@@ -63,6 +63,17 @@
     border-radius: 3px; padding: 6px 12px; cursor: pointer; font: inherit;
   }
   button:hover { background: #2c313f; }
+  details { margin: 10px 0; }
+  details > summary {
+    cursor: pointer; user-select: none; list-style: none;
+    display: inline-block; padding: 6px 12px; border-radius: 6px;
+    background: #232833; border: 1px solid #333a49; color: #cfd4de;
+    font: 500 14px ui-sans-serif, system-ui, sans-serif;
+  }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before { content: '▸ '; opacity: 0.7; }
+  details[open] > summary::before { content: '▾ '; }
+  details > summary:hover { background: #2c313f; }
   button.primary { background: #e0473f; border-color: #e0473f; color: #fff; font-weight: 600; }
   button.primary:hover { background: #ec5a52; }
   button.primary[disabled] { opacity: 0.35; cursor: default; }
@@ -114,19 +125,24 @@
   </div>
 </div>
 
-<p class="hint">
-  <b>build b107</b> — P1: WASD to move, mouse to aim, hold click to fire. On touch, left half moves and right half aims.
+<details id="helpBox">
+  <summary>Controls</summary>
+  <p class="hint">
+  <b>build <span id="buildLbl"></span></b> — P1: WASD to move, mouse to aim, hold click to fire. On touch, left half moves and right half aims.
   Press <b>2</b> to drop in a local player 2 (arrow keys + space, or a second gamepad) — that's the same
   code path the networked player will use. <b>Shift</b> dive-rolls (P2: Ctrl or Enter; two fingers on the move side; A or RB on a pad). <b>R</b> restarts. <b>C</b> calibrates the gun barrels.
-</p>
+  </p>
+</details>
 
-<div class="panel" id="panel"></div>
-<div class="buttons">
-  <button id="copy">Copy tuning values</button>
-
-  <button id="calibrate">Calibrate guns (C)</button>
-  <button id="resetmuzzle">Reset barrels from sliders</button>
-</div>
+<details id="tuningBox">
+  <summary>Tuning sliders</summary>
+  <div class="panel" id="panel"></div>
+  <div class="buttons">
+    <button id="copy">Copy tuning values</button>
+    <button id="calibrate">Calibrate guns (C)</button>
+    <button id="resetmuzzle">Reset barrels from sliders</button>
+  </div>
+</details>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
@@ -342,7 +358,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b107';
+const BUILD = 'b111';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['jared', 'tyson'];
@@ -4154,6 +4170,19 @@ document.getElementById('magBtn').addEventListener('click', () => { giveTestMagn
 document.getElementById('fsMag').addEventListener('click', () => { giveTestMagnet(); dropFocus(); });
 document.getElementById('fsNuke').addEventListener('click', () => { dropTestNuke(); dropFocus(); });
 document.getElementById('fsGun').addEventListener('click', () => { giveTestGun(); dropFocus(); });
+
+const bl = document.getElementById('buildLbl');
+if (bl) bl.textContent = BUILD;
+
+// remember which panels you left open
+for (const id of ['tuningBox', 'helpBox']) {
+  const d = document.getElementById(id);
+  if (!d) continue;
+  try { d.open = localStorage.getItem('open-' + id) === '1'; } catch (_) {}
+  d.addEventListener('toggle', () => {
+    try { localStorage.setItem('open-' + id, d.open ? '1' : '0'); } catch (_) {}
+  });
+}
 
 // browsers won't start audio until the user does something
 function unlockAudio() {
