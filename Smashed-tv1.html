@@ -91,7 +91,7 @@
   <label>Username <input id="turnUser" style="text-transform:none;letter-spacing:normal"></label>
   <label>Password <input id="turnPass" type="password" style="text-transform:none;letter-spacing:normal"></label>
   <button id="applyTurn">Apply relay</button>
-  <span>Use credentials from your TURN provider on both devices, then host/join again.</span>
+  <span>A relay is already built in — you shouldn't need this. Only fill it in to use your own.</span>
 </details>
 <div class="net">
   <label for="charSel">Character</label>
@@ -2459,6 +2459,17 @@ const PEER_OPTS = {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun.cloudflare.com:3478' },
+      // Relay, for when the two machines can't reach each other directly.
+      // Baked in so nobody has to paste credentials. Free tier, no overages —
+      // if the monthly quota runs out it simply stops relaying.
+      { urls: 'turn:global.relay.metered.ca:80',
+        username: '717ffe96ec1375e0fb3f834b', credential: 'v/tattI18wAT8wvM' },
+      { urls: 'turn:global.relay.metered.ca:443',
+        username: '717ffe96ec1375e0fb3f834b', credential: 'v/tattI18wAT8wvM' },
+      { urls: 'turn:global.relay.metered.ca:443?transport=tcp',
+        username: '717ffe96ec1375e0fb3f834b', credential: 'v/tattI18wAT8wvM' },
+      { urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+        username: '717ffe96ec1375e0fb3f834b', credential: 'v/tattI18wAT8wvM' },
       // Add authenticated TURN via Relay settings when direct connections fail.
     ]
   }
@@ -2596,7 +2607,17 @@ function badOrigin() {
   return null;
 }
 
+// Keys are ignored while a text field has focus, so anything that could leave
+// focus in one has to hand it back — otherwise WASD silently stops working.
+function releaseFocus() {
+  const ci = document.getElementById('codeIn');
+  if (ci && ci.blur) ci.blur();
+  if (typeof document !== 'undefined' && document.activeElement
+      && document.activeElement.blur) document.activeElement.blur();
+}
+
 function hostGame() {
+  releaseFocus();
   if (typeof Peer === 'undefined') { setStatus('PeerJS did not load — need internet', 'bad'); return; }
   const bad = badOrigin();
   if (bad) { setStatus(bad, 'bad'); return; }
@@ -2629,6 +2650,7 @@ function hostGame() {
 }
 
 function joinGame(code) {
+  releaseFocus();
   if (typeof Peer === 'undefined') { setStatus('PeerJS did not load — need internet', 'bad'); return; }
   const bad = badOrigin();
   if (bad) { setStatus(bad, 'bad'); return; }
@@ -2729,6 +2751,7 @@ function watchIce(conn) {
 }
 
 document.getElementById('leaveBtn').addEventListener('click', () => {
+  releaseFocus();
   killPeer(); net.role = 'local'; net.code = ''; world = newWorld(); showPoster = true;
   setStatus('Local game — host or join to play online');
 });
@@ -2736,7 +2759,15 @@ document.getElementById('hostBtn').addEventListener('click', hostGame);
 document.getElementById('joinBtn').addEventListener('click',
   () => joinGame(document.getElementById('codeIn').value.trim()));
 document.getElementById('codeIn').addEventListener('keydown',
-  e => { if (e.key === 'Enter') joinGame(e.target.value.trim()); });
+  e => { if (e.key === 'Enter') { joinGame(e.target.value.trim()); e.target.blur(); } });
+
+// Any button or field hands focus back to the page, so the movement keys keep
+// working. Without this, joining by typing a code left focus in the input and
+// every WASD press was ignored.
+for (const el of document.querySelectorAll('button')) {
+  el.addEventListener('click', () => setTimeout(() => el.blur(), 0));
+}
+document.getElementById('codeIn').addEventListener('blur', () => {});
 
 // client pushes input, host pushes state
 setInterval(() => {
@@ -4004,6 +4035,7 @@ document.getElementById('copy').addEventListener('click', async e => {
   setTimeout(() => e.target.textContent = 'Copy tuning values', 1200);
 });
 function restartGame() {
+  releaseFocus();
   if (net.role === 'client') { setStatus('The host can restart the online game.'); return; }
   accumulator = 0;
   const twoPlayers = world.players.length > 1;
@@ -4011,6 +4043,7 @@ function restartGame() {
   if (twoPlayers) addPlayer(world);
 }
 function startGame() {
+  releaseFocus();
   if (net.role === 'client') return;     // the host owns the world
   if (cal.on) return;
   world.started = true;
@@ -4074,9 +4107,7 @@ function goFullscreen() {
 }
 // after clicking a button the browser leaves focus on it, which can eat the
 // next keypress. Hand focus back to the page so G and N keep working.
-function dropFocus() {
-  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-}
+function dropFocus() { releaseFocus(); }
 
 function giveTestMagnet() {
   if (net.role === 'client') { setStatus('only the host can do that', 'bad'); return; }
