@@ -166,7 +166,7 @@ const T = {
   enemyStride: 10,     // px travelled per animation frame (lower = faster legs)
   enemyBob:    2,      // px of vertical bounce on the passing frames
   enemyLean:   7,      // degrees of tilt into the run at full speed
-  enemySpeed:  95,
+  enemySpeed:  80,
   enemyHp:     3,
   enemyRadius: 15,
   stagger:     0.13,   // seconds an enemy stops advancing after a hit
@@ -219,7 +219,7 @@ const T = {
   spudPickup:  0.36,   // bending down to grab one off the ground
   spudThrow:   0.5,    // chucking the spent potato away
   spudThrowSpd:520,    // how hard he lobs it
-  spudThrowDmg:1,      // what it does if it hits something
+  spudThrowFrac:1,     // a thrown husk kills a grunt outright (1 = full grunt hp)
   spudGrow:    9,      // seconds from sprout to ready
   spudRate:    5,      // seconds between new sprouts
   spudMax:     6,      // plants in the arena at once
@@ -343,7 +343,7 @@ const RANGES = {
   spudPellets: [4, 60, 1],      spudStart:   [0, 6, 1],
   spudMaxAmmo: [12, 200, 4],    spudReload:  [0.2, 2, 0.05],
   spudPickup:  [0.15, 1.5, 0.02], spudThrow:   [0.2, 2, 0.05],
-  spudThrowSpd:[150, 1200, 20],   spudThrowDmg:[0, 5, 0.5],
+  spudThrowSpd:[150, 1200, 20],   spudThrowFrac:[0, 4, 0.25],
   spudGrow:    [2, 40, 0.5],    spudRate:    [1, 30, 0.5],
   spudMax:     [0, 20, 1],      spudEmpty:   [0.05, 1, 0.01],
   magnetBonus: [0, 6, 1],
@@ -391,7 +391,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b144';
+const BUILD = 'b147';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'jared', 'tyson'];
@@ -1844,13 +1844,24 @@ function step(w, inputs, dt) {
     h.rot += h.spin * dt;
     h.life -= dt;
     let gone = h.life <= 0;
-    for (const e of w.enemies) {
+    for (let k = w.enemies.length - 1; k >= 0; k--) {
+      const e = w.enemies[k];
       if (e.spawn > 0) continue;
       if (segmentHit(ox, oy, h.x, h.y, e.x, e.y, eRad(e) + 6) === null) continue;
-      e.hp -= T.spudThrowDmg;
+      e.hp -= Math.max(0.1, T.enemyHp * T.spudThrowFrac);
       e.flash = 0.08;
       e.stun = Math.max(e.stun || 0, T.stagger);
       fx(w, FX.HIT, h.x, h.y);
+      // a lobbed potato can finish something off, so it has to kill properly
+      if (e.hp <= 0) {
+        if (e.t === 2) burstShrapnel(w, e.x, e.y); else fx(w, FX.KILL, e.x, e.y);
+        makeCorpse(w, e, h.vx, h.vy, false);
+        w.shake = Math.max(w.shake || 0, T.killShake);
+        killBurst(w, e.x, e.y, h.vx, h.vy, false);
+        splat(w, e.x, e.y);
+        payKill(w, e.x, e.y, e.t, h.owner === undefined ? -1 : h.owner);
+        w.enemies.splice(k, 1);
+      }
       gone = true;
       break;
     }
@@ -1868,7 +1879,8 @@ function step(w, inputs, dt) {
       if (before > rel && p.throw <= rel && !p.threw) {
         p.threw = 1;
         const f = facingVec(p), l = Math.hypot(f.x, f.y) || 1;
-        w.husks.push({ x: p.x + (f.x / l) * 14, y: p.y - 14 + (f.y / l) * 8,
+        w.husks.push({ owner: p.id,
+                       x: p.x + (f.x / l) * 14, y: p.y - 14 + (f.y / l) * 8,
                        vx: (f.x / l) * T.spudThrowSpd, vy: (f.y / l) * T.spudThrowSpd,
                        rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 22, life: 1.2 });
         if (typeof SFX !== 'undefined' && SND.ctx) sNoise(0.08, 900, 1.4, 0.16, 'bandpass', 300);
@@ -3677,14 +3689,21 @@ function render(w, hudRight) {
   // bullets
   ctx.lineCap = 'round';
   for (const h of (cal.on ? [] : (w.husks || []))) {
+    const im = SPUD_IMG[4];                          // the loose potato sprite
     ctx.save();
     ctx.translate(h.x, h.y);
     ctx.rotate(h.rot || 0);
-    ctx.fillStyle = '#7a5230';
-    ctx.beginPath(); ctx.ellipse(0, 0, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2f1d10';                       // the holes he's cored out
-    for (const [hx, hy] of [[-3,-2],[2,-3],[3,2],[-2,3],[0,0]]) {
-      ctx.beginPath(); ctx.arc(hx, hy, 1.6, 0, Math.PI * 2); ctx.fill();
+    if (im && im.complete && im.naturalWidth) {
+      const dw = 22, dh = dw * (im.naturalHeight / im.naturalWidth);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(im, Math.round(-dw / 2), Math.round(-dh / 2), Math.round(dw), Math.round(dh));
+    } else {
+      ctx.fillStyle = '#7a5230';
+      ctx.beginPath(); ctx.ellipse(0, 0, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(47,29,16,0.9)';            // the holes he's cored out
+    for (const [hx, hy] of [[-3,-2],[2,-3],[3,2],[-2,3]]) {
+      ctx.beginPath(); ctx.arc(hx, hy, 1.5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
@@ -4137,7 +4156,8 @@ function render(w, hudRight) {
 
     // hp pips over the head; anything past full is a gold overheal pip
     const shown = Math.max(T.playerHp, Math.ceil(p.hp));
-    const pipY = Math.round(p.y + r * 0.9 - r * T.spriteScale * T.hpHeight);
+    const chScale = (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * (NEW_ART.has(p.ch) ? T.altScale : 1);
+    const pipY = Math.round(p.y + r * 0.9 - r * T.spriteScale * T.hpHeight * chScale);
     for (let i = 0; i < shown; i++) {
       const over = i >= T.playerHp;
       ctx.fillStyle = i < p.hp
