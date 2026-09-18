@@ -494,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b178 — a table and two chairs';
+const BUILD = 'b179 — take a seat';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -648,6 +648,17 @@ TOWER_IMG.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKwAAADCCAMAAADjE
 const POOL = { x0: 624, y0: 90, x1: 815, y1: 239 };
 // the lounge table and its two chairs, as one solid lump
 function tableBox() { return { x0: T.tableX - 52, x1: T.tableX + 52, y0: T.tableY - 16, y1: T.tableY + 16 }; }
+// the two chairs: 1 is left of the table (sits facing right), 2 is right of it
+function chairPos(i) { return { x: T.tableX + (i === 1 ? -44 : 44), y: T.tableY + 2 }; }
+function chairNear(w, p) {
+  if (!p || !p.alive || p.dive || w.started || !T.loungeFloor || NPC_GOTH.carrier === p.id) return 0;
+  for (const i of [1, 2]) {
+    const c = chairPos(i);
+    if (w.players.some(q => q !== p && q.sit === i)) continue;     // taken
+    if (Math.abs(p.x - c.x) < 44 && Math.abs(p.y - c.y) < 44) return i;
+  }
+  return 0;
+}
 function drawTable(w) {
   if (w.started || !T.loungeFloor || cal.on) return;
   const x = T.tableX, y = T.tableY;
@@ -827,7 +838,7 @@ function lobbySolids(w) {
   if (w.started || !T.loungeFloor) return;
   const water = { x0: POOL.x0 + 6, y0: POOL.y0 + 6, x1: POOL.x1 - 6, y1: POOL.y1 - 6 };
   for (const p of w.players) {
-    if (!p.alive || p.dive) continue;
+    if (!p.alive || p.dive || p.sit) continue;
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
     pushOutOfBox(p, T.radius * 0.5, tableBox());
@@ -1862,6 +1873,11 @@ function stepBase(w, inputs, dt) {
     let inp = inputs[p.id] || { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false };
     // arms full: no shooting or rolling while carrying Gothica
     if (NPC_GOTH.carrier === p.id && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });
+    // sitting: a nudge on the stick stands him up; otherwise he stays put
+    if (p.sit && !w.started) {
+      if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) p.sit = 0;
+      else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const c = chairPos(p.sit); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; }
+    } else if (p.sit) p.sit = 0;
     // weapon bar: switch to anything he's actually holding
     if (inp.wsel && WEAPONS[inp.wsel] && inp.wsel !== p.weapon && hasWeapon(p, inp.wsel) && !p.dump && !p.spin) {
       p.weapon = inp.wsel; p.lobHeld = 0; p.aimOn = 0;
@@ -4100,7 +4116,9 @@ function carryButton() {
   if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
   let label = null;
   if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
+  else if (p.sit) label = 'STAND';
   else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
+  else if (chairNear(w, p)) label = 'SIT';
   else if (canCarry(w, p)) label = 'PICK UP';
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
 }
@@ -4117,6 +4135,8 @@ function drawCarryButton() {
 function toggleCarry(w) {
   const p = w.players[0];
   if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
+  if (p && p.sit) { p.sit = 0; return; }
+  { const ch = chairNear(w, p); if (ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
     if (p && p.dive === DIVE.BOARD) throwGoth(w, (p.fx < 0 ? -1 : 1) * T.diveFwd * 1.25, 40, T.diveHop * 0.9);
@@ -4327,6 +4347,25 @@ function drawJared(w, p) {
     ctx.stroke();
   }
 
+  if (p.sit && !w.started) {
+    // no sitting art: his side-on top half on the seat, facing the table,
+    // which hides where his legs would be
+    const gS = weaponOf(p), sk = (gS.skin && gS.skin[p.ch]) || p.ch, setS = IMG[sk] || IMG[p.ch] || IMG.jared;
+    let im = setS.side_run || setS.side_a; if (Array.isArray(im)) im = im[0];
+    if (im && im.complete && im.naturalWidth) {
+      const alt = NEW_ART.has(p.ch);
+      const h = r * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * (alt ? T.altScale : 1);
+      const dw = h * (im.naturalWidth / im.naturalHeight) * (alt ? T.altWide : 1);
+      const keep = 0.58, seatY = p.y + 6;
+      ctx.save();
+      if (p.sit === 2) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }   // the right chair faces left
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(im, 0, 0, im.naturalWidth, Math.round(im.naturalHeight * keep),
+                    Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw), Math.round(h * keep));
+      ctx.restore();
+      return;
+    }
+  }
   // hands in the air between waves
   let pose;
   const gw0 = weaponOf(p);
