@@ -227,7 +227,7 @@ const T = {
   shotgunTime: 12,     // seconds the shotgun lasts once picked up
   spudPellets: 10,     // pellets one potato gives you
   spudStart:   0,      // potatoes' worth of pellets you begin a run with
-  spudMaxAmmo: 40,     // pocket limit
+  spudMaxAmmo: 200,    // pocket limit: twenty whole potatoes (b170: was 40)
   spudReload:  0.42,   // the jab between every shot — this IS the fire rate
   jabRun:      1,      // keep the legs running while he jabs
   loungeFloor: 1,      // the lobby's lounge/gym/pool floor art
@@ -405,7 +405,7 @@ const RANGES = {
   sgDiagFlip:  [0, 1, 1],       sgBdiagFlip: [0, 1, 1],
   shotgunTime: [3, 60, 1],      spinCost:    [1, 30, 1],
   spudPellets: [4, 60, 1],      spudStart:   [0, 6, 1],
-  spudMaxAmmo: [12, 200, 4],    spudReload:  [0.2, 2, 0.05],
+  spudMaxAmmo: [10, 400, 10],    spudReload:  [0.2, 2, 0.05],
   jabRun:      [0, 1, 1],
   loungeFloor: [0, 1, 1],       towerX:      [18, 842, 1],
   towerY:      [18, 502, 1],    towerScale:  [0.5, 2, 0.02],
@@ -481,7 +481,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b169 — pull the gym rope';
+const BUILD = 'b170 — pockets hold twenty potatoes';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1417,7 +1417,7 @@ function calChar() { return world && world.players[0] ? barrelKey(world.players[
 defaultMuzzle();
 const SAVE_KEY = 'jucy-jared-tuning-v1';
 function saveTuning() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 2, bv: 2, mv: 3, T, M: MUZZLE_BY_CHAR, touched: TOUCHED })); } catch (_) {}
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 2, bv: 2, mv: 3, pv: 1, T, M: MUZZLE_BY_CHAR, touched: TOUCHED })); } catch (_) {}
 }
 try {
   const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -1429,6 +1429,8 @@ try {
       if (ART_KEYS.has(key)) continue;          // the file's defaults win for these
       // blast sizes were bumped in b153: ignore sliders saved before that
       if (saved.bv !== 2 && (key === 'blastRadius' || key === 'blastSize' || key === 'blastSelf')) continue;
+      // pockets grew in b170: ignore a limit saved before that
+      if (saved.pv !== 1 && key === 'spudMaxAmmo') continue;
       const value = saved.T && saved.T[key], [min, max] = RANGES[key];
       if (Number.isFinite(value) && value >= min && value <= max) T[key] = value;
     }
