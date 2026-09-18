@@ -491,7 +491,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b175 — enemies at half speed';
+const BUILD = 'b176 — bend and grab with any weapon';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -4239,6 +4239,11 @@ function jabRunImage(skinId, top, bot, key, idx, legKey, legIdx) {
   return out;
 }
 
+function pickupSkin(p, skin0) {
+  if (CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.pickup)) return skin0;
+  const alt = WEAPONS.spud.skin && WEAPONS.spud.skin[p.ch];
+  return (alt && CHARS[alt] && Array.isArray(CHARS[alt].sprites.pickup)) ? alt : null;
+}
 function drawJared(w, p) {
   const r = T.radius;
 
@@ -4281,10 +4286,11 @@ function drawJared(w, p) {
     const f = Math.min(n - 1, Math.floor((1 - p.throw / T.spudThrow) * n));
     pose = { img: key, flip: key === 'throw_side' && fv.x < 0, frame: f };
   }
-  else if (p.pickup > 0 && CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.pickup)) {
-    const n = CHARS[skin0].sprites.pickup.length;
+  else if (p.pickup > 0 && pickupSkin(p, skin0)) {
+    // only the spud-gun sheets have a bend-and-grab, so borrow it whatever he's holding
+    const pk = pickupSkin(p, skin0), n = CHARS[pk].sprites.pickup.length;
     const f = Math.min(n - 1, Math.floor((1 - p.pickup / T.spudPickup) * n));
-    pose = { img: 'pickup', flip: false, frame: f };
+    pose = { img: 'pickup', flip: false, frame: f, skin: pk };
   }
   else if (p.reload > 0 && CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.reload)) {
     // jabbing the gun into a potato. Side-on if he's facing sideways-ish and
@@ -4345,7 +4351,7 @@ function drawJared(w, p) {
 
   const g = weaponOf(p);
   const skinId = (g.skin && g.skin[p.ch]) || p.ch;
-  const set = IMG[skinId] || IMG[p.ch] || IMG.jared;
+  const set = IMG[pose.skin || skinId] || IMG[p.ch] || IMG.jared;   // a pose can bring its own sheet
   let key = pose.img, idx = pose.frame || 0;
   const hash = key.indexOf('#');
   if (hash >= 0) { idx = parseInt(key.slice(hash + 1), 10) || 0; key = key.slice(0, hash); }
