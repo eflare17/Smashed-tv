@@ -246,8 +246,10 @@ const T = {
   spudThrowSpd:520,    // how hard he lobs it
   spudThrowFrac:1,     // a thrown husk kills a grunt outright (1 = full grunt hp)
   lobWhole:    2.2,    // a whole potato, thrown on purpose: times the husk's damage
-  lobSpd:      1.15,   // and a bit faster
-  punchTime:   0.24,   // how long a punch takes
+  lobCharge:   1.1,    // seconds of holding fire for a full-power throw
+  lobNear:     110,    // how far a tap throws it
+  lobFar:      430,    // how far a full charge throws it
+  lobPowDmg:   1.5,    // damage at full power, as a multiple of a tap  punchTime:   0.24,   // how long a punch takes
   punchReach:  40,     // how far in front of him it lands
   punchDmg:    0.7,    // in grunt hp
   punchKnock:  2.8,    // times the normal knockback: fists are for shoving
@@ -415,8 +417,9 @@ const RANGES = {
   loungeSlotX: [30, 830, 1],    loungeVendX: [30, 830, 1],
   spudPickup:  [0.15, 1.5, 0.02], spudThrow:   [0.2, 2, 0.05],
   spudThrowSpd:[150, 1200, 20],   spudThrowFrac:[0, 4, 0.25],
-  lobWhole:    [0.5, 6, 0.1],     lobSpd:      [0.5, 2, 0.05],
-  punchTime:   [0.1, 0.6, 0.02],  punchReach:  [16, 90, 2],
+  lobWhole:    [0.5, 6, 0.1],     lobCharge:   [0.3, 3, 0.05],
+  lobNear:     [40, 300, 5],      lobFar:      [150, 700, 10],
+  lobPowDmg:   [1, 4, 0.1],  punchTime:   [0.1, 0.6, 0.02],  punchReach:  [16, 90, 2],
   punchDmg:    [0.1, 4, 0.1],     punchKnock:  [0.5, 8, 0.1],
   punchLunge:  [0, 500, 10],
   ropeX:       [320, 580, 1],     ropeY:       [110, 230, 1],
@@ -481,7 +484,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b170 — pockets hold twenty potatoes';
+const BUILD = 'b171 — charged potato lob';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1533,7 +1536,7 @@ function firePlayer(w, p, ax, ay) {
     // the throw animation releases the potato three fifths through
     if (p.ammo < T.spudPellets) return;
     p.ammo -= T.spudPellets;
-    p.throw = T.spudThrow; p.threw = 0; p.throwWhole = 1;
+    p.throw = T.spudThrow; p.threw = 0; p.throwWhole = 1; p.throwPow = p.lobPow || 0.5;
     p.fx = ax; p.fy = ay; p.shots++;
     return;
   }
@@ -1999,7 +2002,24 @@ function stepBase(w, inputs, dt) {
       } else if (p.cooldown < 0) p.cooldown = 0;
     } else { p.aimOn = 0; p.lobHeld = 0; }
 
-    if (inp.shoot && !lobbing) {
+    if (weaponOf(p).lob) {
+      // the potato: hold fire to wind up, let go to throw. Power is how long you held.
+      const busy = p.reload > 0 || p.pickup > 0 || p.throw > 0;
+      let dx = ax, dy = ay;
+      if (alen > 0.001) { dx /= alen; dy /= alen; } else { const f = Math.hypot(p.fx, p.fy) || 1; dx = p.fx / f; dy = p.fy / f; }
+      if (inp.shoot && !busy && p.ammo >= T.spudPellets) {
+        p.charge = Math.min(1, (p.charge || 0) + dt / T.lobCharge); p.charging = 1;
+        p.fx = dx; p.fy = dy; p.adx = dx; p.ady = dy; p.firing = 1;
+      } else if (p.charging && !busy) {
+        p.charging = 0; p.lobPow = 0.2 + 0.8 * (p.charge || 0); p.charge = 0;
+        p.fx = dx; p.fy = dy;
+        firePlayer(w, p, dx, dy);
+      } else if (inp.shoot && !busy && p.ammo < T.spudPellets) {
+        p.click -= 1 / 120; p.dryHint = 1.2;                     // nothing whole left to throw
+        if (p.click <= 0) { p.click = T.spudEmpty; if (typeof SFX !== 'undefined' && SND.ctx) sTone(0.03, 900, 500, 0.12, 'square'); }
+      } else { p.charging = 0; p.charge = 0; }
+    }
+    else if (inp.shoot && !lobbing) {
       if (alen > 0.001) { ax /= alen; ay /= alen; }
       else { const f = Math.hypot(p.fx, p.fy) || 1; ax = p.fx / f; ay = p.fy / f; }
       p.fx = ax; p.fy = ay;
@@ -2550,15 +2570,26 @@ function stepBase(w, inputs, dt) {
     const h = w.husks[i];
     const ox = h.x, oy = h.y;
     h.x += h.vx * dt; h.y += h.vy * dt;
-    h.vx *= Math.pow(0.5, dt); h.vy *= Math.pow(0.5, dt);
+    if (h.lob) { h.vz -= 1000 * dt; h.dz += h.vz * dt; }
+    else { h.vx *= Math.pow(0.5, dt); h.vy *= Math.pow(0.5, dt); }
     h.rot += h.spin * dt;
     h.life -= dt;
     let gone = h.life <= 0;
-    for (let k = w.enemies.length - 1; k >= 0; k--) {
+    if (h.lob && h.dz <= 0) {                     // came down on nothing: it's a potato on the floor again
+      gone = true;
+      const m = ARENA.wall + 12;
+      if (h.x > m && h.x < ARENA.w - m && h.y > m && h.y < ARENA.h - m && !inWater(h.x, h.y)) {
+        w.plants.push({ x: h.x, y: h.y, t: T.spudGrow, wob: 0.4 });
+        fx(w, FX.WALL, h.x, h.y);
+        if (SND.ctx) sNoise(0.05, 300, 1.4, 0.16, 'lowpass', 300);
+      } else if (inWater(h.x, h.y)) fx(w, FX.SPLASH, h.x, h.y);
+    }
+    for (let k = w.enemies.length - 1; k >= 0 && !gone; k--) {
       const e = w.enemies[k];
       if (e.spawn > 0) continue;
+      if (h.lob && h.dz > eRad(e) * 1.6 + 10) continue;   // sailing over his head
       if (segmentHit(ox, oy, h.x, h.y, e.x, e.y, eRad(e) + 6) === null) continue;
-      e.hp -= Math.max(0.1, T.enemyHp * T.spudThrowFrac * (h.whole ? T.lobWhole : 1));
+      e.hp -= Math.max(0.1, h.dmg !== undefined ? h.dmg : T.enemyHp * T.spudThrowFrac * (h.whole ? T.lobWhole : 1));
       e.flash = 0.08;
       e.stun = Math.max(e.stun || 0, T.stagger);
       if (h.whole) {                            // a whole potato has some weight behind it
@@ -2599,12 +2630,23 @@ function stepBase(w, inputs, dt) {
       if (before > rel && p.throw <= rel && !p.threw) {
         p.threw = 1;
         const f = facingVec(p), l = Math.hypot(f.x, f.y) || 1;
-        const whole = !!p.throwWhole, spd = T.spudThrowSpd * (whole ? T.lobSpd : 1);
+        const whole = !!p.throwWhole, pow = whole ? (p.throwPow || 0.5) : 0;
         p.throwWhole = 0;
-        w.husks.push({ owner: p.id, whole,
-                       x: p.x + (f.x / l) * 14, y: p.y - 14 + (f.y / l) * 8,
-                       vx: (f.x / l) * spd, vy: (f.y / l) * spd,
-                       rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 22, life: whole ? 1.5 : 1.2 });
+        if (whole) {
+          // lobbed: lands lobNear..lobFar away, in the air 0.5-0.9s, gravity does the rest
+          const dist = T.lobNear + (T.lobFar - T.lobNear) * pow, tf = 0.5 + 0.4 * pow, G = 1000;
+          w.husks.push({ owner: p.id, whole, lob: true,
+                         x: p.x + (f.x / l) * 12, y: p.y + (f.y / l) * 6, dz: 28, vz: G * tf / 2 - 28 / tf,
+                         vx: (f.x / l) * dist / tf, vy: (f.y / l) * dist / tf,
+                         dmg: T.enemyHp * T.spudThrowFrac * T.lobWhole * (1 + (T.lobPowDmg - 1) * pow),
+                         rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * (14 + 16 * pow), life: 3 });
+          if (SND.ctx) sTone(0.12, 300 + 300 * pow, 700 + 400 * pow, 0.12, 'triangle');
+        } else {
+          w.husks.push({ owner: p.id,
+                         x: p.x + (f.x / l) * 14, y: p.y - 14 + (f.y / l) * 8,
+                         vx: (f.x / l) * T.spudThrowSpd, vy: (f.y / l) * T.spudThrowSpd,
+                         rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 22, life: 1.2 });
+        }
         if (typeof SFX !== 'undefined' && SND.ctx) sNoise(0.08, 900, 1.4, 0.16, 'bandpass', 300);
       }
       // once he's binned it, load the next potato if he has one
@@ -4136,6 +4178,12 @@ function drawJared(w, p) {
     // the "fists" frame of his celebration, with a lean into the swing
     pose = { img: 'victory', frame: 2, flip: p.fx < 0 };
   }
+  else if (p.charging && CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.throw_side)) {
+    const fv = facingVec(p);
+    const sideways = Math.abs(fv.x) > Math.abs(fv.y) * 0.9;
+    const key = sideways ? 'throw_side' : 'throw_front';
+    pose = { img: key, flip: key === 'throw_side' && fv.x < 0, frame: 0 };
+  }
   else if (p.throw > 0 && CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.throw_side)) {
     const fv = facingVec(p);
     const sideways = Math.abs(fv.x) > Math.abs(fv.y) * 0.9;
@@ -5305,7 +5353,12 @@ function renderBase(w, hudRight) {
   for (const h of (cal.on ? [] : (w.husks || []))) {
     const im = SPUD_IMG[4];                          // the loose potato sprite
     ctx.save();
-    ctx.translate(h.x, h.y);
+    if (h.lob) {
+      const sf = Math.max(0.35, 1 - (h.dz || 0) / 260);
+      ctx.fillStyle = 'rgba(0,0,0,' + (0.3 * sf).toFixed(2) + ')';
+      ctx.beginPath(); ctx.ellipse(h.x, h.y + 6, 12 * sf, 5 * sf, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.translate(h.x, h.y - (h.lob ? h.dz : 0));
     ctx.rotate(h.rot || 0);
     if (im && im.complete && im.naturalWidth) {
       const dw = h.whole ? 28 : 22, dh = dw * (im.naturalHeight / im.naturalWidth);
@@ -5824,6 +5877,14 @@ function renderBase(w, hudRight) {
       ctx.stroke();
     }
 
+    // throw power while he winds up
+    if (p.charging) {
+      const bw = 34, by = Math.round(p.y + r * 0.9 - r * T.spriteScale * T.hpHeight) - 8, c = p.charge || 0;
+      ctx.fillStyle = 'rgba(20,22,28,0.75)';
+      ctx.fillRect(Math.round(p.x - bw / 2), by, bw, 4);
+      ctx.fillStyle = c >= 1 ? (Math.floor(w.t * 12) % 2 ? '#fff3c4' : '#f6d17a') : '#d8b878';
+      ctx.fillRect(Math.round(p.x - bw / 2), by, Math.round(bw * c), 4);
+    }
     // shotgun timer, just above the hp pips
     if (p.weapon === 'shotgun' && p.wTime > 0) {
       const bw = 34, by = Math.round(p.y + r * 0.9 - r * T.spriteScale * T.hpHeight) - 8;
