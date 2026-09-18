@@ -246,7 +246,7 @@ const T = {
   spudThrowSpd:520,    // how hard he lobs it
   spudThrowFrac:1,     // a thrown husk kills a grunt outright (1 = full grunt hp)
   lobWhole:    2.2,    // a whole potato, thrown on purpose: times the husk's damage
-  lobCharge:   1.1,    // seconds of holding fire for a full-power throw
+  lobCharge:   0.55,   // seconds of holding fire for a full-power throw (b180: was 1.1)
   lobNear:     110,    // how far a tap throws it
   lobFar:      430,    // how far a full charge throws it
   lobPowDmg:   1.5,    // damage at full power, as a multiple of a tap
@@ -494,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b179 — take a seat';
+const BUILD = 'b180 — the throw charges twice as fast';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1486,7 +1486,7 @@ function calChar() { return world && world.players[0] ? barrelKey(world.players[
 defaultMuzzle();
 const SAVE_KEY = 'jucy-jared-tuning-v1';
 function saveTuning() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 2, bv: 2, mv: 3, pv: 1, ev: 1, T, M: MUZZLE_BY_CHAR, touched: TOUCHED })); } catch (_) {}
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ version: 2, bv: 2, mv: 3, pv: 1, ev: 1, cv: 1, T, M: MUZZLE_BY_CHAR, touched: TOUCHED })); } catch (_) {}
 }
 try {
   const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -1502,6 +1502,7 @@ try {
       if (saved.pv !== 1 && key === 'spudMaxAmmo') continue;
       // enemies were slowed in b175: ignore a speed saved before that
       if (saved.ev !== 1 && key === 'enemySpeed') continue;
+      if (saved.cv !== 1 && key === 'lobCharge') continue;      // charge halved in b180
       const value = saved.T && saved.T[key], [min, max] = RANGES[key];
       if (Number.isFinite(value) && value >= min && value <= max) T[key] = value;
     }
