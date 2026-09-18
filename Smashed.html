@@ -494,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b183 — his legs when standing with her';
+const BUILD = 'b184 — only her bust jiggles';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3731,8 +3731,11 @@ const JIGGLE_BOX = {
   // in Jared's arms, one per carry frame; these frames share one head position,
   // so the rows are absolute rather than from the top of the art
   carry0:    { x0: 48, x1: 79, y0: 63, y1: 88, abs: true },   // standing
-  carry1:    { x0: 26, x1: 61, y0: 65, y1: 95, abs: true },   // stride, and the walk frames built from it
-  carry2:    { x0: 32, x1: 64, y0: 88, y1: 112, abs: true },  // the squat, mid pick-up
+  // Carried, her arm wraps round two sides of her bust, so no rule based on colour or on
+  // what's beside a pixel can tell them apart. These are placed by hand: the box is where
+  // the movement peaks, the ellipse is the only place anything may move.
+  carry1:    { x0: 36, x1: 58, y0: 67, y1: 87, abs: true, ell: { cx: 46.5, cy: 77, rx: 10.5, ry: 9.5 } },   // stride, and the walk frames built from it
+  carry2:    { x0: 49, x1: 65, y0: 100, y1: 114, abs: true, ell: { cx: 57, cy: 107, rx: 8, ry: 7 } },   // the squat (b182 had this box on her hair and neck by mistake)
 };
 const JIG = {};
 function jiggleAmount(p) {
@@ -3768,6 +3771,32 @@ function headTop(im) {
   im._pixels = d;
   return (im._headTop = top);
 }
+// Which pixels in the jiggle box are actually her bust. The box on its own also
+// holds her arm (and, when she's carried, his hand and shirt), and they were
+// sliding along with it. In: her top (dark), and pale skin that has her top on
+// BOTH sides of it in the same row, which is the cleavage inside the neckline.
+// Her arm is the same pale colour, so colour can't separate it; but it has the
+// top on one side only. Out: everything else (his orange skin, his shirt).
+// Note dark also catches any of her black hair that hangs inside the box.
+function bustMask(im, box, top) {
+  if (im._bustMask) return im._bustMask;
+  const w = im.naturalWidth, h = im.naturalHeight, d = im._pixels, m = new Uint8Array(w * h), REACH = 14;
+  const dark = o => d[o + 3] && Math.max(d[o], d[o + 1], d[o + 2]) < 90;
+  const pale = o => d[o + 3] && d[o] > 190 && d[o + 1] > 150 && d[o + 2] > 120;
+  for (let y = Math.max(0, top + box.y0 - 5); y <= Math.min(h - 1, top + box.y1 + 5); y++) {
+    for (let x = box.x0; x <= box.x1; x++) {
+      const o = (y * w + x) * 4;
+      if (box.ell) { const ex = (x - box.ell.cx) / box.ell.rx, ey = (y - box.ell.cy) / box.ell.ry; if (ex * ex + ey * ey > 1) continue; }   // hand-placed bust
+      if (dark(o)) { m[y * w + x] = 1; continue; }
+      if (!pale(o)) continue;
+      let L = false, R = false;
+      for (let k = 1; k <= REACH && !L; k++) if (x - k >= 0 && dark((y * w + x - k) * 4)) L = true;
+      for (let k = 1; k <= REACH && !R; k++) if (x + k < w && dark((y * w + x + k) * 4)) R = true;
+      if (L && R) m[y * w + x] = 1;
+    }
+  }
+  return (im._bustMask = m);
+}
 function jiggled(im, key, amt) {
   const box = JIGGLE_BOX[key];
   const level = Math.max(-4, Math.min(4, Math.round(amt * T.jiggle * 2) / 2));   // half-pixel steps, cached
@@ -3781,12 +3810,15 @@ function jiggled(im, key, amt) {
   const g = c.getContext('2d');
   const out = g.createImageData(w, h); out.data.set(src);
   const y0 = top + box.y0, y1 = top + box.y1, xm = (box.x0 + box.x1) / 2, xr = (box.x1 - box.x0) / 2;
+  const mask = bustMask(im, box, top);
   for (let y = y0; y <= y1; y++) {
     const bell = Math.sin(Math.PI * (y - y0) / (y1 - y0));
     for (let x = box.x0; x <= box.x1; x++) {
       const taper = Math.cos((x - xm) / xr * Math.PI / 2);
       const sy = Math.round(y - level * bell * taper);    // + level = bust drops
       if (sy === y || sy < 0 || sy >= h) continue;
+      // only the bust moves, and it is only ever filled from the bust
+      if (!mask[y * w + x] || !mask[sy * w + x]) continue;
       const o = (y * w + x) * 4, i = (sy * w + x) * 4;
       for (let n = 0; n < 4; n++) out.data[o + n] = src[i + n];
     }
