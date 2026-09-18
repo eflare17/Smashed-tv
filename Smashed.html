@@ -464,7 +464,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b166 — weapon bar: 1-5, drag to rearrange';
+const BUILD = 'b167 — gun icons on the weapon bar';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3632,6 +3632,26 @@ function hasWeapon(p, id) {
   return id === 'spud' || (id === 'blaster' && !!p.blasters) || (id === 'shotgun' && p.wTime > 0) || (id === 'launcher' && p.rockets > 0);
 }
 const HOT_LABEL = { spud: 'SPUD', blaster: 'BLAST', shotgun: 'SHOT', launcher: 'NUKE' };
+// slot icons: the gun itself, cropped out of Juicy's side-on art for each skin
+const HOT_ICON = {
+  blaster:  { set: 'juicy',          key: 'side_run', sx: 76, sy: 34, sw: 54,  sh: 46 },
+  shotgun:  { set: 'juicy_shotgun',  key: 'side_a',   sx: 42, sy: 31, sw: 36,  sh: 17 },   // barrel and receiver, clear of his head
+  launcher: { set: 'juicy_launcher', key: 'side_a',   sx: 72, sy: 36, sw: 52,  sh: 36 },   // the business end: symbol and warhead
+  spud:     { set: 'juicy_spud',     key: 'side_run', sx: 74, sy: 28, sw: 42,  sh: 28 }
+};
+function drawHotIcon(id, cx, cy, maxW, maxH, alpha) {
+  const ic = HOT_ICON[id], set = ic && IMG[ic.set];
+  let im = set && set[ic.key]; if (Array.isArray(im)) im = im[0];
+  if (!im || !im.complete || !im.naturalWidth) {                   // art not in yet: fall back to the word
+    ctx.font = 'bold 10px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = alpha < 1 ? '#4a5162' : '#cfd4de';
+    ctx.fillText(HOT_LABEL[id], cx, cy); return;
+  }
+  const k = Math.min(maxW / ic.sw, maxH / ic.sh), w = Math.round(ic.sw * k), h = Math.round(ic.sh * k);
+  ctx.save(); ctx.globalAlpha = alpha; if (alpha < 1) ctx.filter = 'grayscale(1)';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(im, ic.sx, ic.sy, ic.sw, ic.sh, Math.round(cx - w / 2), Math.round(cy - h / 2), w, h);
+  ctx.restore();
+}
 function hotbarGeo(w) {
   const n = 5, s = 40, gap = 6;
   return { n, s, gap, x0: ARENA.w / 2 - (n * s + (n - 1) * gap) / 2,
@@ -3670,9 +3690,7 @@ function drawHotbar(w) {
     ctx.fillStyle = '#6b7385'; ctx.fillText(String(i + 1), x + 4, y + 7);
     ctx.textAlign = 'center';
     if (!id || dragging) continue;
-    ctx.font = 'bold 10px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillStyle = owned ? (current ? '#f6d17a' : '#cfd4de') : '#4a5162';
-    ctx.fillText(HOT_LABEL[id], x + g.s / 2, y + 17);
+    drawHotIcon(id, x + g.s / 2, y + 15, 34, 20, owned ? 1 : 0.35);
     ctx.font = '9px ui-monospace, monospace';
     if (id === 'spud')          { ctx.fillStyle = p.ammo > 0 ? '#d8b878' : '#e0473f'; ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + (p.ammo || 0), x + g.s / 2, y + 30); }
     else if (id === 'blaster')  { ctx.fillStyle = owned ? '#9aa3b5' : '#3a4050'; ctx.fillText(owned ? '\u221E' : '\u2014', x + g.s / 2, y + 30); }
@@ -3689,8 +3707,7 @@ function drawHotbar(w) {
     const d = HOTBAR.drag, x = d.x - g.s / 2, y = d.y - g.s / 2;
     ctx.fillStyle = 'rgba(14,16,22,0.92)'; ctx.fillRect(x, y, g.s, g.s);
     ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, g.s - 2, g.s - 2);
-    ctx.font = 'bold 10px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = '#f6d17a';
-    ctx.fillText(HOT_LABEL[HOTBAR.order[d.i]], x + g.s / 2, y + g.s / 2);
+    drawHotIcon(HOTBAR.order[d.i], x + g.s / 2, y + g.s / 2, 34, 24, 1);
   }
   ctx.restore();
 }
