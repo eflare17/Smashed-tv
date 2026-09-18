@@ -464,7 +464,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b164 — scoop her up, set her down';
+const BUILD = 'b165 — pick-up back to instant';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1679,8 +1679,6 @@ function stepBase(w, inputs, dt) {
     let inp = inputs[p.id] || { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false };
     // arms full: no shooting or rolling while carrying Gothica
     if (NPC_GOTH.carrier === p.id && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });
-    // and he stands still for the scoop / set-down
-    if (NPC_GOTH.anim && NPC_GOTH.anim.pid === p.id) inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false });
     p.iframe = Math.max(0, p.iframe - dt);
     p.muzzle = Math.max(0, p.muzzle - dt);
     // count down, but never bank more than one frame of credit: otherwise a
@@ -3616,38 +3614,18 @@ function drawCarryButton() {
 }
 function toggleCarry(w) {
   const p = w.players[0];
-  if (NPC_GOTH.anim) return;                          // mid scoop or set-down
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
     if (p && p.dive === DIVE.BOARD) throwGoth(w, (p.fx < 0 ? -1 : 1) * T.diveFwd * 1.25, 40, T.diveHop * 0.9);
-    else if (!p || !p.dive) NPC_GOTH.anim = { kind: 'drop', t: 0, dur: 0.42, pid: p.id };
+    else if (!p || !p.dive) putGothDown(w);
     return;
   }
-  if (canCarry(w, p)) {
-    NPC_GOTH.anim = { kind: 'pick', t: 0, dur: 0.45, pid: p.id };
-    NPC_GOTH.face = p.fx < 0; NPC_GOTH.moving = false; NPC_GOTH.wait = 99;
-    NPC_GOTH.fx = Math.sign(p.x - NPC_GOTH.x) || 0; NPC_GOTH.fy = 0.3;   // turn to him
-  }
+  if (canCarry(w, p)) { NPC_GOTH.carrier = p.id; NPC_GOTH.face = p.fx < 0; }
 }
 function lobbyGoth(w) {
   if (!T.npcGoth || w.started || cal.on) { if (NPC_GOTH.carrier >= 0) putGothDown(w); return null; }
   const n = NPC_GOTH, now = performance.now() / 1000;
   const dt = Math.min(0.1, Math.max(0, now - (n.t || now))); n.t = now;
-  if (n.anim) {                                     // the scoop / set-down: he squats, she changes hands at the bottom
-    const a = n.anim, was = a.t; a.t += dt;
-    const p = w.players.find(q => q.id === a.pid);
-    if (!p || !p.alive) { n.anim = null; if (n.carrier >= 0) putGothDown(w); return n; }
-    if (was < a.dur / 2 && a.t >= a.dur / 2) {
-      if (a.kind === 'pick') {
-        n.carrier = p.id;
-        const j = JIG.npc_goth; if (j) j.v += 30;                        // the landing-in-his-arms bounce
-        w.floaters.push({ x: p.x, y: p.y - 60, text: 'hup!', t: 0, col: '#f7a8ff' });
-      } else putGothDown(w);
-    }
-    if (a.t >= a.dur) { n.anim = null; if (n.carrier < 0) n.wait = 1.5; }
-    if (n.carrier >= 0) { n.x = p.x; n.y = p.y; n.dz = p.dz || 0; return null; }
-    return n;
-  }
   if (n.carrier >= 0) {
     const p = carrierOf(w);
     if (!p || !p.alive) { putGothDown(w); return n; }
@@ -3969,15 +3947,11 @@ function drawJared(w, p) {
   if (skinId === 'tyson_shotgun' && TYSON_SHOTGUN_SCALE[baseImg]) pscale *= TYSON_SHOTGUN_SCALE[baseImg];
   if ((skinId === 'juicy_shotgun' || skinId === 'tyson2_shotgun') && JUICY_SHOTGUN_SCALE[baseImg]) pscale *= JUICY_SHOTGUN_SCALE[baseImg];
   const alt = NEW_ART.has(p.ch);
-  const h0 = r * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * pscale
+  const h = r * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * pscale
             * (alt ? T.altScale : 1);
-  // scooping Gothica up or setting her down: a squat, deepest as she changes hands
-  const an = NPC_GOTH.anim;
-  const bend = (an && an.pid === p.id && !p.npc) ? Math.sin(Math.PI * Math.min(1, an.t / an.dur)) * 0.22 : 0;
-  const h = h0 * (1 - bend);
   // his sheet is drawn leaner than the others, so widen as well as scale —
   // scaling alone would just make him tall and still skinny
-  const dw = h0 * (im.naturalWidth / im.naturalHeight) * (alt ? T.altWide : 1) * (1 + bend * 0.5);   // and a bit wider, like a real squat
+  const dw = h * (im.naturalWidth / im.naturalHeight) * (alt ? T.altWide : 1);
   // the carry frames are anchored on his head, not the middle of the canvas
   const dx = p.x - dw * (carrying ? CARRY_ANCHOR : 0.5);
   // Anchor the roll by the character's own ground line rather than the canvas,
