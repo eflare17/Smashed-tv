@@ -464,7 +464,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b162 — Gothica in the lobby';
+const BUILD = 'b163 — carry button for touch';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2960,6 +2960,9 @@ canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     return;
   }
+  // the carry button: a tap (or click) on it does what E does
+  const cb = carryButton();
+  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { toggleCarry(world); e.preventDefault(); return; }
   if (cal.on) { calPick(pt); calPlace(pt); canvas.setPointerCapture(e.pointerId); e.preventDefault(); return; }
   if (e.pointerType === 'mouse') {
     mouse.down = true; mouse.x = pt.x; mouse.y = pt.y; mouse.inside = true;
@@ -3588,6 +3591,26 @@ function putGothDown(w) {
 function canCarry(w, p) {
   return T.npcGoth && !w.started && p && p.alive && !p.dive && CARRIERS.has(p.ch) && !NPC_GOTH.thrown
          && Math.hypot(p.x - NPC_GOTH.x, p.y - NPC_GOTH.y) < T.carryRange;
+}
+// The on-screen button for the same thing, for phones (and anyone who'd
+// rather tap): pick up, put down, or throw — only when it would do something.
+function carryButton() {
+  const w = world, p = w.players[0];
+  if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
+  let label = null;
+  if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
+  else if (canCarry(w, p)) label = 'PICK UP';
+  return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
+}
+function drawCarryButton() {
+  const b = carryButton();
+  if (!b) return;
+  ctx.fillStyle = 'rgba(20,12,28,0.72)'; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#f7a8ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(b.label, b.x, b.y);
+  ctx.textBaseline = 'alphabetic';
 }
 function toggleCarry(w) {
   const p = w.players[0];
@@ -5566,6 +5589,7 @@ function renderBase(w, hudRight) {
 
   drawStick(moveStick, 'rgba(224,71,63,0.55)');
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
+  drawCarryButton();
 
   // HUD
   ctx.fillStyle = '#6d7486';
