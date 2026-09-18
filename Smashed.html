@@ -252,6 +252,10 @@ const T = {
   punchDmg:    0.7,    // in grunt hp
   punchKnock:  2.8,    // times the normal knockback: fists are for shoving
   punchLunge:  170,    // he steps into it
+  ropeX:       450,    // the gym's bell rope: where it hangs
+  ropeY:       152,    //   and how far down the knot reaches
+  ropeCount:   20,     // potatoes that fall when you pull it
+  ropeCool:    20,     // seconds before it works again
   spudGrow:    9,      // seconds from sprout to ready
   spudRate:    5,      // seconds between new sprouts
   spudMax:     6,      // plants in the arena at once
@@ -415,6 +419,8 @@ const RANGES = {
   punchTime:   [0.1, 0.6, 0.02],  punchReach:  [16, 90, 2],
   punchDmg:    [0.1, 4, 0.1],     punchKnock:  [0.5, 8, 0.1],
   punchLunge:  [0, 500, 10],
+  ropeX:       [320, 580, 1],     ropeY:       [110, 230, 1],
+  ropeCount:   [1, 60, 1],        ropeCool:    [3, 120, 1],
   spudGrow:    [2, 40, 0.5],    spudRate:    [1, 30, 0.5],
   spudMax:     [0, 20, 1],      spudEmpty:   [0.05, 1, 0.01],
   magnetBonus: [0, 6, 1],
@@ -475,7 +481,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b168 — fists, and throwing whole potatoes';
+const BUILD = 'b169 — pull the gym rope';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -878,9 +884,11 @@ function plantSpud(w, progress) {
 }
 
 function stepPlants(w, dt) {
-  if (!w.started || w.over || secretActive(w)) return;
-  w.plantTimer -= dt;
-  if (w.plantTimer <= 0) { plantSpud(w, 0); w.plantTimer = T.spudRate; }
+  if (w.over || secretActive(w)) return;
+  if (w.started) {                                 // they only grow wild during a run
+    w.plantTimer -= dt;
+    if (w.plantTimer <= 0) { plantSpud(w, 0); w.plantTimer = T.spudRate; }
+  }
   for (let i = w.plants.length - 1; i >= 0; i--) {
     const pl = w.plants[i];
     pl.t += dt;
@@ -2534,6 +2542,7 @@ function stepBase(w, inputs, dt) {
   stepRockets(w, dt);
   w.shake = Math.max(0, (w.shake || 0) - dt * 90);
   stepPlants(w, dt);
+  stepRain(w, dt);
   // spent potatoes in flight
   for (let i = w.husks.length - 1; i >= 0; i--) {
     const h = w.husks[i];
@@ -3810,11 +3819,87 @@ function drawHotbar(w) {
   }
   ctx.restore();
 }
+// The gym's bell rope. Pull it (E, or the button) and potatoes rain down on
+// the gym floor, ready to pick up. Then it needs a while to reset. The rope
+// and the falling spuds are decoration on this machine; the potatoes that
+// land are real plants, so they go over the wire like any other.
+const ROPE = { cool: 0, pull: 0 };
+const RAIN = [];
+function ropeNear(p) {
+  return !!p && p.alive && !p.dive && Math.abs(p.x - T.ropeX) < 26 && p.y > T.ropeY - 4 && p.y < T.ropeY + 40;
+}
+function pullRope(w) {
+  ROPE.cool = T.ropeCool; ROPE.pull = 0.45;
+  const n = T.ropeCount;
+  for (let i = 0; i < n; i++) {
+    RAIN.push({ x: 318 + rnd(w) * 262, y: 112 + rnd(w) * 122, dz: 380 + rnd(w) * 160, vz: 0,
+                delay: 0.35 + i * 0.09 + rnd(w) * 0.05, bounces: 0, rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 10 });
+  }
+  w.floaters.push({ x: T.ropeX, y: T.ropeY - 30, text: 'POTATOES!', t: 0, col: '#d8b878' });
+  if (SND.ctx) { sTone(0.5, 1320, 1240, 0.22, 'sine'); sTone(0.7, 880, 840, 0.18, 'triangle'); }
+}
+function stepRain(w, dt) {
+  ROPE.cool = Math.max(0, ROPE.cool - dt);
+  ROPE.pull = Math.max(0, ROPE.pull - dt);
+  let thud = false;
+  for (let i = RAIN.length - 1; i >= 0; i--) {
+    const d = RAIN[i];
+    d.delay -= dt; if (d.delay > 0) continue;
+    d.vz -= 1500 * dt; d.dz += d.vz * dt; d.rot += d.spin * dt;
+    if (d.dz > 0) continue;
+    d.dz = 0;
+    if (d.bounces < 2 && Math.abs(d.vz) > 120) { d.vz = -d.vz * 0.32; d.bounces++; thud = true; continue; }
+    RAIN.splice(i, 1);
+    w.plants.push({ x: d.x, y: d.y, t: T.spudGrow, wob: 0.4 });    // lands ready to pick up
+    fx(w, FX.WALL, d.x, d.y);
+    thud = true;
+  }
+  if (thud && SND.ctx && !(ROPE.thudAt > performance.now() - 60)) { ROPE.thudAt = performance.now(); sNoise(0.05, 300, 1.4, 0.16, 'lowpass', 300); }
+}
+function drawRope(w) {
+  if (w.started || !T.loungeFloor || cal.on) return;
+  const ready = ROPE.cool <= 0, sway = Math.sin(w.t * 1.6) * 3;
+  const top = ARENA.wall, bot = T.ropeY + (ROPE.pull > 0 ? Math.sin(ROPE.pull / 0.45 * Math.PI) * 14 : 0);
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = ready ? '#b08a52' : '#6e5a3c'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(T.ropeX, top); ctx.quadraticCurveTo(T.ropeX + sway * 0.5, (top + bot) / 2, T.ropeX + sway, bot); ctx.stroke();
+  ctx.strokeStyle = ready ? '#e2bd82' : '#8a7454'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(T.ropeX - 1, top); ctx.quadraticCurveTo(T.ropeX + sway * 0.5 - 1, (top + bot) / 2, T.ropeX + sway - 1, bot); ctx.stroke();
+  // the knot
+  ctx.fillStyle = ready ? '#8a5a2b' : '#5c4530';
+  ctx.beginPath(); ctx.ellipse(T.ropeX + sway, bot + 6, 6, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1; ctx.stroke();
+  const p = localPlayer();
+  if (ready && ropeNear(p) && NPC_GOTH.carrier !== p.id) {
+    ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: pull', T.ropeX + 1, bot + 27);
+    ctx.fillStyle = '#fff';            ctx.fillText('E: pull', T.ropeX, bot + 26);
+  }
+  ctx.restore();
+}
+function drawRain() {
+  const im = SPUD_IMG[4];
+  for (const d of RAIN) {
+    if (d.delay > 0) continue;
+    const sf = Math.max(0.3, 1 - d.dz / 300);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.28 * sf).toFixed(2) + ')';
+    ctx.beginPath(); ctx.ellipse(d.x, d.y + 6, 13 * sf, 5 * sf, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(d.x, d.y - d.dz); ctx.rotate(d.rot);
+    if (im && im.complete && im.naturalWidth) {
+      const dw = 30, dh = dw * (im.naturalHeight / im.naturalWidth);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(im, Math.round(-dw / 2), Math.round(-dh / 2), Math.round(dw), Math.round(dh));
+    } else { ctx.fillStyle = '#7a5230'; ctx.beginPath(); ctx.ellipse(0, 0, 11, 8, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+}
 function carryButton() {
   const w = world, p = w.players[0];
   if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
   let label = null;
   if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
+  else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
   else if (canCarry(w, p)) label = 'PICK UP';
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
 }
@@ -3830,6 +3915,7 @@ function drawCarryButton() {
 }
 function toggleCarry(w) {
   const p = w.players[0];
+  if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
     if (p && p.dive === DIVE.BOARD) throwGoth(w, (p.fx < 0 ? -1 : 1) * T.diveFwd * 1.25, 40, T.diveHop * 0.9);
@@ -5319,6 +5405,7 @@ function renderBase(w, hudRight) {
   }
 
   // ---- lobby props
+  drawRope(w);
   if (!cal.on && !w.started) {
     for (const c of (w.cans || [])) {
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -5416,6 +5503,7 @@ function renderBase(w, hudRight) {
     }
   }
 
+  drawRain();
   drawLobMarkers(w);
 
   // the nuke-launcher vending machine — look, don't touch (yet)
