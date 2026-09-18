@@ -262,6 +262,8 @@ const T = {
   ropeY:       152,    //   and how far down the knot reaches
   ropeCount:   10,     // potatoes that fall when you pull it (b173: was 20)
   ropeCool:    20,     // seconds before it works again
+  tableX:      165,    // the lounge table, on the rug
+  tableY:      300,
   spudGrow:    9,      // seconds from sprout to ready
   spudRate:    5,      // seconds between new sprouts
   spudMax:     6,      // plants in the arena at once
@@ -431,6 +433,7 @@ const RANGES = {
   punchLunge:  [0, 500, 10],
   ropeX:       [320, 580, 1],     ropeY:       [110, 230, 1],
   ropeCount:   [1, 60, 1],        ropeCool:    [3, 120, 1],
+  tableX:      [60, 800, 1],      tableY:      [60, 460, 1],
   spudGrow:    [2, 40, 0.5],    spudRate:    [1, 30, 0.5],
   spudMax:     [0, 20, 1],      spudEmpty:   [0.05, 1, 0.01],
   magnetBonus: [0, 6, 1],
@@ -491,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b177 — his skin tone while carrying';
+const BUILD = 'b178 — a table and two chairs';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -643,6 +646,48 @@ TOWER_IMG.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKwAAADCCAMAAADjE
 // the water, in arena pixels (measured off the floor art); you can't walk in
 // it yet — swimming comes later
 const POOL = { x0: 624, y0: 90, x1: 815, y1: 239 };
+// the lounge table and its two chairs, as one solid lump
+function tableBox() { return { x0: T.tableX - 52, x1: T.tableX + 52, y0: T.tableY - 16, y1: T.tableY + 16 }; }
+function drawTable(w) {
+  if (w.started || !T.loungeFloor || cal.on) return;
+  const x = T.tableX, y = T.tableY;
+  ctx.save();
+  // shadow under the lot
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(x, y + 18, 56, 10, 0, 0, Math.PI * 2); ctx.fill();
+  // chairs: seat, two front legs, a slatted back on the far side
+  const chair = (cx, flip) => {
+    ctx.fillStyle = '#5a3a1e';
+    ctx.fillRect(cx - 12, y - 4, 24, 14);                       // seat
+    ctx.fillStyle = '#7a5230';
+    ctx.fillRect(cx - 11, y - 3, 22, 10);
+    ctx.fillStyle = '#3e2712';
+    ctx.fillRect(cx - 12, y + 10, 3, 9); ctx.fillRect(cx + 9, y + 10, 3, 9);   // front legs
+    const bx = cx + (flip ? 9 : -12);                            // back, on the side away from the table
+    ctx.fillStyle = '#5a3a1e'; ctx.fillRect(bx, y - 24, 3, 22);
+    ctx.fillRect(bx, y - 24, flip ? 3 : 3, 22);
+    ctx.fillStyle = '#7a5230';
+    for (let s = 0; s < 3; s++) ctx.fillRect(flip ? cx - 12 : cx - 9, y - 22 + s * 6, 21, 3);   // slats
+    ctx.fillStyle = '#5a3a1e'; ctx.fillRect(flip ? cx + 9 : cx - 12, y - 24, 3, 22);
+  };
+  chair(x - 44, false); chair(x + 44, true);
+  // table: pedestal, then the top
+  ctx.fillStyle = '#3e2712'; ctx.fillRect(x - 4, y - 2, 8, 20);
+  ctx.beginPath(); ctx.ellipse(x, y + 18, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4a2e15';
+  ctx.beginPath(); ctx.ellipse(x, y - 4, 30, 13, 0, 0, Math.PI * 2); ctx.fill();   // rim / edge
+  ctx.fillStyle = '#8a5a2b';
+  ctx.beginPath(); ctx.ellipse(x, y - 6, 28, 11, 0, 0, Math.PI * 2); ctx.fill();   // top
+  ctx.fillStyle = '#a06a35';
+  ctx.beginPath(); ctx.ellipse(x - 4, y - 8, 16, 5, 0, 0, Math.PI * 2); ctx.fill(); // sheen
+  ctx.fillStyle = '#3e2712';                                                        // grain
+  ctx.fillRect(x - 20, y - 6, 40, 1); ctx.fillRect(x - 14, y - 10, 28, 1); ctx.fillRect(x - 16, y - 2, 32, 1);
+  // a mug on it
+  ctx.fillStyle = '#e8e2d2'; ctx.fillRect(x + 8, y - 15, 7, 8);
+  ctx.fillStyle = '#c9c1ad'; ctx.fillRect(x + 15, y - 13, 2, 4);
+  ctx.fillStyle = '#4a2e15'; ctx.fillRect(x + 9, y - 14, 5, 2);
+  ctx.restore();
+}
 function towerBox() {
   const k = T.towerScale;
   return { x0: T.towerX - 19 * k, x1: T.towerX + 19 * k, y0: T.towerY - 9 * k, y1: T.towerY };
@@ -785,10 +830,13 @@ function lobbySolids(w) {
     if (!p.alive || p.dive) continue;
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
+    pushOutOfBox(p, T.radius * 0.5, tableBox());
   }
+  if (NPC_GOTH.carrier < 0 && !NPC_GOTH.thrown) pushOutOfBox(NPC_GOTH, 8, tableBox());
   for (const c of (w.cans || [])) {
     if (pushOutOfBox(c, 6, water)) { c.vx *= -0.5; c.vy *= -0.5; }
     pushOutOfBox(c, 6, towerBox());
+    if (pushOutOfBox(c, 6, tableBox())) { c.vx *= -0.5; c.vy *= -0.5; }
   }
 }
 // Moving water: the pool is redrawn from the floor art in thin rows, each nudged
@@ -5576,6 +5624,7 @@ function renderBase(w, hudRight) {
 
   // ---- lobby props
   drawRope(w);
+  drawTable(w);
   if (!cal.on && !w.started) {
     for (const c of (w.cans || [])) {
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
