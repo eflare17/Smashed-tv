@@ -138,7 +138,7 @@
   <summary>Controls</summary>
   <p class="hint">
   <b>build <span id="buildLbl"></span></b> — P1: WASD to move, mouse to aim, hold click to fire. On touch, left half moves and right half aims.
-  Press <b>1</b>&ndash;<b>5</b> to pick a weapon from the bar along the bottom (tap it on a phone), and drag a slot onto another to swap them. Press <b>P</b> to drop in a local player 2 (arrow keys + space, or a second gamepad) — that's the same
+  Press <b>1</b>&ndash;<b>6</b> to pick a weapon (fists, spud gun, potato throw, blasters, shotgun, nuke) from the bar along the bottom (tap it on a phone), and drag a slot onto another to swap them. Press <b>P</b> to drop in a local player 2 (arrow keys + space, or a second gamepad) — that's the same
   code path the networked player will use. <b>Shift</b> dive-rolls (P2: Ctrl or Enter; two fingers on the move side; A or RB on a pad). <b>R</b> restarts. <b>C</b> calibrates the gun barrels.
   </p>
 </details>
@@ -245,6 +245,13 @@ const T = {
   spudThrow:   0.5,    // chucking the spent potato away
   spudThrowSpd:520,    // how hard he lobs it
   spudThrowFrac:1,     // a thrown husk kills a grunt outright (1 = full grunt hp)
+  lobWhole:    2.2,    // a whole potato, thrown on purpose: times the husk's damage
+  lobSpd:      1.15,   // and a bit faster
+  punchTime:   0.24,   // how long a punch takes
+  punchReach:  40,     // how far in front of him it lands
+  punchDmg:    0.7,    // in grunt hp
+  punchKnock:  2.8,    // times the normal knockback: fists are for shoving
+  punchLunge:  170,    // he steps into it
   spudGrow:    9,      // seconds from sprout to ready
   spudRate:    5,      // seconds between new sprouts
   spudMax:     6,      // plants in the arena at once
@@ -404,6 +411,10 @@ const RANGES = {
   loungeSlotX: [30, 830, 1],    loungeVendX: [30, 830, 1],
   spudPickup:  [0.15, 1.5, 0.02], spudThrow:   [0.2, 2, 0.05],
   spudThrowSpd:[150, 1200, 20],   spudThrowFrac:[0, 4, 0.25],
+  lobWhole:    [0.5, 6, 0.1],     lobSpd:      [0.5, 2, 0.05],
+  punchTime:   [0.1, 0.6, 0.02],  punchReach:  [16, 90, 2],
+  punchDmg:    [0.1, 4, 0.1],     punchKnock:  [0.5, 8, 0.1],
+  punchLunge:  [0, 500, 10],
   spudGrow:    [2, 40, 0.5],    spudRate:    [1, 30, 0.5],
   spudMax:     [0, 20, 1],      spudEmpty:   [0.05, 1, 0.01],
   magnetBonus: [0, 6, 1],
@@ -464,7 +475,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b167 — gun icons on the weapon bar';
+const BUILD = 'b168 — fists, and throwing whole potatoes';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -487,6 +498,12 @@ const PRIZES = [
 const SYM_COUNT = 6;   // heart, shotgun, coin, bolt, star, skull
 
 const WEAPONS = {
+  // Bare hands. Short reach, a proper shove, and nothing to run out of.
+  fists: { name: 'fists', pellets: 1, fireRate: 3.2, fists: true, skin: null, flash: 0, flashTime: 0 },
+  // A whole potato, lobbed. Costs a full potato's worth of pellets and hits
+  // like it: it can drop a grunt in one.
+  lob: { name: 'potato', pellets: 1, fireRate: 1.5, lob: true, ammo: true, flash: 0, flashTime: 0,
+         skin: { juicy: 'juicy_spud', tyson2: 'tyson2_spud' } },
   // The toy you start with. Fast little pops, weak, kicks like a mule for a
   // toy, and it runs dry — you reload by jabbing it into a potato.
   spud: {
@@ -1482,7 +1499,7 @@ let banner = { text: '', until: 0 };
 const lobHint = { on: false, t: 0 };
 function giveWeapon(p, id) {
   p.weapon = id;
-  p.wTime = (id === 'blaster' || id === 'spud' || id === 'launcher') ? 0 : T.shotgunTime;
+  p.wTime = id === 'shotgun' ? T.shotgunTime : 0;
   if (id === 'launcher') p.rockets = T.launcherRounds;
   if (id === 'blaster') p.blasters = 1;          // once earned, they're yours
   if (id !== 'spud') {
@@ -1494,6 +1511,22 @@ function giveWeapon(p, id) {
 function firePlayer(w, p, ax, ay) {
   if (typeof cal !== 'undefined' && cal.on) return;
   const g = weaponOf(p);
+  if (g.fists) {
+    // a swing: the hit lands partway through (see the punch timer in step)
+    p.punch = T.punchTime; p.punched = 0;
+    p.vx += ax * T.punchLunge; p.vy += ay * T.punchLunge;
+    p.fx = ax; p.fy = ay; p.shots++;
+    if (typeof SFX !== 'undefined' && SND.ctx) sNoise(0.07, 400, 1.2, 0.12, 'bandpass', 120);
+    return;
+  }
+  if (g.lob) {
+    // the throw animation releases the potato three fifths through
+    if (p.ammo < T.spudPellets) return;
+    p.ammo -= T.spudPellets;
+    p.throw = T.spudThrow; p.threw = 0; p.throwWhole = 1;
+    p.fx = ax; p.fy = ay; p.shots++;
+    return;
+  }
   const base = Math.atan2(ay, ax);
   const spread = (g.spread !== undefined ? g.spread : T.spread) * Math.PI / 180;
   const speed = g.speed || T.bulletSpeed;
@@ -1552,6 +1585,46 @@ function firePlayer(w, p, ax, ay) {
   p.muzzle = g.flashTime || 0.055;
   p.mdx = ax; p.mdy = ay;          // the flash points where the shot went
   p.shots++;
+}
+
+// A punch: anything within reach of a point just in front of him takes a
+// hit and a big shove. Kills go through the same motions as a shot.
+function punchLand(w, p) {
+  const f = Math.hypot(p.fx, p.fy) || 1, fx0 = p.fx / f, fy0 = p.fy / f;
+  const hx = p.x + fx0 * T.punchReach * 0.6, hy = p.y + fy0 * T.punchReach * 0.6;
+  let landed = false;
+  for (let k = w.enemies.length - 1; k >= 0; k--) {
+    const e = w.enemies[k];
+    if (e.spawn > 0) continue;
+    if (Math.hypot(e.x - hx, e.y - hy) > T.punchReach * 0.7 + eRad(e)) continue;
+    landed = true;
+    e.hp -= Math.max(0.1, T.enemyHp * T.punchDmg);
+    e.flash = 0.08;
+    const mass = T.staggerMass ? ETYPE[e.t].mass : 1;
+    e.stun = Math.max(e.stun || 0, T.stagger * 1.5 / mass);
+    const kb = T.knockback * T.punchKnock / ETYPE[e.t].mass;
+    e.vx += fx0 * kb; e.vy += fy0 * kb;
+    fx(w, FX.HIT, e.x - fx0 * eRad(e) * 0.5, e.y - fy0 * eRad(e) * 0.5);
+    if (e.hp <= 0) {
+      if (e.t === 2) burstShrapnel(w, e.x, e.y); else fx(w, FX.KILL, e.x, e.y);
+      makeCorpse(w, e, fx0 * 200, fy0 * 200, false);
+      w.shake = Math.max(w.shake || 0, T.killShake);
+      killBurst(w, e.x, e.y, fx0 * 200, fy0 * 200, false);
+      splat(w, e.x, e.y);
+      payKill(w, e.x, e.y, e.t, p.id);
+      w.enemies.splice(k, 1);
+    }
+  }
+  // lobby dummies take it too
+  for (const d of (w.dummies || [])) {
+    if (d.down > 0 || Math.hypot(d.x - hx, d.y - hy) > T.punchReach * 0.7 + 14) continue;
+    landed = true; d.hp -= 1; d.flash = 0.1; d.wob = 1;
+    fx(w, FX.HIT, d.x, d.y);
+  }
+  if (landed) {
+    w.shake = Math.max(w.shake || 0, 3);
+    if (typeof SFX !== 'undefined' && SND.ctx) { sNoise(0.06, 250, 1.6, 0.25, 'lowpass', 400); sTone(0.05, 110, 60, 0.18, 'sine'); }
+  }
 }
 
 // ---- nuke launcher rockets. Fly straight, go off on the first thing they
@@ -1925,7 +1998,7 @@ function stepBase(w, inputs, dt) {
         const gw = weaponOf(p);
         if (p.reload > 0 || p.pickup > 0 || p.throw > 0 || p.dump > 0) {
           // mid-jab, bent over, or binning a husk: nothing happens
-        } else if (gw.ammo && p.ammo <= 0) {
+        } else if (gw.ammo && p.ammo < (gw.lob ? T.spudPellets : 1)) {
           // dry: a hollow click, and a nudge to go find a potato
           p.click -= 1 / 120;
           p.dryHint = 1.2;
@@ -2474,9 +2547,13 @@ function stepBase(w, inputs, dt) {
       const e = w.enemies[k];
       if (e.spawn > 0) continue;
       if (segmentHit(ox, oy, h.x, h.y, e.x, e.y, eRad(e) + 6) === null) continue;
-      e.hp -= Math.max(0.1, T.enemyHp * T.spudThrowFrac);
+      e.hp -= Math.max(0.1, T.enemyHp * T.spudThrowFrac * (h.whole ? T.lobWhole : 1));
       e.flash = 0.08;
       e.stun = Math.max(e.stun || 0, T.stagger);
+      if (h.whole) {                            // a whole potato has some weight behind it
+        const hs = Math.hypot(h.vx, h.vy) || 1, kb = T.knockback * 1.5 / ETYPE[e.t].mass;
+        e.vx += (h.vx / hs) * kb; e.vy += (h.vy / hs) * kb;
+      }
       fx(w, FX.HIT, h.x, h.y);
       // a lobbed potato can finish something off, so it has to kill properly
       if (e.hp <= 0) {
@@ -2497,6 +2574,12 @@ function stepBase(w, inputs, dt) {
   }
 
   for (const p of w.players) {
+    if (p.punch > 0) {
+      const before = p.punch;
+      p.punch = Math.max(0, p.punch - dt);
+      const at = T.punchTime * 0.55;
+      if (before > at && p.punch <= at && !p.punched) { p.punched = 1; punchLand(w, p); }
+    }
     if (p.throw > 0) {
       const before = p.throw;
       p.throw = Math.max(0, p.throw - dt);
@@ -2505,14 +2588,16 @@ function stepBase(w, inputs, dt) {
       if (before > rel && p.throw <= rel && !p.threw) {
         p.threw = 1;
         const f = facingVec(p), l = Math.hypot(f.x, f.y) || 1;
-        w.husks.push({ owner: p.id,
+        const whole = !!p.throwWhole, spd = T.spudThrowSpd * (whole ? T.lobSpd : 1);
+        p.throwWhole = 0;
+        w.husks.push({ owner: p.id, whole,
                        x: p.x + (f.x / l) * 14, y: p.y - 14 + (f.y / l) * 8,
-                       vx: (f.x / l) * T.spudThrowSpd, vy: (f.y / l) * T.spudThrowSpd,
-                       rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 22, life: 1.2 });
+                       vx: (f.x / l) * spd, vy: (f.y / l) * spd,
+                       rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 22, life: whole ? 1.5 : 1.2 });
         if (typeof SFX !== 'undefined' && SND.ctx) sNoise(0.08, 900, 1.4, 0.16, 'bandpass', 300);
       }
       // once he's binned it, load the next potato if he has one
-      if (p.throw === 0 && p.ammo > 0) p.reload = T.spudReload;
+      if (p.throw === 0 && p.ammo > 0 && weaponOf(p).jab) p.reload = T.spudReload;
     }
     if (p.reload > 0) {
       const before = p.reload;
@@ -2702,7 +2787,7 @@ function snapshot(w) {
                            Math.round(p.iframe * 100), Math.round(p.muzzle * 100),
                            p.lastGun, Math.round(p.odo), p.kills,
                            CHAR_IDS.indexOf(p.ch), p.coins,
-                           p.weapon === 'shotgun' ? 1 : (p.weapon === 'spud' ? 2 : (p.weapon === 'launcher' ? 3 : 0)), Math.round(p.wTime * 10),
+                           ['blaster','shotgun','spud','launcher','fists','lob'].indexOf(p.weapon) < 0 ? 0 : ['blaster','shotgun','spud','launcher','fists','lob'].indexOf(p.weapon), Math.round(p.wTime * 10),
                            Math.round(p.spin * 100), Math.round(p.speed * 10),
                            Math.round(p.launch * 100),
                            Math.round(p.magnet * 10),
@@ -2786,7 +2871,7 @@ function worldFromSnapshot(s, age, bits) {
       hp: a[7], alive: !!a[8], iframe: a[9] / 100, muzzle: a[10] / 100,
       lastGun: a[11], odo: a[12], kills: a[13],
       ch: CHAR_IDS[a[14]] || 'juicy', coins: a[15] || 0,
-      weapon: a[16] === 3 ? 'launcher' : a[16] === 2 ? 'spud' : (a[16] ? 'shotgun' : 'blaster'), wTime: (a[17] || 0) / 10,
+      weapon: ['blaster','shotgun','spud','launcher','fists','lob'][a[16]] || 'blaster', wTime: (a[17] || 0) / 10,
       spin: (a[18] || 0) / 100, speed: (a[19] || 0) / 10, launch: (a[20] || 0) / 100,
       magnet: (a[21] || 0) / 10,
       ix: (a[22] || 0) / 100, iy: (a[23] === undefined ? 100 : a[23]) / 100, moving: a[24] || 0,
@@ -2880,7 +2965,7 @@ addEventListener('keydown', e => {
   if (e.repeat && ['r', 'c', 'p'].includes(k)) return;
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
-  if (k >= '1' && k <= '5' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
+  if (k >= '1' && k <= '6' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
   if (k === 'r') {
     restartGame();
     return;
@@ -3621,17 +3706,17 @@ function canCarry(w, p) {
 // dragging one slot onto another swaps them, and the order is remembered.
 // It only *asks* for a weapon — the switch happens in step(), from the input,
 // so it works the same for the host and for a joined player.
-const HOTBAR = { order: ['spud', 'blaster', 'shotgun', 'launcher', null], want: null, drag: null, flash: null };
+const HOTBAR = { order: ['fists', 'spud', 'lob', 'blaster', 'shotgun', 'launcher'], want: null, drag: null, flash: null };
 try {
   const o = JSON.parse(localStorage.getItem('smashed-hotbar') || 'null');
-  if (Array.isArray(o) && o.length === 5 && ['spud', 'blaster', 'shotgun', 'launcher'].every(k => o.includes(k))) HOTBAR.order = o;
+  if (Array.isArray(o) && o.length === 6 && ['fists', 'spud', 'lob', 'blaster', 'shotgun', 'launcher'].every(k => o.includes(k))) HOTBAR.order = o;
 } catch (_) {}
 function saveHotbar() { try { localStorage.setItem('smashed-hotbar', JSON.stringify(HOTBAR.order)); } catch (_) {} }
 function localPlayer() { return net.role === 'client' ? world.players.find(p => p.id === 1) : world.players[0]; }
 function hasWeapon(p, id) {
-  return id === 'spud' || (id === 'blaster' && !!p.blasters) || (id === 'shotgun' && p.wTime > 0) || (id === 'launcher' && p.rockets > 0);
+  return id === 'spud' || id === 'fists' || id === 'lob' || (id === 'blaster' && !!p.blasters) || (id === 'shotgun' && p.wTime > 0) || (id === 'launcher' && p.rockets > 0);
 }
-const HOT_LABEL = { spud: 'SPUD', blaster: 'BLAST', shotgun: 'SHOT', launcher: 'NUKE' };
+const HOT_LABEL = { spud: 'SPUD', blaster: 'BLAST', shotgun: 'SHOT', launcher: 'NUKE', fists: 'FISTS', lob: 'THROW' };
 // slot icons: the gun itself, cropped out of Juicy's side-on art for each skin
 const HOT_ICON = {
   blaster:  { set: 'juicy',          key: 'side_run', sx: 76, sy: 34, sw: 54,  sh: 46 },
@@ -3640,6 +3725,18 @@ const HOT_ICON = {
   spud:     { set: 'juicy_spud',     key: 'side_run', sx: 74, sy: 28, sw: 42,  sh: 28 }
 };
 function drawHotIcon(id, cx, cy, maxW, maxH, alpha) {
+  if (id === 'fists') {                                            // no art for bare hands: a fist glyph
+    ctx.font = '20px ui-sans-serif, system-ui, sans-serif'; ctx.globalAlpha = alpha; ctx.fillStyle = '#cfd4de';
+    ctx.fillText('\u270A', cx, cy + 1); ctx.globalAlpha = 1; return;
+  }
+  if (id === 'lob') {                                              // the loose potato
+    const im = SPUD_IMG[4];
+    if (im && im.complete && im.naturalWidth) {
+      const k = Math.min(maxW / im.naturalWidth, maxH / im.naturalHeight), w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+      ctx.save(); ctx.globalAlpha = alpha; ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(im, Math.round(cx - w / 2), Math.round(cy - h / 2), w, h); ctx.restore(); return;
+    }
+  }
   const ic = HOT_ICON[id], set = ic && IMG[ic.set];
   let im = set && set[ic.key]; if (Array.isArray(im)) im = im[0];
   if (!im || !im.complete || !im.naturalWidth) {                   // art not in yet: fall back to the word
@@ -3653,7 +3750,7 @@ function drawHotIcon(id, cx, cy, maxW, maxH, alpha) {
   ctx.restore();
 }
 function hotbarGeo(w) {
-  const n = 5, s = 40, gap = 6;
+  const n = 6, s = 40, gap = 6;
   return { n, s, gap, x0: ARENA.w / 2 - (n * s + (n - 1) * gap) / 2,
            y: (w.started ? ARENA.h - ARENA.wall - 50 : ARENA.h - ARENA.wall - 70 - 50) };
 }
@@ -3692,7 +3789,9 @@ function drawHotbar(w) {
     if (!id || dragging) continue;
     drawHotIcon(id, x + g.s / 2, y + 15, 34, 20, owned ? 1 : 0.35);
     ctx.font = '9px ui-monospace, monospace';
-    if (id === 'spud')          { ctx.fillStyle = p.ammo > 0 ? '#d8b878' : '#e0473f'; ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + (p.ammo || 0), x + g.s / 2, y + 30); }
+    if (id === 'fists')         { ctx.fillStyle = '#9aa3b5'; ctx.fillText('POW', x + g.s / 2, y + 30); }
+    else if (id === 'lob')      { const n = Math.floor((p.ammo || 0) / T.spudPellets); ctx.fillStyle = n > 0 ? '#d8b878' : '#e0473f'; ctx.fillText('\u00D7 ' + n, x + g.s / 2, y + 30); }
+    else if (id === 'spud')     { ctx.fillStyle = p.ammo > 0 ? '#d8b878' : '#e0473f'; ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + (p.ammo || 0), x + g.s / 2, y + 30); }
     else if (id === 'blaster')  { ctx.fillStyle = owned ? '#9aa3b5' : '#3a4050'; ctx.fillText(owned ? '\u221E' : '\u2014', x + g.s / 2, y + 30); }
     else if (id === 'launcher') { ctx.fillStyle = owned ? '#f6d17a' : '#3a4050'; ctx.fillText('\u2622 ' + (p.rockets || 0), x + g.s / 2, y + 30); }
     else if (id === 'shotgun') {
@@ -3944,6 +4043,10 @@ function drawJared(w, p) {
     // off the board: tumble all the way down
     const f = Math.floor((p.odo || 0) / 26) % 4;
     pose = { img: 'roll' + (f + 1), flip: false };
+  }
+  else if (p.punch > 0 && Array.isArray((IMG[p.ch] || IMG.jared).victory) && (IMG[p.ch] || IMG.jared).victory.length >= 8) {
+    // the "fists" frame of his celebration, with a lean into the swing
+    pose = { img: 'victory', frame: 2, flip: p.fx < 0 };
   }
   else if (p.throw > 0 && CHARS[skin0] && Array.isArray(CHARS[skin0].sprites.throw_side)) {
     const fv = facingVec(p);
@@ -4458,7 +4561,7 @@ setInterval(() => {
     net.conn.send({ t: 'in', i: inp });
     // fire the shot sound locally so it isn't delayed by the round trip
     const meL = (net.snap && net.snap.p || []).find(a => a[0] === 1);
-    if (inp.shoot && SND.ctx && net.snap && !(meL && meL[16] === 3)) {
+    if (inp.shoot && SND.ctx && net.snap && !(meL && meL[16] >= 3)) {
       const me = meL;
       const wep = me ? me[16] : 0;                      // 0 blaster, 1 shotgun, 2 spud
       const rate = wep === 1 ? WEAPONS.shotgun.fireRate : (wep === 2 ? 1 / T.spudReload : T.fireRate);
@@ -5117,7 +5220,7 @@ function renderBase(w, hudRight) {
     ctx.translate(h.x, h.y);
     ctx.rotate(h.rot || 0);
     if (im && im.complete && im.naturalWidth) {
-      const dw = 22, dh = dw * (im.naturalHeight / im.naturalWidth);
+      const dw = h.whole ? 28 : 22, dh = dw * (im.naturalHeight / im.naturalWidth);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(im, Math.round(-dw / 2), Math.round(-dh / 2), Math.round(dw), Math.round(dh));
     } else {
