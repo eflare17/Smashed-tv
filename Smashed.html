@@ -494,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b182 — a real scoop-up';
+const BUILD = 'b183 — his legs when standing with her';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3827,6 +3827,32 @@ CARRY_FRAMES.forEach((im, i) => {
 // from the belt up, with Juicy's own side-run legs underneath (they face right
 // too), lined up on his head and waistband. Her boots hang below his
 // belt, so those rows keep any solid dark run to the right of his skin.
+// Standing still uses the same build, because the sheet's own standing frame
+// draws his legs pressed together and pale, and at game size they washed out
+// to nothing. The legs come from whichever run frame has the narrowest boot
+// span near the floor. KNOWN WEAKNESS: that picks a frame with one foot
+// lifted (narrow because only one boot is down), so he reads as frozen
+// mid-stride rather than standing. Wants a real idle/standing leg frame.
+let CARRY_STAND_K = -1;
+function carryStandFrame() {
+  const runs = IMG.juicy && IMG.juicy.side_run;
+  if (!Array.isArray(runs) || !runs.length) return null;
+  if (CARRY_STAND_K < 0) {
+    let best = -1, bestW = 1e9;
+    for (let k = 0; k < runs.length; k++) {
+      const im = runs[k];
+      if (!im.complete || !im.naturalWidth) return null;
+      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let x0 = 1e9, x1 = -1;
+      for (let y = c.height - 24; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+      if (x1 - x0 < bestW) { bestW = x1 - x0; best = k; }
+    }
+    CARRY_STAND_K = best;
+  }
+  return carryWalkFrame(CARRY_STAND_K);
+}
 const CARRY_WALK = [];
 function carryWalkFrame(k) {
   if (CARRY_WALK[k]) return CARRY_WALK[k];
@@ -4488,13 +4514,13 @@ function drawJared(w, p) {
   }
   // carrying Gothica: stands still, or steps through the walk, facing the way
   // he last walked (the art faces right, so it's mirrored when he's going left)
-  const walk = p.moving ? carryWalkFrame(Math.floor((p.odo || 0) / T.runStride) % 7) : null;
-  const cf = p.moving ? 1 : 0;
-  let cim = walk || CARRY_FRAMES[cf], cfK = cf;
+  const walk = p.moving ? carryWalkFrame(Math.floor((p.odo || 0) / T.runStride) % 7) : carryStandFrame();
+  const cf = walk ? 1 : 0;                           // built frames share the stride's body (and its jiggle box)
+  let cim = walk || CARRY_FRAMES[0], cfK = cf;
   const an = NPC_GOTH.anim;
   if (an && NPC_GOTH.carrier === p.id && CARRY_FRAMES[2]) {          // the scoop: squat frame, then standing
     const squat = an.kind === 'pick' ? an.t < 0.2 : an.t >= 0.12;
-    cfK = squat ? 2 : 0; cim = CARRY_FRAMES[cfK];
+    if (squat) { cfK = 2; cim = CARRY_FRAMES[2]; }
   }
   const carrying = !p.npc && NPC_GOTH.carrier === p.id && !w.started && cim.complete && cim.naturalWidth;
   if (carrying) {
