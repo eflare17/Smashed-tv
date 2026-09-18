@@ -484,7 +484,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b171 — charged potato lob';
+const BUILD = 'b172 — the potato lands where you aim';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1537,6 +1537,8 @@ function firePlayer(w, p, ax, ay) {
     if (p.ammo < T.spudPellets) return;
     p.ammo -= T.spudPellets;
     p.throw = T.spudThrow; p.threw = 0; p.throwWhole = 1; p.throwPow = p.lobPow || 0.5;
+    p.throwDx = ax; p.throwDy = ay; p.throwDist = p.lobDist || T.lobNear;
+    p.throwTx = p.tx; p.throwTy = p.ty;                 // the spot itself: he may run before it leaves his hand
     p.fx = ax; p.fy = ay; p.shots++;
     return;
   }
@@ -2003,21 +2005,34 @@ function stepBase(w, inputs, dt) {
     } else { p.aimOn = 0; p.lobHeld = 0; }
 
     if (weaponOf(p).lob) {
-      // the potato: hold fire to wind up, let go to throw. Power is how long you held.
+      // The potato: hold fire to wind up, let go to throw. It lands where you
+      // point — the cursor, or a stick's tilt for distance — and holding
+      // longer makes it fly faster and hit harder.
       const busy = p.reload > 0 || p.pickup > 0 || p.throw > 0;
-      let dx = ax, dy = ay;
+      let dx = ax, dy = ay, dist;
       if (alen > 0.001) { dx /= alen; dy /= alen; } else { const f = Math.hypot(p.fx, p.fy) || 1; dx = p.fx / f; dy = p.fy / f; }
+      if (inp.st) dist = T.lobNear + (T.lobFar - T.lobNear) * Math.min(1, Math.max(0, (alen - 0.15) / 0.8));
+      else if (alen > 0.001) dist = Math.min(alen, T.lobFar);
+      else dist = T.lobNear;
       if (inp.shoot && !busy && p.ammo >= T.spudPellets) {
         p.charge = Math.min(1, (p.charge || 0) + dt / T.lobCharge); p.charging = 1;
         p.fx = dx; p.fy = dy; p.adx = dx; p.ady = dy; p.firing = 1;
+        const m = ARENA.wall + 6;                                     // the landing spot, shown as a ring
+        p.tx = Math.max(m, Math.min(ARENA.w - m, p.x + dx * dist));
+        p.ty = Math.max(m, Math.min(ARENA.h - m, p.y + dy * dist));
+        p.aimOn = 1;
       } else if (p.charging && !busy) {
-        p.charging = 0; p.lobPow = 0.2 + 0.8 * (p.charge || 0); p.charge = 0;
+        // thrown at the spot he was aiming at when he let go (a stick springs back)
+        p.charging = 0; p.lobPow = 0.2 + 0.8 * (p.charge || 0); p.charge = 0; p.aimOn = 0;
+        const tl = Math.hypot(p.tx - p.x, p.ty - p.y);
+        if (tl > 1) { dx = (p.tx - p.x) / tl; dy = (p.ty - p.y) / tl; }
+        p.lobDist = Math.max(20, tl);
         p.fx = dx; p.fy = dy;
         firePlayer(w, p, dx, dy);
       } else if (inp.shoot && !busy && p.ammo < T.spudPellets) {
         p.click -= 1 / 120; p.dryHint = 1.2;                     // nothing whole left to throw
         if (p.click <= 0) { p.click = T.spudEmpty; if (typeof SFX !== 'undefined' && SND.ctx) sTone(0.03, 900, 500, 0.12, 'square'); }
-      } else { p.charging = 0; p.charge = 0; }
+      } else { p.charging = 0; p.charge = 0; p.aimOn = 0; }
     }
     else if (inp.shoot && !lobbing) {
       if (alen > 0.001) { ax /= alen; ay /= alen; }
@@ -2633,11 +2648,14 @@ function stepBase(w, inputs, dt) {
         const whole = !!p.throwWhole, pow = whole ? (p.throwPow || 0.5) : 0;
         p.throwWhole = 0;
         if (whole) {
-          // lobbed: lands lobNear..lobFar away, in the air 0.5-0.9s, gravity does the rest
-          const dist = T.lobNear + (T.lobFar - T.lobNear) * pow, tf = 0.5 + 0.4 * pow, G = 1000;
+          // lobbed at the spot he aimed at; a harder throw gets there sooner (flatter, faster)
+          // re-aim at the spot from wherever he is now
+          let dist = p.throwDist || T.lobNear, tx = p.throwDx !== undefined ? p.throwDx : f.x / l, ty = p.throwDy !== undefined ? p.throwDy : f.y / l;
+          if (p.throwTx !== undefined) { const dl = Math.hypot(p.throwTx - p.x, p.throwTy - p.y); if (dl > 8) { dist = dl; tx = (p.throwTx - p.x) / dl; ty = (p.throwTy - p.y) / dl; } }
+          const tf = 0.78 - 0.33 * pow, G = 1000;
           w.husks.push({ owner: p.id, whole, lob: true,
-                         x: p.x + (f.x / l) * 12, y: p.y + (f.y / l) * 6, dz: 28, vz: G * tf / 2 - 28 / tf,
-                         vx: (f.x / l) * dist / tf, vy: (f.y / l) * dist / tf,
+                         x: p.x + tx * 12, y: p.y + ty * 6, dz: 28, vz: G * tf / 2 - 28 / tf,
+                         vx: tx * (dist - 12) / tf, vy: ty * (dist - 6) / tf,
                          dmg: T.enemyHp * T.spudThrowFrac * T.lobWhole * (1 + (T.lobPowDmg - 1) * pow),
                          rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * (14 + 16 * pow), life: 3 });
           if (SND.ctx) sTone(0.12, 300 + 300 * pow, 700 + 400 * pow, 0.12, 'triangle');
@@ -5005,7 +5023,7 @@ function drawLobMarkers(w) {
   const R = T.blastRadius;
   const pulse = 0.5 + 0.5 * Math.sin(((typeof performance !== 'undefined' ? performance.now() : 0) / 1000) * 8);
   for (const p of w.players) {
-    if (!p.alive || p.weapon !== 'launcher' || !p.aimOn || !(p.rockets > 0)) continue;
+    if (!p.alive || !p.aimOn || !((p.weapon === 'launcher' && p.rockets > 0) || (p.weapon === 'lob' && p.charging))) continue;
     const col = P_COLOURS[p.id] || '#f6d17a';
     ctx.save();
     ctx.globalAlpha = 0.14 + 0.06 * pulse;
