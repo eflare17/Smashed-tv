@@ -256,7 +256,7 @@ const T = {
   punchLunge:  170,    // he steps into it
   ropeX:       450,    // the gym's bell rope: where it hangs
   ropeY:       152,    //   and how far down the knot reaches
-  ropeCount:   20,     // potatoes that fall when you pull it
+  ropeCount:   10,     // potatoes that fall when you pull it (b173: was 20)
   ropeCool:    20,     // seconds before it works again
   spudGrow:    9,      // seconds from sprout to ready
   spudRate:    5,      // seconds between new sprouts
@@ -484,7 +484,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b172 — the potato lands where you aim';
+const BUILD = 'b173 — keep your potatoes; a lumpier bounce';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2590,14 +2590,11 @@ function stepBase(w, inputs, dt) {
     h.rot += h.spin * dt;
     h.life -= dt;
     let gone = h.life <= 0;
-    if (h.lob && h.dz <= 0) {                     // came down on nothing: it's a potato on the floor again
+    if (h.lob && h.dz <= 0) {                     // came down on nothing: bounces, then it's a potato on the floor again
       gone = true;
-      const m = ARENA.wall + 12;
-      if (h.x > m && h.x < ARENA.w - m && h.y > m && h.y < ARENA.h - m && !inWater(h.x, h.y)) {
-        w.plants.push({ x: h.x, y: h.y, t: T.spudGrow, wob: 0.4 });
-        fx(w, FX.WALL, h.x, h.y);
-        if (SND.ctx) sNoise(0.05, 300, 1.4, 0.16, 'lowpass', 300);
-      } else if (inWater(h.x, h.y)) fx(w, FX.SPLASH, h.x, h.y);
+      if (inWater(h.x, h.y)) fx(w, FX.SPLASH, h.x, h.y);
+      else RAIN.push({ x: h.x, y: h.y, dz: 0, vz: h.vz, vx: h.vx * 0.3, vy: h.vy * 0.3, squash: 0,
+                       delay: 0, bounces: 0, rot: h.rot, spin: h.spin, fromThrow: true });
     }
     for (let k = w.enemies.length - 1; k >= 0 && !gone; k--) {
       const e = w.enemies[k];
@@ -3894,8 +3891,8 @@ function pullRope(w) {
   ROPE.cool = T.ropeCool; ROPE.pull = 0.45;
   const n = T.ropeCount;
   for (let i = 0; i < n; i++) {
-    RAIN.push({ x: 318 + rnd(w) * 262, y: 112 + rnd(w) * 122, dz: 380 + rnd(w) * 160, vz: 0,
-                delay: 0.35 + i * 0.09 + rnd(w) * 0.05, bounces: 0, rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 10 });
+    RAIN.push({ x: 318 + rnd(w) * 262, y: 112 + rnd(w) * 122, dz: 380 + rnd(w) * 160, vz: 0, vx: 0, vy: 0, squash: 0,
+                delay: 0.35 + i * 0.12 + rnd(w) * 0.08, bounces: 0, rot: rnd(w) * 6.28, spin: (rnd(w) - 0.5) * 10 });
   }
   w.floaters.push({ x: T.ropeX, y: T.ropeY - 30, text: 'POTATOES!', t: 0, col: '#d8b878' });
   if (SND.ctx) { sTone(0.5, 1320, 1240, 0.22, 'sine'); sTone(0.7, 880, 840, 0.18, 'triangle'); }
@@ -3903,20 +3900,42 @@ function pullRope(w) {
 function stepRain(w, dt) {
   ROPE.cool = Math.max(0, ROPE.cool - dt);
   ROPE.pull = Math.max(0, ROPE.pull - dt);
-  let thud = false;
+  let thud = 0;
   for (let i = RAIN.length - 1; i >= 0; i--) {
     const d = RAIN[i];
     d.delay -= dt; if (d.delay > 0) continue;
-    d.vz -= 1500 * dt; d.dz += d.vz * dt; d.rot += d.spin * dt;
+    d.squash = Math.max(0, (d.squash || 0) - dt * 9);
+    d.vz -= 1500 * dt; d.dz += d.vz * dt;
+    d.x += (d.vx || 0) * dt; d.y += (d.vy || 0) * dt;
+    d.rot += d.spin * dt;
     if (d.dz > 0) continue;
+    // the floor. Each bounce keeps less, kicks off sideways a little (it's
+    // lumpy), tumbles slower, and squashes on impact
     d.dz = 0;
-    if (d.bounces < 2 && Math.abs(d.vz) > 120) { d.vz = -d.vz * 0.32; d.bounces++; thud = true; continue; }
+    const hit = -d.vz;
+    const keep = [0.45, 0.36, 0.28][Math.min(2, d.bounces)];
+    d.bounces++;
+    if (hit > 110 && d.bounces <= 3) {
+      d.vz = hit * keep;
+      const kick = hit * 0.08;
+      d.vx = (d.vx || 0) * 0.6 + (rnd(w) - 0.5) * kick;
+      d.vy = (d.vy || 0) * 0.6 + (rnd(w) - 0.5) * kick;
+      d.spin *= 0.55; d.squash = 1;
+      if (hit > 300) burst(w, d.x, d.y + 4, 3, '#b9a58a', 40);      // a puff of dust
+      thud = Math.max(thud, hit);
+      continue;
+    }
+    // settled: a potato on the floor
     RAIN.splice(i, 1);
-    w.plants.push({ x: d.x, y: d.y, t: T.spudGrow, wob: 0.4 });    // lands ready to pick up
-    fx(w, FX.WALL, d.x, d.y);
-    thud = true;
+    const m = ARENA.wall + 12;
+    d.x = Math.max(m, Math.min(ARENA.w - m, d.x)); d.y = Math.max(m, Math.min(ARENA.h - m, d.y));
+    if (inWater(d.x, d.y)) fx(w, FX.SPLASH, d.x, d.y);
+    else w.plants.push({ x: d.x, y: d.y, t: T.spudGrow, wob: 0.3 });
   }
-  if (thud && SND.ctx && !(ROPE.thudAt > performance.now() - 60)) { ROPE.thudAt = performance.now(); sNoise(0.05, 300, 1.4, 0.16, 'lowpass', 300); }
+  if (thud && SND.ctx && !(ROPE.thudAt > performance.now() - 50)) {
+    ROPE.thudAt = performance.now();
+    sNoise(0.05, 220 + thud * 0.2, 1.4, Math.min(0.22, 0.06 + thud / 3000), 'lowpass', 300);
+  }
 }
 function drawRope(w) {
   if (w.started || !T.loungeFloor || cal.on) return;
@@ -3944,10 +3963,12 @@ function drawRain() {
   const im = SPUD_IMG[4];
   for (const d of RAIN) {
     if (d.delay > 0) continue;
-    const sf = Math.max(0.3, 1 - d.dz / 300);
+    const sf = Math.max(0.3, 1 - d.dz / 300), sq = d.squash || 0;
     ctx.fillStyle = 'rgba(0,0,0,' + (0.28 * sf).toFixed(2) + ')';
     ctx.beginPath(); ctx.ellipse(d.x, d.y + 6, 13 * sf, 5 * sf, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.translate(d.x, d.y - d.dz); ctx.rotate(d.rot);
+    ctx.save(); ctx.translate(d.x, d.y - d.dz);
+    ctx.scale(1 + 0.3 * sq, 1 - 0.3 * sq);                          // flattens on impact, springs back
+    ctx.rotate(d.rot);
     if (im && im.complete && im.naturalWidth) {
       const dw = 30, dh = dw * (im.naturalHeight / im.naturalWidth);
       ctx.imageSmoothingEnabled = false;
@@ -6380,7 +6401,7 @@ function startGame() {
     p.hp = T.playerHp;
     p.weapon = 'spud';                   // you start with the toy
     p.blasters = 0;                      // the real guns are earned
-    p.ammo = T.spudPellets * T.spudStart;
+    p.ammo = Math.max(p.ammo || 0, T.spudPellets * T.spudStart);   // except potatoes: those you gathered come with you
     p.reload = 0;
     p.wTime = 0;
     p.speed = 0;
