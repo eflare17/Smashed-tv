@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b193 — rubber ducks in the pool';
+const BUILD = 'b194 — big white-water splash';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -995,8 +995,8 @@ function inWater(x, y) {
 const DIVE = { CLIMB: 1, BOARD: 2, FALL: 3, SWIM: 4 };
 
 function splash(w, x, y) {
-  fx(w, FX.SPLASH, x, y);
-  w.shake = Math.max(w.shake || 0, 7);
+  fx(w, FX.DIVE, x, y);
+  w.shake = Math.max(w.shake || 0, 10);
   w.floaters.push({ x, y: y - 50, text: 'SPLASH!', t: 0, col: '#8fd3ff' });
   if (SND.ctx) { sNoise(0.55, 1500, 0.7, 0.45, 'lowpass', 250); sTone(0.2, 170, 60, 0.2, 'sine'); }
 }
@@ -1384,16 +1384,79 @@ function addPlayer(w) {
   if (!w.started) w.players[w.players.length - 1].coins = Math.max(T.lobbyCash, T.testCash);
 }
 
-const FX = { HIT: 0, KILL: 1, WALL: 2, HURT: 3, DOWN: 4, BOOM: 5, LAUNCH: 6, BLAST: 7, SPLASH: 8 };
+const FX = { HIT: 0, KILL: 1, WALL: 2, HURT: 3, DOWN: 4, BOOM: 5, LAUNCH: 6, BLAST: 7, SPLASH: 8, DIVE: 9 };
 const FX_LOOK = [[4,'#f6d17a',180], [14,'#6fd3a0',260], [3,'#5a6274',120],
                  [10,'#e0473f',220], [24,'#e0473f',300], [36,'#ff9a6a',420],
-                 [8,'#c9c9c9',140], [40,'#ffb347',520], [34,'#a8e2ff',300]];
+                 [8,'#c9c9c9',140], [40,'#ffb347',520], [10,'#e6f7ff',200], [16,'#ffffff',260]];
+
+// White water: a foam patch, a crown of spray thrown up and falling back, a
+// tall plume in the middle for the big ones, and rings rolling out. Purely a
+// picture, so each screen runs its own (host from fx, clients from playEvents).
+const SPLASHES = [];
+function waterSplash(x, y, size) {
+  const drops = [], ring = Math.round(60 * size + 10);
+  for (let i = 0; i < ring; i++) {                                     // the crown: an ellipse of spray
+    const a = (i / ring) * Math.PI * 2 + Math.random() * 0.2, out = (50 + Math.random() * 90) * size;
+    drops.push({ x: Math.cos(a) * 10 * size, y: Math.sin(a) * 5 * size, z: 2, vx: Math.cos(a) * out, vy: Math.sin(a) * out * 0.5,
+                 vz: (160 + Math.random() * 180) * Math.sqrt(size), r: 2 + Math.random() * 3.5 * size });
+  }
+  const plume = Math.round(50 * size);
+  for (let i = 0; i < plume; i++) {                                    // the column straight up
+    const a = Math.random() * Math.PI * 2, out = Math.random() * 30 * size;
+    drops.push({ x: 0, y: 0, z: 4, vx: Math.cos(a) * out, vy: Math.sin(a) * out * 0.5,
+                 vz: (180 + Math.random() * 300) * size, r: 3 + Math.random() * 4 * size });
+  }
+  SPLASHES.push({ x, y, size, t: 0, drops });
+  for (let i = 0; i < 4; i++) RIPPLES.push({ x, y, t: -i * 0.15, life: 1.5, grow: 50 + 60 * size, w: 1.5 + 2 * size });
+}
+function drawSplashes() {
+  const now = performance.now() / 1000;
+  const dt = Math.min(0.1, Math.max(0, now - (drawSplashes.last || now))); drawSplashes.last = now;
+  const G = 700;
+  ctx.save();
+  for (let i = SPLASHES.length - 1; i >= 0; i--) {
+    const s = SPLASHES[i]; s.t += dt;
+    // the foam: a white churn on the water that spreads and thins out
+    const fk = Math.min(1, s.t / 1.4);
+    if (fk < 1) {
+      const fr = (22 + 50 * Math.sqrt(fk)) * s.size + 6;
+      ctx.globalAlpha = 0.85 * (1 - fk);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(s.x, s.y, fr, fr * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#bfe9ff';
+      for (let k = 0; k < 7; k++) {                                   // bubbly lumps round the edge
+        const a = k * 0.9 + s.t * 0.7, rr = fr * 0.8;
+        ctx.beginPath(); ctx.ellipse(s.x + Math.cos(a) * rr, s.y + Math.sin(a) * rr * 0.45, fr * 0.28, fr * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    // the spray: shadows on the water first, then the drops up in the air
+    let alive = 0;
+    for (const d of s.drops) {
+      if (d.z <= 0) continue;
+      d.x += d.vx * dt; d.y += d.vy * dt; d.vz -= G * dt; d.z += d.vz * dt; d.vx *= 0.99;
+      if (d.z <= 0) { if (Math.random() < 0.3) RIPPLES.push({ x: s.x + d.x, y: s.y + d.y, t: 0, life: 0.6, grow: 10, w: 1 }); continue; }
+      alive++;
+      ctx.globalAlpha = 0.18; ctx.fillStyle = '#0a3a60';
+      ctx.fillRect(Math.round(s.x + d.x - d.r / 2), Math.round(s.y + d.y), Math.ceil(d.r), 1);
+    }
+    ctx.globalAlpha = 0.95;
+    for (const pass of [0, 1]) for (const d of s.drops) {              // a pale-blue rim, then the white on top
+      if (d.z <= 0) continue;
+      const r = Math.ceil(d.r) + (pass ? 0 : 2), px = Math.round(s.x + d.x - r / 2), py = Math.round(s.y + d.y - d.z - r / 2);
+      ctx.fillStyle = pass ? (d.r > 3 ? '#ffffff' : '#eefaff') : '#7cc8f0';
+      ctx.fillRect(px, py, r, r + (d.vz < 0 ? 2 : 0));                // stretched a bit as it falls
+    }
+    if (!alive && fk >= 1) SPLASHES.splice(i, 1);
+  }
+  ctx.restore();
+}
 
 // host records what happened so the client can replay the sparks locally
 function fx(w, kind, x, y) {
   const [n, colour, speed] = FX_LOOK[kind];
   burst(w, x, y, n, colour, speed);
-  if (kind === FX.SPLASH) duckSplash(x, y, 1);
+  if (kind === FX.SPLASH) { duckSplash(x, y, 0.6); waterSplash(x, y, 0.45); }
+  if (kind === FX.DIVE) { duckSplash(x, y, 1.6); waterSplash(x, y, 1); }
   if (w.events && w.events.length < 40) w.events.push([kind, Math.round(x), Math.round(y)]);
 }
 
@@ -5503,6 +5566,8 @@ function playEvents(list) {
   if (!list) return;
   for (const [kind, x, y] of list) {
     const [n, colour, speed] = FX_LOOK[kind];
+    if (kind === FX.SPLASH) waterSplash(x, y, 0.45);
+    if (kind === FX.DIVE) waterSplash(x, y, 1);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = speed * (0.3 + Math.random() * 0.7);
@@ -6119,6 +6184,7 @@ function renderBase(w, hudRight) {
     ctx.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 3, 3);
   }
   ctx.globalAlpha = 1;
+  if (!cal.on) drawSplashes();
 
   // bullets
   ctx.lineCap = 'round';
