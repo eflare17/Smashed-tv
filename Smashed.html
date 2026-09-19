@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b227 — same Verdavape all the way through';
+const BUILD = 'b228 — Verdavape leans with the stem';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1156,6 +1156,7 @@ const STEM_PIX = [                                          // b227: a pixel wid
   '...KWWwwK.',
   '...KKKKKK.',
 ];
+const STEM_LEAN = 4;                                       // rows per one-pixel step of lean
 const STEM_COL = { K: '#1c1a22', L: '#e6e8ec', S: '#b4b8c0', D: '#7a7e88', E: '#5a5e68', W: '#9a5a32', w: '#6e3c1e', P: '#c9ccd2' };
 function drawStemVape(ax, ay, tip, heat) {
   const H = heat <= 0 ? '#d7d9de' : heat < 0.35 ? '#e8a07a' : heat < 0.7 ? '#ff6a2a' : '#ff3a1e';
@@ -1164,7 +1165,8 @@ function drawStemVape(ax, ay, tip, heat) {
   ctx.save();
   for (let r = 0; r < STEM_PIX.length; r++) for (let c = 0; c < STEM_PIX[r].length; c++) {
     const ch = STEM_PIX[r][c]; if (ch === '.') continue;
-    ctx.fillStyle = ch === 'H' ? H : STEM_COL[ch]; ctx.fillRect(x0 + c / 2, y0 + r / 2, 0.5, 0.5);
+    // b228: leaning with the stem, in pixel steps: every STEM_LEAN rows down it steps one pixel left
+    ctx.fillStyle = ch === 'H' ? H : STEM_COL[ch]; ctx.fillRect(x0 + (c - Math.floor(r / STEM_LEAN)) / 2, y0 + r / 2, 0.5, 0.5);
   }
   if (heat > 0.35) { ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff8a2a'; ctx.fillRect(x0 + 1, y0 - 0.5, 3, 2); }   // a glow over the cap
   ctx.restore();
