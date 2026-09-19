@@ -87,9 +87,9 @@
   <button id="fsBtn">Full screen</button>
   <button id="zoomBtn">Zoom: 1x (Z)</button>
   <button id="muteBtn">Sound: on</button>
-  <button id="gunBtn">Give shotgun (G)</button>
-  <button id="nukeBtn">Test nuke (N)</button>
-  <button id="magBtn">Test magnet (M)</button>
+  <button id="gunBtn" class="debugOnly">Give shotgun (G)</button>
+  <button id="nukeBtn" class="debugOnly">Test nuke (N)</button>
+  <button id="magBtn" class="debugOnly">Test magnet (M)</button>
   <button id="hostBtn">Host a game</button>
   <input id="codeIn" placeholder="room code" maxlength="8" autocomplete="off">
   <button id="joinBtn">Join</button>
@@ -501,7 +501,11 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b223 — bigger weapon bar';
+// b224: the test buttons (shotgun, nuke, magnet), their keys and the build/network readout only show
+// with ?debug on the end of the address; players get just the wave count
+const DEBUG = /[?&]debug\b/.test(location.search);
+if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
+const BUILD = 'b224 — test buttons tucked away';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -4454,8 +4458,8 @@ addEventListener('keydown', e => {
     return;
   }
   if (k === 'c') { if (!net.conn) cal.on = !cal.on; return; }
-  if (k === 'n' && !e.repeat) { dropTestNuke(); return; }
-  if (k === 'm' && !e.repeat) { giveTestMagnet(); return; }
+  if (DEBUG && k === 'n' && !e.repeat) { dropTestNuke(); return; }
+  if (DEBUG && k === 'm' && !e.repeat) { giveTestMagnet(); return; }
   if (k === 'j' && !e.repeat && net.role !== 'client' && world.started) {
     world.slot.broken = true; world.sign = 'stand';
     world.janitor.phase = 'idle'; world.janitor.hits = 0;
@@ -4465,7 +4469,7 @@ addEventListener('keydown', e => {
     setStatus('janitor incoming', 'live');
     return;
   }
-  if (k === 'g' && net.role !== 'client' && world.players[0]) {
+  if (DEBUG && k === 'g' && net.role !== 'client' && world.players[0]) {
     giveWeapon(world.players[0], 'shotgun');    // temporary: until the slot machine
     return;
   }
@@ -7710,8 +7714,8 @@ function renderBase(w, hudRight) {
   ctx.fillStyle = '#6d7486';
   ctx.font = '12px ui-monospace, monospace';
   const totalKills = w.players.reduce((a, p) => a + p.kills, 0);
-  ctx.fillText(w.slotSecret?.room ? '' : BUILD + '   wave ' + w.wave + '   ' + w.enemies.length + ' left   '
-             + totalKills + ' killed   ' + hudRight,
+  ctx.fillText(w.slotSecret?.room ? '' : DEBUG ? BUILD + '   wave ' + w.wave + '   ' + w.enemies.length + ' left   ' + totalKills + ' killed   ' + hudRight
+             : w.started ? 'wave ' + w.wave + '   ' + w.enemies.length + ' left   ' + totalKills + ' killed' : '',
              ARENA.wall + 8, ARENA.wall + 20);
 
   // wallet, one line per player, in that player's colour
