@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b196 — drips after the pool';
+const BUILD = 'b197 — drips hang and fall off him';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1454,8 +1454,15 @@ function drawSplashes() {
 // Dripping wet: for a few seconds after climbing out of the pool, drops run
 // off him (and Gothica) and patter onto the tiles, thinning out as he dries.
 // Picked up from the swim ending, so every screen sees it without sending anything.
-const DRIP = { was: {}, wet: {}, drops: [], spots: [], last: 0 };
+const DRIP = { was: {}, wet: {}, drops: [], runs: [], bits: [], spots: [], last: 0 };
 const DRIP_TIME = 3;
+// where the drips hang from, as fractions of sprite height from the feet, facing the camera
+const DRIP_POINTS = [[0, -0.74], [-0.08, -0.84], [0.08, -0.84], [-0.23, -0.6], [0.23, -0.6],
+                     [-0.33, -0.56], [0.33, -0.56], [-0.16, -0.25], [0.16, -0.25], [0, -0.27]];
+function dripAt(d) {                                     // a drip point on the body as it is facing now
+  const e = d.e, side = Math.abs(e.fx || 0) > Math.abs(e.fy || 0);
+  return { x: e.x + (side ? d.ox * 0.35 + Math.sign(e.fx) * 3 : d.ox), y: e.y + d.oy };
+}
 function drawDrips(w) {
   const now = performance.now() / 1000;
   const dt = Math.min(0.1, Math.max(0, now - (DRIP.last || now))); DRIP.last = now;
@@ -1472,9 +1479,16 @@ function drawDrips(w) {
     const wet = DRIP.wet[k] || 0; if (wet <= 0) continue;
     DRIP.wet[k] = wet - dt;
     const f = wet / DRIP_TIME;                                           // 1 = soaked, 0 = dry
-    if (Math.random() < dt * 45 * f * f + dt * 4) {
-      DRIP.drops.push({ x: e.x + (Math.random() - 0.5) * T.radius * 1.3, y: e.y - h * (0.15 + Math.random() * 0.8),
-                        floor: e.y + 1 + Math.random() * 3, vy: 10 + Math.random() * 20 });
+    // drops gather where water runs off a body: chin, hair ends, fingers, elbows, shorts hem
+    if (Math.random() < dt * 22 * f + dt * 2) {
+      const [px, py] = DRIP_POINTS[Math.floor(Math.random() * DRIP_POINTS.length)];
+      DRIP.drops.push({ e, ox: px * h + (Math.random() - 0.5) * 2, oy: py * h, t: 0,
+                        hang: 0.25 + Math.random() * 0.35, r: 2.2 + Math.random() * 1 });
+    }
+    // and thin trickles running down him
+    if (Math.random() < dt * 9 * f) {
+      DRIP.runs.push({ e, ox: (Math.random() - 0.5) * 0.4, oy: -(0.45 + Math.random() * 0.3) * h,
+                       sp: 14 + Math.random() * 14, t: 0, life: 0.6 + Math.random() * 0.5 });
     }
   }
   ctx.save();
@@ -1488,19 +1502,49 @@ function drawDrips(w) {
   DRIP.dt = dt;
 }
 function drawDripDrops() {
-  const dt = DRIP.dt || 0;
+  const dt = DRIP.dt || 0, R = Math.round;
   ctx.save();
+  // trickles: a glint sliding down him, with a faint wet line behind it
+  for (let i = DRIP.runs.length - 1; i >= 0; i--) {
+    const q = DRIP.runs[i]; q.t += dt;
+    if (q.t >= q.life) { DRIP.runs.splice(i, 1); continue; }
+    const h = T.radius * T.spriteScale, a = dripAt({ e: q.e, ox: q.ox * h, oy: q.oy }), y = a.y + q.sp * q.t;
+    const fade = 1 - q.t / q.life, len = Math.min(7, q.sp * q.t);
+    ctx.globalAlpha = 0.35 * fade; ctx.fillStyle = '#cfefff'; ctx.fillRect(R(a.x), R(y - len), 1, R(len));
+    ctx.globalAlpha = 0.9 * fade; ctx.fillStyle = '#ffffff'; ctx.fillRect(R(a.x), R(y), 1, 2);
+  }
   for (let i = DRIP.drops.length - 1; i >= 0; i--) {
-    const d = DRIP.drops[i];
-    d.vy += 350 * dt; d.y += d.vy * dt;
-    if (d.y >= d.floor) {
-      DRIP.drops.splice(i, 1);
-      if (DRIP.spots.length < 60) DRIP.spots.push({ x: d.x, y: d.floor, r: 1.2 + Math.random() * 1.2, t: 0, life: 1.6 });
+    const d = DRIP.drops[i]; d.t += dt;
+    if (d.t < d.hang) {
+      // still hanging on: swells up, stretched a little on a thin neck
+      const a = dripAt(d), k = d.t / d.hang, r = 0.6 + d.r * k, x = R(a.x), y = R(a.y + k * 2);
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = '#2f79ad'; ctx.fillRect(x - Math.ceil(r / 2), y, Math.ceil(r), Math.ceil(r) + 1);
+      if (k > 0.5) ctx.fillRect(x, y - 1, 1, 1);
+      ctx.fillStyle = '#bfe9ff'; ctx.fillRect(x, y + (r > 2 ? 1 : 0), 1, 1);
       continue;
     }
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = '#3f8fc8'; ctx.fillRect(Math.round(d.x) - 1, Math.round(d.y) - 2, 3, 5);
-    ctx.fillStyle = '#bfe9ff'; ctx.fillRect(Math.round(d.x), Math.round(d.y) - 1, 1, 3);
+    if (d.x === undefined) {                                           // lets go
+      const a = dripAt(d); d.x = a.x; d.y = a.y + 2; d.vy = 0; d.floor = d.e.y + 1 + Math.random() * 3;
+    }
+    const y0 = d.y; d.vy += 420 * dt; d.y += d.vy * dt;
+    if (d.y >= d.floor) {                                              // hits the tiles: a tiny splat
+      DRIP.drops.splice(i, 1);
+      if (DRIP.spots.length < 70) DRIP.spots.push({ x: d.x, y: d.floor, r: 1.5 + Math.random() * 1.3, t: 0, life: 1.8 });
+      for (const s of [-1, 1]) DRIP.bits.push({ x: d.x, y: d.floor, vx: s * (18 + Math.random() * 18), vy: -30 - Math.random() * 20, t: 0 });
+      continue;
+    }
+    const x = R(d.x), yy = R(d.y), tail = Math.min(5, R(d.y - y0 + 1));
+    ctx.globalAlpha = 0.35; ctx.fillStyle = '#bfe9ff'; ctx.fillRect(x, yy - tail - 1, 1, tail);    // falling streak
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = '#2f79ad'; ctx.fillRect(x - 1, yy - 2, 3, 4);
+    ctx.fillStyle = '#e8f8ff'; ctx.fillRect(x - 1, yy - 1, 1, 2);
+  }
+  for (let i = DRIP.bits.length - 1; i >= 0; i--) {
+    const b = DRIP.bits[i]; b.t += dt;
+    if (b.t > 0.18) { DRIP.bits.splice(i, 1); continue; }
+    b.vy += 500 * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+    ctx.globalAlpha = 0.8; ctx.fillStyle = '#bfe9ff'; ctx.fillRect(R(b.x), R(b.y), 1, 1);
   }
   ctx.restore();
 }
