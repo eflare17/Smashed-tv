@@ -2650,6 +2650,11 @@ function stepBase(w, inputs, dt) {
       if (inp.st) dist = T.lobNear + (T.lobFar - T.lobNear) * Math.min(1, Math.max(0, (alen - 0.15) / 0.8));
       else if (alen > 0.001) dist = Math.min(alen, T.lobFar);
       else dist = T.lobNear;
+      if (inp.lt) {                                                   // a finger on the spot to hit
+        const tdx = inp.lx - p.x, tdy = inp.ly - p.y, tl = Math.hypot(tdx, tdy);
+        if (tl > 1) { dx = tdx / tl; dy = tdy / tl; }
+        dist = Math.min(tl, T.lobFar);
+      }
       if (inp.shoot && !busy && p.ammo >= T.spudPellets) {
         p.charge = Math.min(1, (p.charge || 0) + dt / T.lobCharge); p.charging = 1;
         p.fx = dx; p.fy = dy; p.adx = dx; p.ady = dy; p.firing = 1;
@@ -3703,6 +3708,19 @@ function localHasLauncher() {
   const p = world.players[0];
   return !!(p && p.alive && p.weapon === 'launcher' && p.rockets > 0);
 }
+// Touch + potato: put a finger where you want it to land. Held still it winds
+// up (let go to throw); a quick tap anywhere, even on the move side, lobs it
+// there straight away. Drag instead and it's the aim stick like before.
+const LOBTOUCH = {};
+let lobTap = { x: 0, y: 0, until: 0 };
+function localHasLob() {
+  if (net.role === 'client') {
+    const me = (net.snap && net.snap.p || []).find(a => a[0] === 1);
+    return !!(me && me[16] === 5);
+  }
+  const p = world.players[0];
+  return !!(p && p.alive && weaponOf(p).lob);
+}
 // read once and clear, so a tap can never be missed or fire twice
 function consumeRollTap() {
   if (!rollTap) return false;
@@ -3828,6 +3846,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   if (s.active) return;
   if (localHasLauncher()) TAPS[e.pointerId] = { x: pt.x, y: pt.y, t: performance.now(), moved: 0 };
+  if (localHasLob()) LOBTOUCH[e.pointerId] = { x: pt.x, y: pt.y, t: performance.now(), moved: 0, aim: s === aimStick };
   s.active = true; s.id = e.pointerId;
   s.ox = pt.x; s.oy = pt.y; s.dx = 0; s.dy = 0;
   canvas.setPointerCapture(e.pointerId); e.preventDefault();
@@ -3842,6 +3861,8 @@ canvas.addEventListener('pointermove', e => {
   if (e.pointerType === 'mouse') { mouse.x = pt.x; mouse.y = pt.y; mouse.inside = true; return; }
   const tp = TAPS[e.pointerId];
   if (tp) tp.moved = Math.max(tp.moved, Math.hypot(pt.x - tp.x, pt.y - tp.y));
+  const lt = LOBTOUCH[e.pointerId];
+  if (lt) lt.moved = Math.max(lt.moved, Math.hypot(pt.x - lt.x, pt.y - lt.y));
   const s = moveStick.id === e.pointerId ? moveStick : aimStick.id === e.pointerId ? aimStick : null;
   if (!s) return;
   let dx = pt.x - s.ox, dy = pt.y - s.oy;
@@ -3863,6 +3884,13 @@ function endPointer(e) {
   if (e.pointerType === 'mouse') { mouse.down = false; return; }
   const tp = TAPS[e.pointerId];
   delete TAPS[e.pointerId];
+  const lt = LOBTOUCH[e.pointerId];
+  delete LOBTOUCH[e.pointerId];
+  // a quick tap on the move side: throw there now (the aim side throws on its own when let go)
+  if (lt && !lt.aim && e.type === 'pointerup' && lt.moved < 12 && performance.now() - lt.t < 250 && localHasLob()) {
+    const tw = screenToWorld(lt.x, lt.y);
+    lobTap = { x: tw.x, y: tw.y, until: performance.now() + 130 };
+  }
   if (tp && e.type === 'pointerup' && tp.moved < 12 && performance.now() - tp.t < 300 && localHasLauncher()) {
     const tw = screenToWorld(tp.x, tp.y);                // where that is in the world, if zoomed
     tapShot = { id: tapShot.id + 1, x: tw.x, y: tw.y, until: performance.now() + 150 };
@@ -3895,8 +3923,13 @@ function localInput0() {
   if (g && Math.hypot(g.axes[0] || 0, g.axes[1] || 0) > 0.22) { mx = g.axes[0]; my = g.axes[1]; }
 
   let ax = 0, ay = 0, shoot = false;
-  let st = false;
-  if (aimStick.active) {
+  let st = false, lt = null;
+  const held = aimStick.active && LOBTOUCH[aimStick.id];
+  if (held && held.moved < 12 && localHasLob()) {
+    lt = screenToWorld(held.x, held.y); shoot = true;                 // finger on the landing spot
+  } else if (lobTap.until > performance.now()) {
+    lt = { x: lobTap.x, y: lobTap.y }; shoot = true;
+  } else if (aimStick.active) {
     shoot = true; st = true; ax = aimStick.dx; ay = aimStick.dy;
     if (Math.hypot(ax, ay) < 0.06) { ax = 0; ay = 0; }
   } else if (g && Math.hypot(g.axes[2] || 0, g.axes[3] || 0) > 0.25) {
@@ -3911,6 +3944,7 @@ function localInput0() {
   const roll = keys.has('shift') || consumeRollTap()
     || !!(g && ((g.buttons[0] && g.buttons[0].pressed) || (g.buttons[5] && g.buttons[5].pressed)));
   const inp = { mx, my, ax, ay, shoot, roll, st, tc: touchSeen };
+  if (lt) { inp.lt = 1; inp.lx = lt.x; inp.ly = lt.y; }
   if (HOTBAR.want) { inp.wsel = HOTBAR.want; HOTBAR.want = null; }
   if (tapShot.until > performance.now()) { inp.tap = tapShot.id; inp.tx = tapShot.x; inp.ty = tapShot.y; }
   return inp;
@@ -5395,7 +5429,8 @@ function wireConn(conn) {
       const i = d.i;
       if (!i || !['mx','my','ax','ay'].every(k => Number.isFinite(i[k]))) return;
       net.remoteInput = { mx: Math.max(-1,Math.min(1,i.mx)), my: Math.max(-1,Math.min(1,i.my)), ax: i.ax, ay: i.ay, shoot: i.shoot === true, roll: i.roll === true, wsel: (typeof i.wsel === 'string' && WEAPONS[i.wsel]) ? i.wsel : undefined, st: i.st === true, tc: i.tc === true,
-                         tap: i.tap | 0, tx: +i.tx || 0, ty: +i.ty || 0 };
+                         tap: i.tap | 0, tx: +i.tx || 0, ty: +i.ty || 0,
+                         lt: i.lt === 1 ? 1 : 0, lx: +i.lx || 0, ly: +i.ly || 0 };
       net.inputAt = performance.now();
       return;
     }
