@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b221 — the wardrobe';
+const BUILD = 'b222 — no banner in the lobby';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -4530,7 +4530,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   // in the lobby, a tap near the centre message is Start
-  if (!world.started && !world.over && !cal.on && net.role !== 'client'
+  if (!world.started && !world.over && !cal.on && net.role !== 'client' && showPoster
       && Math.abs(pt.x - ARENA.w / 2) < 260 && pt.y > ARENA.h - ARENA.wall - 70) {
     startGame();
     e.preventDefault();
@@ -7778,7 +7778,8 @@ function renderBase(w, hudRight) {
       const pw = ph * POSTER.naturalWidth / POSTER.naturalHeight;
       ctx.drawImage(POSTER, Math.round((ARENA.w - pw) / 2), ARENA.wall, Math.round(pw), ph);
     }
-    // a dark band across the bottom so the instructions read over the art
+    // a dark band across the bottom so the instructions read over the art; only over the title poster (b222: not in the lobby)
+    if (showPoster) {
     ctx.fillStyle = 'rgba(20,22,28,0.78)';
     ctx.fillRect(ARENA.wall, ARENA.h - ARENA.wall - 70, ARENA.w - ARENA.wall * 2, 70);
     ctx.textAlign = 'center';
@@ -7799,6 +7800,7 @@ function renderBase(w, hudRight) {
     else line = 'shoot the dummies, have a sit at the table  ·  ' + line;
     ctx.fillText(line, ARENA.w / 2, ARENA.h - ARENA.wall - 20);
     ctx.textAlign = 'left';
+    }
   }
 
   if (w.breather > 0 && w.started && !w.over && !cal.on) {
