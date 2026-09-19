@@ -500,7 +500,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b188 — Gothica comes to watch';
+const BUILD = 'b189 — plates hang on the tree properly';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -686,7 +686,11 @@ const BAR_REST = { x: 63.7, y: 24.1 };                     // bar centre in the 
 const BAR_LEN = 216, BAR_SHOULDER = 55;                  // the inner collar stops on the bar (the art's bar is shortened: see b187)
 const PRESS_OFF = { x: -1, y: 0 };                       // press frames against the bench image
 const FISTS = [[41.8, 19.1, 94.7, 16.1], [37.8, 41.8, 95.7, 38.8], [41.5, 65.3, 96.1, 60.6], [38.5, 41.5, 94.1, 37.2]];
-const PEGS = [[16, 25.5, -1], [16, 56.3, -1], [16, 88.4, -1], [56.3, 16.1, 1], [56.3, 49.6, 1], [56.3, 81.7, 1]];   // x, y, -1 = front-left, 1 = back-right
+// where a plate's hole sits on each peg, slid up to the flange by the post (b189: measured off the rods;
+// the left ones were 3-4px low), and the rows each peg's rod spans
+const PEGS = [[19, 23, -1], [19, 53, -1], [19, 84, -1], [54, 18, 1], [54, 50, 1], [54, 80, 1]];
+const PEG_ROWS = [[13, 31], [44, 62], [75, 96], [10, 26], [42, 58], [72, 90]];
+const RACK_POST = [29, 43], RACK_BASE = 100;             // the post's columns, and where the base starts   // x, y, -1 = front-left, 1 = back-right
 function gymReady() { return GYM_ART.bench.complete && GYM_ART.bench.naturalWidth && GYM_ART.rack.complete && GYM_ART.rack.naturalWidth; }
 function benchOrigin() { const im = GYM_ART.bench; return { x: T.benchX - im.naturalWidth / 4, y: T.benchY - im.naturalHeight / 2 }; }
 function rackOrigin() { const im = GYM_ART.rack; return { x: T.rackX - im.naturalWidth / 4, y: T.rackY - im.naturalHeight / 2 }; }
@@ -773,16 +777,44 @@ function drawBenchStation(w) {
   drawLoadedBar(px + (lx + rx) / 4, py + (ly + ry) / 4 + 0.5);
   const fo = fistOverlay(i); if (fo) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(fo, Math.round(px), Math.round(py), fo.width / 2, fo.height / 2); ctx.restore(); }
 }
-function drawRackStation() {
-  if (!gymReady()) return;
-  const o = rackOrigin(), im = GYM_ART.rack;
-  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(T.rackX, T.rackY - 7, 20, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-  const hang = back => PEGS.forEach(([x, y, side], i) => { if ((side > 0) !== back) return; GYM.pegs[i].forEach((p, k) => drawGymImg(GYM_ART.plate[p], o.x + (x + side * 4 * k) / 2, o.y + (y - side * 1.3 * k) / 2, side > 0)); });
-  hang(true);                                            // the back pegs' plates sit behind the post
-  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(im, Math.round(o.x), Math.round(o.y), im.naturalWidth / 2, im.naturalHeight / 2); ctx.restore();
-  hang(false);
+// The tree cut into the pieces that overlap differently: pegs pointing away
+// (right), pegs pointing at you (left), the post, the base. A plate on a peg
+// hides the rod behind it, the post hides the back plates, and the front pegs'
+// tips come out through the plate's hole towards you.
+let RACK_LAYERS = null;
+function rackLayers() {
+  if (RACK_LAYERS) return RACK_LAYERS;
+  const im = GYM_ART.rack; if (!im.complete || !im.naturalWidth) return null;
+  const w = im.naturalWidth, h = im.naturalHeight, make = keep => {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    const id = g.getImageData(0, 0, w, h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!keep(x, y)) id.data[(y * w + x) * 4 + 3] = 0;
+    g.putImageData(id, 0, 0); return c; };
+  const [p0, p1] = RACK_POST;
+  return (RACK_LAYERS = { back: make((x, y) => y < RACK_BASE && x > p1), front: make((x, y) => y < RACK_BASE && x < p0),
+                          post: make((x, y) => y < RACK_BASE && x >= p0 && x <= p1), base: make((x, y) => y >= RACK_BASE) });
 }
-// what E does here, if anything
+function drawRackStation() {
+  const L = rackLayers(); if (!gymReady() || !L) return;
+  const o = rackOrigin(), w = GYM_ART.rack.naturalWidth / 2, h = GYM_ART.rack.naturalHeight / 2;
+  const layer = c => { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(c, Math.round(o.x), Math.round(o.y), w, h); ctx.restore(); };
+  const plateAt = (i, k) => { const [x, y, side] = PEGS[i]; return { x: o.x + (x + side * 4 * k) / 2, y: o.y + (y - side * 0.4 * k) / 2 }; };
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(T.rackX, T.rackY - 7, 20, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  layer(L.back);
+  for (let i = 3; i < 6; i++) for (let k = GYM.pegs[i].length - 1; k >= 0; k--) {   // back pegs: the outer plate is furthest away, so first
+    const q = plateAt(i, k); drawGymImg(GYM_ART.plate[GYM.pegs[i][k]], q.x, q.y, true); }
+  layer(L.post);
+  layer(L.front);
+  for (let i = 0; i < 3; i++) GYM.pegs[i].forEach((p, k) => { const q = plateAt(i, k); drawGymImg(GYM_ART.plate[p], q.x, q.y, false); });
+  // the front pegs' tips, out through the outermost plate's hole
+  for (let i = 0; i < 3; i++) {
+    const n = GYM.pegs[i].length; if (!n) continue;
+    const hole = PEGS[i][0] - 4 * (n - 1), [r0, r1] = PEG_ROWS[i], cut = Math.max(0, hole - 1);
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(L.front, 0, r0, cut, r1 - r0, Math.round(o.x), Math.round(o.y + r0 / 2), cut / 2, (r1 - r0) / 2);
+    ctx.restore();
+  }
+  layer(L.base);
+}// what E does here, if anything
 function gymNear(w, p) {
   if (!p || !p.alive || w.started || !T.loungeFloor || p.dive || p.sit || NPC_GOTH.carrier === p.id || !gymReady()) return null;
   if (p.lift) return { kind: 'getup', label: 'GET UP' };
