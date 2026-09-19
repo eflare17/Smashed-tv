@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b213 — sitting art, hands on knees';
+const BUILD = 'b214 — sits still, just the head turn';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1149,8 +1149,8 @@ const SIT_IDLE = [
 function sitIdleReady() { return SIT_IDLE.every(i => i.complete && i.naturalWidth); }
 function drawSitIdle(p) {
   const dir = p.sit === 2 ? -1 : 1, now = performance.now() / 1000;
-  // a slow breath (0,1,2,1...), and now and then he looks round at you for a moment
-  const f = (now % 9) > 7.6 ? 3 : [0, 1, 2, 1][Math.floor(now / 0.7) % 4];
+  // sat still (b214: the breathing frame moved his chest too much), and now and then he looks round at you
+  const f = (now % 9) > 7.6 ? 3 : 0;
   const im = SIT_IDLE[f], w = im.naturalWidth / 2, h = im.naturalHeight / 2, bottom = p.y + SIT_GEO.floor;
   ctx.save();
   if (dir < 0) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
