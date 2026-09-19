@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b226 — Verdavape in the stem';
+const BUILD = 'b227 — same Verdavape all the way through';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1133,39 +1133,40 @@ function drawTrip() {
 const SIT_T = { heat: 0.25, click: 2.1, pull: 2.4, blow: 3.8, done: 5.9, end: 6.2 };
 // where the Verdavape's tip is in each bong frame (world px from the art's top-left), and which way the stem points
 // b226: where the Verdavape's cap sits in each bong frame (world px from the art's top-left), measured off the art so its
-// wooden end stands in the stem's opening. Frames 1 and 2 already show it in the art (his hand's moved), so null there.
-const SIT_STEM = [[29.25, 24], null, null, [28, 23.5]];
+// wooden end stands in the stem's opening. b227: drawn in all four, over the art's own (thinner, paler) one in frames
+// 1 and 2, so it doesn't change look halfway through the hit.
+const SIT_STEM = [[29.25, 24], [29.75, 23.5], [29.5, 24.5], [28, 23.5]];
 // The Verdavape as it really is (b216, from the user's photos): a wooden end sat in the bong's joint,
 // a brushed-steel body with a seam, a flat cap full of little holes on top, and the T-handle: a steel
 // pin out of the side with a wooden knob on it. Stands nearly upright out of the stem.
 // b225: the Verdavape as a little pixel sprite on the same 2x grid as the art (one character = one
 // screen pixel), drawn upright like the real one stands in the joint, instead of smooth lines.
 // H cap (heat colour), L/S/D steel light/mid/dark, E seam, W/w wood, P the T-handle's pin, K outline
-const STEM_PIX = [
-  '...KKKK.',
-  '...KHHK.',
-  '...KLSD.',
-  '...KLSD.',
-  '...KLSD.',
-  'KWWPKLSD',
-  'KwwPKLSD',
-  '...KEEE.',
-  '...KWWw.',
-  '...KWWw.',
-  '...KWwwK',
-  '...KKKK.',
+const STEM_PIX = [                                          // b227: a pixel wider, so it covers the art's own in frames 1-2
+  '...KKKKKK.',
+  '...KHHHHK.',
+  '...KLSSDK.',
+  '...KLSSDK.',
+  '...KLSSDK.',
+  'KWWPKLSSDK',
+  'KwwPKLSSDK',
+  '...KEEEEK.',
+  '...KWWWwK.',
+  '...KWWWwK.',
+  '...KWWwwK.',
+  '...KKKKKK.',
 ];
 const STEM_COL = { K: '#1c1a22', L: '#e6e8ec', S: '#b4b8c0', D: '#7a7e88', E: '#5a5e68', W: '#9a5a32', w: '#6e3c1e', P: '#c9ccd2' };
 function drawStemVape(ax, ay, tip, heat) {
   const H = heat <= 0 ? '#d7d9de' : heat < 0.35 ? '#e8a07a' : heat < 0.7 ? '#ff6a2a' : '#ff3a1e';
   // the cap's middle sits on the tip; the whole thing snapped to the 2x pixel grid
-  const x0 = Math.round((ax + tip[0]) * 2 - 5.5) / 2, y0 = Math.round((ay + tip[1]) * 2 - 1.5) / 2;
+  const x0 = Math.round((ax + tip[0]) * 2 - 6) / 2, y0 = Math.round((ay + tip[1]) * 2 - 1.5) / 2;
   ctx.save();
-  for (let r = 0; r < STEM_PIX.length; r++) for (let c = 0; c < 8; c++) {
+  for (let r = 0; r < STEM_PIX.length; r++) for (let c = 0; c < STEM_PIX[r].length; c++) {
     const ch = STEM_PIX[r][c]; if (ch === '.') continue;
     ctx.fillStyle = ch === 'H' ? H : STEM_COL[ch]; ctx.fillRect(x0 + c / 2, y0 + r / 2, 0.5, 0.5);
   }
-  if (heat > 0.35) { ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff8a2a'; ctx.fillRect(x0 + 1, y0 - 0.5, 2.5, 2); }   // a glow over the cap
+  if (heat > 0.35) { ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff8a2a'; ctx.fillRect(x0 + 1, y0 - 0.5, 3, 2); }   // a glow over the cap
   ctx.restore();
 }function drawSitArt(p) {
   const dir = p.sit === 2 ? -1 : 1, v = p.vape, S = SIT_T;
