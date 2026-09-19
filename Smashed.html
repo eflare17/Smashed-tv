@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b217 — Verdavape half size';
+const BUILD = 'b218 — no cans';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -624,8 +624,8 @@ function fillLobby(w) {
     { x: T.loungeFloor ? 380 : ARENA.w * 0.28, y: T.loungeFloor ? 175 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 },
     { x: T.loungeFloor ? 520 : ARENA.w * 0.72, y: T.loungeFloor ? 175 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 }
   ];
-  w.cans = [];
-  for (let i = 0; i < T.canCount; i++) {
+  w.cans = [];                                            // b218: no cans in the lobby any more
+  for (let i = 0; i < 0; i++) {
     w.cans.push({ x: ARENA.w * (T.loungeFloor ? 0.46 + 0.14 * i : 0.32 + 0.18 * i), y: ARENA.h * 0.68,
                   vx: 0, vy: 0, rot: rnd(w) * 6.28, spin: 0 });
   }
@@ -7767,7 +7767,7 @@ function renderBase(w, hudRight) {
     else if (w.players.length < 2) line = (touch ? 'Host a game for a friend, or ' : 'press P for local co-op, Host a game, or ') + go;
     else line = go + ' when you\'re both ready';
     if (showPoster) line = 'tap the poster to see the arena  ·  ' + line;
-    else line = 'shoot the dummies, kick the cans, try the machine  ·  ' + line;
+    else line = 'shoot the dummies, have a sit at the table  ·  ' + line;
     ctx.fillText(line, ARENA.w / 2, ARENA.h - ARENA.wall - 20);
     ctx.textAlign = 'left';
   }
