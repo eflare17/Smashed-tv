@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b194 — big white-water splash';
+const BUILD = 'b195 — splash toned down';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -996,7 +996,7 @@ const DIVE = { CLIMB: 1, BOARD: 2, FALL: 3, SWIM: 4 };
 
 function splash(w, x, y) {
   fx(w, FX.DIVE, x, y);
-  w.shake = Math.max(w.shake || 0, 10);
+  w.shake = Math.max(w.shake || 0, 8);
   w.floaters.push({ x, y: y - 50, text: 'SPLASH!', t: 0, col: '#8fd3ff' });
   if (SND.ctx) { sNoise(0.55, 1500, 0.7, 0.45, 'lowpass', 250); sTone(0.2, 170, 60, 0.2, 'sine'); }
 }
@@ -1394,20 +1394,20 @@ const FX_LOOK = [[4,'#f6d17a',180], [14,'#6fd3a0',260], [3,'#5a6274',120],
 // picture, so each screen runs its own (host from fx, clients from playEvents).
 const SPLASHES = [];
 function waterSplash(x, y, size) {
-  const drops = [], ring = Math.round(60 * size + 10);
+  const drops = [], ring = Math.round(38 * size + 8);
   for (let i = 0; i < ring; i++) {                                     // the crown: an ellipse of spray
-    const a = (i / ring) * Math.PI * 2 + Math.random() * 0.2, out = (50 + Math.random() * 90) * size;
-    drops.push({ x: Math.cos(a) * 10 * size, y: Math.sin(a) * 5 * size, z: 2, vx: Math.cos(a) * out, vy: Math.sin(a) * out * 0.5,
-                 vz: (160 + Math.random() * 180) * Math.sqrt(size), r: 2 + Math.random() * 3.5 * size });
+    const a = (i / ring) * Math.PI * 2 + Math.random() * 0.2, out = (40 + Math.random() * 60) * size;
+    drops.push({ x: Math.cos(a) * 8 * size, y: Math.sin(a) * 4 * size, z: 2, vx: Math.cos(a) * out, vy: Math.sin(a) * out * 0.5,
+                 vz: (120 + Math.random() * 120) * Math.sqrt(size), r: 1.5 + Math.random() * 2.5 * size });
   }
-  const plume = Math.round(50 * size);
+  const plume = Math.round(28 * size);
   for (let i = 0; i < plume; i++) {                                    // the column straight up
-    const a = Math.random() * Math.PI * 2, out = Math.random() * 30 * size;
+    const a = Math.random() * Math.PI * 2, out = Math.random() * 20 * size;
     drops.push({ x: 0, y: 0, z: 4, vx: Math.cos(a) * out, vy: Math.sin(a) * out * 0.5,
-                 vz: (180 + Math.random() * 300) * size, r: 3 + Math.random() * 4 * size });
+                 vz: (150 + Math.random() * 180) * size, r: 2 + Math.random() * 3 * size });
   }
   SPLASHES.push({ x, y, size, t: 0, drops });
-  for (let i = 0; i < 4; i++) RIPPLES.push({ x, y, t: -i * 0.15, life: 1.5, grow: 50 + 60 * size, w: 1.5 + 2 * size });
+  for (let i = 0; i < 3; i++) RIPPLES.push({ x, y, t: -i * 0.15, life: 1.4, grow: 40 + 45 * size, w: 1.2 + 1.5 * size });
 }
 function drawSplashes() {
   const now = performance.now() / 1000;
@@ -1419,7 +1419,7 @@ function drawSplashes() {
     // the foam: a white churn on the water that spreads and thins out
     const fk = Math.min(1, s.t / 1.4);
     if (fk < 1) {
-      const fr = (22 + 50 * Math.sqrt(fk)) * s.size + 6;
+      const fr = (16 + 36 * Math.sqrt(fk)) * s.size + 6;
       ctx.globalAlpha = 0.85 * (1 - fk);
       ctx.fillStyle = '#ffffff';
       ctx.beginPath(); ctx.ellipse(s.x, s.y, fr, fr * 0.45, 0, 0, Math.PI * 2); ctx.fill();
