@@ -494,7 +494,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b184 — only her bust jiggles';
+const BUILD = 'b185 — Gothica walks round the table';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -4211,6 +4211,66 @@ function toggleCarry(w) {
     const j = JIG.npc_goth; if (j) j.v += 30;                  // and she bounces as she lands in his arms
   }
 }
+// Gothica's way round the table. She walks in straight lines, so a spot on the
+// far side of the table used to walk her into it, where lobbySolids pushed her
+// back out, forever. Now: never pick a spot on the table, and route round it
+// (npcNextPoint).
+const NPC_PAD = 12;                                    // her radius, and a bit
+function npcObstacles() {
+  if (!T.loungeFloor) return [];
+  const b = tableBox();
+  return [{ x0: b.x0 - NPC_PAD, x1: b.x1 + NPC_PAD, y0: b.y0 - NPC_PAD, y1: b.y1 + NPC_PAD }];
+}
+function inBox(x, y, b) { return x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; }
+// does the segment a->b pass through the inside of box r? (Liang-Barsky)
+function segHitsBox(ax, ay, bx, by, r) {
+  let t0 = 0, t1 = 1; const dx = bx - ax, dy = by - ay;
+  for (const [p, q] of [[-dx, ax - r.x0], [dx, r.x1 - ax], [-dy, ay - r.y0], [dy, r.y1 - ay]]) {
+    if (p === 0) { if (q <= 0) return false; continue; }
+    const t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return t1 - t0 > 1e-6;
+}
+function npcPickSpot(n) {
+  const obs = npcObstacles();
+  for (let i = 0; i < 30; i++) {
+    const x = NPC_AREA.x0 + Math.random() * (NPC_AREA.x1 - NPC_AREA.x0);
+    const y = NPC_AREA.y0 + Math.random() * (NPC_AREA.y1 - NPC_AREA.y0);
+    if (!obs.some(b => inBox(x, y, b))) { n.tx = x; n.ty = y; return; }
+  }
+  n.tx = n.x; n.ty = n.y;                            // nowhere free: stay put this time
+}
+// Where to head next: the first step of the genuinely shortest walkable path.
+// Nodes are her, the spot, and the corners of every obstacle (just outside its
+// margin); two nodes join if the straight line between them is clear. Picking
+// "the nearest corner" instead made her flip between two corners every frame,
+// because it ignored that the path onward from a corner can be blocked too.
+// A true shortest path doesn't change as she walks along it, so she can't dither.
+function npcNextPoint(n) {
+  const obs = npcObstacles();
+  const clear = (ax, ay, bx, by) => !obs.some(b => segHitsBox(ax, ay, bx, by, b));
+  if (clear(n.x, n.y, n.tx, n.ty)) return [n.tx, n.ty];
+  const e = 2, pts = [[n.x, n.y], [n.tx, n.ty]];
+  for (const b of obs) for (const [cx, cy] of [[b.x0 - e, b.y0 - e], [b.x1 + e, b.y0 - e], [b.x0 - e, b.y1 + e], [b.x1 + e, b.y1 + e]])
+    if (!obs.some(o => inBox(cx, cy, o))) pts.push([cx, cy]);
+  // Dijkstra from the spot back towards her, so we can read off her next hop
+  const N = pts.length, dist = new Array(N).fill(Infinity), nxt = new Array(N).fill(-1), done = new Array(N).fill(false);
+  dist[1] = 0;
+  for (;;) {
+    let u = -1; for (let i = 0; i < N; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0) break; done[u] = true;
+    for (let v = 0; v < N; v++) {
+      if (done[v] || v === u) continue;
+      if (!clear(pts[u][0], pts[u][1], pts[v][0], pts[v][1])) continue;
+      const nd = dist[u] + Math.hypot(pts[u][0] - pts[v][0], pts[u][1] - pts[v][1]);
+      if (nd < dist[v]) { dist[v] = nd; nxt[v] = u; }
+    }
+  }
+  const hop = nxt[0];
+  return hop < 0 ? [n.tx, n.ty] : pts[hop];          // no way round: fall back and let the backstop sort it
+}
 function lobbyGoth(w) {
   if (!T.npcGoth || w.started || cal.on) { if (NPC_GOTH.carrier >= 0) putGothDown(w); return null; }
   const n = NPC_GOTH, now = performance.now() / 1000;
@@ -4227,18 +4287,22 @@ function lobbyGoth(w) {
   if (n.thrown) { stepThrownGoth(w, n, dt); return n; }
   if (n.wait > 0) {
     n.wait -= dt; n.moving = false; n.vx = n.vy = 0;
-    if (n.wait <= 0) {
-      n.tx = NPC_AREA.x0 + Math.random() * (NPC_AREA.x1 - NPC_AREA.x0);
-      n.ty = NPC_AREA.y0 + Math.random() * (NPC_AREA.y1 - NPC_AREA.y0);
-    }
+    if (n.wait <= 0) { npcPickSpot(n); n.stuckT = 0; n.stuckX = undefined; }
     return n;
   }
-  const dx = n.tx - n.x, dy = n.ty - n.y, d = Math.hypot(dx, dy);
-  if (d < 3) {
+  if (Math.hypot(n.tx - n.x, n.ty - n.y) < 3) {
     n.wait = 1.5 + Math.random() * 2.5;
     n.fx = 0; n.fy = 1;                                // turn to face the room
     return n;
   }
+  // backstop: if she hasn't actually moved in a couple of seconds (a player
+  // standing in her way, say), give up on that spot and pick another. This is
+  // "hasn't moved", not "hasn't got closer": going round the table takes her
+  // further away for a while, and that must not count as stuck.
+  if (n.stuckX === undefined || Math.hypot(n.x - n.stuckX, n.y - n.stuckY) > 6) { n.stuckX = n.x; n.stuckY = n.y; n.stuckT = 0; }
+  else if ((n.stuckT = (n.stuckT || 0) + dt) > 2) { npcPickSpot(n); n.stuckT = 0; n.stuckX = undefined; return n; }
+  const [px, py] = npcNextPoint(n);
+  const dx = px - n.x, dy = py - n.y, d = Math.hypot(dx, dy) || 1;
   const step = Math.min(d, T.npcSpeed * dt);
   n.ix = dx / d; n.iy = dy / d; n.fx = n.ix; n.fy = n.iy;
   n.vx = n.ix * T.npcSpeed; n.vy = n.iy * T.npcSpeed;
