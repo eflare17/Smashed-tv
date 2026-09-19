@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b206 — sit, then bong or cards';
+const BUILD = 'b207 — sit-down menu';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1239,6 +1239,33 @@ function cardsButton() {
   const w = net.role === 'client' ? net.view : world; if (!w || w.started || w.over || cal.on || w.bj) return null;
   const me = bjMe(w); if (!me || !me.alive || !me.sit) return null;
   return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'CARDS' };
+}
+// Just sat down, nothing picked yet: a menu up top asking what it'll be.
+// The host gets the bong or Gothica; the guest (no bong over there) just Gothica.
+function sitMenu() {
+  const w = net.role === 'client' ? net.view : world; if (!w || w.started || w.over || cal.on || w.bj) return null;
+  const me = bjMe(w); if (!me || !me.alive || !me.sit || me.bong) return null;
+  const host = net.role !== 'client', pw = host ? 360 : 240, ph = 84, px = Math.round(ARENA.w / 2 - pw / 2), py = ARENA.wall + 34;
+  const btns = host ? [{ a: 'bong', label: 'BONG (E)', x: px + 16, y: py + 40, w: 150, h: 30, col: '#3a2150' },
+                       { a: 'call', label: 'CALL GOTHICA (B)', x: px + pw - 186, y: py + 40, w: 170, h: 30, col: '#1f5a36' }]
+                    : [{ a: 'call', label: 'CALL GOTHICA (B)', x: px + 35, y: py + 40, w: 170, h: 30, col: '#1f5a36' }];
+  return { px, py, pw, ph, btns };
+}
+function drawSitMenu() {
+  const M = sitMenu(); if (!M) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(20,12,28,0.9)'; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(M.px, M.py, M.pw, M.ph, 10); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText("Take a seat. What'll it be?", M.px + M.pw / 2, M.py + 20);
+  for (const b of M.btns) {
+    ctx.fillStyle = b.col; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+  }
+  ctx.restore();
 }
 function drawCardsButton() {
   const b = cardsButton(); if (!b) return;
@@ -4302,6 +4329,8 @@ canvas.addEventListener('pointerdown', e => {
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
+  { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
+    if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
   if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
@@ -7452,6 +7481,7 @@ function renderBase(w, hudRight) {
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
   drawCardsButton();
+  drawSitMenu();
   drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
