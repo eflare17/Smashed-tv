@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b200 — lips on the bong';
+const BUILD = 'b201 — bong tipped towards him';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1002,6 +1002,11 @@ function vapeFrame(p, geo) {
   if (!v.held) { finishVape(p, v, t0, t, dt, mouth, dir); return; }
   const cx = rest.x + (held.x - rest.x) * up, cy = rest.y + (held.y - rest.y) * up - Math.sin(up * Math.PI) * 6;
   const at = (ox, oy) => ({ x: cx + dir * ox, y: cy + oy });
+  // tipped towards him round the mouthpiece, so his lips stay on it and the base swings out
+  const ang = -dir * VAPE_GEO.tilt * up, pv = at(BONG_GEO.lip[0], BONG_GEO.lip[1]);
+  const tilted = () => { ctx.translate(pv.x, pv.y); ctx.rotate(ang); ctx.translate(-pv.x, -pv.y); };
+  const rot = q => { const dx = q.x - pv.x, dy = q.y - pv.y, c = Math.cos(ang), s = Math.sin(ang); return { x: pv.x + dx * c - dy * s, y: pv.y + dx * s + dy * c }; };
+  ctx.save(); tilted();
   drawGymImg(VAPE_ART.bong, cx, cy, dir < 0);
   // the tube going milky while he pulls, then clearing
   const fill = t < S.pull ? 0 : t < S.down ? ease((t - S.pull) / 0.9) : Math.max(0, 1 - (t - S.down) / 0.5);
@@ -1009,16 +1014,18 @@ function vapeFrame(p, geo) {
     const [tx0, tx1, ty0, ty1] = BONG_GEO.tube, xa = Math.min(at(tx0, 0).x, at(tx1, 0).x), ya = cy + ty1 - (ty1 - ty0) * fill;
     ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = '#eef0f4'; ctx.fillRect(Math.round(xa), Math.round(ya), Math.round(Math.abs(tx1 - tx0)), Math.round(cy + ty1 - ya)); ctx.restore();
   }
-  const tip = drawBongVape(cx, cy, dir);
+  const tip0 = drawBongVape(cx, cy, dir);
   // its tip heating up: steel, pink, red, bright red; cooling off after the pull
   const heat = t < S.torch ? 0 : t < S.pull ? Math.min(1, (t - S.torch - 0.3) / 1.4) : Math.max(0, 1 - (t - S.pull) / 1.2);
   if (heat > 0) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, heat * 1.5); ctx.fillStyle = heat < 0.4 ? '#e89090' : heat < 0.8 ? '#e0402a' : '#ff5a2a';
-    ctx.beginPath(); ctx.arc(tip.x, tip.y, 1.9, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff7a2a'; ctx.beginPath(); ctx.arc(tip.x, tip.y, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(tip0.x, tip0.y, 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff7a2a'; ctx.beginPath(); ctx.arc(tip0.x, tip0.y, 4.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+  ctx.restore();
+  const tip = rot(tip0);                                               // where the tip really is, tipped
   // the blowtorch, up from his other hand, flame on the tip
   if (t > S.torch && t < S.pull) {
     const rise = ease((t - S.torch) / 0.25) * ease((S.pull - t) / 0.25);
@@ -1047,7 +1054,7 @@ function vapeFrame(p, geo) {
     if (SND.ctx && Math.floor(t0 * 9) !== Math.floor(t * 9)) sTone(0.05, 180 + Math.random() * 120, 120, 0.06, 'sine');
   }
   if (v.bub) {
-    ctx.save(); ctx.fillStyle = '#ffffff';
+    ctx.save(); tilted(); ctx.fillStyle = '#ffffff';
     for (let i = v.bub.length - 1; i >= 0; i--) {
       const b = v.bub[i]; b.t += dt; b.y -= dt * 22;
       if (b.t > 0.3) { v.bub.splice(i, 1); continue; }
@@ -1068,7 +1075,7 @@ function finishVape(p, v, t0, t, dt, mouth, dir) {
   if (t >= S.end) p.vape = null;
 }
 // his face on the seated pose (fractions of his sprite), and where the gun's barrel is cropped while he's at it
-const VAPE_GEO = { mouthX: -0.01, mouthY: 0.262, cut: 0.56 };   // mouth: just under the moustache
+const VAPE_GEO = { mouthX: -0.01, mouthY: 0.262, cut: 0.56, tilt: 0.45 };   // mouth: just under the moustache
 VAPE_ART.torch2 = gymImg('iVBORw0KGgoAAAANSUhEUgAAAA8AAAAeCAYAAADzXER0AAAD/klEQVR4AZSUe0yVZRzHP897zuEiRwWSASptkUhQpGnWyBgpckkKVlrMsLWVErT+aKvW2Jppq/AP12qr/mk1KiNm2QWMAE1oCSsCuQpBklwEAbnzwjnc3qfnPYRb2zksn/P8dt73t9/n+3t+v9+zV+MmV0rCTvlEWqI0sf8FP7V/r3z9lSxZ8v2X8sTxIwRvCCNp94PSLZya9JB84dkMmX3oGVmQ/6FMTkok48l9OPRxSssqkAuzrPKzcwN+OnCdvOeuGPli9iF5PO8Yh587iJe3jebmZkrLz1NQcJpz5y/Q2NTKyNAQ/T3dS/D7oWEyKySYbf6BzM85qa4sp6SsEm+rhYv1LUxN6TS1tnP5726+OFUkCn84K2oa24Qr84Cuc21ihksdl6m72EhVTYvK0Ma1/j7GJyY5U1Yhfiz/RZytrBZmo5bNBedNjYm3RweZ9LezLz0Fm5cPV3qucvLrM+L3uqb/AMug+e+CzYdGx4yIuXMTfr6+RG6OJCQ42HSvaDfgh9X8vL28uPBbHUMDfWyNiWJ/+l7XPD0puODYe7fKTbeHk5qSzBtHj5B7LI+DmQeIiY5mV1ysRwEXvPP+Lfj6+DI8OkznX+20NdXS0dHBxg2hhN0W4inx0qiKrxfTI7uYtjgZdY4yOHOd3vl+yrt/omKgbGVYrpmlliq+mf+cQp+POcl7nHLm02Krx7bKgqelBcZYZNL6x8kIz+KxqExSwzN4JPwAmRHPkxXxGpH2Laz2t0t3ApoQAm+bDxFrokkMSiPWfxvxt8QRvy6ZYK9QBJKpcd3trDWkxGLR0DQLXXq9qvNdijrfpHe6cclv1dwldfk0aaC0Dfod7VQOfMqcMavMQXnfR4wt9Kkgt0mVHzQpJNMLE9To3zInZ0C9m3JOQ6d6vBBDzONpaZom0OfHcRjTGKoEVSRCCCxCwyGnWFwJNgzJ4oKBYSyq8qUyM69AKahn1WS18bBUw1SwEnDVrjKrjTB/AtSxEEJ4QFE3TKC6anUFmaAZuRyvzoFUwqbPnbnmIIRAnVp13QxRiDqqCZnlWCxW0+nWNKHcXsKXVVa7avS/IqoGaQjW2oKUz6Ii3G9NIrBbA0gOyGF30GESwnLYc+tLpG3MJSkwB7lgynuADXVJ2ieamFrUCfffTuTqeKICEgjyC6fX2aVuWpd7Unk1K95cmmjgk44TvNX8Ku+0v8zRlmxyG3LI7/qAUTmgwtxvLXLtHdidgUgbjM2O0DvTxVXHFXRjkgWHZLNvNDu23y3d4drY2AQ7ZBx7eJQHFncRo8cSNXwfcTNJpHtn4D+5nj88fEG1tj87xWdfnRa1lS30VA0yUqkz8PM4DUWtnCv5le+KSz127B8AAAD//3QGeZ0AAAAGSURBVAMAV6upoeuBeioAAAAASUVORK5CYII=');function drawSmoke() {
   const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (drawSmoke.last || now))); drawSmoke.last = now;
   if (!VAPOUR.length) return;
