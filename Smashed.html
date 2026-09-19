@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b198 — tap to aim the potato';
+const BUILD = 'b199 — bong hit at the table';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -949,10 +949,139 @@ function drawTable(w) {
   ctx.beginPath(); ctx.ellipse(x - 4, y - 8, 16, 5, 0, 0, Math.PI * 2); ctx.fill(); // sheen
   ctx.fillStyle = '#3e2712';                                                        // grain
   ctx.fillRect(x - 20, y - 6, 40, 1); ctx.fillRect(x - 14, y - 10, 28, 1); ctx.fillRect(x - 16, y - 2, 32, 1);
+  if (!bongHeld()) { drawGymImg(VAPE_ART.bong, x - 9, y - 19, false); drawBongVape(x - 9, y - 19, 1); }   // the bong (unless he's got it)
   // a mug on it
   ctx.fillStyle = '#e8e2d2'; ctx.fillRect(x + 8, y - 15, 7, 8);
   ctx.fillStyle = '#c9c1ad'; ctx.fillRect(x + 15, y - 13, 2, 4);
   ctx.fillStyle = '#4a2e15'; ctx.fillRect(x + 9, y - 14, 5, 2);
+  ctx.restore();
+}
+// b199: a bong on the table, and a vaporizer (heated with a torch) to have a go on while sitting
+const VAPE_ART = {
+  bong: gymImg('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'),
+  vape: gymImg('iVBORw0KGgoAAAANSUhEUgAAABwAAAAoCAYAAADt5povAAAFK0lEQVR4AbSWS2xUVRjH/9+9d6YdqYVCB/sQSmemVd5YqFBSjAZWQtwZFwaJxseCmBgFjRsMCxVYGOPCxJU749YNC4lBiVJENJakpQ/SobTT0s70lpbO4859HP/nEkMwxAX0ntxv7r3ntt/vfM9zDEQ0Tnx4XH3w7lH19Rdn1MfH3lefnzypNCoS4CcfHVeJx+Kof3wFbi8sYmV9PdaubcSpz86oSIA1tTVoXLMaC4tFJJNrsLRURHNTEuVSBZEAx4YGMD4xgS2bUtizuwuHD7+C0dERnDt3Lhpgqezg8h9/oq/vMuzCNF1bh+zYGKpVLxqgHwCep6DvC3cqtDYXPidqaqIBGn4ZlvgwGLC6RBxPtjbDMgVVrxoNEGYNfCWoFRciAisWg2GSDokGWKq4gFLQEYvFTKhAW2tiqViOBrhUdGAZilaaEFq7ZM/A973ogAZhhmnC0EGEQl3DWi7AoEMRjYVabUDVJp2KahEQg9aCQziL5R8B4ydCvRpkxBHQnfqV09EAy44HzwWWyj7y9h1cz06i4rjQCWRwHct+JeIWEjEPiVoLTckGpNvXIc4519N5C2D7lmdVR3qbam7qUMnGlFq9uk01rFqn+OmhLsVEcQILlmUhdC3fTa/EUgGM3p796sirh3DsvTdwYP8+7O3Zie1bN2LTxg507+pVu7r2qh3bdofS2bFDZdJbVXvbJtXa0qE2rN/8wEXpWGntSgVwirfh0zKYMS5eYJQrVfxw9lcMDQ0jYA/s7Egjk25HW1sbWppb8URTM9LpDDozKaTaNyCVSiGTSaOzI4NDLz6P7p3PqZ7ufZRe1d3Vo3bt2KMqPlBXn2TB01YuSYMDiYfWGpbhY33LSviug4GBAZz/+QL6+/txndvJzYmbmJ6awo0bWYyPZ7Fgz2JuLo9CIY/5eRtTuUl0bWvHO6+/hKNvv4w3XzuIt44cxPYtGaxIWNAEo2YFYjUJmKZx992MJZCoa2Qm5UIltm1TcR5zhRnYVP4vYHomj+nZAgr5PGy7wG8F5KZu4eyPv+Pk6W9x4tNvcOrL73D6q+9x/sIVemyMPGFmWiwLH752H2NpDI2M4Wr/33Ach1sKfc6ULlVNOJ4J3zfh8s5PqLoGU1uhXBEKn90YsjdtTOSGJDs+KGM3BiVLGcsOSEtyJRpW1TJEdClB2qUiEi7AsO2sXLrSJ/2DOULilFioZDI3LJNTwzI1PSy3Zkfl1sxdmc2PSCizQ7yPCh4wRASmZcIwJIQEYfPmM+Re4RcKo1LIXwsFjzjsxSrm5iuYnpnHX/1D+O3iFVwdGIdT9e4BH5Fx3787rofZ/DyujU7iQt8gRq5Pobg4z5C50QBdz4fH/qm3pDkmYT4/h2KV2xXPHMZ9S1umFws+2NWYdD41KtTX10E3A52pkQBdNpAqWTzGsCQCVCoORP6TNFzKsl0BzzNCbYHuMry7jCkLhE+IJoYeY6ggEMOkKwMUS2Ww5lnLPNuE2GX+0bESIVAAESOMpbbQjyppAnaXWCxOUAARQf1jFuI8p5KPSJJGIKErRXcagO0xgOMb2qsRAYUUDaWlnu+j6DBlOaWnI7HQZ3qKCEQotEsR7DN+pXJOIgHOsNnH43G6VSHO/TaminSrRxsRjUtDzQJ4PFqUXIEXMH4qnP1f4N2/eMjfmBWDomv1eaZUBZTubdQViUuplyXBRKGVoLi0NCBcz0cGPLB3IzY/lUJrcxIv9D6DrU+v07zoXPpT3whmCos8+9g4/8slXLw8EgL/AQAA//8x0qUMAAAABklEQVQDABu+inUfuZ2YAAAAAElFTkSuQmCC'),
+  torch: gymImg('iVBORw0KGgoAAAANSUhEUgAAABcAAAAoCAYAAAAVBmHYAAAHqklEQVR4AayXa2wcVxXH/zP73rVn7d2117Fje22HJshpEjuERHFC07oQVDUqQVWhtNBKpgRURCNaHlJQQcAnPvKokEAoH3hIlUmF1JcoUBHSxHartvEju37G3l3v+/2e3dm5nDsxCWRrx6IdzZ3ZuXPP75x7zj3nzor4iI9jRw+xJ0+fYMMeF/vQ8AP7BhkHPnTqs+xrY19mjz3yIPrcTajq3fi/4EaDkT1w8l52ZuwxdvrB+/CNpx7HD889g588fxaPnPoUrvvjmF2aE7YNH9yzm4Cj7Aff+xZ7+OHP43Mnh/HUE6dxZuwLGDkyhEw6jZdf+wf+8uqbaLVbwY8t4Xv3HWQHhg6xnz7/HHv27Ffx/W+PwWZ34+jhIYTSenxp7Bz+OP5XjL/0OibevopAMIK55Tg8fV3o3NG/uc8PDB9hOzo9GDm8H1959AHce88RJNI5yOUcpmeuwS5Z8fSZR7GweB3h9VUsLPkx612Fd3EdcyEFT54caPS5zWxlw584xlqdbqRSScilFP5w/gVceOllLC6taVOe9fkxM+PFL351HtFYAv5YDemsDLNRgCpnMetbwa8vXLkFf3xnN3vl+HF21uNBLpdHNptFXVFIOIXOnj0kXEJgPY73Z1fQ3SHBtxzGfaMnkC0oCIfWsbw0j9//aVx4/W//FC5PTAmpXOFGQPfbJLbbZENGrqJd1KOYz0Ct19Hb149YluHi1Ap8C6t4b3peU/iZ0aOwmg14930vFuav4dJbl4XZuTkBtx1aQA0C9TMgmiuiojLUlBqq1SpisRiUuoj5pVWyOgqL2YhjhwcxvH83TJYm9Pb2oL3NeRvy1qMGf6eQFXz5AoplBd5EBlZrE2q1qmalIIrIFBgpYahUZPxrYhrf/dELZLEPUxMTZP00WXYL+N+/NDjvuJRL4dV4FBerZRhMFnR17USVK6grMJnNqCh6lBUDwWdRmPFhqFwFS6a46KbtJnxNLglXSmkhQXaodRWMATabDSK5rEaxMBqNqNfrKBbyOCQacO7TI/jxoaFNwfzFTTh/4C2XTQjJeAThcAjlcgUGgxEOlxOkk4KsQlXrkAQdImthLKxGuMimrQHOR0otdoCpiEXCSCTiyKQzMJNrioUCbKTGatBrrlooFfnwTdsHwq22ZrS5O9DX368JxikWfPWQRohgeFsp4ZfTM7iQDPMJaWM+6NIAl+wOZrbYEFpfR4qKkZF8zQUV8jdfogZnOyahw3hwbUswl2mAcx8bDQb09PbCbDJDoSzlA0Hu4IHOZTMIBZfvCAYdDXBbkx01SqCg309lIAeVlg23XqHE0pNSvUFHYts7G+BGWuOgxOkmyx0Oh0YhPsWXQa/X0+oxaH3buTTA7fYW8LX9H8vlSoUy1qYllCCI2JY/NjSLG3ft5nR1sCz5VJZldO3shtliprVdh06vI8tVMFqefBba4G1c/gcu2R1wtbWjubkZiXgMlXIZArmIu6NWq2nBlWhmnV0eyt8702/C+4xWZm9xQK/Tga9pge4FShquiLvGQkk0MNCHvXfvhVhT8Gxv/x0VaPCDTS3s/mYXTKvXEY9GYLU1wdHqgIc2jtbWVrS1t6O9owM1hdGM4jjR7sAXR4bxs+H9WyoQ+eROdXVgyNmCnVILRjMZdC5cQ2nRC2VtGaZIAPrgCqzBZdyf9OM5fRnfueeTKEnNOEgGYItDg/vSBfS7JDzkbsFxpwOj1mY80yTh6Y52/Ly/C+f7OvHbXT34+sc8GOnpRM83n4BEWTxL294WbGjwMO0+L0bT8EaTSNarcEsmDLjt8LjsyFksqJC/eZMNRnhjWbz3u3FMRdJIU7W8I7yN4PpaHcHBu/AupfxrgTgurkbhnQ9gPpnHG61OTC6FcPnqMsILfhTTWaiUxaZYciv2Dct5ZoilCvSJNMRQDAJlCulDSVGhi2fQPLcE3UaNUemlK56CLpKAnorZVnTNLYwyg1EprUk21Pq7oRKZ+FRhGfT0w1gsUQIJqDOgSu+4Ec2pDKq8Ywu6BhcEAUwkCq1tQzBKlgtaM+pEpEnxpMEECHRSM9O4PG1/BQBFyly6bXpqcJkEBIIYVoIQK1VtsELPVWpXzRb0UUXUOumSdrtQaZUgmk2wkhx1bXqK/E2BNmTNFbQRl8ha3sdfkKFoU1W4qAlkOhOAyi4PZLsEA8UoQXusXWolZ3GJxibu6OxlyZ09WFNrQL4IdWMMr+Mqie0mhRQOfgI2Kyy+ZaTcTvhVBW81S9i15+4NicabKOr0WqAyez6Oq047ArTO16sV5Oh7ZclkRIGw3OKwXMF0NIpXkgmMT83g7z0e8C2Pz7gRe6NHrJM/U/Q1G48nULVKUAf3ITs8jIs73Ji0GPGizYzfkH//7HLhysBdSHf1wd7WjTLNKEZ1qE5G3EA1XsVI2C/UyFKV/CqTdel0CjIFtW60QG+TUDY3oUAfqTlZQSQaQ6FQhEJVsaY1GWvXFxqpGz08blTpgkIqHkImFUc+l4VMmwWjjYHXcEYrhn/xFvI5bW/l5Xd93Y9QYIXAXiGbSVKYN2i33TQ478vnU0Is6hcCaz5hZXEGQf8youEAoqEAwqE1pFJR+gexgncm3xSuXHpDCIdWN4VyHm//BgAA//9/yKnoAAAABklEQVQDAB4HjGGuaNvOAAAAAElFTkSuQmCC'),
+};
+// The session, on his seated pose: he lifts the bong off the table to his
+// lips with the vape sat in its stem, blowtorches the vape's tip till it glows
+// red (and clicks), pulls through the bubbling water as the tube goes milky,
+// sets the bong back down and blows the cloud out. Times in seconds; lobby
+// only, on the host's screen.
+const VAPE_T = { lift: 0.5, torch: 0.55, click: 2.35, pull: 2.6, down: 3.9, blow: 4.2, end: 7 };
+const VAPOUR = [];
+// the bong's own points, from its centre in world px (facing right): mouthpiece top, the bowl the
+// vape sits in and the stem's direction, the tube, and the water
+const BONG_GEO = { lip: [-1.9, -13], bowl: [5, 0], stem: [0.55, -0.83], tube: [-4.4, 0, -12, 3], water: [0, 8, 5] };
+const TORCH_NOZ = [3.2, -6];                                          // the torch's nozzle off its centre
+// the vape sat in the bong's bowl, pointing up the stem; gives back where its tip is
+function drawBongVape(cx, cy, dir) {
+  const sd = { x: BONG_GEO.stem[0] * dir, y: BONG_GEO.stem[1] }, bowl = { x: cx + dir * BONG_GEO.bowl[0], y: cy + BONG_GEO.bowl[1] };
+  const vl = 12, vc = { x: bowl.x + sd.x * (vl / 2 - 2), y: bowl.y + sd.y * (vl / 2 - 2) };
+  const vi = VAPE_ART.vape;
+  if (vi.complete && vi.naturalWidth) {
+    const k = vl / (vi.naturalHeight / 2);
+    ctx.save(); ctx.translate(Math.round(vc.x), Math.round(vc.y)); ctx.rotate(Math.atan2(sd.x, -sd.y)); if (dir < 0) ctx.scale(-1, 1);
+    ctx.imageSmoothingEnabled = false; ctx.drawImage(vi, -vi.naturalWidth / 4 * k, -vi.naturalHeight / 4 * k, vi.naturalWidth / 2 * k, vi.naturalHeight / 2 * k);
+    ctx.restore();
+  }
+  return { x: bowl.x + sd.x * (vl - 3), y: bowl.y + sd.y * (vl - 3) };
+}
+function bongHeld() { return world.players.some(p => p.vape && p.vape.held); }
+function bongRest() { return { x: T.tableX - 9, y: T.tableY - 19 }; }
+function vapeFrame(p, geo) {
+  const v = p.vape; if (!v) return;
+  const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (v.last || now))); v.last = now;
+  const t0 = v.t; v.t += dt; const t = v.t, S = VAPE_T;
+  const dir = p.sit === 2 ? -1 : 1, { top, dw, h } = geo;
+  const ease = f => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
+  const mouth = { x: p.x + dir * dw * VAPE_GEO.mouthX, y: top + h * VAPE_GEO.mouthY };
+  // the bong: off the table, to his lips, back down
+  const rest = bongRest(), held = { x: mouth.x + dir * 2 - dir * BONG_GEO.lip[0], y: mouth.y - BONG_GEO.lip[1] };
+  const up = t < S.down ? ease(t / S.lift) : 1 - ease((t - S.down) / 0.45);
+  v.held = up > 0;
+  if (!v.held) { finishVape(p, v, t0, t, dt, mouth, dir); return; }
+  const cx = rest.x + (held.x - rest.x) * up, cy = rest.y + (held.y - rest.y) * up - Math.sin(up * Math.PI) * 6;
+  const at = (ox, oy) => ({ x: cx + dir * ox, y: cy + oy });
+  drawGymImg(VAPE_ART.bong, cx, cy, dir < 0);
+  // the tube going milky while he pulls, then clearing
+  const fill = t < S.pull ? 0 : t < S.down ? ease((t - S.pull) / 0.9) : Math.max(0, 1 - (t - S.down) / 0.5);
+  if (fill > 0) {
+    const [tx0, tx1, ty0, ty1] = BONG_GEO.tube, xa = Math.min(at(tx0, 0).x, at(tx1, 0).x), ya = cy + ty1 - (ty1 - ty0) * fill;
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = '#eef0f4'; ctx.fillRect(Math.round(xa), Math.round(ya), Math.round(Math.abs(tx1 - tx0)), Math.round(cy + ty1 - ya)); ctx.restore();
+  }
+  const tip = drawBongVape(cx, cy, dir);
+  // its tip heating up: steel, pink, red, bright red; cooling off after the pull
+  const heat = t < S.torch ? 0 : t < S.pull ? Math.min(1, (t - S.torch - 0.3) / 1.4) : Math.max(0, 1 - (t - S.pull) / 1.2);
+  if (heat > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, heat * 1.5); ctx.fillStyle = heat < 0.4 ? '#e89090' : heat < 0.8 ? '#e0402a' : '#ff5a2a';
+    ctx.beginPath(); ctx.arc(tip.x, tip.y, 1.9, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 0.3 * heat; ctx.fillStyle = '#ff7a2a'; ctx.beginPath(); ctx.arc(tip.x, tip.y, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // the blowtorch, up from his other hand, flame on the tip
+  if (t > S.torch && t < S.pull) {
+    const rise = ease((t - S.torch) / 0.25) * ease((S.pull - t) / 0.25);
+    const noz = { x: tip.x + dir * 7, y: tip.y + 5 + (1 - rise) * 8 };
+    const ti = VAPE_ART.torch2;
+    ctx.save(); ctx.globalAlpha = rise; ctx.translate(Math.round(noz.x - dir * TORCH_NOZ[0]), Math.round(noz.y - TORCH_NOZ[1])); ctx.scale(-dir, 1);   // nozzle aims back at him
+    if (ti.complete && ti.naturalWidth) { ctx.imageSmoothingEnabled = false; ctx.drawImage(ti, -ti.naturalWidth / 4, -ti.naturalHeight / 4, ti.naturalWidth / 2, ti.naturalHeight / 2); }
+    ctx.restore();
+    if (rise > 0.9) {
+      const fl = 0.9 + 0.12 * Math.sin(now * 55), ax = noz.x + (tip.x - noz.x) * fl, ay = noz.y + (tip.y - noz.y) * fl, len = Math.hypot(ax - noz.x, ay - noz.y) || 1;
+      ctx.save();
+      for (const [wid, col, al] of [[2, '#1e5bff', 0.8], [1.3, '#39c8ff', 0.9], [0.5, '#e8fbff', 1]]) {
+        const px = -(ay - noz.y) / len * wid, py = (ax - noz.x) / len * wid;
+        ctx.globalAlpha = al; ctx.fillStyle = col; ctx.beginPath();
+        ctx.moveTo(noz.x - px, noz.y - py); ctx.lineTo(ax, ay); ctx.lineTo(noz.x + px, noz.y + py); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+      if (SND.ctx && Math.floor(t0 * 6) !== Math.floor(t * 6)) sNoise(0.18, 2600, 0.6, 0.05, 'bandpass');
+    }
+  }
+  if (t0 < S.click && t >= S.click && SND.ctx) { sTone(0.02, 2400, 2200, 0.12, 'square'); setTimeout(() => sTone(0.02, 2600, 2400, 0.1, 'square'), 70); }
+  // pulling: bubbles up through the water, a wisp off the hot tip
+  if (t > S.pull && t < S.down) {
+    if (Math.random() < dt * 30) { const [wx, wy, wr] = BONG_GEO.water; v.bub = v.bub || []; v.bub.push({ x: (Math.random() - 0.5) * wr * 2 + wx, y: wy, t: 0 }); }
+    if (Math.random() < dt * 8) VAPOUR.push({ x: tip.x, y: tip.y - 1, vx: dir * 3, vy: -12, r: 1, grow: 4, t: 0, life: 0.9, a: 0.45 });
+    if (SND.ctx && Math.floor(t0 * 9) !== Math.floor(t * 9)) sTone(0.05, 180 + Math.random() * 120, 120, 0.06, 'sine');
+  }
+  if (v.bub) {
+    ctx.save(); ctx.fillStyle = '#ffffff';
+    for (let i = v.bub.length - 1; i >= 0; i--) {
+      const b = v.bub[i]; b.t += dt; b.y -= dt * 22;
+      if (b.t > 0.3) { v.bub.splice(i, 1); continue; }
+      ctx.globalAlpha = 0.85; ctx.fillRect(Math.round(cx + dir * b.x), Math.round(cy + b.y), 1, 1);
+    }
+    ctx.restore();
+  }
+  finishVape(p, v, t0, t, dt, mouth, dir);
+}
+function finishVape(p, v, t0, t, dt, mouth, dir) {
+  const S = VAPE_T;
+  if (t >= S.blow && t < S.blow + 1.3 && Math.random() < dt * 26) {  // and out it all comes
+    const s = 1 - (t - S.blow) / 1.3;
+    VAPOUR.push({ x: mouth.x + dir * 3, y: mouth.y, vx: dir * (30 + Math.random() * 30) * (0.4 + s), vy: -8 - Math.random() * 12,
+                 r: 1.5 + Math.random() * 1.5, grow: 8 + Math.random() * 7, t: 0, life: 2 + Math.random(), a: 0.65 });
+  }
+  if (t0 < S.blow + 1.5 && t >= S.blow + 1.5 && Math.random() < 0.35) world.floaters.push({ x: mouth.x, y: mouth.y - 18, text: '*cough*', t: 0, col: '#e8e2d2' });
+  if (t >= S.end) p.vape = null;
+}
+// his face on the seated pose (fractions of his sprite), and where the gun's barrel is cropped while he's at it
+const VAPE_GEO = { mouthX: -0.09, mouthY: 0.155, cut: 0.56 };
+VAPE_ART.torch2 = gymImg('iVBORw0KGgoAAAANSUhEUgAAAA8AAAAeCAYAAADzXER0AAAD/klEQVR4AZSUe0yVZRzHP897zuEiRwWSASptkUhQpGnWyBgpckkKVlrMsLWVErT+aKvW2Jppq/AP12qr/mk1KiNm2QWMAE1oCSsCuQpBklwEAbnzwjnc3qfnPYRb2zksn/P8dt73t9/n+3t+v9+zV+MmV0rCTvlEWqI0sf8FP7V/r3z9lSxZ8v2X8sTxIwRvCCNp94PSLZya9JB84dkMmX3oGVmQ/6FMTkok48l9OPRxSssqkAuzrPKzcwN+OnCdvOeuGPli9iF5PO8Yh587iJe3jebmZkrLz1NQcJpz5y/Q2NTKyNAQ/T3dS/D7oWEyKySYbf6BzM85qa4sp6SsEm+rhYv1LUxN6TS1tnP5726+OFUkCn84K2oa24Qr84Cuc21ihksdl6m72EhVTYvK0Ma1/j7GJyY5U1Yhfiz/RZytrBZmo5bNBedNjYm3RweZ9LezLz0Fm5cPV3qucvLrM+L3uqb/AMug+e+CzYdGx4yIuXMTfr6+RG6OJCQ42HSvaDfgh9X8vL28uPBbHUMDfWyNiWJ/+l7XPD0puODYe7fKTbeHk5qSzBtHj5B7LI+DmQeIiY5mV1ysRwEXvPP+Lfj6+DI8OkznX+20NdXS0dHBxg2hhN0W4inx0qiKrxfTI7uYtjgZdY4yOHOd3vl+yrt/omKgbGVYrpmlliq+mf+cQp+POcl7nHLm02Krx7bKgqelBcZYZNL6x8kIz+KxqExSwzN4JPwAmRHPkxXxGpH2Laz2t0t3ApoQAm+bDxFrokkMSiPWfxvxt8QRvy6ZYK9QBJKpcd3trDWkxGLR0DQLXXq9qvNdijrfpHe6cclv1dwldfk0aaC0Dfod7VQOfMqcMavMQXnfR4wt9Kkgt0mVHzQpJNMLE9To3zInZ0C9m3JOQ6d6vBBDzONpaZom0OfHcRjTGKoEVSRCCCxCwyGnWFwJNgzJ4oKBYSyq8qUyM69AKahn1WS18bBUw1SwEnDVrjKrjTB/AtSxEEJ4QFE3TKC6anUFmaAZuRyvzoFUwqbPnbnmIIRAnVp13QxRiDqqCZnlWCxW0+nWNKHcXsKXVVa7avS/IqoGaQjW2oKUz6Ii3G9NIrBbA0gOyGF30GESwnLYc+tLpG3MJSkwB7lgynuADXVJ2ieamFrUCfffTuTqeKICEgjyC6fX2aVuWpd7Unk1K95cmmjgk44TvNX8Ku+0v8zRlmxyG3LI7/qAUTmgwtxvLXLtHdidgUgbjM2O0DvTxVXHFXRjkgWHZLNvNDu23y3d4drY2AQ7ZBx7eJQHFncRo8cSNXwfcTNJpHtn4D+5nj88fEG1tj87xWdfnRa1lS30VA0yUqkz8PM4DUWtnCv5le+KSz127B8AAAD//3QGeZ0AAAAGSURBVAMAV6upoeuBeioAAAAASUVORK5CYII=');function drawSmoke() {
+  const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (drawSmoke.last || now))); drawSmoke.last = now;
+  if (!VAPOUR.length) return;
+  ctx.save();
+  for (let i = VAPOUR.length - 1; i >= 0; i--) {
+    const s = VAPOUR[i]; s.t += dt;
+    if (s.t >= s.life) { VAPOUR.splice(i, 1); continue; }
+    s.x += s.vx * dt; s.y += s.vy * dt; s.vx *= 1 - dt * 1.4; s.vy -= 4 * dt;
+    const k = s.t / s.life, r = s.r + s.grow * Math.sqrt(k);
+    ctx.globalAlpha = s.a * (1 - k) * (1 - k * 0.3);
+    ctx.fillStyle = '#e9e6ee'; ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha *= 0.6; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(s.x - r * 0.25, s.y - r * 0.3, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  }
   ctx.restore();
 }
 function towerBox() {
@@ -2395,7 +2524,7 @@ function stepBase(w, inputs, dt) {
     if (NPC_GOTH.anim && NPC_GOTH.carrier === p.id) inp = Object.assign({}, inp, { mx: 0, my: 0 });   // and stands still for the scoop
     // sitting: a nudge on the stick stands him up; otherwise he stays put
     if (p.sit && !w.started) {
-      if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) p.sit = 0;
+      if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) { p.sit = 0; p.vape = null; }
       else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const c = chairPos(p.sit); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; }
     } else if (p.sit) p.sit = 0;
     // on the bench: a nudge on the stick gets him up; otherwise he stays lying there
@@ -4784,7 +4913,7 @@ function carryButton() {
   const gn = gymNear(w, p);
   if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
   else if (gn) label = gn.label;
-  else if (p.sit) label = 'STAND';
+  else if (p.sit) label = p.vape ? null : 'VAPE';
   else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
   else if (chairNear(w, p)) label = 'SIT';
   else if (canCarry(w, p)) label = 'PICK UP';
@@ -4805,7 +4934,7 @@ function toggleCarry(w) {
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   if (gymAction(w, p)) return;
   if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
-  if (p && p.sit) { p.sit = 0; return; }
+  if (p && p.sit) { if (!p.vape) p.vape = { t: 0 }; return; }       // sitting: E has a vape (move to stand up)
   { const ch = chairNear(w, p); if (ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
@@ -5117,9 +5246,12 @@ function drawJared(w, p) {
       ctx.save();
       if (p.sit === 2) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }   // the right chair faces left
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(im, 0, 0, im.naturalWidth, Math.round(im.naturalHeight * keep),
-                    Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw), Math.round(h * keep));
+      // vaping: the gun's barrel cropped off the front of him (no empty-handed side art yet)
+      const cut = p.vape ? VAPE_GEO.cut : 1;
+      ctx.drawImage(im, 0, 0, Math.round(im.naturalWidth * cut), Math.round(im.naturalHeight * keep),
+                    Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw * cut), Math.round(h * keep));
       ctx.restore();
+      vapeFrame(p, { top: seatY - h * keep, dw, h });
       return;
     }
   }
@@ -6902,7 +7034,7 @@ function renderBase(w, hudRight) {
   }
   for (const d of deep) d.draw();                  // whatever nobody stood in front of
   if (!towerDrawn) drawTower();
-  if (!cal.on) drawDripDrops();                    // in front of whoever they're running off
+  if (!cal.on) { drawDripDrops(); drawSmoke(); }  // in front of whoever they're running off / blowing it
   for (const p of speech) drawSpeech(p, p.watch ? (p.x >= T.benchX ? 1 : -1) : 0);
 
   for (const p of (cal.on ? [] : w.players)) {
