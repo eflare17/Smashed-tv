@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b204 — torch faces the vape';
+const BUILD = 'b205 — blackjack at the table';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -956,6 +956,7 @@ function drawTable(w) {
   ctx.fillStyle = '#c9c1ad'; ctx.fillRect(x + 15, y - 13, 2, 4);
   ctx.fillStyle = '#4a2e15'; ctx.fillRect(x + 9, y - 14, 5, 2);
   ctx.restore();
+  drawTableCards(w);
 }
 // b199: a bong on the table, and a vaporizer (heated with a torch) to have a go on while sitting
 const VAPE_ART = {
@@ -1040,6 +1041,195 @@ function drawSitArt(p) {
 }
 function usesSitArt(p) { return !!(p && p.sit && p.ch === 'juicy' && SIT_ART.every(i => i.complete && i.naturalWidth)); }
 function sitArtIn(chair) { return world.players.some(p => p.sit === chair && usesSitArt(p)); }
+// ================================================================ BLACKJACK ===
+// Sat at the table you can play blackjack. Gothica deals (house rules: she
+// draws to 16 and stands on 17); whoever is sat down plays against her, 10
+// coins a hand, blackjack pays 3:2. The host runs it and it rides the
+// snapshot (w.bj), so a guest sat in the other chair plays the same hand.
+const BJ_BET = 10;
+const BJ_ST = ['play', 'stand', 'bust', 'bj', 'left'];
+function bjValue(cards) {
+  let v = 0, aces = 0;
+  for (const c of cards) { if (c < 0) continue; const r = c % 13; if (r === 0) { aces++; v += 11; } else v += Math.min(10, r + 1); }
+  while (v > 21 && aces) { v -= 10; aces--; }
+  return v;
+}
+function bjDraw(b) {
+  if (!b.deck.length) { b.deck = []; for (let i = 0; i < 104; i++) b.deck.push(i % 52); for (let i = b.deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b.deck[i], b.deck[j]] = [b.deck[j], b.deck[i]]; } }
+  return b.deck.pop();
+}
+function bjSay(b, text) { b.say = text; b.sayN = (b.sayN || 0) + 1; }
+function bjNextTurn(b, after) { for (const i of [1, 2]) if (i > after && b.seats[i] && b.seats[i].st === 'play') return i; return 0; }
+function bjAdvance(b) { b.turn = bjNextTurn(b, b.turn); if (!b.turn) { b.ph = 'dealer'; b.t = 0.7; } }
+function bjFloat(w, q, text, col) { w.floaters.push({ x: q.x, y: q.y - 70, text, t: 0, col: col || '#f6d17a' }); }
+function bjAction(w, p, a) {
+  if (w.started || !p || !p.alive || !p.sit) return;
+  let b = w.bj;
+  if (a === 'deal') {
+    if (b && (b.ph === 'play' || b.ph === 'dealer')) return;
+    if (NPC_GOTH.carrier >= 0 || NPC_GOTH.thrown) { bjFloat(w, p, "Gothica's busy!", '#f7a8ff'); return; }
+    b = w.bj = { ph: 'idle', deck: (b && b.deck) || [], d: [], seats: {}, turn: 0, t: 0, shown: false, say: '', sayN: (b && b.sayN) || 0 };
+    for (const q of w.players) {
+      if (!q.alive || !q.sit) continue;
+      if (q.coins < BJ_BET) { bjFloat(w, q, 'need ' + BJ_BET + ' coins', '#e0473f'); continue; }
+      q.coins -= BJ_BET; b.seats[q.sit] = { pid: q.id, c: [], st: 'play', bet: BJ_BET, res: '' };
+    }
+    const seats = Object.keys(b.seats);
+    if (!seats.length) { w.bj = null; return; }
+    for (let r = 0; r < 2; r++) { for (const k of seats) b.seats[k].c.push(bjDraw(b)); b.d.push(bjDraw(b)); }
+    for (const k of seats) if (bjValue(b.seats[k].c) === 21) b.seats[k].st = 'bj';
+    b.ph = 'play'; b.turn = bjNextTurn(b, 0);
+    bjSay(b, seats.length > 1 ? 'Cards, boys.' : 'Cards up, big guy.');
+    if (!b.turn) { b.ph = 'dealer'; b.t = 0.9; }
+    return;
+  }
+  if (!b || b.ph !== 'play' || b.turn !== p.sit) return;
+  const s = b.seats[p.sit]; if (!s || s.st !== 'play') return;
+  if (a === 'hit') {
+    s.c.push(bjDraw(b)); const v = bjValue(s.c);
+    if (v > 21) s.st = 'bust'; else if (v === 21) s.st = 'stand';
+  } else if (a === 'stand') s.st = 'stand';
+  if (s.st !== 'play') bjAdvance(b);
+}
+function stepBJ(w, dt) {
+  const b = w.bj; if (!b) return;
+  if (w.started) { w.bj = null; return; }
+  for (const k of Object.keys(b.seats)) {                 // stood up: out of the hand, bet lost
+    const s = b.seats[k], q = w.players.find(q => q.id === s.pid);
+    if (q && q.alive && q.sit === +k) continue;
+    if (b.ph === 'play' || b.ph === 'dealer') { if (s.st === 'play' || s.st === 'stand' || s.st === 'bj') { s.st = 'left'; s.res = 'LEFT'; if (b.turn === +k) bjAdvance(b); } }
+    else delete b.seats[k];
+  }
+  if (b.ph !== 'dealer' && !w.players.some(q => q.alive && q.sit)) { w.bj = null; return; }
+  if (b.ph !== 'dealer') return;
+  if ((b.t -= dt) > 0) return;
+  if (!b.shown) { b.shown = true; b.t = 0.8; return; }  // turn the hole card over
+  const standing = Object.values(b.seats).some(s => s.st === 'stand');
+  if (standing && bjValue(b.d) < 17) { b.d.push(bjDraw(b)); b.t = 0.8; return; }
+  // settle up
+  const dv = bjValue(b.d), dbj = dv === 21 && b.d.length === 2;
+  let won = 0, lost = 0, bjs = 0;
+  for (const s of Object.values(b.seats)) {
+    const q = w.players.find(q => q.id === s.pid), v = bjValue(s.c);
+    let pay = 0;
+    if (s.st === 'left') { s.res = 'LEFT'; lost++; }
+    else if (s.st === 'bust') { s.res = 'BUST'; lost++; }
+    else if (s.st === 'bj') { if (dbj) { pay = s.bet; s.res = 'PUSH'; } else { pay = Math.round(s.bet * 2.5); s.res = 'BLACKJACK'; bjs++; } }
+    else if (dbj) { s.res = 'LOSE'; lost++; }
+    else if (dv > 21 || v > dv) { pay = s.bet * 2; s.res = 'WIN'; won++; }
+    else if (v === dv) { pay = s.bet; s.res = 'PUSH'; }
+    else { s.res = 'LOSE'; lost++; }
+    if (q) { q.coins += pay; const net = pay - s.bet; bjFloat(w, q, s.res + (net > 0 ? ' +' + net : net < 0 ? ' ' + net : ''), net > 0 ? '#6fd3a0' : net < 0 ? '#e0473f' : '#f6d17a'); }
+  }
+  bjSay(b, bjs ? 'Blackjack?! Lucky.' : dv > 21 ? 'Ugh, I bust.' : dbj ? 'Blackjack. House wins~' : won && !lost ? 'Fine, you win.' : lost && !won ? 'House wins~' : 'Some you win...');
+  b.ph = 'done'; b.turn = 0;
+}
+// over the wire: no deck, and the hole card stays hidden until she turns it
+function bjPack(b) {
+  if (!b) return null;
+  return [['idle', 'play', 'dealer', 'done'].indexOf(b.ph), b.d.map((c, i) => (i === 1 && !b.shown) ? -1 : c), b.turn,
+          Object.entries(b.seats).map(([k, s]) => [+k, s.pid, s.c, BJ_ST.indexOf(s.st), s.res]), b.say, b.sayN || 0];
+}
+function bjUnpack(a) {
+  if (!a) return null;
+  const seats = {}; for (const [k, pid, c, st, res] of a[3]) seats[k] = { pid, c, st: BJ_ST[st] || 'play', res };
+  return { ph: ['idle', 'play', 'dealer', 'done'][a[0]] || 'idle', d: a[1], shown: !a[1].includes(-1), turn: a[2], seats, say: a[4], sayN: a[5] };
+}
+function bjView(b) { return b && b.deck ? bjUnpack(bjPack(b)) : b; }   // what the players get to see
+// cards: a small white card with its rank and suit, or the back
+const BJ_RANK = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'], BJ_SUIT = ['♠', '♥', '♦', '♣'];
+function drawCard(x, y, c, W, H) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.roundRect(x + 1, y + 2, W, H, W / 7); ctx.fill();
+  if (c < 0) {
+    ctx.fillStyle = '#5a2a6e'; ctx.beginPath(); ctx.roundRect(x, y, W, H, W / 7); ctx.fill();
+    ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = Math.max(1, W / 14); ctx.beginPath(); ctx.roundRect(x + W * 0.14, y + W * 0.14, W * 0.72, H - W * 0.28, W / 10); ctx.stroke();
+  } else {
+    const red = c >= 13 && c < 39;
+    ctx.fillStyle = '#fbf8f0'; ctx.beginPath(); ctx.roundRect(x, y, W, H, W / 7); ctx.fill();
+    ctx.strokeStyle = '#1c1a22'; ctx.lineWidth = 1; ctx.stroke();
+    if (W >= 14) {
+      ctx.fillStyle = red ? '#d8283a' : '#1c1a22'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + Math.round(W * 0.42) + 'px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillText(BJ_RANK[c % 13], x + W * 0.5, y + H * 0.3);
+      ctx.font = Math.round(W * 0.5) + 'px ui-sans-serif, system-ui, sans-serif';
+      ctx.fillText(BJ_SUIT[Math.floor(c / 13)], x + W * 0.5, y + H * 0.7);
+    } else { ctx.fillStyle = red ? '#d8283a' : '#1c1a22'; ctx.fillRect(Math.round(x + W / 2 - 1), Math.round(y + H / 2 - 1), 2, 2); }
+  }
+  ctx.restore();
+}
+// the hands laid out on the table top itself
+function drawTableCards(w) {
+  const b = bjView(w.bj); if (!b || w.started) return;
+  const x = T.tableX, y = T.tableY;
+  b.d.forEach((c, i) => drawCard(x - 8 + i * 4, y - 16, c, 6, 8));
+  for (const [k, s] of Object.entries(b.seats)) s.c.forEach((c, i) => drawCard(x + (+k === 1 ? -24 : 8) + i * 3, y - 6, c, 6, 8));
+}
+// the panel you play from while you're sat down
+function bjMe(w) { const id = net.role === 'client' ? 1 : 0; return w.players.find(p => p.id === id); }
+function bjPanel(w) {
+  const me = bjMe(w); if (!me || !me.sit || w.started || cal.on) return null;
+  const b = bjView(w.bj), rows = 1 + (b ? Object.keys(b.seats).length : 0);
+  const pw = 330, ph = 64 + Math.max(1, rows) * 46, px = Math.round(ARENA.w / 2 - pw / 2), py = ARENA.wall + 34;
+  const mine = b && b.seats[me.sit], myTurn = b && b.ph === 'play' && b.turn === me.sit && mine && mine.st === 'play';
+  const btns = [];
+  const by = py + ph - 30;
+  if (myTurn) { btns.push({ a: 'hit', label: 'HIT (H)', x: px + 20, y: by, w: 130, h: 24 }); btns.push({ a: 'stand', label: 'STAND (T)', x: px + pw - 150, y: by, w: 130, h: 24 }); }
+  else if (!b || b.ph === 'done' || b.ph === 'idle') btns.push({ a: 'deal', label: (b ? 'DEAL AGAIN' : 'DEAL') + ' (B) · ' + BJ_BET + ' coins', x: px + 40, y: by, w: pw - 80, h: 24 });
+  return { me, b, px, py, pw, ph, btns, myTurn, mine };
+}
+function drawBJPanel(w) {
+  const P = bjPanel(w); if (!P) return;
+  const { me, b, px, py, pw, ph, btns, myTurn, mine } = P;
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,40,26,0.9)'; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 10); ctx.fill(); ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#f7a8ff'; ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('BLACKJACK', px + 12, py + 14);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#f6d17a'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('coins ' + me.coins, px + pw - 12, py + 14);
+  const row = (label, cards, total, y, note, lit) => {
+    ctx.textAlign = 'left'; ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = lit ? '#ffffff' : '#bfc8d0'; ctx.fillText(label, px + 12, y + 9);
+    if (total !== null) { ctx.font = 'bold 15px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = total > 21 ? '#ff6a6a' : '#ffffff'; ctx.fillText(String(total), px + 12, y + 27); }
+    cards.forEach((c, i) => drawCard(px + 72 + i * 30, y, c, 26, 36));
+    if (note) { ctx.textAlign = 'right'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = /WIN|BLACKJACK/.test(note) ? '#6fd3a0' : /LOSE|BUST|LEFT/.test(note) ? '#ff6a6a' : '#f6d17a'; ctx.fillText(note, px + pw - 12, y + 18); }
+  };
+  if (!b) {
+    ctx.textAlign = 'center'; ctx.fillStyle = '#dfe6ea'; ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText('Gothica deals. Beat her to 21 without going over.', px + pw / 2, py + 44);
+    ctx.fillText('Dealer stands on 17 · blackjack pays 3:2', px + pw / 2, py + 62);
+  } else {
+    let y = py + 28;
+    row('GOTHICA', b.d, b.shown ? bjValue(b.d) : bjValue(b.d.filter(c => c >= 0)), y, b.ph === 'dealer' ? 'drawing...' : '', b.ph === 'dealer'); y += 46;
+    for (const k of [1, 2]) {
+      const s = b.seats[k]; if (!s) continue;
+      const q = w.players.find(q => q.id === s.pid), who = q && q === me ? 'YOU' : 'P' + (s.pid + 1);
+      const note = s.res || (s.st === 'bust' ? 'BUST' : s.st === 'bj' ? 'BLACKJACK!' : b.ph === 'play' && b.turn === +k ? (q === me ? 'your go' : 'their go') : s.st === 'stand' ? 'stands' : '');
+      row(who, s.c, bjValue(s.c), y, note, b.turn === +k); y += 46;
+    }
+    if (!mine && b.ph !== 'done') { ctx.textAlign = 'center'; ctx.fillStyle = '#bfc8d0'; ctx.font = '11px ui-sans-serif, system-ui, sans-serif'; ctx.fillText('sitting this hand out', px + pw / 2, y + 6); }
+  }
+  for (const bt of btns) {
+    ctx.fillStyle = myTurn && bt.a === 'hit' ? '#2f7d4a' : '#3a2150'; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(bt.x, bt.y, bt.w, bt.h, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(bt.label, bt.x + bt.w / 2, bt.y + bt.h / 2 + 1);
+  }
+  ctx.restore();
+  // a flick for every new card, on whichever screen this is
+  const n = b ? b.d.length + Object.values(b.seats).reduce((k, s) => k + s.c.length, 0) + (b.shown ? 1 : 0) : 0;
+  if (SND.ctx && n > (drawBJPanel.n || 0)) sTone(0.04, 1500, 700, 0.06, 'triangle');
+  drawBJPanel.n = n;
+}
+function bjButtonAt(pt) { const P = bjPanel(net.role === 'client' ? (net.view || world) : world); if (!P) return null; return P.btns.find(bt => pt.x >= bt.x && pt.x <= bt.x + bt.w && pt.y >= bt.y && pt.y <= bt.y + bt.h) || null; }
+// act from this screen: the host plays straight in, the guest sends it over
+const BJREQ = { id: 0, a: '' }, SITREQ = { id: 0 };
+function doBJ(a) { if (net.role === 'client') { BJREQ.id++; BJREQ.a = a; } else bjAction(world, world.players[0], a); }
+function localSitting() { const w = net.role === 'client' ? net.view : world; const me = w && bjMe(w); return !!(me && me.sit && !w.started); }
+function sitDown(p, ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; }
+
 // His legs while he's sat down (there's no sitting art): thighs along the seat,
 // knees bent, shins down to his boots on the floor, in his own colours picked
 // off his standing sprite (shorts, skin and boots bands). Drawn facing right.
@@ -2640,6 +2830,13 @@ function stepBase(w, inputs, dt) {
     // arms full: no shooting or rolling while carrying Gothica
     if (NPC_GOTH.carrier === p.id && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });
     if (NPC_GOTH.anim && NPC_GOTH.carrier === p.id) inp = Object.assign({}, inp, { mx: 0, my: 0 });   // and stands still for the scoop
+    // the guest's E (sit / stand) and blackjack buttons, each acted on once
+    if (p.id !== 0 && !w.started && inp.sq !== undefined) {
+      if (p.lastSq === undefined) p.lastSq = inp.sq;
+      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; if (p.sit) p.sit = 0; else { const ch = chairNear(w, p); if (ch) sitDown(p, ch); } }
+      if (p.lastBq === undefined) p.lastBq = inp.bq;
+      else if (inp.bq !== p.lastBq) { p.lastBq = inp.bq; bjAction(w, p, inp.ba); }
+    }
     // sitting: a nudge on the stick stands him up; otherwise he stays put
     if (p.sit && !w.started) {
       if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) { p.sit = 0; p.vape = null; }
@@ -3469,6 +3666,7 @@ function stepBase(w, inputs, dt) {
   stepPlants(w, dt);
   stepRain(w, dt);
   stepGym(w, dt);
+  stepBJ(w, dt);
   // spent potatoes in flight
   for (let i = w.husks.length - 1; i >= 0; i--) {
     const h = w.husks[i];
@@ -3761,7 +3959,8 @@ function snapshot(w) {
                            Math.round(p.rdx * 100), Math.round(p.rdy * 100),
                            p.shots & 255, p.rockets || 0, Math.round((p.buy || 0) * 100),
                            Math.round(p.tx || 0), Math.round(p.ty || 0), p.aimOn ? 1 : 0,
-                           p.dive || 0, Math.round(p.dz || 0)]),
+                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0]),
+    bj: bjPack(w.bj),
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
     bx: (w.blasts || []).map(b => [Math.round(b.x), Math.round(b.y), Math.round(b.t * 100), b.id]),
@@ -3843,8 +4042,9 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[46] || 0
+      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0
     })),
+    bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
                                       H: a[5], h0: a[6], id: a[7] })),
     blasts: (s.bx || []).map(a => ({ x: a[0], y: a[1], t: a[2] / 100, id: a[3] })),
@@ -4005,7 +4205,9 @@ addEventListener('keydown', e => {
     return;
   }
   if (k === 'enter' && !world.started && !e.repeat) { startGame(); return; }
+  if (!e.repeat && (k === 'b' || k === 'h' || k === 't') && localSitting()) { doBJ(k === 'b' ? 'deal' : k === 'h' ? 'hit' : 'stand'); return; }
   if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { toggleCarry(world); return; }
+  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { SITREQ.id++; return; }   // the guest: sit / stand
   if (cal.on && (k === '[' || k === ',')) { cal.i = (cal.i + 7) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   if (cal.on && (k === ']' || k === '.')) { cal.i = (cal.i + 1) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   keys.add(k);
@@ -4071,8 +4273,9 @@ canvas.addEventListener('pointerdown', e => {
   }
   // the carry button: a tap (or click) on it does what E does
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
+  { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand
   const cb = carryButton();
-  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { toggleCarry(world); e.preventDefault(); return; }
+  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
   const hs = cal.on ? -1 : hotbarSlotAt(pt);
   if (hs >= 0) { HOTBAR.drag = { i: hs, x: pt.x, y: pt.y, id: e.pointerId, moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
@@ -4192,6 +4395,7 @@ function localInput0() {
     || !!(g && ((g.buttons[0] && g.buttons[0].pressed) || (g.buttons[5] && g.buttons[5].pressed)));
   const inp = { mx, my, ax, ay, shoot, roll, st, tc: touchSeen };
   if (lt) { inp.lt = 1; inp.lx = lt.x; inp.ly = lt.y; }
+  inp.sq = SITREQ.id; inp.bq = BJREQ.id; inp.ba = BJREQ.a;           // the guest's sit and blackjack requests
   if (HOTBAR.want) { inp.wsel = HOTBAR.want; HOTBAR.want = null; }
   if (tapShot.until > performance.now()) { inp.tap = tapShot.id; inp.tx = tapShot.x; inp.ty = tapShot.y; }
   return inp;
@@ -5025,6 +5229,12 @@ function drawRain() {
   }
 }
 function carryButton() {
+  if (net.role === 'client') {                               // the guest: sit down at the table, or get up
+    const v = net.view, me = v && v.players.find(q => q.id === 1);
+    if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
+    const label = me.sit ? 'STAND' : chairNear(v, me) ? 'SIT' : null;
+    return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
+  }
   const w = world, p = w.players[0];
   if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
   let label = null;
@@ -5140,6 +5350,19 @@ function lobbyGoth(w) {
     return null;                                                    // drawn as part of him
   }
   if (n.thrown) { stepThrownGoth(w, n, dt); return n; }
+  // Blackjack on: she hurries round behind the table to deal, and says her piece
+  const bj = w.bj;
+  if (bj && bj.sayN !== n.bjSayN) { if (n.bjSayN !== undefined && bj.say) n.bubble = { text: bj.say, t: 0, dur: 2.6 }; n.bjSayN = bj.sayN; }
+  if (bj && bj.ph !== 'idle') {
+    n.dealing = true;
+    const spot = { x: T.tableX, y: T.tableY - 30 };
+    n.tx = spot.x; n.ty = spot.y; n.wait = 0;
+    if (Math.hypot(n.x - spot.x, n.y - spot.y) < 4) {
+      n.moving = false; n.vx = n.vy = 0; n.fx = 0; n.fy = 1;       // facing the players, over the table
+      n.stuckT = 0; n.stuckX = undefined;
+      return n;
+    }
+  } else if (n.dealing) { n.dealing = false; n.wait = 1.5; }
   // Someone's benching. From his 2nd rep she hurries over to watch from beside
   // the bench, and from his 5th she's impressed (once, when she's there). When
   // he gets up she wanders off again.
@@ -5175,7 +5398,7 @@ function lobbyGoth(w) {
   else if ((n.stuckT = (n.stuckT || 0) + dt) > 2) { npcPickSpot(n); n.stuckT = 0; n.stuckX = undefined; return n; }
   const [px, py] = npcNextPoint(n);
   const dx = px - n.x, dy = py - n.y, d = Math.hypot(dx, dy) || 1;
-  const spd = T.npcSpeed * (n.watch ? 2.4 : 1);           // she hurries over to watch
+  const spd = T.npcSpeed * (n.watch || n.dealing ? 2.4 : 1);   // she hurries over to watch, or to deal
   const step = Math.min(d, spd * dt);
   n.ix = dx / d; n.iy = dy / d; n.fx = n.ix; n.fy = n.iy;
   n.vx = n.ix * spd; n.vy = n.iy * spd;
@@ -5683,7 +5906,8 @@ function wireConn(conn) {
       if (!i || !['mx','my','ax','ay'].every(k => Number.isFinite(i[k]))) return;
       net.remoteInput = { mx: Math.max(-1,Math.min(1,i.mx)), my: Math.max(-1,Math.min(1,i.my)), ax: i.ax, ay: i.ay, shoot: i.shoot === true, roll: i.roll === true, wsel: (typeof i.wsel === 'string' && WEAPONS[i.wsel]) ? i.wsel : undefined, st: i.st === true, tc: i.tc === true,
                          tap: i.tap | 0, tx: +i.tx || 0, ty: +i.ty || 0,
-                         lt: i.lt === 1 ? 1 : 0, lx: +i.lx || 0, ly: +i.ly || 0 };
+                         lt: i.lt === 1 ? 1 : 0, lx: +i.lx || 0, ly: +i.ly || 0,
+                         sq: i.sq | 0, bq: i.bq | 0, ba: ['deal', 'hit', 'stand'].includes(i.ba) ? i.ba : '' };
       net.inputAt = performance.now();
       return;
     }
@@ -7198,6 +7422,7 @@ function renderBase(w, hudRight) {
   drawStick(moveStick, 'rgba(224,71,63,0.55)');
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
+  drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
 
@@ -7469,6 +7694,7 @@ function frame(now) {
       let age = Math.min(0.25, (now - net.snapAt) / 1000);
       if ((net.snap.fz || 0) > 0) age = 0;      // frozen: hold, don't slide
       const view = worldFromSnapshot(net.snap, age, net.bits);
+      net.view = view;                                  // what the guest's buttons (sit, blackjack) look at
 
       // the client has no sim, so drive the nuke audio off the state it receives
       const ph = view.nuke ? view.nuke.phase : null;
