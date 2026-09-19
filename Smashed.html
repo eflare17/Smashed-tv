@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b214 — sits still, just the head turn';
+const BUILD = 'b215 — no vending machine in the lobby';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -640,6 +640,8 @@ function fillLobby(w) {
 // stage is a spud lying on the ground, which is what you actually pick up.
 // The vending machine is scenery for now: fixed spot, no state, so nothing
 // to send over the network. Position comes straight from the tunables.
+// b215: only out in the run, not in the lobby
+function vendHere(w) { return T.vendShow && !!(w && w.started); }
 function vendPos(w) {
   const lobby = w && !w.started;
   return { x: lobby ? T.loungeVendX : ARENA.w * T.vendX, y: ARENA.wall + 54 + T.vendDrop };
@@ -1940,7 +1942,7 @@ function plantSpud(w, progress) {
     y = m + 60 + rnd(w) * (ARENA.h - m * 2 - 60);   // keep clear of the slot machine
     tries++;
   } while (tries < 12 && (Math.hypot(x - w.slot.x, y - w.slot.y) < 90
-           || (T.vendShow && Math.hypot(x - vendPos(w).x, y - vendPos(w).y) < 90)
+           || (vendHere(w) && Math.hypot(x - vendPos(w).x, y - vendPos(w).y) < 90)
            || w.plants.some(q => Math.hypot(q.x - x, q.y - y) < 70)
            || w.players.some(p => Math.hypot(p.x - x, p.y - y) < 60)));
   w.plants.push({ x, y, t: (progress || 0) * T.spudGrow, wob: 0 });
@@ -3100,7 +3102,7 @@ function stepBase(w, inputs, dt) {
     // buy the launcher: stand still at the machine for a moment
     {
       const vp = vendPos(w);
-      const canBuy = T.vendShow && !w.over && !w.vendSold && !secretActive(w)
+      const canBuy = vendHere(w) && !w.over && !w.vendSold && !secretActive(w)
         && p.weapon !== 'launcher' && p.coins >= T.vendPrice
         && inp.mx === 0 && inp.my === 0 && !inp.shoot
         && Math.hypot(p.x - vp.x, p.y - vp.y) < T.vendRadius;
@@ -7224,7 +7226,7 @@ function renderBase(w, hudRight) {
   drawLobMarkers(w);
 
   // the nuke-launcher vending machine — look, don't touch (yet)
-  if (!cal.on && T.vendShow && !w.slotSecret?.room) {
+  if (!cal.on && vendHere(w) && !w.slotSecret?.room) {
     const vp = vendPos(w);
     const vim = VEND_IMG[w.vendSold ? 'sold' : (Math.floor(w.t * 2.5) % 2 ? 'idle_b' : 'idle_a')];
     if (vim && vim.complete && vim.naturalWidth) {
