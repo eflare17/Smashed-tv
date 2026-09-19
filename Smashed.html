@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b205 — blackjack at the table';
+const BUILD = 'b206 — sit, then bong or cards';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1039,7 +1039,7 @@ function drawSitArt(p) {
   if (t0 < S.blow + 1.6 && t >= S.blow + 1.6 && Math.random() < 0.35) { const m = W(SIT_GEO.mouth[0], SIT_GEO.mouth[1]); world.floaters.push({ x: m.x, y: m.y - 18, text: '*cough*', t: 0, col: '#e8e2d2' }); }
   if (t >= S.end) p.vape = null;
 }
-function usesSitArt(p) { return !!(p && p.sit && p.ch === 'juicy' && SIT_ART.every(i => i.complete && i.naturalWidth)); }
+function usesSitArt(p) { return !!(p && p.sit && p.bong && p.ch === 'juicy' && SIT_ART.every(i => i.complete && i.naturalWidth)); }
 function sitArtIn(chair) { return world.players.some(p => p.sit === chair && usesSitArt(p)); }
 // ================================================================ BLACKJACK ===
 // Sat at the table you can play blackjack. Gothica deals (house rules: she
@@ -1065,8 +1065,16 @@ function bjFloat(w, q, text, col) { w.floaters.push({ x: q.x, y: q.y - 70, text,
 function bjAction(w, p, a) {
   if (w.started || !p || !p.alive || !p.sit) return;
   let b = w.bj;
+  if (a === 'call' || (a === 'deal' && !b)) {                 // call her over; she deals when you're ready
+    if (b) return;
+    if (NPC_GOTH.carrier >= 0 || NPC_GOTH.thrown) { bjFloat(w, p, "Gothica's busy!", '#f7a8ff'); return; }
+    w.bj = { ph: 'idle', deck: [], d: [], seats: {}, turn: 0, t: 0, shown: false, say: '', sayN: 0 };
+    bjSay(w.bj, Math.random() < 0.5 ? "Cards? Sure, I'll deal." : 'Ooh, blackjack? Coming!');
+    return;
+  }
+  if (a === 'stop') { if (b && (b.ph === 'idle' || b.ph === 'done')) { w.bj = null; } return; }   // done: off she goes
   if (a === 'deal') {
-    if (b && (b.ph === 'play' || b.ph === 'dealer')) return;
+    if (b.ph === 'play' || b.ph === 'dealer') return;
     if (NPC_GOTH.carrier >= 0 || NPC_GOTH.thrown) { bjFloat(w, p, "Gothica's busy!", '#f7a8ff'); return; }
     b = w.bj = { ph: 'idle', deck: (b && b.deck) || [], d: [], seats: {}, turn: 0, t: 0, shown: false, say: '', sayN: (b && b.sayN) || 0 };
     for (const q of w.players) {
@@ -1168,14 +1176,17 @@ function drawTableCards(w) {
 // the panel you play from while you're sat down
 function bjMe(w) { const id = net.role === 'client' ? 1 : 0; return w.players.find(p => p.id === id); }
 function bjPanel(w) {
-  const me = bjMe(w); if (!me || !me.sit || w.started || cal.on) return null;
+  const me = bjMe(w); if (!me || !me.sit || w.started || cal.on || !w.bj) return null;   // only once she's been called over
   const b = bjView(w.bj), rows = 1 + (b ? Object.keys(b.seats).length : 0);
   const pw = 330, ph = 64 + Math.max(1, rows) * 46, px = Math.round(ARENA.w / 2 - pw / 2), py = ARENA.wall + 34;
   const mine = b && b.seats[me.sit], myTurn = b && b.ph === 'play' && b.turn === me.sit && mine && mine.st === 'play';
   const btns = [];
   const by = py + ph - 30;
   if (myTurn) { btns.push({ a: 'hit', label: 'HIT (H)', x: px + 20, y: by, w: 130, h: 24 }); btns.push({ a: 'stand', label: 'STAND (T)', x: px + pw - 150, y: by, w: 130, h: 24 }); }
-  else if (!b || b.ph === 'done' || b.ph === 'idle') btns.push({ a: 'deal', label: (b ? 'DEAL AGAIN' : 'DEAL') + ' (B) · ' + BJ_BET + ' coins', x: px + 40, y: by, w: pw - 80, h: 24 });
+  else if (b.ph === 'done' || b.ph === 'idle') {
+    btns.push({ a: 'deal', label: (b.ph === 'done' ? 'DEAL AGAIN' : 'DEAL') + ' (B) · ' + BJ_BET + ' coins', x: px + 16, y: by, w: pw - 128, h: 24 });
+    btns.push({ a: 'stop', label: 'DONE', x: px + pw - 104, y: by, w: 88, h: 24 });
+  }
   return { me, b, px, py, pw, ph, btns, myTurn, mine };
 }
 function drawBJPanel(w) {
@@ -1196,7 +1207,7 @@ function drawBJPanel(w) {
     cards.forEach((c, i) => drawCard(px + 72 + i * 30, y, c, 26, 36));
     if (note) { ctx.textAlign = 'right'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = /WIN|BLACKJACK/.test(note) ? '#6fd3a0' : /LOSE|BUST|LEFT/.test(note) ? '#ff6a6a' : '#f6d17a'; ctx.fillText(note, px + pw - 12, y + 18); }
   };
-  if (!b) {
+  if (!b || b.ph === 'idle') {
     ctx.textAlign = 'center'; ctx.fillStyle = '#dfe6ea'; ctx.font = '12px ui-sans-serif, system-ui, sans-serif';
     ctx.fillText('Gothica deals. Beat her to 21 without going over.', px + pw / 2, py + 44);
     ctx.fillText('Dealer stands on 17 · blackjack pays 3:2', px + pw / 2, py + 62);
@@ -1222,6 +1233,21 @@ function drawBJPanel(w) {
   const n = b ? b.d.length + Object.values(b.seats).reduce((k, s) => k + s.c.length, 0) + (b.shown ? 1 : 0) : 0;
   if (SND.ctx && n > (drawBJPanel.n || 0)) sTone(0.04, 1500, 700, 0.06, 'triangle');
   drawBJPanel.n = n;
+}
+// sat down and she's not been called yet: a CARDS button beside the E button
+function cardsButton() {
+  const w = net.role === 'client' ? net.view : world; if (!w || w.started || w.over || cal.on || w.bj) return null;
+  const me = bjMe(w); if (!me || !me.alive || !me.sit) return null;
+  return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'CARDS' };
+}
+function drawCardsButton() {
+  const b = cardsButton(); if (!b) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,40,26,0.8)'; ctx.strokeStyle = '#6fd3a0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#6fd3a0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(b.label, b.x, b.y - 5); ctx.font = '10px ui-sans-serif, system-ui, sans-serif'; ctx.fillText('(B)', b.x, b.y + 9);
+  ctx.restore();
 }
 function bjButtonAt(pt) { const P = bjPanel(net.role === 'client' ? (net.view || world) : world); if (!P) return null; return P.btns.find(bt => pt.x >= bt.x && pt.x <= bt.x + bt.w && pt.y >= bt.y && pt.y <= bt.y + bt.h) || null; }
 // act from this screen: the host plays straight in, the guest sends it over
@@ -2842,6 +2868,7 @@ function stepBase(w, inputs, dt) {
       if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) { p.sit = 0; p.vape = null; }
       else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const c = chairPos(p.sit); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; }
     } else if (p.sit) p.sit = 0;
+    if (!p.sit) p.bong = 0;                                // the bong goes back on the table when he gets up
     // on the bench: a nudge on the stick gets him up; otherwise he stays lying there
     if (p.lift && !w.started) {
       if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) { p.lift = null; }
@@ -3959,7 +3986,7 @@ function snapshot(w) {
                            Math.round(p.rdx * 100), Math.round(p.rdy * 100),
                            p.shots & 255, p.rockets || 0, Math.round((p.buy || 0) * 100),
                            Math.round(p.tx || 0), Math.round(p.ty || 0), p.aimOn ? 1 : 0,
-                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0]),
+                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0]),
     bj: bjPack(w.bj),
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
@@ -4042,7 +4069,7 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0
+      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -4273,7 +4300,8 @@ canvas.addEventListener('pointerdown', e => {
   }
   // the carry button: a tap (or click) on it does what E does
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
-  { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand
+  { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
+  { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
   if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
@@ -5241,7 +5269,7 @@ function carryButton() {
   const gn = gymNear(w, p);
   if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
   else if (gn) label = gn.label;
-  else if (p.sit) label = p.vape ? null : 'VAPE';
+  else if (p.sit) label = !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
   else if (chairNear(w, p)) label = 'SIT';
   else if (canCarry(w, p)) label = 'PICK UP';
@@ -5262,7 +5290,7 @@ function toggleCarry(w) {
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   if (gymAction(w, p)) return;
   if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
-  if (p && p.sit) { if (!p.vape) p.vape = { t: 0 }; return; }       // sitting: E has a vape (move to stand up)
+  if (p && p.sit) { if (!p.bong) p.bong = 1; else if (!p.vape) p.vape = { t: 0 }; return; }   // sitting: E grabs the bong, then takes a hit (move to stand up)
   { const ch = chairNear(w, p); if (ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
@@ -5352,8 +5380,9 @@ function lobbyGoth(w) {
   if (n.thrown) { stepThrownGoth(w, n, dt); return n; }
   // Blackjack on: she hurries round behind the table to deal, and says her piece
   const bj = w.bj;
-  if (bj && bj.sayN !== n.bjSayN) { if (n.bjSayN !== undefined && bj.say) n.bubble = { text: bj.say, t: 0, dur: 2.6 }; n.bjSayN = bj.sayN; }
-  if (bj && bj.ph !== 'idle') {
+  if (!bj) n.bjSayN = 0;
+  if (bj && bj.sayN !== n.bjSayN) { if (bj.say) n.bubble = { text: bj.say, t: 0, dur: 2.6 }; n.bjSayN = bj.sayN; }
+  if (bj) {                                                    // called over: she stays at the table till sent off
     n.dealing = true;
     const spot = { x: T.tableX, y: T.tableY - 30 };
     n.tx = spot.x; n.ty = spot.y; n.wait = 0;
@@ -5590,7 +5619,7 @@ function drawJared(w, p) {
       drawSeatedLegs(im, p.x, seatY, true);                            // far leg behind him
       ctx.imageSmoothingEnabled = false;
       // vaping: the gun's barrel cropped off the front of him (no empty-handed side art yet)
-      const cut = p.vape ? VAPE_GEO.cut : 1;
+      const cut = VAPE_GEO.cut;                                       // sat down, the gun's out of the way
       ctx.drawImage(im, 0, 0, Math.round(im.naturalWidth * cut), Math.round(im.naturalHeight * keep),
                     Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw * cut), Math.round(h * keep));
       drawSeatedLegs(im, p.x, seatY, false);                           // near leg over his lap
@@ -5907,7 +5936,7 @@ function wireConn(conn) {
       net.remoteInput = { mx: Math.max(-1,Math.min(1,i.mx)), my: Math.max(-1,Math.min(1,i.my)), ax: i.ax, ay: i.ay, shoot: i.shoot === true, roll: i.roll === true, wsel: (typeof i.wsel === 'string' && WEAPONS[i.wsel]) ? i.wsel : undefined, st: i.st === true, tc: i.tc === true,
                          tap: i.tap | 0, tx: +i.tx || 0, ty: +i.ty || 0,
                          lt: i.lt === 1 ? 1 : 0, lx: +i.lx || 0, ly: +i.ly || 0,
-                         sq: i.sq | 0, bq: i.bq | 0, ba: ['deal', 'hit', 'stand'].includes(i.ba) ? i.ba : '' };
+                         sq: i.sq | 0, bq: i.bq | 0, ba: ['call', 'stop', 'deal', 'hit', 'stand'].includes(i.ba) ? i.ba : '' };
       net.inputAt = performance.now();
       return;
     }
@@ -7422,6 +7451,7 @@ function renderBase(w, hudRight) {
   drawStick(moveStick, 'rgba(224,71,63,0.55)');
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
+  drawCardsButton();
   drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
