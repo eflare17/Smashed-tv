@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b225 — props on one pixel grid';
+const BUILD = 'b226 — Verdavape in the stem';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1132,7 +1132,9 @@ function drawTrip() {
 // 1 (torch on the vape) -> 2 (the pull) -> 3 (blowing it out) and back to 0.
 const SIT_T = { heat: 0.25, click: 2.1, pull: 2.4, blow: 3.8, done: 5.9, end: 6.2 };
 // where the Verdavape's tip is in each bong frame (world px from the art's top-left), and which way the stem points
-const SIT_STEM = [[30.5, 20.5], [30.8, 24.5], [29.2, 24.5], [30.5, 21.5]];
+// b226: where the Verdavape's cap sits in each bong frame (world px from the art's top-left), measured off the art so its
+// wooden end stands in the stem's opening. Frames 1 and 2 already show it in the art (his hand's moved), so null there.
+const SIT_STEM = [[29.25, 24], null, null, [28, 23.5]];
 // The Verdavape as it really is (b216, from the user's photos): a wooden end sat in the bong's joint,
 // a brushed-steel body with a seam, a flat cap full of little holes on top, and the T-handle: a steel
 // pin out of the side with a wooden knob on it. Stands nearly upright out of the stem.
@@ -1183,7 +1185,7 @@ function drawStemVape(ax, ay, tip, heat) {
   // the Verdavape in the stem: only a stub in the art, so it's drawn over it where you can see it,
   // the tip going from steel to orange to red while the torch is on it, cooling after the pull
   const heat = !v ? 0 : t < S.heat ? 0 : t < S.pull ? Math.min(1, (t - S.heat) / 1.6) : Math.max(0, 1 - (t - S.pull) / 2.4);
-  drawStemVape(left, bottom - h, SIT_STEM[f], heat);
+  if (SIT_STEM[f]) drawStemVape(left, bottom - h, SIT_STEM[f], heat);
   ctx.restore();
   if (!v) return;
   const now = performance.now() / 1000;
