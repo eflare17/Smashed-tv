@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b210 — louder, creepier trip music';
+const BUILD = 'b211 — the mantis comes closer';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1058,17 +1058,24 @@ function drawTrip() {
   ctx.save();
   ctx.setTransform(canvas.width / ARENA.w, 0, 0, canvas.height / ARENA.h, 0, 0);
   ctx.globalAlpha = black; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, ARENA.w, ARENA.h);
-  if (t > S.show && t < S.gone) {
-    // him: fading up out of the dark, bobbing, drifting closer, flickering
-    let a = ease((t - S.show) / (S.full - S.show));
-    if (t > S.fade) a *= Math.random() < 0.5 ? 0.15 : 1 - (t - S.fade) / (S.gone - S.fade);   // flickers out
-    else if (Math.random() < dt * 1.5) a *= 0.35;                                          // the odd flicker
+  if (t > S.show && t < S.fade) {
+    // him: far off in the dark at first, then flickering in and out, gone for a
+    // moment at a time, and each time he's back he's closer, till he's right on you
+    if (!TRIP.seq) {                                               // when he's there and when he isn't, fixed per trip
+      TRIP.seq = []; let s = S.show;
+      while (s < S.fade) { const on = 0.45 + Math.random() * 0.7, off = 0.12 + Math.random() * 0.4; TRIP.seq.push([s, s + on, (Math.random() - 0.5) * 2]); s += on + off; }
+    }
+    const seg = TRIP.seq.find(q => t >= q[0] && t < q[1]);
+    if (seg && TRIP.seg !== seg) { TRIP.seg = seg; if (SND.ctx && SND.on && seg !== TRIP.seq[0]) sNoise(0.09, 1800 + Math.random() * 1500, 3, 0.18, 'bandpass'); }   // a crackle as he pops back
+    let a = !seg ? 0 : seg === TRIP.seq[0] ? ease((t - seg[0]) / 0.8) : 1;
+    if (seg && Math.random() < dt * 4) a *= 0.2;                   // blinks even while he's there
     const im = MANTIS[Math.floor(t * 5) % MANTIS.length];
-    if (im.complete && im.naturalWidth) {
-      const k = 1 + 0.35 * ease((t - S.show) / (S.fade - S.show)), w = im.naturalWidth * k, h = im.naturalHeight * k;
-      const cx = ARENA.w / 2, feet = ARENA.h / 2 + 118 + 26 * (k - 1) + Math.sin(t * 1.7) * 6;
+    if (a > 0 && im.complete && im.naturalWidth) {
+      const pr = Math.pow((t - S.show) / (S.fade - S.show), 1.6);  // slow at first, then rushing in
+      const k = 0.22 * Math.pow(2.6 / 0.22, pr), w = im.naturalWidth * k, h = im.naturalHeight * k;
+      const cx = ARENA.w / 2 + seg[2] * 60 * (1 - pr), feet = ARENA.h / 2 + 10 + (ARENA.h * 0.75) * pr * pr + Math.sin(t * 1.7) * 6 * k;
       ctx.globalAlpha = a * 0.5; ctx.fillStyle = '#1a1a22';
-      ctx.beginPath(); ctx.ellipse(cx, feet + 22, 46 * k * (1 - Math.sin(t * 1.7) * 0.06), 9 * k, 0, 0, Math.PI * 2); ctx.fill();   // his shadow, far below him
+      ctx.beginPath(); ctx.ellipse(cx, feet + 22 * k, 46 * k, 9 * k, 0, 0, Math.PI * 2); ctx.fill();   // his shadow, far below him
       ctx.globalAlpha = a; ctx.imageSmoothingEnabled = false;
       ctx.drawImage(im, Math.round(cx - w * 0.45), Math.round(feet - h), Math.round(w), Math.round(h));
     }
