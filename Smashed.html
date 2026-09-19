@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b209 — zoom in when sat, art legs';
+const BUILD = 'b210 — louder, creepier trip music';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1026,15 +1026,16 @@ function startTrip() {
   const c = SND.ctx; if (!c || !SND.on) return;
   // the music: a detuned low drone through a slowly breathing filter, a thin
   // dissonant whine echoing over it, all on one fader so it can fade away
-  const out = c.createGain(); out.gain.setValueAtTime(0.0001, c.currentTime); out.gain.exponentialRampToValueAtTime(0.9, c.currentTime + 3); out.connect(SND.master);
+  // (pitched up in b210: the first go sat at 40-60Hz, which phone and laptop speakers barely play)
+  const out = c.createGain(); out.gain.setValueAtTime(0.0001, c.currentTime); out.gain.exponentialRampToValueAtTime(1, c.currentTime + 2.5); out.connect(SND.master);
   const nodes = [];
-  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180; lp.Q.value = 6; lp.connect(out);
-  const lfo = c.createOscillator(), lfoG = c.createGain(); lfo.frequency.value = 0.13; lfoG.gain.value = 120; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start(); nodes.push(lfo);
-  for (const [f, w, g] of [[41.2, 'sawtooth', 0.22], [43.6, 'sawtooth', 0.2], [61.7, 'triangle', 0.16]]) {
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.Q.value = 8; lp.connect(out);
+  const lfo = c.createOscillator(), lfoG = c.createGain(); lfo.frequency.value = 0.18; lfoG.gain.value = 420; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start(); nodes.push(lfo);
+  for (const [f, w, g] of [[110, 'sawtooth', 0.16], [116.5, 'sawtooth', 0.15], [155.6, 'sawtooth', 0.1], [55, 'triangle', 0.2]]) {
     const o = c.createOscillator(), og = c.createGain(); o.type = w; o.frequency.value = f; og.gain.value = g; o.connect(og); og.connect(lp); o.start(); nodes.push(o);
   }
-  const echo = c.createDelay(1); echo.delayTime.value = 0.37; const fb = c.createGain(); fb.gain.value = 0.45; echo.connect(fb); fb.connect(echo); echo.connect(out);
-  const hi = c.createGain(); hi.gain.value = 0.018; hi.connect(out); hi.connect(echo);
+  const echo = c.createDelay(1); echo.delayTime.value = 0.37; const fb = c.createGain(); fb.gain.value = 0.5; echo.connect(fb); fb.connect(echo); echo.connect(out);
+  const hi = c.createGain(); hi.gain.value = 0.06; hi.connect(out); hi.connect(echo);
   for (const f of [1244.5, 1318.5]) {
     const o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, c.currentTime); o.frequency.linearRampToValueAtTime(f * 0.94, c.currentTime + 12);
     const vib = c.createOscillator(), vg = c.createGain(); vib.frequency.value = 5.3; vg.gain.value = 9; vib.connect(vg); vg.connect(o.frequency); vib.start();
@@ -1071,9 +1072,14 @@ function drawTrip() {
       ctx.globalAlpha = a; ctx.imageSmoothingEnabled = false;
       ctx.drawImage(im, Math.round(cx - w * 0.45), Math.round(feet - h), Math.round(w), Math.round(h));
     }
-    // a heartbeat under it all
+    // a heartbeat under it all: a thump with a knock on top, so small speakers carry it
     const beat = Math.floor((t - S.show) / 1.15);
-    if (beat !== TRIP.beat && SND.ctx && SND.on && t < S.fade) { TRIP.beat = beat; sTone(0.18, 70, 40, 0.5, 'sine'); setTimeout(() => sTone(0.14, 62, 38, 0.35, 'sine'), 170); }
+    const thump = g => { sTone(0.16, 130, 60, g, 'sine'); sNoise(0.07, 500, 1, g * 0.6, 'lowpass'); };
+    if (beat !== TRIP.beat && SND.ctx && SND.on && t < S.fade) { TRIP.beat = beat; thump(0.7); setTimeout(() => thump(0.5), 170); }
+  }
+  if (SND.ctx && SND.on) {
+    if (!TRIP.rise && t > S.show - 0.6) { TRIP.rise = true; sNoise(2, 250, 5, 0.35, 'bandpass', 2600); }          // a rising whoosh as he comes up out of the dark
+    if (!TRIP.sting && t > S.fade) { TRIP.sting = true; sTone(0.9, 1400, 90, 0.3, 'sawtooth'); sNoise(0.5, 3000, 2, 0.35, 'bandpass', 300); }   // a shriek as he goes
   }
   if (black > 0.2) {                                            // grain over the black
     ctx.globalAlpha = 0.05 * black; ctx.fillStyle = '#ffffff';
