@@ -85,6 +85,7 @@
   <button id="startBtn" class="primary">Start</button>
   <button id="restart">Restart</button>
   <button id="fsBtn">Full screen</button>
+  <button id="zoomBtn">Zoom: 1x (Z)</button>
   <button id="muteBtn">Sound: on</button>
   <button id="gunBtn">Give shotgun (G)</button>
   <button id="nukeBtn">Test nuke (N)</button>
@@ -500,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b190 — a bigger plate tree, off the dive tower';
+const BUILD = 'b191 — 2x zoom that follows you';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3359,6 +3360,48 @@ function worldFromSnapshot(s, age, bits) {
   };
 }
 
+// ================================================================= CAMERA ===
+// 1x shows the whole arena. 2x follows your player round it, never showing
+// past the walls. The world is drawn through the camera; the HUD, sticks,
+// E-button and weapon bar aren't. Off during calibration (its crosshairs are
+// drawn on the character) and in the slot machine's secret room.
+const CAM = { on: false, z: 1, x: 430, y: 260, t: 0 };
+try { CAM.on = localStorage.getItem('smashed-zoom') === '1'; } catch (_) {}
+function setZoom(on) {
+  CAM.on = !!on;
+  try { localStorage.setItem('smashed-zoom', CAM.on ? '1' : '0'); } catch (_) {}
+  const b = document.getElementById('zoomBtn'); if (b) b.textContent = 'Zoom: ' + (CAM.on ? '2x' : '1x') + ' (Z)';
+}
+function camFollow(w) {                                  // once per frame, before drawing
+  const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (CAM.t || now))); CAM.t = now;
+  const want = CAM.on && !cal.on && !(w.slotSecret && w.slotSecret.room) ? 2 : 1;
+  CAM.z += (want - CAM.z) * Math.min(1, dt * 10); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
+  const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0)) || w.players[0];
+  const tx = me ? me.x : ARENA.w / 2, ty = me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
+  const k = Math.min(1, dt * 8); CAM.x += (tx - CAM.x) * k; CAM.y += (ty - CAM.y) * k;
+}
+function camView() {                                     // what's on screen, kept inside the arena
+  const z = CAM.z, hw = ARENA.w / 2 / z, hh = ARENA.h / 2 / z;
+  return { z, cx: Math.max(hw, Math.min(ARENA.w - hw, CAM.x)), cy: Math.max(hh, Math.min(ARENA.h - hh, CAM.y)) };
+}
+function camApply() { const v = camView(); if (v.z === 1) return; ctx.translate(ARENA.w / 2, ARENA.h / 2); ctx.scale(v.z, v.z); ctx.translate(-v.cx, -v.cy); }
+function screenToWorld(x, y) { const v = camView(); return { x: (x - ARENA.w / 2) / v.z + v.cx, y: (y - ARENA.h / 2) / v.z + v.cy }; }
+function zoomButton() { return { x: ARENA.w - ARENA.wall - 24, y: ARENA.wall + 24, r: 16 }; }
+function drawZoomButton() {
+  if (cal.on) return;
+  const b = zoomButton();
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,16,22,0.72)'; ctx.strokeStyle = CAM.on ? '#f6d17a' : '#8b93a4'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // a magnifying glass, with + to zoom in or - to zoom out
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x - 2, b.y - 2, 6.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(b.x + 2.8, b.y + 2.8); ctx.lineTo(b.x + 8, b.y + 8); ctx.stroke();
+  ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(b.x - 5.5, b.y - 2); ctx.lineTo(b.x + 1.5, b.y - 2);
+  if (!CAM.on) { ctx.moveTo(b.x - 2, b.y - 5.5); ctx.lineTo(b.x - 2, b.y + 1.5); }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // ================================================================== INPUT ===
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -3411,6 +3454,7 @@ addEventListener('keydown', e => {
   if (e.repeat && ['r', 'c', 'p'].includes(k)) return;
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
+  if (k === 'z' && !e.repeat) { setZoom(!CAM.on); return; }
   if (k >= '1' && k <= '6' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
   if (k === 'r') {
     restartGame();
@@ -3498,6 +3542,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   // the carry button: a tap (or click) on it does what E does
+  { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
   const cb = carryButton();
   if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
@@ -3556,7 +3601,8 @@ function endPointer(e) {
   const tp = TAPS[e.pointerId];
   delete TAPS[e.pointerId];
   if (tp && e.type === 'pointerup' && tp.moved < 12 && performance.now() - tp.t < 300 && localHasLauncher()) {
-    tapShot = { id: tapShot.id + 1, x: tp.x, y: tp.y, until: performance.now() + 150 };
+    const tw = screenToWorld(tp.x, tp.y);                // where that is in the world, if zoomed
+    tapShot = { id: tapShot.id + 1, x: tw.x, y: tw.y, until: performance.now() + 150 };
   }
   for (const s of [moveStick, aimStick])
     if (s.id === e.pointerId) { s.active = false; s.id = null; s.dx = s.dy = 0; }
@@ -3596,7 +3642,7 @@ function localInput0() {
     const p = net.role === 'client' && net.snap
       ? worldFromSnapshot(net.snap, Math.min(0.25, (performance.now() - net.snapAt) / 1000), []).players.find(p => p.id === 1)
       : world.players[0];
-    if (p) { shoot = mouse.down; ax = mouse.x - p.x; ay = mouse.y - p.y; }
+    if (p) { const m = screenToWorld(mouse.x, mouse.y); shoot = mouse.down; ax = m.x - p.x; ay = m.y - p.y; }
   }
   // dive roll: shift, gamepad A / RB, or a second finger on the move side
   const roll = keys.has('shift') || consumeRollTap()
@@ -5758,6 +5804,8 @@ function renderBase(w, hudRight) {
   const shy = shakeAmt ? (Math.random() - 0.5) * shakeAmt : 0;
   ctx.save();
   if (shakeAmt) ctx.translate(shx, shy);
+  camFollow(w);
+  ctx.save(); camApply();                          // the world, through the camera
   ctx.fillStyle = '#1b1e26';
   ctx.fillRect(0, 0, ARENA.w, ARENA.h);
 
@@ -6590,10 +6638,12 @@ function renderBase(w, hudRight) {
   }
   ctx.globalAlpha = 1;
 
+  ctx.restore();                                   // camera off: the HUD stays put
   drawStick(moveStick, 'rgba(224,71,63,0.55)');
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
   drawHotbar(w);
+  drawZoomButton();
 
   // HUD
   ctx.fillStyle = '#6d7486';
@@ -6710,6 +6760,7 @@ function renderBase(w, hudRight) {
     ctx.textAlign = 'left';
   }
 
+  ctx.save(); camApply();                          // rockets, blasts, the nuke and floating numbers are in the world
   drawRockets(w);
   drawBlasts(w);
 
@@ -6769,6 +6820,7 @@ function renderBase(w, hudRight) {
   }
   ctx.globalAlpha = 1;
 
+  ctx.restore();                                   // camera off again
   // first time a touch player picks up the launcher: tell them how
   {
     const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0));
@@ -7138,6 +7190,8 @@ document.getElementById('muteBtn').addEventListener('click', e => {
 });
 
 document.getElementById('fsBtn').addEventListener('click', goFullscreen);
+document.getElementById('zoomBtn').addEventListener('click', () => setZoom(!CAM.on));
+setZoom(CAM.on);                                         // the button's label, from what was saved
 document.addEventListener('fullscreenchange', () => {
   resize();
   if (!document.fullscreenElement && screen.orientation && screen.orientation.unlock) {
