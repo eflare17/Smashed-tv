@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b218 — no cans';
+const BUILD = 'b219 — targets bottom right';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -620,9 +620,10 @@ function newPlayer(id) {
 // The lobby doubles as a warm-up: two dummies to shoot, cans to kick about,
 // and enough cash to try the slot machine before it matters.
 function fillLobby(w) {
+  // the two targets: bottom right, under the pool (b219)
   w.dummies = [
-    { x: T.loungeFloor ? 380 : ARENA.w * 0.28, y: T.loungeFloor ? 175 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 },
-    { x: T.loungeFloor ? 520 : ARENA.w * 0.72, y: T.loungeFloor ? 175 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 }
+    { x: T.loungeFloor ? 630 : ARENA.w * 0.28, y: T.loungeFloor ? 390 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 },
+    { x: T.loungeFloor ? 730 : ARENA.w * 0.72, y: T.loungeFloor ? 390 : ARENA.h * 0.42, hp: T.dummyHp, flash: 0, down: 0, wob: 0 }
   ];
   w.cans = [];                                            // b218: no cans in the lobby any more
   for (let i = 0; i < 0; i++) {
