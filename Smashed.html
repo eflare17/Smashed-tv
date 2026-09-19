@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b191 — 2x zoom that follows you';
+const BUILD = 'b192 — zoom 1.5x';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3361,20 +3361,22 @@ function worldFromSnapshot(s, age, bits) {
 }
 
 // ================================================================= CAMERA ===
-// 1x shows the whole arena. 2x follows your player round it, never showing
+// 1x shows the whole arena. Zoomed (ZOOM_IN, 1.5x since b192; 2x felt too close)
+// follows your player round it, never showing
 // past the walls. The world is drawn through the camera; the HUD, sticks,
 // E-button and weapon bar aren't. Off during calibration (its crosshairs are
 // drawn on the character) and in the slot machine's secret room.
+const ZOOM_IN = 1.5;
 const CAM = { on: false, z: 1, x: 430, y: 260, t: 0 };
 try { CAM.on = localStorage.getItem('smashed-zoom') === '1'; } catch (_) {}
 function setZoom(on) {
   CAM.on = !!on;
   try { localStorage.setItem('smashed-zoom', CAM.on ? '1' : '0'); } catch (_) {}
-  const b = document.getElementById('zoomBtn'); if (b) b.textContent = 'Zoom: ' + (CAM.on ? '2x' : '1x') + ' (Z)';
+  const b = document.getElementById('zoomBtn'); if (b) b.textContent = 'Zoom: ' + (CAM.on ? ZOOM_IN + 'x' : '1x') + ' (Z)';
 }
 function camFollow(w) {                                  // once per frame, before drawing
   const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (CAM.t || now))); CAM.t = now;
-  const want = CAM.on && !cal.on && !(w.slotSecret && w.slotSecret.room) ? 2 : 1;
+  const want = CAM.on && !cal.on && !(w.slotSecret && w.slotSecret.room) ? ZOOM_IN : 1;
   CAM.z += (want - CAM.z) * Math.min(1, dt * 10); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
   const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0)) || w.players[0];
   const tx = me ? me.x : ARENA.w / 2, ty = me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
