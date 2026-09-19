@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b201 — bong tipped towards him';
+const BUILD = 'b202 — legs when sitting';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -985,6 +985,63 @@ function drawBongVape(cx, cy, dir) {
     ctx.restore();
   }
   return { x: bowl.x + sd.x * (vl - 3), y: bowl.y + sd.y * (vl - 3) };
+}
+// His legs while he's sat down (there's no sitting art): thighs along the seat,
+// knees bent, shins down to his boots on the floor, in his own colours picked
+// off his standing sprite (shorts, skin and boots bands). Drawn facing right.
+const LEG_COLS = new WeakMap();
+function legColours(im) {
+  let c = LEG_COLS.get(im); if (c) return c;
+  const w = im.naturalWidth, h = im.naturalHeight, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const g = cv.getContext('2d'); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, w, h).data;
+  const common = (y0, y1, pick) => {
+    const n = new Map();
+    for (let y = Math.floor(h * y0); y < h * y1; y++) for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4; if (d[o + 3] < 200) continue;
+      const r = d[o], gg = d[o + 1], b = d[o + 2]; if (!pick(r, gg, b)) continue;
+      const k = (r >> 4) << 8 | (gg >> 4) << 4 | (b >> 4); const e = n.get(k) || [0, 0, 0, 0]; e[0]++; e[1] += r; e[2] += gg; e[3] += b; n.set(k, e);
+    }
+    let best = null; for (const e of n.values()) if (!best || e[0] > best[0]) best = e;
+    return best ? [best[1] / best[0], best[2] / best[0], best[3] / best[0]] : null;
+  };
+  const lum = (r, g, b) => 0.3 * r + 0.59 * g + 0.11 * b;
+  const skinish = (r, g, b) => r > g + 25 && g > b && lum(r, g, b) > 90;
+  const shorts = common(0.58, 0.72, (r, g, b) => !skinish(r, g, b) && lum(r, g, b) > 60) || [120, 130, 150];
+  const skin = common(0.28, 0.52, skinish) || [214, 150, 104];            // off his arms: the legs' own is mostly highlight
+  const boot = common(0.88, 1, (r, g, b) => lum(r, g, b) < 70 && lum(r, g, b) > 8) || [40, 38, 44];
+  const hex = (c, k) => '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v * k))).toString(16).padStart(2, '0')).join('');
+  c = { shorts: hex(shorts, 1), shortsD: hex(shorts, 0.72), skin: hex(skin, 1), skinD: hex(skin, 0.75), boot: hex(boot, 1), bootL: hex(boot, 1.9), line: '#1c1a22' };
+  if (im.complete && im.naturalWidth) LEG_COLS.set(im, c);
+  return c;
+}
+function drawSeatedLegs(im, x, seatY, far) {
+  const c = legColours(im);
+  const poly = (pts, col, grow) => {                                       // a filled outline; grow > 0 puts the ink line round it
+    ctx.fillStyle = col; ctx.beginPath();
+    const cx = pts.reduce((s, q) => s + q[0], 0) / pts.length, cy = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+    pts.forEach(([a, b], i) => { const l = Math.hypot(a - cx, b - cy) || 1, ax = a + (a - cx) / l * grow, ay = b + (b - cy) / l * grow; i ? ctx.lineTo(ax, ay) : ctx.moveTo(ax, ay); });
+    ctx.closePath(); ctx.fill();
+  };
+  const leg = (dx, dy, far) => {
+    const sh = far ? c.shortsD : c.shorts, sk = far ? c.skinD : c.skin;
+    const hx = x - 6 + dx, ty = seatY - 11 + dy, kx = x + 14 + dx;
+    // thigh: thick at the hip, the shorts ending just short of the knee
+    const thigh = [[hx - 2, ty], [kx - 4, ty + 1], [kx - 4, ty + 9], [hx - 2, ty + 10]];
+    const knee = [[kx - 5, ty + 1.5], [kx + 1, ty + 2], [kx + 2, ty + 5], [kx + 1, ty + 9], [kx - 5, ty + 9]];
+    const shin = [[kx - 5, ty + 7], [kx + 1, ty + 7], [kx + 2, ty + 19], [kx - 3, ty + 19]];   // angled a touch forward
+    const boot = [[kx - 5, ty + 17], [kx + 2, ty + 17], [kx + 6, ty + 20], [kx + 6, ty + 23], [kx - 5, ty + 23]];
+    for (const [p, col] of [[shin, sk], [knee, sk], [thigh, sh], [boot, c.boot]]) poly(p, c.line, 1.2);
+    poly(shin, sk, 0); poly(knee, sk, 0);
+    if (!far) { ctx.fillStyle = c.skinD; ctx.fillRect(Math.round(kx - 4), Math.round(ty + 9), 2, 9); }   // shin shadow
+    poly(thigh, sh, 0);
+    if (!far) { ctx.fillStyle = c.shortsD; ctx.fillRect(Math.round(hx), Math.round(ty + 7), Math.round(kx - hx - 5), 2);   // underside
+                ctx.fillRect(Math.round(kx - 6), Math.round(ty + 1), 1, 8); }                                           // hem
+    poly(boot, c.boot, 0);
+    ctx.fillStyle = c.bootL; ctx.fillRect(Math.round(kx - 4), Math.round(ty + 18), 6, 1);                                // shine
+    ctx.fillStyle = c.line; ctx.fillRect(Math.round(kx - 5), Math.round(ty + 22), 11, 1);                                 // sole
+  };
+  if (far) leg(3, -1, true);                                               // the far leg, a touch behind
+  else leg(0, 1, false);
 }
 function bongHeld() { return world.players.some(p => p.vape && p.vape.held); }
 function bongRest() { return { x: T.tableX - 9, y: T.tableY - 19 }; }
@@ -5252,11 +5309,13 @@ function drawJared(w, p) {
       const keep = 0.58, seatY = p.y + 6;
       ctx.save();
       if (p.sit === 2) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }   // the right chair faces left
+      drawSeatedLegs(im, p.x, seatY, true);                            // far leg behind him
       ctx.imageSmoothingEnabled = false;
       // vaping: the gun's barrel cropped off the front of him (no empty-handed side art yet)
       const cut = p.vape ? VAPE_GEO.cut : 1;
       ctx.drawImage(im, 0, 0, Math.round(im.naturalWidth * cut), Math.round(im.naturalHeight * keep),
                     Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw * cut), Math.round(h * keep));
+      drawSeatedLegs(im, p.x, seatY, false);                           // near leg over his lap
       ctx.restore();
       vapeFrame(p, { top: seatY - h * keep, dw, h });
       return;
