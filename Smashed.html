@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b222 — no banner in the lobby';
+const BUILD = 'b223 — bigger weapon bar';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -5337,9 +5337,8 @@ function drawHotIcon(id, cx, cy, maxW, maxH, alpha) {
   ctx.restore();
 }
 function hotbarGeo(w) {
-  const n = 6, s = 40, gap = 6;
-  return { n, s, gap, x0: ARENA.w / 2 - (n * s + (n - 1) * gap) / 2,
-           y: (w.started ? ARENA.h - ARENA.wall - 50 : ARENA.h - ARENA.wall - 70 - 50) };
+  const n = 6, s = 54, gap = 8;                          // b223: bigger, and down at the bottom now the lobby banner's gone
+  return { n, s, gap, x0: ARENA.w / 2 - (n * s + (n - 1) * gap) / 2, y: ARENA.h - ARENA.wall - s - 8 };
 }
 function hotbarSlotAt(pt) {
   const g = hotbarGeo(world);
@@ -5361,32 +5360,35 @@ function drawHotbar(w) {
   ctx.save();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (let i = 0; i < g.n; i++) {
-    const id = HOTBAR.order[i], x = g.x0 + i * (g.s + g.gap), y = g.y;
+    // each slot is laid out at 40px and scaled up to the bar's size (b223)
+    const id = HOTBAR.order[i], x = 0, y = 0, S = 40;
+    ctx.save(); ctx.translate(g.x0 + i * (g.s + g.gap), g.y); ctx.scale(g.s / S, g.s / S);
     const owned = id && hasWeapon(p, id), current = id && p.weapon === id && owned;
     const dragging = HOTBAR.drag && HOTBAR.drag.i === i && HOTBAR.drag.moved >= 8;
     const bad = HOTBAR.flash && HOTBAR.flash.i === i && HOTBAR.flash.until > now;
     ctx.fillStyle = 'rgba(14,16,22,0.78)';
-    ctx.fillRect(x, y, g.s, g.s);
+    ctx.fillRect(x, y, S, S);
     ctx.lineWidth = current ? 2 : 1;
     ctx.strokeStyle = bad ? '#e0473f' : current ? '#f6d17a' : (owned ? '#8b93a4' : '#3a4050');
-    ctx.strokeRect(x + 0.5, y + 0.5, g.s - 1, g.s - 1);
+    ctx.strokeRect(x + 0.5, y + 0.5, S - 1, S - 1);
     ctx.font = '9px ui-monospace, monospace'; ctx.textAlign = 'left';
     ctx.fillStyle = '#6b7385'; ctx.fillText(String(i + 1), x + 4, y + 7);
     ctx.textAlign = 'center';
-    if (!id || dragging) continue;
-    drawHotIcon(id, x + g.s / 2, y + 15, 34, 20, owned ? 1 : 0.35);
+    if (!id || dragging) { ctx.restore(); continue; }
+    drawHotIcon(id, x + S / 2, y + 15, 34, 20, owned ? 1 : 0.35);
     ctx.font = '9px ui-monospace, monospace';
-    if (id === 'fists')         { ctx.fillStyle = '#9aa3b5'; ctx.fillText('POW', x + g.s / 2, y + 30); }
-    else if (id === 'lob')      { const n = Math.floor((p.ammo || 0) / T.spudPellets); ctx.fillStyle = n > 0 ? '#d8b878' : '#e0473f'; ctx.fillText('\u00D7 ' + n, x + g.s / 2, y + 30); }
-    else if (id === 'spud')     { ctx.fillStyle = p.ammo > 0 ? '#d8b878' : '#e0473f'; ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + (p.ammo || 0), x + g.s / 2, y + 30); }
-    else if (id === 'blaster')  { ctx.fillStyle = owned ? '#9aa3b5' : '#3a4050'; ctx.fillText(owned ? '\u221E' : '\u2014', x + g.s / 2, y + 30); }
-    else if (id === 'launcher') { ctx.fillStyle = owned ? '#f6d17a' : '#3a4050'; ctx.fillText('\u2622 ' + (p.rockets || 0), x + g.s / 2, y + 30); }
+    if (id === 'fists')         { ctx.fillStyle = '#9aa3b5'; ctx.fillText('POW', x + S / 2, y + 30); }
+    else if (id === 'lob')      { const n = Math.floor((p.ammo || 0) / T.spudPellets); ctx.fillStyle = n > 0 ? '#d8b878' : '#e0473f'; ctx.fillText('\u00D7 ' + n, x + S / 2, y + 30); }
+    else if (id === 'spud')     { ctx.fillStyle = p.ammo > 0 ? '#d8b878' : '#e0473f'; ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + (p.ammo || 0), x + S / 2, y + 30); }
+    else if (id === 'blaster')  { ctx.fillStyle = owned ? '#9aa3b5' : '#3a4050'; ctx.fillText(owned ? '\u221E' : '\u2014', x + S / 2, y + 30); }
+    else if (id === 'launcher') { ctx.fillStyle = owned ? '#f6d17a' : '#3a4050'; ctx.fillText('\u2622 ' + (p.rockets || 0), x + S / 2, y + 30); }
     else if (id === 'shotgun') {
-      if (owned) { ctx.fillStyle = '#2a2f3b'; ctx.fillRect(x + 6, y + 28, g.s - 12, 4);
+      if (owned) { ctx.fillStyle = '#2a2f3b'; ctx.fillRect(x + 6, y + 28, S - 12, 4);
                    ctx.fillStyle = p.wTime < 3 && Math.floor(p.wTime * 6) % 2 === 0 && w.started ? '#e0473f' : '#f6d17a';
-                   ctx.fillRect(x + 6, y + 28, Math.round((g.s - 12) * Math.min(1, p.wTime / T.shotgunTime)), 4); }
-      else { ctx.fillStyle = '#3a4050'; ctx.fillText('\u2014', x + g.s / 2, y + 30); }
+                   ctx.fillRect(x + 6, y + 28, Math.round((S - 12) * Math.min(1, p.wTime / T.shotgunTime)), 4); }
+      else { ctx.fillStyle = '#3a4050'; ctx.fillText('\u2014', x + S / 2, y + 30); }
     }
+    ctx.restore();
   }
   // the slot being dragged rides under the finger
   if (HOTBAR.drag && HOTBAR.drag.moved >= 8 && HOTBAR.order[HOTBAR.drag.i]) {
