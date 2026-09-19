@@ -501,7 +501,7 @@ const RANGES = {
   intermission:[0.5, 8, 0.1],
 };
 
-const BUILD = 'b211 — the mantis comes closer';
+const BUILD = 'b212 — sitting legs join up';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1141,13 +1141,35 @@ function usesSitArt(p) { return !!(p && p.sit && p.bong && p.ch === 'juicy' && S
 function sitArtIn(chair) { return world.players.some(p => p.sit === chair && (usesSitArt(p) || usesSitLegs(p))); }
 // sat without the bong: the art's legs and stool (everything below the bong's base, which ends at row
 // SIT_LEGS_ROW of the 2x frame) under his own top half
-const SIT_LEGS_ROW = 74;
+// (b212) from the top of his shorts down, so his thighs join his waist; the bong's base and the
+// hand holding it sit on his lap there, so they're painted out with the shorts/leg just below them
+const SIT_LEGS_ROW = 64, SIT_WAIST_ROW = 72;
+let SIT_LEGS_CV = null;
+function sitLegsCanvas() {
+  if (SIT_LEGS_CV) return SIT_LEGS_CV;
+  const im = SIT_ART[0], w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0); const id = g.getImageData(0, 0, w, h), d = id.data;
+  for (let y = 0; y < SIT_LEGS_ROW; y++) for (let x = 0; x < w; x++) d[(y * w + x) * 4 + 3] = 0;
+  for (let y = SIT_LEGS_ROW; y < 72; y++) for (let x = 34; x < w; x++) d[(y * w + x) * 4 + 3] = 0;   // his lap in front of him: nothing but air above the thigh
+  const lum = (r, gg, b) => 0.3 * r + 0.59 * gg + 0.11 * b;
+  for (let y = 77; y >= SIT_LEGS_ROW; y--) for (let x = 20; x < 64; x++) {          // bottom up, so fills come from below
+    const o = (y * w + x) * 4; if (!d[o + 3]) continue;
+    const r = d[o], gg = d[o + 1], b = d[o + 2];
+    const glass = (b > r + 25 && lum(r, gg, b) > 165) || b - r > 85;
+    const hand = r > gg + 25 && gg > b && x < 60 && y < 76;
+    if (!glass && !hand) continue;
+    const u = ((y + 1) * w + x) * 4; for (let k = 0; k < 4; k++) d[o + k] = d[u + k];
+  }
+  g.putImageData(id, 0, 0);
+  return (SIT_LEGS_CV = c);
+}
 function usesSitLegs(p) { const im = SIT_ART[0]; return !!(p && p.sit && !p.bong && p.ch === 'juicy' && im.complete && im.naturalWidth); }
+function sitWaistY(y) { return y + SIT_GEO.floor - SIT_ART[0].naturalHeight / 2 + SIT_WAIST_ROW / 2; }   // where his top half stops
 function drawSitLegs(x, y) {
-  const im = SIT_ART[0], left = x - SIT_GEO.stool, bottom = y + SIT_GEO.floor, top = bottom - im.naturalHeight / 2;
+  const im = sitLegsCanvas(), left = x - SIT_GEO.stool, bottom = y + SIT_GEO.floor, top = bottom - im.height / 2;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(im, 0, SIT_LEGS_ROW, im.naturalWidth, im.naturalHeight - SIT_LEGS_ROW,
-                Math.round(left), Math.round(top + SIT_LEGS_ROW / 2), im.naturalWidth / 2, (im.naturalHeight - SIT_LEGS_ROW) / 2);
+  ctx.drawImage(im, 0, SIT_LEGS_ROW, im.width, im.height - SIT_LEGS_ROW,
+                Math.round(left), Math.round(top + SIT_LEGS_ROW / 2), im.width / 2, (im.height - SIT_LEGS_ROW) / 2);
 }
 // ================================================================ BLACKJACK ===
 // Sat at the table you can play blackjack. Gothica deals (house rules: she
@@ -5760,8 +5782,10 @@ function drawJared(w, p) {
       ctx.imageSmoothingEnabled = false;
       // vaping: the gun's barrel cropped off the front of him (no empty-handed side art yet)
       const cut = VAPE_GEO.cut;                                       // sat down, the gun's out of the way
-      ctx.drawImage(im, 0, 0, Math.round(im.naturalWidth * cut), Math.round(im.naturalHeight * keep),
-                    Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw * cut), Math.round(h * keep));
+      // with the art's legs his top half stops at the waist, where the art's shorts take over
+      const kd = artLegs ? Math.min(keep, (sitWaistY(p.y) - (seatY - h * keep)) / h) : keep;
+      ctx.drawImage(im, 0, 0, Math.round(im.naturalWidth * cut), Math.round(im.naturalHeight * kd),
+                    Math.round(p.x - dw / 2), Math.round(seatY - h * keep), Math.round(dw * cut), Math.round(h * kd));
       if (!artLegs) drawSeatedLegs(im, p.x, seatY, false);             // near leg over his lap
       ctx.restore();
       vapeFrame(p, { top: seatY - h * keep, dw, h });
