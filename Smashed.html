@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b231 — shirt art fills the logo';
+const BUILD = 'b232 — position and stretch your shirt art';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -969,11 +969,10 @@ function patchShade(im, L) {
 function shirtSkin(im) {
   const L = shirtLogoBox(im); if (!L || !SHIRT.art) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
-  const a = SHIRT.art, k = Math.min(bw / a.width, bh / a.height);            // shrink it to the patch
-  const dw = Math.max(1, Math.round(a.width * k)), dh = Math.max(1, Math.round(a.height * k));
+  const a = SHIRT.art, pl = SHIRT.place || { x: 0, y: 0, w: 1, h: 1 };       // where you put it in the editor
   const patch = document.createElement('canvas'); patch.width = w; patch.height = h;
   const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = false;
-  pg.drawImage(a, Math.round(bx + (bw - dw) / 2), Math.round(by + (bh - dh) / 2), dw, dh);
+  pg.drawImage(a, bx + pl.x * bw, by + pl.y * bh, Math.max(1, pl.w * bw), Math.max(1, pl.h * bh));
   pg.globalCompositeOperation = 'destination-in'; pg.drawImage(L.mask, 0, 0);  // only on the shirt patch
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
@@ -1015,16 +1014,140 @@ function loadShirtArt(file) {
     const s = document.createElement('canvas'); s.width = Math.max(1, Math.round(tw * k)); s.height = Math.max(1, Math.round(th * k));
     s.getContext('2d').drawImage(c, x0, y0, tw, th, 0, 0, s.width, s.height);
     const url = s.toDataURL();
-    const n = new Image(); n.onload = () => { SHIRT.art = n; applyShirtArt(); if (world.players[0]) world.floaters.push({ x: WARD.x, y: WARD.y - 40, text: 'NEW SHIRT!', t: 0, col: '#6fd3a0' }); }; n.src = url;
+    const n = new Image(); n.onload = () => { SHIRT.art = n; SHIRT.place = shirtFitPlace('fit'); applyShirtArt(); openShirtEditor(); }; n.src = url;
     try { localStorage.setItem(SHIRT.key, url); } catch (_) {}
   }; im.src = fr.result; };
   fr.readAsDataURL(file);
 }
-function clearShirtArt() { SHIRT.art = null; applyShirtArt(); try { localStorage.removeItem(SHIRT.key); } catch (_) {} }
+function clearShirtArt() { SHIRT.art = null; SHIRT.place = null; SHED.open = false; applyShirtArt(); try { localStorage.removeItem(SHIRT.key); localStorage.removeItem(SHIRT.key + '-place'); } catch (_) {} }
 function pickShirtArt() {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
   inp.onchange = () => { if (inp.files && inp.files[0]) loadShirtArt(inp.files[0]); };
   inp.click();
+}
+// ======================================================== SHIRT ART EDITOR ===
+// b232: after picking a picture you get a big view of his chest with it on, and you drag it about,
+// stretch it by the corners, and see what the shirt patch cuts off, before saying yes.
+const SHED = { open: false, place: null, drag: null, pose: null };
+function shirtPoseImage() {
+  const set = IMG.juicy || IMG.jared; if (!set) return null;
+  const im = Array.isArray(set.front_run) ? set.front_run[0] : set.front_run;
+  return im && (im.__orig || im);
+}
+function shirtFitPlace(mode) {                                  // the picture's spot inside the patch, 0..1 of it
+  const a = SHIRT.art, im = shirtPoseImage(), L = im && shirtLogoBox(im);
+  if (!a || !L) return { x: 0, y: 0, w: 1, h: 1 };
+  const ar = a.width / a.height, br = L.box[2] / L.box[3];
+  const k = mode === 'fill' ? Math.max(1, ar / br, br / ar) : 1;
+  let w = 1, h = 1;
+  if (mode === 'fill') { if (ar > br) { h = 1; w = ar / br; } else { w = 1; h = br / ar; } }
+  else { if (ar > br) { w = 1; h = br / ar; } else { h = 1; w = ar / br; } }
+  return { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
+}
+function openShirtEditor() {
+  if (!SHIRT.art) return;
+  SHED.open = true; SHED.place = SHIRT.place ? { ...SHIRT.place } : shirtFitPlace('fit');
+}
+function closeShirtEditor(save) {
+  if (save) { SHIRT.place = { ...SHED.place }; try { localStorage.setItem(SHIRT.key + '-place', JSON.stringify(SHIRT.place)); } catch (_) {} applyShirtArt(); }
+  SHED.open = false; SHED.drag = null;
+}
+function shirtEditorGeo() {
+  const pw = 430, ph = 330, px = Math.round(ARENA.w / 2 - pw / 2), py = Math.round(ARENA.h / 2 - ph / 2);
+  const view = { x: px + 16, y: py + 40, w: 250, h: 250 };
+  const im = shirtPoseImage(), L = im && shirtLogoBox(im);
+  let src = null, box = null;
+  if (L) {
+    const [bx, by, bw, bh] = L.box, pad = Math.round(Math.max(bw, bh) * 0.7);
+    const s = Math.max(bw, bh) + pad * 2;
+    src = { x: bx + bw / 2 - s / 2, y: by + bh / 2 - s / 2, s };
+    const k = view.w / s;                                       // the patch, in the big view
+    box = { x: view.x + (bx - src.x) * k, y: view.y + (by - src.y) * k, w: bw * k, h: bh * k, k };
+  }
+  const bw2 = 128, bh2 = 26, bx2 = px + pw - bw2 - 16;
+  const btns = [
+    { a: 'file', label: 'PICK PICTURE', x: bx2, y: py + 44 },
+    { a: 'fit', label: 'FIT', x: bx2, y: py + 44 + 34 },
+    { a: 'fill', label: 'FILL', x: bx2, y: py + 44 + 68 },
+    { a: 'done', label: 'DONE', x: bx2, y: py + ph - 76 },
+    { a: 'cancel', label: 'CANCEL', x: bx2, y: py + ph - 42 },
+  ].map(b => ({ ...b, w: bw2, h: bh2 }));
+  return { px, py, pw, ph, view, src, box, btns, im };
+}
+function shirtArtRect(g) {                                       // where the picture sits, on screen
+  const p = SHED.place, b = g.box;
+  return { x: b.x + p.x * b.w, y: b.y + p.y * b.h, w: p.w * b.w, h: p.h * b.h };
+}
+function drawShirtEditor() {
+  if (!SHED.open) return;
+  const g = shirtEditorGeo(); if (!g.box) { SHED.open = false; return; }
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,10,14,0.78)'; ctx.fillRect(0, 0, ARENA.w, ARENA.h);
+  ctx.fillStyle = 'rgba(20,12,28,0.96)'; ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(g.px, g.py, g.pw, g.ph, 10); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f7a8ff'; ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('YOUR ART ON HIS SHIRT', g.px + 16, g.py + 22);
+  ctx.fillStyle = '#8b93a4'; ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('drag to move \u00b7 drag a corner to stretch', g.px + 16, g.py + g.ph - 18);
+  // his chest, big
+  ctx.fillStyle = '#11141b'; ctx.fillRect(g.view.x, g.view.y, g.view.w, g.view.h);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(g.im, g.src.x, g.src.y, g.src.s, g.src.s, g.view.x, g.view.y, g.view.w, g.view.h);
+  // the picture: solid where the shirt will show it, faint where the patch cuts it off
+  const r = shirtArtRect(g);
+  ctx.save(); ctx.globalAlpha = 0.28; ctx.drawImage(SHIRT.art, r.x, r.y, r.w, r.h); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(g.box.x, g.box.y, g.box.w, g.box.h); ctx.clip();
+  ctx.drawImage(SHIRT.art, r.x, r.y, r.w, r.h); ctx.restore();
+  ctx.strokeStyle = 'rgba(111,211,160,0.9)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+  ctx.strokeRect(g.box.x, g.box.y, g.box.w, g.box.h); ctx.setLineDash([]);
+  // corner handles
+  ctx.fillStyle = '#f6d17a';
+  for (const [hx, hy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) { ctx.fillStyle = '#1c1a22'; ctx.fillRect(hx - 8, hy - 8, 16, 16); ctx.fillStyle = '#f6d17a'; ctx.fillRect(hx - 6, hy - 6, 12, 12); }
+  for (const b of g.btns) {
+    ctx.fillStyle = b.a === 'done' ? '#1f5a36' : b.a === 'cancel' ? '#5a1f28' : '#3a2150';
+    ctx.strokeStyle = '#f7a8ff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 1);
+    ctx.textAlign = 'left';
+  }
+  ctx.restore();
+}
+// dragging in the editor
+function shirtEditorDown(pt) {
+  if (!SHED.open) return false;
+  const g = shirtEditorGeo(); if (!g.box) return false;
+  for (const b of g.btns) if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
+    if (b.a === 'file') pickShirtArt();
+    else if (b.a === 'fit') SHED.place = shirtFitPlace('fit');
+    else if (b.a === 'fill') SHED.place = shirtFitPlace('fill');
+    else closeShirtEditor(b.a === 'done');
+    return true;
+  }
+  const r = shirtArtRect(g), near = (x, y) => Math.abs(pt.x - x) < 16 && Math.abs(pt.y - y) < 16;   // easy to grab with a finger
+  if (near(r.x, r.y)) SHED.drag = { mode: 'nw', g };
+  else if (near(r.x + r.w, r.y)) SHED.drag = { mode: 'ne', g };
+  else if (near(r.x, r.y + r.h)) SHED.drag = { mode: 'sw', g };
+  else if (near(r.x + r.w, r.y + r.h)) SHED.drag = { mode: 'se', g };
+  else if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) SHED.drag = { mode: 'move', g, ox: pt.x - r.x, oy: pt.y - r.y };
+  else SHED.drag = null;
+  return true;                                                   // the editor swallows taps while it's up
+}
+function shirtEditorMove(pt) {
+  if (!SHED.open || !SHED.drag) return false;
+  const g = shirtEditorGeo(), b = g.box, p = SHED.place, d = SHED.drag;
+  const rx = (pt.x - b.x) / b.w, ry = (pt.y - b.y) / b.h;
+  const minS = 0.08;
+  if (d.mode === 'move') { p.x = (pt.x - d.ox - b.x) / b.w; p.y = (pt.y - d.oy - b.y) / b.h; }
+  else {
+    const x1 = p.x + p.w, y1 = p.y + p.h;
+    if (d.mode === 'nw') { p.x = Math.min(rx, x1 - minS); p.y = Math.min(ry, y1 - minS); p.w = x1 - p.x; p.h = y1 - p.y; }
+    if (d.mode === 'ne') { p.w = Math.max(minS, rx - p.x); p.y = Math.min(ry, y1 - minS); p.h = y1 - p.y; }
+    if (d.mode === 'sw') { p.x = Math.min(rx, x1 - minS); p.w = x1 - p.x; p.h = Math.max(minS, ry - p.y); }
+    if (d.mode === 'se') { p.w = Math.max(minS, rx - p.x); p.h = Math.max(minS, ry - p.y); }
+  }
+  return true;
 }
 // the ART button, beside the E button, while the wardrobe's open in front of you
 function artButton() {
@@ -1049,6 +1172,7 @@ function drawArtButton() {
   }
   ctx.restore();
 }
+try { const pl = localStorage.getItem(SHIRT.key + '-place'); if (pl) SHIRT.place = JSON.parse(pl); } catch (_) {}
 try { const saved = localStorage.getItem(SHIRT.key); if (saved) { const i = new Image(); i.onload = () => { SHIRT.art = i; applyShirtArt(); }; i.src = saved; } } catch (_) {}
 // b221: the wardrobe (the user's art), on the wooden floor by the arcade machine where the vending machine
 // used to stand. E by it opens it (doors swing out: 0 shut, 1 one door, 2 both), E again shuts it.
@@ -4670,6 +4794,7 @@ function calPlace(pt) {
 
 canvas.addEventListener('pointerdown', e => {
   const pt = toArena(e);
+  if (SHED.open) { shirtEditorDown(pt); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
   // game over: a tap on the message restarts (back to the lobby)
   if (world.over && net.role !== 'client'
       && Math.abs(pt.x - ARENA.w / 2) < 220 && Math.abs(pt.y - ARENA.h / 2) < 60) {
@@ -4697,7 +4822,7 @@ canvas.addEventListener('pointerdown', e => {
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
   { const ab = artButton();
     if (ab && SHIRT.art && Math.hypot(pt.x - (ab.x + ab.r * 0.72), pt.y - (ab.y - ab.r * 0.72)) < 12) { clearShirtArt(); e.preventDefault(); return; }
-    if (ab && Math.hypot(pt.x - ab.x, pt.y - ab.y) < ab.r + 6) { pickShirtArt(); e.preventDefault(); return; } }
+    if (ab && Math.hypot(pt.x - ab.x, pt.y - ab.y) < ab.r + 6) { if (SHIRT.art) openShirtEditor(); else pickShirtArt(); e.preventDefault(); return; } }
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
@@ -4729,6 +4854,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   const pt = toArena(e);
+  if (SHED.open) { if (shirtEditorMove(pt)) e.preventDefault(); return; }
   if (HOTBAR.drag && HOTBAR.drag.id === e.pointerId) {
     const d = HOTBAR.drag; d.moved = Math.max(d.moved, Math.hypot(pt.x - d.x, pt.y - d.y)); d.x = pt.x; d.y = pt.y;
     e.preventDefault(); return;
@@ -4748,6 +4874,7 @@ canvas.addEventListener('pointermove', e => {
   e.preventDefault();
 });
 function endPointer(e) {
+  if (SHED.open) { SHED.drag = null; return; }
   if (HOTBAR.drag && HOTBAR.drag.id === e.pointerId) {
     const d = HOTBAR.drag; HOTBAR.drag = null;
     if (d.moved < 8) selectSlot(d.i);
@@ -7861,6 +7988,7 @@ function renderBase(w, hudRight) {
   drawCardsButton();
   drawArtButton();
   drawSitMenu();
+  drawShirtEditor();
   drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
