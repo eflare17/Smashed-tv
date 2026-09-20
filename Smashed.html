@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b232 — position and stretch your shirt art';
+const BUILD = 'b233 — art covers the whole shirt';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -922,13 +922,12 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
   if (w && h) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const g = c.getContext('2d'); g.drawImage(im, 0, 0);
-    const d = g.getImageData(0, 0, w, h).data, lum = o => 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2];
-    const shirt = [], L = [];
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = (y * w + x) * 4;
-      if (d[o + 3] > 200 && d[o + 1] > d[o] * 1.25 && d[o + 1] > d[o + 2] * 1.25 && d[o + 1] > 90) { shirt.push(y * w + x); L.push(lum(o)); } }
-    if (shirt.length >= 60) {
-      const sorted = [...L].sort((a, b) => a - b), cut = sorted[sorted.length >> 1] * 1.3;
-      const mark = new Uint8Array(w * h); shirt.forEach((i, k) => { if (L[k] > cut) mark[i] = 1; });
+    const d = g.getImageData(0, 0, w, h).data;
+    // b233: the whole tank top, not just its logo — every green pixel of the shirt, taken as one piece
+    const isShirt = o => d[o + 3] > 200 && d[o + 1] > d[o] * 1.2 && d[o + 1] > d[o + 2] * 1.2 && d[o + 1] > 80;
+    const mark = new Uint8Array(w * h); let total = 0;
+    for (let i = 0; i < w * h; i++) if (isShirt(i * 4)) { mark[i] = 1; total++; }
+    if (total >= 60) {
       const seen = new Uint8Array(w * h); let best = null;
       for (let i = 0; i < w * h; i++) { if (!mark[i] || seen[i]) continue;
         const st = [i]; seen[i] = 1; const px = []; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
@@ -937,28 +936,18 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
           for (const k of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]) if (k >= 0 && mark[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
         if (!best || px.length > best.px.length) best = { px, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] };
       }
-      if (best && best.px.length >= 20) {
-        // b231: the bright pixels are only the logo's highlight. Grow out to the whole logo: its box,
-        // opened up a bit, and every shirt pixel inside it.
-        const pad = Math.max(1, Math.round(Math.max(best.box[2], best.box[3]) * 0.35));
-        const bx = Math.max(0, best.box[0] - pad), by = Math.max(0, best.box[1] - pad);
-        const bw = Math.min(w - bx, best.box[2] + pad * 2), bh = Math.min(h - by, best.box[3] + pad * 2);
+      if (best && best.px.length >= 60) {
         const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
         const mg = mc.getContext('2d'), md = mg.createImageData(w, h);
-        let n = 0;
-        for (let y = by; y < by + bh; y++) for (let x = bx; x < bx + bw; x++) {
-          const i = y * w + x, o = i * 4;
-          if (d[o + 3] > 200 && d[o + 1] > d[o] * 1.25 && d[o + 1] > d[o + 2] * 1.25 && d[o + 1] > 90) { md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; n++; }
-        }
+        for (const i of best.px) { const o = i * 4; md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; }
         mg.putImageData(md, 0, 0);
-        if (n >= 20) out = { box: [bx, by, bw, bh], mask: mc };
+        out = { box: best.box, mask: mc };
       }
     }
   }
   SHIRT.boxes.set(im, out);
   return out;
-}
-// just the shirt under the logo, used faintly over the picture so the folds and shading still read
+}// just the shirt under the logo, used faintly over the picture so the folds and shading still read
 function patchShade(im, L) {
   const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
@@ -977,7 +966,7 @@ function shirtSkin(im) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   g.drawImage(im, 0, 0); g.drawImage(patch, 0, 0);
-  g.globalAlpha = 0.25; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0);   // the shirt's folds through it
+  g.globalAlpha = 0.34; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0);   // the shirt's folds through it
   return c;
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
@@ -1058,7 +1047,7 @@ function shirtEditorGeo() {
   const im = shirtPoseImage(), L = im && shirtLogoBox(im);
   let src = null, box = null;
   if (L) {
-    const [bx, by, bw, bh] = L.box, pad = Math.round(Math.max(bw, bh) * 0.7);
+    const [bx, by, bw, bh] = L.box, pad = Math.round(Math.max(bw, bh) * 0.28);
     const s = Math.max(bw, bh) + pad * 2;
     src = { x: bx + bw / 2 - s / 2, y: by + bh / 2 - s / 2, s };
     const k = view.w / s;                                       // the patch, in the big view
