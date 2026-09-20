@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b242 — print reads right way round';
+const BUILD = 'b243 — the shirt edges too';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -930,7 +930,8 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
     // his blue jeans (plenty of red) and his sunglasses (blue well past the green) still don't.
     const isShirt = o => d[o + 3] > 200 && (
       (d[o + 1] > d[o] * 1.2 && d[o + 1] > d[o + 2] * 1.2 && d[o + 1] > 80) ||
-      (d[o] < 60 && d[o + 1] >= 70 && d[o + 2] <= d[o + 1] * 1.2));   // 1.2, or his sunglasses count as shirt
+      (d[o] < 60 && d[o + 1] >= 70 && d[o + 2] <= d[o + 1] * 1.2) ||   // 1.2, or his sunglasses count as shirt
+      (d[o] < 30 && d[o + 1] >= 45 && d[o + 1] > d[o] * 2 && d[o + 2] <= d[o + 1] * 1.4));   // b243: its darkest shadows, along the edges (the black outline stays)
     const green = new Uint8Array(w * h); let total = 0;
     for (let i = 0; i < w * h; i++) if (isShirt(i * 4)) { green[i] = 1; total++; }
     // b239: the shirt's own lettering (pale grey-blue and white) isn't green, so it showed through the
