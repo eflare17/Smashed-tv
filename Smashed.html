@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b230 — your own art on his shirt';
+const BUILD = 'b231 — shirt art fills the logo';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -938,18 +938,34 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
         if (!best || px.length > best.px.length) best = { px, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] };
       }
       if (best && best.px.length >= 20) {
+        // b231: the bright pixels are only the logo's highlight. Grow out to the whole logo: its box,
+        // opened up a bit, and every shirt pixel inside it.
+        const pad = Math.max(1, Math.round(Math.max(best.box[2], best.box[3]) * 0.35));
+        const bx = Math.max(0, best.box[0] - pad), by = Math.max(0, best.box[1] - pad);
+        const bw = Math.min(w - bx, best.box[2] + pad * 2), bh = Math.min(h - by, best.box[3] + pad * 2);
         const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
         const mg = mc.getContext('2d'), md = mg.createImageData(w, h);
-        for (const i of best.px) { const o = i * 4; md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; }
+        let n = 0;
+        for (let y = by; y < by + bh; y++) for (let x = bx; x < bx + bw; x++) {
+          const i = y * w + x, o = i * 4;
+          if (d[o + 3] > 200 && d[o + 1] > d[o] * 1.25 && d[o + 1] > d[o + 2] * 1.25 && d[o + 1] > 90) { md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; n++; }
+        }
         mg.putImageData(md, 0, 0);
-        out = { box: best.box, mask: mc };
+        if (n >= 20) out = { box: [bx, by, bw, bh], mask: mc };
       }
     }
   }
   SHIRT.boxes.set(im, out);
   return out;
 }
-// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
+// just the shirt under the logo, used faintly over the picture so the folds and shading still read
+function patchShade(im, L) {
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.drawImage(im, 0, 0);
+  g.globalCompositeOperation = 'destination-in'; g.drawImage(L.mask, 0, 0);
+  return c;
+}// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
 function shirtSkin(im) {
   const L = shirtLogoBox(im); if (!L || !SHIRT.art) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
@@ -962,6 +978,7 @@ function shirtSkin(im) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   g.drawImage(im, 0, 0); g.drawImage(patch, 0, 0);
+  g.globalAlpha = 0.25; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0);   // the shirt's folds through it
   return c;
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
@@ -975,8 +992,11 @@ function applyShirtArt() {
   }
   for (const [holder, key, orig] of SHIRT.originals) {
     const list = Array.isArray(orig) ? orig : [orig];
-    const done = list.map(im => { if (!SHIRT.art || !im.naturalWidth) return im; const c = shirtSkin(im); if (!c) return im;
-      const n = new Image(); n.src = c.toDataURL(); n.__orig = im; return n; });
+    const done = list.map(im => { if (!SHIRT.art || !im.naturalWidth) return im;
+      let c = null; try { c = shirtSkin(im); } catch (_) {}
+      if (!c) return im;
+      Object.defineProperty(c, 'naturalWidth', { value: c.width }); Object.defineProperty(c, 'naturalHeight', { value: c.height });
+      Object.defineProperty(c, 'complete', { value: true }); c.__orig = im; return c; });
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
 }
