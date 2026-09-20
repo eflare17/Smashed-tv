@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b244 — photo or pixel look';
+const BUILD = 'b245 — pictures kept at full detail';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1029,13 +1029,13 @@ function mirroredArt(a) {                                        // the picture 
     const g = m.getContext('2d'); g.imageSmoothingEnabled = false; g.translate(m.width, 0); g.scale(-1, 1); g.drawImage(a, 0, 0); MIRRORED.set(a, m); }
   return m;
 }
-function shirtSkin(im, isBack, mirror) {
+function shirtSkin(im, isBack, mirror, hi) {
   const L = shirtLogoBox(im); if (!L) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
   let a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
   if (mirror) a = mirroredArt(a);
   const pl = ((isBack && SHIRT.artBack) ? SHIRT.placeBack : SHIRT.place) || { x: 0, y: 0, w: 1, h: 1 };   // where you put it in the editor
-  const S = SHIRT.smooth ? 2 : 1;                                          // photo mode: twice the detail, smoothly scaled
+  const S = SHIRT.smooth ? (hi ? 3 : 2) : 1;                               // photo mode: twice the detail (three times where the camera closes in)
   const patch = document.createElement('canvas'); patch.width = w * S; patch.height = h * S;
   const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = SHIRT.smooth;
   pg.imageSmoothingQuality = 'high';
@@ -1052,8 +1052,9 @@ function shirtSkin(im, isBack, mirror) {
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
 function applyShirtArt() {
+  const chs = new Set((world.players || []).map(p => p.ch).filter(Boolean)); if (!chs.size) chs.add('juicy');
   const sets = [];
-  for (const id of Object.keys(IMG)) if (/^(juicy|jared|tyson)/.test(id)) sets.push(IMG[id]);
+  for (const id of Object.keys(IMG)) if ([...chs].some(ch => id === ch || id.startsWith(ch + '_'))) sets.push(IMG[id]);
   if (!SHIRT.originals) {
     SHIRT.originals = [];
     for (const set of sets) for (const k of Object.keys(set)) SHIRT.originals.push([set, k, set[k]]);
@@ -1062,7 +1063,8 @@ function applyShirtArt() {
   for (const [holder, key, orig] of SHIRT.originals) {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => { if ((!SHIRT.art && !SHIRT.artBack) || !im.naturalWidth) return im;
-      let c = null, m = null; try { c = shirtSkin(im, backKey(key)); m = shirtSkin(im, backKey(key), true); } catch (_) {}
+      const hi = holder === SIT_ART || holder === SIT_IDLE;                 // sat at the table the camera zooms in, so print those finer
+      let c = null, m = null; try { c = shirtSkin(im, backKey(key), false, hi); m = shirtSkin(im, backKey(key), true, hi); } catch (_) {}
       if (!c) return im;
       for (const cv of [c, m]) { if (!cv) continue;
         Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
@@ -1082,10 +1084,11 @@ function loadShirtArt(file) {
       if (d[o + 3] < 30 || (d[o] > 244 && d[o + 1] > 244 && d[o + 2] > 244)) continue;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (x1 < 0) { x0 = 0; y0 = 0; x1 = w - 1; y1 = h - 1; }
-    const tw = x1 - x0 + 1, th = y1 - y0 + 1, k = Math.min(1, 96 / Math.max(tw, th));
+    const tw = x1 - x0 + 1, th = y1 - y0 + 1, k = Math.min(1, 512 / Math.max(tw, th));   // b245: keep the detail
     const s = document.createElement('canvas'); s.width = Math.max(1, Math.round(tw * k)); s.height = Math.max(1, Math.round(th * k));
     s.getContext('2d').drawImage(c, x0, y0, tw, th, 0, 0, s.width, s.height);
-    const url = s.toDataURL();   // kept below, on whichever side is showing
+    let url = s.toDataURL('image/webp', 0.92);                              // webp: small enough to keep in the browser
+    if (!/^data:image\/webp/.test(url)) url = s.toDataURL();                 // (png if webp isn't going)
     const n = new Image(); n.onload = () => {
       const back = SHED.open && SHED.side === 'back';
       if (back) { SHIRT.artBack = n; } else { SHIRT.art = n; }
