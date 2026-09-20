@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b240 — front and back of the shirt';
+const BUILD = 'b241 — shirt shadows covered too';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -925,7 +925,12 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
     const g = c.getContext('2d'); g.drawImage(im, 0, 0);
     const d = g.getImageData(0, 0, w, h).data;
     // b233: the whole tank top, not just its logo — every green pixel of the shirt, taken as one piece
-    const isShirt = o => d[o + 3] > 200 && d[o + 1] > d[o] * 1.2 && d[o + 1] > d[o + 2] * 1.2 && d[o + 1] > 80;
+    // b241: the shirt's shadows on the folds are dark teal (more blue than green), so they were left
+    // sitting on top of the print. Anything with next to no red and a strong green counts as fabric;
+    // his blue jeans (plenty of red) and his sunglasses (blue well past the green) still don't.
+    const isShirt = o => d[o + 3] > 200 && (
+      (d[o + 1] > d[o] * 1.2 && d[o + 1] > d[o + 2] * 1.2 && d[o + 1] > 80) ||
+      (d[o] < 60 && d[o + 1] >= 70 && d[o + 2] <= d[o + 1] * 1.2));   // 1.2, or his sunglasses count as shirt
     const green = new Uint8Array(w * h); let total = 0;
     for (let i = 0; i < w * h; i++) if (isShirt(i * 4)) { green[i] = 1; total++; }
     // b239: the shirt's own lettering (pale grey-blue and white) isn't green, so it showed through the
