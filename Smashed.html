@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b243 — the shirt edges too';
+const BUILD = 'b244 — photo or pixel look';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -914,7 +914,7 @@ function drawHeldPlate(p) {
 // each frame of his art by looking for the brightest connected patch of shirt-green, so the picture
 // lands in the right place in every pose and is shrunk to fit that patch on its own. The picture is
 // kept (shrunk) in this browser, so it's still there next time.
-const SHIRT = { art: null, artBack: null, place: null, placeBack: null, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
+const SHIRT = { art: null, artBack: null, place: null, placeBack: null, smooth: false, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
 const backKey = k => typeof k === 'string' && /^b(ack|diag)/.test(k);     // which of his frames show his back
 function shirtLogoBox(im) {                                   // {box:[x,y,w,h], mask:canvas} or null
   if (SHIRT.boxes.has(im)) return SHIRT.boxes.get(im);
@@ -998,12 +998,29 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
   SHIRT.boxes.set(im, out);
   return out;
 }// just the shirt under the logo, used faintly over the picture so the folds and shading still read
+// b244: the shirt's folds, as light and shade relative to its flat colour, so the print darkens in the
+// creases only. (Shading with the fabric's own colour left the lettering brighter than everything
+// around it, and its shape ghosted through the print.)
 function patchShade(im, L) {
-  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
-  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  g.drawImage(im, 0, 0);
-  g.globalCompositeOperation = 'destination-in'; g.drawImage(L.shade || L.mask, 0, 0);
-  return c;
+  const w = im.naturalWidth, h = im.naturalHeight;
+  const src = document.createElement('canvas'); src.width = w; src.height = h;
+  const sg = src.getContext('2d'); sg.imageSmoothingEnabled = false; sg.drawImage(im, 0, 0);
+  const d = sg.getImageData(0, 0, w, h).data;
+  const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+  const mg = mc.getContext('2d'); mg.drawImage(L.shade || L.mask, 0, 0);
+  const md = mg.getImageData(0, 0, w, h), mdd = md.data;
+  const lum = o => 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2];
+  let sum = 0, n = 0;
+  for (let i = 0; i < w * h; i++) if (mdd[i * 4 + 3]) { sum += lum(i * 4); n++; }
+  const avg = n ? sum / n : 1;
+  const out = mg.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { const o = i * 4;
+    if (!mdd[o + 3]) continue;                                  // off the fabric: leave the print alone
+    const v = Math.max(60, Math.min(255, Math.round(255 * (lum(o) / avg))));
+    out.data[o] = out.data[o + 1] = out.data[o + 2] = v; out.data[o + 3] = 255;
+  }
+  mg.putImageData(out, 0, 0);
+  return mc;
 }// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
 const MIRRORED = new Map();
 function mirroredArt(a) {                                        // the picture flipped, so it still reads right on a flipped frame
@@ -1018,15 +1035,19 @@ function shirtSkin(im, isBack, mirror) {
   let a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
   if (mirror) a = mirroredArt(a);
   const pl = ((isBack && SHIRT.artBack) ? SHIRT.placeBack : SHIRT.place) || { x: 0, y: 0, w: 1, h: 1 };   // where you put it in the editor
-  const patch = document.createElement('canvas'); patch.width = w; patch.height = h;
-  const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = false;
+  const S = SHIRT.smooth ? 2 : 1;                                          // photo mode: twice the detail, smoothly scaled
+  const patch = document.createElement('canvas'); patch.width = w * S; patch.height = h * S;
+  const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = SHIRT.smooth;
+  pg.imageSmoothingQuality = 'high';
   const plx = mirror ? (1 - pl.x - pl.w) : pl.x;
-  pg.drawImage(a, bx + plx * bw, by + pl.y * bh, Math.max(1, pl.w * bw), Math.max(1, pl.h * bh));
-  pg.globalCompositeOperation = 'destination-in'; pg.drawImage(L.mask, 0, 0);  // only on the shirt patch
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  pg.drawImage(a, (bx + plx * bw) * S, (by + pl.y * bh) * S, Math.max(1, pl.w * bw) * S, Math.max(1, pl.h * bh) * S);
+  pg.globalCompositeOperation = 'destination-in'; pg.imageSmoothingEnabled = false;
+  pg.drawImage(L.mask, 0, 0, w * S, h * S);                                // only on the shirt itself
+  const c = document.createElement('canvas'); c.width = w * S; c.height = h * S;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  g.drawImage(im, 0, 0); g.drawImage(patch, 0, 0);
-  g.globalAlpha = 0.34; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0);   // the shirt's folds through it
+  g.drawImage(im, 0, 0, w * S, h * S); g.drawImage(patch, 0, 0);
+  c.__ss = S;
+  g.globalAlpha = 0.75; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0, w * S, h * S);   // the shirt's folds through it
   return c;
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
@@ -1140,6 +1161,7 @@ function shirtEditorGeo() {
     { a: 'fit', label: 'FIT', x: bx2, y: py + 44 + 32 },
     { a: 'fill', label: 'FILL', x: bx2, y: py + 44 + 64 },
     { a: 'turn', label: SHED.side === 'back' ? 'SHOW FRONT' : 'TURN AROUND', x: bx2, y: py + 44 + 96 },
+    { a: 'smooth', label: SHIRT.smooth ? 'LOOK: PHOTO' : 'LOOK: PIXEL', x: bx2, y: py + 44 + 128 },
     { a: 'done', label: 'DONE', x: bx2, y: py + ph - 76 },
     { a: 'cancel', label: 'CANCEL', x: bx2, y: py + ph - 42 },
   ].map(b => ({ ...b, w: bw2, h: bh2 }));
@@ -1169,8 +1191,9 @@ function drawShirtEditor() {
   // not its box), with a faint outline showing where the rest of it falls
   const r = shirtArtRect(g);
   const pv = document.createElement('canvas'); pv.width = Math.ceil(g.view.w); pv.height = Math.ceil(g.view.h);
-  const pg = pv.getContext('2d'); pg.imageSmoothingEnabled = false;
+  const pg = pv.getContext('2d'); pg.imageSmoothingEnabled = SHIRT.smooth; pg.imageSmoothingQuality = 'high';
   pg.drawImage(shedArt(), r.x - g.view.x, r.y - g.view.y, r.w, r.h);
+  pg.imageSmoothingEnabled = false;
   pg.globalCompositeOperation = 'destination-in';
   pg.drawImage(g.mask, g.src.x, g.src.y, g.src.s, g.src.s, 0, 0, g.view.w, g.view.h);
   ctx.drawImage(pv, g.view.x, g.view.y);
@@ -1200,6 +1223,7 @@ function shirtEditorDown(pt) {
     else if (b.a === 'fit') SHED.place = shirtFitPlace('fit');
     else if (b.a === 'fill') SHED.place = shirtFitPlace('fill');
     else if (b.a === 'turn') { shedSaveSide(); SHED.side = SHED.side === 'back' ? 'front' : 'back'; shedLoadSide(); }
+    else if (b.a === 'smooth') { SHIRT.smooth = !SHIRT.smooth; try { localStorage.setItem(SHIRT.key + '-smooth', SHIRT.smooth ? '1' : '0'); } catch (_) {} applyShirtArt(); }
     else closeShirtEditor(b.a === 'done');
     return true;
   }
@@ -1250,7 +1274,8 @@ function drawArtButton() {
   }
   ctx.restore();
 }
-try { const pl = localStorage.getItem(SHIRT.key + '-place'); if (pl) SHIRT.place = JSON.parse(pl);
+try { SHIRT.smooth = localStorage.getItem(SHIRT.key + '-smooth') === '1';
+      const pl = localStorage.getItem(SHIRT.key + '-place'); if (pl) SHIRT.place = JSON.parse(pl);
       const pb = localStorage.getItem(SHIRT.key + '-place-back'); if (pb) SHIRT.placeBack = JSON.parse(pb);
       const ab = localStorage.getItem(SHIRT.key + '-back'); if (ab) { const i = new Image(); i.onload = () => { SHIRT.artBack = i; applyShirtArt(); }; i.src = ab; } } catch (_) {}
 try { const saved = localStorage.getItem(SHIRT.key); if (saved) { const i = new Image(); i.onload = () => { SHIRT.art = i; applyShirtArt(); }; i.src = saved; } } catch (_) {}
@@ -1522,7 +1547,8 @@ function drawStemVape(ax, ay, tip, heat) {
     t0 = v.t; v.t += dt; t = v.t;
   }
   const f = !v ? 0 : t < S.heat ? 0 : t < S.pull ? 1 : t < S.blow ? 2 : t < S.done ? 3 : 0;
-  const im1 = SIT_ART[f], im = (dir < 0 && im1.__mir) || im1, w = im.naturalWidth / 2, h = im.naturalHeight / 2;
+  const im1 = SIT_ART[f], im = (dir < 0 && im1.__mir) || im1, ss = im.__ss || 1;
+  const w = im.naturalWidth / (2 * ss), h = im.naturalHeight / (2 * ss);
   const left = p.x - SIT_GEO.stool, bottom = p.y + SIT_GEO.floor;
   const W = (ox, oy) => ({ x: p.x + dir * (ox - SIT_GEO.stool), y: bottom + oy });   // a point on the art, in the world
   ctx.save();
@@ -1570,7 +1596,8 @@ function drawSitIdle(p) {
   const dir = p.sit === 2 ? -1 : 1, now = performance.now() / 1000;
   // sat still (b214: the breathing frame moved his chest too much), and now and then he looks round at you
   const f = (now % 9) > 7.6 ? 3 : 0;
-  const im0 = SIT_IDLE[f], im = (dir < 0 && im0.__mir) || im0, w = im.naturalWidth / 2, h = im.naturalHeight / 2, bottom = p.y + SIT_GEO.floor;
+  const im0 = SIT_IDLE[f], im = (dir < 0 && im0.__mir) || im0, ss = im.__ss || 1;
+  const w = im.naturalWidth / (2 * ss), h = im.naturalHeight / (2 * ss), bottom = p.y + SIT_GEO.floor;
   ctx.save();
   if (dir < 0) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
