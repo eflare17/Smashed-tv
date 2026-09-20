@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b234 — preview shows the shirt only';
+const BUILD = 'b239 — lettering covered, skin untouched';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -925,23 +925,66 @@ function shirtLogoBox(im) {                                   // {box:[x,y,w,h],
     const d = g.getImageData(0, 0, w, h).data;
     // b233: the whole tank top, not just its logo — every green pixel of the shirt, taken as one piece
     const isShirt = o => d[o + 3] > 200 && d[o + 1] > d[o] * 1.2 && d[o + 1] > d[o + 2] * 1.2 && d[o + 1] > 80;
-    const mark = new Uint8Array(w * h); let total = 0;
-    for (let i = 0; i < w * h; i++) if (isShirt(i * 4)) { mark[i] = 1; total++; }
-    if (total >= 60) {
-      const seen = new Uint8Array(w * h); let best = null;
+    const green = new Uint8Array(w * h); let total = 0;
+    for (let i = 0; i < w * h; i++) if (isShirt(i * 4)) { green[i] = 1; total++; }
+    // b239: the shirt's own lettering (pale grey-blue and white) isn't green, so it showed through the
+    // print. A pale pixel counts as shirt when there's green fabric on both sides of it (left and right,
+    // or above and below) within a few pixels: true of every letter, not true of his grey gun beside it.
+    const mark = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) mark[i] = green[i];
+    const REACH = 9;
+    const hit = (x, y, dx, dy) => { for (let k = 1; k <= REACH; k++) { const xx = x + dx * k, yy = y + dy * k;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) return false; if (green[yy * w + xx]) return true; } return false; };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x, o = i * 4; if (green[i] || d[o + 3] < 200) continue;
+      const mx = Math.max(d[o], d[o + 1], d[o + 2]), mn = Math.min(d[o], d[o + 1], d[o + 2]);
+      if (mx - mn > 75 || 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2] < 105) continue;     // not pale: skip
+      if ((hit(x, y, -1, 0) && hit(x, y, 1, 0)) || (hit(x, y, 0, -1) && hit(x, y, 0, 1))) mark[i] = 1;
+    }    if (total >= 60) {
+      // b236: his arm can split the shirt in two (the diagonal run), so take every worthwhile piece,
+      // not just the biggest, or the offcut keeps its old lettering
+      const seen = new Uint8Array(w * h), parts = [];
       for (let i = 0; i < w * h; i++) { if (!mark[i] || seen[i]) continue;
         const st = [i]; seen[i] = 1; const px = []; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
         while (st.length) { const j = st.pop(); px.push(j); const x = j % w, y = (j / w) | 0;
           if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
           for (const k of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]) if (k >= 0 && mark[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
-        if (!best || px.length > best.px.length) best = { px, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] };
+        parts.push({ px, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] });
+      }
+      parts.sort((a, b) => b.px.length - a.px.length);
+      const keep = parts.filter(p => p.px.length >= Math.max(30, parts[0].px.length * 0.12));
+      let best = null;
+      if (keep.length) {
+        const px = [].concat(...keep.map(p => p.px));
+        const x0 = Math.min(...keep.map(p => p.box[0])), y0 = Math.min(...keep.map(p => p.box[1]));
+        const x1 = Math.max(...keep.map(p => p.box[0] + p.box[2])), y1 = Math.max(...keep.map(p => p.box[1] + p.box[3]));
+        best = { px, box: [x0, y0, x1 - x0, y1 - y0], parts: keep };
       }
       if (best && best.px.length >= 60) {
-        const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+        // b235: the shirt's own lettering and logo aren't green, so they sat as holes in the print.
+        // Fill anything enclosed by the shirt: flood in from the edge of its box, and whatever the
+        // flood can't reach is inside the shirt.
+        const inShirt = new Uint8Array(w * h); for (const i of best.px) inShirt[i] = 1;
+        const outside = new Uint8Array(w * h), q = [];
+        for (const part of best.parts) {
+        const [bx, by, bw, bh] = part.box;
+        for (let x = bx; x < bx + bw; x++) { for (const y of [by, by + bh - 1]) { const i = y * w + x; if (!inShirt[i] && !outside[i]) { outside[i] = 1; q.push(i); } } }
+        for (let y = by; y < by + bh; y++) { for (const x of [bx, bx + bw - 1]) { const i = y * w + x; if (!inShirt[i] && !outside[i]) { outside[i] = 1; q.push(i); } } }
+        while (q.length) { const j = q.pop(), x = j % w, y = (j / w) | 0;
+          for (const k of [x > bx ? j - 1 : -1, x < bx + bw - 1 ? j + 1 : -1, y > by ? j - w : -1, y < by + bh - 1 ? j + w : -1])
+            if (k >= 0 && !inShirt[k] && !outside[k]) { outside[k] = 1; q.push(k); } }
+        }
+        { const [bx, by, bw, bh] = best.box;
+        const mc = document.createElement('canvas'); mc.width = w; mc.height = h;          // the whole shirt, holes and all
         const mg = mc.getContext('2d'), md = mg.createImageData(w, h);
-        for (const i of best.px) { const o = i * 4; md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; }
-        mg.putImageData(md, 0, 0);
-        out = { box: best.box, mask: mc };
+        const sc = document.createElement('canvas'); sc.width = w; sc.height = h;          // just the green, for the folds
+        const sg = sc.getContext('2d'), sd = sg.createImageData(w, h);
+        for (let y = by; y < by + bh; y++) for (let x = bx; x < bx + bw; x++) { const i = y * w + x, o = i * 4;
+          if (inShirt[i] || !outside[i]) { md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; }
+          if (green[i]) { sd.data[o] = sd.data[o + 1] = sd.data[o + 2] = 255; sd.data[o + 3] = 255; }
+        }
+        mg.putImageData(md, 0, 0); sg.putImageData(sd, 0, 0);
+        out = { box: best.box, mask: mc, shade: sc }; }
       }
     }
   }
@@ -952,7 +995,7 @@ function patchShade(im, L) {
   const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   g.drawImage(im, 0, 0);
-  g.globalCompositeOperation = 'destination-in'; g.drawImage(L.mask, 0, 0);
+  g.globalCompositeOperation = 'destination-in'; g.drawImage(L.shade || L.mask, 0, 0);
   return c;
 }// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
 function shirtSkin(im) {
