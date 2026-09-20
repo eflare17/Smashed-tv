@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b241 — shirt shadows covered too';
+const BUILD = 'b242 — print reads right way round';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1004,14 +1004,23 @@ function patchShade(im, L) {
   g.globalCompositeOperation = 'destination-in'; g.drawImage(L.shade || L.mask, 0, 0);
   return c;
 }// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
-function shirtSkin(im, isBack) {
+const MIRRORED = new Map();
+function mirroredArt(a) {                                        // the picture flipped, so it still reads right on a flipped frame
+  let m = MIRRORED.get(a);
+  if (!m) { m = document.createElement('canvas'); m.width = a.width || a.naturalWidth; m.height = a.height || a.naturalHeight;
+    const g = m.getContext('2d'); g.imageSmoothingEnabled = false; g.translate(m.width, 0); g.scale(-1, 1); g.drawImage(a, 0, 0); MIRRORED.set(a, m); }
+  return m;
+}
+function shirtSkin(im, isBack, mirror) {
   const L = shirtLogoBox(im); if (!L) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
-  const a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
+  let a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
+  if (mirror) a = mirroredArt(a);
   const pl = ((isBack && SHIRT.artBack) ? SHIRT.placeBack : SHIRT.place) || { x: 0, y: 0, w: 1, h: 1 };   // where you put it in the editor
   const patch = document.createElement('canvas'); patch.width = w; patch.height = h;
   const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = false;
-  pg.drawImage(a, bx + pl.x * bw, by + pl.y * bh, Math.max(1, pl.w * bw), Math.max(1, pl.h * bh));
+  const plx = mirror ? (1 - pl.x - pl.w) : pl.x;
+  pg.drawImage(a, bx + plx * bw, by + pl.y * bh, Math.max(1, pl.w * bw), Math.max(1, pl.h * bh));
   pg.globalCompositeOperation = 'destination-in'; pg.drawImage(L.mask, 0, 0);  // only on the shirt patch
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
@@ -1031,10 +1040,12 @@ function applyShirtArt() {
   for (const [holder, key, orig] of SHIRT.originals) {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => { if ((!SHIRT.art && !SHIRT.artBack) || !im.naturalWidth) return im;
-      let c = null; try { c = shirtSkin(im, backKey(key)); } catch (_) {}
+      let c = null, m = null; try { c = shirtSkin(im, backKey(key)); m = shirtSkin(im, backKey(key), true); } catch (_) {}
       if (!c) return im;
-      Object.defineProperty(c, 'naturalWidth', { value: c.width }); Object.defineProperty(c, 'naturalHeight', { value: c.height });
-      Object.defineProperty(c, 'complete', { value: true }); c.__orig = im; return c; });
+      for (const cv of [c, m]) { if (!cv) continue;
+        Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
+        Object.defineProperty(cv, 'complete', { value: true }); cv.__orig = im; }
+      c.__mir = m; return c; });
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
 }
@@ -1510,7 +1521,7 @@ function drawStemVape(ax, ay, tip, heat) {
     t0 = v.t; v.t += dt; t = v.t;
   }
   const f = !v ? 0 : t < S.heat ? 0 : t < S.pull ? 1 : t < S.blow ? 2 : t < S.done ? 3 : 0;
-  const im = SIT_ART[f], w = im.naturalWidth / 2, h = im.naturalHeight / 2;
+  const im1 = SIT_ART[f], im = (dir < 0 && im1.__mir) || im1, w = im.naturalWidth / 2, h = im.naturalHeight / 2;
   const left = p.x - SIT_GEO.stool, bottom = p.y + SIT_GEO.floor;
   const W = (ox, oy) => ({ x: p.x + dir * (ox - SIT_GEO.stool), y: bottom + oy });   // a point on the art, in the world
   ctx.save();
@@ -1558,7 +1569,7 @@ function drawSitIdle(p) {
   const dir = p.sit === 2 ? -1 : 1, now = performance.now() / 1000;
   // sat still (b214: the breathing frame moved his chest too much), and now and then he looks round at you
   const f = (now % 9) > 7.6 ? 3 : 0;
-  const im = SIT_IDLE[f], w = im.naturalWidth / 2, h = im.naturalHeight / 2, bottom = p.y + SIT_GEO.floor;
+  const im0 = SIT_IDLE[f], im = (dir < 0 && im0.__mir) || im0, w = im.naturalWidth / 2, h = im.naturalHeight / 2, bottom = p.y + SIT_GEO.floor;
   ctx.save();
   if (dir < 0) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
@@ -6409,7 +6420,7 @@ function drawJared(w, p) {
   ctx.save();
   if (pose.flip) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
+  ctx.drawImage(pose.flip && im.__mir ? im.__mir : im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
   ctx.restore();
 
   if (swim) {
