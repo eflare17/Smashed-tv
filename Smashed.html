@@ -505,7 +505,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b229 — wardrobe art in its own files';
+const BUILD = 'b230 — your own art on his shirt';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -909,6 +909,127 @@ function drawHeldPlate(p) {
   if (!p.plate) return;
   const im = GYM_ART.plate[p.plate]; drawGymImg(im, p.x + (p.fx < 0 ? -4 : 4), p.y - 16, p.fx < 0);
 }
+// ============================================================== SHIRT ART ===
+// b230: open the wardrobe and load your own picture onto Jared's tank top. The logo patch is found in
+// each frame of his art by looking for the brightest connected patch of shirt-green, so the picture
+// lands in the right place in every pose and is shrunk to fit that patch on its own. The picture is
+// kept (shrunk) in this browser, so it's still there next time.
+const SHIRT = { art: null, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
+function shirtLogoBox(im) {                                   // {box:[x,y,w,h], mask:canvas} or null
+  if (SHIRT.boxes.has(im)) return SHIRT.boxes.get(im);
+  let out = null;
+  const w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+  if (w && h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, w, h).data, lum = o => 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2];
+    const shirt = [], L = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = (y * w + x) * 4;
+      if (d[o + 3] > 200 && d[o + 1] > d[o] * 1.25 && d[o + 1] > d[o + 2] * 1.25 && d[o + 1] > 90) { shirt.push(y * w + x); L.push(lum(o)); } }
+    if (shirt.length >= 60) {
+      const sorted = [...L].sort((a, b) => a - b), cut = sorted[sorted.length >> 1] * 1.3;
+      const mark = new Uint8Array(w * h); shirt.forEach((i, k) => { if (L[k] > cut) mark[i] = 1; });
+      const seen = new Uint8Array(w * h); let best = null;
+      for (let i = 0; i < w * h; i++) { if (!mark[i] || seen[i]) continue;
+        const st = [i]; seen[i] = 1; const px = []; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+        while (st.length) { const j = st.pop(); px.push(j); const x = j % w, y = (j / w) | 0;
+          if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+          for (const k of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]) if (k >= 0 && mark[k] && !seen[k]) { seen[k] = 1; st.push(k); } }
+        if (!best || px.length > best.px.length) best = { px, box: [x0, y0, x1 - x0 + 1, y1 - y0 + 1] };
+      }
+      if (best && best.px.length >= 20) {
+        const mc = document.createElement('canvas'); mc.width = w; mc.height = h;
+        const mg = mc.getContext('2d'), md = mg.createImageData(w, h);
+        for (const i of best.px) { const o = i * 4; md.data[o] = md.data[o + 1] = md.data[o + 2] = 255; md.data[o + 3] = 255; }
+        mg.putImageData(md, 0, 0);
+        out = { box: best.box, mask: mc };
+      }
+    }
+  }
+  SHIRT.boxes.set(im, out);
+  return out;
+}
+// his frame with the picture dropped into the logo patch, shrunk to fit and cut to the patch's shape
+function shirtSkin(im) {
+  const L = shirtLogoBox(im); if (!L || !SHIRT.art) return null;
+  const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
+  const a = SHIRT.art, k = Math.min(bw / a.width, bh / a.height);            // shrink it to the patch
+  const dw = Math.max(1, Math.round(a.width * k)), dh = Math.max(1, Math.round(a.height * k));
+  const patch = document.createElement('canvas'); patch.width = w; patch.height = h;
+  const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = false;
+  pg.drawImage(a, Math.round(bx + (bw - dw) / 2), Math.round(by + (bh - dh) / 2), dw, dh);
+  pg.globalCompositeOperation = 'destination-in'; pg.drawImage(L.mask, 0, 0);  // only on the shirt patch
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.drawImage(im, 0, 0); g.drawImage(patch, 0, 0);
+  return c;
+}
+// swap every frame of his for a version wearing the picture (and back again when it's cleared)
+function applyShirtArt() {
+  const sets = [];
+  for (const id of Object.keys(IMG)) if (/^(juicy|jared|tyson)/.test(id)) sets.push(IMG[id]);
+  if (!SHIRT.originals) {
+    SHIRT.originals = [];
+    for (const set of sets) for (const k of Object.keys(set)) SHIRT.originals.push([set, k, set[k]]);
+    for (const arr of [SIT_ART, SIT_IDLE]) arr.forEach((im, i) => SHIRT.originals.push([arr, i, im]));
+  }
+  for (const [holder, key, orig] of SHIRT.originals) {
+    const list = Array.isArray(orig) ? orig : [orig];
+    const done = list.map(im => { if (!SHIRT.art || !im.naturalWidth) return im; const c = shirtSkin(im); if (!c) return im;
+      const n = new Image(); n.src = c.toDataURL(); n.__orig = im; return n; });
+    holder[key] = Array.isArray(orig) ? done : done[0];
+  }
+}
+// picked a file: trim the empty edges off it, shrink it, keep it for next time, put it on
+function loadShirtArt(file) {
+  const fr = new FileReader();
+  fr.onload = () => { const im = new Image(); im.onload = () => {
+    const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0); const d = g.getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;                                     // trim see-through / white edges
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = (y * w + x) * 4;
+      if (d[o + 3] < 30 || (d[o] > 244 && d[o + 1] > 244 && d[o + 2] > 244)) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) { x0 = 0; y0 = 0; x1 = w - 1; y1 = h - 1; }
+    const tw = x1 - x0 + 1, th = y1 - y0 + 1, k = Math.min(1, 96 / Math.max(tw, th));
+    const s = document.createElement('canvas'); s.width = Math.max(1, Math.round(tw * k)); s.height = Math.max(1, Math.round(th * k));
+    s.getContext('2d').drawImage(c, x0, y0, tw, th, 0, 0, s.width, s.height);
+    const url = s.toDataURL();
+    const n = new Image(); n.onload = () => { SHIRT.art = n; applyShirtArt(); if (world.players[0]) world.floaters.push({ x: WARD.x, y: WARD.y - 40, text: 'NEW SHIRT!', t: 0, col: '#6fd3a0' }); }; n.src = url;
+    try { localStorage.setItem(SHIRT.key, url); } catch (_) {}
+  }; im.src = fr.result; };
+  fr.readAsDataURL(file);
+}
+function clearShirtArt() { SHIRT.art = null; applyShirtArt(); try { localStorage.removeItem(SHIRT.key); } catch (_) {} }
+function pickShirtArt() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => { if (inp.files && inp.files[0]) loadShirtArt(inp.files[0]); };
+  inp.click();
+}
+// the ART button, beside the E button, while the wardrobe's open in front of you
+function artButton() {
+  if (net.role === 'client' || world.started || world.over || cal.on || !T.loungeFloor) return null;
+  const p = world.players[0];
+  if (!p || !p.alive || !WARD.open || !wardNear(p)) return null;
+  return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'ART' };
+}
+function drawArtButton() {
+  const b = artButton(); if (!b) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,40,26,0.8)'; ctx.strokeStyle = '#6fd3a0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#6fd3a0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(b.label, b.x, b.y - 6); ctx.font = '9px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(SHIRT.art ? 'tap: change' : 'on shirt', b.x, b.y + 9);
+  if (SHIRT.art) {                                           // a little x in the corner takes it off again
+    const cx = b.x + b.r * 0.72, cy = b.y - b.r * 0.72;
+    ctx.fillStyle = 'rgba(20,12,28,0.9)'; ctx.strokeStyle = '#e0473f'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e0473f'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif'; ctx.fillText('\u00D7', cx, cy + 1);
+  }
+  ctx.restore();
+}
+try { const saved = localStorage.getItem(SHIRT.key); if (saved) { const i = new Image(); i.onload = () => { SHIRT.art = i; applyShirtArt(); }; i.src = saved; } } catch (_) {}
 // b221: the wardrobe (the user's art), on the wooden floor by the arcade machine where the vending machine
 // used to stand. E by it opens it (doors swing out: 0 shut, 1 one door, 2 both), E again shuts it.
 // Lobby only, the host's screen.
@@ -4554,6 +4675,9 @@ canvas.addEventListener('pointerdown', e => {
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
+  { const ab = artButton();
+    if (ab && SHIRT.art && Math.hypot(pt.x - (ab.x + ab.r * 0.72), pt.y - (ab.y - ab.r * 0.72)) < 12) { clearShirtArt(); e.preventDefault(); return; }
+    if (ab && Math.hypot(pt.x - ab.x, pt.y - ab.y) < ab.r + 6) { pickShirtArt(); e.preventDefault(); return; } }
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
@@ -7715,6 +7839,7 @@ function renderBase(w, hudRight) {
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
   drawCardsButton();
+  drawArtButton();
   drawSitMenu();
   drawBJPanel(w);
   drawHotbar(w);
