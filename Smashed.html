@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b248 — Jared on the leg press';
+const BUILD = 'b249 — your gun barrel spots saved';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3128,18 +3128,18 @@ const CALIBRATED = {
     6: [{x: 2,  y: -44},   {x: 2,  y: -44}],
     7: [{x: 14, y: -38},   {x: 14, y: -38}]
   },
-  juicy: {
-    0: [{x: 13.5, y: -18},  {x: 30,   y: -28.5}],
-    1: [{x: -8,   y: -12.5},{x: -16.5,y: -7}],
-    2: [{x: -20,  y: 7},    {x: 20.5, y: 6}],
-    3: [{x: 16.5, y: -7},   {x: 8,    y: -12.5}],
-    4: [{x: -30,  y: -28.5},{x: -13.5,y: -18}],
+  juicy: {                                          // b249: the user's own drag-in (E, SE, S, SW, W)
+    0: [{x: 26.5, y: -41.6},{x: 19,   y: -33.6}],
+    1: [{x: -11,  y: -29.6},{x: 26,   y: -33.6}],
+    2: [{x: -12,  y: -33.1},{x: 10.5, y: -34.6}],
+    3: [{x: 6.5,  y: -27.6},{x: -25.5,y: -31.1}],
+    4: [{x: -29,  y: -41.1},{x: -20.5,y: -35.1}],
     5: [{x: 20,   y: -41.5},{x: -22,  y: -40.5}],
     6: [{x: 20.5, y: -42},  {x: -20,  y: -40.5}],
-    7: [{x: 13.5, y: -18},  {x: 30,   y: -28.5}]
+    7: [{x: 22,   y: -40.5},{x: -20,  y: -41.5}]
   },
   jared: {
-    0: [{x: 13.5, y: -18},  {x: 30,   y: -28.5}],   // E  — side, two-handed
+    0: [{x: 7,    y: -6.4}, {x: 24,   y: -23.4}],   // E  — side, two-handed (b249: the user's drag-in)
     1: [{x: -8,   y: -12.5},{x: -16.5,y: -7}],      // SE — diagonal
     2: [{x: -20,  y: 7},    {x: 20.5, y: 6}],       // S  — front, guns at the hips
     3: [{x: 16.5, y: -7},   {x: 8,    y: -12.5}],   // SW
@@ -3152,7 +3152,7 @@ const CALIBRATED = {
   // hand-placed barrels are a far better start than the generic formula.
   // Press C with Tyson selected to fine-tune.
   tyson: {
-    0: [{x: 13.5, y: -18},  {x: 30,   y: -28.5}],   // E
+    0: [{x: 29,   y: -27.9},{x: 13,   y: -10.9}],   // E (b249: the user's drag-in)
     1: [{x: -8,   y: -12.5},{x: -16.5,y: -7}],      // SE
     2: [{x: -20,  y: 7},    {x: 20.5, y: 6}],       // S
     3: [{x: 16.5, y: -7},   {x: 8,    y: -12.5}],   // SW
