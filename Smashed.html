@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b249 — your gun barrel spots saved';
+const BUILD = 'b254 — a 2x zoom for the lobby';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -955,9 +955,53 @@ function legFrame(p) {                                   // legs out, halfway, k
   const f = (p.leg.t % p.leg.rep) / p.leg.rep;
   return f < 0.2 ? 0 : f < 0.4 ? 1 : f < 0.6 ? 2 : f < 0.8 ? (p.leg.reps >= 10 ? 3 : 4) : 0;
 }
+// b250: the layered leg press, from the user's machine without its sled (art/legpress-base.png) and the
+// sled on its own (art/legpress-sled.png): the frame never moves, and the sled (foot plate, sleeves,
+// horns and the plates on them) slides up the angled bars with each push. He goes on top from frames of
+// just him, drawn for this machine (LEG_LAYER.jared, same order as LEG_ART.press); until all five of
+// those exist, the whole-machine frames below are used instead, so the machine never changes under him.
+const LEG_LAYER = {
+  base: legImg('legpress-base.png'), sled: legImg('legpress-sled.png'), jared: [],
+  origin: [-0.55, -0.6],                        // the base picture's corner against the old one's, world px
+  rest: [37, 45.6], travel: [13.8, -24.7],      // the sled's corner on the base (2x px) at rest, and where a full push takes it
+  horn: { L: [18, 18], R: [116, 36] }, dir: { L: [-0.98, -0.2], R: [1, 0.07] },   // on the sled: the first plate's spot, and which way each horn runs
+  plateFront: [22, 0, 24, 59],                  // the foot plate's left edge (sled px): in front of the back horn's plates
+  keys: [1, 0.5, 0, 0.5, 0.5]                   // how far up the bars the sled is in each of his frames
+};
+function legLayered() { const L = LEG_LAYER; return (L.jared.length === 5 || L.test) && [L.base, L.sled, ...L.jared].every(i => i.complete && i.naturalWidth); }
+function legSledAt(p) {                          // 0 at rest .. 1 pushed all the way, passing through each frame's spot
+  if (!p) return 0;
+  const f = (p.leg.t % p.leg.rep) / p.leg.rep, K = LEG_LAYER.keys;
+  const pts = [[-0.1, K[0]], [0.1, K[0]], [0.3, K[1]], [0.5, K[2]], [0.7, K[1]], [0.9, K[0]], [1.1, K[0]]];
+  for (let i = 0; i < pts.length - 1; i++) if (f <= pts[i + 1][0]) { const [a, va] = pts[i], [b, vb] = pts[i + 1]; return va + (vb - va) * (f - a) / (b - a); }
+  return K[0];
+}
+function drawLegLayered(w, lifter) {
+  const L = LEG_LAYER, o = legOrigin(), bx = o.x + L.origin[0], by = o.y + L.origin[1], sled = L.sled;
+  const t = legSledAt(lifter), sx = Math.round(bx + (L.rest[0] + L.travel[0] * t) / 2), sy = Math.round(by + (L.rest[1] + L.travel[1] * t) / 2);
+  const part = (x, y, pw, ph) => { x = Math.max(0, Math.floor(x)); if (pw > 0 && ph > 0) ctx.drawImage(sled, x, y, pw, ph, sx + x / 2, sy + y / 2, pw / 2, ph / 2); };
+  const at = (s, k) => [L.horn[s][0] + L.dir[s][0] * LEG_STEP * k, L.horn[s][1] + L.dir[s][1] * LEG_STEP * k];
+  const plates = s => LEG.horn[s].forEach((p, k) => { const [x, y] = at(s, k); drawGymImg(LEG_ART.plate[p], sx + x / 2, sy + y / 2, s === 'R'); });
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.ellipse(T.legX, T.legY - 12, 50, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(L.base, Math.round(bx), Math.round(by), L.base.naturalWidth / 2, L.base.naturalHeight / 2);
+  ctx.drawImage(sled, sx, sy, sled.naturalWidth / 2, sled.naturalHeight / 2);
+  // the back horn: its plates, the horn's end out through them, then the foot plate's edge in front
+  const nL = LEG.horn.L.length;
+  plates('L');
+  if (nL) { part(0, 11, at('L', nL - 1)[0], 11); part(...L.plateFront); }
+  const im = lifter && L.jared[legFrame(lifter)];
+  if (im) { const ss = im.__ss || 1; ctx.drawImage(im, Math.round(bx), Math.round(by), im.naturalWidth / (2 * ss), im.naturalHeight / (2 * ss)); }
+  // the front horn: its plates, then the horn's end out through them
+  const nR = LEG.horn.R.length;
+  plates('R');
+  if (nR) { const x = Math.ceil(at('R', nR - 1)[0]) + 1; part(x, 29, sled.naturalWidth - x, 16); }
+  ctx.restore();
+}
 function drawLegStation(w) {
   if (!legReady()) return;
   const lifter = w.players.find(q => q.leg && q.alive), fi = lifter ? legFrame(lifter) : -1;
+  if (legLayered()) { drawLegLayered(w, lifter); return; }
   const pf = fi >= 0 && LEG_ART.press[fi], on = pf && pf.complete && pf.naturalWidth > 0;
   const src = on ? pf : LEG_ART.machine, ss = src.__ss || 1, o = legOrigin(), H = LEG_HORNS[on ? fi + 1 : 0];
   // a piece of the picture redrawn on top (in its own 2x pixels; his frames can carry the shirt print at a finer scale)
@@ -1175,12 +1219,12 @@ function applyShirtArt() {
     SHIRT.originals = [];
     for (const set of sets) for (const k of Object.keys(set)) SHIRT.originals.push([set, k, set[k]]);
     // b248: and his frames on the bench and the leg press (the gym draws those itself, at their own scale)
-    for (const arr of [SIT_ART, SIT_IDLE, GYM_ART.press, LEG_ART.press]) arr.forEach((im, i) => SHIRT.originals.push([arr, i, im]));
+    for (const arr of [SIT_ART, SIT_IDLE, GYM_ART.press, LEG_ART.press, LEG_LAYER.jared]) arr.forEach((im, i) => SHIRT.originals.push([arr, i, im]));
   }
   for (const [holder, key, orig] of SHIRT.originals) {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => { if ((!SHIRT.art && !SHIRT.artBack) || !im.naturalWidth) return im;
-      const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press;   // the camera zooms in on these, so print them finer
+      const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press || holder === LEG_LAYER.jared;   // the camera zooms in on these, so print them finer
       let c = null, m = null; try { c = shirtSkin(im, backKey(key), false, hi); m = shirtSkin(im, backKey(key), true, hi); } catch (_) {}
       if (!c) return im;
       for (const cv of [c, m]) { if (!cv) continue;
@@ -1402,11 +1446,12 @@ try { const saved = localStorage.getItem(SHIRT.key); if (saved) { const i = new 
 // b221: the wardrobe (the user's art), on the wooden floor by the arcade machine where the vending machine
 // used to stand. E by it opens it (doors swing out: 0 shut, 1 one door, 2 both), E again shuts it.
 // Lobby only, the host's screen.
+// b252: moved down to the bedroom (b251), against its top wall beside the doorway, with the mirror.
 // b229: the wardrobe's art lives in art/ beside this file instead of being written into it, so the
 // browser doesn't have to read it before the game starts (and remembers it between visits)
 const artImg = name => { const i = new Image(); i.src = 'art/' + name; return i; };
 const WARD_ART = ['wardrobe-0.png', 'wardrobe-1.png', 'wardrobe-2.png'].map(artImg);
-const WARD = { x: 222, y: 132, s: 1, open: false, k: 0, t: 0 };   // y: where its feet are; s: drawn a bit taller than him
+const WARD = { x: 194, y: ARENA.h + 100, s: 1, open: false, k: 0, t: 0 };   // y: where its feet are; s: drawn a bit taller than him
 function wardBox() { return { x0: WARD.x - 32, x1: WARD.x + 32, y0: WARD.y - 16, y1: WARD.y }; }
 function wardNear(p) { return !!p && p.alive && !p.dive && !p.sit && T.loungeFloor && Math.abs(p.x - WARD.x) < 40 && p.y > WARD.y - 2 && p.y < WARD.y + 38; }
 function toggleWard() {
@@ -1423,7 +1468,419 @@ function drawWardrobe() {
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(WARD.x, WARD.y - 1, 34, 6, 0, 0, Math.PI * 2); ctx.fill();
   ctx.imageSmoothingEnabled = false; ctx.drawImage(im, Math.round(WARD.x - w / 2), Math.round(WARD.y - h), Math.round(w), Math.round(h));
   ctx.restore();
-}function lobbySolidBoxes() { return T.loungeFloor ? [tableBox(), benchBox(), rackBox(), legBox(), wardBox()] : []; }
+}
+// b251: the lobby scrolls. A bedroom sits below the lounge's wood floor, through a
+// doorway in its bottom wall: more map, not another room, so one of you can be in
+// the bedroom while the other's in the gym, and each screen follows its own player.
+// The lounge is laid out for one screen, so the camera shows the whole lounge
+// while you're in it and pans down to the bedroom as you go through.
+// Placeholder art, drawn here; an art/bedroom.png (440x342) replaces its floor.
+const LOBBY_H = 880;                                           // the lobby's height; runs use ARENA.h
+const BEDROOM = { x0: ARENA.wall, y0: ARENA.h, x1: 458, y1: LOBBY_H - ARENA.wall };   // its floor
+const BED_DOOR = { x: 110, w: 64 };                            // the gap in the lounge's bottom wall
+const BED = { x0: 314, x1: 446, y0: BEDROOM.y0, y1: BEDROOM.y0 + 156 };   // headboard to the top wall
+const NIGHTSTAND = { x0: 282, x1: 308, y0: BEDROOM.y0, y1: BEDROOM.y0 + 36 };
+const BED_ART = artImg('bedroom.png');
+function lobbyTall(w) { return !!w && !w.started && !!T.loungeFloor && !cal.on && !secretActive(w); }
+function worldH(w) { return lobbyTall(w) ? LOBBY_H : ARENA.h; }
+function inBedroom(o) { return o.y > ARENA.h - ARENA.wall / 2; }
+// where something r wide can be: the lounge, the bedroom, and the doorway between
+// (shut to someone carrying Gothica: she lives in the lounge)
+function lobbyAreas(r, shut) {
+  const a = [{ x0: ARENA.wall + r, y0: ARENA.wall + r, x1: ARENA.w - ARENA.wall - r, y1: ARENA.h - ARENA.wall - r },
+             { x0: BEDROOM.x0 + r, y0: BEDROOM.y0 + r, x1: BEDROOM.x1 - r, y1: BEDROOM.y1 - r }];
+  if (!shut) a.push({ x0: BED_DOOR.x - BED_DOOR.w / 2 + r, x1: BED_DOOR.x + BED_DOOR.w / 2 - r, y0: a[0].y0, y1: a[1].y1 });
+  return a;
+}
+function lobbyInside(x, y) { return lobbyAreas(0).some(a => x >= a.x0 && x <= a.x1 && y >= a.y0 && y <= a.y1); }
+// the lobby's walls: put o back in the nearest place it can be; says which way it hit
+function lobbyClamp(o, r, shut) {
+  let bx = o.x, by = o.y, bd = Infinity;
+  for (const a of lobbyAreas(r, shut)) {
+    const x = Math.max(a.x0, Math.min(a.x1, o.x)), y = Math.max(a.y0, Math.min(a.y1, o.y));
+    const d = (x - o.x) ** 2 + (y - o.y) ** 2;
+    if (d < bd) { bd = d; bx = x; by = y; }
+  }
+  const hit = { x: bx !== o.x, y: by !== o.y };
+  o.x = bx; o.y = by;
+  return hit;
+}
+function bedBoxes() { return [{ x0: BED.x0, x1: BED.x1, y0: BED.y0, y1: BED.y1 - 12 }, NIGHTSTAND, mirrorBox()]; }
+// b252: a full-length mirror beside the wardrobe. Stand in front of it and you're in
+// it: drawn again in the glass, smaller, facing the other way (walk up to it and it
+// looks back at you). Everyone's screen draws it, so you see your friend in it too.
+const MIRROR = { x: 258, y: ARENA.h + 96, w: 36, h: 92 };      // y: where its feet are
+function mirrorBox() { return { x0: MIRROR.x - MIRROR.w / 2, x1: MIRROR.x + MIRROR.w / 2, y0: MIRROR.y - 10, y1: MIRROR.y }; }
+function drawMirror(w) {
+  const m = MIRROR, x0 = m.x - m.w / 2, top = m.y - m.h;
+  const g = { x0: x0 + 4, x1: x0 + m.w - 4, y0: top + 5, y1: m.y - 7 };   // the glass
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(m.x, m.y - 1, m.w / 2 + 4, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#6b4526'; ctx.fillRect(x0, top, m.w, m.h - 3);                   // frame
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(x0 + 1, top + 1, m.w - 2, 2);
+  ctx.fillStyle = '#4a2e1c'; ctx.fillRect(x0 + 3, m.y - 4, 4, 4); ctx.fillRect(x0 + m.w - 7, m.y - 4, 4, 4);   // feet
+  const gl = ctx.createLinearGradient(0, g.y0, 0, g.y1);
+  gl.addColorStop(0, '#9fb4c4'); gl.addColorStop(1, '#6d8193');
+  ctx.fillStyle = gl; ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
+  ctx.beginPath(); ctx.rect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0); ctx.clip();
+  // whoever's in front, farthest first, pinned to the bottom of the glass
+  const seen = w.players.filter(p => p.alive && !p.dive && !p.sit && !p.lift && !p.leg
+    && p.y > m.y && p.y < m.y + 170 && Math.abs(p.x - m.x) < 70).sort((a, b) => b.y - a.y);
+  for (const p of seen) {
+    const d = p.y - m.y, s = 0.72 - 0.3 * Math.min(1, d / 170);
+    const rx = m.x + (p.x - m.x) * 0.35, ry = g.y1 + 2;
+    const r = { ...p, x: rx, y: ry, fy: -p.fy, iy: -(p.iy || 0), ady: -(p.ady || 0), mdy: -(p.mdy || 0), rdy: -(p.rdy || 0) };
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.translate(rx, ry); ctx.scale(s, s); ctx.translate(-rx, -ry);
+    drawJared(w, r);
+    ctx.restore();
+  }
+  // a sheen across the front
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath(); ctx.moveTo(g.x0, g.y0 + 30); ctx.lineTo(g.x0 + 14, g.y0); ctx.lineTo(g.x0 + 22, g.y0); ctx.lineTo(g.x0, g.y0 + 44); ctx.fill();
+  ctx.restore();
+}
+// below the lounge: dark where there's no room yet, then the bedroom, its walls and the doorway
+function drawLowerLobby(w) {
+  if (!lobbyTall(w)) return;
+  const b = BEDROOM, wl = ARENA.wall;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#101218'; ctx.fillRect(0, ARENA.h, ARENA.w, LOBBY_H - ARENA.h);
+  if (BED_ART.complete && BED_ART.naturalWidth) ctx.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+  else drawBedroomPlaceholder();
+  ctx.fillStyle = '#2b3040';
+  ctx.fillRect(0, b.y0, wl, LOBBY_H - b.y0);                      // left
+  ctx.fillRect(b.x1, b.y0, wl, LOBBY_H - b.y0);                   // right
+  ctx.fillRect(0, b.y1, b.x1 + wl, wl);                           // bottom
+  // the doorway: a gap in the shared wall, framed, with a mat either side
+  const x = BED_DOOR.x - BED_DOOR.w / 2, y = ARENA.h - wl;
+  ctx.fillStyle = '#6a472f'; ctx.fillRect(x, y, BED_DOOR.w, wl);
+  ctx.fillStyle = '#8a5a34'; ctx.fillRect(x - 4, y - 2, 4, wl + 4); ctx.fillRect(x + BED_DOOR.w, y - 2, 4, wl + 4);
+  ctx.fillStyle = '#5b6b3a'; ctx.fillRect(x + 8, ARENA.h + 2, BED_DOOR.w - 16, 10);
+  ctx.restore();
+}
+function drawBedroomPlaceholder() {
+  const b = BEDROOM;
+  // floorboards
+  for (let y = b.y0, row = 0; y < b.y1; y += 18, row++) {
+    const h = Math.min(18, b.y1 - y);
+    ctx.fillStyle = row % 2 ? '#734f35' : '#6a472f'; ctx.fillRect(b.x0, y, b.x1 - b.x0, h);
+    ctx.fillStyle = '#4e3322'; if (h === 18) ctx.fillRect(b.x0, y + 17, b.x1 - b.x0, 1);
+    for (let x = b.x0 + (row * 53) % 120; x < b.x1; x += 120) ctx.fillRect(x, y, 1, h);
+  }
+  // rug
+  ctx.fillStyle = '#5a2430'; ctx.fillRect(96, 650, 200, 150);
+  ctx.fillStyle = '#c9a45c'; ctx.fillRect(103, 657, 186, 136);
+  ctx.fillStyle = '#7a2f3d'; ctx.fillRect(107, 661, 178, 128);
+  ctx.strokeStyle = '#c9a45c'; ctx.lineWidth = 2; ctx.strokeRect(126, 680, 140, 90);
+  // nightstand and lamp
+  const n = NIGHTSTAND;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(n.x0 + 3, n.y1, n.x1 - n.x0, 4);
+  ctx.fillStyle = '#5a3a24'; ctx.fillRect(n.x0, n.y0, n.x1 - n.x0, n.y1 - n.y0);
+  ctx.fillStyle = '#7a5234'; ctx.fillRect(n.x0 + 2, n.y0 + 2, n.x1 - n.x0 - 4, n.y1 - n.y0 - 10);
+  ctx.fillStyle = '#f3d89a'; ctx.beginPath(); ctx.arc((n.x0 + n.x1) / 2, n.y0 + 14, 7, 0, Math.PI * 2); ctx.fill();
+  // the bed: headboard, sheet, pillows, blanket turned down
+  const d = BED, bw = d.x1 - d.x0;
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(d.x0 + 4, d.y1, bw, 6);
+  ctx.fillStyle = '#4a2e1c'; ctx.fillRect(d.x0 - 4, d.y0, bw + 8, 14);
+  ctx.fillStyle = '#e9e4da'; ctx.fillRect(d.x0, d.y0 + 10, bw, d.y1 - d.y0 - 10);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(d.x0 + 10, d.y0 + 18, 50, 24); ctx.fillRect(d.x1 - 60, d.y0 + 18, 50, 24);
+  ctx.fillStyle = '#d6d0c4'; ctx.fillRect(d.x0 + 10, d.y0 + 38, 50, 4); ctx.fillRect(d.x1 - 60, d.y0 + 38, 50, 4);
+  ctx.fillStyle = '#dfe6f0'; ctx.fillRect(d.x0, d.y0 + 58, bw, 8);
+  ctx.fillStyle = '#2f4f7a'; ctx.fillRect(d.x0, d.y0 + 66, bw, d.y1 - d.y0 - 66);
+  ctx.fillStyle = '#284469'; for (let x = d.x0 + 22; x < d.x1; x += 44) ctx.fillRect(x, d.y0 + 66, 2, d.y1 - d.y0 - 66);
+}
+// b253: the arcade row. Two cabinets beside the slot machine, on the lounge's top wall
+// where the wardrobe stood. E at one plays it: its screen fills yours and you stand
+// still while you play. It runs on your own screen only (like the wardrobe), so the
+// host and the guest can each be on one. E or Esc (or the X) walks away.
+// A game is an entry in ARCADE_GAMES: make() a fresh state, step() it, draw() it into
+// the screen, mini() for the little screen on the cabinet. Another cabinet is one more
+// entry here and in CABINETS.
+const ARC = { open: null, g: null, t: 0, keys: new Set(), touch: null, hi: {} };
+try { ARC.hi = JSON.parse(localStorage.getItem('smashedArcadeHi') || '{}') || {}; } catch (_) {}
+const CABINETS = [
+  { x: 172, game: 'snake',  body: '#1d4f33', trim: '#7dff9a' },
+  { x: 242, game: 'bricks', body: '#4f1d44', trim: '#ff8ad8' },
+];
+const ARC_SCR = { x: 190, y: 92, w: 480, h: 320 };             // the game's screen, on yours
+function cabY() { return ARENA.wall + 54 + T.slotDrop + 6; }   // feet in line with the slot machine's
+function cabBox(c) { const y = cabY(); return { x0: c.x - 26, x1: c.x + 26, y0: y - 14, y1: y }; }
+function arcadeNear(p) {
+  if (!p || !p.alive || p.dive || p.sit || p.lift || p.leg || !T.loungeFloor) return null;
+  const y = cabY();
+  return CABINETS.find(c => Math.abs(p.x - c.x) < 30 && p.y > y - 4 && p.y < y + 46) || null;
+}
+function localMe() { return net.role === 'client' ? (net.view && net.view.players.find(q => q.id === 1)) : world.players[0]; }
+function arcadeTryOpen() {
+  const v = net.role === 'client' ? net.view : world;
+  if (!v || v.started || v.over || cal.on || (net.role !== 'client' && NPC_GOTH.carrier === 0)) return false;
+  const c = arcadeNear(localMe());
+  if (!c) return false;
+  ARC.open = c; ARC.g = ARCADE_GAMES[c.game].make(); ARC.t = performance.now();
+  ARC.keys.clear(); ARC.touch = null; keys.clear(); mouse.down = false;
+  for (const s of [moveStick, aimStick]) { s.active = false; s.id = null; s.dx = s.dy = 0; }
+  if (SND.ctx) sTone(0.12, 440, 880, 0.08, 'square');
+  return true;
+}
+function closeArcade() { arcadeSaveHi(); ARC.open = null; ARC.g = null; ARC.keys.clear(); ARC.touch = null; }
+function arcadeSaveHi() {
+  const c = ARC.open, g = ARC.g;
+  if (!c || !g || !(g.score > (ARC.hi[c.game] || 0))) return;
+  ARC.hi[c.game] = g.score;
+  try { localStorage.setItem('smashedArcadeHi', JSON.stringify(ARC.hi)); } catch (_) {}
+}
+function arcadeKey(k, e) {
+  if (k === 'escape' || k === 'e') { if (!e.repeat) closeArcade(); e.preventDefault(); return; }
+  ARC.keys.add(k);
+  if (['w','a','s','d',' ','enter','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+}
+// touch: drag from where the finger lands to steer
+function arcadeClose() { return { x: ARC_SCR.x + ARC_SCR.w + 6, y: ARC_SCR.y - 44, r: 15 }; }
+function arcadeDown(e, pt) {
+  const b = arcadeClose();
+  if (Math.hypot(pt.x - b.x, pt.y - b.y) < b.r + 8) { closeArcade(); return; }
+  ARC.touch = { id: e.pointerId, x: pt.x, y: pt.y, dx: 0, dy: 0 };
+  ARC.keys.add('tap');
+}
+function arcadeMove(e, pt) {
+  const t = ARC.touch; if (!t || t.id !== e.pointerId) return;
+  t.dx = Math.max(-1, Math.min(1, (pt.x - t.x) / 30)); t.dy = Math.max(-1, Math.min(1, (pt.y - t.y) / 30));
+}
+function arcadeUp(e) { if (ARC.touch && ARC.touch.id === e.pointerId) ARC.touch = null; ARC.keys.delete('tap'); }
+// one stick for every game: keys, a finger, or gamepad 0
+function arcadeStick() {
+  const K = ARC.keys; let x = 0, y = 0;
+  if (K.has('a') || K.has('arrowleft')) x -= 1;
+  if (K.has('d') || K.has('arrowright')) x += 1;
+  if (K.has('w') || K.has('arrowup')) y -= 1;
+  if (K.has('s') || K.has('arrowdown')) y += 1;
+  if (ARC.touch && Math.hypot(ARC.touch.dx, ARC.touch.dy) > 0.3) { x = ARC.touch.dx; y = ARC.touch.dy; }
+  const g = padAt(0);
+  if (g && Math.hypot(g.axes[0] || 0, g.axes[1] || 0) > 0.3) { x = g.axes[0]; y = g.axes[1]; }
+  const fire = K.has(' ') || K.has('enter') || K.has('tap') || !!(g && g.buttons[0] && g.buttons[0].pressed);
+  return { x, y, fire, go: fire || Math.hypot(x, y) > 0.5 };
+}
+
+const ARCADE_GAMES = {
+  // ---- SPUD SNAKE: eat the potatoes, don't eat yourself
+  snake: {
+    title: 'SPUD SNAKE', hint: 'WASD / arrows / drag to steer',
+    make() {
+      const g = { live: false, over: false, wait: 0, score: 0, cols: 24, rows: 16, t: 0, speed: 0.13,
+                  body: [[8, 8], [7, 8], [6, 8]], dir: [1, 0], next: [1, 0], food: null };
+      this.food(g); return g;
+    },
+    food(g) {
+      do g.food = [Math.floor(Math.random() * g.cols), Math.floor(Math.random() * g.rows)];
+      while (g.body.some(b => b[0] === g.food[0] && b[1] === g.food[1]));
+    },
+    step(g, dt, st) {
+      if (Math.abs(st.x) > 0.5 || Math.abs(st.y) > 0.5) {
+        const d = Math.abs(st.x) > Math.abs(st.y) ? [Math.sign(st.x), 0] : [0, Math.sign(st.y)];
+        if (d[0] !== -g.dir[0] || d[1] !== -g.dir[1]) g.next = d;       // no turning back on yourself
+      }
+      if (!g.live) return;
+      g.t += dt;
+      while (g.t >= g.speed && !g.over) {
+        g.t -= g.speed; g.dir = g.next;
+        const h = [g.body[0][0] + g.dir[0], g.body[0][1] + g.dir[1]];
+        if (h[0] < 0 || h[1] < 0 || h[0] >= g.cols || h[1] >= g.rows || g.body.some(b => b[0] === h[0] && b[1] === h[1])) {
+          g.over = true; g.wait = 0.8; if (SND.ctx) sTone(0.4, 300, 60, 0.12, 'square'); return;
+        }
+        g.body.unshift(h);
+        if (h[0] === g.food[0] && h[1] === g.food[1]) {
+          g.score++; g.speed = Math.max(0.06, g.speed * 0.97); this.food(g);
+          if (SND.ctx) sTone(0.07, 520, 900, 0.1, 'square');
+        } else g.body.pop();
+      }
+    },
+    draw(g, s) {
+      const c = s.w / g.cols;
+      ctx.fillStyle = '#0b1f12'; ctx.fillRect(s.x, s.y, s.w, s.h);
+      ctx.fillStyle = '#0f2a18';
+      for (let i = 0; i < g.cols; i++) for (let j = 0; j < g.rows; j++) if ((i + j) % 2) ctx.fillRect(s.x + i * c, s.y + j * c, c, c);
+      arcSpud(s.x + (g.food[0] + 0.5) * c, s.y + (g.food[1] + 0.5) * c, c * 0.42);
+      g.body.forEach((b, i) => {
+        ctx.fillStyle = i === 0 ? '#b8ffc6' : i % 2 ? '#4fd26e' : '#43bd61';
+        ctx.fillRect(s.x + b[0] * c + 1, s.y + b[1] * c + 1, c - 2, c - 2);
+      });
+      const h = g.body[0], d = g.dir;                                   // two eyes, looking where it's going
+      ctx.fillStyle = '#0b1f12';
+      for (const side of [-1, 1])
+        ctx.fillRect(s.x + (h[0] + 0.5 + d[0] * 0.2 + side * d[1] * 0.22) * c - 2, s.y + (h[1] + 0.5 + d[1] * 0.2 + side * d[0] * 0.22) * c - 2, 4, 4);
+    },
+    mini(r, t) {
+      ctx.fillStyle = '#0b1f12'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      const k = Math.floor(t * 6);
+      for (let i = 0; i < 6; i++) {
+        const q = (k - i + 280) % 28, x = q < 14 ? q : 27 - q;
+        ctx.fillStyle = i === 0 ? '#b8ffc6' : '#4fd26e';
+        ctx.fillRect(r.x + 3 + x * (r.w - 8) / 14, r.y + r.h / 2 - 1, 3, 3);
+      }
+      ctx.fillStyle = '#c69a5b'; ctx.fillRect(r.x + r.w - 8, r.y + 5, 3, 3);
+    }
+  },
+  // ---- BRICK BRAWL: keep the ball up, smash the wall
+  bricks: {
+    title: 'BRICK BRAWL', hint: 'left / right (or drag) to move  ·  space or up to launch',
+    make() { const g = { live: false, over: false, wait: 0, score: 0, lives: 3, level: 1, px: 240 }; this.wall(g); this.serve(g); return g; },
+    wall(g) {
+      g.bricks = [];
+      for (let j = 0; j < 5; j++) for (let i = 0; i < 8; i++)
+        g.bricks.push({ x: 12 + i * 57, y: 36 + j * 18, hp: j < Math.ceil(g.level / 2) ? 2 : 1, row: j });
+    },
+    serve(g) { g.stuck = true; g.bx = g.px; g.by = 288; g.vx = 0; g.vy = 0; },
+    step(g, dt, st) {
+      g.px = Math.max(36, Math.min(444, g.px + st.x * 380 * dt));
+      if (g.stuck) {                                                     // on the paddle: fire (or push up) to launch
+        g.bx = g.px;
+        if (g.live && (st.fire || st.y < -0.5)) { g.stuck = false; const sp = 250 + g.level * 25; g.vx = sp * 0.45; g.vy = -sp; }
+        return;
+      }
+      g.bx += g.vx * dt; g.by += g.vy * dt;
+      if (g.bx < 5) { g.bx = 5; g.vx = Math.abs(g.vx); }
+      if (g.bx > 475) { g.bx = 475; g.vx = -Math.abs(g.vx); }
+      if (g.by < 5) { g.by = 5; g.vy = Math.abs(g.vy); }
+      if (g.vy > 0 && g.by > 290 && g.by < 304 && Math.abs(g.bx - g.px) < 40) {   // the paddle: where it hits steers it
+        const sp = Math.hypot(g.vx, g.vy), a = (g.bx - g.px) / 40 * 1.05;
+        g.vx = Math.sin(a) * sp; g.vy = -Math.cos(a) * sp; g.by = 290;
+        if (SND.ctx) sTone(0.04, 330, 330, 0.08, 'square');
+      }
+      for (const b of g.bricks) {
+        if (b.hp <= 0 || g.bx < b.x - 5 || g.bx > b.x + 59 || g.by < b.y - 5 || g.by > b.y + 19) continue;
+        const ox = Math.min(g.bx - (b.x - 5), b.x + 59 - g.bx), oy = Math.min(g.by - (b.y - 5), b.y + 19 - g.by);
+        if (ox < oy) g.vx = -g.vx; else g.vy = -g.vy;
+        b.hp--; g.score += b.hp ? 1 : 5;
+        if (SND.ctx) sTone(0.05, b.hp ? 600 : 900, 700, 0.08, 'square');
+        break;
+      }
+      if (!g.bricks.some(b => b.hp > 0)) { g.level++; this.wall(g); this.serve(g); }
+      if (g.by > 330) {
+        g.lives--;
+        if (SND.ctx) sTone(0.35, 260, 70, 0.12, 'square');
+        if (g.lives <= 0) { g.over = true; g.wait = 0.8; } else this.serve(g);
+      }
+    },
+    draw(g, s) {
+      ctx.fillStyle = '#16091a'; ctx.fillRect(s.x, s.y, s.w, s.h);
+      const cols = ['#ff5d8f', '#ff8ad8', '#c98bff', '#8fb4ff', '#8ff0ff'];
+      for (const b of g.bricks) {
+        if (b.hp <= 0) continue;
+        ctx.fillStyle = cols[b.row]; ctx.fillRect(s.x + b.x, s.y + b.y, 54, 14);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(s.x + b.x, s.y + b.y, 54, 3);
+        if (b.hp > 1) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(s.x + b.x + 4, s.y + b.y + 6, 46, 3); }
+      }
+      ctx.fillStyle = '#f6d17a'; ctx.fillRect(s.x + g.px - 36, s.y + 294, 72, 8);
+      ctx.fillStyle = '#fff'; ctx.fillRect(s.x + g.bx - 4, s.y + g.by - 4, 8, 8);
+      ctx.fillStyle = '#ff8ad8'; ctx.font = 'bold 12px ui-monospace, monospace'; ctx.textAlign = 'right';
+      ctx.fillText('♥'.repeat(Math.max(0, g.lives)) + '  LV ' + g.level, s.x + s.w - 8, s.y + s.h - 8);
+    },
+    mini(r, t) {
+      ctx.fillStyle = '#16091a'; ctx.fillRect(r.x, r.y, r.w, r.h);
+      const cols = ['#ff5d8f', '#c98bff', '#8ff0ff'];
+      for (let j = 0; j < 3; j++) for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = cols[j]; ctx.fillRect(r.x + 2 + i * (r.w - 4) / 5, r.y + 3 + j * 4, (r.w - 4) / 5 - 1, 3);
+      }
+      const f = (t * 0.7) % 1, bx = r.x + 3 + Math.abs(f * 2 - 1) * (r.w - 6), by = r.y + r.h - 6 - Math.abs(Math.sin(t * 3)) * (r.h - 20);
+      ctx.fillStyle = '#fff'; ctx.fillRect(bx, by, 2, 2);
+      ctx.fillStyle = '#f6d17a'; ctx.fillRect(r.x + r.w / 2 - 5 + Math.sin(t * 2) * 6, r.y + r.h - 3, 10, 2);
+    }
+  }
+};
+function arcSpud(x, y, r) {
+  ctx.fillStyle = '#8a5a2b'; ctx.beginPath(); ctx.ellipse(x, y, r * 1.15, r * 0.85, 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#c69a5b'; ctx.beginPath(); ctx.ellipse(x - r * 0.15, y - r * 0.15, r * 0.85, r * 0.55, 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#6b4220'; ctx.fillRect(x - r * 0.4, y - r * 0.1, 2, 2); ctx.fillRect(x + r * 0.3, y + r * 0.2, 2, 2);
+}
+// the cabinet on the floor: its own little screen running, and a tip when you're at it
+function drawCabinet(w, c) {
+  const G = ARCADE_GAMES[c.game], fy = cabY(), W = 50, H = 104, x0 = c.x - W / 2, top = fy - H;
+  const t = performance.now() / 1000;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(c.x, fy - 1, W / 2 + 4, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#121218'; ctx.fillRect(x0 - 2, top + 8, W + 4, H - 8);          // side panels
+  ctx.fillStyle = c.body; ctx.fillRect(x0 + 2, top + 10, W - 4, H - 12);
+  ctx.fillStyle = c.trim; ctx.fillRect(x0 - 2, top + 8, 2, H - 8); ctx.fillRect(x0 + W, top + 8, 2, H - 8);
+  // marquee, lit
+  ctx.fillStyle = '#0c0c12'; ctx.fillRect(x0 - 3, top, W + 6, 16);
+  ctx.fillStyle = c.trim; ctx.globalAlpha = 0.25 + 0.1 * Math.sin(t * 4); ctx.fillRect(x0 - 1, top + 2, W + 2, 12); ctx.globalAlpha = 1;
+  ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff'; ctx.fillText(G.title, c.x, top + 8.5);
+  // the screen, in its bezel, playing to itself
+  ctx.fillStyle = '#050507'; ctx.fillRect(x0 + 4, top + 19, W - 8, 36);
+  const r = { x: x0 + 7, y: top + 22, w: W - 14, h: 30 };
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); G.mini(r, t); ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(r.x, r.y, r.w, 2);
+  // control panel: stick and two buttons
+  ctx.fillStyle = '#26262e'; ctx.fillRect(x0 - 2, top + 58, W + 4, 12);
+  ctx.fillStyle = '#e0473f'; ctx.beginPath(); ctx.arc(x0 + 12, top + 62, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f6d17a'; ctx.fillRect(x0 + 28, top + 62, 4, 4);
+  ctx.fillStyle = '#8fd3ff'; ctx.fillRect(x0 + 36, top + 62, 4, 4);
+  // coin door
+  ctx.fillStyle = '#16161c'; ctx.fillRect(c.x - 9, top + 76, 18, 18);
+  ctx.fillStyle = c.trim; ctx.fillRect(c.x - 5, top + 80, 2, 6); ctx.fillRect(c.x + 3, top + 80, 2, 6);
+  const me = localMe();
+  if (!ARC.open && me && arcadeNear(me) === c) {
+    ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: play', c.x + 1, top - 7);
+    ctx.fillStyle = '#8fd3ff'; ctx.fillText('E: play', c.x, top - 8);
+  }
+  ctx.restore();
+}
+// the game, filling your screen
+function drawArcade() {
+  if (!ARC.open) return;
+  const v = net.role === 'client' ? net.view : world;
+  if (!v || v.started || v.over) { closeArcade(); return; }
+  const now = performance.now(), dt = Math.min(0.05, Math.max(0, (now - ARC.t) / 1000)); ARC.t = now;
+  const c = ARC.open, G = ARCADE_GAMES[c.game], s = ARC_SCR, st = arcadeStick();
+  let g = ARC.g;
+  if (g.over) {
+    g.wait -= dt;
+    if (g.wait <= 0 && st.go) { arcadeSaveHi(); g = ARC.g = G.make(); g.live = true; }
+  } else {
+    if (!g.live && st.go) g.live = true;
+    G.step(g, dt, st);
+    if (g.over) arcadeSaveHi();
+  }
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,10,14,0.8)'; ctx.fillRect(0, 0, ARENA.w, ARENA.h);
+  // the cabinet round the screen
+  ctx.fillStyle = c.body; ctx.strokeStyle = c.trim; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(s.x - 22, s.y - 62, s.w + 44, s.h + 94, 12); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0c0c12'; ctx.fillRect(s.x - 8, s.y - 54, s.w + 16, 40);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 24px ui-monospace, monospace';
+  ctx.fillStyle = c.trim; ctx.fillText(G.title, s.x + s.w / 2, s.y - 33);
+  ctx.fillStyle = '#050507'; ctx.fillRect(s.x - 6, s.y - 6, s.w + 12, s.h + 12);
+  ctx.save(); ctx.beginPath(); ctx.rect(s.x, s.y, s.w, s.h); ctx.clip();
+  G.draw(g, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; for (let y = s.y; y < s.y + s.h; y += 3) ctx.fillRect(s.x, y, s.w, 1);   // scanlines
+  ctx.restore();
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 14px ui-monospace, monospace'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#fff'; ctx.fillText('SCORE ' + g.score, s.x + 8, s.y + 14);
+  ctx.textAlign = 'right'; ctx.fillStyle = c.trim; ctx.fillText('HI ' + Math.max(g.score, ARC.hi[c.game] || 0), s.x + s.w - 8, s.y + 14);
+  const mid = (text, y, size, col) => {
+    ctx.textAlign = 'center'; ctx.font = 'bold ' + size + 'px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillText(text, s.x + s.w / 2 + 2, y + 2);
+    ctx.fillStyle = col; ctx.fillText(text, s.x + s.w / 2, y);
+  };
+  if (g.over) { mid('GAME OVER', s.y + s.h / 2 - 12, 30, '#e0473f'); if (g.wait <= 0) mid('PUSH TO PLAY AGAIN', s.y + s.h / 2 + 22, 14, '#fff'); }
+  else if (!g.live && Math.floor(now / 450) % 2) mid('PUSH TO START', s.y + s.h / 2 + 40, 16, '#fff');
+  ctx.font = '12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#cfd4de';
+  ctx.fillText(G.hint + '  ·  E or Esc to walk away', s.x + s.w / 2, s.y + s.h + 18);
+  const b = arcadeClose();
+  ctx.fillStyle = 'rgba(20,12,28,0.9)'; ctx.strokeStyle = c.trim; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = c.trim; ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif'; ctx.fillText('✕', b.x, b.y + 1);
+  ctx.restore();
+}
+function lobbySolidBoxes() { return T.loungeFloor ? [tableBox(), benchBox(), rackBox(), legBox(), wardBox()].concat(bedBoxes(), CABINETS.map(cabBox)) : []; }
 function tableBox() { return { x0: T.tableX - 52, x1: T.tableX + 52, y0: T.tableY - 16, y1: T.tableY + 16 }; }
 // the two chairs: 1 is left of the table (sits facing right), 2 is right of it
 function chairPos(i) { return { x: T.tableX + (i === 1 ? -44 : 44), y: T.tableY + 2 }; }
@@ -3744,10 +4201,16 @@ function stepBase(w, inputs, dt) {
 
       const min2 = ARENA.wall + T.radius;
       let bounced = false;
+      if (lobbyTall(w)) {
+        const hit = lobbyClamp(p, T.radius, NPC_GOTH.carrier === p.id);
+        if (hit.x) { p.vx = -p.vx * T.playerBounce; bounced = true; }
+        if (hit.y) { p.vy = -p.vy * T.playerBounce; bounced = true; }
+      } else {
       if (p.x < min2)           { p.x = min2;           p.vx = -p.vx * T.playerBounce; bounced = true; }
       if (p.x > ARENA.w - min2) { p.x = ARENA.w - min2; p.vx = -p.vx * T.playerBounce; bounced = true; }
       if (p.y < min2)           { p.y = min2;           p.vy = -p.vy * T.playerBounce; bounced = true; }
       if (p.y > ARENA.h - min2) { p.y = ARENA.h - min2; p.vy = -p.vy * T.playerBounce; bounced = true; }
+      }
       if (bounced && Math.hypot(p.vx, p.vy) > 120) {
         w.shake = Math.max(w.shake || 0, 14);
         fx(w, FX.WALL, p.x, p.y);
@@ -3771,6 +4234,7 @@ function stepBase(w, inputs, dt) {
       p.y += p.vy * dt;
       p.odo += Math.hypot(p.vx, p.vy) * dt;
       const min0 = ARENA.wall + T.radius;
+      if (lobbyTall(w)) { const hit = lobbyClamp(p, T.radius, NPC_GOTH.carrier === p.id); if (hit.x) p.vx = 0; if (hit.y) p.vy = 0; continue; }
       if (p.x < min0) { p.x = min0; p.vx = 0; }
       if (p.x > ARENA.w - min0) { p.x = ARENA.w - min0; p.vx = 0; }
       if (p.y < min0) { p.y = min0; p.vy = 0; }
@@ -3823,7 +4287,7 @@ function stepBase(w, inputs, dt) {
         p.lastTap = inp.tap;
         p.lobHeld = 0;
         p.tx = Math.max(m, Math.min(ARENA.w - m, inp.tx));
-        p.ty = Math.max(m, Math.min(ARENA.h - m, inp.ty));
+        p.ty = Math.max(m, Math.min(worldH(w) - m, inp.ty));
         p.aimOn = 1;
         const dl = Math.hypot(p.tx - p.x, p.ty - p.y);
         if (dl > 1) { dx = (p.tx - p.x) / dl; dy = (p.ty - p.y) / dl; }
@@ -3833,7 +4297,7 @@ function stepBase(w, inputs, dt) {
         dx = p.adx; dy = p.ady;
       } else {
         p.tx = Math.max(m, Math.min(ARENA.w - m, p.x + dx * dist));
-        p.ty = Math.max(m, Math.min(ARENA.h - m, p.y + dy * dist));
+        p.ty = Math.max(m, Math.min(worldH(w) - m, p.y + dy * dist));
         p.aimOn = live ? 1 : 0;
       }
       p.fx = dx; p.fy = dy; p.adx = dx; p.ady = dy;
@@ -3877,7 +4341,7 @@ function stepBase(w, inputs, dt) {
         p.fx = dx; p.fy = dy; p.adx = dx; p.ady = dy; p.firing = 1;
         const m = ARENA.wall + 6;                                     // the landing spot, shown as a ring
         p.tx = Math.max(m, Math.min(ARENA.w - m, p.x + dx * dist));
-        p.ty = Math.max(m, Math.min(ARENA.h - m, p.y + dy * dist));
+        p.ty = Math.max(m, Math.min(worldH(w) - m, p.y + dy * dist));
         p.aimOn = 1;
       } else if (p.charging && !busy) {
         // thrown at the spot he was aiming at when he let go (a stick springs back)
@@ -3927,6 +4391,7 @@ function stepBase(w, inputs, dt) {
     p.odo += Math.hypot(p.vx, p.vy) * dt;   // drives the run cycle
 
     const min = ARENA.wall + T.radius;
+    if (lobbyTall(w)) { const hit = lobbyClamp(p, T.radius, NPC_GOTH.carrier === p.id); if (hit.x) p.vx = 0; if (hit.y) p.vy = 0; continue; }
     if (p.x < min) { p.x = min; p.vx = 0; }
     if (p.x > ARENA.w - min) { p.x = ARENA.w - min; p.vx = 0; }
     if (p.y < min) { p.y = min; p.vy = 0; }
@@ -4203,7 +4668,8 @@ function stepBase(w, inputs, dt) {
       }
     }
 
-    const wall = b.x < ARENA.wall || b.x > ARENA.w - ARENA.wall
+    const wall = lobbyTall(w) ? !lobbyInside(b.x, b.y)
+              : b.x < ARENA.wall || b.x > ARENA.w - ARENA.wall
               || b.y < ARENA.wall || b.y > ARENA.h - ARENA.wall;
     if (wall) fx(w, FX.WALL, b.x, b.y);
     if (hit || wall || b.life <= 0) w.bullets.splice(i, 1);
@@ -4486,7 +4952,7 @@ function stepBase(w, inputs, dt) {
     }
     if (struck && h.lob && h.pow >= 0.98) potatoSplat(w, h.x, h.y, h.owner);
     const m = ARENA.wall + 6;
-    if (h.x < m || h.x > ARENA.w - m || h.y < m || h.y > ARENA.h - m) gone = true;
+    if (lobbyTall(w) ? !lobbyInside(h.x, h.y) : h.x < m || h.x > ARENA.w - m || h.y < m || h.y > ARENA.h - m) gone = true;
     if (gone) w.husks.splice(i, 1);
   }
 
@@ -4637,7 +5103,7 @@ function stepBase(w, inputs, dt) {
     c.spin = (c.spin || 0) * Math.pow(0.25, dt);
     const m = ARENA.wall + 6;
     c.x = Math.max(m, Math.min(ARENA.w - m, c.x));
-    c.y = Math.max(m, Math.min(ARENA.h - m, c.y));
+    c.y = Math.max(m, Math.min(worldH(w) - m, c.y));
     c.life -= dt;
     if ((c.arm || 0) > 0) { c.arm -= dt; continue; }    // still in the air, not yours yet
 
@@ -4847,34 +5313,45 @@ function worldFromSnapshot(s, age, bits) {
 }
 
 // ================================================================= CAMERA ===
-// 1x shows the whole arena. Zoomed (ZOOM_IN, 1.5x since b192; 2x felt too close)
+// 1x shows the whole arena. Zoomed (ZOOM_IN, 1.5x since b192; 2x felt too close in a fight)
 // follows your player round it, never showing
 // past the walls. The world is drawn through the camera; the HUD, sticks,
 // E-button and weapon bar aren't. Off during calibration (its crosshairs are
 // drawn on the character) and in the slot machine's secret room.
+// b254: a third step, 2x, for the lobby only (the bedroom, the mirror, the arcade up
+// close). In a run it's too close, so 2x drops back to 1.5x there by itself.
 const ZOOM_IN = 1.5;
+const ZOOM_LOBBY = 2;
 const SIT_ZOOM = 1.8;                                      // sat at the table, the camera closes in on it by itself
-const CAM = { on: false, z: 1, x: 430, y: 260, t: 0 };
-try { CAM.on = localStorage.getItem('smashed-zoom') === '1'; } catch (_) {}
-function setZoom(on) {
-  CAM.on = !!on;
-  try { localStorage.setItem('smashed-zoom', CAM.on ? '1' : '0'); } catch (_) {}
-  const b = document.getElementById('zoomBtn'); if (b) b.textContent = 'Zoom: ' + (CAM.on ? ZOOM_IN + 'x' : '1x') + ' (Z)';
+const CAM = { on: false, lvl: 0, z: 1, x: 430, y: 260, t: 0 };   // lvl: 0 = 1x, 1 = 1.5x, 2 = 2x in the lobby
+try { CAM.lvl = Math.max(0, Math.min(2, +localStorage.getItem('smashed-zoom') || 0)); } catch (_) {}
+CAM.on = CAM.lvl > 0;
+function setZoom(lvl) {
+  CAM.lvl = ((lvl % 3) + 3) % 3; CAM.on = CAM.lvl > 0;
+  try { localStorage.setItem('smashed-zoom', String(CAM.lvl)); } catch (_) {}
+  const b = document.getElementById('zoomBtn');
+  if (b) b.textContent = 'Zoom: ' + ['1x', ZOOM_IN + 'x', ZOOM_LOBBY + 'x'][CAM.lvl] + ' (Z)';
 }
+function nextZoom() { setZoom(CAM.lvl + 1); }                // 1x, 1.5x, 2x, round again
+function zoomWanted(w) { return !CAM.lvl ? 1 : CAM.lvl === 2 && !w.started ? ZOOM_LOBBY : ZOOM_IN; }
 function camFollow(w) {                                  // once per frame, before drawing
   const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (CAM.t || now))); CAM.t = now;
   const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0)) || w.players[0];
   const seated = !!(me && me.sit && !w.started && T.loungeFloor);           // sat at the table: close in on it
-  const want = cal.on || (w.slotSecret && w.slotSecret.room) ? 1 : seated ? SIT_ZOOM : CAM.on ? ZOOM_IN : 1;
+  const want = cal.on || (w.slotSecret && w.slotSecret.room) ? 1 : seated ? SIT_ZOOM : zoomWanted(w);
   CAM.z += (want - CAM.z) * Math.min(1, dt * (seated ? 5 : 10)); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
-  const tx = seated ? T.tableX : me ? me.x : ARENA.w / 2, ty = seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
+  let ty = seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
+  const tx = seated ? T.tableX : me ? me.x : ARENA.w / 2;
+  CAM.h = worldH(w);
+  // the tall lobby, zoomed out: the whole lounge, or the bedroom below it (the view stops at the edges)
+  if (CAM.h > ARENA.h && want === 1 && !seated) ty = me && inBedroom(me) ? CAM.h : 0;
   const k = Math.min(1, dt * 8); CAM.x += (tx - CAM.x) * k; CAM.y += (ty - CAM.y) * k;
 }
-function camView() {                                     // what's on screen, kept inside the arena
-  const z = CAM.z, hw = ARENA.w / 2 / z, hh = ARENA.h / 2 / z;
-  return { z, cx: Math.max(hw, Math.min(ARENA.w - hw, CAM.x)), cy: Math.max(hh, Math.min(ARENA.h - hh, CAM.y)) };
+function camView() {                                     // what's on screen, kept inside the arena (or the tall lobby)
+  const z = CAM.z, hw = ARENA.w / 2 / z, hh = ARENA.h / 2 / z, h = CAM.h || ARENA.h;
+  return { z, cx: Math.max(hw, Math.min(ARENA.w - hw, CAM.x)), cy: Math.max(hh, Math.min(h - hh, CAM.y)) };
 }
-function camApply() { const v = camView(); if (v.z === 1) return; ctx.translate(ARENA.w / 2, ARENA.h / 2); ctx.scale(v.z, v.z); ctx.translate(-v.cx, -v.cy); }
+function camApply() { const v = camView(); if (v.z === 1 && v.cy === ARENA.h / 2) return; ctx.translate(ARENA.w / 2, ARENA.h / 2); ctx.scale(v.z, v.z); ctx.translate(-v.cx, -v.cy); }
 function screenToWorld(x, y) { const v = camView(); return { x: (x - ARENA.w / 2) / v.z + v.cx, y: (y - ARENA.h / 2) / v.z + v.cy }; }
 function zoomButton() { return { x: ARENA.w - ARENA.wall - 24, y: ARENA.wall + 24, r: 16 }; }
 function drawZoomButton() {
@@ -4887,7 +5364,7 @@ function drawZoomButton() {
   ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x - 2, b.y - 2, 6.5, 0, Math.PI * 2); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(b.x + 2.8, b.y + 2.8); ctx.lineTo(b.x + 8, b.y + 8); ctx.stroke();
   ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(b.x - 5.5, b.y - 2); ctx.lineTo(b.x + 1.5, b.y - 2);
-  if (!CAM.on) { ctx.moveTo(b.x - 2, b.y - 5.5); ctx.lineTo(b.x - 2, b.y + 1.5); }
+  if (CAM.lvl < 2) { ctx.moveTo(b.x - 2, b.y - 5.5); ctx.lineTo(b.x - 2, b.y + 1.5); }   // + till the last step, then -
   ctx.stroke();
   ctx.restore();
 }
@@ -4954,10 +5431,11 @@ const keys = new Set();
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable]')) return;
   const k = e.key.toLowerCase();
+  if (ARC.open) { arcadeKey(k, e); return; }                  // playing a cabinet: the keys are the game's
   if (e.repeat && ['r', 'c', 'p'].includes(k)) return;
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
-  if (k === 'z' && !e.repeat) { setZoom(!CAM.on); return; }
+  if (k === 'z' && !e.repeat) { nextZoom(); return; }
   if (k >= '1' && k <= '6' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
   if (k === 'r') {
     restartGame();
@@ -4981,14 +5459,14 @@ addEventListener('keydown', e => {
   }
   if (k === 'enter' && !world.started && !e.repeat) { startGame(); return; }
   if (!e.repeat && (k === 'b' || k === 'h' || k === 't') && localSitting()) { doBJ(k === 'b' ? 'deal' : k === 'h' ? 'hit' : 'stand'); return; }
-  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { toggleCarry(world); return; }
-  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { SITREQ.id++; return; }   // the guest: sit / stand
+  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!arcadeTryOpen()) toggleCarry(world); return; }
+  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!arcadeTryOpen()) SITREQ.id++; return; }   // the guest: sit / stand
   if (cal.on && (k === '[' || k === ',')) { cal.i = (cal.i + 7) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   if (cal.on && (k === ']' || k === '.')) { cal.i = (cal.i + 1) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   keys.add(k);
   if (['w','a','s','d',' ','shift','control','enter','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
 });
-addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); ARC.keys.delete(e.key.toLowerCase()); });
 addEventListener('blur', () => {
   keys.clear(); mouse.down = false;
   for (const stick of [moveStick, aimStick]) { stick.active = false; stick.id = null; stick.dx = stick.dy = 0; }
@@ -5025,6 +5503,7 @@ function calPlace(pt) {
 
 canvas.addEventListener('pointerdown', e => {
   const pt = toArena(e);
+  if (ARC.open) { arcadeDown(e, pt); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
   if (SHED.open) { shirtEditorDown(pt); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
   // game over: a tap on the message restarts (back to the lobby)
   if (world.over && net.role !== 'client'
@@ -5048,7 +5527,7 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   // the carry button: a tap (or click) on it does what E does
-  { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { setZoom(!CAM.on); e.preventDefault(); return; } }
+  { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
   { const ab = artButton();
@@ -5057,7 +5536,7 @@ canvas.addEventListener('pointerdown', e => {
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
-  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
+  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (arcadeTryOpen()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
   const hs = cal.on ? -1 : hotbarSlotAt(pt);
   if (hs >= 0) { HOTBAR.drag = { i: hs, x: pt.x, y: pt.y, id: e.pointerId, moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
@@ -5085,6 +5564,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   const pt = toArena(e);
+  if (ARC.open) { arcadeMove(e, pt); e.preventDefault(); return; }
   if (SHED.open) { if (shirtEditorMove(pt)) e.preventDefault(); return; }
   if (HOTBAR.drag && HOTBAR.drag.id === e.pointerId) {
     const d = HOTBAR.drag; d.moved = Math.max(d.moved, Math.hypot(pt.x - d.x, pt.y - d.y)); d.x = pt.x; d.y = pt.y;
@@ -5105,6 +5585,7 @@ canvas.addEventListener('pointermove', e => {
   e.preventDefault();
 });
 function endPointer(e) {
+  if (ARC.open) { arcadeUp(e); return; }
   if (SHED.open) { SHED.drag = null; return; }
   if (HOTBAR.drag && HOTBAR.drag.id === e.pointerId) {
     const d = HOTBAR.drag; HOTBAR.drag = null;
@@ -5182,6 +5663,7 @@ function localInput0() {
   inp.sq = SITREQ.id; inp.bq = BJREQ.id; inp.ba = BJREQ.a;           // the guest's sit and blackjack requests
   if (HOTBAR.want) { inp.wsel = HOTBAR.want; HOTBAR.want = null; }
   if (tapShot.until > performance.now()) { inp.tap = tapShot.id; inp.tx = tapShot.x; inp.ty = tapShot.y; }
+  if (ARC.open) { Object.assign(inp, { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false, st: false }); delete inp.lt; delete inp.tap; }   // at a cabinet: stand still
   return inp;
 }
 
@@ -6018,7 +6500,7 @@ function carryButton() {
   if (net.role === 'client') {                               // the guest: sit down at the table, or get up
     const v = net.view, me = v && v.players.find(q => q.id === 1);
     if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
-    const label = me.sit ? 'STAND' : chairNear(v, me) ? 'SIT' : null;
+    const label = me.sit ? 'STAND' : chairNear(v, me) ? 'SIT' : arcadeNear(me) ? 'PLAY' : null;
     return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
   }
   const w = world, p = w.players[0];
@@ -6030,6 +6512,7 @@ function carryButton() {
   else if (p.sit) label = !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
   else if (NPC_GOTH.carrier < 0 && wardNear(p)) label = WARD.open ? 'CLOSE' : 'OPEN';
+  else if (NPC_GOTH.carrier < 0 && arcadeNear(p)) label = 'PLAY';
   else if (chairNear(w, p)) label = 'SIT';
   else if (canCarry(w, p)) label = 'PICK UP';
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
@@ -7379,7 +7862,7 @@ function renderBase(w, hudRight) {
   camFollow(w);
   ctx.save(); camApply();                          // the world, through the camera
   ctx.fillStyle = '#1b1e26';
-  ctx.fillRect(0, 0, ARENA.w, ARENA.h);
+  ctx.fillRect(0, 0, ARENA.w, worldH(w));
 
   const loungeOn = !w.started && T.loungeFloor && !cal.on && LOUNGE_IMG.complete && LOUNGE_IMG.naturalWidth;
   if (loungeOn) {
@@ -7405,6 +7888,7 @@ function renderBase(w, hudRight) {
   ctx.fillRect(0, ARENA.h - ARENA.wall, ARENA.w, ARENA.wall);
   ctx.fillRect(0, 0, ARENA.wall, ARENA.h);
   ctx.fillRect(ARENA.w - ARENA.wall, 0, ARENA.wall, ARENA.h);
+  drawLowerLobby(w);
 
   if (w.slotSecret?.room) drawMachineFloor(w);
 
@@ -8022,7 +8506,9 @@ function renderBase(w, hudRight) {
                           { y: T.benchY - 14, draw: () => drawBenchStation(w) },
                           { y: T.rackY - 10, draw: () => drawRackStation() },
                           { y: T.legY - 14, draw: () => drawLegStation(w) },
-                          { y: WARD.y - 6, draw: () => drawWardrobe() }].sort((a, b) => a.y - b.y) : [];
+                          { y: WARD.y - 6, draw: () => drawWardrobe() },
+                          { y: MIRROR.y - 6, draw: () => drawMirror(w) },
+                          ...CABINETS.map(c => ({ y: cabY() - 6, draw: () => drawCabinet(w, c) }))].sort((a, b) => a.y - b.y) : [];
   const speech = [];
   for (const p of byDepth) {
     while (deep.length && p.y >= deep[0].y) deep.shift().draw();
@@ -8226,6 +8712,7 @@ function renderBase(w, hudRight) {
   drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
+  drawArcade();
 
   // HUD
   ctx.fillStyle = '#6d7486';
@@ -8777,8 +9264,8 @@ document.getElementById('muteBtn').addEventListener('click', e => {
 });
 
 document.getElementById('fsBtn').addEventListener('click', goFullscreen);
-document.getElementById('zoomBtn').addEventListener('click', () => setZoom(!CAM.on));
-setZoom(CAM.on);                                         // the button's label, from what was saved
+document.getElementById('zoomBtn').addEventListener('click', () => nextZoom());
+setZoom(CAM.lvl);                                        // the button's label, from what was saved
 document.addEventListener('fullscreenchange', () => {
   resize();
   if (!document.fullscreenElement && screen.orientation && screen.orientation.unlock) {
