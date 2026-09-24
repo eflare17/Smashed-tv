@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b254 — a 2x zoom for the lobby';
+const BUILD = 'b257 — the shirt editor shows LOOK: PIXEL';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1353,14 +1353,15 @@ function drawShirtEditor() {
   ctx.drawImage(g.im, g.src.x, g.src.y, g.src.s, g.src.s, g.view.x, g.view.y, g.view.w, g.view.h);
   // b234: the picture exactly as it'll look — on the shirt and nothing else (cut to the shirt itself,
   // not its box), with a faint outline showing where the rest of it falls
-  const r = shirtArtRect(g);
-  const pv = document.createElement('canvas'); pv.width = Math.ceil(g.view.w); pv.height = Math.ceil(g.view.h);
+  // b257: printed at his sprite's own size (as shirtSkin does), then blown up, so LOOK: PIXEL shows its pixels here too
+  const r = shirtArtRect(g), S = SHIRT.smooth ? 2 : 1, q = S / g.box.k;   // q: view pixels -> patch pixels
+  const pv = document.createElement('canvas'); pv.width = Math.ceil(g.src.s * S); pv.height = pv.width;
   const pg = pv.getContext('2d'); pg.imageSmoothingEnabled = SHIRT.smooth; pg.imageSmoothingQuality = 'high';
-  pg.drawImage(shedArt(), r.x - g.view.x, r.y - g.view.y, r.w, r.h);
+  pg.drawImage(shedArt(), (r.x - g.view.x) * q, (r.y - g.view.y) * q, r.w * q, r.h * q);
   pg.imageSmoothingEnabled = false;
   pg.globalCompositeOperation = 'destination-in';
-  pg.drawImage(g.mask, g.src.x, g.src.y, g.src.s, g.src.s, 0, 0, g.view.w, g.view.h);
-  ctx.drawImage(pv, g.view.x, g.view.y);
+  pg.drawImage(g.mask, g.src.x, g.src.y, g.src.s, g.src.s, 0, 0, g.src.s * S, g.src.s * S);
+  ctx.drawImage(pv, g.view.x, g.view.y, g.view.w * pv.width / (g.src.s * S), g.view.h * pv.width / (g.src.s * S));
   ctx.save(); ctx.strokeStyle = 'rgba(246,209,122,0.55)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
   ctx.strokeRect(r.x, r.y, r.w, r.h); ctx.setLineDash([]); ctx.restore();
   ctx.strokeStyle = 'rgba(111,211,160,0.35)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
@@ -1511,6 +1512,26 @@ function bedBoxes() { return [{ x0: BED.x0, x1: BED.x1, y0: BED.y0, y1: BED.y1 -
 // looks back at you). Everyone's screen draws it, so you see your friend in it too.
 const MIRROR = { x: 258, y: ARENA.h + 96, w: 36, h: 92 };      // y: where its feet are
 function mirrorBox() { return { x0: MIRROR.x - MIRROR.w / 2, x1: MIRROR.x + MIRROR.w / 2, y0: MIRROR.y - 10, y1: MIRROR.y }; }
+// b256: stand right in front of it and E closes the camera in on the glass (your screen only);
+// E again, or moving, lets it go. Up close the real you fades out and your reflection
+// grows to fill the glass, as if you're looking at yourself; mirrorK runs 0..1 between the two.
+const MIRROR_ZOOM = 4.4;                                        // the frame fills the screen, clear of the weapon bar
+let mirrorLook = false, mirrorK = 0, mirrorAt = null;           // mirrorAt: where you stood when you looked
+function mirrorNear(p) { return !!p && p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed && T.loungeFloor && Math.abs(p.x - MIRROR.x) < 24 && p.y > MIRROR.y && p.y < MIRROR.y + 40; }
+function mirrorTryLook() {
+  const v = net.role === 'client' ? net.view : world;
+  if (!v || v.started || v.over || cal.on) return false;
+  if (mirrorLook) { mirrorLook = false; return true; }
+  const me = localMe();
+  if (!mirrorNear(me)) return false;
+  mirrorLook = true; mirrorAt = { x: me.x, y: me.y };
+  return true;
+}
+function mirrorStep(w, me, dt) {                               // once per frame, from camFollow
+  if (mirrorLook && (w.started || w.over || !mirrorNear(me) || Math.hypot(me.x - mirrorAt.x, me.y - mirrorAt.y) > 3)) mirrorLook = false;
+  mirrorK = Math.max(0, Math.min(1, mirrorK + (mirrorLook ? dt : -dt) * 3));
+}
+function mirrorMe(p) { return mirrorK > 0 && !p.npc && p.id === (net.role === 'client' ? 1 : 0); }   // the one fading into the glass
 function drawMirror(w) {
   const m = MIRROR, x0 = m.x - m.w / 2, top = m.y - m.h;
   const g = { x0: x0 + 4, x1: x0 + m.w - 4, y0: top + 5, y1: m.y - 7 };   // the glass
@@ -1524,11 +1545,18 @@ function drawMirror(w) {
   ctx.fillStyle = gl; ctx.fillRect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0);
   ctx.beginPath(); ctx.rect(g.x0, g.y0, g.x1 - g.x0, g.y1 - g.y0); ctx.clip();
   // whoever's in front, farthest first, pinned to the bottom of the glass
-  const seen = w.players.filter(p => p.alive && !p.dive && !p.sit && !p.lift && !p.leg
+  const seen = w.players.filter(p => p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed
     && p.y > m.y && p.y < m.y + 170 && Math.abs(p.x - m.x) < 70).sort((a, b) => b.y - a.y);
+  // (you, looking into it, drawn last: nearest, and full height)
+  seen.sort((a, b) => mirrorMe(a) - mirrorMe(b));
   for (const p of seen) {
-    const d = p.y - m.y, s = 0.72 - 0.3 * Math.min(1, d / 170);
-    const rx = m.x + (p.x - m.x) * 0.35, ry = g.y1 + 2;
+    const d = p.y - m.y;
+    let s = 0.72 - 0.3 * Math.min(1, d / 170), rx = m.x + (p.x - m.x) * 0.35, ry = g.y1 + 2;
+    if (mirrorMe(p)) {                                             // grow to fill the glass, feet on its bottom edge
+      const k = mirrorK * mirrorK * (3 - 2 * mirrorK);
+      const sF = (g.y1 - g.y0) / (T.radius * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * (NEW_ART.has(p.ch) ? T.altScale : 1)), ryF = g.y1 - 1 - T.radius * 0.9 * sF;
+      s += (sF - s) * k; rx += (m.x - rx) * k; ry += (ryF - ry) * k;
+    }
     const r = { ...p, x: rx, y: ry, fy: -p.fy, iy: -(p.iy || 0), ady: -(p.ady || 0), mdy: -(p.mdy || 0), rdy: -(p.rdy || 0) };
     ctx.save();
     ctx.globalAlpha = 0.9;
@@ -1550,6 +1578,7 @@ function drawLowerLobby(w) {
   ctx.fillStyle = '#101218'; ctx.fillRect(0, ARENA.h, ARENA.w, LOBBY_H - ARENA.h);
   if (BED_ART.complete && BED_ART.naturalWidth) ctx.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
   else drawBedroomPlaceholder();
+  drawSleepers(w);
   ctx.fillStyle = '#2b3040';
   ctx.fillRect(0, b.y0, wl, LOBBY_H - b.y0);                      // left
   ctx.fillRect(b.x1, b.y0, wl, LOBBY_H - b.y0);                   // right
@@ -1591,6 +1620,55 @@ function drawBedroomPlaceholder() {
   ctx.fillStyle = '#dfe6f0'; ctx.fillRect(d.x0, d.y0 + 58, bw, 8);
   ctx.fillStyle = '#2f4f7a'; ctx.fillRect(d.x0, d.y0 + 66, bw, d.y1 - d.y0 - 66);
   ctx.fillStyle = '#284469'; for (let x = d.x0 + 22; x < d.x1; x += 44) ctx.fillRect(x, d.y0 + 66, 2, d.y1 - d.y0 - 66);
+}
+// b255: lie on the bed. E beside it and you get in (p.bed: 1 the left side, 2 the right,
+// so you can both lie down); the stick or E again gets you up, at the foot of the bed.
+// Drawn on the bed itself, head on the pillow and tucked in under the blanket.
+function bedSpot(side) { return { x: (BED.x0 + BED.x1) / 2 + (side === 1 ? -30 : 30), y: BED.y0 + 70 }; }
+function bedNear(w, p) {
+  if (!p || !p.alive || p.dive || p.sit || p.lift || p.leg || p.bed || w.started || !lobbyTall(w)) return 0;
+  if (p.x < BED.x0 - 24 || p.x > BED.x1 + 24 || p.y < BED.y0 || p.y > BED.y1 + 34) return 0;
+  const taken = s => w.players.some(q => q !== p && q.bed === s);
+  const want = p.x < (BED.x0 + BED.x1) / 2 ? 1 : 2;
+  return !taken(want) ? want : !taken(3 - want) ? 3 - want : 0;
+}
+function lieDown(p, side) {
+  const s = bedSpot(side);
+  p.bed = side; p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0; p.fx = 0; p.fy = 1;
+}
+function getUp(p) {
+  p.x = bedSpot(p.bed).x; p.y = BED.y1 + T.radius + 2; p.bed = 0; p.vx = 0; p.vy = 0; p.fx = 0; p.fy = 1;
+}
+// whoever's in bed: the top of them over the pillow, the rest under the blanket
+function drawSleepers(w) {
+  if (!lobbyTall(w)) return;
+  const t = performance.now() / 1000;
+  for (const p of w.players) {
+    if (!p.alive || !p.bed) continue;
+    const set = IMG[p.ch] || IMG.jared;
+    let im = set.front_run || set.front_a || set.front;
+    if (Array.isArray(im)) im = im[0];
+    if (!im || !im.complete || !im.naturalWidth) continue;
+    const alt = NEW_ART.has(p.ch);
+    const h = T.radius * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * (alt ? T.altScale : 1);
+    const dw = h * (im.naturalWidth / im.naturalHeight) * (alt ? T.altWide : 1);
+    const s = bedSpot(p.bed), top = BED.y0 + 16;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(BED.x0, BED.y0, BED.x1 - BED.x0, 50); ctx.clip();   // everything below the fold is under the covers
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, Math.round(s.x - dw / 2), Math.round(top), Math.round(dw), Math.round(h));
+    ctx.restore();
+    // the blanket's turned-down edge, over his chest
+    ctx.fillStyle = '#dfe6f0'; ctx.fillRect(s.x - dw / 2 + 2, BED.y0 + 50, dw - 4, 8);
+    ctx.fillStyle = '#2f4f7a'; ctx.fillRect(s.x - dw / 2 + 2, BED.y0 + 58, dw - 4, 8);
+    // z z z
+    ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
+    for (let i = 0; i < 3; i++) {
+      const f = (t * 0.5 + i / 3) % 1;
+      ctx.fillStyle = 'rgba(220,235,255,' + (1 - f).toFixed(2) + ')';
+      ctx.fillText('z', s.x + 14 + f * 16, top - f * 26);
+    }
+  }
 }
 // b253: the arcade row. Two cabinets beside the slot machine, on the lounge's top wall
 // where the wardrobe stood. E at one plays it: its screen fills yours and you stand
@@ -2756,7 +2834,7 @@ function lobbySolids(w) {
   if (w.started || !T.loungeFloor) return;
   const water = { x0: POOL.x0 + 6, y0: POOL.y0 + 6, x1: POOL.x1 - 6, y1: POOL.y1 - 6 };
   for (const p of w.players) {
-    if (!p.alive || p.dive || p.sit) continue;
+    if (!p.alive || p.dive || p.sit || p.bed) continue;
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
     for (const b of lobbySolidBoxes()) pushOutOfBox(p, T.radius * 0.5, b);
@@ -4058,7 +4136,7 @@ function stepBase(w, inputs, dt) {
     // the guest's E (sit / stand) and blackjack buttons, each acted on once
     if (p.id !== 0 && !w.started && inp.sq !== undefined) {
       if (p.lastSq === undefined) p.lastSq = inp.sq;
-      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; if (p.sit) p.sit = 0; else { const ch = chairNear(w, p); if (ch) sitDown(p, ch); } }
+      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; if (p.sit) p.sit = 0; else if (p.bed) getUp(p); else { const ch = chairNear(w, p), bs = !ch && bedNear(w, p); if (ch) sitDown(p, ch); else if (bs) lieDown(p, bs); } }
       if (p.lastBq === undefined) p.lastBq = inp.bq;
       else if (inp.bq !== p.lastBq) { p.lastBq = inp.bq; bjAction(w, p, inp.ba); }
     }
@@ -4077,6 +4155,10 @@ function stepBase(w, inputs, dt) {
       if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) { p.leg = null; p.y = T.legY + 20; }
       else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); p.x = T.legX - 16; p.y = T.legY + 6; p.vx = 0; p.vy = 0; }
     } else if (p.leg) p.leg = null;
+    if (p.bed && !w.started) {                               // in bed: a nudge gets him up
+      if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) getUp(p);
+      else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const s = bedSpot(p.bed); p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0; }
+    } else if (p.bed) p.bed = 0;
     if (p.plate && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });   // hands full of plate    // weapon bar: switch to anything he's actually holding
     if (inp.wsel && WEAPONS[inp.wsel] && inp.wsel !== p.weapon && hasWeapon(p, inp.wsel) && !p.dump && !p.spin) {
       p.weapon = inp.wsel; p.lobHeld = 0; p.aimOn = 0;
@@ -5198,7 +5280,7 @@ function snapshot(w) {
                            Math.round(p.rdx * 100), Math.round(p.rdy * 100),
                            p.shots & 255, p.rockets || 0, Math.round((p.buy || 0) * 100),
                            Math.round(p.tx || 0), Math.round(p.ty || 0), p.aimOn ? 1 : 0,
-                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0]),
+                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0, p.bed || 0]),
     bj: bjPack(w.bj),
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
@@ -5281,7 +5363,7 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0
+      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -5338,10 +5420,12 @@ function camFollow(w) {                                  // once per frame, befo
   const now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (CAM.t || now))); CAM.t = now;
   const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0)) || w.players[0];
   const seated = !!(me && me.sit && !w.started && T.loungeFloor);           // sat at the table: close in on it
-  const want = cal.on || (w.slotSecret && w.slotSecret.room) ? 1 : seated ? SIT_ZOOM : zoomWanted(w);
-  CAM.z += (want - CAM.z) * Math.min(1, dt * (seated ? 5 : 10)); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
-  let ty = seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
-  const tx = seated ? T.tableX : me ? me.x : ARENA.w / 2;
+  mirrorStep(w, me, dt);
+  const looking = mirrorLook;                                               // at the mirror: the frame fills the screen
+  const want = cal.on || (w.slotSecret && w.slotSecret.room) ? 1 : looking ? MIRROR_ZOOM : seated ? SIT_ZOOM : zoomWanted(w);
+  CAM.z += (want - CAM.z) * Math.min(1, dt * (seated || looking ? 5 : 10)); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
+  let ty = looking ? MIRROR.y - 38 : seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
+  const tx = looking ? MIRROR.x : seated ? T.tableX : me ? me.x : ARENA.w / 2;
   CAM.h = worldH(w);
   // the tall lobby, zoomed out: the whole lounge, or the bedroom below it (the view stops at the edges)
   if (CAM.h > ARENA.h && want === 1 && !seated) ty = me && inBedroom(me) ? CAM.h : 0;
@@ -5459,8 +5543,8 @@ addEventListener('keydown', e => {
   }
   if (k === 'enter' && !world.started && !e.repeat) { startGame(); return; }
   if (!e.repeat && (k === 'b' || k === 'h' || k === 't') && localSitting()) { doBJ(k === 'b' ? 'deal' : k === 'h' ? 'hit' : 'stand'); return; }
-  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!arcadeTryOpen()) toggleCarry(world); return; }
-  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!arcadeTryOpen()) SITREQ.id++; return; }   // the guest: sit / stand
+  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!arcadeTryOpen() && !mirrorTryLook()) toggleCarry(world); return; }
+  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!arcadeTryOpen() && !mirrorTryLook()) SITREQ.id++; return; }   // the guest: sit / stand
   if (cal.on && (k === '[' || k === ',')) { cal.i = (cal.i + 7) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   if (cal.on && (k === ']' || k === '.')) { cal.i = (cal.i + 1) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   keys.add(k);
@@ -5536,7 +5620,7 @@ canvas.addEventListener('pointerdown', e => {
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
-  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (arcadeTryOpen()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
+  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (arcadeTryOpen() || mirrorTryLook()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
   const hs = cal.on ? -1 : hotbarSlotAt(pt);
   if (hs >= 0) { HOTBAR.drag = { i: hs, x: pt.x, y: pt.y, id: e.pointerId, moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
@@ -6500,7 +6584,7 @@ function carryButton() {
   if (net.role === 'client') {                               // the guest: sit down at the table, or get up
     const v = net.view, me = v && v.players.find(q => q.id === 1);
     if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
-    const label = me.sit ? 'STAND' : chairNear(v, me) ? 'SIT' : arcadeNear(me) ? 'PLAY' : null;
+    const label = me.sit ? 'STAND' : me.bed ? 'GET UP' : chairNear(v, me) ? 'SIT' : bedNear(v, me) ? 'LIE DOWN' : arcadeNear(me) ? 'PLAY' : mirrorNear(me) ? (mirrorLook ? 'BACK' : 'LOOK') : null;
     return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
   }
   const w = world, p = w.players[0];
@@ -6513,7 +6597,10 @@ function carryButton() {
   else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
   else if (NPC_GOTH.carrier < 0 && wardNear(p)) label = WARD.open ? 'CLOSE' : 'OPEN';
   else if (NPC_GOTH.carrier < 0 && arcadeNear(p)) label = 'PLAY';
+  else if (mirrorNear(p)) label = mirrorLook ? 'BACK' : 'LOOK';
+  else if (p.bed) label = 'GET UP';
   else if (chairNear(w, p)) label = 'SIT';
+  else if (NPC_GOTH.carrier < 0 && bedNear(w, p)) label = 'LIE DOWN';
   else if (canCarry(w, p)) label = 'PICK UP';
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
 }
@@ -6534,6 +6621,8 @@ function toggleCarry(w) {
   if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
   if (NPC_GOTH.carrier < 0 && !w.started && wardNear(p)) { toggleWard(); return; }
   if (p && p.sit) { if (!p.bong) p.bong = 1; else if (!p.vape) p.vape = { t: 0 }; return; }   // sitting: E grabs the bong, then takes a hit (move to stand up)
+  if (p && p.bed) { getUp(p); return; }
+  if (NPC_GOTH.carrier < 0) { const bs = bedNear(w, p); if (bs) { lieDown(p, bs); return; } }
   { const ch = chairNear(w, p); if (ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
   if (NPC_GOTH.carrier >= 0) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
@@ -8526,7 +8615,11 @@ function renderBase(w, hudRight) {
     const r = T.radius;
     // blink while invulnerable
     if (!cal.on && p.iframe > 0 && Math.floor(p.iframe * 20) % 2 === 0) continue;
-    if ((p.lift || p.leg) && !w.started) continue;    // he's the one on the bench (or leg press): that draws him
+    if ((p.lift || p.leg || p.bed) && !w.started) continue;    // he's the one on the bench (or leg press, or in bed): that draws him
+    if (mirrorMe(p)) {                                         // looking in the mirror: the real you fades out
+      if (mirrorK < 1) { ctx.save(); ctx.globalAlpha = 1 - mirrorK; drawJared(w, p); drawHeldPlate(p); ctx.restore(); }
+      continue;
+    }
     drawJared(w, p);
     drawHeldPlate(p);
     // everything hung over his head rides up the tower with him
