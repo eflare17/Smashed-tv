@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b259 — the shirt print stays on when he carries her';
+const BUILD = 'b260 — a wider mirror';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1472,7 +1472,7 @@ try { const saved = localStorage.getItem(SHIRT.key); if (saved) { const i = new 
 // browser doesn't have to read it before the game starts (and remembers it between visits)
 const artImg = name => { const i = new Image(); i.src = 'art/' + name; return i; };
 const WARD_ART = ['wardrobe-0.png', 'wardrobe-1.png', 'wardrobe-2.png'].map(artImg);
-const WARD = { x: 194, y: ARENA.h + 100, s: 1, open: false, k: 0, t: 0 };   // y: where its feet are; s: drawn a bit taller than him
+const WARD = { x: 180, y: ARENA.h + 100, s: 1, open: false, k: 0, t: 0 };   // y: where its feet are; s: drawn a bit taller than him
 function wardBox() { return { x0: WARD.x - 32, x1: WARD.x + 32, y0: WARD.y - 16, y1: WARD.y }; }
 function wardNear(p) { return !!p && p.alive && !p.dive && !p.sit && T.loungeFloor && Math.abs(p.x - WARD.x) < 40 && p.y > WARD.y - 2 && p.y < WARD.y + 38; }
 function toggleWard() {
@@ -1530,7 +1530,8 @@ function bedBoxes() { return [{ x0: BED.x0, x1: BED.x1, y0: BED.y0, y1: BED.y1 -
 // b252: a full-length mirror beside the wardrobe. Stand in front of it and you're in
 // it: drawn again in the glass, smaller, facing the other way (walk up to it and it
 // looks back at you). Everyone's screen draws it, so you see your friend in it too.
-const MIRROR = { x: 258, y: ARENA.h + 96, w: 36, h: 92 };      // y: where its feet are
+// b260: wide enough for all of him (60, from 36), the wardrobe moved over 14 to make room
+const MIRROR = { x: 246, y: ARENA.h + 96, w: 60, h: 92 };      // y: where its feet are
 function mirrorBox() { return { x0: MIRROR.x - MIRROR.w / 2, x1: MIRROR.x + MIRROR.w / 2, y0: MIRROR.y - 10, y1: MIRROR.y }; }
 // b256: stand right in front of it and E closes the camera in on the glass (your screen only);
 // E again, or moving, lets it go. Up close the real you fades out and your reflection
