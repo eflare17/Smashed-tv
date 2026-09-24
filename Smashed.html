@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b261 — a magic mushroom';
+const BUILD = 'b262 — the mushroom holds still';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2307,12 +2307,11 @@ function drawShroom(w) {
 
   // ---- the 3D view, in its own low-res pixels
   const RW = SHROOM_RW, RH = SHROOM_RH, EYE = SHROOM_EYE, WALL = SHROOM_WALL;
-  const fov = (66 + 14 * Math.sin(t * 0.7) * amp + 10 * pulse * amp) * Math.PI / 180, tanH = Math.tan(fov / 2);
+  const fov = 66 * Math.PI / 180, tanH = Math.tan(fov / 2);             // b262: steady, no breathing or throbbing on the beat
   const proj = (RW / 2) / tanH;
   const a = SHROOM.ang, dx = Math.cos(a), dy = Math.sin(a), rx = -dy, ry = dx;
   const px = me.x, py = me.y;
-  const bob = Math.sin((me.odo || 0) * 0.12) * 2.5;
-  const hor = RH / 2 + bob + Math.sin(t * 1.1) * 6 * amp;
+  const hor = RH / 2;                                                    // b262: the horizon stays put (no walk bob, no sway)
   const buf = cv.buf, B = buf.data, L = SHROOM_LUT, F = SHROOM.floor, FD = F.data, FW = F.w, FH = F.h;
   const mix = (0.3 + 0.2 * Math.sin(t * 1.3)) * amp, warp = 7 * amp, tsh = t * 60;
   // floor and ceiling, row by row
@@ -2371,7 +2370,7 @@ function drawShroom(w) {
   list.sort((p, q) => q.depth - p.depth);
   for (const { s, depth, lat } of list) {
     const sc = proj / depth, cx = RW / 2 + lat * sc, wpx = s.W * sc, hpx = s.H * sc;
-    const x0 = cx - wpx / 2, top = hor + (EYE - s.foot) * sc + (s.glow ? 0 : Math.sin(t * 3 + s.x * 0.05) * 2 * amp);
+    const x0 = cx - wpx / 2, top = hor + (EYE - s.foot) * sc;
     const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(RW, Math.ceil(x0 + wpx));
     let run = -1;
     for (let c = c0; c <= c1; c++) {
@@ -2396,11 +2395,10 @@ function drawShroom(w) {
   const ag = cv.acc.getContext('2d');
   ag.save();
   ag.globalAlpha = 0.35 + 0.35 * (1 - amp * 0.6);                    // lower = longer trails
-  ag.translate(CW / 2, CH / 2); ag.rotate(Math.sin(t * 0.6) * 0.035 * amp); ag.scale(1.06 + 0.02 * pulse * amp, 1.06 + 0.02 * pulse * amp); ag.translate(-CW / 2, -CH / 2);   // a touch big, so the sway never shows an edge
   ag.drawImage(cv.view, 0, 0);
   ag.globalAlpha = 0.12 * amp; ag.globalCompositeOperation = 'lighter';
-  const off = (8 + 10 * Math.sin(t * 0.9)) * amp * S;                 // a second, offset copy of it all
-  ag.drawImage(cv.view, off, Math.sin(t * 1.3) * off * 0.5); ag.drawImage(cv.view, -off, -Math.sin(t * 1.3) * off * 0.5);
+  const off = 8 * amp * S;                                            // a second, offset copy of it all (b262: held still, not swimming)
+  ag.drawImage(cv.view, off, 0); ag.drawImage(cv.view, -off, 0);
   ag.restore();
   // ---- onto the screen: the lobby from above spiralling away as it comes on (and back as it wears off)
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
