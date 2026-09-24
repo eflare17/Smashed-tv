@@ -1,0 +1,8 @@
+# working art and references: the game only loads the finished files in art/
+art/legpress/
+reference-images/
+
+# one-off dev scripts (the preview server, .claude/launch.json + serve.ps1, is kept)
+.claude/*
+!.claude/launch.json
+!.claude/serve.ps1
