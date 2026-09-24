@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b265 — his feet on the board';
+const BUILD = 'b266 — his own boots';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2588,10 +2588,14 @@ function drawShroom(w) {
     g.restore();
   };
   // his legs and boots at the bottom of the screen: a step every metre or so, feet together when he stops
+  const LEG_CROP = [21, 114, 27, 46];                                   // x, y, w, h in his 98x160 standing frame: calf and boot
   const drawFeet = g => {
     const set = IMG[me.ch] || IMG.juicy || IMG.jared; let src = set && (set.front_run || set.front_a); if (Array.isArray(src)) src = src[0];
     if (!src || !src.complete || !src.naturalWidth) return;
     const c = legColours(src.__orig || src), moving = SHROOM.moveK || 0, ph = SHROOM.walkPh || 0;
+    // the new art's standing frame: its left leg is planted from the knee to the sole, so that's the one we use (mirrored for the right)
+    let art = NEW_ART.has(me.ch) && me.ch !== 'goth' && set.front_a; if (art && art.__orig) art = art.__orig;
+    if (art && (!art.complete || !art.naturalWidth)) art = null;
     g.save();
     for (const i of [0, 1]) {
       const w = CW * 0.125, side = i ? 1 : -1;
@@ -2599,6 +2603,18 @@ function drawShroom(w) {
       const lift = Math.max(0, Math.cos(ph + i * Math.PI)) * moving;                       // off the board while it swings through
       const fx = CW * 0.5 + side * CW * (0.075 - 0.012 * p), fy = CH * (1.0 - 0.17 * p) - lift * CH * 0.035;
       const bw = w * (1 - 0.22 * p), bh = bw * 0.62;
+      if (art) {                                                            // b266: his real calf and boot, off his own art
+        const base = CH * 0.5 * (1 - 0.15 * p), wd = base * LEG_CROP[2] / LEG_CROP[3];
+        const ax = CW * 0.5 + side * CW * (0.1 - 0.015 * p), top = CH * (0.62 - 0.12 * p) - lift * CH * 0.04;
+        const hd = Math.max(base, CH - top + 6);                             // a foot out ahead stretches his calf, so it always reaches below the screen
+        g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';               // its shadow on the plank, under the toe
+        g.beginPath(); g.ellipse(ax, top + wd * 0.35 + lift * CH * 0.04, wd * 0.5, wd * 0.22, 0, 0, Math.PI * 2); g.fill();
+        g.save(); g.imageSmoothingEnabled = false;
+        g.translate(ax, top); g.scale(side < 0 ? 1 : -1, -1);               // upside down: the boot out ahead, his calf coming up from below the screen
+        g.drawImage(art, LEG_CROP[0], LEG_CROP[1], LEG_CROP[2], LEG_CROP[3], -wd / 2, -hd, wd, hd);
+        g.restore();
+        continue;
+      }
       g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';                 // its shadow on the plank
       g.beginPath(); g.ellipse(fx, fy + bh * 0.5 + lift * CH * 0.035, bw * 0.55, bh * 0.35, 0, 0, Math.PI * 2); g.fill();
       g.fillStyle = c.skin; g.strokeStyle = c.line; g.lineWidth = Math.max(2, CW * 0.003);  // the shin, coming up from below the screen
