@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b260 — a wider mirror';
+const BUILD = 'b261 — a magic mushroom';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2075,6 +2075,356 @@ const SIT_ART = [
 ];
 // in the art's own world px from its bottom-left: the stool's middle, his mouth (frame 3), the vape's tip (frame 2), the flame (frame 1)
 const SIT_GEO = { stool: 10.5, mouth: [21, -46.5], tip: [29.2, -34.5], flame: [33.3, -39], floor: 18 };
+// ================================================================ THE SHROOM ===
+// b261: a mushroom on the lounge floor. E to eat it and for 30 seconds your screen goes first
+// person and 3D, and fully psychedelic: the lobby raycast from where you stand (walls where you
+// can't walk, the lounge and bedroom art as the floor), everyone and everything in it stood up as
+// flat cut-outs of their own art, like the old Doom games. Your screen only: your friend still sees
+// the lobby from above, and the mushroom's on each of your floors. Lobby only, starting a run ends
+// it. W/S walk, A/D step sideways, the mouse (or the arrow keys, or the right stick) turns you,
+// click shoots straight ahead. It grows back 20s after you come down.
+const SHROOM_SPOT = { x: 52, y: 424 };                              // bottom-left of the lounge, clear of the weapon bar
+const SHROOM_TIME = 30, SHROOM_IN = 2.2, SHROOM_OUT = 2.5, SHROOM_REGROW = 20;
+const SHROOM_RW = 288, SHROOM_RH = 174;                              // the 3D view's own pixels, blown up to fill the screen
+const SHROOM_EYE = 62, SHROOM_WALL = 150;                            // eye height and wall height, in world units
+const SHROOM = { on: false, t: 0, ang: 0, turn: 0, gone: 0, last: 0, beat: -1, props: null, floor: null, cv: null, chars: new Map(), music: null };
+const shroomNow = () => performance.now() / 1000;
+function shroomHere() { return !SHROOM.on && shroomNow() >= SHROOM.gone; }
+function shroomNear(p) { return !!p && p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed && T.loungeFloor && Math.hypot(p.x - SHROOM_SPOT.x, p.y - SHROOM_SPOT.y) < 26; }
+function shroomTryEat() {                                            // E: eat it (and while tripping, E does nothing else)
+  if (SHROOM.on) return true;
+  const v = net.role === 'client' ? net.view : world;
+  if (!v || v.started || v.over || cal.on || !shroomHere()) return false;
+  const me = localMe();
+  if (!shroomNear(me)) return false;
+  Object.assign(SHROOM, { on: true, t: 0, last: shroomNow(), beat: -1, turn: 0, props: null, floor: null, gone: Infinity });
+  SHROOM.ang = (me.fx || me.fy) ? Math.atan2(me.fy, me.fx) : -Math.PI / 2;
+  SHROOM.chars.clear();
+  shroomMusic(true);
+  return true;
+}
+function endShroom() {
+  if (!SHROOM.on) return;
+  SHROOM.on = false; SHROOM.gone = shroomNow() + SHROOM_REGROW; SHROOM.props = null; SHROOM.floor = null;
+  shroomMusic(false);
+}
+// the pickup, on the lounge floor: a fat red toadstool, glowing a little so you notice it
+function drawShroomPickup(w) {
+  if (w.started || cal.on || !T.loungeFloor || !shroomHere()) return;
+  const t = shroomNow(), x = SHROOM_SPOT.x, y = SHROOM_SPOT.y, bob = Math.round(Math.sin(t * 2.2));
+  ctx.save();
+  const gl = ctx.createRadialGradient(x, y - 6, 2, x, y - 6, 22);
+  gl.addColorStop(0, 'hsla(' + ((t * 90) % 360) + ',100%,70%,' + (0.35 + 0.15 * Math.sin(t * 3)).toFixed(2) + ')'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gl; ctx.fillRect(x - 22, y - 28, 44, 44);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(x, y + 1, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e9dcc0'; ctx.fillRect(x - 3, y - 8 + bob, 6, 9);                  // stem
+  ctx.fillStyle = '#c8b894'; ctx.fillRect(x - 3, y - 8 + bob, 2, 9);
+  ctx.fillStyle = '#b3202a'; ctx.fillRect(x - 9, y - 12 + bob, 18, 5); ctx.fillRect(x - 7, y - 15 + bob, 14, 3); ctx.fillRect(x - 4, y - 17 + bob, 8, 2);   // cap
+  ctx.fillStyle = '#e0414a'; ctx.fillRect(x - 6, y - 15 + bob, 8, 2);
+  ctx.fillStyle = '#7c141c'; ctx.fillRect(x - 9, y - 8 + bob, 18, 1);
+  ctx.fillStyle = '#fff6ea'; ctx.fillRect(x - 5, y - 13 + bob, 2, 2); ctx.fillRect(x + 2, y - 15 + bob, 2, 2); ctx.fillRect(x + 5, y - 11 + bob, 2, 2); ctx.fillRect(x - 8, y - 10 + bob, 2, 1);
+  ctx.restore();
+}
+// the music: a slow, wobbling detuned drone, and (from drawShroom) a pentatonic arpeggio on the beat
+function shroomMusic(on) {
+  const c = SND.ctx;
+  if (!on) {
+    const m = SHROOM.music; SHROOM.music = null; if (!c || !m) return;
+    m.out.gain.cancelScheduledValues(c.currentTime); m.out.gain.setValueAtTime(Math.max(0.0001, m.out.gain.value), c.currentTime);
+    m.out.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 2);
+    for (const n of m.nodes) n.stop(c.currentTime + 2.1);
+    sNoise(1.6, 3000, 3, 0.25, 'bandpass', 200);                     // a long whoosh down
+    return;
+  }
+  if (!c || !SND.on || SHROOM.music) return;
+  const out = c.createGain(); out.gain.setValueAtTime(0.0001, c.currentTime); out.gain.exponentialRampToValueAtTime(0.9, c.currentTime + 2); out.connect(SND.master);
+  const nodes = [];
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 6; lp.connect(out);
+  const lfo = c.createOscillator(), lfoG = c.createGain(); lfo.frequency.value = 0.3; lfoG.gain.value = 600; lfo.connect(lfoG); lfoG.connect(lp.frequency); lfo.start(); nodes.push(lfo);
+  for (const [f, w, g] of [[98, 'sawtooth', 0.09], [98.9, 'sawtooth', 0.09], [147, 'triangle', 0.08], [196.4, 'sine', 0.06]]) {
+    const o = c.createOscillator(), og = c.createGain(); o.type = w; o.frequency.value = f; og.gain.value = g;
+    const vib = c.createOscillator(), vg = c.createGain(); vib.frequency.value = 0.4 + Math.random() * 0.5; vg.gain.value = f * 0.012; vib.connect(vg); vg.connect(o.frequency); vib.start();
+    o.connect(og); og.connect(lp); o.start(); nodes.push(o, vib);
+  }
+  SHROOM.music = { out, nodes };
+  sNoise(1.8, 200, 4, 0.3, 'bandpass', 3200);                        // a whoosh up
+}
+// turning: the mouse, while tripping (it keeps working when it leaves the canvas)
+window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045; });
+// WASD walk and step relative to where you're looking; aim is always straight ahead
+function shroomInput(inp) {
+  if (!SHROOM.on || SHROOM.t < SHROOM_IN * 0.5) return;
+  const a = SHROOM.ang, fx = Math.cos(a), fy = Math.sin(a), rx = -fy, ry = fx;
+  const fwd = -inp.my, side = inp.mx;
+  inp.mx = fwd * fx + side * rx; inp.my = fwd * fy + side * ry;
+  const touchTurn = aimStick.active;
+  inp.ax = fx * 100; inp.ay = fy * 100; inp.st = false;
+  inp.shoot = !touchTurn && !!mouse.down;
+  delete inp.lt; delete inp.tap;
+}
+// a 256-step rainbow, for tinting everything
+const SHROOM_LUT = (() => { const L = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) { const h = i / 256 * 6, k = n => { const v = Math.abs(((h + n) % 6) - 3) - 1; return Math.max(0, Math.min(1, v)); };
+    L[i * 3] = 255 * k(0); L[i * 3 + 1] = 255 * k(4); L[i * 3 + 2] = 255 * k(2); }
+  return L; })();
+// where a ray from (px,py) along (dx,dy) leaves the lobby's floor: t (in multiples of the ray) and which way the wall runs
+function shroomCast(px, py, dx, dy, A) {
+  let t = 0, side = 0;
+  for (let guard = 0; guard < 8; guard++) {
+    const x = px + dx * t, y = py + dy * t;
+    let best = -1, bs = 0;
+    for (const a of A) {
+      if (x < a.x0 - 0.01 || x > a.x1 + 0.01 || y < a.y0 - 0.01 || y > a.y1 + 0.01) continue;
+      const tx = dx > 0 ? (a.x1 - x) / dx : dx < 0 ? (a.x0 - x) / dx : Infinity;
+      const ty = dy > 0 ? (a.y1 - y) / dy : dy < 0 ? (a.y0 - y) / dy : Infinity;
+      const te = Math.min(tx, ty);
+      if (te > best) { best = te; bs = tx < ty ? 0 : 1; }
+    }
+    if (best < 0) break;
+    t += best + 0.02; side = bs;
+    const nx = px + dx * t, ny = py + dy * t;
+    if (!A.some(a => nx >= a.x0 && nx <= a.x1 && ny >= a.y0 && ny <= a.y1)) break;
+  }
+  return { t: Math.max(0.5, t), side };
+}
+// what's drawn on the canvas at the moment, cut to what isn't see-through (and not a faint shadow)
+// and kept as a cut-out: { img, x0, y0, x1, y1 } in world units, or null
+function shroomGrab(k, wx0, wy0, ww, wh) {
+  const W = Math.round(ww * k), H = Math.round(wh * k);
+  const d = ctx.getImageData(0, 0, W, H), u = new Uint32Array(d.data.buffer);
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if ((u[i] >>> 24) < 150) { u[i] = 0; continue; }                   // shadows and sheens stay on the floor
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return null;
+  const c = document.createElement('canvas'); c.width = x1 - x0 + 1; c.height = y1 - y0 + 1;
+  const cut = new ImageData(c.width, c.height), cu = new Uint32Array(cut.data.buffer);
+  for (let y = y0; y <= y1; y++) cu.set(u.subarray(y * W + x0, y * W + x1 + 1), (y - y0) * c.width);
+  c.getContext('2d').putImageData(cut, 0, 0);
+  return { img: c, x0: wx0 + x0 / k, y0: wy0 + y0 / k, x1: wx0 + (x1 + 1) / k, y1: wy0 + (y1 + 1) / k };
+}
+// once a trip: the floor as one picture, and every piece of furniture as a cut-out standing where it is
+function shroomCapture(w) {
+  const k = Math.min(2, canvas.width / ARENA.w), quiet = { ...w, players: [] };
+  const f = document.createElement('canvas'); f.width = ARENA.w; f.height = LOBBY_H;
+  const fg = f.getContext('2d'); fg.imageSmoothingEnabled = false;
+  fg.fillStyle = '#101218'; fg.fillRect(0, 0, f.width, f.height);
+  if (LOUNGE_IMG.complete && LOUNGE_IMG.naturalWidth) fg.drawImage(LOUNGE_IMG, ARENA.wall, ARENA.wall, ARENA.w - ARENA.wall * 2, ARENA.h - ARENA.wall * 2);
+  const b = BEDROOM;
+  if (BED_ART.complete && BED_ART.naturalWidth) fg.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+  fg.fillStyle = '#6a472f'; fg.fillRect(BED_DOOR.x - BED_DOOR.w / 2, ARENA.h - ARENA.wall, BED_DOOR.w, ARENA.wall);   // the doorway
+  SHROOM.floor = { data: fg.getImageData(0, 0, f.width, f.height).data, w: f.width, h: f.height };
+  const props = [];
+  const grab = (fn, dy) => {                                           // draw one thing alone, then keep it
+    ctx.save(); ctx.setTransform(k, 0, 0, k, 0, -dy * k); ctx.clearRect(0, dy, ARENA.w, ARENA.h);
+    try { fn(); } catch (_) {}
+    ctx.restore();
+    const g = shroomGrab(k, 0, dy, ARENA.w, ARENA.h);
+    if (g) props.push({ img: g.img, x: (g.x0 + g.x1) / 2, y: g.y1 - 4, W: g.x1 - g.x0, H: g.y1 - g.y0, foot: g.y1 - g.y0 });
+    return !!g;
+  };
+  const fns = [() => drawTower(), () => drawBenchStation(quiet), () => drawRackStation(), () => drawLegStation(quiet),
+    () => drawTable(quiet), () => drawRope(quiet), ...CABINETS.map(c => () => drawCabinet(quiet, c))];
+  if (w.slot) fns.push(() => { const sim = SLOT_IMG.idle_a; if (!sim || !sim.naturalWidth) return;
+    const h = 92 * T.slotScale, dw = h * (sim.naturalWidth / sim.naturalHeight); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sim, Math.round(w.slot.x - dw / 2), Math.round(w.slot.y + 6 - h), Math.round(dw), Math.round(h)); });
+  if (vendHere(w)) fns.push(() => { const vp = vendPos(w), vim = VEND_IMG.idle_a; if (!vim || !vim.naturalWidth) return;
+    const h = T.vendHeight, dw = h * (vim.naturalWidth / vim.naturalHeight); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(vim, Math.round(vp.x - dw / 2), Math.round(vp.y + 6 - h), Math.round(dw), Math.round(h)); });
+  for (const fn of fns) grab(fn, 0);
+  for (const fn of [() => drawWardrobe(), () => drawMirror(quiet)]) grab(fn, ARENA.h);
+  SHROOM.props = props;
+  // a training dummy (they move and fall over, so they're placed each frame) and a bullet's glow
+  const dm = document.createElement('canvas'); dm.width = 30; dm.height = 50; const dg = dm.getContext('2d');
+  dg.fillStyle = '#5a4a30'; dg.fillRect(12, 32, 6, 18);
+  dg.fillStyle = '#c8a86a'; dg.beginPath(); dg.ellipse(15, 20, 14, 17, 0, 0, Math.PI * 2); dg.fill();
+  dg.strokeStyle = 'rgba(20,22,28,0.55)'; dg.lineWidth = 2; dg.beginPath(); dg.arc(15, 18, 8, 0, Math.PI * 2); dg.stroke();
+  dg.beginPath(); dg.arc(15, 18, 3.5, 0, Math.PI * 2); dg.stroke(); dg.fillStyle = 'rgba(20,22,28,0.5)'; dg.fillRect(1, 4, 28, 4);
+  const bl = document.createElement('canvas'); bl.width = bl.height = 16; const bg = bl.getContext('2d');
+  const gr = bg.createRadialGradient(8, 8, 1, 8, 8, 8); gr.addColorStop(0, '#fff'); gr.addColorStop(0.4, '#ffe38a'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+  bg.fillStyle = gr; bg.fillRect(0, 0, 16, 16);
+  SHROOM.dummy = dm; SHROOM.glow = bl;
+}
+// another character as a cut-out, turned the way they'd look from where you are
+function shroomCharacter(w, p, me) {
+  const k = Math.min(2, canvas.width / ARENA.w), BW = 150, BH = 180, FX = 75, FY = 150;
+  const rel = Math.atan2(p.fy || 0.0001, p.fx || 0) - Math.atan2(me.y - p.y, me.x - p.x), turn = Math.PI / 2 + rel - Math.atan2(p.fy || 0.0001, p.fx || 0);
+  const rot = (x, y) => [x * Math.cos(turn) - y * Math.sin(turn), x * Math.sin(turn) + y * Math.cos(turn)];
+  const q = { ...p, x: FX, y: FY };
+  [q.fx, q.fy] = rot(p.fx || 0, p.fy || 0.0001);
+  for (const [a, b] of [['ix', 'iy'], ['adx', 'ady'], ['mdx', 'mdy'], ['rdx', 'rdy']]) if (p[a] !== undefined || p[b] !== undefined) [q[a], q[b]] = rot(p[a] || 0, p[b] || 0);
+  ctx.save(); ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, BW, BH);
+  try { drawJared(w, q); } catch (_) {}
+  ctx.restore();
+  const key = p.npc ? 'npc' : p.id;
+  let c = SHROOM.chars.get(key);
+  if (!c) { c = document.createElement('canvas'); c.width = Math.round(BW * k); c.height = Math.round(BH * k); SHROOM.chars.set(key, c); }
+  const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); g.drawImage(canvas, 0, 0, c.width, c.height, 0, 0, c.width, c.height);
+  return { img: c, x: p.x, y: p.y, W: BW, H: BH, foot: FY + T.radius * 0.9 };
+}
+function drawShroom(w) {
+  if (!SHROOM.on) return;
+  const now = shroomNow(), dt = Math.min(0.1, Math.max(0, now - (SHROOM.last || now))); SHROOM.last = now;
+  const me = w.players.find(q => q.id === (net.role === 'client' ? 1 : 0));
+  if (w.started || w.over || cal.on || !me || !T.loungeFloor) { endShroom(); return; }
+  const t = (SHROOM.t += dt);
+  if (t >= SHROOM_TIME) { endShroom(); return; }
+  const ease = f => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
+  const fade = t < SHROOM_IN ? ease(t / SHROOM_IN) : t > SHROOM_TIME - SHROOM_OUT ? ease((SHROOM_TIME - t) / SHROOM_OUT) : 1;
+  const amp = 0.4 + 0.6 * fade;                                          // how hard it's hitting
+  // turning: the mouse, the arrow keys (unless they're player 2's), the right stick, a gamepad's right stick
+  SHROOM.ang += SHROOM.turn; SHROOM.turn = 0;
+  const arrows = !(w.players.length > 1 && !net.conn && net.role !== 'client');
+  if (arrows) { if (keys.has('arrowleft')) SHROOM.ang -= 2.4 * dt; if (keys.has('arrowright')) SHROOM.ang += 2.4 * dt; }
+  if (aimStick.active) SHROOM.ang += aimStick.dx * 2.8 * dt;
+  const gp = padAt(0); if (gp && Math.abs(gp.axes[2] || 0) > 0.2) SHROOM.ang += gp.axes[2] * 2.8 * dt;
+  // the beat: a note of the arpeggio, and a pulse through everything
+  const bpm = 0.21, beat = Math.floor(t / bpm), pulse = Math.max(0, 1 - (t % bpm) / bpm) ** 3;
+  if (beat !== SHROOM.beat) { SHROOM.beat = beat;
+    const scale = [0, 3, 5, 7, 10, 12, 15, 17], n = scale[(beat * 3 + (beat >> 3)) % scale.length];
+    if (SND.ctx && SND.on && fade > 0.2) sTone(0.3, 196 * Math.pow(2, n / 12), 196 * Math.pow(2, n / 12) * 1.004, 0.045 * fade, beat % 4 ? 'triangle' : 'square');
+  }
+  const CW = canvas.width, CH = canvas.height;
+  if (!SHROOM.cv) {
+    const mk = (a, b) => { const c = document.createElement('canvas'); c.width = a; c.height = b; return c; };
+    SHROOM.cv = { low: mk(SHROOM_RW, SHROOM_RH), view: mk(CW, CH), acc: mk(CW, CH), under: mk(CW, CH) };
+    SHROOM.cv.buf = SHROOM.cv.low.getContext('2d').createImageData(SHROOM_RW, SHROOM_RH);
+  }
+  const cv = SHROOM.cv;
+  for (const k of ['view', 'acc', 'under']) if (cv[k].width !== CW || cv[k].height !== CH) { cv[k].width = CW; cv[k].height = CH; }
+  // what's on screen now (the lobby from above), for the fade in and out
+  const ug = cv.under.getContext('2d'); ug.clearRect(0, 0, CW, CH); ug.drawImage(canvas, 0, 0);
+  if (!SHROOM.props) shroomCapture(w);
+  // everyone else, as cut-outs (drawn on the canvas one at a time, then kept)
+  const sprites = SHROOM.props.slice();
+  const cast = w.players.filter(p => p !== me && p.alive && !p.bed);
+  const npc = net.role !== 'client' && lobbyGoth(w); if (npc && !npc.thrown) cast.push(npc);
+  for (const p of cast) sprites.push(shroomCharacter(w, p, me));
+  for (const d of (w.dummies || [])) if (!(d.down > 0)) sprites.push({ img: SHROOM.dummy, x: d.x, y: d.y + 16, W: 30, H: 50, foot: 50, wob: d.wob });
+  for (const b of (w.bullets || [])) sprites.push({ img: SHROOM.glow, x: b.x, y: b.y, W: 10, H: 10, foot: 50, glow: true });
+
+  // ---- the 3D view, in its own low-res pixels
+  const RW = SHROOM_RW, RH = SHROOM_RH, EYE = SHROOM_EYE, WALL = SHROOM_WALL;
+  const fov = (66 + 14 * Math.sin(t * 0.7) * amp + 10 * pulse * amp) * Math.PI / 180, tanH = Math.tan(fov / 2);
+  const proj = (RW / 2) / tanH;
+  const a = SHROOM.ang, dx = Math.cos(a), dy = Math.sin(a), rx = -dy, ry = dx;
+  const px = me.x, py = me.y;
+  const bob = Math.sin((me.odo || 0) * 0.12) * 2.5;
+  const hor = RH / 2 + bob + Math.sin(t * 1.1) * 6 * amp;
+  const buf = cv.buf, B = buf.data, L = SHROOM_LUT, F = SHROOM.floor, FD = F.data, FW = F.w, FH = F.h;
+  const mix = (0.3 + 0.2 * Math.sin(t * 1.3)) * amp, warp = 7 * amp, tsh = t * 60;
+  // floor and ceiling, row by row
+  for (let y = 0; y < RH; y++) {
+    const below = y > hor, den = below ? (y - hor) : (hor - y);
+    if (den < 0.5) { for (let x = 0; x < RW; x++) { const o = (y * RW + x) * 4; B[o] = B[o + 1] = B[o + 2] = 0; B[o + 3] = 255; } continue; }
+    const dist = (below ? EYE : WALL - EYE) * proj / den;
+    let wx = px + dist * (dx - rx * tanH), wy = py + dist * (dy - ry * tanH);
+    const sx = dist * rx * tanH * 2 / RW, sy = dist * ry * tanH * 2 / RW;
+    const shade = Math.min(1, 260 / (dist + 60));
+    for (let x = 0; x < RW; x++, wx += sx, wy += sy) {
+      const o = (y * RW + x) * 4;
+      let r, g, bb;
+      if (below) {                                                       // the floor art, swimming, run through the rainbow
+        const ux = wx + Math.sin(wy * 0.045 + t * 2.1) * warp, uy = wy + Math.cos(wx * 0.04 + t * 1.7) * warp;
+        const ix = ux | 0, iy = uy | 0;
+        if (ix >= 0 && iy >= 0 && ix < FW && iy < FH) { const fo = (iy * FW + ix) * 4; r = FD[fo]; g = FD[fo + 1]; bb = FD[fo + 2]; }
+        else { r = 16; g = 18; bb = 24; }
+        const li = ((((ux + uy) * 0.9 + dist * 0.6 + tsh * 2) | 0) & 255) * 3;
+        r = (r * (1 - mix) + L[li] * mix) * shade; g = (g * (1 - mix) + L[li + 1] * mix) * shade; bb = (bb * (1 - mix) + L[li + 2] * mix) * shade;
+      } else {                                                           // the ceiling: a slow plasma
+        const v = Math.sin(wx * 0.025 + t) + Math.sin(wy * 0.03 - t * 1.3) + Math.sin((wx + wy) * 0.018 + t * 0.7);
+        const li = ((((v + 3) * 42 + tsh) | 0) & 255) * 3, s = shade * (0.55 + 0.25 * amp);
+        r = L[li] * s; g = L[li + 1] * s; bb = L[li + 2] * s;
+      }
+      B[o] = r; B[o + 1] = g; B[o + 2] = bb; B[o + 3] = 255;
+    }
+  }
+  // the walls, column by column, melting
+  const A = lobbyAreas(0), zbuf = SHROOM.zbuf || (SHROOM.zbuf = new Float32Array(RW));
+  for (let x = 0; x < RW; x++) {
+    const cam = 2 * x / RW - 1, rdx = dx + rx * tanH * cam, rdy = dy + ry * tanH * cam;
+    const hit = shroomCast(px, py, rdx, rdy, A), d = hit.t;
+    zbuf[x] = d;
+    const melt = Math.sin(x * 0.07 + t * 2.3) * 5 * amp + Math.sin(x * 0.023 - t * 1.1) * 4 * amp;
+    const top = Math.max(0, Math.floor(hor - (WALL - EYE) * proj / d + melt)), bot = Math.min(RH, Math.ceil(hor + EYE * proj / d + melt * 0.5));
+    const u = hit.side ? px + rdx * d : py + rdy * d, span = bot - top || 1;
+    const shade = Math.min(1, 220 / (d + 40)) * (hit.side ? 0.85 : 1) * (0.8 + 0.4 * pulse);
+    for (let y = top; y < bot; y++) {
+      const v = (y - top) / span, o = (y * RW + x) * 4;
+      const li = (((u * 0.9 + v * 180 + tsh * 3) | 0) & 255) * 3;
+      const band = ((u * 0.08 + v * 7 - t * 2.5) % 1 + 1) % 1 < 0.28 ? 0.45 : 1;
+      B[o] = L[li] * shade * band; B[o + 1] = L[li + 1] * shade * band; B[o + 2] = L[li + 2] * shade * band;
+    }
+  }
+  cv.low.getContext('2d').putImageData(buf, 0, 0);
+  const vg = cv.view.getContext('2d');
+  vg.imageSmoothingEnabled = false; vg.drawImage(cv.low, 0, 0, CW, CH);
+  // the cut-outs, far to near, each column only where it's in front of the wall there
+  const S = CW / RW, list = [];
+  for (const s of sprites) {
+    const ox = s.x - px, oy = s.y - py, depth = ox * dx + oy * dy;
+    if (depth < 6) continue;
+    list.push({ s, depth, lat: ox * rx + oy * ry });
+  }
+  list.sort((p, q) => q.depth - p.depth);
+  for (const { s, depth, lat } of list) {
+    const sc = proj / depth, cx = RW / 2 + lat * sc, wpx = s.W * sc, hpx = s.H * sc;
+    const x0 = cx - wpx / 2, top = hor + (EYE - s.foot) * sc + (s.glow ? 0 : Math.sin(t * 3 + s.x * 0.05) * 2 * amp);
+    const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(RW, Math.ceil(x0 + wpx));
+    let run = -1;
+    for (let c = c0; c <= c1; c++) {
+      const vis = c < c1 && depth < zbuf[c];
+      if (vis && run < 0) run = c;
+      if (!vis && run >= 0) {
+        const f0 = (run - x0) / wpx, f1 = (c - x0) / wpx, iw = s.img.width;
+        const sx0 = Math.max(0, f0 * iw), sx1 = Math.min(iw, f1 * iw);
+        if (sx1 > sx0) {
+          if (s.glow) vg.globalCompositeOperation = 'lighter';
+          vg.drawImage(s.img, sx0, 0, sx1 - sx0, s.img.height, run * S, top * S, (c - run) * S, hpx * S);
+          vg.globalCompositeOperation = 'source-over';
+        }
+        run = -1;
+      }
+    }
+  }
+  // a gun flash when you shoot
+  if (me.muzzle > 0) { const gx = CW / 2, gy = CH * 0.86, gr = vg.createRadialGradient(gx, gy, 4, gx, gy, CH * 0.3);
+    gr.addColorStop(0, 'rgba(255,240,190,0.9)'); gr.addColorStop(1, 'rgba(255,140,40,0)'); vg.fillStyle = gr; vg.fillRect(0, 0, CW, CH); }
+  // ---- psychedelia: trails (the last frames linger), double vision, a hue that never sits still
+  const ag = cv.acc.getContext('2d');
+  ag.save();
+  ag.globalAlpha = 0.35 + 0.35 * (1 - amp * 0.6);                    // lower = longer trails
+  ag.translate(CW / 2, CH / 2); ag.rotate(Math.sin(t * 0.6) * 0.035 * amp); ag.scale(1.06 + 0.02 * pulse * amp, 1.06 + 0.02 * pulse * amp); ag.translate(-CW / 2, -CH / 2);   // a touch big, so the sway never shows an edge
+  ag.drawImage(cv.view, 0, 0);
+  ag.globalAlpha = 0.12 * amp; ag.globalCompositeOperation = 'lighter';
+  const off = (8 + 10 * Math.sin(t * 0.9)) * amp * S;                 // a second, offset copy of it all
+  ag.drawImage(cv.view, off, Math.sin(t * 1.3) * off * 0.5); ag.drawImage(cv.view, -off, -Math.sin(t * 1.3) * off * 0.5);
+  ag.restore();
+  // ---- onto the screen: the lobby from above spiralling away as it comes on (and back as it wears off)
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, CW, CH);
+  if (fade < 1) {
+    ctx.save(); ctx.translate(CW / 2, CH / 2); ctx.rotate((1 - fade) * 0 + fade * 1.4); ctx.scale(1 + fade * 1.5, 1 + fade * 1.5); ctx.translate(-CW / 2, -CH / 2);
+    ctx.globalAlpha = 1 - fade; ctx.drawImage(cv.under, 0, 0); ctx.restore();
+  }
+  ctx.globalAlpha = fade;
+  if ('filter' in ctx) ctx.filter = 'hue-rotate(' + ((t * 45) % 360).toFixed(0) + 'deg) saturate(' + (1.3 + 0.5 * amp).toFixed(2) + ')';
+  ctx.translate(CW / 2, CH / 2); ctx.rotate((1 - fade) * -1.2); ctx.scale(0.4 + 0.6 * fade, 0.4 + 0.6 * fade); ctx.translate(-CW / 2, -CH / 2);
+  ctx.drawImage(cv.acc, 0, 0);
+  ctx.restore();
+  // a crosshair, and how long's left as a thin rainbow along the top
+  ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
+  ctx.globalAlpha = fade;
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(ARENA.w / 2 - 7, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 - 2, ARENA.h / 2); ctx.moveTo(ARENA.w / 2 + 2, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 + 7, ARENA.h / 2);
+  ctx.moveTo(ARENA.w / 2, ARENA.h / 2 - 7); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 - 2); ctx.moveTo(ARENA.w / 2, ARENA.h / 2 + 2); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 + 7); ctx.stroke();
+  const left = 1 - t / SHROOM_TIME, bar = ctx.createLinearGradient(0, 0, ARENA.w, 0);
+  for (let i = 0; i <= 6; i++) bar.addColorStop(i / 6, 'hsl(' + ((i * 60 + t * 120) % 360) + ',100%,60%)');
+  ctx.fillStyle = bar; ctx.fillRect(0, 0, ARENA.w * left, 3);
+  ctx.restore();
+}
 // ================================================================== THE TRIP ===
 // Two bong hits in a row (sat down, the second within 30s of the first) and
 // the lights go out: the screen fades to black, a low drone creeps in, and the
@@ -5564,8 +5914,8 @@ addEventListener('keydown', e => {
   }
   if (k === 'enter' && !world.started && !e.repeat) { startGame(); return; }
   if (!e.repeat && (k === 'b' || k === 'h' || k === 't') && localSitting()) { doBJ(k === 'b' ? 'deal' : k === 'h' ? 'hit' : 'stand'); return; }
-  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!arcadeTryOpen() && !mirrorTryLook()) toggleCarry(world); return; }
-  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!arcadeTryOpen() && !mirrorTryLook()) SITREQ.id++; return; }   // the guest: sit / stand
+  if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!shroomTryEat() && !arcadeTryOpen() && !mirrorTryLook()) toggleCarry(world); return; }
+  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!shroomTryEat() && !arcadeTryOpen() && !mirrorTryLook()) SITREQ.id++; return; }   // the guest: sit / stand
   if (cal.on && (k === '[' || k === ',')) { cal.i = (cal.i + 7) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   if (cal.on && (k === ']' || k === '.')) { cal.i = (cal.i + 1) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
   keys.add(k);
@@ -5641,7 +5991,7 @@ canvas.addEventListener('pointerdown', e => {
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
-  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (arcadeTryOpen() || mirrorTryLook()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
+  if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (shroomTryEat() || arcadeTryOpen() || mirrorTryLook()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
   const hs = cal.on ? -1 : hotbarSlotAt(pt);
   if (hs >= 0) { HOTBAR.drag = { i: hs, x: pt.x, y: pt.y, id: e.pointerId, moved: 0 }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
@@ -5769,6 +6119,7 @@ function localInput0() {
   if (HOTBAR.want) { inp.wsel = HOTBAR.want; HOTBAR.want = null; }
   if (tapShot.until > performance.now()) { inp.tap = tapShot.id; inp.tx = tapShot.x; inp.ty = tapShot.y; }
   if (ARC.open) { Object.assign(inp, { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false, st: false }); delete inp.lt; delete inp.tap; }   // at a cabinet: stand still
+  shroomInput(inp);                                                  // tripping: walk and aim the way you're looking
   return inp;
 }
 
@@ -6432,6 +6783,7 @@ function drawHotIcon(id, cx, cy, maxW, maxH, alpha) {
   }
   const ic = HOT_ICON[id], set = ic && IMG[ic.set];
   let im = set && set[ic.key]; if (Array.isArray(im)) im = im[0];
+  if (im && im.__orig) im = im.__orig;                             // b261: the art itself (wearing a LOOK: PHOTO print it's 2x, and the crop landed on his head)
   if (!im || !im.complete || !im.naturalWidth) {                   // art not in yet: fall back to the word
     ctx.font = 'bold 10px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = alpha < 1 ? '#4a5162' : '#cfd4de';
     ctx.fillText(HOT_LABEL[id], cx, cy); return;
@@ -6608,7 +6960,7 @@ function carryButton() {
   if (net.role === 'client') {                               // the guest: sit down at the table, or get up
     const v = net.view, me = v && v.players.find(q => q.id === 1);
     if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
-    const label = me.sit ? 'STAND' : me.bed ? 'GET UP' : chairNear(v, me) ? 'SIT' : bedNear(v, me) ? 'LIE DOWN' : arcadeNear(me) ? 'PLAY' : mirrorNear(me) ? (mirrorLook ? 'BACK' : 'LOOK') : null;
+    const label = me.sit ? 'STAND' : me.bed ? 'GET UP' : chairNear(v, me) ? 'SIT' : bedNear(v, me) ? 'LIE DOWN' : arcadeNear(me) ? 'PLAY' : mirrorNear(me) ? (mirrorLook ? 'BACK' : 'LOOK') : shroomNear(me) && shroomHere() ? 'EAT' : null;
     return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
   }
   const w = world, p = w.players[0];
@@ -6622,6 +6974,7 @@ function carryButton() {
   else if (NPC_GOTH.carrier < 0 && wardNear(p)) label = WARD.open ? 'CLOSE' : 'OPEN';
   else if (NPC_GOTH.carrier < 0 && arcadeNear(p)) label = 'PLAY';
   else if (mirrorNear(p)) label = mirrorLook ? 'BACK' : 'LOOK';
+  else if (shroomNear(p) && shroomHere()) label = 'EAT';
   else if (p.bed) label = 'GET UP';
   else if (chairNear(w, p)) label = 'SIT';
   else if (NPC_GOTH.carrier < 0 && bedNear(w, p)) label = 'LIE DOWN';
@@ -8306,6 +8659,7 @@ function renderBase(w, hudRight) {
   // ---- lobby props
   drawRope(w);
   drawTable(w);
+  drawShroomPickup(w);
   if (!cal.on && !w.started) {
     for (const c of (w.cans || [])) {
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -9129,6 +9483,7 @@ function frame(now) {
         p.muzzle = net[k].until > now ? 0.05 : 0;
       }
       render(view, net.ping + ' ms');
+      drawShroom(view);
       drawTrip();
     } else {
       ctx.fillStyle = '#1b1e26';
@@ -9180,6 +9535,7 @@ function frame(now) {
 
   render(world, snapBytes + ' B/tick'
        + (net.role === 'host' && net.conn ? '   ' + net.ping + ' ms' : ''));
+  drawShroom(world);                               // eaten the mushroom: the 3D view, over the lobby
   drawTrip();                                      // over everything, HUD and all
   requestAnimationFrame(frame);
 }
