@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b258 — carrying her in LOOK: PHOTO, no giant arm';
+const BUILD = 'b259 — the shirt print stays on when he carries her';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1225,14 +1225,34 @@ function applyShirtArt() {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => { if ((!SHIRT.art && !SHIRT.artBack) || !im.naturalWidth) return im;
       const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press || holder === LEG_LAYER.jared;   // the camera zooms in on these, so print them finer
-      let c = null, m = null; try { c = shirtSkin(im, backKey(key), false, hi); m = shirtSkin(im, backKey(key), true, hi); } catch (_) {}
-      if (!c) return im;
-      for (const cv of [c, m]) { if (!cv) continue;
-        Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
-        Object.defineProperty(cv, 'complete', { value: true }); cv.__orig = im; }
-      c.__mir = m; return c; });
+      return shirtPrinted(im, backKey(key), hi) || im; });
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
+  shirtVer++;                                                              // and the frames built as he's drawn get printed again
+}
+// his frame im wearing the picture (and its flipped twin in .__mir), or null if there's no shirt in it
+function shirtPrinted(im, isBack, hi) {
+  let c = null, m = null; try { c = shirtSkin(im, isBack, false, hi); m = shirtSkin(im, isBack, true, hi); } catch (_) {}
+  if (!c) return null;
+  for (const cv of [c, m]) { if (!cv) continue;
+    Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
+    Object.defineProperty(cv, 'complete', { value: true }); cv.__orig = im; }
+  c.__mir = m; return c;
+}
+// b259: frames put together while he's drawn (carrying her, reloading on the run) aren't in IMG, so
+// applyShirtArt never printed them and the picture went when he picked her up. They're built from his
+// plain art (the printed frames are 2x bigger in LOOK: PHOTO) and printed here, last thing before drawing.
+// base: the frame im was made from by moving a few pixels (her jiggle), whose shirt is in the same place.
+const SHIRT_WORN = new WeakMap();
+let shirtVer = 0;
+function shirtWorn(im, isBack, base) {
+  if ((!SHIRT.art && !SHIRT.artBack) || !im || im.__orig) return im;
+  const e = SHIRT_WORN.get(im);
+  if (e && e.v === shirtVer) return e.c;
+  if (base && base !== im && !SHIRT.boxes.has(im)) SHIRT.boxes.set(im, shirtLogoBox(base));
+  const c = shirtPrinted(im, isBack, false) || im;
+  SHIRT_WORN.set(im, { v: shirtVer, c });
+  return c;
 }
 // picked a file: trim the empty edges off it, shrink it, keep it for next time, put it on
 function loadShirtArt(file) {
@@ -7067,9 +7087,11 @@ function drawJared(w, p) {
   if (hash >= 0) { idx = parseInt(key.slice(hash + 1), 10) || 0; key = key.slice(0, hash); }
   let im = set[key];
   if (Array.isArray(im)) im = im[Math.max(0, Math.min(im.length - 1, idx))];
+  let built = false, builtFrom = null;                   // b259: put together here, so the shirt print goes on at the end
   if (pose.legKey && Array.isArray(set[pose.legKey])) {
-    const stitched = jabRunImage(skinId, im, set[pose.legKey][pose.legs] , key, idx, pose.legKey, pose.legs);
-    if (stitched) im = stitched;
+    const legs = set[pose.legKey][pose.legs];
+    const stitched = im && legs && jabRunImage(skinId, im.__orig || im, legs.__orig || legs, key, idx, pose.legKey, pose.legs);
+    if (stitched) { im = stitched; built = true; }
   }
   if (!im || !im.complete || !im.naturalWidth) {          // fallback until loaded
     ctx.fillStyle = P_COLOURS[p.id];
@@ -7097,6 +7119,7 @@ function drawJared(w, p) {
     // wobble carries on from the lobby and on after she's put down
     const amt = T.jiggle > 0 ? jiggleAmount({ id: 'npc_goth', npc: true, odo: p.odo }) * T.npcJiggle : 0;
     im = jiggled(cim, 'carry' + cfK, amt);
+    built = true; builtFrom = cim;
   }
 
   const baseImg = pose.img.split('#')[0];
@@ -7149,6 +7172,7 @@ function drawJared(w, p) {
   ctx.save();
   if (pose.flip) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
+  if (built) im = shirtWorn(im, backKey(key), builtFrom);
   ctx.drawImage(pose.flip && im.__mir ? im.__mir : im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
   ctx.restore();
 
