@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b263 — the 20 metre dive';
+const BUILD = 'b264 — a long walk off a high board';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2093,6 +2093,7 @@ const SHROOM_RW = 288, SHROOM_RH = 174;                              // the 3D v
 const SHROOM_EYE = 62, SHROOM_WALL = 150;                            // eye height and wall height, in world units
 const SHROOM_TOWER = 710;                                          // eye height at the top, in world units: 20 m, him being 64 (1.8 m) tall
 const SHROOM_CLIMB = 0.16;                                         // the climb, slowed to about five seconds
+const SHROOM_BOARD = 350, SHROOM_BOARD_PACE = 0.085;                // b264: in here the board is 10 m long, and the walk out takes about four seconds
 const SHROOM_FALL = 2.6, SHROOM_SPLASH = 1.8, SHROOM_SWIM_EYE = 18;  // the drop, the splash and the swim afterwards, eyes at the waterline
 const SHROOM = { on: false, t: 0, clock: 0, dive: null, lastDive: 0, lastEye: 0, ang: 0, turn: 0, gone: 0, last: 0, beat: -1, props: null, floor: null, cv: null, chars: new Map(), music: null };
 const shroomNow = () => performance.now() / 1000;
@@ -2168,7 +2169,7 @@ function shroomInput(inp) {
     return done({ mx: 0, my: (me.dz || 0) <= 0 && up < 0 ? 1 : -up * SHROOM_CLIMB, ay: -100 });
   if (me && me.dive === DIVE.BOARD) {                               // W out along the board, S back to the ladder
     const back = up < 0 && me.x <= towerGeo().ladderX + 2;
-    return done({ mx: back ? 0 : up, my: back ? 1 : 0 });
+    return done({ mx: back ? 0 : up * SHROOM_BOARD_PACE, my: back ? 1 : 0 });
   }
   const a = SHROOM.ang, fx = Math.cos(a), fy = Math.sin(a), rx = -fy, ry = fx;
   const fwd = -inp.my, side = inp.mx;
@@ -2342,14 +2343,29 @@ function drawShroom(w) {
   let eye = EYE, px = me.x, py = me.y, pitch = 0, back = false;
   if (me.dive === DIVE.CLIMB || me.dive === DIVE.BOARD) eye = EYE + (me.dz || 0) / tg.deckH * (SHROOM_TOWER - EYE);
   else if (me.dive === DIVE.SWIM) eye = SHROOM_SWIM_EYE;
-  // the higher you get, the more you look down: on the board the pool is right there below you
   const high = Math.max(0, Math.min(1, (eye - EYE) / (SHROOM_TOWER - EYE)));
-  const lookTo = me.dive === DIVE.BOARD ? 1.3 * high : me.dive === DIVE.CLIMB ? 0.35 * high : 0;
-  SHROOM.look = (SHROOM.look || 0) + (lookTo - (SHROOM.look || 0)) * Math.min(1, dt * 4);
+  // b264: the board, in here, is 10 m of planks. How far along it you are (bu, 0..1) comes from the game's
+  // own short board; your view slides out from the ladder to over the near end of the pool, and in the last
+  // few metres it gives under you like a springboard
+  let bu = 0, sag = 0;
+  if (me.dive === DIVE.BOARD) {
+    bu = Math.max(0, Math.min(1, (me.x - tg.ladderX) / Math.max(1, tg.tipX - tg.ladderX)));
+    px = tg.ladderX + bu * (POOL.x0 + 40 - tg.ladderX); SHROOM.camX = px;
+    sag = 12 * ease((bu - 0.7) / 0.3); eye -= sag * bu * bu;
+    SHROOM.stepD = (SHROOM.stepD || 0) + Math.abs(bu - (SHROOM.boardU ?? bu)) * SHROOM_BOARD;
+    if (SHROOM.stepD > 30) {                                              // a footstep, and the plank creaks
+      SHROOM.stepD = 0;
+      if (SND.ctx && SND.on) { sNoise(0.06, 350, 1.2, 0.18, 'lowpass', 120); sTone(0.16, 190 - bu * 50, 140 - bu * 40, 0.045, 'sawtooth'); }
+    }
+    SHROOM.boardU = bu;
+  } else SHROOM.boardU = undefined;
+  // the higher you get, the more you look down: along the board you look out ahead, and at the end, over the edge
+  const lookTo = me.dive === DIVE.BOARD ? high * (0.55 + 0.9 * ease((bu - 0.75) / 0.25)) : me.dive === DIVE.CLIMB ? 0.35 * high : 0;
+  SHROOM.look = (SHROOM.look || 0) + (lookTo - (SHROOM.look || 0)) * Math.min(1, dt * 5);
   pitch = SHROOM.look;
   // off the board: the long drop, your screen only (the game underneath has him in the pool already)
   if (!SHROOM.dive && SHROOM.lastDive === DIVE.BOARD && me.dive !== DIVE.BOARD && me.dive !== DIVE.CLIMB) {
-    SHROOM.dive = { t: 0, x0: me.x, y0: me.y, h0: SHROOM.lastEye, p0: SHROOM.look || 0, splashed: false, fx: [], bubbles: [] };
+    SHROOM.dive = { t: 0, x0: SHROOM.camX ?? me.x, y0: me.y, h0: SHROOM.lastEye, p0: SHROOM.look || 0, splashed: false, fx: [], bubbles: [] };
     if (SND.ctx && SND.on) { sNoise(SHROOM_FALL, 250, 2, 0.35, 'bandpass', 2600); sTone(0.2, 300, 700, 0.1, 'triangle'); }
   }
   SHROOM.lastDive = me.dive;
@@ -2385,6 +2401,7 @@ function drawShroom(w) {
   const buf = cv.buf, B = buf.data, L = SHROOM_LUT, F = SHROOM.floor, FD = F.data, FW = F.w, FH = F.h;
   const mix = (0.3 + 0.2 * Math.sin(t * 1.3)) * amp, warp = 7 * amp, tsh = t * 60;
   // floor and ceiling, row by row
+  const PCX = (POOL.x0 + POOL.x1) / 2, PCY = (POOL.y0 + POOL.y1) / 2;
   const floorAt = (o, wx, wy, dist, shade) => {                          // the floor art, swimming, run through the rainbow
     const ux = wx + Math.sin(wy * 0.045 + t * 2.1) * warp, uy = wy + Math.cos(wx * 0.04 + t * 1.7) * warp;
     const ix = ux | 0, iy = uy | 0;
@@ -2392,7 +2409,13 @@ function drawShroom(w) {
     if (ix >= 0 && iy >= 0 && ix < FW && iy < FH) { const fo = (iy * FW + ix) * 4; r = FD[fo]; g = FD[fo + 1]; bb = FD[fo + 2]; }
     else {                                                                // outside the rooms: a slow swirl instead of the dark
       const v = Math.sin(ux * 0.02 + t) + Math.sin(uy * 0.025 - t * 1.2), vi = ((((v + 2) * 55 + tsh) | 0) & 255) * 3;
-      r = L[vi] * 0.5; g = L[vi + 1] * 0.5; bb = L[vi + 2] * 0.5;
+      r = L[vi] * 0.22; g = L[vi + 1] * 0.22; bb = L[vi + 2] * 0.22;   // kept dark, so the rooms stand out
+    }
+    if (ux > POOL.x0 + 8 && ux < POOL.x1 - 8 && uy > POOL.y0 + 8 && uy < POOL.y1 - 8) {   // b264: the pool glows, rainbow ripples running out across it
+      const ring = Math.sin(Math.hypot(ux - PCX, uy - PCY) * 0.12 - t * 5) * 0.5 + 0.5, pi = ((((ring * 90 + t * 70 + ux * 0.3) | 0) & 255)) * 3;
+      const k = 0.7 + 0.5 * ring;
+      B[o] = Math.min(255, (r * 0.3 + L[pi] * 0.7) * k); B[o + 1] = Math.min(255, (g * 0.3 + L[pi + 1] * 0.7) * k); B[o + 2] = Math.min(255, (bb * 0.3 + L[pi + 2] * 0.7) * k + 40); B[o + 3] = 255;
+      return;
     }
     const li = ((((ux + uy) * 0.9 + dist * 0.6 + tsh * 2) | 0) & 255) * 3;
     B[o] = (r * (1 - mix) + L[li] * mix) * shade; B[o + 1] = (g * (1 - mix) + L[li + 1] * mix) * shade; B[o + 2] = (bb * (1 - mix) + L[li + 2] * mix) * shade; B[o + 3] = 255;
@@ -2496,17 +2519,61 @@ function drawShroom(w) {
     }
     vg.restore();
   }
-  // on the board: the planks running out ahead of you, to the end
-  if (me.dive === DIVE.BOARD && !dv && tg.tipX > px + 8) {
-    const P = (wx, wy) => { const q = toScreen(wx, wy, eye - EYE) || { x: RW / 2, y: RH * 3 }; return [q.x * S, q.y * S]; };
-    const x0 = px + 8, x1 = tg.tipX, y0 = tg.climbY - 7, y1 = tg.climbY + 7;
+  // up high: slow rainbow clouds drifting past at your height (and past you as you fall)
+  if (tp) {
+    if (!SHROOM.clouds) { SHROOM.clouds = [];
+      for (let i = 0; i < 18; i++) SHROOM.clouds.push({ x: -700 + Math.random() * 2300, y: -700 + Math.random() * 2000, z: 420 + Math.random() * 520,
+                                                        r: 90 + Math.random() * 150, h: Math.random() * 360 }); }
+    const cl = [];
+    for (const c of SHROOM.clouds) { const q = toScreen(-700 + ((c.x + 700 + t * 14) % 2300), c.y, c.z); if (q) cl.push([q, c]); }
+    cl.sort((m, n) => n[0].d - m[0].d);
     vg.save();
-    vg.fillStyle = 'hsl(' + ((t * 40) % 360).toFixed(0) + ',45%,55%)';
-    vg.beginPath(); for (const [wx, wy] of [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]) vg.lineTo(...P(wx, wy)); vg.closePath(); vg.fill();
-    vg.strokeStyle = 'rgba(0,0,0,0.3)'; vg.lineWidth = Math.max(1, S * 0.6);
-    for (const wy of [tg.climbY - 2.5, tg.climbY + 2.5]) { vg.beginPath(); vg.moveTo(...P(x0, wy)); vg.lineTo(...P(x1, wy)); vg.stroke(); }
-    vg.fillStyle = 'rgba(255,255,255,0.8)';                              // the end, so you can see where it stops
-    vg.beginPath(); for (const [wx, wy] of [[x1 - 1.5, y0], [x1, y0], [x1, y1], [x1 - 1.5, y1]]) vg.lineTo(...P(wx, wy)); vg.closePath(); vg.fill();
+    for (const [q, c] of cl) {
+      const R = c.r * q.sc * S; if (R < 3 || q.x * S < -R * 2 || q.x * S > CW + R * 2 || q.y * S < -R * 2 || q.y * S > CH + R * 2) continue;
+      for (const [ox, oy, k] of [[-0.55, 0.05, 0.7], [0.5, 0.1, 0.75], [0, -0.2, 0.9], [0.05, 0.15, 1]]) {
+        const cx = q.x * S + ox * R, cy = q.y * S + oy * R, rr = R * k, g = vg.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        g.addColorStop(0, 'hsla(' + ((c.h + t * 25) % 360).toFixed(0) + ',90%,88%,0.5)'); g.addColorStop(1, 'hsla(' + ((c.h + 60 + t * 25) % 360).toFixed(0) + ',90%,75%,0)');
+        vg.fillStyle = g; vg.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
+      }
+    }
+    vg.restore();
+  }
+  // on the board: the platform behind you, and 10 m of planks running out ahead, to a bright lip at the end.
+  // (a: along the board from the platform's edge, l: across it; world x is the camera's plus how far ahead.)
+  if (me.dive === DIVE.BOARD && !dv) {
+    const Lb = SHROOM_BOARD, here = bu * Lb, top0 = eye + sag * bu * bu - EYE, halfW = 11;
+    const zAt = a => top0 - sag * (Math.max(0, a) / Lb) ** 2;              // the board bends down towards the end
+    const P = (a, l, z) => { const q = toScreen(px + (a - here), py + l, z); return q && [q.x * S, q.y * S]; };
+    const quad = (pts, fill) => { const s = pts.map(v => P(...v)); if (s.some(v => !v)) return; vg.fillStyle = fill; vg.beginPath(); for (const v of s) vg.lineTo(...v); vg.closePath(); vg.fill(); };
+    const line = (p0, p1, stroke, wdt) => { const a0 = P(...p0), a1 = P(...p1); if (!a0 || !a1) return; vg.strokeStyle = stroke; vg.lineWidth = wdt; vg.beginPath(); vg.moveTo(...a0); vg.lineTo(...a1); vg.stroke(); };
+    vg.save(); vg.lineCap = 'round';
+    // the platform you stepped out from, with a handrail either side
+    quad([[-45, -28, top0], [0, -28, top0], [0, 28, top0], [-45, 28, top0]], '#7d5a3a');
+    quad([[-45, -28, top0], [0, -28, top0], [0, -28, top0 - 6], [-45, -28, top0 - 6]], '#4e3521');
+    quad([[-45, 28, top0], [0, 28, top0], [0, 28, top0 - 6], [-45, 28, top0 - 6]], '#4e3521');
+    for (const l of [-26, 26]) {
+      const rail = 'hsl(' + ((t * 50 + (l > 0 ? 120 : 0)) % 360).toFixed(0) + ',55%,70%)';
+      for (const a of [-42, -21, 0]) line([a, l, top0], [a, l, top0 + 34], rail, Math.max(2, S * 1.4));
+      line([-44, l, top0 + 34], [2, l, top0 + 34], rail, Math.max(2, S * 1.8));
+      line([-44, l, top0 + 18], [0, l, top0 + 18], rail, Math.max(1, S));
+    }
+    // the planks, far end first, so the near ones draw over them
+    const seg = 14, n = Math.ceil(Lb / seg);
+    for (let i = n - 1; i >= 0; i--) {
+      const a0 = i * seg, a1 = Math.min(Lb, a0 + seg), z0 = zAt(a0), z1 = zAt(a1);
+      if (a1 < here - 30) continue;                                        // well behind you
+      quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, -halfW, z1 - 5], [a0, -halfW, z0 - 5]], '#5a3a1f');   // its edges, with some thickness to them
+      quad([[a0, halfW, z0], [a1, halfW, z1], [a1, halfW, z1 - 5], [a0, halfW, z0 - 5]], '#5a3a1f');
+      quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, halfW, z1], [a0, halfW, z0]], i % 2 ? '#b58049' : '#a8743f');
+      quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, halfW, z1], [a0, halfW, z0]], 'hsla(' + ((a0 * 1.4 + t * 80) % 360).toFixed(0) + ',90%,62%,0.22)');   // a rainbow sheen
+      quad([[a0, -3.5, z0 + 0.1], [a1, -3.5, z1 + 0.1], [a1, 3.5, z1 + 0.1], [a0, 3.5, z0 + 0.1]], 'rgba(40,30,25,0.45)');   // the grip strip down the middle
+      for (const l of [-8, -5.5, 6, 8.5]) line([a0, l, z0 + 0.1], [a1, l, z1 + 0.1], 'rgba(70,40,15,0.35)', Math.max(1, S * 0.5));   // grain
+      line([a0, -halfW, z0 + 0.1], [a0, halfW, z0 + 0.1], 'rgba(50,28,10,0.45)', Math.max(1, S * 0.6));   // the join between planks
+    }
+    // the end: a bright rounded lip, so you know exactly where it stops
+    const zE = zAt(Lb), lip = 'hsl(' + ((t * 120) % 360).toFixed(0) + ',100%,78%)';
+    quad([[Lb, -halfW, zE], [Lb, halfW, zE], [Lb, halfW, zE - 5], [Lb, -halfW, zE - 5]], lip);
+    quad([[Lb - 2.5, -halfW, zE + 0.2], [Lb, -halfW, zE + 0.2], [Lb, halfW, zE + 0.2], [Lb - 2.5, halfW, zE + 0.2]], '#ffffff');
     vg.restore();
   }
   // a gun flash when you shoot
@@ -3329,9 +3396,10 @@ function stepDive(w, p, inp, dt) {
   }
 
   if (p.dive === DIVE.BOARD) {
-    const dir = Math.abs(inp.mx) > 0.2 ? Math.sign(inp.mx) : 0;
-    p.x = Math.max(tg.ladderX, Math.min(tg.tipX, p.x + dir * T.boardWalk * dt));
-    p.odo += Math.abs(dir) * T.boardWalk * dt;
+    // b264: a push of half or more walks at full speed, as before; less than that walks slower (the trip's long board uses it)
+    const dir = Math.abs(inp.mx) > 0.05 ? Math.sign(inp.mx) : 0, pace = Math.min(1, Math.abs(inp.mx) * 2);
+    p.x = Math.max(tg.ladderX, Math.min(tg.tipX, p.x + dir * pace * T.boardWalk * dt));
+    p.odo += Math.abs(dir) * pace * T.boardWalk * dt;
     p.vx = 0; p.vy = 0;
     p.moving = dir ? 1 : 0; p.ix = dir; p.iy = 0;
     if (dir) { p.fx = dir; p.fy = 0; }
