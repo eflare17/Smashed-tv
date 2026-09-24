@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b264 — a long walk off a high board';
+const BUILD = 'b265 — his feet on the board';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2352,7 +2352,10 @@ function drawShroom(w) {
     bu = Math.max(0, Math.min(1, (me.x - tg.ladderX) / Math.max(1, tg.tipX - tg.ladderX)));
     px = tg.ladderX + bu * (POOL.x0 + 40 - tg.ladderX); SHROOM.camX = px;
     sag = 12 * ease((bu - 0.7) / 0.3); eye -= sag * bu * bu;
-    SHROOM.stepD = (SHROOM.stepD || 0) + Math.abs(bu - (SHROOM.boardU ?? bu)) * SHROOM_BOARD;
+    const moved = Math.abs(bu - (SHROOM.boardU ?? bu)) * SHROOM_BOARD;
+    SHROOM.walkPh = (SHROOM.walkPh || 0) + moved / 30 * Math.PI;           // a step every 30 units (about a metre)
+    SHROOM.moveK = (SHROOM.moveK || 0) + ((moved > 0.01 ? 1 : 0) - (SHROOM.moveK || 0)) * Math.min(1, dt * 8);
+    SHROOM.stepD = (SHROOM.stepD || 0) + moved;
     if (SHROOM.stepD > 30) {                                              // a footstep, and the plank creaks
       SHROOM.stepD = 0;
       if (SND.ctx && SND.on) { sNoise(0.06, 350, 1.2, 0.18, 'lowpass', 120); sTone(0.16, 190 - bu * 50, 140 - bu * 40, 0.045, 'sawtooth'); }
@@ -2360,7 +2363,7 @@ function drawShroom(w) {
     SHROOM.boardU = bu;
   } else SHROOM.boardU = undefined;
   // the higher you get, the more you look down: along the board you look out ahead, and at the end, over the edge
-  const lookTo = me.dive === DIVE.BOARD ? high * (0.55 + 0.9 * ease((bu - 0.75) / 0.25)) : me.dive === DIVE.CLIMB ? 0.35 * high : 0;
+  const lookTo = me.dive === DIVE.BOARD ? high * (0.7 + 0.75 * ease((bu - 0.75) / 0.25)) : me.dive === DIVE.CLIMB ? 0.35 * high : 0;
   SHROOM.look = (SHROOM.look || 0) + (lookTo - (SHROOM.look || 0)) * Math.min(1, dt * 5);
   pitch = SHROOM.look;
   // off the board: the long drop, your screen only (the game underneath has him in the pool already)
@@ -2540,13 +2543,14 @@ function drawShroom(w) {
   }
   // on the board: the platform behind you, and 10 m of planks running out ahead, to a bright lip at the end.
   // (a: along the board from the platform's edge, l: across it; world x is the camera's plus how far ahead.)
-  if (me.dive === DIVE.BOARD && !dv) {
+  const onBoard = me.dive === DIVE.BOARD && !dv;
+  const drawBoard = g => {                                               // b265: drawn over the trip's trails and colour shift, so it's solid
     const Lb = SHROOM_BOARD, here = bu * Lb, top0 = eye + sag * bu * bu - EYE, halfW = 11;
     const zAt = a => top0 - sag * (Math.max(0, a) / Lb) ** 2;              // the board bends down towards the end
     const P = (a, l, z) => { const q = toScreen(px + (a - here), py + l, z); return q && [q.x * S, q.y * S]; };
-    const quad = (pts, fill) => { const s = pts.map(v => P(...v)); if (s.some(v => !v)) return; vg.fillStyle = fill; vg.beginPath(); for (const v of s) vg.lineTo(...v); vg.closePath(); vg.fill(); };
-    const line = (p0, p1, stroke, wdt) => { const a0 = P(...p0), a1 = P(...p1); if (!a0 || !a1) return; vg.strokeStyle = stroke; vg.lineWidth = wdt; vg.beginPath(); vg.moveTo(...a0); vg.lineTo(...a1); vg.stroke(); };
-    vg.save(); vg.lineCap = 'round';
+    const quad = (pts, fill) => { const s = pts.map(v => P(...v)); if (s.some(v => !v)) return; g.fillStyle = fill; g.beginPath(); for (const v of s) g.lineTo(...v); g.closePath(); g.fill(); };
+    const line = (p0, p1, stroke, wdt) => { const a0 = P(...p0), a1 = P(...p1); if (!a0 || !a1) return; g.strokeStyle = stroke; g.lineWidth = wdt; g.beginPath(); g.moveTo(...a0); g.lineTo(...a1); g.stroke(); };
+    g.save(); g.lineCap = 'round';
     // the platform you stepped out from, with a handrail either side
     quad([[-45, -28, top0], [0, -28, top0], [0, 28, top0], [-45, 28, top0]], '#7d5a3a');
     quad([[-45, -28, top0], [0, -28, top0], [0, -28, top0 - 6], [-45, -28, top0 - 6]], '#4e3521');
@@ -2564,18 +2568,49 @@ function drawShroom(w) {
       if (a1 < here - 30) continue;                                        // well behind you
       quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, -halfW, z1 - 5], [a0, -halfW, z0 - 5]], '#5a3a1f');   // its edges, with some thickness to them
       quad([[a0, halfW, z0], [a1, halfW, z1], [a1, halfW, z1 - 5], [a0, halfW, z0 - 5]], '#5a3a1f');
+      const haze = Math.min(0.45, a0 / Lb * 0.45);                          // far planks fade a little into the air
       quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, halfW, z1], [a0, halfW, z0]], i % 2 ? '#b58049' : '#a8743f');
+      if (haze > 0.02) quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, halfW, z1], [a0, halfW, z0]], 'rgba(235,225,255,' + haze.toFixed(2) + ')');
       quad([[a0, -halfW, z0], [a1, -halfW, z1], [a1, halfW, z1], [a0, halfW, z0]], 'hsla(' + ((a0 * 1.4 + t * 80) % 360).toFixed(0) + ',90%,62%,0.22)');   // a rainbow sheen
       quad([[a0, -3.5, z0 + 0.1], [a1, -3.5, z1 + 0.1], [a1, 3.5, z1 + 0.1], [a0, 3.5, z0 + 0.1]], 'rgba(40,30,25,0.45)');   // the grip strip down the middle
       for (const l of [-8, -5.5, 6, 8.5]) line([a0, l, z0 + 0.1], [a1, l, z1 + 0.1], 'rgba(70,40,15,0.35)', Math.max(1, S * 0.5));   // grain
       line([a0, -halfW, z0 + 0.1], [a0, halfW, z0 + 0.1], 'rgba(50,28,10,0.45)', Math.max(1, S * 0.6));   // the join between planks
+      for (const l of [-halfW + 2, halfW - 2]) { const nl = P(a0 + 2, l, z0 + 0.2); if (nl) { g.fillStyle = '#d8d2c8'; g.fillRect(nl[0] - S * 0.6, nl[1] - S * 0.4, S * 1.2, S * 0.8); } }   // nails
+      for (const l of [-halfW, halfW]) {                                    // a dark outline along each edge, a light one just inside
+        line([a0, l, z0], [a1, l, z1], 'rgba(30,16,6,0.9)', Math.max(1.5, S * 0.9));
+        line([a0, l * 0.86, z0 + 0.1], [a1, l * 0.86, z1 + 0.1], 'rgba(255,230,190,0.45)', Math.max(1, S * 0.45));
+      }
     }
     // the end: a bright rounded lip, so you know exactly where it stops
     const zE = zAt(Lb), lip = 'hsl(' + ((t * 120) % 360).toFixed(0) + ',100%,78%)';
     quad([[Lb, -halfW, zE], [Lb, halfW, zE], [Lb, halfW, zE - 5], [Lb, -halfW, zE - 5]], lip);
     quad([[Lb - 2.5, -halfW, zE + 0.2], [Lb, -halfW, zE + 0.2], [Lb, halfW, zE + 0.2], [Lb - 2.5, halfW, zE + 0.2]], '#ffffff');
-    vg.restore();
-  }
+    g.restore();
+  };
+  // his legs and boots at the bottom of the screen: a step every metre or so, feet together when he stops
+  const drawFeet = g => {
+    const set = IMG[me.ch] || IMG.juicy || IMG.jared; let src = set && (set.front_run || set.front_a); if (Array.isArray(src)) src = src[0];
+    if (!src || !src.complete || !src.naturalWidth) return;
+    const c = legColours(src.__orig || src), moving = SHROOM.moveK || 0, ph = SHROOM.walkPh || 0;
+    g.save();
+    for (const i of [0, 1]) {
+      const w = CW * 0.125, side = i ? 1 : -1;
+      const sw = Math.sin(ph + i * Math.PI), p = 0.35 + (0.5 + 0.5 * sw - 0.35) * moving;   // how far forward this foot is
+      const lift = Math.max(0, Math.cos(ph + i * Math.PI)) * moving;                       // off the board while it swings through
+      const fx = CW * 0.5 + side * CW * (0.075 - 0.012 * p), fy = CH * (1.0 - 0.17 * p) - lift * CH * 0.035;
+      const bw = w * (1 - 0.22 * p), bh = bw * 0.62;
+      g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';                 // its shadow on the plank
+      g.beginPath(); g.ellipse(fx, fy + bh * 0.5 + lift * CH * 0.035, bw * 0.55, bh * 0.35, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = c.skin; g.strokeStyle = c.line; g.lineWidth = Math.max(2, CW * 0.003);  // the shin, coming up from below the screen
+      g.beginPath(); g.moveTo(fx - bw * 0.36 + side * bw * 0.1, CH + 4); g.lineTo(fx - bw * 0.24, fy + bh * 0.05); g.lineTo(fx + bw * 0.24, fy + bh * 0.05); g.lineTo(fx + bw * 0.36 + side * bw * 0.1, CH + 4); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = c.skinD; g.fillRect(fx + side * bw * 0.12 - bw * 0.05, fy + bh * 0.2, bw * 0.1, CH - fy);
+      g.fillStyle = c.boot; g.beginPath(); g.roundRect(fx - bw / 2, fy - bh * 0.45, bw, bh, [bh * 0.5, bh * 0.5, bh * 0.2, bh * 0.2]); g.fill(); g.stroke();   // the boot, toe ahead
+      g.fillStyle = c.bootL; g.fillRect(fx - bw * 0.3, fy - bh * 0.32, bw * 0.6, Math.max(2, bh * 0.08));                // shine on the toe cap
+      g.fillStyle = 'rgba(255,255,255,0.55)'; for (let k = 0; k < 3; k++) g.fillRect(fx - bw * 0.14, fy - bh * 0.05 + k * bh * 0.12, bw * 0.28, Math.max(1, bh * 0.04));   // laces
+      g.fillStyle = c.line; g.fillRect(fx - bw / 2, fy + bh * 0.47, bw, Math.max(2, bh * 0.1));                            // sole
+    }
+    g.restore();
+  };
   // a gun flash when you shoot
   if (me.muzzle > 0) { const gx = CW / 2, gy = CH * 0.86, gr = vg.createRadialGradient(gx, gy, 4, gx, gy, CH * 0.3);
     gr.addColorStop(0, 'rgba(255,240,190,0.9)'); gr.addColorStop(1, 'rgba(255,140,40,0)'); vg.fillStyle = gr; vg.fillRect(0, 0, CW, CH); }
@@ -2606,6 +2641,7 @@ function drawShroom(w) {
     for (let y = 0; y < CH; y += band) ctx.drawImage(cv.acc, 0, y, CW, band, Math.sin(y / CH * 18 + t * 9) * CW * 0.02 * under, y, CW, band);
   } else ctx.drawImage(cv.acc, 0, 0);
   ctx.restore();
+  if (onBoard) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fade; drawBoard(ctx); drawFeet(ctx); ctx.restore(); }
   if (dv && dv.splashed) drawShroomSplash(dv, st, under, t);
   // a crosshair, and how long's left as a thin rainbow along the top
   ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
@@ -2617,8 +2653,9 @@ function drawShroom(w) {
     const atLadder = !me.dive && Math.abs(me.x - tg.ladderX) < 14 && me.y > T.towerY && me.y < T.towerY + 30;
     const tip = atLadder ? 'face the ladder and hold W to climb' : me.dive === DIVE.CLIMB ? 'W: up   S: down' : me.dive === DIVE.BOARD ? 'walk off the end, or Shift to dive' : '';
     if (tip) { ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
-      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(tip, ARENA.w / 2 + 1, ARENA.h - 96);
-      ctx.fillStyle = '#fff'; ctx.fillText(tip, ARENA.w / 2, ARENA.h - 97); ctx.textAlign = 'left'; }
+      const ty = me.dive === DIVE.BOARD ? 40 : ARENA.h - 97;                // on the board it goes up top, clear of his feet
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(tip, ARENA.w / 2 + 1, ty + 1);
+      ctx.fillStyle = '#fff'; ctx.fillText(tip, ARENA.w / 2, ty); ctx.textAlign = 'left'; }
   }
   const left = 1 - trip / SHROOM_TIME, bar = ctx.createLinearGradient(0, 0, ARENA.w, 0);
   for (let i = 0; i <= 6; i++) bar.addColorStop(i / 6, 'hsl(' + ((i * 60 + t * 120) % 360) + ',100%,60%)');
