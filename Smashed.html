@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b257 — the shirt editor shows LOOK: PIXEL';
+const BUILD = 'b258 — carrying her in LOOK: PHOTO, no giant arm';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -6278,7 +6278,7 @@ function carryStandFrame() {
   if (CARRY_STAND_K < 0) {
     let best = -1, bestW = 1e9;
     for (let k = 0; k < runs.length; k++) {
-      const im = runs[k];
+      const im = runs[k].__orig || runs[k];                  // the art itself, not a shirt-printed copy
       if (!im.complete || !im.naturalWidth) return null;
       const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
       const g = c.getContext('2d'); g.drawImage(im, 0, 0);
@@ -6294,7 +6294,10 @@ function carryStandFrame() {
 const CARRY_WALK = [];
 function carryWalkFrame(k) {
   if (CARRY_WALK[k]) return CARRY_WALK[k];
-  const body = CARRY_FRAMES[1], run = IMG.juicy && IMG.juicy.side_run && IMG.juicy.side_run[k];
+  // b258: the legs come from the run art itself. Wearing a shirt print in LOOK: PHOTO the frame is a
+  // copy drawn 2x bigger, and cut up at the art's own size it put a giant arm and gun under him
+  const run0 = IMG.juicy && IMG.juicy.side_run && IMG.juicy.side_run[k], run = run0 && (run0.__orig || run0);
+  const body = CARRY_FRAMES[1];
   if (!body.complete || !body.naturalWidth || !run || !run.complete || !run.naturalWidth) return null;
   const px = im => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext('2d'); g.drawImage(im, 0, 0); return { d: g.getImageData(0, 0, c.width, c.height).data, w: c.width, h: c.height }; };
   const B = px(body), R = px(run), W = 160, H = 185, WAIST = 106;
