@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b268 — his own calves';
+const BUILD = 'b269 — the shirt print looks like a photo';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1049,7 +1049,7 @@ function drawHeldPlate(p) {
 // each frame of his art by looking for the brightest connected patch of shirt-green, so the picture
 // lands in the right place in every pose and is shrunk to fit that patch on its own. The picture is
 // kept (shrunk) in this browser, so it's still there next time.
-const SHIRT = { art: null, artBack: null, place: null, placeBack: null, smooth: false, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
+const SHIRT = { art: null, artBack: null, place: null, placeBack: null, smooth: true, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
 const backKey = k => typeof k === 'string' && /^b(ack|diag)/.test(k);     // which of his frames show his back
 function shirtLogoBox(im) {                                   // {box:[x,y,w,h], mask:canvas} or null
   if (SHIRT.boxes.has(im)) return SHIRT.boxes.get(im);
@@ -1408,7 +1408,7 @@ function shirtEditorDown(pt) {
     else if (b.a === 'fit') SHED.place = shirtFitPlace('fit');
     else if (b.a === 'fill') SHED.place = shirtFitPlace('fill');
     else if (b.a === 'turn') { shedSaveSide(); SHED.side = SHED.side === 'back' ? 'front' : 'back'; shedLoadSide(); }
-    else if (b.a === 'smooth') { SHIRT.smooth = !SHIRT.smooth; try { localStorage.setItem(SHIRT.key + '-smooth', SHIRT.smooth ? '1' : '0'); } catch (_) {} applyShirtArt(); }
+    else if (b.a === 'smooth') { SHIRT.smooth = !SHIRT.smooth; try { localStorage.setItem(SHIRT.key + '-look', SHIRT.smooth ? 'photo' : 'pixel'); } catch (_) {} applyShirtArt(); }
     else closeShirtEditor(b.a === 'done');
     return true;
   }
@@ -1459,7 +1459,8 @@ function drawArtButton() {
   }
   ctx.restore();
 }
-try { SHIRT.smooth = localStorage.getItem(SHIRT.key + '-smooth') === '1';
+// b269: LOOK: PHOTO is the default now; the old setting (key '-smooth', pixel unless you'd switched it) is left behind, so everyone starts on photo
+try { SHIRT.smooth = localStorage.getItem(SHIRT.key + '-look') !== 'pixel';
       const pl = localStorage.getItem(SHIRT.key + '-place'); if (pl) SHIRT.place = JSON.parse(pl);
       const pb = localStorage.getItem(SHIRT.key + '-place-back'); if (pb) SHIRT.placeBack = JSON.parse(pb);
       const ab = localStorage.getItem(SHIRT.key + '-back'); if (ab) { const i = new Image(); i.onload = () => { SHIRT.artBack = i; applyShirtArt(); }; i.src = ab; } } catch (_) {}
