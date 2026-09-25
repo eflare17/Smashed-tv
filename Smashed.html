@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b267 — his boots the right way round';
+const BUILD = 'b268 — his own calves';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2306,6 +2306,7 @@ const BOOT_PIX = [                                         // b267: his boot fro
   '..KsSSSSSSSSSssK..',
 ];
 const BOOT_COL = { K: '#141a24', D: '#2c3442', H: '#46505f', L: '#7a8698', E: '#1a2029', W: '#9aa3b0', G: '#5f6776', g: '#3e4552', S: '#f39461', s: '#c9724d' };   // off his sprite
+const CALF_CROP = [21, 112, 27, 21];                        // his calf in the new art's 98x160 standing frame, knee to ankle
 const BOOT_SHIN = 20;                                      // rows from here down are shin, stretched to the bottom of the screen
 let BOOT_CV = null;
 function bootCanvas() {
@@ -2641,9 +2642,14 @@ function drawShroom(w) {
         g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';               // its shadow on the plank
         g.beginPath(); g.ellipse(ax, top + bh * 0.45 + lift * CH * 0.04, wd * 0.6, bh * 0.45, 0, 0, Math.PI * 2); g.fill();
         g.save(); g.imageSmoothingEnabled = false;
-        g.translate(ax, top); if (side > 0) g.scale(-1, 1);                   // the right boot is the left one mirrored
-        g.drawImage(bc, 0, 0, 18, BOOT_SHIN, -wd / 2, 0, wd, bh);
-        g.drawImage(bc, 0, BOOT_SHIN, 18, BOOT_PIX.length - BOOT_SHIN, -wd / 2, bh, wd, CH - top - bh + 6);
+        g.translate(ax, top); if (side > 0) g.scale(-1, 1);                   // the right leg is the left one mirrored
+        // b268: his calf off his own art (not a stick): the standing frame's left calf, turned so the ankle
+        // meets the cuff and it swells out towards the knee at the bottom of the screen
+        const [cx0, cy0, cw, ch] = CALF_CROP, calfW = wd * 1.3, calfTop = bh - k * 1.5, calfH = CH - top - calfTop + 6;
+        g.save(); g.translate(0, calfTop + calfH); g.scale(1, -1);
+        g.drawImage(art, cx0, cy0, cw, ch, -calfW / 2, 0, calfW, calfH);
+        g.restore();
+        g.drawImage(bc, 0, 0, 18, BOOT_SHIN, -wd / 2, 0, wd, bh);              // the boot over it, its cuff hiding the join
         g.restore();
         continue;
       }
