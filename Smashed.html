@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b273 — the print stays on while he carries her';
+const BUILD = 'b274 — facial hair in the mirror';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -620,7 +620,8 @@ function newPlayer(id) {
     ammo: 0, reload: 0, pickup: 0, throw: 0, blasters: 0, click: 0, dryHint: 0,
     rockets: 0, buy: 0, dump: 0, prevWeapon: 'spud',
     tx: 0, ty: 0, aimOn: 0, lobHeld: 0,
-    dive: 0, dz: 0, vz: 0, dvt: 0   // the dive tower: which stage, height off the floor
+    dive: 0, dz: 0, vz: 0, dvt: 0,  // the dive tower: which stage, height off the floor
+    beard: id === 0 ? LOCAL_BEARD : id === 1 ? GUEST_BEARD : 0   // b274: facial hair (the host keeps the guest's)
   };
 }
 
@@ -931,7 +932,7 @@ function stepGym(w, dt) {
 const legImg = name => { const i = new Image(); i.src = 'art/' + name; return i; };
 const LEG_ART = { machine: legImg('legpress.png'),
                   press: [1, 2, 3, 4, 5].map(n => { const i = legImg('legpress-' + n + '.png');   // in after the shirt art? then put it on him here too
-                    i.addEventListener('load', () => { if (SHIRT.art || SHIRT.artBack) applyShirtArt(); }); return i; }),
+                    i.addEventListener('load', () => { if (SHIRT.art || SHIRT.artBack || CH_STYLE.juicy) applyShirtArt(); }); return i; }),
                   plate: { S: legImg('legplate-S.png'), M: legImg('legplate-M.png'), L: legImg('legplate-L.png') } };
 const LEG = { horn: { L: [], R: [] } };                  // L: the back horn (behind the foot plate), R: the front one
 const LEG_KG = 50;                                       // the sled on its own
@@ -1225,23 +1226,200 @@ function shirtSkin(im, isBack, mirror, hi) {
   return c;
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
-function applyShirtArt() {
-  const chs = new Set((world.players || []).map(p => p.ch).filter(Boolean)); if (!chs.size) chs.add('juicy');
-  const sets = [];
-  for (const id of Object.keys(IMG)) if ([...chs].some(ch => id === ch || id.startsWith(ch + '_'))) sets.push(IMG[id]);
-  if (!SHIRT.originals) {
-    SHIRT.originals = [];
-    for (const set of sets) for (const k of Object.keys(set)) SHIRT.originals.push([set, k, set[k]]);
-    // b248: and his frames on the bench and the leg press (the gym draws those itself, at their own scale)
-    for (const arr of [SIT_ART, SIT_IDLE, GYM_ART.press, LEG_ART.press, LEG_LAYER.jared]) arr.forEach((im, i) => SHIRT.originals.push([arr, i, im]));
+// ============================================================ FACIAL HAIR ===
+// b274: change his facial hair in the mirror. Nothing is redrawn by hand: in every frame of his the face is
+// found from the art itself (the bright blue of his sunglasses, then the dark brown moustache under them,
+// and his skin down to the chin), and each style works from that: the moustache taken out and filled with
+// his skin, or kept and hair added round it in its own browns, in pixels the size of his. Frames with no
+// glasses in them (his back) are left as they are. Your pick goes over the wire, so you see each other's.
+const BEARDS = [
+  { key: 'classic',   label: 'THE CLASSIC' },
+  { key: 'clean',     label: 'CLEAN SHAVEN' },
+  { key: 'tyson',     label: 'THE TYSON' },       // Tyson's short dark boxed beard, off his old art
+  { key: 'full',      label: 'FULL BEARD' },
+  { key: 'goatee',    label: 'GOATEE' },
+  { key: 'stubble',   label: 'STUBBLE' },
+  { key: 'handlebar', label: 'HANDLEBAR' },
+];
+let LOCAL_BEARD = 0, GUEST_BEARD = 0;                          // yours, and (on the host) your friend's
+try { LOCAL_BEARD = Math.max(0, Math.min(BEARDS.length - 1, +localStorage.getItem('smashed-beard') || 0)); } catch (_) {}
+const CH_STYLE = {};                                           // the style each character's art is wearing right now
+// where his face is in a frame: the glasses, the moustache (as a mask) and how far down his chin goes
+function faceOf(d, w, h) {
+  // the glasses: the topmost patch of bright blue (his shirt and a blaster's glow have blue in them too, lower down)
+  const blue = i => { const o = i * 4; return d[o + 3] > 200 && d[o + 2] > 170 && d[o] < 90 && d[o + 2] > d[o + 1] + 10; };
+  let first = -1;
+  for (let i = 0; i < w * Math.floor(h * 0.6) && first < 0; i++) if (blue(i)) first = i;
+  if (first < 0) return null;
+  let gx0 = 1e9, gx1 = -1, gy0 = 1e9, gy1 = -1, n = 0;
+  { const seen = new Uint8Array(w * h), st = [first]; seen[first] = 1;
+    while (st.length) { const j = st.pop(), x = j % w, y = (j / w) | 0; n++;
+      if (x < gx0) gx0 = x; if (x > gx1) gx1 = x; if (y < gy0) gy0 = y; if (y > gy1) gy1 = y;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {            // small gaps (the bridge, a glint) don't split it
+        const xx = x + dx, yy = y + dy, k = yy * w + xx;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && !seen[k] && blue(k)) { seen[k] = 1; st.push(k); } } } }
+  if (n < 6 || gy1 - gy0 > h * 0.12) return null;
+  const gh = gy1 - gy0 + 1, ya = gy1 + 1, yb = Math.min(h - 1, gy1 + Math.max(8, Math.round(gh * 2.5)));
+  const pad = Math.max(3, Math.round((gx1 - gx0) * 0.4)), xa = Math.max(0, gx0 - pad), xb = Math.min(w - 1, gx1 + pad);   // turned, the moustache pokes out past the glasses
+  const dark = o => d[o + 3] > 200 && Math.max(d[o], d[o + 1], d[o + 2]) < 115 && d[o] > d[o + 2] + 2 && d[o] >= d[o + 1] - 5;   // warm: Gothica's hair is cooler
+  // the moustache: the biggest patch of dark brown under the glasses, near their middle
+  const seen = new Uint8Array(w * h); let best = null;
+  for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+    const i = y * w + x; if (seen[i] || !dark(i * 4)) continue;
+    const st = [i]; let px = []; seen[i] = 1;
+    while (st.length) { const j = st.pop(); px.push(j); const jx = j % w, jy = (j / w) | 0;
+      for (const k of [jx > xa ? j - 1 : -1, jx < xb ? j + 1 : -1, jy > ya ? j - w : -1, jy < yb ? j + w : -1])
+        if (k >= 0 && !seen[k] && dark(k * 4)) { seen[k] = 1; st.push(k); } }
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1; for (const j of px) { const jx = j % w, jy = (j / w) | 0; if (jx < x0) x0 = jx; if (jx > x1) x1 = jx; if (jy < y0) y0 = jy; if (jy > y1) y1 = jy; }
+    const tall = Math.max(7, gh * 2);
+    if (y1 - y0 + 1 > tall) {                                     // run on into the shadows down his jaw: keep the top of it, the moustache
+      px = px.filter(j => ((j / w) | 0) < y0 + Math.max(5, Math.round(gh * 1.5)));
+      x0 = 1e9; x1 = -1; y1 = -1; for (const j of px) { const jx = j % w, jy = (j / w) | 0; if (jx < x0) x0 = jx; if (jx > x1) x1 = jx; if (jy > y1) y1 = jy; }
+    }
+    const cx = (x0 + x1) / 2;
+    if (px.length < 6 || x1 - x0 < 3 || cx < gx0 - 2 || cx > gx1 + 2) continue;
+    if (!best || px.length > best.px.length) best = { px, x0, x1, y0, y1 };
   }
-  for (const [holder, key, orig] of SHIRT.originals) {
+  if (!best) return null;
+  const M = new Uint8Array(w * h); for (const j of best.px) M[j] = 1;
+  const skin = o => d[o + 3] > 200 && d[o] > 140 && d[o] > d[o + 1] + 25 && d[o + 1] > d[o + 2] - 5;
+  const fx0 = Math.max(0, Math.min(gx0, best.x0) - 1), fx1 = Math.min(w - 1, Math.max(gx1, best.x1) + 1), mh = best.y1 - best.y0 + 1;
+  let chin = best.y1;                                          // down the face, under the moustache, till the skin runs out
+  const cx0 = Math.max(0, best.x0 - 2), cx1 = Math.min(w - 1, best.x1 + 2);
+  for (let y = best.y1 + 1; y <= Math.min(h - 1, best.y1 + mh * 3 + 2); y++) {
+    let s = 0; for (let x = cx0; x <= cx1; x++) if (skin((y * w + x) * 4)) s++;
+    if (s < (cx1 - cx0 + 1) * 0.35) break; chin = y;
+  }
+  chin = Math.max(chin, best.y1 + Math.round(mh * 1.2) + 1);    // from the side his chin sits back under it, where that misses it
+  let r = 0, g = 0, b = 0; for (const j of best.px) { r += d[j * 4]; g += d[j * 4 + 1]; b += d[j * 4 + 2]; }
+  const k = best.px.length;
+  // his face: skin joined on to the moustache, from a little above it down to the chin, reaching back along the
+  // jaw (from the side the jaw runs well past the glasses)
+  const Fm = new Uint8Array(w * h), cx = (best.x0 + best.x1) / 2, half = Math.max(gx1 - gx0, best.x1 - best.x0) * 1.1 + 3;
+  const fy0 = Math.max(0, best.y0 - mh), lx = Math.max(0, Math.floor(cx - half)), rx = Math.min(w - 1, Math.ceil(cx + half));
+  { const st = [];
+    for (const j of best.px) { const x = j % w, y = (j / w) | 0; for (const q of [j - 1, j + 1, j - w, j + w]) st.push(q); }
+    while (st.length) { const j = st.pop(), x = j % w, y = (j / w) | 0;
+      if (y < fy0 || y > chin || x < lx || x > rx || Fm[j] || M[j] || !skin(j * 4)) continue;
+      Fm[j] = 1; st.push(j - 1, j + 1, j - w, j + w); } }
+  // the moustache's soft shaded edge, so shaving takes all of it
+  const Mx = new Uint8Array(M);
+  for (const j of best.px) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const q = j + dy * w + dx, o = q * 4; if (q < 0 || q >= w * h || M[q]) continue;
+    if (d[o + 3] > 200 && 0.3 * d[o] + 0.59 * d[o + 1] + 0.11 * d[o + 2] < 140 && d[o] >= d[o + 2]) Mx[q] = 1; }
+  return { gx0, gx1, gy0, gy1, M, Mx, Fm, mx0: best.x0, mx1: best.x1, mTop: best.y0, mBot: best.y1, mh, chin, fx0: lx, fx1: rx, skin, hair: [r / k, g / k, b / k] };
+}
+const BEARD_ART = new WeakMap();
+function beardFrame(im, style) {                                // im wearing style (an index into BEARDS), or im itself
+  if (!style || !im || !im.naturalWidth) return im;
+  let cache = BEARD_ART.get(im); if (!cache) BEARD_ART.set(im, cache = {});
+  if (cache[style] !== undefined) return cache[style] || im;
+  const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  const id = g.getImageData(0, 0, w, h), d = id.data, src = new Uint8ClampedArray(d);
+  const F = faceOf(src, w, h);
+  if (!F) { cache[style] = null; return im; }
+  const key = BEARDS[style].key, { M, Mx, Fm, mx0, mx1, mTop, mBot, mh, chin, fx0, fx1, skin, hair } = F, mw = mx1 - mx0 + 1;
+  const at = (x, y) => (y * w + x) * 4, rnd = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) % 1000 / 1000;
+  const set = (x, y, col) => { const o = at(x, y); d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255; };
+  const hairAt = (x, y) => { const q = rnd(x, y), k = q < 0.25 ? 1.2 : q < 0.8 ? 1 : 0.82; return hair.map(v => Math.min(255, v * k)); };
+  const skinNear = (x, y) => {                                  // his own skin, from just below (or above) this spot
+    for (let k = 1; k <= mh * 3; k++) for (const yy of [y + k, y - k]) { if (yy < 0 || yy >= h) continue; const o = at(x, yy); if (!Mx[yy * w + x] && skin(o)) return [src[o], src[o + 1], src[o + 2]]; }
+    return [230, 140, 100];
+  };
+  const onFace = (x, y) => x >= fx0 && x <= fx1 && y >= 0 && y < h && src[at(x, y) + 3] > 200;
+  const mouthRow = mBot + 1, mouthX0 = mx0 + Math.round(mw * 0.3), mouthX1 = mx1 - Math.round(mw * 0.3);
+  const shave = () => {                                          // the moustache out, his skin in, and a mouth under where it was
+    for (let y = Math.max(0, mTop - 1); y <= Math.min(h - 1, mBot + 1); y++) for (let x = Math.max(0, mx0 - 1); x <= Math.min(w - 1, mx1 + 1); x++) if (Mx[y * w + x]) set(x, y, skinNear(x, y));
+    for (let x = mouthX0; x <= mouthX1; x++) { const s = skinNear(x, mBot); set(x, mBot, [s[0] * 0.72, s[1] * 0.5, s[2] * 0.52]); }
+  };
+  const beardOver = (y0, y1, extra) => {                         // hair over his skin from y0 down to y1, the mouth left showing
+    for (let y = y0; y <= y1; y++) for (let x = fx0; x <= fx1; x++) {
+      if (M[y * w + x] || !onFace(x, y)) continue;
+      const o = at(x, y); if (!Fm[y * w + x] && !(Mx[y * w + x] && skin(o)) && !(extra && extra(x, y))) continue;
+      if (y === mouthRow && x >= mouthX0 && x <= mouthX1) { set(x, y, [src[o] * 0.72, src[o + 1] * 0.5, src[o + 2] * 0.52]); continue; }
+      if (y === y0 && rnd(x, y) < 0.5) continue;                 // a ragged top edge, not a ruler line
+      set(x, y, hairAt(x, y));
+    }
+  };
+  if (key === 'clean') shave();
+  else if (key === 'stubble') {
+    shave();
+    for (let y = mTop - 1; y <= chin; y++) for (let x = fx0; x <= fx1; x++) {
+      const o = at(x, y); if (!Fm[y * w + x] || (y === mBot && x >= mouthX0 && x <= mouthX1) || rnd(x, y) > 0.45) continue;
+      set(x, y, [d[o] * 0.62 + 70 * 0.38, d[o + 1] * 0.62 + 45 * 0.38, d[o + 2] * 0.62 + 45 * 0.38]);
+    }
+  } else if (key === 'tyson') beardOver(mTop - Math.max(1, Math.round(mh * 0.4)), chin);
+  else if (key === 'full') {
+    beardOver(mTop - Math.max(1, Math.round(mh * 0.6)), chin);
+    for (let y = F.gy1 + 1; y < mTop + mh; y++) {                          // sideburns, down the outside of his face
+      let a = -1, z = -1; for (let x = fx0; x <= fx1; x++) if (skin(at(x, y))) { if (a < 0) a = x; z = x; }
+      if (a < 0) continue; for (const x of [a, a + 1, z - 1, z]) set(x, y, hairAt(x, y)); }
+    const cx = (mx0 + mx1) / 2, below = Math.max(2, Math.round(mh * 0.7));    // and a rounded bush under the chin
+    for (let k = 1; k <= below; k++) { const half = (fx1 - fx0) / 2 * (1 - (k / (below + 1)) ** 2) * 0.85, y = chin + k;
+      if (y >= h) break; for (let x = Math.round(cx - half); x <= Math.round(cx + half); x++) if (x >= 0 && x < w && src[at(x, y) + 3] > 200) set(x, y, hairAt(x, y)); }
+  } else if (key === 'goatee') {
+    const gx0 = mx0 + Math.round(mw * 0.28), gx1 = mx1 - Math.round(mw * 0.28);
+    for (let y = mBot + 2; y <= chin; y++) for (let x = gx0; x <= gx1; x++) { const o = at(x, y); if (skin(o)) set(x, y, hairAt(x, y)); }
+    for (let y = mBot; y <= mBot + 2; y++) for (const x of [gx0, gx1]) { const o = at(x, y); if (skin(o)) set(x, y, hairAt(x, y)); }   // joined to the moustache at the corners
+  } else if (key === 'handlebar') {
+    const curl = Math.max(2, Math.round(mh * 0.6));
+    for (const s of [-1, 1]) {
+      const ex = s < 0 ? mx0 : mx1;
+      let ey = mBot; while (ey > mTop && !M[ey * w + ex]) ey--;
+      const pts = [[1, 0], [2, 0], [2, -1], [3, -1], [3, -2]]; for (let k = 3; k <= curl + 1; k++) pts.push([3, -k], [2, -k - 1]);
+      for (const [dx, dy] of pts) for (let t = 0; t < Math.max(1, Math.round(mh / 5)); t++) { const x = ex + s * dx, y = ey + dy - t; if (x >= 0 && x < w && y >= 0 && src[at(x, y) + 3] > 200) set(x, y, hairAt(x, y)); }
+    }
+  }
+  g.putImageData(id, 0, 0);
+  Object.defineProperty(c, 'naturalWidth', { value: w }); Object.defineProperty(c, 'naturalHeight', { value: h }); Object.defineProperty(c, 'complete', { value: true });
+  cache[style] = c;
+  return c;
+}
+function beardOf(ch) { return CH_STYLE[ch] || 0; }
+function ensureLooks(w) {                                       // once a frame: anyone whose facial hair changed gets their art redone
+  for (const p of (w && w.players) || []) {
+    const want = Math.max(0, Math.min(BEARDS.length - 1, p.beard | 0));
+    if ((CH_STYLE[p.ch] || 0) !== want) { CH_STYLE[p.ch] = want; applyShirtArt(p.ch); }
+  }
+}
+function setLocalBeard(i) {                                     // yours: remembered, and sent to the host if you're the guest
+  LOCAL_BEARD = ((i % BEARDS.length) + BEARDS.length) % BEARDS.length;
+  try { localStorage.setItem('smashed-beard', String(LOCAL_BEARD)); } catch (_) {}
+  if (net.role === 'client') { if (net.conn && net.conn.open) net.conn.send({ t: 'beard', b: LOCAL_BEARD }); }
+  else if (world.players[0]) world.players[0].beard = LOCAL_BEARD;
+  if (SND.ctx) { sNoise(0.08, 3200, 2, 0.12, 'bandpass', 1800); sTone(0.05, 900, 1300, 0.06, 'square'); }   // snip
+}
+function applyShirtArt(only) {
+  // b274: every character on screen (and any wearing a style), each set captured the first time it's seen
+  const chs = new Set([...(world.players || []), ...((typeof net !== 'undefined' && net.view && net.view.players) || [])].map(p => p.ch).filter(Boolean));
+  for (const ch of Object.keys(CH_STYLE)) chs.add(ch);
+  if (!chs.size) chs.add('juicy');
+  if (!SHIRT.originals) {
+    SHIRT.originals = []; SHIRT.captured = new Set();
+    // b248: and his frames on the bench and the leg press (the gym draws those itself, at their own scale): Jared's art
+    for (const arr of [SIT_ART, SIT_IDLE, GYM_ART.press, LEG_ART.press, LEG_LAYER.jared]) arr.forEach((im, i) => SHIRT.originals.push([arr, i, im, 'juicy']));
+  }
+  for (const id of Object.keys(IMG)) {
+    const ch = [...chs].find(c => id === c || id.startsWith(c + '_'));
+    if (!ch || SHIRT.captured.has(IMG[id])) continue;
+    SHIRT.captured.add(IMG[id]);
+    for (const k of Object.keys(IMG[id])) SHIRT.originals.push([IMG[id], k, IMG[id][k], ch]);
+  }
+  let waiting = 0;
+  for (const [holder, key, orig, ch] of SHIRT.originals) {
+    if (only && ch !== only) continue;
+    const style = CH_STYLE[ch] || 0, printing = SHIRT.art || SHIRT.artBack;
     const list = Array.isArray(orig) ? orig : [orig];
-    const done = list.map(im => { if ((!SHIRT.art && !SHIRT.artBack) || !im.naturalWidth) return im;
+    const done = list.map(im => {
+      if (!im.naturalWidth) { if (style || printing) waiting++; return im; }
+      const b = beardFrame(im, style);                                  // his facial hair, then the shirt print over that
+      if (!printing) return b;
       const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press || holder === LEG_LAYER.jared;   // the camera zooms in on these, so print them finer
-      return shirtPrinted(im, backKey(key), hi) || im; });
+      return shirtPrinted(b, backKey(key), hi) || b; });
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
+  if (waiting) setTimeout(() => applyShirtArt(only), 400);            // some of the art still loading: go round again when it's in
   shirtVer++;                                                              // and the frames built as he's drawn get printed again
 }
 // his frame im wearing the picture (and its flipped twin in .__mir), or null if there's no shirt in it
@@ -1592,14 +1770,32 @@ function mirrorStep(w, me, dt) {                               // once per frame
   mirrorK = Math.max(0, Math.min(1, mirrorK + (mirrorLook ? dt : -dt) * 3));
 }
 function mirrorMe(p) { return mirrorK > 0 && !p.npc && p.id === (net.role === 'client' ? 1 : 0); }   // the one fading into the glass
+function hairButton() {                                        // b274: beside BACK, while you're looking in the mirror
+  if (!mirrorLook || mirrorK < 0.8) return null;
+  return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'HAIR' };
+}
+function drawHairButton() {
+  const b = hairButton(); if (!b) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(40,24,16,0.85)'; ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#f6d17a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.fillText(b.label, b.x, b.y - 5);
+  ctx.font = '9px ui-sans-serif, system-ui, sans-serif'; ctx.fillText((LOCAL_BEARD + 1) + ' of ' + BEARDS.length, b.x, b.y + 9);
+  ctx.restore();
+}
 function drawMirrorHint() {                                     // b272: how to turn round, and how to leave
   if (!mirrorLook || mirrorK < 0.8) return;
   const touch = touchSeen || ('ontouchstart' in window);
-  const tip = touch ? 'drag left or right to turn round  ·  drag down or tap BACK to step away' : 'A / D: turn round  ·  S or E: step away';
+  const tip = touch ? 'drag left or right to turn round  ·  HAIR to change it  ·  BACK to step away' : 'A / D: turn round  ·  F: facial hair  ·  S or E: step away';
   ctx.save(); ctx.globalAlpha = Math.min(1, (mirrorK - 0.8) * 5);
   ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(tip, ARENA.w / 2 + 1, ARENA.h - 81);
   ctx.fillStyle = '#fff'; ctx.fillText(tip, ARENA.w / 2, ARENA.h - 82);
+  const name = BEARDS[LOCAL_BEARD].label;                          // b274: which facial hair you've got on
+  ctx.font = 'bold 18px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(name, ARENA.w / 2 + 1, ARENA.h - 104);
+  ctx.fillStyle = '#f6d17a'; ctx.fillText(name, ARENA.w / 2, ARENA.h - 105);
   ctx.restore();
 }
 function drawMirror(w) {
@@ -6058,7 +6254,7 @@ function snapshot(w) {
                            Math.round(p.rdx * 100), Math.round(p.rdy * 100),
                            p.shots & 255, p.rockets || 0, Math.round((p.buy || 0) * 100),
                            Math.round(p.tx || 0), Math.round(p.ty || 0), p.aimOn ? 1 : 0,
-                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0, p.bed || 0]),
+                           p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0, p.bed || 0, p.beard || 0]),
     bj: bjPack(w.bj),
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
@@ -6141,7 +6337,7 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0
+      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -6298,6 +6494,7 @@ addEventListener('keydown', e => {
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
   if (k === 'z' && !e.repeat) { nextZoom(); return; }
+  if (k === 'f' && !e.repeat && mirrorLook) { setLocalBeard(LOCAL_BEARD + (e.shiftKey ? -1 : 1)); return; }   // b274: facial hair, in the mirror
   if (k >= '1' && k <= '6' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
   if (k === 'r') {
     restartGame();
@@ -6390,6 +6587,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   // the carry button: a tap (or click) on it does what E does
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
+  { const hb = hairButton(); if (hb && Math.hypot(pt.x - hb.x, pt.y - hb.y) < hb.r + 6) { setLocalBeard(LOCAL_BEARD + 1); e.preventDefault(); return; } }   // b274: next facial hair
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
   { const ab = artButton();
@@ -7872,11 +8070,13 @@ function drawJared(w, p) {
   const walk = p.moving ? carryWalkFrame(Math.floor((p.odo || 0) / T.runStride) % 7) : carryStandFrame();
   const cf = walk ? 1 : 0;                           // built frames share the stride's body (and its jiggle box)
   let cim = walk || CARRY_FRAMES[0], cfK = cf;
+  const styleC = beardOf(p.ch);                                   // b274: his facial hair, before her bounce is put in
   const an = NPC_GOTH.anim;
   if (an && NPC_GOTH.carrier === p.id && CARRY_FRAMES[2]) {          // the scoop: squat frame, then standing
     const squat = an.kind === 'pick' ? an.t < 0.2 : an.t >= 0.12;
     if (squat) { cfK = 2; cim = CARRY_FRAMES[2]; }
   }
+  if (styleC && cim && cim.naturalWidth) cim = beardFrame(cim, styleC);
   const carrying = !p.npc && NPC_GOTH.carrier === p.id && !w.started && cim.complete && cim.naturalWidth;
   if (carrying) {
     pose = { img: 'carry', flip: NPC_GOTH.face };
@@ -8048,6 +8248,7 @@ function wireConn(conn) {
     } else {
       conn.send({ t: 'hello' });
       conn.send({ t: 'char', c: pickedChar[1] });
+      conn.send({ t: 'beard', b: LOCAL_BEARD });
     }
   });
 
@@ -8058,6 +8259,10 @@ function wireConn(conn) {
         pickedChar[1] = d.c;
         if (world.players[1]) world.players[1].ch = d.c;
       }
+      return;
+    }
+    if (d.t === 'beard' && net.role === 'host') {                     // b274: the guest's facial hair
+      const b = d.b | 0; if (b >= 0 && b < BEARDS.length) { GUEST_BEARD = b; if (world.players[1]) world.players[1].beard = b; }
       return;
     }
     if (d.t === 'in' && net.role === 'host') {
@@ -9600,6 +9805,7 @@ function renderBase(w, hudRight) {
   drawZoomButton();
   drawArcade();
   drawMirrorHint();
+  drawHairButton();
 
   // HUD
   ctx.fillStyle = '#6d7486';
@@ -10466,6 +10672,7 @@ function drawBonusHazards(w) {
   }
 }
 function render(w,hudRight) {
+  ensureLooks(w);
   const s=w.slotSecret;
   secretAudio(s);
   if(!secretActive(w)){renderBase(w,hudRight);return;}
