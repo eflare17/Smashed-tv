@@ -11,6 +11,7 @@
 - **Earlier report: "hair doesn't line up with his head"**: couldn't reproduce, needs a screenshot.
 
 ## From before
-- **Dive board walk**: improved, "still not 100%".
+- **Dive board walk**: b281 shows the drop (big pool and lawn far below, the board's shadow, calmer colours up
+  there), a springy board and a head bob. Waiting on how it feels on the phone.
 - **Boots and legs on the dive board**: "much better, not perfect".
 - **Carrying Gothica, shirt print flickered** on the phone: fix is in, not confirmed on the phone yet.
