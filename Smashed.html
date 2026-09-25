@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b272 — turn round in the mirror';
+const BUILD = 'b273 — the print stays on while he carries her';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1257,16 +1257,30 @@ function shirtPrinted(im, isBack, hi) {
 // applyShirtArt never printed them and the picture went when he picked her up. They're built from his
 // plain art (the printed frames are 2x bigger in LOOK: PHOTO) and printed here, last thing before drawing.
 // base: the frame im was made from by moving a few pixels (her jiggle), whose shirt is in the same place.
-const SHIRT_WORN = new WeakMap();
+// b273: while he carries Gothica her bounce makes a new frame at every step of it, and each got its own
+// print, both ways round, at photo detail: on a phone that ran out of image memory, and new prints came out
+// blank, so the picture flickered on and off. Now only the way he's facing is printed, and only the last
+// few dozen are kept (the bounce is also in whole pixels while carrying, so there are fewer of them).
+const SHIRT_WORN = new Map(), SHIRT_WORN_MAX = 40;
 let shirtVer = 0;
-function shirtWorn(im, isBack, base) {
+function shirtWorn(im, isBack, base, flip) {
   if ((!SHIRT.art && !SHIRT.artBack) || !im || im.__orig) return im;
-  const e = SHIRT_WORN.get(im);
-  if (e && e.v === shirtVer) return e.c;
+  let e = SHIRT_WORN.get(im);
+  if (!e || e.v !== shirtVer) e = { v: shirtVer, c: null, m: null };
+  SHIRT_WORN.delete(im); SHIRT_WORN.set(im, e);                          // most recently used goes to the back of the queue
+  while (SHIRT_WORN.size > SHIRT_WORN_MAX) SHIRT_WORN.delete(SHIRT_WORN.keys().next().value);
   if (base && base !== im && !SHIRT.boxes.has(im)) SHIRT.boxes.set(im, shirtLogoBox(base));
-  const c = shirtPrinted(im, isBack, false) || im;
-  SHIRT_WORN.set(im, { v: shirtVer, c });
-  return c;
+  const k = flip ? 'm' : 'c';
+  if (!e[k]) {
+    let cv = null; try { cv = shirtSkin(im, isBack, !!flip, false); } catch (_) {}
+    if (cv) {
+      Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
+      Object.defineProperty(cv, 'complete', { value: true }); cv.__orig = im;
+      if (flip) cv.__mir = cv;                                              // drawn flipped, so it's drawn as its own mirror image
+    }
+    e[k] = cv || im;
+  }
+  return e[k];
 }
 // picked a file: trim the empty edges off it, shrink it, keep it for next time, put it on
 function loadShirtArt(file) {
@@ -7869,7 +7883,7 @@ function drawJared(w, p) {
     // his footsteps kick the same loose spring she has when strolling, so the
     // wobble carries on from the lobby and on after she's put down
     const amt = T.jiggle > 0 ? jiggleAmount({ id: 'npc_goth', npc: true, odo: p.odo }) * T.npcJiggle : 0;
-    im = jiggled(cim, 'carry' + cfK, amt);
+    im = jiggled(cim, 'carry' + cfK, T.jiggle > 0 ? Math.round(amt * T.jiggle) / T.jiggle : 0);   // b273: in whole pixels, so fewer frames to print
     built = true; builtFrom = cim;
   }
 
@@ -7923,7 +7937,7 @@ function drawJared(w, p) {
   ctx.save();
   if (pose.flip) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
-  if (built) im = shirtWorn(im, backKey(key), builtFrom);
+  if (built) im = shirtWorn(im, backKey(key), builtFrom, pose.flip);
   ctx.drawImage(pose.flip && im.__mir ? im.__mir : im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
   ctx.restore();
 
