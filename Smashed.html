@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b288 — gore, cut along the outline';
+const BUILD = 'b289 — batter walk: planted feet, bending knees';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -7027,6 +7027,134 @@ function batterWalkGeometry(pose, index, im, height) {
   return {h:im.naturalHeight*scale,w:im.naturalWidth*scale,
           x:-(layout.anchors[index % layout.anchors.length]-layout.lean)*scale,y:-height};
 }
+// Blend aligned stepping frames on a transparent surface. Additive weighted
+// drawing keeps opaque body pixels opaque instead of double-darkening them.
+// Each eight-frame cycle has 128 cached transitions, shared by all batters.
+const BATTER_STEP_CACHE = new WeakMap();
+function batterStepPhase(odo, count) {
+  const cycle=Math.max(1,T.enemyStride*4);
+  const phase=(((odo||0)%cycle)+cycle)%cycle/cycle*count;
+  const index=Math.floor(phase), sub=Math.floor((phase-index)*16);
+  const t=sub/16;
+  return {index,next:(index+1)%count,sub,mix:t*t*(3-2*t)};
+}
+function drawSmoothBatterStep(frames,odo,height,bob) {
+  if (!Array.isArray(frames) || frames.length!==8 ||
+      frames.some(im=>!im.complete || !im.naturalWidth)) return false;
+  const p=batterStepPhase(odo,frames.length);
+  let cache=BATTER_STEP_CACHE.get(frames);
+  if (!cache) {cache=new Map();BATTER_STEP_CACHE.set(frames,cache);}
+  const key=p.index*16+p.sub;
+  let entry=cache.get(key);
+  if (!entry) {
+    const layout=BATTER_WALK.side;
+    const left=Math.ceil(Math.max(...layout.anchors.map(a=>a-layout.lean)))+2;
+    const right=Math.ceil(Math.max(...frames.map((im,i)=>im.naturalWidth-layout.anchors[i]+layout.lean)))+2;
+    const cv=document.createElement('canvas');cv.width=left+right;cv.height=layout.height+2;
+    const g=cv.getContext('2d');g.imageSmoothingEnabled=false;
+    g.globalCompositeOperation='lighter';
+    for(const [index,weight] of [[p.index,1-p.mix],[p.next,p.mix]]) {
+      if(weight===0)continue;
+      g.globalAlpha=weight;
+      g.drawImage(frames[index],left-layout.anchors[index]+layout.lean,0);
+    }
+    entry={image:cv,left,height:layout.height};cache.set(key,entry);
+  }
+  const scale=height/entry.height;
+  ctx.drawImage(entry.image,-entry.left*scale,-height+bob,
+                entry.image.width*scale,entry.image.height*scale);
+  return true;
+}
+// A two-joint leg rig: a planted foot travels backwards exactly as far as
+// the character travels forwards; the returning foot lifts and bends.
+const BATTER_RIG_CACHE = new Map();
+const BATTER_UPPER_CACHE = new WeakMap();
+const BATTER_RIG_STANCE = .6;
+const BATTER_RIG_TRAVEL = 34 / BATTER_RIG_STANCE;
+function batterFoot(phase) {
+  phase=((phase%1)+1)%1;
+  if(phase<BATTER_RIG_STANCE) return {x:17-34*phase/BATTER_RIG_STANCE,lift:0};
+  const t=(phase-BATTER_RIG_STANCE)/(1-BATTER_RIG_STANCE);
+  const ease=t*t*(3-2*t);
+  return {x:-17+34*ease,lift:12*Math.sin(Math.PI*t)};
+}
+function batterKnee(hip,ankle,length,bend) {
+  const dx=ankle.x-hip.x,dy=ankle.y-hip.y;
+  const d=Math.max(.001,Math.hypot(dx,dy));
+  const half=Math.min(length,d*.5),out=Math.sqrt(Math.max(0,length*length-half*half));
+  return {x:(hip.x+ankle.x)*.5+dy/d*out*bend,
+          y:(hip.y+ankle.y)*.5-dx/d*out*bend};
+}
+function batterUpper(im,pose) {
+  let cv=BATTER_UPPER_CACHE.get(im);if(cv)return cv;
+  cv=document.createElement('canvas');cv.width=im.naturalWidth;cv.height=im.naturalHeight;
+  const g=cv.getContext('2d');g.drawImage(im,0,0);
+  // Preserve the low-hanging bat separately from the old spread-legged pose.
+  if(pose==='side') {g.clearRect(20,54,cv.width,cv.height);g.clearRect(0,71,20,cv.height);}
+  else {g.clearRect(0,51,50,cv.height);g.clearRect(50,81,cv.width,cv.height);}
+  BATTER_UPPER_CACHE.set(im,cv);return cv;
+}
+function drawRigLeg(g,hip,foot,pose,near,phase,denim) {
+  const side=pose==='side';
+  const ankle={x:side?foot.x:hip.x+Math.sin(phase*Math.PI*2)*1.5,
+               y:side?-5-foot.lift:-5+foot.x*.15-foot.lift*.7};
+  const knee=batterKnee(hip,ankle,side?23:20,side?1:(near?1:-1)*.35);
+  const base=near?'#244965':'#162e40',light=near?'#42657b':'#2b4658';
+  function bone(a,b,width,shin) {
+    g.lineCap='round';g.lineJoin='round';
+    g.strokeStyle='#101c26';g.lineWidth=width+2;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();
+    g.strokeStyle=base;g.lineWidth=width;g.stroke();
+    if(denim && denim.complete && denim.naturalWidth) {
+      const length=Math.hypot(b.x-a.x,b.y-a.y);
+      g.save();g.translate(a.x,a.y);g.rotate(Math.atan2(b.y-a.y,b.x-a.x)-Math.PI/2);
+      g.beginPath();g.moveTo(-width*.5,0);g.lineTo(width*.5,0);
+      g.lineTo(width*.4,length);g.lineTo(-width*.4,length);g.closePath();g.clip();
+      g.globalAlpha=near?.9:.5;
+      g.drawImage(denim,shin?51:39,shin?71:55,shin?7:9,shin?11:14,-width/2,0,width,length);
+      g.restore();
+    }
+    g.strokeStyle=light;g.lineWidth=1;g.beginPath();g.moveTo(a.x-1,a.y);g.lineTo(b.x-1,b.y);g.stroke();
+  }
+  bone(hip,knee,near?9:8,false);bone(knee,ankle,near?7:6,true);
+  if(pose!=='back') {g.fillStyle=near?'#b78c66':'#785d49';g.fillRect(Math.round(knee.x)-2,Math.round(knee.y)-1,4,3);}
+  g.save();g.translate(ankle.x,ankle.y);
+  if(side)g.rotate(foot.lift>0?-.32*Math.sin(phase*Math.PI*2):0);
+  g.fillStyle='#111820';g.beginPath();
+  if(side){g.moveTo(-4,-4);g.lineTo(3,-4);g.lineTo(4,0);g.lineTo(10,3);g.lineTo(10,5);g.lineTo(-4,5);}
+  else {g.moveTo(-4,-4);g.lineTo(4,-4);g.lineTo(5,5);g.lineTo(-5,5);}
+  g.closePath();g.fill();
+  g.fillStyle=near?'#797b78':'#454b4e';g.fillRect(-3,-3,6,6);
+  g.fillStyle=near?'#b1aaa0':'#777b79';g.fillRect(-2,-2,4,1);g.fillRect(-2,0,4,1);
+  g.fillStyle='#aaa99f';g.fillRect(-3,3,side?12:7,1);g.restore();
+}
+function drawBatterRig(set,pose,odo,height) {
+  if(!['side','front','back'].includes(pose))return false;
+  const im=Array.isArray(set[pose])?set[pose][0]:set[pose];
+  if(!im || !im.complete || !im.naturalWidth)return false;
+  const sourceHeight=pose==='side'?96:88,scale=height/sourceHeight;
+  const travel=BATTER_RIG_TRAVEL*scale*Math.max(.4,T.enemyStride/10);
+  const phase=(((odo||0)%travel)+travel)%travel/travel;
+  const frame=Math.floor(phase*96),key=pose+':'+frame;
+  let cv=BATTER_RIG_CACHE.get(key);
+  if(!cv) {
+    cv=document.createElement('canvas');cv.width=128;cv.height=128;
+    const g=cv.getContext('2d');g.imageSmoothingEnabled=false;g.translate(64,112);
+    const p=frame/96,side=pose==='side';
+    // Only the body rises; planted boots stay at ground level.
+    const rise=-.8*(1-Math.cos(p*Math.PI*4));
+    const hipY=(side?-42:-37)+rise;
+    const far=batterFoot(p+.5),near=batterFoot(p);
+    drawRigLeg(g,{x:side?-2:-5,y:hipY},far,pose,false,p+.5,Array.isArray(set.side)?set.side[0]:set.side);
+    drawRigLeg(g,{x:side?2:5,y:hipY},near,pose,true,p,Array.isArray(set.side)?set.side[0]:set.side);
+    const upper=batterUpper(im,pose);
+    const anchor=side?36:BATTER_WALK[pose].anchors[0];
+    g.drawImage(upper,-anchor,-sourceHeight+rise);
+    BATTER_RIG_CACHE.set(key,cv);
+  }
+  ctx.drawImage(cv,-64*scale,-112*scale,128*scale,128*scale);
+  return true;
+}
+
 const ENEMY_ANCHOR = { batter: { swing: 0.401 } };
 const ENEMY_POSE_SCALE = { batter: { swing: 401 / 325 } };   // wind-up bat is overhead
 // Per-pose size corrections. Sheets come back with the character sitting at
@@ -7098,13 +7226,15 @@ function enemyPose(e) {
   if (oct < 0) oct += 8;
   // the first three sheets were drawn facing left; the batter's faces right
   const R = !!(ETYPE[e.t] && ETYPE[e.t].facesRight);
+  // Batter diagonal art repeats a split-legged contact pose: use the
+  // complete eight-frame side cycle so the feet actually pass each other.
   switch (oct) {
     case 0: return { img: 'side',  flip: !R };
-    case 1: return { img: 'diag',  flip: !R };
+    case 1: return { img: e.t === 3 ? 'side' : 'diag', flip: !R };
     case 2: return { img: 'front', flip: false };
-    case 3: return { img: 'diag',  flip: R };
+    case 3: return { img: e.t === 3 ? 'side' : 'diag', flip: R };
     case 4: return { img: 'side',  flip: R };
-    case 5: return { img: 'back',  flip: true  };
+    case 5: return { img: e.t === 3 ? 'side' : 'back', flip: true };
     case 6: return { img: 'back',  flip: false };
     default: return { img: 'side', flip: !R };
   }
@@ -9429,7 +9559,7 @@ function renderBase(w, hudRight) {
       const walkGeom = walkLayout ? batterWalkGeometry(pose.img,walkIndex,eim,h) : null;
       const walking = running && Math.hypot(e.vx||0,e.vy||0) >= 12 && !(e.stun > 0);
       const bob = walkLayout
-        ? (walking ? -T.enemyBob*.3*(1-Math.cos((e.odo||0)/Math.max(1,T.enemyStride*4)*Math.PI*4)) : 0)
+        ? (walking ? -T.enemyBob*.18*(1-Math.cos((e.odo||0)/Math.max(1,T.enemyStride*4)*Math.PI*4)) : 0)
         : (running ? enemyBob(set,pose.img,e.odo) : 0);
       // lean into the run: sideways speed tilts him about his feet, in screen
       // space, so it reads the same whichever way the art is flipped
@@ -9440,14 +9570,16 @@ function renderBase(w, hudRight) {
       ctx.save();
       if (e.flash > 0) ctx.filter = 'brightness(2.6) saturate(0.2)';
       ctx.translate(e.x, footY);
-      ctx.rotate(lean);
+      ctx.rotate(walkLayout ? 0 : lean);
       if (pose.flip) ctx.scale(-1, 1);
       ctx.imageSmoothingEnabled = false;
       const anchor = (ENEMY_ANCHOR[ty.key] && ENEMY_ANCHOR[ty.key][pose.img]) || 0.5;
       if (walkGeom) {
         // Keep fractional destination positions: rounding four separate values
         // introduced one-pixel jumps even during otherwise smooth movement.
-        ctx.drawImage(eim,walkGeom.x,walkGeom.y+bob,walkGeom.w,walkGeom.h);
+        if (!drawBatterRig(set,pose.img,e.odo,h)) {
+          ctx.drawImage(eim,walkGeom.x,walkGeom.y+bob,walkGeom.w,walkGeom.h);
+        }
       } else {
         ctx.drawImage(eim, Math.round(-dw * anchor), Math.round(-h + bob), Math.round(dw), Math.round(h));
       }
