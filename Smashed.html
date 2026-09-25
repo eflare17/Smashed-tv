@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b276 — hair styles in the mirror';
+const BUILD = 'b277 — quick hair changes, turn arrows in the mirror';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1213,7 +1213,7 @@ function shirtSkin(im, isBack, mirror, hi) {
   pg.drawImage(L.mask, 0, 0, w * S, h * S);                                // only on the shirt itself
   pg.drawImage(im, 0, 0, w * S, h * S);                                    // b246: and never in the see-through gaps (between arm and body)
   const c = document.createElement('canvas'); c.width = w * S; c.height = h * S;
-  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false;   // b277: his head's read back off it when his hair changes
   g.drawImage(im, 0, 0, w * S, h * S); g.drawImage(patch, 0, 0);
   c.__ss = S;
   // the shirt's folds through it. b271: in LOOK: PHOTO they're smoothed and softened (they were blown up in hard
@@ -1282,49 +1282,120 @@ function hairRef(view) {
   return (HAIR_REF[view] = hairAnchor(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height));
 }
 const BEARD_ART = new WeakMap();
-function hairFrame(im, style, key, ch) {                        // im wearing style (an index into BEARDS), or im itself
-  if (!style || !im || !im.naturalWidth || !ch || !ch.startsWith('juicy')) return im;
-  const view = hairView(key); if (!view) return im;
-  const av = view === 'bdiag' ? 'back' : view;                  // half turned away: his hair from behind
-  const L = HAIR_IMG[BEARDS[style].key][av], at = HAIR_ART[BEARDS[style].key][av];
-  if (!L.complete || !L.naturalWidth) return im;
-  let cache = BEARD_ART.get(im); if (!cache) BEARD_ART.set(im, cache = {});
-  if (cache[style] !== undefined) return cache[style] || im;
+// where his head is in frame im: which way it faces, its size (s) and where (ox, oy) against his run frame
+function hairFit(im, key, ch) {
+  if (!im || !im.naturalWidth || !ch || !ch.startsWith('juicy')) return null;
+  const view = hairView(key); if (!view) return null;
+  const fit = HAIR_FIT[im.__fit];
+  if (fit) { let [s, ox, oy] = fit; if (Math.abs(s - 1) < 0.05) s = 1;   // near enough his size: kept on his pixel grid
+    if (s === 1) { ox = Math.round(ox); oy = Math.round(oy); }
+    return { view, s, ox, oy }; }
+  if (im.__fit || view === 'back' || view === 'bdiag') return null;   // his head's too changed in this one to find (a throw, a pickup)
+  const ref = hairRef(view); if (!ref) return null;             // a frame put together as he's drawn (carrying her): by his sunglasses
   const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.drawImage(im, 0, 0);
-  const id = g.getImageData(0, 0, w, h), d = id.data;
-  let s = 1, ox, oy; const fit = HAIR_FIT[im.__fit];
-  if (fit) { [s, ox, oy] = fit; if (Math.abs(s - 1) < 0.05) s = 1; }   // near enough his size: kept on his pixel grid
-  else if (im.__fit) { cache[style] = null; return im; }        // his head's too changed in this one to find (a throw, a pickup)
-  else {                                                        // a frame put together as he's drawn (carrying her): by his sunglasses
-    const ref = view !== 'back' && view !== 'bdiag' && hairRef(view), A = ref && hairAnchor(d, w, h);
-    if (!A) { cache[style] = null; return im; }
-    ox = A.x - ref.x; oy = A.y - ref.y;
-  }
-  // his old hair out, over his head
-  // (a little wider over the top, and the soft see-through edge of it too, or a ring of it shows round the new one)
-  const [hx, t0, t1, hw] = HAIR_HEAD[view], hy = (t0 + t1) / 2;
-  for (let y = Math.max(0, Math.floor(oy + (t0 - 3) * s)); y <= Math.min(h - 1, Math.ceil(oy + (t1 + 1) * s)); y++)
-    for (let x = Math.max(0, Math.floor(ox + (hx - hw - 3) * s)); x <= Math.min(w - 1, Math.ceil(ox + (hx + hw + 3) * s)); x++) {
-      const ry = (y + 0.5 - oy) / s - hy, grow = ry < 0 ? 2.5 : 1, u = ((x + 0.5 - ox) / s - hx) / (hw + grow), v = ry / ((t1 - t0) / 2 + grow), o = (y * w + x) * 4;
-      if (view === 'bdiag') continue;                             // (half turned: only what the new hair covers, below, so his ear and glasses stay whole)
-      if (u * u + v * v <= 1 && (hairLike(d, o) || (ry < 0 && d[o + 3] < 200) || (Math.max(d[o], d[o + 1], d[o + 2]) < 125 && d[o + 1] < d[o] + 10))) d[o + 3] = 0;   // any dark but his shirt's (his outline's a cool purple)
-    }
-  if (view === 'bdiag') {                                       // from behind, half turned: his head's a little further round
-    ox += 3 * s;
-    const m = document.createElement('canvas'); m.width = w; m.height = h; const mg = m.getContext('2d');
-    mg.drawImage(L, ox + at[0] * s, oy + at[1] * s, L.naturalWidth * s, L.naturalHeight * s);
-    const md = mg.getImageData(0, 0, w, h).data;
+  const A = hairAnchor(g.getImageData(0, 0, w, h).data, w, h); if (!A) return null;
+  return { view, s: 1, ox: A.x - ref.x, oy: A.y - ref.y };
+}
+// the part of the frame his hair can reach (his head, and long hair past it), in the frame's own pixels
+function hairBottom(F, h) { return Math.min(h, Math.ceil(F.oy + (HAIR_HEAD[F.view][2] + 18) * F.s)); }
+function hairBox(F, w, h) {
+  const [hx, , , hw] = HAIR_HEAD[F.view], sh = F.view === 'bdiag' ? 3 : 0;
+  return [Math.max(0, Math.floor(F.ox + (hx + sh - hw - 7) * F.s)), 0, Math.min(w, Math.ceil(F.ox + (hx + sh + hw + 7) * F.s)), hairBottom(F, h)];
+}
+// style's head over his in g, a canvas holding his frame blown up S times: his old hair out, the new one on
+function hairPaint(g, W, H, S, F, style) {
+  const av = F.view === 'bdiag' ? 'back' : F.view;              // half turned away: his hair from behind
+  const L = HAIR_IMG[BEARDS[style].key][av], at = HAIR_ART[BEARDS[style].key][av];
+  const { view, s } = F; let { ox, oy } = F;
+  const [bx0, , bx1, by1] = hairBox(F, W / S, H / S), X0 = Math.floor(bx0 * S), X1 = Math.min(W, Math.ceil(bx1 * S)), y1 = Math.min(H, Math.ceil(by1 * S)), RW = X1 - X0;
+  if (RW <= 0 || y1 <= 0) return;
+  const id = g.getImageData(X0, 0, RW, y1), d = id.data;   // only round his head: quicker
+  // his old hair out, over his head (a little wider over the top, and the soft see-through edge of it too, or
+  // a ring of it shows round the new one). Half turned, only what the new hair covers, so his ear and glasses stay whole.
+  if (view !== 'bdiag') {
+    const [hx, t0, t1, hw] = HAIR_HEAD[view], hy = (t0 + t1) / 2;
+    for (let y = Math.max(0, Math.floor((oy + (t0 - 3) * s) * S)); y < Math.min(y1, Math.ceil((oy + (t1 + 1) * s) * S)); y++)
+      for (let x = Math.max(X0, Math.floor((ox + (hx - hw - 3) * s) * S)); x < Math.min(X1, Math.ceil((ox + (hx + hw + 3) * s) * S)); x++) {
+        const ry = ((y + 0.5) / S - oy) / s - hy, grow = ry < 0 ? 2.5 : 1, u = (((x + 0.5) / S - ox) / s - hx) / (hw + grow), v = ry / ((t1 - t0) / 2 + grow), o = (y * RW + x - X0) * 4;
+        if (u * u + v * v <= 1 && (hairLike(d, o) || (ry < 0 && d[o + 3] < 200) || (Math.max(d[o], d[o + 1], d[o + 2]) < 125 && d[o + 1] < d[o] + 10))) d[o + 3] = 0;   // any dark but his shirt's (his outline's a cool purple)
+      }
+  } else ox += 3 * s;                                           // from behind, half turned: his head's a little further round
+  const dx = (ox + at[0] * s) * S, dy = (oy + at[1] * s) * S, dw = L.naturalWidth * s * S, dh = L.naturalHeight * s * S;
+  if (view === 'bdiag') {
+    const m = document.createElement('canvas'); m.width = RW; m.height = y1; const mg = m.getContext('2d');
+    mg.imageSmoothingEnabled = s < 0.8; mg.drawImage(L, dx - X0, dy, dw, dh);
+    const md = mg.getImageData(0, 0, RW, y1).data;
     for (let i = 3; i < md.length; i += 4) if (md[i] > 0 && hairLike(d, i - 3)) d[i] = 0;
   }
-  g.putImageData(id, 0, 0);
+  g.putImageData(id, X0, 0);
+  g.save(); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.filter = 'none';   // (a printed frame's left in its shading blend)
   g.imageSmoothingEnabled = s < 0.8;                            // shrunk, it's blended down like the rest of that set
-  if (s === 1) { ox = Math.round(ox); oy = Math.round(oy); }   // on his pixel grid
-  g.drawImage(L, ox + at[0] * s, oy + at[1] * s, L.naturalWidth * s, L.naturalHeight * s);
+  g.drawImage(L, dx, dy, dw, dh);
+  g.restore();
+}
+function hairReady(style) {                                     // the art for style has loaded
+  return Object.values(HAIR_IMG[BEARDS[style].key] || {}).every(i => i.complete && i.naturalWidth);
+}
+function hairFrame(im, style, key, ch) {                        // im wearing style (an index into BEARDS), or im itself
+  if (!style || !im || !im.naturalWidth || !hairReady(style)) return im;
+  let cache = BEARD_ART.get(im); if (!cache) BEARD_ART.set(im, cache = {});
+  if (cache[style] !== undefined) return cache[style] || im;
+  const F = hairFit(im, key, ch); if (!F) { cache[style] = null; return im; }
+  const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  hairPaint(g, w, h, 1, F, style);
   Object.defineProperty(c, 'naturalWidth', { value: w }); Object.defineProperty(c, 'naturalHeight', { value: h }); Object.defineProperty(c, 'complete', { value: true });
   cache[style] = c;
   return c;
 }
+// b277: wearing a shirt print, changing hair used to print the picture on every frame of his again (a second
+// or more on a phone). Now each frame is printed once and kept (till the picture changes), and a change of hair
+// only redoes his head on it: his untouched head is put back, and the new hair painted over it.
+let shirtSerial = 0;
+function printKey(isBack, hi) {
+  const id = a => a ? (a.__sid || (a.__sid = ++shirtSerial)) : 0;
+  return [id(SHIRT.art), id(SHIRT.artBack), JSON.stringify(SHIRT.place), JSON.stringify(SHIRT.placeBack), SHIRT.smooth, isBack, hi].join('|');
+}
+function printedWithHair(im, key, ch, isBack, hi, style) {
+  const pk = printKey(isBack, hi);
+  let pr = im.__printed;
+  if (!pr || pr.k !== pk) {
+    pr = im.__printed = { k: pk, c: shirtPrinted(im, isBack, hi), style: 0, F: hairFit(im, key, ch) };
+    if (pr.c && pr.F) HEAD_KEEP.push([im, pr]);                   // his head kept off it in the background, ready for a change of hair
+  }
+  if (!pr.c) return hairFrame(im, style, key, ch);              // no shirt in this one
+  if (!style || !hairReady(style)) style = 0;
+  if (pr.style !== style && pr.F) {
+    for (const cv of [pr.c, pr.c.__mir]) {
+      if (!cv) continue;
+      const S = cv.width / im.naturalWidth, g = cv.getContext('2d');
+      keepHead(im, pr, cv); if (!cv.__head) continue;
+      g.putImageData(cv.__head.d, cv.__head.x, 0);              // his own head back
+      if (style) hairPaint(g, cv.width, cv.height, S, pr.F, style);
+      delete cv._headTop; delete cv._pixels;                    // (worked out from the old pixels)
+    }
+  }
+  pr.style = style;
+  return pr.c;
+}
+// Reading a printed frame back the first time is what's slow (the printing itself only happens then), so it's
+// done a few frames at a time while nothing else is going on, not all at once when you change your hair.
+const HEAD_KEEP = [];
+function keepHead(im, pr, cv) {
+  if (cv.__head || pr.style) return;                            // (only ever off his own head, before any hair's on it)
+  const S = cv.width / im.naturalWidth, [x0, y0, x1, y1] = hairBox(pr.F, im.naturalWidth, im.naturalHeight);
+  const X0 = Math.floor(x0 * S), X1 = Math.min(cv.width, Math.ceil(x1 * S)), Y1 = Math.min(cv.height, Math.ceil(y1 * S));
+  if (X1 > X0 && Y1 > 0) cv.__head = { x: X0, d: cv.getContext('2d').getImageData(X0, 0, X1 - X0, Y1) };
+}
+(function keepHeads() {
+  const t0 = performance.now();
+  while (HEAD_KEEP.length && performance.now() - t0 < 6) {
+    const [im, pr] = HEAD_KEEP.shift();
+    if (im.__printed === pr) for (const cv of [pr.c, pr.c.__mir]) if (cv) keepHead(im, pr, cv);
+  }
+  setTimeout(keepHeads, HEAD_KEEP.length ? 30 : 400);
+})();
 function beardOf(ch) { return CH_STYLE[ch] || 0; }
 function ensureLooks(w) {                                       // once a frame: anyone whose hair changed gets their art redone
   for (const p of (w && w.players) || []) {
@@ -1362,10 +1433,9 @@ function applyShirtArt(only) {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => {
       if (!im.naturalWidth) { if (style || printing) waiting++; return im; }
-      const b = hairFrame(im, style, key, ch);                          // b276: his hair, then the shirt print over that
-      if (!printing) return b;
+      if (!printing) return hairFrame(im, style, key, ch);              // b276: his hair
       const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press || holder === LEG_LAYER.jared;   // the camera zooms in on these, so print them finer
-      return shirtPrinted(b, backKey(key), hi) || b; });
+      return printedWithHair(im, key, ch, backKey(key), hi, style); });   // b277: the print, kept, with his hair on it
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
   if (waiting) setTimeout(() => applyShirtArt(only), 400);            // some of the art still loading: go round again when it's in
@@ -1697,6 +1767,7 @@ let mirrorLook = false, mirrorK = 0, mirrorAt = null;           // mirrorAt: whe
 // b272: looking in it, left and right turn you round on the spot (so you can see the back of your shirt);
 // mirrorTurn is the way you're facing, as an angle, on your screen only. Down (or E) steps away.
 let mirrorTurn = -Math.PI / 2;
+let mirrorGoal = null;                                         // b277: where the arrow buttons are turning you to
 function mirrorNear(p) { return !!p && p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed && T.loungeFloor && Math.abs(p.x - MIRROR.x) < 24 && p.y > MIRROR.y && p.y < MIRROR.y + 40; }
 function mirrorTryLook() {
   const v = net.role === 'client' ? net.view : world;
@@ -1704,7 +1775,7 @@ function mirrorTryLook() {
   if (mirrorLook) { mirrorLook = false; return true; }
   const me = localMe();
   if (!mirrorNear(me)) return false;
-  mirrorLook = true; mirrorAt = { x: me.x, y: me.y }; mirrorTurn = -Math.PI / 2;   // facing the glass
+  mirrorLook = true; mirrorAt = { x: me.x, y: me.y }; mirrorTurn = -Math.PI / 2; mirrorGoal = null;   // facing the glass
   return true;
 }
 function mirrorStep(w, me, dt) {                               // once per frame, from camFollow
@@ -1713,7 +1784,11 @@ function mirrorStep(w, me, dt) {                               // once per frame
     let turn = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
     if (moveStick.active && Math.abs(moveStick.dx) > 0.25) turn = moveStick.dx;
     if (g && Math.abs(g.axes[0] || 0) > 0.3) turn = g.axes[0];
-    mirrorTurn += turn * 3.2 * dt;
+    if (turn) { mirrorTurn += turn * 3.2 * dt; mirrorGoal = null; }
+    else if (mirrorGoal !== null) {                               // an arrow tapped: round an eighth of a turn
+      const left = mirrorGoal - mirrorTurn, step = 6 * dt;
+      if (Math.abs(left) <= step) { mirrorTurn = mirrorGoal; mirrorGoal = null; } else mirrorTurn += Math.sign(left) * step;
+    }
   }
   if (mirrorLook && (w.started || w.over || !mirrorNear(me) || Math.hypot(me.x - mirrorAt.x, me.y - mirrorAt.y) > 3)) mirrorLook = false;
   mirrorK = Math.max(0, Math.min(1, mirrorK + (mirrorLook ? dt : -dt) * 3));
@@ -1723,7 +1798,24 @@ function hairButton() {                                        // b274: beside B
   if (!mirrorLook || mirrorK < 0.8) return null;
   return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'HAIR' };
 }
+// b277: arrows either side of the glass, to turn round with a tap
+function mirrorArrows() {
+  if (!mirrorLook || mirrorK < 0.8) return [];
+  return [-1, 1].map(d => ({ x: ARENA.w / 2 + d * 168, y: ARENA.h / 2 - 50, r: 26, d }));
+}
+function mirrorSpin(d) { mirrorGoal = (mirrorGoal === null ? mirrorTurn : mirrorGoal) + d * Math.PI / 4; }
+function drawMirrorArrows() {
+  for (const a of mirrorArrows()) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(40,24,16,0.85)'; ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f6d17a'; ctx.beginPath();                    // a fat arrowhead, pointing the way you'll turn
+    ctx.moveTo(a.x + a.d * 11, a.y); ctx.lineTo(a.x - a.d * 7, a.y - 12); ctx.lineTo(a.x - a.d * 7, a.y + 12); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
 function drawHairButton() {
+  drawMirrorArrows();
   const b = hairButton(); if (!b) return;
   ctx.save();
   ctx.fillStyle = 'rgba(40,24,16,0.85)'; ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2;
@@ -1736,7 +1828,7 @@ function drawHairButton() {
 function drawMirrorHint() {                                     // b272: how to turn round, and how to leave
   if (!mirrorLook || mirrorK < 0.8) return;
   const touch = touchSeen || ('ontouchstart' in window);
-  const tip = touch ? 'drag left or right to turn round  ·  HAIR to change it  ·  BACK to step away' : 'A / D: turn round  ·  F: hair  ·  S or E: step away';
+  const tip = touch ? 'arrows (or drag) to turn round  ·  HAIR to change it  ·  BACK to step away' : 'A / D or the arrows: turn round  ·  F: hair  ·  S or E: step away';
   ctx.save(); ctx.globalAlpha = Math.min(1, (mirrorK - 0.8) * 5);
   ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(tip, ARENA.w / 2 + 1, ARENA.h - 81);
@@ -6537,6 +6629,7 @@ canvas.addEventListener('pointerdown', e => {
   // the carry button: a tap (or click) on it does what E does
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
   { const hb = hairButton(); if (hb && Math.hypot(pt.x - hb.x, pt.y - hb.y) < hb.r + 6) { setLocalBeard(LOCAL_BEARD + 1); e.preventDefault(); return; } }   // b274: next hair
+  { const ma = mirrorArrows().find(a => Math.hypot(pt.x - a.x, pt.y - a.y) < a.r + 8); if (ma) { mirrorSpin(ma.d); e.preventDefault(); return; } }   // b277: turn round
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
   { const ab = artButton();
