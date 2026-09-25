@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b274 — facial hair in the mirror';
+const BUILD = 'b275 — facial hair on old Jared too';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1245,13 +1245,50 @@ let LOCAL_BEARD = 0, GUEST_BEARD = 0;                          // yours, and (on
 try { LOCAL_BEARD = Math.max(0, Math.min(BEARDS.length - 1, +localStorage.getItem('smashed-beard') || 0)); } catch (_) {}
 const CH_STYLE = {};                                           // the style each character's art is wearing right now
 // where his face is in a frame: the glasses, the moustache (as a mask) and how far down his chin goes
-function faceOf(d, w, h) {
+// b275: old Jared has no sunglasses. His moustache is the lowest patch of warm dark brown on his head with his
+// skin both just above it and just below it (his hair has none above, his eyebrows and eyes sit higher up, and
+// his jaw has shirt below). The glasses box is made up from it, a little above, and the rest carries on as usual.
+const darkOld = (d, o) => d[o + 3] > 200 && Math.max(d[o], d[o + 1], d[o + 2]) < 90 && d[o + 2] <= d[o] + 16;   // his black hair: near-black, not blue
+function noGlassesAnchor(d, w, h) {
+  const dark = o => darkOld(d, o);
+  const skin = o => d[o + 3] > 200 && d[o] > 140 && d[o] > d[o + 1] + 25 && d[o + 1] > d[o + 2] - 5;
+  // his head: from the first row with skin in it (his forehead), as wide as the skin there, a fifth of him tall
+  let ys = -1, hx0 = 1e9, hx1 = -1;
+  for (let y = 0; y < h * 0.4 && ys < 0; y++) { let n = 0; for (let x = 0; x < w; x++) if (skin((y * w + x) * 4)) n++; if (n >= 3) ys = y; }
+  if (ys < 0) return null;
+  for (let y = ys; y < ys + 6; y++) for (let x = 0; x < w; x++) if (skin((y * w + x) * 4)) { if (x < hx0) hx0 = x; if (x > hx1) hx1 = x; }
+  const lim = Math.min(h, Math.floor(ys + h * 0.24)), seen = new Uint8Array(w * h); let best = null;
+  for (let y = ys + 2; y < lim; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (seen[i] || !dark(i * 4)) continue;
+    const st = [i], px = []; seen[i] = 1;
+    while (st.length) { const j = st.pop(); px.push(j); const jx = j % w, jy = (j / w) | 0;
+      for (const k of [jx > 0 ? j - 1 : -1, jx < w - 1 ? j + 1 : -1, jy > ys + 2 ? j - w : -1, jy < lim - 1 ? j + w : -1]) if (k >= 0 && !seen[k] && dark(k * 4)) { seen[k] = 1; st.push(k); } }
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1; for (const j of px) { const jx = j % w, jy = (j / w) | 0; if (jx < x0) x0 = jx; if (jx > x1) x1 = jx; if (jy < y0) y0 = jy; if (jy > y1) y1 = jy; }
+    if (x1 - x0 < 3 || y1 - y0 > 5 || px.length < 5) continue;
+    let ok = 0;
+    for (let x = x0; x <= x1; x++) {
+      let up = false, dn = false;
+      for (let k = 1; k <= 3; k++) { if (y0 - k >= 0 && skin(((y0 - k) * w + x) * 4)) up = true; if (y1 + k < h && skin(((y1 + k) * w + x) * 4)) dn = true; }
+      if (up && dn) ok++;
+    }
+    if (ok < (x1 - x0 + 1) * 0.6 || (x0 + x1) / 2 < hx0 - 3 || (x0 + x1) / 2 > hx1 + 3) continue;
+    if (!best || y0 > best.y0) best = { x0, x1, y0, y1 };
+  }
+  if (!best) return null;
+  const gh = 2;
+  return { gx0: best.x0 - 1, gx1: best.x1 + 1, gy1: best.y0 - 2, gy0: best.y0 - 2 - gh };
+}
+function faceOf(d, w, h, noGlasses) {
   // the glasses: the topmost patch of bright blue (his shirt and a blaster's glow have blue in them too, lower down)
   const blue = i => { const o = i * 4; return d[o + 3] > 200 && d[o + 2] > 170 && d[o] < 90 && d[o + 2] > d[o + 1] + 10; };
   let first = -1;
-  for (let i = 0; i < w * Math.floor(h * 0.6) && first < 0; i++) if (blue(i)) first = i;
-  if (first < 0) return null;
+  if (!noGlasses) for (let i = 0; i < w * Math.floor(h * 0.6) && first < 0; i++) if (blue(i)) first = i;   // (old Jared wears none: his tie-dye's blue isn't glasses)
   let gx0 = 1e9, gx1 = -1, gy0 = 1e9, gy1 = -1, n = 0;
+  if (first < 0) {
+    const g = noGlasses && noGlassesAnchor(d, w, h); if (!g) return null;
+    ({ gx0, gx1, gy0, gy1 } = g); n = 99; first = -2;
+  }
+  if (first >= 0)
   { const seen = new Uint8Array(w * h), st = [first]; seen[first] = 1;
     while (st.length) { const j = st.pop(), x = j % w, y = (j / w) | 0; n++;
       if (x < gx0) gx0 = x; if (x > gx1) gx1 = x; if (y < gy0) gy0 = y; if (y > gy1) gy1 = y;
@@ -1261,7 +1298,7 @@ function faceOf(d, w, h) {
   if (n < 6 || gy1 - gy0 > h * 0.12) return null;
   const gh = gy1 - gy0 + 1, ya = gy1 + 1, yb = Math.min(h - 1, gy1 + Math.max(8, Math.round(gh * 2.5)));
   const pad = Math.max(3, Math.round((gx1 - gx0) * 0.4)), xa = Math.max(0, gx0 - pad), xb = Math.min(w - 1, gx1 + pad);   // turned, the moustache pokes out past the glasses
-  const dark = o => d[o + 3] > 200 && Math.max(d[o], d[o + 1], d[o + 2]) < 115 && d[o] > d[o + 2] + 2 && d[o] >= d[o + 1] - 5;   // warm: Gothica's hair is cooler
+  const dark = noGlasses ? (o => darkOld(d, o)) : (o => d[o + 3] > 200 && Math.max(d[o], d[o + 1], d[o + 2]) < 115 && d[o] > d[o + 2] + 2 && d[o] >= d[o + 1] - 5);   // warm: Gothica's hair is cooler (old Jared's is black)
   // the moustache: the biggest patch of dark brown under the glasses, near their middle
   const seen = new Uint8Array(w * h); let best = null;
   for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
@@ -1310,14 +1347,14 @@ function faceOf(d, w, h) {
   return { gx0, gx1, gy0, gy1, M, Mx, Fm, mx0: best.x0, mx1: best.x1, mTop: best.y0, mBot: best.y1, mh, chin, fx0: lx, fx1: rx, skin, hair: [r / k, g / k, b / k] };
 }
 const BEARD_ART = new WeakMap();
-function beardFrame(im, style) {                                // im wearing style (an index into BEARDS), or im itself
+function beardFrame(im, style, noGlasses) {                     // im wearing style (an index into BEARDS), or im itself
   if (!style || !im || !im.naturalWidth) return im;
   let cache = BEARD_ART.get(im); if (!cache) BEARD_ART.set(im, cache = {});
   if (cache[style] !== undefined) return cache[style] || im;
   const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); g.drawImage(im, 0, 0);
   const id = g.getImageData(0, 0, w, h), d = id.data, src = new Uint8ClampedArray(d);
-  const F = faceOf(src, w, h);
+  const F = faceOf(src, w, h, noGlasses);
   if (!F) { cache[style] = null; return im; }
   const key = BEARDS[style].key, { M, Mx, Fm, mx0, mx1, mTop, mBot, mh, chin, fx0, fx1, skin, hair } = F, mw = mx1 - mx0 + 1;
   const at = (x, y) => (y * w + x) * 4, rnd = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) % 1000 / 1000;
@@ -1413,7 +1450,7 @@ function applyShirtArt(only) {
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => {
       if (!im.naturalWidth) { if (style || printing) waiting++; return im; }
-      const b = beardFrame(im, style);                                  // his facial hair, then the shirt print over that
+      const b = beardFrame(im, style, ch === 'jared');                  // his facial hair (old Jared's found without glasses), then the shirt print over that
       if (!printing) return b;
       const hi = holder === SIT_ART || holder === SIT_IDLE || holder === GYM_ART.press || holder === LEG_ART.press || holder === LEG_LAYER.jared;   // the camera zooms in on these, so print them finer
       return shirtPrinted(b, backKey(key), hi) || b; });
@@ -8076,7 +8113,7 @@ function drawJared(w, p) {
     const squat = an.kind === 'pick' ? an.t < 0.2 : an.t >= 0.12;
     if (squat) { cfK = 2; cim = CARRY_FRAMES[2]; }
   }
-  if (styleC && cim && cim.naturalWidth) cim = beardFrame(cim, styleC);
+  if (styleC && cim && cim.naturalWidth) cim = beardFrame(cim, styleC, p.ch === 'jared');
   const carrying = !p.npc && NPC_GOTH.carrier === p.id && !w.started && cim.complete && cim.naturalWidth;
   if (carrying) {
     pose = { img: 'carry', flip: NPC_GOTH.face };
