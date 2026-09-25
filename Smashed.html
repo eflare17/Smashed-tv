@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b289 — batter walk: planted feet, bending knees';
+const BUILD = 'b290 — every enemy walks with planted feet';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -562,9 +562,9 @@ const WEAPONS = {
 // Three enemies that want to be fought differently: the grunt is the baseline,
 // the swarmer punishes standing still, the brute punishes ignoring it.
 const ETYPE = [
-  { key: 'grunt',   speed: 1.00, hp: 1.00, r: 1.00, dmg: 1, mass: 1.0, colour: '#6fd3a0', coins: 1 },
-  { key: 'swarmer', speed: 1.85, hp: 0.34, r: 0.60, dmg: 1, mass: 0.45, colour: '#e8c34f', coins: 1 },
-  { key: 'brute',   speed: 0.52, hp: 2.80, r: 1.60, dmg: 2, mass: 2.8, colour: '#b06bd8', coins: 5 },
+  { key: 'grunt', facesRight: true,   speed: 1.00, hp: 1.00, r: 1.00, dmg: 1, mass: 1.0, colour: '#6fd3a0', coins: 1 },
+  { key: 'swarmer', facesRight: true, speed: 1.85, hp: 0.34, r: 0.60, dmg: 1, mass: 0.45, colour: '#e8c34f', coins: 1 },
+  { key: 'brute', facesRight: true,   speed: 0.52, hp: 2.80, r: 1.60, dmg: 2, mass: 2.8, colour: '#b06bd8', coins: 5 },
   // the batter doesn't hurt on touch — only the swing does, and it's telegraphed
   { key: 'batter',  speed: 1.10, hp: 1.35, r: 1.00, dmg: 2, mass: 1.1, colour: '#d94a4a', melee: true, facesRight: true, coins: 3 }
 ];
@@ -6508,7 +6508,7 @@ function snapshot(w) {
                            Math.round(e.vx), Math.round(e.vy),
                            e.hp, Math.round(e.spawn * 100), e.flash > 0 ? 1 : 0, e.t,
                            e.st || 0, Math.round((e.sdx || 0) * 100),
-                           Math.round(((e.odo || 0) % Math.max(1,T.enemyStride*4))*100)/100, Math.round((e.stT || 0) * 100),
+                           Math.round((e.odo || 0)*100)/100, Math.round((e.stT || 0) * 100),
                            Math.round((e.stun || 0) * 100)]),
     b: w.bullets.map(b => [Math.round(b.x), Math.round(b.y),
                            Math.round(b.vx), Math.round(b.vy), b.owner, b.size || 0,
@@ -7155,6 +7155,75 @@ function drawBatterRig(set,pose,odo,height) {
   return true;
 }
 
+const ENEMY_WALK_RIGS = {
+  grunt:{stride:12,lift:9,bob:.7,width:9,base:'#247235',light:'#4f9b55',dark:'#174425',boot:'#303631',
+    views:{front:[29,45],back:[30,46],side:[32,44],diag:[33,45]}},
+  swarmer:{stride:16,lift:13,bob:1,width:6,base:'#cc9f16',light:'#f4cc38',dark:'#80621a',boot:'#38352c',
+    views:{front:[29,46],back:[30,47],side:[39,45],diag:[34,47]}},
+  brute:{stride:8,lift:5,bob:.45,width:12,base:'#6b3aa6',light:'#9b63d2',dark:'#3d2361',boot:'#2a1f3e',   // (b290: matched to his armour, the first pass came out washed out)
+    views:{front:[35,53],back:[29,54],side:[30,53],diag:[34,53]}}
+};
+const ENEMY_WALK_CACHE = new Map();
+const ENEMY_UPPER_CACHE = new WeakMap();
+function enemyRigFoot(phase,cfg) {
+  phase=((phase%1)+1)%1;
+  if(phase<.6)return {x:cfg.stride*(1-2*phase/.6),lift:0};
+  const t=(phase-.6)/.4;
+  return {x:cfg.stride*(-1+2*t*t*(3-2*t)),lift:cfg.lift*Math.sin(Math.PI*t)};
+}
+function enemyRigUpper(im,cut) {
+  let cv=ENEMY_UPPER_CACHE.get(im);if(cv)return cv;
+  cv=document.createElement('canvas');cv.width=im.naturalWidth;cv.height=im.naturalHeight;
+  const g=cv.getContext('2d');g.drawImage(im,0,0);g.clearRect(0,cut+3,cv.width,cv.height);
+  ENEMY_UPPER_CACHE.set(im,cv);return cv;
+}
+function enemyRigLeg(g,hip,foot,view,cfg,near) {
+  const profile=view==='side', diagonal=view==='diag';
+  const ankle={x:hip.x+(profile?foot.x:diagonal?foot.x*.65:foot.x*.06),
+    y:-4-foot.lift+(profile?0:foot.x*(diagonal?.13:.18))};
+  const length=(80-cfg.cut-4)*.58;
+  const knee=batterKnee(hip,ankle,length,profile||diagonal?1:(near?1:-1)*.3);
+  function segment(a,b,width,shin) {
+    g.lineCap='round';g.lineJoin='round';g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);
+    g.strokeStyle='#17201d';g.lineWidth=width+2;g.stroke();
+    g.strokeStyle=near?cfg.base:cfg.dark;g.lineWidth=width;g.stroke();
+    g.beginPath();g.moveTo(a.x-1,a.y);g.lineTo(b.x-1,b.y);
+    g.strokeStyle=near?cfg.light:cfg.base;g.lineWidth=2;g.stroke();
+    if(cfg.armour) {
+      g.save();g.translate((a.x+b.x)/2,(a.y+b.y)/2);g.rotate(Math.atan2(b.y-a.y,b.x-a.x)-Math.PI/2);
+      g.fillStyle=near?cfg.light:cfg.base;g.fillRect(-width*.4,-(shin?4:5),width*.8,shin?8:10);
+      g.strokeStyle=cfg.dark;g.lineWidth=1;g.strokeRect(-width*.4,-(shin?4:5),width*.8,shin?8:10);g.restore();
+    }
+  }
+  segment(hip,knee,cfg.width,false);segment(knee,ankle,cfg.width*.78,true);
+  g.save();g.translate(ankle.x,ankle.y);
+  g.fillStyle='#171b1c';g.fillRect(-cfg.width*.43,-3,cfg.width*.85+(profile||diagonal?5:0),7);
+  g.fillStyle=cfg.boot;g.fillRect(-cfg.width*.33,-2,cfg.width*.65+(profile||diagonal?4:0),5);
+  g.fillStyle=near?'#7b7b71':'#51564f';g.fillRect(-cfg.width*.33,2,cfg.width*.65+(profile||diagonal?4:0),1);g.restore();
+}
+function drawOtherEnemyRig(set,key,pose,odo,height) {
+  const base=ENEMY_WALK_RIGS[key];if(!base||!base.views[pose])return false;
+  const im=Array.isArray(set[pose])?set[pose][0]:set[pose];
+  if(!im||!im.complete||!im.naturalWidth)return false;
+  const view=key==='brute'&&pose==='back'?'side':pose;
+  const [anchor,cut]=base.views[pose],scale=height/80;
+  const travel=base.stride*2/.6*scale*Math.max(.4,T.enemyStride/10);
+  const phase=(((odo||0)%travel)+travel)%travel/travel;
+  const frame=Math.floor(phase*96),cacheKey=key+':'+pose+':'+frame;
+  let cv=ENEMY_WALK_CACHE.get(cacheKey);
+  if(!cv) {
+    cv=document.createElement('canvas');cv.width=128;cv.height=112;
+    const g=cv.getContext('2d');g.imageSmoothingEnabled=false;g.translate(64,96);
+    const p=frame/96,rise=-base.bob*(1-Math.cos(p*Math.PI*4));
+    const cfg={...base,cut,armour:key==='brute'},spread=view==='side'?2:base.width*.58;
+    enemyRigLeg(g,{x:-spread,y:cut-80+rise},enemyRigFoot(p+.5,base),view,cfg,false);
+    enemyRigLeg(g,{x:spread,y:cut-80+rise},enemyRigFoot(p,base),view,cfg,true);
+    g.drawImage(enemyRigUpper(im,cut),-anchor,-80+rise);
+    ENEMY_WALK_CACHE.set(cacheKey,cv);
+  }
+  ctx.drawImage(cv,-64*scale,-96*scale,cv.width*scale,cv.height*scale);return true;
+}
+
 const ENEMY_ANCHOR = { batter: { swing: 0.401 } };
 const ENEMY_POSE_SCALE = { batter: { swing: 401 / 325 } };   // wind-up bat is overhead
 // Per-pose size corrections. Sheets come back with the character sitting at
@@ -7224,7 +7293,7 @@ function enemyPose(e) {
   if (sp < 12) return { img: 'idle', flip: false };
   let oct = Math.round(Math.atan2(e.vy, e.vx) / (Math.PI / 4));
   if (oct < 0) oct += 8;
-  // the first three sheets were drawn facing left; the batter's faces right
+  // All current side and diagonal source sprites face right.
   const R = !!(ETYPE[e.t] && ETYPE[e.t].facesRight);
   // Batter diagonal art repeats a split-legged contact pose: use the
   // complete eight-frame side cycle so the feet actually pass each other.
@@ -9554,6 +9623,7 @@ function renderBase(w, hudRight) {
       const h = r * T.enemyScale * pscale;
       const dw = h * (eim.naturalWidth / eim.naturalHeight);
       const running = (e.st === 0 || e.st === undefined);
+      const otherRig = !!(ENEMY_WALK_RIGS[ty.key] && ENEMY_WALK_RIGS[ty.key].views[pose.img]);
       const walkLayout = ty.key === 'batter' && BATTER_WALK[pose.img];
       const walkIndex = Array.isArray(set[pose.img]) ? cycleIndex(set[pose.img],e.odo) : 0;
       const walkGeom = walkLayout ? batterWalkGeometry(pose.img,walkIndex,eim,h) : null;
@@ -9570,11 +9640,13 @@ function renderBase(w, hudRight) {
       ctx.save();
       if (e.flash > 0) ctx.filter = 'brightness(2.6) saturate(0.2)';
       ctx.translate(e.x, footY);
-      ctx.rotate(walkLayout ? 0 : lean);
+      ctx.rotate(walkLayout || otherRig ? 0 : lean);
       if (pose.flip) ctx.scale(-1, 1);
       ctx.imageSmoothingEnabled = false;
       const anchor = (ENEMY_ANCHOR[ty.key] && ENEMY_ANCHOR[ty.key][pose.img]) || 0.5;
-      if (walkGeom) {
+      if (otherRig && drawOtherEnemyRig(set,ty.key,pose.img,e.odo,h)) {
+        // The rig draws its own upper body and grounded feet.
+      } else if (walkGeom) {
         // Keep fractional destination positions: rounding four separate values
         // introduced one-pixel jumps even during otherwise smooth movement.
         if (!drawBatterRig(set,pose.img,e.odo,h)) {
