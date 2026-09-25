@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b283 — smoother splash';
+const BUILD = 'b284 — new boots and legs on the dive board';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -2960,49 +2960,90 @@ function drawShroom(w) {
     g.restore();
   };
   // his legs and boots at the bottom of the screen: a step every metre or so, feet together when he stops
+  // b284: his legs and boots, drawn as pixel art at a proper size (the old ones were his tiny sprite's calf
+  // blown up into orange blocks, and one flat boot icon with a dark halo round it). Looking down: the boot's
+  // toe out ahead with the sole's rim round it, crossed laces, his grey cuff, then the shin coming back towards
+  // you: a highlight down the bone, the calf bulging on the outside, a kneecap, and his shorts' hem at the bottom.
+  const legCv = SHROOM.legCv || (SHROOM.legCv = document.createElement('canvas'));
+  const rgbOf = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const drawLeg = (g, ax, top, wd, side, lift, c, pal) => {
+    const pix = wd / 22, LW = 44, LH = Math.max(40, Math.ceil((CH - top) / pix) + 2);
+    if (legCv.width !== LW || legCv.height !== LH) { legCv.width = LW; legCv.height = LH; }
+    const lg = legCv.getContext('2d'), id = lg.createImageData(LW, LH), d = id.data;
+    const put = (x, y, col) => { x = Math.round(x); if (x < 0 || y < 0 || x >= LW || y >= LH) return; const o = (y * LW + x) * 4; d[o] = col[0]; d[o + 1] = col[1]; d[o + 2] = col[2]; d[o + 3] = 255; };
+    const cx = LW / 2, sk = rgbOf(c.skin), shade = (col, k) => col.map(v => Math.max(0, Math.min(255, v * k)));
+    const SKL = shade(sk, 1.18), SKM = sk, SKD = shade(sk, 0.78), SKDD = shade(sk, 0.6), LINE = rgbOf(c.line), SH = rgbOf(c.shorts), SHD = rgbOf(c.shortsD);
+    const BT = 31, legTop = BT - 4, legLen = LH - legTop;
+    for (let y = legTop; y < LH; y++) {                                   // the leg, from the ankle back to the bottom of the screen
+      const f = (y - legTop) / legLen, bulge = Math.sin(Math.min(1, f / 0.5) * Math.PI / 2);
+      const knee = Math.exp(-(((f - 0.7) / 0.09) ** 2)), thigh = Math.max(0, (f - 0.78) / 0.14);
+      const outer = 6.5 + 4.5 * bulge - 1.8 * knee * (f > 0.5) + 2.5 * thigh, inner = 5.5 + 2 * bulge - 0.6 * knee + 2 * thigh;   // (the calf swells on the outside)
+      const near = 1 + 0.55 * f;                                          // (nearer your eyes, so bigger: it opens out towards the knee)
+      const x0 = Math.round(cx - outer * near), x1 = Math.round(cx + inner * near);
+      if (f > 0.86) {                                                     // his shorts, over the top of the thigh
+        const hem = y === Math.ceil(legTop + legLen * 0.86) || y === Math.ceil(legTop + legLen * 0.86) + 1;
+        for (let x = x0 - 2; x <= x1 + 2; x++) put(x, y, x === x0 - 2 || x === x1 + 2 ? LINE : hem ? SHD : (x - x0) % 5 === 0 ? SHD : SH);
+        continue;
+      }
+      for (let x = x0; x <= x1; x++) {
+        const u = (x - x0) / Math.max(1, x1 - x0);
+        let col = u < 0.2 ? SKD : u > 0.86 ? SKD : (u > 0.46 && u < 0.62) ? SKL : SKM;       // shaded round, lit down the front of the shin
+        if (u < 0.08 && bulge > 0.6 && f < 0.7) col = SKDD;
+        if (knee > 0.35) { const kx = (x - (cx + 0.5)) / 3.6, ky = (f - 0.7) / 0.055; if (kx * kx + ky * ky < 1) col = kx * kx + ky * ky < 0.4 ? SKL : SKM;
+          else if (Math.abs(ky - 1.2) < 0.35 && Math.abs(kx) < 1.1) col = SKD; }                 // the kneecap, and the crease under it
+        put(x, y, x === x0 || x === x1 ? LINE : col);
+      }
+    }
+    const P = pal;                                                        // the boot: toe out ahead (the top of the picture)
+    const hwAt = y => y < 9 ? 9.5 * Math.sqrt(Math.max(0, 1 - ((9 - y) / 9.5) ** 2)) : y < 23 ? 10 - (y - 9) * 0.12 : 8.2;
+    for (let y = 1; y < BT; y++) {                                        // the sole's rim, just outside the upper round the toe and sides
+      if (y > 22) break; const hw = hwAt(y) + 1.1;
+      for (let x = Math.round(cx - hw); x <= Math.round(cx + hw - 1); x++) put(x, y - 1, P.G);
+    }
+    for (let y = 1; y < BT; y++) {
+      const hw = hwAt(y), x0 = Math.round(cx - hw), x1 = Math.round(cx + hw - 1);
+      for (let x = x0; x <= x1; x++) {
+        const u = (x - x0) / Math.max(1, x1 - x0); let col = u < 0.35 && u > 0.1 ? P.H : P.D;   // lit from the left
+        if (y >= 23) col = (y === 23 || y === BT - 1) ? P.K : ((x + y) % 3 ? P.G : P.g);          // his grey cuff
+        else if (y >= 2 && y <= 7) { const tx = (x - (cx - 1)) / 4, ty = (y - 4.5) / 2.2; if (tx * tx + ty * ty < 1) col = tx * tx + ty * ty < 0.35 ? P.W : P.L; }   // the toe cap's shine
+        else if (y >= 10 && y <= 21) {                                    // the tongue and the laces crossing it, eyelets either side
+          const lx = x - cx + 0.5;
+          if (Math.abs(lx) <= 3) col = P.E;
+          const r = (y - 10) % 4; if (Math.abs(lx) <= 3 && (Math.abs(lx - (r - 1.5) * 1.8) < 0.8 || Math.abs(lx + (r - 1.5) * 1.8) < 0.8)) col = P.W;
+          if ((Math.abs(lx) === 4.5 || Math.abs(lx) === 4) && r === 0) col = P.L;
+        }
+        if (x === x0 || x === x1 || y === 1) col = P.K;
+        put(x, y, col);
+      }
+    }
+    lg.putImageData(id, 0, 0);
+    // a soft shadow on the plank under the sole (it stays on the board while the foot swings through)
+    g.fillStyle = 'rgba(20,10,4,' + (0.32 * (1 - lift)).toFixed(2) + ')';
+    g.beginPath(); g.ellipse(ax + pix * 1.5 * side, top + lift * CH * 0.04 + pix * 14, pix * 10.5, pix * 11, 0, 0, Math.PI * 2); g.fill();   // (mostly under the boot: a sliver shows)
+    g.save(); g.imageSmoothingEnabled = false; g.translate(ax, top); if (side > 0) g.scale(-1, 1);   // the right leg is the left one mirrored
+    g.drawImage(legCv, -LW / 2 * pix, 0, LW * pix, LH * pix);
+    g.restore();
+  };
   const drawFeet = g => {
     const set = IMG[me.ch] || IMG.juicy || IMG.jared; let src = set && (set.front_run || set.front_a); if (Array.isArray(src)) src = src[0];
     if (!src || !src.complete || !src.naturalWidth) return;
     const c = legColours(src.__orig || src), moving = SHROOM.moveK || 0, ph = SHROOM.walkPh || 0;
-    // Juicy and Tyson get the pixel boot (their boots); anyone else keeps the drawn one
-    let art = NEW_ART.has(me.ch) && me.ch !== 'goth' && set.front_a; if (art && art.__orig) art = art.__orig;
-    if (art && (!art.complete || !art.naturalWidth)) art = null;
+    // Juicy and Tyson get their own boots' colours; anyone else, their sprite's
+    const own = NEW_ART.has(me.ch) && me.ch !== 'goth', bc = rgbOf(c.boot), sh = k => bc.map(v => Math.max(0, Math.min(255, v * k)));
+    const pal = own ? Object.fromEntries(Object.entries(BOOT_COL).map(([k, v]) => [k, rgbOf(v)]))
+                    : { K: rgbOf(c.line), D: bc, H: sh(1.4), L: sh(2.1), W: sh(2.8), E: sh(0.7), G: sh(1.6), g: sh(1.2) };
     g.save();
     for (const i of [0, 1]) {
-      const w = CW * 0.125, side = i ? 1 : -1;
+      const side = i ? 1 : -1;
       const sw = Math.sin(ph + i * Math.PI), p = 0.35 + (0.5 + 0.5 * sw - 0.35) * moving;   // how far forward this foot is
       const lift = Math.max(0, Math.cos(ph + i * Math.PI)) * moving;                       // off the board while it swings through
-      const fx = CW * 0.5 + side * CW * (0.075 - 0.012 * p), fy = CH * (1.0 - 0.17 * p) - lift * CH * 0.035;
-      const bw = w * (1 - 0.22 * p), bh = bw * 0.62;
-      if (art) {                                                            // b267: his boot seen from above, toe out ahead, shin down off the screen
-        const bc = bootCanvas(), wd = CW * 0.125 * (1 - 0.15 * p), k = wd / 18, bh = BOOT_SHIN * k * 1.25;
-        const ax = CW * 0.5 + side * CW * (0.085 - 0.012 * p), top = CH * (0.6 - 0.12 * p) - lift * CH * 0.04;
-        g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';               // its shadow on the plank
-        g.beginPath(); g.ellipse(ax, top + bh * 0.45 + lift * CH * 0.04, wd * 0.6, bh * 0.45, 0, 0, Math.PI * 2); g.fill();
-        g.save(); g.imageSmoothingEnabled = false;
-        g.translate(ax, top); if (side > 0) g.scale(-1, 1);                   // the right leg is the left one mirrored
-        // b268: his calf off his own art (not a stick): the standing frame's left calf, turned so the ankle
-        // meets the cuff and it swells out towards the knee at the bottom of the screen
-        const [cx0, cy0, cw, ch] = CALF_CROP, calfW = wd * 1.3, calfTop = bh - k * 1.5, calfH = CH - top - calfTop + 6;
-        g.save(); g.translate(0, calfTop + calfH); g.scale(1, -1);
-        g.drawImage(art, cx0, cy0, cw, ch, -calfW / 2, 0, calfW, calfH);
-        g.restore();
-        g.drawImage(bc, 0, 0, 18, BOOT_SHIN, -wd / 2, 0, wd, bh);              // the boot over it, its cuff hiding the join
-        g.restore();
-        continue;
-      }
-      g.fillStyle = 'rgba(20,10,4,' + (0.45 * (1 - lift)).toFixed(2) + ')';                 // its shadow on the plank
-      g.beginPath(); g.ellipse(fx, fy + bh * 0.5 + lift * CH * 0.035, bw * 0.55, bh * 0.35, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = c.skin; g.strokeStyle = c.line; g.lineWidth = Math.max(2, CW * 0.003);  // the shin, coming up from below the screen
-      g.beginPath(); g.moveTo(fx - bw * 0.36 + side * bw * 0.1, CH + 4); g.lineTo(fx - bw * 0.24, fy + bh * 0.05); g.lineTo(fx + bw * 0.24, fy + bh * 0.05); g.lineTo(fx + bw * 0.36 + side * bw * 0.1, CH + 4); g.closePath(); g.fill(); g.stroke();
-      g.fillStyle = c.skinD; g.fillRect(fx + side * bw * 0.12 - bw * 0.05, fy + bh * 0.2, bw * 0.1, CH - fy);
-      g.fillStyle = c.boot; g.beginPath(); g.roundRect(fx - bw / 2, fy - bh * 0.45, bw, bh, [bh * 0.5, bh * 0.5, bh * 0.2, bh * 0.2]); g.fill(); g.stroke();   // the boot, toe ahead
-      g.fillStyle = c.bootL; g.fillRect(fx - bw * 0.3, fy - bh * 0.32, bw * 0.6, Math.max(2, bh * 0.08));                // shine on the toe cap
-      g.fillStyle = 'rgba(255,255,255,0.55)'; for (let k = 0; k < 3; k++) g.fillRect(fx - bw * 0.14, fy - bh * 0.05 + k * bh * 0.12, bw * 0.28, Math.max(1, bh * 0.04));   // laces
-      g.fillStyle = c.line; g.fillRect(fx - bw / 2, fy + bh * 0.47, bw, Math.max(2, bh * 0.1));                            // sole
+      const wd = CW * 0.125 * (1 - 0.15 * p) * (1 + 0.06 * lift);
+      const ax = CW * 0.5 + side * CW * (0.085 - 0.012 * p), top = CH * (0.6 - 0.12 * p) - lift * CH * 0.04;
+      drawLeg(g, ax, top, wd, side, lift, c, pal);
     }
     g.restore();
   };
+
   // a gun flash when you shoot
   if (me.muzzle > 0) { const gx = VW / 2, gy = VH * 0.86, gr = vg.createRadialGradient(gx, gy, 4, gx, gy, VH * 0.3);
     gr.addColorStop(0, 'rgba(255,240,190,0.9)'); gr.addColorStop(1, 'rgba(255,140,40,0)'); vg.fillStyle = gr; vg.fillRect(0, 0, VW, VH); }

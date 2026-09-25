@@ -13,5 +13,6 @@
 ## From before
 - **Dive board walk**: b281 shows the drop (big pool and lawn far below, the board's shadow, calmer colours up
   there), a springy board and a head bob. Waiting on how it feels on the phone.
-- **Boots and legs on the dive board**: "much better, not perfect".
+- **Boots and legs on the dive board**: redrawn in b284 (proper pixel boots and shaped legs). Waiting on how it
+  looks on the phone.
 - **Carrying Gothica, shirt print flickered** on the phone: fix is in, not confirmed on the phone yet.
