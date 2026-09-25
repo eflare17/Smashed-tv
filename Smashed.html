@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b284 — new boots and legs on the dive board';
+const BUILD = 'b285 — hair arrows in the mirror';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1799,9 +1799,11 @@ function mirrorStep(w, me, dt) {                               // once per frame
   mirrorK = Math.max(0, Math.min(1, mirrorK + (mirrorLook ? dt : -dt) * 3));
 }
 function mirrorMe(p) { return mirrorK > 0 && !p.npc && p.id === (net.role === 'client' ? 1 : 0); }   // the one fading into the glass
-function hairButton() {                                        // b274: beside BACK, while you're looking in the mirror
-  if (!mirrorLook || mirrorK < 0.8) return null;
-  return { x: ARENA.w - 62 - 80, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label: 'HAIR' };
+// b285: ◀ ▶ either side of the hair's name, to go back and forth through the styles (was one HAIR button
+// that only went round one way)
+function hairArrows() {
+  if (!mirrorLook || mirrorK < 0.8) return [];
+  return [-1, 1].map(d => ({ x: ARENA.w / 2 + d * 118, y: ARENA.h - 111, r: 18, d }));
 }
 // b277: arrows either side of the glass, to turn round with a tap
 function mirrorArrows() {
@@ -1821,19 +1823,19 @@ function drawMirrorArrows() {
 }
 function drawHairButton() {
   drawMirrorArrows();
-  const b = hairButton(); if (!b) return;
-  ctx.save();
-  ctx.fillStyle = 'rgba(40,24,16,0.85)'; ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#f6d17a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.fillText(b.label, b.x, b.y - 5);
-  ctx.font = '9px ui-sans-serif, system-ui, sans-serif'; ctx.fillText((LOCAL_BEARD + 1) + ' of ' + BEARDS.length, b.x, b.y + 9);
-  ctx.restore();
+  for (const a of hairArrows()) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(40,24,16,0.85)'; ctx.strokeStyle = '#f6d17a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f6d17a'; ctx.beginPath();
+    ctx.moveTo(a.x + a.d * 7, a.y); ctx.lineTo(a.x - a.d * 5, a.y - 8); ctx.lineTo(a.x - a.d * 5, a.y + 8); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
 }
 function drawMirrorHint() {                                     // b272: how to turn round, and how to leave
   if (!mirrorLook || mirrorK < 0.8) return;
   const touch = touchSeen || ('ontouchstart' in window);
-  const tip = touch ? 'arrows (or drag) to turn round  ·  HAIR to change it  ·  BACK to step away' : 'A / D or the arrows: turn round  ·  F: hair  ·  S or E: step away';
+  const tip = touch ? 'big arrows (or drag) to turn round  ·  small arrows: hair  ·  BACK to step away' : 'A / D or the big arrows: turn round  ·  F or the small arrows: hair  ·  S or E: step away';
   ctx.save(); ctx.globalAlpha = Math.min(1, (mirrorK - 0.8) * 5);
   ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(tip, ARENA.w / 2 + 1, ARENA.h - 81);
@@ -1842,6 +1844,8 @@ function drawMirrorHint() {                                     // b272: how to 
   ctx.font = 'bold 18px ui-sans-serif, system-ui, sans-serif';
   ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(name, ARENA.w / 2 + 1, ARENA.h - 104);
   ctx.fillStyle = '#f6d17a'; ctx.fillText(name, ARENA.w / 2, ARENA.h - 105);
+  ctx.font = 'bold 10px ui-sans-serif, system-ui, sans-serif'; ctx.fillStyle = 'rgba(246,209,122,0.85)';
+  ctx.fillText('HAIR  ' + (LOCAL_BEARD + 1) + ' of ' + BEARDS.length, ARENA.w / 2, ARENA.h - 128);
   ctx.restore();
 }
 function drawMirror(w) {
@@ -6721,7 +6725,7 @@ canvas.addEventListener('pointerdown', e => {
   }
   // the carry button: a tap (or click) on it does what E does
   { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
-  { const hb = hairButton(); if (hb && Math.hypot(pt.x - hb.x, pt.y - hb.y) < hb.r + 6) { setLocalBeard(LOCAL_BEARD + 1); e.preventDefault(); return; } }   // b274: next hair
+  { const ha = hairArrows().find(a => Math.hypot(pt.x - a.x, pt.y - a.y) < a.r + 8); if (ha) { setLocalBeard(LOCAL_BEARD + ha.d); e.preventDefault(); return; } }   // b285: the next hair, or the one before
   { const ma = mirrorArrows().find(a => Math.hypot(pt.x - a.x, pt.y - a.y) < a.r + 8); if (ma) { mirrorSpin(ma.d); e.preventDefault(); return; } }   // b277: turn round
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
   { const kb = cardsButton(); if (kb && Math.hypot(pt.x - kb.x, pt.y - kb.y) < kb.r + 6) { doBJ('call'); e.preventDefault(); return; } }
