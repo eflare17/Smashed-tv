@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b270 — the back of his shirt covered';
+const BUILD = 'b271 — a smooth print on his back';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1215,7 +1215,13 @@ function shirtSkin(im, isBack, mirror, hi) {
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   g.drawImage(im, 0, 0, w * S, h * S); g.drawImage(patch, 0, 0);
   c.__ss = S;
-  g.globalAlpha = 0.75; g.globalCompositeOperation = 'multiply'; g.drawImage(patchShade(im, L), 0, 0, w * S, h * S);   // the shirt's folds through it
+  // the shirt's folds through it. b271: in LOOK: PHOTO they're smoothed and softened (they were blown up in hard
+  // pixels, which made the photo look pixelated), and on his back, whose tank top is camo, only a touch comes
+  // through, or the blotches of the pattern speckle the picture
+  g.globalAlpha = isBack ? (SHIRT.smooth ? 0.3 : 0.5) : 0.75; g.globalCompositeOperation = 'multiply';
+  if (SHIRT.smooth) { g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; if ('filter' in g) g.filter = 'blur(' + (S * 0.7).toFixed(1) + 'px)'; }
+  g.drawImage(patchShade(im, L), 0, 0, w * S, h * S);
+  g.filter = 'none'; g.imageSmoothingEnabled = false;
   return c;
 }
 // swap every frame of his for a version wearing the picture (and back again when it's cleared)
