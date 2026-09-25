@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b271 — a smooth print on his back';
+const BUILD = 'b272 — turn round in the mirror';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1553,6 +1553,9 @@ function mirrorBox() { return { x0: MIRROR.x - MIRROR.w / 2, x1: MIRROR.x + MIRR
 // grows to fill the glass, as if you're looking at yourself; mirrorK runs 0..1 between the two.
 const MIRROR_ZOOM = 4.4;                                        // the frame fills the screen, clear of the weapon bar
 let mirrorLook = false, mirrorK = 0, mirrorAt = null;           // mirrorAt: where you stood when you looked
+// b272: looking in it, left and right turn you round on the spot (so you can see the back of your shirt);
+// mirrorTurn is the way you're facing, as an angle, on your screen only. Down (or E) steps away.
+let mirrorTurn = -Math.PI / 2;
 function mirrorNear(p) { return !!p && p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed && T.loungeFloor && Math.abs(p.x - MIRROR.x) < 24 && p.y > MIRROR.y && p.y < MIRROR.y + 40; }
 function mirrorTryLook() {
   const v = net.role === 'client' ? net.view : world;
@@ -1560,14 +1563,31 @@ function mirrorTryLook() {
   if (mirrorLook) { mirrorLook = false; return true; }
   const me = localMe();
   if (!mirrorNear(me)) return false;
-  mirrorLook = true; mirrorAt = { x: me.x, y: me.y };
+  mirrorLook = true; mirrorAt = { x: me.x, y: me.y }; mirrorTurn = -Math.PI / 2;   // facing the glass
   return true;
 }
 function mirrorStep(w, me, dt) {                               // once per frame, from camFollow
+  if (mirrorLook) {                                               // turning round: A/D, the arrow keys, the move stick, a pad
+    const g = padAt(0);
+    let turn = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0);
+    if (moveStick.active && Math.abs(moveStick.dx) > 0.25) turn = moveStick.dx;
+    if (g && Math.abs(g.axes[0] || 0) > 0.3) turn = g.axes[0];
+    mirrorTurn += turn * 3.2 * dt;
+  }
   if (mirrorLook && (w.started || w.over || !mirrorNear(me) || Math.hypot(me.x - mirrorAt.x, me.y - mirrorAt.y) > 3)) mirrorLook = false;
   mirrorK = Math.max(0, Math.min(1, mirrorK + (mirrorLook ? dt : -dt) * 3));
 }
 function mirrorMe(p) { return mirrorK > 0 && !p.npc && p.id === (net.role === 'client' ? 1 : 0); }   // the one fading into the glass
+function drawMirrorHint() {                                     // b272: how to turn round, and how to leave
+  if (!mirrorLook || mirrorK < 0.8) return;
+  const touch = touchSeen || ('ontouchstart' in window);
+  const tip = touch ? 'drag left or right to turn round  ·  drag down or tap BACK to step away' : 'A / D: turn round  ·  S or E: step away';
+  ctx.save(); ctx.globalAlpha = Math.min(1, (mirrorK - 0.8) * 5);
+  ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(tip, ARENA.w / 2 + 1, ARENA.h - 81);
+  ctx.fillStyle = '#fff'; ctx.fillText(tip, ARENA.w / 2, ARENA.h - 82);
+  ctx.restore();
+}
 function drawMirror(w) {
   const m = MIRROR, x0 = m.x - m.w / 2, top = m.y - m.h;
   const g = { x0: x0 + 4, x1: x0 + m.w - 4, y0: top + 5, y1: m.y - 7 };   // the glass
@@ -1593,7 +1613,11 @@ function drawMirror(w) {
       const sF = (g.y1 - g.y0) / (T.radius * T.spriteScale * (CHARS[p.ch] ? CHARS[p.ch].scale : 1) * (NEW_ART.has(p.ch) ? T.altScale : 1)), ryF = g.y1 - 1 - T.radius * 0.9 * sF;
       s += (sF - s) * k; rx += (m.x - rx) * k; ry += (ryF - ry) * k;
     }
-    const r = { ...p, x: rx, y: ry, fy: -p.fy, iy: -(p.iy || 0), ady: -(p.ady || 0), mdy: -(p.mdy || 0), rdy: -(p.rdy || 0) };
+    let r = { ...p, x: rx, y: ry, fy: -p.fy, iy: -(p.iy || 0), ady: -(p.ady || 0), mdy: -(p.mdy || 0), rdy: -(p.rdy || 0) };
+    if (mirrorMe(p) && mirrorLook) {                                   // b272: turned round on the spot, and the glass turns with you
+      const fx = Math.cos(mirrorTurn), fy = Math.sin(mirrorTurn);
+      r = { ...r, id: 'mirror' + p.id, npc: true, moving: 0, firing: 0, fx, fy: -fy, ix: fx, iy: -fy };
+    }
     ctx.save();
     ctx.globalAlpha = 0.9;
     ctx.translate(rx, ry); ctx.scale(s, s); ctx.translate(-rx, -ry);
@@ -6488,6 +6512,10 @@ function localInput0() {
   if (HOTBAR.want) { inp.wsel = HOTBAR.want; HOTBAR.want = null; }
   if (tapShot.until > performance.now()) { inp.tap = tapShot.id; inp.tx = tapShot.x; inp.ty = tapShot.y; }
   if (ARC.open) { Object.assign(inp, { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false, st: false }); delete inp.lt; delete inp.tap; }   // at a cabinet: stand still
+  if (mirrorLook) {                                                  // at the mirror: left/right turn you (see mirrorStep), down steps away
+    if (inp.my > 0.6) mirrorLook = false;
+    else { inp.mx = 0; inp.my = 0; inp.shoot = false; inp.roll = false; }
+  }
   shroomInput(inp);                                                  // tripping: walk and aim the way you're looking
   return inp;
 }
@@ -9557,6 +9585,7 @@ function renderBase(w, hudRight) {
   drawHotbar(w);
   drawZoomButton();
   drawArcade();
+  drawMirrorHint();
 
   // HUD
   ctx.fillStyle = '#6d7486';
