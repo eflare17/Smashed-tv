@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b291 — six fixes: art built in, gym online, smoother guest walks, no hair clash, snake';
+const BUILD = 'b292 — plain straps on the side of a printed singlet';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1198,7 +1198,29 @@ function fillPlace(a, bw, bh) {                                  // a picture sc
   const w = ar > br ? ar / br : 1, h = ar > br ? 1 : br / ar;
   return { x: (1 - w) / 2, y: (1 - h) / 2, w, h };
 }
-function shirtSkin(im, isBack, mirror, hi) {
+// the strap rows of a shirt mask when they run off to one side: {y0, y1}, or null
+function shirtStrap(L, w, h) {
+  if (L.strap !== undefined) return L.strap;
+  const d = L.mask.getContext('2d').getImageData(0, 0, w, h).data, wd = new Int32Array(h), cx = new Float64Array(h);
+  let maxW = 0, top = -1;
+  for (let y = 0; y < h; y++) { let n = 0, sx = 0; for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 0) { n++; sx += x; }
+    wd[y] = n; cx[y] = n ? sx / n : 0; if (n > maxW) maxW = n; if (n && top < 0) top = y; }
+  let out = null;
+  if (top >= 0) {
+    let y1 = top; while (y1 + 1 < h && wd[y1 + 1] >= wd[y1]) y1++;                 // the band over his shoulder: down to where it stops widening
+    if (y1 - top + 1 >= 3 && y1 - top + 1 <= 14) out = { y0: top, y1 };
+  }
+  L.strap = out; return out;
+}
+function shirtTone(a) {                                       // the picture's overall colour, for the strap: worked out once per picture
+  if (a.__tone) return a.__tone;
+  const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d');
+  g.drawImage(a, 0, 0, 8, 8); const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+  if (!n) return '#888';
+  return (a.__tone = 'rgb(' + Math.round(r / n) + ',' + Math.round(gg / n) + ',' + Math.round(b / n) + ')');
+}
+function shirtSkin(im, isBack, mirror, hi, sideish) {            // sideish: seen from the side or a diagonal, where the strap runs off at an angle
   const L = shirtLogoBox(im); if (!L) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
   let a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
@@ -1216,6 +1238,15 @@ function shirtSkin(im, isBack, mirror, hi) {
   pg.globalCompositeOperation = 'destination-in'; pg.imageSmoothingEnabled = false;
   pg.drawImage(L.mask, 0, 0, w * S, h * S);                                // only on the shirt itself
   pg.drawImage(im, 0, 0, w * S, h * S);                                    // b246: and never in the see-through gaps (between arm and body)
+  // b292: seen from the side, the strap over his shoulder is a thin band running off at an angle: the top of
+  // the picture landed on it and turned to noise. So a strap that sits off to one side (from the side and the
+  // diagonals: from the front and back the two straps are either side of the chest, and left alone) is plain
+  // fabric in the picture's own overall colour, and the picture stays on the body of the singlet.
+  const strap = sideish && shirtStrap(L, w, h);
+  if (strap) {
+    pg.globalCompositeOperation = 'source-atop'; pg.fillStyle = shirtTone(a);
+    pg.fillRect(0, strap.y0 * S, w * S, (strap.y1 - strap.y0 + 1) * S);
+  }
   const c = document.createElement('canvas'); c.width = w * S; c.height = h * S;
   const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false;   // b277: his head's read back off it when his hair changes
   g.drawImage(im, 0, 0, w * S, h * S); g.drawImage(patch, 0, 0);
@@ -1362,15 +1393,15 @@ function hairFrame(im, style, key, ch) {                        // im wearing st
 // or more on a phone). Now each frame is printed once and kept (till the picture changes), and a change of hair
 // only redoes his head on it: his untouched head is put back, and the new hair painted over it.
 let shirtSerial = 0;
-function printKey(isBack, hi) {
+function printKey(isBack, hi, sideish) {
   const id = a => a ? (a.__sid || (a.__sid = ++shirtSerial)) : 0;
-  return [id(SHIRT.art), id(SHIRT.artBack), JSON.stringify(SHIRT.place), JSON.stringify(SHIRT.placeBack), SHIRT.smooth, isBack, hi].join('|');
+  return [id(SHIRT.art), id(SHIRT.artBack), JSON.stringify(SHIRT.place), JSON.stringify(SHIRT.placeBack), SHIRT.smooth, isBack, hi, !!sideish].join('|');
 }
 function printedWithHair(im, key, ch, isBack, hi, style) {
-  const pk = printKey(isBack, hi);
+  const sideish = shirtSide(key), pk = printKey(isBack, hi, sideish);
   let pr = im.__printed;
   if (!pr || pr.k !== pk) {
-    pr = im.__printed = { k: pk, c: shirtPrinted(im, isBack, hi), style: 0, F: hairFit(im, key, ch) };
+    pr = im.__printed = { k: pk, c: shirtPrinted(im, isBack, hi, sideish), style: 0, F: hairFit(im, key, ch) };
     if (pr.c && pr.F) HEAD_KEEP.push([im, pr]);                   // his head kept off it in the background, ready for a change of hair
   }
   if (!pr.c) return hairFrame(im, style, key, ch);              // no shirt in this one
@@ -1453,8 +1484,9 @@ function applyShirtArt(only) {
   shirtVer++;                                                              // and the frames built as he's drawn get printed again
 }
 // his frame im wearing the picture (and its flipped twin in .__mir), or null if there's no shirt in it
-function shirtPrinted(im, isBack, hi) {
-  let c = null, m = null; try { c = shirtSkin(im, isBack, false, hi); m = shirtSkin(im, isBack, true, hi); } catch (_) {}
+const shirtSide = key => typeof key === 'string' && (/^(side|diag)/.test(key) || key === 'carry');   // b292: the angles whose strap runs off to one side
+function shirtPrinted(im, isBack, hi, sideish) {
+  let c = null, m = null; try { c = shirtSkin(im, isBack, false, hi, sideish); m = shirtSkin(im, isBack, true, hi, sideish); } catch (_) {}
   if (!c) return null;
   for (const cv of [c, m]) { if (!cv) continue;
     Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
@@ -1471,7 +1503,7 @@ function shirtPrinted(im, isBack, hi) {
 // few dozen are kept (the bounce is also in whole pixels while carrying, so there are fewer of them).
 const SHIRT_WORN = new Map(), SHIRT_WORN_MAX = 40;
 let shirtVer = 0;
-function shirtWorn(im, isBack, base, flip) {
+function shirtWorn(im, isBack, base, flip, sideish) {
   if ((!SHIRT.art && !SHIRT.artBack) || !im || im.__orig) return im;
   let e = SHIRT_WORN.get(im);
   if (!e || e.v !== shirtVer) e = { v: shirtVer, c: null, m: null };
@@ -1480,7 +1512,7 @@ function shirtWorn(im, isBack, base, flip) {
   if (base && base !== im && !SHIRT.boxes.has(im)) SHIRT.boxes.set(im, shirtLogoBox(base));
   const k = flip ? 'm' : 'c';
   if (!e[k]) {
-    let cv = null; try { cv = shirtSkin(im, isBack, !!flip, false); } catch (_) {}
+    let cv = null; try { cv = shirtSkin(im, isBack, !!flip, false, sideish); } catch (_) {}
     if (cv) {
       Object.defineProperty(cv, 'naturalWidth', { value: cv.width }); Object.defineProperty(cv, 'naturalHeight', { value: cv.height });
       Object.defineProperty(cv, 'complete', { value: true }); cv.__orig = im;
@@ -8618,7 +8650,7 @@ function drawJared(w, p) {
   ctx.save();
   if (pose.flip) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
-  if (built) im = shirtWorn(im, backKey(key), builtFrom, pose.flip);
+  if (built) im = shirtWorn(im, backKey(key), builtFrom, pose.flip, shirtSide(key));
   ctx.drawImage(pose.flip && im.__mir ? im.__mir : im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
   ctx.restore();
 
