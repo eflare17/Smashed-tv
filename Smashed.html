@@ -508,7 +508,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b292 — plain straps on the side of a printed singlet';
+const BUILD = 'b293 — guest weapon bar, inputs at high fps, guest clock, no rockets in the bonus room';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -6493,7 +6493,7 @@ function stepBase(w, inputs, dt) {
 function snapshot(w) {
   const s = {
     ss: secretPacket(w),
-    w: w.wave, o: w.over ? 1 : 0, br: Math.round(w.breather * 100), st: w.started ? 1 : 0,
+    w: w.wave, o: w.over ? 1 : 0, br: Math.round(w.breather * 100), st: w.started ? 1 : 0, tm: Math.round((w.t || 0) * 100),   // b293: the clock, for the guest's animations
     fz: Math.round((w.freeze || 0) * 1000),
     nk: w.nuke ? [Math.round(w.nuke.x), Math.round(w.nuke.y),
                   Math.round(w.nuke.t * 100), w.nuke.phase === 'boom' ? 1 : 0] : null,
@@ -6589,7 +6589,7 @@ function worldFromSnapshot(s, age, bits) {
   }
   return {
     slotSecret: s.ss || null,
-    t: s.ss ? s.ss.clock : 0,
+    t: s.ss ? s.ss.clock : (s.tm || 0) / 100 + age,        // b293: was 0 outside the secret room, so the slot reels and the vending machine stood still for the guest
     wave: s.w, over: !!s.o, breather: s.br / 100, started: !!s.st,
     freeze: (s.fz || 0) / 1000,
     nuke: s.nk ? { x: s.nk[0], y: s.nk[1], t: s.nk[2] / 100,
@@ -7878,7 +7878,7 @@ try {
   if (Array.isArray(o) && o.length === 6 && ['fists', 'spud', 'lob', 'blaster', 'shotgun', 'launcher'].every(k => o.includes(k))) HOTBAR.order = o;
 } catch (_) {}
 function saveHotbar() { try { localStorage.setItem('smashed-hotbar', JSON.stringify(HOTBAR.order)); } catch (_) {} }
-function localPlayer() { return net.role === 'client' ? world.players.find(p => p.id === 1) : world.players[0]; }
+function localPlayer() { return net.role === 'client' ? (net.view && net.view.players.find(p => p.id === 1)) : world.players[0]; }   // b293: the guest's player lives in the host's world (their own only ever has player 0), so this looked in the wrong place: no weapon bar, no weapon switching
 function hasWeapon(p, id) {
   return id === 'spud' || id === 'fists' || id === 'lob' || (id === 'blaster' && !!p.blasters) || (id === 'shotgun' && p.wTime > 0) || (id === 'launcher' && p.rockets > 0);
 }
@@ -10610,12 +10610,16 @@ function renderBase(w, hudRight) {
 let last = performance.now();
 const FIXED_DT = 1 / 120;
 let accumulator = 0;
+let carryInput = null;                                    // b293: a weapon pick or roll tap from a frame too short to run a step (above 120 fps), kept for the next
 function advanceSimulation(elapsed, inputs) {
   accumulator += Math.max(0, Math.min(elapsed, 0.1));
+  if (carryInput) { inputs = inputs.map((inp, i) => carryInput[i] ? { ...inp, wsel: inp.wsel || carryInput[i].wsel, roll: inp.roll || carryInput[i].roll } : inp); carryInput = null; }
+  let ran = false;
   while (accumulator + 1e-10 >= FIXED_DT) {
     if (!world.over) step(world, inputs, FIXED_DT);
-    accumulator -= FIXED_DT;
+    accumulator -= FIXED_DT; ran = true;
   }
+  if (!ran) carryInput = inputs.map(inp => inp && (inp.wsel || inp.roll) ? { wsel: inp.wsel, roll: !!inp.roll } : null);
 }
 document.addEventListener('visibilitychange', () => {
   last = performance.now(); accumulator = 0;
@@ -11008,7 +11012,7 @@ function beginSlotSecret(w) {
 function enterMachine(w) {
   const s=w.slotSecret;
   s.phase='landing'; s.t=0; s.room=true; s.hazards=[]; s.nextDrop=0.5; s.nextCash=0;
-  for (const name of ['enemies','bullets','ebullets','coins','bits','blood','splats','corpses','floaters','plants','husks']) w[name]=[];
+  for (const name of ['enemies','bullets','ebullets','coins','bits','blood','splats','corpses','floaters','plants','husks','rockets','blasts']) w[name]=[];   // b293: rockets and blasts too, or one in the air went off in here
   w.nuke=null; w.breather=0; w.pending=0; w.queue=[]; w.over=false;
   w.janitor={...w.janitor,phase:'done'}; w.sign='gone'; w.slot.broken=true;
   w.slot.cool=0; w.slot.busy=-1;
