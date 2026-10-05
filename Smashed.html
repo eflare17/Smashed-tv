@@ -25,6 +25,9 @@
   }
   #stage:fullscreen #fsBar:hover, #stage:fullscreen #fsBar:active { opacity: 1; }
   #fsBar button { padding: 5px 10px; font-size: 13px; }
+  .modeArrow { padding-left: 9px; padding-right: 9px; }
+  .modeName { display: inline-block; min-width: 118px; text-align: center; color: #f6d17a; font: 600 14px ui-sans-serif, system-ui, sans-serif; vertical-align: middle; }
+  #fsBar .modeName { min-width: 104px; font-size: 13px; align-self: center; }
   .panel {
     width: min(860px, 100%);
     display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -82,6 +85,7 @@
 <body>
 
 <div class="net" id="net">
+  <button id="modePrev" class="modeArrow" aria-label="previous mode">◀</button><span class="modeName" id="modeName">Classic</span><button id="modeNext" class="modeArrow" aria-label="next mode">▶</button>
   <button id="startBtn" class="primary">Start</button>
   <button id="restart">Restart</button>
   <button id="fsBtn">Full screen</button>
@@ -126,6 +130,7 @@
 <div id="stage">
   <canvas id="game"></canvas>
   <div id="fsBar">
+    <button id="fsModePrev" class="modeArrow" aria-label="previous mode">◀</button><span class="modeName" id="fsModeName">Classic</span><button id="fsModeNext" class="modeArrow" aria-label="next mode">▶</button>
     <button id="fsStart" class="primary">Start</button>
     <button id="fsRestart">Restart</button>
     <button class="debugOnly" id="fsGun">Shotgun</button>
@@ -508,7 +513,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b293 — guest weapon bar, inputs at high fps, guest clock, no rockets in the bonus room';
+const BUILD = 'b294 — game modes: Classic and Protect Gothica';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -5377,9 +5382,13 @@ function stepBase(w, inputs, dt) {
   for (const p of w.players) {
     let inp = inputs[p.id] || { mx: 0, my: 0, ax: 0, ay: 0, shoot: false, roll: false };
     // arms full: no shooting or rolling while carrying Gothica
-    if (NPC_GOTH.carrier === p.id && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });
+    if (gothHeldBy(w, p)) inp = Object.assign({}, inp, { shoot: false, roll: false });
     if (NPC_GOTH.anim && NPC_GOTH.carrier === p.id) inp = Object.assign({}, inp, { mx: 0, my: 0 });   // and stands still for the scoop
     // the guest's E (sit / stand) and blackjack buttons, each acted on once
+    if (p.id !== 0 && w.started && w.goth && inp.sq !== undefined) {   // b294: the guest picks her up / puts her down
+      if (p.lastSq === undefined) p.lastSq = inp.sq;
+      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; protectCarry(w, p); }
+    }
     if (p.id !== 0 && !w.started && inp.sq !== undefined) {
       if (p.lastSq === undefined) p.lastSq = inp.sq;
       else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; if (p.sit) p.sit = 0; else if (p.bed) getUp(p); else { const ch = chairNear(w, p), bs = !ch && bedNear(w, p); if (ch) sitDown(p, ch); else if (bs) lieDown(p, bs); } }
@@ -5710,7 +5719,7 @@ function stepBase(w, inputs, dt) {
       p.cooldown = 0;
     }
 
-    const cap = T.maxSpeed * (p.speed > 0 ? T.speedMul : 1);
+    const cap = T.maxSpeed * (p.speed > 0 ? T.speedMul : 1) * (w.goth && w.goth.carrier === p.id ? PROT.carrySlow : 1);
     const sp = Math.hypot(p.vx, p.vy);
     if (sp > cap) { p.vx = (p.vx / sp) * cap; p.vy = (p.vy / sp) * cap; }
 
@@ -5758,6 +5767,7 @@ function stepBase(w, inputs, dt) {
       const d = Math.hypot(p.x - e.x, p.y - e.y);
       if (d < best) { best = d; target = p; }
     }
+    if (w.goth) [target, best] = protTarget(w, e, target, best);   // b294: or Gothica, if she's nearer
     e.stun = Math.max(0, (e.stun || 0) - dt);
     const espeed = wspeed * ETYPE[e.t].speed * (e.stun > 0 ? 0 : 1);
 
@@ -5795,9 +5805,12 @@ function stepBase(w, inputs, dt) {
             if (p.hp <= 0) {
               p.alive = false;
               fx(w, FX.DOWN, p.x, p.y);
-              if (w.players.every(q => !q.alive)) w.over = true;
+              if (!w.goth && w.players.every(q => !q.alive)) w.over = true;
             }
           }
+          { const g = w.goth;                                  // b294: and Gothica, if she's in the arc
+            if (g) { const dx = g.x - e.x, dy = g.y - e.y, d = Math.hypot(dx, dy);
+              if (d <= T.batReach + 12 && (dx * e.sdx + dy * e.sdy) / (d || 1) >= 0.25) protHurt(w, g, T.contactDmg * ETYPE[e.t].dmg, e.sdx, e.sdy); } }
           // a little lunge so the swing carries him forward
           e.vx += e.sdx * espeed * 1.6; e.vy += e.sdy * espeed * 1.6;
         } else if (e.st === BAT.SWING && e.stT <= 0) {
@@ -5878,7 +5891,7 @@ function stepBase(w, inputs, dt) {
         p.alive = false;
         if (w.slot.busy === p.id) { w.slot.busy = -1; p.spin = 0; }
         fx(w, FX.DOWN, p.x, p.y);
-        if (w.players.every(q => !q.alive)) w.over = true;
+        if (!w.goth && w.players.every(q => !q.alive)) w.over = true;
       }
     }
   }
@@ -6011,6 +6024,10 @@ function stepBase(w, inputs, dt) {
       || s.x < ARENA.wall || s.x > ARENA.w - ARENA.wall
       || s.y < ARENA.wall || s.y > ARENA.h - ARENA.wall;
 
+    if (!gone && w.goth && Math.hypot(w.goth.x - s.x, w.goth.y - s.y) < 16) {   // b294: shrapnel hurts her too
+      const sv = Math.hypot(s.vx, s.vy) || 1;
+      if (protHurt(w, w.goth, T.shrapDmg, s.vx / sv, s.vy / sv)) gone = true;
+    }
     if (!gone) for (const p of w.players) {
       if (!p.alive || p.iframe > 0 || p.grace > 0) continue;
       if (Math.hypot(p.x - s.x, p.y - s.y) > T.radius + 4) continue;
@@ -6024,7 +6041,7 @@ function stepBase(w, inputs, dt) {
         p.alive = false;
         if (w.slot.busy === p.id) { w.slot.busy = -1; p.spin = 0; }
         fx(w, FX.DOWN, p.x, p.y);
-        if (w.players.every(q => !q.alive)) w.over = true;
+        if (!w.goth && w.players.every(q => !q.alive)) w.over = true;
       }
       gone = true; break;
     }
@@ -6231,6 +6248,7 @@ function stepBase(w, inputs, dt) {
   stepRockets(w, dt);
   w.shake = Math.max(0, (w.shake || 0) - dt * 90);
   stepPlants(w, dt);
+  stepGoth(w, dt);
   stepRain(w, dt);
   stepGym(w, dt);
   stepBJ(w, dt);
@@ -6495,6 +6513,12 @@ function snapshot(w) {
     ss: secretPacket(w),
     w: w.wave, o: w.over ? 1 : 0, br: Math.round(w.breather * 100), st: w.started ? 1 : 0, tm: Math.round((w.t || 0) * 100),   // b293: the clock, for the guest's animations
     fz: Math.round((w.freeze || 0) * 1000),
+    md: w.started ? (w.mode || 'classic') : gameMode,             // b294: the mode, and Gothica in Protect Gothica
+    gt: w.goth ? (g => [Math.round(g.x), Math.round(g.y), Math.round(g.hp * 10), g.max, Math.round(g.fx * 100), Math.round(g.fy * 100),
+                        g.moving ? 1 : 0, Math.round(g.odo), g.carrier, Math.round(g.hurt * 100), g.face ? 1 : 0, g.carryCd > 0 ? 1 : 0,
+                        g.bubble ? [g.bubble.text, Math.round(g.bubble.t * 100), Math.round(g.bubble.dur * 100)] : null,
+                        Math.round(g.ix * 100), Math.round(g.iy * 100)])(w.goth) : null,
+    gd: w.gothDown ? 1 : 0,
     nk: w.nuke ? [Math.round(w.nuke.x), Math.round(w.nuke.y),
                   Math.round(w.nuke.t * 100), w.nuke.phase === 'boom' ? 1 : 0] : null,
     sk: Math.round(w.shake || 0),
@@ -6592,6 +6616,12 @@ function worldFromSnapshot(s, age, bits) {
     t: s.ss ? s.ss.clock : (s.tm || 0) / 100 + age,        // b293: was 0 outside the secret room, so the slot reels and the vending machine stood still for the guest
     wave: s.w, over: !!s.o, breather: s.br / 100, started: !!s.st,
     freeze: (s.fz || 0) / 1000,
+    mode: s.md || 'classic', gothDown: !!s.gd,
+    goth: s.gt ? (a => ({ id: 'npc_goth', npc: true, prot: true, ch: 'goth', weapon: 'blaster', alive: true,
+                          x: a[0], y: a[1], hp: a[2] / 10, max: a[3], fx: a[4] / 100, fy: a[5] / 100, moving: !!a[6],
+                          odo: a[7] + (a[6] ? PROT.walk * age : 0), carrier: a[8], hurt: Math.max(0, a[9] / 100 - age), face: !!a[10], carryCd: a[11] ? 1 : 0,
+                          bubble: a[12] ? { text: a[12][0], t: a[12][1] / 100 + age, dur: a[12][2] / 100 } : null,
+                          ix: a[13] / 100, iy: a[14] / 100, vx: 0, vy: 0 }))(s.gt) : null,
     nuke: s.nk ? { x: s.nk[0], y: s.nk[1], t: s.nk[2] / 100,
                    phase: s.nk[3] ? 'boom' : 'fall' } : null,
     shake: s.sk || 0,
@@ -6816,6 +6846,8 @@ addEventListener('keydown', e => {
   }
   if (k === 'enter' && !world.started && !e.repeat) { startGame(); return; }
   if (!e.repeat && (k === 'b' || k === 'h' || k === 't') && localSitting()) { doBJ(k === 'b' ? 'deal' : k === 'h' ? 'hit' : 'stand'); return; }
+  if (k === 'e' && !e.repeat && world.started && world.goth && net.role !== 'client') { protectCarry(world, world.players[0]); return; }
+  if (k === 'e' && !e.repeat && net.role === 'client' && net.view && net.view.started && net.view.goth) { SITREQ.id++; return; }
   if (k === 'e' && !e.repeat && !world.started && net.role !== 'client') { if (!shroomTryEat() && !arcadeTryOpen() && !mirrorTryLook()) toggleCarry(world); return; }
   if (k === 'e' && !e.repeat && net.role === 'client' && net.view && !net.view.started) { if (!shroomTryEat() && !arcadeTryOpen() && !mirrorTryLook()) SITREQ.id++; return; }   // the guest: sit / stand
   if (cal.on && (k === '[' || k === ',')) { cal.i = (cal.i + 7) % 8; cal.oct = CAL_OCTS[cal.i]; return; }
@@ -8081,11 +8113,19 @@ function drawRain() {
 function carryButton() {
   if (net.role === 'client') {                               // the guest: sit down at the table, or get up
     const v = net.view, me = v && v.players.find(q => q.id === 1);
+    if (v && v.started && v.goth && !v.over && me && me.alive) {                      // b294: Protect Gothica
+      const label = v.goth.carrier === me.id ? 'PUT DOWN' : protCanCarry(v, me) ? 'PICK UP' : null;
+      return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
+    }
     if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
     const label = me.sit ? 'STAND' : me.bed ? 'GET UP' : chairNear(v, me) ? 'SIT' : bedNear(v, me) ? 'LIE DOWN' : arcadeNear(me) ? 'PLAY' : mirrorNear(me) ? (mirrorLook ? 'BACK' : 'LOOK') : shroomNear(me) && shroomHere() ? 'EAT' : null;
     return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
   }
   const w = world, p = w.players[0];
+  if (w.started && w.goth && !w.over && p && p.alive) {
+    const label = w.goth.carrier === p.id ? 'PUT DOWN' : protCanCarry(w, p) ? 'PICK UP' : null;
+    return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
+  }
   if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
   let label = null;
   const gn = gymNear(w, p);
@@ -8115,6 +8155,7 @@ function drawCarryButton() {
 }
 function toggleCarry(w) {
   const p = w.players[0];
+  if (w.started && w.goth) { protectCarry(w, p); return; }
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   if (gymAction(w, p)) return;
   if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
@@ -8584,15 +8625,15 @@ function drawJared(w, p) {
   const cf = walk ? 1 : 0;                           // built frames share the stride's body (and its jiggle box)
   let cim = walk || CARRY_FRAMES[0], cfK = cf;
   const styleC = beardOf(p.ch);                                   // b276: his hair, before her bounce is put in
-  const an = NPC_GOTH.anim;
+  const an = w.goth ? null : NPC_GOTH.anim;
   if (an && NPC_GOTH.carrier === p.id && CARRY_FRAMES[2]) {          // the scoop: squat frame, then standing
     const squat = an.kind === 'pick' ? an.t < 0.2 : an.t >= 0.12;
     if (squat) { cfK = 2; cim = CARRY_FRAMES[2]; }
   }
   if (styleC && cim && cim.naturalWidth) cim = hairFrame(cim, styleC, 'carry', p.ch);
-  const carrying = !p.npc && NPC_GOTH.carrier === p.id && !w.started && cim.complete && cim.naturalWidth;
+  const carrying = gothHeldBy(w, p) && cim.complete && cim.naturalWidth;
   if (carrying) {
-    pose = { img: 'carry', flip: NPC_GOTH.face };
+    pose = { img: 'carry', flip: gothFace(w) };
     // his footsteps kick the same loose spring she has when strolling, so the
     // wobble carries on from the lobby and on after she's put down
     const amt = T.jiggle > 0 ? jiggleAmount({ id: 'npc_goth', npc: true, odo: p.odo }) * T.npcJiggle : 0;
@@ -10149,7 +10190,7 @@ function renderBase(w, hudRight) {
   // players, with the dive tower slotted in by depth
   const towerOn = !w.started && T.loungeFloor && !cal.on;
   let towerDrawn = !towerOn;
-  const npc = lobbyGoth(w);
+  const npc = w.goth ? (w.goth.carrier >= 0 || cal.on ? null : w.goth) : lobbyGoth(w);   // b294: in Protect Gothica she's in the run
   const cast = npc ? w.players.concat([npc]) : w.players;
   const byDepth = (towerOn || npc) ? cast.slice().sort((a, b) => a.y - b.y) : cast;
   // tall lobby props, each drawn just before the first character standing in front of it
@@ -10165,9 +10206,19 @@ function renderBase(w, hudRight) {
     while (deep.length && p.y >= deep[0].y) deep.shift().draw();
     if (!p.alive) continue;
     if (p.npc) {                                       // no ring, tips or bars over her
-      if (p.thrown === 'air' || p.thrown === 'floor') drawThrownGoth(p); else drawJared(w, p);
+      if (p.prot && p.hp <= 0) drawThrownGoth(Object.assign({}, p, { thrown: 'floor', dz: 0 }));
+      else if (p.prot && p.hurt > 0 && Math.floor(p.hurt * 20) % 2 === 0) {}   // blinks after a hit, like you do
+      else if (p.thrown === 'air' || p.thrown === 'floor') drawThrownGoth(p); else drawJared(w, p);
       if (p.bubble) speech.push(p);                  // drawn last, over everything
-      if (canCarry(w, w.players[0])) {
+      if (p.prot) {
+        if (p.hp > 0) drawGothBar(p);
+        if (protCanCarry(w, localPlayer())) {
+          const y = p.y - T.radius * T.spriteScale * 1.25 + 4;
+          ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: pick up', p.x + 1, y + 1);
+          ctx.fillStyle = '#fff';            ctx.fillText('E: pick up', p.x,     y);
+        }
+      } else if (canCarry(w, w.players[0])) {
         ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: pick up', p.x + 1, p.y - T.radius * T.spriteScale * 1.25 + 1);
         ctx.fillStyle = '#fff';            ctx.fillText('E: pick up', p.x,     p.y - T.radius * T.spriteScale * 1.25);
@@ -10485,6 +10536,10 @@ function renderBase(w, hudRight) {
     ctx.fillText(waveSize(next) + ' incoming'
                  + (bits2.length ? ' — ' + bits2.join(' and ') : ''),
                  ARENA.w / 2, ARENA.h / 2 + 16);
+    if (w.goth && w.wave === 0) {
+      ctx.fillStyle = '#f7a8ff';
+      ctx.fillText('keep Gothica alive  ·  potatoes heal her' + (CARRIERS.has((localPlayer() || {}).ch) ? '  ·  E picks her up' : ''), ARENA.w / 2, ARENA.h / 2 + 38);
+    }
     ctx.textAlign = 'left';
   }
 
@@ -10592,10 +10647,13 @@ function renderBase(w, hudRight) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#e0473f';
     ctx.font = 'bold 40px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('DOWN', ARENA.w / 2, ARENA.h / 2 - 22);
+    const prot = !!w.goth;                     // b294: in Protect Gothica, it's her that went down
+    if (prot) protNoteBest(w.wave);
+    ctx.fillText(prot ? "GOTHICA'S DOWN" : 'DOWN', ARENA.w / 2, ARENA.h / 2 - 22);
     ctx.fillStyle = '#cfd4de';
     ctx.font = '16px ui-sans-serif, system-ui, sans-serif';
-    ctx.fillText('made it to wave ' + w.wave + ' — ' + totalKills + ' killed',
+    ctx.fillText(prot ? 'you kept her safe to wave ' + w.wave + ' — best: wave ' + Math.max(protBest, w.wave)
+                      : 'made it to wave ' + w.wave + ' — ' + totalKills + ' killed',
                  ARENA.w / 2, ARENA.h / 2 + 8);
     ctx.fillStyle = '#8b93a4';
     ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
@@ -10759,6 +10817,222 @@ document.getElementById('copy').addEventListener('click', async e => {
   }
   setTimeout(() => e.target.textContent = 'Copy tuning values', 1200);
 });
+// =========================================================== GAME MODES ===
+// b294: ◀ ▶ beside Start pick the mode. The host's pick is the one that's
+// played (a guest sees it, greyed out); the last one picked is remembered.
+const MODES = [{ id: 'classic', name: 'Classic' }, { id: 'protect', name: 'Protect Gothica' }];
+let gameMode = 'classic';
+try { const m = localStorage.getItem('smashed-mode'); if (MODES.some(o => o.id === m)) gameMode = m; } catch (_) {}
+function shownMode() { return net.role === 'client' ? ((net.view && net.view.mode) || 'classic') : (world.started ? (world.mode || 'classic') : gameMode); }
+function stepMode(d) {
+  if (net.role === 'client' || world.started || cal.on) return;
+  const i = MODES.findIndex(o => o.id === gameMode);
+  gameMode = MODES[(i + d + MODES.length) % MODES.length].id;
+  try { localStorage.setItem('smashed-mode', gameMode); } catch (_) {}
+  updateModeUI();
+}
+function updateModeUI() {
+  const m = MODES.find(o => o.id === shownMode()) || MODES[0];
+  const off = net.role === 'client' || world.started || cal.on;
+  for (const id of ['modeName', 'fsModeName']) { const el = document.getElementById(id); if (el && el.textContent !== m.name) el.textContent = m.name; }
+  for (const id of ['modePrev', 'modeNext', 'fsModePrev', 'fsModeNext']) { const el = document.getElementById(id); if (el) el.disabled = off; }
+}
+
+// ===================================================== PROTECT GOTHICA ===
+// She's in the arena for the run, with a health bar. Calm, she wanders, and
+// heads for a ripe potato when she's hurt (eating one heals her). An enemy
+// close by sends her running away from it, without a thought for what's
+// ahead. Jared can carry her (E): she can't be hurt up there, but he's slow,
+// can't shoot or roll, and after a few seconds she wriggles down. Enemies go
+// for whichever is closer, her or a player. You come back after a few
+// seconds if you go down; if she goes down, that's the run.
+const PROT = {
+  hp: 10,            // hers (a player has 5)
+  walk: 38,          // strolling, as in the lobby
+  run: 110,          // panicking: quicker than a grunt, slower than a swarmer
+  panicR: 130,       // an enemy this close and she bolts
+  hurtFor: 0.9,      // can't be hurt again for this long after a hit
+  heal: 2,           // per potato
+  eatR: 280,         // how far she'll go for a potato
+  carryFor: 4,       // seconds in his arms before she wriggles down
+  carryCool: 1.5,    // and how long before he can pick her up again
+  carrySlow: 0.7,    // his top speed while carrying
+  respawn: 4,        // seconds down before a player's back
+  margin: 70         // where she'll wander: this far in from the walls
+};
+const PROT_SAY = { panic: ['Help!', 'Eek!', 'Get away!', 'Nooo!'], hurt: ['Ow!', 'Ouch!', 'Hey!'], eat: ['Mmm', 'Yum!'], free: ['Put me down!', 'I can walk!'] };
+function protSay(g, list, dur) { g.bubble = { text: list[Math.floor(Math.random() * list.length)], t: 0, dur: dur || 1.6 }; }
+// she keeps below the machines along the top wall (behind them she's out of sight)
+function protTop(w) { return Math.max(ARENA.wall + 14, ((w.slot && w.slot.y) || 0) + 40); }
+function newGoth(w) {
+  const m = ARENA.wall + PROT.margin;
+  const x = Math.max(m, Math.min(ARENA.w - m, NPC_GOTH.x || ARENA.w / 2));
+  const y = Math.max(protTop(w) + 30, Math.min(ARENA.h - m, NPC_GOTH.y || ARENA.h / 2));
+  return { id: 'npc_goth', npc: true, prot: true, ch: 'goth', weapon: 'blaster', alive: true,
+           x, y, odo: 0, moving: false, ix: 0, iy: 1, fx: 0, fy: 1, vx: 0, vy: 0,
+           tx: x, ty: y, wait: 1.5, hp: PROT.hp, max: PROT.hp, hurt: 0,
+           carrier: -1, carryT: 0, carryCd: 0, face: false, panic: 0, sayCd: 0, bubble: null };
+}
+function gothHeldBy(w, p) {
+  if (!p || p.npc) return false;
+  if (w.goth) return w.goth.carrier === p.id;
+  return NPC_GOTH.carrier === p.id && !w.started;
+}
+function gothFace(w) { return w.goth ? w.goth.face : NPC_GOTH.face; }
+function protCanCarry(w, p) {
+  const g = w.goth;
+  return !!(g && w.started && !w.over && g.hp > 0 && g.carrier < 0 && g.carryCd <= 0 && p && p.alive && !p.dive
+            && CARRIERS.has(p.ch) && Math.hypot(p.x - g.x, p.y - g.y) < T.carryRange);
+}
+function protSetDown(w, g, cool) {
+  const p = w.players.find(q => q.id === g.carrier);
+  g.carrier = -1; g.carryT = 0; g.carryCd = cool || 0.3;
+  if (p) { g.x = p.x + (g.face ? 20 : -20); g.y = p.y + 4; }
+  const m = ARENA.wall + 14;
+  g.x = Math.max(m, Math.min(ARENA.w - m, g.x)); g.y = Math.max(protTop(w), Math.min(ARENA.h - m, g.y));
+  g.moving = false; g.wait = 0.4; g.fx = 0; g.fy = 1;
+}
+function protectCarry(w, p) {
+  const g = w.goth;
+  if (!g || !p || w.over) return;
+  if (g.carrier === p.id) { protSetDown(w, g, 0.3); return; }
+  if (protCanCarry(w, p)) {
+    g.carrier = p.id; g.carryT = 0; g.face = p.fx < 0; g.moving = false; g.bubble = null;
+    if (typeof JIG !== 'undefined' && JIG.npc_goth) JIG.npc_goth.v += 30;
+  }
+}
+// she takes a hit (only ever on the ground)
+function protHurt(w, g, dmg, nx, ny) {
+  if (g.hurt > 0 || g.hp <= 0 || g.carrier >= 0) return false;
+  g.hp = Math.max(0, g.hp - dmg); g.hurt = PROT.hurtFor;
+  g.vx += nx * T.contactPush * 0.8; g.vy += ny * T.contactPush * 0.8;
+  fx(w, FX.HURT, g.x, g.y);
+  if (g.hp <= 0) {
+    g.alive = true; g.moving = false; g.bubble = { text: 'Ugh...', t: 0, dur: 3 };
+    fx(w, FX.DOWN, g.x, g.y);
+    w.over = true; w.gothDown = true;
+  } else if (g.sayCd <= 0) { protSay(g, PROT_SAY.hurt, 1.1); g.sayCd = 1.2; }
+  return true;
+}
+// what an enemy goes for: the nearest living player, or her if she's nearer
+function protTarget(w, e, target, best) {
+  const g = w.goth;
+  if (!g || g.hp <= 0 || g.carrier >= 0) return [target, best];
+  const d = Math.hypot(g.x - e.x, g.y - e.y);
+  return d < best ? [g, d] : [target, best];
+}
+function stepGoth(w, dt) {
+  const g = w.goth;
+  if (!g || !w.started || w.over || secretActive(w)) return;
+  g.hurt = Math.max(0, g.hurt - dt); g.carryCd = Math.max(0, g.carryCd - dt); g.sayCd = Math.max(0, g.sayCd - dt);
+  if (g.bubble && (g.bubble.t += dt) > g.bubble.dur) g.bubble = null;
+  // players who went down come back after a while, next to her
+  for (const p of w.players) {
+    if (p.alive) { p.downT = 0; continue; }
+    if ((p.downT = (p.downT || 0) + dt) < PROT.respawn) continue;
+    p.alive = true; p.downT = 0; p.hp = T.playerHp; p.grace = 1.5; p.iframe = 0;
+    p.x = g.x + (p.id ? 40 : -40); p.y = g.y + 10; p.vx = p.vy = 0; p.roll = 0; p.rollCd = 0;
+    const m = ARENA.wall + T.radius; p.x = Math.max(m, Math.min(ARENA.w - m, p.x)); p.y = Math.max(m, Math.min(ARENA.h - m, p.y));
+  }
+  // in someone's arms: safe, until she's had enough
+  if (g.carrier >= 0) {
+    const p = w.players.find(q => q.id === g.carrier);
+    if (!p || !p.alive || p.dive) { protSetDown(w, g, 0.5); return; }
+    g.x = p.x; g.y = p.y; g.moving = false; g.vx = g.vy = 0;
+    if (p.moving && Math.abs(p.ix) > 0.2) g.face = p.ix < 0;
+    if ((g.carryT += dt) >= PROT.carryFor) { protSetDown(w, g, PROT.carryCool); protSay(g, PROT_SAY.free, 1.4); }
+    return;
+  }
+  // knocked back by a hit: slide to a stop
+  const kick = Math.hypot(g.vx, g.vy);
+  let mx = 0, my = 0, spd = 0;
+  // anything close? run directly away from everything that's close (and only that)
+  let ax = 0, ay = 0, near = Infinity;
+  for (const e of w.enemies) {
+    if (e.spawn > 0) continue;
+    const dx = g.x - e.x, dy = g.y - e.y, d = Math.hypot(dx, dy) || 1;
+    near = Math.min(near, d);
+    if (d < PROT.panicR) { const k = 1 / d; ax += dx / d * k; ay += dy / d * k; }
+  }
+  if (near < PROT.panicR) {
+    if (g.panic <= 0 && g.sayCd <= 0) { protSay(g, PROT_SAY.panic, 1.2); g.sayCd = 2.5; }
+    g.panic = 0.8;                                     // and keeps running a moment after
+    g.runX = ax; g.runY = ay;
+  }
+  if (g.panic > 0) {
+    g.panic -= dt;
+    let rx = g.runX || 0, ry = g.runY || 0;
+    // the walls turn her (she slides along them rather than into them)
+    const m = ARENA.wall + 30;
+    if (g.x < m && rx < 0) rx = 0; if (g.x > ARENA.w - m && rx > 0) rx = 0;
+    if (g.y < protTop(w) + 16 && ry < 0) ry = 0; if (g.y > ARENA.h - m && ry > 0) ry = 0;
+    const l = Math.hypot(rx, ry);
+    if (l > 1e-6) { mx = rx / l; my = ry / l; spd = PROT.run; }
+    g.wait = 0.6;                                      // then she gets her breath back
+    g.tx = g.x; g.ty = g.y;
+  } else {
+    // hurt, and a ripe potato in reach? go and eat it
+    let food = null, fd = PROT.eatR;
+    if (g.hp < g.max) for (const pl of w.plants) {
+      if (pl.t < T.spudGrow) continue;
+      const d = Math.hypot(pl.x - g.x, pl.y - g.y);
+      if (d < fd) { fd = d; food = pl; }
+    }
+    if (food) {
+      g.wait = 0; g.tx = food.x; g.ty = food.y;
+      if (fd < 14) {
+        w.plants.splice(w.plants.indexOf(food), 1);
+        g.hp = Math.min(g.max, g.hp + PROT.heal);
+        protSay(g, PROT_SAY.eat, 1.2);
+        w.floaters.push({ x: g.x, y: g.y - 46, text: '+' + PROT.heal, t: 0, col: '#7dff9a' });
+        fx(w, FX.WALL, food.x, food.y);
+        g.wait = 0.8; g.tx = g.x; g.ty = g.y;
+      }
+    } else if (g.wait > 0) {
+      g.wait -= dt;
+      if (g.wait <= 0) {
+        const m = ARENA.wall + PROT.margin;
+        const top = Math.max(m, protTop(w) + 20);
+        g.tx = m + Math.random() * (ARENA.w - m * 2); g.ty = top + Math.random() * (ARENA.h - m - top);
+      }
+    } else if (Math.hypot(g.tx - g.x, g.ty - g.y) < 4) {
+      g.wait = 1.2 + Math.random() * 2.2; g.fx = 0; g.fy = 1;
+    }
+    if (g.wait <= 0) {
+      const dx = g.tx - g.x, dy = g.ty - g.y, d = Math.hypot(dx, dy);
+      if (d > 2) { mx = dx / d; my = dy / d; spd = food ? PROT.walk * 1.8 : PROT.walk; }
+    }
+  }
+  if (spd > 0) {
+    g.ix = mx; g.iy = my; g.fx = mx; g.fy = my;
+    g.x += mx * spd * dt; g.y += my * spd * dt; g.odo += spd * dt; g.moving = true;
+  } else g.moving = false;
+  if (kick > 1) { g.x += g.vx * dt; g.y += g.vy * dt; const f = Math.pow(0.002, dt); g.vx *= f; g.vy *= f; } else { g.vx = g.vy = 0; }
+  const m = ARENA.wall + 14;
+  g.x = Math.max(m, Math.min(ARENA.w - m, g.x)); g.y = Math.max(protTop(w), Math.min(ARENA.h - m, g.y));
+  // contact: anything that isn't a batter hurts her on touch (the batter has to swing)
+  for (const e of w.enemies) {
+    if (e.spawn > 0 || ETYPE[e.t].melee) continue;
+    const dx = g.x - e.x, dy = g.y - e.y, d = Math.hypot(dx, dy);
+    if (d > eRad(e) + 12) continue;
+    if (protHurt(w, g, T.contactDmg * ETYPE[e.t].dmg, dx / (d || 1), dy / (d || 1))) {
+      e.vx -= dx / (d || 1) * T.contactPush * 0.6 / ETYPE[e.t].mass; e.vy -= dy / (d || 1) * T.contactPush * 0.6 / ETYPE[e.t].mass;
+    }
+  }
+}
+// her health, over her head
+function drawGothBar(g) {
+  const w = 40, h = 5, x = Math.round(g.x - w / 2), y = Math.round(g.y - T.radius * T.spriteScale * 1.25 + 14);
+  const f = Math.max(0, Math.min(1, g.hp / (g.max || PROT.hp)));
+  ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = f > 0.5 ? '#f7a8ff' : f > 0.25 ? '#f6d17a' : '#e0473f';
+  ctx.fillRect(x, y, Math.round(w * f), h);
+}
+let protBest = 0;
+try { protBest = +localStorage.getItem('smashed-protect-best') || 0; } catch (_) {}
+function protNoteBest(wave) {
+  if (wave > protBest) { protBest = wave; try { localStorage.setItem('smashed-protect-best', String(wave)); } catch (_) {} }
+}
 function restartGame() {
   releaseFocus();
   if (net.role === 'client') { setStatus('The host can restart the online game.'); return; }
@@ -10773,6 +11047,9 @@ function startGame() {
   if (net.role === 'client') return;     // the host owns the world
   if (cal.on) return;
   world.started = true;
+  world.mode = gameMode;                                   // b294: which mode this run is
+  world.goth = gameMode === 'protect' ? newGoth(world) : null;
+  world.gothDown = false;
   world.breather = T.intermission;
   world.dummies = [];
   world.cans = [];
@@ -10828,6 +11105,10 @@ setInterval(() => {
   }
 }, 200);
 document.getElementById('startBtn').addEventListener('click', startGame);
+for (const [id, d] of [['modePrev', -1], ['modeNext', 1], ['fsModePrev', -1], ['fsModeNext', 1]])
+  document.getElementById(id).addEventListener('click', e => { stepMode(d); e.currentTarget.blur(); });
+setInterval(updateModeUI, 200);
+updateModeUI();
 document.getElementById('fsStart').addEventListener('click', startGame);
 document.getElementById('fsRestart').addEventListener('click', () => restartGame());
 document.getElementById('fsExit').addEventListener('click', () => {
