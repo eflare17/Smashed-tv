@@ -521,7 +521,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b300 — carrying her, his new hair stays off her face';
+const BUILD = 'b301 — no stray line by his boots carrying her';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -7917,6 +7917,7 @@ function carryWalkFrame(k) {
     if (y >= WAIST + 40) break;
     let cut = -1;
     for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (B.d[i + 3] && skin(i)) cut = x; }
+    if (cut < 0) continue;                                    // b301: no skin in the row: nothing to measure her boots from (it took every dark bit across, a stray line by his boots)
     for (let x = cut + 3; x < W; x++) {
       if (!dark((y * W + x) * 4)) continue;
       let e = x; while (e < W && dark((y * W + e) * 4)) e++;
