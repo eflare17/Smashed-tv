@@ -16,3 +16,8 @@
 - **Boots and legs on the dive board**: redrawn in b284 (proper pixel boots and shaped legs). Waiting on how it
   looks on the phone.
 - **Carrying Gothica, shirt print flickered** on the phone: fix is in, not confirmed on the phone yet.
+
+## Mega Drive (b295)
+- **Not yet tried on two real devices online.** Tested here with a home-made test game: playing, the picture
+  and sound going to the friend, and their buttons coming back as player 2 all work. The real connection
+  between two phones still needs a try.
