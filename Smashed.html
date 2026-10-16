@@ -46,6 +46,7 @@
                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #mdList .play:hover { background: #2c313f; }
   #mdList .size { color: #6b7385; font-size: 12px; width: 58px; text-align: right; flex: none; }
+  #mdList .pic { flex: none; width: 64px; height: 45px; object-fit: cover; border-radius: 4px; background: #111522 center/60% no-repeat; border: 1px solid #333a49; }   /* b304: each game's picture */
   #mdList .del { flex: none; padding: 6px 10px; background: transparent; border: 1px solid #333a49; color: #8b93a4; border-radius: 6px; }
   #mdScreen { flex: 1; position: relative; background: #000; display: none; }
   #mdScreen.on { display: block; }
@@ -174,6 +175,7 @@
   <div id="mdBox">
     <div id="mdTop">
       <span id="mdTitle">MEGA DRIVE</span>
+      <button id="mdSnap" title="Use what's on screen now as this game's picture">&#128247; Set picture</button>
       <button id="mdBack">Library</button>
       <button id="mdExit">Close</button>
     </div>
@@ -585,7 +587,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b304 — the Mega Drive cabinet plays Super Nintendo games too';
+const BUILD = 'b305 — the Mega Drive cabinet plays Super Nintendo games too';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3028,7 +3030,8 @@ function drawCabinet(w, c) {
   // the screen, in its bezel, playing to itself
   ctx.fillStyle = '#050507'; ctx.fillRect(x0 + 4, top + 19, W - 8, 36);
   const r = { x: x0 + 7, y: top + 22, w: W - 14, h: 30 };
-  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); G.mini(r, t); ctx.restore();
+  const pic = c.game === 'bricks' && mdCabPic();                      // b304: a Mega Drive game on: its picture
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip(); if (pic) ctx.drawImage(pic, r.x, r.y, r.w, r.h); else G.mini(r, t); ctx.restore();
   ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(r.x, r.y, r.w, 2);
   // control panel: stick and two buttons
   ctx.fillStyle = '#26262e'; ctx.fillRect(x0 - 2, top + 58, W + 4, 12);
@@ -11947,6 +11950,9 @@ function mdDrawList() {
   }
   for (const g of MD.games) {
     const row = document.createElement('div'); row.className = 'row';
+    const pic = document.createElement(g.pic ? 'img' : 'div'); pic.className = 'pic';          // b304: its picture (once it's been played)
+    if (g.pic) { pic.src = g.pic; pic.alt = ''; } else pic.title = 'Play it once and it gets a picture';
+    pic.addEventListener('click', () => mdPlay(g.id)); row.appendChild(pic);
     const b = document.createElement('button'); b.className = 'play'; b.textContent = g.name; b.title = g.file;
     b.addEventListener('click', () => mdPlay(g.id));
     const s = document.createElement('span'); s.className = 'size'; s.textContent = (MD_SYS[g.sys || 'md'] || MD_SYS.md).tag + '  ' + mdSize(g.size);
@@ -11963,6 +11969,7 @@ function mdShow(mode) {
   $md('mdMenu').style.display = mode === 'menu' ? '' : 'none';
   $md('mdScreen').classList.toggle('on', mode !== 'menu');
   $md('mdBack').style.display = mode === 'play' ? '' : 'none';
+  $md('mdSnap').style.display = mode === 'play' ? '' : 'none';
   $md('mdPad').classList.toggle('on', mode === 'watch' && (('ontouchstart' in window) || navigator.maxTouchPoints > 0));
   $md('mdFolder').style.display = ('webkitdirectory' in document.createElement('input')) && !/iPhone|iPad|Android/i.test(navigator.userAgent) ? '' : 'none';
   $md('mdTitle').textContent = mode === 'menu' ? 'MEGA DRIVE · SNES' : mode === 'play' ? (MD.playing ? MD.playing.name : 'MEGA DRIVE') : (MD.offer ? MD.offer.name + ' (player 2)' : 'MEGA DRIVE');
@@ -12027,6 +12034,39 @@ function mdStarted() {
   if (!MD.frame) return;
   try { MD.emu = MD.frame.contentWindow.EJS_emulator; } catch (_) { MD.emu = null; }
   mdOffer(true);
+  // b304: no picture yet: take one a few seconds in (past the SEGA logo, usually on its title), and if that's
+  // a dark moment between screens, try again a little later
+  const meta = MD.playing;
+  if (meta && !meta.pic) for (const s of [9, 15, 23, 34]) setTimeout(() => { if (MD.playing === meta && !meta.pic) mdSnap(false); }, s * 1000);
+}
+// b304: a picture of the game, off its own screen (EmulatorJS's screenshot: a copy of the canvas comes out black),
+// small, kept with the game in the library. Shown in the library, and on the cabinet while it's being played
+async function mdSnap(force) {
+  const emu = MD.emu, meta = MD.playing;
+  if (!emu || !meta || !emu.gameManager || !emu.gameManager.screenshot) return false;
+  // (the core's own screenshot, a PNG: EmulatorJS's takeScreenshot never answers at 1x, a bug in it)
+  let png = null; try { png = await Promise.race([emu.gameManager.screenshot(), new Promise(r => setTimeout(r, 3000))]); } catch (_) {}
+  if (!png || !(png.byteLength || png.length) || MD.playing !== meta) return false;
+  let bm; try { bm = await createImageBitmap(new Blob([png], { type: 'image/png' })); } catch (_) { return false; }
+  const c = document.createElement('canvas'); c.width = 160; c.height = 112;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(bm, 0, 0, c.width, c.height);
+  if (!force) {                                                  // a black or nearly black screen is a fade, not the game
+    const d = g.getImageData(0, 0, c.width, c.height).data; let sum = 0, n = 0;
+    for (let i = 0; i < d.length; i += 16) { sum += d[i] + d[i + 1] + d[i + 2]; n++; }
+    if (sum / n < 70) return false;
+  }
+  meta.pic = c.toDataURL('image/jpeg', 0.82);
+  try { await mdReq('games', 'readwrite', s => s.put(meta)); } catch (_) {}
+  mdOffer(true);                                                 // (the picture goes to your friend with the game's name)
+  return true;
+}
+// the picture of whatever's being played on this cabinet, yours or your friend's, as an image to draw (or null)
+const MD_PIC = { src: null, img: null };
+function mdCabPic() {
+  const src = (MD.playing && MD.playing.pic) || (MD.offer && MD.offer.pic) || null;
+  if (!src) return null;
+  if (MD_PIC.src !== src) { MD_PIC.src = src; MD_PIC.img = new Image(); MD_PIC.img.src = src; }
+  return MD_PIC.img.complete && MD_PIC.img.naturalWidth ? MD_PIC.img : null;
 }
 function mdMyName() {
   const me = localMe(); const c = me && CHARS[me.ch];
@@ -12037,7 +12077,9 @@ function mdOffer(force) {
   const now = performance.now();
   if (!force && now - MD.offerAt < 3000) return;
   MD.offerAt = now;
-  net.conn.send({ t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName(), sys: MD.playing.sys || mdSysOf(MD.playing.file) });
+  const msg = { t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName(), sys: MD.playing.sys || mdSysOf(MD.playing.file) };   // b305: and which console
+  if (MD.playing.pic && (force || MD.picSent !== MD.playing.pic)) { msg.pic = MD.playing.pic; MD.picSent = MD.playing.pic; }   // b304: its picture, once
+  net.conn.send(msg);
 }
 setInterval(() => mdOffer(false), 1000);          // and keep saying so, for a friend who connects after
 addEventListener('message', e => { if (MD.frame && e.source === MD.frame.contentWindow && e.data && e.data.md === 'started') mdStarted(); });
@@ -12154,6 +12196,8 @@ function mdOnData(d) {
     if (d.on) {
       const o = { name: String(d.name || 'a game').slice(0, 60), who: String(d.who || 'Your friend').slice(0, 30), sys: MD_SYS[d.sys] ? d.sys : 'md' };
       const fresh = !MD.offer || MD.offer.name !== o.name;
+      if (typeof d.pic === 'string' && /^data:image\/jpeg;base64,/.test(d.pic) && d.pic.length < 60000) o.pic = d.pic;   // b304: its picture
+      else if (!fresh && MD.offer.pic) o.pic = MD.offer.pic;
       MD.offer = o;
       if (fresh && MD.dismissed !== o.name && !MD.wantJoin && !MD.playing) mdAsk(true);
     } else {
@@ -12177,6 +12221,7 @@ function mdConnGone() {
 // the box's buttons
 $md('mdExit').addEventListener('click', mdClose);
 $md('mdBack').addEventListener('click', () => { mdStopGame(); mdNote(''); mdShow('menu'); mdDrawList(); });
+$md('mdSnap').addEventListener('click', async () => { mdNote((await mdSnap(true)) ? 'Picture saved.' : "Couldn't take a picture yet: wait for the game to start."); });
 $md('mdBricks').addEventListener('click', () => { const c = MD.cab; mdClose(); if (c) arcadeOpenCab(c); });
 $md('mdAdd').addEventListener('click', () => $md('mdFile').click());
 $md('mdFolder').addEventListener('click', () => $md('mdDir').click());
