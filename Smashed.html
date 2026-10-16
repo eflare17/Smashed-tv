@@ -41,11 +41,18 @@
   #mdMenu .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
   #mdMenu .hint { color: #8b93a4; font-size: 12px; margin: 4px 0 10px; }
   #mdList { display: flex; flex-direction: column; gap: 6px; }
+  #mdSys { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }   /* b306: pick a console */
+  #mdSys button { display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 18px; background: #1b1e27; border: 1px solid #333a49;
+                  color: #cfd4de; font: 600 13px ui-sans-serif, system-ui, sans-serif; }
+  #mdSys button .n { min-width: 18px; padding: 1px 6px; border-radius: 9px; background: #2c313f; color: #8b93a4; font-size: 11px; text-align: center; }
+  #mdSys button.on { background: #3a1d1c; border-color: #e0473f; color: #fff; }
+  #mdSys button.on .n { background: #e0473f; color: #fff; }
+  #mdSys button.none { opacity: 0.55; }
   #mdList .row { display: flex; align-items: center; gap: 8px; }
   #mdList .play { flex: 1; text-align: left; padding: 9px 12px; background: #232833; border: 1px solid #333a49; color: #fff; border-radius: 6px; font: 600 14px ui-sans-serif, system-ui, sans-serif;
                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #mdList .play:hover { background: #2c313f; }
-  #mdList .size { color: #6b7385; font-size: 12px; width: 58px; text-align: right; flex: none; }
+  #mdList .size { color: #6b7385; font-size: 12px; width: 84px; text-align: right; flex: none; white-space: nowrap; }
   #mdList .pic { flex: none; width: 64px; height: 45px; object-fit: cover; border-radius: 4px; background: #111522 center/60% no-repeat; border: 1px solid #333a49; }   /* b304: each game's picture */
   #mdList .del { flex: none; padding: 6px 10px; background: transparent; border: 1px solid #333a49; color: #8b93a4; border-radius: 6px; }
   #mdScreen { flex: 1; position: relative; background: #000; display: none; }
@@ -187,6 +194,7 @@
         <button id="mdBricks">Play Bricks</button>
       </div>
       <div class="hint" id="mdHint">Your games stay on this device. They're never uploaded.</div>
+      <div id="mdSys"></div>
       <div id="mdList"></div>
       <input id="mdFile" type="file" multiple style="display:none">
       <input id="mdDir" type="file" webkitdirectory multiple style="display:none">
@@ -587,7 +595,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b305 — the Mega Drive cabinet plays Super Nintendo games too';
+const BUILD = 'b306 — pick a console in the Mega Drive menu';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -11826,9 +11834,13 @@ const MD = { open: false, mode: null, cab: null, games: [], frame: null, emu: nu
              call: null, copy: null, remotePad: 0, offer: null, dismissed: null, wantJoin: false, watchCall: null, pad: 0, padSent: 0, offerAt: 0 };
 // b304: the Super Nintendo too. Which emulator a game gets goes by its file ending.
 const MD_SYS = {
-  md:   { core: 'segaMD', label: 'Mega Drive',     tag: 'MD',   ext: ['md', 'bin', 'gen', 'smd', 'sms', 'gg', '68k', 'sgd'] },
-  snes: { core: 'snes',   label: 'Super Nintendo', tag: 'SNES', ext: ['sfc', 'smc', 'fig', 'swc'] }
+  md:   { core: 'segaMD', label: 'Mega Drive',     tag: 'MD',   ext: ['md', 'bin', 'gen', 'smd', '68k', 'sgd'] },
+  snes: { core: 'snes',   label: 'Super Nintendo', tag: 'SNES', ext: ['sfc', 'smc', 'fig', 'swc'] },
+  // b306: the Mega Drive's emulator plays these two as well (it goes by the file ending)
+  sms:  { core: 'segaMD', label: 'Master System',  tag: 'SMS',  ext: ['sms'], extra: true },
+  gg:   { core: 'segaMD', label: 'Game Gear',      tag: 'GG',   ext: ['gg'],  extra: true }
 };
+const MD_SHOW = ['md', 'snes', 'sms', 'gg'];     // the order of the console tiles
 const MD_EXT = [].concat(...Object.values(MD_SYS).map(o => o.ext));
 function mdSysOf(file) { const ext = String(file).split('.').pop().toLowerCase(); return Object.keys(MD_SYS).find(k => MD_SYS[k].ext.includes(ext)) || 'md'; }
 const MD_CDN = 'https://cdn.emulatorjs.org/stable/data/';
@@ -11877,6 +11889,7 @@ async function mdLoadList() {
 async function mdPut(file, data) {
   if (MD.games.some(g => g.file === file && g.size === data.byteLength)) return false;     // already got it
   const meta = { file, name: mdNiceName(file), sys: mdSysOf(file), size: data.byteLength, added: Date.now() };
+  if (MD.addedSys) MD.addedSys.add(mdGameSys(meta));
   const db = await mdDb();
   await new Promise((res, rej) => {
     const tx = db.transaction(['games', 'roms'], 'readwrite');
@@ -11923,6 +11936,7 @@ async function mdAddFiles(list) {
   if (!files.length) return;
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (_) {}   // ask the browser not to clear them
   let added = 0, had = 0, skipped = 0;
+  MD.addedSys = new Set();
   mdNote('Adding ' + files.length + ' file' + (files.length > 1 ? 's' : '') + '…');
   for (const f of files) {
     const ext = f.name.split('.').pop().toLowerCase();
@@ -11937,25 +11951,53 @@ async function mdAddFiles(list) {
     } catch (e) { skipped++; }
   }
   MD.games.sort((a, b) => a.name.localeCompare(b.name));
+  // b306: show what was just added, if another console was picked
+  const got = [...MD.addedSys]; MD.addedSys = null;
+  if (got.length && mdPick !== 'all' && !got.every(k => k === mdPick)) mdSetPick(got.length === 1 ? got[0] : 'all');
   mdDrawList();
   mdNote([added ? 'Added ' + added + ' game' + (added > 1 ? 's' : '') + '.' : '', had ? had + ' already in your library.' : '',
           skipped ? skipped + " file" + (skipped > 1 ? 's' : '') + " skipped (not a Mega Drive or Super Nintendo game)." : ''].filter(Boolean).join(' ') || 'Nothing added.');
 }
+// b306: which console each game is, going by its file (older entries saved .sms and .gg as Mega Drive)
+function mdGameSys(g) { const k = mdSysOf(g.file); return MD_SYS[k] ? k : 'md'; }
+let mdPick = 'all';
+try { const k = localStorage.getItem('smashed-console'); if (k === 'all' || MD_SYS[k]) mdPick = k; } catch (_) {}
+function mdSetPick(k) { mdPick = k; try { localStorage.setItem('smashed-console', k); } catch (_) {} mdDrawList(); }
+function mdDrawSys() {
+  const row = $md('mdSys'); row.textContent = '';
+  const count = k => MD.games.filter(g => k === 'all' || mdGameSys(g) === k).length;
+  // All, the Mega Drive and the Super Nintendo always; the others once you have a game for them (or they're picked)
+  const tiles = ['all'].concat(MD_SHOW.filter(k => !MD_SYS[k].extra || count(k) || mdPick === k));
+  for (const k of tiles) {
+    const b = document.createElement('button'), n = count(k);
+    b.className = (k === mdPick ? 'on' : '') + (n ? '' : ' none');
+    b.append(k === 'all' ? 'All' : MD_SYS[k].label);
+    const c = document.createElement('span'); c.className = 'n'; c.textContent = n; b.append(c);
+    b.addEventListener('click', () => mdSetPick(k));
+    row.appendChild(b);
+  }
+}
+const MD_EMPTY = { md: 'Mega Drive games end in .md, .bin, .gen or .smd.', snes: 'Super Nintendo games end in .sfc or .smc.',
+                   sms: 'Master System games end in .sms.', gg: 'Game Gear games end in .gg.' };
 function mdDrawList() {
+  mdDrawSys();
   const box = $md('mdList'); box.textContent = '';
-  if (!MD.games.length) {
+  const list = MD.games.filter(g => mdPick === 'all' || mdGameSys(g) === mdPick);
+  if (!list.length) {
     const p = document.createElement('div'); p.className = 'hint';
-    p.textContent = 'No games yet. Tap "Add games" and pick Mega Drive games (.md, .bin, .gen, .smd), Super Nintendo games (.sfc, .smc), or a .zip of them from this device.';
+    p.textContent = mdPick === 'all'
+      ? 'No games yet. Tap "Add games" and pick Mega Drive games (.md, .bin, .gen, .smd), Super Nintendo games (.sfc, .smc), or a .zip of them from this device.'
+      : 'No ' + MD_SYS[mdPick].label + ' games yet. ' + MD_EMPTY[mdPick] + ' Tap "Add games" to add some.';
     box.appendChild(p); return;
   }
-  for (const g of MD.games) {
+  for (const g of list) {
     const row = document.createElement('div'); row.className = 'row';
     const pic = document.createElement(g.pic ? 'img' : 'div'); pic.className = 'pic';          // b304: its picture (once it's been played)
     if (g.pic) { pic.src = g.pic; pic.alt = ''; } else pic.title = 'Play it once and it gets a picture';
     pic.addEventListener('click', () => mdPlay(g.id)); row.appendChild(pic);
     const b = document.createElement('button'); b.className = 'play'; b.textContent = g.name; b.title = g.file;
     b.addEventListener('click', () => mdPlay(g.id));
-    const s = document.createElement('span'); s.className = 'size'; s.textContent = (MD_SYS[g.sys || 'md'] || MD_SYS.md).tag + '  ' + mdSize(g.size);
+    const s = document.createElement('span'); s.className = 'size'; s.textContent = (mdPick === 'all' ? MD_SYS[mdGameSys(g)].tag + '  ' : '') + mdSize(g.size);
     const d = document.createElement('button'); d.className = 'del'; d.textContent = '✕'; d.title = 'Remove from library';
     d.addEventListener('click', () => { if (confirm('Remove "' + g.name + '" from this device?')) mdDelete(g.id); });
     row.append(b, s, d); box.appendChild(row);
@@ -12002,7 +12044,7 @@ async function mdPlay(id) {
   const base = await mdBasePath();
   mdStopGame();
   MD.playing = meta; MD.url = URL.createObjectURL(new Blob([data]));
-  const cfg = { core: (MD_SYS[meta.sys || mdSysOf(meta.file)] || MD_SYS.md).core, path: base.path, url: MD.url, name: meta.file };
+  const cfg = { core: MD_SYS[mdGameSys(meta)].core, path: base.path, url: MD.url, name: meta.file };
   const doc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{width:100%;height:100%}</style></head><body><div id="game"></div><script>'
     + 'var C=' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ';'
@@ -12077,7 +12119,7 @@ function mdOffer(force) {
   const now = performance.now();
   if (!force && now - MD.offerAt < 3000) return;
   MD.offerAt = now;
-  const msg = { t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName(), sys: MD.playing.sys || mdSysOf(MD.playing.file) };   // b305: and which console
+  const msg = { t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName(), sys: mdGameSys(MD.playing) };   // b305: and which console
   if (MD.playing.pic && (force || MD.picSent !== MD.playing.pic)) { msg.pic = MD.playing.pic; MD.picSent = MD.playing.pic; }   // b304: its picture, once
   net.conn.send(msg);
 }
@@ -12111,7 +12153,7 @@ function mdEndStream() {
 function mdApplyPad(bits) {
   const emu = MD.emu, was = MD.remotePad; MD.remotePad = bits;
   if (!emu || !emu.gameManager) return;
-  const btn = mdPadOf(MD.playing && (MD.playing.sys || mdSysOf(MD.playing.file))).btn;
+  const btn = mdPadOf(MD.playing && mdGameSys(MD.playing)).btn;
   for (let i = 0; i < btn.length; i++) {
     const a = (was >> i) & 1, b = (bits >> i) & 1;
     if (a !== b) { try { emu.gameManager.simulateInput(1, btn[i], b); } catch (_) {} }
