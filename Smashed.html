@@ -196,10 +196,7 @@
         <button class="dir" data-b="1" style="left:62px;bottom:14px">▼</button>
         <button class="dir" data-b="2" style="left:10px;bottom:66px">◀</button>
         <button class="dir" data-b="3" style="left:114px;bottom:66px">▶</button>
-        <button data-b="4" style="right:136px;bottom:40px">A</button>
-        <button data-b="5" style="right:74px;bottom:56px">B</button>
-        <button data-b="6" style="right:12px;bottom:72px">C</button>
-        <button class="small" data-b="7" style="left:50%;margin-left:-32px;bottom:14px">START</button>
+        <button class="small" data-b="7" style="left:50%;margin-left:4px;bottom:14px">START</button>
       </div>
     </div>
   </div>
@@ -588,7 +585,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b303 — the Bricks cabinet is a Mega Drive: your own library, and a friend can join as player 2';
+const BUILD = 'b304 — the Mega Drive cabinet plays Super Nintendo games too';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3027,7 +3024,7 @@ function drawCabinet(w, c) {
   ctx.fillStyle = '#0c0c12'; ctx.fillRect(x0 - 3, top, W + 6, 16);
   ctx.fillStyle = c.trim; ctx.globalAlpha = 0.25 + 0.1 * Math.sin(t * 4); ctx.fillRect(x0 - 1, top + 2, W + 2, 12); ctx.globalAlpha = 1;
   ctx.font = 'bold 7px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#fff'; ctx.fillText(c.game === 'bricks' && Math.floor(t / 2.5) % 2 ? 'MEGA DRIVE' : G.title, c.x, top + 8.5);   // b303
+  ctx.fillStyle = '#fff'; ctx.fillText(c.game === 'bricks' ? ['BRICKS', 'MEGA DRIVE', 'SNES'][Math.floor(t / 2.5) % 3] : G.title, c.x, top + 8.5);   // b303/b304
   // the screen, in its bezel, playing to itself
   ctx.fillStyle = '#050507'; ctx.fillRect(x0 + 4, top + 19, W - 8, 36);
   const r = { x: x0 + 7, y: top + 22, w: W - 14, h: 30 };
@@ -11824,11 +11821,28 @@ function protNoteBest(wave) {
 // buttons come back over the game's connection.
 const MD = { open: false, mode: null, cab: null, games: [], frame: null, emu: null, playing: null, url: null, base: null, db: null,
              call: null, copy: null, remotePad: 0, offer: null, dismissed: null, wantJoin: false, watchCall: null, pad: 0, padSent: 0, offerAt: 0 };
-const MD_EXT = ['md', 'bin', 'gen', 'smd', 'sms', 'gg', '68k', 'sgd'];
+// b304: the Super Nintendo too. Which emulator a game gets goes by its file ending.
+const MD_SYS = {
+  md:   { core: 'segaMD', label: 'Mega Drive',     tag: 'MD',   ext: ['md', 'bin', 'gen', 'smd', 'sms', 'gg', '68k', 'sgd'] },
+  snes: { core: 'snes',   label: 'Super Nintendo', tag: 'SNES', ext: ['sfc', 'smc', 'fig', 'swc'] }
+};
+const MD_EXT = [].concat(...Object.values(MD_SYS).map(o => o.ext));
+function mdSysOf(file) { const ext = String(file).split('.').pop().toLowerCase(); return Object.keys(MD_SYS).find(k => MD_SYS[k].ext.includes(ext)) || 'md'; }
 const MD_CDN = 'https://cdn.emulatorjs.org/stable/data/';
 // pad bits: up down left right A B C start X Y Z mode, and EmulatorJS's button numbers for them
-const MD_BTN = [4, 5, 6, 7, 1, 0, 8, 3, 10, 9, 11, 2];
-const MD_KEYS = { arrowup: 0, w: 0, arrowdown: 1, s: 1, arrowleft: 2, a: 2, arrowright: 3, d: 3, j: 4, k: 5, l: 6, enter: 7, u: 8, i: 9, o: 10, m: 11 };
+// bits 0-3 are the d-pad and 7 is Start; the rest depend on the console
+const MD_PADS = {
+  md:   { btn: [4, 5, 6, 7, 1, 0, 8, 3, 10, 9, 11, 2],                       // A B C, X Y Z, Mode
+          keys: { j: 4, k: 5, l: 6, u: 8, i: 9, o: 10, m: 11 }, keyHelp: 'J K L = A B C, U I O = X Y Z, Enter = Start',
+          gp: { 2: 4, 0: 5, 1: 6, 4: 8, 3: 9, 5: 10, 8: 11 },
+          touch: [[4, 'A', 0, 0], [5, 'B', 1, 0], [6, 'C', 2, 0], [8, 'X', 0, 1], [9, 'Y', 1, 1], [10, 'Z', 2, 1], [11, 'MODE', -1, 0]] },
+  snes: { btn: [4, 5, 6, 7, 8, 0, 1, 3, 9, 10, 11, 2],                       // A B Y, X L R, Select
+          keys: { l: 4, k: 5, j: 6, i: 8, u: 9, o: 10, m: 11 }, keyHelp: 'J K L = Y B A, I = X, U O = L R, M = Select, Enter = Start',
+          gp: { 1: 4, 0: 5, 2: 6, 3: 8, 4: 9, 5: 10, 8: 11 },
+          touch: [[6, 'Y', 0, 0], [5, 'B', 1, 0], [4, 'A', 2, 0], [9, 'L', 0, 1], [8, 'X', 1, 1], [10, 'R', 2, 1], [11, 'SELECT', -1, 0]] }
+};
+const MD_DIR_KEYS = { arrowup: 0, w: 0, arrowdown: 1, s: 1, arrowleft: 2, a: 2, arrowright: 3, d: 3, enter: 7 };
+function mdPadOf(sys) { return MD_PADS[sys] || MD_PADS.md; }
 const $md = id => document.getElementById(id);
 function mdNote(text) { $md('mdNote').textContent = text || ''; }
 function mdNiceName(file) { return file.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim() || file; }
@@ -11859,7 +11873,7 @@ async function mdLoadList() {
 }
 async function mdPut(file, data) {
   if (MD.games.some(g => g.file === file && g.size === data.byteLength)) return false;     // already got it
-  const meta = { file, name: mdNiceName(file), size: data.byteLength, added: Date.now() };
+  const meta = { file, name: mdNiceName(file), sys: mdSysOf(file), size: data.byteLength, added: Date.now() };
   const db = await mdDb();
   await new Promise((res, rej) => {
     const tx = db.transaction(['games', 'roms'], 'readwrite');
@@ -11922,20 +11936,20 @@ async function mdAddFiles(list) {
   MD.games.sort((a, b) => a.name.localeCompare(b.name));
   mdDrawList();
   mdNote([added ? 'Added ' + added + ' game' + (added > 1 ? 's' : '') + '.' : '', had ? had + ' already in your library.' : '',
-          skipped ? skipped + " file" + (skipped > 1 ? 's' : '') + " skipped (not a Mega Drive game)." : ''].filter(Boolean).join(' ') || 'Nothing added.');
+          skipped ? skipped + " file" + (skipped > 1 ? 's' : '') + " skipped (not a Mega Drive or Super Nintendo game)." : ''].filter(Boolean).join(' ') || 'Nothing added.');
 }
 function mdDrawList() {
   const box = $md('mdList'); box.textContent = '';
   if (!MD.games.length) {
     const p = document.createElement('div'); p.className = 'hint';
-    p.textContent = 'No games yet. Tap "Add games" and pick game files (.md, .bin, .gen, .smd) or a .zip of them from this device.';
+    p.textContent = 'No games yet. Tap "Add games" and pick Mega Drive games (.md, .bin, .gen, .smd), Super Nintendo games (.sfc, .smc), or a .zip of them from this device.';
     box.appendChild(p); return;
   }
   for (const g of MD.games) {
     const row = document.createElement('div'); row.className = 'row';
     const b = document.createElement('button'); b.className = 'play'; b.textContent = g.name; b.title = g.file;
     b.addEventListener('click', () => mdPlay(g.id));
-    const s = document.createElement('span'); s.className = 'size'; s.textContent = mdSize(g.size);
+    const s = document.createElement('span'); s.className = 'size'; s.textContent = (MD_SYS[g.sys || 'md'] || MD_SYS.md).tag + '  ' + mdSize(g.size);
     const d = document.createElement('button'); d.className = 'del'; d.textContent = '✕'; d.title = 'Remove from library';
     d.addEventListener('click', () => { if (confirm('Remove "' + g.name + '" from this device?')) mdDelete(g.id); });
     row.append(b, s, d); box.appendChild(row);
@@ -11951,7 +11965,7 @@ function mdShow(mode) {
   $md('mdBack').style.display = mode === 'play' ? '' : 'none';
   $md('mdPad').classList.toggle('on', mode === 'watch' && (('ontouchstart' in window) || navigator.maxTouchPoints > 0));
   $md('mdFolder').style.display = ('webkitdirectory' in document.createElement('input')) && !/iPhone|iPad|Android/i.test(navigator.userAgent) ? '' : 'none';
-  $md('mdTitle').textContent = mode === 'menu' ? 'MEGA DRIVE' : mode === 'play' ? (MD.playing ? MD.playing.name : 'MEGA DRIVE') : (MD.offer ? MD.offer.name + ' (player 2)' : 'MEGA DRIVE');
+  $md('mdTitle').textContent = mode === 'menu' ? 'MEGA DRIVE · SNES' : mode === 'play' ? (MD.playing ? MD.playing.name : 'MEGA DRIVE') : (MD.offer ? MD.offer.name + ' (player 2)' : 'MEGA DRIVE');
 }
 function mdOpen(cab) {
   MD.open = true; MD.cab = cab || MD.cab;
@@ -11981,7 +11995,7 @@ async function mdPlay(id) {
   const base = await mdBasePath();
   mdStopGame();
   MD.playing = meta; MD.url = URL.createObjectURL(new Blob([data]));
-  const cfg = { core: 'segaMD', path: base.path, url: MD.url, name: meta.file };
+  const cfg = { core: (MD_SYS[meta.sys || mdSysOf(meta.file)] || MD_SYS.md).core, path: base.path, url: MD.url, name: meta.file };
   const doc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#game{width:100%;height:100%}</style></head><body><div id="game"></div><script>'
     + 'var C=' + JSON.stringify(cfg).replace(/</g, '\\u003c') + ';'
@@ -12023,7 +12037,7 @@ function mdOffer(force) {
   const now = performance.now();
   if (!force && now - MD.offerAt < 3000) return;
   MD.offerAt = now;
-  net.conn.send({ t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName() });
+  net.conn.send({ t: 'md', on: 1, name: MD.playing.name.slice(0, 60), who: mdMyName(), sys: MD.playing.sys || mdSysOf(MD.playing.file) });
 }
 setInterval(() => mdOffer(false), 1000);          // and keep saying so, for a friend who connects after
 addEventListener('message', e => { if (MD.frame && e.source === MD.frame.contentWindow && e.data && e.data.md === 'started') mdStarted(); });
@@ -12055,16 +12069,17 @@ function mdEndStream() {
 function mdApplyPad(bits) {
   const emu = MD.emu, was = MD.remotePad; MD.remotePad = bits;
   if (!emu || !emu.gameManager) return;
-  for (let i = 0; i < MD_BTN.length; i++) {
+  const btn = mdPadOf(MD.playing && (MD.playing.sys || mdSysOf(MD.playing.file))).btn;
+  for (let i = 0; i < btn.length; i++) {
     const a = (was >> i) & 1, b = (bits >> i) & 1;
-    if (a !== b) { try { emu.gameManager.simulateInput(1, MD_BTN[i], b); } catch (_) {} }
+    if (a !== b) { try { emu.gameManager.simulateInput(1, btn[i], b); } catch (_) {} }
   }
 }
 
 // ---- watching (and playing) the other player's game
 function mdAsk(show) {
   const o = MD.offer;
-  if (show && o) $md('mdAskText').textContent = o.who + ' is playing ' + o.name + ' on the Mega Drive.';
+  if (show && o) $md('mdAskText').textContent = o.who + ' is playing ' + o.name + ' on the ' + MD_SYS[o.sys].label + '.';
   $md('mdAsk').classList.toggle('on', !!(show && o));
 }
 function mdJoin() {
@@ -12076,7 +12091,8 @@ function mdJoin() {
   for (const s of [moveStick, aimStick]) { s.active = false; s.id = null; s.dx = s.dy = 0; }
   $md('mdWait').textContent = 'Waiting for the picture…';
   mdShow('watch');
-  mdNote('You are player 2.  Keys: arrows or WASD, J K L = A B C, Enter = Start.');
+  mdLayoutPad(MD.offer.sys);
+  mdNote('You are player 2.  Keys: arrows or WASD, ' + mdPadOf(MD.offer.sys).keyHelp + '.');
   net.conn.send({ t: 'mdjoin' });
 }
 function mdHookCalls(peer) {
@@ -12113,8 +12129,9 @@ function mdSendPad() {
     const on = i => gp.buttons[i] && gp.buttons[i].pressed;
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
     if (on(12) || ay < -0.5) bits |= 1; if (on(13) || ay > 0.5) bits |= 2; if (on(14) || ax < -0.5) bits |= 4; if (on(15) || ax > 0.5) bits |= 8;
-    if (on(2)) bits |= 16; if (on(0)) bits |= 32; if (on(1)) bits |= 64; if (on(9)) bits |= 128;
-    if (on(4)) bits |= 256; if (on(3)) bits |= 512; if (on(5)) bits |= 1024; if (on(8)) bits |= 2048;
+    if (on(9)) bits |= 128;
+    const map = mdPadOf(MD.offer && MD.offer.sys).gp;
+    for (const i in map) if (on(+i)) bits |= 1 << map[i];
   }
   if (bits !== MD.padSent || performance.now() - (MD.padAt || 0) > 250) {
     MD.padSent = bits; MD.padAt = performance.now();
@@ -12126,7 +12143,7 @@ function mdKey(e, down) {
   const k = e.key.toLowerCase();
   if (down && k === 'escape') { mdClose(); e.preventDefault(); return; }
   if (MD.mode !== 'watch') return;
-  const b = MD_KEYS[k];
+  const b = k in MD_DIR_KEYS ? MD_DIR_KEYS[k] : mdPadOf(MD.offer && MD.offer.sys).keys[k];
   if (b === undefined) return;
   if (down) MD.pad |= 1 << b; else MD.pad &= ~(1 << b);
   e.preventDefault();
@@ -12135,7 +12152,7 @@ function mdKey(e, down) {
 function mdOnData(d) {
   if (d.t === 'md') {
     if (d.on) {
-      const o = { name: String(d.name || 'a game').slice(0, 60), who: String(d.who || 'Your friend').slice(0, 30) };
+      const o = { name: String(d.name || 'a game').slice(0, 60), who: String(d.who || 'Your friend').slice(0, 30), sys: MD_SYS[d.sys] ? d.sys : 'md' };
       const fresh = !MD.offer || MD.offer.name !== o.name;
       MD.offer = o;
       if (fresh && MD.dismissed !== o.name && !MD.wantJoin && !MD.playing) mdAsk(true);
@@ -12167,13 +12184,26 @@ for (const id of ['mdFile', 'mdDir']) $md(id).addEventListener('change', e => { 
 $md('mdJoin').addEventListener('click', mdJoin);
 $md('mdNo').addEventListener('click', () => { if (MD.offer) MD.dismissed = MD.offer.name; mdAsk(false); });
 $md('mdScreen').addEventListener('click', () => { const v = $md('mdScreen').querySelector('video'); if (v && v.paused) v.play().then(() => { $md('mdWait').textContent = ''; }).catch(() => {}); });
-for (const b of $md('mdPad').querySelectorAll('button')) {
+// the face buttons for this console: two rows of three on the right, and Mode / Select by Start
+function mdLayoutPad(sys) {
+  const pad = $md('mdPad');
+  for (const b of pad.querySelectorAll('button.face')) b.remove();
+  for (const [bit, label, col, row] of mdPadOf(sys).touch) {
+    const b = document.createElement('button'); b.className = 'face'; b.dataset.b = bit; b.textContent = label;
+    if (col < 0) { b.classList.add('small'); b.style.cssText = 'left:50%;margin-left:-68px;bottom:14px'; }
+    else b.style.cssText = 'right:' + (136 - col * 62) + 'px;bottom:' + (40 + col * 16 + row * 66) + 'px';
+    pad.appendChild(b); mdPadButton(b);
+  }
+}
+function mdPadButton(b) {
   const bit = 1 << (+b.dataset.b);
   const on = e => { MD.pad |= bit; b.classList.add('down'); try { b.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); };
   const off = e => { MD.pad &= ~bit; b.classList.remove('down'); e.preventDefault(); };
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
   b.addEventListener('contextmenu', e => e.preventDefault());
 }
+for (const b of $md('mdPad').querySelectorAll('button')) mdPadButton(b);
+mdLayoutPad('md');
 addEventListener('keyup', e => { if (MD.open) mdKey(e, false); });
 
 setInterval(() => { const v = net.role === 'client' ? net.view : world; if (MD.open && v && v.started) mdClose(); }, 300);   // a run starting closes the Mega Drive
