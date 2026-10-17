@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b329';
+const BUILD = 'b330';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -2003,6 +2003,7 @@ const FENCE_H = 58;                                   // a bit under eye height,
 const TRAMP = { cx: 707, cy: 1340, r: 122, mat: 32, net: 64, g: 520, vbase: 175, vmax: 380, boost: 85, keep: 0.82 };
 const YARD_SOLIDS = [
   { x0: 488,  y0: 566,  x1: 618,  y1: 634,  h: 36,  m: 'bbq' },                                     // barbecue
+  { x0: 488,  y0: 690,  x1: 520,  y1: 712,  h: 22,  m: 'esky' },                                    // b330: the esky of snags
   { x0: 604,  y0: 668,  x1: 796,  y1: 748,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
   { x0: 680,  y0: 612,  x1: 722,  y1: 668,  h: 34,  m: 'wood' },                                    //   back chair
   { x0: 680,  y0: 748,  x1: 722,  y1: 806,  h: 34,  m: 'wood' },                                    //   front chair
@@ -2032,6 +2033,46 @@ function pushOutOfSolid(o, r, s) {
   if (d >= m) return false;
   if (d < 0.001) { o.y = s.cy + m; return true; }
   o.x = s.cx + dx / d * m; o.y = s.cy + dy / d * m; return true;
+}
+// b330: the barbecue on the deck. E lights it, turns it up (low, medium, high) and off. Grab a snag from the esky,
+// E at the barbecue puts it on the hotplate, and it cooks as fast as the heat's up: raw, cooked, burnt. E takes a
+// cooked one off, and E eats it. The host keeps it (w.bbq: heat 0-3, and four places on the hotplate, each how cooked
+// its snag is, 1 being done, or -1 for none); what you're holding is p.food (1 raw, 2 cooked, 3 burnt).
+const BBQ = { x0: 522, y0: 634, x1: 626, y1: 692,                           // where you stand to use it, in front
+  top: { x0: 523, y0: 524, x1: 583, y1: 554 },                               // its hotplate top-down, on the picture's barbecue
+  fp: { x0: 520, y0: 576, x1: 586, y1: 622 },                                // and on top of it in first person
+  rate: [0, 0.055, 0.1, 0.17] };                                             // how fast a snag cooks at each heat
+const ESKY = { x: 504, y: 701 };
+function bbqNear(p) { return p.x > BBQ.x0 && p.x < BBQ.x1 && p.y > BBQ.y0 && p.y < BBQ.y1; }
+function eskyNear(p) { return Math.hypot(p.x - ESKY.x, p.y - ESKY.y) < 42; }
+function bbqLabel(w, p) {
+  const B = w && w.bbq; if (!B || !p || !p.alive || w.started || !lobbyTall(w) || p.tramp || p.air || p.sit || p.bed || p.dive) return null;
+  if (bbqNear(p)) {
+    if (p.food === 1) return B.s.includes(-1) ? 'COOK' : null;
+    if (!p.food) return B.s.some(c => c >= 1) ? 'TAKE SNAG' : ['LIGHT', 'TURN UP', 'TURN UP', 'TURN OFF'][B.heat];
+  }
+  if (eskyNear(p)) { if (!p.food) return 'GRAB SNAG'; if (p.food === 1) return 'PUT BACK'; }
+  if (p.food >= 2) return p.food === 2 ? 'EAT' : 'EAT IT?';
+  return null;
+}
+function bbqAction(w, p) {                              // on the host (the guest's E comes in as a request)
+  const L = bbqLabel(w, p); if (!L) return false;
+  const B = w.bbq;
+  if (L === 'COOK') { B.s[B.s.indexOf(-1)] = 0; p.food = 0; }
+  else if (L === 'TAKE SNAG') { let best = -1; B.s.forEach((c, i) => { if (c >= 1 && (best < 0 || c > B.s[best])) best = i; }); p.food = B.s[best] >= 1.6 ? 3 : 2; B.s[best] = -1; }   // (the one nearest burning)
+  else if (L === 'GRAB SNAG') p.food = 1;
+  else if (L === 'PUT BACK') p.food = 0;
+  else if (L === 'EAT' || L === 'EAT IT?') {
+    const good = p.food === 2; p.food = 0;
+    w.floaters.push({ x: p.x, y: p.y - 70, text: good ? 'YUM!' : 'BLEH!', t: 0, col: good ? '#7fd89a' : '#9aa0a8' });
+    if (good && p.hp < T.playerHp) p.hp++;
+  }
+  else B.heat = (B.heat + 1) % 4;                       // light it, turn it up, turn it off
+  return true;
+}
+function bbqStep(w, dt) {
+  const B = w.bbq; if (!B || !B.heat) return;
+  for (let i = 0; i < 4; i++) if (B.s[i] >= 0) B.s[i] = Math.min(2, B.s[i] + BBQ.rate[B.heat] * dt);
 }
 function trampNear(p) { return !!p && p.alive && !p.tramp && !p.air && !p.dive && !p.sit && !p.bed && !p.lift && !p.leg && Math.hypot(p.x - TRAMP.cx, p.y - TRAMP.cy) < TRAMP.r + 40; }
 function trampOn(p) {                                   // up over the edge, onto the mat near where you stood
@@ -2293,6 +2334,70 @@ function drawYardCut(o) {
     o.img = c;
   }
   ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(o.img, o.box[0], o.box[1]); ctx.restore();
+}
+// b330: the barbecue's look and sound. Smoke puffs (u, v across its hotplate, z up) are made up on each screen; the
+// sizzle and the knobs' clicks are worked out from what the host says it's doing, so the guest hears them too.
+const BBQ_FX = { puffs: [], last: 0, heat: 0, siz: 0 };
+function bbqFx(w) {
+  const B = w.bbq, now = performance.now() / 1000, dt = Math.min(0.1, Math.max(0, now - (BBQ_FX.last || now))); BBQ_FX.last = now;
+  if (!B) return;
+  const me = localMe(), near = me ? Math.max(0, 1 - Math.hypot(me.x - 553, me.y - 600) / 700) : 0, sound = SND.ctx && SND.on && near > 0;
+  if (B.heat !== BBQ_FX.heat) {                                          // a click of the knob, and a whoomp as it lights
+    if (sound) { sTone(0.03, 1800, 1200, 0.05 * near, 'square'); if (!BBQ_FX.heat) sNoise(0.5, 400, 1.5, 0.25 * near, 'bandpass', 1400); }
+    BBQ_FX.heat = B.heat;
+  }
+  const on = B.s.filter(c => c >= 0), burnt = on.some(c => c > 1.5);
+  if (B.heat && on.length) {                                             // sizzling, and smoke (black once something's burning)
+    BBQ_FX.siz -= dt;
+    if (BBQ_FX.siz <= 0) { BBQ_FX.siz = 0.05 + Math.random() * 0.12; if (sound) sNoise(0.06 + Math.random() * 0.06, 3500 + Math.random() * 3000, 2, (0.012 + 0.01 * B.heat) * near, 'highpass'); }
+    if (Math.random() < dt * (2 + 3 * B.heat + (burnt ? 8 : 0))) BBQ_FX.puffs.push({ u: 0.15 + Math.random() * 0.7, v: 0.2 + Math.random() * 0.6, z: 0, r: 3, a: burnt ? 0.5 : 0.28, c: burnt ? 60 : 210, life: 1.6 });
+  } else if (B.heat && Math.random() < dt * 0.8) BBQ_FX.puffs.push({ u: 0.2 + Math.random() * 0.6, v: 0.5, z: 0, r: 2, a: 0.12, c: 200, life: 1.2 });   // just the heat shimmering off it
+  for (let i = BBQ_FX.puffs.length - 1; i >= 0; i--) { const q = BBQ_FX.puffs[i]; q.z += 26 * dt; q.r += 5 * dt; q.life -= dt; q.u += (Math.random() - 0.5) * 0.02; if (q.life <= 0) BBQ_FX.puffs.splice(i, 1); }
+}
+function snagColour(c) {                                                 // raw pink, cooked brown, burnt black
+  const k = Math.min(1, c), b = Math.max(0, Math.min(1, (c - 1) / 0.6));
+  const r = 232 + (150 - 232) * k, g = 150 + (84 - 150) * k, bl = 150 + (44 - 150) * k;
+  return [r + (36 - r) * b, g + (28 - g) * b, bl + (24 - bl) * b];
+}
+function drawSnag(x, y, c, w, h) {
+  const [r, g, b] = snagColour(c);
+  ctx.fillStyle = 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+  ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, h / 2); else ctx.rect(x, y, w, h); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,' + (c < 1.4 ? 0.35 : 0.1) + ')'; ctx.fillRect(x + h / 2, y + 1, w - h, 1);   // shine
+  if (c > 0.45) { ctx.fillStyle = 'rgba(30,14,6,0.55)'; for (let i = 1; i < 4; i++) ctx.fillRect(x + i * w / 4, y, 1, h); }   // grill marks
+}
+function drawBbq(w) {
+  const B = w.bbq; if (!B) return;
+  bbqFx(w);
+  const T0 = BBQ.top, W = T0.x1 - T0.x0, H = T0.y1 - T0.y0, now = performance.now() / 1000;
+  ctx.save();
+  ctx.fillStyle = '#9ea3aa'; ctx.fillRect(T0.x0 - 1, T0.y0 - 9, W + 2, 9);              // the lid, propped open at the back
+  ctx.fillStyle = '#c9ced4'; ctx.fillRect(T0.x0 + 1, T0.y0 - 8, W - 2, 3);
+  ctx.fillStyle = '#26272b'; ctx.fillRect(T0.x0, T0.y0, W, H);
+  if (B.heat) for (let x = T0.x0 + 2; x < T0.x1 - 2; x += 4) {                           // the burners glowing through
+    const f = (0.35 + 0.2 * B.heat) * (0.7 + 0.3 * Math.sin(now * 13 + x * 1.7));
+    ctx.fillStyle = 'rgba(255,' + Math.round(110 + 60 * f) + ',30,' + f.toFixed(2) + ')'; ctx.fillRect(x, T0.y0 + 1, 3, H - 2);
+  }
+  ctx.fillStyle = '#7d8189'; for (let y = T0.y0 + 2; y < T0.y1 - 1; y += 4) ctx.fillRect(T0.x0 + 1, y, W - 2, 1);   // the grill's bars
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.strokeRect(T0.x0 + 0.5, T0.y0 + 0.5, W - 1, H - 1);
+  for (let i = 0; i < 4; i++) if (B.s[i] >= 0) drawSnag(T0.x0 + 6 + (i % 2) * 28, T0.y0 + 6 + (i >> 1) * 12, B.s[i], 20, 6);
+  const lit = [0, 1, 3, 5][B.heat];                                                       // the knobs: one for low, three for medium, five for high
+  [530, 543, 552, 562, 574].forEach((x, i) => { if (i < lit) { ctx.fillStyle = '#ff5a2a'; ctx.fillRect(x - 1, 580, 3, 3); } });
+  for (const q of BBQ_FX.puffs) {
+    ctx.fillStyle = 'rgba(' + q.c + ',' + q.c + ',' + q.c + ',' + (q.a * Math.min(1, q.life)).toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(T0.x0 + q.u * W, T0.y0 + q.v * H - q.z, q.r, 0, Math.PI * 2); ctx.fill();
+  }
+  const ex = ESKY.x, ey = ESKY.y;                                                         // the esky: white lid, blue body
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(ex - 15, ey + 9, 32, 4);
+  ctx.fillStyle = '#2f6fbf'; ctx.fillRect(ex - 16, ey - 8, 32, 18);
+  ctx.fillStyle = '#e6eaee'; ctx.fillRect(ex - 17, ey - 16, 34, 9);
+  ctx.fillStyle = '#9aa3ad'; ctx.fillRect(ex - 6, ey - 13, 12, 3);
+  ctx.strokeStyle = '#13213a'; ctx.strokeRect(ex - 16.5, ey - 16.5, 33, 27);
+  ctx.restore();
+}
+function drawHeldSnag(p) {
+  if (!p.food) return;
+  ctx.save(); drawSnag(p.x + (p.fx < 0 ? -18 : 4), p.y - 20 - (p.dive ? 0 : p.dz || 0), [0, 0, 1, 1.8][p.food], 14, 5); ctx.restore();
 }
 // b322: the yard picture, under everything else in the lobby
 function drawYard() {
@@ -3743,6 +3848,31 @@ function fpSolid(s, px, py, dx, dy, tMin, tMax) {
   if (s.roof && (s.roof.ridge === 'y') === (side === 1)) h2 = s.h + s.roof.k * Math.min(u - (side ? s.x0 : s.y0), (side ? s.x1 : s.y1) - u);
   if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit, s.m === 'house' ? 0 : tFar, h2);
 }
+// b330: a point on the barbecue's hotplate in first person (u, v: 0..1 across and down it): a snag, a bar of the grill,
+// or the gap between, glowing when it's lit
+const BBQ_RGB = [0, 0, 0];
+function bbqPlateRGB(u, v, B, now) {
+  for (let i = 0; B && i < 4; i++) {
+    if (B.s[i] < 0) continue;
+    const su = 0.1 + (i % 2) * 0.47, sv = 0.18 + (i >> 1) * 0.42;
+    if (u > su && u < su + 0.33 && v > sv && v < sv + 0.22) {
+      const c = snagColour(B.s[i]), mk = B.s[i] > 0.45 && fpRep((u - su) * 40, 3.3) < 0.5 ? 0.5 : 1;
+      BBQ_RGB[0] = c[0] * mk; BBQ_RGB[1] = c[1] * mk; BBQ_RGB[2] = c[2] * mk; return;
+    }
+  }
+  if (fpRep(v * 34, 3) < 1.2) { BBQ_RGB[0] = 96; BBQ_RGB[1] = 99; BBQ_RGB[2] = 106; return; }   // the grill's bars
+  if (B && B.heat) { const f = (0.25 + 0.17 * B.heat) * (0.7 + 0.3 * Math.sin(now * 13 + u * 60)); BBQ_RGB[0] = 34 + 210 * f; BBQ_RGB[1] = 30 + 100 * f * f; BBQ_RGB[2] = 28; return; }   // the burners glowing between them
+  BBQ_RGB[0] = 38; BBQ_RGB[1] = 39; BBQ_RGB[2] = 43;
+}
+const FP_PUFFS = {};                                                  // smoke puffs as cut-outs: pale or dark, four strengths
+function fpPuff(q) {
+  const key = (q.c < 128 ? 'd' : 'l') + Math.max(0, Math.min(3, Math.round(q.a * Math.min(1, q.life) * 8)));
+  if (FP_PUFFS[key]) return FP_PUFFS[key];
+  const c = document.createElement('canvas'); c.width = c.height = 24; const g = c.getContext('2d'), v = q.c < 128 ? 60 : 215, a = (+key[1] + 1) / 8;
+  const gr = g.createRadialGradient(12, 12, 1, 12, 12, 12); gr.addColorStop(0, 'rgba(' + v + ',' + v + ',' + v + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + v + ',' + v + ',' + v + ',0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 24, 24);
+  return (FP_PUFFS[key] = c);
+}
 function fpHash(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; }
 function fpRep(u, n) { return ((u % n) + n) % n; }
 // a wall's colour at u across its face and z up it: into FP_RGB (r, g, b, and how solid: 1; less for the
@@ -3834,6 +3964,8 @@ function fpMaterial(s, face, u, z) {
       if (z > H - 3) { r = 192; g = 198; b = 200; } else if (z < 2) { r = 92; g = 94; b = 94; }
       break;
     }
+    case 'esky':                                                      // b330: blue, a white lid
+      if (z > H - 6) { r = 230; g = 234; b = 238; } else if (z < 2) { r = 30; g = 40; b = 60; } else { r = 48; g = 110; b = 190; } break;
     case 'compost':
       r = 58; g = 86; b = 50; if (z > H - 4) { r = 44; g = 64; b = 38; } else if (z % 9 < 1) { r = 40; g = 60; b = 34; } break;
   }
@@ -3981,6 +4113,15 @@ function shroomExtras(w, me, sprites, npc) {
   for (const b of (w.blasts || [])) {
     const f = Math.min(0.999, b.t / T.blastTime), set = NUKE.boom || [], im = set[Math.floor(f * set.length)];
     if (im && im.naturalWidth) { const dw = T.blastRadius * 1.6 * (0.6 + f * 0.6), dh = dw * im.naturalHeight / im.naturalWidth; sprites.push({ img: im, x: b.x, y: b.y, W: dw, H: dh, foot: dh * 0.85, glow: true }); }
+  }
+  if (w.bbq && lobbyTall(w)) {                                          // b330: the barbecue's flames and smoke
+    const B = w.bbq, F = BBQ.fp, W0 = F.x1 - F.x0, H0 = F.y1 - F.y0, tt = performance.now() / 1000;
+    bbqFx(w);
+    if (B.heat) for (let i = 0; i < 2 + B.heat; i++) {
+      const fl = 0.75 + 0.25 * Math.sin(tt * (9 + i) + i * 2.1), sz = (5 + B.heat * 2.5) * fl;
+      sprites.push({ img: SHROOM.glow, x: F.x0 + W0 * (0.15 + 0.7 * ((i * 0.37) % 1)), y: F.y0 + H0 * (0.3 + 0.4 * ((i * 0.61) % 1)), W: sz, H: sz, foot: 36 + sz * 0.6, glow: true });
+    }
+    for (const q of BBQ_FX.puffs) sprites.push({ img: fpPuff(q), x: F.x0 + q.u * W0, y: F.y0 + q.v * H0, W: q.r * 2.4, H: q.r * 2.4, foot: 36 + q.z + q.r * 1.2 });
   }
   if (T.loungeFloor && !w.started) for (const d of DUCKS) { const im = duckImg(d.look); sprites.push({ img: im, x: d.x, y: d.y, W: im.width, H: im.height, foot: im.height - 4 }); }
   // Gothica, thrown: flying, flat out on the floor, or paddling in the pool
@@ -4468,7 +4609,10 @@ function drawShroom(w) {
           const dm = k / den; if (dm > hh.t2 || dm < d) continue;
           const wx = px + rdx * dm, wy = py + rdy * dm, o = (y * RW + x) * 4;
           let r, g, b;
-          if (sh.m === 'tank') {                                         // the tank's rim, and the water in it
+          if (sh.m === 'bbq' && wx > BBQ.fp.x0 && wx < BBQ.fp.x1 && wy > BBQ.fp.y0 && wy < BBQ.fp.y1) {   // b330: the hotplate
+            bbqPlateRGB((wx - BBQ.fp.x0) / (BBQ.fp.x1 - BBQ.fp.x0), (wy - BBQ.fp.y0) / (BBQ.fp.y1 - BBQ.fp.y0), w.bbq, t); r = BBQ_RGB[0]; g = BBQ_RGB[1]; b = BBQ_RGB[2];
+          } else if (sh.m === 'esky') { r = 228; g = 232; b = 236; }
+          else if (sh.m === 'tank') {                                    // the tank's rim, and the water in it
             if (Math.hypot(wx - sh.cx, wy - sh.cy) > sh.r - 7) { r = 196; g = 200; b = 204; }
             else { const kk = fpRep(wx * 0.7 + wy, 18) < 1.2 ? 1.15 : 1; r = 78 * kk; g = 128 * kk; b = 176 * kk; }
           } else {                                                       // anything else: its own picture off the yard art (the garage's roof, the ute from above...)
@@ -4730,6 +4874,14 @@ function drawShroom(w) {
   ctx.restore();
   if (onBoard) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fade; drawBoard(ctx); drawFeet(ctx); ctx.restore(); }
   if (!onBoard && !dv && !me.dive) drawFpGuns(me, CW, CH, fade);         // b318: the blasters in your hands
+  if (!onBoard && !dv && me.food) {                                      // b330: a snag in your hand, down at the bottom
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fade;
+    ctx.translate(CW * 0.5, CH * 0.7); ctx.rotate(-0.18); const sw = CW * 0.17, shh = CH * 0.065, [r0, g0, b0] = snagColour([0, 0, 1, 1.8][me.food]);
+    ctx.fillStyle = 'rgb(' + (r0 | 0) + ',' + (g0 | 0) + ',' + (b0 | 0) + ')'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-sw / 2, -shh / 2, sw, shh, shh / 2); else ctx.rect(-sw / 2, -shh / 2, sw, shh); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(-sw / 2 + shh / 2, -shh / 2 + shh * 0.18, sw - shh, shh * 0.14);
+    if (me.food > 1) { ctx.fillStyle = 'rgba(30,14,6,0.5)'; for (let i = 1; i < 5; i++) ctx.fillRect(-sw / 2 + i * sw / 5, -shh / 2, sw * 0.02, shh); }
+    ctx.restore();
+  }
   // a crosshair, and how long's left as a thin rainbow along the top
   ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
   ctx.globalAlpha = fade;
@@ -5620,6 +5772,7 @@ function stepDive(w, p, inp, dt) {
 
 function lobbySolids(w, dt) {
   if (w.started || !T.loungeFloor) return;
+  bbqStep(w, dt || 1 / 60);                              // b330: the snags cooking
   const water = { x0: POOL.x0 + 6, y0: POOL.y0 + 6, x1: POOL.x1 - 6, y1: POOL.y1 - 6 };
   for (const p of w.players) {
     if (p.tramp) { trampStep(w, p, dt || 1 / 60); continue; }   // b326: bouncing (the net, not the solids, keeps him in)
@@ -5889,6 +6042,7 @@ function buildWorld() {
     vendSold: false,      // bought this wave; restocks when the next one starts
     shake: 0,
     dummies: [], cans: [],      // lobby playground: only alive before Start
+    bbq: { heat: 0, s: [-1, -1, -1, -1] },   // b330: the barbecue on the deck
     plants: [], plantTimer: 0,  // potatoes, the spud gun's ammo
     husks: [],                  // spent potatoes, mid-air
     slot: { x: ARENA.w * 0.5, y: ARENA.wall + 54 + T.slotDrop, flash: 0, sym: 0, cool: 0, busy: -1,
@@ -8205,10 +8359,12 @@ function snapshot(w) {
                            p.leg ? [Math.round(p.leg.t * 100), p.leg.reps, Math.round(p.leg.rep * 100)] : 0,
                            p.plate ? 'SML'.indexOf(p.plate) + 1 : 0,
                            p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0,   // b309: taking a hit, so the guest sees it
-                           p.tramp ? 1 : p.air ? 2 : 0, Math.round(p.tv || 0)]),   // b326: on the trampoline (b327: or flying off it), and how fast he's going up or down
+                           p.tramp ? 1 : p.air ? 2 : 0, Math.round(p.tv || 0),   // b326: on the trampoline (b327: or flying off it), and how fast he's going up or down
+                           p.food || 0]),                                           // b330: a snag in his hand
     gy: [GYM.bar.L.join(''), GYM.bar.R.join(''), GYM.pegs.map(q => q.join('')), LEG.horn.L.join(''), LEG.horn.R.join(''),
          GYM.anim ? [GYM.anim.kind, GYM.anim.side, GYM.anim.size, Math.round(GYM.anim.t * 100), Math.round(GYM.anim.dur * 100), GYM.anim.pid] : 0],
     bj: bjPack(w.bj),
+    bq: w.bbq ? [w.bbq.heat].concat(w.bbq.s.map(c => c < 0 ? -1 : Math.round(c * 100))) : 0,   // b330: the barbecue
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
     bx: (w.blasts || []).map(b => [Math.round(b.x), Math.round(b.y), Math.round(b.t * 100), b.id]),
@@ -8308,9 +8464,10 @@ function worldFromSnapshot(s, age, bits) {
       leg: a[52] ? { t: a[52][0] / 100 + age, reps: a[52][1], rep: a[52][2] / 100 } : null,
       plate: a[53] ? 'SML'[a[53] - 1] : null,
       vape: a[54] ? { t: a[54] / 100 + age } : null,
-      tramp: a[55] === 1 ? 1 : 0, air: a[55] === 2 ? {} : null, tv: a[56] || 0
+      tramp: a[55] === 1 ? 1 : 0, air: a[55] === 2 ? {} : null, tv: a[56] || 0, food: a[57] || 0
     })),
     bj: bjUnpack(s.bj),
+    bbq: s.bq ? { heat: s.bq[0], s: s.bq.slice(1, 5).map(v => v < 0 ? -1 : v / 100) } : { heat: 0, s: [-1, -1, -1, -1] },
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
                                       H: a[5], h0: a[6], id: a[7] })),
     blasts: (s.bx || []).map(a => ({ x: a[0], y: a[1], t: a[2] / 100, id: a[3] })),
@@ -8736,6 +8893,7 @@ const HELP_PAD = [
   ['View', 'First person'], ['D-pad ▲', 'Zoom'], ['D-pad ▼', 'Show / hide this list'],
   ['At the card table', 'X deal,  Y hit,  B stand'], ['In a cabinet', 'B to leave'],
   ['On the trampoline', 'B / RB / LT: bounce higher,  A: climb off  (up high: jump off)'],
+  ['At the barbecue', 'A: light it, turn it up, off;  cook a snag, take it, eat it'],
 ];
 const HELP_KEYS = [
   ['W A S D', 'Move'], ['Mouse', 'Aim  (first person: look)'], ['Click (hold)', 'Fire'],
@@ -8743,6 +8901,7 @@ const HELP_KEYS = [
   ['Enter', 'Start the run'], ['R', 'Restart'], ['V', 'First person'], ['Z', 'Zoom'], ['Tab', 'Show / hide this list'],
   ['At the card table', 'B deal,  H hit,  T stand'], ['P', 'Add a player 2 on this keyboard (arrows + space)'],
   ['On the trampoline', 'Shift: bounce higher,  E: climb off  (up high: jump off)'],
+  ['At the barbecue', 'E: light it, turn it up, off;  cook a snag, take it, eat it'],
 ];
 function drawControlsHelp() {
   const pad = PAD.last > PAD.kb, now = performance.now();
@@ -9932,6 +10091,7 @@ function lobbyLabel(w, p) {
   if (p.dive) return null;
   if (p.tramp) return trampHigh(p) ? 'JUMP OFF' : 'CLIMB OFF';   // b326 (b327)
   if (p.air) return null;
+  { const bq = bbqLabel(w, p); if (bq) return bq; }      // b330
   const gn = gymNear(w, p); if (gn) return gn.label;
   if (p.sit) return !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   if (p.bed) return 'GET UP';
@@ -9984,6 +10144,7 @@ function lobbyAction(w, p) {
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   const carrying = NPC_GOTH.carrier === p.id;
   if (p.tramp) { if (trampHigh(p)) trampLeap(p, p.moving ? p.ix : p.fx, p.moving ? p.iy : p.fy); else trampOff(p); return; }   // b326 (b327: up high, leap off)
+  if (bbqAction(w, p)) return;                           // b330: the barbecue, the esky, eating
   if (!carrying && trampNear(p)) { trampOn(p); return; }
   if (gymAction(w, p)) return;
   if (!carrying && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
@@ -11401,6 +11562,7 @@ function renderBase(w, hudRight) {
   ctx.fillRect(0, 0, ARENA.wall, ARENA.h);
   ctx.fillRect(ARENA.w - ARENA.wall, 0, ARENA.wall, ARENA.h);
   drawLowerLobby(w);
+  if (lobbyTall(w)) drawBbq(w);                     // b330
 
   if (w.slotSecret?.room) drawMachineFloor(w);
 
@@ -12102,6 +12264,7 @@ function renderBase(w, hudRight) {
     }
     drawJared(w, p);
     drawHeldPlate(p);
+    drawHeldSnag(p);                                 // b330
     // everything hung over his head rides up the tower with him
     ctx.save();
     ctx.translate(0, p.dive === DIVE.SWIM ? 36 : -(p.dz || 0));   // a swimmer's head is low in the water
@@ -13398,6 +13561,7 @@ function startGame() {
   // nothing won in the lobby carries into the run — it's a warm-up, not a head start
   for (const p of world.players) { if (p.plate) { rackPlate(p.plate); p.plate = null; } p.lift = null; p.leg = null; }
   for (const p of world.players) {
+    p.food = 0;                          // b330: no snags in the run
     if (p.tramp || p.air) { p.tramp = 0; p.air = null; p.tz = 0; p.tv = 0; if (!p.dive) p.dz = 0; }   // b326: off the trampoline
     if (inYard(p)) { p.x = BACK_DOOR.x; p.y = ARENA.h - ARENA.wall - T.radius - 6; p.vx = p.vy = 0; }   // b322: in from the yard
     p.coins = T.testCash;                // 0 in the real game; a slider for testing
