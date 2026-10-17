@@ -949,5 +949,17 @@
  ],
  "line@13484": [],
  "MACHINE_ART.src": "assets/MACHINE_ART_src.jpg",
- "COG_ART.src": "assets/COG_ART_src.png"
+ "COG_ART.src": "assets/COG_ART_src.png",
+ "SOUNDS": {
+  "pistol": [
+   "assets/sounds/pistol_0.mp3",
+   "assets/sounds/pistol_1.mp3",
+   "assets/sounds/pistol_2.mp3",
+   "assets/sounds/pistol_3.mp3",
+   "assets/sounds/pistol_4.mp3",
+   "assets/sounds/pistol_5.mp3"
+  ],
+  "nuke": "assets/sounds/nuke.mp3",
+  "whistle": "assets/sounds/whistle.mp3"
+ }
 }
