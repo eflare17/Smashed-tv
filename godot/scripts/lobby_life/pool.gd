@@ -41,7 +41,9 @@ var _info_t: float = 0.0
 var _ov: Node3D                       # the first-person ladder and board
 var _ov_on: bool = false
 var _flash: ColorRect
-var _tower_vis: bool = true
+var _look_p: float = 0.0              # how far down he looks (first person), up to 1.45
+var _cut_set: bool = false
+var _cut_was: int = -1
 var _exc: Dictionary = {}
 ## For screenshots: don't advance the dive (the test scene sets a state up and looks at it).
 var test_hold: bool = false
@@ -53,6 +55,7 @@ signal splashed(x: float, y: float, big: bool)
 
 func _ready() -> void:
 	reach = 60.0
+	process_priority = 200            # after the camera rig (100): the extra downward look is turned on its camera
 	fx = LobbyPoolFx.new()
 	fx.name = "Fx"
 	fx.pool = self
@@ -146,6 +149,13 @@ func ellipse(key: String, x: float, y: float, rx: float, ry: float, col: Color, 
 ## p.dive for him: 0 none, 1 CLIMB, 2 BOARD, 3 FALL, 4 SWIM.
 func dive_of(p: Node) -> int:
 	return int(_s[p].dive) if _s.has(p) else 0
+
+## Where he is on the tower or in the air: (x, y) on the ground as the HTML game has them and his true height.
+func state_pos(p: Node) -> Vector3:
+	if not _s.has(p):
+		var o := ppos(p)
+		return Vector3(o.x, o.y, 0.0)
+	return Vector3(float(_s[p].x), float(_s[p].y), float(_s[p].hz))
 
 ## Up the ladder or on the board.
 func on_tower(p: Node) -> bool:
@@ -535,8 +545,10 @@ func _apply(p: Player, s: Dictionary) -> void:
 		p.global_position = GameData.world_to_3d(float(s.x), float(s.y), LobbyPoolFx.WATER_Z)
 		p.dz = (SWIM_EYE - float(LobbyLife.D("SHROOM_EYE", 62.0))) if fp else 0.0
 	else:
-		var lift := _lift(p, float(s.x), float(s.y), float(s.hz))
-		p.global_position = GameData.world_to_3d(float(s.x), float(s.y), lift.z)
+		# the HTML game's p.y is the middle of his body: his feet are 0.9 radius further down the screen
+		var fy := float(s.y) + LobbyLife.T("radius", 14.0) * 0.9
+		var lift := _lift(p, float(s.x), fy, float(s.hz))
+		p.global_position = GameData.world_to_3d(float(s.x), fy, lift.z)
 		p.dz = lift.z
 		s.scale = lift.s
 	p.facing = Vector2(float(s.fx), float(s.fy))
@@ -550,8 +562,8 @@ func _apply(p: Player, s: Dictionary) -> void:
 		sp.moving = p.moving
 		sp.odo = p.odo
 		sp.action = "tumble" if d == Dive.FALL else ""
-		sp.air = p.dz if d != Dive.SWIM else 0.0
 		sp.scale = Vector3.ONE * float(s.scale)
+		sp.air = p.dz / maxf(0.1, float(s.scale)) if d != Dive.SWIM else 0.0
 		var pose := ll.pose_of(p)
 		if pose:
 			pose.scale = sp.scale
@@ -571,7 +583,7 @@ func _lift(p: Player, x: float, y: float, hz: float) -> Dictionary:
 	var cam := get_viewport().get_camera_3d()
 	if p.is_first_person() or cam == null or hz <= 0.0:
 		return {"z": hz, "s": 1.0}
-	var g := GameData.world_to_3d(x, 0.0, y)
+	var g := GameData.world_to_3d(x, y, 0.0)
 	var up := Vector3.UP
 	var pa := cam.unproject_position(g)
 	var pb := cam.unproject_position(g + cam.global_transform.basis.y * U)
@@ -594,20 +606,34 @@ func _lift(p: Player, x: float, y: float, hz: float) -> Dictionary:
 	var dh := (hi - cam.global_position).dot(fwd)
 	return {"z": maxf(0.0, sc / U), "s": clampf(dh / maxf(dg, 0.01), 0.3, 1.0)}
 
-## In first person the view is held while he's on the tower (L4287): up the ladder looks at it, on the board out
-## over the pool; it eases there.
+## In first person the view is held while he's on the tower (L4287, L4374): up the ladder it looks at it and a
+## little down, on the board out over the pool and more and more down toward the tip, in the air down at the
+## water; it eases there (rate 6 across, 5 up and down). Swimming lets go again after a moment.
 func _look_lock(p: Player, s: Dictionary, dt: float) -> void:
 	if not p.is_first_person():
 		return
 	var d := int(s.dive)
-	var want := NAN
+	var g := tower_geo()
+	var high := clampf(float(s.hz) / maxf(1.0, float(g.deckH)), 0.0, 1.0)
+	var yaw := NAN
+	var pitch := NAN
 	if d == Dive.CLIMB:
-		want = -PI / 2.0
-	elif d == Dive.BOARD or d == Dive.FALL:
-		want = 0.0
-	if is_nan(want):
-		return
-	p.look_ang = lerp_angle(p.look_ang, want, minf(1.0, 6.0 * dt))
+		yaw = -PI / 2.0
+		pitch = 0.35 * high
+	elif d == Dive.BOARD:
+		var bu := clampf((float(s.x) - float(g.ladderX)) / maxf(1.0, float(g.tipX) - float(g.ladderX)), 0.0, 1.0)
+		yaw = 0.0
+		pitch = high * (0.7 + 0.75 * smoothstep(0.0, 1.0, (bu - 0.75) / 0.25))
+	elif d == Dive.FALL:
+		yaw = 0.0
+		pitch = 0.9
+	elif d == Dive.SWIM and float(s.dvt) < 1.0:
+		pitch = 0.0
+	if not is_nan(yaw):
+		p.look_ang = lerp_angle(p.look_ang, yaw, minf(1.0, 6.0 * dt))
+	if not is_nan(pitch):
+		_look_p = lerpf(_look_p, pitch, minf(1.0, 5.0 * dt))
+		p.look_y = clampf(_look_p, -0.6, 0.6)     # (the rig holds look_y to +-0.6: the rest is tipped on in _process)
 
 func _flash_white() -> void:
 	if _flash == null:
@@ -623,6 +649,8 @@ func _process(delta: float) -> void:
 	if ll == null or ll.player == null:
 		return
 	var p := ll.player
+	if not _s.has(p):
+		_look_p = p.look_y
 	# climbing on: push up at the foot of the ladder
 	if not _s.has(p) and ll.can_start(p) and _at_ladder(p) and p.roll <= 0.0 and p.controls_enabled:
 		var v := steer(p)
@@ -663,6 +691,9 @@ func _process(delta: float) -> void:
 		var a := minf(_shake, 40.0) / 2.0 * U
 		cam.h_offset = randf_range(-a, a)
 		cam.v_offset = randf_range(-a, a)
+		# more downward than the rig lets him look: looking over the end of the board at the water
+		if _s.has(p) and p.is_first_person() and _look_p > 0.6:
+			cam.rotate_object_local(Vector3.RIGHT, -(_look_p - 0.6))
 	_update_tower_view(p)
 	_update_tips(p, dt)
 
@@ -719,6 +750,16 @@ func _act_key() -> String:
 ## built in 3D in front of him (the HTML game draws the same as an overlay, L4675-L4754).
 func _update_tower_view(p: Player) -> void:
 	var want := _s.has(p) and p.is_first_person() and int(_s[p].dive) in [Dive.CLIMB, Dive.BOARD, Dive.FALL]
+	# up above the ceiling the house is cut down so he sees out over its walls (the HTML game's first person has none)
+	var high := want and float(_s[p].hz) > 76.0
+	if ll.world and ll.world.get("cutaway") != null:
+		if high and not _cut_set:
+			_cut_was = int(ll.world.cutaway)
+			ll.world.cutaway = 1
+			_cut_set = true
+		elif not high and _cut_set:
+			ll.world.cutaway = _cut_was
+			_cut_set = false
 	if want != _ov_on:
 		_ov_on = want
 		if want and _ov == null:
@@ -750,13 +791,13 @@ func _build_overlay() -> void:
 	var g := tower_geo()
 	var lx: float = g.ladderX
 	var top: float = float(g.deckH) + 22.0
-	var gy: float = float(g.climbY) - 15.0        # the ladder stands a little in front of his face
+	var gy: float = float(g.climbY) - 30.0        # the ladder stands a little in front of his face
 	# the ladder: two rails and a rung every 14 units
-	for sx in [-8.0, 8.0]:
+	for sx in [-11.0, 11.0]:
 		_box(_ov, Vector3(lx + sx, top / 2.0, gy), Vector3(2.4, top, 2.4), Color("#7b8794"))
 	var z := 8.0
 	while z < top:
-		_box(_ov, Vector3(lx, z, gy), Vector3(17.0, 1.8, 2.0), Color("#c9d2da"))
+		_box(_ov, Vector3(lx, z, gy), Vector3(22.0, 2.2, 2.4), Color("#c9d2da"))
 		z += 14.0
 	# the deck and board: planks along it, the board's rise from the deck to the springboard
 	var x0 := float(g.ladderX) - 10.0
@@ -770,8 +811,6 @@ func _build_overlay() -> void:
 		_box(_ov, Vector3(xm, hz - 2.0, float(g.climbY)), Vector3(11.4, 3.0, 26.0), Color("#4f8fd6") if i % 2 == 0 else Color("#3f78bd"))
 		x += 12.0
 		i += 1
-	for sy in [-13.0, 13.0]:
-		_box(_ov, Vector3((lx + float(g.boardX0)) / 2.0, float(g.deckH) + 8.0, float(g.climbY) + sy), Vector3(float(g.boardX0) - lx + 20.0, 2.0, 1.6), Color("#dfe6ee"))
 	_ov.visible = false
 
 # ------------------------------------------------------------------ screenshots
@@ -781,12 +820,13 @@ func test_scene(tl: Node, parts: PackedStringArray) -> void:
 	var g := tower_geo()
 	var p := ll.player
 	tl.go(float(g.ladderX), 214.0, Vector2(0, -1))
-	tl.later(3.0, func(): if _s.has(p): print("POOLDBG lift ", _lift(p, _s[p].x, _s[p].y, _s[p].hz), " pos ", p.global_position, " scale ", p.sprite.scale, " cam ", get_viewport().get_camera_3d().global_position))
-	tl.later(3.0, func(): if false: print("POOLDBG tip ", _tip.visible, " ", _tip.text, " ", _tip.position, " ", _tip.size, " lbl=", ll.player.focus_label, " feet=", get_viewport().get_camera_3d().unproject_position(ll.player.global_position), " k=", vis_k(), " gp=", ll.player.global_position, " vp=", get_viewport().get_visible_rect().size))
 	if parts.has("splash"):
 		tl.go(690.0, 235.0, Vector2(0, -1))
-		tl.later(1.0, func(): splash(730.0, 160.0, true))
-		tl.later(3.0, func(): splash(700.0, 190.0, false))
+		tl.later(1.0, func():
+			splash(730.0, 175.0, true)
+			splash(690.0, 195.0, false)
+			fx.step(0.22)
+			fx.set_process(false))
 		return
 	if parts.has("climb"):
 		tl.later(0.3, func():
