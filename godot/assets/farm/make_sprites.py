@@ -41,3 +41,35 @@ def coin(d):
 icon('seed', seed); icon('bud', bud); icon('can', can); icon('drop', drop); icon('joint', joint); icon('coin', coin)
 icon('fert_basic', bag((120, 170, 80))); icon('fert_premium', bag((80, 130, 200))); icon('fert_super', bag((220, 90, 200)))
 print('wrote', HERE)
+
+# the sounds (the HTML game's farmFx: filtered noise bursts and tones made in code), as small WAVs
+import wave, struct, math, random
+def wav(name, samples, rate=22050):
+    with wave.open(os.path.join(HERE, name + '.wav'), 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes(b''.join(struct.pack('<h', int(max(-1, min(1, s)) * 32000)) for s in samples))
+def noise(dur, f0, f1, vol, q=1.0, rate=22050):
+    # a noise burst through a swept resonant band-pass, fading out
+    random.seed(name_seed[0]); out = []; y1 = y2 = 0.0; n = int(dur * rate)
+    for i in range(n):
+        t = i / n; f = f0 + (f1 - f0) * t; w0 = 2 * math.pi * f / rate; al = math.sin(w0) / (2 * q)
+        b0, a0, a1, a2 = al, 1 + al, -2 * math.cos(w0), 1 - al
+        x = random.uniform(-1, 1); y = (b0 * x - a1 * y1 - a2 * y2) / a0; y2, y1 = y1, y
+        out.append(y * vol * 6 * (1 - t) ** 2 * min(1, i / (0.005 * rate)))
+    return out
+def tone(dur, f0, f1, vol, kind='sq', rate=22050):
+    out = []; ph = 0.0; n = int(dur * rate)
+    for i in range(n):
+        t = i / n; ph += 2 * math.pi * (f0 + (f1 - f0) * t) / rate
+        v = (1 if math.sin(ph) > 0 else -1) if kind == 'sq' else (2 / math.pi) * math.asin(math.sin(ph))
+        out.append(v * vol * (1 - t))
+    return out
+name_seed = [1]
+wav('snd_plant', noise(0.14, 320, 110, 0.5))
+name_seed[0] = 2; wav('snd_snip', noise(0.3, 4200, 2400, 0.35, 0.8))
+name_seed[0] = 3; wav('snd_water', noise(0.8, 800, 1700, 0.3, 0.6))
+name_seed[0] = 4; wav('snd_fill', noise(0.55, 1500, 700, 0.35, 1.2))
+wav('snd_seed', tone(0.06, 880, 1320, 0.25) + tone(0.08, 1320, 1320, 0.2, 'tri'))
+wav('snd_cash', tone(0.07, 1046, 1046, 0.22) + tone(0.12, 1568, 1568, 0.22) + [0.0] * 800 + tone(0.07, 1046, 1046, 0.18) + tone(0.14, 1568, 1568, 0.18))
+wav('snd_smoke', noise(0.9, 600, 300, 0.25, 0.5))
+print('sounds made')

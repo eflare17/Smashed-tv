@@ -150,6 +150,7 @@ func setup(f: Farm, w: FarmWorld, p: Node, r: Node) -> void:
 	farm.raid_started.connect(func(r2): toast("RAIDERS ARE AFTER %d PLANTS!" % r2.targets.size(), Color("#ff7a6a")))
 	farm.seed_dropped.connect(func(s): toast("A RAIDER DROPPED A %s SEED!" % D.STRAINS[s].name.to_upper(), GREEN))
 	farm.buff_changed.connect(func(b): toast(("%s: %s (%d wave%s)" % [b.name.to_upper(), D.STRAINS[b.strain].effect, b.waves, "" if b.waves == 1 else "s"]) if not b.is_empty() else "THE BUFF HAS WORN OFF", PINK))
+	farm.sound.connect(play)
 	if world:
 		farm.floater.connect(world_floater)
 		_can3d = Sprite3D.new()
@@ -224,6 +225,27 @@ func _icon(n: String) -> Texture2D:
 	if not _icons.has(n):
 		_icons[n] = load("res://assets/farm/%s.png" % n)
 	return _icons[n]
+
+## A farm sound (assets/farm/snd_<name>.wav).
+var _players: Array = []
+func play(n: String) -> void:
+	var st = load("res://assets/farm/snd_%s.wav" % n)
+	if st == null:
+		return
+	var pl: AudioStreamPlayer = null
+	for a in _players:
+		if not a.playing:
+			pl = a
+			break
+	if pl == null:
+		if _players.size() >= 6:
+			return
+		pl = AudioStreamPlayer.new()
+		pl.volume_db = -6.0
+		add_child(pl)
+		_players.append(pl)
+	pl.stream = st
+	pl.play()
 
 ## ---------------------------------------------------------------- the panel
 

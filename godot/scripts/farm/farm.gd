@@ -33,6 +33,8 @@ signal raid_started(raid: Dictionary)
 signal raid_resolved(info: Dictionary)
 signal sold(pid: int, amount: int)
 signal seed_dropped(strain: int)
+## A farm sound to play ("plant", "snip", "water", "fill", "seed", "cash", "smoke": assets/farm/snd_<name>.wav).
+signal sound(name: String)
 ## The panel should open ("bag", "shop", "sell", "land", "breed") for this player.
 signal panel_wanted(context: String, pid: int)
 
@@ -201,6 +203,7 @@ func spot_act(spot: Node, p) -> void:
 			var r := state.plot_act(i, pid)
 			if r != "":
 				say(r, at, Color("#8fd3ff") if r == "WATERED" else Color("#9fe07a"))
+				sound.emit("plant" if l.begins_with("PLANT") else ("snip" if l == "HARVEST" else ("water" if l == "WATER" else "plant")))
 		"row":
 			if l == "NEED TRACTOR":
 				panel_wanted.emit("land", pid)
@@ -208,10 +211,12 @@ func spot_act(spot: Node, p) -> void:
 			var r := state.row_act(i, pid)
 			if r != "":
 				say(r, at)
+				sound.emit("snip" if l == "HARVEST ROW" else ("water" if l == "WATER ROW" else "plant"))
 		"tank":
 			if l == "FILL CAN":
 				state.fill_can(pid)
 				say("CAN FULL", at, Color("#8fd3ff"))
+				sound.emit("fill")
 			else:
 				state.drop_can(pid)
 		"crate":
@@ -337,6 +342,7 @@ func buy_seed(pid: int, s: int, n: int = 1) -> String:
 	if not spend(c, "seeds"):
 		return "NEED $%d" % c
 	state.add_seed(pid, s, n)
+	sound.emit("seed")
 	_save_soon()
 	return "+%d %s SEED%s" % [n, st.short, "S" if n > 1 else ""]
 
@@ -347,6 +353,7 @@ func buy_fert(pid: int, f: int, n: int = 1) -> String:
 	if not spend(c, "fertiliser"):
 		return "NEED $%d" % c
 	state.add_fert(pid, f, n)
+	sound.emit("seed")
 	_save_soon()
 	return "+%d %s" % [n, D.FERTS[f].short]
 
@@ -380,6 +387,7 @@ func sell(pid: int, s: int = -1) -> int:
 	if v > 0:
 		earn(v, "buds")
 		sold.emit(pid, v)
+		sound.emit("cash")
 		_save_soon()
 	return v
 
@@ -403,6 +411,7 @@ func smoke(p, s: int) -> Dictionary:
 	if b.is_empty():
 		return b
 	smoked.emit(pid, s, b)
+	sound.emit("smoke")
 	buff_changed.emit(b)
 	_save_soon()
 	return b
