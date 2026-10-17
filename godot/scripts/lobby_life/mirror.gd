@@ -35,8 +35,10 @@ var _hint: Label
 var _title: Label
 var _tip: Label
 var _prev_cam: Camera3D
+var _scan_t: float = 0.0
 
 func _ready() -> void:
+	process_priority = 100               # after the Player and the fight session have set the frame
 	reach = 60.0
 	LobbyLife.ensure_action("lobby_hair", [KEY_F])
 	LobbyLook.load_saved()
@@ -243,6 +245,11 @@ func _process(dt: float) -> void:
 	_update_reflections(ll.player)
 	if ll.gothica:
 		_update_reflections(ll.gothica)
+	_scan_t -= dt
+	if _scan_t <= 0.0:
+		_scan_t = 0.4
+		for n in get_tree().root.find_children("*", "CharSprite", true, false):
+			register_sprite(n)
 	for s in _sprites.duplicate():
 		if not is_instance_valid(s):
 			_sprites.erase(s)
@@ -256,7 +263,7 @@ func _process(dt: float) -> void:
 
 ## Swap the baked frame (hair, shirt print) into a juicy CharSprite.
 func wear(s: CharSprite) -> void:
-	if s.char_id != "juicy" or s.current_path == "":
+	if not s.char_id.begins_with("juicy") or s.current_path == "":
 		return
 	var base: Texture2D = GameData.tex(s.current_path)
 	var tex := LobbyLook.baked(s.current_path, base, s.current_flip)
@@ -284,15 +291,20 @@ func _update_reflections(who: Node3D) -> void:
 	sp.visible = show
 	if not show:
 		return
-	var id: String = who.char_id if "char_id" in who else "goth"
+	# the reflection is what he really looks like now: the same sheet (the weapon he holds), roll and all
+	var real: CharSprite = who.sprite if (who is Player and who.sprite) else null
+	var id: String = real.char_id if real else (who.char_id if "char_id" in who else "goth")
 	sp.char_id = id
+	if real:
+		sp.action = real.action
+		sp.roll_t = real.roll_t
 	var d := o.y - MIR.y
 	var s := 0.72 - 0.3 * minf(1.0, d / 170.0)
 	var rx := MIR.x + (o.x - MIR.x) * 0.35
 	var zf := 6.0                                     # the reflection's feet over the floor
-	var fac: Vector2 = who.facing if "facing" in who else Vector2(0, 1)
+	var fac: Vector2 = real.facing if real else (who.facing if "facing" in who else Vector2(0, 1))
 	var f := Vector2(fac.x, -fac.y)
-	var mv: bool = bool(who.get("moving"))
+	var mv: bool = real.moving if real else bool(who.get("moving"))
 	if is_me and k > 0.0:
 		var e := k * k * (3.0 - 2.0 * k)
 		s += (1.0 - s) * e
@@ -301,9 +313,10 @@ func _update_reflections(who: Node3D) -> void:
 		if looking:
 			f = Vector2(cos(turn), -sin(turn))
 			mv = false
+			sp.action = ""
 	sp.facing = f
 	sp.moving = mv
-	sp.odo = float(who.get("odo") if who.get("odo") != null else 0.0)
+	sp.odo = real.odo if real else float(who.get("odo") if who.get("odo") != null else 0.0)
 	sp.scale = Vector3(s, s, s)
 	sp.global_position = GameData.world_to_3d(rx, MIR.y - 1.4, zf)
 
@@ -377,6 +390,16 @@ func test_scene(tl: Node, parts: PackedStringArray) -> void:
 		if s.begins_with("hair="):
 			st = int(s.substr(5))
 	LobbyLook.set_style(st)
+	for s in parts:
+		if s.begins_with("skin="):
+			ll.player.char_id = s.substr(5)
+	if parts.has("art"):
+		var im := Image.create(120, 80, false, Image.FORMAT_RGBA8)
+		for y in 80:
+			for x in 120:
+				im.set_pixel(x, y, Color.from_hsv(float(x) / 120.0, 0.9, 0.5 + 0.5 * float(y) / 80.0))
+		LobbyLook.set_art(im, false)
+		LobbyLook.place_front = Rect2(0, 0, 1, 1)
 	tl.go(246.0, 650.0, Vector2(0, -1))
 	if parts.has("walk"):
 		return

@@ -14,7 +14,7 @@ var current := ""
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
-	ll = LobbyLife.install(main)
+	ll = LobbyLife.existing(main)
 	ll.rig.capture_mouse = false
 	_go.call_deferred()
 

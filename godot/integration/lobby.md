@@ -1,5 +1,7 @@
 # Lobby life (milestone 3): integration note
 
+Mirror fix: done. Cause: `LobbyMirror.wear` only handled `char_id == "juicy"`, but the fight session puts weapon sheets (`juicy_spud`, `juicy_shotgun`, `juicy_launcher`) on the player's CharSprite. Now every `juicy*` CharSprite in the tree is found (rescan every 0.4 s) and wears the hair and print; frames without a HAIR_FIT entry (victory, extras) get the hair slid by the sunglasses' offset from the run frame 0; the print goes on every frame except the roll frames (rolls get hair only if sunglasses are found, otherwise nothing, as in the HTML game). The reflection copies the real sprite (its sheet, roll action, moving, odo, facing with y turned round: facing the glass shows his front, facing away his back). Test scenes: `?lobby=mirror,walk,hair=5,art,skin=juicy_spud[,fp]`. `t_look.gd` covers it. Test harness: `LobbyLife.existing(main)` reuses the LobbyLife main.gd already installs (two installs made E go to two mirrors).
+
 Status: done (all things built and tested; polish items listed under "What's left"). 286+ logic checks pass (`run.tscn`, no `--test`).
 
 Branch `claude/godot-lobby`. Owned files: `scripts/lobby_life/`, `scenes/lobby_life/`, `test/lobby_life/`, this note.

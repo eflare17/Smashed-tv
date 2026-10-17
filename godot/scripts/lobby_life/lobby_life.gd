@@ -39,6 +39,13 @@ var _cash: Dictionary = {}
 
 static var current: LobbyLife
 
+## The LobbyLife main already has (main.gd installs one itself now), else a new one: for the test scenes.
+static func existing(main_node: Node) -> LobbyLife:
+	for c in main_node.get_children():
+		if c is LobbyLife:
+			return c
+	return install(main_node)
+
 ## The one call main.gd makes.
 static func install(main_node: Node) -> LobbyLife:
 	var ll := LobbyLife.new()
