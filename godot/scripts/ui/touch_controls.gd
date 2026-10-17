@@ -29,6 +29,16 @@ const DARK := Color(20 / 255.0, 12 / 255.0, 28 / 255.0, 0.55)
 var _fingers: Dictionary = {}
 var _move := Vector2.ZERO
 var _aim := Vector2.ZERO
+var _aim_smooth := Vector2.ZERO      # the aim the player gets: _aim eased, so a thumb's tremor doesn't spin him
+var _look_pending := Vector2.ZERO    # first person drag not yet turned into looking (eased in over a few frames)
+
+## A thumb is imprecise: the left stick has a real dead zone and a gentle curve (small pushes walk slowly, a full
+## push still runs), the aim stick a smaller dead zone, the drag-to-look a lower turn rate than a mouse.
+const MOVE_DEAD := 0.22
+const AIM_DEAD := 0.18
+const MOVE_CURVE := 1.5
+const LOOK_X := 0.0052
+const LOOK_Y := 0.0042
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -100,7 +110,7 @@ func _input(event: InputEvent) -> void:
 			_touch_up(event.index)
 			get_viewport().set_input_as_handled()
 	elif event is InputEventScreenDrag and _fingers.has(event.index):
-		_touch_drag(event.index, event.position, event.screen_relative)
+		_touch_drag(event.index, event.position, event.relative)
 		get_viewport().set_input_as_handled()
 
 # A finger down: a button, the left stick, or the right side (aim top-down, look in first person). False: not ours.
@@ -140,15 +150,10 @@ func _touch_drag(i: int, pos: Vector2, rel: Vector2) -> void:
 				_set_move(v)
 			else:
 				_aim = v
-				var p := _player()
-				if p:
-					p.aim_override = v
 		"look":
-			var p := _player()
-			if p and p.controls_enabled:
-				var k := 720.0 / maxf(1.0, get_viewport_rect().size.y)   # the same turn for a swipe across any screen
-				p.look_ang = wrapf(p.look_ang + rel.x * 0.0075 * k, -PI, PI)
-				p.look_y = clampf(p.look_y + rel.y * 0.006 * k, -CameraRig.LOOK_MAX, CameraRig.LOOK_MAX)
+			# `rel` is in the game's own units (the same on any phone: the stretch already accounts for the
+			# screen's density), taken in over the next frames by _process
+			_look_pending += rel
 	queue_redraw()
 
 func _touch_up(i: int) -> void:
@@ -159,9 +164,12 @@ func _touch_up(i: int) -> void:
 			_set_move(Vector2.ZERO)
 		"aim":
 			_aim = Vector2.ZERO
+			_aim_smooth = Vector2.ZERO
 			var p := _player()
 			if p:
 				p.aim_override = Vector2.ZERO
+		"look":
+			_look_pending = Vector2.ZERO
 		"btn":
 			_send(f.action, false)
 	queue_redraw()
@@ -170,11 +178,18 @@ func _release_all() -> void:
 	for i in _fingers.keys():
 		_touch_up(i)
 
-# The left stick as the move actions, with their strengths (dead zone 0.15).
+## A stick push with the dead zone taken off (so it starts from 0 at the edge of it) and the curve put on.
+static func shape(v: Vector2, dead: float, curve: float) -> Vector2:
+	var l := v.length()
+	if l <= dead:
+		return Vector2.ZERO
+	var m := pow(minf(1.0, (l - dead) / (1.0 - dead)), curve)
+	return v / l * m
+
+# The left stick as the move actions, with their strengths.
 func _set_move(v: Vector2) -> void:
 	_move = v
-	if v.length() < 0.15:
-		v = Vector2.ZERO
+	v = shape(v, MOVE_DEAD, MOVE_CURVE)
 	for a in [["move_right", v.x], ["move_left", -v.x], ["move_down", v.y], ["move_up", -v.y]]:
 		if a[1] > 0.0:
 			Input.action_press(a[0], minf(1.0, a[1]))
@@ -188,9 +203,26 @@ func _send(action: String, pressed: bool) -> void:
 	e.strength = 1.0 if pressed else 0.0
 	Input.parse_input_event(e)
 
-func _process(_dt: float) -> void:
-	if active:
-		queue_redraw()
+func _process(dt: float) -> void:
+	if not active:
+		return
+	dt = minf(dt, 0.1)
+	var p := _player()
+	# the aim stick, eased (about 60 ms) and shaped
+	if _fingers.values().any(func(f): return f.role == "aim"):
+		_aim_smooth = _aim_smooth.lerp(shape(_aim, AIM_DEAD, 1.0), 1.0 - exp(-dt * 25.0))
+		if p:
+			p.aim_override = _aim_smooth
+	# the drag to look: a share of what's pending turns him each frame
+	if _look_pending != Vector2.ZERO:
+		var take := _look_pending * (1.0 - exp(-dt * 30.0))
+		_look_pending -= take
+		if p and p.controls_enabled and _fp():
+			p.look_ang = wrapf(p.look_ang + take.x * LOOK_X, -PI, PI)
+			p.look_y = clampf(p.look_y + take.y * LOOK_Y, -CameraRig.LOOK_MAX, CameraRig.LOOK_MAX)
+		if _look_pending.length() < 0.05:
+			_look_pending = Vector2.ZERO
+	queue_redraw()
 
 func _draw() -> void:
 	if not active:

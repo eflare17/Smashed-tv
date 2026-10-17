@@ -2,6 +2,24 @@
 
 Status: done (everything buildable without the owner is built; re-verified 17 Oct: 0 failed in the headless logic test). What remains needs other sessions or the owner: the `Arcade.install(self)` line in main.gd, a real ROM try, milestone 4 wiring, the Google OAuth client ID, a phone speed check (see "What's left").
 
+Phone fix: done (17 Oct, from the owner's phone test; merged `claude/github-game-repo-tdm9yz` in first). Touches files outside the arcade
+on the main session's say-so: `scripts/ui/touch_controls.gd`, `scripts/camera/camera_rig.gd`, `export_presets.cfg` (head_include).
+- **Twitchy touch**: left stick has a 0.22 dead zone (rescaled so it starts from 0) and a 1.5 curve (`TouchControls.shape`); the aim stick
+  a 0.18 dead zone and is eased (~60 ms) before it reaches `Player.aim_override`; first-person drag-to-look is lower (0.0052 / 0.0042,
+  was 0.0075 / 0.006), eased in over a few frames, and uses `event.relative` (game units) instead of `screen_relative` (physical pixels,
+  which made a high-density phone turn ~3x too fast). The top-down camera follow is now frame-rate independent (`1 - exp(-8 dt)`).
+- **Portrait**: the top-down camera backs off for windows narrower than 1.5:1 (`CameraRig.PORTRAIT_REF`) so it shows about as much across as
+  landscape (more north-south). First person already keeps the width.
+- **Full screen shell** (`html/head_include`): viewport-fit=cover, `html/body` fixed at 100% / 100dvh, the canvas pinned to the visible viewport
+  (also on `visualViewport` resize), so no black bar at the top in landscape. A **FULL SCREEN** button (left edge, touch devices that have the
+  Fullscreen API, hidden once full screen or when installed) in the page itself so it runs inside the click. A manifest (display
+  fullscreen, orientation any: portrait works now) is built by the page, plus the apple-mobile-web-app meta, for Add to Home Screen
+  (iPhone Safari has no Fullscreen API, so the home-screen app is its full screen). Not tested on a real device: Chromium mobile emulation
+  at 390x844 and 844x390 (touch, scale 2) fills the window exactly, and a scripted touch drag moves the stick and the player.
+- **For the main session**: re-export with the new preset. In portrait the HUD's weapon bar is large and sits over the touch controls
+  (HUD, not ours). The vending machine (lobby session, (235,154)) sits next to the Bricks cabinet: E there picks the vend (nearer), so in
+  first person the arcade test's "E says PLAY" now fails after the merge (label 'STOP'); consider a priority or a smaller `vendRadius`.
+
 ## Handoff
 
 **State: done and pushed** (`claude/godot-arcade`, last commit "Arcade: input actions (added in code), integration
