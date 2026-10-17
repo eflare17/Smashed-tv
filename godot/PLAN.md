@@ -111,6 +111,15 @@ panel, the farm plans (FARM.md).
    Google, listing the games in a folder shared with your friend by Gmail. Needs the OAuth client ID from the
    owner (Google Cloud project, Drive API on, consent screen in Testing with the friends as test users, origin
    https://eflare17.github.io).
+6. **VR (decided by the owner, 17 Oct: they have a Meta Quest).** Play it in the Quest's browser from the same
+   link (WebXR through Godot's WebXRInterface, Compatibility renderer; GitHub Pages is HTTPS, which WebXR needs),
+   an "Enter VR" button when a headset is there. Head-tracked first person, stick to walk, snap turn (and smooth
+   as an option), hands from the Touch controllers: aim and shoot with them, point and pull the trigger for
+   what E does, the weapon bar on a wrist. Comfort: a vignette when moving, a fade on big jumps (the
+   trampoline, the dive tower), the mushroom and bong trips toned down or optional. The HUD and menus as panels
+   in the world. The arcade cabinets played on their screens. Hold 72-90 fps on a Quest (lighter settings).
+   Characters stay sprites at first (they'll look like cut-outs; 3D models later if wanted). Online: a VR
+   player and a flat-screen friend together.
 
 ## Milestone 1: who does what
 
