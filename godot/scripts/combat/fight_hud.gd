@@ -139,6 +139,12 @@ func _process(delta: float) -> void:
 	if fight.is_fp() and fight.touch_seen:
 		_fp_hint_t += delta
 	_bar.visible = not s.over
+	# with the pointer held (first person) a click is always a shot, never a button (b307)
+	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
+	for b in _picker.get_children():
+		if b is Control:
+			b.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 	var bs := 54.0 * sc()
 	_bar.size = Vector2(bs * 6.0 + 8.0 * sc() * 5.0, bs)
 	_bar.position = Vector2((_draw_c.size.x - _bar.size.x) / 2.0, 440.0 * sc())

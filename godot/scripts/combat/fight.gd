@@ -53,6 +53,7 @@ var _shake_node: Node
 var _was_alive := true
 var _hp_seen := 5.0
 var _last_spin := false
+var _log_t := 0.0
 
 func _enter_tree() -> void:
 	me = self
@@ -529,6 +530,12 @@ func _process(delta: float) -> void:
 		_place_player()
 	_drain()
 	_update_sprite()
+	if debug.has("log"):
+		_log_t += delta
+		if _log_t >= 1.0:
+			_log_t = 0.0
+			print("FIGHT started=%s wave=%d enemies=%d hp=%.0f alive=%s kills=%d coins=%d weapon=%s ammo=%d over=%s x=%.0f y=%.0f shots=%d fps=%d" % [
+				sim.started, sim.wave, sim.enemies.size(), f.hp, f.alive, f.kills, f.coins, f.weapon, f.ammo, sim.over, f.x, f.y, f.shots, Engine.get_frames_per_second()])
 	goth_carry.update_pos()
 	if debug.has("wave") and sim.started and sim.wave == 0 and sim.breather > 0.0:
 		sim.wave = int(debug["wave"]) - 1
