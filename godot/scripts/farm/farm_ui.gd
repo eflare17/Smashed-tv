@@ -161,6 +161,21 @@ func setup(f: Farm, w: FarmWorld, p: Node, r: Node) -> void:
 		world.add_child(_can3d)
 
 static func _ensure_actions() -> void:
+	# the panel by pad: A presses, B backs out, the d-pad moves (added if the ui actions lack them)
+	var pad := {"ui_accept": [JOY_BUTTON_A], "ui_cancel": [JOY_BUTTON_B], "ui_up": [JOY_BUTTON_DPAD_UP],
+		"ui_down": [JOY_BUTTON_DPAD_DOWN], "ui_left": [JOY_BUTTON_DPAD_LEFT], "ui_right": [JOY_BUTTON_DPAD_RIGHT]}
+	for a in pad:
+		if not InputMap.has_action(a):
+			continue
+		for b in pad[a]:
+			var have := false
+			for e in InputMap.action_get_events(a):
+				if e is InputEventJoypadButton and e.button_index == b:
+					have = true
+			if not have:
+				var j := InputEventJoypadButton.new()
+				j.button_index = b
+				InputMap.action_add_event(a, j)
 	if not InputMap.has_action("farm_bag"):
 		InputMap.add_action("farm_bag")
 		for k in [KEY_TAB, KEY_I]:
@@ -523,7 +538,8 @@ func world_floater(text: String, col: Color, at: Vector2) -> void:
 func _process(delta: float) -> void:
 	if farm == null:
 		return
-	if _rebuild_pending and _panel.visible:
+	# (not while a button's held down: a click or A lands on the button it started on)
+	if _rebuild_pending and _panel.visible and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_action_pressed("ui_accept"):
 		_rebuild(false)
 	if _panel.visible:
 		_layout()

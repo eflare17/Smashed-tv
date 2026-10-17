@@ -250,6 +250,18 @@ func _farm_tests() -> void:
 	# save round trip through the farm (stand-in clock and wallet ride along)
 	var d := f.to_dict()
 	ok(d.has("clock_standin") and d.wallet_standin == wallet.cash, "stand-ins saved with the farm")
+	# past midnight (the hour wraps, the day turns at 7 am): growth still counts the hours
+	f.state.add_seed(0, 5, 1)
+	for i in f.state.plots.size():
+		if f.state.plots[i].zone == "yard" and f.state.plots[i].s < 0:
+			f.state.plant(i, 0, 5)
+			f.state.plots[i].wet = 100.0
+			clock.hour = 23.0
+			f._clock_reset()
+			clock.advance_hours(2.0)
+			f.sync_clock()
+			near(f.state.plots[i].g, 2.0 / 15.0, "growth across midnight")
+			break
 	# sleeping grows too
 	f.state.add_seed(0, 0, 1)
 	f.state.plant(0, 0, 0)

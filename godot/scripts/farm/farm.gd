@@ -48,7 +48,8 @@ var price_mults: Dictionary = {}
 ## Save to disk / localStorage (off in tests).
 var persist := true
 
-var _last_total := -1.0
+var _last_hour := -1.0            # the clock's hour at the last look (-1: not looked yet)
+var _last_day := 0
 var _dirty := false
 var _save_t := 0.0
 var _raid: Dictionary = {}          # this wave's raid, while the fighting runs it
@@ -66,13 +67,14 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	state.changed.connect(_on_state_changed)
+	state.grew.connect(func(): _dirty = true)
 	if clock == null:
 		clock = get_node_or_null("/root/GameClock")
 	if wallet == null:
 		wallet = get_node_or_null("/root/Wallet")
 	if persist:
 		load_save()
-	_last_total = _clock_total()
+	_clock_reset()
 
 func _on_state_changed() -> void:
 	_dirty = true
@@ -86,23 +88,29 @@ func _process(delta: float) -> void:
 			save()
 
 ## Grow by however much game time has passed on the clock since the last look (ticking, advance_hours and
-## sleep_to_morning all count the same way).
+## sleep_to_morning all count the same way). The hour wraps at midnight while the day number may turn at 7 am,
+## so it's the hour's step forward (mod 24) that counts, plus whole days if the day jumped more than one.
 func sync_clock() -> void:
-	var t := _clock_total()
-	if t < 0.0:
+	if clock == null or not is_instance_valid(clock):
 		return
-	if _last_total < 0.0:
-		_last_total = t
+	var day := int(clock.get("day"))
+	var hour := float(clock.get("hour"))
+	if _last_hour < 0.0:
+		_last_day = day
+		_last_hour = hour
 		return
-	var d := t - _last_total
-	_last_total = t
+	var d := fposmod(hour - _last_hour, 24.0)
+	if day - _last_day >= 2:
+		d += 24.0 * (day - _last_day - 1)
+	_last_day = day
+	_last_hour = hour
 	if d > 0.0 and d < 24.0 * 30.0:
 		state.grow(d)
 
-func _clock_total() -> float:
-	if clock == null or not is_instance_valid(clock):
-		return -1.0
-	return float(clock.get("day")) * 24.0 + float(clock.get("hour"))
+## Forget where the clock was (after loading, or when the clock is swapped): the next look starts from now.
+func _clock_reset() -> void:
+	_last_hour = -1.0
+	sync_clock()
 
 ## ---------------------------------------------------------------- money
 
@@ -514,7 +522,7 @@ func from_dict(d: Dictionary) -> void:
 	if d.has("wallet_standin") and wallet and wallet.get("STANDIN") == true:
 		wallet.cash = int(d.wallet_standin)
 		wallet.cash_changed.emit(wallet.cash)
-	_last_total = _clock_total()
+	_clock_reset()
 
 func save() -> void:
 	_dirty = false

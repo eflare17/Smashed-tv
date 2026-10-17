@@ -119,6 +119,35 @@ func _at(x: float, y: float) -> String:
 	await get_tree().process_frame
 	return main.player.focus_label
 
+func _pad(btn: int) -> void:
+	for down in [true, false]:
+		var e := InputEventJoypadButton.new()
+		e.button_index = btn
+		e.pressed = down
+		Input.parse_input_event(e)
+		await get_tree().process_frame
+
+func _enter() -> void:
+	for down in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = KEY_ENTER
+		e.physical_keycode = KEY_ENTER
+		e.pressed = down
+		Input.parse_input_event(e)
+		await get_tree().process_frame
+
+func _key(action: String) -> void:
+	var e := InputEventAction.new()
+	e.action = action
+	e.pressed = true
+	Input.parse_input_event(e)
+	await get_tree().process_frame
+	var r := InputEventAction.new()
+	r.action = action
+	r.pressed = false
+	Input.parse_input_event(r)
+	await get_tree().process_frame
+
 func _press(prefix: String) -> bool:
 	var ui: FarmUI = main.get_node("FarmUI")
 	for b in ui._all_buttons():
@@ -211,6 +240,28 @@ func _selftest() -> void:
 	await get_tree().process_frame
 	_ok(p.focus_label == "PLANT SD", "same in first person")
 	main.rig.set_mode(0)
+	# the pad / keyboard path: the bag action opens the panel, ui_accept presses the focused button, ui_cancel closes
+	ui.close()
+	farm.wallet.cash = 100
+	await _key("farm_bag")
+	_ok(ui.is_open() and ui._context == "bag", "the bag action (Tab / I / pad Y) opens the bag")
+	await _key("ui_cancel")
+	_ok(not ui.is_open(), "ui_cancel (Esc / pad B) closes it")
+	ui.open("shop", 0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var fo := get_viewport().gui_get_focus_owner()
+	_ok(fo is Button and fo.text == "$10", "the shop opens with the first seed's button focused (%s)" % (fo.text if fo else "none"))
+	var seeds0: int = st.inv_of(0).seeds[0]
+	await _pad(JOY_BUTTON_A)
+	_ok(st.inv_of(0).seeds[0] == seeds0 + 1, "the pad's A buys it")
+	await get_tree().process_frame
+	await _enter()
+	_ok(st.inv_of(0).seeds[0] == seeds0 + 2, "and Enter")
+	await _key("ui_down")
+	fo = get_viewport().gui_get_focus_owner()
+	_ok(fo is Button and fo.text != "$10", "ui_down moves to the next button (%s)" % (fo.text if fo else "none"))
+	ui.close()
 	# the clock's hour moves and growth follows
 	var h0: float = farm.clock.hour
 	farm.clock.advance_hours(1.0)
@@ -240,5 +291,5 @@ func _process(delta: float) -> void:
 		return
 	var p: Node = main.player
 	var h: Vector3 = p.html_pos()
-	print("FARM t=%d x=%.0f y=%.0f label=%s g0=%.2f cash=%d hour=%.2f fps=%d" % [_n, h.x, h.y, p.focus_label, farm.state.plots[0].g, farm.cash(),
+	print("FARM t=%d x=%.0f y=%.0f label=%s g0=%.2f cash=%d seeds=%d hour=%.2f fps=%d" % [_n, h.x, h.y, p.focus_label, farm.state.plots[0].g, farm.cash(), farm.state.seed_count(0),
 		float(farm.clock.get("hour")) if farm.clock else -1.0, Engine.get_frames_per_second()])

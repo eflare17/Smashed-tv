@@ -13,6 +13,9 @@ extends RefCounted
 const D := preload("res://scripts/farm/farm_data.gd")
 
 signal changed
+## Time passed (grow): emitted every time; `changed` only when something you'd see changed (a stage, dry or
+## wilted, ready, the breeding table), so the panel isn't rebuilt every frame.
+signal grew
 
 ## Every plot: {zone ("yard", "neighbour", "paddock"), row (paddock row, else -1), x, y (HTML units), s (strain,
 ## -1 empty), g (0..1 grown), wet (game hours of water left), dry (hours dry), wilt (0/1), fert (0 none, 1-3),
@@ -375,6 +378,7 @@ func row_act(r: int, pid: int) -> String:
 func grow(hours: float) -> void:
 	if hours <= 0.0:
 		return
+	var before := _look_sig()
 	for p in plots:
 		if p.s < 0 or p.g >= 1.0:
 			continue
@@ -409,7 +413,19 @@ func grow(hours: float) -> void:
 		breeding.hours -= hours
 		if breeding.hours <= 0.0:
 			breeding.waiting = false
-	changed.emit()
+	grew.emit()
+	if _look_sig() != before:
+		changed.emit()
+
+## What the plots and the table look like (stage, look, watered), to tell whether time passing changed anything.
+func _look_sig() -> String:
+	var a := PackedStringArray()
+	for i in plots.size():
+		var p: Dictionary = plots[i]
+		if p.s >= 0:
+			a.append("%d:%d%d%d" % [i, stage(i), look(i), 1 if watered(i) else 0])
+	a.append(str(breeding.get("waiting", "")))
+	return ",".join(a)
 
 ## A wave survived: the buff counts down (time itself moves on through the GameClock), and a seed on the
 ## breeding table is ready.
