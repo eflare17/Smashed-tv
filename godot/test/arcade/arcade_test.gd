@@ -241,6 +241,9 @@ func _logic() -> void:
 	ov.close()
 	check("overlay: the best score is kept", int(arcade.hi.get("snake", 0)) >= 7, str(arcade.hi))
 	check("overlay: closing gives him back", p.controls_enabled and not Arcade.is_open())
+	# he faces the cabinet again (the lobby's vending machine stands just behind him: facing away buys from it)
+	p.facing = Vector2(0, -1)
+	await get_tree().process_frame
 	p.use()
 	await get_tree().process_frame
 	arcade.md._btn_bricks.pressed.emit()

@@ -92,6 +92,53 @@ body {
 		</style>
 		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<style>
+html,body{position:fixed;inset:0;width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#000;overscroll-behavior:none;touch-action:none}
+@supports(height:100dvh){html,body{height:100dvh}}
+#canvas{position:fixed!important;left:0!important;top:0!important;width:100%!important;height:100%!important;display:block}
+#fsBtn{position:fixed;left:max(6px,env(safe-area-inset-left));top:42%;z-index:5;display:none;padding:5px 10px;font:600 12px sans-serif;color:#f7a8ff;background:rgba(20,12,28,.55);border:1.5px solid #f7a8ff;border-radius:14px;opacity:.7;-webkit-tap-highlight-color:transparent}
+#fsBtn:active{opacity:1}
+</style>
+<script>
+(function(){
+  var de=document.documentElement;
+  function isFs(){return !!(document.fullscreenElement||document.webkitFullscreenElement);}
+  var touch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+  var canFs=!!(de.requestFullscreen||de.webkitRequestFullscreen);
+  function mk(){
+    var standalone=(navigator.standalone===true)||(window.matchMedia&&matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches);
+    if(!touch||!canFs||standalone)return;
+    var b=document.createElement('button');b.id='fsBtn';b.type='button';b.textContent='FULL SCREEN';
+    function sync(){b.style.display=isFs()?'none':'block';}
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var p=(de.requestFullscreen||de.webkitRequestFullscreen).call(de,{navigationUI:'hide'});
+      if(p&&p.then)p.then(function(){try{if(screen.orientation&&screen.orientation.lock&&innerWidth>innerHeight)screen.orientation.lock('landscape').catch(function(){});}catch(_){}} ).catch(function(){});
+    });
+    ['touchstart','touchend','pointerdown','pointerup'].forEach(function(n){b.addEventListener(n,function(e){e.stopPropagation();},{passive:true});});
+    document.body.appendChild(b);sync();
+    document.addEventListener('fullscreenchange',function(){sync();dispatchEvent(new Event('resize'));});
+    document.addEventListener('webkitfullscreenchange',function(){sync();dispatchEvent(new Event('resize'));});
+  }
+  if(document.body)mk();else addEventListener('DOMContentLoaded',mk);
+  // follow the visible viewport (an address bar sliding away changes it without a resize on some browsers)
+  if(window.visualViewport)visualViewport.addEventListener('resize',function(){dispatchEvent(new Event('resize'));});
+  // a web app manifest (built here so it points at wherever the game is served): Add to Home Screen opens it full screen
+  try{
+    var m={name:'Smashed TV',short_name:'Smashed TV',start_url:location.href.split('#')[0],scope:location.href.replace(/[^\/]*$/,''),
+      display:'fullscreen',orientation:'any',background_color:'#000000',theme_color:'#000000',
+      icons:[{src:new URL('index.icon.png',location.href).href,sizes:'256x256',type:'image/png'}]};
+    var l=document.createElement('link');l.rel='manifest';
+    l.href=URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));
+    document.head.appendChild(l);
+  }catch(_){}
+})();
+</script>
 
 	</head>
 	<body>
@@ -111,7 +158,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":10110240,"index.wasm":43699190},"focusCanvas":true,"gdextensionLibs":[]};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":10172080,"index.wasm":43699190},"focusCanvas":true,"gdextensionLibs":[]};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 

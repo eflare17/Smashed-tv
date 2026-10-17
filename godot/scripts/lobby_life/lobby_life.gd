@@ -89,11 +89,13 @@ func _main_get(k: String):
 	var v = main.get(k)
 	return v if v is Node else null
 
+## (No vending machine here: the HTML game only has it in runs, where the fight puts it; a lobby one stood right in
+## front of the Bricks cabinet and took its E. LobbyVend stays for a run-side use.)
 func _make_things() -> void:
 	for pair in [
 		["pool", LobbyPool], ["gym", LobbyGym], ["rope", LobbyRope], ["table", LobbyTable],
 		["mirror", LobbyMirror], ["wardrobe", LobbyWardrobe], ["bed", LobbyBed], ["shroom", LobbyShroom],
-		["slot", LobbySlot], ["vend", LobbyVend], ["bbq", LobbyBbq], ["goth_life", GothLife],
+		["slot", LobbySlot], ["bbq", LobbyBbq], ["goth_life", GothLife],
 	]:
 		var n: Node = pair[1].new()
 		n.name = String(pair[0]).capitalize().replace(" ", "")

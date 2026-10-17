@@ -5,7 +5,7 @@ func run(t) -> void:
 	var ll: LobbyLife = t.ll
 	t.check(ll != null and ll.get_parent() == t.main, "installed under main")
 	t.check(ll.get_index() < t.main.hud.get_index(), "before the Hud in main's children")
-	for k in ["pool", "gym", "rope", "table", "mirror", "wardrobe", "bed", "shroom", "slot", "vend", "bbq", "goth_life"]:
+	for k in ["pool", "gym", "rope", "table", "mirror", "wardrobe", "bed", "shroom", "slot", "bbq", "goth_life"]:
 		t.check(ll.things.has(k), "thing " + k)
 	var c := ll.cash(ll.player)
 	t.check(c >= 40, "starts with money (%d)" % c)

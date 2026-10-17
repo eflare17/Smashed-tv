@@ -357,7 +357,18 @@ func _update_focus() -> void:
 			var reach = n.get("reach")
 			if reach == null:
 				reach = 40.0
-			if d > float(reach) or d >= best_d:
+			if d > float(reach):
+				continue
+			# things in front of him win over things beside or behind him (the vending machine stands just in
+			# front of the Bricks cabinet: facing the cabinet picks the cabinet)
+			var to := GameData.from_3d(n.global_position)
+			var me := html_pos()
+			var dir := Vector2(to.x - me.x, to.y - me.y)
+			var looks := Vector2(cos(look_ang), sin(look_ang)) if is_first_person() else facing
+			# (only for things a step or more away: right under him, which way he faces doesn't matter)
+			if dir.length() > 10.0 and looks.length() > 0.001:
+				d -= 20.0 * dir.normalized().dot(looks.normalized())
+			if d >= best_d:
 				continue
 			var l = n.label_for(self)
 			if l is String and l != "":
