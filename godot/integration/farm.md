@@ -1,5 +1,62 @@
 # The farm: integration note (branch `claude/godot-farm`)
 
+## Handoff (17 Oct, for the next session)
+
+**Done and working:** everything listed under "What works" below, all pushed on `claude/godot-farm`. Nothing is
+half-done: there's no uncommitted work. 76 logic checks and 40 in-game self-test checks pass, and the web export
+renders and takes real clicks.
+
+**Files** (all in the farm session's own folders):
+- `scripts/farm/farm_data.gd`: every number.
+- `farm_state.gd`: the rules. No nodes, so the headless tests drive it directly.
+- `farm.gd`: the Farm node: the clock, the wallet, saving, and the hooks for the other sessions.
+- `farm_spot.gd`: the Interactables.
+- `farm_plot_view.gd`: the plant and soil pictures, with their shaders.
+- `farm_world.gd`: the props, the land stages and the fences.
+- `farm_ui.gd`: the panel, the status strip, the hints, toasts, floaters, the held can and the sounds.
+- `farm_install.gd`: the entry point.
+- `game_clock_standin.gd` and `farm_wallet_standin.gd`: stand-ins until the real clock and wallet are merged.
+- `assets/farm/make_sprites.py`: makes the pictures and the WAVs from `tools/strains.py`.
+- `scenes/farm/farm_test.tscn` with `test/farm/farm_test_scene.gd`: the farm inside the real game, with demo options.
+- `test/farm/test_farm_logic.gd`: the headless logic tests.
+
+**Next steps, in order** (all optional polish; the main session only needs the install line):
+1. When the Lighting GameClock is merged, run both tests against it. Delete the stand-in if you like.
+2. When the fighting session lands, wire its wave start and end to `on_wave_started`, `raid_result` and
+   `on_wave_survived`, then set `auto_raids = false`.
+3. Co-op snapshot (M4): send `state.to_dict()` from the host, and turn the guest's E into requests to
+   `Farm.spot_act`.
+4. Real art for the neighbour's block and the paddock (they're boxes and flat colours for now).
+5. Tune `farm_data.gd` by playing.
+
+**Gotchas:**
+- `-s` test scripts get no autoloads, so `GameData` isn't there. The farm logic preloads
+  `res://scripts/game_data.gd` for its static helpers. Anything that needs the real game goes in the test scene's
+  `selftest` instead.
+- In a `-s` script's `_init` the tree isn't running yet: the node tests run on the first `process_frame`.
+- The clock's hour wraps at midnight while the day number turns at 7 am, so growth uses the hour's step forward
+  mod 24 (`Farm.sync_clock`). Never use `day * 24 + hour`.
+- `FarmState.grow()` must not emit `changed` every frame. Doing so rebuilt the panel constantly and swallowed
+  clicks; it emits `grew` every frame and `changed` only on visible changes.
+- Headless runs have no window size, so mouse events can't be tested there. Test clicks with a Playwright click
+  in the web build.
+- Pad A wasn't in `ui_accept` in this project: `FarmUI` adds it, plus B and the d-pad.
+- Don't run two Godots on one folder. Test in a scratch copy: tar the `godot/` folder over, keeping `.godot`
+  (rsync isn't installed).
+
+**How to test:**
+- Setup: `bash godot/tools/setup_godot.sh`, then `godot --headless --path <copy> --import`.
+- Logic: `godot --headless --path <copy> -s res://test/farm/test_farm_logic.gd` should end
+  "FARM LOGIC: 76 passed, 0 failed".
+- In-game: `godot --headless --path <copy> --fixed-fps 60 res://scenes/farm/farm_test.tscn -- selftest` should end
+  "SELFTEST DONE 40 passed, 0 failed".
+- Web:
+  1. In the copy only, set `run/main_scene="res://scenes/farm/farm_test.tscn"` in `project.godot`.
+  2. Export with `--export-release "Web" build/web/index.html`.
+  3. Serve the copy and open `build/web/index.html` with options, e.g. `?farmdemo&zoom=0&at=1500,420`. The other
+     options are `farmall`, `fp&look=-1.57`, `panel=shop|bag|sell|land|breed`, `waves=N` and `smoke=S`.
+  4. Screenshot with `godot/tools/gd_shot.mjs`.
+
 The farm from `../FARM.md`, running on the game clock (PLAN.md 1.4). Everything is in `scripts/farm/`,
 `scenes/farm/`, `assets/farm/`, `test/farm/` and this note; nothing else was touched.
 
