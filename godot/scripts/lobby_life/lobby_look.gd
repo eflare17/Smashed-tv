@@ -494,3 +494,85 @@ static func shirt_box(img: Image) -> Rect2i:
 	if n < 60:
 		return Rect2i()
 	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+## The frame with the picture at a trial place (the editor's preview), whatever is saved.
+static func preview(img: Image, back: bool, place: Rect2, art: Image, smooth_: bool) -> Image:
+	var keep := [art_front, art_back, place_front, place_back, smooth]
+	if back:
+		art_back = art
+		place_back = place
+	else:
+		art_front = art
+		place_front = place
+	smooth = smooth_
+	var out := img.duplicate()
+	_print(out, back, false)
+	art_front = keep[0]
+	art_back = keep[1]
+	place_front = keep[2]
+	place_back = keep[3]
+	smooth = keep[4]
+	return out
+
+# ------------------------------------------------------------------ picking a picture (pickShirtArt)
+
+static var _pick_cb: JavaScriptObject
+static var _dialog: FileDialog
+
+## Ask for a picture file and hand the Image to on_image. In the web build the browser's own file chooser opens
+## (an <input type=file>, as the HTML game does); elsewhere the system's file dialog.
+static func pick_picture(parent: Node, on_image: Callable) -> void:
+	if OS.has_feature("web"):
+		var win := JavaScriptBridge.get_interface("window")
+		_pick_cb = JavaScriptBridge.create_callback(func(args: Array) -> void:
+			var im := _image_from_data_url(String(args[0]))
+			if im:
+				on_image.call(im))
+		win.__lobbyPick = _pick_cb
+		JavaScriptBridge.eval("(function(){var i=document.createElement('input');i.type='file';i.accept='image/*';i.onchange=function(){var f=i.files[0];if(!f)return;var r=new FileReader();r.onload=function(){window.__lobbyPick(r.result);};r.readAsDataURL(f);};i.click();})()")
+		return
+	var load_file := func(path: String) -> void:
+		var im := Image.load_from_file(path)
+		if im and not im.is_empty():
+			on_image.call(im)
+	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG_FILE):
+		DisplayServer.file_dialog_show("Pick a picture", "", "", false, DisplayServer.FILE_DIALOG_MODE_OPEN_FILE,
+			PackedStringArray(["*.png,*.jpg,*.jpeg,*.webp,*.bmp;Pictures"]),
+			func(ok: bool, paths: PackedStringArray, _f: int) -> void:
+				if ok and paths.size() > 0:
+					load_file.call(paths[0]))
+		return
+	if _dialog == null or not is_instance_valid(_dialog):
+		_dialog = FileDialog.new()
+		_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_dialog.use_native_dialog = false
+		_dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp ; Pictures"])
+		_dialog.size = Vector2i(720, 460)
+		parent.add_child(_dialog)
+	for c in _dialog.file_selected.get_connections():
+		_dialog.file_selected.disconnect(c.callable)
+	_dialog.file_selected.connect(func(p: String) -> void: load_file.call(p))
+	_dialog.popup_centered()
+
+static func _image_from_data_url(url: String) -> Image:
+	var comma := url.find(",")
+	if comma < 0:
+		return null
+	var head := url.substr(0, comma)
+	var buf := Marshalls.base64_to_raw(url.substr(comma + 1))
+	var im := Image.new()
+	var err := ERR_FILE_UNRECOGNIZED
+	if head.contains("png"):
+		err = im.load_png_from_buffer(buf)
+	elif head.contains("webp"):
+		err = im.load_webp_from_buffer(buf)
+	elif head.contains("jpeg") or head.contains("jpg"):
+		err = im.load_jpg_from_buffer(buf)
+	else:
+		err = im.load_png_from_buffer(buf)
+		if err != OK:
+			err = im.load_jpg_from_buffer(buf)
+		if err != OK:
+			err = im.load_webp_from_buffer(buf)
+	return im if err == OK else null

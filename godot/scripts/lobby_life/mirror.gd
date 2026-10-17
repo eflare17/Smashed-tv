@@ -312,7 +312,7 @@ func _update_reflections(who: Node3D) -> void:
 func _build_ui() -> void:
 	_ui = Control.new()
 	_ui.name = "MirrorUI"
-	_ui.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.visible = false
 	ll.ui.root.add_child(_ui)
