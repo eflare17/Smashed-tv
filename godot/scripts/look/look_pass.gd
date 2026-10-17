@@ -79,7 +79,7 @@ const HIGH_LIGHT := """
 """
 
 ## The low look (phones): unshaded, no light passes at all. The day's light is one colour (look_tint), and up to
-## four lamps add warm pools by distance, worked out right in the material (global uniforms LookPass sets).
+## twelve lamps add warm pools by distance, worked out right in the material (global uniforms LookPass sets).
 const LOW_FN := """
 global uniform vec3 look_tint;
 global uniform vec3 look_lamp_color;
@@ -88,6 +88,14 @@ global uniform vec4 look_lamp0;
 global uniform vec4 look_lamp1;
 global uniform vec4 look_lamp2;
 global uniform vec4 look_lamp3;
+global uniform vec4 look_lamp4;
+global uniform vec4 look_lamp5;
+global uniform vec4 look_lamp6;
+global uniform vec4 look_lamp7;
+global uniform vec4 look_lamp8;
+global uniform vec4 look_lamp9;
+global uniform vec4 look_lamp10;
+global uniform vec4 look_lamp11;
 float look_lamp(vec4 l, vec3 wp) {
 	if (l.w <= 0.0) return 0.0;
 	vec3 d = (l.xyz - wp) / l.w;
@@ -95,7 +103,7 @@ float look_lamp(vec4 l, vec3 wp) {
 	return f * f;
 }
 vec3 look_light(vec3 wp) {
-	float f = look_lamp(look_lamp0, wp) + look_lamp(look_lamp1, wp) + look_lamp(look_lamp2, wp) + look_lamp(look_lamp3, wp);
+	float f = look_lamp(look_lamp0, wp) + look_lamp(look_lamp1, wp) + look_lamp(look_lamp2, wp) + look_lamp(look_lamp3, wp) + look_lamp(look_lamp4, wp) + look_lamp(look_lamp5, wp) + look_lamp(look_lamp6, wp) + look_lamp(look_lamp7, wp) + look_lamp(look_lamp8, wp) + look_lamp(look_lamp9, wp) + look_lamp(look_lamp10, wp) + look_lamp(look_lamp11, wp);
 	return look_tint + look_lamp_color * look_lamp_level * f;
 }
 """
@@ -104,9 +112,20 @@ const LOW_LIGHT := """
 """
 ## The names and types of the low look's globals.
 const GLOBALS := {"look_tint": RenderingServer.GLOBAL_VAR_TYPE_VEC3, "look_lamp_color": RenderingServer.GLOBAL_VAR_TYPE_VEC3,
-	"look_lamp_level": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "look_lamp0": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
-	"look_lamp1": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "look_lamp2": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
-	"look_lamp3": RenderingServer.GLOBAL_VAR_TYPE_VEC4}
+	"look_lamp_level": RenderingServer.GLOBAL_VAR_TYPE_FLOAT,
+	"look_lamp0": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp1": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp2": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp3": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp4": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp5": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp6": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp7": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp8": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp9": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp10": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp11": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+}
 
 ## The normal that lights an upright picture (a character, a prop): toward the camera across the ground, tipped
 ## well up to the sky, so the sun lights it from behind as well (wrap lighting does the rest).
@@ -781,17 +800,20 @@ static func register_globals() -> void:
 			RenderingServer.global_shader_parameter_add(n, GLOBALS[n], def)
 
 ## The low look's lamps: the first four that are on in the low look ("low" or "both"), as position and reach.
+## How many lamps the low look's shader has room for (look_lamp0..11).
+const LOW_LAMPS := 12
+
 func _set_low_lamps() -> void:
 	var i := 0
 	var col := Color(1.0, 0.8, 0.6).srgb_to_linear()
-	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 0.8)
+	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 1.25)
 	if day_night:
 		for l in day_night.lamps:
-			if i >= 4 or l.get("which", "both") == "high":
+			if i >= LOW_LAMPS or l.get("which", "both") == "high":
 				continue
 			var o: OmniLight3D = l.light
 			RenderingServer.global_shader_parameter_set("look_lamp%d" % i, Vector4(o.global_position.x, o.global_position.y, o.global_position.z, o.omni_range))
 			i += 1
-	while i < 4:
+	while i < LOW_LAMPS:
 		RenderingServer.global_shader_parameter_set("look_lamp%d" % i, Vector4.ZERO)
 		i += 1

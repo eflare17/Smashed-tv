@@ -15,8 +15,8 @@ const SKY_SHADER := preload("res://scripts/look/sky.gdshader")
 ## The hour each look is for, and the look. sky: top, horizon; light: colour, energy (the sun or the moon);
 ## amb: the ambient light; fog: the haze; lamps: 0..1 how on the lamps are; stars: 0..1.
 const KEYS := [
-	[0.0, {"top": "#040916", "hor": "#0c1730", "light": "#8ca6ff", "le": 0.22, "amb": "#262c4a", "fog": "#0a1222", "lamps": 1.0, "stars": 1.0}],
-	[4.8, {"top": "#060c20", "hor": "#141e3c", "light": "#8ca6ff", "le": 0.2, "amb": "#282e4c", "fog": "#0e1628", "lamps": 1.0, "stars": 1.0}],
+	[0.0, {"top": "#040916", "hor": "#0c1730", "light": "#8ca6ff", "le": 0.22, "amb": "#38406a", "fog": "#0a1222", "lamps": 1.0, "stars": 1.0}],
+	[4.8, {"top": "#060c20", "hor": "#141e3c", "light": "#8ca6ff", "le": 0.2, "amb": "#3a426c", "fog": "#0e1628", "lamps": 1.0, "stars": 1.0}],
 	[5.85, {"top": "#1c2650", "hor": "#6a5272", "light": "#8ca6ff", "le": 0.0, "amb": "#4a4a66", "fog": "#3a3850", "lamps": 1.0, "stars": 0.4}],
 	[6.4, {"top": "#4466a6", "hor": "#f2a272", "light": "#ff9a66", "le": 0.22, "amb": "#7a6e78", "fog": "#c8a090", "lamps": 0.8, "stars": 0.0}],
 	[7.3, {"top": "#5a8ad8", "hor": "#f2d2b0", "light": "#ffd8b0", "le": 0.36, "amb": "#9c9ca2", "fog": "#d4d0c8", "lamps": 0.0, "stars": 0.0}],
@@ -25,8 +25,8 @@ const KEYS := [
 	[17.8, {"top": "#4a78c4", "hor": "#f6c48a", "light": "#ffc27a", "le": 0.46, "amb": "#a49488", "fog": "#e6c8a0", "lamps": 0.0, "stars": 0.0}],
 	[19.0, {"top": "#3e4c90", "hor": "#ff9056", "light": "#ff8a4a", "le": 0.36, "amb": "#7e6670", "fog": "#d88a6a", "lamps": 0.6, "stars": 0.0}],
 	[19.9, {"top": "#1e2654", "hor": "#a04c5c", "light": "#ff6a4a", "le": 0.0, "amb": "#5a4e66", "fog": "#5a3a50", "lamps": 1.0, "stars": 0.2}],
-	[20.8, {"top": "#0a1028", "hor": "#2a2448", "light": "#8ca6ff", "le": 0.18, "amb": "#2c3250", "fog": "#161a32", "lamps": 1.0, "stars": 0.8}],
-	[24.0, {"top": "#040916", "hor": "#0c1730", "light": "#8ca6ff", "le": 0.22, "amb": "#262c4a", "fog": "#0a1222", "lamps": 1.0, "stars": 1.0}],
+	[20.8, {"top": "#0a1028", "hor": "#2a2448", "light": "#8ca6ff", "le": 0.18, "amb": "#3c4470", "fog": "#161a32", "lamps": 1.0, "stars": 0.8}],
+	[24.0, {"top": "#040916", "hor": "#0c1730", "light": "#8ca6ff", "le": 0.22, "amb": "#38406a", "fog": "#0a1222", "lamps": 1.0, "stars": 1.0}],
 ]
 ## When the sun is up (the light is the sun between these, the moon outside them).
 const SUNRISE := 5.85

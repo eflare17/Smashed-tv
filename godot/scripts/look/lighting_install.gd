@@ -17,6 +17,7 @@ const ClockScript := preload("res://scripts/clock/game_clock.gd")
 const SAVE_PATH := "user://gameclock.json"
 const SAVE_EVERY := 10.0
 const LAMP := Color(1.0, 0.78, 0.52)
+const YARD_LAMP := Color(1.0, 0.88, 0.7)       # the outdoor lights: a little whiter than the indoor ones
 
 var main: Node
 var clock: Node
@@ -126,10 +127,20 @@ func _add_lamps() -> void:
 		[470, 300, 138, LAMP, 2.6, 290, true, "high"],
 		[740, 380, 138, LAMP, 2.3, 270, true, "high"],
 		[720, 165, 30, Color(0.35, 0.85, 1.0), 1.6, 220, false, "high"],
-		[430, 260, 140, LAMP, 4.0, 470, true, "low"],
+		[215, 260, 140, LAMP, 4.0, 420, false, "low"],
+		[645, 260, 140, LAMP, 4.0, 420, false, "low"],
 		[240, 700, 138, LAMP, 2.2, 330, true, "both"],
 		[295, 532, 42, Color(1.0, 0.7, 0.42), 1.0, 150, false, "high"],
 		[645, 585, 112, Color(1.0, 0.82, 0.6), 2.6, 280, true, "both"],
+		# the yard at night (the owner: "put some lights up outside so you can see at night"): flood and wall lights
+		[1070, 960, 100, YARD_LAMP, 2.4, 400, true, "both"],     # over the garage door
+		[1080, 465, 90, YARD_LAMP, 2.2, 340, true, "both"],      # on the shed
+		[1500, 420, 120, YARD_LAMP, 2.4, 400, true, "both"],     # over the crop patch
+		[707, 1240, 170, YARD_LAMP, 2.8, 480, true, "both"],     # the trampoline's floodlight
+		[740, 1720, 110, YARD_LAMP, 2.2, 400, true, "both"],     # the garden beds
+		[260, 1480, 110, YARD_LAMP, 2.2, 400, true, "both"],     # the back corner
+		[1600, 1450, 110, YARD_LAMP, 2.2, 400, true, "both"],    # by the water tank
+		[380, 900, 110, YARD_LAMP, 2.2, 380, true, "both"],      # the side path
 	]
 	for l in L:
 		day_night.add_lamp(l[0], l[1], l[2], l[3], l[4], l[5], l[6])
