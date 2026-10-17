@@ -8,7 +8,7 @@ W="${WORK:-/tmp/claude-0/fightweb}"
 G="${GODOT:-$HOME/godot/godot}"
 PORT="${PORT:-8765}"
 mkdir -p "$W"
-rsync -a --delete --exclude .godot --exclude build "$SRC/" "$W/godot/"
+mkdir -p "$W/godot" && (cd "$SRC" && tar cf - --exclude=./.godot --exclude=./build .) | (cd "$W/godot" && tar xf -)
 if ! grep -q "FightInstall.install" "$W/godot/scripts/main.gd"; then
   sed -i 's/^\tprint("Smashed TV (Godot) ", hud.build_text, ": ready")/\tFightInstall.install(self)\n&/' "$W/godot/scripts/main.gd"
 fi
