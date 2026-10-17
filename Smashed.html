@@ -596,7 +596,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b308 — first person shows what top-down does: cans, potatoes, rockets, ducks, words, Gothica thrown, the landing ring';
+const BUILD = 'b309 — online: each shirt picture shows on its own player, and the guest can use the gym, rope, wardrobe, bong and Gothica';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -1144,6 +1144,51 @@ function drawHeldPlate(p) {
 // kept (shrunk) in this browser, so it's still there next time.
 const SHIRT = { art: null, artBack: null, place: null, placeBack: null, smooth: true, boxes: new Map(), originals: null, key: 'smashed-shirt-art' };
 const backKey = k => typeof k === 'string' && /^b(ack|diag)/.test(k);     // which of his frames show his back
+// b309: each picture is worn by its own character. Yours goes on your character, and your friend's (sent over
+// the connection) on theirs; before, yours went on every character on your screen and theirs never arrived.
+// PRINT is the one being printed right now (the printing code reads it instead of SHIRT).
+const REMOTE_PRINT = { ch: null, art: null, artBack: null, place: null, placeBack: null, smooth: true };
+let PRINT = SHIRT;
+const PRINT_NET = { sent: null, chars: '' };
+function printData(im) {                                        // small enough for the connection: 256 pixels across at most
+  if (!im) return null;
+  try {
+    const W = im.naturalWidth || im.width, H = im.naturalHeight || im.height, k = Math.min(1, 256 / Math.max(W, H));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(W * k)); c.height = Math.max(1, Math.round(H * k));
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    const u = c.toDataURL('image/webp', 0.85); return /^data:image\/webp/.test(u) ? u : c.toDataURL();
+  } catch (_) { return null; }
+}
+function onPrintData(d) {
+  const ok = u => typeof u === 'string' && /^data:image\/(webp|png|jpeg);base64,/.test(u) && u.length < 600000;
+  const load = u => new Promise(r => { if (!ok(u)) return r(null); const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = u; });
+  const pl = q => q && typeof q === 'object' && ['x', 'y', 'w', 'h'].every(k => Number.isFinite(q[k])) ? { x: q.x, y: q.y, w: q.w, h: q.h } : null;
+  Promise.all([load(d.a), load(d.b)]).then(([a, b]) => {
+    Object.assign(REMOTE_PRINT, { ch: CHARS[d.ch] ? d.ch : null, art: a, artBack: b, place: pl(d.p), placeBack: pl(d.pb), smooth: d.s !== false });
+    applyShirtArt();
+  });
+}
+setInterval(() => {
+  // a character changed (yours or theirs): print the right picture on each
+  const v = net.role === 'client' ? net.view : world, chars = [myChar(), REMOTE_PRINT.ch, ...((v && v.players) || []).map(q => q.ch)].join(',');
+  if (chars !== PRINT_NET.chars) { PRINT_NET.chars = chars; if (SHIRT.originals) applyShirtArt(); }
+  if (!net.conn || !net.conn.open) {
+    PRINT_NET.sent = null;
+    if (REMOTE_PRINT.ch) { REMOTE_PRINT.ch = null; REMOTE_PRINT.art = REMOTE_PRINT.artBack = null; applyShirtArt(); }   // they've gone
+    return;
+  }
+  const id = a => a ? (a.__sid || (a.__sid = ++shirtSerial)) : 0, me = myChar();
+  const sig = [me, id(SHIRT.art), id(SHIRT.artBack), JSON.stringify(SHIRT.place), JSON.stringify(SHIRT.placeBack), SHIRT.smooth].join('|');
+  if (!me || sig === PRINT_NET.sent) return;
+  PRINT_NET.sent = sig;
+  net.conn.send({ t: 'shirt', ch: me, a: printData(SHIRT.art), b: printData(SHIRT.artBack), p: SHIRT.place, pb: SHIRT.placeBack, s: !!SHIRT.smooth });
+}, 1000);
+function myChar() { const me = typeof localMe === 'function' && localMe(); return me ? me.ch : null; }
+function printFor(ch) {
+  if (ch && ch === myChar()) return SHIRT;
+  if (ch && REMOTE_PRINT.ch === ch && (REMOTE_PRINT.art || REMOTE_PRINT.artBack)) return REMOTE_PRINT;
+  return null;
+}
 function shirtLogoBox(im) {                                   // {box:[x,y,w,h], mask:canvas} or null
   if (SHIRT.boxes.has(im)) return SHIRT.boxes.get(im);
   let out = null;
@@ -1311,15 +1356,15 @@ function shirtTone(a) {                                       // the picture's o
 function shirtSkin(im, isBack, mirror, hi, sideish) {            // sideish: seen from the side or a diagonal, where the strap runs off at an angle
   const L = shirtLogoBox(im); if (!L) return null;
   const w = im.naturalWidth, h = im.naturalHeight, [bx, by, bw, bh] = L.box;
-  let a = (isBack && SHIRT.artBack) || SHIRT.art; if (!a) return null;
+  let a = (isBack && PRINT.artBack) || PRINT.art; if (!a) return null;
   if (mirror) a = mirroredArt(a);
   // where you put it in the editor. b270: the back, until you've placed something there, is covered edge to
   // edge (with the front picture if there's no back one): the front's placing is for a different shape of
   // shirt, and on his back it left strips of green showing round the picture
-  const pl = (isBack ? SHIRT.placeBack || fillPlace(a, bw, bh) : SHIRT.place) || { x: 0, y: 0, w: 1, h: 1 };
-  const S = SHIRT.smooth ? (hi ? 3 : 2) : 1;                               // photo mode: twice the detail (three times where the camera closes in)
+  const pl = (isBack ? PRINT.placeBack || fillPlace(a, bw, bh) : PRINT.place) || { x: 0, y: 0, w: 1, h: 1 };
+  const S = PRINT.smooth ? (hi ? 3 : 2) : 1;                               // photo mode: twice the detail (three times where the camera closes in)
   const patch = document.createElement('canvas'); patch.width = w * S; patch.height = h * S;
-  const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = SHIRT.smooth;
+  const pg = patch.getContext('2d'); pg.imageSmoothingEnabled = PRINT.smooth;
   pg.imageSmoothingQuality = 'high';
   const plx = mirror ? (1 - pl.x - pl.w) : pl.x;
   pg.drawImage(a, (bx + plx * bw) * S, (by + pl.y * bh) * S, Math.max(1, pl.w * bw) * S, Math.max(1, pl.h * bh) * S);
@@ -1342,8 +1387,8 @@ function shirtSkin(im, isBack, mirror, hi, sideish) {            // sideish: see
   // the shirt's folds through it. b271: in LOOK: PHOTO they're smoothed and softened (they were blown up in hard
   // pixels, which made the photo look pixelated), and on his back, whose tank top is camo, only a touch comes
   // through, or the blotches of the pattern speckle the picture
-  g.globalAlpha = isBack ? (SHIRT.smooth ? 0.3 : 0.5) : 0.75; g.globalCompositeOperation = 'multiply';
-  if (SHIRT.smooth) { g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; if ('filter' in g) g.filter = 'blur(' + (S * 0.7).toFixed(1) + 'px)'; }
+  g.globalAlpha = isBack ? (PRINT.smooth ? 0.3 : 0.5) : 0.75; g.globalCompositeOperation = 'multiply';
+  if (PRINT.smooth) { g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; if ('filter' in g) g.filter = 'blur(' + (S * 0.7).toFixed(1) + 'px)'; }
   g.drawImage(patchShade(im, L), 0, 0, w * S, h * S);
   g.filter = 'none'; g.imageSmoothingEnabled = false;
   return c;
@@ -1532,7 +1577,7 @@ function hairFrame(im, style, key, ch) {                        // im wearing st
 let shirtSerial = 0;
 function printKey(isBack, hi, sideish) {
   const id = a => a ? (a.__sid || (a.__sid = ++shirtSerial)) : 0;
-  return [id(SHIRT.art), id(SHIRT.artBack), JSON.stringify(SHIRT.place), JSON.stringify(SHIRT.placeBack), SHIRT.smooth, isBack, hi, !!sideish].join('|');
+  return [id(PRINT.art), id(PRINT.artBack), JSON.stringify(PRINT.place), JSON.stringify(PRINT.placeBack), PRINT.smooth, isBack, hi, !!sideish].join('|');
 }
 function printedWithHair(im, key, ch, isBack, hi, style) {
   const sideish = shirtSide(key), pk = printKey(isBack, hi, sideish);
@@ -1608,7 +1653,8 @@ function applyShirtArt(only) {
   let waiting = 0;
   for (const [holder, key, orig, ch] of SHIRT.originals) {
     if (only && ch !== only) continue;
-    const style = CH_STYLE[ch] || 0, printing = SHIRT.art || SHIRT.artBack;
+    const style = CH_STYLE[ch] || 0, pr = printFor(ch), printing = pr && (pr.art || pr.artBack);
+    PRINT = pr || SHIRT;
     const list = Array.isArray(orig) ? orig : [orig];
     const done = list.map(im => {
       if (!im.naturalWidth) { if (style || printing) waiting++; return im; }
@@ -1617,6 +1663,7 @@ function applyShirtArt(only) {
       return printedWithHair(im, key, ch, backKey(key), hi, style); });   // b277: the print, kept, with his hair on it
     holder[key] = Array.isArray(orig) ? done : done[0];
   }
+  PRINT = SHIRT;
   if (waiting) setTimeout(() => applyShirtArt(only), 400);            // some of the art still loading: go round again when it's in
   shirtVer++;                                                              // and the frames built as he's drawn get printed again
 }
@@ -1640,8 +1687,12 @@ function shirtPrinted(im, isBack, hi, sideish) {
 // few dozen are kept (the bounce is also in whole pixels while carrying, so there are fewer of them).
 const SHIRT_WORN = new Map(), SHIRT_WORN_MAX = 40;
 let shirtVer = 0;
-function shirtWorn(im, isBack, base, flip, sideish) {
-  if ((!SHIRT.art && !SHIRT.artBack) || !im || im.__orig) return im;
+function shirtWorn(im, isBack, base, flip, sideish, ch) {
+  const pr = printFor(ch); if (!pr || (!pr.art && !pr.artBack) || !im || im.__orig) return im;
+  PRINT = pr;
+  try { return shirtWornAs(im, isBack, base, flip, sideish); } finally { PRINT = SHIRT; }
+}
+function shirtWornAs(im, isBack, base, flip, sideish) {
   let e = SHIRT_WORN.get(im);
   if (!e || e.v !== shirtVer) e = { v: shirtVer, c: null, m: null };
   SHIRT_WORN.delete(im); SHIRT_WORN.set(im, e);                          // most recently used goes to the back of the queue
@@ -3447,7 +3498,7 @@ function shroomWords(w) {
     ctx.globalAlpha = a; ctx.font = 'bold 16px ui-monospace, monospace';
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(f.text, q.x + 1, q.y + 1); ctx.fillStyle = f.col || '#7fd89a'; ctx.fillText(f.text, q.x, q.y);
   }
-  const n = !w.started && net.role !== 'client' ? NPC_GOTH : w.goth;
+  const n = !w.started ? NPC_GOTH : w.goth;
   if (n && n.bubble && n.carrier < 0) {
     const b = n.bubble, q = at(n.x, n.y, 92 + (n.dz || 0));
     if (q) {
@@ -3616,7 +3667,7 @@ function drawShroom(w) {
   // everyone else, as cut-outs (drawn on the canvas one at a time, then kept)
   const sprites = SHROOM.props.filter(s => !(s.tower && (me.dive === DIVE.CLIMB || me.dive === DIVE.BOARD)));
   const cast = w.players.filter(p => p !== me && p.alive && !p.bed);
-  const npc = net.role !== 'client' && lobbyGoth(w); if (npc && !npc.thrown) cast.push(npc);
+  const npc = lobbyGoth(w); if (npc && !npc.thrown) cast.push(npc);
   for (const p of cast) sprites.push(shroomCharacter(w, p, me));
   for (const d of (w.dummies || [])) if (!(d.down > 0)) sprites.push({ img: SHROOM.dummy, x: d.x, y: d.y + 16, W: 30, H: 50, foot: 50, wob: d.wob });
   for (const b of (w.bullets || [])) sprites.push({ img: SHROOM.glow, x: b.x, y: b.y, W: 10, H: 10, foot: 50, glow: true });
@@ -4164,11 +4215,16 @@ const MANTIS = [
 ];
 const TRIP_T = { dark: 1.5, show: 3, full: 4.5, fade: 11, gone: 11.5, back: 12.2, end: 13.8 };
 let TRIP = null;
+// b309: only your own hits count, once each (the other player's hit, drawn on your screen, used to start your
+// trip; and on the guest's screen the same hit was seen again every frame till the host's next update)
+const BONG_HITS = { row: 0, at: 0 };
 function bongHit(p) {
+  if (!p || p.id !== (net.role === 'client' ? 1 : 0)) return;
   const now = performance.now() / 1000;
-  p.hitRow = (p.sit && p.lastHitAt && now - p.lastHitAt < 30) ? (p.hitRow || 0) + 1 : 1;
-  p.lastHitAt = now;
-  if (p.hitRow >= 2 && !TRIP) { p.hitRow = 0; startTrip(); }
+  if (now - BONG_HITS.at < 3) return;
+  BONG_HITS.row = (p.sit && BONG_HITS.at && now - BONG_HITS.at < 30) ? BONG_HITS.row + 1 : 1;
+  BONG_HITS.at = now;
+  if (BONG_HITS.row >= 2 && !TRIP) { BONG_HITS.row = 0; startTrip(); }
 }
 function startTrip() {
   TRIP = { t: 0, last: performance.now() / 1000, beat: 0, nodes: null };
@@ -6327,7 +6383,7 @@ function stepBase(w, inputs, dt) {
     }
     if (p.id !== 0 && !w.started && inp.sq !== undefined) {
       if (p.lastSq === undefined) p.lastSq = inp.sq;
-      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; if (p.sit) p.sit = 0; else if (p.bed) getUp(p); else { const ch = chairNear(w, p), bs = !ch && bedNear(w, p); if (ch) sitDown(p, ch); else if (bs) lieDown(p, bs); } }
+      else if (inp.sq !== p.lastSq) { p.lastSq = inp.sq; lobbyAction(w, p); }   // b309: the gym, the rope, the wardrobe, the bong, Gothica...
       if (p.lastBq === undefined) p.lastBq = inp.bq;
       else if (inp.bq !== p.lastBq) { p.lastBq = inp.bq; bjAction(w, p, inp.ba); }
     }
@@ -7449,7 +7505,9 @@ function snapshot(w) {
     ss: secretPacket(w),
     w: w.wave, o: w.over ? 1 : 0, br: Math.round(w.breather * 100), st: w.started ? 1 : 0, tm: Math.round((w.t || 0) * 100),   // b293: the clock, for the guest's animations
     fz: Math.round((w.freeze || 0) * 1000),
-    md: w.started ? (w.mode || 'classic') : gameMode,             // b294: the mode, and Gothica in Protect Gothica
+    md: w.started ? (w.mode || 'classic') : gameMode,
+    wd: WARD.open ? 1 : 0,                                         // b309: the wardrobe, and Gothica in the lobby, for the guest
+    ng: !w.started && T.npcGoth ? gothPack() : null,             // b294: the mode, and Gothica in Protect Gothica
     gt: w.goth ? (g => [Math.round(g.x), Math.round(g.y), Math.round(g.hp * 10), g.max, Math.round(g.fx * 100), Math.round(g.fy * 100),
                         g.moving ? 1 : 0, Math.round(g.odo), g.carrier, Math.round(g.hurt * 100), g.face ? 1 : 0, g.carryCd > 0 ? 1 : 0,
                         g.bubble ? [g.bubble.text, Math.round(g.bubble.t * 100), Math.round(g.bubble.dur * 100)] : null,
@@ -7502,7 +7560,8 @@ function snapshot(w) {
                            p.dive || 0, Math.round(p.dz || 0), p.sit || 0, p.bong ? 1 : 0, p.bed || 0, p.beard || 0,
                            p.lift ? [Math.round(p.lift.t * 100), p.lift.reps, Math.round(p.lift.rep * 100)] : 0,   // b291: the gym, so the guest sees it
                            p.leg ? [Math.round(p.leg.t * 100), p.leg.reps, Math.round(p.leg.rep * 100)] : 0,
-                           p.plate ? 'SML'.indexOf(p.plate) + 1 : 0]),
+                           p.plate ? 'SML'.indexOf(p.plate) + 1 : 0,
+                           p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0]),   // b309: taking a hit, so the guest sees it
     gy: [GYM.bar.L.join(''), GYM.bar.R.join(''), GYM.pegs.map(q => q.join('')), LEG.horn.L.join(''), LEG.horn.R.join(''),
          GYM.anim ? [GYM.anim.kind, GYM.anim.side, GYM.anim.size, Math.round(GYM.anim.t * 100), Math.round(GYM.anim.dur * 100), GYM.anim.pid] : 0],
     bj: bjPack(w.bj),
@@ -7543,6 +7602,7 @@ function snapshot(w) {
 // long ago the packet arrived so it doesn't move in 20fps steps.
 function worldFromSnapshot(s, age, bits) {
   if (s.ss && s.ss.phase !== 'done') age = 0;
+  if (typeof net !== 'undefined' && net.role === 'client' && s.wd !== undefined) WARD.open = !!s.wd;   // b309
   if (s.gy && typeof net !== 'undefined' && net.role === 'client') {   // b291: the plates on the bar, the pegs and the leg press, as the host has them
     const g = s.gy; GYM.bar.L = [...g[0]]; GYM.bar.R = [...g[1]]; GYM.pegs = g[2].map(q => [...q]); LEG.horn.L = [...g[3]]; LEG.horn.R = [...g[4]];
     GYM.anim = g[5] ? { kind: g[5][0], side: g[5][1], size: g[5][2], t: g[5][3] / 100 + age, dur: g[5][4] / 100, pid: g[5][5] } : null;
@@ -7552,7 +7612,7 @@ function worldFromSnapshot(s, age, bits) {
     t: s.ss ? s.ss.clock : (s.tm || 0) / 100 + age,        // b293: was 0 outside the secret room, so the slot reels and the vending machine stood still for the guest
     wave: s.w, over: !!s.o, breather: s.br / 100, started: !!s.st,
     freeze: (s.fz || 0) / 1000,
-    mode: s.md || 'classic', gothDown: !!s.gd,
+    mode: s.md || 'classic', gothDown: !!s.gd, ng: s.ng || null,
     goth: s.gt ? (a => ({ id: 'npc_goth', npc: true, prot: true, ch: 'goth', weapon: 'blaster', alive: true,
                           x: a[0], y: a[1], hp: a[2] / 10, max: a[3], fx: a[4] / 100, fy: a[5] / 100, moving: !!a[6],
                           odo: a[7] + (a[6] ? PROT.walk * age : 0), carrier: a[8], hurt: Math.max(0, a[9] / 100 - age), face: !!a[10], carryCd: a[11] ? 1 : 0,
@@ -7601,7 +7661,8 @@ function worldFromSnapshot(s, age, bits) {
       dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0,
       lift: a[51] ? { t: a[51][0] / 100 + age, reps: a[51][1], rep: a[51][2] / 100 } : null,   // b291: on the bench, the leg press, carrying a plate
       leg: a[52] ? { t: a[52][0] / 100 + age, reps: a[52][1], rep: a[52][2] / 100 } : null,
-      plate: a[53] ? 'SML'[a[53] - 1] : null
+      plate: a[53] ? 'SML'[a[53] - 1] : null,
+      vape: a[54] ? { t: a[54] / 100 + age } : null
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -7870,7 +7931,7 @@ canvas.addEventListener('pointerdown', e => {
     if (ab && SHIRT.art && Math.hypot(pt.x - (ab.x + ab.r * 0.72), pt.y - (ab.y - ab.r * 0.72)) < 12) { clearShirtArt(); e.preventDefault(); return; }
     if (ab && Math.hypot(pt.x - ab.x, pt.y - ab.y) < ab.r + 6) { if (SHIRT.art) openShirtEditor(); else pickShirtArt(); e.preventDefault(); return; } }
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
-    if (mb) { if (mb.a === 'bong') toggleCarry(world); else doBJ('call'); e.preventDefault(); return; } }
+    if (mb) { if (mb.a === 'bong') { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); } else doBJ('call'); e.preventDefault(); return; } }
   const cb = carryButton();
   if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (shroomTryEat() || arcadeTryOpen() || mirrorTryLook()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
@@ -9056,37 +9117,30 @@ function drawRain() {
     ctx.restore();
   }
 }
+// b309: what E does for p in the lobby, the same on either screen (w: the host's world, or the guest's copy of it)
+function lobbyLabel(w, p) {
+  if (!p || !p.alive || w.started || w.over || cal.on) return null;
+  if (NPC_GOTH.carrier === p.id) return p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
+  if (p.dive) return null;
+  const gn = gymNear(w, p); if (gn) return gn.label;
+  if (p.sit) return !p.bong ? 'BONG' : p.vape ? null : 'HIT';
+  if (p.bed) return 'GET UP';
+  if (ropeNear(p) && ROPE.cool <= 0) return 'PULL';
+  if (wardNear(p)) return WARD.open ? 'CLOSE' : 'OPEN';
+  if (arcadeNear(p)) return 'PLAY';
+  if (mirrorNear(p)) return mirrorLook ? 'BACK' : 'LOOK';
+  if (shroomNear(p) && shroomHere()) return 'EAT';
+  if (chairNear(w, p)) return 'SIT';
+  if (bedNear(w, p)) return 'LIE DOWN';
+  if (NPC_GOTH.carrier < 0 && canCarry(w, p)) return 'PICK UP';
+  return null;
+}
 function carryButton() {
-  if (net.role === 'client') {                               // the guest: sit down at the table, or get up
-    const v = net.view, me = v && v.players.find(q => q.id === 1);
-    if (v && v.started && v.goth && !v.over && me && me.alive) {                      // b294: Protect Gothica
-      const label = v.goth.carrier === me.id ? 'PUT DOWN' : protCanCarry(v, me) ? 'PICK UP' : null;
-      return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
-    }
-    if (!v || v.started || v.over || cal.on || !T.loungeFloor || !me || !me.alive || me.dive) return null;
-    const label = me.sit ? 'STAND' : me.bed ? 'GET UP' : chairNear(v, me) ? 'SIT' : bedNear(v, me) ? 'LIE DOWN' : arcadeNear(me) ? 'PLAY' : mirrorNear(me) ? (mirrorLook ? 'BACK' : 'LOOK') : shroomNear(me) && shroomHere() ? 'EAT' : null;
-    return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
-  }
-  const w = world, p = w.players[0];
-  if (w.started && w.goth && !w.over && p && p.alive) {
-    const label = w.goth.carrier === p.id ? 'PUT DOWN' : protCanCarry(w, p) ? 'PICK UP' : null;
-    return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
-  }
-  if (!T.npcGoth || w.started || w.over || cal.on || net.role === 'client' || !p) return null;
+  const client = net.role === 'client', w = client ? net.view : world, p = client ? (w && w.players.find(q => q.id === 1)) : world.players[0];
+  if (!w || !p) return null;
   let label = null;
-  const gn = gymNear(w, p);
-  if (NPC_GOTH.carrier === p.id) label = p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
-  else if (gn) label = gn.label;
-  else if (p.sit) label = !p.bong ? 'BONG' : p.vape ? null : 'HIT';
-  else if (ropeNear(p) && ROPE.cool <= 0) label = 'PULL';
-  else if (NPC_GOTH.carrier < 0 && wardNear(p)) label = WARD.open ? 'CLOSE' : 'OPEN';
-  else if (NPC_GOTH.carrier < 0 && arcadeNear(p)) label = 'PLAY';
-  else if (mirrorNear(p)) label = mirrorLook ? 'BACK' : 'LOOK';
-  else if (shroomNear(p) && shroomHere()) label = 'EAT';
-  else if (p.bed) label = 'GET UP';
-  else if (chairNear(w, p)) label = 'SIT';
-  else if (NPC_GOTH.carrier < 0 && bedNear(w, p)) label = 'LIE DOWN';
-  else if (canCarry(w, p)) label = 'PICK UP';
+  if (w.started && w.goth && !w.over && p.alive) label = w.goth.carrier === p.id ? 'PUT DOWN' : protCanCarry(w, p) ? 'PICK UP' : null;   // b294: Protect Gothica
+  else label = lobbyLabel(w, p);
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
 }
 function drawCarryButton() {
@@ -9099,24 +9153,28 @@ function drawCarryButton() {
   ctx.fillText(b.label, b.x, b.y);
   ctx.textBaseline = 'alphabetic';
 }
-function toggleCarry(w) {
-  const p = w.players[0];
+function toggleCarry(w) { lobbyAction(w, w.players[0]); }
+// b309: E for player p (the host's own, or the guest's, which arrives with their input)
+function lobbyAction(w, p) {
+  if (!p || !p.alive) return;
   if (w.started && w.goth) { protectCarry(w, p); return; }
+  if (w.started) return;
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
+  const carrying = NPC_GOTH.carrier === p.id;
   if (gymAction(w, p)) return;
-  if (NPC_GOTH.carrier < 0 && !w.started && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
-  if (NPC_GOTH.carrier < 0 && !w.started && wardNear(p)) { toggleWard(); return; }
-  if (p && p.sit) { if (!p.bong) p.bong = 1; else if (!p.vape) p.vape = { t: 0 }; return; }   // sitting: E grabs the bong, then takes a hit (move to stand up)
-  if (p && p.bed) { getUp(p); return; }
-  if (NPC_GOTH.carrier < 0) { const bs = bedNear(w, p); if (bs) { lieDown(p, bs); return; } }
-  { const ch = chairNear(w, p); if (ch) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
-  if (NPC_GOTH.carrier >= 0) {
+  if (!carrying && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
+  if (!carrying && wardNear(p)) { toggleWard(); return; }
+  if (p.sit) { if (!p.bong) p.bong = 1; else if (!p.vape) p.vape = { t: 0 }; return; }   // sitting: E grabs the bong, then takes a hit (move to stand up)
+  if (p.bed) { getUp(p); return; }
+  if (!carrying) { const bs = bedNear(w, p); if (bs) { lieDown(p, bs); return; } }
+  { const ch = chairNear(w, p); if (ch && !carrying) { p.sit = ch; const c = chairPos(ch); p.x = c.x; p.y = c.y; p.vx = 0; p.vy = 0; p.fx = ch === 1 ? 1 : -1; p.fy = 0; return; } }
+  if (carrying) {
     // on the board she goes in the pool; on the ladder she stays put; anywhere else, set her down
-    if (p && p.dive === DIVE.BOARD) throwGoth(w, (p.fx < 0 ? -1 : 1) * T.diveFwd * 1.25, 40, T.diveHop * 0.9);
-    else if (!p || !p.dive) NPC_GOTH.anim = { kind: 'drop', t: 0, dur: 0.34 };   // squat, then she's down
+    if (p.dive === DIVE.BOARD) throwGoth(w, (p.fx < 0 ? -1 : 1) * T.diveFwd * 1.25, 40, T.diveHop * 0.9);
+    else if (!p.dive) NPC_GOTH.anim = { kind: 'drop', t: 0, dur: 0.34 };   // squat, then she's down
     return;
   }
-  if (canCarry(w, p)) {
+  if (NPC_GOTH.carrier < 0 && canCarry(w, p)) {
     NPC_GOTH.carrier = p.id; NPC_GOTH.face = p.fx < 0;
     NPC_GOTH.anim = { kind: 'pick', t: 0, dur: 0.34 };         // scooped from a squat, then he straightens up
     const j = JIG.npc_goth; if (j) j.v += 30;                  // and she bounces as she lands in his arms
@@ -9181,7 +9239,28 @@ function npcNextPoint(n) {
   const hop = nxt[0];
   return hop < 0 ? [n.tx, n.ty] : pts[hop];          // no way round: fall back and let the backstop sort it
 }
+// b309: Gothica in the lobby is the host's, and the guest sees her where she is on the host's screen
+// (each screen used to run its own Gothica, so you saw her in different places and the guest couldn't pick her up)
+function gothPack() {
+  const n = NPC_GOTH;
+  return [Math.round(n.x), Math.round(n.y), Math.round((n.fx || 0) * 100), Math.round((n.fy || 0) * 100), n.moving ? 1 : 0, Math.round(n.odo || 0),
+          n.carrier, [null, 'air', 'floor', 'swim'].indexOf(n.thrown || null), Math.round(n.dz || 0), n.face ? 1 : 0,
+          n.anim ? [n.anim.kind, Math.round(n.anim.t * 100), Math.round(n.anim.dur * 100)] : 0,
+          n.bubble ? [n.bubble.text, Math.round(n.bubble.t * 100), Math.round(n.bubble.dur * 100)] : 0,
+          Math.round((n.spin || 0) * 10), n.dive || 0, Math.round((n.ix || 0) * 100), Math.round((n.iy || 0) * 100)];
+}
+function gothFromHost(w) {
+  const a = w && w.ng, n = NPC_GOTH;
+  if (!a || w.started || cal.on) { n.carrier = -1; n.anim = null; return null; }
+  Object.assign(n, { x: a[0], y: a[1], fx: a[2] / 100, fy: a[3] / 100, moving: !!a[4], odo: a[5], carrier: a[6],
+    thrown: [null, 'air', 'floor', 'swim'][a[7]] || null, dz: a[8], face: !!a[9],
+    anim: a[10] ? { kind: String(a[10][0]), t: a[10][1] / 100, dur: a[10][2] / 100 } : null,
+    bubble: a[11] ? { text: String(a[11][0]).slice(0, 80), t: a[11][1] / 100, dur: a[11][2] / 100 } : null,
+    spin: a[12] / 10, dive: a[13], ix: a[14] / 100, iy: a[15] / 100 });
+  return n.carrier >= 0 ? null : n;                      // carried: drawn as part of whoever has her
+}
 function lobbyGoth(w) {
+  if (typeof net !== 'undefined' && net.role === 'client') return gothFromHost(w);
   if (!T.npcGoth || w.started || cal.on) { if (NPC_GOTH.carrier >= 0) putGothDown(w); return null; }
   const n = NPC_GOTH, now = performance.now() / 1000;
   const dt = Math.min(0.1, Math.max(0, now - (n.t || now))); n.t = now;
@@ -9637,7 +9716,7 @@ function drawJared(w, p) {
   ctx.save();
   if (pose.flip) { ctx.translate(p.x * 2, 0); ctx.scale(-1, 1); }
   ctx.imageSmoothingEnabled = false;
-  if (built) im = shirtWorn(im, backKey(key), builtFrom, pose.flip, shirtSide(key));
+  if (built) im = shirtWorn(im, backKey(key), builtFrom, pose.flip, shirtSide(key), p.ch);
   ctx.drawImage(pose.flip && im.__mir ? im.__mir : im, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(h));
   ctx.restore();
 
@@ -9755,6 +9834,7 @@ function wireConn(conn) {
   conn.on('data', d => {
     if (net.conn !== conn || !d || typeof d !== 'object') return;
     if (typeof d.t === 'string' && d.t.startsWith('md') && mdOnData(d)) return;   // b303: the Mega Drive
+    if (d.t === 'shirt') { onPrintData(d); return; }                     // b309: their shirt picture
     if (d.t === 'char' && net.role === 'host') {
       if (CHARS[d.c]) {
         // b295: the guest can be on the host's character too (two Juicy Jareds); they share player 1's hair
@@ -9782,7 +9862,12 @@ function wireConn(conn) {
       net.inputAt = performance.now();
       return;
     }
-    if (d.t === 'snap' && net.role === 'client') { net.snap = d.s; net.snapAt = performance.now(); return; }
+    if (d.t === 'snap' && net.role === 'client') {
+      // b309: your own bong hit, done: the host clears it as it ends, so it's counted here, when it goes
+      const mine = q => q && (q.p || []).find(x => x[0] === 1), was = mine(net.snap), now = mine(d.s);
+      if (was && was[54] >= (SIT_T.end - 0.6) * 100 && !(now && now[54])) bongHit({ id: 1, sit: (now && now[47]) || was[47] });
+      net.snap = d.s; net.snapAt = performance.now(); return;
+    }
     if (d.t === 'cfg' && net.role === 'client') {
       Object.assign(T, d.T);            // client draws with the host's numbers
       if (d.M) { MUZZLE_BY_CHAR = d.M; useChar(pickedChar[1]); }
@@ -11169,7 +11254,7 @@ function renderBase(w, hudRight) {
           ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: pick up', p.x + 1, y + 1);
           ctx.fillStyle = '#fff';            ctx.fillText('E: pick up', p.x,     y);
         }
-      } else if (canCarry(w, w.players[0])) {
+      } else if (NPC_GOTH.carrier < 0 && canCarry(w, localPlayer())) {
         ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('E: pick up', p.x + 1, p.y - T.radius * T.spriteScale * 1.25 + 1);
         ctx.fillStyle = '#fff';            ctx.fillText('E: pick up', p.x,     p.y - T.radius * T.spriteScale * 1.25);
