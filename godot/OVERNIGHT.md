@@ -29,3 +29,6 @@ it out."
 - 10:54 UTC: an interrupt in the chat stopped every running agent (and the machine restarted at 11:24). Lesson:
   an interrupt/stop kills the background agents. 11:25 UTC: both workflows resumed (finished agents cached:
   characters, the weapons and enemies specs); the interrupted build agents carry on from their work folders.
+- 11:58 UTC: M2 specs finished (godot/specs/: weapons, enemies_waves, gore_loot, modes_hud, README with gaps);
+  sound recordings extracted (assets/sounds). M1: characters and world done, player nearly, tramp+Gothica
+  building; then integrate, review, fix. Preview build at 12:10 UTC.
