@@ -23,7 +23,8 @@ var player: Node
 var rig: Node
 
 var _root: Control
-var _status: RichTextLabel
+var _status: HBoxContainer          # one Label per item, so nothing can draw over a neighbour
+var _status_key := ""
 var _hint: Label
 var _toast: Label
 var _toast_t := 0.0
@@ -51,16 +52,10 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	_status = RichTextLabel.new()
-	_status.bbcode_enabled = true
-	_status.fit_content = true
-	_status.scroll_active = false
+	_status = HBoxContainer.new()
 	_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_status.position = Vector2(12, 46)
-	_status.size = Vector2(760, 30)
-	_status.add_theme_font_size_override("normal_font_size", 15)
-	_status.add_theme_constant_override("outline_size", 4)
-	_status.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_status.add_theme_constant_override("separation", 16)
 	_root.add_child(_status)
 
 	_hint = _label(_root, "", 15, PALE)
@@ -579,21 +574,30 @@ func _update_status() -> void:
 	var st := farm.state
 	var pid := Farm.pid_of(player)
 	var v := st.inv_of(pid)
-	var parts := ["[color=#f6d17a]$%d[/color]" % farm.cash()]
-	parts.append("[color=#d9ecb8]seeds %d[/color]" % st.seed_count(pid))
-	parts.append("[color=#a8e480]buds %d[/color]" % st.bud_count(pid))
+	var parts: Array = [["$%d" % farm.cash(), "#f6d17a"]]
+	parts.append(["seeds %d" % st.seed_count(pid), "#d9ecb8"])
+	parts.append(["buds %d" % st.bud_count(pid), "#a8e480"])
 	if int(v.can) > 0:
-		parts.append("[color=#8fd3ff]can %d[/color]" % v.can)
+		parts.append(["can %d" % v.can, "#8fd3ff"])
 	if st.fert_count(pid) > 0:
-		parts.append("[color=#e0c890]bags %d[/color]" % st.fert_count(pid))
+		parts.append(["bags %d" % st.fert_count(pid), "#e0c890"])
 	if not st.buff.is_empty():
-		parts.append("[color=#f7a8ff]%s %dw[/color]" % [D.STRAINS[st.buff.strain].short, st.buff.waves])
+		parts.append(["%s %dw" % [D.STRAINS[st.buff.strain].short, st.buff.waves], "#f7a8ff"])
 	var c := farm.clock
 	if c and is_instance_valid(c):
 		var h := float(c.get("hour"))
 		var hh := int(h) % 12
-		parts.append("[color=#ffffff]day %d  %d:%02d %s[/color]" % [int(c.get("day")), 12 if hh == 0 else hh, int(fmod(h, 1.0) * 60.0), "am" if h < 12.0 else "pm"])
-	_status.text = "   ".join(parts)
+		parts.append(["day %d  %d:%02d %s" % [int(c.get("day")), 12 if hh == 0 else hh, int(fmod(h, 1.0) * 60.0), "am" if h < 12.0 else "pm"], "#ffffff"])
+	var key := str(parts)
+	if key == _status_key:
+		return
+	_status_key = key
+	for ch in _status.get_children():
+		_status.remove_child(ch)
+		ch.queue_free()
+	for p in parts:
+		var l := _label(_status, p[0], 15, Color(p[1]))
+		l.custom_minimum_size.x = l.get_minimum_size().x
 
 ## The spot in front of the player (the nearest farm spot in reach, with or without something for E to do).
 func _spot_here() -> FarmSpot:
