@@ -121,3 +121,21 @@ panel, the farm plans (FARM.md).
 | Player and cameras | `scripts/player/*`, `scripts/camera/*`, `scripts/ui/*` | Moving, rolling, E, the two views, the prompt and HUD. |
 | Trampoline and Gothica | `scripts/lobby/trampoline.gd`, `scripts/npc/*` | The trampoline, and Gothica wandering the lobby. |
 | Putting it together | `scenes/main.tscn`, `scripts/main.gd` | Wire it all up, export, test, fix what doesn't fit. |
+
+## Later: locations and the trading game (when the friend's Dope Wars-style file arrives)
+
+- **Locations** are hand-designed where it matters and assembled where it doesn't: each place has a location
+  sheet (vibe, landmarks, what's sold, danger), a kit of parts made in Gemini (ground, shopfronts, props, locals),
+  streets assembled from the kit with a fixed seed per place (different from each other, the same every visit,
+  the same for host and guest), and landmarks placed by hand. Start with two: a beach town and a country town.
+- **Landmarks the owner wants:** St Kilda's Luna Park entrance and the Palais Theatre (lookalikes, no real logos),
+  the Melbourne Star wheel (Docklands) that you can ride for the view.
+- **Random events** on the game clock and by place: e.g. getting mugged after riding the Star; and "under the
+  bridge on New Year's" (a real story of the owner's): at night, sleeping rough under a bridge (likelier on New
+  Year's Eve in the game calendar), a big bloke and his mate walk up. Playing Jared: he's asked for two bucks and
+  pays. Playing Tyson: the mate makes a rude proposition, Tyson says no and gets slapped in the face (shake, OOF,
+  a black eye for the rest of the day). Online, each player gets their own version at once. (The mugger is just a
+  big scary bloke; the joke is the two bucks and the slap.)
+- **One wallet** for wave cash and trading money; travel uses game time; each new day sets new prices; crops are
+  stock to sell; land is what the profits buy. Prices all in one tuning file, worked back from pacing targets
+  (e.g. first extra land after about 3 game days), then tuned by playing.
