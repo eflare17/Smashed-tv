@@ -12,7 +12,8 @@ extends CharacterBody3D
 ## The obstacles are the World's solids: WorldBuilder.ground_boxes() (the node in the "world_builder" group, or
 ## any WorldBuilder in the tree), else calls.lobbySolidBoxes from game_data.json; only those near NPC_AREA count.
 ## Her picture is a CharSprite child (char_id "goth"), given her facing, moving and odo so she walks properly.
-## Collision: a capsule on layer 3 (bit 4, "npcs"), hitting layer 1 (the World), moved with move_and_slide.
+## Collision: a capsule on layer 3 ("npcs", GameData.LAYER_NPCS), hitting layer 1 (the World), moved with
+## move_and_slide in _physics_process (the one clock: 120 ticks a second, interpolated for drawing).
 ## Not yet: being carried, thrown, watching the lifts, dealing cards, talking.
 
 ## Where she starts, HTML units (NPC_GOTH.x, y).
@@ -53,8 +54,8 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-	collision_layer = 1 << 3
-	collision_mask = 1
+	collision_layer = GameData.LAYER_NPCS
+	collision_mask = GameData.LAYER_WORLD
 	wall_min_slide_angle = 0.0
 	safe_margin = 0.004
 	var d: Dictionary = GameData.data
@@ -98,6 +99,7 @@ func html_pos2() -> Vector2:
 ## Put her somewhere (HTML units) and stand her there.
 func place(x: float, y: float) -> void:
 	global_position = GameData.world_to_3d(x, y, 0.0)
+	reset_physics_interpolation()
 	target = Vector2(x, y)
 	moving = false
 	_stuck_at = null

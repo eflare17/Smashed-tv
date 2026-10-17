@@ -34,3 +34,14 @@ it out."
   building; then integrate, review, fix. Preview build at 12:10 UTC.
 - 12:12 UTC: preview published: the integrator's first working build copied to godot-play/ and pushed to main
   (Pages deployed 1cf7ecf). M1 integrate step still running; then review, fix, and godot-play/ gets the final.
+- 12:44 UTC: the owner asked for extra sessions: three started (fighting M2 on `claude/godot-fighting`, lobby life
+  M3 on `claude/godot-lobby`, arcade cabinets on `claude/godot-arcade`; see PARALLEL.md). This session: finish M1,
+  then 1.4, 1.5, merging them in, then online (M4). godot-play/ updated with the integrator's 12:29 build.
+- 12:55 UTC: the owner asked for two more sessions to use a reset that expires soon: Lighting (1.4 day/night +
+  1.5 look, `claude/godot-lighting`) and Farm (`claude/godot-farm`). This session: finish M1, merge, online.
+  Half-hour resume checks (:27 and :57) restart anything stopped by a usage limit.
+- 12:57 UTC heartbeat: M1 integrate still running; fighting pushed its simulation (weapons, enemies, waves, gore, money, Protect Gothica, headless tests); lobby pushed its framework; arcade, lighting, farm setting up.
+- 13:43 UTC: lobby, arcade, farm now on Sonnet sessions (owner's request, to stretch usage); IDs in PARALLEL.md.
+- 13:50 UTC: arcade merged (Status: done) with Arcade.install in main.gd; godot-play/ updated (M1 so far + arcade). NOTE: if the M1 fix step copies main.gd back, re-add Arcade.install(self).
+- 14:05 UTC: farm merged (Status: done), FarmInstall.install after Arcade in main.gd; godot-play/ updated (M1 + arcade + farm). Archived: farm Sonnet session done.
+- 14:20 UTC: M1 finished (review + 23 fixes: 120 Hz physics clock, layers, input actions, touch controls). Farm HUD fix merged. godot-play/ updated (M1 final + arcade + farm). Fighting, lighting, lobby told to merge the dev branch (new shared conventions in PLAN.md).

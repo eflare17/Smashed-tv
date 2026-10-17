@@ -20,8 +20,11 @@ var player: Player
 var rig: CameraRig
 ## The build label's text.
 var build_text: String = "Godot M1"
-## Keys 1, 2, 3 pick the character (turn off when a weapon bar wants them).
+## The pick_char_1..3 actions (keys 1, 2, 3) pick the character. The weapon bar (milestone 2) wants the number keys
+## (weapon_1..6 are bound to 1-6 too): whoever installs it sets this false, and the picker's buttons stay.
 var number_keys_pick: bool = true
+## The phone and tablet controls (TouchControls), made in _ready; they show once a touch is seen.
+var touch: TouchControls
 
 var _build: Label
 var _view: Label
@@ -106,17 +109,22 @@ func _ready() -> void:
 		_picker.add_child(b)
 		_pick_btns.append(b)
 
+	touch = TouchControls.new()
+	touch.name = "Touch"
+	touch.hud = self
+	root.add_child(touch)
+	root.move_child(touch, 0)               # under the other bits: the E button and the picker take their own touches
+
 func _label(parent: Control, text: String, size: int, col: Color) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
-	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.65))
-	l.add_theme_constant_override("shadow_offset_x", 1)
-	l.add_theme_constant_override("shadow_offset_y", 1)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
-	l.add_theme_constant_override("outline_size", 3)
+	# an outline, never a font shadow: with a shadow the Compatibility renderer draws text a letter at a time (one
+	# draw call each: the help line alone was 88), with only an outline a label is about two
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	l.add_theme_constant_override("outline_size", 4)
 	parent.add_child(l)
 	return l
 
@@ -137,12 +145,20 @@ func _input(event: InputEvent) -> void:
 		pad_last = false
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not number_keys_pick or not (event is InputEventKey) or not event.pressed or event.echo:
+	if not number_keys_pick or event.is_echo():
 		return
-	var k: int = event.physical_keycode
-	if k >= KEY_1 and k <= KEY_3:
-		pick(CHARACTERS[k - KEY_1][0])
-		get_viewport().set_input_as_handled()
+	for i in CHARACTERS.size():
+		if event.is_action_pressed("pick_char_%d" % (i + 1)):
+			pick(CHARACTERS[i][0])
+			get_viewport().set_input_as_handled()
+			return
+
+## Is screen point p (pixels) on the round E button while it shows? (The touch layer leaves those touches to it.)
+func e_button_hit(p: Vector2) -> bool:
+	if _ebtn == null or not _ebtn.is_visible_in_tree():
+		return false
+	var r := _ebtn.get_global_rect()
+	return p.distance_to(r.get_center()) <= minf(r.size.x, r.size.y) / 2.0 + 6.0
 
 func _find() -> void:
 	if player == null or not is_instance_valid(player):
@@ -172,10 +188,11 @@ func _process(_delta: float) -> void:
 		view += "    " + rig.zoom_text()
 	_view.text = view
 	_cross.visible = fp
-	_hint.visible = fp and rig != null and not rig.mouse_captured() and not _touch_only()
+	_hint.visible = fp and rig != null and not rig.mouse_captured() and not _touch_only() and not (touch and touch.active)
 	var label := player.focus_label if player else ""
 	var txt := (("A: " if pad_last else "E: ") + label.to_lower()) if label != "" else ""
 	_help.text = PAD_HELP if pad_last else KEY_HELP
+	_help.visible = touch == null or not touch.active
 	_prompt.text = txt
 	_prompt.visible = txt != ""
 	# under the crosshair in first person (the HTML game's spot); top-down, above the help line

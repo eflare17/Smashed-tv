@@ -334,6 +334,7 @@ void fragment() {
 const _SHADER_CODE := """
 shader_type spatial;
 render_mode %RENDER%;
+#include "res://scripts/actors/upright_depth.gdshaderinc"
 
 uniform sampler2D tex : source_color, filter_nearest, repeat_disable;
 uniform vec4 modulate = vec4(1.0);
@@ -362,26 +363,8 @@ void vertex() {
 	vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), cu, tip));
 	vec3 across = right * VERTEX.x * sx;
 	vec3 drawn = origin + across + up * VERTEX.y * sy;          // where it shows on screen
-	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(drawn, 1.0));
-	// How deep it is: where the ray from the camera through this point crosses the upright figure's plane (the
-	// Y billboard's: through the feet, along `right` and straight up). Tipped back, the picture lies behind
-	// that plane, so the depth is pulled toward the camera, back onto it. Upright (eye level) it's already on it.
-	vec3 n = vec3(-right.z, 0.0, right.x);                     // the plane's normal, toward the camera's side
-	bool ortho = PROJECTION_MATRIX[3][3] > 0.5;
-	vec3 cam = INV_VIEW_MATRIX[3].xyz;
-	vec3 to_cam = ortho ? cb : normalize(cam - drawn);
-	float behind = -dot(drawn - origin, n);                    // how far behind the plane the tipped point is
-	float mu = clamp(behind / max(dot(to_cam, n), 0.0001), 0.0, depth_reach);
-	if (!ortho) {
-		mu = min(mu, max(0.0, length(cam - drawn) - 0.25));    // never past the camera's near plane
-	}
-	vec4 vd = VIEW_MATRIX * vec4(drawn + to_cam * mu, 1.0);
-	vd.z += depth_bias;
-	vec4 cd = PROJECTION_MATRIX * vd;
-	if (cd.w > 0.0001) {
-		clip.z = cd.z / cd.w * clip.w;
-	}
-	POSITION = clip;
+	// its depth is the upright figure's (the Y billboard's plane through the feet): the shared upright_depth
+	POSITION = upright_clip(drawn, origin, right, VIEW_MATRIX, INV_VIEW_MATRIX, PROJECTION_MATRIX, depth_bias, depth_reach);
 }
 
 vec3 rgb2hsl(vec3 c) {
