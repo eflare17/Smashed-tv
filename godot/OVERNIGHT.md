@@ -26,3 +26,6 @@ it out."
 
 - Milestone 1 workflow wf_473b6552-01f started 10:24 UTC. Milestone 2 specs workflow wf_79888b3a-794 started
   10:35 UTC (writes godot/specs/).
+- 10:54 UTC: an interrupt in the chat stopped every running agent (and the machine restarted at 11:24). Lesson:
+  an interrupt/stop kills the background agents. 11:25 UTC: both workflows resumed (finished agents cached:
+  characters, the weapons and enemies specs); the interrupted build agents carry on from their work folders.
