@@ -1,0 +1,1667 @@
+{
+ "T": {
+  "maxSpeed": 260,
+  "accel": 2200,
+  "friction": 1900,
+  "radius": 14,
+  "bulletSpeed": 620,
+  "fireRate": 9.5,
+  "spread": 4,
+  "bulletLife": 1.4,
+  "bulletSize": 4,
+  "recoil": 60,
+  "enemyScale": 3.4,
+  "enemyStride": 10,
+  "enemyBob": 2,
+  "enemyLean": 7,
+  "enemySpeed": 40,
+  "enemyHp": 3,
+  "enemyRadius": 15,
+  "stagger": 0.13,
+  "staggerMass": 1,
+  "knockback": 170,
+  "contactDmg": 1,
+  "contactPush": 320,
+  "rollSpeed": 620,
+  "rollTime": 0.42,
+  "rollInvuln": 0.3,
+  "rollCooldown": 0.55,
+  "overheal": 6,
+  "playerHp": 5,
+  "iframes": 0.9,
+  "spriteScale": 4.6,
+  "muzzleFwd": 30,
+  "muzzleSide": 7,
+  "muzzleUp": 18,
+  "dualGuns": 1,
+  "hpHeight": 1.05,
+  "celebrate": 0,
+  "flexScale": 1.25,
+  "altScale": 1.242,
+  "altWide": 1,
+  "runStride": 13,
+  "flashSize": 13,
+  "rollScale": 1.35,
+  "rollHop": 7,
+  "shotgunFlash": 1.7,
+  "jiggle": 1.5,
+  "npcGoth": 1,
+  "npcSpeed": 38,
+  "npcJiggle": 2.2,
+  "carryRange": 46,
+  "carryScale": 1,
+  "diagFlip": 0,
+  "bdiagFlip": 0,
+  "altSideFlip": 0,
+  "altDiagFlip": 0,
+  "altBdiagFlip": 1,
+  "sgSideFlip": 0,
+  "sgDiagFlip": 1,
+  "sgBdiagFlip": 1,
+  "diagAnim": 1,
+  "diagFrame": 0,
+  "shotgunTime": 12,
+  "spudPellets": 10,
+  "spudStart": 0,
+  "spudMaxAmmo": 200,
+  "spudReload": 0.42,
+  "jabRun": 1,
+  "loungeFloor": 1,
+  "towerX": 604,
+  "towerY": 190,
+  "towerScale": 1.25,
+  "climbSpeed": 120,
+  "boardWalk": 120,
+  "diveHop": 240,
+  "diveFwd": 130,
+  "swimSpeed": 120,
+  "loungeSlotX": 90,
+  "loungeVendX": 235,
+  "spudPickup": 0.36,
+  "spudThrow": 0.5,
+  "spudThrowSpd": 520,
+  "spudThrowFrac": 1,
+  "lobWhole": 2.2,
+  "lobCharge": 0.3,
+  "lobNear": 110,
+  "lobFar": 430,
+  "lobPowDmg": 1.5,
+  "splatRadius": 72,
+  "splatDmg": 0.9,
+  "splatKnock": 1.8,
+  "punchTime": 0.24,
+  "punchReach": 40,
+  "punchDmg": 0.7,
+  "punchKnock": 2.8,
+  "punchLunge": 170,
+  "ropeX": 345,
+  "ropeY": 152,
+  "ropeCount": 10,
+  "ropeCool": 20,
+  "tableX": 165,
+  "benchX": 420,
+  "benchY": 130,
+  "rackX": 528,
+  "rackY": 112,
+  "legX": 470,
+  "legY": 236,
+  "tableY": 300,
+  "spudGrow": 9,
+  "spudRate": 5,
+  "spudMax": 6,
+  "spudEmpty": 0.18,
+  "spinCost": 5,
+  "spinTime": 1.6,
+  "spinCool": 8,
+  "janitorWave": 1,
+  "janitorSpeed": 105,
+  "playerBounce": 0.55,
+  "janitorScale": 0.9,
+  "janitorHits": 3,
+  "janitorPay": 3,
+  "janitorRage": 340,
+  "gripeTime": 3.4,
+  "chaseGiveUp": 8,
+  "whackForce": 980,
+  "launchTime": 1.1,
+  "launchDrag": 0.25,
+  "janitorLead": 0.28,
+  "lobbyCash": 40,
+  "dummyHp": 6,
+  "dummyRespawn": 2.5,
+  "canCount": 3,
+  "canKick": 420,
+  "nukeFall": 1.9,
+  "nukeBoom": 0.85,
+  "nukeSize": 340,
+  "nukeShake": 26,
+  "slotScale": 1.35,
+  "slotDrop": 38,
+  "reelScale": 1.9,
+  "magnetBonus": 1,
+  "magnetTime": 14,
+  "magnetRange": 460,
+  "speedTime": 10,
+  "speedMul": 1.55,
+  "slotRadius": 46,
+  "vendShow": 1,
+  "vendX": 0.82,
+  "vendDrop": 82,
+  "vendHeight": 150,
+  "vendPrice": 2500,
+  "vendRadius": 56,
+  "vendHold": 0.8,
+  "testCash": 2500,
+  "launcherRounds": 3,
+  "launcherRate": 1.1,
+  "launcherRecoil": 320,
+  "lobTime": 0.75,
+  "lobHeight": 110,
+  "lobMax": 420,
+  "lobMin": 50,
+  "lobDefault": 220,
+  "blastRadius": 110,
+  "blastDmg": 4,
+  "blastEdge": 0.35,
+  "blastPush": 520,
+  "blastSelf": 1.4,
+  "blastYeet": 620,
+  "blastSize": 340,
+  "blastTime": 0.6,
+  "blastShake": 18,
+  "coinMult": 1,
+  "coinLife": 6,
+  "coinPop": 150,
+  "coinGrab": 34,
+  "coinMagnet": 95,
+  "coinPull": 900,
+  "corpseFly": 1.35,
+  "corpseSpin": 7,
+  "corpseLife": 7,
+  "killShake": 5,
+  "killShakeBig": 3.2,
+  "bloodSize": 42,
+  "deathSpray": 5,
+  "deathSize": 1.42,
+  "bloodReach": 0.68,
+  "shotgunBlood": 1.5,
+  "hitStop": 0.022,
+  "hitStopBig": 2.2,
+  "splatAlpha": 0.62,
+  "bloodTime": 0.34,
+  "splatLife": 45,
+  "splatMax": 140,
+  "shrapCount": 8,
+  "shrapSpeed": 270,
+  "shrapLife": 1.1,
+  "shrapDmg": 1,
+  "shrapFriendly": 1,
+  "swarmWave": 3,
+  "bruteWave": 5,
+  "baseEnemy": 3,
+  "batWave": 4,
+  "batRange": 60,
+  "batWindup": 0.38,
+  "batReach": 46,
+  "batRecover": 0.55,
+  "waveBase": 6,
+  "waveGrowth": 3,
+  "waveSpeedUp": 6,
+  "spawnGap": 0.45,
+  "intermission": 2.2
+ },
+ "BUILD": "b331",
+ "ARENA": {
+  "w": 860,
+  "h": 520,
+  "wall": 18
+ },
+ "LOBBY_H": 880,
+ "BEDROOM": {
+  "x0": 18,
+  "y0": 520,
+  "x1": 458,
+  "y1": 862
+ },
+ "BED": {
+  "x0": 314,
+  "x1": 446,
+  "y0": 520,
+  "y1": 676
+ },
+ "NIGHTSTAND": {
+  "x0": 282,
+  "x1": 308,
+  "y0": 520,
+  "y1": 556
+ },
+ "BED_DOOR": {
+  "x": 110,
+  "w": 64
+ },
+ "YARD": {
+  "ox": -45,
+  "oy": -50,
+  "w": 2003,
+  "h": 1998
+ },
+ "YARD_SOLIDS": [
+  {
+   "x0": 488,
+   "y0": 566,
+   "x1": 618,
+   "y1": 634,
+   "h": 36,
+   "m": "bbq"
+  },
+  {
+   "x0": 488,
+   "y0": 690,
+   "x1": 520,
+   "y1": 712,
+   "h": 22,
+   "m": "esky"
+  },
+  {
+   "x0": 604,
+   "y0": 668,
+   "x1": 796,
+   "y1": 748,
+   "h": 27,
+   "m": "wood"
+  },
+  {
+   "x0": 680,
+   "y0": 612,
+   "x1": 722,
+   "y1": 668,
+   "h": 34,
+   "m": "wood"
+  },
+  {
+   "x0": 680,
+   "y0": 748,
+   "x1": 722,
+   "y1": 806,
+   "h": 34,
+   "m": "wood"
+  },
+  {
+   "x0": 905,
+   "y0": 468,
+   "x1": 1234,
+   "y1": 948,
+   "h": 90,
+   "m": "garage",
+   "art": [
+    898,
+    458,
+    1242,
+    956
+   ],
+   "roof": {
+    "k": 0.4,
+    "ridge": "y",
+    "h": 90,
+    "cons": [
+     0,
+     1
+    ]
+   }
+  },
+  {
+   "x0": 1000,
+   "y0": 124,
+   "x1": 1160,
+   "y1": 450,
+   "h": 66,
+   "m": "car",
+   "art": [
+    988,
+    114,
+    1172,
+    458
+   ],
+   "fp": [
+    {
+     "x0": 1000,
+     "y0": 124,
+     "x1": 1160,
+     "y1": 222,
+     "h": 44,
+     "m": "car",
+     "part": "tray"
+    },
+    {
+     "x0": 1006,
+     "y0": 222,
+     "x1": 1154,
+     "y1": 335,
+     "h": 66,
+     "m": "car",
+     "part": "cab"
+    },
+    {
+     "x0": 1000,
+     "y0": 335,
+     "x1": 1160,
+     "y1": 450,
+     "h": 42,
+     "m": "car",
+     "part": "bonnet"
+    }
+   ]
+  },
+  {
+   "x0": 1280,
+   "y0": 30,
+   "x1": 1302,
+   "y1": 894,
+   "h": 58,
+   "m": "fence"
+  },
+  {
+   "x0": 1234,
+   "y0": 884,
+   "x1": 1434,
+   "y1": 904,
+   "h": 58,
+   "m": "fence",
+   "art": [
+    1236,
+    796,
+    1438,
+    906
+   ]
+  },
+  {
+   "x0": 1594,
+   "y0": 884,
+   "x1": 1712,
+   "y1": 904,
+   "h": 58,
+   "m": "fence",
+   "art": [
+    1590,
+    796,
+    1710,
+    906
+   ]
+  },
+  {
+   "x0": 1240,
+   "y0": 896,
+   "x1": 1330,
+   "y1": 976,
+   "h": 42,
+   "m": "bush",
+   "art": [
+    1222,
+    874,
+    1346,
+    990
+   ]
+  },
+  {
+   "cx": 707,
+   "cy": 1340,
+   "r": 122,
+   "h": 96,
+   "m": "tramp",
+   "art": [
+    578,
+    1106,
+    840,
+    1454
+   ]
+  },
+  {
+   "x0": 60,
+   "y0": 1528,
+   "x1": 418,
+   "y1": 1864,
+   "h": 66,
+   "m": "shed",
+   "art": [
+    54,
+    1520,
+    424,
+    1870
+   ],
+   "roof": {
+    "k": 0.32,
+    "ridge": "x",
+    "h": 66,
+    "cons": [
+     2,
+     3
+    ]
+   }
+  },
+  {
+   "x0": 12,
+   "y0": 1600,
+   "x1": 60,
+   "y1": 1822,
+   "h": 28,
+   "m": "junk"
+  },
+  {
+   "x0": 614,
+   "y0": 1574,
+   "x1": 878,
+   "y1": 1694,
+   "h": 16,
+   "m": "bed"
+  },
+  {
+   "x0": 614,
+   "y0": 1754,
+   "x1": 878,
+   "y1": 1874,
+   "h": 16,
+   "m": "bed"
+  },
+  {
+   "x0": 1104,
+   "y0": 1538,
+   "x1": 1236,
+   "y1": 1790,
+   "h": 16,
+   "m": "bed"
+  },
+  {
+   "cx": 1380,
+   "cy": 1680,
+   "r": 100,
+   "h": 72,
+   "m": "tank",
+   "art": [
+    1268,
+    1510,
+    1514,
+    1792
+   ]
+  },
+  {
+   "x0": 1520,
+   "y0": 1560,
+   "x1": 1638,
+   "y1": 1728,
+   "h": 36,
+   "m": "compost"
+  }
+ ],
+ "TRAMP": {
+  "cx": 707,
+  "cy": 1340,
+  "r": 122,
+  "mat": 32,
+  "net": 64,
+  "g": 520,
+  "vbase": 175,
+  "vmax": 560,
+  "boost": 110,
+  "keep": 0.82
+ },
+ "POOL": {
+  "x0": 624,
+  "y0": 90,
+  "x1": 815,
+  "y1": 239
+ },
+ "FENCE_H": 58,
+ "CABINETS": [
+  {
+   "x": 172,
+   "game": "miner",
+   "body": "#4a3320",
+   "trim": "#ffcf4a"
+  },
+  {
+   "x": 242,
+   "game": "bricks",
+   "body": "#4f1d44",
+   "trim": "#ff8ad8"
+  }
+ ],
+ "WARD": {
+  "x": 180,
+  "y": 620,
+  "s": 1,
+  "open": false,
+  "k": 0,
+  "t": 4.106
+ },
+ "MIRROR": {
+  "x": 246,
+  "y": 616,
+  "w": 60,
+  "h": 92
+ },
+ "SHROOM_SPOT": {
+  "x": 52,
+  "y": 424
+ },
+ "SHROOM_EYE": 62,
+ "SHROOM_WALL": 150,
+ "SHROOM_TOWER": 710,
+ "ETYPE": [
+  {
+   "key": "grunt",
+   "facesRight": true,
+   "speed": 1,
+   "hp": 1,
+   "r": 1,
+   "dmg": 1,
+   "mass": 1,
+   "colour": "#6fd3a0",
+   "coins": 1
+  },
+  {
+   "key": "swarmer",
+   "facesRight": true,
+   "speed": 1.85,
+   "hp": 0.34,
+   "r": 0.6,
+   "dmg": 1,
+   "mass": 0.45,
+   "colour": "#e8c34f",
+   "coins": 1
+  },
+  {
+   "key": "brute",
+   "facesRight": true,
+   "speed": 0.52,
+   "hp": 2.8,
+   "r": 1.6,
+   "dmg": 2,
+   "mass": 2.8,
+   "colour": "#b06bd8",
+   "coins": 5
+  },
+  {
+   "key": "batter",
+   "speed": 1.1,
+   "hp": 1.35,
+   "r": 1,
+   "dmg": 2,
+   "mass": 1.1,
+   "colour": "#d94a4a",
+   "melee": true,
+   "facesRight": true,
+   "coins": 3
+  }
+ ],
+ "WEAPONS": {
+  "fists": {
+   "name": "fists",
+   "pellets": 1,
+   "fireRate": 3.2,
+   "fists": true,
+   "skin": null,
+   "flash": 0,
+   "flashTime": 0
+  },
+  "lob": {
+   "name": "potato",
+   "pellets": 1,
+   "fireRate": 1.5,
+   "lob": true,
+   "ammo": true,
+   "flash": 0,
+   "flashTime": 0,
+   "skin": {
+    "juicy": "juicy_spud",
+    "tyson2": "tyson2_spud"
+   }
+  },
+  "spud": {
+   "name": "spud gun",
+   "pellets": 1,
+   "spread": 4,
+   "fireRate": 8,
+   "speed": 360,
+   "life": 0.9,
+   "size": 4,
+   "recoil": 190,
+   "knockMul": 0.8,
+   "dmgFrac": 0.5,
+   "flash": 0.7,
+   "flashTime": 0.05,
+   "ammo": true,
+   "jab": true,
+   "skin": {
+    "juicy": "juicy_spud",
+    "tyson2": "tyson2_spud"
+   }
+  },
+  "blaster": {
+   "name": "blasters",
+   "pellets": 1,
+   "skin": null,
+   "flash": 1,
+   "flashTime": 0.055
+  },
+  "launcher": {
+   "name": "nuke launcher",
+   "pellets": 1,
+   "rocket": true,
+   "flash": 2.2,
+   "flashTime": 0.12,
+   "skin": {
+    "juicy": "juicy_launcher",
+    "tyson2": "tyson2_launcher"
+   }
+  },
+  "shotgun": {
+   "name": "shotgun",
+   "pellets": 5,
+   "spread": 20,
+   "fireRate": 2.4,
+   "speed": 520,
+   "life": 0.42,
+   "size": 5,
+   "recoil": 220,
+   "knockMul": 2.2,
+   "flash": 1.7,
+   "flashTime": 0.075,
+   "skin": {
+    "jared": "jared_shotgun",
+    "tyson": "tyson_shotgun",
+    "juicy": "juicy_shotgun",
+    "tyson2": "tyson2_shotgun"
+   }
+  }
+ },
+ "NPC_AREA": {
+  "x0": 70,
+  "x1": 590,
+  "y0": 250,
+  "y1": 410
+ },
+ "DIVE": {
+  "CLIMB": 1,
+  "BOARD": 2,
+  "FALL": 3,
+  "SWIM": 4
+ },
+ "BAT": {
+  "CHASE": 0,
+  "WINDUP": 1,
+  "SWING": 2,
+  "RECOVER": 3
+ },
+ "PROT": {
+  "hp": 10,
+  "walk": 38,
+  "run": 110,
+  "panicR": 130,
+  "hurtFor": 0.9,
+  "heal": 2,
+  "eatR": 280,
+  "carryFor": 4,
+  "carryCool": 1.5,
+  "carrySlow": 0.7,
+  "respawn": 4,
+  "margin": 70
+ },
+ "MODES": [
+  {
+   "id": "classic",
+   "name": "Classic"
+  },
+  {
+   "id": "protect",
+   "name": "Protect Gothica"
+  }
+ ],
+ "CHAR_IDS": [
+  "juicy",
+  "tyson2",
+  "goth",
+  "jared",
+  "tyson",
+  "inky"
+ ],
+ "NEW_ART": {},
+ "BEARDS": [
+  {
+   "key": "classic",
+   "label": "THE CLASSIC"
+  },
+  {
+   "key": "braids",
+   "label": "BRAIDS"
+  },
+  {
+   "key": "mullet",
+   "label": "MULLET"
+  },
+  {
+   "key": "slick",
+   "label": "SLICKED BACK"
+  },
+  {
+   "key": "tyson",
+   "label": "TYSON",
+   "face": true
+  },
+  {
+   "key": "mohawk",
+   "label": "MOHAWK",
+   "face": true
+  },
+  {
+   "key": "mohawk_blue",
+   "label": "MOHAWK  BLUE",
+   "face": true
+  },
+  {
+   "key": "mohawk_purple",
+   "label": "MOHAWK  PURPLE",
+   "face": true
+  },
+  {
+   "key": "mohawk_green",
+   "label": "MOHAWK  GREEN",
+   "face": true
+  }
+ ],
+ "HOTBAR": {
+  "order": [
+   "fists",
+   "spud",
+   "lob",
+   "blaster",
+   "shotgun",
+   "launcher"
+  ],
+  "want": null,
+  "drag": null,
+  "flash": null
+ },
+ "FX": {
+  "HIT": 0,
+  "KILL": 1,
+  "WALL": 2,
+  "HURT": 3,
+  "DOWN": 4,
+  "BOOM": 5,
+  "LAUNCH": 6,
+  "BLAST": 7,
+  "SPLASH": 8,
+  "DIVE": 9
+ },
+ "P_COLOURS": [
+  "#e0473f",
+  "#4f9fe8"
+ ],
+ "ARC_SCR": {
+  "x": 190,
+  "y": 92,
+  "w": 480,
+  "h": 320
+ },
+ "CARRIERS": {},
+ "SIT_T": {
+  "heat": 0.25,
+  "click": 2.1,
+  "pull": 2.4,
+  "blow": 3.8,
+  "done": 5.9,
+  "end": 6.2
+ },
+ "SIT_GEO": {
+  "stool": 10.5,
+  "mouth": [
+   21,
+   -46.5
+  ],
+  "tip": [
+   29.2,
+   -34.5
+  ],
+  "flame": [
+   33.3,
+   -39
+  ],
+  "floor": 18
+ },
+ "GYM": {
+  "bar": {
+   "L": [],
+   "R": []
+  },
+  "pegs": [
+   [
+    "S"
+   ],
+   [
+    "M"
+   ],
+   [
+    "L"
+   ],
+   [
+    "S"
+   ],
+   [
+    "M"
+   ],
+   [
+    "L"
+   ]
+  ],
+  "anim": null
+ },
+ "LEG": {
+  "horn": {
+   "L": [],
+   "R": []
+  }
+ },
+ "ROPE": {
+  "cool": 0,
+  "pull": 0
+ },
+ "MD_SYS": {
+  "md": {
+   "core": "segaMD",
+   "label": "Mega Drive",
+   "tag": "MD",
+   "ext": [
+    "md",
+    "bin",
+    "gen",
+    "smd",
+    "68k",
+    "sgd"
+   ]
+  },
+  "snes": {
+   "core": "snes",
+   "label": "Super Nintendo",
+   "tag": "SNES",
+   "ext": [
+    "sfc",
+    "smc",
+    "fig",
+    "swc"
+   ]
+  },
+  "sms": {
+   "core": "segaMD",
+   "label": "Master System",
+   "tag": "SMS",
+   "ext": [
+    "sms"
+   ],
+   "extra": true
+  },
+  "gg": {
+   "core": "segaMD",
+   "label": "Game Gear",
+   "tag": "GG",
+   "ext": [
+    "gg"
+   ],
+   "extra": true
+  }
+ },
+ "calls": {
+  "towerGeo": {
+   "ladderX": 602.125,
+   "climbY": 188,
+   "baseY": 200.8,
+   "deckH": 93.1,
+   "boardH": 100.6,
+   "boardX0": 622.75,
+   "tipX": 682.75
+  },
+  "lobbyAreas": [
+   {
+    "x0": 18,
+    "y0": 18,
+    "x1": 842,
+    "y1": 502
+   },
+   {
+    "x0": 18,
+    "y0": 520,
+    "x1": 458,
+    "y1": 862
+   },
+   {
+    "x0": 78,
+    "x1": 142,
+    "y0": 18,
+    "y1": 862
+   },
+   {
+    "x0": 617,
+    "x1": 673,
+    "y0": 18,
+    "y1": 570
+   },
+   {
+    "x0": 476,
+    "y0": 566,
+    "x1": 905,
+    "y1": 945
+   },
+   {
+    "x0": 860,
+    "y0": 58,
+    "x1": 1706,
+    "y1": 1880
+   },
+   {
+    "x0": 4,
+    "y0": 884,
+    "x1": 1706,
+    "y1": 1880
+   }
+  ],
+  "lobbySolidBoxes": [
+   {
+    "x0": 113,
+    "x1": 217,
+    "y0": 284,
+    "y1": 316
+   },
+   {
+    "x0": 393,
+    "x1": 449,
+    "y0": 101,
+    "y1": 129
+   },
+   {
+    "x0": 509,
+    "x1": 547,
+    "y0": 96,
+    "y1": 111
+   },
+   {
+    "x0": 424,
+    "x1": 516,
+    "y0": 210,
+    "y1": 234
+   },
+   {
+    "x0": 148,
+    "x1": 212,
+    "y0": 604,
+    "y1": 620
+   },
+   {
+    "x0": 314,
+    "x1": 446,
+    "y0": 520,
+    "y1": 664
+   },
+   {
+    "x0": 282,
+    "x1": 308,
+    "y0": 520,
+    "y1": 556
+   },
+   {
+    "x0": 216,
+    "x1": 276,
+    "y0": 606,
+    "y1": 616
+   },
+   {
+    "x0": 146,
+    "x1": 198,
+    "y0": 102,
+    "y1": 116
+   },
+   {
+    "x0": 216,
+    "x1": 268,
+    "y0": 102,
+    "y1": 116
+   }
+  ],
+  "chairPos1": {
+   "x": 121,
+   "y": 302
+  },
+  "chairPos2": {
+   "x": 209,
+   "y": 302
+  },
+  "tableBox": {
+   "x0": 113,
+   "x1": 217,
+   "y0": 284,
+   "y1": 316
+  },
+  "benchBox": {
+   "x0": 393,
+   "x1": 449,
+   "y0": 101,
+   "y1": 129
+  },
+  "rackBox": {
+   "x0": 509,
+   "x1": 547,
+   "y0": 96,
+   "y1": 111
+  },
+  "legBox": {
+   "x0": 424,
+   "x1": 516,
+   "y0": 210,
+   "y1": 234
+  },
+  "wardBox": {
+   "x0": 148,
+   "x1": 212,
+   "y0": 604,
+   "y1": 620
+  },
+  "bedBoxes": [
+   {
+    "x0": 314,
+    "x1": 446,
+    "y0": 520,
+    "y1": 664
+   },
+   {
+    "x0": 282,
+    "x1": 308,
+    "y0": 520,
+    "y1": 556
+   },
+   {
+    "x0": 216,
+    "x1": 276,
+    "y0": 606,
+    "y1": 616
+   }
+  ],
+  "cabY": 116,
+  "cabBoxes": [
+   {
+    "x0": 146,
+    "x1": 198,
+    "y0": 102,
+    "y1": 116
+   },
+   {
+    "x0": 216,
+    "x1": 268,
+    "y0": 102,
+    "y1": 116
+   }
+  ],
+  "mirrorBox": {
+   "x0": 216,
+   "x1": 276,
+   "y0": 606,
+   "y1": 616
+  },
+  "barRest": {
+   "x": 420.85,
+   "y": 71.05
+  },
+  "slot": {
+   "x": 90,
+   "y": 110
+  },
+  "vendPos": {
+   "x": 235,
+   "y": 154
+  },
+  "worldW": 2003,
+  "worldH": 1998,
+  "hotbarGeo": {
+   "n": 6,
+   "s": 54,
+   "gap": 8,
+   "x0": 248,
+   "y": 440
+  },
+  "waveSizes": [
+   [
+    1,
+    6,
+    40
+   ],
+   [
+    2,
+    9,
+    42.400000000000006
+   ],
+   [
+    3,
+    12,
+    44.800000000000004
+   ],
+   [
+    4,
+    15,
+    47.199999999999996
+   ],
+   [
+    5,
+    18,
+    49.6
+   ],
+   [
+    8,
+    27,
+    56.8
+   ],
+   [
+    10,
+    33,
+    61.6
+   ],
+   [
+    15,
+    48,
+    73.6
+   ]
+  ],
+  "waveMix": [
+   [
+    1,
+    [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ]
+   ],
+   [
+    3,
+    [
+     1,
+     3,
+     1,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ]
+   ],
+   [
+    5,
+    [
+     1,
+     3,
+     1,
+     1,
+     2,
+     3,
+     3,
+     3,
+     3,
+     1,
+     1,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     1
+    ]
+   ],
+   [
+    8,
+    [
+     1,
+     3,
+     3,
+     1,
+     3,
+     3,
+     3,
+     1,
+     3,
+     3,
+     3,
+     3,
+     1,
+     1,
+     1,
+     2,
+     3,
+     3,
+     1,
+     1,
+     1,
+     1,
+     1,
+     3,
+     1,
+     3,
+     2
+    ]
+   ],
+   [
+    12,
+    [
+     3,
+     1,
+     1,
+     3,
+     3,
+     2,
+     3,
+     1,
+     3,
+     1,
+     1,
+     1,
+     3,
+     2,
+     1,
+     3,
+     1,
+     1,
+     3,
+     1,
+     3,
+     3,
+     3,
+     1,
+     1,
+     1,
+     3,
+     3,
+     1,
+     1,
+     1,
+     3,
+     2,
+     1,
+     1,
+     2,
+     3,
+     1,
+     3
+    ]
+   ]
+  ],
+  "playerStart": {
+   "x": 380,
+   "y": 260
+  },
+  "npcGoth": {
+   "x": 287.38271154887474,
+   "y": 349.3064262509402
+  },
+  "dummies": [
+   {
+    "x": 730,
+    "y": 318,
+    "hp": 6,
+    "flash": 0,
+    "down": 0,
+    "wob": 0
+   },
+   {
+    "x": 730,
+    "y": 390,
+    "hp": 6,
+    "flash": 0,
+    "down": 0,
+    "wob": 0
+   }
+  ],
+  "cans": []
+ },
+ "charNames": {
+  "goth": {
+   "name": "Gothica (test)",
+   "scale": 1,
+   "keys": [
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back_a",
+    "back_b",
+    "back",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "victory"
+   ]
+  },
+  "jared": {
+   "name": "Jucy Jared",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "back",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "bdiag_a",
+    "bdiag_b",
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run"
+   ]
+  },
+  "tyson": {
+   "name": "Tornado Tyson",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "back",
+    "victory",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "victory_old",
+    "bdiag_a",
+    "bdiag_b",
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run"
+   ]
+  },
+  "jared_shotgun": {
+   "name": "Jucy Jared (shotgun)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "back",
+    "overhead",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "bdiag_a",
+    "bdiag_b"
+   ]
+  },
+  "tyson_shotgun": {
+   "name": "Tornado Tyson (shotgun)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "victory",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4"
+   ]
+  },
+  "juicy": {
+   "name": "Juicy Jared (new)",
+   "scale": 1,
+   "keys": [
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back_a",
+    "back_b",
+    "back"
+   ]
+  },
+  "juicy_shotgun": {
+   "name": "Juicy Jared (shotgun)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4"
+   ]
+  },
+  "juicy_spud": {
+   "name": "Juicy Jared (spud gun)",
+   "scale": 1,
+   "keys": [
+    "back_run",
+    "bdiag_run",
+    "diag_run",
+    "front_run",
+    "side_run",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "reload",
+    "pickup",
+    "reload_side",
+    "throw_side",
+    "throw_front"
+   ]
+  },
+  "tyson2": {
+   "name": "Tornado Tyson (new art)",
+   "scale": 1,
+   "keys": [
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back_a",
+    "back_b",
+    "back"
+   ]
+  },
+  "tyson2_shotgun": {
+   "name": "Tornado Tyson (shotgun)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4"
+   ]
+  },
+  "tyson2_launcher": {
+   "name": "Tornado Tyson (nuke launcher)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4"
+   ]
+  },
+  "tyson2_spud": {
+   "name": "Tornado Tyson (spud)",
+   "scale": 1,
+   "keys": [
+    "back_run",
+    "bdiag_run",
+    "diag_run",
+    "front_run",
+    "side_run",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "reload",
+    "pickup",
+    "reload_side",
+    "throw_side",
+    "throw_front"
+   ]
+  },
+  "juicy_launcher": {
+   "name": "Juicy Jared (nuke launcher)",
+   "scale": 1,
+   "keys": [
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back",
+    "back_b",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4"
+   ]
+  },
+  "inky": {
+   "name": "Inky",
+   "scale": 1,
+   "keys": [
+    "front_run",
+    "diag_run",
+    "side_run",
+    "bdiag_run",
+    "back_run",
+    "front_a",
+    "front_b",
+    "diag_a",
+    "diag_b",
+    "side_a",
+    "side_b",
+    "bdiag_a",
+    "bdiag_b",
+    "back_a",
+    "back_b",
+    "back",
+    "roll1",
+    "roll2",
+    "roll3",
+    "roll4",
+    "victory",
+    "datapad"
+   ]
+  }
+ }
+}
