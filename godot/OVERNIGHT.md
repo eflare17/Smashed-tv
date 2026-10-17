@@ -40,3 +40,4 @@ it out."
 - 12:55 UTC: the owner asked for two more sessions to use a reset that expires soon: Lighting (1.4 day/night +
   1.5 look, `claude/godot-lighting`) and Farm (`claude/godot-farm`). This session: finish M1, merge, online.
   Half-hour resume checks (:27 and :57) restart anything stopped by a usage limit.
+- 12:57 UTC heartbeat: M1 integrate still running; fighting pushed its simulation (weapons, enemies, waves, gore, money, Protect Gothica, headless tests); lobby pushed its framework; arcade, lighting, farm setting up.
