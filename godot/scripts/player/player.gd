@@ -361,7 +361,12 @@ func _update_sprite() -> void:
 	else:
 		sprite.action = ""
 		sprite.roll_t = 0.0
-	sprite.air = dz
+	# his contact shadow on what he's over: the mat when he's on the trampoline (drawJared draws it there)
+	var floor_z := 0.0
+	if on_tramp:
+		var tr = GameData.data.get("TRAMP", {})
+		floor_z = float(tr.get("mat", 32.0)) if tr is Dictionary else 32.0
+	sprite.air = maxf(0.0, dz - floor_z)
 	sprite.visible = not is_first_person()
 	var cam := get_viewport().get_camera_3d()
 	if sprite.visible:

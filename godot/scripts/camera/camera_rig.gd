@@ -37,6 +37,12 @@ var in_run: bool = false
 @export var top_fov: float = 30.0
 ## First person field of view across, degrees (the HTML game's 66).
 @export var fp_fov: float = 66.0
+## How much of his height off the ground the top-down view rises with (on the trampoline, and otherwise). The HTML
+## game's flat view lifts by 0.3 of it on the trampoline; in 3D the camera is close enough that a bounce 8 m up
+## would come right up to it and leave the screen, so the view rises with most of the height instead: he still
+## goes up the screen and the yard drops away under him.
+@export var air_follow_tramp: float = 0.75
+@export var air_follow: float = 0.6
 ## The ground the top-down view keeps inside, HTML units (x0, y0, w, h); empty: no limit.
 var bounds: Rect2 = Rect2()
 ## Lets the mouse capture happen (false for tests or menus over the game).
@@ -207,7 +213,7 @@ func _update_top(dt: float) -> void:
 		var hp := target.html_pos()
 		tx = hp.x
 		ty = hp.y - 20.0                                   # camFollow: me.y - 20, him a little below the middle
-		th = target.dz * (0.3 if target.on_tramp else 0.6)  # and up with him when he's off the ground
+		th = target.dz * (air_follow_tramp if target.on_tramp else air_follow)  # and up with him off the ground
 	if _snap:
 		_aim = Vector2(tx, ty)
 		_aim_h = th
