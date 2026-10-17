@@ -70,6 +70,19 @@
     }, []);
     runs = runs.filter(r => r.x1 - r.x0 + 1 >= w * 0.012);
     if (!runs.length) return [];
+    // slivers (a fist or a strand of hair off on its own) belong to the figure next to them
+    {
+      const med = runs.map(r => r.x1 - r.x0 + 1).sort((a, b) => a - b)[runs.length >> 1];
+      let i = 0;
+      while (runs.length > 1 && i < runs.length) {
+        const r = runs[i];
+        if (r.x1 - r.x0 + 1 >= med * 0.35) { i++; continue; }
+        const L = runs[i - 1], R = runs[i + 1];
+        const gl = L ? r.x0 - L.x1 : Infinity, gr = R ? R.x0 - r.x1 : Infinity;
+        if (gl <= gr) L.x1 = r.x1; else R.x0 = r.x0;
+        runs.splice(i, 1);
+      }
+    }
     // too many: join the pair with the smallest gap between them
     while (runs.length > n) {
       let best = 0, gap = Infinity;

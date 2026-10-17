@@ -158,10 +158,11 @@ const SHEETS = [
   { id: 'back_run', title: 'Running away from the camera', ref: 'back_run', frames: 7, aspect: '21:9', keys: 'back_run',
     view: 'BACK VIEW: she runs straight away from the camera, straight up the screen. We see only the back of her head, hair, top, skirt and legs. No face at all.',
     what: 'Seven frames of a running loop, arms swinging opposite to the legs, frame 7 flowing back into frame 1. Match the reference frame by frame.' },
-  { id: 'standing', title: 'Standing still, every direction', ref: 'standing', frames: 11, aspect: '21:9',
-    keys: ['front_a', 'front_b', 'diag_a', 'diag_b', 'side_a', 'side_b', 'bdiag_a', 'bdiag_b', 'back_a', 'back_b', 'back'],
-    view: 'Standing still, relaxed, hands at her sides, turning through every direction exactly like the reference.',
-    what: 'Eleven frames in this order: 1-2 front view facing the camera (two idle poses, like a breath in and out); 3-4 three-quarter front view facing the bottom-right corner; 5-6 side profile facing right; 7-8 three-quarter back view facing the top-right corner (face not visible); 9-10 straight from behind (two idle poses); 11 straight from behind, standing still.' },
+  { id: 'standing', title: 'Standing still, every direction', ref: 'standing5', frames: 5, aspect: '16:9',
+    // one pose per direction, used for both idle frames (Gothica's two are nearly the same anyway)
+    keys: [['front_a', 'front_b'], ['diag_a', 'diag_b'], ['side_a', 'side_b'], ['bdiag_a', 'bdiag_b'], ['back_a', 'back_b', 'back']],
+    view: 'Standing still, relaxed, hands at her sides, turning through five directions exactly like the reference.',
+    what: 'Exactly five figures, left to right: 1 front view facing the camera; 2 three-quarter front view facing the bottom-right corner; 3 side profile facing right; 4 three-quarter back view facing the top-right corner (face not visible); 5 straight from behind (no face at all).' },
   { id: 'roll', title: 'Dive roll', ref: 'side_one', frames: 4, dropFirst: true, sizeBy: 'first', ground: 'sheet', aspect: '16:9',
     keys: ['roll1', 'roll2', 'roll3', 'roll4'],
     view: 'SIDE VIEW, moving to the RIGHT.',
@@ -426,7 +427,7 @@ function renderSheet(sh) {
   if (s.frames && s.frames.length) {
     strip = el('div', { class: 'frames' });
     const gc = el('canvas', { class: 'goth', title: 'Gothica, for size' });
-    gothFrame(sh.ref === 'side_one' ? 'side_one' : sh.ref === 'standing' ? 'front_one' : sh.ref).then(g => {
+    gothFrame(sh.ref === 'side_one' ? 'side_one' : /^standing/.test(sh.ref) ? 'front_one' : sh.ref).then(g => {
       gc.width = g.width; gc.height = g.height; gc.getContext('2d').drawImage(g, 0, 0);
       gc.style.width = g.width * 2 + 'px'; gc.style.height = g.height * 2 + 'px';
     });
@@ -519,7 +520,7 @@ function exportChar() {
     const urls = s.frames.map(f => frameToCanvas(f).toDataURL('image/png'));
     if (Array.isArray(sh.keys)) {
       if (urls.length < sh.keys.length) missing.push(sh.title + ' (only ' + urls.length + ' of ' + want + ' frames)');
-      sh.keys.forEach((k, i) => { if (urls[i]) sprites[k] = urls[i]; });
+      sh.keys.forEach((k, i) => { if (urls[i]) [].concat(k).forEach(name => { sprites[name] = urls[i]; }); });
     } else sprites[sh.keys] = urls;
   }
   if (missing.length && !confirm('Not finished:\n- ' + missing.join('\n- ') + '\n\nDownload what there is anyway?')) return;
