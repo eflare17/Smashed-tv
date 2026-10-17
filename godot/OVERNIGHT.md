@@ -34,3 +34,6 @@ it out."
   building; then integrate, review, fix. Preview build at 12:10 UTC.
 - 12:12 UTC: preview published: the integrator's first working build copied to godot-play/ and pushed to main
   (Pages deployed 1cf7ecf). M1 integrate step still running; then review, fix, and godot-play/ gets the final.
+- 12:44 UTC: the owner asked for extra sessions: three started (fighting M2 on `claude/godot-fighting`, lobby life
+  M3 on `claude/godot-lobby`, arcade cabinets on `claude/godot-arcade`; see PARALLEL.md). This session: finish M1,
+  then 1.4, 1.5, merging them in, then online (M4). godot-play/ updated with the integrator's 12:29 build.
