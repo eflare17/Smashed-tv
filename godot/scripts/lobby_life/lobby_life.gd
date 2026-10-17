@@ -27,6 +27,7 @@ var gothica: Node
 var world: Node
 var ui: LobbyUI
 var sfx: LobbySfx
+var smoke: LobbySmoke
 
 ## Every thing, by name ("pool", "bench", ...).
 var things: Dictionary = {}
@@ -65,6 +66,9 @@ func _ready() -> void:
 	sfx = LobbySfx.new()
 	sfx.name = "Sfx"
 	add_child(sfx)
+	smoke = LobbySmoke.new()
+	smoke.name = "Smoke"
+	add_child(smoke)
 	ui = LobbyUI.new()
 	ui.name = "UI"
 	ui.ll = self
@@ -122,6 +126,20 @@ static func add_input_actions() -> void:
 	for a in ["move_up", "move_down", "move_left", "move_right", "interact", "roll", "toggle_view"]:
 		if not InputMap.has_action(a):
 			InputMap.add_action(a, 0.2)
+
+## Add an input action if it's missing: keys (physical keycodes), pad buttons (JOY_BUTTON_*).
+static func ensure_action(a: String, keys: Array, pads: Array = []) -> void:
+	if InputMap.has_action(a):
+		return
+	InputMap.add_action(a, 0.3)
+	for k in keys:
+		var e := InputEventKey.new()
+		e.physical_keycode = k
+		InputMap.action_add_event(a, e)
+	for b in pads:
+		var j := InputEventJoypadButton.new()
+		j.button_index = b
+		InputMap.action_add_event(a, j)
 
 func _hook_hud_button() -> void:
 	if hud == null:
