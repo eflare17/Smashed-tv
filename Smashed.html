@@ -3243,7 +3243,7 @@ function endShroom() {
   if (!SHROOM.on) return;
   const sober = SHROOM.sober; SHROOM.sober = false;
   SHROOM.on = false; SHROOM.props = null; SHROOM.floor = null; SHROOM.dive = null;
-  if (sober) { SHROOM.gone = SHROOM.keepGone || 0; fpLabel(); return; }   // plain first person: the mushroom's left as it was
+  if (sober) { SHROOM.gone = SHROOM.keepGone || 0; SHROOM.lookY = 0; fpLock(false); fpLabel(); return; }   // plain first person: the mushroom's left as it was
   SHROOM.gone = shroomNow() + SHROOM_REGROW;
   shroomMusic(false);
 }
@@ -3257,7 +3257,8 @@ function toggleFirstPerson() {
   SHROOM.keepGone = SHROOM.gone;
   Object.assign(SHROOM, { on: true, sober: true, t: SHROOM_IN + 1, clock: 0, dive: null, lastDive: 0, last: shroomNow(), beat: -1, turn: 0, props: null, floor: null, gone: Infinity, hue: 0, calm: 1 });
   SHROOM.ang = (me.fx || me.fy) ? Math.atan2(me.fy, me.fx) : -Math.PI / 2;
-  SHROOM.chars.clear();
+  SHROOM.chars.clear(); SHROOM.lookY = 0;
+  fpLock(true);
   fpLabel();
 }
 function fpLabel() { const b = document.getElementById('fpBtn'); if (b) b.textContent = SHROOM.on && SHROOM.sober ? 'Top-down view (V)' : 'First person (V)'; }
@@ -3315,7 +3316,12 @@ function shroomMusic(on) {
   sNoise(1.8, 200, 4, 0.3, 'bandpass', 3200);                        // a whoosh up
 }
 // turning: the mouse, while tripping (it keeps working when it leaves the canvas)
-window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045; });
+window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045;
+  if (SHROOM.on && SHROOM.sober) SHROOM.lookY = Math.max(-0.6, Math.min(0.6, (SHROOM.lookY || 0) + (e.movementY || 0) * 0.0035)); });   // b287: and up and down
+// b287: in plain first person the mouse is captured (so it never runs off the screen); Esc lets it go, a click takes it back
+function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (c && document.pointerLockElement !== c && c.requestPointerLock) c.requestPointerLock(); }
+  else if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (_) {} }
+window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && e.target && e.target.id === 'game') fpLock(true); });
 // WASD walk and step relative to where you're looking; aim is always straight ahead
 function shroomInput(inp) {
   if (!SHROOM.on || SHROOM.t < SHROOM_IN * 0.5) return;
@@ -3504,7 +3510,7 @@ function drawShroom(w) {
     SHROOM.ang += da * Math.min(1, dt * 6);
   }
   SHROOM.ang += SHROOM.turn; SHROOM.turn = 0;
-  const arrows = lock === null && !(w.players.length > 1 && !net.conn && net.role !== 'client');
+  const arrows = lock === null && !(w.players.length > 1 && !net.conn && net.role !== 'client'), arrowsOk = arrows;
   if (arrows) { if (keys.has('arrowleft')) SHROOM.ang -= 2.4 * dt; if (keys.has('arrowright')) SHROOM.ang += 2.4 * dt; }
   if (aimStick.active && lock === null) SHROOM.ang += aimStick.dx * 2.8 * dt;
   const gp = padAt(0); if (lock === null && gp && Math.abs(gp.axes[2] || 0) > 0.2) SHROOM.ang += gp.axes[2] * 2.8 * dt;
@@ -3575,6 +3581,10 @@ function drawShroom(w) {
   const lookTo = me.dive === DIVE.BOARD ? high * (0.7 + 0.75 * ease((bu - 0.75) / 0.25)) : me.dive === DIVE.CLIMB ? 0.35 * high : 0;
   SHROOM.look = (SHROOM.look || 0) + (lookTo - (SHROOM.look || 0)) * Math.min(1, dt * 5);
   pitch = SHROOM.look;
+  if (sober && !me.dive) {                                              // b287: look up and down: the mouse, or the up and down arrows
+    if (arrowsOk) { if (keys.has('arrowup')) SHROOM.lookY = Math.max(-0.6, (SHROOM.lookY || 0) - 1.6 * dt); if (keys.has('arrowdown')) SHROOM.lookY = Math.min(0.6, (SHROOM.lookY || 0) + 1.6 * dt); }
+    pitch += SHROOM.lookY || 0;
+  }
   // off the board: the long drop, your screen only (the game underneath has him in the pool already)
   if (!SHROOM.dive && SHROOM.lastDive === DIVE.BOARD && me.dive !== DIVE.BOARD && me.dive !== DIVE.CLIMB) {
     SHROOM.dive = { t: 0, x0: SHROOM.camX ?? me.x, y0: me.y, h0: SHROOM.lastEye, p0: SHROOM.look || 0, splashed: false, fx: [], bubbles: [] };
