@@ -961,5 +961,25 @@
   ],
   "nuke": "assets/sounds/nuke.mp3",
   "whistle": "assets/sounds/whistle.mp3"
+ },
+ "PROPS": {
+  "bench": "assets/props/bench.png",
+  "bench_shadow": "assets/props/bench_shadow.png",
+  "cab_bricks": "assets/props/cab_bricks.png",
+  "cab_bricks_shadow": "assets/props/cab_bricks_shadow.png",
+  "cab_miner": "assets/props/cab_miner.png",
+  "cab_miner_shadow": "assets/props/cab_miner_shadow.png",
+  "legpress": "assets/props/legpress.png",
+  "legpress_shadow": "assets/props/legpress_shadow.png",
+  "mirror": "assets/props/mirror.png",
+  "mirror_shadow": "assets/props/mirror_shadow.png",
+  "rack": "assets/props/rack.png",
+  "rack_shadow": "assets/props/rack_shadow.png",
+  "rope": "assets/props/rope.png",
+  "rope_shadow": "assets/props/rope_shadow.png",
+  "slot_shadow": "assets/props/slot_shadow.png",
+  "table": "assets/props/table.png",
+  "table_shadow": "assets/props/table_shadow.png",
+  "wardrobe_shadow": "assets/props/wardrobe_shadow.png"
  }
 }

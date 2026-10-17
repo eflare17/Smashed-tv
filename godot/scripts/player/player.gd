@@ -9,9 +9,13 @@ extends CharacterBody3D
 ## Top-down: W is up the screen (north, HTML -y). First person: relative to where you look (shroomInput).
 ## E uses the nearest Interactable that has something to do (label_for != "") within its reach.
 ##
-## Collision: a capsule T.radius wide on collision layer 2 ("players"), hitting layer 1 (the World's walls
-## and solids, StaticBody3D on the default layer). The feet are on this node's origin; the body stands at
-## dz (HTML units) above the floor (y = 0), which the trampoline sets.
+## Collision: a capsule T.radius wide on collision layer 2 ("players", GameData.LAYER_PLAYERS), hitting layer 1
+## (the World's walls and solids). The feet are on this node's origin; the body stands at dz (HTML units) above
+## the floor (y = 0), which the trampoline sets.
+##
+## The clock: he steps in _physics_process, 120 times a second (the HTML game's FIXED_DT), and physics
+## interpolation draws him smoothly between steps. Whoever moves him by hand (a teleport) calls place() or
+## reset_physics_interpolation() after. visual_pos() is where he's drawn this frame (for cameras).
 
 signal interacted(target: Node)
 
@@ -47,6 +51,9 @@ var rig: Node = null
 var controls_enabled: bool = true
 ## Top-down with a mouse over the window: face the cursor, like the HTML game (it aims at the mouse).
 var face_mouse: bool = true
+## Where something other than the mouse or a pad aims him top-down (the touch layer's right stick), HTML ground
+## axes, length 0..1; under 0.3 it's ignored.
+var aim_override: Vector2 = Vector2.ZERO
 ## The Interactable E would use now, and what it says ("" for nothing). Updated every frame.
 var focus: Node = null
 var focus_label: String = ""
@@ -66,8 +73,8 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
-	collision_layer = 2
-	collision_mask = 1
+	collision_layer = GameData.LAYER_PLAYERS
+	collision_mask = GameData.LAYER_WORLD
 	wall_min_slide_angle = 0.0
 	safe_margin = 0.004
 	_shape = null
@@ -133,6 +140,13 @@ func html_pos() -> Vector3:
 ## Put him somewhere, in HTML units.
 func place(x: float, y: float) -> void:
 	global_position = GameData.world_to_3d(x, y, 0.0)
+	reset_physics_interpolation()
+
+## Where he's drawn this frame (between two physics steps), HTML units: for cameras and anything drawn by him.
+func visual_pos() -> Vector3:
+	if is_inside_tree():
+		return GameData.from_3d(get_global_transform_interpolated().origin)
+	return html_pos()
 
 ## --- Not contract ---
 
@@ -162,12 +176,11 @@ func read_steer() -> Vector2:
 		return Vector2.ZERO
 	var mx := Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 	var my := Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	if not is_first_person():
-		# the arrows too, like the HTML game's player 1 when he's alone (in first person they look round)
-		if Input.is_physical_key_pressed(KEY_LEFT): mx -= 1.0
-		if Input.is_physical_key_pressed(KEY_RIGHT): mx += 1.0
-		if Input.is_physical_key_pressed(KEY_UP): my -= 1.0
-		if Input.is_physical_key_pressed(KEY_DOWN): my += 1.0
+	if not is_first_person() and pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() < 0.01:
+		# the look actions (the arrows) move him too, like the HTML game's player 1 when he's alone (in first
+		# person they look round); not when they come from a pad's right stick, which aims
+		mx += Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
+		my += Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
 		mx = clampf(mx, -1.0, 1.0)
 		my = clampf(my, -1.0, 1.0)
 	var m := Vector2(mx, my)
@@ -198,14 +211,16 @@ func _notification(what: int) -> void:
 	elif what == NOTIFICATION_WM_MOUSE_ENTER:
 		_mouse_in = true
 
-func _process(delta: float) -> void:
-	var dt := minf(delta, 0.05)
+func _physics_process(delta: float) -> void:
+	# one physics tick (1/120 s, the HTML game's FIXED_DT): the same dt moves him, steers him and runs his timers
 	if not frozen:
-		_step(dt)
+		_step(minf(delta, 0.1))
+
+func _process(_delta: float) -> void:
 	_update_focus()
 	_update_sprite()
 
-# The HTML game's player step, for one frame.
+# The HTML game's player step, for one physics tick.
 func _step(dt: float) -> void:
 	roll = maxf(0.0, roll - dt)
 	roll_cd = maxf(0.0, roll_cd - dt)
@@ -263,6 +278,9 @@ func _step(dt: float) -> void:
 		var stick := pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y) if controls_enabled else Vector2.ZERO
 		if is_first_person():
 			facing = Vector2(cos(look_ang), sin(look_ang))
+		elif aim_override.length() > 0.3 and controls_enabled:
+			facing = aim_override.normalized()                     # the touch layer's right stick
+			_mouse_seen = false
 		elif stick.length() > 0.3:
 			facing = stick.normalized()                            # the right stick aims (b314)
 			_mouse_seen = false
@@ -278,8 +296,9 @@ func _step(dt: float) -> void:
 		if sp2 > cap:
 			vel = vel / sp2 * cap
 	odo += vel.length() * dt                       # drives the run cycle
-	# move, sliding along walls and solids (the HTML game zeroes the blocked part, like a slide)
-	velocity = Vector3(vel.x, 0.0, vel.y) * GameData.UNIT
+	# move, sliding along walls and solids (the HTML game zeroes the blocked part, like a slide); move_and_slide
+	# moves by the physics step, so scale to dt in case it was clamped
+	velocity = Vector3(vel.x, 0.0, vel.y) * GameData.UNIT * (dt / maxf(get_physics_process_delta_time(), 0.0001))
 	global_position.y = dz * GameData.UNIT
 	move_and_slide()
 	# what hit something loses the part of its speed going into it (lobbyClamp: hit.x -> vx = 0)
@@ -366,7 +385,9 @@ func _update_sprite() -> void:
 	if on_tramp:
 		var tr = GameData.data.get("TRAMP", {})
 		floor_z = float(tr.get("mat", 32.0)) if tr is Dictionary else 32.0
-	sprite.air = maxf(0.0, dz - floor_z)
+	# (his height as drawn this frame: physics interpolation moves him between steps)
+	var vz := visual_pos().z if is_inside_tree() else dz
+	sprite.air = maxf(0.0, vz - floor_z)
 	sprite.visible = not is_first_person()
 	var cam := get_viewport().get_camera_3d()
 	if sprite.visible:

@@ -111,6 +111,15 @@ panel, the farm plans (FARM.md).
    Google, listing the games in a folder shared with your friend by Gmail. Needs the OAuth client ID from the
    owner (Google Cloud project, Drive API on, consent screen in Testing with the friends as test users, origin
    https://eflare17.github.io).
+6. **VR (decided by the owner, 17 Oct: they have a Meta Quest).** Play it in the Quest's browser from the same
+   link (WebXR through Godot's WebXRInterface, Compatibility renderer; GitHub Pages is HTTPS, which WebXR needs),
+   an "Enter VR" button when a headset is there. Head-tracked first person, stick to walk, snap turn (and smooth
+   as an option), hands from the Touch controllers: aim and shoot with them, point and pull the trigger for
+   what E does, the weapon bar on a wrist. Comfort: a vignette when moving, a fade on big jumps (the
+   trampoline, the dive tower), the mushroom and bong trips toned down or optional. The HUD and menus as panels
+   in the world. The arcade cabinets played on their screens. Hold 72-90 fps on a Quest (lighter settings).
+   Characters stay sprites at first (they'll look like cut-outs; 3D models later if wanted). Online: a VR
+   player and a flat-screen friend together.
 
 ## Milestone 1: who does what
 
@@ -121,6 +130,37 @@ panel, the farm plans (FARM.md).
 | Player and cameras | `scripts/player/*`, `scripts/camera/*`, `scripts/ui/*` | Moving, rolling, E, the two views, the prompt and HUD. |
 | Trampoline and Gothica | `scripts/lobby/trampoline.gd`, `scripts/npc/*` | The trampoline, and Gothica wandering the lobby. |
 | Putting it together | `scenes/main.tscn`, `scripts/main.gd` | Wire it all up, export, test, fix what doesn't fit. |
+
+## Shared conventions (every part, from the milestone 1 fixes)
+
+- **One clock.** Gameplay steps run in `_physics_process`: 120 ticks a second (the HTML game's FIXED_DT,
+  `physics/common/physics_ticks_per_second`), up to 12 a frame (below 10 fps time slows, as the HTML game drops
+  time past 0.1 s a frame), with physics interpolation on so things are drawn smoothly between ticks. Only visuals,
+  the HUD and the cameras run in `_process`. Use one dt for a step (moving, timers, speeds). A teleport (setting
+  `global_position` by hand to somewhere else) is followed by `reset_physics_interpolation()` (Player.place does).
+  Cameras follow where things are drawn: `Player.visual_pos()` / `get_global_transform_interpolated()`.
+- **Physics layers** (named in project.godot; bits in `GameData.LAYER_*`): 1 world (walls, solids, the
+  trampoline), 2 players, 3 npcs (Gothica), 4 enemies, 5 projectiles, 6 pickups.
+- **Input actions** (project.godot; pad bindings there too): move_left/right/up/down (WASD, left stick),
+  look_left/right/up/down (arrows, right stick: look in first person; top-down the arrows move and the right stick
+  aims), interact (E, A), roll (Shift, B, RB, LT), toggle_view (V, View), zoom (Z, d-pad up), release_mouse (Esc),
+  fire (left mouse, RT), weapon_1..6 (1-6), pick_char_1..3 (1-3: the HUD's character picker; whoever installs the
+  weapon bar sets `Hud.number_keys_pick = false`). Read actions, never raw keys.
+- **Touch** (`scripts/ui/touch_controls.gd`, made by the Hud, shown once a touch is seen): it drives the same
+  actions (left stick = move_*, buttons = InputEventActions), sets `Player.aim_override` (the top-down right
+  stick) and turns `look_ang`/`look_y` on a first-person drag. Milestone 2: set `hud.touch.fire_enabled = true`
+  for its FIRE button (the "fire" action).
+- **Upright pictures** (characters, props, enemies) sort with the shared `scripts/actors/upright_depth.gdshaderinc`
+  (CONTRACT): include it and write `POSITION = upright_clip(...)`, so everything sorts like the HTML y-sort.
+- **HUD text:** outlines, never font shadows (a shadow makes the Compatibility renderer draw text a letter at a
+  time: the help line alone was 88 draw calls).
+- **Pictures** are in `assets/` and the manifest, loaded with `GameData.tex` (the prop cut-outs are the manifest's
+  `PROPS`). Tests live in `test/<part>/` (not exported).
+- **Deliberate differences from the HTML game:** none in collision now (the slot machine is walk-through, as
+  there). The top-down camera rises with 0.75 of a bounce (the HTML game's 0.3 would lose him in 3D).
+- **Deferred:** the rubber ducks and the animated pool water (drawDucks, drawPoolWater) come with the pool in
+  milestone 3. `data/game_data.json` is from b331; Smashed.html is now b332 (the weed bed: drawWeedBed, its plants,
+  the seed crate, the SEEDS sign): re-read it from the running game when the farm's yard work starts.
 
 ## Later: locations and the trading game (when the friend's Dope Wars-style file arrives)
 
