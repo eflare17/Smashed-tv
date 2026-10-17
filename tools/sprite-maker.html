@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprite Maker</title>
+<style>
+  :root {
+    --bg: #14151b; --panel: #1d1f28; --panel2: #262935; --line: #343848;
+    --text: #e6e8ee; --dim: #9aa0b2; --accent: #f7a8ff; --ok: #6fdc8c; --warn: #ffcc66; --bad: #ff7a7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 80px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; letter-spacing: 0.02em; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 16px; margin: 0; }
+  .sub { color: var(--dim); margin: 0 0 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+  label { display: block; color: var(--dim); font-size: 13px; margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], textarea, select {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; font: inherit;
+  }
+  textarea { min-height: 78px; resize: vertical; }
+  input[type=number] { width: 70px; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 12px; font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: #5b2a63; border-color: #8a4796; }
+  button.primary:hover:not(:disabled) { border-color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 200px; }
+  .hint { color: var(--dim); font-size: 13px; }
+  details summary { cursor: pointer; color: var(--dim); }
+  .design { display: flex; gap: 14px; flex-wrap: wrap; }
+  .drop {
+    width: 200px; min-height: 200px; border: 2px dashed var(--line); border-radius: 10px; display: flex;
+    align-items: center; justify-content: center; text-align: center; color: var(--dim); cursor: pointer; overflow: hidden;
+    background: var(--panel2); flex: 0 0 auto;
+  }
+  .drop.over { border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 260px; display: block; }
+  .sheet-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--panel2); color: var(--dim); }
+  .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.busy { color: var(--accent); }
+  .pics { display: flex; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+  .pics figure { margin: 0; }
+  .pics figcaption { font-size: 12px; color: var(--dim); }
+  .thumb { height: 110px; border-radius: 6px; border: 1px solid var(--line); background: #0d0e12; cursor: zoom-in; display: block; }
+  .thumb.empty { width: 180px; display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 12px; cursor: default; }
+  .frames {
+    display: flex; align-items: flex-end; gap: 2px; overflow-x: auto; padding: 6px; border-radius: 6px;
+    background: repeating-conic-gradient(#2a2d38 0 25%, #22242e 0 50%) 0 0 / 16px 16px;
+  }
+  .frames canvas { image-rendering: pixelated; flex: 0 0 auto; }
+  .frames .goth { opacity: 0.55; margin-right: 10px; }
+  .play { image-rendering: pixelated; border-radius: 6px; background: repeating-conic-gradient(#2a2d38 0 25%, #22242e 0 50%) 0 0 / 16px 16px; }
+  .controls { display: flex; gap: 10px 16px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .controls label { display: inline; margin: 0; }
+  .controls .fix { flex: 1 1 260px; }
+  .note { font-size: 13px; color: var(--warn); margin-top: 6px; }
+  .err { color: var(--bad); white-space: pre-wrap; font-size: 13px; margin-top: 6px; }
+  .bar { position: sticky; bottom: 0; background: rgba(20,21,27,0.95); border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none; align-items: center; justify-content: center; z-index: 9; cursor: zoom-out; padding: 10px; }
+  #lightbox img { max-width: 100%; max-height: 100%; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) {
+    .two { grid-template-columns: 1fr; } .drop { width: 100%; }
+    .bar { padding: 6px 8px; gap: 6px; } .bar button { padding: 6px 10px; font-size: 14px; } .bar .hint { flex-basis: 100%; text-align: center; order: 9; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sprite <span>Maker</span></h1>
+  <p class="sub">One design picture in, every sprite sheet out, cut, sized to match Gothica and ready for Smashed.</p>
+
+  <div class="card">
+    <details id="setup">
+      <summary><b>Gemini key and models</b> <span class="hint" id="keyState"></span></summary>
+      <label for="apiKey">Gemini API key (get one at aistudio.google.com/apikey)</label>
+      <input id="apiKey" type="password" autocomplete="off" placeholder="paste your key">
+      <div class="row" style="margin-top:6px">
+        <label style="margin:0"><input type="checkbox" id="keepKey" checked> Remember it on this device</label>
+      </div>
+      <p class="hint">The key only goes to Google, from this browser. It's never put in the game or on GitHub.
+        No key? Every sheet has <b>Copy prompt</b> and <b>Save reference</b>, so you can make it in the Gemini app and drop the picture back in.</p>
+      <div class="two">
+        <div>
+          <label for="imgModel">Image model</label>
+          <input id="imgModel" type="text" list="imgModels" value="gemini-nano-banana-2.1">
+          <datalist id="imgModels">
+            <option value="gemini-nano-banana-2.1"><option value="gemini-3-pro-image"><option value="gemini-3.1-flash-image">
+          </datalist>
+        </div>
+        <div>
+          <label for="txtModel">Model for "describe her" (text)</label>
+          <input id="txtModel" type="text" value="gemini-flash-latest">
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>The character</h2>
+    <div class="design" style="margin-top:10px">
+      <div class="drop" id="drop" tabindex="0">Drop the design picture here<br>or tap to choose</div>
+      <input type="file" id="designFile" accept="image/*" hidden>
+      <div class="grow">
+        <label for="charName">Name</label>
+        <input id="charName" type="text" placeholder="Inky">
+        <label for="charDesc">What she looks like (goes in every prompt, so keep it to her look)</label>
+        <textarea id="charDesc" placeholder="Hair, face, glasses, outfit, colours, build, shoes..."></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="describe">Describe from the picture</button>
+          <span class="hint" id="descState"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheets"></div>
+</main>
+
+<div class="bar">
+  <button class="primary" id="makeAll">Make all sheets</button>
+  <button id="stop" disabled>Stop</button>
+  <span class="hint" id="allState"></span>
+  <button class="primary" id="export">Download for the game</button>
+</div>
+
+<div id="lightbox"><img alt=""></div>
+
+<script src="gothica-refs.js"></script>
+<script src="sprite-cut.js"></script>
+<script>
+'use strict';
+// ------------------------------------------------------------------ the sheets
+// Same set and order as Gothica's sprites. Side and diagonal views face right: the game mirrors them.
+// keys: where each cut frame goes in the character's sprites (an array name, or one name per frame)
+const SHEETS = [
+  { id: 'front_run', title: 'Running toward the camera', ref: 'front_run', frames: 7, aspect: '21:9', keys: 'front_run',
+    view: 'FRONT VIEW: she runs straight toward the camera, straight down the screen, seen slightly from above. We see her whole face.',
+    what: 'Seven frames of a running loop. Arms swing opposite to the legs. Frame 7 flows back into frame 1. Match the leg positions in the reference frame by frame.' },
+  { id: 'diag_run', title: 'Running, front diagonal', ref: 'diag_run', frames: 7, aspect: '21:9', keys: 'diag_run',
+    view: 'THREE-QUARTER FRONT VIEW, NOT a front view: her whole body, head included, is turned 45 degrees so she runs toward the BOTTOM-RIGHT corner of the screen. Her right shoulder is nearer to us and her left shoulder is further back, partly hidden. Her nose and glasses point toward the right edge of the frame and we see more of her left cheek. Her toes point down and to the right. Exactly the angle of the reference.',
+    what: 'Seven frames of a running loop, arms swinging opposite to the legs, frame 7 flowing back into frame 1. Match the reference frame by frame.' },
+  { id: 'side_run', title: 'Running, side on', ref: 'side_run', frames: 7, aspect: '21:9', keys: 'side_run',
+    view: 'SIDE PROFILE facing RIGHT: she runs toward the right edge of the screen. We see only her right side: one eye, her nose pointing right, the side of her glasses.',
+    what: 'Seven frames of a running loop, arms swinging opposite to the legs, her hair moving with each step, frame 7 flowing back into frame 1. Match the reference frame by frame.' },
+  { id: 'bdiag_run', title: 'Running, back diagonal', ref: 'bdiag_run', frames: 7, aspect: '21:9', keys: 'bdiag_run',
+    view: 'THREE-QUARTER BACK VIEW: she runs AWAY from us toward the TOP-RIGHT corner of the screen. We see mostly her back and the back of her head, and just the edge of her right cheek and glasses. Her face is NOT visible.',
+    what: 'Seven frames of a running loop, arms swinging opposite to the legs, frame 7 flowing back into frame 1. Match the reference frame by frame.' },
+  { id: 'back_run', title: 'Running away from the camera', ref: 'back_run', frames: 7, aspect: '21:9', keys: 'back_run',
+    view: 'BACK VIEW: she runs straight away from the camera, straight up the screen. We see only the back of her head, hair, top, skirt and legs. No face at all.',
+    what: 'Seven frames of a running loop, arms swinging opposite to the legs, frame 7 flowing back into frame 1. Match the reference frame by frame.' },
+  { id: 'standing', title: 'Standing still, every direction', ref: 'standing', frames: 11, aspect: '21:9',
+    keys: ['front_a', 'front_b', 'diag_a', 'diag_b', 'side_a', 'side_b', 'bdiag_a', 'bdiag_b', 'back_a', 'back_b', 'back'],
+    view: 'Standing still, relaxed, hands at her sides, turning through every direction exactly like the reference.',
+    what: 'Eleven frames in this order: 1-2 front view facing the camera (two idle poses, like a breath in and out); 3-4 three-quarter front view facing the bottom-right corner; 5-6 side profile facing right; 7-8 three-quarter back view facing the top-right corner (face not visible); 9-10 straight from behind (two idle poses); 11 straight from behind, standing still.' },
+  { id: 'roll', title: 'Dive roll', ref: 'side_one', frames: 4, dropFirst: true, sizeBy: 'first', ground: 'sheet', aspect: '16:9',
+    keys: ['roll1', 'roll2', 'roll3', 'roll4'],
+    view: 'SIDE VIEW, moving to the RIGHT.',
+    what: 'Five frames. Frame 1: standing upright side-on, relaxed, the same size and pose as the reference (it sets her size). Frames 2 to 5, a quick forward dive roll: 2 diving forward low, arms reaching ahead; 3 tucked into a tight ball, upside down; 4 tucked ball coming over the top; 5 coming up out of the roll in a low crouch. Keep her the same size as in frame 1 the whole way: the ball in frames 3 and 4 is much shorter than her standing height and sits on the ground.' },
+  { id: 'victory', title: 'Victory', ref: 'front_one', frames: 7, sizeBy: 'first', ground: 'sheet', aspect: '21:9', keys: 'victory',
+    view: 'FRONT VIEW, facing the camera, at the same size as the reference.',
+    what: 'Seven frames of a victory celebration: frame 1 standing relaxed like the reference, then she throws both fists up and does a little hop, top of the hop with arms up in the middle frames, then back down to a confident pose with a grin and a hand on her hip. Frame 7 is a pose she can hold.' },
+  { id: 'datapad', title: 'Checking her datapad (optional)', ref: 'front_one', frames: 4, aspect: '16:9', keys: 'datapad', optional: true, handsFree: true,
+    view: 'FRONT VIEW, facing the camera, standing still, at the same size as the reference.',
+    what: 'Four frames, looking down at a small glowing handheld datapad held in both hands at chest height: 1 holding it, looking at it; 2 tapping the screen with one finger; 3 pushing her glasses up her nose with one finger, datapad in the other hand; 4 holding it and looking at it, a little different from frame 1 so it loops.' },
+];
+
+// ------------------------------------------------------------------ state
+const S = { design: null, sheets: {} };      // design: data URL; sheets[id]: { raw, size, mirror, fix, frames }
+let stopAll = false, busy = 0;
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('sm-' + k); return v === null ? d : v; } catch (_) { return d; } },
+  set(k, v) { try { localStorage.setItem('sm-' + k, v); } catch (_) {} },
+  del(k) { try { localStorage.removeItem('sm-' + k); } catch (_) {} },
+};
+
+// Pictures are big, so the work in progress lives in IndexedDB (a refresh, or a tab the phone
+// threw away, doesn't lose sheets you've paid for).
+const DB = {
+  db: null,
+  open() {
+    return new Promise(res => {
+      try {
+        const r = indexedDB.open('sprite-maker', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => { DB.db = r.result; res(); };
+        r.onerror = () => res();
+      } catch (_) { res(); }
+    });
+  },
+  get(k) {
+    return new Promise(res => {
+      if (!DB.db) return res(null);
+      try { const q = DB.db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }
+      catch (_) { res(null); }
+    });
+  },
+  set(k, v) {
+    if (!DB.db) return;
+    try { DB.db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); } catch (_) {}
+  },
+};
+function charKey() { return ($('charName').value.trim() || 'unnamed').toLowerCase(); }
+let saveT = 0;
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    const keep = {};
+    for (const [id, s] of Object.entries(S.sheets)) keep[id] = { raw: s.raw || null, size: s.size, mirror: s.mirror, fix: s.fix, count: s.count };
+    DB.set('char:' + charKey(), { design: S.design, desc: $('charDesc').value, sheets: keep });
+    store.set('last', $('charName').value.trim());
+  }, 300);
+}
+async function load(name) {
+  const v = await DB.get('char:' + (name || 'unnamed').toLowerCase());
+  S.design = v && v.design || null;
+  $('charDesc').value = v && v.desc || '';
+  S.sheets = {};
+  for (const sh of SHEETS) {
+    const o = v && v.sheets && v.sheets[sh.id] || {};
+    S.sheets[sh.id] = { raw: o.raw || null, size: o.size || 1, mirror: !!o.mirror, fix: o.fix || '', count: o.count || sh.frames, frames: null, note: '' };
+  }
+  showDesign();
+  for (const sh of SHEETS) { renderSheet(sh); if (S.sheets[sh.id].raw) recut(sh); }
+}
+
+// ------------------------------------------------------------------ pictures
+function loadImg(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+function fileToDataURL(f) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+}
+// keep what we send to Google a sensible size
+async function shrinkForSend(dataURL, max = 1536) {
+  const im = await loadImg(dataURL);
+  const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
+}
+const b64 = d => d.slice(d.indexOf(',') + 1);
+const mimeOf = d => d.slice(5, d.indexOf(';'));
+function frameToCanvas(f) {
+  const c = document.createElement('canvas'); c.width = f.width; c.height = f.height;
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(f.data), f.width, f.height), 0, 0);
+  return c;
+}
+// Gothica's first frame of a reference strip, at the game's size (the strips are 3x, with an 8px border)
+let gothSize = {};
+async function gothFrame(refId) {
+  if (gothSize[refId]) return gothSize[refId];
+  const im = await loadImg(GOTH_REFS[refId]);
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  // find the first frame's width: scan the first art column run along the strip's middle rows
+  const t = document.createElement('canvas'); t.width = im.naturalWidth; t.height = im.naturalHeight;
+  const tg = t.getContext('2d'); tg.drawImage(im, 0, 0);
+  const d = tg.getImageData(0, 0, t.width, t.height).data;
+  let x0 = -1, x1 = -1;
+  for (let x = 0; x < t.width; x++) {
+    let art = false;
+    for (let y = 24; y < t.height - 24; y += 3) { const i = (y * t.width + x) * 4; if (!(d[i + 1] > 200 && d[i] < 60 && d[i + 2] < 60)) { art = true; break; } }
+    if (art && x0 < 0) x0 = x;
+    if (!art && x0 >= 0) { x1 = x; break; }
+  }
+  c.width = Math.round((x1 - x0) / 3) + 4; c.height = 160;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(im, x0 - 6, 24, c.width * 3, 480, 0, 0, c.width, 160);
+  // green out
+  const id = g.getImageData(0, 0, c.width, c.height);
+  for (let i = 0; i < id.data.length; i += 4) { const r = id.data[i], gg = id.data[i + 1], b = id.data[i + 2]; if (gg > 120 && gg > r + 50 && gg > b + 50) id.data[i + 3] = 0; }
+  g.putImageData(id, 0, 0);
+  return (gothSize[refId] = c);
+}
+
+// ------------------------------------------------------------------ Gemini
+function apiKey() { return $('apiKey').value.trim(); }
+async function gemini({ model, text, images, image, aspect }) {
+  const key = apiKey();
+  if (!key) throw new Error('No Gemini API key yet: open "Gemini key and models" at the top.');
+  const parts = [{ text }].concat(images.map(d => ({ inline_data: { mime_type: mimeOf(d), data: b64(d) } })));
+  // generateContent first; some settings aren't on every model, so it backs off them one at a time
+  const configs = image
+    ? [{ responseModalities: ['IMAGE'], imageConfig: { aspectRatio: aspect, imageSize: '2K' } },
+       { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: aspect } },
+       { responseModalities: ['TEXT', 'IMAGE'] }]
+    : [{}];
+  let lastErr = null;
+  for (const cfg of configs) {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: cfg }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return readReply(j);
+    lastErr = (j.error && j.error.message) || ('HTTP ' + r.status);
+    if (r.status === 400 && /config|modalit|aspect|image_?size|imageSize|not supported/i.test(lastErr)) continue;
+    if (r.status === 404 || (r.status === 400 && /generateContent/i.test(lastErr))) break;   // try the newer API below
+    throw new Error(lastErr);
+  }
+  // the newer Interactions API
+  const input = [{ type: 'text', text }].concat(images.map(d => ({ type: 'image', mime_type: mimeOf(d), data: b64(d) })));
+  const body = { model, input };
+  if (image) body.response_format = { type: 'image', aspect_ratio: aspect, image_size: '2K' };
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(((j.error && j.error.message) || ('HTTP ' + r.status)) + (lastErr ? '\n(before that: ' + lastErr + ')' : ''));
+  return readReply(j);
+}
+// Find the picture and any words in a reply, whichever API shape it came back in.
+function readReply(j) {
+  let img = null; const words = [];
+  (function walk(o) {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    const inl = o.inlineData || o.inline_data;
+    if (inl && inl.data && /^image\//.test(inl.mimeType || inl.mime_type || '')) { img = img || 'data:' + (inl.mimeType || inl.mime_type) + ';base64,' + inl.data; }
+    else if (o.type === 'image' && o.data) { img = img || 'data:' + (o.mime_type || o.mimeType || 'image/png') + ';base64,' + o.data; }
+    if (typeof o.text === 'string' && !o.thought) words.push(o.text);
+    for (const k in o) if (k !== 'inlineData' && k !== 'inline_data' && k !== 'data') walk(o[k]);
+  })(j);
+  const block = j.promptFeedback && j.promptFeedback.blockReason;
+  const finish = j.candidates && j.candidates[0] && j.candidates[0].finishReason;
+  return { img, text: words.join('\n').trim(), why: block || (finish && finish !== 'STOP' ? finish : '') };
+}
+
+function promptFor(sh) {
+  const s = S.sheets[sh.id];
+  const name = $('charName').value.trim() || 'the character';
+  const desc = $('charDesc').value.trim();
+  const n = sh.frames + (sh.dropFirst ? 1 : 0);
+  return [
+    'Make a pixel art sprite sheet for a top-down retro arcade game.',
+    'IMAGE 1 is the character design for ' + name + '. Copy ' + name + ' exactly in every frame: face, hair, outfit, colours and build.' + (desc ? ' ' + desc : ''),
+    'IMAGE 2 is a pose and size reference showing a DIFFERENT character (Gothica). Copy ONLY her poses, camera angle, framing, size and pixel art style. Never copy Gothica\'s looks, hair, clothes or boots.',
+    'Rules: exactly ' + n + ' frames in one row, left to right, evenly spaced, with a clear gap of plain green between frames so no hair, arm or foot touches the next frame. Every frame shows the whole body from the top of the head to the soles, nothing cropped, with exactly two arms and two legs. Every frame the same size, feet on the same line. Plain solid bright green background (#00FF00) only: no floor, no shadow, no text, no numbers, no labels, no borders. Crisp pixel art with hard edges, no blur.' + (sh.handsFree ? '' : ' Hands empty, no weapon.'),
+    'VIEW: ' + sh.view,
+    sh.what,
+    s.fix ? 'Also fix this: ' + s.fix : '',
+  ].filter(Boolean).join('\n\n');
+}
+
+// ------------------------------------------------------------------ making a sheet
+async function makeSheet(sh) {
+  const s = S.sheets[sh.id];
+  if (!S.design) throw new Error('Add the design picture first.');
+  s.busy = true; s.err = ''; renderSheet(sh);
+  try {
+    const design = await shrinkForSend(S.design);
+    const res = await gemini({ model: $('imgModel').value.trim(), text: promptFor(sh), images: [design, GOTH_REFS[sh.ref]], image: true, aspect: sh.aspect });
+    if (!res.img) throw new Error('Gemini sent back no picture' + (res.why ? ' (' + res.why + ')' : '') + (res.text ? ':\n' + res.text.slice(0, 400) : '.'));
+    s.raw = res.img; s.mirror = false;
+    save();
+    await recut(sh);
+  } catch (e) {
+    s.err = String(e && e.message || e);
+  } finally {
+    s.busy = false; renderSheet(sh);
+  }
+}
+async function recut(sh) {
+  const s = S.sheets[sh.id];
+  if (!s.raw) { s.frames = null; return; }
+  const im = await loadImg(s.raw);
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  const data = g.getImageData(0, 0, c.width, c.height);
+  const r = SpriteCut.cutSheet(data, { frames: s.count || sh.frames, sizeBy: sh.sizeBy || 'median', ground: sh.ground || 'each', dropFirst: !!sh.dropFirst, size: s.size, mirror: s.mirror });
+  s.frames = r.frames; s.note = r.note || '';
+  if (r.frames.length !== (s.count || sh.frames)) s.note = (s.note ? s.note + '; ' : '') + 'got ' + r.frames.length + ' of ' + (s.count || sh.frames) + ' frames';
+  renderSheet(sh);
+}
+
+// ------------------------------------------------------------------ drawing the page
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) {
+    if (k === 'class') e.className = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k] === true ? '' : attrs[k]);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(k));
+  return e;
+}
+function zoom(src) { const lb = $('lightbox'); lb.querySelector('img').src = src; lb.style.display = 'flex'; }
+$('lightbox').onclick = () => { $('lightbox').style.display = 'none'; };
+
+const players = {};
+function renderSheet(sh) {
+  const s = S.sheets[sh.id];
+  let card = $('sheet-' + sh.id);
+  if (!card) { card = el('div', { class: 'card', id: 'sheet-' + sh.id }); $('sheets').append(card); }
+  const n = s.count || sh.frames;
+  let pill;
+  if (s.busy) pill = el('span', { class: 'pill busy' }, 'drawing... (about a minute)');
+  else if (s.err) pill = el('span', { class: 'pill bad' }, 'failed');
+  else if (s.frames && s.frames.length === n && !s.note) pill = el('span', { class: 'pill ok' }, n + ' frames');
+  else if (s.frames) pill = el('span', { class: 'pill warn' }, 'check it');
+  else pill = el('span', { class: 'pill' }, sh.optional ? 'optional' : 'not made yet');
+
+  const head = el('div', { class: 'sheet-head' }, el('h2', null, (SHEETS.indexOf(sh) + 1) + '. ' + sh.title), pill);
+
+  const refFig = el('figure', null, el('img', { class: 'thumb', src: GOTH_REFS[sh.ref], alt: 'Gothica reference', onclick: () => zoom(GOTH_REFS[sh.ref]) }), el('figcaption', null, 'Gothica (pose and size)'));
+  const outFig = el('figure', null,
+    s.raw ? el('img', { class: 'thumb', src: s.raw, alt: 'what Gemini drew', onclick: () => zoom(s.raw) }) : el('div', { class: 'thumb empty' }, 'nothing yet'),
+    el('figcaption', null, 'What Gemini drew'));
+  const playC = el('canvas', { class: 'play', width: 1, height: 1 });
+  const playFig = el('figure', null, playC, el('figcaption', null, 'Animated'));
+  const pics = el('div', { class: 'pics' }, refFig, outFig, s.frames && s.frames.length ? playFig : null);
+
+  let strip = null;
+  if (s.frames && s.frames.length) {
+    strip = el('div', { class: 'frames' });
+    const gc = el('canvas', { class: 'goth', title: 'Gothica, for size' });
+    gothFrame(sh.ref === 'side_one' ? 'side_one' : sh.ref === 'standing' ? 'front_one' : sh.ref).then(g => {
+      gc.width = g.width; gc.height = g.height; gc.getContext('2d').drawImage(g, 0, 0);
+      gc.style.width = g.width * 2 + 'px'; gc.style.height = g.height * 2 + 'px';
+    });
+    strip.append(gc);
+    for (const f of s.frames) {
+      const c = frameToCanvas(f); c.style.width = f.width * 2 + 'px'; c.style.height = f.height * 2 + 'px';
+      strip.append(c);
+    }
+    // the animation: cycle the frames at the game's size, x2
+    const fr = s.frames.map(frameToCanvas);
+    playC.width = fr[0].width; playC.height = 160; playC.style.width = fr[0].width * 2 + 'px'; playC.style.height = '320px';
+    clearInterval(players[sh.id]);
+    let k = 0;
+    const pg = playC.getContext('2d');
+    const tick = () => { pg.clearRect(0, 0, playC.width, 160); pg.drawImage(fr[k++ % fr.length], 0, 0); };
+    tick(); players[sh.id] = setInterval(tick, sh.id === 'standing' ? 400 : 110);
+  }
+
+  const makeBtn = el('button', { class: 'primary', disabled: !!s.busy, onclick: () => runOne(sh) }, s.raw ? 'Redo' : 'Make it');
+  const fix = el('input', { type: 'text', class: 'fix', placeholder: 'Fix note for the redo, e.g. "frame 3 has three legs"', value: s.fix });
+  fix.oninput = () => { s.fix = fix.value; save(); };
+  const size = el('input', { type: 'range', min: '0.8', max: '1.2', step: '0.01', value: s.size });
+  const sizeVal = el('span', { class: 'hint' }, Math.round(s.size * 100) + '%');
+  size.oninput = () => { sizeVal.textContent = Math.round(size.value * 100) + '%'; };
+  size.onchange = () => { s.size = +size.value; save(); recut(sh); };
+  const count = el('input', { type: 'number', min: '1', max: '16', value: n });
+  count.onchange = () => { s.count = Math.max(1, Math.min(16, +count.value || sh.frames)); save(); recut(sh); };
+  const mirror = el('input', { type: 'checkbox' }); mirror.checked = s.mirror;
+  mirror.onchange = () => { s.mirror = mirror.checked; save(); recut(sh); };
+  const own = el('input', { type: 'file', accept: 'image/*', hidden: true });
+  own.onchange = async () => { if (!own.files[0]) return; s.raw = await fileToDataURL(own.files[0]); s.err = ''; save(); recut(sh); };
+  const controls = el('div', { class: 'controls' },
+    makeBtn, fix,
+    el('span', null, el('label', null, 'Size '), size, ' ', sizeVal),
+    el('span', null, el('label', null, 'Frames '), count),
+    el('span', null, mirror, el('label', null, ' Flip (if she faces the wrong way)')),
+  );
+  const manual = el('div', { class: 'controls' },
+    el('button', { onclick: async e => { await navigator.clipboard.writeText(promptFor(sh)).catch(() => {}); e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy prompt', 1500); } }, 'Copy prompt'),
+    el('button', { onclick: () => downloadURL(GOTH_REFS[sh.ref], 'gothica_' + sh.id + '.png') }, 'Save reference'),
+    el('button', { onclick: () => own.click() }, 'Use my own picture'), own,
+    s.raw ? el('button', { onclick: () => { s.raw = null; s.frames = null; s.note = ''; save(); renderSheet(sh); } }, 'Clear') : null,
+    el('span', { class: 'hint' }, 'Made it in the Gemini app instead? Use my own picture.'),
+  );
+  card.replaceChildren(...[head, pics, strip, s.note ? el('div', { class: 'note' }, s.note + ' — check the frames, or Redo with a fix note.') : null,
+    s.err ? el('div', { class: 'err' }, s.err) : null, controls, manual].filter(Boolean));
+}
+function showDesign() {
+  const d = $('drop');
+  d.replaceChildren(S.design ? el('img', { src: S.design, alt: 'design' }) : el('span', null, 'Drop the design picture here', el('br'), 'or tap to choose'));
+}
+function downloadURL(url, name) { const a = el('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove(); }
+
+// ------------------------------------------------------------------ running
+async function runOne(sh) {
+  busy++; updateBar();
+  try { await makeSheet(sh); } finally { busy--; updateBar(); }
+}
+async function makeAll() {
+  if (!S.design) { alert('Add the design picture first.'); return; }
+  if (!apiKey()) { $('setup').open = true; $('apiKey').focus(); return; }
+  stopAll = false;
+  const todo = SHEETS.filter(sh => !S.sheets[sh.id].raw && !S.sheets[sh.id].busy);
+  if (!todo.length) { $('allState').textContent = 'All made. Redo any that look wrong.'; return; }
+  $('stop').disabled = false;
+  let done = 0;
+  const next = async () => {
+    while (todo.length && !stopAll) {
+      const sh = todo.shift();
+      $('allState').textContent = 'Drawing ' + (done + 1) + ' to ' + (done + 3) + ' of ' + (done + todo.length + 1) + '...';
+      await runOne(sh); done++;
+    }
+  };
+  await Promise.all([next(), next(), next()]);        // three at a time
+  $('stop').disabled = true;
+  const bad = SHEETS.filter(sh => S.sheets[sh.id].err).length;
+  $('allState').textContent = stopAll ? 'Stopped.' : bad ? bad + ' failed, see the red notes.' : 'Done. Check each sheet, Redo any duds, then Download for the game.';
+}
+function updateBar() { $('makeAll').disabled = busy > 0; }
+
+// ------------------------------------------------------------------ export
+function exportChar() {
+  const name = $('charName').value.trim();
+  if (!name) { alert('Give her a name first.'); return; }
+  const sprites = {}; const missing = [];
+  for (const sh of SHEETS) {
+    const s = S.sheets[sh.id];
+    const want = Array.isArray(sh.keys) ? sh.keys.length : (s.count || sh.frames);
+    if (!s.frames || !s.frames.length) { if (!sh.optional) missing.push(sh.title); continue; }
+    const urls = s.frames.map(f => frameToCanvas(f).toDataURL('image/png'));
+    if (Array.isArray(sh.keys)) {
+      if (urls.length < sh.keys.length) missing.push(sh.title + ' (only ' + urls.length + ' of ' + want + ' frames)');
+      sh.keys.forEach((k, i) => { if (urls[i]) sprites[k] = urls[i]; });
+    } else sprites[sh.keys] = urls;
+  }
+  if (missing.length && !confirm('Not finished:\n- ' + missing.join('\n- ') + '\n\nDownload what there is anyway?')) return;
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'new_character';
+  const out = { id, name, made: new Date().toISOString().slice(0, 10), tool: 'sprite-maker', sprites };
+  const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+  downloadURL(URL.createObjectURL(blob), id + '.json');
+}
+
+// ------------------------------------------------------------------ describe her
+async function describe() {
+  if (!S.design) { alert('Add the design picture first.'); return; }
+  $('descState').textContent = 'looking...';
+  $('describe').disabled = true;
+  try {
+    const res = await gemini({
+      model: $('txtModel').value.trim(), image: false, images: [await shrinkForSend(S.design, 1024)],
+      text: 'Describe this character\'s look for a pixel artist, in one paragraph of plain sentences: hair (style, length, colours), face, glasses or piercings, makeup, every piece of clothing and its colour, accessories, shoes or bare feet, and body build. Only what can be seen. No backstory, no personality, no lists.',
+    });
+    if (!res.text) throw new Error('No description came back' + (res.why ? ' (' + res.why + ')' : '.'));
+    $('charDesc').value = res.text; save();
+    $('descState').textContent = 'done, edit it if anything is off';
+  } catch (e) { $('descState').textContent = String(e.message || e); }
+  finally { $('describe').disabled = false; }
+}
+
+// ------------------------------------------------------------------ wiring
+(async function start() {
+  $('apiKey').value = store.get('key', '');
+  $('keepKey').checked = store.get('keepKey', '1') === '1';
+  $('imgModel').value = store.get('imgModel', $('imgModel').value);
+  $('txtModel').value = store.get('txtModel', $('txtModel').value);
+  const keyNote = () => { $('keyState').textContent = apiKey() ? '(key set)' : '(no key yet)'; };
+  keyNote();
+  if (!apiKey()) $('setup').open = true;
+  $('apiKey').oninput = () => { if ($('keepKey').checked) store.set('key', apiKey()); keyNote(); };
+  $('keepKey').onchange = () => { store.set('keepKey', $('keepKey').checked ? '1' : '0'); if ($('keepKey').checked) store.set('key', apiKey()); else store.del('key'); };
+  $('imgModel').onchange = () => store.set('imgModel', $('imgModel').value.trim());
+  $('txtModel').onchange = () => store.set('txtModel', $('txtModel').value.trim());
+
+  await DB.open();
+  $('charName').value = store.get('last', '');
+  await load($('charName').value);
+  let nameT = 0;
+  $('charName').oninput = () => {      // a different name is a different character: load hers, or start fresh keeping the picture
+    clearTimeout(nameT);
+    nameT = setTimeout(async () => {
+      const keepDesign = S.design, keepDesc = $('charDesc').value;
+      const v = await DB.get('char:' + charKey());
+      if (v) await load($('charName').value); else { S.design = keepDesign; $('charDesc').value = keepDesc; }
+      save();
+    }, 500);
+  };
+  $('charDesc').oninput = save;
+
+  const drop = $('drop'), file = $('designFile');
+  const take = async f => { if (!f || !/^image\//.test(f.type)) return; S.design = await fileToDataURL(f); showDesign(); save(); };
+  drop.onclick = () => file.click();
+  drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') file.click(); };
+  file.onchange = () => take(file.files[0]);
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files[0]); };
+  document.addEventListener('paste', e => { const f = [...(e.clipboardData && e.clipboardData.files || [])][0]; if (f && document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') take(f); });
+
+  $('describe').onclick = describe;
+  $('makeAll').onclick = makeAll;
+  $('stop').onclick = () => { stopAll = true; $('allState').textContent = 'Stopping after the ones already drawing...'; };
+  $('export').onclick = exportChar;
+})();
+</script>
+</body>
+</html>
