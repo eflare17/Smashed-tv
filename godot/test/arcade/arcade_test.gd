@@ -94,6 +94,10 @@ func check(name: String, ok: bool, info: String = "") -> void:
 
 func _logic() -> void:
 	arcade.sfx.enabled = false
+	# ---- phone stick shaping (touch_controls.gd)
+	check("stick: inside the dead zone is nothing", TouchControls.shape(Vector2(0.2, 0), 0.22, 1.5) == Vector2.ZERO)
+	check("stick: a full push is full", absf(TouchControls.shape(Vector2(1, 0), 0.22, 1.5).x - 1.0) < 0.001)
+	check("stick: a half push walks slowly (curve)", TouchControls.shape(Vector2(0.5, 0), 0.22, 1.5).x < 0.3)
 	# ---- Snake
 	var s := SnakeGame.new()
 	s.live = true

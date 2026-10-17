@@ -62,6 +62,7 @@ var bounds: Rect2 = Rect2()
 ## Lets the mouse capture happen (false for tests or menus over the game).
 var capture_mouse: bool = true
 
+const PORTRAIT_REF := 1.5        # the narrowest shape that keeps its height; narrower windows show the same across
 const VIEW_H := 520.0            # the HTML game's screen height (ARENA.h): what 1x shows north to south
 const MOUSE_X := 0.0045
 const MOUSE_Y := 0.0035
@@ -261,7 +262,9 @@ func _update_top(dt: float) -> void:
 		tx = v.x
 		ty = v.y - 20.0                                    # camFollow: me.y - 20, him a little below the middle
 	# far enough back that the screen's height covers VIEW_H / zoom of ground north to south (HTML units)
-	var span := VIEW_H / _z
+	# A tall screen (a phone upright) would otherwise see a thin strip across: the camera backs off so it shows
+	# about what a PORTRAIT_REF-shaped window does across (more north to south instead).
+	var span := VIEW_H / _z * maxf(1.0, PORTRAIT_REF / maxf(0.1, aspect))
 	var dist := span * sin(pitch) / (2.0 * tan(half_f))
 	if fixed_aim is Vector2:
 		var f := _frame(fixed_aim, pitch, half_f, aspect)
@@ -279,7 +282,7 @@ func _update_top(dt: float) -> void:
 		_aim_h = th
 		_dist = dist
 	else:
-		var k := minf(1.0, dt * 8.0)
+		var k := 1.0 - exp(-dt * 8.0)                        # (frame-rate independent: smooth at 30 fps too)
 		_aim += (Vector2(tx, ty) - _aim) * k
 		_aim_h += (th - _aim_h) * k
 		_dist += (dist - _dist) * k
