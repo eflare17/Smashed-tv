@@ -36,6 +36,7 @@ func build(f: Farm) -> void:
 	_build_yard()
 	_build_neighbour()
 	_build_paddock()
+	_build_fences()
 	for i in farm.state.plots.size():
 		var p: Dictionary = farm.state.plots[i]
 		var v := FarmPlotView.new()
@@ -214,6 +215,18 @@ func _build_paddock() -> void:
 	_owned_only.paddock.append(gate)
 	var gs := _spot("gate_paddock", 0, Vector2(D.P_GATE.x, D.P_GATE.y), 60.0)
 	gs.gate_pos = Vector2(D.P_GATE.x, D.P_GATE.y)
+
+## The fences round the new land (the yard's own are the world's): the neighbour's block's north and east, the
+## paddock's west, south and east, and between the block and the paddock, so each is reached by its gate.
+func _build_fences() -> void:
+	var W := D.LAND_W
+	var H := D.LAND_H
+	var fh := float(GameData.data.get("FENCE_H", 58)) if Engine.get_main_loop() else 58.0
+	var wood := _col(Color8(122, 96, 66))
+	var rail := _col(Color8(58, 46, 32))
+	for r in [[1706, 36, W, 40], [W, 36, W + 4, H], [-4, H, W + 4, H + 4], [-4, 1880, 0, H], [1710, 1900, W, 1904]]:
+		_box(self, r[0], r[1], r[2], r[3], 0, fh, wood, rail)
+		_solid(r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2, fh)
 
 ## ---------------------------------------------------------------- pieces
 
