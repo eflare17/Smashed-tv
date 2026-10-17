@@ -188,7 +188,7 @@ func add_lamp(x: float, y: float, z: float, col: Color, energy: float, reach: fl
 	o.light_color = col
 	o.light_energy = energy
 	o.omni_range = reach * GameData.UNIT
-	o.omni_attenuation = 0.8
+	o.omni_attenuation = 1.1
 	o.shadow_enabled = false
 	o.light_specular = 0.0
 	add_child(o)
