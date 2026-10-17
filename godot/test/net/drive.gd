@@ -32,13 +32,9 @@ func _who() -> String:
 	return "host" if host else "guest"
 
 func _process(dt: float) -> void:
-	if done or not net.live or net.fight == null or not is_instance_valid(net.fight) or net.p2 == null or not is_instance_valid(net.p2):
+	if done:
 		return
-	host = net.role == "host"
-	var fight := net.fight
-	if fight.sim.started:
-		saw_enemies = maxi(saw_enemies, fight.sim.enemies.size())
-	# the checks waiting
+	# the checks waiting (also while the connection is down)
 	for w in waiting.duplicate():
 		if w[1].call():
 			check(w[0], true, w[3].call() if w[3].is_valid() else "")
@@ -48,6 +44,12 @@ func _process(dt: float) -> void:
 			if w[2] <= 0.0:
 				check(w[0], false, w[3].call() if w[3].is_valid() else "")
 				waiting.erase(w)
+	if not net.live or net.fight == null or not is_instance_valid(net.fight) or net.p2 == null or not is_instance_valid(net.p2):
+		return
+	host = net.role == "host"
+	var fight := net.fight
+	if fight.sim.started:
+		saw_enemies = maxi(saw_enemies, fight.sim.enemies.size())
 	phase_t += dt
 	# the next phase starts when this one's checks are all in, and a moment has passed
 	if not waiting.is_empty() or phase_t < 1.0:
@@ -122,5 +124,23 @@ func _process(dt: float) -> void:
 			expect("back in the lobby, still together", func():
 				return net.fight != null and is_instance_valid(net.fight) and net.fight.get_instance_id() != old_fight and is_instance_valid(net.fight) and not net.fight.sim.started and net.live and net.p2 != null, 90.0)
 		8:
+			# the guest leaves: the host's room stays open, the guest is on its own again; then it joins again
+			if not host:
+				var code := net.code
+				get_tree().create_timer(0.2).timeout.connect(func():
+					net.leave()
+					print("DRIVE left")
+					check("guest is local again", net.role == "local" and net.p2 == null and not net.live)
+					get_tree().create_timer(3.0).timeout.connect(func(): net.join(code)))
+			else:
+				var seen_gone := [false]
+				expect("sees the guest leave and come back", func():
+					if not net.live and net.p2 == null and net.role == "host":
+						seen_gone[0] = true
+					return seen_gone[0] and net.live and net.p2 != null, 90.0)
+		9:
+			if not host:
+				expect("is back in", func(): return net.live and net.p2 != null, 60.0)
+		10:
 			print("DRIVE DONE fails=%d" % fails)
 			done = true

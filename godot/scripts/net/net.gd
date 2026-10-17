@@ -783,7 +783,14 @@ func _guest_step(inputs: Array, dt: float) -> void:
 	pred.st = own.st
 	pred.wsel = own.wsel
 	var ins := [pred, inputs[1] if inputs.size() > 1 else FT.Inp.new()]
+	# nobody gets hurt in the guess (the host says who's hit): the wave-start grace, put back after
+	var grace := []
+	for f: FT.Fighter in sim.players:
+		grace.append(f.grace)
+		f.grace = maxf(f.grace, 1.0)
 	sim.step(ins, dt)
+	for i in mini(grace.size(), sim.players.size()):
+		sim.players[i].grace = maxf(0.0, grace[i] - dt) if grace[i] > 0.0 else 0.0
 	sim.sounds.clear()
 	sim.events.clear()
 	sim.banners.clear()

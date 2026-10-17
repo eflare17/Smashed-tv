@@ -8,7 +8,8 @@ const shots = shotsArg.split(',').map(Number);
 setTimeout(() => { console.log('TIMED OUT'); process.exit(1); }, (+total + 60) * 1000);
 const b = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
-const q = (role) => base + '?' + role + '&netdrive=res://test/net/drive.gd&netstate' + (extra ? '&' + extra : '');
+const drive = process.env.DRIVE || 'res://test/net/drive.gd';
+const q = (role) => base + '?' + role + '&netdrive=' + drive + '&netstate' + (extra ? '&' + extra : '');
 async function page(name, url) {
   const ctx = await b.newContext({ viewport: { width: 960, height: 540 } });
   const p = await ctx.newPage();
