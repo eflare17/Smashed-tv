@@ -77,7 +77,8 @@ func setup(m: Node) -> void:
 
 func _ready() -> void:
 	name = "Fight"
-	process_priority = 50                # after the Player has moved, before the camera follows him
+	process_priority = 50                # after the Player's picture, before the camera follows him
+	process_physics_priority = 50        # after the Player's own step on the same tick
 	_read_debug()
 	sim = FightSim.new()
 	if saved_char != "" and player:
@@ -119,6 +120,9 @@ func _ready() -> void:
 	add_child(_shake_node)
 	if main and main.get("hud"):
 		main.hud.number_keys_pick = false
+		var tc = main.hud.get("touch")
+		if tc:
+			tc.fire_enabled = true          # its FIRE button presses the "fire" action
 	if debug.has("run") or debug.has("protect"):
 		if debug.has("protect"):
 			mode = "protect"
@@ -301,6 +305,7 @@ func start_run() -> void:
 	player.collision_mask = 0
 	player.halt()
 	_place_player()
+	player.reset_physics_interpolation()
 	if rig:
 		rig.snap()
 
@@ -373,6 +378,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				restart()
 			return
 		_fire_mouse = true
+	if event is InputEventAction and event.action == "fire":
+		_fire_mouse = event.pressed          # the touch layer's FIRE button
+		touch_fire = event.pressed and is_fp()
 	if event.is_action_pressed("start_run") and not event.is_echo():
 		if sim.over:
 			restart()
@@ -456,11 +464,10 @@ func is_fp(id: int = 0) -> bool:
 func _steer() -> Vector2:
 	var mx := Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 	var my := Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	if not is_fp() and p2 == null:
-		if Input.is_physical_key_pressed(KEY_LEFT): mx -= 1.0
-		if Input.is_physical_key_pressed(KEY_RIGHT): mx += 1.0
-		if Input.is_physical_key_pressed(KEY_UP): my -= 1.0
-		if Input.is_physical_key_pressed(KEY_DOWN): my += 1.0
+	if not is_fp() and p2 == null and Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() < 0.01:
+		# top-down the look actions (the arrows) move him too, as milestone 1's Player does
+		mx += Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
+		my += Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
 	var m := Vector2(clampf(mx, -1, 1), clampf(my, -1, 1))
 	if is_fp():
 		var fw := Vector2(cos(player.look_ang), sin(player.look_ang))
@@ -523,6 +530,11 @@ func _build_input() -> FT.Inp:
 		inp.lx = touch_tap_spot.x
 		inp.ly = touch_tap_spot.y
 		inp.shoot = true
+	if player.aim_override.length() > 0.0:
+		touch_aim_on = true
+		touch_aim = player.aim_override
+	elif touch_aim_on and hud and not hud.own_sticks:
+		touch_aim_on = false
 	if touch_aim_on:
 		inp.shoot = true
 		inp.st = true
@@ -616,55 +628,42 @@ func _sync_from_player() -> void:
 	f.odo = player.odo
 	f.ch = player.char_id
 
-func _process(delta: float) -> void:
+# One tick of the shared 120 Hz physics clock = one step of the fight (the HTML game's FIXED_DT).
+func _physics_process(delta: float) -> void:
 	if player == null:
 		return
+	var dt := minf(delta, 0.1)
 	var lobby := not sim.started
 	if not lobby and is_fp() and not sim.over:
-		var dt := minf(delta, 0.05)
-		if p2 == null:
-			if Input.is_physical_key_pressed(KEY_LEFT): player.look_ang -= 2.4 * dt
-			if Input.is_physical_key_pressed(KEY_RIGHT): player.look_ang += 2.4 * dt
-			if Input.is_physical_key_pressed(KEY_UP): player.look_y = maxf(-0.6, player.look_y - 1.6 * dt)
-			if Input.is_physical_key_pressed(KEY_DOWN): player.look_y = minf(0.6, player.look_y + 1.6 * dt)
-		var rs := Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
-		player.look_ang = wrapf(player.look_ang + rs.x * absf(rs.x) * 3.2 * dt, -PI, PI)
-		player.look_y = clampf(player.look_y + rs.y * absf(rs.y) * 1.8 * dt, -0.6, 0.6)
+		# first-person look in a run (the rig turns only while the Player's own controls are on): the look actions
+		var lx := Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
+		var ly := Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
+		if p2 != null and Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() < 0.01:
+			lx = 0.0                     # the arrows are player 2's
+			ly = 0.0
+		var turn := 2.8 if Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() > 0.01 else 2.4
+		player.look_ang = wrapf(player.look_ang + lx * turn * dt, -PI, PI)
+		player.look_y = clampf(player.look_y + ly * 1.6 * dt, -0.6, 0.6)
 	if lobby:
 		_sync_from_player()
 	f.ch = player.char_id
 	if p2:
 		f2.ch = p2.char_id
-	var inp := _build_input()
-	_acc += minf(delta, 0.1)
 	var vel0 := Vector2(f.vx, f.vy)
-	var n := 0
-	if has_meta("frozen"):
-		_acc = 0.0
-	while _acc >= FightSim.DT:
-		_acc -= FightSim.DT
+	if not has_meta("frozen"):
+		var inp := _build_input()
 		if debug.has("god"):
 			f.iframe = maxf(f.iframe, 0.1)
 		if debug.has("auto"):
 			_autopilot(inp)
-		sim.step([inp, _build_input2()] if f2 else [inp])
-		n += 1
-		if n == 1:
-			inp.wsel = ""
-			inp.use = false
-			if inp.tap != 0:
-				touch_tap_id = touch_tap_id
-		if n > 12:
-			_acc = 0.0
-			break
-	if n > 0:
+		sim.step([inp, _build_input2()] if f2 else [inp], dt)
 		_wsel = ""
 		_use = false
 		_roll_tap = false
 		if touch_tap_spot != null and f.weapon != "lob":
 			touch_tap_spot = null
 	if p2 and lobby and f2.alive:
-		_move_p2_lobby(minf(delta, 0.1))
+		_move_p2_lobby(dt)
 	if lobby:
 		if Vector2(f.vx, f.vy) != vel0:
 			player.vel += Vector2(f.vx, f.vy) - vel0
@@ -679,6 +678,14 @@ func _process(delta: float) -> void:
 			p2.facing = sim.facing_vec(f2)
 			if sim.secret and sim.secret.phase != "done":
 				_sec_state[1] = _secret_place(sim.secret, p2, f2)
+	goth_carry.update_pos()
+	if debug.has("wave") and sim.started and sim.wave == 0 and sim.breather > 0.0:
+		sim.wave = int(debug["wave"]) - 1
+		debug.erase("wave")
+
+func _process(delta: float) -> void:
+	if player == null:
+		return
 	_drain()
 	if sim.over and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # let the pointer go for the game-over screen
@@ -692,10 +699,6 @@ func _process(delta: float) -> void:
 			_log_t = 0.0
 			print("FIGHT started=%s wave=%d enemies=%d hp=%.0f alive=%s kills=%d coins=%d weapon=%s ammo=%d over=%s x=%.0f y=%.0f shots=%d fps=%d" % [
 				sim.started, sim.wave, sim.enemies.size(), f.hp, f.alive, f.kills, f.coins, f.weapon, f.ammo, sim.over, f.x, f.y, f.shots, Engine.get_frames_per_second()])
-	goth_carry.update_pos()
-	if debug.has("wave") and sim.started and sim.wave == 0 and sim.breather > 0.0:
-		sim.wave = int(debug["wave"]) - 1
-		debug.erase("wave")
 
 func _place_player() -> void:
 	player.vel = Vector2.ZERO
@@ -919,7 +922,7 @@ func visual_muzzle(owner: int) -> Vector3:
 	var spr: CharSprite = pl.sprite
 	var key := WeaponDefs.barrel_key(pl.char_id, ff.weapon)
 	var o := WeaponDefs.barrel(key, spr.current_sector if spr else 2, ff.last_gun)
-	return pl.global_position + view.cam_right * (o.x * GameData.UNIT) + view.stand_up * ((12.6 - o.y) * GameData.UNIT) + view.to_cam * 0.05
+	return pl.get_global_transform_interpolated().origin + view.cam_right * (o.x * GameData.UNIT) + view.stand_up * ((12.6 - o.y) * GameData.UNIT) + view.to_cam * 0.05
 
 ## First person: your own shots aren't drawn until they're 70 out (they'd seem to come from the middle of the
 ## screen; the tracers cover the gap).

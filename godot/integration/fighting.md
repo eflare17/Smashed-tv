@@ -1,3 +1,5 @@
+Status: done (merged with milestone 1's final, cbdebc6; tests and screenshots re-run after the merge)
+
 # Milestone 2 (fighting): integration note
 
 Branch `claude/godot-fighting`. Everything is in the folders PARALLEL.md gives this session: `scripts/combat/`,
@@ -5,7 +7,8 @@ Branch `claude/godot-fighting`. Everything is in the folders PARALLEL.md gives t
 
 ## Install (the one line for `scripts/main.gd`)
 
-At the end of `Main._ready()`, just before the `print("Smashed TV (Godot) ...")` line:
+At the end of `Main._ready()`, after `FarmInstall.install(self)` and before the `print("Smashed TV (Godot) ...")`
+line:
 
 ```gdscript
 	FightInstall.install(self)
@@ -86,7 +89,9 @@ Tested in the real web export (screenshots looked at) and in headless logic test
   rolls, tap to fire the launcher there, hold on the spot to throw the potato there, FIRE and drag-to-look in first
   person, tap the game-over screen to restart.
 
-## Input actions added (in code, by `FightInstall.add_actions()`)
+## Input actions added (in code, by `FightInstall.add_actions()`; any already in project.godot are left alone)
+
+`fire` and `weapon_1`..`weapon_6` are milestone 1's (project.godot) now; the rest are added in code:
 
 | action | keyboard / mouse | pad |
 |---|---|---|
@@ -97,8 +102,21 @@ Tested in the real web export (screenshots looked at) and in headless logic test
 | `start_run` | Enter, keypad Enter | Menu (Start) |
 | `restart` | R | (Menu when it's over) |
 | `add_player` | P | |
+| `help` | Tab | d-pad down |
 
 Debug keys (with `?fight=keys` / `--fight=keys` only): G shotgun, N the nuke, M magnet and notes, J send the janitor.
+
+## Fitting milestone 1's final conventions (PLAN.md "Shared conventions")
+
+- **One clock**: the fight steps in `Fight._physics_process`, one step a 120 Hz tick
+  (`process_physics_priority` 50, after the Player's own step); views, the HUD and sounds in `_process`.
+- **Input**: the run reads the actions (`move_*`, `look_*` for the arrows top-down and for turning in first person,
+  `fire`, `weapon_*`, `roll`, `interact`), not raw keys, except player 2's own keys.
+- **Touch**: milestone 1's TouchControls drive moving, aiming (`Player.aim_override` = the fight's aim stick, which
+  fires) and its FIRE button (the install sets `hud.touch.fire_enabled = true`). The fight keeps only what that layer
+  doesn't do: a quick tap to fire the launcher / throw the potato at a spot, first-person look by dragging in a run,
+  tapping the game-over words. (Its own twin sticks are still in `FightHud`, switched off: `own_sticks`.)
+- **HUD**: the run line and wallets sit 22 px below the HTML's spot, under the farm's day line.
 
 ## Contract changes wanted (and what the fighting does meanwhile)
 
@@ -113,11 +131,14 @@ Debug keys (with `?fight=keys` / `--fight=keys` only): G shotgun, N the nuke, M 
    wind-up); the Fight node calls the private `_show()` meanwhile, and sets `char_id` to the weapon sheet
    (`juicy_spud`, ...) after the Player sets it back each frame, which loses the sector hysteresis. A `skin_id`
    on CharSprite/Player would fix both.
-4. **CameraRig**: a `shake` input (the Fight node nudges the camera after the rig has placed it, with a child node at
+4. **CameraRig**: first-person turning (the look actions) and TouchControls' look drag only run while
+   `target.controls_enabled`; in a run the Fight node turns the view itself. A `look_enabled` flag would be cleaner.
+   Also a `shake` input (the Fight node nudges the camera after the rig has placed it, with a child node at
    process priority 200), and a `zoom_text()` that says 1.5x in a run (the zoom is right, the label says 2x).
 5. **World**: a run-mode switch (`set_run_mode(on)`) would be nicer than hiding the whole World node; the arena is
    drawn by `ArenaRoom` meanwhile, and since the run moves the player without collisions the lobby's walls don't
    matter.
+7. **Farm**: its day line and BAG button stay on screen in a run (fine, but a run might want them hidden).
 6. **Lobby session** (slot machine, vending machine, rope): call `Fight.me.award(player_node, "shotgun")` (keys:
    blasters, shotgun, health, speed, clear, cash, magnet, bust) for the lobby slot machine's prizes, and
    `Fight.me.sim.rope_rain()` for the bell rope's potatoes. The run's machines are this session's (`ArenaRoom`,

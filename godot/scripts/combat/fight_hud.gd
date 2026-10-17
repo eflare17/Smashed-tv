@@ -15,6 +15,8 @@ extends CanvasLayer
 const GOLD := Color("#f6d17a")
 const INK := Color(20 / 255.0, 22 / 255.0, 28 / 255.0)
 const STICK_MAX := 52.0
+## Pixels the run line and wallets sit below the HTML's spot: the farm's day line is up there now.
+const TOP_PAD := 22.0
 
 var fight: Fight
 var _draw_c: _Draw
@@ -38,6 +40,10 @@ var _fp_hint_t := 0.0
 var sticks := {"move": {"on": false, "id": -1, "o": Vector2.ZERO, "d": Vector2.ZERO, "t0": 0, "moved": 0.0},
 	"aim": {"on": false, "id": -1, "o": Vector2.ZERO, "d": Vector2.ZERO, "t0": 0, "moved": 0.0}}
 var _fire_id := -1
+## The fight's own twin sticks and FIRE: off now that milestone 1's TouchControls drive the actions (its aim stick
+## sets Player.aim_override, its FIRE presses "fire"); the launcher's tap-to-fire and first-person look in a run
+## (the shared layer only turns the view while the Player's controls are on) stay here.
+var own_sticks := false
 var help_on := false
 var _help_auto := -1.0             ## seconds of the help shown by itself the first time a pad is used
 var _pad_seen := false
@@ -185,10 +191,21 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		fight.touch_seen = true
 		var p: Vector2 = event.position
+		if not own_sticks:
+			_shared_touch(event)
+			return
 		if event.pressed:
 			_touch_down(event.index, p)
 		else:
 			_touch_up(event.index, p)
+	elif event is InputEventScreenDrag and not own_sticks:
+		if fight.is_fp() and fight.sim.started and event.position.x > _draw_c.size.x * 0.45 and fight.player:
+			var kk := 720.0 / maxf(1.0, _draw_c.size.y)
+			fight.player.look_ang = wrapf(fight.player.look_ang + event.screen_relative.x * 0.0075 * kk, -PI, PI)
+			fight.player.look_y = clampf(fight.player.look_y + event.screen_relative.y * 0.006 * kk, -0.6, 0.6)
+		var td: Dictionary = _taps.get(event.index, {})
+		if not td.is_empty():
+			td.moved = maxf(td.moved, (event.position - td.at).length())
 	elif event is InputEventScreenDrag:
 		for k in sticks:
 			var st: Dictionary = sticks[k]
@@ -204,6 +221,35 @@ func _input(event: InputEvent) -> void:
 		if fight.is_fp() and event.index != sticks.move.id and event.index != _fire_id and fight.player:
 			fight.player.look_ang = wrapf(fight.player.look_ang + event.relative.x * 0.0075, -PI, PI)
 			fight.player.look_y = clampf(fight.player.look_y + event.relative.y * 0.004, -0.6, 0.6)
+
+var _taps: Dictionary = {}
+
+# With the shared touch layer: a quick tap (< 300 ms, moved < 12) fires the launcher at that spot; a quick tap with
+# the potato throws it there (weapons 6, modes 7.2); a tap on the game-over words restarts.
+func _shared_touch(event: InputEventScreenTouch) -> void:
+	var s := fight.sim
+	var p := event.position
+	if event.pressed:
+		if s.over:
+			if absf(p.x - _draw_c.size.x / 2.0) < 220.0 * sc() and absf(p.y - 260.0 * sc()) < 60.0 * sc():
+				fight.restart()
+			return
+		_taps[event.index] = {"at": p, "t0": Time.get_ticks_msec(), "moved": 0.0}
+		return
+	var td: Dictionary = _taps.get(event.index, {})
+	_taps.erase(event.index)
+	if td.is_empty() or _on_ui(p):
+		return
+	if Time.get_ticks_msec() - int(td.t0) < 300 and float(td.moved) < 12.0 and not fight.is_fp():
+		var g = fight.screen_to_ground(p)
+		if g == null:
+			return
+		if fight.f.weapon == "launcher":
+			fight.touch_tap_id += 1
+			fight.touch_tap_spot = Vector2(g.x, g.y)
+		elif fight.f.weapon == "lob":
+			fight.touch_tap_spot = Vector2(g.x, g.y)
+			get_tree().create_timer(0.13).timeout.connect(func(): fight.touch_tap_spot = null)
 
 func _on_ui(p: Vector2) -> bool:
 	if _bar.visible and _bar.get_global_rect().grow(4).has_point(p):
@@ -370,8 +416,8 @@ func draw_all(c: Control) -> void:
 		var killed := 0
 		for p: FT.Fighter in s.players:
 			killed += p.kills
-		_text(c, 26 * k, 38 * k + 20, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#a3aabb"), 0, 4, Color(0, 0, 0, 0.6))
-	var y0 := 64 * k + 20
+		_text(c, 26 * k, 38 * k + 20 + TOP_PAD, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#a3aabb"), 0, 4, Color(0, 0, 0, 0.6))
+	var y0 := 64 * k + 20 + TOP_PAD
 	for p: FT.Fighter in s.players:
 		var pc: Color = FightSim.P_COLOURS[p.id % 2]
 		_text(c, 26 * k, y0, "$%d" % p.coins, 17, pc, 0, 4, Color(0, 0, 0, 0.55))
@@ -439,7 +485,7 @@ func draw_all(c: Control) -> void:
 		if st.on:
 			c.draw_arc(st.o, STICK_MAX * k, 0, TAU, 40, Color("#4b5468"), 2.0, true)
 			c.draw_circle(st.o + st.d * STICK_MAX * k, 20 * k, Color(0.88, 0.28, 0.25, 0.55) if key == "move" else Color(0.96, 0.82, 0.48, 0.55))
-	if fp and fight.touch_seen:
+	if fp and fight.touch_seen and own_sticks:
 		var fc := Vector2(hx(705), 405 * k)
 		var held := fight.touch_fire
 		c.draw_circle(fc, 40 * k, Color(0.88, 0.28, 0.25, 0.6) if held else Color(14 / 255.0, 16 / 255.0, 22 / 255.0, 0.5))
@@ -661,11 +707,11 @@ func _draw_fp(c: Control) -> void:
 		var col := Color(1, 1, 1, 0.15)
 		if i < int(ceil(f.hp)):
 			col = GOLD if i >= int(s.tv("playerHp", 5)) else FightSim.P_COLOURS[0]
-		c.draw_rect(Rect2(26 * k + i * 14 * k, 72 * k + 22 * s.players.size() * k, 10 * k, 10 * k), col)
+		c.draw_rect(Rect2(26 * k + i * 14 * k, 72 * k + 22 * s.players.size() * k + TOP_PAD, 10 * k, 10 * k), col)
 	# landing ring hint text in first person isn't needed: the ring is drawn on the floor
 	if s.goth and s.goth.hp > 0.0:
 		var x0 := 26 * k
-		var y1 := 72 * k + 22 * s.players.size() * k + 18 * k
+		var y1 := 72 * k + 22 * s.players.size() * k + 18 * k + TOP_PAD
 		_text(c, x0, y1 + 10 * k, "Gothica", 11, Color("#f7a8ff"))
 		c.draw_rect(Rect2(x0 + 52 * k, y1 + 2 * k, 80 * k, 8 * k), Color(0, 0, 0, 0.65))
 		c.draw_rect(Rect2(x0 + 52 * k, y1 + 2 * k, 80 * k * clampf(s.goth.hp / s.goth.max_hp, 0, 1), 8 * k), Color("#f7a8ff"))
