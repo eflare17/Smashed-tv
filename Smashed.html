@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b330';
+const BUILD = 'b331';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -2000,7 +2000,7 @@ const FENCE_H = 58;                                   // a bit under eye height,
 // phone) pushes you down into the mat as you land, so each bounce goes higher. tz: how high above the mat; dz (what
 // the game already sends and draws for height) is the mat plus that, so everyone sees you up there, and in first
 // person your eyes go up and down with you.
-const TRAMP = { cx: 707, cy: 1340, r: 122, mat: 32, net: 64, g: 520, vbase: 175, vmax: 380, boost: 85, keep: 0.82 };
+const TRAMP = { cx: 707, cy: 1340, r: 122, mat: 32, net: 64, g: 520, vbase: 175, vmax: 560, boost: 110, keep: 0.82 };   // b331: higher (vmax 380 → 560: up to about 300 over the mat, from 140; boost 85 → 110)
 const YARD_SOLIDS = [
   { x0: 488,  y0: 566,  x1: 618,  y1: 634,  h: 36,  m: 'bbq' },                                     // barbecue
   { x0: 488,  y0: 690,  x1: 520,  y1: 712,  h: 22,  m: 'esky' },                                    // b330: the esky of snags
