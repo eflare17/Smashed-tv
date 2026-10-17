@@ -596,7 +596,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b306 — pick a console in the Mega Drive menu';
+const BUILD = 'b307 — first person: clicks shoot, E shows what it does, and sitting or the arcade step out of it till you are done';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3261,6 +3261,12 @@ function toggleFirstPerson() {
   fpLock(true);
   fpLabel();
 }
+// b307: things E starts that need the top-down screen (sitting and the cards, the bench, the arcade, the
+// mirror, the shirt, the Mega Drive): first person steps aside for them, and comes back when you're done
+function fpBusy() {
+  const me = localMe();
+  return !!(ARC.open || (typeof MD !== 'undefined' && MD.open) || SHED.open || mirrorLook || (me && (me.sit || me.bed || me.lift || me.leg)));
+}
 function fpLabel() { const b = document.getElementById('fpBtn'); if (b) b.textContent = SHROOM.on && SHROOM.sober ? 'Top-down view (V)' : 'First person (V)'; }
 function fpButton() { const z = zoomButton(); return { x: z.x, y: z.y + 40, r: 16 }; }
 function fpShown() { return !cal.on && !(SHROOM.on && !SHROOM.sober) && (fpCan() || (SHROOM.on && SHROOM.sober)); }
@@ -3321,10 +3327,11 @@ window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.mov
 // b287: in plain first person the mouse is captured (so it never runs off the screen); Esc lets it go, a click takes it back
 function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (c && document.pointerLockElement !== c && c.requestPointerLock) c.requestPointerLock(); }
   else if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (_) {} }
-window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && e.target && e.target.id === 'game') fpLock(true); });
+window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && !fpBusy() && e.target && e.target.id === 'game') fpLock(true); });
 // WASD walk and step relative to where you're looking; aim is always straight ahead
 function shroomInput(inp) {
   if (!SHROOM.on || SHROOM.t < SHROOM_IN * 0.5) return;
+  if (SHROOM.sober && fpBusy()) return;                            // b307: stepped aside (sitting, at the arcade...): the normal controls
   const me = localMe(), up = -inp.my, still = { ax: 100, ay: 0, shoot: false, st: false };
   const done = o => { Object.assign(inp, still, o); delete inp.lt; delete inp.tap; };
   if (SHROOM.dive || (me && me.dive === DIVE.FALL)) return done({ mx: 0, my: 0, roll: false });   // mid-dive: along for the ride
@@ -3498,6 +3505,8 @@ function drawShroom(w) {
   else if (!onTower || SHROOM.t < SHROOM_TIME - SHROOM_OUT - 0.2) SHROOM.t += dt;
   const trip = SHROOM.t;
   if (!sober && trip >= SHROOM_TIME) { endShroom(); return; }
+  if (sober && fpBusy()) { SHROOM.turn = 0; SHROOM.busy = true; fpLock(false); return; }   // b307: the top-down screen, till you're done
+  if (SHROOM.busy) { SHROOM.busy = false; SHROOM.props = null; }   // (back: the room may have changed, so look again)
   const ease = f => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
   const fade = trip < SHROOM_IN ? ease(trip / SHROOM_IN) : trip > SHROOM_TIME - SHROOM_OUT ? ease((SHROOM_TIME - trip) / SHROOM_OUT) : 1;
   const amp = sober ? 0 : 0.4 + 0.6 * fade;                                          // how hard it's hitting
@@ -3979,7 +3988,21 @@ function drawShroom(w) {
     ctx.fillStyle = bar; ctx.fillRect(0, 0, ARENA.w * left, 3);
   }
   ctx.restore();
-  if (sober) { ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0); drawFpButton(); ctx.restore(); }   // (so you can tap your way back out)
+  if (sober) {
+    ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
+    drawFpButton();                                                    // (so you can tap your way back out)
+    // b307: what E would do right now, under the crosshair; the same button as top-down (for a tap); and the weapons
+    const cb = !dv && carryButton();
+    if (cb) {
+      const txt = 'E: ' + cb.label.toLowerCase();
+      ctx.font = 'bold 15px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(txt, ARENA.w / 2 + 1, ARENA.h / 2 + 33);
+      ctx.fillStyle = '#f7a8ff'; ctx.fillText(txt, ARENA.w / 2, ARENA.h / 2 + 32); ctx.textAlign = 'left';
+      drawCarryButton();
+    }
+    if (!dv) drawHotbar(w);
+    ctx.restore();
+  }
 }
 // hitting the water: rainbow spray thrown out across the screen, rings of colour, a big splash and a
 // rising chord. (Missed the pool somehow? Just a thump.)
@@ -7729,6 +7752,11 @@ canvas.addEventListener('pointerdown', e => {
   const pt = toArena(e);
   if (ARC.open) { arcadeDown(e, pt); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
   if (SHED.open) { shirtEditorDown(pt); try { canvas.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
+  // b307: first person with the mouse captured: the pointer stays frozen where it was captured (often right on
+  // the eye button, which switched first person straight back off), so a click is always a shot
+  if (e.pointerType === 'mouse' && SHROOM.on && SHROOM.sober && document.pointerLockElement === canvas) {
+    mouse.down = true; mouse.inside = true; e.preventDefault(); return;
+  }
   // game over: a tap on the message restarts (back to the lobby)
   if (world.over && net.role !== 'client'
       && Math.abs(pt.x - ARENA.w / 2) < 220 && Math.abs(pt.y - ARENA.h / 2) < 60) {
