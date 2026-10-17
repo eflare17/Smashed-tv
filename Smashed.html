@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b323';
+const BUILD = 'b324';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -3391,7 +3391,7 @@ function shroomTryEat() {                                            // E: eat i
 function endShroom() {
   if (!SHROOM.on) return;
   const sober = SHROOM.sober; SHROOM.sober = false;
-  SHROOM.on = false; SHROOM.props = null; SHROOM.floor = null; SHROOM.dive = null;
+  SHROOM.on = false; SHROOM.props = null; SHROOM.floor = null; SHROOM.dive = null; fpTouchClear();
   if (sober) { SHROOM.gone = SHROOM.keepGone || 0; SHROOM.lookY = 0; fpLock(false); fpLabel(); return; }   // plain first person: the mushroom's left as it was
   SHROOM.gone = shroomNow() + SHROOM_REGROW;
   shroomMusic(false);
@@ -3418,6 +3418,33 @@ function fpBusy() {
 }
 function fpLabel() { const b = document.getElementById('fpBtn'); if (b) b.textContent = SHROOM.on && SHROOM.sober ? 'Top-down view (V)' : 'First person (V)'; }
 function fpButton() { const z = zoomButton(); return { x: z.x, y: z.y + 40, r: 16 }; }
+// b324: first person on a phone. The left thumb walks (the stick, as ever). On the right half, drag anywhere to
+// look round and up and down, and hold FIRE to shoot (slide off it to keep firing while you look)
+const FP_TOUCH = { f: {} };                                          // fingers on the right half: id -> { x, y, fire }
+function fpFireButton() { return { x: ARENA.w - 155, y: ARENA.h - 115, r: 40 }; }   // left of the E button, right of the weapons
+function fpTouchFire() { for (const k in FP_TOUCH.f) if (FP_TOUCH.f[k].fire) return true; return false; }
+function fpTouchClear() { for (const k in FP_TOUCH.f) delete FP_TOUCH.f[k]; }
+function fpTouchShown() { return SHROOM.on && !fpBusy() && (touchSeen || (!!window.matchMedia && matchMedia('(pointer: coarse)').matches)); }
+function drawFpFireButton() {
+  const b = fpFireButton(), on = fpTouchFire(), ink = on ? '#ffffff' : '#ffb3a8';
+  ctx.save();
+  ctx.fillStyle = on ? 'rgba(224,71,63,0.6)' : 'rgba(14,16,22,0.5)'; ctx.strokeStyle = on ? '#ffd0c8' : '#e0473f'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath();                  // a crosshair, and the word
+  ctx.arc(b.x, b.y - 6, 9, 0, Math.PI * 2);
+  ctx.moveTo(b.x - 16, b.y - 6); ctx.lineTo(b.x - 5, b.y - 6); ctx.moveTo(b.x + 5, b.y - 6); ctx.lineTo(b.x + 16, b.y - 6);
+  ctx.moveTo(b.x, b.y - 22); ctx.lineTo(b.x, b.y - 11); ctx.moveTo(b.x, b.y - 1); ctx.lineTo(b.x, b.y + 10); ctx.stroke();
+  ctx.fillStyle = ink; ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('FIRE', b.x, b.y + 23);
+  if ((SHROOM.clock || 0) < 6) {                                     // the first few seconds: how it works
+    ctx.globalAlpha *= Math.min(1, (6 - SHROOM.clock) / 1.5);
+    ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif';
+    for (const [txt, x] of [['thumb here to walk', ARENA.w * 0.25], ['drag here to look', ARENA.w * 0.75]]) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(txt, x + 1, ARENA.h * 0.3 + 1); ctx.fillStyle = '#f6d17a'; ctx.fillText(txt, x, ARENA.h * 0.3);
+    }
+  }
+  ctx.restore();
+}
 function fpShown() { return !cal.on && !(SHROOM.on && !SHROOM.sober) && (fpCan() || (SHROOM.on && SHROOM.sober)); }
 function drawFpButton() {                                          // an eye: tap for first person, tap again to go back
   if (!fpShown()) return;
@@ -3512,7 +3539,7 @@ function shroomInput(inp) {
   const touchTurn = aimStick.active;
   const reach = Math.max(60, Math.min(T.lobFar || 400, (T.lobDefault || 220) * (1 - (SHROOM.lookY || 0) * 1.4)));   // b308: look up to throw further
   inp.ax = fx * reach; inp.ay = fy * reach; inp.st = false;
-  inp.shoot = !touchTurn && (!!mouse.down || padBtn(padAt(0), 7));   // b316: and the right trigger
+  inp.shoot = fpTouchFire() || (!touchTurn && (!!mouse.down || padBtn(padAt(0), 7)));   // b316: and the right trigger; b324: FIRE on a phone
   delete inp.lt; delete inp.tap;
 }
 // a 256-step rainbow, for tinting everything
@@ -4501,6 +4528,7 @@ function drawShroom(w) {
   ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(ARENA.w / 2 - 7, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 - 2, ARENA.h / 2); ctx.moveTo(ARENA.w / 2 + 2, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 + 7, ARENA.h / 2);
   ctx.moveTo(ARENA.w / 2, ARENA.h / 2 - 7); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 - 2); ctx.moveTo(ARENA.w / 2, ARENA.h / 2 + 2); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 + 7); ctx.stroke();
+  if (!dv && fpTouchShown()) drawFpFireButton();                    // b324: on a phone
   if (!dv) {                                                             // how to get up the tower, and off it
     const atLadder = !me.dive && Math.abs(me.x - tg.ladderX) < 14 && me.y > T.towerY && me.y < T.towerY + 30;
     const tip = atLadder ? 'face the ladder and hold W to climb' : me.dive === DIVE.CLIMB ? 'W: up   S: down' : me.dive === DIVE.BOARD ? 'walk off the end, or Shift to dive' : '';
@@ -8261,7 +8289,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); ARC.keys.delete(e.key.toLowerCase()); });
 addEventListener('blur', () => {
-  keys.clear(); mouse.down = false;
+  keys.clear(); mouse.down = false; fpTouchClear();
   for (const stick of [moveStick, aimStick]) { stick.active = false; stick.id = null; stick.dx = stick.dy = 0; }
 });
 
@@ -8347,6 +8375,14 @@ canvas.addEventListener('pointerdown', e => {
     mouse.down = true; mouse.x = pt.x; mouse.y = pt.y; mouse.inside = true;
     canvas.setPointerCapture(e.pointerId); e.preventDefault(); return;
   }
+  // b324: first person: a finger on the right half looks round as it drags, and fires if it started on FIRE
+  if (SHROOM.on && !fpBusy() && pt.x >= ARENA.w / 2) {
+    touchSeen = true;
+    const fb = fpFireButton();
+    FP_TOUCH.f[e.pointerId] = { x: pt.x, y: pt.y, fire: Math.hypot(pt.x - fb.x, pt.y - fb.y) < fb.r + 10 };
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault(); return;
+  }
   // a third finger anywhere, or a second on the side that's already busy,
   // means roll — you shouldn't have to aim for a specific half under pressure
   touchSeen = true;
@@ -8373,6 +8409,11 @@ canvas.addEventListener('pointermove', e => {
     e.preventDefault(); return;
   }
   if (cal.on && e.buttons) { calPlace(pt); e.preventDefault(); return; }
+  const ff = FP_TOUCH.f[e.pointerId];
+  if (ff) {                                                          // b324: dragging to look: across turns you, up and down looks up and down
+    if (SHROOM.on) { SHROOM.turn += (pt.x - ff.x) * 0.0075; SHROOM.lookY = Math.max(-0.6, Math.min(0.6, (SHROOM.lookY || 0) + (pt.y - ff.y) * 0.004)); }
+    ff.x = pt.x; ff.y = pt.y; e.preventDefault(); return;
+  }
   if (e.pointerType === 'mouse') { mouse.x = pt.x; mouse.y = pt.y; mouse.inside = true; return; }
   const tp = TAPS[e.pointerId];
   if (tp) tp.moved = Math.max(tp.moved, Math.hypot(pt.x - tp.x, pt.y - tp.y));
@@ -8398,6 +8439,7 @@ function endPointer(e) {
     }
     return;
   }
+  if (FP_TOUCH.f[e.pointerId]) { delete FP_TOUCH.f[e.pointerId]; return; }   // b324
   if (e.pointerType === 'mouse') { mouse.down = false; return; }
   const tp = TAPS[e.pointerId];
   delete TAPS[e.pointerId];
