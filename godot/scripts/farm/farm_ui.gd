@@ -40,6 +40,8 @@ var _pid := 0
 var _was_capture := true
 var _rebuild_pending := false
 var _icons := {}
+var _can3d: Sprite3D                 # the watering can in his hand (top-down)
+var _can_fp: TextureRect             # and down at the bottom of the screen (first person)
 
 func _ready() -> void:
 	layer = 11
@@ -86,6 +88,16 @@ func _ready() -> void:
 	_bag_btn.offset_bottom = -40
 	_bag_btn.pressed.connect(func(): toggle("bag"))
 	_root.add_child(_bag_btn)
+
+	_can_fp = TextureRect.new()
+	_can_fp.texture = _icon("can")
+	_can_fp.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_can_fp.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_can_fp.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	_can_fp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_can_fp.rotation = -0.12
+	_can_fp.visible = false
+	_root.add_child(_can_fp)
 
 	_dim = ColorRect.new()
 	_dim.color = Color(0, 0, 0, 0.35)
@@ -140,6 +152,13 @@ func setup(f: Farm, w: FarmWorld, p: Node, r: Node) -> void:
 	farm.buff_changed.connect(func(b): toast(("%s: %s (%d wave%s)" % [b.name.to_upper(), D.STRAINS[b.strain].effect, b.waves, "" if b.waves == 1 else "s"]) if not b.is_empty() else "THE BUFF HAS WORN OFF", PINK))
 	if world:
 		farm.floater.connect(world_floater)
+		_can3d = Sprite3D.new()
+		_can3d.texture = _icon("can")
+		_can3d.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		_can3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_can3d.pixel_size = 0.9 * 0.025
+		_can3d.visible = false
+		world.add_child(_can3d)
 
 static func _ensure_actions() -> void:
 	if not InputMap.has_action("farm_bag"):
@@ -281,7 +300,7 @@ func _rebuild(grab: bool) -> void:
 	buttons = _all_buttons()
 	if grab or focus_i < 0:
 		for b in buttons:
-			if b.get_parent() != _tabs and not b.disabled:
+			if b.get_parent() != _tabs and not b.disabled and b.text != "X":
 				b.grab_focus.call_deferred()
 				break
 	elif focus_i >= 0 and focus_i < buttons.size():
@@ -514,6 +533,7 @@ func _process(delta: float) -> void:
 		_toast.visible = _toast_t > 0.0
 	_update_status()
 	_update_hint()
+	_update_can()
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	_bag_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 
@@ -568,6 +588,24 @@ func _update_hint() -> void:
 		var fp: bool = rig != null and rig.get("mode") == 1
 		_hint.size = Vector2(vp.x, 50)
 		_hint.position = Vector2(0, vp.y / 2.0 + 64.0 if fp else vp.y - 136.0)   # under the crosshair's E, or over the prompt
+
+## The watering can, while you're carrying it: in his hand top-down, at the bottom of the screen in first person.
+func _update_can() -> void:
+	var holding := player != null and int(farm.state.inv_of(Farm.pid_of(player)).can) > 0
+	var fp: bool = rig != null and rig.get("mode") == 1
+	if _can3d:
+		_can3d.visible = holding and not fp
+		if _can3d.visible and player is Node3D:
+			var f: Vector2 = player.get("facing") if player.get("facing") != null else Vector2(0, 1)
+			var side := -1.0 if f.x < 0.0 else 1.0
+			_can3d.global_position = player.global_position + Vector3(side * 16.0, 44.0 + float(player.get("dz") if player.get("dz") != null else 0.0), 6.0) * 0.025
+			_can3d.flip_h = side > 0.0
+	_can_fp.visible = holding and fp and not _panel.visible
+	if _can_fp.visible:
+		var vp := get_viewport().get_visible_rect().size
+		var k := vp.y / 340.0
+		_can_fp.size = Vector2(64, 64) * k
+		_can_fp.position = Vector2(vp.x * 0.5 - 20 * k, vp.y - 50 * k)
 
 static func _touch_only() -> bool:
 	return DisplayServer.is_touchscreen_available() and OS.has_feature("mobile")

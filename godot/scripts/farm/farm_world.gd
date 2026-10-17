@@ -271,7 +271,7 @@ func _label(parent: Node3D, at: Vector2, z: float, text: String, col: Color, siz
 	var l := Label3D.new()
 	l.text = text
 	l.font_size = size
-	l.pixel_size = 0.6 * U
+	l.pixel_size = 0.32 * U
 	l.modulate = col
 	l.outline_modulate = Color(0, 0, 0, 0.8)
 	l.outline_size = 8
