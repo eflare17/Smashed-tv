@@ -1001,8 +1001,13 @@ shader_type spatial;
 render_mode unshaded, cull_disabled, world_vertex_coords, depth_draw_opaque;
 // A cut-out standing on its feet (this node's origin), turned square to the camera, and leaning back to lie
 // flat as the camera looks down, so from above it reads as the top-down picture and from eye height it stands.
+// Its depth is the upright cut-out's (where the camera's ray through each point crosses the upright plane through
+// its feet), the way CharSprite does it for the characters, so the two sort like the HTML game's y-sort: someone
+// standing behind a cabinet (north of its feet) is hidden by it, someone in front covers it.
 uniform sampler2D tex : source_color, filter_nearest;
 uniform float lean_max = 1.35;
+uniform float depth_bias = 0.03;   // metres toward the camera, so its bottom row wins over the floor it stands on
+uniform float depth_reach = 6.0;   // metres: the most the leaning picture's depth is pulled toward the camera
 void vertex() {
 	vec3 o = MODEL_MATRIX[3].xyz;
 	vec3 local = VERTEX - o;
@@ -1013,7 +1018,25 @@ void vertex() {
 	float pitch = asin(clamp(INV_VIEW_MATRIX[2].y, -1.0, 1.0));
 	float th = min(lean_max, max(pitch, 0.0) * smoothstep(0.35, 0.9, pitch));
 	vec3 up = cos(th) * vec3(0.0, 1.0, 0.0) + sin(th) * fh;
-	VERTEX = o + r * local.x + up * local.y;
+	vec3 drawn = o + r * local.x + up * local.y;
+	VERTEX = drawn;
+	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(drawn, 1.0));
+	vec3 n = -fh;                                              // the upright plane's normal, toward the camera
+	bool ortho = PROJECTION_MATRIX[3][3] > 0.5;
+	vec3 cam = INV_VIEW_MATRIX[3].xyz;
+	vec3 to_cam = ortho ? INV_VIEW_MATRIX[2].xyz : normalize(cam - drawn);
+	float behind = -dot(drawn - o, n);
+	float mu = clamp(behind / max(dot(to_cam, n), 0.0001), 0.0, depth_reach);
+	if (!ortho) {
+		mu = min(mu, max(0.0, length(cam - drawn) - 0.25));
+	}
+	vec4 vd = VIEW_MATRIX * vec4(drawn + to_cam * mu, 1.0);
+	vd.z += depth_bias;
+	vec4 cd = PROJECTION_MATRIX * vd;
+	if (cd.w > 0.0001) {
+		clip.z = cd.z / cd.w * clip.w;
+	}
+	POSITION = clip;
 }
 void fragment() {
 	vec4 c = texture(tex, UV);

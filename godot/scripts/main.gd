@@ -65,8 +65,37 @@ func _on_mode(m: int) -> void:
 		world.environment.fog_enabled = m == CameraRig.Mode.FIRST_PERSON
 
 func _process(delta: float) -> void:
-	if not print_state:
+	_frame_rooms()
+	if print_state:
+		_print_state(delta)
+
+## The HTML game's lobby at 1x (camFollow): indoors the view shows the whole lounge, or the whole bedroom, instead
+## of following him; outside it follows him.
+func _frame_rooms() -> void:
+	var a: Dictionary = GameData.data.get("ARENA", {"w": 860, "h": 520, "wall": 18})
+	var hp := player.html_pos()
+	if rig.zoom_level != 0 or in_yard(hp):
+		rig.fixed_aim = null
 		return
+	var lobby_h := float(GameData.data.get("LOBBY_H", 880))
+	var cy: float = lobby_h - a.h / 2.0 if in_bedroom(hp) else a.h / 2.0
+	rig.fixed_aim = Vector2(a.w / 2.0, cy)
+
+## inYard: past the middle of the lounge's bottom or right wall, and not in the bedroom (HTML units).
+static func in_yard(o: Vector3) -> bool:
+	var d: Dictionary = GameData.data
+	var a: Dictionary = d.get("ARENA", {"w": 860, "h": 520, "wall": 18})
+	var b: Dictionary = d.get("BEDROOM", {"x1": 458})
+	var half: float = a.wall / 2.0
+	var lobby_h := float(d.get("LOBBY_H", 880))
+	return o.x > a.w - half or (o.y > a.h - half and (o.x > b.x1 + half or o.y > lobby_h - half))
+
+## inBedroom.
+static func in_bedroom(o: Vector3) -> bool:
+	var a: Dictionary = GameData.data.get("ARENA", {"w": 860, "h": 520, "wall": 18})
+	return o.y > a.h - a.wall / 2.0 and not in_yard(o)
+
+func _print_state(delta: float) -> void:
 	_state_t += delta
 	if _state_t < 0.1:
 		return

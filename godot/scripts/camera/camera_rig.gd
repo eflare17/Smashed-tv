@@ -43,6 +43,10 @@ var in_run: bool = false
 ## goes up the screen and the yard drops away under him.
 @export var air_follow_tramp: float = 0.75
 @export var air_follow: float = 0.6
+## Where the top-down view centres instead of following the target (HTML ground units), or null to follow. The
+## HTML game's 1x view in the lobby shows the whole lounge, or the whole bedroom, rather than following (camFollow);
+## main sets this for that.
+var fixed_aim = null
 ## The ground the top-down view keeps inside, HTML units (x0, y0, w, h); empty: no limit.
 var bounds: Rect2 = Rect2()
 ## Lets the mouse capture happen (false for tests or menus over the game).
@@ -209,7 +213,12 @@ func _update_top(dt: float) -> void:
 	var tx := _aim.x
 	var ty := _aim.y
 	var th := 0.0
-	if target:
+	if fixed_aim is Vector2:
+		tx = fixed_aim.x
+		ty = fixed_aim.y
+		if target:
+			th = target.dz * (air_follow_tramp if target.on_tramp else air_follow)
+	elif target:
 		var hp := target.html_pos()
 		tx = hp.x
 		ty = hp.y - 20.0                                   # camFollow: me.y - 20, him a little below the middle

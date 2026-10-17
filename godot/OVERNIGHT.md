@@ -37,3 +37,6 @@ it out."
 - 12:44 UTC: the owner asked for extra sessions: three started (fighting M2 on `claude/godot-fighting`, lobby life
   M3 on `claude/godot-lobby`, arcade cabinets on `claude/godot-arcade`; see PARALLEL.md). This session: finish M1,
   then 1.4, 1.5, merging them in, then online (M4). godot-play/ updated with the integrator's 12:29 build.
+- 12:55 UTC: the owner asked for two more sessions to use a reset that expires soon: Lighting (1.4 day/night +
+  1.5 look, `claude/godot-lighting`) and Farm (`claude/godot-farm`). This session: finish M1, merge, online.
+  Half-hour resume checks (:27 and :57) restart anything stopped by a usage limit.
