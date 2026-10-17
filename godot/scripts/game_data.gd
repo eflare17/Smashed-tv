@@ -6,6 +6,17 @@ extends Node
 ## One HTML-game unit in metres. His eyes are 62 units up, about 1.55 m; a wall is 150 (3.75 m).
 const UNIT := 0.025
 
+## The physics layers (named in project.godot, layer_names/3d_physics), as bits for collision_layer / mask:
+## 1 world (walls, solids, the trampoline), 2 players, 3 npcs (Gothica), 4 enemies, 5 projectiles, 6 pickups.
+## Gameplay steps run in _physics_process (120 ticks a second, the HTML game's FIXED_DT, with physics
+## interpolation on); only visuals and the cameras run in _process.
+const LAYER_WORLD := 1 << 0
+const LAYER_PLAYERS := 1 << 1
+const LAYER_NPCS := 1 << 2
+const LAYER_ENEMIES := 1 << 3
+const LAYER_PROJECTILES := 1 << 4
+const LAYER_PICKUPS := 1 << 5
+
 var data: Dictionary = {}
 var manifest: Dictionary = {}
 var _tex_cache: Dictionary = {}

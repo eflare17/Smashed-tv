@@ -2,7 +2,7 @@ extends Node3D
 ## A test bed for the Player, CameraRig and Hud on their own (not part of the game): the lounge floor picture
 ## on a floor, walls round it, a few solid boxes, a test Interactable, the player, the rig and the HUD.
 ## Prints "STATE ..." lines (where he is, the view, what E says) twice a second for scripted checks.
-## Run it as a scene's root script (scenes/player_test.tscn in a test copy).
+## Run it as a scene's root script (a scene in a test copy, e.g. test/player/player_test.tscn).
 
 var player: Player
 var rig: CameraRig

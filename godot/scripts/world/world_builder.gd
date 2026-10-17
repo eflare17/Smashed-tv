@@ -17,9 +17,17 @@ extends Node3D
 ##   water tank round. The yard's edges are fences (FENCE_H). From above (cutaway) they aren't stood up: the yard
 ##   picture shows them there as the HTML game's top-down view does (FullMesh / CutMesh), so nothing tall hides
 ##   the player; their collision stays the same. (The esky, which isn't in the picture, stands in both.)
-## - The lounge's furniture and machines as upright cut-outs of the HTML game's own art (scripts/world/props/,
-##   captured from its drawing functions; the tower, the slot machine and the wardrobe from assets/), standing on
-##   their feet, leaning back to lie flat as the camera looks down so the top-down view shows them as drawn.
+## - The lounge's furniture and machines as upright cut-outs of the HTML game's own art (assets/props/, the
+##   manifest's PROPS, captured from its drawing functions; the tower, the slot machine and the wardrobe from
+##   assets/; the two shooting dummies and the mushroom drawn here the way the HTML game draws them), standing on
+##   their feet, leaning back to lie flat as the camera looks down so the top-down view shows them as drawn. They
+##   sort against the characters through the shared upright depth (scripts/actors/upright_depth.gdshaderinc).
+## - Seen from above, the water tank is also cut out of the yard picture (the HTML game's TANK_OVER, b328) and
+##   laid over it with the depth of an upright picture at its foot, so someone walking up behind it goes behind it.
+## - Indoors, first person darkens with distance the way the HTML game's does (walls min(1, 220/(d+40)), the
+##   floor and ceiling min(1, 334/(d+60))); from above it doesn't (IN_SHADER).
+## - The doorways' details (drawLowerLobby, drawBackDoor): the bedroom door's posts and mat, the back door's
+##   frame, sill, shade, the door swung back, and its mat on the deck.
 ## - Collision: one StaticBody3D for the walls and fences, one per solid (named Solid_<name>). Solids' shapes are
 ##   inset so a player capsule of radius player_radius stops where the HTML game stops him (it lets him half his
 ##   radius into furniture, a unit off the water, 0.7 of it into the tower).
@@ -41,7 +49,12 @@ const G_CUT := 2
 ## The sun's to the north: how lit each side is, by the way it looks (FP_LIT).
 const LIT := {"N": 1.0, "E": 0.9, "W": 0.9, "S": 0.76}
 const WALL_TOP := Color8(16, 18, 24)
-const CEILING := Color8(78, 75, 70)
+## The walls' tops cut down (from above): the HTML game's top-down walls (renderBase, drawLowerLobby).
+const WALL_TOP_CUT := Color("#2b3040")
+## How lit each face of an indoor wall is (the HTML first person's 'in' walls: side hits 0.85), before distance.
+const LIT_IN := {"N": 1.0, "S": 1.0, "E": 0.85, "W": 0.85}
+## The ceiling (plain, sober: 96, 92, 88 times the floor's shade).
+const CEILING := Color8(96, 92, 88)
 const GRASS := Color8(82, 136, 52)
 ## Heights (units) of the lounge's and bedroom's furniture, which the HTML game draws but never measures up.
 const FURNITURE_H := {"table": 30, "bench": 40, "rack": 64, "legpress": 60, "wardrobe": 96, "bed": 20, "nightstand": 26,
@@ -167,6 +180,52 @@ func _mat(tex: Texture2D, col: Color = Color.WHITE, alpha: int = 0) -> StandardM
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	return m
 
+## Indoors in first person the HTML game darkens with distance: walls by min(1, 220 / (d + 40)), the floor and the
+## ceiling by min(1, (260 + eye * 1.2) / (d + 60)) (eye 62: 334), d in units. From above (the camera looking down
+## more steeply than 45 degrees) nothing darkens, as in the HTML top-down view.
+const IN_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+uniform sampler2D tex : source_color, filter_nearest_mipmap, repeat_enable;
+uniform bool has_tex = false;
+uniform vec4 col : source_color = vec4(1.0);
+uniform float k_near = 220.0;
+uniform float k_off = 40.0;
+vec3 lin(vec3 c) {
+	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+void fragment() {
+	vec4 c = has_tex ? texture(tex, UV) : vec4(1.0);
+	vec3 a = c.rgb * col.rgb * lin(COLOR.rgb);
+	float d = max(0.0, -VERTEX.z) / 0.025;
+	float top_down = step(0.7071, INV_VIEW_MATRIX[2].y);
+	float sh = min(1.0, k_near / (d + k_off));
+	sh = mix(sh, 1.0, top_down);
+	ALBEDO = a * pow(sh, 2.2);   // (the HTML game multiplies its sRGB values by sh)
+}
+"""
+var _in_shader: Shader
+
+## An indoor material: a picture (or a plain colour), darkened with distance in first person. kind: "wall" or
+## "floor" (the floor and the ceiling).
+func _in_mat(tex: Texture2D, col: Color = Color.WHITE, kind: String = "floor") -> ShaderMaterial:
+	if _in_shader == null:
+		_in_shader = Shader.new()
+		_in_shader.code = IN_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = _in_shader
+	m.set_shader_parameter("has_tex", tex != null)
+	if tex:
+		m.set_shader_parameter("tex", tex)
+	m.set_shader_parameter("col", col)
+	var eye := float(_d().get("SHROOM_EYE", 62.0))
+	m.set_shader_parameter("k_near", 220.0 if kind == "wall" else 260.0 + eye * 1.2)
+	m.set_shader_parameter("k_off", 40.0 if kind == "wall" else 60.0)
+	return m
+
+func _in_col_st(c: Color, group: int = G_ALL) -> SurfaceTool:
+	return _st("incol_" + c.to_html(), func(): return _in_mat(null, c), group)
+
 ## The SurfaceTool collecting everything drawn with one material in one group (made the first time it's asked for).
 ## group: G_ALL (always drawn), G_FULL (the house at full height, its ceiling and roof: not from above), G_CUT
 ## (the house's walls cut down low: only from above).
@@ -203,11 +262,12 @@ func _no_uv(_x: float, _y: float) -> Vector2:
 
 ## A wall face: the vertical rectangle along one side of a box, from (ax, ay) to (bx, by), z0 to z1. face: the
 ## way it looks (N, E, S, W). uvf(u, z) -> Vector2, u being along the face in world units (x for N/S, y for E/W).
-func _side(st: SurfaceTool, ax: float, ay: float, bx: float, by: float, z0: float, z1: float, face: String, uvf: Callable) -> void:
+func _side(st: SurfaceTool, ax: float, ay: float, bx: float, by: float, z0: float, z1: float, face: String, uvf: Callable, lit: Dictionary = LIT) -> void:
 	var ua := ax if face == "N" or face == "S" else ay
 	var ub := bx if face == "N" or face == "S" else by
+	var k: float = lit[face]
 	_quad(st, [P(ax, ay, z0), P(bx, by, z0), P(bx, by, z1), P(ax, ay, z1)],
-		[uvf.call(ua, z0), uvf.call(ub, z0), uvf.call(ub, z1), uvf.call(ua, z1)], Color(LIT[face], LIT[face], LIT[face]))
+		[uvf.call(ua, z0), uvf.call(ub, z0), uvf.call(ub, z1), uvf.call(ua, z1)], Color(k, k, k))
 
 ## The four sides of box b (x0..x1, y0..y1) from z0 to z1, each by side_st(face) -> [SurfaceTool, uvf] (or null: skip).
 func _box_sides(b: Dictionary, z0: float, z1: float, side_st: Callable) -> void:
@@ -292,7 +352,6 @@ func _yard_st() -> SurfaceTool:
 
 ## The prop cut-outs: where each is drawn in the HTML game (world units) and its picture. "shadow": its faint
 ## parts (shadows, sheen), printed on the floor. Pictures captured from Smashed.html's drawing functions at 2x.
-const PROP_DIR := "res://scripts/world/props/"
 const PROPS := {
 	"bench": {"rect": [367, 59, 475, 130], "shadow": [386, 112, 454, 130]},
 	"rack": {"rect": [507, 33, 549, 112], "shadow": [504, 96, 552, 112]},
@@ -305,7 +364,40 @@ const PROPS := {
 	"tower": {"asset": "TOWER_IMG.src"},
 	"wardrobe": {"asset": "assets/art/wardrobe-0.png", "shadow": [146, 615.5, 214, 625]},
 	"mirror": {"rect": [216, 524, 276, 616], "shadow": [212, 613, 280, 619]},
+	# drawn here (gen), the way the HTML game draws them: the lobby's two shooting dummies (fillLobby: calls.dummies,
+	# a 30 x 50 picture with its feet at y + 16) and the mushroom at SHROOM_SPOT (drawShroomPickup)
+	"dummy_0": {"gen": "dummy", "dummy": 0},
+	"dummy_1": {"gen": "dummy", "dummy": 1},
+	"shroom": {"gen": "shroom"},
 }
+
+## A prop picture from the manifest's PROPS ("bench", "bench_shadow"...), or null.
+func _prop_tex(key: String) -> Texture2D:
+	var path = GameData.manifest.get("PROPS", {}).get(key, "")
+	if not (path is String) or path == "":
+		return null
+	return GameData.tex(path)
+
+## A texture with mipmaps made from t's picture (nearest within each level: mip 1 of a 2x capture is the 1x art,
+## so the 1x top-down view stays crisp and still).
+func _mip_tex(t: Texture2D) -> Texture2D:
+	if t == null:
+		return null
+	var key := "mip_" + t.resource_path + str(t.get_instance_id())
+	if _tex_cache.has(key):
+		return _tex_cache[key]
+	var im := t.get_image()
+	if im == null:
+		return t
+	im = im.duplicate()
+	if im.is_compressed():
+		im.decompress()
+	im.convert(Image.FORMAT_RGBA8)
+	if not im.has_mipmaps():
+		im.generate_mipmaps()
+	var out := ImageTexture.create_from_image(im)
+	_tex_cache[key] = out
+	return out
 
 ## Print each prop's shadow whose rect lies on floor picture im (2 px per unit, its corner at world fx, fy).
 func _print_shadows(im: Image, fx: float, fy: float) -> void:
@@ -318,7 +410,7 @@ func _print_shadows(im: Image, fx: float, fy: float) -> void:
 		var py := int(round((float(r[1]) - fy) * 2))
 		if px < 0 or py < 0 or px >= im.get_width() or py >= im.get_height():
 			continue
-		var t = load(PROP_DIR + n + "_shadow.png")
+		var t := _prop_tex(n + "_shadow")
 		if t == null:
 			continue
 		var sh: Image = t.get_image().duplicate()
@@ -326,7 +418,50 @@ func _print_shadows(im: Image, fx: float, fy: float) -> void:
 			sh.decompress()
 		sh.convert(Image.FORMAT_RGBA8)
 		im.blend_rect(sh, Rect2i(0, 0, sh.get_width(), sh.get_height()), Vector2i(px, py))
+	# the drawn props' shadows: soft-edged dark ellipses (the dummies' rgba(0,0,0,0.32) 15 x 5 at their feet, the
+	# mushroom's 0.3, 8 x 3)
+	for e in _gen_shadows():
+		_ellipse_shadow(im, fx, fy, e[0], e[1], e[2], e[3], e[4])
 
+## [cx, cy, rx, ry, alpha] for the drawn props' shadows, world units.
+func _gen_shadows() -> Array:
+	var out := []
+	for d in _dummies():
+		out.append([d.x, d.y + 16.0, 15.0, 5.0, 0.32])
+	var sp := _shroom_spot()
+	out.append([sp.x, sp.y + 1.0, 8.0, 3.0, 0.3])
+	return out
+
+## Darken an ellipse on floor picture im (2 px a unit, its corner at world fx, fy).
+func _ellipse_shadow(im: Image, fx: float, fy: float, cx: float, cy: float, rx: float, ry: float, a: float) -> void:
+	var x0 := int(floor((cx - rx - fx) * 2))
+	var x1 := int(ceil((cx + rx - fx) * 2))
+	var y0 := int(floor((cy - ry - fy) * 2))
+	var y1 := int(ceil((cy + ry - fy) * 2))
+	for y in range(maxi(0, y0), mini(im.get_height(), y1)):
+		for x in range(maxi(0, x0), mini(im.get_width(), x1)):
+			var dx := ((x + 0.5) / 2.0 + fx - cx) / rx
+			var dy := ((y + 0.5) / 2.0 + fy - cy) / ry
+			if dx * dx + dy * dy > 1.0:
+				continue
+			var c := im.get_pixel(x, y)
+			im.set_pixel(x, y, Color(c.r * (1.0 - a), c.g * (1.0 - a), c.b * (1.0 - a), c.a))
+
+## The lobby's shooting dummies (calls.dummies, else fillLobby's 730,318 and 730,390), as Vector2s.
+func _dummies() -> Array:
+	var out := []
+	var ds = _d().get("calls", {}).get("dummies", [])
+	if ds is Array:
+		for d in ds:
+			if d is Dictionary and d.has("x"):
+				out.append(Vector2(float(d.x), float(d.y)))
+	if out.is_empty():
+		out = [Vector2(730, 318), Vector2(730, 390)]
+	return out
+
+func _shroom_spot() -> Vector2:
+	var s = _d().get("SHROOM_SPOT", {"x": 52, "y": 424})
+	return Vector2(float(s.get("x", 52)), float(s.get("y", 424))) if s is Dictionary else Vector2(52, 424)
 ## How much further than its art (x0, y0, x1, y1) a solid's picture is painted out: the trampoline's shadow and a
 ## leg spill past its art rect in the yard picture.
 const PAINT_MORE := {"tramp": [-4, 0, 30, 4]}
@@ -370,7 +505,7 @@ func _floors() -> void:
 		_print_shadows(bim, B.x0, B.y0)
 		_bed_tex = _tex_from(bim)
 	# the lounge's floor, round the pool's hole
-	var lst := _st("lounge", func(): return _mat(_lounge_tex))
+	var lst := _st("lounge", func(): return _in_mat(_lounge_tex))
 	var luv := func(x: float, y: float) -> Vector2: return Vector2((x - wl) / lw, (y - wl) / lh)
 	var w := _pool_hole()
 	var lx0 := wl
@@ -382,14 +517,15 @@ func _floors() -> void:
 	_flat(lst, lx0, w.y0, w.x0, w.y1, 0, luv)
 	_flat(lst, w.x1, w.y0, lx1, w.y1, 0, luv)
 	# the bedroom
-	var bst := _st("bedroom", func(): return _mat(_bed_tex))
+	var bst := _st("bedroom", func(): return _in_mat(_bed_tex))
 	_flat(bst, B.x0, B.y0, B.x1, B.y1, 0, func(x: float, y: float) -> Vector2: return Vector2((x - B.x0) / bw, (y - B.y0) / bh))
 	# the doorways' floors (fpFloor's colours)
 	var areas: Array = d.calls.lobbyAreas
 	var bd: Dictionary = areas[2]
 	var dd: Dictionary = areas[3]
-	_flat(_col_st(Color("#6a472f")), bd.x0, A.h - wl, bd.x1, A.h, 0, _no_uv)
-	_flat(_col_st(Color("#77736c")), dd.x0, A.h - wl, dd.x1, _back_door_y1(), 0, _no_uv)
+	_flat(_in_col_st(Color("#6a472f")), bd.x0, A.h - wl, bd.x1, A.h, 0, _no_uv)
+	_flat(_in_col_st(Color("#77736c")), dd.x0, A.h - wl, dd.x1, A.h, 0, _no_uv)
+	_flat(_col_st(Color("#77736c")), dd.x0, A.h, dd.x1, _back_door_y1(), 0, _no_uv)
 	# the yard: its picture everywhere but under the house
 	var hx: float = A.w
 	var hy: float = _back_door_y1()
@@ -469,7 +605,7 @@ func _house() -> void:
 		if i < 0 or j < 0 or i >= nx or j >= ny:
 			return 0
 		return kind[j * nx + i]
-	var in_tex := func(): return _mat(_side_tex("in", {"m": "in", "h": WALL}, "N", 0, 4, int(WALL)))
+	var in_tex := func(): return _in_mat(_side_tex("in", {"m": "in", "h": WALL}, "N", 0, 4, int(WALL)), Color.WHITE, "wall")
 	var out_tex := func(): return _mat(_side_tex("house", {"m": "house", "h": WALL}, "N", 0, 4, int(WALL)))
 	var in_st := _st("wall_in", in_tex, G_FULL)
 	var out_st := _st("wall_out", out_tex, G_FULL)
@@ -477,8 +613,16 @@ func _house() -> void:
 	var out_cut := _st("wall_out", out_tex, G_CUT)
 	var wuv := func(u: float, z: float) -> Vector2: return Vector2(u / 4.0, (WALL - z) / WALL)
 	var top := _col_st(WALL_TOP, G_FULL)
-	var top_cut := _col_st(WALL_TOP, G_CUT)
+	var top_cut := _col_st(WALL_TOP_CUT, G_CUT)
 	var CUT := minf(cutaway_height, WALL)
+	# From above, the house's back wall along the top of the deck (south of the lounge, east of the bedroom: y 520 to
+	# the deck, x 476 on) isn't a wall strip: the HTML game shows the yard picture there (the house's back wall, its
+	# windows and brickwork). Those cells are flat picture in the cutaway; the walls next to them get a face.
+	var flat_cut := func(i: int, j: int) -> bool:
+		if at.call(i, j) != 2:
+			return false
+		return float(gy[j]) >= float(A.h) - 0.01 and float(gy[j + 1]) <= hy + 0.01 and float(gx[i]) >= wx - 0.01
+	var ycut := _st("yard", func(): return _mat(_yard_tex), G_CUT)
 	for j in ny:
 		var run0 := -1
 		for i in nx + 1:
@@ -488,14 +632,19 @@ func _house() -> void:
 				var x1: float = gx[i + 1]
 				var y0: float = gy[j]
 				var y1: float = gy[j + 1]
+				var flat: bool = flat_cut.call(i, j)
 				_flat(top, x0, y0, x1, y1, WALL, _no_uv)
-				_flat(top_cut, x0, y0, x1, y1, CUT, _no_uv)
+				if flat:
+					_flat(ycut, x0, y0, x1, y1, 0.0, Callable(self, "_yard_uv"))
+				else:
+					_flat(top_cut, x0, y0, x1, y1, CUT, _no_uv)
 				for f in [["N", 0, -1, x0, y0, x1, y0], ["S", 0, 1, x0, y1, x1, y1], ["W", -1, 0, x0, y0, x0, y1], ["E", 1, 0, x1, y0, x1, y1]]:
 					var nk: int = at.call(i + f[1], j + f[2])
-					if nk == 2:
-						continue
-					_side(in_st if nk == 1 else out_st, f[3], f[4], f[5], f[6], 0, WALL, f[0], wuv)
-					_side(in_cut if nk == 1 else out_cut, f[3], f[4], f[5], f[6], 0, CUT, f[0], wuv)
+					var n_flat: bool = flat_cut.call(i + f[1], j + f[2])
+					if nk != 2:
+						_side(in_st if nk == 1 else out_st, f[3], f[4], f[5], f[6], 0, WALL, f[0], wuv, LIT_IN if nk == 1 else LIT)
+					if not flat and (nk != 2 or n_flat):
+						_side(in_cut if nk == 1 else out_cut, f[3], f[4], f[5], f[6], 0, CUT, f[0], wuv, LIT_IN if nk == 1 else LIT)
 				if run0 < 0:
 					run0 = i
 			if not wall and run0 >= 0:
@@ -511,17 +660,70 @@ func _house() -> void:
 		var under := _col_st(Color8(60, 54, 48), G_FULL)
 		_flat(under, x0, y0, x1, y1, Z0, _no_uv)
 		_flat(top, x0, y0, x1, y1, WALL, _no_uv)
-		_side(in_st, x0, y0, x1, y0, Z0, WALL, "N", wuv)
-		_side(out_st if a == areas[3] else in_st, x0, y1, x1, y1, Z0, WALL, "S", wuv)
+		_side(in_st, x0, y0, x1, y0, Z0, WALL, "N", wuv, LIT_IN)
+		_side(out_st if a == areas[3] else in_st, x0, y1, x1, y1, Z0, WALL, "S", wuv, LIT if a == areas[3] else LIT_IN)
 		_coll_box(_walls_body, {"x0": x0, "y0": y0, "x1": x1, "y1": y1}, Z0, WALL)
 	# the ceiling indoors, and the roof: both hidden from above (G_FULL)
-	var ceil_st := _col_st(CEILING, G_FULL)
+	var ceil_st := _st("ceiling", func(): return _in_mat(null, CEILING), G_FULL)
 	for a in indoor:
 		var y1: float = a.y1
 		if a == areas[3]:
 			y1 = hy
 		_flat(ceil_st, a.x0, a.y0, a.x1, y1, WALL - 0.5, _no_uv)
 	_house_roof(blocks, WALL)
+	_doorways(CUT)
+
+## The doorways' details, as drawLowerLobby and drawBackDoor draw them top-down: flat on the floor (both views),
+## the frames as low posts from above and as the doorways' jambs in first person.
+func _doorways(CUT: float) -> void:
+	var d := _d()
+	var A: Dictionary = d.ARENA
+	var wl: float = A.wall
+	var areas: Array = d.calls.lobbyAreas
+	var hy := _back_door_y1()
+	var z := 0.3
+	var Zl := 84.0                                   # the lintels' underside (FP_LINTEL)
+	# the bedroom's: a gap in the shared wall, framed, with a mat inside
+	var bx: float = areas[2].x0
+	var bw: float = float(areas[2].x1) - bx
+	var y: float = float(A.h) - wl
+	var post := Color("#8a5a34")
+	_flat(_in_col_st(Color("#5b6b3a")), bx + 8, float(A.h) + 2, bx + bw - 8, float(A.h) + 12, z, _no_uv)
+	for x0 in [bx - 4, bx + bw]:
+		_post_box({"x0": x0, "y0": y - 2, "x1": x0 + 4, "y1": y + wl + 2}, CUT + 0.2, post, G_CUT)
+	_jambs(bx, bx + bw, y, y + wl, Zl, post)
+	# the back door: concrete running out, in the doorway's shade, the sill, the frame, the door swung back, a mat
+	var x: float = areas[3].x0
+	var w: float = float(areas[3].x1) - x
+	var top := float(A.h) - wl
+	var h := hy - top
+	_flat(_col_st(Color("#77736c") * Color(0.78, 0.78, 0.78)), x, float(A.h), x + w, hy - 3, z, _no_uv)
+	_flat(_col_st(Color("#4a3624")), x, hy - 3, x + w, hy, z, _no_uv)
+	_flat(_col_st(Color("#5b6b3a")), x + 8, hy + 2, x + w - 8, hy + 12, z, _no_uv)
+	_flat(_col_st(Color("#6b4a30"), G_CUT), x + w + 4, float(A.h) - 2, x + w + 10, float(A.h) - 2 + h - wl + 2, z + 0.1, _no_uv)
+	var frame := Color("#ddd6c6")
+	var edge := Color("#b9b09c")
+	for x0 in [x - 4, x + w]:
+		_post_box({"x0": x0, "y0": top - 2, "x1": x0 + 4, "y1": hy}, CUT + 0.2, frame, G_CUT)
+	for x0 in [x - 4, x + w + 3]:
+		_flat(_col_st(edge, G_CUT), x0, top - 2, x0 + 1, hy, CUT + 0.25, _no_uv)
+	_jambs(x, x + w, top, hy, Zl, frame)
+
+## A small box (posts, frames) from the floor to height h, its colour lit by face.
+func _post_box(b: Dictionary, h: float, c: Color, group: int) -> void:
+	var st := _col_st(c, group)
+	_flat(st, b.x0, b.y0, b.x1, b.y1, h, _no_uv)
+	_box_sides(b, 0, h, func(_f: String): return [st, _no_uv_side])
+
+func _no_uv_side(_u: float, _z: float) -> Vector2:
+	return Vector2.ZERO
+
+## A doorway's frame in first person: its two jambs (the wall faces looking into the gap, x0 and x1, from y0 to
+## y1) painted c up to the lintel, a hair proud of the wall.
+func _jambs(x0: float, x1: float, y0: float, y1: float, zt: float, c: Color) -> void:
+	var st := _in_col_st(c, G_FULL)
+	_side(st, x0 + 0.15, y0, x0 + 0.15, y1, 0, zt, "E", _no_uv_side, LIT_IN)
+	_side(st, x1 - 0.15, y0, x1 - 0.15, y1, 0, zt, "W", _no_uv_side, LIT_IN)
 
 ## The house's roof (b329): a hipped L, the main block's and the wing's meeting in valleys, each block hipped on
 ## its own rectangle from the top (FP_HOUSE_ROOF.rects: y0 0), k 0.5 up from the eaves at the top of the walls.
@@ -608,8 +810,8 @@ func _lounge_boxes() -> Array:
 	var cb: Array = c.cabBoxes
 	for i in mini(cabs.size(), cb.size()):
 		add.call("cab_" + String(cabs[i].game), cb[i])
-	var sl: Dictionary = c.get("slot", {"x": 90, "y": 110})
-	add.call("slot", {"x0": sl.x - 26, "x1": sl.x + 26, "y0": sl.y - 8, "y1": sl.y + 6})
+	# (no slot machine: the HTML game's lobbySolidBoxes() leaves it out and nothing pushes you out of it, so you
+	# walk through it there too)
 	var tk := _T("towerScale", 1.25)
 	var tx := _T("towerX", 604)
 	var ty := _T("towerY", 190)
@@ -640,7 +842,7 @@ func _bed_boxes() -> void:
 	var B: Dictionary = d.BEDROOM
 	var bw: float = float(B.x1) - float(B.x0)
 	var bh: float = float(B.y1) - float(B.y0)
-	var st := _st("bedroom", func(): return _mat(_bed_tex))
+	var st := _st("bedroom", func(): return _in_mat(_bed_tex))
 	var buv := func(x: float, y: float) -> Vector2: return Vector2((x - B.x0) / bw, (y - B.y0) / bh)
 	for item in [[d.BED, FURNITURE_H.bed], [d.NIGHTSTAND, FURNITURE_H.nightstand]]:
 		var b: Dictionary = item[0]
@@ -663,7 +865,7 @@ func _pool() -> void:
 	var lh: float = float(A.h) - wl * 2
 	var w := _pool_hole()
 	var depth := 3.0
-	var tile := _st("pool_side", func(): return _mat(null, Color8(150, 170, 176)))
+	var tile := _st("pool_side", func(): return _in_mat(null, Color8(150, 170, 176)))
 	_box_sides(w, -depth, 0, func(_f: String): return [tile, func(_u: float, _z: float) -> Vector2: return Vector2.ZERO])
 	var mi := MeshInstance3D.new()
 	mi.name = "PoolWater"
@@ -711,7 +913,45 @@ func _yard_flat() -> void:
 		var st := _st("flat_%s_%d_%d" % [s.m, r.position.x, r.position.y], func(): return _mat(tex), G_CUT)
 		_flat(st, ax0, ay0, ax0 + r.size.x, ay0 + r.size.y, 0.4,
 			func(x: float, y: float) -> Vector2: return Vector2((x - ax0) / r.size.x, (y - ay0) / r.size.y))
+	_tank_img = _cut_out(TANK_OVER)
 	_yard_orig = null
+
+## b328's TANK_OVER: the water tank cut out of the yard picture (its box, world units; the shape: two ellipses and
+## two rects, Smashed.html), to lay over anyone standing behind it (north of foot_y) from above.
+const TANK_OVER := {"foot_y": 1772.0, "box": [1270, 1512, 1522, 1776],
+	"ellipses": [[1380, 1581, 103, 62], [1380, 1710, 103, 62]], "rects": [[1277, 1581, 206, 129], [1477, 1576, 34, 108]]}
+var _tank_img: Image
+
+## A piece of the yard picture (as it is, not painted out) in o's box, clear outside o's shape.
+func _cut_out(o: Dictionary) -> Image:
+	if _yard_orig == null:
+		return null
+	var b: Array = o.box
+	var x0 := int(b[0])
+	var y0 := int(b[1])
+	var w := int(b[2]) - x0
+	var h := int(b[3]) - y0
+	var im := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	im.blit_rect(_yard_orig, Rect2i(int(x0 - _yard_ox), int(y0 - _yard_oy), w, h), Vector2i.ZERO)
+	for y in h:
+		var wy := y0 + y + 0.5
+		for x in w:
+			var wx := x0 + x + 0.5
+			var inside := false
+			for e in o.ellipses:
+				var dx: float = (wx - float(e[0])) / float(e[2])
+				var dy: float = (wy - float(e[1])) / float(e[3])
+				if dx * dx + dy * dy <= 1.0:
+					inside = true
+					break
+			if not inside:
+				for r in o.rects:
+					if wx >= float(r[0]) and wx < float(r[0]) + float(r[2]) and wy >= float(r[1]) and wy < float(r[1]) + float(r[3]):
+						inside = true
+						break
+			if not inside:
+				im.set_pixel(x, y, Color(0, 0, 0, 0))
+	return im
 
 func _yard_solids_3d() -> void:
 	var d := _d()
@@ -1004,8 +1244,10 @@ render_mode unshaded, cull_disabled, world_vertex_coords, depth_draw_opaque;
 // Its depth is the upright cut-out's (where the camera's ray through each point crosses the upright plane through
 // its feet), the way CharSprite does it for the characters, so the two sort like the HTML game's y-sort: someone
 // standing behind a cabinet (north of its feet) is hidden by it, someone in front covers it.
-uniform sampler2D tex : source_color, filter_nearest;
+#include "res://scripts/actors/upright_depth.gdshaderinc"
+uniform sampler2D tex : source_color, filter_nearest_mipmap;
 uniform float lean_max = 1.35;
+uniform float lean_fixed = -1.0;   // >= 0: always lean this far (pi / 2: flat, like a piece of the floor's picture)
 uniform float depth_bias = 0.03;   // metres toward the camera, so its bottom row wins over the floor it stands on
 uniform float depth_reach = 6.0;   // metres: the most the leaning picture's depth is pulled toward the camera
 void vertex() {
@@ -1016,27 +1258,11 @@ void vertex() {
 	r = length(r) > 1e-4 ? normalize(r) : vec3(1.0, 0.0, 0.0);
 	vec3 fh = vec3(r.z, 0.0, -r.x);
 	float pitch = asin(clamp(INV_VIEW_MATRIX[2].y, -1.0, 1.0));
-	float th = min(lean_max, max(pitch, 0.0) * smoothstep(0.35, 0.9, pitch));
+	float th = lean_fixed >= 0.0 ? lean_fixed : min(lean_max, max(pitch, 0.0) * smoothstep(0.35, 0.9, pitch));
 	vec3 up = cos(th) * vec3(0.0, 1.0, 0.0) + sin(th) * fh;
 	vec3 drawn = o + r * local.x + up * local.y;
 	VERTEX = drawn;
-	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(drawn, 1.0));
-	vec3 n = -fh;                                              // the upright plane's normal, toward the camera
-	bool ortho = PROJECTION_MATRIX[3][3] > 0.5;
-	vec3 cam = INV_VIEW_MATRIX[3].xyz;
-	vec3 to_cam = ortho ? INV_VIEW_MATRIX[2].xyz : normalize(cam - drawn);
-	float behind = -dot(drawn - o, n);
-	float mu = clamp(behind / max(dot(to_cam, n), 0.0001), 0.0, depth_reach);
-	if (!ortho) {
-		mu = min(mu, max(0.0, length(cam - drawn) - 0.25));
-	}
-	vec4 vd = VIEW_MATRIX * vec4(drawn + to_cam * mu, 1.0);
-	vd.z += depth_bias;
-	vec4 cd = PROJECTION_MATRIX * vd;
-	if (cd.w > 0.0001) {
-		clip.z = cd.z / cd.w * clip.w;
-	}
-	POSITION = clip;
+	POSITION = upright_clip(drawn, o, r, VIEW_MATRIX, INV_VIEW_MATRIX, PROJECTION_MATRIX, depth_bias, depth_reach);
 }
 void fragment() {
 	vec4 c = texture(tex, UV);
@@ -1088,11 +1314,18 @@ func _props() -> void:
 					var dw := tw / 2 * ws
 					var dh := th / 2 * ws
 					rect = [round(W.x - dw / 2), round(W.y - dh), round(W.x - dw / 2) + round(dw), round(W.y - dh) + round(dh)]
+		elif p.has("gen"):
+			var g := _gen_prop(p)
+			if g.is_empty():
+				continue
+			tex = g[0]
+			rect = g[1]
 		else:
-			tex = load(PROP_DIR + n + ".png")
+			tex = _prop_tex(n)
 			rect = p.rect
 		if tex == null:
 			continue
+		tex = _mip_tex(tex)
 		var x0: float = rect[0]
 		var y0: float = rect[1]
 		var x1: float = rect[2]
@@ -1116,6 +1349,114 @@ func _props() -> void:
 		mi.set_meta("rect", rect)
 		add_child(mi)
 		props[n] = mi
+	_tank_prop()
+
+## The tank laid over the yard from above (TANK_OVER): flat on the picture where the HTML game draws it, with the
+## depth of an upright picture standing at its foot, so the player behind it is hidden and in front covers it. Only
+## from above (in first person the tank stands as a cylinder).
+func _tank_prop() -> void:
+	if _tank_img == null:
+		return
+	var b: Array = TANK_OVER.box
+	var w := (float(b[2]) - float(b[0])) * U
+	var h := (float(b[3]) - float(b[1])) * U
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_quad(st, [Vector3(-w / 2, 0, 0), Vector3(w / 2, 0, 0), Vector3(w / 2, h, 0), Vector3(-w / 2, h, 0)],
+		[Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)], Color.WHITE)
+	var mi := MeshInstance3D.new()
+	mi.name = "Prop_tank_over"
+	mi.mesh = st.commit()
+	var sm := ShaderMaterial.new()
+	sm.shader = _prop_shader
+	var im := _tank_img
+	im.generate_mipmaps()
+	sm.set_shader_parameter("tex", ImageTexture.create_from_image(im))
+	sm.set_shader_parameter("lean_fixed", PI / 2.0)
+	sm.set_shader_parameter("depth_reach", 20.0)
+	mi.material_override = sm
+	mi.extra_cull_margin = h + w
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# its foot on the picture's bottom edge (b[3], 4 below TANK_OVER.y, where the HTML game sorts it), a hair over
+	# the flat yard art (0.4)
+	mi.position = P((float(b[0]) + float(b[2])) / 2, float(b[3]), 0.5)
+	mi.set_meta("rect", b)
+	add_child(mi)
+	props["tank_over"] = mi
+	_cut_only.append(mi)
+	_tank_img = null
+
+var _cut_only: Array = []          # nodes shown only from above (the cutaway)
+
+## A prop drawn here: [texture, rect (world units)] or [] (2 px a unit, as the captured ones).
+func _gen_prop(p: Dictionary) -> Array:
+	match String(p.gen):
+		"dummy":
+			var ds := _dummies()
+			var i: int = p.dummy
+			if i >= ds.size():
+				return []
+			var d: Vector2 = ds[i]
+			return [_dummy_tex(), [d.x - 15, d.y + 16 - 50, d.x + 15, d.y + 16]]
+		"shroom":
+			var sp := _shroom_spot()
+			return [_shroom_tex(), [sp.x - 9, sp.y - 17, sp.x + 9, sp.y + 1]]
+	return []
+
+## The training dummy (shroomCapture's 30 x 50 dummy, the top-down one's colours): a post, the sack, its target
+## rings and the strap over the top. At 2x.
+func _dummy_tex() -> Texture2D:
+	if _tex_cache.has("gen_dummy"):
+		return _tex_cache["gen_dummy"]
+	var S := 2
+	var im := Image.create(30 * S, 50 * S, false, Image.FORMAT_RGBA8)
+	var post := Color("#5a4a30")
+	var sack := Color("#c8a86a")
+	var ink := Color8(20, 22, 28)
+	for y in im.get_height():
+		for x in im.get_width():
+			var u := (x + 0.5) / S
+			var v := (y + 0.5) / S
+			var c := Color(0, 0, 0, 0)
+			if u >= 12 and u < 18 and v >= 32:
+				c = post
+			var ex := (u - 15.0) / 14.0
+			var ey := (v - 20.0) / 17.0
+			if ex * ex + ey * ey <= 1.0:
+				c = sack
+				var r := Vector2(u - 15.0, v - 18.0).length()
+				if absf(r - 8.0) <= 1.0 or absf(r - 3.5) <= 1.0:
+					c = c.lerp(ink, 0.55)
+				if v >= 4 and v < 8 and u >= 1 and u < 29:
+					c = c.lerp(ink, 0.5)
+			im.set_pixel(x, y, c)
+	var t := ImageTexture.create_from_image(im)
+	_tex_cache["gen_dummy"] = t
+	return t
+
+## The mushroom (drawShroomPickup, standing still): its stem and the red cap with white spots, 18 x 18 units, its
+## foot at SHROOM_SPOT + 1. At 2x.
+func _shroom_tex() -> Texture2D:
+	if _tex_cache.has("gen_shroom"):
+		return _tex_cache["gen_shroom"]
+	var S := 2
+	var im := Image.create(18 * S, 18 * S, false, Image.FORMAT_RGBA8)
+	im.fill(Color(0, 0, 0, 0))
+	# rects in the HTML game's units round (x, y) = (0, 0), drawn in order; the picture's corner is (-9, -17)
+	var rects := [
+		[-3, -8, 6, 9, "#e9dcc0"], [-3, -8, 2, 9, "#c8b894"],
+		[-9, -12, 18, 5, "#b3202a"], [-7, -15, 14, 3, "#b3202a"], [-4, -17, 8, 2, "#b3202a"],
+		[-6, -15, 8, 2, "#e0414a"], [-9, -8, 18, 1, "#7c141c"],
+		[-5, -13, 2, 2, "#fff6ea"], [2, -15, 2, 2, "#fff6ea"], [5, -11, 2, 2, "#fff6ea"], [-8, -10, 2, 1, "#fff6ea"]]
+	for r in rects:
+		var c := Color(String(r[4]))
+		for y in range(int(r[1] + 17) * S, int(r[1] + r[3] + 17) * S):
+			for x in range(int(r[0] + 9) * S, int(r[0] + r[2] + 9) * S):
+				if x >= 0 and y >= 0 and x < im.get_width() and y < im.get_height():
+					im.set_pixel(x, y, c)
+	var t := ImageTexture.create_from_image(im)
+	_tex_cache["gen_shroom"] = t
+	return t
 
 # ---------------------------------------------------------------- finishing
 
@@ -1162,6 +1503,8 @@ func _update_cutaway() -> void:
 		cut = cam != null and cam.global_basis.z.normalized().y > sin(deg_to_rad(cutaway_pitch_deg))
 	_full_mesh.visible = not cut
 	_cut_mesh.visible = cut
+	for n in _cut_only:
+		n.visible = cut
 
 ## True when the house is cut away (the top-down view) just now.
 func is_cut_away() -> bool:

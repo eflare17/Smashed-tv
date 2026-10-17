@@ -45,8 +45,11 @@ const NET_IN := 22.0                 # trampStep: the net holds you TRAMP.r - 22
 const LEAP_SPEED := 190.0            # trampLeap
 const LEAP_UP := 110.0
 const R_DEFAULT := 14.0              # T.radius
-## The HTML game steps its world at a fixed 1/120 s (FIXED_DT); the bounce does too, so its heights match.
+## The HTML game steps its world at a fixed 1/120 s (FIXED_DT); so does the game here (physics ticks 120 a second),
+## and the bounce takes one step a tick, so its heights match.
 const FIXED_DT := 1.0 / 120.0
+## Where its shadow falls, from its middle (HTML units, x east, y south): as in the yard picture.
+const SHADOW_OFFSET := Vector2(32, 26)
 
 func _ready() -> void:
 	var d = GameData.data.get("TRAMP", {})
@@ -56,8 +59,7 @@ func _ready() -> void:
 	if place_from_data:
 		global_position = GameData.world_to_3d(tr.cx, tr.cy, 0.0)
 	reach = tr.r + 40.0
-	process_priority = 50             # after the Player's _process (0): the net check sees where he moved to
-	process_physics_priority = 50
+	process_physics_priority = 50     # after the Player's step (0): the net sees where he moved to
 	_build()
 
 # ------------------------------------------------------------------ E
@@ -120,6 +122,7 @@ func climb_on(p: Node3D) -> void:
 	_set_if(p, "dz", tr.mat)
 	_exceptions(p, true)
 	p.global_position = GameData.world_to_3d(tr.cx + cos(a) * d, tr.cy + sin(a) * d, tr.mat)
+	p.reset_physics_interpolation()          # a hop up onto it, not a slide
 
 ## trampOff: over the side he's nearest, back onto the grass.
 func climb_off(p: Node3D) -> void:
@@ -131,6 +134,7 @@ func climb_off(p: Node3D) -> void:
 	_set_if(p, "on_tramp", false)
 	_set_if(p, "dz", 0.0)
 	p.global_position = GameData.world_to_3d(tr.cx + cos(a) * d, tr.cy + sin(a) * d, 0.0)
+	p.reset_physics_interpolation()
 	_exceptions(p, false)
 
 ## trampLeap: off it through the air, the way (ux, uy) points (HTML ground axes).
@@ -180,18 +184,14 @@ func _physics_process(delta: float) -> void:
 		if "on_tramp" in p and not _flag(p, "on_tramp"):   # someone else took him off
 			release(p)
 			continue
-		_bounce(p, dt)
+		_net(p)                          # trampStep: the net (after the Player's step this tick), then the bounce
+		if riders.has(p):
+			_bounce(p, dt)
 	for p in fliers.keys():
 		if not is_instance_valid(p) or not p.is_inside_tree():
 			fliers.erase(p)
 			continue
 		_air(p, dt)
-
-func _process(_delta: float) -> void:
-	# after the Player has moved him this frame: the net (trampStep's first half)
-	for p in riders.keys():
-		if is_instance_valid(p) and riders.has(p):
-			_net(p)
 
 # trampStep: the net, then the bounce.
 func _net(p: Node3D) -> void:
@@ -220,17 +220,15 @@ func _bounce(p: Node3D, dt: float) -> void:
 	var r: Dictionary = riders[p]
 	if _controls(p) and Input.is_action_pressed("roll"):
 		r.tjump = true                   # the roll button is a bigger bounce
-	r.acc += dt
-	while r.acc >= FIXED_DT - 1e-9:
-		r.acc -= FIXED_DT
-		r.tv -= tr.g * FIXED_DT
-		r.tz += r.tv * FIXED_DT
-		if r.tz <= 0.0:                  # down on the mat: it throws you back up
-			var hit: float = -r.tv
-			r.tz = 0.0
-			r.tv = minf(tr.vmax, hit + tr.boost) if r.tjump else maxf(tr.vbase, hit * tr.keep)
-			r.tjump = false
-			bounced.emit(p, hit, r.tv)
+	# one step a physics tick (dt is FIXED_DT at the project's 120 ticks a second)
+	r.tv -= tr.g * dt
+	r.tz += r.tv * dt
+	if r.tz <= 0.0:                      # down on the mat: it throws you back up
+		var hit: float = -r.tv
+		r.tz = 0.0
+		r.tv = minf(tr.vmax, hit + tr.boost) if r.tjump else maxf(tr.vbase, hit * tr.keep)
+		r.tjump = false
+		bounced.emit(p, hit, r.tv)
 	var dz: float = tr.mat + r.tz
 	_set_if(p, "dz", dz)
 	p.global_position.y = dz * U
@@ -250,11 +248,8 @@ func _air(p: Node3D, dt: float) -> void:
 		var o := _html(p)
 		p.global_position = GameData.world_to_3d(o.x + f.vx * dt, o.y + f.vy * dt, dz)
 	_set_if(p, "vel", Vector2.ZERO)
-	f.acc += dt
-	while f.acc >= FIXED_DT - 1e-9 and dz > 0.0:
-		f.acc -= FIXED_DT
-		f.tv -= tr.g * FIXED_DT
-		dz += f.tv * FIXED_DT
+	f.tv -= tr.g * dt
+	dz += f.tv * dt
 	if dz <= 0.0:
 		dz = 0.0
 		fliers.erase(p)
@@ -563,17 +558,20 @@ func _build() -> void:
 	_band(st, R, MAT, H - 2.5, 0.25, (H - 2.5 - MAT) / 4.0, false, 128)
 	_mesh_node("Net", st, net_mat)
 
-	# its shadow on the grass (the HTML game's floor darkens to 0.55 under it)
+	# its shadow on the grass (the HTML game's floor darkens to 0.55 under it), cast to the south-east as the yard
+	# picture draws it (the sun's behind and to the side), so from above it shows past the frame, not under the mat
+	var so := SHADOW_OFFSET
 	var sh := Image.create(64, 64, false, Image.FORMAT_RGBA8)
 	for y in 64:
 		for x in 64:
 			var d := Vector2(x + 0.5 - 32, y + 0.5 - 32).length() / 32.0
-			sh.set_pixel(x, y, Color(0, 0, 0, 0.4 * clampf((1.0 - d) * 6.0, 0.0, 1.0)))
+			sh.set_pixel(x, y, Color(0, 0, 0, 0.55 * clampf((1.0 - d) * 6.0, 0.0, 1.0)))
 	sh.generate_mipmaps()
 	st = SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var z0 := 0.35
-	q = [Vector3(-R * U, z0 * U, -R * U), Vector3(R * U, z0 * U, -R * U), Vector3(R * U, z0 * U, R * U), Vector3(-R * U, z0 * U, R * U)]
+	q = [Vector3((so.x - R) * U, z0 * U, (so.y - R) * U), Vector3((so.x + R) * U, z0 * U, (so.y - R) * U),
+		Vector3((so.x + R) * U, z0 * U, (so.y + R) * U), Vector3((so.x - R) * U, z0 * U, (so.y + R) * U)]
 	for j in [0, 1, 2, 0, 2, 3]:
 		st.set_color(Color.WHITE)
 		st.set_uv(quv[j])
