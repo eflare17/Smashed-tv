@@ -402,7 +402,8 @@ func grow(hours: float) -> void:
 				if not p.wilt and p.dry >= D.DRY_WILT_HOURS:
 					p.wilt = 1
 				left = 0.0
-		if p.g >= 1.0:
+		if p.g >= 0.9999:                       # (rounding: a plant due now is ready now)
+			p.g = 1.0
 			p.wet = 0.0
 	if not breeding.is_empty() and breeding.waiting:
 		breeding.hours -= hours
@@ -636,6 +637,8 @@ func from_dict(d: Dictionary) -> void:
 		buff = bf.duplicate()
 		buff.strain = int(buff.strain)
 		buff.waves = int(buff.waves)
+		for k in D.BUFF_NEUTRAL:                # JSON gives every number back as a float
+			buff[k] = type_convert(buff.get(k, D.BUFF_NEUTRAL[k]), typeof(D.BUFF_NEUTRAL[k]))
 	var st: Dictionary = d.get("stats", {})
 	for k in stats:
 		stats[k] = int(st.get(k, 0))

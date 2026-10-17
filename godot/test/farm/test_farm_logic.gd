@@ -44,10 +44,12 @@ func _state_tests() -> void:
 	ok(s.plot_act(0, 0).begins_with("PLANTED"), "planting")
 	ok(s.inv_of(0).seeds[0] == 1 and s.plots[0].s == 0, "a seed used, plot holds NL")
 	ok(s.stage(0) == 0, "seedling stage")
-	# dry: half speed, 4 h strain -> after 2 h dry it's grown 0.25 and wilts at 2 h
+	# dry: half speed, 4 h strain -> after 2 h dry it's grown 0.25; it wilts at 2.5 h
 	s.grow(2.0)
 	near(s.plots[0].g, 0.25, "dry growth at half speed")
-	ok(s.plots[0].wilt == 1, "dry 2 h: wilted")
+	ok(s.plots[0].wilt == 0, "dry 2 h: not wilted yet")
+	s.grow(0.5)
+	ok(s.plots[0].wilt == 1, "dry 2.5 h: wilted")
 	ok(s.look(0) == 2, "wilted look")
 	# a fresh one watered: full speed 3 h, then dry
 	s.plant(1, 0, 0)

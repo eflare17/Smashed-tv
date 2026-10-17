@@ -231,6 +231,74 @@ func spot_act(spot: Node, p) -> void:
 				panel_wanted.emit("breed", pid)
 	_save_soon()
 
+## A line or two about what's at a spot (farmHint): the strain and how grown, dry or watered; what's for sale;
+## the can. Shown under the E prompt whether or not E does something there.
+func hint_lines(spot: Node, p) -> Array:
+	var pid := pid_of(p)
+	var st := state
+	var v := st.inv_of(pid)
+	var k: String = spot.kind
+	match k:
+		"plot":
+			var i: int = spot.idx
+			if not st.plot_open(i):
+				return []
+			var pl: Dictionary = st.plots[i]
+			if pl.s < 0:
+				return ["an empty hole", "no seeds: buy some at the crate by the shed" if st.seed_count(pid) == 0 else "E plants your " + D.STRAINS[st.seed_pick(pid)].name]
+			var nm: String = D.STRAINS[pl.s].name + (" (frosty)" if pl.frosty else "")
+			if pl.g >= 1.0:
+				return [nm + ": ready!", "%d buds%s" % [st.buds_of(pl), " (it lost one wilting)" if pl.wilt else ""]]
+			var second := ""
+			if st.watered(i):
+				second = "watered" + (" by the sprinkler" if pl.zone == "neighbour" and st.upgrades.sprinkler else ": %.1f h of water left" % pl.wet)
+			elif pl.wilt:
+				second = "wilted: it lost a bud. water it!"
+			else:
+				second = "dry: growing at half speed" + ("" if int(v.can) > 0 else " (fill the can at the tank)")
+			var f := ""
+			if pl.fert > 0:
+				f = ", " + D.FERTS[pl.fert].name
+			return ["%s: %d%% grown%s, about %.1f h to go" % [nm, int(pl.g * 100.0), f, st.hours_left(pl)], second]
+		"row":
+			if not st.land.paddock:
+				return []
+			var idx := st.row_plots(spot.idx)
+			var planted := 0
+			var ready := 0
+			var g := 0.0
+			for i in idx:
+				if st.plots[i].s >= 0:
+					planted += 1
+					g += st.plots[i].g
+					if st.plots[i].g >= 1.0:
+						ready += 1
+			if planted == 0:
+				return ["row %d: empty" % (spot.idx + 1), "the tractor plants %d at once" % D.P_ROW_PLANTS]
+			return ["row %d: %d planted, %d ready" % [spot.idx + 1, planted, ready], "%d%% grown on average" % int(g / planted * 100.0)]
+		"tank":
+			return ["watering can: %d of %d left" % [v.can, D.CAN_SIZE] if int(v.can) > 0 else "the watering can", "a full can waters %d plants" % D.CAN_SIZE]
+		"crate":
+			return ["seeds and fertiliser", "cash $%d" % cash()]
+		"sell":
+			return ["the garage buys buds", "%d buds on you, worth $%d" % [st.bud_count(pid), st.bud_value(pid, price_mults)]]
+		"compost":
+			if not st.upgrades.compost:
+				return ["the compost bin", D.UPGRADES.compost.what]
+			return ["compost: %d of %d harvests to the next bag" % [st.compost_count, D.COMPOST_PER_BAG], "%d bags of Basic waiting" % st.compost_bags]
+		"sign_neighbour":
+			return [] if st.land.neighbour else ["the neighbour's block: 24 plots, a grow house", "buy it for $%d" % D.LAND_PRICES.neighbour]
+		"sign_paddock":
+			return [] if st.land.paddock else ["the paddock: 12 long rows (needs a tractor)", "buy it for $%d" % D.LAND_PRICES.paddock]
+		"breed":
+			if not st.land.neighbour:
+				return []
+			if st.breeding.is_empty():
+				return ["the breeding table: cross two seeds", "the new seed is ready after the next wave"]
+			var b: Dictionary = st.breeding
+			return ["crossing: a " + D.STRAINS[b.s].name + (" (frosty!)" if b.frosty else "") + " seed", "ready!" if not b.waiting else "ready after the next wave, or in %.1f h" % b.hours]
+	return []
+
 ## Gates: step through to the other side (until the world takes the fence down: integration note).
 func _through_gate(spot: Node, p) -> void:
 	if not (p is Node3D):

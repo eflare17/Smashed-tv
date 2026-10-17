@@ -48,7 +48,7 @@ const STAGE_AT := [0.0, 0.2, 0.5, 1.0]
 ## A watering lasts this long; then the plant is dry (half speed, droops) and after DRY_WILT_HOURS dry it wilts
 ## (goes brown and loses a bud, once).
 const WET_HOURS := 3.0
-const DRY_WILT_HOURS := 2.0
+const DRY_WILT_HOURS := 2.5
 const DRY_SPEED := 0.5
 ## A full can waters this many plants.
 const CAN_SIZE := 8
