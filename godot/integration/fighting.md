@@ -74,7 +74,8 @@ Tested in the real web export (screenshots looked at) and in headless logic test
   Juicy Jared carrying her with E (the milestone 1 E prompt and round button: PICK UP / PUT DOWN), slow and unable to
   shoot or roll, she wriggles down after 4 s; players respawn next to her after 4 s; her down ends the run with the
   best wave saved.
-- **A second player on the same keyboard** (P): arrows move, Space fires the way he faces, Ctrl rolls; or the second
+- **A second player on the same keyboard** (P): arrows move, Space fires the way he faces, Ctrl rolls (on the web
+  keypad 0 or / instead: Ctrl+W would close the tab; they work everywhere); or the second
   pad (left stick, right stick aims, RT fires, B/RB/LT roll). Blue pips, wallet and shots; the lobby's cash but no
   blasters (the HTML's addPlayer), joining a run with nothing; kept over a restart. In the lobby the sim moves him and
   he slides along the house's walls like player 1.
@@ -97,7 +98,7 @@ Tested in the real web export (screenshots looked at) and in headless logic test
 | `restart` | R | (Menu when it's over) |
 | `add_player` | P | |
 
-Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and notes, J send the janitor.
+Debug keys (with `?fight=keys` / `--fight=keys` only): G shotgun, N the nuke, M magnet and notes, J send the janitor.
 
 ## Contract changes wanted (and what the fighting does meanwhile)
 
@@ -124,6 +125,9 @@ Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and
 
 ## Decisions (made for the owner; easy to change)
 
+- While the bonus room runs, the view is top-down (first person comes back after) and the character buttons are
+  hidden (they're milestone 1's `Hud._picker`, reached from outside).
+
 - One simulation (`FightSim`) in HTML units at 1/120 s, one RNG (the HTML's LCG), host-style, so milestone 4 can
   snapshot it. In the lobby the milestone 1 Player still walks himself; the sim shoots for him and adds recoil to his
   velocity. In a run the sim drives him (the HTML's player step: rolls, being thrown, arena walls).
@@ -147,9 +151,11 @@ Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and
 
 ## What's left
 
-- Player 2 in the lobby: the milestone 1 Player also reads the arrow keys (and any pad's left stick), so the arrows
-  move player 1 too while you're in the lobby (in a run they're player 2's only). Contract wanted: a Player flag to
-  leave the arrows alone / read only its own pad. The bonus room's intro drags only player 1 in.
+- Player 2 in the lobby: the milestone 1 Player also reads the arrow keys, so the arrows move player 1 too while
+  you're in the lobby (in a run they're player 2's only), and in lobby first person the CameraRig turns player 1
+  with them. Contract wanted: a Player / CameraRig flag to leave the arrows alone when there are two.
+- In a run the Fight node turns the first-person view with the arrows and the right stick itself (the CameraRig only
+  does it while the Player's own controls are on). A `look_enabled` flag on the rig would be cleaner.
 - The batter's procedural rig (his own walk frames are used), the lean on idle poses; in the bonus room's intro Gary
   stays where he swung (the HTML stands him beside the cabinet with his own frames) and the players aren't turned
   feet-first (a CharSprite can't rotate).

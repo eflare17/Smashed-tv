@@ -57,9 +57,9 @@ var _was_alive := true
 var _hp_seen := 5.0
 var _last_spin := false
 var _log_t := 0.0
-var _secret_scale := 1.0
-var _secret_hidden := false
-var _secret_tumble := false
+var _sec_state: Dictionary = {}        # player id -> [scale, hidden, tumble] in the bonus room's cinematics
+var _sectors: Dictionary = {}          # player id -> the picture's last sector (kept over the sheet swap)
+var _view_before := -1
 var _secret_beat := ""
 var _zoom_before := -1
 
@@ -106,6 +106,8 @@ func _ready() -> void:
 	var bview := BonusView.new()
 	bview.sim = sim
 	add_child(bview)
+	for v in [room, view, eview, bview]:
+		v.process_priority = 60          # after the sim's step this frame, before the camera (100)
 	hud = FightHud.new()
 	hud.fight = self
 	add_child(hud)
@@ -402,7 +404,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	if sim.started and event.is_action_pressed("roll") and not event.is_echo():
 		_roll_tap = true
-	if debug.has("keys") or OS.is_debug_build():
+	if debug.has("keys"):
 		if event is InputEventKey and event.pressed and not event.echo:
 			match event.physical_keycode:
 				KEY_G:
@@ -557,7 +559,8 @@ func _build_input2() -> FT.Inp:
 	if Input.is_physical_key_pressed(KEY_UP): my -= 1.0
 	if Input.is_physical_key_pressed(KEY_DOWN): my += 1.0
 	inp.shoot = Input.is_physical_key_pressed(KEY_SPACE)
-	inp.roll = Input.is_physical_key_pressed(KEY_CTRL)
+	inp.roll = Input.is_physical_key_pressed(KEY_KP_0) or Input.is_physical_key_pressed(KEY_SLASH) \
+		or (Input.is_physical_key_pressed(KEY_CTRL) and not OS.has_feature("web"))
 	var pads := Input.get_connected_joypads()
 	if pads.size() > 1:
 		var d: int = pads[1]
@@ -617,8 +620,21 @@ func _process(delta: float) -> void:
 	if player == null:
 		return
 	var lobby := not sim.started
+	if not lobby and is_fp() and not sim.over:
+		var dt := minf(delta, 0.05)
+		if p2 == null:
+			if Input.is_physical_key_pressed(KEY_LEFT): player.look_ang -= 2.4 * dt
+			if Input.is_physical_key_pressed(KEY_RIGHT): player.look_ang += 2.4 * dt
+			if Input.is_physical_key_pressed(KEY_UP): player.look_y = maxf(-0.6, player.look_y - 1.6 * dt)
+			if Input.is_physical_key_pressed(KEY_DOWN): player.look_y = minf(0.6, player.look_y + 1.6 * dt)
+		var rs := Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
+		player.look_ang = wrapf(player.look_ang + rs.x * absf(rs.x) * 3.2 * dt, -PI, PI)
+		player.look_y = clampf(player.look_y + rs.y * absf(rs.y) * 1.8 * dt, -0.6, 0.6)
 	if lobby:
 		_sync_from_player()
+	f.ch = player.char_id
+	if p2:
+		f2.ch = p2.char_id
 	var inp := _build_input()
 	_acc += minf(delta, 0.1)
 	var vel0 := Vector2(f.vx, f.vy)
@@ -661,6 +677,8 @@ func _process(delta: float) -> void:
 			p2.vel = Vector2.ZERO
 			p2.global_position = GameData.world_to_3d(f2.x, f2.y, 0.0)
 			p2.facing = sim.facing_vec(f2)
+			if sim.secret and sim.secret.phase != "done":
+				_sec_state[1] = _secret_place(sim.secret, p2, f2)
 	_drain()
 	if sim.over and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # let the pointer go for the game-over screen
@@ -683,12 +701,10 @@ func _place_player() -> void:
 	player.vel = Vector2.ZERO
 	player.velocity = Vector3.ZERO
 	player.global_position = GameData.world_to_3d(f.x, f.y, 0.0)
-	_secret_scale = 1.0
-	_secret_hidden = false
-	_secret_tumble = false
+	_sec_state.clear()
 	var sec := sim.secret
 	if sec and sec.phase != "done":
-		_secret_place(sec)
+		_sec_state[0] = _secret_place(sec, player, f)
 	player.facing = sim.facing_vec(f)
 	player.moving = f.moving
 	player.odo = f.odo
@@ -742,9 +758,9 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 		spr.visible = false
 		return
 	var blink := f.iframe > 0.0 and int(floor(f.iframe * 20.0)) % 2 == 0
-	var sec_on := f.id == 0
-	spr.scale = Vector3.ONE * (_secret_scale if sec_on else 1.0)
-	if _secret_hidden and sec_on:
+	var ss: Array = _sec_state.get(f.id, [1.0, false, false])
+	spr.scale = Vector3.ONE * float(ss[0])
+	if ss[1]:
 		spr.visible = false
 		return
 	var carried := sim.goth != null and sim.goth.carrier == f.id
@@ -757,10 +773,11 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 	spr.char_id = skin
 	var fv := sim.facing_vec(f)
 	spr.facing = fv
-	spr.moving = f.moving if sim.started else pl.moving
-	spr.odo = f.odo if sim.started else pl.odo
-	var roll := f.roll if sim.started else pl.roll
-	if f.launch > 0.0 or (_secret_tumble and sec_on):
+	var own := sim.started or f.driven
+	spr.moving = f.moving if own else pl.moving
+	spr.odo = f.odo if own else pl.odo
+	var roll := f.roll if own else pl.roll
+	if f.launch > 0.0 or ss[2]:
 		spr.action = "tumble"
 		spr.odo = Time.get_ticks_msec() / 1000.0 * 120.0
 	elif roll > 0.0:
@@ -769,7 +786,10 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 	else:
 		spr.action = ""
 	var cam := get_viewport().get_camera_3d()
+	if _sectors.has(f.id):
+		spr._sector = _sectors[f.id]       # (the Player sets its own sheet back each frame, which forgets it)
 	spr.update_view(cam)
+	_sectors[f.id] = spr._sector
 	if f.launch > 0.0 or roll > 0.0:
 		return
 	# weapon actions (drawJared's checks, weapons 11.1)
@@ -806,41 +826,43 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 
 # The bonus room's cinematics (gore_loot 14.5): dragged feet first into the cabinet and shrinking into it, then
 # tumbling in from the bottom of the room, and back out of the machine at the end.
-func _secret_place(sec: FT.Secret) -> void:
+func _secret_place(sec: FT.Secret, pl: Player, ff: FT.Fighter) -> Array:
 	var t := sec.t
-	var side := -1.0
+	var side := -1.0 if ff.id == 0 else 1.0
 	var hx := sim.slot.x
 	var hy := sim.slot.y + 4.0
+	var scale := 1.0
+	var hidden := false
+	var tumble := false
 	match sec.phase:
 		"intro":
-			var o: Vector2 = sec.origins[0] if not sec.origins.is_empty() else Vector2(f.x, f.y)
+			var o: Vector2 = sec.origins[ff.id] if ff.id < sec.origins.size() else Vector2(ff.x, ff.y)
 			if t < 1.5:
-				player.global_position = GameData.world_to_3d(o.x, o.y, 0.0)
+				pl.global_position = GameData.world_to_3d(o.x, o.y, 0.0)
 			elif t < 4.15:
 				var k := minf(1.0, (t - 1.5) / 2.1)
 				k = k * k * (3.0 - 2.0 * k)
 				var at := o.lerp(Vector2(hx + side * 11.0, hy + 12.0), k)
 				at.x += sin(t * 30.0) * 2.0 * k
-				player.global_position = GameData.world_to_3d(at.x, at.y, 0.0)
-				_secret_scale = 1.0 - 0.18 * k
-				_secret_tumble = k > 0.3
+				pl.global_position = GameData.world_to_3d(at.x, at.y, 0.0)
+				scale = 1.0 - 0.18 * k
+				tumble = k > 0.3
 			elif t < 4.43:
 				var k2 := (t - 4.15) / 0.28
-				player.global_position = GameData.world_to_3d(hx + side * 11.0, hy + 12.0, 0.0)
-				_secret_scale = 0.82 * (1.0 - k2)
-				_secret_tumble = true
+				pl.global_position = GameData.world_to_3d(hx + side * 11.0, hy + 12.0, 0.0)
+				scale = 0.82 * (1.0 - k2)
+				tumble = true
 			else:
-				_secret_hidden = true
+				hidden = true
 		"landing", "return":
 			var dur := 0.85 if sec.phase == "landing" else 1.15
 			var k3 := minf(1.0, t / dur)
 			k3 = 1.0 - (1.0 - k3) * (1.0 - k3)
 			var from := Vector2(430, 505) if sec.phase == "landing" else Vector2(hx, hy)
-			var at2 := from.lerp(Vector2(f.x, f.y), k3)
-			player.global_position = GameData.world_to_3d(at2.x, at2.y, 45.0 * 4.0 * k3 * (1.0 - k3))
-			_secret_tumble = k3 < 1.0
-		"payout":
-			pass
+			var at2 := from.lerp(Vector2(ff.x, ff.y), k3)
+			pl.global_position = GameData.world_to_3d(at2.x, at2.y, 45.0 * 4.0 * k3 * (1.0 - k3))
+			tumble = k3 < 1.0
+	return [scale, hidden, tumble]
 
 func _secret_frame() -> void:
 	var sec := sim.secret
@@ -859,6 +881,17 @@ func _secret_frame() -> void:
 				Sfx.play("s_landing")
 			"payout":
 				Sfx.play("s_payout")
+	var on := sec != null and sec.phase != "done"
+	if rig:
+		if on and _view_before < 0:
+			_view_before = rig.mode
+			rig.set_mode(CameraRig.Mode.TOP_DOWN)
+		elif not on and _view_before >= 0:
+			rig.set_mode(_view_before)
+			_view_before = -1
+	var mh = main.get("hud") if main else null
+	if mh and mh.get("_picker") is Control:
+		mh._picker.visible = not on
 	# the camera shows the whole room inside the machine
 	var inside := sec != null and sec.room
 	if rig:

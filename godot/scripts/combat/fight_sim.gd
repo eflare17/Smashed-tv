@@ -822,6 +822,13 @@ func start_run(run_mode: String) -> void:
 		p.iframe = 0.0
 		p.spin = 0.0
 		p.weapon = "spud"
+		p.charging = false
+		p.charge = 0.0
+		p.aim_on = false
+		p.punch = 0.0
+		p.throw = 0.0
+		p.pickup = 0.0
+		p.dump = 0.0
 		p.blasters = 0
 		p.ammo = maxi(p.ammo, int(tv("spudPellets", 10) * tv("spudStart", 0)))
 		p.reload = 0.0
@@ -1130,6 +1137,9 @@ func _step_player(p: FT.Fighter, inp: FT.Inp, dt: float) -> void:
 				p.vy -= p.vy / sp * drop
 	else:
 		# the lobby: rolling or thrown, no shooting (the Player node runs the roll)
+		if p.launch > 0.0:
+			p.launch = maxf(0.0, p.launch - dt)
+			return
 		if p.roll > 0.0:
 			return
 		if p.moving:
