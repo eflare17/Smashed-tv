@@ -8,6 +8,7 @@ func run(t) -> void:
 	# geometry and prompts
 	t.place(98, 302, Vector2(1, 0))
 	t.check(t.label() == "SIT", "SIT next to chair 1 (%s)" % t.label())
+	t.main.gothica.place(700, 700)
 	t.place(300, 302)
 	t.check(t.label() == "", "nothing far from the chairs")
 	t.place(232, 302, Vector2(-1, 0))

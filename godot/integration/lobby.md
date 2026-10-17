@@ -1,5 +1,7 @@
 # Lobby life (milestone 3): integration note
 
+Status: done (all things built and tested; polish items listed under "What's left"). 286+ logic checks pass (`run.tscn`, no `--test`).
+
 Branch `claude/godot-lobby`. Owned files: `scripts/lobby_life/`, `scenes/lobby_life/`, `test/lobby_life/`, this note.
 
 ## Status (what works, what's left)
@@ -90,3 +92,14 @@ The things add more with `LobbyLife.ensure_action`:
 - Player meta `carrying_goth` blocks sitting, the gym and the rope.
 - Decisions: Tyson reuses Jared's sit/bench/leg-press art (recoloured); the top-down seated zoom is skipped.
 - Left: second seat for a second player, generic seated pose for non-Jared, potato spin, run-start auto-rack of held plates; wanted Player hook to suppress roll while holding a plate.
+
+## Pool, tower, ducks and Gothica's life (built by a helper: t_pool, t_goth)
+- Pool: ladder (push up at the foot or E "CLIMB"), board, fall, swim, climb out at an edge; ducks; waterline shader on the swimmer (reads CharSprite's private `_SHADER_CODE`, `_mat`, `_path`); splash/ripple/drips in `pool_fx.gd`. API: `splash(x,y,big)`, `in_water`, `water_rect`, `tower_geo`, `shove_ducks`, `on_tower(p)`, `diving(p)`, `swimming(p)`; signals `dived`, `splashed`. The trip clock (shroom) holds while `on_tower`.
+- Gothica (`goth_life.gd`, now a LobbyThing): E "PICK UP"/"PUT DOWN" (juicy/jared only, meta `carrying_goth`), thrown off the board by the pool's E (`throw_from_board`) or dropped off its tip (`drop_off_board`), cartwheel, swims 3.5 s, climbs out; "OOF" if she misses. Watches lifts through the gym's `rep` signal ("Wow, you're really strong!" at 5 reps). Claims: cards > watch > rest.
+- Decisions: top-down heights on the tower are adjusted so the screen height matches the art (first person uses true heights); first person climbs/walks the board slowly, house cut away above eye height ~140; extras E dives / climbs out; "^" instead of an arrow glyph.
+- Test scenes: `?lobby=pool[,climb|board|dive|swim|splash|wet][,fp]`, `?lobby=goth_life[,carry|throw|swim|floor][,fp]` (thing keys, not `goth`).
+- Left: first-person board sag/creak, whoosh/somersault, FP splash arpeggio; Gothica's jiggle and the over-head tip.
+
+## Left for the main session
+- Add `LobbyLife.install(self)` at the end of `main.gd`'s `_ready()`; connect `LobbyLife.sleep_requested` to the day clock; the fighting session picks up `prize` signals and `rockets` / `spud_ammo` / `food` metas.
+- Wanted: a Player hook to suppress roll/shoot while holding a plate; `Player.coins` as the shared wallet (LobbyLife keeps its own until then).

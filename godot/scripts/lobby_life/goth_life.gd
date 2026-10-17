@@ -210,7 +210,22 @@ func ground_distance(player: Node3D) -> float:
 func label_for(p: Node) -> String:
 	if carrying(p):
 		return "PUT DOWN"
-	return "PICK UP" if can_carry(p) else ""
+	# PICK UP is last in the HTML game's list: next to a chair, the bench, the bed... that one gets the E
+	return "PICK UP" if can_carry(p) and not _other_wants_e(p) else ""
+
+## Does any other Interactable in reach of p have something for E (so picking her up waits)?
+func _other_wants_e(p: Node) -> bool:
+	for n in get_tree().get_nodes_in_group("interactable"):
+		if n == self or not (n is Node3D) or not n.has_method("label_for") or not n.is_inside_tree():
+			continue
+		var d: float = n.ground_distance(p) if n.has_method("ground_distance") else 0.0
+		var rch = n.get("reach")
+		if d > (float(rch) if rch != null else 40.0):
+			continue
+		var l = n.label_for(p)
+		if l is String and l != "":
+			return true
+	return false
 
 func act(p: Node) -> void:
 	if not anim.is_empty():

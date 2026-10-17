@@ -26,9 +26,10 @@ func run(t) -> void:
 	t.check(int(counts.get("blasters", 0)) > 200 and int(counts.get("blasters", 0)) < 460, "REAL GUNS about 3 in 18 (%s)" % counts.get("blasters", 0))
 	# jackpot notes
 	var base := ll.cash(ll.player)
+	s.magnet_t = 20.0
 	s.award(ll.player, LobbySlot.PRIZES[5])
 	t.check(s.notes.size() == 18, "JACKPOT throws 18 notes")
-	await t.wait(3.0)
+	await t.wait(4.0)
 	t.check(ll.cash(ll.player) > base, "and walking about picks some up (%d)" % (ll.cash(ll.player) - base))
 	# speed boost
 	var ms := LobbyLife.T("maxSpeed")

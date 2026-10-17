@@ -225,6 +225,10 @@ func ground_distance(player: Node3D) -> float:
 func label_for(p: Node) -> String:
 	if p == null or _s.has(p) or not can_start(p) or not _at_ladder(p):
 		return ""
+	# E is Gothica's when she's within reach to pick up (pushing up still climbs, like the HTML game)
+	var gl = _goth()
+	if gl and gl.has_method("can_carry") and gl.can_carry(p):
+		return ""
 	return "CLIMB"
 
 func act(p: Node) -> void:
@@ -285,6 +289,10 @@ func start_climb(p: Player) -> void:
 	var s := {"dive": Dive.CLIMB, "hz": 0.0, "vz": 0.0, "dvt": 0.0, "x": float(g.ladderX), "y": float(g.climbY), "vx": 0.0, "vy": 0.0,
 		"odo": 0.0, "fx": 0.0, "fy": -1.0, "moving": false, "roll_req": false, "entered": false, "t": 0.0, "scale": 1.0}
 	_s[p] = s
+	# climbing with a gym plate in hand racks it first (L1007)
+	var gym = ll.things.get("gym")
+	if gym and gym.has_method("holding_plate") and String(gym.holding_plate(p)) != "" and gym.has_method("drop_plate"):
+		gym.drop_plate(p)
 	ll.hold(p, self)
 	_exceptions(p, true)
 	p.facing = Vector2(0, -1)
@@ -706,7 +714,7 @@ func _update_tips(p: Player, dt: float) -> void:
 	if d == Dive.BOARD:
 		text = (_act_key() + ": throw her in!") if _carrying(p) else "walk off or roll to dive!"
 	elif d == 0 and not _s.has(p) and ll.can_start(p) and _at_ladder(p):
-		text = "↑ climb"
+		text = "^ climb"
 	if _tip:
 		_tip.visible = false
 		if text != "" and not fp and not ll.ui.menu_open():
@@ -827,6 +835,14 @@ func test_scene(tl: Node, parts: PackedStringArray) -> void:
 			splash(690.0, 195.0, false)
 			fx.step(0.22)
 			fx.set_process(false))
+		return
+	if parts.has("wet"):
+		tl.go(690.0, 262.0, Vector2(0, 1))
+		var tm := Timer.new()
+		tm.wait_time = 0.1
+		tm.autostart = true
+		tm.timeout.connect(func(): fx._wet["p0"] = 2.4)
+		add_child(tm)
 		return
 	if parts.has("climb"):
 		tl.later(0.3, func():

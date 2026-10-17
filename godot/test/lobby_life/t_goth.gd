@@ -148,8 +148,24 @@ func run(t) -> void:
 	# --- watching a lift: the gym's rep signal (here told directly; without a gym that can say lifting(p) he is
 	# taken to be lifting for 4 s after the last rep)
 	var gym = ll.things["gym"]
+	t.reset()                          # off the board, standing at the middle of the lounge
 	if gym.has_method("lifting"):
-		t.check(true, "(a real gym: watching is driven by its signal)")
+		# the real gym: lie on the bench, and she comes to watch, and says her piece at 5 reps
+		goth.place(200, 350)
+		goth.set("wait", 5.0)
+		t.place(420, 150)
+		t.press_e()
+		t.check(gym.lifting(p), "on the bench")
+		await t.wait(gym.lifts[p].rep * 2.2)
+		t.check(gl.claimed_by() == "watch", "from the second rep she comes to watch")
+		await t.wait(gym.lifts[p].rep * 3.2 + 2.0)
+		t.check(gym.reps(p) >= 5, "five reps done (%d)" % gym.reps(p))
+		var d2 := LobbyLife.hpos(goth).distance_to(Vector2(478, 154))
+		t.check(d2 < 8.0, "she is at the watch spot (%.1f)" % d2)
+		t.check(ll.ui.saying(goth) == "Wow, you're really strong!", "at 5 reps she says it (%s)" % ll.ui.saying(goth))
+		t.press_e()
+		await t.wait(0.3)
+		t.check(not gym.lifting(p) and gl.claimed_by() == "", "when he gets up she stops watching")
 		return
 	goth.place(200, 350)
 	goth.set("wait", 0.0)
