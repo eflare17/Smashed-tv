@@ -152,7 +152,7 @@ void fragment() {
 	ROUGHNESS = 0.25;
 	SPECULAR = 0.35;
 	NORMAL = normalize((VIEW_MATRIX * vec4(sin(wp.x * 20.0 + t) * 0.05, 1.0, cos(wp.z * 18.0 + t * 1.2) * 0.05, 0.0)).xyz);
-	EMISSION = glow * glow_color * (0.35 + caus * 0.45) * (0.6 + c);
+	EMISSION = glow * glow_color * (0.3 + caus * 0.25) * (0.6 + c);
 }
 """
 
@@ -199,6 +199,7 @@ func setup(main_: Node, dn: DayNight) -> void:
 	if world:
 		light_tree(world)
 		_world_extras(world)
+		_screen_glows(world)
 	var tramp = main.get("trampoline")
 	if tramp:
 		light_tree(tramp)
@@ -451,6 +452,55 @@ func _prop_shader(high: bool) -> Shader:
 	_shaders[key] = s
 	return s
 
+## The arcade screens' glow, done without the renderer's glow (the Compatibility renderer's is weak or missing):
+## a soft additive halo in front of each screen (first person: from above the cabinets lie flat).
+## The Compatibility renderer lights each thing with at most 8 lights, and the lamps use those up, so no light
+## of their own spills from the screens.
+const SCREENS := {"cab_miner": Color(0.55, 0.85, 1.0), "cab_bricks": Color(1.0, 0.45, 0.85)}
+var _halos: Array = []            # [MeshInstance3D, ShaderMaterial]
+
+const HALO_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
+uniform vec3 col : source_color = vec3(0.6, 0.85, 1.0);
+uniform float strength = 0.3;
+void vertex() {
+	// a billboard
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+}
+void fragment() {
+	vec2 d = (UV - 0.5) * 2.0;
+	float r = dot(d, d);
+	ALBEDO = col * strength * pow(max(0.0, 1.0 - r), 2.0);
+}
+"""
+
+func _screen_glows(world: Node) -> void:
+	var props: Dictionary = world.get("props")
+	var sh := Shader.new()
+	sh.code = HALO_SHADER
+	for n in SCREENS:
+		var p = props.get(n) if props else null
+		if p == null:
+			continue
+		var rect: Array = p.get_meta("rect", [0, 0, 0, 0])
+		var cx: float = (rect[0] + rect[2]) / 2.0
+		var hh: float = rect[3] - rect[1]
+		var screen_z: float = hh * (1.0 - (0.212 + 0.5) / 2.0)
+		var mi := MeshInstance3D.new()
+		mi.name = "Halo_" + n
+		var q := QuadMesh.new()
+		q.size = Vector2(110, 95) * GameData.UNIT
+		mi.mesh = q
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		m.set_shader_parameter("col", SCREENS[n])
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = GameData.world_to_3d(cx, rect[3] + 3.0, screen_z)
+		add_child(mi)
+		_halos.append([mi, m])
+
 # ---------------------------------------------------------------- characters
 
 var _caster_shader: Shader
@@ -545,7 +595,11 @@ func _process(dt: float) -> void:
 	if _water:
 		_water.set_shader_parameter("glow", night)
 	for m in _props:
-		m.set_shader_parameter("glow", 0.35 + 0.9 * night)
+		m.set_shader_parameter("glow", 0.15 + 0.35 * night)
+	var cut_now: bool = main.world.is_cut_away() if main and main.get("world") else false
+	for h in _halos:
+		h[0].visible = not cut_now
+		h[1].set_shader_parameter("strength", 0.04 + 0.16 * night)
 
 ## For a few seconds after it starts (and after a switch back to high): if the median frame takes longer than
 ## SLOW_MS, go low. Real time, not the engine's delta (held to 8 physics steps).
