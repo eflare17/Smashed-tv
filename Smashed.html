@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b331';
+const BUILD = 'b332';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -2024,6 +2024,7 @@ const YARD_SOLIDS = [
   { x0: 1104, y0: 1538, x1: 1236, y1: 1790, h: 16,  m: 'bed' },
   { cx: 1380, cy: 1680, r: 100, h: 72, m: 'tank', art: [1268, 1510, 1514, 1792] },                  // water tank
   { x0: 1520, y0: 1560, x1: 1638, y1: 1728, h: 36,  m: 'compost' },                                 // compost bins
+  { x0: 420,  y0: 1690, x1: 492,  y1: 1724, h: 22,  m: 'seeds' },                                   // b332: the seed crate against the shed
 ];
 for (const s of YARD_SOLIDS) if (s.roof) { s.roof.h = s.h; s.roof.cons = s.roof.ridge === 'y' ? [0, 1] : [2, 3]; }   // (b329: its roof starts on its walls)
 // push something round (o, r wide) out of one of them
@@ -2046,7 +2047,7 @@ const ESKY = { x: 504, y: 701 };
 function bbqNear(p) { return p.x > BBQ.x0 && p.x < BBQ.x1 && p.y > BBQ.y0 && p.y < BBQ.y1; }
 function eskyNear(p) { return Math.hypot(p.x - ESKY.x, p.y - ESKY.y) < 42; }
 function bbqLabel(w, p) {
-  const B = w && w.bbq; if (!B || !p || !p.alive || w.started || !lobbyTall(w) || p.tramp || p.air || p.sit || p.bed || p.dive) return null;
+  const B = w && w.bbq; if (!B || !p || !p.alive || w.started || !lobbyTall(w) || p.tramp || p.air || p.sit || p.bed || p.dive || p.can > 0) return null;   // (b332: not with the watering can)
   if (bbqNear(p)) {
     if (p.food === 1) return B.s.includes(-1) ? 'COOK' : null;
     if (!p.food) return B.s.some(c => c >= 1) ? 'TAKE SNAG' : ['LIGHT', 'TURN UP', 'TURN UP', 'TURN OFF'][B.heat];
@@ -2073,6 +2074,147 @@ function bbqAction(w, p) {                              // on the host (the gues
 function bbqStep(w, dt) {
   const B = w.bbq; if (!B || !B.heat) return;
   for (let i = 0; i < 4; i++) if (B.s[i] >= 0) B.s[i] = Math.min(2, B.s[i] + BBQ.rate[B.heat] * dt);
+}
+// b332: the weed bed (FARM.md, the first bit of stage 1). Eight holes in the dirt bed out the back, past the driveway
+// fence. Buy seeds at the crate against the shed (Northern Lights on its left, Sour Diesel on its right), and E at an
+// empty hole plants one. Grab the watering can at the tank; E waters a plant. It grows while the game's open: a few
+// minutes on its own, half as fast once it's dry (a watering lasts three minutes), and left dry two minutes it wilts
+// and loses a bud. Every wave you clear gives it a big jump. Ready, E harvests its buds, and E at the garage's roller
+// door sells them. It's the host's farm, kept on the host's machine; in co-op you share the bed, each of you has your
+// own seeds and buds, and whoever sells gets the cash.
+const STRAIN = [                                          // the six strains (FARM.md; the numbers are farm-numbers.xlsx's)
+  { name: 'Northern Lights',   short: 'NL',  price: 40,  mins: 4,  waves: 2, buds: 3, seed: 10 },
+  { name: 'Sour Diesel',       short: 'SD',  price: 75,  mins: 6,  waves: 3, buds: 3, seed: 30 },
+  { name: 'Granddaddy Purple', short: 'GDP', price: 80,  mins: 6,  waves: 3, buds: 4 },
+  { name: 'Blue Dream',        short: 'BD',  price: 140, mins: 9,  waves: 4, buds: 3 },
+  { name: 'Acapulco Gold',     short: 'AG',  price: 150, mins: 10, waves: 4, buds: 2 },
+  { name: 'White Widow',       short: 'WW',  price: 300, mins: 15, waves: 6, buds: 2 },
+];
+const WEED = {
+  holes: [[1426, 174], [1571, 174], [1426, 302], [1571, 302], [1426, 430], [1571, 430], [1426, 558], [1571, 558]],   // the holes in the yard art
+  reach: 48,                                              // how near a hole you stand to use it
+  wetFor: 180, wiltAfter: 120,                            // seconds a watering lasts; then seconds dry before it wilts
+  can: 8,                                                 // a full can waters eight plants
+  S: 1.25,                                                // the plant art (44 x 64, its stem's foot at 21.5, 60) in world units
+  crate: { x0: 420, y0: 1690, x1: 492, y1: 1724 },        // the seed crate, against the shed (in YARD_SOLIDS too)
+  sell: { x0: 932, y0: 948, x1: 1208, y1: 1036 },         // in front of the garage's roller door
+  tank: { cx: 1380, cy: 1680, d: 162 },                   // anywhere round the tank (its bucket's at the front, right)
+};
+function farmFresh() { return { v: 1, beds: WEED.holes.map(() => null), inv: [Array(12).fill(0), Array(12).fill(0)], pick: [0, 0] }; }
+function farmLoad() {                                     // (what each of you has: inv[id], seeds 0-5 then buds 6-11, one of each strain)
+  const F = farmFresh();
+  try {
+    const o = JSON.parse(localStorage.getItem('smashed-farm') || 'null');
+    if (o && o.v === 1) {
+      (o.beds || []).forEach((b, i) => { if (i < F.beds.length && b && STRAIN[b.s]) F.beds[i] = { s: b.s | 0, g: Math.max(0, Math.min(1, +b.g || 0)), wet: Math.max(0, +b.wet || 0), dry: Math.max(0, +b.dry || 0), wilt: b.wilt ? 1 : 0 }; });
+      (o.inv || []).forEach((a, i) => { if (i < 2 && Array.isArray(a)) for (let k = 0; k < 12; k++) F.inv[i][k] = Math.max(0, a[k] | 0); });
+      (o.pick || []).forEach((s, i) => { if (i < 2 && STRAIN[s]) F.pick[i] = s; });
+    }
+  } catch (_) {}
+  return F;
+}
+const FARM = farmLoad();
+let farmSaveT = 0;
+function farmSave() { farmSaveT = 0; try { localStorage.setItem('smashed-farm', JSON.stringify(FARM)); } catch (_) {} }
+function farmInvOf(F, id) { return F.inv[id] || (F.inv[id] = Array(12).fill(0)); }
+function farmSeedPick(F, id) {                            // the seed E plants: the kind you bought last, or else any you've got
+  const inv = farmInvOf(F, id), s = F.pick[id] || 0;
+  if (inv[s] > 0) return s;
+  for (let k = 0; k < STRAIN.length; k++) if (inv[k] > 0) return k;
+  return -1;
+}
+function budCount(inv) { let n = 0; for (let s = 0; s < STRAIN.length; s++) n += inv[6 + s]; return n; }
+function budValue(inv) { let v = 0; for (let s = 0; s < STRAIN.length; s++) v += inv[6 + s] * STRAIN[s].price / STRAIN[s].buds; return Math.round(v); }   // (a plant's price is for all its buds)
+function weedStage(g) { return g >= 1 ? 3 : g >= 0.5 ? 2 : g >= 0.2 ? 1 : 0; }   // seedling, young, fan leaves, ready with buds
+function weedHole(p) { let best = -1, bd = WEED.reach; WEED.holes.forEach(([x, y], i) => { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = i; } }); return best; }
+function crateSide(p) {                                   // which bin you're at: 0 Northern Lights (left), 1 Sour Diesel (right), -1 neither
+  const C = WEED.crate; if (p.x < C.x0 - 34 || p.x > C.x1 + 34 || p.y < C.y0 - 34 || p.y > C.y1 + 40) return -1;
+  return p.x < (C.x0 + C.x1) / 2 ? 0 : 1;
+}
+function tankNear(p) { return Math.hypot(p.x - WEED.tank.cx, p.y - WEED.tank.cy) < WEED.tank.d; }
+function sellNear(p) { const S = WEED.sell; return p.x > S.x0 && p.x < S.x1 && p.y > S.y0 && p.y < S.y1; }
+function farmLabel(w, p) {                                // what E does for p out here (null: nothing)
+  const F = w && w.farm; if (!F || !p || !p.alive || !lobbyTall(w) || p.tramp || p.air || p.sit || p.bed || p.dive || p.food) return null;
+  const inv = farmInvOf(F, p.id), h = weedHole(p);
+  if (h >= 0) {
+    const b = F.beds[h];
+    if (!b) { const s = farmSeedPick(F, p.id); return s >= 0 ? 'PLANT ' + STRAIN[s].short : null; }
+    if (b.g >= 1) return 'HARVEST';
+    return p.can > 0 && b.wet < WEED.wetFor - 20 ? 'WATER' : null;
+  }
+  const c = crateSide(p); if (c >= 0) return 'BUY $' + STRAIN[c].seed;
+  if (tankNear(p)) return (p.can || 0) < WEED.can ? 'FILL CAN' : 'LEAVE CAN';
+  if (sellNear(p) && budCount(inv)) return 'SELL $' + budValue(inv);
+  return null;
+}
+function farmAction(w, p) {                               // on the host (the guest's E comes in as a request)
+  const L = farmLabel(w, p); if (!L) return false;
+  const F = w.farm, inv = farmInvOf(F, p.id), say = (text, col) => w.floaters.push({ x: p.x, y: p.y - 70, text, t: 0, col: col || '#9fe07a' });
+  if (L.startsWith('PLANT')) {
+    const s = farmSeedPick(F, p.id); inv[s]--;
+    F.beds[weedHole(p)] = { s, g: 0, wet: 0, dry: 0, wilt: 0 }; say('PLANTED ' + STRAIN[s].short);
+  } else if (L === 'HARVEST') {
+    const h = weedHole(p), b = F.beds[h], n = Math.max(1, STRAIN[b.s].buds - b.wilt);
+    inv[6 + b.s] += n; F.beds[h] = null; say('+' + n + ' ' + STRAIN[b.s].short + ' BUDS');
+  } else if (L === 'WATER') {
+    const b = F.beds[weedHole(p)]; b.wet = WEED.wetFor; b.dry = 0; p.can--; say('WATERED', '#8fd3ff');
+  } else if (L.startsWith('BUY')) {
+    const s = crateSide(p), c = STRAIN[s].seed;
+    if ((p.coins || 0) < c) { say('NEED $' + c, '#e0473f'); return true; }
+    p.coins -= c; inv[s]++; F.pick[p.id] = s; say('+1 ' + STRAIN[s].short + ' SEED');
+  } else if (L === 'FILL CAN') { p.can = WEED.can; say('CAN FULL', '#8fd3ff'); }
+  else if (L === 'LEAVE CAN') p.can = 0;
+  else if (L.startsWith('SELL')) {
+    const v = budValue(inv); for (let s = 0; s < STRAIN.length; s++) inv[6 + s] = 0;
+    p.coins = (p.coins || 0) + v; say('+$' + v, '#f6d17a');
+  }
+  if (F === FARM) farmSave();
+  return true;
+}
+function farmStep(w, dt) {                                // each step on the host, in the lobby or out on a run
+  const F = w.farm; if (F !== FARM) return;
+  let live = false;
+  for (const b of F.beds) {
+    if (!b || b.g >= 1) continue;
+    live = true;
+    const wet = b.wet > 0;
+    b.g = Math.min(1, b.g + (wet ? 1 : 0.5) * dt / (STRAIN[b.s].mins * 60));
+    if (wet) b.wet = Math.max(0, b.wet - dt);
+    else if (!b.wilt && (b.dry += dt) >= WEED.wiltAfter) b.wilt = 1;
+  }
+  if (live && (farmSaveT += dt) > 10) farmSave();
+}
+function farmWave(w) {                                    // a wave cleared: everything growing jumps ahead
+  const F = w.farm; if (F !== FARM) return;
+  let any = false;
+  for (const b of F.beds) if (b && b.g < 1) { b.g = Math.min(1, b.g + 1 / STRAIN[b.s].waves); any = true; }
+  if (any) farmSave();
+}
+function farmPack(F) { return [F.beds.map(b => b ? [b.s, Math.round(b.g * 1000), Math.ceil(b.wet), b.wilt] : 0), F.inv.map(a => a.join('.')), F.pick]; }
+function farmUnpack(a) {
+  const F = farmFresh(); if (!Array.isArray(a)) return F;
+  (a[0] || []).forEach((b, i) => { if (b && i < F.beds.length && STRAIN[b[0]]) F.beds[i] = { s: b[0], g: b[1] / 1000, wet: b[2] || 0, dry: 0, wilt: b[3] || 0 }; });
+  (a[1] || []).forEach((s, i) => { F.inv[i] = String(s).split('.').map(Number); });
+  if (Array.isArray(a[2])) F.pick = a[2];
+  return F;
+}
+function farmHint(w, p) {                                 // a line or two about what's in front of you
+  const F = w && w.farm; if (!F || !p || !p.alive || !lobbyTall(w) || p.tramp || p.air || p.sit || p.bed || p.dive) return null;
+  const inv = farmInvOf(F, p.id), h = weedHole(p), list = (o) => STRAIN.map((S, s) => inv[o + s] ? inv[o + s] + ' ' + S.short : '').filter(Boolean).join(', ');
+  if (h >= 0) {
+    const b = F.beds[h];
+    const sell = budCount(inv) ? ['sell your buds at the garage door'] : [];
+    if (!b) { const l = list(0); return (l ? ['seeds: ' + l] : ['no seeds yet', 'buy them at the crate by the shed']).concat(sell); }
+    const N = STRAIN[b.s].name;
+    if (b.g >= 1) return [N + ': ready!', (STRAIN[b.s].buds - b.wilt) + ' buds' + (b.wilt ? ' (it lost one wilting)' : '')];
+    const pct = N + ' · ' + Math.floor(b.g * 100) + '%';
+    if (b.wet > 0) return [pct, 'watered'];
+    return [pct, (b.wilt ? 'wilted, lost a bud' : 'dry, growing slowly') + (p.can > 0 ? ': water it' : ': get the can at the tank')];
+  }
+  const c = crateSide(p); if (c >= 0) { const S = STRAIN[c]; return [S.name + ' seed · sells for $' + S.price, 'grows in ' + S.mins + ' min, or ' + S.waves + ' waves']; }
+  if (tankNear(p)) return [p.can > 0 ? 'watering can: ' + p.can + ' of ' + WEED.can + ' left' : 'the watering can', 'a full can waters ' + WEED.can + ' plants'];
+  if (sellNear(p)) { const l = list(6); return l ? ['buds: ' + l] : null; }
+  return null;
 }
 function trampNear(p) { return !!p && p.alive && !p.tramp && !p.air && !p.dive && !p.sit && !p.bed && !p.lift && !p.leg && Math.hypot(p.x - TRAMP.cx, p.y - TRAMP.cy) < TRAMP.r + 40; }
 function trampOn(p) {                                   // up over the edge, onto the mat near where you stood
@@ -2398,6 +2540,186 @@ function drawBbq(w) {
 function drawHeldSnag(p) {
   if (!p.food) return;
   ctx.save(); drawSnag(p.x + (p.fx < 0 ? -18 : 4), p.y - 20 - (p.dive ? 0 : p.dz || 0), [0, 0, 1, 1.8][p.food], 14, 5); ctx.restore();
+}
+// b332: the weed bed's pictures. Every strain's four stages are tools/strains.py's pixel art (one sheet: a row per strain,
+// a column per stage, 44 x 64 each); dry ones droop and go yellow, wilted ones droop further and go brown.
+const WEED_SHEET = new Image(); WEED_SHEET.src = 'data:image/png;base64,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';
+const WEED_ART = [];                                      // [strain][stage][0 healthy, 1 dry, 2 wilted]: { c: canvas, top: its top row }
+function weedArt(s, st, look) {
+  if (!WEED_ART.length) {
+    if (!WEED_SHEET.complete || !WEED_SHEET.naturalWidth) return null;
+    for (let i = 0; i < STRAIN.length; i++) {
+      const row = [];
+      for (let k = 0; k < 4; k++) {
+        const set = [];
+        for (let lk = 0; lk < 3; lk++) {
+          const c = document.createElement('canvas'); c.width = 44; c.height = 64; const g = c.getContext('2d');
+          g.imageSmoothingEnabled = false;
+          if (!lk) g.drawImage(WEED_SHEET, k * 44, i * 64, 44, 64, 0, 0, 44, 64);
+          else {                                          // squashed down onto its foot, and tinted
+            const hh = lk === 1 ? 54 : 47;
+            g.drawImage(WEED_SHEET, k * 44, i * 64, 44, 60, 0, 60 - hh, 44, hh);
+            g.globalCompositeOperation = 'source-atop'; g.fillStyle = lk === 1 ? 'rgba(176,154,58,0.42)' : 'rgba(118,78,40,0.6)'; g.fillRect(0, 0, 44, 64);
+          }
+          const d = g.getImageData(0, 0, 44, 64).data; let top = 60;
+          for (let y = 0; y < 60 && top === 60; y++) for (let x = 0; x < 44; x++) if (d[(y * 44 + x) * 4 + 3] > 0) { top = y; break; }
+          set.push({ c, top });
+        }
+        row.push(set);
+      }
+      WEED_ART.push(row);
+    }
+  }
+  return WEED_ART[s] && WEED_ART[s][st][look];
+}
+function weedLook(b) { return b.g < 1 && b.wet <= 0 ? 1 + b.wilt : 0; }
+// the sounds, on either screen, from what's changed since the last look (so the guest hears their own planting too)
+const FARM_FX = { beds: null, wet: null, inv: null, can: 0 };
+function farmFx(w) {
+  const F = w.farm, me = localMe(); if (!F || !me) return;
+  const beds = F.beds.map(b => b ? b.s : -1), wet = F.beds.map(b => b ? b.wet : 0), inv = (F.inv[me.id] || Array(12).fill(0)).slice(), can = me.can || 0;
+  if (FARM_FX.beds && SND.ctx && SND.on) {
+    F.beds.forEach((b, i) => {
+      const near = Math.max(0, 1 - Math.hypot(me.x - WEED.holes[i][0], me.y - WEED.holes[i][1]) / 600); if (near <= 0) return;
+      if (FARM_FX.beds[i] < 0 && b) sNoise(0.14, 320, 1, 0.24 * near, 'lowpass', 110);                    // a seed into the dirt
+      else if (FARM_FX.beds[i] >= 0 && !b) sNoise(0.3, 2400, 0.8, 0.16 * near, 'bandpass', 4200);        // the buds snipped off
+      else if (b && b.wet > FARM_FX.wet[i] + 5) sNoise(0.8, 1700, 0.6, 0.14 * near, 'bandpass', 800);   // watered
+    });
+    const o = FARM_FX.inv;
+    let seedsUp = false;
+    for (let s = 0; s < STRAIN.length; s++) if ((inv[s] || 0) > (o[s] || 0)) seedsUp = true;
+    const sold = budCount(o) > 0 && budCount(inv) === 0 && sellNear(me);
+    if (seedsUp) { sTone(0.06, 880, 1320, 0.06, 'square'); sTone(0.08, 1320, 1320, 0.04, 'triangle'); }
+    if (sold && typeof SFX !== 'undefined') { SFX.cash(); setTimeout(() => SND.ctx && SFX.cash(), 90); }
+    if (can > FARM_FX.can) sNoise(0.55, 700, 1.2, 0.16, 'bandpass', 1500);                              // the can filling
+  }
+  FARM_FX.beds = beds; FARM_FX.wet = wet; FARM_FX.inv = inv; FARM_FX.can = can;
+}
+function drawWeedBed(w) {                                 // on the ground, under everyone: soil in the holes, dark and damp where it's watered
+  const F = w.farm; if (!F) return;
+  farmFx(w);
+  ctx.save();
+  F.beds.forEach((b, i) => {
+    if (!b) return; const [x, y] = WEED.holes[i];
+    if (b.wet > 0) { ctx.fillStyle = 'rgba(28,16,8,0.42)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 46, 23, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = b.wet > 0 ? '#3b2618' : '#5a3d27'; ctx.beginPath(); ctx.ellipse(x, y + 1, 27, 12, 0, 0, Math.PI * 2); ctx.fill();   // the hole, filled in round it
+    ctx.fillStyle = b.wet > 0 ? '#4a3020' : '#6b4a30'; ctx.beginPath(); ctx.ellipse(x, y - 1, 14, 6, 0, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+function farmDeep(w) {                                    // the plants and the seed crate, slotted in by depth with everyone
+  const F = w.farm, out = []; if (!F) return out;
+  F.beds.forEach((b, i) => { if (b) out.push({ y: WEED.holes[i][1] + 2, draw: () => drawWeedPlant(b, WEED.holes[i]) }); });
+  out.push({ y: WEED.crate.y1 - 4, draw: drawSeedCrate });
+  return out;
+}
+function drawWeedPlant(b, h) {
+  const [x, y] = h, st = weedStage(b.g), lk = weedLook(b), a = weedArt(b.s, st, lk); if (!a) return;
+  const S = WEED.S, t = performance.now() / 1000, sway = lk ? 0 : Math.sin(t * 1.1 + x * 0.05) * 0.035;
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.translate(x, y + 2); ctx.transform(1, 0, -sway, 1, 0, 0);   // swaying in the breeze, from its foot
+  ctx.drawImage(a.c, -21.5 * S, -60 * S, 44 * S, 64 * S);
+  ctx.restore();
+  const top = y + 2 - (60 - a.top) * S;
+  if (lk) {                                               // a drop over it, bobbing: it wants water
+    const dx = x + 14, dy = top - 10 + Math.sin(t * 4 + x) * 2;
+    for (const [ox, col] of [[1, 'rgba(0,0,0,0.35)'], [0, '#7cc8ff']]) {
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(dx + ox, dy - 7 + ox); ctx.quadraticCurveTo(dx + 5 + ox, dy + ox, dx + ox, dy + 4 + ox); ctx.quadraticCurveTo(dx - 5 + ox, dy + ox, dx + ox, dy - 7 + ox); ctx.fill();
+    }
+  } else if (st === 3 && Math.sin(t * 3 + x * 0.3) > 0.6) {   // ready: a glint on its buds now and then
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; const gx = x + 2, gy = top + 4;
+    ctx.fillRect(gx - 0.5, gy - 3, 1, 7); ctx.fillRect(gx - 3, gy - 0.5, 7, 1);
+  }
+}
+function farmSignImg() {                                  // the SEEDS sign on its stake, by the crate (drawn the same in first person)
+  if (farmSignImg.c) return farmSignImg.c;
+  const c = farmSignImg.c = document.createElement('canvas'); c.width = 40; c.height = 44; const g = c.getContext('2d');
+  g.fillStyle = '#5e3f26'; g.fillRect(18, 12, 4, 32);
+  g.fillStyle = '#d2ae74'; g.fillRect(1, 1, 38, 14); g.strokeStyle = '#5e3f26'; g.lineWidth = 2; g.strokeRect(1, 1, 38, 14);
+  g.fillStyle = '#2f5a24'; g.font = 'bold 10px ui-sans-serif, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SEEDS', 20, 8.5);
+  return c;
+}
+function drawSeedPacket(x, y, col, leaf) {
+  ctx.fillStyle = '#efe4c6'; ctx.fillRect(x, y, 8, 10);
+  ctx.fillStyle = col; ctx.fillRect(x + 1, y + 3, 6, 6);
+  ctx.fillStyle = leaf; ctx.fillRect(x + 3, y + 4, 2, 4); ctx.fillRect(x + 2, y + 5, 4, 1);
+}
+function drawSeedCrate() {
+  const C = WEED.crate, W0 = C.x1 - C.x0, H0 = C.y1 - C.y0, mid = (C.x0 + C.x1) / 2;
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(farmSignImg(), C.x1 - 32, C.y0 - 40);                                        // the sign, stuck in behind it
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(C.x0 + 3, C.y1 - 1, W0, 5);               // its shadow
+  ctx.fillStyle = '#a7784a'; ctx.fillRect(C.x0, C.y0, W0, H0 - 10);                          // the top's rim
+  ctx.fillStyle = '#3a281a'; ctx.fillRect(C.x0 + 3, C.y0 + 3, W0 / 2 - 4.5, H0 - 16); ctx.fillRect(mid + 1.5, C.y0 + 3, W0 / 2 - 4.5, H0 - 16);   // the two bins
+  [[C.x0 + 6, '#3f8f3a', '#a8e07a'], [mid + 4, '#c4bf36', '#f2ee9a']].forEach(([x, col, leaf]) => {   // full of packets: Northern Lights, Sour Diesel
+    drawSeedPacket(x, C.y0 + 5, col, leaf); drawSeedPacket(x + 9, C.y0 + 4, col, leaf); drawSeedPacket(x + 18, C.y0 + 6, col, leaf);
+  });
+  ctx.fillStyle = '#7a5434'; ctx.fillRect(C.x0, C.y1 - 10, W0, 10);                         // the front boards
+  ctx.fillStyle = '#5e3f26'; ctx.fillRect(C.x0, C.y1 - 10, W0, 1); ctx.fillRect(C.x0, C.y1 - 5, W0, 1); ctx.fillRect(mid - 0.5, C.y1 - 10, 1, 10);
+  ctx.font = 'bold 8px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#f6ecd0';   // the prices on the front
+  ctx.fillText('$' + STRAIN[0].seed, C.x0 + W0 / 4, C.y1 - 2); ctx.fillText('$' + STRAIN[1].seed, C.x0 + W0 * 3 / 4, C.y1 - 2);
+  ctx.strokeStyle = '#2e1f13'; ctx.lineWidth = 1; ctx.strokeRect(C.x0 + 0.5, C.y0 + 0.5, W0 - 1, H0 - 1);
+  ctx.restore();
+}
+function drawHeldCan(p) {                                 // the watering can in his hand
+  if (!(p.can > 0)) return;
+  const L = p.fx < 0, x = p.x + (L ? -21 : 7), y = p.y - 24 - (p.dive ? 0 : p.dz || 0), sx = L ? x : x + 13, dir = L ? -1 : 1;
+  ctx.save();
+  ctx.strokeStyle = '#56616c'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(sx, y + 6); ctx.lineTo(sx + dir * 7, y - 2); ctx.stroke();   // the spout
+  ctx.fillStyle = '#56616c'; ctx.fillRect(sx + dir * 7 - 2, y - 5, 4, 3);                  // its rose
+  ctx.beginPath(); ctx.arc(x + 6.5, y, 4.5, Math.PI, 0); ctx.stroke();                      // the handle
+  ctx.fillStyle = '#93a0ac'; ctx.fillRect(x, y, 13, 10);
+  ctx.fillStyle = '#c3ccd5'; ctx.fillRect(x, y, 13, 2); ctx.fillStyle = '#6f7b87'; ctx.fillRect(x, y + 6, 13, 1);
+  ctx.restore();
+}
+function drawFarmHint(w, p) {                             // over your head, about what's in front of you
+  if (p !== localMe()) return;
+  const lines = farmHint(w, p); if (!lines) return;
+  const y0 = p.y - T.radius * T.spriteScale * 1.25 - 16 - (p.dz || 0);
+  ctx.save(); ctx.font = 'bold 11px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center';
+  lines.forEach((t, i) => { const y = y0 + i * 13; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(t, p.x + 1, y + 1); ctx.fillStyle = i ? '#dfe8d2' : '#bff08a'; ctx.fillText(t, p.x, y); });
+  ctx.restore();
+}
+function drawSeedIcon(x, y) {                             // the HUD: a seed packet
+  ctx.fillStyle = '#efe4c6'; ctx.fillRect(x, y, 10, 13);
+  ctx.fillStyle = '#4f9a3c'; ctx.fillRect(x + 1, y + 4, 8, 8);
+  ctx.fillStyle = '#b4ec84'; ctx.fillRect(x + 4, y + 5, 2, 6); ctx.fillRect(x + 2, y + 7, 6, 2);
+}
+function drawBudIcon(x, y) {                              // and a bud: green, frosty, orange hairs
+  ctx.fillStyle = '#4f8a3a'; ctx.beginPath(); ctx.ellipse(x + 5, y + 7, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#d6ebb0'; ctx.fillRect(x + 3, y + 3, 1, 1); ctx.fillRect(x + 6, y + 8, 1, 1); ctx.fillRect(x + 4, y + 10, 1, 1);
+  ctx.fillStyle = '#e28a3e'; ctx.fillRect(x + 6, y + 4, 1, 2); ctx.fillRect(x + 3, y + 7, 1, 2); ctx.fillRect(x + 5, y + 11, 1, 1);
+}
+function drawFarmHud(w, p, x, y) {                        // after his cash: seeds and buds in his pocket, and the can
+  const inv = w.farm && w.farm.inv[p.id]; if (!inv) return;
+  let sd = 0, bd = 0; for (let s = 0; s < STRAIN.length; s++) { sd += inv[s]; bd += inv[6 + s]; }
+  if (sd) { drawSeedIcon(x, y - 12); ctx.fillStyle = '#d9ecb8'; ctx.fillText(String(sd), x + 14, y); x += 22 + 11 * String(sd).length; }
+  if (bd) { drawBudIcon(x, y - 13); ctx.fillStyle = '#a8e480'; ctx.fillText(String(bd), x + 14, y); x += 22 + 11 * String(bd).length; }
+  if (p.can > 0) {
+    ctx.fillStyle = '#93a0ac'; ctx.fillRect(x + 2, y - 9, 9, 8); ctx.fillStyle = '#c3ccd5'; ctx.fillRect(x + 2, y - 9, 9, 2);
+    ctx.strokeStyle = '#93a0ac'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 2, y - 4); ctx.lineTo(x - 2, y - 9); ctx.stroke();
+    ctx.fillStyle = '#8fd3ff'; ctx.fillText(String(p.can), x + 15, y);
+  }
+}
+function drawFpFarmHint(w) {                              // first person: the same lines, under the crosshair's E
+  const me = localMe(), lines = me && farmHint(w, me); if (!lines) return;
+  ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  lines.forEach((t, i) => { const y = ARENA.h / 2 + 54 + i * 16; ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillText(t, ARENA.w / 2 + 1, y + 1); ctx.fillStyle = i ? '#dfe8d2' : '#bff08a'; ctx.fillText(t, ARENA.w / 2, y); });
+  ctx.textAlign = 'left';
+}
+function drawFpCan(me, CW, CH, fade) {                    // first person: the watering can, down at the bottom
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = fade;
+  const k = CH / 340; ctx.translate(CW * 0.5, CH * 0.71); ctx.rotate(-0.12);
+  ctx.strokeStyle = '#56616c'; ctx.lineWidth = 5 * k; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-24 * k, -6 * k); ctx.lineTo(-58 * k, -40 * k); ctx.stroke();               // the spout
+  ctx.fillStyle = '#56616c'; ctx.beginPath(); ctx.ellipse(-61 * k, -43 * k, 7 * k, 4 * k, -0.8, 0, Math.PI * 2); ctx.fill();   // its rose
+  ctx.lineWidth = 6 * k; ctx.beginPath(); ctx.arc(4 * k, -26 * k, 18 * k, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();   // the handle
+  ctx.fillStyle = '#93a0ac'; ctx.fillRect(-26 * k, -22 * k, 56 * k, 40 * k);
+  ctx.fillStyle = '#c3ccd5'; ctx.fillRect(-26 * k, -22 * k, 56 * k, 6 * k);
+  ctx.fillStyle = '#6f7b87'; ctx.fillRect(-26 * k, 0, 56 * k, 3 * k);
+  ctx.fillStyle = 'rgba(143,211,255,0.9)'; for (let i = 0; i < WEED.can; i++) ctx.fillRect((-22 + i * 6.6) * k, 8 * k, 4.5 * k, 5 * k * (i < me.can ? 1 : 0.25));   // how much water's left
+  ctx.restore();
 }
 // b322: the yard picture, under everything else in the lobby
 function drawYard() {
@@ -3954,6 +4276,15 @@ function fpMaterial(s, face, u, z) {
       else { r = 12; g = 12; b = 16; a = fpRep(u, 4) < 0.7 || fpRep(z, 4) < 0.7 ? 0.42 : 0.1; }   // the net
       break;
     }
+    case 'seeds': {                                                   // b332: the seed crate: boards, and a packet of each on the front
+      const sl = s.x0 + (s.x1 - s.x0) * 0.25, sr = s.x0 + (s.x1 - s.x0) * 0.75, nl = Math.abs(u - sl) < 9, sd = Math.abs(u - sr) < 9;
+      if (face === 'S' && z > 5 && z < 18 && (nl || sd)) {
+        if (z > 14) { r = 238; g = 230; b = 202; } else if (nl) { r = 64; g = 142; b = 58; } else { r = 198; g = 190; b = 62; }
+        break;
+      }
+      r = 150; g = 108; b = 66; if (z % 7 < 1 || z > H - 2) { r *= 0.72; g *= 0.72; b *= 0.72; }
+      break;
+    }
     case 'junk':                                                      // bricks and crates
       if (fpRep(u, 22) < 11) { r = 134; g = 66; b = 48; } else { r = 152; g = 112; b = 64; }
       if (z % 6 < 1) { r *= 0.75; g *= 0.75; b *= 0.75; } break;
@@ -4122,6 +4453,12 @@ function shroomExtras(w, me, sprites, npc) {
       sprites.push({ img: SHROOM.glow, x: F.x0 + W0 * (0.15 + 0.7 * ((i * 0.37) % 1)), y: F.y0 + H0 * (0.3 + 0.4 * ((i * 0.61) % 1)), W: sz, H: sz, foot: 36 + sz * 0.6, glow: true });
     }
     for (const q of BBQ_FX.puffs) sprites.push({ img: fpPuff(q), x: F.x0 + q.u * W0, y: F.y0 + q.v * H0, W: q.r * 2.4, H: q.r * 2.4, foot: 36 + q.z + q.r * 1.2 });
+  }
+  if (w.farm && lobbyTall(w)) {                                          // b332: the weed bed, and the seed crate's sign
+    farmFx(w);
+    const S = WEED.S;
+    w.farm.beds.forEach((b, i) => { if (!b) return; const a = weedArt(b.s, weedStage(b.g), weedLook(b)); if (a) sprites.push({ img: a.c, x: WEED.holes[i][0], y: WEED.holes[i][1] + 2, W: 44 * S, H: 64 * S, foot: 60 * S }); });
+    sprites.push({ img: farmSignImg(), x: WEED.crate.x1 - 12, y: WEED.crate.y0 - 3, W: 40, H: 44, foot: 44 });
   }
   if (T.loungeFloor && !w.started) for (const d of DUCKS) { const im = duckImg(d.look); sprites.push({ img: im, x: d.x, y: d.y, W: im.width, H: im.height, foot: im.height - 4 }); }
   // Gothica, thrown: flying, flat out on the floor, or paddling in the pool
@@ -4612,6 +4949,11 @@ function drawShroom(w) {
           if (sh.m === 'bbq' && wx > BBQ.fp.x0 && wx < BBQ.fp.x1 && wy > BBQ.fp.y0 && wy < BBQ.fp.y1) {   // b330: the hotplate
             bbqPlateRGB((wx - BBQ.fp.x0) / (BBQ.fp.x1 - BBQ.fp.x0), (wy - BBQ.fp.y0) / (BBQ.fp.y1 - BBQ.fp.y0), w.bbq, t); r = BBQ_RGB[0]; g = BBQ_RGB[1]; b = BBQ_RGB[2];
           } else if (sh.m === 'esky') { r = 228; g = 232; b = 236; }
+          else if (sh.m === 'seeds') {                                   // b332: the seed crate's two bins of packets
+            const mid = (sh.x0 + sh.x1) / 2;
+            if (wx < sh.x0 + 3 || wx > sh.x1 - 3 || wy < sh.y0 + 3 || wy > sh.y1 - 3 || Math.abs(wx - mid) < 1.5) { r = 170; g = 124; b = 78; }
+            else { const kk = fpRep(wx + wy * 1.3, 7) < 1.2 ? 0.72 : 1; if (wx < mid) { r = 70 * kk; g = 150 * kk; b = 62 * kk; } else { r = 204 * kk; g = 196 * kk; b = 72 * kk; } }
+          }
           else if (sh.m === 'tank') {                                    // the tank's rim, and the water in it
             if (Math.hypot(wx - sh.cx, wy - sh.cy) > sh.r - 7) { r = 196; g = 200; b = 204; }
             else { const kk = fpRep(wx * 0.7 + wy, 18) < 1.2 ? 1.15 : 1; r = 78 * kk; g = 128 * kk; b = 176 * kk; }
@@ -4882,6 +5224,7 @@ function drawShroom(w) {
     if (me.food > 1) { ctx.fillStyle = 'rgba(30,14,6,0.5)'; for (let i = 1; i < 5; i++) ctx.fillRect(-sw / 2 + i * sw / 5, -shh / 2, sw * 0.02, shh); }
     ctx.restore();
   }
+  if (!onBoard && !dv && me.can > 0) drawFpCan(me, CW, CH, fade);      // b332: the watering can
   // a crosshair, and how long's left as a thin rainbow along the top
   ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
   ctx.globalAlpha = fade;
@@ -4920,6 +5263,7 @@ function drawShroom(w) {
       ctx.fillStyle = '#f7a8ff'; ctx.fillText(txt, ARENA.w / 2, ARENA.h / 2 + 32); ctx.textAlign = 'left';
       drawCarryButton();
     }
+    if (!dv) drawFpFarmHint(w);                                        // b332: about the plant (or crate, or tank) in front of you
     if (!dv) drawHotbar(w);
   drawControlsHelp();
     if (!dv) shroomWords(w);
@@ -6043,6 +6387,7 @@ function buildWorld() {
     shake: 0,
     dummies: [], cans: [],      // lobby playground: only alive before Start
     bbq: { heat: 0, s: [-1, -1, -1, -1] },   // b330: the barbecue on the deck
+    farm: FARM,                              // b332: the weed bed (the host's own, kept on this machine)
     plants: [], plantTimer: 0,  // potatoes, the spud gun's ammo
     husks: [],                  // spent potatoes, mid-air
     slot: { x: ARENA.w * 0.5, y: ARENA.wall + 54 + T.slotDrop, flash: 0, sym: 0, cool: 0, busy: -1,
@@ -7538,6 +7883,7 @@ function stepBase(w, inputs, dt) {
       }
     } else if (w.enemies.length === 0) {
       w.breather = T.intermission;
+      farmWave(w);                               // b332: a wave cleared: the weed jumps ahead
     }
   }
 
@@ -8194,6 +8540,7 @@ function stepBase(w, inputs, dt) {
   w.slot.y = ARENA.wall + 54 + T.slotDrop;      // so the slider moves it live
   if (!w.slotSecret?.room) w.slot.x = (!w.started && T.loungeFloor) ? T.loungeSlotX : ARENA.w * 0.5;
   lobbySolids(w, dt);
+  farmStep(w, dt);                              // b332: the weed growing, out on a run too
   w.slot.flash = Math.max(0, w.slot.flash - dt);
 
   for (let i = w.floaters.length - 1; i >= 0; i--) {
@@ -8360,11 +8707,12 @@ function snapshot(w) {
                            p.plate ? 'SML'.indexOf(p.plate) + 1 : 0,
                            p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0,   // b309: taking a hit, so the guest sees it
                            p.tramp ? 1 : p.air ? 2 : 0, Math.round(p.tv || 0),   // b326: on the trampoline (b327: or flying off it), and how fast he's going up or down
-                           p.food || 0]),                                           // b330: a snag in his hand
+                           p.food || 0, p.can || 0]),                               // b330: a snag in his hand (b332: the watering can)
     gy: [GYM.bar.L.join(''), GYM.bar.R.join(''), GYM.pegs.map(q => q.join('')), LEG.horn.L.join(''), LEG.horn.R.join(''),
          GYM.anim ? [GYM.anim.kind, GYM.anim.side, GYM.anim.size, Math.round(GYM.anim.t * 100), Math.round(GYM.anim.dur * 100), GYM.anim.pid] : 0],
     bj: bjPack(w.bj),
     bq: w.bbq ? [w.bbq.heat].concat(w.bbq.s.map(c => c < 0 ? -1 : Math.round(c * 100))) : 0,   // b330: the barbecue
+    fm: w.farm ? farmPack(w.farm) : 0,                                                          // b332: the weed bed
     rk: (w.rockets || []).map(r => [Math.round(r.sx), Math.round(r.sy), Math.round(r.tx), Math.round(r.ty),
                                     Math.round(r.t * 1000), Math.round(r.H), Math.round(r.h0), r.id]),
     bx: (w.blasts || []).map(b => [Math.round(b.x), Math.round(b.y), Math.round(b.t * 100), b.id]),
@@ -8464,10 +8812,11 @@ function worldFromSnapshot(s, age, bits) {
       leg: a[52] ? { t: a[52][0] / 100 + age, reps: a[52][1], rep: a[52][2] / 100 } : null,
       plate: a[53] ? 'SML'[a[53] - 1] : null,
       vape: a[54] ? { t: a[54] / 100 + age } : null,
-      tramp: a[55] === 1 ? 1 : 0, air: a[55] === 2 ? {} : null, tv: a[56] || 0, food: a[57] || 0
+      tramp: a[55] === 1 ? 1 : 0, air: a[55] === 2 ? {} : null, tv: a[56] || 0, food: a[57] || 0, can: a[58] || 0
     })),
     bj: bjUnpack(s.bj),
     bbq: s.bq ? { heat: s.bq[0], s: s.bq.slice(1, 5).map(v => v < 0 ? -1 : v / 100) } : { heat: 0, s: [-1, -1, -1, -1] },
+    farm: farmUnpack(s.fm),                                                                     // b332
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
                                       H: a[5], h0: a[6], id: a[7] })),
     blasts: (s.bx || []).map(a => ({ x: a[0], y: a[1], t: a[2] / 100, id: a[3] })),
@@ -10092,6 +10441,7 @@ function lobbyLabel(w, p) {
   if (p.tramp) return trampHigh(p) ? 'JUMP OFF' : 'CLIMB OFF';   // b326 (b327)
   if (p.air) return null;
   { const bq = bbqLabel(w, p); if (bq) return bq; }      // b330
+  { const fl = farmLabel(w, p); if (fl) return fl; }     // b332: the weed bed, the seeds, the can, selling
   const gn = gymNear(w, p); if (gn) return gn.label;
   if (p.sit) return !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   if (p.bed) return 'GET UP';
@@ -10145,6 +10495,7 @@ function lobbyAction(w, p) {
   const carrying = NPC_GOTH.carrier === p.id;
   if (p.tramp) { if (trampHigh(p)) trampLeap(p, p.moving ? p.ix : p.fx, p.moving ? p.iy : p.fy); else trampOff(p); return; }   // b326 (b327: up high, leap off)
   if (bbqAction(w, p)) return;                           // b330: the barbecue, the esky, eating
+  if (farmAction(w, p)) return;                          // b332: the weed bed
   if (!carrying && trampNear(p)) { trampOn(p); return; }
   if (gymAction(w, p)) return;
   if (!carrying && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
@@ -11563,6 +11914,7 @@ function renderBase(w, hudRight) {
   ctx.fillRect(ARENA.w - ARENA.wall, 0, ARENA.wall, ARENA.h);
   drawLowerLobby(w);
   if (lobbyTall(w)) drawBbq(w);                     // b330
+  if (lobbyTall(w)) drawWeedBed(w);                 // b332
 
   if (w.slotSecret?.room) drawMachineFloor(w);
 
@@ -12229,7 +12581,8 @@ function renderBase(w, hudRight) {
                           { y: WARD.y - 6, draw: () => drawWardrobe() },
                           { y: MIRROR.y - 6, draw: () => drawMirror(w) },
                           ...CABINETS.map(c => ({ y: cabY() - 6, draw: () => drawCabinet(w, c) })),
-                          ...(lobbyTall(w) ? [{ y: TANK_OVER.y, draw: () => drawYardCut(TANK_OVER) }] : [])].sort((a, b) => a.y - b.y) : [];   // (b328: the tank)
+                          ...(lobbyTall(w) ? [{ y: TANK_OVER.y, draw: () => drawYardCut(TANK_OVER) }] : []),
+                          ...(lobbyTall(w) ? farmDeep(w) : [])].sort((a, b) => a.y - b.y) : [];   // (b328: the tank; b332: the weed and the seed crate)
   const speech = [];
   for (const p of byDepth) {
     while (deep.length && p.y >= deep[0].y) deep.shift().draw();
@@ -12265,6 +12618,8 @@ function renderBase(w, hudRight) {
     drawJared(w, p);
     drawHeldPlate(p);
     drawHeldSnag(p);                                 // b330
+    drawHeldCan(p);                                  // b332
+    if (lobbyTall(w)) drawFarmHint(w, p);
     // everything hung over his head rides up the tower with him
     ctx.save();
     ctx.translate(0, p.dive === DIVE.SWIM ? 36 : -(p.dz || 0));   // a swimmer's head is low in the water
@@ -12476,6 +12831,7 @@ function renderBase(w, hudRight) {
       ctx.fillText((p.ammo > 0 ? '\u25CF' : '\u25CB') + ' ' + p.ammo,
                    ARENA.wall + 70, ARENA.wall + 46 + i * 22);
     }
+    if (!w.started) drawFarmHud(w, p, ARENA.wall + 150, ARENA.wall + 46 + i * 22);   // b332
   });
 
   if (cal.on) {
@@ -13562,6 +13918,7 @@ function startGame() {
   for (const p of world.players) { if (p.plate) { rackPlate(p.plate); p.plate = null; } p.lift = null; p.leg = null; }
   for (const p of world.players) {
     p.food = 0;                          // b330: no snags in the run
+    p.can = 0;                           // b332: or the watering can
     if (p.tramp || p.air) { p.tramp = 0; p.air = null; p.tz = 0; p.tv = 0; if (!p.dive) p.dz = 0; }   // b326: off the trampoline
     if (inYard(p)) { p.x = BACK_DOOR.x; p.y = ARENA.h - ARENA.wall - T.radius - 6; p.vx = p.vy = 0; }   // b322: in from the yard
     p.coins = T.testCash;                // 0 in the real game; a slider for testing

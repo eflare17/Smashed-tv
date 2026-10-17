@@ -1,7 +1,8 @@
 # The farm (planned)
 
 Smashed gets an outside area with a farming side: grow, harvest and sell crops between runs, and spend the
-cash on guns, upgrades and more land. Agreed with Tyson on 17 Oct 2026; nothing is built in the game yet.
+cash on guns, upgrades and more land. Agreed with Tyson on 17 Oct 2026. The weed bed in the backyard is in the
+game from b332 (see "Built so far" at the bottom); the rest is still the plan.
 
 ## How it works
 - **Loop:** plant, water, wait, harvest, sell (at the garage), spend.
@@ -85,3 +86,28 @@ Seeds you can buy: Northern Lights and Sour Diesel (prices still to decide; firs
 
 All of these numbers live in `farm-numbers.xlsx` (water, fertiliser, strains, a grow and profit calculator,
 breeding, upgrades); change the yellow cells and the rest works itself out.
+
+## Built so far
+**b332 (17 Oct): the weed bed.** The 8 holes in the dirt bed east of the driveway fence.
+- **Seeds:** a crate against the shed's right-hand wall, with a SEEDS sign. Its left bin sells Northern Lights
+  ($10) and its right bin Sour Diesel ($30). E buys one.
+- **Planting:** E at an empty hole plants a seed. It uses the kind you bought last, or any other you've got.
+- **Water:** E at the tank grabs the watering can, which waters 8 plants (E there again puts it back). E at a
+  plant waters it.
+  - Watered, a plant grows at full speed for 3 minutes, with dark damp soil.
+  - Dry, it grows at half speed, droops and shows a drop.
+  - Dry for 2 minutes, it wilts: it goes brown and loses a bud.
+- **Growing:** it grows in real time while the game's open, runs included (4 min for NL, 6 for SD). Every wave
+  you clear jumps it ahead (2 waves for NL, 3 for SD).
+- **Stages:** seedling, young, fan leaves, then ready with buds, drawn from tools/strains.py's art. E harvests
+  the buds.
+- **Selling:** E at the garage's roller door sells every bud you're carrying. A plant's price is for all its
+  buds, so a wilted one sells for less.
+- **Co-op:** one shared bed. Each player keeps their own seeds and buds, and whoever sells gets the cash.
+- **Saving:** it's all kept on the host's machine (localStorage `smashed-farm`).
+- **On screen:** a hint over your head says what's in front of you (the strain, how grown, dry or watered).
+  Seeds, buds and the can show after your cash. First person shows the plants, the crate, the sign and the can.
+- **Not yet:**
+  - The other four strains can't be bought or bred yet (the game can draw and grow all six).
+  - Fertiliser, breeding, the bong buffs, raids, the potato patch and stages 2 and 3.
+  - Lobby cash still resets each run.
