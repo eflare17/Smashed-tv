@@ -1,5 +1,7 @@
 # Lighting: milestones 1.4 (day and night) and 1.5 (the look pass)
 
+Status: done (merged with M1 final, cbdebc6; tests and screenshots re-run on it).
+
 Branch `claude/godot-lighting`. Everything is in this session's own folders: `scripts/clock/`, `scripts/look/`,
 `scenes/look/`, `test/lighting/` and this note. No existing file was edited.
 
@@ -11,12 +13,16 @@ Branch `claude/godot-lighting`. Everything is in this session's own folders: `sc
 GameClock="*res://scripts/clock/game_clock.gd"
 ```
 
-`scripts/main.gd`, the last line of `_ready()` (after the World is built and Gothica placed, before the
-`print("Smashed TV ...ready")` is fine too):
+`scripts/main.gd`, in `_ready()`, before `Arcade.install(self)` / `FarmInstall.install(self)` (after the World
+is built and Gothica placed):
 
 ```gdscript
 	LightingInstall.install(self)
 ```
+
+(Any order works: the farm's meshes are lit as they're made, wherever it's installed. With the autoload the farm
+always finds the GameClock; without it, install lighting first and the clock is only added at the end of the
+frame, so the farm would fall back to its stand-in: use the autoload.)
 
 That's all. Without the autoload it still works: the install adds the GameClock at `/root/GameClock` itself.
 main.gd's own fog toggle (`_on_mode`: haze in first person only) stays as it is; the install only changes the
@@ -75,8 +81,14 @@ The meshes have no normals, so the shader works each face's normal out on screen
 - **Far blur** (first person, high look): the Compatibility renderer has no depth texture (tried: the shader
   won't compile on the web), so the lit material blends far surfaces (from 12 m, fully by 45 m) into a smoothly
   filtered copy of their own picture. Near things stay crisp pixel art.
-- **Top-down stays crisp**: no haze, no blur; the floors keep their drawn shadows; at night the rooms are warm
-  pools of lamp light and the yard is moonlit blue.
+- **Top-down stays crisp and playable at night**: no haze, no blur; the floors keep their drawn shadows; at night
+  the rooms are warm pools of lamp light, and out in the yard the view from above gets 2.5x the ambient and 2.2x
+  the moon (eased in over a second as you step outside), so the yard is a readable moonlit green; first person
+  keeps the real dark.
+- **The World's indoor materials** (its IN_SHADER, the HTML game's first-person darkening with distance) become
+  lit too; the darkening is kept at about half strength, since the real lamps fall off by themselves.
+- **The farm's** beds and ground (StandardMaterial3Ds) are lit, also those it makes later; its plant shader is
+  left as it is.
 
 **Quality**: "high" (shadows, all the lamps, the far blur, the glow) and "low" (phones: unshaded pictures times
 one day colour, plus up to four lamps worked out in the material: no light passes, no shadows). Phones
@@ -115,7 +127,7 @@ wait for both players in bed (the bed's job), then the host calls `sleep_to_morn
 - `scenes/look/look_test.tscn`: the game with the install, for the web build and screenshots. Its address takes
   `hour=`, `day=`, `look=`, `view=fp`, `at=x,y`, `face=deg`, `ly=`, `zoom=`, `perf` (prints frame times),
   `nolight` (the game without the install, to compare). `test/lighting/shots.mjs` takes a screenshot per query.
-  To export it, point the copy's `run/main_scene` at it.
+  To export it, point the copy's `run/main_scene` at it and take `test/*` out of the export's exclude filter.
 
 **Frame times** (the web export in headless Chromium, which draws with the CPU (SwiftShader), 480x270; only
 the ratios mean anything): without the install 41 ms; low look 48-54 ms (about +20%); high look 94 ms at noon
@@ -138,7 +150,9 @@ slow desktop drops to it.
   let the shadow caster skip it without the geometry test in `_caster_without_roof`; normals in the SurfaceTools
   (`st.generate_normals()`) would let the shader skip the screen-space normal. The props' shader code is
   copied from the material and patched by string replace (`render_mode unshaded, ` and
-  `ALPHA_SCISSOR_THRESHOLD = 0.5;`); if PROP_SHADER changes, keep those two strings or tell this session.
+  `ALPHA_SCISSOR_THRESHOLD = 0.5;`); if PROP_SHADER changes, keep those two strings or tell this session. The
+  indoor materials are recognised by their shader having `k_near` and `render_mode unshaded`, and read through
+  their `tex`, `has_tex`, `col`, `k_near`, `k_off` parameters.
 - **The Lobby session's bed**: a `sleep_requested` signal (see Sleeping). Its other interactables don't need
   anything.
 - **Anyone adding unshaded StandardMaterial3Ds later** (enemies' props, gore...): they stay unshaded unless
@@ -152,6 +166,8 @@ slow desktop drops to it.
 - **Night is 9 pm to 7 am** for `is_night()` (the 6 real minutes); the look gets dark from about 8 pm (sunset
   7:54 pm) and light from about 6 am.
 - **The sun crosses the north** (southern hemisphere), matching the HTML game's lit north faces.
+- **From above at night the yard is lifted** (more ambient and moon) so it stays playable; indoors and in first
+  person it's left dark and lamp-lit.
 - **Rooms are sunlit by day in both views**: the roof doesn't throw its shadow over the inside (it would make
   first person dark inside all day while the top-down view, which has no roof, stays bright).
 - **Sleeping works at any time** (an afternoon nap goes to 7 am tomorrow), from either side of the bed.

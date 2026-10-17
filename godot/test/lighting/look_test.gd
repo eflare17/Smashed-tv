@@ -11,6 +11,8 @@ var _t := 0.0
 var _last := 0
 
 func _ready() -> void:
+	LightingInstall._ensure_clock(get_tree())    # (the autoload, once merged: the farm finds it at its install)
+	await get_tree().process_frame
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	var a := LightingInstall._page_args()

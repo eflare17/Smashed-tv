@@ -15,6 +15,8 @@ func frames(n: int) -> void:
 		await get_tree().process_frame
 
 func _ready() -> void:
+	LightingInstall._ensure_clock(get_tree())    # (the autoload, once merged: the farm finds it at its install)
+	await get_tree().process_frame
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	var li := LightingInstall.install(main)
@@ -34,7 +36,12 @@ func _ready() -> void:
 				m = mi.material_override if mi.material_override else mi.mesh.surface_get_material(i)
 			if m is StandardMaterial3D and m.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED:
 				unlit += 1
-	check(unlit == 0, "no unshaded StandardMaterial3D left in the World (%d)" % unlit)
+			elif m is ShaderMaterial and m.shader and m.shader.code.contains("k_near") and m.shader.code.contains("render_mode unshaded"):
+				unlit += 1
+	check(unlit == 0, "no unshaded World material left (StandardMaterial3D or indoor) (%d)" % unlit)
+	var farm := main.get_node_or_null("Farm")
+	if farm:
+		check(farm.get("clock") == clock, "the farm runs on this GameClock")
 	check(main.player.sprite.get_node_or_null("SunShadow") != null, "the player has a sun shadow caster")
 	check(main.gothica.sprite.get_node_or_null("SunShadow") != null, "Gothica has a sun shadow caster")
 	check(main.world.find_children("HouseShadow", "", true, false).size() == 1, "the house's shadow caster (no roof)")

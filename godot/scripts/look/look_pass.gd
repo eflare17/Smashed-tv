@@ -35,6 +35,10 @@ uniform float blur_start = 12.0;
 uniform float blur_full = 45.0;
 uniform bool has_tex = false;
 uniform vec4 albedo : source_color = vec4(1.0);
+// the World's indoor darkening with distance in first person (its IN_SHADER: the HTML game's), kept
+uniform bool in_dark = false;
+uniform float k_near = 220.0;
+uniform float k_off = 40.0;
 uniform bool srgb_vertex = true;
 uniform float scissor = 0.5;
 vec3 to_linear(vec3 c) {
@@ -53,6 +57,12 @@ void fragment() {
 			}
 		}
 		c *= t;
+	}
+	if (in_dark) {
+		float d = max(0.0, -VERTEX.z) / 0.025;
+		float sh = min(1.0, k_near / (d + k_off));
+		sh = mix(sh, 1.0, step(0.7071, INV_VIEW_MATRIX[2].y));
+		c.rgb *= mix(1.0, pow(sh, 2.2), 0.45);   // (softened: the real light falls off by itself)
 	}
 	ALBEDO = c.rgb;
 	%ALPHA%
@@ -183,6 +193,10 @@ var _chars: Array = []            # [CharSprite, caster Sprite3D, caster materia
 var _props: Array = []            # ShaderMaterials of the lit props (their glow follows the time of day)
 var _water: ShaderMaterial
 var _blur_on := -1.0
+## From above at night: the ambient and the moon multiplied by these (readable, still night).
+const TD_NIGHT_AMBIENT := 2.5
+const TD_NIGHT_MOON := 2.2
+var _td_boost := -1.0
 var _full_caster: MeshInstance3D
 var _full_mesh: MeshInstance3D
 var _lit_nodes: Dictionary = {}   # instance id -> true: done
@@ -200,6 +214,9 @@ func setup(main_: Node, dn: DayNight) -> void:
 		light_tree(world)
 		_world_extras(world)
 		_screen_glows(world)
+	var farm := main.get_node_or_null("Farm")
+	if farm:
+		light_tree(farm)
 	var tramp = main.get("trampoline")
 	if tramp:
 		light_tree(tramp)
@@ -235,9 +252,26 @@ func setup(main_: Node, dn: DayNight) -> void:
 		sun.light_specular = 0.0
 	set_quality(quality)
 
+## Parts of the game whose meshes are lit, also when they're made later (the farm builds its beds as it goes).
+const LIT_PARTS := ["World", "Trampoline", "Farm"]
+
 func _on_node_added(n: Node) -> void:
 	if n is CharSprite:
 		_add_char.call_deferred(n)    # (its picture is made in its _ready)
+	elif n is MeshInstance3D and _in_lit_part(n):
+		_light_later.call_deferred(n)
+
+func _light_later(mi: MeshInstance3D) -> void:
+	if is_instance_valid(mi):
+		light_mesh(mi)
+
+func _in_lit_part(n: Node) -> bool:
+	var p := n.get_parent()
+	while p and p != main:
+		if String(p.name) in LIT_PARTS and p.get_parent() == main:
+			return true
+		p = p.get_parent()
+	return false
 
 ## Lights every unshaded StandardMaterial3D in a tree (meshes' surfaces and overrides).
 func light_tree(root: Node) -> void:
@@ -263,6 +297,8 @@ func light_mesh(mi: MeshInstance3D) -> void:
 				var lm := lit_material(m)
 				if lm:
 					mi.set_surface_override_material(i, lm)
+			elif m is ShaderMaterial and _is_indoor(m):
+				mi.set_surface_override_material(i, lit_indoor(m))
 	if mi.material_override is ShaderMaterial and mi.name.begins_with("Prop_"):
 		_light_prop(mi)
 
@@ -294,6 +330,31 @@ func lit_material(m: StandardMaterial3D) -> ShaderMaterial:
 		sm.set_shader_parameter("srgb_vertex", false)
 	sm.set_shader_parameter("scissor", m.alpha_scissor_threshold)
 	sm.render_priority = m.render_priority
+	_mat_cache[m] = sm
+	return sm
+
+## The World's indoor materials (its IN_SHADER: unshaded, darkened with distance in first person).
+func _is_indoor(m: ShaderMaterial) -> bool:
+	return m.shader != null and m.shader.code.contains("k_near") and m.shader.code.contains("render_mode unshaded")
+
+## The lit version of an indoor material: the same picture and colour, its distance darkening kept.
+func lit_indoor(m: ShaderMaterial) -> ShaderMaterial:
+	if _mat_cache.has(m):
+		return _mat_cache[m]
+	var sm := ShaderMaterial.new()
+	sm.shader = _world_shader("opaque", false, quality == "high")
+	sm.set_meta("look_variant", ["opaque", false])
+	var tex = m.get_shader_parameter("tex")
+	sm.set_shader_parameter("has_tex", bool(m.get_shader_parameter("has_tex")) and tex != null)
+	if tex:
+		sm.set_shader_parameter("tex", tex)
+		sm.set_shader_parameter("tex_soft", tex)
+	var col = m.get_shader_parameter("col")
+	sm.set_shader_parameter("albedo", col if col is Color else Color.WHITE)
+	sm.set_shader_parameter("srgb_vertex", true)
+	sm.set_shader_parameter("in_dark", true)
+	sm.set_shader_parameter("k_near", float(m.get_shader_parameter("k_near")))
+	sm.set_shader_parameter("k_off", float(m.get_shader_parameter("k_off")))
 	_mat_cache[m] = sm
 	return sm
 
@@ -587,6 +648,19 @@ func _process(dt: float) -> void:
 		for l in day_night.lamps:
 			if l.has("glow"):
 				l.glow.visible = l.glow.visible and not cut
+	# from above at night the yard must stay playable: more ambient and moon there (first person keeps the dark)
+	if day_night and not day_night.look.is_empty():
+		var nf: float = clampf(day_night.look.stars, 0.0, 1.0)
+		# only out in the yard: indoors the lamps light the rooms (and keep them warm)
+		var outside := 1.0
+		var pl = main.get("player")
+		if pl and main.has_method("in_yard"):
+			outside = 1.0 if main.in_yard(pl.html_pos()) else 0.0
+		var want := 0.0 if fp else outside
+		_td_boost = want if _td_boost < 0.0 else move_toward(_td_boost, want, dt * 1.5)
+		var td := _td_boost
+		day_night.ambient_energy = lerpf(1.0, TD_NIGHT_AMBIENT, nf * td)
+		day_night.light_scale = lerpf(1.0, TD_NIGHT_MOON, nf * td)
 	if quality != "high":
 		_update_low()
 	var night := 0.0
@@ -659,7 +733,10 @@ func _update_low() -> void:
 	if day_night == null or day_night.look.is_empty():
 		return
 	var lk: Dictionary = day_night.look
-	var amb: Color = (lk.amb as Color).srgb_to_linear()
+	# (dark colours: the lit look comes out brighter than their linear values say, so at night the tint leans
+	# toward the colour as written; matched to the high look by eye at noon and at 2 am)
+	var nf: float = clampf(lk.stars, 0.0, 1.0)
+	var amb: Color = (lk.amb as Color).srgb_to_linear().lerp(lk.amb as Color * 0.75, nf)
 	var li: Color = (lk.light as Color).srgb_to_linear()
 	var t: Color = amb * (day_night.ambient_energy * 1.15) + li * (lk.le * day_night.light_scale * 0.8)
 	RenderingServer.global_shader_parameter_set("look_tint", Vector3(t.r, t.g, t.b))
@@ -683,7 +760,7 @@ static func register_globals() -> void:
 func _set_low_lamps() -> void:
 	var i := 0
 	var col := Color(1.0, 0.8, 0.6).srgb_to_linear()
-	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 1.15)
+	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 0.8)
 	if day_night:
 		for l in day_night.lamps:
 			if i >= 4 or l.get("which", "both") == "high":
