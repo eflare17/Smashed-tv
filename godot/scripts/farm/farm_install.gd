@@ -22,12 +22,7 @@ static func install(main: Node) -> Farm:
 		clock = ClockStandin.new()
 		clock.name = "GameClock"
 		root.add_child.call_deferred(clock)
-	var wallet := root.get_node_or_null("Wallet")
-	if wallet == null:
-		wallet = WalletStandin.new()
-		wallet.name = "Wallet"
-		wallet.cash = D.START_CASH
-		root.add_child.call_deferred(wallet)
+	var wallet: Node = Wallet.ensure(main.get_tree())   # the game's one wallet (scripts/ui/wallet.gd)
 	var farm := Farm.new()
 	farm.name = "Farm"
 	farm.main = main

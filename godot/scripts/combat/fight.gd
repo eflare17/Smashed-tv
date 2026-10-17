@@ -57,6 +57,7 @@ var _was_alive := true
 var _hp_seen := 5.0
 var _last_spin := false
 var _log_t := 0.0
+var _coins_synced: int = -2147483648
 var _sec_state: Dictionary = {}        # player id -> [scale, hidden, tumble] in the bonus room's cinematics
 var _sectors: Dictionary = {}          # player id -> the picture's last sector (kept over the sheet swap)
 var _view_before := -1
@@ -84,6 +85,7 @@ func _ready() -> void:
 	if saved_char != "" and player:
 		player.char_id = saved_char
 	f = sim.add_player(player, player.char_id if player else "juicy")
+	f.shared_wallet = true
 	if player:
 		var hp := player.html_pos()
 		f.x = hp.x
@@ -662,6 +664,12 @@ func _physics_process(delta: float) -> void:
 	if p2:
 		f2.ch = p2.char_id
 	var vel0 := Vector2(f.vx, f.vy)
+	var wallet := Wallet.get_wallet(get_tree())
+	if wallet:
+		if _coins_synced != -2147483648 and f.coins != _coins_synced:
+			wallet.add_cash(f.coins - _coins_synced, "fight")     # changed between ticks (a prize, a test)
+		f.coins = wallet.cash
+	var coins0 := f.coins
 	if not has_meta("frozen"):
 		var inp := _build_input()
 		if debug.has("god"):
@@ -674,6 +682,10 @@ func _physics_process(delta: float) -> void:
 		_roll_tap = false
 		if touch_tap_spot != null and f.weapon != "lob":
 			touch_tap_spot = null
+	if wallet:
+		if f.coins != coins0:
+			wallet.add_cash(f.coins - coins0, "fight")
+		_coins_synced = f.coins
 	if p2 and lobby and f2.alive:
 		_move_p2_lobby(dt)
 	if lobby:

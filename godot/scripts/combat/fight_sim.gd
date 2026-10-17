@@ -812,7 +812,8 @@ func start_run(run_mode: String) -> void:
 	nuke = null
 	rain.clear()
 	for p: FT.Fighter in players:
-		p.coins = int(tv("testCash", 2500))
+		if not p.shared_wallet:          # (one wallet: player 1's money carries into the run, farm money too)
+			p.coins = int(tv("testCash", 2500))
 		p.rockets = 0
 		p.dump = 0.0
 		p.buy = 0.0

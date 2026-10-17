@@ -15,6 +15,8 @@ var _floaters: Array = []       # {pos (Vector3), text, col, t, dur, ctl}
 var _money: Label
 var _money_shown: int = -999999
 var _money_t: float = 0.0
+## Off when the game's one HUD line shows the cash (the fight's HUD sets it).
+var show_money := true
 var _menu: PanelContainer
 var _menu_box: VBoxContainer
 var _menu_title: Label
@@ -219,7 +221,7 @@ func _process(delta: float) -> void:
 			_money_t = 4.0
 		_money_t -= delta
 		_money.text = "$%d" % c
-		_money.visible = _money_t > 0.0 or menu_open()
+		_money.visible = show_money and (_money_t > 0.0 or menu_open())
 
 ## A speech bubble: a white rounded box with dark words and a tail down to the speaker, like the HTML game's.
 class _Bubble extends Control:
