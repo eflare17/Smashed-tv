@@ -43,3 +43,4 @@ it out."
 - 12:57 UTC heartbeat: M1 integrate still running; fighting pushed its simulation (weapons, enemies, waves, gore, money, Protect Gothica, headless tests); lobby pushed its framework; arcade, lighting, farm setting up.
 - 13:43 UTC: lobby, arcade, farm now on Sonnet sessions (owner's request, to stretch usage); IDs in PARALLEL.md.
 - 13:50 UTC: arcade merged (Status: done) with Arcade.install in main.gd; godot-play/ updated (M1 so far + arcade). NOTE: if the M1 fix step copies main.gd back, re-add Arcade.install(self).
+- 14:05 UTC: farm merged (Status: done), FarmInstall.install after Arcade in main.gd; godot-play/ updated (M1 + arcade + farm). Archived: farm Sonnet session done.
