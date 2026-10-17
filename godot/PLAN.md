@@ -90,7 +90,9 @@ panel, the farm plans (FARM.md).
    players are in bed). Online, the host's clock is the one; it goes to the guest in the snapshot. A save of the
    day and time. **Why:** the owner's friend is building a trading game in the spirit of Dope Wars and Schedule I
    that will plug in later: each day is a market day (prices change, events happen) through `day_started`. Build
-   the hooks, not the trading.
+   the hooks, not the trading. **The farm** (later, from FARM.md in the repo root) runs on the same clock: crops grow in game time;
+   surviving a wave moves the clock on a few game hours (so fighting speeds the farm up); water and fertiliser
+   multiply growth. The owner thinks 20 minutes a day suits this; keep it one tunable number.
 1.5. **The look pass.** The big visual jump, in the "HD-2D" style (pixel-art characters in a lit 3D world,
    like Octopath Traveller): real lighting and soft shadows, a sky in the yard (sunny or golden hour), warm lamps
    indoors, glow on the arcade screens and the pool, a light haze in the distance and a gentle blur on far-off
