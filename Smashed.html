@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b328';
+const BUILD = 'b329';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -2006,7 +2006,7 @@ const YARD_SOLIDS = [
   { x0: 604,  y0: 668,  x1: 796,  y1: 748,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
   { x0: 680,  y0: 612,  x1: 722,  y1: 668,  h: 34,  m: 'wood' },                                    //   back chair
   { x0: 680,  y0: 748,  x1: 722,  y1: 806,  h: 34,  m: 'wood' },                                    //   front chair
-  { x0: 905,  y0: 468,  x1: 1234, y1: 948,  h: 110, m: 'garage', art: [898, 458, 1242, 956] },      // garage
+  { x0: 905,  y0: 468,  x1: 1234, y1: 948,  h: 90,  m: 'garage', art: [898, 458, 1242, 956], roof: { k: 0.4, ridge: 'y' } },   // garage (b329: its ridge runs front to back)
   { x0: 1000, y0: 124,  x1: 1160, y1: 450,  h: 66,  m: 'car', art: [988, 114, 1172, 458],           // the ute in the driveway, facing the garage
     fp: [{ x0: 1000, y0: 124, x1: 1160, y1: 222, h: 44, m: 'car', part: 'tray' },
          { x0: 1006, y0: 222, x1: 1154, y1: 335, h: 66, m: 'car', part: 'cab' },
@@ -2016,7 +2016,7 @@ const YARD_SOLIDS = [
   { x0: 1594, y0: 884,  x1: 1712, y1: 904,  h: FENCE_H, m: 'fence', art: [1590, 796, 1710, 906] },  //   and right of it
   { x0: 1240, y0: 896,  x1: 1330, y1: 976,  h: 42,  m: 'bush', art: [1222, 874, 1346, 990] },       // bush by the garage
   { cx: TRAMP.cx, cy: TRAMP.cy, r: TRAMP.r, h: TRAMP.mat + TRAMP.net, m: 'tramp', art: [578, 1106, 840, 1454] },   // trampoline
-  { x0: 60,   y0: 1528, x1: 418,  y1: 1864, h: 85,  m: 'shed', art: [54, 1520, 424, 1870] },        // shed
+  { x0: 60,   y0: 1528, x1: 418,  y1: 1864, h: 66,  m: 'shed', art: [54, 1520, 424, 1870], roof: { k: 0.32, ridge: 'x' } },   // shed (b329: its ridge runs side to side)
   { x0: 12,   y0: 1600, x1: 60,   y1: 1822, h: 28,  m: 'junk' },                                    // bricks and crates beside it
   { x0: 614,  y0: 1574, x1: 878,  y1: 1694, h: 16,  m: 'bed' },                                     // raised beds
   { x0: 614,  y0: 1754, x1: 878,  y1: 1874, h: 16,  m: 'bed' },
@@ -2024,6 +2024,7 @@ const YARD_SOLIDS = [
   { cx: 1380, cy: 1680, r: 100, h: 72, m: 'tank', art: [1268, 1510, 1514, 1792] },                  // water tank
   { x0: 1520, y0: 1560, x1: 1638, y1: 1728, h: 36,  m: 'compost' },                                 // compost bins
 ];
+for (const s of YARD_SOLIDS) if (s.roof) { s.roof.h = s.h; s.roof.cons = s.roof.ridge === 'y' ? [0, 1] : [2, 3]; }   // (b329: its roof starts on its walls)
 // push something round (o, r wide) out of one of them
 function pushOutOfSolid(o, r, s) {
   if (s.r === undefined) return pushOutOfBox(o, r, s);
@@ -3635,9 +3636,41 @@ const FP_IN = { h: SHROOM_WALL, m: 'in' }, FP_OUT = { h: SHROOM_WALL, m: 'house'
 const FP_HOUSE = [{ x0: 0, y0: 0, x1: ARENA.w, y1: BACK_DOOR.y1, h: SHROOM_WALL, m: 'house' },    // the house, from outside
                   { x0: 0, y0: BACK_DOOR.y1, x1: BEDROOM.x1 + ARENA.wall, y1: YARD_AREAS[2].y0, h: SHROOM_WALL, m: 'house' }];
 const FP_LIT = { N: 1, E: 0.9, W: 0.9, S: 0.76 };                    // the sun's to the north
+// b329: roofs, for first person from outside. The house: a hipped L, the main block's roof and the wing's meeting in
+// valleys, wearing the roof from the yard picture; the garage and the shed: gables in corrugated iron. k: how steep
+// (the rise for each unit in from the eave). cons: the sides it slopes up from (0 west, 1 east, 2 north, 3 south).
+const FP_HOUSE_ROOF = { k: 0.5, h: SHROOM_WALL, cons: [0, 1, 2, 3], rects: FP_HOUSE.map(r => ({ x0: r.x0, y0: 0, x1: r.x1, y1: r.y1 })),
+  pic: [{ x0: 0, sx: 1, sy: 503 / BACK_DOOR.y1 }, { x0: 27, sx: 383 / (BEDROOM.x1 + ARENA.wall), sy: 840 / YARD_AREAS[2].y0 }] };   // (where each block's roof is in the picture)
+const FP_ROOF_HIT = { h: 0, m: 'roof' };                               // the house's roof, as a hit of its own (no wall)
+const FP_LINTEL_OUT = { h: SHROOM_WALL, z0: 84, m: 'house' }, FP_LINTEL_IN = { h: SHROOM_WALL, z0: 84, m: 'in' };   // the wall over the back door
+let FP_ROOFPIC = null, FP_RH_FACE = 0;
+function fpSlab(r, px, py, dx, dy) {                                   // where a ray crosses a rectangle (t in, t out), or null
+  let a0 = -Infinity, a1 = Infinity;
+  if (dx) { let a = (r.x0 - px) / dx, b = (r.x1 - px) / dx; if (a > b) { const q = a; a = b; b = q; } a0 = a; a1 = b; } else if (px < r.x0 || px > r.x1) return null;
+  if (dy) { let a = (r.y0 - py) / dy, b = (r.y1 - py) / dy; if (a > b) { const q = a; a = b; b = q; } if (a > a0) a0 = a; if (b < a1) a1 = b; } else if (py < r.y0 || py > r.y1) return null;
+  return a0 < a1 ? [a0, a1] : null;
+}
+// where a ray from (px, py) at height eye, along (dx, dy) and climbing e for each unit along, first meets the roof
+// over rectangle r, between tA and tB: t (Infinity if it doesn't), and which side's slope it meets in FP_RH_FACE.
+// Each slope is the eave's height plus k times how far in from that side; the roof is the lowest of them.
+function fpRoofHit(r, roof, px, py, dx, dy, eye, e, tA, tB, sl) {
+  if (!sl) return Infinity;
+  let lo = Math.max(tA, sl[0]), hi = Math.min(tB, sl[1]), face = -1;
+  if (lo >= hi) return Infinity;
+  for (const i of roof.cons) {
+    const a = i === 0 ? px - r.x0 : i === 1 ? r.x1 - px : i === 2 ? py - r.y0 : r.y1 - py;
+    const b = i === 0 ? dx : i === 1 ? -dx : i === 2 ? dy : -dy;
+    const A = roof.k * b - e, C = eye - roof.h - roof.k * a;             // under this slope: A t >= C
+    if (Math.abs(A) < 1e-9) { if (C > 0) return Infinity; continue; }
+    const tt = C / A;
+    if (A > 0) { if (tt > lo) { lo = tt; face = i; } } else if (tt < hi) hi = tt;
+  }
+  if (lo > hi) return Infinity;
+  FP_RH_FACE = face < 0 ? 2 : face; return lo;
+}
 function fpIndoors(x, y) { return x >= 0 && y >= 0 && ((x <= ARENA.w && y <= BACK_DOOR.y1) || (x <= BEDROOM.x1 + ARENA.wall && y <= YARD_AREAS[2].y0)); }
 let FP_N = 0;
-function fpAdd(t, s, u, side, face, lit, t2) { if (FP_N >= FP_HITS.length) return; const o = FP_HITS[FP_N++]; o.t = t; o.s = s; o.u = u; o.side = side; o.face = face; o.lit = lit; o.t2 = t2 || 0; }
+function fpAdd(t, s, u, side, face, lit, t2, h2) { if (FP_N >= FP_HITS.length) return; const o = FP_HITS[FP_N++]; o.t = t; o.s = s; o.u = u; o.side = side; o.face = face; o.lit = lit; o.t2 = t2 || 0; o.h2 = h2 || 0; }
 function fpCast(px, py, dx, dy, A) {
   let t = 0, side = 0, cur = -1;                                      // where it leaves the floor, and off which bit
   for (let guard = 0; guard < 10; guard++) {
@@ -3663,8 +3696,17 @@ function fpCast(px, py, dx, dy, A) {
   const low = wall === FP_FENCE;
   for (const s of YARD_SOLIDS) for (const q of (s.fp || [s])) fpSolid(q, px, py, dx, dy, 0, low ? Infinity : t);
   if (low) for (const q of FP_HOUSE) fpSolid(q, px, py, dx, dy, t, Infinity);   // over the fence: the house's other sides
+  if (!fpIndoors(px, py)) {                                           // b329: from outside, the house's roof
+    let tin = Infinity, tout = 0;
+    for (const r of FP_HOUSE_ROOF.rects) { const sl = fpSlab(r, px, py, dx, dy); if (sl) { if (sl[0] < tin) tin = sl[0]; if (sl[1] > tout) tout = sl[1]; } }
+    if (tin < tout && tout > 0.5) fpAdd(Math.max(0.5, tin) - 0.01, FP_ROOF_HIT, 0, 0, 'roof', 1, tout);
+  }
+  if (dy) {                                                           // b329: the wall over the back door (its outside face from out, its inside from in)
+    const d0 = BACK_DOOR, out = dy < 0, yy = out ? d0.y1 : ARENA.h - ARENA.wall, tt = (yy - py) / dy, hx = px + dx * tt;
+    if (tt > 0.5 && hx > d0.x - d0.w / 2 && hx < d0.x + d0.w / 2) fpAdd(tt, out ? FP_LINTEL_OUT : FP_LINTEL_IN, hx, 1, out ? 'S' : 'N', FP_LIT[out ? 'S' : 'N']);
+  }
   for (let i = 1; i < FP_N; i++) { const o = FP_HITS[i]; let j = i - 1; while (j >= 0 && FP_HITS[j].t > o.t) { FP_HITS[j + 1] = FP_HITS[j]; j--; } FP_HITS[j + 1] = o; }
-  for (let i = 0; i < FP_N; i++) if (FP_HITS[i].s.h >= SHROOM_WALL) return i + 1;
+  for (let i = 0; i < FP_N; i++) if (FP_HITS[i].s.h >= SHROOM_WALL && !FP_HITS[i].s.z0) return i + 1;
   return FP_N;
 }
 // where the ray first meets one solid (a box, or round), if it's between tMin and tMax
@@ -3697,7 +3739,9 @@ function fpSolid(s, px, py, dx, dy, tMin, tMax) {
     tFar = t1;
     face = side ? (dy > 0 ? 'N' : 'S') : (dx > 0 ? 'W' : 'E'); u = side ? px + dx * t0 : py + dy * t0; lit = FP_LIT[face];
   }
-  if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit, s.m === 'house' ? 0 : tFar);
+  let h2 = 0;                                                         // b329: a gable end's wall goes up to its roof
+  if (s.roof && (s.roof.ridge === 'y') === (side === 1)) h2 = s.h + s.roof.k * Math.min(u - (side ? s.x0 : s.y0), (side ? s.x1 : s.y1) - u);
+  if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit, s.m === 'house' ? 0 : tFar, h2);
 }
 function fpHash(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; }
 function fpRep(u, n) { return ((u % n) + n) % n; }
@@ -3805,7 +3849,8 @@ function fpFloor() {
   const f = document.createElement('canvas'); f.width = W; f.height = H;
   const g = f.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false;
   g.fillStyle = 'rgb(82,136,52)'; g.fillRect(0, 0, W, H);
-  if (ok(YARD_IMG)) { g.drawImage(YARD_IMG, YARD.ox, YARD.oy); for (const s of YARD_SOLIDS) if (s.art) fpPaintOut(g, s); }
+  if (ok(YARD_IMG)) { g.drawImage(YARD_IMG, YARD.ox, YARD.oy); for (const s of YARD_SOLIDS) if (s.art) fpPaintOut(g, s);
+    const rp = g.getImageData(0, 0, ARENA.w, YARD_AREAS[2].y0); FP_ROOFPIC = { data: rp.data, w: rp.width, h: rp.height }; }   // (b329: the house's roof, for first person)
   g.fillStyle = '#101218'; g.fillRect(0, 0, ARENA.w, d.y1); g.fillRect(0, d.y1, b.x1 + wl, YARD_AREAS[2].y0 - d.y1);
   if (ok(LOUNGE_IMG)) g.drawImage(LOUNGE_IMG, wl, wl, ARENA.w - wl * 2, ARENA.h - wl * 2);
   if (ok(BED_ART)) g.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
@@ -4303,20 +4348,10 @@ function drawShroom(w) {
     let wx = px + dist * (dx - rx * tanH), wy = py + dist * (dy - ry * tanH);
     const sx = dist * rx * tanH * 2 / RW, sy = dist * ry * tanH * 2 / RW;
     const shade = Math.min(1, (260 + eye * 1.2) / (dist + 60)), sv = (hor - y) / RH;
-    const rd = below && eye > WALL + 0.5 ? (eye - WALL) * proj / den : 0;   // b326: bounced up past the roofline: the house's flat roof
-    let rwx = px + rd * (dx - rx * tanH), rwy = py + rd * (dy - ry * tanH);
-    const rsx = rd * rx * tanH * 2 / RW, rsy = rd * ry * tanH * 2 / RW;
     for (let x = 0; x < RW; x++, wx += sx, wy += sy) {
       const o = (y * RW + x) * 4;
       let r, g, bb;
-      if (below) {
-        if (rd) {
-          const qx = rwx, qy = rwy; rwx += rsx; rwy += rsy;
-          if (fpIndoors(qx, qy)) { const k = fpRep(qx, 9) < 2.5 ? 0.8 : 1, hz = Math.min(0.5, rd / 3200);
-            B[o] = 80 * k + (204 - 80 * k) * hz; B[o + 1] = 84 * k + (218 - 84 * k) * hz; B[o + 2] = 94 * k + (232 - 94 * k) * hz; B[o + 3] = 255; continue; }
-        }
-        floorAt(o, wx, wy, dist, shade); continue;
-      }
+      if (below) { floorAt(o, wx, wy, dist, shade); continue; }
       if (!fpIndoors(wx, wy)) { skyAt(o, x, sv); continue; }               // b323: outside: the sky, not a ceiling
       {                                                           // the ceiling: a slow plasma
         const v = Math.sin(wx * 0.025 + t) + Math.sin(wy * 0.03 - t * 1.3) + Math.sin((wx + wy) * 0.018 + t * 0.7);
@@ -4337,6 +4372,35 @@ function drawShroom(w) {
   const occN = SHROOM.occN || (SHROOM.occN = new Uint8Array(RW));
   const occT = SHROOM.occT || (SHROOM.occT = new Float32Array(RW * FP_OCC)), occTop = SHROOM.occTop || (SHROOM.occTop = new Float32Array(RW * FP_OCC));
   occN.fill(0);
+  // b329: a roof's pixels in column x, from the top of the screen down to yTo (the top of the wall under it): each row
+  // looks for where its line of sight first meets the roof, and colours it by the slope it's on (the sun's north)
+  const roofRows = (x, rdx, rdy, oi, roof, rects, tA, tB, yTo, mat) => {
+    let hmax = 0; for (const r of rects) hmax = Math.max(hmax, roof.h + roof.k * Math.min(r.x1 - r.x0, r.y1 - r.y0) / 2);
+    const y0 = Math.max(0, Math.floor(hor - (hmax - eye) * proj / tA)), y1 = Math.min(RH, Math.ceil(yTo));
+    const sls = rects.map(r => fpSlab(r, px, py, rdx, rdy));           // (the ray's stretch over each, once for the column)
+    let topRow = RH;
+    for (let y = y0; y < y1; y++) {
+      const e = (hor - (y + 0.5)) / proj;
+      let tHit = Infinity, face = 2, ri = 0;
+      for (let j = 0; j < rects.length; j++) { const tt = fpRoofHit(rects[j], roof, px, py, rdx, rdy, eye, e, tA, tB, sls[j]); if (tt < tHit) { tHit = tt; face = FP_RH_FACE; ri = j; } }
+      if (tHit === Infinity) continue;
+      const wx = px + rdx * tHit, wy = py + rdy * tHit, o = (y * RW + x) * 4;
+      let r, g, b;
+      if (mat === 'house') {                                             // the house wears its roof from the yard picture
+        const M = roof.pic[ri], P = FP_ROOFPIC, ix = (M.x0 + wx * M.sx) | 0, iy = (wy * M.sy) | 0;
+        if (P && ix >= 0 && iy >= 0 && ix < P.w && iy < P.h) { const fo = (iy * P.w + ix) * 4; r = P.data[fo]; g = P.data[fo + 1]; b = P.data[fo + 2]; } else { r = 72; g = 76; b = 86; }
+      } else {                                                           // corrugated iron, the ribs running down the slope
+        const along = face < 2 ? wy : wx, kk = fpRep(along, 6) < 3 ? 1 : 0.82;
+        if (mat === 'garage') { if (fpHash(Math.floor(along / 6) + 31) < 0.35) { r = 132 * kk; g = 86 * kk; b = 60 * kk; } else { r = 140 * kk; g = 128 * kk; b = 114 * kk; } }
+        else if (fpHash(Math.floor(along / 5) + 7) < 0.2) { r = 134 * kk; g = 90 * kk; b = 64 * kk; } else { r = 156 * kk; g = 156 * kk; b = 154 * kk; }
+      }
+      const lit = face === 2 ? 1.06 : face === 3 ? 0.7 : 0.88, hz = Math.min(0.5, tHit / 3200);
+      r *= lit; g *= lit; b *= lit;
+      B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = b + (232 - b) * hz;
+      if (y < topRow) topRow = y;
+    }
+    if (oi < FP_OCC && topRow < RH) { const q = x * FP_OCC + oi; if (topRow < occTop[q]) occTop[q] = topRow; }   // (and it hides what's behind it up to there)
+  };
   if (tp) zbuf.fill(1e9);                                                // above them, the walls are just the dark edges of the floor art
   else for (let x = 0; x < RW; x++) {
     const cam = 2 * x / RW - 1, rdx = dx + rx * tanH * cam, rdy = dy + ry * tanH * cam;
@@ -4345,15 +4409,20 @@ function drawShroom(w) {
     zbuf[x] = 1e9;
     for (let i = 0; i < n && i < FP_OCC; i++) {                          // what hides what's behind it, and up to where (rooms and the house: all of it)
       const hh = FP_HITS[i], sh = hh.s;
-      if (zbuf[x] === 1e9 && sh.h >= eye && sh.m !== 'tramp') zbuf[x] = hh.t;
+      if (zbuf[x] === 1e9 && sh.h >= eye && sh.m !== 'tramp' && !sh.z0) zbuf[x] = hh.t;
       occT[x * FP_OCC + i] = hh.t;
-      const oh = sh.m === 'tramp' ? TRAMP.mat : sh.h;
-      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : (eye > oh && hh.t2 > hh.t && sh.m !== 'tramp') ? hor + (eye - oh) * proj / hh.t2 + melt : hor - (oh - eye) * proj / hh.t + melt;
+      const oh = sh.m === 'tramp' ? TRAMP.mat : (hh.h2 || sh.h);
+      occTop[x * FP_OCC + i] = (sh.m === 'roof' || sh.z0) ? RH                 // (b329: a roof sets its own as it's drawn; a lintel hides nothing under it)
+        : sh.h >= SHROOM_WALL ? -1e9 : (eye > oh && hh.t2 > hh.t && sh.m !== 'tramp') ? hor + (eye - oh) * proj / hh.t2 + melt : hor - (oh - eye) * proj / hh.t + melt;
       occN[x] = i + 1;
     }
     for (let i = n - 1; i >= 0; i--) {                                   // far to near
-      const hh = FP_HITS[i], sh = hh.s, d = hh.t, H = sh.h, u = hh.u;
-      const yTop = hor - (H - eye) * proj / d + melt, yBot = hor + eye * proj / d + melt * 0.5, span = (yBot - yTop) || 1;
+      const hh = FP_HITS[i], sh = hh.s, d = hh.t, H = hh.h2 || sh.h, u = hh.u, z0 = sh.z0 || 0;
+      if (sh.m === 'roof') {                                             // b329: the house's roof (no wall of its own)
+        if (sober) roofRows(x, rdx, rdy, i, FP_HOUSE_ROOF, FP_HOUSE_ROOF.rects, d, hh.t2, hor - (SHROOM_WALL - eye) * proj / d + melt, 'house');
+        continue;
+      }
+      const yTop = hor - (H - eye) * proj / d + melt, yBot = hor + (eye - z0) * proj / d + melt * 0.5, span = (yBot - yTop) || 1;
       const top = Math.max(0, Math.floor(yTop)), bot = Math.min(RH, Math.ceil(yBot));
       if (!sober) {                                                      // the trip: every wall the same melting rainbow
         const shade = Math.min(1, 220 / (d + 40)) * (hh.side ? 0.85 : 1) * (0.8 + 0.4 * pulse);
@@ -4369,7 +4438,7 @@ function drawShroom(w) {
       const hz = indoor ? 0 : Math.min(0.5, d / 3200);                    // (outside: daylight, a little haze far off)
       for (let y = top; y < bot; y++) {
         const o = (y * RW + x) * 4;
-        fpMaterial(sh, hh.face, u, H * (yBot - y - 0.5) / span);
+        fpMaterial(sh, hh.face, u, z0 + (H - z0) * (yBot - y - 0.5) / span);
         const a = FP_RGB[3]; if (a <= 0) continue;
         let r = FP_RGB[0] * lit, g = FP_RGB[1] * lit, b = FP_RGB[2] * lit;
         if (hz) { r += (204 - r) * hz; g += (218 - g) * hz; b += (232 - b) * hz; }
@@ -4391,7 +4460,8 @@ function drawShroom(w) {
           B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = b + (232 - b) * hz;
         }
       }
-      if (hh.t2 > d && sh.m !== 'tramp' && eye > H + 0.5) {             // b328: seen from above (up on the trampoline): its top, at its own height
+      if (sh.roof) roofRows(x, rdx, rdy, i, sh.roof, [sh], d, hh.t2, yTop, sh.m);   // b329: the garage's and the shed's gables
+      else if (hh.t2 > d && sh.m !== 'tramp' && eye > H + 0.5) {        // b328: seen from above (up on the trampoline): its top, at its own height
         const k = (eye - H) * proj, y0 = Math.max(0, Math.floor(hor + k / hh.t2 + melt * 0.5)), y1 = Math.min(RH, Math.ceil(hor + k / d + melt * 0.5));
         for (let y = y0; y < y1; y++) {
           const den = y + 0.5 - hor - melt * 0.5; if (den <= 0) continue;
