@@ -959,7 +959,7 @@ func _carrying(p: FT.Fighter) -> bool:
 
 # The players block (L7169-7525). In the lobby the Player node moves him; the sim does the rest.
 func _step_player(p: FT.Fighter, inp: FT.Inp, dt: float) -> void:
-	var drive := started
+	var drive := started or p.driven
 	if _carrying(p):
 		inp.shoot = false
 		inp.roll = false
@@ -1188,6 +1188,10 @@ func _step_player(p: FT.Fighter, inp: FT.Inp, dt: float) -> void:
 		_integrate(p, dt)
 
 func _integrate(p: FT.Fighter, dt: float) -> void:
+	if not started:
+		# the lobby: the Fight node moves his body with these velocities, sliding along the house's walls
+		p.odo += Vector2(p.vx, p.vy).length() * dt
+		return
 	p.x += p.vx * dt
 	p.y += p.vy * dt
 	p.odo += Vector2(p.vx, p.vy).length() * dt

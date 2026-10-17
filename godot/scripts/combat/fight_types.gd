@@ -96,6 +96,7 @@ class Fighter:
 	var tap_fire := false
 	var last_tap := 0
 	var bonk := 0.0              ## seconds since a hard wall bounce (sound once)
+	var driven := false          ## the sim works out his movement in the lobby too (player 2: the Fight node slides him)
 
 	func pos() -> Vector2:
 		return Vector2(x, y)

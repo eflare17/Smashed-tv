@@ -20,12 +20,15 @@ static var me: Fight
 static var saved_char: String = ""
 static var saved_mode: String = "classic"
 static var hotbar_order: Array[String] = []
+static var saved_two: bool = false
 
 var main: Node
 var player: Player
 var rig: CameraRig
 var sim: FightSim
 var f: FT.Fighter                       ## the local player's fight record
+var p2: Player                          ## a second player on the same keyboard (P), or null
+var f2: FT.Fighter
 var view: FightView
 var eview: EnemyView
 var room: ArenaRoom
@@ -126,6 +129,8 @@ func _ready() -> void:
 		call_deferred("_gallery")
 	if debug.has("secret"):
 		call_deferred("_debug_secret")
+	if saved_two or debug.has("p2"):
+		call_deferred("add_player2")
 	if debug.has("at") and player:
 		var xy: PackedStringArray = String(debug["at"]).split(":")
 		if xy.size() == 2:
@@ -297,6 +302,27 @@ func start_run() -> void:
 	if rig:
 		rig.snap()
 
+## P: a second player on the same keyboard (addPlayer, L6065): arrows move, Space fires the way he faces, Ctrl rolls,
+## or the second pad. He gets the lobby's cash but not its blasters; mid-run he joins with nothing.
+func add_player2() -> void:
+	if p2 != null or main == null or BonusRoom.active(sim):
+		return
+	p2 = Player.new()
+	p2.name = "Player2"
+	main.add_child(p2)
+	p2.char_id = "juicy" if player and player.char_id == "tyson2" else "tyson2"
+	p2.controls_enabled = false
+	p2.face_mouse = false
+	p2.place(480, 260)
+	f2 = sim.add_player(p2, p2.char_id)
+	f2.driven = true
+	f2.x = 480
+	f2.y = 260
+	f2.coins = 0 if sim.started else int(maxf(sim.tv("lobbyCash", 40), sim.tv("testCash", 2500)))
+	if sim.started:
+		p2.collision_mask = 0
+	saved_two = true
+
 func restart() -> void:
 	if player:
 		saved_char = player.char_id
@@ -341,6 +367,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			restart()
 		elif not sim.started:
 			start_run()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("add_player") and not event.is_echo():
+		add_player2()
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("restart") and not event.is_echo():
@@ -415,7 +445,7 @@ func is_fp(id: int = 0) -> bool:
 func _steer() -> Vector2:
 	var mx := Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
 	var my := Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-	if not is_fp():
+	if not is_fp() and p2 == null:
 		if Input.is_physical_key_pressed(KEY_LEFT): mx -= 1.0
 		if Input.is_physical_key_pressed(KEY_RIGHT): mx += 1.0
 		if Input.is_physical_key_pressed(KEY_UP): my -= 1.0
@@ -506,6 +536,60 @@ func _build_input() -> FT.Inp:
 		inp.shoot = inp.shoot or _fire_mouse or rt
 	return inp
 
+## localInput1: arrows, Space, Ctrl; or the second pad (left stick, right stick aims, RT fires, B/RB/LT roll).
+func _build_input2() -> FT.Inp:
+	var inp := FT.Inp.new()
+	if sim.over:
+		return inp
+	var mx := 0.0
+	var my := 0.0
+	if Input.is_physical_key_pressed(KEY_LEFT): mx -= 1.0
+	if Input.is_physical_key_pressed(KEY_RIGHT): mx += 1.0
+	if Input.is_physical_key_pressed(KEY_UP): my -= 1.0
+	if Input.is_physical_key_pressed(KEY_DOWN): my += 1.0
+	inp.shoot = Input.is_physical_key_pressed(KEY_SPACE)
+	inp.roll = Input.is_physical_key_pressed(KEY_CTRL)
+	var pads := Input.get_connected_joypads()
+	if pads.size() > 1:
+		var d: int = pads[1]
+		var ls := Vector2(Input.get_joy_axis(d, JOY_AXIS_LEFT_X), Input.get_joy_axis(d, JOY_AXIS_LEFT_Y))
+		if ls.length() > 0.2:
+			mx = ls.x
+			my = ls.y
+		var rs := Vector2(Input.get_joy_axis(d, JOY_AXIS_RIGHT_X), Input.get_joy_axis(d, JOY_AXIS_RIGHT_Y))
+		if rs.length() > 0.22:
+			inp.st = true
+			inp.ax = rs.x
+			inp.ay = rs.y
+		var rt := Input.get_joy_axis(d, JOY_AXIS_TRIGGER_RIGHT) > 0.5
+		inp.shoot = inp.shoot or rt
+		inp.roll = inp.roll or Input.is_joy_button_pressed(d, JOY_BUTTON_B) or Input.is_joy_button_pressed(d, JOY_BUTTON_RIGHT_SHOULDER) \
+			or Input.get_joy_axis(d, JOY_AXIS_TRIGGER_LEFT) > 0.5
+	inp.mx = clampf(mx, -1, 1)
+	inp.my = clampf(my, -1, 1)
+	return inp
+
+# Player 2's body in the lobby: slid along the house's walls with the sim's velocity (like the Player's own step).
+func _move_p2_lobby(dt: float) -> void:
+	p2.vel = Vector2.ZERO
+	p2.collision_mask = 1
+	p2.velocity = Vector3(f2.vx, 0.0, f2.vy) * GameData.UNIT
+	p2.move_and_slide()
+	for i in p2.get_slide_collision_count():
+		var n3 := p2.get_slide_collision(i).get_normal()
+		var n := Vector2(n3.x, n3.z)
+		if n.length() < 0.2:
+			continue
+		n = n.normalized()
+		var into := Vector2(f2.vx, f2.vy).dot(n)
+		if into < 0.0:
+			f2.vx -= n.x * into
+			f2.vy -= n.y * into
+	p2.velocity = Vector3.ZERO
+	var hp := p2.html_pos()
+	f2.x = hp.x
+	f2.y = hp.y
+
 # ---------------------------------------------------------------- the frame
 
 func _sync_from_player() -> void:
@@ -538,7 +622,7 @@ func _process(delta: float) -> void:
 			f.iframe = maxf(f.iframe, 0.1)
 		if debug.has("auto"):
 			_autopilot(inp)
-		sim.step([inp])
+		sim.step([inp, _build_input2()] if f2 else [inp])
 		n += 1
 		if n == 1:
 			inp.wsel = ""
@@ -554,6 +638,8 @@ func _process(delta: float) -> void:
 		_roll_tap = false
 		if touch_tap_spot != null and f.weapon != "lob":
 			touch_tap_spot = null
+	if p2 and lobby and f2.alive:
+		_move_p2_lobby(minf(delta, 0.1))
 	if lobby:
 		if Vector2(f.vx, f.vy) != vel0:
 			player.vel += Vector2(f.vx, f.vy) - vel0
@@ -561,8 +647,15 @@ func _process(delta: float) -> void:
 			player.controls_enabled = false
 	else:
 		_place_player()
+		if p2:
+			p2.collision_mask = 0
+			p2.vel = Vector2.ZERO
+			p2.global_position = GameData.world_to_3d(f2.x, f2.y, 0.0)
+			p2.facing = sim.facing_vec(f2)
 	_drain()
 	_update_sprite()
+	if p2:
+		_update_sprite_of(p2, f2)
 	_secret_frame()
 	if debug.has("log"):
 		_log_t += delta
@@ -627,32 +720,36 @@ func _drain() -> void:
 ## The picture: the weapon's sheet, facing the shot while firing, the weapon actions (reload, pickup, throw,
 ## wind-up), tumbling when thrown, blinking in iframes, gone when down.
 func _update_sprite() -> void:
-	var spr: CharSprite = player.sprite
+	_update_sprite_of(player, f)
+
+func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
+	var spr: CharSprite = pl.sprite
 	if spr == null:
 		return
-	var fp := is_fp()
+	var fp := is_fp(f.id)
 	if not f.alive:
 		spr.visible = false
 		return
 	var blink := f.iframe > 0.0 and int(floor(f.iframe * 20.0)) % 2 == 0
-	spr.scale = Vector3.ONE * _secret_scale
-	if _secret_hidden:
+	var sec_on := f.id == 0
+	spr.scale = Vector3.ONE * (_secret_scale if sec_on else 1.0)
+	if _secret_hidden and sec_on:
 		spr.visible = false
 		return
 	var carried := sim.goth != null and sim.goth.carrier == f.id
 	spr.visible = not fp and not blink
 	if fp:
 		return
-	var skin := WeaponDefs.skin_for(player.char_id, f.weapon)
+	var skin := WeaponDefs.skin_for(pl.char_id, f.weapon)
 	if not CharFrames.has(skin, "front_a") and not CharFrames.has(skin, "front_run"):
-		skin = player.char_id
+		skin = pl.char_id
 	spr.char_id = skin
 	var fv := sim.facing_vec(f)
 	spr.facing = fv
-	spr.moving = f.moving if sim.started else player.moving
-	spr.odo = f.odo if sim.started else player.odo
-	var roll := f.roll if sim.started else player.roll
-	if f.launch > 0.0 or _secret_tumble:
+	spr.moving = f.moving if sim.started else pl.moving
+	spr.odo = f.odo if sim.started else pl.odo
+	var roll := f.roll if sim.started else pl.roll
+	if f.launch > 0.0 or (_secret_tumble and sec_on):
 		spr.action = "tumble"
 		spr.odo = Time.get_ticks_msec() / 1000.0 * 120.0
 	elif roll > 0.0:
@@ -679,7 +776,7 @@ func _update_sprite() -> void:
 		var nn := CharFrames.frame_count(skin, key)
 		idx = mini(nn - 1, int(floor((1.0 - f.throw / sim.tv("spudThrow", 0.5)) * nn)))
 	elif f.pickup > 0.0:
-		var ps := skin if CharFrames.has(skin, "pickup") else WeaponDefs.skin_for(player.char_id, "spud")
+		var ps := skin if CharFrames.has(skin, "pickup") else WeaponDefs.skin_for(pl.char_id, "spud")
 		if CharFrames.has(ps, "pickup"):
 			skin = ps
 			key = "pickup"
@@ -764,19 +861,21 @@ func _secret_frame() -> void:
 ## Where a player's gun is in 3D: the barrel map's point for the frame his picture shows (weapons 18.4), or near
 ## the camera in first person. INF if unknown.
 func visual_muzzle(owner: int) -> Vector3:
-	if owner != 0 or player == null:
+	var pl: Player = player if owner == 0 else p2
+	var ff: FT.Fighter = f if owner == 0 else f2
+	if pl == null or ff == null:
 		return Vector3.INF
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
 		return Vector3.INF
-	if is_fp():
+	if is_fp(owner):
 		var b := cam.global_transform.basis
-		var side := -1.0 if f.last_gun == 0 else 1.0
+		var side := -1.0 if ff.last_gun == 0 else 1.0
 		return cam.global_position - b.z * 0.5 - b.y * 0.25 + b.x * 0.18 * side
-	var spr: CharSprite = player.sprite
-	var key := WeaponDefs.barrel_key(player.char_id, f.weapon)
-	var o := WeaponDefs.barrel(key, spr.current_sector if spr else 2, f.last_gun)
-	return player.global_position + view.cam_right * (o.x * GameData.UNIT) + view.stand_up * ((12.6 - o.y) * GameData.UNIT) + view.to_cam * 0.05
+	var spr: CharSprite = pl.sprite
+	var key := WeaponDefs.barrel_key(pl.char_id, ff.weapon)
+	var o := WeaponDefs.barrel(key, spr.current_sector if spr else 2, ff.last_gun)
+	return pl.global_position + view.cam_right * (o.x * GameData.UNIT) + view.stand_up * ((12.6 - o.y) * GameData.UNIT) + view.to_cam * 0.05
 
 ## First person: your own shots aren't drawn until they're 70 out (they'd seem to come from the middle of the
 ## screen; the tracers cover the gap).

@@ -74,6 +74,10 @@ Tested in the real web export (screenshots looked at) and in headless logic test
   Juicy Jared carrying her with E (the milestone 1 E prompt and round button: PICK UP / PUT DOWN), slow and unable to
   shoot or roll, she wriggles down after 4 s; players respawn next to her after 4 s; her down ends the run with the
   best wave saved.
+- **A second player on the same keyboard** (P): arrows move, Space fires the way he faces, Ctrl rolls; or the second
+  pad (left stick, right stick aims, RT fires, B/RB/LT roll). Blue pips, wallet and shots; the lobby's cash but no
+  blasters (the HTML's addPlayer), joining a run with nothing; kept over a restart. In the lobby the sim moves him and
+  he slides along the house's walls like player 1.
 - **Sounds**: every recipe in the specs synthesised (baked to WAVs on first use) plus the pistol, nuke and whistle
   recordings in `assets/sounds/`. A batter's wind-up whooshes in first person (new). The pad rumbles when you're hurt.
 - **Phones** (code reviewed, not tested on a device): left half a floating move stick (it presses the move actions,
@@ -91,6 +95,7 @@ Tested in the real web export (screenshots looked at) and in headless logic test
 | `weapon_next` | | Y, d-pad right |
 | `start_run` | Enter, keypad Enter | Menu (Start) |
 | `restart` | R | (Menu when it's over) |
+| `add_player` | P | |
 
 Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and notes, J send the janitor.
 
@@ -142,8 +147,9 @@ Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and
 
 ## What's left
 
-- **A second local player** (P, arrows / Space / Ctrl, pad 2). The sim takes any number of players
-  (`sim.add_player`), but nothing adds one yet; the HUD lists every wallet.
+- Player 2 in the lobby: the milestone 1 Player also reads the arrow keys (and any pad's left stick), so the arrows
+  move player 1 too while you're in the lobby (in a run they're player 2's only). Contract wanted: a Player flag to
+  leave the arrows alone / read only its own pad. The bonus room's intro drags only player 1 in.
 - The batter's procedural rig (his own walk frames are used), the lean on idle poses; in the bonus room's intro Gary
   stays where he swung (the HTML stands him beside the cabinet with his own frames) and the players aren't turned
   feet-first (a CharSprite can't rotate).
