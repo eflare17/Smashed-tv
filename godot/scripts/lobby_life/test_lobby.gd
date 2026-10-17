@@ -15,7 +15,7 @@ var _steps: Array = []          # [[time, Callable], ...] to run once each
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
-	ll = LobbyLife.install(main)
+	ll = LobbyLife.existing(main)
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--lobby="):
 			scene_name = a.substr(8)

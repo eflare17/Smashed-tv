@@ -195,28 +195,41 @@ static func baked(path: String, tex: Texture2D, flip: bool = false) -> Texture2D
 	var pk := parse(path)
 	var out: Texture2D = tex
 	if pk.size() == 3 and String(pk[0]).begins_with("juicy"):
-		var fit_key := "%s.%s.%d" % [pk[0], pk[1], pk[2]]
+		var key := String(pk[1])
+		var fit_key := "%s.%s.%d" % [pk[0], key, pk[2]]
 		var fits: Dictionary = data().get("HAIR_FIT", {})
-		var view := view_of(String(pk[1]))
+		var view := view_of(key)
 		var img := tex.get_image()
 		if img != null and not img.is_empty():
 			if img.is_compressed():
 				img.decompress()
 			img.convert(Image.FORMAT_RGBA8)
 			var changed := false
-			if style > 0 and view != "" and fits.has(fit_key):
-				var f: Array = fits[fit_key]
-				var s := float(f[0])
-				var ox := float(f[1])
-				var oy := float(f[2])
-				if absf(s - 1.0) < 0.05:
-					s = 1.0
-					ox = roundf(ox)
-					oy = roundf(oy)
-				_paint_hair(img, view, s, ox, oy)
-				changed = true
-			if (art_front != null or art_back != null) and String(pk[1]) != "" and view != "":
-				var is_back := view == "back" or view == "bdiag"
+			if style > 0:
+				if view != "" and fits.has(fit_key):
+					var f: Array = fits[fit_key]
+					var s := float(f[0])
+					var ox := float(f[1])
+					var oy := float(f[2])
+					if absf(s - 1.0) < 0.05:
+						s = 1.0
+						ox = roundf(ox)
+						oy = roundf(oy)
+					_paint_hair(img, view, s, ox, oy)
+					changed = true
+				else:
+					# a frame the HTML game has no fit for (the roll, victory, the other weapons' extras):
+					# find his sunglasses here and in the run frame 0 and slide the hair by the difference
+					# (hairFit's third case, the way the carry frames get theirs)
+					var v2 := view if view != "" else "front"
+					if v2 != "back" and v2 != "bdiag":
+						var a := _anchor(img)
+						var ref := _view_anchor(v2)
+						if a.x >= 0 and ref.x >= 0:
+							_paint_hair(img, v2, 1.0, float(a.x - ref.x), float(a.y - ref.y))
+							changed = true
+			if (art_front != null or art_back != null) and not key.begins_with("roll"):
+				var is_back := key.begins_with("back") or key.begins_with("bdiag")
 				if _print(img, is_back, flip):
 					changed = true
 			if changed:
