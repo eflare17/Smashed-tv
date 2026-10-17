@@ -77,8 +77,13 @@ func setup(sun_: DirectionalLight3D, env_: Environment) -> void:
 		if env.sky == null:
 			env.sky = Sky.new()
 		env.sky.sky_material = sky_mat
+		env.sky.radiance_size = Sky.RADIANCE_SIZE_32
+		env.sky.process_mode = Sky.PROCESS_MODE_QUALITY
 		env.background_mode = Environment.BG_SKY
+		# the sky is only a background: nothing lights or reflects from it, so it's never baked into a radiance
+		# map (its colours change every frame)
 		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	update_now()
 
 ## The clock (or the override) to the scene.
@@ -162,6 +167,7 @@ func apply(h: float) -> void:
 		sky_mat.set_shader_parameter("moon_dir", md)
 		sky_mat.set_shader_parameter("moon", look.stars)
 		sky_mat.set_shader_parameter("stars", look.stars)
+		sky_mat.set_shader_parameter("twinkle", float(Time.get_ticks_msec() % 100000) / 1000.0)
 	lamp_level = look.lamps
 	for l in lamps:
 		var o: Light3D = l.light

@@ -68,6 +68,7 @@ func _setup() -> void:
 	var q := "low" if _is_phone() else "high"
 	if args.has("look"):
 		q = "low" if String(args.look) == "low" else "high"
+		look.auto_quality = false
 	look.quality = q
 	add_child(look)
 	look.setup(main, day_night)
@@ -113,7 +114,7 @@ func _add_lamps() -> void:
 		[470, 300, 138, LAMP, 3.2, 340, true, "high"],
 		[740, 380, 138, LAMP, 2.8, 300, true, "high"],
 		[720, 165, 30, Color(0.35, 0.85, 1.0), 1.6, 220, false, "high"],
-		[430, 260, 140, LAMP, 4.0, 620, true, "low"],
+		[430, 260, 140, LAMP, 4.0, 470, true, "low"],
 		[240, 700, 138, LAMP, 3.2, 330, true, "both"],
 		[295, 532, 42, Color(1.0, 0.7, 0.42), 1.4, 150, false, "high"],
 		[645, 585, 112, Color(1.0, 0.82, 0.6), 2.6, 280, true, "both"],

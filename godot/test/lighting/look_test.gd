@@ -8,12 +8,14 @@ var main: Node
 var _ft: Array = []
 var _perf := false
 var _t := 0.0
+var _last := 0
 
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
-	LightingInstall.install(main)
 	var a := LightingInstall._page_args()
+	if not a.has("nolight"):
+		LightingInstall.install(main)
 	_perf = a.has("perf")
 	if a.has("at"):
 		var p: PackedStringArray = String(a.at).split(",")
@@ -66,9 +68,11 @@ func _process(dt: float) -> void:
 	if not _perf:
 		return
 	_t += dt
-	if _t > 4.0:
-		_ft.append(dt * 1000.0)
-	if _ft.size() == 240:
+	var now := Time.get_ticks_usec()
+	if _t > 3.0 and _last > 0:
+		_ft.append((now - _last) / 1000.0)    # real time: the engine's delta is held to 8 physics steps
+	_last = now
+	if _ft.size() == 30:
 		var s := _ft.duplicate()
 		s.sort()
 		var sum := 0.0

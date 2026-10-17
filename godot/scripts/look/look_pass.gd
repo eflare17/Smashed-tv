@@ -25,7 +25,8 @@ extends Node
 
 const WORLD_SHADER := """
 shader_type spatial;
-render_mode cull_disabled, specular_disabled, diffuse_lambert%MODE%;
+render_mode cull_disabled%RENDER%%MODE%;
+%LOWFN%
 uniform sampler2D tex : source_color, %FILTER%, repeat_enable;
 // the same picture, smoothly filtered: far-off things fade into it (first person's gentle distance blur)
 uniform sampler2D tex_soft : source_color, filter_linear_mipmap, repeat_enable;
@@ -55,12 +56,47 @@ void fragment() {
 	}
 	ALBEDO = c.rgb;
 	%ALPHA%
-	// no normals in the mesh: the face's own, worked out on screen, turned toward the camera
+	%LIGHT%
+}
+"""
+
+## The high look's light: real lights, so a normal. There are none in the mesh: the face's own, worked out on
+## screen, turned toward the camera.
+const HIGH_LIGHT := """
 	vec3 n = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
 	NORMAL = dot(n, VERTEX) > 0.0 ? -n : n;
 	ROUGHNESS = 1.0;
+"""
+
+## The low look (phones): unshaded, no light passes at all. The day's light is one colour (look_tint), and up to
+## four lamps add warm pools by distance, worked out right in the material (global uniforms LookPass sets).
+const LOW_FN := """
+global uniform vec3 look_tint;
+global uniform vec3 look_lamp_color;
+global uniform float look_lamp_level;
+global uniform vec4 look_lamp0;
+global uniform vec4 look_lamp1;
+global uniform vec4 look_lamp2;
+global uniform vec4 look_lamp3;
+float look_lamp(vec4 l, vec3 wp) {
+	if (l.w <= 0.0) return 0.0;
+	vec3 d = (l.xyz - wp) / l.w;
+	float f = max(0.0, 1.0 - dot(d, d));
+	return f * f;
+}
+vec3 look_light(vec3 wp) {
+	float f = look_lamp(look_lamp0, wp) + look_lamp(look_lamp1, wp) + look_lamp(look_lamp2, wp) + look_lamp(look_lamp3, wp);
+	return look_tint + look_lamp_color * look_lamp_level * f;
 }
 """
+const LOW_LIGHT := """
+	ALBEDO *= look_light((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+"""
+## The names and types of the low look's globals.
+const GLOBALS := {"look_tint": RenderingServer.GLOBAL_VAR_TYPE_VEC3, "look_lamp_color": RenderingServer.GLOBAL_VAR_TYPE_VEC3,
+	"look_lamp_level": RenderingServer.GLOBAL_VAR_TYPE_FLOAT, "look_lamp0": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp1": RenderingServer.GLOBAL_VAR_TYPE_VEC4, "look_lamp2": RenderingServer.GLOBAL_VAR_TYPE_VEC4,
+	"look_lamp3": RenderingServer.GLOBAL_VAR_TYPE_VEC4}
 
 ## The normal that lights an upright picture (a character, a prop): toward the camera across the ground, tipped
 ## well up to the sky, so the sun lights it from behind as well (wrap lighting does the rest).
@@ -130,6 +166,13 @@ const GLOW_RECTS := {
 }
 
 var quality: String = "high"
+## Drops to the low look by itself if the high one runs slowly (set false when the quality was asked for).
+var auto_quality: bool = true
+## The frame time (ms, the median) the high look must keep under, or it drops to low.
+const SLOW_MS := 26.0
+var _watch_t := 0.0
+var _watch: Array = []
+var _watch_last := 0
 var main: Node
 var day_night: DayNight
 ## The ambient's strength, the sun's, by quality (the day's colours come from DayNight).
@@ -149,6 +192,8 @@ var _lit_nodes: Dictionary = {}   # instance id -> true: done
 func setup(main_: Node, dn: DayNight) -> void:
 	main = main_
 	day_night = dn
+	register_globals()
+	_set_low_lamps.call_deferred()
 	process_priority = 200        # after the World has shown or hidden its house for this frame's camera
 	var world: Node = main.get("world")
 	if world:
@@ -157,6 +202,8 @@ func setup(main_: Node, dn: DayNight) -> void:
 	var tramp = main.get("trampoline")
 	if tramp:
 		light_tree(tramp)
+		for mi in tramp.find_children("*", "MeshInstance3D", true, false):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON   # (its blended net and shadow can't)
 	for n in main.get_tree().root.find_children("*", "CharSprite", true, false):
 		_add_char(n)
 	main.get_tree().node_added.connect(_on_node_added)
@@ -234,7 +281,8 @@ func lit_material(m: StandardMaterial3D) -> ShaderMaterial:
 	var linear := m.texture_filter in [BaseMaterial3D.TEXTURE_FILTER_LINEAR, BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS,
 		BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC]
 	var sm := ShaderMaterial.new()
-	sm.shader = _world_shader(mode, linear)
+	sm.shader = _world_shader(mode, linear, quality == "high")
+	sm.set_meta("look_variant", [mode, linear])
 	sm.set_shader_parameter("albedo", m.albedo_color)
 	sm.set_shader_parameter("has_tex", m.albedo_texture != null)
 	if m.albedo_texture:
@@ -248,8 +296,8 @@ func lit_material(m: StandardMaterial3D) -> ShaderMaterial:
 	_mat_cache[m] = sm
 	return sm
 
-func _world_shader(mode: String, linear: bool) -> Shader:
-	var key := mode + str(linear)
+func _world_shader(mode: String, linear: bool, high: bool = true) -> Shader:
+	var key := "w" + mode + str(linear) + str(high)
 	if _shaders.has(key):
 		return _shaders[key]
 	var s := Shader.new()
@@ -262,7 +310,9 @@ func _world_shader(mode: String, linear: bool) -> Shader:
 			alpha = "ALPHA = c.a;"
 			extra = ", depth_draw_opaque"
 	s.code = WORLD_SHADER.replace("%MODE%", extra).replace("%ALPHA%", alpha) \
-		.replace("%FILTER%", "filter_linear_mipmap" if linear else "filter_nearest_mipmap")
+		.replace("%FILTER%", "filter_linear_mipmap" if linear else "filter_nearest_mipmap") \
+		.replace("%RENDER%", ", specular_disabled, diffuse_lambert" if high else ", unshaded") \
+		.replace("%LOWFN%", "" if high else LOW_FN).replace("%LIGHT%", HIGH_LIGHT if high else LOW_LIGHT)
 	_shaders[key] = s
 	return s
 
@@ -363,36 +413,62 @@ func _light_prop(mi: MeshInstance3D) -> void:
 	var sm: ShaderMaterial = mi.material_override
 	if sm.shader == null:
 		return
-	var key := "prop"
-	if not _shaders.has(key):
-		var code: String = sm.shader.code
-		code = code.replace("render_mode unshaded, ", "render_mode diffuse_lambert_wrap, specular_disabled, ")
-		code = code.replace("uniform sampler2D tex", "uniform vec4 glow_a = vec4(0.0);\nuniform vec4 glow_b = vec4(0.0);\nuniform float glow = 0.0;\nuniform sampler2D tex")
-		var tail := "ALPHA_SCISSOR_THRESHOLD = 0.5;"
-		code = code.replace(tail, tail + PICTURE_NORMAL + """
-	{
-		float ga = step(glow_a.x, UV.x) * step(UV.x, glow_a.z) * step(glow_a.y, UV.y) * step(UV.y, glow_a.w);
-		float gb = step(glow_b.x, UV.x) * step(UV.x, glow_b.z) * step(glow_b.y, UV.y) * step(UV.y, glow_b.w);
-		EMISSION = c.rgb * glow * max(ga, gb);
-	}
-""")
-		var s := Shader.new()
-		s.code = code
-		_shaders[key] = s
+	if _prop_src == "":
+		_prop_src = sm.shader.code
 	var n := String(mi.name).trim_prefix("Prop_")
 	var nm := sm.duplicate() as ShaderMaterial
-	nm.shader = _shaders[key]
+	nm.shader = _prop_shader(quality == "high")
 	if GLOW_RECTS.has(n):
 		var r: Array = GLOW_RECTS[n]
 		nm.set_shader_parameter("glow_a", r[0])
 		nm.set_shader_parameter("glow_b", r[1] if r.size() > 1 else Vector4.ZERO)
-		_props.append(nm)
+	_props.append(nm)
 	mi.material_override = nm
+
+var _prop_src := ""
+
+## The props' shader (the World's PROP_SHADER), lit (high) or tinted (low), with the glowing rectangles.
+func _prop_shader(high: bool) -> Shader:
+	var key := "prop" + str(high)
+	if _shaders.has(key):
+		return _shaders[key]
+	var code := _prop_src
+	if high:
+		code = code.replace("render_mode unshaded, ", "render_mode diffuse_lambert_wrap, specular_disabled, ")
+	code = code.replace("uniform sampler2D tex", ("" if high else LOW_FN) + "uniform vec4 glow_a = vec4(0.0);\nuniform vec4 glow_b = vec4(0.0);\nuniform float glow = 0.0;\nuniform sampler2D tex")
+	var tail := "ALPHA_SCISSOR_THRESHOLD = 0.5;"
+	var glow := """
+	float ga = step(glow_a.x, UV.x) * step(UV.x, glow_a.z) * step(glow_a.y, UV.y) * step(UV.y, glow_a.w);
+	float gb = step(glow_b.x, UV.x) * step(UV.x, glow_b.z) * step(glow_b.y, UV.y) * step(UV.y, glow_b.w);
+	float g = glow * max(ga, gb);
+"""
+	if high:
+		code = code.replace(tail, tail + PICTURE_NORMAL + "{" + glow + "EMISSION = c.rgb * g;}")
+	else:
+		code = code.replace(tail, tail + "{" + glow + "ALBEDO = ALBEDO * look_light(MODEL_MATRIX[3].xyz + vec3(0.0, 1.0, 0.0)) + c.rgb * g * 0.6;}")
+	var s := Shader.new()
+	s.code = code
+	_shaders[key] = s
+	return s
 
 # ---------------------------------------------------------------- characters
 
-var _char_shader: Shader
 var _caster_shader: Shader
+
+## The characters' shader (CharSprite's own), lit (high) or tinted (low).
+func _char_shader_for(high: bool) -> Shader:
+	var key := "char" + str(high)
+	if _shaders.has(key):
+		return _shaders[key]
+	var s := Shader.new()
+	if high:
+		s.code = CharSprite._SHADER_CODE.replace("%RENDER%", "cull_disabled, depth_draw_opaque, diffuse_lambert_wrap, specular_disabled") \
+			.replace("%LIT%", PICTURE_NORMAL)
+	else:
+		s.code = CharSprite._SHADER_CODE.replace("render_mode %RENDER%;", "render_mode cull_disabled, depth_draw_opaque, unshaded;\n" + LOW_FN) \
+			.replace("%LIT%", "ALBEDO *= look_light(MODEL_MATRIX[3].xyz + vec3(0.0, 1.0, 0.0));")
+	_shaders[key] = s
+	return s
 
 func _add_char(cs: Node) -> void:
 	if not is_instance_valid(cs) or not cs.is_inside_tree():
@@ -404,13 +480,10 @@ func _add_char(cs: Node) -> void:
 	var pic: Sprite3D = cs.get_node_or_null("Picture") as Sprite3D
 	if not (mat is ShaderMaterial) or pic == null:
 		return
-	if _char_shader == null:
-		_char_shader = Shader.new()
-		_char_shader.code = CharSprite._SHADER_CODE.replace("%RENDER%", "cull_disabled, depth_draw_opaque, diffuse_lambert_wrap, specular_disabled") \
-			.replace("%LIT%", PICTURE_NORMAL)
+	if _caster_shader == null:
 		_caster_shader = Shader.new()
 		_caster_shader.code = CASTER_SHADER
-	mat.shader = _char_shader
+	mat.shader = _char_shader_for(quality == "high")
 	var caster := Sprite3D.new()
 	caster.name = "SunShadow"
 	caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
@@ -447,7 +520,8 @@ func _sync_chars() -> void:
 
 # ---------------------------------------------------------------- each frame
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
+	_watch_speed(dt)
 	_sync_chars()
 	if _full_caster and _full_mesh:
 		_full_caster.visible = _full_mesh.visible
@@ -463,6 +537,8 @@ func _process(_dt: float) -> void:
 		for l in day_night.lamps:
 			if l.has("glow"):
 				l.glow.visible = l.glow.visible and not cut
+	if quality != "high":
+		_update_low()
 	var night := 0.0
 	if day_night:
 		night = day_night.lamp_level
@@ -471,8 +547,30 @@ func _process(_dt: float) -> void:
 	for m in _props:
 		m.set_shader_parameter("glow", 0.35 + 0.9 * night)
 
+## For a few seconds after it starts (and after a switch back to high): if the median frame takes longer than
+## SLOW_MS, go low. Real time, not the engine's delta (held to 8 physics steps).
+func _watch_speed(dt: float) -> void:
+	if not auto_quality or quality != "high":
+		return
+	_watch_t += dt
+	var now := Time.get_ticks_usec()
+	if _watch_t > 3.0 and _watch_last > 0:
+		_watch.append((now - _watch_last) / 1000.0)
+	_watch_last = now
+	if _watch.size() >= 90:
+		var w := _watch.duplicate()
+		w.sort()
+		var med: float = w[w.size() / 2]
+		auto_quality = false
+		if med > SLOW_MS:
+			print("LookPass: frames take %.1f ms on the high look: going low" % med)
+			set_quality("low")
+		else:
+			print("LookPass: high look, %.1f ms a frame" % med)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("look_quality") and not event.is_echo():
+		auto_quality = false
 		set_quality("low" if quality == "high" else "high")
 		print("LookPass: quality ", quality)
 
@@ -484,10 +582,61 @@ func set_quality(q: String) -> void:
 	var sun: DirectionalLight3D = main.get("sun") if main else null
 	if sun:
 		sun.shadow_enabled = high
+		sun.light_cull_mask = 0xFFFFF if high else 0     # low: the sun lights nothing (look_tint does it)
 	var world = main.get("world") if main else null
 	var env: Environment = world.get("environment") if world else null
 	if env:
 		env.glow_enabled = high
 	if day_night:
-		day_night.lamp_filter = func(l: Dictionary) -> bool: return l.get("which", "both") != ("low" if high else "high")
+		day_night.lamp_filter = func(l: Dictionary) -> bool: return high and l.get("which", "both") != "low"
+	for m in _mat_cache.values():
+		var v: Array = m.get_meta("look_variant")
+		m.shader = _world_shader(v[0], v[1], high)
+	for m in _props:
+		m.shader = _prop_shader(high)
+	for e in _chars:
+		if is_instance_valid(e[0]):
+			e[0].get("_mat").shader = _char_shader_for(high)
+	_blur_on = -1.0
 	RenderingServer.directional_shadow_atlas_set_size(4096 if high else 1024, true)
+
+## The low look's globals, from the day's look and the lamps.
+func _update_low() -> void:
+	if day_night == null or day_night.look.is_empty():
+		return
+	var lk: Dictionary = day_night.look
+	var amb: Color = (lk.amb as Color).srgb_to_linear()
+	var li: Color = (lk.light as Color).srgb_to_linear()
+	var t: Color = amb * day_night.ambient_energy + li * (lk.le * day_night.light_scale * 0.8)
+	RenderingServer.global_shader_parameter_set("look_tint", Vector3(t.r, t.g, t.b))
+	RenderingServer.global_shader_parameter_set("look_lamp_level", day_night.lamp_level)
+
+## Registers the low look's globals (before any shader using them is made).
+static var _globals_done := false
+static func register_globals() -> void:
+	if _globals_done:
+		return
+	_globals_done = true
+	for n in GLOBALS:
+		if not ProjectSettings.has_setting("shader_globals/" + n):
+			var def = 0.0
+			match GLOBALS[n]:
+				RenderingServer.GLOBAL_VAR_TYPE_VEC3: def = Vector3.ONE if n == "look_tint" else Vector3.ZERO
+				RenderingServer.GLOBAL_VAR_TYPE_VEC4: def = Vector4.ZERO
+			RenderingServer.global_shader_parameter_add(n, GLOBALS[n], def)
+
+## The low look's lamps: the first four that are on in the low look ("low" or "both"), as position and reach.
+func _set_low_lamps() -> void:
+	var i := 0
+	var col := Color(1.0, 0.8, 0.6).srgb_to_linear()
+	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 0.85)
+	if day_night:
+		for l in day_night.lamps:
+			if i >= 4 or l.get("which", "both") == "high":
+				continue
+			var o: OmniLight3D = l.light
+			RenderingServer.global_shader_parameter_set("look_lamp%d" % i, Vector4(o.global_position.x, o.global_position.y, o.global_position.z, o.omni_range))
+			i += 1
+	while i < 4:
+		RenderingServer.global_shader_parameter_set("look_lamp%d" % i, Vector4.ZERO)
+		i += 1

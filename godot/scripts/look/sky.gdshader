@@ -12,6 +12,7 @@ uniform float sun_glow = 0.5;                    // how much it lights the sky r
 uniform vec3 moon_dir = vec3(-0.5, 0.6, -0.6);
 uniform float moon = 0.0;                        // 0..1 how much moon shows
 uniform float stars = 0.0;                       // 0..1
+uniform float twinkle = 0.0;                     // time, for the stars (TIME would rebake the sky every frame)
 
 float hash(vec3 p) {
 	p = fract(p * 0.3183099 + 0.1);
@@ -45,7 +46,7 @@ void sky() {
 		if (r > 0.985) {
 			vec3 f = fract(g) - 0.5;
 			float s = smoothstep(0.32, 0.0, length(f));
-			float tw = 0.7 + 0.3 * sin(TIME * (1.5 + r * 4.0) + r * 40.0);
+			float tw = 0.7 + 0.3 * sin(twinkle * (1.5 + r * 4.0) + r * 40.0);
 			col += vec3(0.85, 0.9, 1.0) * s * tw * stars * smoothstep(0.0, 0.25, h) * (r - 0.985) * 66.0;
 		}
 	}
