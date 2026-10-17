@@ -18,7 +18,9 @@ it out."
 
 ## Decisions (for the owner to check in the morning)
 
-- (none yet)
+- Views: top-down and first person both fully supported (owner skipped the question; can change).
+- Bring everything across, cut nothing (owner skipped the question; can trim).
+- Day length 20 real minutes (7 am-9 pm ~14 min, night ~6), owner said they didn't know; one tunable number.
 
 ## Progress
 

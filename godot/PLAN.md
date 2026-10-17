@@ -29,6 +29,21 @@ folder is the Godot 4.4.1 version, built alongside it, milestone by milestone, e
   saves a screenshot and prints the console (errors included). Look at the screenshot.
 - **Never touch `Smashed.html`** or anything outside `godot/`. Don't commit or push: that's done after.
 
+## Decided with the owner (17 Oct)
+
+- **Controls:** PC first (keyboard and mouse), with full **gamepad** support (Xbox, PlayStation, Steam
+  Controller; menus usable without a mouse), and **really good phone and tablet** support. Every control goes
+  through Godot input actions (move, look, fire, roll, interact, ...) that the keyboard/mouse, a pad and touch all
+  drive; the game notices the last device used and shows the matching prompts ("E", the pad button, or an
+  on-screen button). Touch: top-down twin sticks with roll and E buttons; first person left-thumb move, drag to
+  look, fire and jump buttons; sizes scale with the screen (tablets get a real layout); landscape. Each arcade
+  game gets its own controls per device (Snake: swipe / d-pad; Bricks: drag the paddle / stick; Sand Miner:
+  on-screen walk, jump, dig). Test phone speed from milestone 1; lighter settings on phones if needed.
+- **Views:** top-down and first person both fully supported, everything working in both (decided for the owner;
+  they can change it).
+- **What comes across:** everything (decided for the owner; they can trim it).
+- **Lighting:** dynamic, from the day and night cycle (1.4).
+
 ## What the HTML game has (the inventory)
 
 **Places.** The lounge (wood floor and rug: the table and two chairs, a bong, cards; the gym: bench press with a
