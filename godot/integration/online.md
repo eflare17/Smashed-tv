@@ -1,6 +1,6 @@
 # Online (milestone 4): integration note
 
-Status: in progress.
+Status: done (tested: two headless games over ENet, all checks; two Chromium pages over PeerJS with a local broker, all 22 checks of the earlier drive; screenshots looked at).
 
 Branch `claude/godot-online`. Files: `scripts/net/` (net.gd, net_transport.gd, peerjs_transport.gd,
 enet_transport.gd, net_codec.gd, net_mirror.gd, net_menu.gd), `test/net/`, this note; small hooks in
@@ -122,3 +122,15 @@ node godot/test/net/two_pages.mjs http://127.0.0.1:8741/build/web/index.html <ou
 - **The guest predicts its own player** between snapshots (keeps its own position unless the host disagrees by
   48+ units), so walking and rolling feel local; shots appear when the host's snapshot has them (as in the HTML
   game).
+
+## What's left
+
+- The public PeerJS broker and unpkg aren't reachable from the build container: online play on GitHub Pages with
+  the real broker, and on real phones, is untested (the code is the HTML game's own set-up).
+- The other player in the pool isn't cut at the waterline; the wardrobe doors and the gym's plates aren't
+  synced (each screen has its own); the host's tuning panel values (HTML's cfg message) aren't sent (same build,
+  same numbers).
+- Packing the fight costs up to ~5 ms a snapshot natively in a busy wave (more in wasm): if phones struggle as
+  host, send fewer cosmetic records (sparks, blood) or pack them by hand.
+- The Mega Drive player-2 video call is wired but not tried with a ROM.
+- The first-person test shot (test/net/look.gd) aims its look at the other player loosely; the view itself works.
