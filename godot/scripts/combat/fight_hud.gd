@@ -78,6 +78,8 @@ func _ready() -> void:
 	_mode_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_mode_lbl.add_theme_color_override("font_color", GOLD)
 	_mode_lbl.add_theme_font_size_override("font_size", 15)
+	_mode_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	_mode_lbl.add_theme_constant_override("outline_size", 5)
 	_picker.add_child(prev)
 	_picker.add_child(_mode_lbl)
 	_picker.add_child(_btn(">", func(): fight.step_mode(1)))
@@ -116,9 +118,34 @@ func flash_slot(i: int) -> void:
 	_flash_slot = i
 	_flash_until = Time.get_ticks_msec() + 350
 
-## The HTML canvas's scale on this screen (860 x 520 units, fitted to the height).
+## The HTML canvas's scale on this screen (860 x 520 units, fitted to the height, but never so big that the
+## 364-wide weapon bar wouldn't fit across: a portrait phone).
 func sc() -> float:
-	return _draw_c.size.y / 520.0
+	return minf(_draw_c.size.y / 520.0, _draw_c.size.x / 372.0)
+
+# A phone held upright: the window is narrow, so the stretched canvas (1280 wide) would make every fixed-size
+# piece of HUD tiny; twice the size there (content_scale_factor 2: the canvas is 640 wide) reads like landscape.
+func _fit_portrait() -> void:
+	var ws := DisplayServer.window_get_size()
+	var want := 2.0 if ws.y > ws.x * 1.1 else 1.0
+	if want != _scale_set:
+		_scale_set = want
+		get_tree().root.content_scale_factor = want
+
+## Portrait (taller than wide): a phone held upright.
+func portrait() -> bool:
+	return _draw_c.size.y > _draw_c.size.x
+
+## An HTML canvas y on this screen: the top stays at the top, the bottom at the bottom, the middle in the middle
+## (on a tall screen the canvas's rows don't all fit one scale).
+func vy(y: float) -> float:
+	var k := sc()
+	var h := _draw_c.size.y
+	if y < 200.0:
+		return y * k
+	if y >= 400.0:
+		return h - (520.0 - y) * k
+	return h / 2.0 + (y - 260.0) * k
 
 ## An HTML canvas x on this screen: left things stay left, right things stay right, the middle stays centred.
 func hx(x: float) -> float:
@@ -131,12 +158,14 @@ func hx(x: float) -> float:
 	return w / 2.0 + (x - 430.0) * s
 
 var _farm_ui: Node
+var _scale_set := -1.0
 var _line_w := 0.0
 var _lobby_ui: Node
 
 func _process(delta: float) -> void:
 	if fight == null:
 		return
+	_fit_portrait()
 	if fight.main:
 		if _farm_ui == null:
 			_farm_ui = fight.main.get_node_or_null("FarmUI")
@@ -152,6 +181,8 @@ func _process(delta: float) -> void:
 	_mode_lbl.text = Fight.mode_name(fight.mode)
 	_picker.position.x = (_draw_c.size.x - _picker.size.x) / 2.0
 	_picker.position.y = 10.0
+	if portrait():
+		_picker.position.y = 150.0            # its own row, under the character tabs, the clock and ZOOM / VIEW
 	var f := fight.f
 	# first-person hands: the walk bob and new shots' tracers
 	var od := f.odo if s.started else fight.player.odo
@@ -181,7 +212,11 @@ func _process(delta: float) -> void:
 			b.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 	var bs := 54.0 * sc()
 	_bar.size = Vector2(bs * 6.0 + 8.0 * sc() * 5.0, bs)
-	_bar.position = Vector2((_draw_c.size.x - _bar.size.x) / 2.0, 440.0 * sc())
+	# the bar: at the bottom like the HTML game's; held upright, up off the bottom, clear of the thumbs' sticks
+	var bar_y := vy(440.0)
+	if portrait():
+		bar_y = _draw_c.size.y * 0.66
+	_bar.position = Vector2((_draw_c.size.x - _bar.size.x) / 2.0, bar_y)
 	_bar.queue_redraw()
 	_draw_c.queue_redraw()
 	_apply_touch_move()
@@ -243,7 +278,7 @@ func _shared_touch(event: InputEventScreenTouch) -> void:
 	var p := event.position
 	if event.pressed:
 		if s.over:
-			if absf(p.x - _draw_c.size.x / 2.0) < 220.0 * sc() and absf(p.y - 260.0 * sc()) < 60.0 * sc():
+			if absf(p.x - _draw_c.size.x / 2.0) < 220.0 * sc() and absf(p.y - vy(260.0)) < 60.0 * sc():
 				fight.restart()
 			return
 		_taps[event.index] = {"at": p, "t0": Time.get_ticks_msec(), "moved": 0.0}
@@ -279,13 +314,13 @@ func _on_ui(p: Vector2) -> bool:
 func _touch_down(id: int, p: Vector2) -> void:
 	var s := fight.sim
 	if s.over:
-		if absf(p.x - _draw_c.size.x / 2.0) < 220.0 * sc() and absf(p.y - 260.0 * sc()) < 60.0 * sc():
+		if absf(p.x - _draw_c.size.x / 2.0) < 220.0 * sc() and absf(p.y - vy(260.0)) < 60.0 * sc():
 			fight.restart()
 		return
 	if _on_ui(p):
 		return
 	var w := _draw_c.size.x
-	if fight.is_fp() and p.distance_to(Vector2(hx(705), 405 * sc())) < 50.0 * sc():
+	if fight.is_fp() and p.distance_to(Vector2(hx(705), vy(405))) < 50.0 * sc():
 		_fire_id = id
 		fight.touch_fire = true
 		return
@@ -483,13 +518,13 @@ func draw_all(c: Control) -> void:
 	_machine_prompts(c)
 	# the wave banner in the breathers
 	if s.started and not s.over and s.breather > 0.0:
-		_text(c, vp.x / 2.0, 250 * k, "WAVE %d" % (s.wave + 1), 26, Color("#cfd4de"), 1, 5, Color(0, 0, 0, 0.5))
-		_text(c, vp.x / 2.0, 276 * k, EnemySim.incoming_text(s, s.wave + 1), 14, Color("#9aa1b2"), 1)
+		_text(c, vp.x / 2.0, vy(250), "WAVE %d" % (s.wave + 1), 26, Color("#cfd4de"), 1, 5, Color(0, 0, 0, 0.5))
+		_text(c, vp.x / 2.0, vy(276), EnemySim.incoming_text(s, s.wave + 1), 14, Color("#9aa1b2"), 1)
 		if s.goth and s.wave == 0:
 			var line := "keep Gothica alive  ·  potatoes heal her"
 			if f.ch in ProtectSim.CARRIERS:
 				line += "  ·  E picks her up"
-			_text(c, vp.x / 2.0, 298 * k, line, 14, Color("#f7a8ff"), 1)
+			_text(c, vp.x / 2.0, vy(298), line, 14, Color("#f7a8ff"), 1)
 	if _launcher_hint_t >= 0.0 and _launcher_hint_t < 4.0:
 		var a2 := minf(1.0, _launcher_hint_t / 0.25) * minf(1.0, (4.0 - _launcher_hint_t) / 0.5)
 		_text(c, vp.x / 2.0, 124 * k, "TAP WHERE YOU WANT IT TO LAND", 22, Color(GOLD, a2), 1, 5, Color(INK, 0.9 * a2))
@@ -509,7 +544,7 @@ func draw_all(c: Control) -> void:
 			c.draw_arc(st.o, STICK_MAX * k, 0, TAU, 40, Color("#4b5468"), 2.0, true)
 			c.draw_circle(st.o + st.d * STICK_MAX * k, 20 * k, Color(0.88, 0.28, 0.25, 0.55) if key == "move" else Color(0.96, 0.82, 0.48, 0.55))
 	if fp and fight.touch_seen and own_sticks:
-		var fc := Vector2(hx(705), 405 * k)
+		var fc := Vector2(hx(705), vy(405))
 		var held := fight.touch_fire
 		c.draw_circle(fc, 40 * k, Color(0.88, 0.28, 0.25, 0.6) if held else Color(14 / 255.0, 16 / 255.0, 22 / 255.0, 0.5))
 		c.draw_arc(fc, 40 * k, 0, TAU, 40, Color("#ffd0c8") if held else Color("#e0473f"), 2.5, true)
@@ -524,7 +559,7 @@ func draw_all(c: Control) -> void:
 
 # The bonus room's words (gore_loot 14.5): bold monospace with a dark outline.
 func _stext(c: Control, y: float, txt: String, size: int, col := Color("#d9f9ff")) -> void:
-	_text(c, c.size.x / 2.0, y * sc(), txt, size, col, 1, 4, Color("#111620"))
+	_text(c, c.size.x / 2.0, vy(y), txt, size, col, 1, 4, Color("#111620"))
 
 func _draw_secret(c: Control, sec: FT.Secret) -> void:
 	var s := fight.sim
@@ -561,7 +596,7 @@ func _draw_secret(c: Control, sec: FT.Secret) -> void:
 		elif sec.phase == "payout":
 			head = "PAYOUT"
 		_stext(c, 107, head, 17)
-		var bot := Rect2(vp.x / 2.0 - 250 * k, 482 * k, 500 * k, 33 * k)
+		var bot := Rect2(vp.x / 2.0 - 250 * k, vy(482), 500 * k, 33 * k)
 		c.draw_rect(bot, Color(8 / 255.0, 15 / 255.0, 24 / 255.0, 0.9))
 		_stext(c, 496, "BANKED $%d" % sec.earned + ("  + $10 EACH" if sec.phase == "payout" and sec.survived else ""), 13, Color("#b1efb7"))
 		_stext(c, 509, "COLLECT CASH  /  SHOOT SKULLS  /  DODGE STAMPS", 10, Color("#9db7c3"))
@@ -665,12 +700,12 @@ func _game_over(c: Control) -> void:
 	for p: FT.Fighter in s.players:
 		killed += p.kills
 	if s.goth:
-		_text(c, vp.x / 2.0, 238 * k, "GOTHICA'S DOWN", 40, Color("#e0473f"), 1)
-		_text(c, vp.x / 2.0, 268 * k, "you kept her safe to wave %d — best: wave %d" % [s.wave, maxi(ProtectSim.get_best(), s.wave)], 16, Color("#cfd4de"), 1)
+		_text(c, vp.x / 2.0, vy(238), "GOTHICA'S DOWN", 40, Color("#e0473f"), 1)
+		_text(c, vp.x / 2.0, vy(268), "you kept her safe to wave %d — best: wave %d" % [s.wave, maxi(ProtectSim.get_best(), s.wave)], 16, Color("#cfd4de"), 1)
 	else:
-		_text(c, vp.x / 2.0, 238 * k, "DOWN", 40, Color("#e0473f"), 1)
-		_text(c, vp.x / 2.0, 268 * k, "made it to wave %d — %d killed" % [s.wave, killed], 16, Color("#cfd4de"), 1)
-	_text(c, vp.x / 2.0, 294 * k, ("press Menu" if _pad_last() else "press R") + ", or tap here to restart", 13, Color("#8b93a4"), 1)
+		_text(c, vp.x / 2.0, vy(238), "DOWN", 40, Color("#e0473f"), 1)
+		_text(c, vp.x / 2.0, vy(268), "made it to wave %d — %d killed" % [s.wave, killed], 16, Color("#cfd4de"), 1)
+	_text(c, vp.x / 2.0, vy(294), ("press Menu" if _pad_last() else "press R") + ", or tap here to restart", 13, Color("#8b93a4"), 1)
 
 # First person: the hands (blasters), the kick and flash, the tracers, the full-view flash for other guns, your
 # own pips (you can't see your head), a red pulse while you can't be hurt.

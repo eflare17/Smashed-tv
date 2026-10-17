@@ -1,3 +1,5 @@
+Portrait HUD: done (portrait phone 390x844 @2x, landscape phone 844x390, desktop 1280x720; lobby, a run, game over)
+
 Polish status: done (one wallet, one HUD line; checked in the lobby, a run, first person, the yard, two players and
 a phone-sized screen in the merged web build; tests: logic 53/53, carry, wallet)
 
@@ -20,6 +22,23 @@ line:
 That's all. It adds the input actions below (in code) and one `Fight` node under Main, which reaches `main.player`,
 `main.rig`, `main.hud`, `main.world`, `main.trampoline`, `main.gothica`. The web test (`test/combat/web_test.sh`)
 inserts exactly this line into a scratch copy and exports it.
+
+## Portrait phones (the HUD)
+
+- **The whole 2D layer is twice the size held upright**: `FightHud` sets `get_tree().root.content_scale_factor` to 2
+  when the window is taller than wide (1 otherwise). With the project's canvas_items / expand stretch a 390-wide
+  phone otherwise shows a 1280-wide canvas, so milestone 1's fixed-size HUD (character tabs, view label, clock, the
+  touch buttons' labels) went tiny. Landscape and desktop are unchanged.
+- **FightHud's own scale** is the HTML canvas fitted to the height but never wider than the weapon bar can fit
+  (`sc() = min(h / 520, w / 372)`), and its rows are anchored: top things at the top, bottom things at the bottom,
+  the banners and the game-over words in the middle (`vy()`), so a tall screen doesn't stretch them apart.
+- **Held upright**: the weapon bar fits the width at two thirds of the way down (clear of the thumb sticks, ROLL and
+  FIRE); the mode picker and Start get their own row under the top HUD.
+- **For the main session**: in a run held upright the top-down camera still frames the arena for a wide screen
+  (the arena fills the top part; below it is the dark surround). The CameraRig could fit the arena's width when
+  the screen is taller than wide.
+- Test: `node godot/test/combat/phone_shot.mjs <url> out.png portrait|landscape [waitMs]` (Chromium mobile
+  emulation, deviceScaleFactor 2, touch).
 
 ## The integration polish: one wallet, one HUD line
 
