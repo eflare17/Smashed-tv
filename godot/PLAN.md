@@ -68,6 +68,14 @@ panel, the farm plans (FARM.md).
    (like the HTML game, following you) and first person (V; mouse look with the pointer captured; Esc lets go).
    E with an on-screen prompt for what it does. The trampoline (climb on, bounce, Shift higher, jump off). Gothica
    wandering. A build label. Exported for the web. **The test of the whole idea: does it feel better?**
+1.4. **The day and night cycle** (decided by the owner, 17 Oct): the lighting is dynamic, driven by one game
+   clock (an autoload `GameClock`): day number, time of day, signals `hour_changed`, `day_started`. **A day is 20
+   real minutes** (7 am to 9 pm in about 14 minutes, the night in about 6), one tunable number. The sun, sky,
+   ambient light and indoor lamps follow it. Lying in the bed skips to 7 am and the next day (online: when both
+   players are in bed). Online, the host's clock is the one; it goes to the guest in the snapshot. A save of the
+   day and time. **Why:** the owner's friend is building a trading game in the spirit of Dope Wars and Schedule I
+   that will plug in later: each day is a market day (prices change, events happen) through `day_started`. Build
+   the hooks, not the trading.
 1.5. **The look pass.** The big visual jump, in the "HD-2D" style (pixel-art characters in a lit 3D world,
    like Octopath Traveller): real lighting and soft shadows, a sky in the yard (sunny or golden hour), warm lamps
    indoors, glow on the arcade screens and the pool, a light haze in the distance and a gentle blur on far-off
