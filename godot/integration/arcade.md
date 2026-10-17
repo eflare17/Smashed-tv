@@ -1,5 +1,7 @@
 # Arcade (milestone 5 part): integration note
 
+Status: done (everything buildable without the owner is built; re-verified 17 Oct: 0 failed in the headless logic test). What remains needs other sessions or the owner: the `Arcade.install(self)` line in main.gd, a real ROM try, milestone 4 wiring, the Google OAuth client ID, a phone speed check (see "What's left").
+
 ## Handoff
 
 **State: done and pushed** (`claude/godot-arcade`, last commit "Arcade: input actions (added in code), integration
