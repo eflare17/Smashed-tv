@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b326';
+const BUILD = 'b327';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -2032,7 +2032,7 @@ function pushOutOfSolid(o, r, s) {
   if (d < 0.001) { o.y = s.cy + m; return true; }
   o.x = s.cx + dx / d * m; o.y = s.cy + dy / d * m; return true;
 }
-function trampNear(p) { return !!p && p.alive && !p.tramp && !p.dive && !p.sit && !p.bed && !p.lift && !p.leg && Math.hypot(p.x - TRAMP.cx, p.y - TRAMP.cy) < TRAMP.r + 40; }
+function trampNear(p) { return !!p && p.alive && !p.tramp && !p.air && !p.dive && !p.sit && !p.bed && !p.lift && !p.leg && Math.hypot(p.x - TRAMP.cx, p.y - TRAMP.cy) < TRAMP.r + 40; }
 function trampOn(p) {                                   // up over the edge, onto the mat near where you stood
   const a = Math.atan2(p.y - TRAMP.cy, p.x - TRAMP.cx), d = TRAMP.r - 36;
   Object.assign(p, { tramp: 1, tz: 0, tv: 150, tjump: 0, dz: TRAMP.mat, x: TRAMP.cx + Math.cos(a) * d, y: TRAMP.cy + Math.sin(a) * d, vx: 0, vy: 0 });
@@ -2041,9 +2041,29 @@ function trampOff(p) {                                  // over the side you're 
   const a = Math.atan2(p.y - TRAMP.cy, p.x - TRAMP.cx), d = TRAMP.r + 24;
   Object.assign(p, { tramp: 0, tz: 0, tv: 0, tjump: 0, dz: 0, x: TRAMP.cx + Math.cos(a) * d, y: TRAMP.cy + Math.sin(a) * d, vx: 0, vy: 0 });
 }
+// b327: off it through the air: up above the net, E leaps the way you're heading (or facing), and running at the
+// net carries you over it. You sail out and drop onto the grass.
+function trampHigh(p) { return (p.dz || 0) - TRAMP.mat > TRAMP.net; }   // (from dz, so the guest's screen knows too)
+function trampLeap(p, ux, uy) {
+  const l = Math.hypot(ux, uy) || 1;
+  p.air = { vx: ux / l * 190, vy: uy / l * 190 };
+  p.tramp = 0; p.tv = Math.max(p.tv || 0, 110); p.tjump = 0; p.vx = p.vy = 0;   // (dz carries on from where he is)
+}
+function airStep(w, p, dt) {                            // each step, on the host, till he lands
+  if (!p.alive || !lobbyTall(w)) { p.air = null; p.dz = 0; p.tv = 0; return; }
+  p.x += p.air.vx * dt; p.y += p.air.vy * dt; p.vx = p.vy = 0;
+  lobbyClamp(p, T.radius);
+  p.tv -= TRAMP.g * dt; p.dz += p.tv * dt;
+  if (p.dz <= 0) {
+    p.dz = 0; p.tv = 0; p.air = null;
+    for (const b of YARD_SOLIDS) pushOutOfSolid(p, T.radius * 0.5, b);   // (not landed inside anything)
+    if (SND.ctx && SND.on) sNoise(0.12, 220, 1, 0.22, 'lowpass', 90);   // thud
+  }
+}
 function trampStep(w, p, dt) {                          // each step, on the host
   if (!p.alive || p.dive || p.sit || p.bed || !lobbyTall(w)) { p.tramp = 0; p.tz = 0; p.tv = 0; p.dz = 0; return; }
   const dx = p.x - TRAMP.cx, dy = p.y - TRAMP.cy, d = Math.hypot(dx, dy) || 1, max = TRAMP.r - 22;   // the net holds you in
+  if (d > max && p.tz > TRAMP.net + 2 && (p.vx * dx + p.vy * dy) / d > 30) { trampLeap(p, dx, dy); return; }   // b327: above it and still going: over you go
   if (d > max) {
     p.x = TRAMP.cx + dx / d * max; p.y = TRAMP.cy + dy / d * max;
     const vn = (p.vx * dx + p.vy * dy) / d; if (vn > 0) { p.vx -= vn * dx / d; p.vy -= vn * dy / d; }
@@ -5494,6 +5514,7 @@ function lobbySolids(w, dt) {
   const water = { x0: POOL.x0 + 6, y0: POOL.y0 + 6, x1: POOL.x1 - 6, y1: POOL.y1 - 6 };
   for (const p of w.players) {
     if (p.tramp) { trampStep(w, p, dt || 1 / 60); continue; }   // b326: bouncing (the net, not the solids, keeps him in)
+    if (p.air) { airStep(w, p, dt || 1 / 60); continue; }        // b327: sailing off it
     if (!p.alive || p.dive || p.sit || p.bed) continue;
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
@@ -6918,6 +6939,7 @@ function stepBase(w, inputs, dt) {
       else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const s = bedSpot(p.bed); p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0; }
     } else if (p.bed) p.bed = 0;
     if (p.tramp && !w.started) { if (inp.roll) p.tjump = 1; inp = Object.assign({}, inp, { roll: false }); }   // b326: on the trampoline the roll button is a bigger bounce
+    if (p.air && !w.started) inp = Object.assign({}, inp, { mx: 0, my: 0, roll: false });   // b327: mid-air: no steering (you can still shoot)
     if (p.plate && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });   // hands full of plate    // weapon bar: switch to anything he's actually holding
     if (inp.wsel && WEAPONS[inp.wsel] && inp.wsel !== p.weapon && hasWeapon(p, inp.wsel) && !p.dump && !p.spin) {
       p.weapon = inp.wsel; p.lobHeld = 0; p.aimOn = 0;
@@ -8074,7 +8096,7 @@ function snapshot(w) {
                            p.leg ? [Math.round(p.leg.t * 100), p.leg.reps, Math.round(p.leg.rep * 100)] : 0,
                            p.plate ? 'SML'.indexOf(p.plate) + 1 : 0,
                            p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0,   // b309: taking a hit, so the guest sees it
-                           p.tramp ? 1 : 0, Math.round(p.tv || 0)]),              // b326: on the trampoline, and how fast he's going up or down
+                           p.tramp ? 1 : p.air ? 2 : 0, Math.round(p.tv || 0)]),   // b326: on the trampoline (b327: or flying off it), and how fast he's going up or down
     gy: [GYM.bar.L.join(''), GYM.bar.R.join(''), GYM.pegs.map(q => q.join('')), LEG.horn.L.join(''), LEG.horn.R.join(''),
          GYM.anim ? [GYM.anim.kind, GYM.anim.side, GYM.anim.size, Math.round(GYM.anim.t * 100), Math.round(GYM.anim.dur * 100), GYM.anim.pid] : 0],
     bj: bjPack(w.bj),
@@ -8171,12 +8193,13 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[55] ? TRAMP.mat + Math.max(0, (a[46] || 0) - TRAMP.mat + (a[56] || 0) * age - TRAMP.g * age * age / 2) : (a[46] || 0), sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0,
+      dive: a[45] || 0, dz: a[55] === 1 ? TRAMP.mat + Math.max(0, (a[46] || 0) - TRAMP.mat + (a[56] || 0) * age - TRAMP.g * age * age / 2)
+          : a[55] === 2 ? Math.max(0, (a[46] || 0) + (a[56] || 0) * age - TRAMP.g * age * age / 2) : (a[46] || 0), sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0,
       lift: a[51] ? { t: a[51][0] / 100 + age, reps: a[51][1], rep: a[51][2] / 100 } : null,   // b291: on the bench, the leg press, carrying a plate
       leg: a[52] ? { t: a[52][0] / 100 + age, reps: a[52][1], rep: a[52][2] / 100 } : null,
       plate: a[53] ? 'SML'[a[53] - 1] : null,
       vape: a[54] ? { t: a[54] / 100 + age } : null,
-      tramp: a[55] || 0, tv: a[56] || 0
+      tramp: a[55] === 1 ? 1 : 0, air: a[55] === 2 ? {} : null, tv: a[56] || 0
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -8603,14 +8626,14 @@ const HELP_PAD = [
   ['LB  /  Y,  d-pad ◀ ▶', 'Change weapon'], ['Menu', 'Start the run  (restart when it’s over)'],
   ['View', 'First person'], ['D-pad ▲', 'Zoom'], ['D-pad ▼', 'Show / hide this list'],
   ['At the card table', 'X deal,  Y hit,  B stand'], ['In a cabinet', 'B to leave'],
-  ['On the trampoline', 'B / RB / LT: bounce higher,  A: climb off'],
+  ['On the trampoline', 'B / RB / LT: bounce higher,  A: climb off  (up high: jump off)'],
 ];
 const HELP_KEYS = [
   ['W A S D', 'Move'], ['Mouse', 'Aim  (first person: look)'], ['Click (hold)', 'Fire'],
   ['Shift', 'Dive roll'], ['E', 'Use: pick up, sit, eat, play, pull, throw'], ['1 – 6', 'Change weapon'],
   ['Enter', 'Start the run'], ['R', 'Restart'], ['V', 'First person'], ['Z', 'Zoom'], ['Tab', 'Show / hide this list'],
   ['At the card table', 'B deal,  H hit,  T stand'], ['P', 'Add a player 2 on this keyboard (arrows + space)'],
-  ['On the trampoline', 'Shift: bounce higher,  E: climb off'],
+  ['On the trampoline', 'Shift: bounce higher,  E: climb off  (up high: jump off)'],
 ];
 function drawControlsHelp() {
   const pad = PAD.last > PAD.kb, now = performance.now();
@@ -9798,7 +9821,8 @@ function lobbyLabel(w, p) {
   if (!p || !p.alive || w.started || w.over || cal.on) return null;
   if (NPC_GOTH.carrier === p.id) return p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
   if (p.dive) return null;
-  if (p.tramp) return 'CLIMB OFF';                       // b326
+  if (p.tramp) return trampHigh(p) ? 'JUMP OFF' : 'CLIMB OFF';   // b326 (b327)
+  if (p.air) return null;
   const gn = gymNear(w, p); if (gn) return gn.label;
   if (p.sit) return !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   if (p.bed) return 'GET UP';
@@ -9850,7 +9874,7 @@ function lobbyAction(w, p) {
   if (w.started) return;
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   const carrying = NPC_GOTH.carrier === p.id;
-  if (p.tramp) { trampOff(p); return; }                  // b326
+  if (p.tramp) { if (trampHigh(p)) trampLeap(p, p.moving ? p.ix : p.fx, p.moving ? p.iy : p.fy); else trampOff(p); return; }   // b326 (b327: up high, leap off)
   if (!carrying && trampNear(p)) { trampOn(p); return; }
   if (gymAction(w, p)) return;
   if (!carrying && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
@@ -13264,7 +13288,7 @@ function startGame() {
   // nothing won in the lobby carries into the run — it's a warm-up, not a head start
   for (const p of world.players) { if (p.plate) { rackPlate(p.plate); p.plate = null; } p.lift = null; p.leg = null; }
   for (const p of world.players) {
-    if (p.tramp) { p.tramp = 0; p.tz = 0; p.tv = 0; if (!p.dive) p.dz = 0; }   // b326: off the trampoline
+    if (p.tramp || p.air) { p.tramp = 0; p.air = null; p.tz = 0; p.tv = 0; if (!p.dive) p.dz = 0; }   // b326: off the trampoline
     if (inYard(p)) { p.x = BACK_DOOR.x; p.y = ARENA.h - ARENA.wall - T.radius - 6; p.vx = p.vy = 0; }   // b322: in from the yard
     p.coins = T.testCash;                // 0 in the real game; a slider for testing
     p.rockets = 0; p.dump = 0; p.buy = 0;
