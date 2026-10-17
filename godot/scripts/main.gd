@@ -62,6 +62,7 @@ func _ready() -> void:
 	FarmInstall.install(self)
 	FightInstall.install(self)
 	LobbyLife.install(self).add_to_group("lobby_only")
+	Net.install(self)                   # playing together online (milestone 4): last, it hooks into all the above
 	print("Smashed TV (Godot) ", hud.build_text, ": ready")
 
 func _on_mode(m: int) -> void:

@@ -63,6 +63,12 @@ var _sectors: Dictionary = {}          # player id -> the picture's last sector 
 var _view_before := -1
 var _secret_beat := ""
 var _zoom_before := -1
+## Online (milestone 4, scripts/net/): player 2's input from the network instead of the second keyboard/pad; the
+## step itself (the guest loads the host's fight instead of stepping its own); and a hook for Enter, R and P
+## (start, restart, add_player), which returns true when the network took it.
+var net_input2: Callable
+var net_step: Callable
+var net_request: Callable
 
 func _enter_tree() -> void:
 	me = self
@@ -286,8 +292,11 @@ func save_hotbar() -> void:
 
 # ---------------------------------------------------------------- the run
 
-func start_run() -> void:
+## forced: the network says so (the host started); otherwise online, the guest asks the host instead.
+func start_run(forced: bool = false) -> void:
 	if sim.started or player == null:
+		return
+	if not forced and net_request.is_valid() and net_request.call("start"):
 		return
 	_sync_from_player()
 	saved_mode = mode
@@ -344,7 +353,10 @@ func add_player2() -> void:
 		p2.collision_mask = 0
 	saved_two = true
 
-func restart() -> void:
+## forced: the network says so (the host restarted); otherwise online, the guest asks the host instead.
+func restart(forced: bool = false) -> void:
+	if not forced and net_request.is_valid() and net_request.call("restart"):
+		return
 	if player:
 		saved_char = player.char_id
 	saved_mode = mode
@@ -403,7 +415,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("add_player") and not event.is_echo():
-		add_player2()
+		if not (net_request.is_valid() and net_request.call("add_player")):
+			add_player2()
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("restart") and not event.is_echo():
@@ -575,6 +588,8 @@ func _build_input() -> FT.Inp:
 
 ## localInput1: arrows, Space, Ctrl; or the second pad (left stick, right stick aims, RT fires, B/RB/LT roll).
 func _build_input2() -> FT.Inp:
+	if net_input2.is_valid():
+		return net_input2.call()
 	var inp := FT.Inp.new()
 	if sim.over:
 		return inp
@@ -652,7 +667,7 @@ func _physics_process(delta: float) -> void:
 		# first-person look in a run (the rig turns only while the Player's own controls are on): the look actions
 		var lx := Input.get_action_strength("look_right") - Input.get_action_strength("look_left")
 		var ly := Input.get_action_strength("look_down") - Input.get_action_strength("look_up")
-		if p2 != null and Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() < 0.01:
+		if p2 != null and not net_input2.is_valid() and Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() < 0.01:
 			lx = 0.0                     # the arrows are player 2's
 			ly = 0.0
 		var turn := 2.8 if Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y).length() > 0.01 else 2.4
@@ -676,7 +691,11 @@ func _physics_process(delta: float) -> void:
 			f.iframe = maxf(f.iframe, 0.1)
 		if debug.has("auto"):
 			_autopilot(inp)
-		sim.step([inp, _build_input2()] if f2 else [inp], dt)
+		var inputs := [inp, _build_input2()] if f2 else [inp]
+		if net_step.is_valid():
+			net_step.call(inputs, dt)
+		else:
+			sim.step(inputs, dt)
 		_wsel = ""
 		_use = false
 		_roll_tap = false
@@ -686,7 +705,7 @@ func _physics_process(delta: float) -> void:
 		if f.coins != coins0:
 			wallet.add_cash(f.coins - coins0, "fight")
 		_coins_synced = f.coins
-	if p2 and lobby and f2.alive:
+	if p2 and lobby and f2.alive and f2.driven:
 		_move_p2_lobby(dt)
 	if lobby:
 		if Vector2(f.vx, f.vy) != vel0:
@@ -792,6 +811,11 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 		return
 	var carried := sim.goth != null and sim.goth.carrier == f.id
 	spr.visible = not fp and not blink
+	# lobby life shows a picture of its own for him (lying in bed, lifting, sitting...): leave his sprite hidden
+	var ll := LobbyLife.current
+	if not sim.started and ll and (ll.pose_of(pl) != null or (ll.busy.has(pl) and bool(ll.busy[pl].hides_sprite(pl)))):
+		spr.visible = false
+		return
 	if fp:
 		return
 	var skin := WeaponDefs.skin_for(pl.char_id, f.weapon)
