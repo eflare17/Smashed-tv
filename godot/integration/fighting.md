@@ -1,3 +1,6 @@
+Polish status: done (one wallet, one HUD line; checked in the lobby, a run, first person, the yard, two players and
+a phone-sized screen in the merged web build; tests: logic 53/53, carry, wallet)
+
 Status: done (merged with milestone 1's final, cbdebc6; tests and screenshots re-run after the merge)
 
 # Milestone 2 (fighting): integration note
@@ -17,6 +20,31 @@ line:
 That's all. It adds the input actions below (in code) and one `Fight` node under Main, which reaches `main.player`,
 `main.rig`, `main.hud`, `main.world`, `main.trampoline`, `main.gothica`. The web test (`test/combat/web_test.sh`)
 inserts exactly this line into a scratch copy and exports it.
+
+## The integration polish: one wallet, one HUD line
+
+- **One wallet**: `scripts/ui/wallet.gd` (`class_name Wallet`, at `/root/Wallet`, made by `Wallet.ensure(tree)` from
+  whichever install runs first; `get_cash`, `set_cash`, `add_cash`, `spend_cash`, signals `changed` and
+  `cash_changed`). It replaces the farm's stand-in (`farm_install.gd` now calls `Wallet.ensure`). Player 1's
+  money is this one number everywhere: the fight (kill pay, notes, the $3 dummies, prizes, the vending machine;
+  the Fight node syncs `FT.Fighter.coins` with it every tick, catching changes made between ticks too), the lobby
+  (`LobbyLife.cash/add_cash` use it for player 1; anyone else keeps the lobby's own cash), the farm's buying and
+  selling. It starts at the HTML game's lobby cash (max(lobbyCash, testCash) = $2500 while testCash is on) and
+  outlasts R (it lives at the root, like the clock). Player 2 keeps his own fight cash.
+- **Decision**: a run no longer resets player 1's cash to testCash (the HTML did, "nothing won in the lobby carries
+  into the run"): with one wallet that would wipe the farm's money. The farm's own save no longer stores the cash
+  (it only did for the stand-in).
+- **One HUD line** (FightHud): top left under the character buttons, on a soft dark backing: `$cash`, the ammo
+  (or rockets), then the farm's seeds / buds / can / bags / buff only when there are any (`FarmUI.status_parts()`);
+  player 2's cash and ammo under it; in a run the `wave N   M left   K killed` line under those. The day and time
+  only once: the lighting clock's (top right). The farm's strip (`FarmUI.show_status`) and the lobby's money label
+  (`LobbyUI.show_money`) have a flag the fight's HUD turns off. First person: your pips under the line.
+- Small edits in other parts' files for this: `scripts/farm/farm_install.gd`, `scripts/farm/farm_ui.gd`,
+  `scripts/lobby_life/lobby_life.gd`, `scripts/lobby_life/lobby_ui.gd`.
+- Not changed: the lobby's vending machine (lobby life's, top left of the lounge in the lobby) is world art and can
+  sit behind the line at some zooms; the backing keeps the line readable over it. (The HTML game has no vending
+  machine in the lobby since b215: lobby life's call.)
+- Test: `godot --headless --fixed-fps 60 --path godot res://test/combat/wallet_test.tscn`.
 
 ## What works
 

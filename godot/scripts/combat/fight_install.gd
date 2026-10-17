@@ -5,6 +5,7 @@ extends RefCounted
 
 static func install(main: Node) -> void:
 	add_actions()
+	Wallet.ensure(main.get_tree())
 	var f := Fight.new()
 	f.setup(main)
 	main.add_child(f)

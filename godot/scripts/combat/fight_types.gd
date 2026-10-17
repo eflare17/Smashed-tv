@@ -96,6 +96,7 @@ class Fighter:
 	var tap_fire := false
 	var last_tap := 0
 	var bonk := 0.0              ## seconds since a hard wall bounce (sound once)
+	var shared_wallet := false   ## his coins are the game's one wallet (/root/Wallet): player 1
 	var driven := false          ## the sim works out his movement in the lobby too (player 2: the Fight node slides him)
 
 	func pos() -> Vector2:

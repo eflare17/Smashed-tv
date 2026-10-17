@@ -15,8 +15,6 @@ extends CanvasLayer
 const GOLD := Color("#f6d17a")
 const INK := Color(20 / 255.0, 22 / 255.0, 28 / 255.0)
 const STICK_MAX := 52.0
-## Pixels the run line and wallets sit below the HTML's spot: the farm's day line is up there now.
-const TOP_PAD := 22.0
 
 var fight: Fight
 var _draw_c: _Draw
@@ -132,9 +130,23 @@ func hx(x: float) -> float:
 		return w - (860.0 - x) * s
 	return w / 2.0 + (x - 430.0) * s
 
+var _farm_ui: Node
+var _line_w := 0.0
+var _lobby_ui: Node
+
 func _process(delta: float) -> void:
 	if fight == null:
 		return
+	if fight.main:
+		if _farm_ui == null:
+			_farm_ui = fight.main.get_node_or_null("FarmUI")
+		if _lobby_ui == null:
+			var ll = fight.main.get_node_or_null("LobbyLife")
+			_lobby_ui = ll.get("ui") if ll else null
+		if _farm_ui:
+			_farm_ui.set("show_status", false)       # this line shows the cash and the farm's things
+		if _lobby_ui:
+			_lobby_ui.set("show_money", false)
 	var s := fight.sim
 	_picker.visible = not s.started
 	_mode_lbl.text = Fight.mode_name(fight.mode)
@@ -411,26 +423,37 @@ func draw_all(c: Control) -> void:
 		return
 	if fp:
 		_draw_fp(c)
-	# the run's top line (26, 38) and the wallet (26, 64) + ammo (88, 64)
+	# the game's one top-left line: player 1's cash (the one wallet), his ammo, the farm's things when he has any;
+	# player 2's cash and ammo under it; then the run's line ("wave N   M left   K killed")
+	var x0 := 18.0 * k
+	var y0 := 46.0 * k
+	var line_h := 21.0 * k
+	# a soft dark backing, so the line reads over whatever art is behind it (as wide as last frame's line)
+	var rows := s.players.size() + (1 if s.started else 0)
+	if _line_w > 0.0:
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0.06, 0.07, 0.09, 0.45)
+		bg.set_corner_radius_all(int(6 * k))
+		c.draw_style_box(bg, Rect2(x0 - 8 * k, y0 - 17 * k, _line_w - x0 + 6 * k, rows * line_h + 6 * k))
+	var widest := 0.0
+	for p: FT.Fighter in s.players:
+		var pc: Color = FightSim.P_COLOURS[p.id % 2] if p.id > 0 else GOLD
+		var x := _seg(c, x0, y0, "$%d" % p.coins, 17, pc)
+		if p.weapon == "launcher":
+			x = _seg(c, x, y0, "☢ %d" % p.rockets, 15, GOLD if p.rockets > 0 else Color("#e0473f"))
+		elif WeaponDefs.uses_ammo(p.weapon):
+			x = _seg(c, x, y0, ("● %d" % p.ammo) if p.ammo > 0 else "○ 0", 15, Color("#d8b878") if p.ammo > 0 else Color("#e0473f"))
+		if p.id == 0 and _farm_ui and _farm_ui.has_method("status_parts"):
+			for part in _farm_ui.status_parts():
+				x = _seg(c, x, y0, part[0], 14, Color(part[1]))
+		widest = maxf(widest, x)
+		y0 += line_h
 	if s.started:
 		var killed := 0
 		for p: FT.Fighter in s.players:
 			killed += p.kills
-		_text(c, 26 * k, 38 * k + 20 + TOP_PAD, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#a3aabb"), 0, 4, Color(0, 0, 0, 0.6))
-	var y0 := 64 * k + 20 + TOP_PAD
-	for p: FT.Fighter in s.players:
-		var pc: Color = FightSim.P_COLOURS[p.id % 2]
-		_text(c, 26 * k, y0, "$%d" % p.coins, 17, pc, 0, 4, Color(0, 0, 0, 0.55))
-		var ax := 26 * k + c.get_theme_default_font().get_string_size("$%d" % p.coins, HORIZONTAL_ALIGNMENT_LEFT, -1, int(17 * k)).x + 14 * k
-		ax = maxf(ax, 88 * k)
-		if p.weapon == "launcher":
-			_text(c, ax, y0, "☢ %d" % p.rockets, 17, GOLD if p.rockets > 0 else Color("#e0473f"), 0, 4, Color(0, 0, 0, 0.55))
-		elif WeaponDefs.uses_ammo(p.weapon):
-			if p.ammo > 0:
-				_text(c, ax, y0, "● %d" % p.ammo, 17, Color("#d8b878"), 0, 4, Color(0, 0, 0, 0.55))
-			else:
-				_text(c, ax, y0, "○ 0", 17, Color("#e0473f"), 0, 4, Color(0, 0, 0, 0.55))
-		y0 += 22 * k
+		widest = maxf(widest, _seg(c, x0, y0 - 2.0 * k, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#b3bacb")))
+	_line_w = widest
 	# floaters, bubbles, words over heads (world space)
 	for fl: FT.Floater in s.floaters:
 		var sp = to_screen(fl.x, fl.y, 40.0 + fl.t * 30.0) if fp else to_screen(fl.x, fl.y, 30.0)
@@ -562,6 +585,17 @@ func _draw_help(c: Control, alpha: float) -> void:
 		var y := r.position.y + (50.0 + i * 22.0) * k
 		_text(c, r.position.x + 170 * k, y, rows[i][0], 13, Color(Color("#ffd36b"), alpha), 2)
 		_text(c, r.position.x + 186 * k, y, rows[i][1], 13, Color(Color("#e6e8ee"), alpha))
+
+## One piece of the top-left line: drawn with a dark outline, returns where the next piece starts.
+func _seg(c: Control, x: float, y: float, txt: String, size: int, col: Color) -> float:
+	var font := c.get_theme_default_font()
+	var fs := int(size * sc())
+	var shown := txt
+	if txt.length() > 0 and txt[0] in ["●", "○", "☢", "∞"]:
+		shown = glyph(c, Vector2(x, y), txt, fs, col, font)
+	c.draw_string_outline(font, Vector2(x, y), shown, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(3, int(4 * sc())), Color(0, 0, 0, 0.6))
+	c.draw_string(font, Vector2(x, y), shown, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	return x + font.get_string_size(shown, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 12.0 * sc()
 
 func _pad_last() -> bool:
 	var h = fight.main.get("hud") if fight.main else null
@@ -707,11 +741,11 @@ func _draw_fp(c: Control) -> void:
 		var col := Color(1, 1, 1, 0.15)
 		if i < int(ceil(f.hp)):
 			col = GOLD if i >= int(s.tv("playerHp", 5)) else FightSim.P_COLOURS[0]
-		c.draw_rect(Rect2(26 * k + i * 14 * k, 72 * k + 22 * s.players.size() * k + TOP_PAD, 10 * k, 10 * k), col)
+		c.draw_rect(Rect2(26 * k + i * 14 * k, 46 * k + 21 * k * s.players.size() + (20.0 * k if s.started else 0.0), 10 * k, 10 * k), col)
 	# landing ring hint text in first person isn't needed: the ring is drawn on the floor
 	if s.goth and s.goth.hp > 0.0:
 		var x0 := 26 * k
-		var y1 := 72 * k + 22 * s.players.size() * k + 18 * k + TOP_PAD
+		var y1 := 46 * k + 21 * k * s.players.size() + (20.0 * k if s.started else 0.0) + 18 * k
 		_text(c, x0, y1 + 10 * k, "Gothica", 11, Color("#f7a8ff"))
 		c.draw_rect(Rect2(x0 + 52 * k, y1 + 2 * k, 80 * k, 8 * k), Color(0, 0, 0, 0.65))
 		c.draw_rect(Rect2(x0 + 52 * k, y1 + 2 * k, 80 * k * clampf(s.goth.hp / s.goth.max_hp, 0, 1), 8 * k), Color("#f7a8ff"))

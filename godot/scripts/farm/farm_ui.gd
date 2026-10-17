@@ -570,7 +570,31 @@ func _process(delta: float) -> void:
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	_bag_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 
+## The farm's part of the game's one HUD line (FightHud draws it after the cash): only what you have.
+func status_parts() -> Array:
+	var st := farm.state
+	var pid := Farm.pid_of(player)
+	var v := st.inv_of(pid)
+	var parts: Array = []
+	if st.seed_count(pid) > 0:
+		parts.append(["seeds %d" % st.seed_count(pid), "#d9ecb8"])
+	if st.bud_count(pid) > 0:
+		parts.append(["buds %d" % st.bud_count(pid), "#a8e480"])
+	if int(v.can) > 0:
+		parts.append(["can %d" % v.can, "#8fd3ff"])
+	if st.fert_count(pid) > 0:
+		parts.append(["bags %d" % st.fert_count(pid), "#e0c890"])
+	if not st.buff.is_empty():
+		parts.append(["%s %dw" % [D.STRAINS[st.buff.strain].short, st.buff.waves], "#f7a8ff"])
+	return parts
+
+## Off when the game's one HUD line shows the cash and the farm's items (the fight's HUD sets it).
+var show_status := true
+
 func _update_status() -> void:
+	_status.visible = show_status
+	if not show_status:
+		return
 	var st := farm.state
 	var pid := Farm.pid_of(player)
 	var v := st.inv_of(pid)

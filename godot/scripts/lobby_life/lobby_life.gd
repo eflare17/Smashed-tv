@@ -262,6 +262,9 @@ func _apply_pose(p: Player) -> void:
 
 ## His money (the Player's own coins if it has them, else kept here: the HTML game's lobby cash, testCash 2500).
 func cash(p: Node) -> int:
+	var w := _wallet_for(p)
+	if w:
+		return w.get_cash()
 	if p and p.get("coins") != null:
 		return int(p.get("coins"))
 	if not _cash.has(p):
@@ -269,10 +272,20 @@ func cash(p: Node) -> int:
 	return _cash[p]
 
 func add_cash(p: Node, n: int) -> void:
+	var w := _wallet_for(p)
+	if w:
+		w.add_cash(n, "lobby")
+		return
 	if p and p.get("coins") != null:
 		p.set("coins", int(p.get("coins")) + n)
 	else:
 		_cash[p] = cash(p) + n
+
+## Player 1's money is the game's one wallet (/root/Wallet); anyone else's is kept here.
+func _wallet_for(p: Node) -> Wallet:
+	if p == null or p != player:
+		return null
+	return Wallet.get_wallet(get_tree())
 
 ## Pay n if he has it.
 func pay(p: Node, n: int) -> bool:
