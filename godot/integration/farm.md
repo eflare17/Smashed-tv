@@ -2,6 +2,15 @@ Status: done
 
 # The farm: integration note (branch `claude/godot-farm`)
 
+## HUD fix (17 Oct, after the merge)
+
+- The status strip is now an `HBoxContainer` of one `Label` per item (16 px apart, each at its own minimum width),
+  rebuilt only when its text changes, instead of one RichTextLabel. Checked in web-export screenshots (top-down at
+  zoom 1x and 2x, first person, the bag panel): each item has its own space.
+- `FarmInstall.install(main)` is now idempotent: it returns the existing `main/Farm` if there is one. `main.gd` now
+  installs the farm itself and the test scene installed it a second time, which stacked two farms (two status
+  strips drawn on top of each other, and the self-test failing). Both tests pass again: 76 logic, 40 in-game.
+
 ## Handoff (17 Oct, for the next session)
 
 **Done and working:** everything listed under "What works" below, all pushed on `claude/godot-farm`. Nothing is

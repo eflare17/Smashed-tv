@@ -13,6 +13,9 @@ const ClockStandin := preload("res://scripts/farm/game_clock_standin.gd")
 const WalletStandin := preload("res://scripts/farm/farm_wallet_standin.gd")
 
 static func install(main: Node) -> Farm:
+	var existing := main.get_node_or_null("Farm")
+	if existing is Farm:
+		return existing   # main.gd already installed it (the test scene calls this again)
 	var root := main.get_tree().root
 	var clock := root.get_node_or_null("GameClock")
 	if clock == null:
