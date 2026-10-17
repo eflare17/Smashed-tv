@@ -50,3 +50,16 @@ install adds the node there):
 - **Don't stop to ask** (the owner is asleep): make the call that best fits the HTML game and log it in your
   integration note under "Decisions". End with the note listing: what works, how to install it (the exact
   `main.gd` lines), input actions added, contract changes wanted, what's left.
+
+## Current sessions (the checks read this; keep it up to date)
+
+| Part | Session | Model | Branch | Resume task (fire_trigger) |
+|---|---|---|---|---|
+| Fighting | session_01Ly2D1peU8QYdXb4hDvitVZ | Opus | claude/godot-fighting | trig_01QZJ4D5nitm26t17TkW3f2o |
+| Lighting | session_01UcDaUiBsn4rNLgW1FU6AaA | Opus | claude/godot-lighting | trig_01YVkXsGVc72aBizMSvWS743 |
+| Lobby | session_01R7jUjAKVBVVZMHS2fb2FHd | Sonnet | claude/godot-lobby | trig_01UazhFKHi1pfyJToPHa7g13 |
+| Arcade | session_01PG4mFfM3KMD6Y52fP6LjFM | Sonnet | claude/godot-arcade | trig_01JAZXjqRB6aBeAbKrccU9oA |
+| Farm | session_01VPeud7q49gzcoQnKjgxq8p | Sonnet | claude/godot-farm | trig_01G2fAyYw2DDyabtJKy8MiD8 |
+
+(13:43 UTC: lobby, arcade and farm moved to Sonnet to stretch the usage limit, at the owner's request; the Opus
+sessions handed off and are archived.)
