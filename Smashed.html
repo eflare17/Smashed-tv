@@ -233,7 +233,7 @@
   code path the networked player will use. <b>Shift</b> dive-rolls (P2: Ctrl or Enter; two fingers on the move side). <b>R</b> restarts.
   <br><b>Controller</b> (any pad, Steam Controller included): left stick moves, right stick aims and fires, <b>RT</b> fires
   (at the pointer if Steam has the gyro or trackpad as the mouse), <b>B</b> / <b>RB</b> / <b>LT</b> roll, <b>A</b> is E (pick up, sit, play),
-  <b>LB</b> / <b>Y</b> or the d-pad swap weapons, <b>Menu</b> starts, <b>View</b> is first person, d-pad up zooms.
+  <b>LB</b> / <b>Y</b> or the d-pad swap weapons, <b>Menu</b> starts, <b>View</b> is first person, d-pad up zooms, d-pad down (or <b>Tab</b>) shows every control on screen.
   At the card table: <b>X</b> deal, <b>Y</b> hit, <b>B</b> stand. In a cabinet, <b>B</b> leaves.
   </p>
   <button id="tweaksBtn">Show tweaks</button> <span class="hint" id="tweaksNote">the tuning sliders and test keys (C: calibrate the gun barrels, J: call the janitor), hidden so they can't go off by accident</span>
@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b315 — first person: the right stick looks up and down too';
+const BUILD = 'b316 — RT fires in first person; Tab or d-pad down shows every control on screen';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -3429,7 +3429,7 @@ function shroomInput(inp) {
   const touchTurn = aimStick.active;
   const reach = Math.max(60, Math.min(T.lobFar || 400, (T.lobDefault || 220) * (1 - (SHROOM.lookY || 0) * 1.4)));   // b308: look up to throw further
   inp.ax = fx * reach; inp.ay = fy * reach; inp.st = false;
-  inp.shoot = !touchTurn && !!mouse.down;
+  inp.shoot = !touchTurn && (!!mouse.down || padBtn(padAt(0), 7));   // b316: and the right trigger
   delete inp.lt; delete inp.tap;
 }
 // a 256-step rainbow, for tinting everything
@@ -4175,6 +4175,7 @@ function drawShroom(w) {
       drawCarryButton();
     }
     if (!dv) drawHotbar(w);
+  drawControlsHelp();
     if (!dv) shroomWords(w);
     ctx.restore();
   }
@@ -7863,6 +7864,7 @@ addEventListener('keydown', e => {
   if (e.repeat && ['r', 'c', 'p'].includes(k)) return;
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
+  if (k === 'tab') { e.preventDefault(); if (!e.repeat) { HELP.on = !(HELP.on || performance.now() < HELP.until); HELP.until = 0; } return; }   // b316: the controls list
   if (k === 'z' && !e.repeat) { nextZoom(); return; }
   if (k === 'v' && !e.repeat) { toggleFirstPerson(); return; }
   if (k === 'f' && !e.repeat && mirrorLook) { setLocalBeard(LOCAL_BEARD + (e.shiftKey ? -1 : 1)); return; }   // b274: hair, in the mirror
@@ -8105,6 +8107,52 @@ function actKey() { return PAD.last > PAD.kb ? 'A' : 'E'; }
 addEventListener('keydown', e => { if (e.isTrusted) PAD.kb = performance.now(); }, true);
 addEventListener('pointerdown', e => { if (e.isTrusted) PAD.kb = performance.now(); }, true);
 canvas.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') mouse.movedAt = performance.now(); });
+// b316: what every button does, for whichever you're using. Tab on the keyboard or d-pad down on a
+// controller shows it; it also comes up by itself for a few seconds the first time a controller's used.
+const HELP = { on: false, until: 0, padShown: false };
+const HELP_PAD = [
+  ['Left stick', 'Move'], ['Right stick', 'Aim and fire  (first person: look)'], ['RT', 'Fire'],
+  ['B  /  RB  /  LT', 'Dive roll'], ['A', 'Use: pick up, sit, eat, play, pull, throw'],
+  ['LB  /  Y,  d-pad ◀ ▶', 'Change weapon'], ['Menu', 'Start the run  (restart when it’s over)'],
+  ['View', 'First person'], ['D-pad ▲', 'Zoom'], ['D-pad ▼', 'Show / hide this list'],
+  ['At the card table', 'X deal,  Y hit,  B stand'], ['In a cabinet', 'B to leave'],
+];
+const HELP_KEYS = [
+  ['W A S D', 'Move'], ['Mouse', 'Aim  (first person: look)'], ['Click (hold)', 'Fire'],
+  ['Shift', 'Dive roll'], ['E', 'Use: pick up, sit, eat, play, pull, throw'], ['1 – 6', 'Change weapon'],
+  ['Enter', 'Start the run'], ['R', 'Restart'], ['V', 'First person'], ['Z', 'Zoom'], ['Tab', 'Show / hide this list'],
+  ['At the card table', 'B deal,  H hit,  T stand'], ['P', 'Add a player 2 on this keyboard (arrows + space)'],
+];
+function drawControlsHelp() {
+  const pad = PAD.last > PAD.kb, now = performance.now();
+  const w = net.role === 'client' ? net.view : world;
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  if (!HELP.on && now >= HELP.until) {                       // just a quiet reminder, in the lobby
+    if (w && !w.started && !ARC.open && !MD.open && !cal.on) {
+      ctx.font = '11px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(pad ? 'D-pad ▼: controls' : 'Tab: controls', ARENA.wall + 9, ARENA.h - ARENA.wall - 9);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText(pad ? 'D-pad ▼: controls' : 'Tab: controls', ARENA.wall + 8, ARENA.h - ARENA.wall - 10);
+    }
+    ctx.restore(); return;
+  }
+  const rows = pad ? HELP_PAD : HELP_KEYS, lh = 22, pw = 470, ph = 54 + rows.length * lh;
+  const px = (ARENA.w - pw) / 2, py = Math.max(8, (ARENA.h - ph) / 2);
+  const fade = HELP.on ? 1 : Math.min(1, (HELP.until - now) / 600);
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = 'rgba(12,14,20,0.9)'; ctx.strokeStyle = 'rgba(247,168,255,0.6)'; ctx.lineWidth = 2;
+  ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(px, py, pw, ph, 10); else ctx.rect(px, py, pw, ph); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.fillStyle = '#f7a8ff'; ctx.font = 'bold 15px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText(pad ? 'CONTROLLER' : 'KEYBOARD AND MOUSE', ARENA.w / 2, py + 20);
+  rows.forEach(([k, v], i) => {
+    const y = py + 46 + i * lh;
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ffd36b'; ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(k, px + 170, y);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#e6e8ee'; ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
+    ctx.fillText(v, px + 186, y);
+  });
+  ctx.restore();
+}
 function padTap(k) {               // a button press goes through the same code as the key
   dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
   dispatchEvent(new KeyboardEvent('keyup', { key: k, bubbles: true }));
@@ -8130,7 +8178,11 @@ setInterval(() => {
   PAD.prev = now;
   const hit = i => now[i] && !was[i];
   if (!now[1]) PAD.holdB = false;                                     // B that left a cabinet doesn't roll you as well
-  if (padActive(g)) PAD.last = performance.now();
+  if (padActive(g)) {
+    PAD.last = performance.now();
+    if (!HELP.padShown) { HELP.padShown = true; HELP.until = PAD.last + 7000; }   // first time on a controller: here's what does what
+  }
+  if (hit(13)) { HELP.on = !(HELP.on || performance.now() < HELP.until); HELP.until = 0; }
   // hurt: a short thump, longer if that was it
   const me = localPlayer();
   if (me && PAD.hp !== null && me.hp < PAD.hp - 0.01) padRumble(g, me.alive ? 140 : 420, me.alive ? 0.6 : 1, 0.35);
@@ -11597,6 +11649,7 @@ function renderBase(w, hudRight) {
   drawArcade();
   drawMirrorHint();
   drawHairButton();
+  drawControlsHelp();
 
   // HUD
   ctx.fillStyle = '#6d7486';
