@@ -38,6 +38,17 @@ var _fp_hint_t := 0.0
 var sticks := {"move": {"on": false, "id": -1, "o": Vector2.ZERO, "d": Vector2.ZERO, "t0": 0, "moved": 0.0},
 	"aim": {"on": false, "id": -1, "o": Vector2.ZERO, "d": Vector2.ZERO, "t0": 0, "moved": 0.0}}
 var _fire_id := -1
+var help_on := false
+var _help_auto := -1.0             ## seconds of the help shown by itself the first time a pad is used
+var _pad_seen := false
+const HELP_KEYS := [["W A S D", "Move"], ["Mouse", "Aim  (first person: look)"], ["Click (hold)", "Fire"],
+	["Shift", "Dive roll"], ["E", "Use: pick up, sit, eat, play, pull, throw"], ["1 – 6", "Change weapon"],
+	["Enter", "Start the run"], ["R", "Restart"], ["V", "First person"], ["Z", "Zoom"], ["Tab", "Show / hide this list"],
+	["P", "Add a player 2 on this keyboard (arrows + space)"]]
+const HELP_PAD := [["Left stick", "Move"], ["Right stick", "Aim  (first person: look)"], ["RT", "Fire"],
+	["B  /  RB  /  LT", "Dive roll"], ["A", "Use: pick up, sit, eat, play, pull, throw"],
+	["LB  /  Y,  d-pad left / right", "Change weapon"], ["Menu", "Start the run  (restart when it's over)"],
+	["View", "First person"], ["D-pad up", "Zoom"], ["D-pad down", "Show / hide this list"]]
 var _touch_driving := false
 
 func _ready() -> void:
@@ -81,6 +92,9 @@ func _ready() -> void:
 	var hp = GameData.manifest.get("FP_BLASTER.img.src")
 	if hp is String and ResourceLoader.exists("res://" + hp):
 		_hands = GameData.tex(hp)
+
+func fp_hint_on() -> bool:
+	return fight.is_fp() and fight.touch_seen
 
 func _btn(text: String, cb: Callable) -> Button:
 	var b := Button.new()
@@ -138,6 +152,8 @@ func _process(delta: float) -> void:
 		_launcher_hint_t = -1.0
 	if fight.is_fp() and fight.touch_seen:
 		_fp_hint_t += delta
+	if _help_auto > 0.0:
+		_help_auto -= delta
 	_bar.visible = not s.over and not (s.secret and s.secret.room)
 	# with the pointer held (first person) a click is always a shot, never a button (b307)
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -154,9 +170,18 @@ func _process(delta: float) -> void:
 
 # ---------------------------------------------------------------- touch (modes_hud.md 7)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("help") and not event.is_echo():
+		help_on = not help_on
+		_help_auto = -1.0
+		get_viewport().set_input_as_handled()
+
 func _input(event: InputEvent) -> void:
 	if fight == null:
 		return
+	if (event is InputEventJoypadButton or (event is InputEventJoypadMotion and absf(event.axis_value) > 0.5)) and not _pad_seen:
+		_pad_seen = true
+		_help_auto = 7.0
 	if event is InputEventScreenTouch:
 		fight.touch_seen = true
 		var p: Vector2 = event.position
@@ -420,6 +445,8 @@ func draw_all(c: Control) -> void:
 		c.draw_circle(fc, 40 * k, Color(0.88, 0.28, 0.25, 0.6) if held else Color(14 / 255.0, 16 / 255.0, 22 / 255.0, 0.5))
 		c.draw_arc(fc, 40 * k, 0, TAU, 40, Color("#ffd0c8") if held else Color("#e0473f"), 2.5, true)
 		_text(c, fc.x, fc.y + 5 * k, "FIRE", 11, Color.WHITE if held else Color("#ffb3a8"), 1)
+	if help_on or _help_auto > 0.0:
+		_draw_help(c, minf(1.0, _help_auto / 0.6) if (not help_on and _help_auto > 0.0) else 1.0)
 	# the big banner
 	if Time.get_ticks_msec() < _banner_until:
 		_text(c, vp.x / 2.0, 90 * k + 12 * k, _banner, 34, GOLD, 1, 5, Color(INK, 0.9))
@@ -473,6 +500,22 @@ func _draw_secret(c: Control, sec: FT.Secret) -> void:
 			var p = to_screen(fl.x, fl.y, 30.0)
 			if p != null:
 				_text(c, p.x, p.y, fl.text, 14, fl.col, 1)
+
+# The controls help (drawControlsHelp): a panel of keys and what they do, for the device last used.
+func _draw_help(c: Control, alpha: float) -> void:
+	var k := sc()
+	var pad := _pad_last()
+	var rows: Array = HELP_PAD if pad else HELP_KEYS
+	var w := 470.0 * k
+	var h := (54.0 + rows.size() * 22.0) * k
+	var r := Rect2((c.size.x - w) / 2.0, maxf(8.0, (c.size.y - h) / 2.0), w, h)
+	c.draw_rect(r, Color(12 / 255.0, 14 / 255.0, 20 / 255.0, 0.9 * alpha))
+	c.draw_rect(r, Color(247 / 255.0, 168 / 255.0, 1.0, 0.6 * alpha), false, 2.0)
+	_text(c, r.get_center().x, r.position.y + 24 * k, "CONTROLLER" if pad else "KEYBOARD AND MOUSE", 15, Color(Color("#f7a8ff"), alpha), 1)
+	for i in rows.size():
+		var y := r.position.y + (50.0 + i * 22.0) * k
+		_text(c, r.position.x + 170 * k, y, rows[i][0], 13, Color(Color("#ffd36b"), alpha), 2)
+		_text(c, r.position.x + 186 * k, y, rows[i][1], 13, Color(Color("#e6e8ee"), alpha))
 
 func _pad_last() -> bool:
 	var h = fight.main.get("hud") if fight.main else null

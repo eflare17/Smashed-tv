@@ -9,7 +9,7 @@ static func install(main: Node) -> void:
 	f.setup(main)
 	main.add_child(f)
 
-## fire, weapon_1..6, weapon_prev / weapon_next, start_run, restart, add_player (keyboard, mouse and pad).
+## fire, weapon_1..6, weapon_prev / weapon_next, start_run, restart, add_player, help (keyboard, mouse and pad).
 static func add_actions() -> void:
 	var mb := InputEventMouseButton.new()
 	mb.button_index = MOUSE_BUTTON_LEFT
@@ -24,6 +24,7 @@ static func add_actions() -> void:
 	_add("start_run", [_key(KEY_ENTER), _key(KEY_KP_ENTER), _pad(JOY_BUTTON_START)])
 	_add("restart", [_key(KEY_R)])
 	_add("add_player", [_key(KEY_P)])
+	_add("help", [_key(KEY_TAB), _pad(JOY_BUTTON_DPAD_DOWN)])
 
 static func _add(name: String, events: Array) -> void:
 	if InputMap.has_action(name):
