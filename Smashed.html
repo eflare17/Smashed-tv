@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b319 — Inky: no more floating hand when she runs away diagonally';
+const BUILD = 'b320 — first person: shots look like they leave your guns, not the middle of the screen';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -3757,7 +3757,9 @@ function drawShroom(w) {
   const npc = lobbyGoth(w); if (npc && !npc.thrown) cast.push(npc);
   for (const p of cast) sprites.push(shroomCharacter(w, p, me));
   for (const d of (w.dummies || [])) if (!(d.down > 0)) sprites.push({ img: SHROOM.dummy, x: d.x, y: d.y + 16, W: 30, H: 50, foot: 50, wob: d.wob });
-  for (const b of (w.bullets || [])) sprites.push({ img: SHROOM.glow, x: b.x, y: b.y, W: 10, H: 10, foot: 50, glow: true });
+  // b320: shots only show once they're out ahead of you: up close they start from where the guns are top-down,
+  // which isn't where they're drawn in your hands, so they looked like they came out of the middle of the screen
+  for (const b of (w.bullets || [])) if (Math.hypot(b.x - me.x, b.y - me.y) > 70) sprites.push({ img: SHROOM.glow, x: b.x, y: b.y, W: 10, H: 10, foot: 50, glow: true });
   shroomExtras(w, me, sprites, npc);                                     // b308: the rest of what moves, as it is top-down
 
   // ---- the 3D view, in its own low-res pixels
