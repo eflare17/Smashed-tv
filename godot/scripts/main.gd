@@ -57,6 +57,8 @@ func _ready() -> void:
 		var q = JavaScriptBridge.eval("window.location.search", true)
 		if q is String and q.find("state") >= 0:
 			print_state = true
+	Arcade.install(self)
+	FarmInstall.install(self)
 	print("Smashed TV (Godot) ", hud.build_text, ": ready")
 
 func _on_mode(m: int) -> void:

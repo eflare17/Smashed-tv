@@ -40,3 +40,8 @@ it out."
 - 12:55 UTC: the owner asked for two more sessions to use a reset that expires soon: Lighting (1.4 day/night +
   1.5 look, `claude/godot-lighting`) and Farm (`claude/godot-farm`). This session: finish M1, merge, online.
   Half-hour resume checks (:27 and :57) restart anything stopped by a usage limit.
+- 12:57 UTC heartbeat: M1 integrate still running; fighting pushed its simulation (weapons, enemies, waves, gore, money, Protect Gothica, headless tests); lobby pushed its framework; arcade, lighting, farm setting up.
+- 13:43 UTC: lobby, arcade, farm now on Sonnet sessions (owner's request, to stretch usage); IDs in PARALLEL.md.
+- 13:50 UTC: arcade merged (Status: done) with Arcade.install in main.gd; godot-play/ updated (M1 so far + arcade). NOTE: if the M1 fix step copies main.gd back, re-add Arcade.install(self).
+- 14:05 UTC: farm merged (Status: done), FarmInstall.install after Arcade in main.gd; godot-play/ updated (M1 + arcade + farm). Archived: farm Sonnet session done.
+- 14:20 UTC: M1 finished (review + 23 fixes: 120 Hz physics clock, layers, input actions, touch controls). Farm HUD fix merged. godot-play/ updated (M1 final + arcade + farm). Fighting, lighting, lobby told to merge the dev branch (new shared conventions in PLAN.md).
