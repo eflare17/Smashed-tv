@@ -46,3 +46,4 @@ it out."
 - 14:05 UTC: farm merged (Status: done), FarmInstall.install after Arcade in main.gd; godot-play/ updated (M1 + arcade + farm). Archived: farm Sonnet session done.
 - 14:20 UTC: M1 finished (review + 23 fixes: 120 Hz physics clock, layers, input actions, touch controls). Farm HUD fix merged. godot-play/ updated (M1 final + arcade + farm). Fighting, lighting, lobby told to merge the dev branch (new shared conventions in PLAN.md).
 - 14:35 UTC: fighting merged (Status: done), FightInstall.install after FarmInstall; godot-play/ updated (M1 + arcade + farm + fighting). Fighting session idle/done.
+- 14:45 UTC: lobby life merged (Status: done), LobbyLife.install last in main.gd; lobby life and arcade join group lobby_only, which Fight hides at the start of a run (they showed in the arena). godot-play/ updated (M1 + arcade + farm + fighting + lobby).

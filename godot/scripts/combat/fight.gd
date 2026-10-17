@@ -267,6 +267,15 @@ func _load_hotbar() -> void:
 			if ok:
 				hotbar_order.assign(o)
 
+## Hides a lobby part for the run: its drawn nodes go invisible and it stops processing.
+func _hide_for_run(n: Node) -> void:
+	n.process_mode = Node.PROCESS_MODE_DISABLED
+	if n is Node3D or n is CanvasItem:
+		n.visible = false
+		return
+	for c in n.get_children():
+		_hide_for_run(c)
+
 func save_hotbar() -> void:
 	var cf := ConfigFile.new()
 	cf.load("user://smashed.cfg")
@@ -291,6 +300,9 @@ func start_run() -> void:
 					node.process_mode = Node.PROCESS_MODE_DISABLED
 				if node is CollisionObject3D:
 					node.collision_layer = 0
+	# parts that live in the lobby (lobby life, the arcade) hide for the run
+	for n in get_tree().get_nodes_in_group("lobby_only"):
+		_hide_for_run(n)
 	# the lobby's E things aren't in the arena
 	for n in get_tree().get_nodes_in_group("interactable"):
 		if n != goth_carry:
