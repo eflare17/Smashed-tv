@@ -79,6 +79,8 @@ var _bed_node: Node              # the Lighting's BedSleep (fade + clock)
 var _late: Node
 var _state_t := 0.0
 var _goth_off := false
+var goth_host_owns := true       ## lobby Gothica is run by the host's game (else the guest's: whoever picked her up)
+var _grab: NetGothGrab
 var _goth_saved := {}
 var _host_goth_pics: Array = []
 var _target := Vector3.ZERO      # where the other player is heading (smoothed)
@@ -154,6 +156,10 @@ func attach(m: Node) -> void:
 	_menu = NetMenu.new()
 	_menu.net = self
 	m.add_child(_menu)
+	_grab = NetGothGrab.new()
+	_grab.name = "NetGothGrab"
+	_grab.net = self
+	m.add_child(_grab)
 	if live:
 		_game_live(true)
 	var args := _args()
@@ -316,6 +322,8 @@ func _game_live(on: bool) -> void:
 		return
 	var gc := get_node_or_null("/root/GameClock")
 	var fm := _farm()
+	goth_host_owns = true
+	_goth_puppet(on and role == "client")
 	if on:
 		if p2 == null or not is_instance_valid(p2):
 			_spawn_p2()
@@ -328,7 +336,6 @@ func _game_live(on: bool) -> void:
 				player.set_meta("farm_pid", 1)
 			if fm:
 				fm.persist = false
-			_goth_guest(true)
 	else:
 		fight.net_input2 = Callable()
 		fight.net_step = Callable()
@@ -345,7 +352,6 @@ func _game_live(on: bool) -> void:
 				if not fm.load_save():
 					fm.state.reset()
 				_farm_applying = false
-			_goth_guest(false)
 
 func _spawn_p2() -> void:
 	var ch: String = remote_av.get("ch", "tyson2" if player and player.char_id == "juicy" else "juicy")
@@ -392,8 +398,19 @@ func _remove_p2() -> void:
 		p2.queue_free()
 	p2 = null
 
-## The guest's Gothica is the host's: hers stops walking by herself and lobby life leaves her alone.
-func _goth_guest(on: bool) -> void:
+## Whether lobby Gothica is this game's to run (always, offline).
+func goth_mine() -> bool:
+	return not live or ((role == "host") == goth_host_owns)
+
+## Gothica run by the other game: ours stops walking by herself and lobby life leaves her alone; she's drawn
+## where the other game has her, and NetGothGrab on her asks for her when you pick her up.
+func _goth_puppet(on: bool) -> void:
+	if _grab and is_instance_valid(_grab):
+		if on and not _grab.is_in_group("interactable"):
+			_grab.add_to_group("interactable")
+		elif not on:
+			_grab.remove_from_group("interactable")
+			_grab.can_take = false
 	var g: Node = main.get("gothica") if main else null
 	var gl: Node = null
 	if LobbyLife.current:
@@ -520,6 +537,10 @@ func _on_message(d: Dictionary) -> void:
 					_apply_snap_now()
 		"farm":
 			_on_farm(d)
+		"goth_take":
+			_on_goth_take()
+		"goth_give":
+			_on_goth_give(d)
 		"sleep":
 			if role == "client":
 				_sleep_now()
@@ -665,12 +686,20 @@ func _send_av() -> void:
 	var tex := mirror.take_outgoing()
 	if not tex.is_empty():
 		_send({"t": "tex", "l": tex})
-	_send({"t": "av", "x": hp.x, "y": hp.y, "dz": player.dz, "fx": player.facing.x, "fy": player.facing.y,
+	var av := {"t": "av", "x": hp.x, "y": hp.y, "dz": player.dz, "fx": player.facing.x, "fy": player.facing.y,
 		"mv": player.moving, "odo": player.odo, "roll": player.roll, "ch": player.char_id, "tr": player.on_tramp,
-		"sv": shown, "pics": pics, "bed": in_bed, "fp": fp})
+		"sv": shown, "pics": pics, "bed": in_bed, "fp": fp}
+	if role == "client" and goth_mine():
+		av["goth"] = _goth_state()
+	var tex2 := mirror.take_outgoing()
+	if not tex2.is_empty():
+		_send({"t": "tex", "l": tex2})
+	_send(av)
 
 func _on_av(d: Dictionary) -> void:
 	remote_av = d
+	if role == "host" and not goth_mine() and d.has("goth") and fight and not fight.sim.started:
+		_apply_goth(d.goth)
 	if p2 and is_instance_valid(p2):
 		var ch := String(d.get("ch", p2.char_id))
 		if ch != p2.char_id:
@@ -704,7 +733,7 @@ func _send_snap() -> void:
 	var gc := get_node_or_null("/root/GameClock")
 	if gc:
 		s["clock"] = gc.save_state()
-	s["goth"] = _goth_state()
+	s["goth"] = _goth_state() if goth_mine() else {}
 	s["bed"] = in_bed
 	var tex := mirror.take_outgoing()
 	if not tex.is_empty():
@@ -718,9 +747,45 @@ func _goth_state() -> Dictionary:
 	var hp := g.html_pos2()
 	var gl: Node = LobbyLife.current.things.get("goth_life") if LobbyLife.current else null
 	var spr := g.sprite
+	var free: bool = g.visible and gl != null and gl.carrier == null and gl.thrown == "" and not gl.held \
+		and gl.anim.is_empty() and not gl.is_busy()
 	return {"x": hp.x, "y": hp.y, "z": GameData.from_3d(g.global_position).z, "fx": g.facing.x, "fy": g.facing.y,
-		"mv": g.moving, "odo": g.odo, "vis": g.visible, "sv": spr.visible if spr else false,
+		"mv": g.moving, "odo": g.odo, "vis": g.visible, "sv": spr.visible if spr else false, "free": free,
 		"pics": mirror.capture([gl] if gl else [])}
+
+## NetGothGrab: E on the other game's Gothica.
+func ask_for_goth() -> void:
+	_send({"t": "goth_take"})
+
+func _on_goth_take() -> void:
+	if not goth_mine() or fight == null or fight.sim.started:
+		return
+	var st := _goth_state()
+	if not bool(st.get("free", false)):
+		return
+	goth_host_owns = role != "host"
+	var tex := mirror.take_outgoing()
+	if not tex.is_empty():
+		_send({"t": "tex", "l": tex})
+	_send({"t": "goth_give", "st": st, "host_owns": goth_host_owns})
+	_goth_puppet(true)
+
+func _on_goth_give(d: Dictionary) -> void:
+	goth_host_owns = bool(d.get("host_owns", true))
+	if not goth_mine():
+		return
+	_goth_puppet(false)
+	mirror.apply("goth", pics_parent, [])
+	var st: Dictionary = d.get("st", {})
+	var gn: Gothica = main.get("gothica") if main else null
+	var gl = LobbyLife.current.things.get("goth_life") if LobbyLife.current else null
+	if gn and st.has("x"):
+		gn.place(float(st.x), float(st.y))
+		gn.visible = true
+		if gn.sprite:
+			gn.sprite.visible = true
+	if gl and player and GothLife.is_carrier(player) and gl.carrier == null:
+		gl.pick_up(player)
 
 func _check_beds() -> void:
 	var both := in_bed and bool(remote_av.get("bed", false))
@@ -835,7 +900,8 @@ func _apply_snap_now() -> void:
 	NetCodec.unpack_sim(fight.sim, fd, true)
 	var fx: Dictionary = s.get("fx", {})
 	_fx_in.append([fx.get("sounds", []), fx.get("events", []), fx.get("banners", [])])
-	_apply_goth(s.get("goth", {}))
+	if not goth_mine():
+		_apply_goth(s.get("goth", {}))
 
 func _apply_goth(g: Dictionary) -> void:
 	var gn: Gothica = main.get("gothica") if main else null
@@ -854,6 +920,9 @@ func _apply_goth(g: Dictionary) -> void:
 		gn.sprite.odo = gn.odo
 		gn.sprite.visible = bool(g.get("sv", true))
 	mirror.apply("goth", pics_parent, g.get("pics", []))
+	if _grab and is_instance_valid(_grab):
+		_grab.global_position = GameData.world_to_3d(float(g.x), float(g.y), 0.0)
+		_grab.can_take = bool(g.get("free", false))
 
 ## ---------------------------------------------------------------- the farm
 

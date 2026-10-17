@@ -96,6 +96,37 @@ func _process(dt: float) -> void:
 						return true
 				return false, 30.0)
 		4:
+			# lobby Gothica is the host's: the guest (as Jared) picks her up, carries her, puts her down
+			var gl = LobbyLife.current.things["goth_life"]
+			if not host:
+				me.char_id = "juicy"
+				expect("can pick up the host's Gothica", func():
+					var g: Node3D = net.main.gothica
+					var at := GameData.from_3d(g.global_position)
+					me.place(at.x + 20.0, at.y)
+					me.facing = Vector2(-1, 0)
+					return me.focus_label == "PICK UP", 40.0, func(): return "label=" + me.focus_label)
+			else:
+				expect("sees the guest carry Gothica", func():
+					return not net.goth_mine() and not net.main.gothica.visible and (net.remote_av.get("pics", []) as Array).size() > 0, 60.0)
+		5:
+			var gl = LobbyLife.current.things["goth_life"]
+			if not host:
+				expect("carries Gothica", func():
+					if me.focus_label == "PICK UP":
+						me.use()
+					elif gl.carrier != me:
+						var at := GameData.from_3d(net.main.gothica.global_position)
+						me.place(at.x + 20.0, at.y)
+					return gl.carrier == me, 30.0)
+			else:
+				expect("sees her put down", func(): return not net.goth_mine() and net.main.gothica.visible, 60.0)
+		6:
+			var gl = LobbyLife.current.things["goth_life"]
+			if not host:
+				get_tree().create_timer(2.0).timeout.connect(func(): me.use())
+				expect("puts her down", func(): return gl.carrier == null and net.main.gothica.visible, 30.0)
+		7:
 			day0 = get_node("/root/GameClock").day
 			LobbyLife.current.things["bed"].lie_down(me, 1 if host else 2)
 			expect("sees the other in bed", func(): return bool(net.remote_av.get("bed", false)), 40.0)
@@ -103,19 +134,19 @@ func _process(dt: float) -> void:
 				var gc := get_node("/root/GameClock")
 				return gc.day == day0 + 1 and gc.hour < 8.0, 60.0,
 				func(): return "day %d -> %d" % [day0, get_node("/root/GameClock").day])
-		5:
+		8:
 			LobbyLife.current.things["bed"].get_up(me)
 			if host:
 				get_tree().create_timer(3.0).timeout.connect(func(): fight.start_run())
 			expect("is in the run", func(): return net.fight.sim.started, 60.0)
-		6:
+		9:
 			fight.debug["auto"] = true
 			expect("saw enemies", func(): return saw_enemies > 0, 60.0)
 			expect("fired", func(): return net.fight.f.shots > 0, 60.0, func(): return "shots=%d" % net.fight.f.shots)
 			expect("sees the other fire", func(): return net.fight.f2 != null and net.fight.f2.shots > 0, 90.0,
 				func(): return "shots=%d" % (net.fight.f2.shots if net.fight.f2 else -1))
 			expect("sees kills", func(): return net.fight.f.kills + (net.fight.f2.kills if net.fight.f2 else 0) > 0, 90.0)
-		7:
+		10:
 			fight.debug.erase("auto")
 			print("DRIVE fight: wave=%d kills=%d+%d hp=%.0f/%.0f" % [fight.sim.wave, fight.f.kills, fight.f2.kills, fight.f.hp, fight.f2.hp])
 			if not host:
@@ -123,7 +154,7 @@ func _process(dt: float) -> void:
 			var old_fight := fight.get_instance_id()
 			expect("back in the lobby, still together", func():
 				return net.fight != null and is_instance_valid(net.fight) and net.fight.get_instance_id() != old_fight and is_instance_valid(net.fight) and not net.fight.sim.started and net.live and net.p2 != null, 90.0)
-		8:
+		11:
 			# the guest leaves: the host's room stays open, the guest is on its own again; then it joins again
 			if not host:
 				var code := net.code
@@ -138,9 +169,9 @@ func _process(dt: float) -> void:
 					if not net.live and net.p2 == null and net.role == "host":
 						seen_gone[0] = true
 					return seen_gone[0] and net.live and net.p2 != null, 90.0)
-		9:
+		12:
 			if not host:
 				expect("is back in", func(): return net.live and net.p2 != null, 60.0)
-		10:
+		13:
 			print("DRIVE DONE fails=%d" % fails)
 			done = true
