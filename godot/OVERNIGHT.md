@@ -51,3 +51,4 @@ it out."
 - 15:05 UTC: the owner put VR on hold (don't start it until they say "do VR").
 - 15:35 UTC: merged the HUD/one-wallet polish (fighting) and the mirror fix (lobby); godot-play/ updated.
 - 16:20 UTC: merged online co-op (M4, Status done) and the phone fix (arcade session). Integration fixes: fight.gd merge conflict (wallet + online p2 driven); E prefers what he faces (Player._update_focus); the lobby vending machine removed (the HTML game has none in the lobby; it blocked the Bricks cabinet). Tests: arcade 0 failed, lobby 286/286, fight 53/53. Portrait phone HUD still too big (weapon bar overflows): sent to fighting.
+- 16:35 UTC: merged the portrait phone HUD fix (fighting); tests: fight 53/53, arcade 0 failed, lobby 286 (one run had 2 timing flakes, the rerun was clean); godot-play/ updated. All parts and fixes are in. Next: the final review pass.
