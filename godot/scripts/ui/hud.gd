@@ -11,6 +11,8 @@ extends CanvasLayer
 
 ## The playable characters and their names (the HTML game's charNames for the new art).
 const CHARACTERS := [["juicy", "Juicy Jared"], ["tyson2", "Tornado Tyson"], ["goth", "Gothica"]]
+const KEY_HELP := "WASD move   Shift roll   E use   V view   Z zoom   1 2 3 character"
+const PAD_HELP := "left stick move   right stick aim / look   B roll   A use   View: first person   d-pad up zoom"
 const PINK := Color("#f7a8ff")
 const GOLD := Color("#f6d17a")
 
@@ -54,7 +56,7 @@ func _ready() -> void:
 	_view.offset_right = -12
 	_view.offset_top = 10
 
-	_help = _label(root, "WASD move   Shift roll   E use   V view   Z zoom   1 2 3 character", 12, Color(1, 1, 1, 0.55))
+	_help = _label(root, KEY_HELP, 12, Color(1, 1, 1, 0.55))
 	_help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	_help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_help.offset_top = -26
@@ -123,6 +125,17 @@ func pick(id: String) -> void:
 	if player:
 		player.char_id = id
 
+## The last thing used was a controller: the prompts say A, not E (the HTML game's actKey).
+var pad_last: bool = false
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton:
+		pad_last = true
+	elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.5:
+		pad_last = true
+	elif event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch:
+		pad_last = false
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not number_keys_pick or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
@@ -161,7 +174,8 @@ func _process(_delta: float) -> void:
 	_cross.visible = fp
 	_hint.visible = fp and rig != null and not rig.mouse_captured() and not _touch_only()
 	var label := player.focus_label if player else ""
-	var txt := ("E: " + label.to_lower()) if label != "" else ""
+	var txt := (("A: " if pad_last else "E: ") + label.to_lower()) if label != "" else ""
+	_help.text = PAD_HELP if pad_last else KEY_HELP
 	_prompt.text = txt
 	_prompt.visible = txt != ""
 	# under the crosshair in first person (the HTML game's spot); top-down, above the help line
@@ -174,6 +188,12 @@ func _process(_delta: float) -> void:
 		_prompt.offset_bottom = vp.y / 2.0 - 48
 	_ebtn.label = label
 	_ebtn.visible = label != ""
+	# with the pointer held (first person) a click is the game's, never a button's: the pointer's position is
+	# stale then, wherever it was let go
+	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	_ebtn.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
+	for b in _pick_btns:
+		b.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 	for i in _pick_btns.size():
 		_pick_btns[i].set_pressed_no_signal(player != null and player.char_id == CHARACTERS[i][0])
 
@@ -212,11 +232,14 @@ class _EButton extends Control:
 		var hit := false
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			hit = true
-		elif event is InputEventScreenTouch and event.pressed:
-			hit = true
+		elif event is InputEventScreenTouch and event.pressed and not _touch_is_mouse():
+			hit = true                         # (a touch also arrives as a click when touch emulates the mouse)
 		if hit and (event.position - size / 2.0).length() <= minf(size.x, size.y) / 2.0:
 			pressed.emit()
 			accept_event()
+
+	static func _touch_is_mouse() -> bool:
+		return bool(ProjectSettings.get_setting("input_devices/pointing/emulate_mouse_from_touch", true))
 
 ## The HTML game's first-person crosshair: four short white strokes round the middle.
 class _Crosshair extends Control:

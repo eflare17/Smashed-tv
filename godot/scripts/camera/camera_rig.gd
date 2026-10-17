@@ -11,7 +11,7 @@ extends Node3D
 ##
 ## First person (V): the HTML game's plain first person: eyes at SHROOM_EYE plus the target's dz, mouse look
 ## with the pointer captured (0.0045 rad a pixel across, 0.0035 up and down, held to +-0.6 like SHROOM.lookY),
-## the arrow keys turn (2.4 rad/s) and look up and down (1.6 rad/s), Esc lets the pointer go and a click takes
+## the arrow keys (or a pad's right stick) turn (2.4 rad/s) and look up and down (1.6 rad/s), Esc lets the pointer go and a click takes
 ## it back. 66 degrees of view across, like the HTML first person.
 
 enum Mode { TOP_DOWN, FIRST_PERSON }
@@ -128,6 +128,14 @@ func _apply_mode() -> void:
 		_cam.keep_aspect = Camera3D.KEEP_HEIGHT
 		_cam.fov = top_fov
 
+# Mouse look comes first, before the GUI: with the pointer held its position stays where it was let go
+# (the web build especially), so a HUD button under it would otherwise swallow every movement.
+func _input(event: InputEvent) -> void:
+	if mode == Mode.FIRST_PERSON and target and event is InputEventMouseMotion and mouse_captured():
+		var rel: Vector2 = event.screen_relative
+		target.look_ang = wrapf(target.look_ang + rel.x * MOUSE_X, -PI, PI)
+		target.look_y = clampf(target.look_y + rel.y * MOUSE_Y, -LOOK_MAX, LOOK_MAX)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_view") and not event.is_echo():
 		toggle_mode()
@@ -141,13 +149,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == KEY_ESCAPE and mode == Mode.FIRST_PERSON:
 			_capture(false)                    # (the browser lets it go by itself; the desktop needs telling)
 			return
+	if event is InputEventJoypadButton and event.pressed and event.button_index == JOY_BUTTON_DPAD_UP:
+		next_zoom()                            # d-pad up: zoom, like the HTML game's pad
+		get_viewport().set_input_as_handled()
+		return
 	if mode != Mode.FIRST_PERSON or target == null:
 		return
-	if event is InputEventMouseMotion and mouse_captured():
-		var rel: Vector2 = event.screen_relative
-		target.look_ang = wrapf(target.look_ang + rel.x * MOUSE_X, -PI, PI)
-		target.look_y = clampf(target.look_y + rel.y * MOUSE_Y, -LOOK_MAX, LOOK_MAX)
-	elif event is InputEventMouseButton and event.pressed and not mouse_captured():
+	if event is InputEventMouseButton and event.pressed and not mouse_captured():
 		_capture(true)                         # a click takes it back
 		get_viewport().set_input_as_handled()
 
@@ -158,6 +166,9 @@ func _process(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_RIGHT): target.look_ang += 2.4 * dt
 		if Input.is_physical_key_pressed(KEY_UP): target.look_y = maxf(-LOOK_MAX, target.look_y - 1.6 * dt)
 		if Input.is_physical_key_pressed(KEY_DOWN): target.look_y = minf(LOOK_MAX, target.look_y + 1.6 * dt)
+		var rs := Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)   # the right stick looks round
+		target.look_ang += rs.x * 2.8 * dt
+		target.look_y = clampf(target.look_y + rs.y * 1.6 * dt, -LOOK_MAX, LOOK_MAX)
 		target.look_ang = wrapf(target.look_ang, -PI, PI)
 	_update(delta)
 

@@ -201,6 +201,12 @@ In order:
    resume 'enter', t 0, flinch 0`.
 5. Not reset: `wave` is still 0, `seed` carries on, player positions (except the yard/pool cases) stay where they
    were. A player standing in the **bedroom** (y > 520) is snapped by the arena clamp on the next step to y = 488.
+   Also **not cleared** (README addition): `enemies` (a lobby BUST brute walks into the run and counts towards
+   wave 1's "everything dead"), `bullets`, `ebullets`, `husks`, `rockets`, `blasts`, a falling `nuke`, `floaters`,
+   `bits`, `RAIN`; per player `alive` (a player a lobby brute killed stays down until wave 1 revives him), `spin`
+   (a pull in progress pays out in the run, while `slot.busy = −1` lets the other player pull at once), `launch`,
+   `iframe`, `kills`, `shots`; and `w.over` (all players killed in the lobby, then Start: the run begins already
+   over, sim frozen, until R). In Godot clear the arena lists and revive everyone at Start.
 
 ### 3.2 What the lobby becomes
 
@@ -243,7 +249,9 @@ in Protect mode, where it's set only when Gothica's hp reaches 0, `protHurt`, `L
 R (any time: in the lobby, mid-run or over, `L8631`), the full-screen Restart button (`L13621`), or a tap/click
 within `|x − 430| < 220, |y − 260| < 60` while over (`L8708-8713`). Refused for the network guest.
 `world = newWorld()` (a fresh lobby: `buildWorld` + `fillLobby`, every player new from `newPlayer` with hp 5 at
-`(380, 260)` / `(480, 260)`, lobby cash, blasters), and player 2 is re-added if there were two. `accumulator = 0`.
+`(380, 260)`, lobby cash, blasters), and player 2 is re-added if there were two (`addPlayer`, at `(480, 260)`: it
+gets the lobby cash but **not** the blasters or the 20 pellets, because `fillLobby` already ran: P2 is back on an
+empty spud gun; README fix). `accumulator = 0`.
 So a restart always lands back in the lobby, never straight into a new run.
 
 ### 3.5 The step order (`stepBase`, `L7160` onwards; driven by `step`, `L13860`)
@@ -407,7 +415,7 @@ if st != CHASE:
         for each player (alive, iframe <= 0, grace <= 0):
             d = |p − e|; if d > T.batReach + T.radius (60): skip
             if ((p − e)·(sdx, sdy)) / d < 0.25: skip    # behind him (outside ~±75.5°) = safe
-            hurt: hp −= T.contactDmg × 2 = 2; iframe = T.iframes
+            hurt: hp −= T.contactDmg × ETYPE[t].dmg (batter 2) = 2; iframe = T.iframes
                   p.v += (sdx, sdy) × T.contactPush × 1.4 (448); fx HURT at p
                   if hp <= 0: death (5.4)
         Protect: Gothica in reach (d <= batReach + 12 = 58) and in the arc → protHurt(2, sdx, sdy)
@@ -787,8 +795,9 @@ it flat facing the camera, or make it a small flat dart that turns with its velo
   **"WAVE n"** with `n = wave + 1` at (430, 250); under it 14 px `#8b93a4` at (430, 276):
   `waveSize(n) + " incoming"` plus, if any apply, `" — " + list.join(" and ")` where the list is
   `swarmers` (n >= swarmWave), `batters` (baseEnemy != 3 && n >= batWave), `brutes` (n >= bruteWave). E.g.
-  "WAVE 5 / 18 incoming — swarmers and brutes". Protect mode, before wave 1: a third line in `#f7a8ff` at y 288:
-  "keep Gothica alive · potatoes heal her" (+ " · E picks her up" for a character who can carry her). It shows for
+  "WAVE 5 / 18 incoming — swarmers and brutes". Protect mode, before wave 1: a third line in `#f7a8ff` at y 298
+  (`ARENA.h/2 + 38`; README fix, was "288"): `"keep Gothica alive  ·  potatoes heal her"` (two spaces each side of
+  the dot; + `"  ·  E picks her up"` if the local player's character is a carrier). It shows for
   the whole breather, including the extra time the janitor holds it.
 - **Banner** (the big gold message, `L12666-12676`): `banner = {text, until}`; bold 34 px `#f6d17a` with a 5 px
   stroke `rgba(20,22,28,0.9)`, centred at (430, 90), drawn last. This system sets "MACHINE IS LIVE" for 1.6 s when the

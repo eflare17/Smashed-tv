@@ -54,6 +54,7 @@ var focus_label: String = ""
 var sprite: CharSprite
 
 var _mouse_seen: bool = false
+var _roll_tap: bool = false               # a Shift (or pad button) press since the last step (consumeRollTap)
 var _mouse_in: bool = true
 var _shape: CollisionShape3D
 
@@ -90,6 +91,40 @@ func _ready() -> void:
 		add_child(sprite)
 	sprite.auto_update = false
 	sprite.char_id = char_id
+	add_pad_bindings()
+
+## Give the input actions their controller buttons too, the HTML game's pad layout (b314): left stick moves,
+## A is E, B / RB / LT roll, View (Back) is first person. Only adds what an action doesn't already have.
+static func add_pad_bindings() -> void:
+	var axes := {"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
+		"move_up": [JOY_AXIS_LEFT_Y, -1.0], "move_down": [JOY_AXIS_LEFT_Y, 1.0]}
+	for a in axes:
+		if not InputMap.has_action(a) or _has_pad_event(a):
+			continue
+		var m := InputEventJoypadMotion.new()
+		m.axis = axes[a][0]
+		m.axis_value = axes[a][1]
+		InputMap.action_add_event(a, m)
+	var buttons := {"interact": [JOY_BUTTON_A], "roll": [JOY_BUTTON_B, JOY_BUTTON_RIGHT_SHOULDER],
+		"toggle_view": [JOY_BUTTON_BACK]}
+	for a in buttons:
+		if not InputMap.has_action(a) or _has_pad_event(a):
+			continue
+		for b in buttons[a]:
+			var e := InputEventJoypadButton.new()
+			e.button_index = b
+			InputMap.action_add_event(a, e)
+		if a == "roll":
+			var lt := InputEventJoypadMotion.new()
+			lt.axis = JOY_AXIS_TRIGGER_LEFT
+			lt.axis_value = 1.0
+			InputMap.action_add_event(a, lt)
+
+static func _has_pad_event(action: String) -> bool:
+	for e in InputMap.action_get_events(action):
+		if e is InputEventJoypadButton or e is InputEventJoypadMotion:
+			return true
+	return false
 
 ## Where he is in HTML units (x, y on the ground, z up).
 func html_pos() -> Vector3:
@@ -151,6 +186,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_mouse_in = true
 	if not controls_enabled:
 		return
+	if event.is_action_pressed("roll") and not event.is_echo():
+		_roll_tap = true                       # a tap shorter than a frame still rolls
 	if event.is_action_pressed("interact") and not event.is_echo():
 		use()
 		get_viewport().set_input_as_handled()
@@ -180,7 +217,9 @@ func _step(dt: float) -> void:
 	else:
 		steer = Vector2.ZERO
 		moving = false
-	var want_roll := controls_enabled and Input.is_action_pressed("roll") and not on_tramp   # on the trampoline Shift bounces higher (the trampoline reads it)
+	var tap := _roll_tap
+	_roll_tap = false
+	var want_roll := controls_enabled and (Input.is_action_pressed("roll") or tap) and not on_tramp   # on the trampoline Shift bounces higher (the trampoline reads it)
 	# ---- dive roll: committed, directional, brief
 	if want_roll and roll <= 0.0 and roll_cd <= 0.0:
 		var d := inp
@@ -221,8 +260,12 @@ func _step(dt: float) -> void:
 				var drop := minf(sp, _t("friction") * dt)
 				vel -= vel / sp * drop
 		# aim: first person faces where you look; top-down with a mouse, the cursor
+		var stick := pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y) if controls_enabled else Vector2.ZERO
 		if is_first_person():
 			facing = Vector2(cos(look_ang), sin(look_ang))
+		elif stick.length() > 0.3:
+			facing = stick.normalized()                            # the right stick aims (b314)
+			_mouse_seen = false
 		elif face_mouse and _mouse_seen and _mouse_in and controls_enabled:
 			var at = _mouse_ground()
 			if at != null:
@@ -250,6 +293,17 @@ func _step(dt: float) -> void:
 		if into < 0.0:
 			vel -= n * into
 	global_position.y = dz * GameData.UNIT
+
+## A stick of the first connected controller, round dead zone 0.2 (padStick), or zero.
+static func pad_stick(ax: int, ay: int, dead: float = 0.2) -> Vector2:
+	var pads := Input.get_connected_joypads()
+	if pads.is_empty():
+		return Vector2.ZERO
+	var v := Vector2(Input.get_joy_axis(pads[0], ax), Input.get_joy_axis(pads[0], ay))
+	var m := v.length()
+	if m < dead:
+		return Vector2.ZERO
+	return v / m * minf(1.0, (m - dead) / (1.0 - dead))
 
 # Where the mouse points on the ground plane (HTML units), or null.
 func _mouse_ground():

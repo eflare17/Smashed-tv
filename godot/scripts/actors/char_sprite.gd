@@ -14,7 +14,10 @@ extends Node3D
 ## The picture is a Sprite3D (nearest filtering, alpha cut) with its own shader: seen from about eye level it
 ## stands upright and turns only round the vertical (a Y billboard); as the camera looks steeply down it tips
 ## back to face the camera fully, so a top-down view shows the whole picture like the HTML game. Its depth is
-## always the upright figure's, so it doesn't sink into the floor or under furniture when it tips.
+## always a standing figure's: each pixel is as deep as the upright Y-billboard's plane (through the feet, as
+## tall as it needs to be) where the camera's ray crosses it. So, like the HTML game's y-sort, things south of
+## him (nearer the camera) cover him and things north of him (a wall he stands against) never cut into him,
+## however far the picture tips.
 
 ## Which character: a key of the manifest's CHARS ("juicy", "tyson2", "goth", ...).
 @export var char_id: String = "juicy":
@@ -344,6 +347,7 @@ uniform vec3 rows = vec3(0.0, 159.0, 160.0);   // first and last opaque row, pic
 uniform float tip_from = 0.55;
 uniform float tip_to = 0.9;
 uniform float depth_bias = 0.06;   // metres toward the camera, so the feet win over the floor they stand on
+uniform float depth_reach = 6.0;   // metres: the most a tipped picture's depth is pulled toward the camera
 
 void vertex() {
 	vec3 origin = MODEL_MATRIX[3].xyz;
@@ -358,9 +362,20 @@ void vertex() {
 	vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), cu, tip));
 	vec3 across = right * VERTEX.x * sx;
 	vec3 drawn = origin + across + up * VERTEX.y * sy;          // where it shows on screen
-	vec3 upright = origin + across + vec3(0.0, VERTEX.y * sy, 0.0);   // how deep it is: the standing figure
 	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(drawn, 1.0));
-	vec4 vd = VIEW_MATRIX * vec4(upright, 1.0);
+	// How deep it is: where the ray from the camera through this point crosses the upright figure's plane (the
+	// Y billboard's: through the feet, along `right` and straight up). Tipped back, the picture lies behind
+	// that plane, so the depth is pulled toward the camera, back onto it. Upright (eye level) it's already on it.
+	vec3 n = vec3(-right.z, 0.0, right.x);                     // the plane's normal, toward the camera's side
+	bool ortho = PROJECTION_MATRIX[3][3] > 0.5;
+	vec3 cam = INV_VIEW_MATRIX[3].xyz;
+	vec3 to_cam = ortho ? cb : normalize(cam - drawn);
+	float behind = -dot(drawn - origin, n);                    // how far behind the plane the tipped point is
+	float mu = clamp(behind / max(dot(to_cam, n), 0.0001), 0.0, depth_reach);
+	if (!ortho) {
+		mu = min(mu, max(0.0, length(cam - drawn) - 0.25));    // never past the camera's near plane
+	}
+	vec4 vd = VIEW_MATRIX * vec4(drawn + to_cam * mu, 1.0);
 	vd.z += depth_bias;
 	vec4 cd = PROJECTION_MATRIX * vd;
 	if (cd.w > 0.0001) {

@@ -175,6 +175,9 @@ calibration: `{on, oct, i, gun}`).
 - **New player** (`newPlayer`, L711): as in §3.1.
 - **Lobby** (`fillLobby`, L733, on every new world): every player gets `weapon = 'blaster'`, `blasters = 1`,
   `rockets = 0`, `dump = 0`, `ammo = T.spudPellets × 2` (20), `coins = max(coins, T.lobbyCash, T.testCash)`.
+  This only reaches the players in the world when it runs, i.e. player 0. A second player added later
+  (`addPlayer`, L6065: the P key, a guest joining, or the re-add in `restartGame`) is a bare `newPlayer`: lobby
+  cash, but `weapon = 'spud'`, `blasters = 0`, `ammo = 0`. (README fix: "every player" was too broad.)
 - **Start of a run** (`startGame`, L13549), per player: `rockets = 0`, `dump = 0`, `buy = 0`, `weapon = 'spud'`,
   `blasters = 0`, `ammo = max(ammo, T.spudPellets × T.spudStart)` (so the 20 from the lobby come with you),
   `reload = 0`, `wTime = 0`, `coins = T.testCash`. The world: plants cleared, `plantTimer = 1.5`, then three plants
@@ -1251,6 +1254,10 @@ hotbar (per screen anyway). Snapshot milestone 4 should add those.
 20. The blast's dead-centre push uses the rocket's travel direction reversed for players, and `(dx || vx)` for corpse
     direction.
 21. Sounds triggered inside the simulation play on the host only (§14).
+22. **The rocket and blast sounds play twice on the host**: `firePlayer` calls `sfxRocket()` and `detonate` calls
+    `sfxBlast()` directly, and both also raise an `fx` event (`LAUNCH`, `BLAST`) that `playEventSounds` turns into the
+    same sound again (and, like every event sound, again each frame until a snapshot clears the list: gore_loot
+    §22.1). The guest hears each once. In Godot play them from the event only, once. (README addition.)
 
 ---
 
