@@ -59,6 +59,7 @@ func _ready() -> void:
 			print_state = true
 	Arcade.install(self)
 	FarmInstall.install(self)
+	FightInstall.install(self)
 	print("Smashed TV (Godot) ", hud.build_text, ": ready")
 
 func _on_mode(m: int) -> void:
