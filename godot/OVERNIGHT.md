@@ -32,3 +32,5 @@ it out."
 - 11:58 UTC: M2 specs finished (godot/specs/: weapons, enemies_waves, gore_loot, modes_hud, README with gaps);
   sound recordings extracted (assets/sounds). M1: characters and world done, player nearly, tramp+Gothica
   building; then integrate, review, fix. Preview build at 12:10 UTC.
+- 12:12 UTC: preview published: the integrator's first working build copied to godot-play/ and pushed to main
+  (Pages deployed 1cf7ecf). M1 integrate step still running; then review, fix, and godot-play/ gets the final.
