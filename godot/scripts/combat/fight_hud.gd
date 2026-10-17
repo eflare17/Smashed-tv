@@ -336,7 +336,7 @@ func draw_all(c: Control) -> void:
 		var killed := 0
 		for p: FT.Fighter in s.players:
 			killed += p.kills
-		_text(c, 26 * k, 38 * k + 20, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#8d94a6"))
+		_text(c, 26 * k, 38 * k + 20, "wave %d   %d left   %d killed" % [s.wave, s.enemies.size(), killed], 12, Color("#a3aabb"), 0, 4, Color(0, 0, 0, 0.6))
 	var y0 := 64 * k + 20
 	for p: FT.Fighter in s.players:
 		var pc: Color = FightSim.P_COLOURS[p.id % 2]

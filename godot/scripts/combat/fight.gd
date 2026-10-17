@@ -113,6 +113,8 @@ func _ready() -> void:
 		rig.call_deferred("set_mode", CameraRig.Mode.FIRST_PERSON)
 	if debug.has("weapon"):
 		call_deferred("_debug_weapon")
+	if debug.has("gallery"):
+		call_deferred("_gallery")
 
 func _read_debug() -> void:
 	var q := ""
@@ -137,6 +139,75 @@ func _debug_weapon() -> void:
 		sim.give_weapon(f, w)
 	if w == "spud" or w == "fists" or w == "lob":
 		f.weapon = w
+
+## Debug: a staged moment with one of everything, the sim paused a beat in (for screenshots).
+func _gallery() -> void:
+	mode = "protect" if debug.get("gallery") == "protect" else "classic"
+	start_run()
+	sim.breather = 999.0
+	f.x = 430
+	f.y = 330
+	sim.give_weapon(f, "launcher")
+	f.tx = 560
+	f.ty = 250
+	f.aim_on = true
+	f.muzzle = 0.1
+	f.mdx = 1
+	f.mdy = -0.5
+	f.adx = 1
+	f.ady = -0.5
+	f.firing = true
+	for et in 4:
+		var e := sim.new_enemy(et, 200 + et * 70, 200 + (et % 2) * 60)
+		e.spawn = 0.0
+		e.vx = 30
+		e.vy = 20
+		e.odo = et * 7.0
+	var b := sim.new_enemy(3, 470, 400)
+	b.spawn = 0.0
+	b.st = EnemySim.WINDUP
+	b.st_t = 0.2
+	b.sdx = -0.5
+	b.sdy = -0.8
+	var sp := sim.new_enemy(1, 640, 420)
+	sp.spawn = 0.2
+	for et in 4:
+		var dead := sim.new_enemy(et, 150 + et * 50, 420)
+		sim.kill_enemy(dead, 1, 0.3, et == 2, 0, 1.0, true)
+	var r := FT.Rocket.new()
+	r.sx = 450
+	r.sy = 330
+	r.h0 = 30
+	r.tx = 700
+	r.ty = 300
+	r.t = 0.35
+	r.big_h = 90
+	r.id = 99
+	sim.rockets.append(r)
+	var bl := FT.Blast.new()
+	bl.x = 700
+	bl.y = 420
+	bl.t = 0.12
+	sim.blasts.append(bl)
+	var h := FT.Husk.new()
+	h.whole = true
+	h.x = 330
+	h.y = 300
+	h.dz = 40
+	sim.husks.append(h)
+	for i in 5:
+		sim._coin(520 + i * 14, 470, 0, 0, 6, 0)
+	sim.burst_shrapnel(600, 200)
+	for sh: FT.Shard in sim.shards:
+		sh.x += sh.vx * 0.15
+		sh.y += sh.vy * 0.15
+	sim.floater(430, 300, "$3", Color("#e0473f"))
+	sim.janitor.phase = "gripe"
+	sim.janitor.x = 520
+	sim.janitor.y = 160
+	sim.sign = "floor"
+	sim.slot.broken = false
+	set_meta("frozen", true)
 
 func _load_hotbar() -> void:
 	hotbar_order.assign(WeaponDefs.ORDER)
@@ -425,6 +496,8 @@ func _process(delta: float) -> void:
 	_acc += minf(delta, 0.1)
 	var vel0 := Vector2(f.vx, f.vy)
 	var n := 0
+	if has_meta("frozen"):
+		_acc = 0.0
 	while _acc >= FightSim.DT:
 		_acc -= FightSim.DT
 		if debug.has("god"):

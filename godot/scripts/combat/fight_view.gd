@@ -497,7 +497,7 @@ func _draw_flash(p: FT.Fighter, col: Batch, addc: Batch) -> void:
 	# the light on the floor under the gun
 	var gx := p.x + p.mdx * 30.0
 	var gy := p.y + p.mdy * 30.0
-	floor_ellipse(addc, gx, gy, 1.5 * ln, 1.5 * ln, Color(1, 0.83, 0.47, 0.12 * t), 1.5, 18)
+	floor_ellipse(batch(null, true, false, -1), gx, gy, 0.8 * ln, 0.8 * ln, Color(1, 0.83, 0.47, 0.16 * t), 1.5, 18)
 	_poly(col, at, fwd, sd, [Vector2(ln, 0), Vector2(0.35 * wd, -wd), Vector2(-0.5 * wd, 0), Vector2(0.35 * wd, wd)], Color(1, 0.6, 0.24, a))
 	_poly(col, at + to_cam * 0.005, fwd, sd, [Vector2(0.55 * ln, 0), Vector2(0, -1.15 * wd), Vector2(-0.45 * wd, 0), Vector2(0, 1.15 * wd)], Color(1, 0.83, 0.47, a))
 	_poly(col, at + to_cam * 0.01, fwd, sd, [Vector2(0.55 * ln, 0), Vector2(0.2 * wd, -0.42 * wd), Vector2(-0.2 * wd, 0), Vector2(0.2 * wd, 0.42 * wd)], Color(1, 0.98, 0.91, t))

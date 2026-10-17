@@ -49,7 +49,8 @@ func _sprite(i: int) -> Sprite3D:
 	return _pool[i]
 
 ## Show a picture on a pooled sprite: feet at HTML (x, y), h units tall, anchor across (0.5 middle), flipped.
-func _show(s: Sprite3D, t: Texture2D, x: float, y: float, z: float, h: float, anchor: float, flip: bool, mod: Color) -> void:
+func _show(s: Sprite3D, t: Texture2D, x: float, y: float, z: float, h: float, anchor: float, flip: bool, mod: Color,
+		src_h := -1.0, foot_row := -1.0) -> void:
 	if t == null:
 		s.visible = false
 		return
@@ -60,10 +61,11 @@ func _show(s: Sprite3D, t: Texture2D, x: float, y: float, z: float, h: float, an
 	_mats[s].set_shader_parameter("modulate", mod)
 	var ph := float(t.get_height())
 	var pw := float(t.get_width())
-	s.pixel_size = h / ph * U
+	s.pixel_size = h / (src_h if src_h > 0.0 else ph) * U
 	s.flip_h = flip
 	var ax := (0.5 - anchor) * pw
-	s.offset = Vector2(-ax if flip else ax, ph / 2.0)
+	var foot := foot_row if foot_row >= 0.0 else ph
+	s.offset = Vector2(-ax if flip else ax, ph / 2.0 - (ph - foot))
 	s.position = p3(x, y, z)
 
 ## Which pose the camera sees for a ground velocity (enemyPose, with the camera's "toward me" for "south").
@@ -150,10 +152,13 @@ func _draw() -> void:
 					bob = absf(sin(e.odo / (s.tv("enemyStride", 10) * 2.0) * PI)) * s.tv("enemyBob", 2) * 1.5
 				if e.stun > 0.0:
 					bob = 0.0
-		var t := EnemyArt.tex(key, pose, frame)
 		var h := r * s.tv("enemyScale", 3.4) * scale
 		var mod := Color(2.6, 2.6, 2.6) if e.flash > 0.0 else Color.WHITE
-		_show(_sprite(used), t, e.x, e.y, bob, h, anchor, flip, mod)
+		if pose != "idle" and pose != "swing" and RigBaker.has_rig(key, pose):
+			# the walk rig: planted feet, bending knees (80 px = his height, feet at row 96)
+			_show(_sprite(used), RigBaker.frame(key, pose, e.odo, h), e.x, e.y, 0.0, h, 0.5, flip, mod, 80.0, 96.0)
+		else:
+			_show(_sprite(used), EnemyArt.tex(key, pose, frame), e.x, e.y, bob, h, anchor, flip, mod)
 		used += 1
 		var mh := s.e_max_hp(e.t)
 		if mh > 1.0 and e.hp < mh:
@@ -216,8 +221,19 @@ func _draw_janitor(floor_c: Batch) -> void:
 
 func _draw_goth(floor_c: Batch, top: Batch) -> void:
 	var g := sim.goth
-	if g == null or g.carrier >= 0:
+	if g == null:
 		_goth.visible = false
+		return
+	if g.carrier >= 0:
+		# in his arms: lying across them, chest high (the HTML swaps in the carry pictures)
+		_goth.visible = false
+		var cp := CharFrames.path("goth", "front_run", 0)
+		if cp != "":
+			var tx := GameData.tex(cp)
+			var hh := 70.0
+			var ww := hh * float(tx.get_width()) / tx.get_height()
+			var side := -1.0 if g.face else 1.0
+			quad(batch(tx, false), p3(g.x, g.y + 2.0, 34.0) + to_cam * 0.08, cam_right * (side * hh * 0.5 * U), stand_up * (ww * 0.5 * U), Color.WHITE)
 		return
 	var blink := g.hurt > 0.0 and int(floor(g.hurt * 20.0)) % 2 == 0
 	if g.hp <= 0.0:
