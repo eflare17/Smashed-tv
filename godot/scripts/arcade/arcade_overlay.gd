@@ -154,27 +154,17 @@ func _hits_close(view_pos: Vector2) -> bool:
 func _input(event: InputEvent) -> void:
 	if game == null:
 		return
-	if event is InputEventKey:
-		device = "keys"
-		if event.pressed and not event.echo:
-			match event.physical_keycode:
-				KEY_ESCAPE, KEY_E:
-					close()
-				KEY_Q: _pressed["q"] = true
-				KEY_U: _pressed["u"] = true
-		get_viewport().set_input_as_handled()
-	elif event is InputEventJoypadButton:
-		device = "pad"
-		if event.pressed:
-			match event.button_index:
-				JOY_BUTTON_B: close()
-				JOY_BUTTON_X: _pressed["q"] = true
-				JOY_BUTTON_Y: _pressed["u"] = true
-				JOY_BUTTON_BACK: close()
-		get_viewport().set_input_as_handled()
-	elif event is InputEventJoypadMotion:
-		if absf(event.axis_value) > 0.5:
+	if event is InputEventKey or event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		if event is InputEventKey:
+			device = "keys"
+		elif event is InputEventJoypadButton or absf(event.axis_value) > 0.5:
 			device = "pad"
+		if event.is_action_pressed("arcade_close", false, true):
+			close()
+		elif event.is_action_pressed("arcade_ammo", false, true):
+			_pressed["q"] = true
+		elif event.is_action_pressed("arcade_upgrade", false, true):
+			_pressed["u"] = true
 		get_viewport().set_input_as_handled()
 	elif event is InputEventScreenTouch:
 		_touch(event)
@@ -269,13 +259,10 @@ func _touch_drag(e: InputEventScreenDrag) -> void:
 
 ## The stick for this frame (arcadeStick, plus the pointer and the game's buttons).
 func read_stick() -> Dictionary:
-	var x := 0.0
-	var y := 0.0
-	var keyed := false
-	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT): x -= 1.0; keyed = true
-	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT): x += 1.0; keyed = true
-	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP): y -= 1.0; keyed = true
-	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN): y += 1.0; keyed = true
+	# the arcade's input actions (Arcade.add_actions): keys, the d-pad and the left stick
+	var x := Input.get_action_strength("arcade_right") - Input.get_action_strength("arcade_left")
+	var y := Input.get_action_strength("arcade_down") - Input.get_action_strength("arcade_up")
+	var keyed := absf(x) > 0.01 or absf(y) > 0.01
 	var miner := game_id == "miner"
 	if not miner and _drag.length() > 0.3:
 		x = _drag.x
@@ -289,34 +276,22 @@ func read_stick() -> Dictionary:
 		held[_btn_touch[i]] = true
 	if held.has("left"): x -= 1.0
 	if held.has("right"): x += 1.0
-	var fire := Input.is_physical_key_pressed(KEY_SPACE) or Input.is_physical_key_pressed(KEY_ENTER) or (_ptr_down and not miner)
-	var aim := Vector2.ZERO
-	var pads := Input.get_connected_joypads()
-	if not pads.is_empty():
-		var j: int = pads[0]
-		var ls := Vector2(Input.get_joy_axis(j, JOY_AXIS_LEFT_X), Input.get_joy_axis(j, JOY_AXIS_LEFT_Y))
-		if ls.length() > 0.3:
-			x = ls.x
-			y = ls.y
-		if Input.is_joy_button_pressed(j, JOY_BUTTON_DPAD_LEFT): x = -1.0
-		if Input.is_joy_button_pressed(j, JOY_BUTTON_DPAD_RIGHT): x = 1.0
-		if Input.is_joy_button_pressed(j, JOY_BUTTON_DPAD_UP): y = -1.0
-		if Input.is_joy_button_pressed(j, JOY_BUTTON_DPAD_DOWN): y = 1.0
-		if Input.is_joy_button_pressed(j, JOY_BUTTON_A):
-			fire = true
-			held["jump"] = true
-		if Input.get_joy_axis(j, JOY_AXIS_TRIGGER_RIGHT) > 0.5:
-			held["dig"] = true
-		if Input.get_joy_axis(j, JOY_AXIS_TRIGGER_LEFT) > 0.5 or Input.is_joy_button_pressed(j, JOY_BUTTON_RIGHT_SHOULDER):
-			held["launch"] = true
-		var rs := Vector2(Input.get_joy_axis(j, JOY_AXIS_RIGHT_X), Input.get_joy_axis(j, JOY_AXIS_RIGHT_Y))
-		if rs.length() > 0.25:
-			aim = rs
-	if Input.is_physical_key_pressed(KEY_F):
+	var fire := Input.is_action_pressed("arcade_fire") or (_ptr_down and not miner)
+	if Input.is_action_pressed("arcade_fire"):
+		held["jump"] = true                            # Space / A: Sand Miner jumps (W / Space in the HTML game)
+	if Input.is_action_pressed("arcade_dig"):
+		held["dig"] = true
+	if Input.is_action_pressed("arcade_launch"):
 		held["launch"] = true
 	if held.has("jump_btn"):
 		held["jump"] = true
-	if absf(x) > 0.01 and (keyed or not pads.is_empty()) and _ptr_touch_id < 0:
+	var aim := Vector2.ZERO                            # the right stick, analogue (Sand Miner aims the shovel)
+	var pads := Input.get_connected_joypads()
+	if not pads.is_empty():
+		var rs := Vector2(Input.get_joy_axis(pads[0], JOY_AXIS_RIGHT_X), Input.get_joy_axis(pads[0], JOY_AXIS_RIGHT_Y))
+		if rs.length() > 0.25:
+			aim = rs
+	if keyed and _ptr_touch_id < 0:
 		_paddle = null                                 # the keys or a stick took the paddle back
 	var st := {"x": clampf(x, -1, 1), "y": clampf(y, -1, 1), "fire": fire or _pressed.has("tap") or held.has("fire_btn"),
 		"ptr": _ptr, "ptr_in": _ptr_in, "ptr_down": _ptr_down, "ptr_alt": _ptr_alt, "touch": _ptr_touch,

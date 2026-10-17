@@ -39,7 +39,7 @@ func _ready() -> void:
 		main.player.look_ang = -PI / 2.0
 	if _arg("at") != null or _arg("open") != null:
 		var c: Dictionary = GameData.data.CABINETS[0]
-		main.player.place(float(c.x), 140.0)
+		main.player.place(float(c.x), float(_arg("at")) if _arg("at") != null and _arg("at") != "" else 140.0)
 		main.player.facing = Vector2(0, -1)
 	var o = _arg("open")
 	if o != null:

@@ -62,7 +62,44 @@ func _exit_tree() -> void:
 	if _inst == self:
 		_inst = null
 
+## The arcade's input actions, added if missing (keyboard, pad; touch is the overlay's own buttons and swipes).
+## Each game reads them through the overlay's stick: move, fire (start / launch the ball / jump), Sand Miner's
+## dig, launch, ammo and upgrade, and close (walk away).
+const ACTIONS := {
+	"arcade_left": {"keys": [KEY_A, KEY_LEFT], "buttons": [JOY_BUTTON_DPAD_LEFT], "axes": [[JOY_AXIS_LEFT_X, -1.0]]},
+	"arcade_right": {"keys": [KEY_D, KEY_RIGHT], "buttons": [JOY_BUTTON_DPAD_RIGHT], "axes": [[JOY_AXIS_LEFT_X, 1.0]]},
+	"arcade_up": {"keys": [KEY_W, KEY_UP], "buttons": [JOY_BUTTON_DPAD_UP], "axes": [[JOY_AXIS_LEFT_Y, -1.0]]},
+	"arcade_down": {"keys": [KEY_S, KEY_DOWN], "buttons": [JOY_BUTTON_DPAD_DOWN], "axes": [[JOY_AXIS_LEFT_Y, 1.0]]},
+	"arcade_fire": {"keys": [KEY_SPACE, KEY_ENTER], "buttons": [JOY_BUTTON_A]},
+	"arcade_launch": {"keys": [KEY_F], "buttons": [JOY_BUTTON_RIGHT_SHOULDER], "axes": [[JOY_AXIS_TRIGGER_LEFT, 1.0]]},
+	"arcade_dig": {"axes": [[JOY_AXIS_TRIGGER_RIGHT, 1.0]]},
+	"arcade_ammo": {"keys": [KEY_Q], "buttons": [JOY_BUTTON_X]},
+	"arcade_upgrade": {"keys": [KEY_U], "buttons": [JOY_BUTTON_Y]},
+	"arcade_close": {"keys": [KEY_ESCAPE, KEY_E], "buttons": [JOY_BUTTON_B, JOY_BUTTON_BACK]},
+}
+
+static func add_actions() -> void:
+	for a in ACTIONS:
+		if InputMap.has_action(a):
+			continue
+		InputMap.add_action(a, 0.3)                    # the HTML game's stick dead zone (arcadeStick: 0.3)
+		var d: Dictionary = ACTIONS[a]
+		for k in d.get("keys", []):
+			var e := InputEventKey.new()
+			e.physical_keycode = k
+			InputMap.action_add_event(a, e)
+		for bt in d.get("buttons", []):
+			var e := InputEventJoypadButton.new()
+			e.button_index = bt
+			InputMap.action_add_event(a, e)
+		for ax in d.get("axes", []):
+			var e := InputEventJoypadMotion.new()
+			e.axis = ax[0]
+			e.axis_value = ax[1]
+			InputMap.action_add_event(a, e)
+
 func _ready() -> void:
+	add_actions()
 	load_hi()
 	sfx = ArcadeSfx.new()
 	sfx.name = "Sfx"
