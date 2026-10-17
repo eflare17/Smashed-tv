@@ -799,6 +799,11 @@ func _update_sprite_of(pl: Player, f: FT.Fighter) -> void:
 		return
 	var carried := sim.goth != null and sim.goth.carrier == f.id
 	spr.visible = not fp and not blink
+	# lobby life shows a picture of its own for him (lying in bed, lifting, sitting...): leave his sprite hidden
+	var ll := LobbyLife.current
+	if not sim.started and ll and (ll.pose_of(pl) != null or (ll.busy.has(pl) and bool(ll.busy[pl].hides_sprite(pl)))):
+		spr.visible = false
+		return
 	if fp:
 		return
 	var skin := WeaponDefs.skin_for(pl.char_id, f.weapon)

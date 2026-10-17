@@ -83,6 +83,7 @@ var _host_goth_pics: Array = []
 var _target := Vector3.ZERO      # where the other player is heading (smoothed)
 var _have_target := false
 var _menu: Node
+var _reloading := false          # a restart is under way: the old game is going
 
 ## main.gd: Net.install(self) at the end of _ready (after the Fight, the farm and lobby life).
 static func install(m: Node) -> Net:
@@ -131,6 +132,7 @@ func _ready() -> void:
 
 func attach(m: Node) -> void:
 	main = m
+	_reloading = false
 	player = m.get("player")
 	fight = Fight.me
 	p2 = null
@@ -147,6 +149,7 @@ func attach(m: Node) -> void:
 	m.add_child(pics_parent)
 	_hook_sleep()
 	_hook_farm()
+	_hook_md()
 	_menu = NetMenu.new()
 	_menu.net = self
 	m.add_child(_menu)
@@ -266,7 +269,7 @@ func leave(quiet: bool = false) -> void:
 		_on_status("Local game — host or join to play online", "")
 	changed.emit()
 	if was_guest_run and fight:
-		fight.restart(true)
+		_restart()
 
 func _on_status(text: String, kind: String) -> void:
 	status_text = text
@@ -294,6 +297,9 @@ func _on_connected() -> void:
 	changed.emit()
 
 func _on_disconnected() -> void:
+	var a := Arcade.instance()
+	if a and a.md:
+		a.md.friend_gone()
 	var guest_run := role == "client" and fight != null and fight.sim.started
 	if live:
 		_game_live(false)
@@ -301,7 +307,7 @@ func _on_disconnected() -> void:
 	remote_av = {}
 	changed.emit()
 	if guest_run and fight:
-		fight.restart(true)
+		_restart()
 
 ## Turn the game here into (or back out of) a game for two.
 func _game_live(on: bool) -> void:
@@ -423,6 +429,8 @@ func _on_request(what: String) -> bool:
 				return true
 			if what == "restart":
 				_send({"t": "restart"})
+				_reloading = true
+				_snap_pending = null
 			return false
 	return false
 
@@ -498,11 +506,11 @@ func _on_message(d: Dictionary) -> void:
 					fight.start_run(true)
 				elif r == "restart":
 					_send({"t": "restart"})
-					fight.restart(true)
+					_restart()
 		"restart":
 			if role == "client" and fight:
 				print("Net: the host restarted")
-				fight.restart(true)
+				_restart()
 		"snap":
 			if role == "client":
 				snaps_in += 1
@@ -526,7 +534,7 @@ func _process(dt: float) -> void:
 		transport.poll()
 	if print_state:
 		_print_state(dt)
-	if not live or main == null or not is_instance_valid(main) or fight == null:
+	if not live or main == null or not is_instance_valid(main) or fight == null or _reloading:
 		return
 	if role == "host":
 		_collect_fx()
@@ -795,7 +803,7 @@ func _gather_input(inp: FT.Inp) -> void:
 func _apply_snap_now() -> void:
 	var s = _snap_pending
 	_snap_pending = null
-	if not (s is Dictionary) or fight == null:
+	if not (s is Dictionary) or fight == null or _reloading:
 		return
 	var gc := get_node_or_null("/root/GameClock")
 	if gc and s.has("clock"):
@@ -805,7 +813,7 @@ func _apply_snap_now() -> void:
 	var started := bool(fd.get("started", false))
 	if not started and fight.sim.started:
 		print("Net: the host is back in the lobby")
-		fight.restart(true)             # the host is back in the lobby (a restart): so are we
+		_restart()             # the host is back in the lobby (a restart): so are we
 		return
 	fight.mode = String(s.get("mode", fight.mode))
 	if started and not fight.sim.started:
@@ -858,6 +866,36 @@ func _on_farm(d: Dictionary) -> void:
 		fm._save_soon()
 
 ## ---------------------------------------------------------------- the Mega Drive cabinet (player 2)
+
+## The arcade's friend hooks (integration/arcade.md): its messages go over this connection; when the friend asks
+## to join, whoever is playing calls them with the emulator's picture and sound (a PeerJS media call).
+func _hook_md() -> void:
+	var a := Arcade.instance()
+	if a == null or a.md == null:
+		return
+	a.md.friend_send = func(msg: Dictionary):
+		if live:
+			_send(msg)
+	a.md.friend_name = _char_name(player.char_id if player else "juicy")
+	if not a.md.friend_joined.is_connected(_on_md_join):
+		a.md.friend_joined.connect(_on_md_join)
+
+func _on_md_join() -> void:
+	if OS.has_feature("web") and transport is PeerJsTransport:
+		JavaScriptBridge.eval("try{SmashedMD.streamTo(SmashedNet.peer, SmashedNet.otherId)}catch(e){console.log('md stream', e)}", true)
+
+func _restart() -> void:
+	if _reloading or fight == null:
+		return
+	_reloading = true
+	_snap_pending = null
+	fight.restart(true)
+
+static func _char_name(id: String) -> String:
+	for c in Hud.CHARACTERS:
+		if c[0] == id:
+			return c[1]
+	return "Your friend"
 
 func _md_message(d: Dictionary) -> void:
 	var a := Arcade.instance()

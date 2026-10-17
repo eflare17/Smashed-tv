@@ -53,6 +53,10 @@ N.kill = function () {
   try { if (c) c.close(); } catch (_) {}
   try { if (p) p.destroy(); } catch (_) {}
 };
+// the Mega Drive cabinet's picture and sound come as a PeerJS media call (SmashedMD, scripts/arcade/md_bridge_js.gd)
+function takeCalls(peer) {
+  peer.on('call', call => { if (N.peer !== peer) return; if (window.SmashedMD) window.SmashedMD.answerCall(call); else call.close(); });
+}
 function wire(conn) {
   N.conn = conn;
   const timeout = setTimeout(() => {
@@ -94,6 +98,7 @@ N.host = function (code, id) {
   N.kill(); N.role = 'host'; N.code = code;
   N.status('opening room…');
   const peer = N.peer = new Peer(id, N.opts());
+  takeCalls(peer);
   peer.on('open', () => { if (N.peer === peer) { N.status('room ' + code + ' — waiting for player 2', 'live'); ev({ e: 'room', code: code }); } });
   peer.on('connection', c => { if (N.peer !== peer || (N.conn && N.conn.open)) { c.close(); return; } wire(c); });
   peer.on('disconnected', () => { if (N.peer !== peer || peer.destroyed) return; N.status('signaling dropped — reconnecting…', 'bad'); try { peer.reconnect(); } catch (_) {} });
@@ -105,6 +110,7 @@ N.join = function (code, id) {
   N.kill(); N.role = 'client'; N.code = code;
   N.status('connecting to ' + code + '…');
   const peer = N.peer = new Peer(N.opts());
+  takeCalls(peer);
   peer.on('open', () => {
     if (N.peer !== peer) return;
     N.status('found broker — calling room ' + code + '…');

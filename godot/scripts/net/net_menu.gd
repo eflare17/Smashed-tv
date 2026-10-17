@@ -41,7 +41,12 @@ func _ready() -> void:
 	_btn.text = "ONLINE (O)"
 	_btn.focus_mode = Control.FOCUS_NONE
 	_btn.add_theme_font_size_override("font_size", 13)
-	_btn.position = Vector2(12, 44)
+	_btn.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)      # above the farm's BAG button
+	_btn.offset_left = 12
+	_btn.offset_top = -112
+	_btn.offset_bottom = -82
+	_btn.offset_right = 12
+	_btn.grow_horizontal = Control.GROW_DIRECTION_END
 	_btn.pressed.connect(toggle)
 	root.add_child(_btn)
 
