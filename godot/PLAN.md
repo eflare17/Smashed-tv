@@ -68,6 +68,12 @@ panel, the farm plans (FARM.md).
    (like the HTML game, following you) and first person (V; mouse look with the pointer captured; Esc lets go).
    E with an on-screen prompt for what it does. The trampoline (climb on, bounce, Shift higher, jump off). Gothica
    wandering. A build label. Exported for the web. **The test of the whole idea: does it feel better?**
+1.5. **The look pass.** The big visual jump, in the "HD-2D" style (pixel-art characters in a lit 3D world,
+   like Octopath Traveller): real lighting and soft shadows, a sky in the yard (sunny or golden hour), warm lamps
+   indoors, glow on the arcade screens and the pool, a light haze in the distance and a gentle blur on far-off
+   things. Some effects are limited in the web build: use what the Compatibility renderer can do.
+   (Later, whenever there are models: real 3D models for the furniture, machines and buildings instead of boxes
+   wearing pictures. That needs the models made first.)
 2. **Fighting.** Weapons, shooting in both views, enemies and waves in the arena, gore, coins, the weapon bar,
    Protect Gothica.
 3. **Lobby life.** The pool and dive tower, the gym, the table and the bong, cards with Gothica, the mirror and
