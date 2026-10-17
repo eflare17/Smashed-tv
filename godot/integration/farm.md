@@ -1,3 +1,5 @@
+Status: done
+
 # The farm: integration note (branch `claude/godot-farm`)
 
 ## Handoff (17 Oct, for the next session)
@@ -21,7 +23,7 @@ renders and takes real clicks.
 - `test/farm/test_farm_logic.gd`: the headless logic tests.
 
 **Next steps, in order** (all optional polish; the main session only needs the install line):
-1. When the Lighting GameClock is merged, run both tests against it. Delete the stand-in if you like.
+1. The real GameClock (on `claude/godot-lighting`) has the same API the farm uses (`day`, `hour`, `tick`, `advance_hours`, `sleep_to_morning`, `save_state`); once merged, run both tests against it and delete the stand-in if you like.
 2. When the fighting session lands, wire its wave start and end to `on_wave_started`, `raid_result` and
    `on_wave_survived`, then set `auto_raids = false`.
 3. Co-op snapshot (M4): send `state.to_dict()` from the host, and turn the guest's E into requests to
