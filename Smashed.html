@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b325';
+const BUILD = 'b326';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -1995,6 +1995,12 @@ const YARD_AREAS = [
 // picture spreads past it on the yard art (art: painted out of the 3D floor, since there it stands up instead),
 // and, for the ute, the blocks it's drawn as (fp: the tray, the cab and the bonnet are different heights)
 const FENCE_H = 58;                                   // a bit under eye height, so you can see over
+// b326: the trampoline. Round, its mat 32 up (just under a metre) inside a padded ring, a net 64 high round it on
+// poles. E climbs on (and off). On it you bounce by yourself, and the roll button (Shift, B / RB / LT, or JUMP on a
+// phone) pushes you down into the mat as you land, so each bounce goes higher. tz: how high above the mat; dz (what
+// the game already sends and draws for height) is the mat plus that, so everyone sees you up there, and in first
+// person your eyes go up and down with you.
+const TRAMP = { cx: 753, cy: 1350, r: 125, mat: 32, net: 64, g: 520, vbase: 175, vmax: 380, boost: 85, keep: 0.82 };
 const YARD_SOLIDS = [
   { x0: 488,  y0: 566,  x1: 618,  y1: 634,  h: 36,  m: 'bbq' },                                     // barbecue
   { x0: 602,  y0: 702,  x1: 800,  y1: 800,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
@@ -2009,7 +2015,7 @@ const YARD_SOLIDS = [
   { x0: 1218, y0: 838,  x1: 1364, y1: 902,  h: FENCE_H, m: 'fence', art: [1214, 792, 1368, 906] },  // the crop bed's front fence, left of its gap
   { x0: 1566, y0: 838,  x1: 1704, y1: 902,  h: FENCE_H, m: 'fence', art: [1562, 792, 1704, 906] },  //   and right of it
   { x0: 1256, y0: 948,  x1: 1346, y1: 1004, h: 42,  m: 'bush', art: [1238, 916, 1362, 1014] },      // bush by the garage
-  { x0: 622,  y0: 1236, x1: 884,  y1: 1452, h: 92,  m: 'tramp', art: [610, 1120, 896, 1476] },      // trampoline
+  { cx: TRAMP.cx, cy: TRAMP.cy, r: TRAMP.r, h: TRAMP.mat + TRAMP.net, m: 'tramp', art: [606, 1116, 900, 1482] },   // trampoline
   { x0: 98,   y0: 1552, x1: 464,  y1: 1898, h: 85,  m: 'shed', art: [90, 1542, 474, 1898] },        // shed
   { x0: 36,   y0: 1620, x1: 104,  y1: 1848, h: 28,  m: 'junk' },                                    // bricks and crates beside it
   { x0: 658,  y0: 1598, x1: 924,  y1: 1716, h: 16,  m: 'bed' },                                     // raised beds
@@ -2025,6 +2031,30 @@ function pushOutOfSolid(o, r, s) {
   if (d >= m) return false;
   if (d < 0.001) { o.y = s.cy + m; return true; }
   o.x = s.cx + dx / d * m; o.y = s.cy + dy / d * m; return true;
+}
+function trampNear(p) { return !!p && p.alive && !p.tramp && !p.dive && !p.sit && !p.bed && !p.lift && !p.leg && Math.hypot(p.x - TRAMP.cx, p.y - TRAMP.cy) < TRAMP.r + 40; }
+function trampOn(p) {                                   // up over the edge, onto the mat near where you stood
+  const a = Math.atan2(p.y - TRAMP.cy, p.x - TRAMP.cx), d = TRAMP.r - 36;
+  Object.assign(p, { tramp: 1, tz: 0, tv: 150, tjump: 0, dz: TRAMP.mat, x: TRAMP.cx + Math.cos(a) * d, y: TRAMP.cy + Math.sin(a) * d, vx: 0, vy: 0 });
+}
+function trampOff(p) {                                  // over the side you're nearest, back onto the grass
+  const a = Math.atan2(p.y - TRAMP.cy, p.x - TRAMP.cx), d = TRAMP.r + 24;
+  Object.assign(p, { tramp: 0, tz: 0, tv: 0, tjump: 0, dz: 0, x: TRAMP.cx + Math.cos(a) * d, y: TRAMP.cy + Math.sin(a) * d, vx: 0, vy: 0 });
+}
+function trampStep(w, p, dt) {                          // each step, on the host
+  if (!p.alive || p.dive || p.sit || p.bed || !lobbyTall(w)) { p.tramp = 0; p.tz = 0; p.tv = 0; p.dz = 0; return; }
+  const dx = p.x - TRAMP.cx, dy = p.y - TRAMP.cy, d = Math.hypot(dx, dy) || 1, max = TRAMP.r - 22;   // the net holds you in
+  if (d > max) {
+    p.x = TRAMP.cx + dx / d * max; p.y = TRAMP.cy + dy / d * max;
+    const vn = (p.vx * dx + p.vy * dy) / d; if (vn > 0) { p.vx -= vn * dx / d; p.vy -= vn * dy / d; }
+  }
+  p.tv -= TRAMP.g * dt; p.tz += p.tv * dt;
+  if (p.tz <= 0) {                                      // down on the mat: it throws you back up
+    const hit = -p.tv;
+    p.tz = 0; p.tv = p.tjump ? Math.min(TRAMP.vmax, hit + TRAMP.boost) : Math.max(TRAMP.vbase, hit * TRAMP.keep); p.tjump = 0;
+    if (SND.ctx && SND.on) sTone(0.22, 110 + hit * 0.15, 260 + hit * 0.5, 0.05, 'sine');   // boing
+  }
+  p.dz = TRAMP.mat + p.tz;
 }
 function worldW(w) { return lobbyTall(w) ? YARD.w : ARENA.w; }
 function worldH(w) { return lobbyTall(w) ? YARD.h : ARENA.h; }
@@ -3510,6 +3540,7 @@ function fpLocked() { return document.pointerLockElement === document.getElement
 let LAST_POINTER = 'mouse';
 addEventListener('pointerdown', e => {
   LAST_POINTER = e.pointerType || 'mouse';
+  if (LAST_POINTER === 'touch') touchSeen = true;          // (b326: any touch, even one on a button, means a phone's in use)
   if (LAST_POINTER !== 'mouse' && document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
 }, true);
 function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (LAST_POINTER !== 'mouse') return; if (c && !fpLocked() && c.requestPointerLock) { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } }
@@ -3569,7 +3600,7 @@ const FP_HOUSE = [{ x0: 0, y0: 0, x1: ARENA.w, y1: BACK_DOOR.y1, h: SHROOM_WALL,
 const FP_LIT = { N: 1, E: 0.9, W: 0.9, S: 0.76 };                    // the sun's to the north
 function fpIndoors(x, y) { return x >= 0 && y >= 0 && ((x <= ARENA.w && y <= BACK_DOOR.y1) || (x <= BEDROOM.x1 + ARENA.wall && y <= YARD_AREAS[2].y0)); }
 let FP_N = 0;
-function fpAdd(t, s, u, side, face, lit) { if (FP_N >= FP_HITS.length) return; const o = FP_HITS[FP_N++]; o.t = t; o.s = s; o.u = u; o.side = side; o.face = face; o.lit = lit; }
+function fpAdd(t, s, u, side, face, lit, t2) { if (FP_N >= FP_HITS.length) return; const o = FP_HITS[FP_N++]; o.t = t; o.s = s; o.u = u; o.side = side; o.face = face; o.lit = lit; o.t2 = t2 || 0; }
 function fpCast(px, py, dx, dy, A) {
   let t = 0, side = 0, cur = -1;                                      // where it leaves the floor, and off which bit
   for (let guard = 0; guard < 10; guard++) {
@@ -3604,8 +3635,17 @@ function fpSolid(s, px, py, dx, dy, tMin, tMax) {
   let t0, side, u, face, lit;
   if (s.r !== undefined) {
     const ox = px - s.cx, oy = py - s.cy, a = dx * dx + dy * dy, b = ox * dx + oy * dy, c = ox * ox + oy * oy - s.r * s.r, disc = b * b - a * c;
-    if (c <= 0 || disc <= 0) return;
-    t0 = (-b - Math.sqrt(disc)) / a;
+    if (disc <= 0 || (c <= 0 && s.m !== 'tramp')) return;
+    const sq = Math.sqrt(disc);
+    if (s.m === 'tramp') {                                            // b326: you see through it, so its far side too (the mat's drawn with that)
+      const near = c > 0 ? (-b - sq) / a : 0.5, tOut = (-b + sq) / a;
+      if (tOut > Math.max(0.5, tMin, near) && tOut < tMax) {
+        const nx = (ox + dx * tOut) / s.r, ny = (oy + dy * tOut) / s.r;
+        fpAdd(tOut, s, (Math.atan2(ny, nx) + Math.PI) * s.r, Math.abs(nx) > Math.abs(ny) ? 0 : 1, 'back', 0.8, near);
+      }
+      if (c <= 0) return;                                             // (on it: only the far side)
+    }
+    t0 = (-b - sq) / a;
     const nx = (ox + dx * t0) / s.r, ny = (oy + dy * t0) / s.r;
     side = Math.abs(nx) > Math.abs(ny) ? 0 : 1; face = ''; u = (Math.atan2(ny, nx) + Math.PI) * s.r;
     lit = 0.7 + 0.3 * Math.max(0, -ny * 0.9 + nx * 0.25);              // round: lit where it faces the sun
@@ -3691,12 +3731,15 @@ function fpMaterial(s, face, u, z) {
       const k = 0.7 + 0.55 * fpHash(Math.floor(u / 3) * 977 + Math.floor(z / 3));
       r = 50 * k; g = 104 * k; b = 42 * k; break;
     }
-    case 'tramp':                                                     // trampoline: the skirt, the blue pad, the net on its poles
-      if (z < 24) { r = 24; g = 24; b = 28; }
-      else if (z < 32) { r = 44; g = 84; b = 172; }
-      else if (z > H - 3 || fpRep(u, 52) < 2.4) { r = 70; g = 72; b = 78; }
-      else { r = 14; g = 14; b = 18; a = fpRep(u, 5) < 0.7 || z % 5 < 0.7 ? 0.32 : 0.1; }   // (the net's mesh: you see through it)
+    case 'tramp': {                                                   // b326: round. Legs, the frame and its springs, the blue pad, the net on its poles
+      const circ = 2 * Math.PI * TRAMP.r;
+      if (z < 22) { if (fpRep(u, circ / 6) < 5) { r = 50; g = 52; b = 56; } else a = 0; }   // the legs (between them, the grass under it)
+      else if (z < 26) { const k = fpRep(u, 3) < 1 ? 0.78 : 1; r = 132 * k; g = 136 * k; b = 142 * k; }
+      else if (z <= TRAMP.mat) { if (z > TRAMP.mat - 1.2) { r = 80; g = 120; b = 208; } else { r = 44; g = 84; b = 172; } }
+      else if (z > H - 2.5 || fpRep(u, circ / 8) < 3) { r = 58; g = 60; b = 66; }        // the poles, and the rope round the top
+      else { r = 12; g = 12; b = 16; a = fpRep(u, 4) < 0.7 || fpRep(z, 4) < 0.7 ? 0.42 : 0.1; }   // the net
       break;
+    }
     case 'junk':                                                      // bricks and crates
       if (fpRep(u, 22) < 11) { r = 134; g = 66; b = 48; } else { r = 152; g = 112; b = 64; }
       if (z % 6 < 1) { r *= 0.75; g *= 0.75; b *= 0.75; } break;
@@ -3745,8 +3788,9 @@ function fpPaintOut(g, s) {
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const wx = x0 + x + 0.5, wy = y0 + y + 0.5;
     if (wx < ax0 || wx >= ax1 || wy < ay0 || wy >= ay1) continue;
-    if (s.r !== undefined ? Math.hypot(wx - s.cx, wy - s.cy) < s.r : wx > s.x0 && wx < s.x1 && wy > s.y0 && wy < s.y1) continue;
-    const o = (y * w + x) * 4, k = 0.94 + 0.12 * fpHash(((wx | 0) * 7919) ^ ((wy | 0) * 104729));
+    const inside = s.r !== undefined ? Math.hypot(wx - s.cx, wy - s.cy) < s.r : wx > s.x0 && wx < s.x1 && wy > s.y0 && wy < s.y1;
+    if (inside && s.m !== 'tramp') continue;
+    const o = (y * w + x) * 4, k = (0.94 + 0.12 * fpHash(((wx | 0) * 7919) ^ ((wy | 0) * 104729))) * (inside ? 0.55 : 1);   // (b326: under the trampoline, its shadow)
     p[o] = med[0] * k; p[o + 1] = med[1] * k; p[o + 2] = med[2] * k;
   }
   g.putImageData(id, x0, y0);
@@ -3877,10 +3921,11 @@ function shroomCharacter(w, p, me) {
   // b282: drawn on the screen and copied off it, which stalls a phone, so each one is redone only every tenth of
   // a second (their walk cycle is slower than that anyway), and not at all while you're in the air
   const old = SHROOM.chars.get(p.npc ? 'npc' : p.id), nowT = performance.now();
-  if (old && (SHROOM.dive || nowT - (old.__t || 0) < 100)) return { img: old, x: p.x, y: p.y, W: BW, H: BH, foot: FY + T.radius * 0.9 };
+  if (old && (SHROOM.dive || nowT - (old.__t || 0) < 100)) return { img: old, x: p.x, y: p.y, W: BW, H: BH, foot: FY + T.radius * 0.9 + (p.dive ? 0 : p.dz || 0) };
   const rel = Math.atan2(p.fy || 0.0001, p.fx || 0) - Math.atan2(me.y - p.y, me.x - p.x), turn = Math.PI / 2 + rel - Math.atan2(p.fy || 0.0001, p.fx || 0);
   const rot = (x, y) => [x * Math.cos(turn) - y * Math.sin(turn), x * Math.sin(turn) + y * Math.cos(turn)];
   const q = { ...p, x: FX, y: FY };
+  if (!p.dive) { q.dz = 0; q.tramp = 0; q.fpCut = !!p.tramp; }      // b326: drawn standing; up on the trampoline the whole cut-out's lifted instead
   [q.fx, q.fy] = rot(p.fx || 0, p.fy || 0.0001);
   for (const [a, b] of [['ix', 'iy'], ['adx', 'ady'], ['mdx', 'mdy'], ['rdx', 'rdy']]) if (p[a] !== undefined || p[b] !== undefined) [q[a], q[b]] = rot(p[a] || 0, p[b] || 0);
   // (the whole screen's cleared first: the lobby drawn under the trip is never seen, and copying off the
@@ -3893,7 +3938,7 @@ function shroomCharacter(w, p, me) {
   let c = SHROOM.chars.get(key);
   if (!c) { c = document.createElement('canvas'); c.width = Math.round(BW * k); c.height = Math.round(BH * k); SHROOM.chars.set(key, c); }
   const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height); g.drawImage(canvas, 0, 0, c.width, c.height, 0, 0, c.width, c.height); c.__t = nowT;
-  return { img: c, x: p.x, y: p.y, W: BW, H: BH, foot: FY + T.radius * 0.9 };
+  return { img: c, x: p.x, y: p.y, W: BW, H: BH, foot: FY + T.radius * 0.9 + (p.dive ? 0 : p.dz || 0) };
 }
 const BOOT_PIX = [                                         // b267: his boot from above, toe first: the cap and its shine, laces, the grey cuff, his shin
   '.....KKKKKKKK.....',
@@ -4072,6 +4117,7 @@ function drawShroom(w) {
   let eye = EYE, px = me.x, py = me.y, pitch = 0, back = false;
   if (me.dive === DIVE.CLIMB || me.dive === DIVE.BOARD) eye = EYE + (me.dz || 0) / tg.deckH * (SHROOM_TOWER - EYE);
   else if (me.dive === DIVE.SWIM) eye = SHROOM_SWIM_EYE;
+  else if (!me.dive && (me.dz || 0) > 0) eye = EYE + me.dz;              // b326: up on the trampoline
   const high = Math.max(0, Math.min(1, (eye - EYE) / (SHROOM_TOWER - EYE)));
   // b264: the board, in here, is 10 m of planks. How far along it you are (bu, 0..1) comes from the game's
   // own short board; your view slides out from the ladder to over the near end of the pool, and in the last
@@ -4133,7 +4179,7 @@ function drawShroom(w) {
   // near end: from 20 m up the lobby was a small patch right under your feet, hidden by the board, with only
   // the swirl round the outside to look at. Now the pool opens out ahead past the end of the board, as big as
   // a real one looks from up there, and it all shrinks back to size as you drop.
-  const zs = 1 + 2 * Math.max(0, Math.min(1, (eye - WALL) / (SHROOM_TOWER - WALL))), ZX = POOL.x0 + 20, ZY = (POOL.y0 + POOL.y1) / 2;
+  const zs = (me.dive || dv) ? 1 + 2 * Math.max(0, Math.min(1, (eye - WALL) / (SHROOM_TOWER - WALL))) : 1, ZX = POOL.x0 + 20, ZY = (POOL.y0 + POOL.y1) / 2;   // (b326: the tower only, not a high bounce)
   SHROOM.calm = sober ? 1 : (SHROOM.calm || 0) + (((me.dive === DIVE.BOARD || me.dive === DIVE.CLIMB) && !dv ? 1 : 0) - (SHROOM.calm || 0)) * Math.min(1, dt * 3);
   const calm = SHROOM.calm;                                              // up there the colours ease off, so you can see where you are
   // the screen's colours are turned round the wheel as a whole (the hue-rotate below); the water and the grass
@@ -4149,7 +4195,7 @@ function drawShroom(w) {
   const flipping = !!dv && dv.t < SHROOM_FALL, sky = Math.max(0, Math.min(1, (eye - (WALL - 50)) / 50));   // above the roofline: open sky
   // Above the walls every pixel is cast properly, tilted however far you're looking (straight down at the
   // pool, head over heels). Down among the walls the columns do it, and tilting only slides the horizon.
-  const tp = eye >= WALL, cp = Math.cos(pitch), sp = Math.sin(pitch), tanV = tanH * RH / RW;
+  const tp = eye >= WALL && !!(me.dive || dv), cp = Math.cos(pitch), sp = Math.sin(pitch), tanV = tanH * RH / RW;
   const fw = [dx * cp, dy * cp, -sp], upv = [dx * sp, dy * sp, cp];
   const toScreen = (wx, wy, wz) => {                                     // a point in the world, on the 3D view: {x, y, sc, d} or null (behind you)
     const ox = wx - px, oy = wy - py, oz = wz - eye;
@@ -4217,10 +4263,20 @@ function drawShroom(w) {
     let wx = px + dist * (dx - rx * tanH), wy = py + dist * (dy - ry * tanH);
     const sx = dist * rx * tanH * 2 / RW, sy = dist * ry * tanH * 2 / RW;
     const shade = Math.min(1, (260 + eye * 1.2) / (dist + 60)), sv = (hor - y) / RH;
+    const rd = below && eye > WALL + 0.5 ? (eye - WALL) * proj / den : 0;   // b326: bounced up past the roofline: the house's flat roof
+    let rwx = px + rd * (dx - rx * tanH), rwy = py + rd * (dy - ry * tanH);
+    const rsx = rd * rx * tanH * 2 / RW, rsy = rd * ry * tanH * 2 / RW;
     for (let x = 0; x < RW; x++, wx += sx, wy += sy) {
       const o = (y * RW + x) * 4;
       let r, g, bb;
-      if (below) { floorAt(o, wx, wy, dist, shade); continue; }
+      if (below) {
+        if (rd) {
+          const qx = rwx, qy = rwy; rwx += rsx; rwy += rsy;
+          if (fpIndoors(qx, qy)) { const k = fpRep(qx, 9) < 2.5 ? 0.8 : 1, hz = Math.min(0.5, rd / 3200);
+            B[o] = 80 * k + (204 - 80 * k) * hz; B[o + 1] = 84 * k + (218 - 84 * k) * hz; B[o + 2] = 94 * k + (232 - 94 * k) * hz; B[o + 3] = 255; continue; }
+        }
+        floorAt(o, wx, wy, dist, shade); continue;
+      }
       if (!fpIndoors(wx, wy)) { skyAt(o, x, sv); continue; }               // b323: outside: the sky, not a ceiling
       {                                                           // the ceiling: a slow plasma
         const v = Math.sin(wx * 0.025 + t) + Math.sin(wy * 0.03 - t * 1.3) + Math.sin((wx + wy) * 0.018 + t * 0.7);
@@ -4249,9 +4305,9 @@ function drawShroom(w) {
     zbuf[x] = 1e9;
     for (let i = 0; i < n && i < FP_OCC; i++) {                          // what hides what's behind it, and up to where (rooms and the house: all of it)
       const hh = FP_HITS[i], sh = hh.s;
-      if (zbuf[x] === 1e9 && sh.h >= eye) zbuf[x] = hh.t;
+      if (zbuf[x] === 1e9 && sh.h >= eye && sh.m !== 'tramp') zbuf[x] = hh.t;
       occT[x * FP_OCC + i] = hh.t;
-      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : hor - ((sh.m === 'tramp' ? 32 : sh.h) - eye) * proj / hh.t + melt;
+      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : hor - ((sh.m === 'tramp' ? TRAMP.mat : sh.h) - eye) * proj / hh.t + melt;
       occN[x] = i + 1;
     }
     for (let i = n - 1; i >= 0; i--) {                                   // far to near
@@ -4278,6 +4334,21 @@ function drawShroom(w) {
         if (hz) { r += (204 - r) * hz; g += (218 - g) * hz; b += (232 - b) * hz; }
         if (a < 1) { B[o] += (r - B[o]) * a; B[o + 1] += (g - B[o + 1]) * a; B[o + 2] += (b - B[o + 2]) * a; }
         else { B[o] = r; B[o + 1] = g; B[o + 2] = b; }
+      }
+      if (sh.m === 'tramp' && hh.face === 'back' && eye > TRAMP.mat + 1) {   // b326: the mat and its padded ring, from the far side of the net back to the near
+        const k = (eye - TRAMP.mat) * proj, near = Math.max(0.5, hh.t2);
+        const y0 = Math.max(0, Math.floor(hor + k / d + melt * 0.5)), y1 = Math.min(RH, Math.ceil(hor + k / near + melt * 0.5));
+        for (let y = y0; y < y1; y++) {
+          const den = y + 0.5 - hor - melt * 0.5; if (den <= 0) continue;
+          const dm = k / den; if (dm > d || dm < near) continue;
+          const wx = px + rdx * dm, wy = py + rdy * dm, rr = Math.hypot(wx - TRAMP.cx, wy - TRAMP.cy), o = (y * RW + x) * 4;
+          let r, g, b;
+          if (rr < TRAMP.r - 18) { const kk = fpRep(wx + wy, 14) < 1 || fpRep(wx - wy, 14) < 1 ? 1.4 : 1; r = 24 * kk; g = 24 * kk; b = 28 * kk; }   // the mat
+          else if (rr < TRAMP.r - 15) { r = 120; g = 124; b = 130; }                                              // the springs at its edge
+          else { const seam = fpRep((Math.atan2(wy - TRAMP.cy, wx - TRAMP.cx) + Math.PI) * TRAMP.r, 26) < 1.2 ? 0.8 : 1; r = 46 * seam; g = 88 * seam; b = 178 * seam; }   // the pad over them
+          const hz = Math.min(0.5, dm / 3200);
+          B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = b + (232 - b) * hz;
+        }
       }
     }
   }
@@ -4536,7 +4607,7 @@ function drawShroom(w) {
   ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(ARENA.w / 2 - 7, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 - 2, ARENA.h / 2); ctx.moveTo(ARENA.w / 2 + 2, ARENA.h / 2); ctx.lineTo(ARENA.w / 2 + 7, ARENA.h / 2);
   ctx.moveTo(ARENA.w / 2, ARENA.h / 2 - 7); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 - 2); ctx.moveTo(ARENA.w / 2, ARENA.h / 2 + 2); ctx.lineTo(ARENA.w / 2, ARENA.h / 2 + 7); ctx.stroke();
-  if (!dv && fpTouchShown()) drawFpFireButton();                    // b324: on a phone
+  if (!dv && fpTouchShown()) { drawFpFireButton(); drawTrampJumpButton(); drawStick(moveStick, 'rgba(224,71,63,0.55)'); }   // b324: on a phone (b326: JUMP, and where your left thumb is)
   if (!dv) {                                                             // how to get up the tower, and off it
     const atLadder = !me.dive && Math.abs(me.x - tg.ladderX) < 14 && me.y > T.towerY && me.y < T.towerY + 30;
     const tip = atLadder ? 'face the ladder and hold W to climb' : me.dive === DIVE.CLIMB ? 'W: up   S: down' : me.dive === DIVE.BOARD ? 'walk off the end, or Shift to dive' : '';
@@ -5418,10 +5489,11 @@ function stepDive(w, p, inp, dt) {
   }
 }
 
-function lobbySolids(w) {
+function lobbySolids(w, dt) {
   if (w.started || !T.loungeFloor) return;
   const water = { x0: POOL.x0 + 6, y0: POOL.y0 + 6, x1: POOL.x1 - 6, y1: POOL.y1 - 6 };
   for (const p of w.players) {
+    if (p.tramp) { trampStep(w, p, dt || 1 / 60); continue; }   // b326: bouncing (the net, not the solids, keeps him in)
     if (!p.alive || p.dive || p.sit || p.bed) continue;
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
@@ -6845,6 +6917,7 @@ function stepBase(w, inputs, dt) {
       if (Math.hypot(inp.mx, inp.my) > 0.3 || inp.roll) getUp(p);
       else { inp = Object.assign({}, inp, { mx: 0, my: 0, shoot: false, roll: false }); const s = bedSpot(p.bed); p.x = s.x; p.y = s.y; p.vx = 0; p.vy = 0; }
     } else if (p.bed) p.bed = 0;
+    if (p.tramp && !w.started) { if (inp.roll) p.tjump = 1; inp = Object.assign({}, inp, { roll: false }); }   // b326: on the trampoline the roll button is a bigger bounce
     if (p.plate && !w.started) inp = Object.assign({}, inp, { shoot: false, roll: false });   // hands full of plate    // weapon bar: switch to anything he's actually holding
     if (inp.wsel && WEAPONS[inp.wsel] && inp.wsel !== p.weapon && hasWeapon(p, inp.wsel) && !p.dump && !p.spin) {
       p.weapon = inp.wsel; p.lobHeld = 0; p.aimOn = 0;
@@ -7835,7 +7908,7 @@ function stepBase(w, inputs, dt) {
 
   w.slot.y = ARENA.wall + 54 + T.slotDrop;      // so the slider moves it live
   if (!w.slotSecret?.room) w.slot.x = (!w.started && T.loungeFloor) ? T.loungeSlotX : ARENA.w * 0.5;
-  lobbySolids(w);
+  lobbySolids(w, dt);
   w.slot.flash = Math.max(0, w.slot.flash - dt);
 
   for (let i = w.floaters.length - 1; i >= 0; i--) {
@@ -8000,7 +8073,8 @@ function snapshot(w) {
                            p.lift ? [Math.round(p.lift.t * 100), p.lift.reps, Math.round(p.lift.rep * 100)] : 0,   // b291: the gym, so the guest sees it
                            p.leg ? [Math.round(p.leg.t * 100), p.leg.reps, Math.round(p.leg.rep * 100)] : 0,
                            p.plate ? 'SML'.indexOf(p.plate) + 1 : 0,
-                           p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0]),   // b309: taking a hit, so the guest sees it
+                           p.vape ? Math.max(1, Math.round(p.vape.t * 100)) : 0,   // b309: taking a hit, so the guest sees it
+                           p.tramp ? 1 : 0, Math.round(p.tv || 0)]),              // b326: on the trampoline, and how fast he's going up or down
     gy: [GYM.bar.L.join(''), GYM.bar.R.join(''), GYM.pegs.map(q => q.join('')), LEG.horn.L.join(''), LEG.horn.R.join(''),
          GYM.anim ? [GYM.anim.kind, GYM.anim.side, GYM.anim.size, Math.round(GYM.anim.t * 100), Math.round(GYM.anim.dur * 100), GYM.anim.pid] : 0],
     bj: bjPack(w.bj),
@@ -8097,11 +8171,12 @@ function worldFromSnapshot(s, age, bits) {
       rdx: (a[37] || 0) / 100, rdy: (a[38] === undefined ? 100 : a[38]) / 100,
       shots: a[39] || 0, rockets: a[40] || 0, buy: (a[41] || 0) / 100,
       tx: a[42] || 0, ty: a[43] || 0, aimOn: a[44] || 0,
-      dive: a[45] || 0, dz: a[46] || 0, sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0,
+      dive: a[45] || 0, dz: a[55] ? TRAMP.mat + Math.max(0, (a[46] || 0) - TRAMP.mat + (a[56] || 0) * age - TRAMP.g * age * age / 2) : (a[46] || 0), sit: a[47] || 0, bong: a[48] || 0, bed: a[49] || 0, beard: a[50] || 0,
       lift: a[51] ? { t: a[51][0] / 100 + age, reps: a[51][1], rep: a[51][2] / 100 } : null,   // b291: on the bench, the leg press, carrying a plate
       leg: a[52] ? { t: a[52][0] / 100 + age, reps: a[52][1], rep: a[52][2] / 100 } : null,
       plate: a[53] ? 'SML'[a[53] - 1] : null,
-      vape: a[54] ? { t: a[54] / 100 + age } : null
+      vape: a[54] ? { t: a[54] / 100 + age } : null,
+      tramp: a[55] || 0, tv: a[56] || 0
     })),
     bj: bjUnpack(s.bj),
     rockets: (s.rk || []).map(a => ({ sx: a[0], sy: a[1], tx: a[2], ty: a[3], t: a[4] / 1000 + age,
@@ -8162,7 +8237,7 @@ function camFollow(w) {                                  // once per frame, befo
   const looking = mirrorLook;                                               // at the mirror: the frame fills the screen
   const want = cal.on || (w.slotSecret && w.slotSecret.room) ? 1 : looking ? MIRROR_ZOOM : seated ? SIT_ZOOM : zoomWanted(w);
   CAM.z += (want - CAM.z) * Math.min(1, dt * (seated || looking ? 5 : 10)); if (Math.abs(want - CAM.z) < 0.003) CAM.z = want;
-  let ty = looking ? MIRROR.y - 38 : seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * 0.6 : ARENA.h / 2;
+  let ty = looking ? MIRROR.y - 38 : seated ? T.tableY - 12 : me ? me.y - 20 - (me.dz || 0) * (me.tramp ? 0.3 : 0.6) : ARENA.h / 2;
   let tx = looking ? MIRROR.x : seated ? T.tableX : me ? me.x : ARENA.w / 2;
   CAM.h = worldH(w); CAM.w = worldW(w);
   // the tall lobby, zoomed out: the whole lounge, or the bedroom below it; outside (b322) it follows you
@@ -8373,6 +8448,8 @@ canvas.addEventListener('pointerdown', e => {
     if (ab && Math.hypot(pt.x - ab.x, pt.y - ab.y) < ab.r + 6) { if (SHIRT.art) openShirtEditor(); else pickShirtArt(); e.preventDefault(); return; } }
   { const M = sitMenu(), mb = M && M.btns.find(b => pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h);   // the sit-down menu
     if (mb) { if (mb.a === 'bong') { if (net.role === 'client') SITREQ.id++; else toggleCarry(world); } else doBJ('call'); e.preventDefault(); return; } }
+  { const jb = e.pointerType !== 'mouse' && trampJumpButton();   // b326: JUMP on the trampoline
+    if (jb && Math.hypot(pt.x - jb.x, pt.y - jb.y) < jb.r + 8) { rollTap = true; setTimeout(() => { rollTap = false; }, 200); e.preventDefault(); return; } }
   const cb = carryButton();
   if (cb && Math.hypot(pt.x - cb.x, pt.y - cb.y) < cb.r + 8) { if (shroomTryEat() || arcadeTryOpen() || mirrorTryLook()) {} else if (net.role === 'client') SITREQ.id++; else toggleCarry(world); e.preventDefault(); return; }
   // the weapon bar: a tap picks, a drag rearranges
@@ -8526,12 +8603,14 @@ const HELP_PAD = [
   ['LB  /  Y,  d-pad ◀ ▶', 'Change weapon'], ['Menu', 'Start the run  (restart when it’s over)'],
   ['View', 'First person'], ['D-pad ▲', 'Zoom'], ['D-pad ▼', 'Show / hide this list'],
   ['At the card table', 'X deal,  Y hit,  B stand'], ['In a cabinet', 'B to leave'],
+  ['On the trampoline', 'B / RB / LT: bounce higher,  A: climb off'],
 ];
 const HELP_KEYS = [
   ['W A S D', 'Move'], ['Mouse', 'Aim  (first person: look)'], ['Click (hold)', 'Fire'],
   ['Shift', 'Dive roll'], ['E', 'Use: pick up, sit, eat, play, pull, throw'], ['1 – 6', 'Change weapon'],
   ['Enter', 'Start the run'], ['R', 'Restart'], ['V', 'First person'], ['Z', 'Zoom'], ['Tab', 'Show / hide this list'],
   ['At the card table', 'B deal,  H hit,  T stand'], ['P', 'Add a player 2 on this keyboard (arrows + space)'],
+  ['On the trampoline', 'Shift: bounce higher,  E: climb off'],
 ];
 function drawControlsHelp() {
   const pad = PAD.last > PAD.kb, now = performance.now();
@@ -9719,6 +9798,7 @@ function lobbyLabel(w, p) {
   if (!p || !p.alive || w.started || w.over || cal.on) return null;
   if (NPC_GOTH.carrier === p.id) return p.dive === DIVE.BOARD ? 'THROW!' : (p.dive ? null : 'PUT DOWN');
   if (p.dive) return null;
+  if (p.tramp) return 'CLIMB OFF';                       // b326
   const gn = gymNear(w, p); if (gn) return gn.label;
   if (p.sit) return !p.bong ? 'BONG' : p.vape ? null : 'HIT';
   if (p.bed) return 'GET UP';
@@ -9728,6 +9808,7 @@ function lobbyLabel(w, p) {
   if (mirrorNear(p)) return mirrorLook ? 'BACK' : 'LOOK';
   if (shroomNear(p) && shroomHere()) return 'EAT';
   if (chairNear(w, p)) return 'SIT';
+  if (trampNear(p)) return 'CLIMB ON';
   if (bedNear(w, p)) return 'LIE DOWN';
   if (NPC_GOTH.carrier < 0 && canCarry(w, p)) return 'PICK UP';
   return null;
@@ -9739,6 +9820,17 @@ function carryButton() {
   if (w.started && w.goth && !w.over && p.alive) label = w.goth.carrier === p.id ? 'PUT DOWN' : protCanCarry(w, p) ? 'PICK UP' : null;   // b294: Protect Gothica
   else label = lobbyLabel(w, p);
   return label ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48, r: 34, label } : null;
+}
+// b326: on the trampoline, on a phone: JUMP, just above the E button (the roll button does it otherwise)
+function trampJumpButton() { const me = localMe(); return me && me.tramp && touchSeen ? { x: ARENA.w - 62, y: ARENA.h - ARENA.wall - 70 - 48 - 80, r: 30 } : null; }
+function drawTrampJumpButton() {
+  const b = trampJumpButton(); if (!b) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(12,22,34,0.72)'; ctx.strokeStyle = '#8fd3ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#8fd3ff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 12px ui-sans-serif, system-ui, sans-serif';
+  ctx.fillText('JUMP', b.x, b.y);
+  ctx.restore();
 }
 function drawCarryButton() {
   const b = carryButton();
@@ -9758,6 +9850,8 @@ function lobbyAction(w, p) {
   if (w.started) return;
   if (NPC_GOTH.anim) return;                              // mid scoop or set-down
   const carrying = NPC_GOTH.carrier === p.id;
+  if (p.tramp) { trampOff(p); return; }                  // b326
+  if (!carrying && trampNear(p)) { trampOn(p); return; }
   if (gymAction(w, p)) return;
   if (!carrying && ropeNear(p) && ROPE.cool <= 0) { pullRope(w); return; }
   if (!carrying && wardNear(p)) { toggleWard(); return; }
@@ -10091,11 +10185,11 @@ function drawJared(w, p) {
   const elev = swim ? 0 : (p.dz || 0);
 
   // team ring so you can tell each other apart at a glance (not up the tower or in the pool)
-  if (!p.dive && !p.npc) {
+  if (!p.dive && !p.npc && !p.fpCut) {                  // (b326: not on a first-person cut-out of him up on the trampoline)
     ctx.strokeStyle = P_COLOURS[p.id];
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y + r * 0.85, r * 1.05, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, p.y + r * 0.85 - (p.tramp ? TRAMP.mat : 0), r * 1.05, r * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -10213,12 +10307,13 @@ function drawJared(w, p) {
   else pose = poseFor(p, Math.floor(p.odo / 26) % 2 === 1);
 
   // contact shadow — stays on the floor and shrinks as he leaves it
-  const lift = (pose && pose.lift ? pose.lift : 0) + elev;
+  const onMat = p.tramp ? TRAMP.mat : 0;                // (b326: on the trampoline the floor is its mat)
+  const lift = (pose && pose.lift ? pose.lift : 0) + elev - onMat;
   const sf = 1 - Math.min(0.45, lift / 22);
-  if (!swim) {
+  if (!swim && !p.fpCut) {
     ctx.fillStyle = 'rgba(0,0,0,' + (0.35 * sf).toFixed(2) + ')';
     ctx.beginPath();
-    ctx.ellipse(p.x, p.y + r * 0.85, r * 0.95 * sf, r * 0.4 * sf, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x, p.y + r * 0.85 - onMat, r * 0.95 * sf, r * 0.4 * sf, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -12049,6 +12144,7 @@ function renderBase(w, hudRight) {
   drawStick(moveStick, 'rgba(224,71,63,0.55)');
   drawStick(aimStick,  'rgba(246,209,122,0.55)');
   drawCarryButton();
+  drawTrampJumpButton();
   drawCardsButton();
   drawArtButton();
   drawSitMenu();
@@ -13168,6 +13264,7 @@ function startGame() {
   // nothing won in the lobby carries into the run — it's a warm-up, not a head start
   for (const p of world.players) { if (p.plate) { rackPlate(p.plate); p.plate = null; } p.lift = null; p.leg = null; }
   for (const p of world.players) {
+    if (p.tramp) { p.tramp = 0; p.tz = 0; p.tv = 0; if (!p.dive) p.dz = 0; }   // b326: off the trampoline
     if (inYard(p)) { p.x = BACK_DOOR.x; p.y = ARENA.h - ARENA.wall - T.radius - 6; p.vx = p.vy = 0; }   // b322: in from the yard
     p.coins = T.testCash;                // 0 in the real game; a slider for testing
     p.rockets = 0; p.dump = 0; p.buy = 0;
