@@ -841,7 +841,7 @@ func start_run(run_mode: String) -> void:
 		p.vy = 0.0
 		if p.y > AH + 40.0 or p.x > AW:
 			# in the yard (or the bedroom): back in the lounge at the back door
-			p.x = clampf(645.0, WALL + 14.0, AW - WALL - 14.0)
+			p.x = clampf(645.0 - 36.0 * p.id, WALL + 14.0, AW - WALL - 14.0)   # (side by side, not on top of each other)
 			p.y = AH - WALL - tv("radius", 14) - 6.0
 		p.x = clampf(p.x, WALL + tv("radius", 14), AW - WALL - tv("radius", 14))
 		p.y = clampf(p.y, WALL + tv("radius", 14), AH - WALL - tv("radius", 14))

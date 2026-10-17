@@ -52,6 +52,7 @@ var bytes_in := 0
 var bytes_out := 0
 var snaps_in := 0
 var last_snap_size := 0
+var pack_ms := 0.0
 
 var _remote_in := FT.Inp.new()   # host: the guest's latest input
 var _edge_use := false
@@ -564,6 +565,8 @@ func _process(dt: float) -> void:
 			_send_snap()
 		_check_beds()
 	else:
+		if _snap_pending != null and fight.has_meta("frozen"):
+			_apply_snap_now()          # (the Fight isn't stepping: the bonus room's cinematics)
 		_in_t += dt
 		if _in_t >= 1.0 / INPUT_HZ and _out_in != null:
 			_in_t = 0.0
@@ -694,7 +697,9 @@ func _collect_fx() -> void:
 func _send_snap() -> void:
 	if fight == null:
 		return
+	var t0 := Time.get_ticks_usec()
 	var s := {"fight": NetCodec.pack_sim(fight.sim), "fx": _fx_out, "mode": fight.mode}
+	pack_ms = (Time.get_ticks_usec() - t0) / 1000.0
 	_fx_out = {"sounds": [], "events": [], "banners": []}
 	var gc := get_node_or_null("/root/GameClock")
 	if gc:
@@ -934,8 +939,8 @@ func _print_state(dt: float) -> void:
 			if int(p.s) >= 0:
 				planted += 1
 		farm = "planted=%d" % planted
-	print("NET role=%s live=%s code=%s status=\"%s\" me=%s them=%s bed=%s/%s ping=%d snap=%dB in=%d out=%d %s %s %s" % [
-		role, live, code, status_text, me_s, them, in_bed, remote_av.get("bed", false), ping_ms, last_snap_size,
+	print("NET role=%s live=%s code=%s status=\"%s\" me=%s them=%s bed=%s/%s ping=%d snap=%dB pack=%.1fms in=%d out=%d %s %s %s" % [
+		role, live, code, status_text, me_s, them, in_bed, remote_av.get("bed", false), ping_ms, last_snap_size, pack_ms,
 		bytes_in, bytes_out, fs, clock, farm])
 
 static func _args() -> Dictionary:
