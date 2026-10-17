@@ -109,10 +109,10 @@ static func _ensure_clock(tree: SceneTree) -> Node:
 func _add_lamps() -> void:
 	var L := [
 		# x, y, z, colour, energy, reach, bulb, which ("both", "high", "low")
-		[200, 150, 138, LAMP, 3.2, 330, true, "high"],
-		[200, 390, 138, LAMP, 3.2, 330, true, "high"],
-		[470, 300, 138, LAMP, 3.2, 340, true, "high"],
-		[740, 380, 138, LAMP, 2.8, 300, true, "high"],
+		[200, 150, 138, LAMP, 2.4, 330, true, "high"],
+		[200, 390, 138, LAMP, 2.4, 330, true, "high"],
+		[470, 300, 138, LAMP, 2.4, 340, true, "high"],
+		[740, 380, 138, LAMP, 2.1, 300, true, "high"],
 		[720, 165, 30, Color(0.35, 0.85, 1.0), 1.6, 220, false, "high"],
 		[430, 260, 140, LAMP, 4.0, 470, true, "low"],
 		[240, 700, 138, LAMP, 2.2, 330, true, "both"],

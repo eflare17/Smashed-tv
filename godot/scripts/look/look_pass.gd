@@ -661,7 +661,7 @@ func _update_low() -> void:
 	var lk: Dictionary = day_night.look
 	var amb: Color = (lk.amb as Color).srgb_to_linear()
 	var li: Color = (lk.light as Color).srgb_to_linear()
-	var t: Color = amb * day_night.ambient_energy + li * (lk.le * day_night.light_scale * 0.8)
+	var t: Color = amb * (day_night.ambient_energy * 1.15) + li * (lk.le * day_night.light_scale * 0.8)
 	RenderingServer.global_shader_parameter_set("look_tint", Vector3(t.r, t.g, t.b))
 	RenderingServer.global_shader_parameter_set("look_lamp_level", day_night.lamp_level)
 
@@ -683,7 +683,7 @@ static func register_globals() -> void:
 func _set_low_lamps() -> void:
 	var i := 0
 	var col := Color(1.0, 0.8, 0.6).srgb_to_linear()
-	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 0.85)
+	RenderingServer.global_shader_parameter_set("look_lamp_color", Vector3(col.r, col.g, col.b) * 1.15)
 	if day_night:
 		for l in day_night.lamps:
 			if i >= 4 or l.get("which", "both") == "high":
