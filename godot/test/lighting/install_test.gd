@@ -83,7 +83,7 @@ func _ready() -> void:
 	clock.load_state({"day": 1, "hour": 22.0})
 	main.player.place(380, 700)
 	await frames(5)
-	check(main.player.focus_label == "SLEEP", "beside the bed E says SLEEP (got '%s')" % main.player.focus_label)
+	check(main.player.focus_label in ["SLEEP", "LIE DOWN"], "beside the bed E offers it (got '%s')" % main.player.focus_label)
 	var days := []
 	clock.day_started.connect(func(d): days.append(d))
 	await li.bed.sleep(main.player)

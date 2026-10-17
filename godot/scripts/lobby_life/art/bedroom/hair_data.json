@@ -1,0 +1,1198 @@
+{
+ "BEARDS": [
+  {
+   "key": "classic",
+   "label": "THE CLASSIC",
+   "face": false
+  },
+  {
+   "key": "braids",
+   "label": "BRAIDS",
+   "face": false
+  },
+  {
+   "key": "mullet",
+   "label": "MULLET",
+   "face": false
+  },
+  {
+   "key": "slick",
+   "label": "SLICKED BACK",
+   "face": false
+  },
+  {
+   "key": "tyson",
+   "label": "TYSON",
+   "face": true
+  },
+  {
+   "key": "mohawk",
+   "label": "MOHAWK",
+   "face": true
+  },
+  {
+   "key": "mohawk_blue",
+   "label": "MOHAWK  BLUE",
+   "face": false
+  },
+  {
+   "key": "mohawk_purple",
+   "label": "MOHAWK  PURPLE",
+   "face": true
+  },
+  {
+   "key": "mohawk_green",
+   "label": "MOHAWK  GREEN",
+   "face": false
+  }
+ ],
+ "HAIR_ART": {
+  "braids": {
+   "front": {
+    "at": [
+     30,
+     11
+    ],
+    "file": "hair/braids_front.png",
+    "size": [
+     37,
+     42
+    ]
+   },
+   "diag": {
+    "at": [
+     36,
+     11
+    ],
+    "file": "hair/braids_diag.png",
+    "size": [
+     35,
+     43
+    ]
+   },
+   "side": {
+    "at": [
+     46,
+     10
+    ],
+    "file": "hair/braids_side.png",
+    "size": [
+     33,
+     41
+    ]
+   },
+   "back": {
+    "at": [
+     30,
+     9
+    ],
+    "file": "hair/braids_back.png",
+    "size": [
+     31,
+     35
+    ]
+   },
+   "bdiag": {
+    "at": [
+     34,
+     9
+    ],
+    "file": "hair/braids_bdiag.png",
+    "size": [
+     35,
+     42
+    ]
+   }
+  },
+  "mullet": {
+   "front": {
+    "at": [
+     30,
+     10
+    ],
+    "file": "hair/mullet_front.png",
+    "size": [
+     38,
+     51
+    ]
+   },
+   "diag": {
+    "at": [
+     37,
+     10
+    ],
+    "file": "hair/mullet_diag.png",
+    "size": [
+     35,
+     51
+    ]
+   },
+   "side": {
+    "at": [
+     45,
+     10
+    ],
+    "file": "hair/mullet_side.png",
+    "size": [
+     36,
+     51
+    ]
+   },
+   "bdiag": {
+    "at": [
+     33,
+     10
+    ],
+    "file": "hair/mullet_bdiag.png",
+    "size": [
+     36,
+     43
+    ]
+   },
+   "back": {
+    "at": [
+     31,
+     9
+    ],
+    "file": "hair/mullet_back.png",
+    "size": [
+     34,
+     49
+    ]
+   }
+  },
+  "slick": {
+   "front": {
+    "at": [
+     30,
+     9
+    ],
+    "file": "hair/slick_front.png",
+    "size": [
+     38,
+     51
+    ]
+   },
+   "diag": {
+    "at": [
+     37,
+     10
+    ],
+    "file": "hair/slick_diag.png",
+    "size": [
+     35,
+     50
+    ]
+   },
+   "side": {
+    "at": [
+     45,
+     9
+    ],
+    "file": "hair/slick_side.png",
+    "size": [
+     34,
+     45
+    ]
+   },
+   "bdiag": {
+    "at": [
+     33,
+     10
+    ],
+    "file": "hair/slick_bdiag.png",
+    "size": [
+     36,
+     37
+    ]
+   },
+   "back": {
+    "at": [
+     30,
+     9
+    ],
+    "file": "hair/slick_back.png",
+    "size": [
+     35,
+     36
+    ]
+   }
+  },
+  "tyson": {
+   "front": {
+    "at": [
+     27,
+     11
+    ],
+    "file": "hair/tyson_front.png",
+    "size": [
+     43,
+     50
+    ]
+   },
+   "diag": {
+    "at": [
+     29,
+     14
+    ],
+    "file": "hair/tyson_diag.png",
+    "size": [
+     50,
+     49
+    ]
+   },
+   "side": {
+    "at": [
+     37,
+     9
+    ],
+    "file": "hair/tyson_side.png",
+    "size": [
+     47,
+     45
+    ]
+   },
+   "bdiag": {
+    "at": [
+     27,
+     8
+    ],
+    "file": "hair/tyson_bdiag.png",
+    "size": [
+     47,
+     38
+    ]
+   },
+   "back": {
+    "at": [
+     26,
+     8
+    ],
+    "file": "hair/tyson_back.png",
+    "size": [
+     42,
+     38
+    ]
+   }
+  },
+  "mohawk": {
+   "front": {
+    "at": [
+     20,
+     0
+    ],
+    "file": "hair/mohawk_front.png",
+    "size": [
+     57,
+     41
+    ]
+   },
+   "diag": {
+    "at": [
+     25,
+     0
+    ],
+    "file": "hair/mohawk_diag.png",
+    "size": [
+     57,
+     55
+    ]
+   },
+   "side": {
+    "at": [
+     32,
+     0
+    ],
+    "file": "hair/mohawk_side.png",
+    "size": [
+     57,
+     53
+    ]
+   },
+   "bdiag": {
+    "at": [
+     24,
+     0
+    ],
+    "file": "hair/mohawk_bdiag.png",
+    "size": [
+     54,
+     49
+    ]
+   },
+   "back": {
+    "at": [
+     21,
+     0
+    ],
+    "file": "hair/mohawk_back.png",
+    "size": [
+     52,
+     48
+    ]
+   }
+  },
+  "mohawk_blue": {
+   "front": {
+    "at": [
+     20,
+     0
+    ],
+    "file": "hair/mohawk_blue_front.png",
+    "size": [
+     57,
+     41
+    ]
+   },
+   "diag": {
+    "at": [
+     25,
+     0
+    ],
+    "file": "hair/mohawk_blue_diag.png",
+    "size": [
+     57,
+     55
+    ]
+   },
+   "side": {
+    "at": [
+     32,
+     0
+    ],
+    "file": "hair/mohawk_blue_side.png",
+    "size": [
+     57,
+     53
+    ]
+   },
+   "bdiag": {
+    "at": [
+     24,
+     0
+    ],
+    "file": "hair/mohawk_blue_bdiag.png",
+    "size": [
+     54,
+     49
+    ]
+   },
+   "back": {
+    "at": [
+     21,
+     0
+    ],
+    "file": "hair/mohawk_blue_back.png",
+    "size": [
+     52,
+     48
+    ]
+   }
+  },
+  "mohawk_purple": {
+   "front": {
+    "at": [
+     20,
+     0
+    ],
+    "file": "hair/mohawk_purple_front.png",
+    "size": [
+     57,
+     41
+    ]
+   },
+   "diag": {
+    "at": [
+     25,
+     0
+    ],
+    "file": "hair/mohawk_purple_diag.png",
+    "size": [
+     57,
+     55
+    ]
+   },
+   "side": {
+    "at": [
+     32,
+     0
+    ],
+    "file": "hair/mohawk_purple_side.png",
+    "size": [
+     57,
+     53
+    ]
+   },
+   "bdiag": {
+    "at": [
+     24,
+     0
+    ],
+    "file": "hair/mohawk_purple_bdiag.png",
+    "size": [
+     54,
+     49
+    ]
+   },
+   "back": {
+    "at": [
+     21,
+     0
+    ],
+    "file": "hair/mohawk_purple_back.png",
+    "size": [
+     52,
+     48
+    ]
+   }
+  },
+  "mohawk_green": {
+   "front": {
+    "at": [
+     20,
+     0
+    ],
+    "file": "hair/mohawk_green_front.png",
+    "size": [
+     57,
+     41
+    ]
+   },
+   "diag": {
+    "at": [
+     25,
+     0
+    ],
+    "file": "hair/mohawk_green_diag.png",
+    "size": [
+     57,
+     55
+    ]
+   },
+   "side": {
+    "at": [
+     32,
+     0
+    ],
+    "file": "hair/mohawk_green_side.png",
+    "size": [
+     57,
+     53
+    ]
+   },
+   "bdiag": {
+    "at": [
+     24,
+     0
+    ],
+    "file": "hair/mohawk_green_bdiag.png",
+    "size": [
+     54,
+     49
+    ]
+   },
+   "back": {
+    "at": [
+     21,
+     0
+    ],
+    "file": "hair/mohawk_green_back.png",
+    "size": [
+     52,
+     48
+    ]
+   }
+  }
+ },
+ "HAIR_HEAD": {
+  "front": [
+   48.5,
+   9,
+   53,
+   19
+  ],
+  "diag": [
+   53.5,
+   9,
+   53,
+   19
+  ],
+  "side": [
+   60.5,
+   9,
+   51,
+   19.5
+  ],
+  "back": [
+   47,
+   9,
+   46,
+   17
+  ],
+  "bdiag": [
+   51,
+   9,
+   47,
+   18
+  ]
+ },
+ "HAIR_HEAD_fields": "centre x, top, bottom, half width (run frame 0 px)",
+ "HAIR_FIT": {
+  "juicy.front_run.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.front_run.1": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.front_run.2": [
+   0.964,
+   0.1,
+   0.3
+  ],
+  "juicy.front_run.3": [
+   1.0,
+   2.0,
+   -1.0
+  ],
+  "juicy.front_run.4": [
+   0.95,
+   1.5,
+   0.4
+  ],
+  "juicy.front_run.5": [
+   0.964,
+   -0.9,
+   0.3
+  ],
+  "juicy.front_run.6": [
+   0.975,
+   1.7,
+   0.2
+  ],
+  "juicy.diag_run.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.diag_run.1": [
+   1.0,
+   -2.0,
+   0.0
+  ],
+  "juicy.diag_run.2": [
+   1.025,
+   -1.9,
+   -0.2
+  ],
+  "juicy.diag_run.3": [
+   1.0,
+   2.0,
+   0.0
+  ],
+  "juicy.diag_run.4": [
+   1.0,
+   -1.0,
+   0.0
+  ],
+  "juicy.diag_run.5": [
+   1.0,
+   -1.0,
+   0.0
+  ],
+  "juicy.diag_run.6": [
+   1.1,
+   -2.5,
+   -0.9
+  ],
+  "juicy.side_run.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.side_run.1": [
+   0.974,
+   -9.9,
+   0.2
+  ],
+  "juicy.side_run.2": [
+   0.974,
+   -1.9,
+   0.2
+  ],
+  "juicy.side_run.3": [
+   1.0,
+   9.0,
+   0.0
+  ],
+  "juicy.side_run.4": [
+   0.974,
+   -6.9,
+   0.2
+  ],
+  "juicy.side_run.5": [
+   0.974,
+   -8.9,
+   0.2
+  ],
+  "juicy.side_run.6": [
+   1.0,
+   2.0,
+   0.0
+  ],
+  "juicy.bdiag_run.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.bdiag_run.1": [
+   1.0,
+   -5.0,
+   0.0
+  ],
+  "juicy.bdiag_run.2": [
+   1.0,
+   -2.0,
+   0.0
+  ],
+  "juicy.bdiag_run.3": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.bdiag_run.4": [
+   1.0,
+   -3.0,
+   0.0
+  ],
+  "juicy.bdiag_run.5": [
+   1.0,
+   -3.0,
+   0.0
+  ],
+  "juicy.bdiag_run.6": [
+   1.027,
+   -1.9,
+   -0.2
+  ],
+  "juicy.back_run.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.back_run.1": [
+   1.028,
+   -1.8,
+   -0.3
+  ],
+  "juicy.back_run.2": [
+   1.0,
+   -1.0,
+   0.0
+  ],
+  "juicy.back_run.3": [
+   1.0,
+   -1.0,
+   0.0
+  ],
+  "juicy.back_run.4": [
+   1.0,
+   -2.0,
+   0.0
+  ],
+  "juicy.back_run.5": [
+   1.028,
+   -3.8,
+   -0.3
+  ],
+  "juicy.back_run.6": [
+   1.028,
+   -0.8,
+   -0.3
+  ],
+  "juicy.front_a.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.front_b.0": [
+   1.0,
+   2.0,
+   -1.0
+  ],
+  "juicy.diag_a.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.diag_b.0": [
+   1.0,
+   2.0,
+   0.0
+  ],
+  "juicy.side_a.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.side_b.0": [
+   1.0,
+   9.0,
+   0.0
+  ],
+  "juicy.bdiag_a.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.bdiag_b.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.back_a.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy.back_b.0": [
+   1.0,
+   -1.0,
+   0.0
+  ],
+  "juicy.back.0": [
+   1.0,
+   0.0,
+   0.0
+  ],
+  "juicy_shotgun.front_a.0": [
+   0.468,
+   1.9,
+   10.8
+  ],
+  "juicy_shotgun.front_b.0": [
+   0.468,
+   0.9,
+   10.8
+  ],
+  "juicy_shotgun.diag_a.0": [
+   0.532,
+   -2.6,
+   12.2
+  ],
+  "juicy_shotgun.diag_b.0": [
+   0.532,
+   -1.6,
+   12.2
+  ],
+  "juicy_shotgun.side_a.0": [
+   0.5,
+   -3.0,
+   15.5
+  ],
+  "juicy_shotgun.side_b.0": [
+   0.526,
+   -6.1,
+   15.3
+  ],
+  "juicy_shotgun.bdiag_a.0": [
+   0.298,
+   4.2,
+   24.3
+  ],
+  "juicy_shotgun.bdiag_b.0": [
+   0.298,
+   4.2,
+   24.3
+  ],
+  "juicy_shotgun.back.0": [
+   0.38,
+   4.6,
+   15.6
+  ],
+  "juicy_shotgun.back_b.0": [
+   0.409,
+   0.7,
+   14.3
+  ],
+  "juicy_spud.back_run.0": [
+   0.93,
+   5.1,
+   16.6
+  ],
+  "juicy_spud.back_run.1": [
+   0.915,
+   6.5,
+   16.8
+  ],
+  "juicy_spud.back_run.2": [
+   0.915,
+   6.5,
+   16.8
+  ],
+  "juicy_spud.back_run.3": [
+   0.902,
+   5.9,
+   17.9
+  ],
+  "juicy_spud.back_run.4": [
+   0.915,
+   6.5,
+   16.8
+  ],
+  "juicy_spud.back_run.5": [
+   0.887,
+   8.4,
+   18.0
+  ],
+  "juicy_spud.back_run.6": [
+   0.902,
+   6.9,
+   17.9
+  ],
+  "juicy_spud.bdiag_run.0": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.1": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.2": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.3": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.4": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.5": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.bdiag_run.6": [
+   1.0,
+   0.0,
+   2.0
+  ],
+  "juicy_spud.diag_run.0": [
+   0.864,
+   20.8,
+   -1.8
+  ],
+  "juicy_spud.diag_run.1": [
+   0.864,
+   21.8,
+   -2.8
+  ],
+  "juicy_spud.diag_run.2": [
+   0.864,
+   21.8,
+   -2.8
+  ],
+  "juicy_spud.diag_run.3": [
+   0.889,
+   19.9,
+   -3.0
+  ],
+  "juicy_spud.diag_run.4": [
+   0.889,
+   19.9,
+   -3.0
+  ],
+  "juicy_spud.diag_run.5": [
+   0.889,
+   20.9,
+   -3.0
+  ],
+  "juicy_spud.diag_run.6": [
+   0.889,
+   19.9,
+   -3.0
+  ],
+  "juicy_spud.front_run.0": [
+   0.975,
+   -1.3,
+   2.2
+  ],
+  "juicy_spud.front_run.1": [
+   0.95,
+   0.5,
+   2.4
+  ],
+  "juicy_spud.front_run.2": [
+   0.975,
+   -1.3,
+   2.2
+  ],
+  "juicy_spud.front_run.3": [
+   0.95,
+   0.5,
+   2.4
+  ],
+  "juicy_spud.front_run.4": [
+   0.975,
+   -1.3,
+   2.2
+  ],
+  "juicy_spud.front_run.5": [
+   0.964,
+   -0.9,
+   2.3
+  ],
+  "juicy_spud.front_run.6": [
+   0.975,
+   -1.3,
+   2.2
+  ],
+  "juicy_spud.side_run.0": [
+   1.026,
+   -4.1,
+   -2.2
+  ],
+  "juicy_spud.side_run.1": [
+   1.026,
+   -3.1,
+   -2.2
+  ],
+  "juicy_spud.side_run.2": [
+   1.026,
+   -4.1,
+   -2.2
+  ],
+  "juicy_spud.side_run.3": [
+   1.026,
+   -3.1,
+   -1.2
+  ],
+  "juicy_spud.side_run.4": [
+   1.026,
+   -3.1,
+   -1.2
+  ],
+  "juicy_spud.side_run.5": [
+   1.026,
+   -4.1,
+   -1.2
+  ],
+  "juicy_spud.side_run.6": [
+   1.026,
+   -4.1,
+   -2.2
+  ],
+  "juicy_spud.front_a.0": [
+   0.975,
+   -7.3,
+   0.2
+  ],
+  "juicy_spud.front_b.0": [
+   0.975,
+   -7.3,
+   0.2
+  ],
+  "juicy_spud.diag_a.0": [
+   1.025,
+   6.1,
+   -0.2
+  ],
+  "juicy_spud.diag_b.0": [
+   1.025,
+   13.1,
+   -0.2
+  ],
+  "juicy_spud.side_a.0": [
+   1.089,
+   -7.8,
+   -0.8
+  ],
+  "juicy_spud.side_b.0": [
+   1.038,
+   -12.6,
+   0.7
+  ],
+  "juicy_spud.bdiag_a.0": [
+   1.0,
+   -8.0,
+   1.0
+  ],
+  "juicy_spud.bdiag_b.0": [
+   1.027,
+   -7.9,
+   0.8
+  ],
+  "juicy_spud.back.0": [
+   0.944,
+   -7.3,
+   19.5
+  ],
+  "juicy_spud.reload.0": [
+   0.889,
+   -1.7,
+   1.0
+  ],
+  "juicy_spud.reload.1": [
+   0.864,
+   -1.9,
+   2.2
+  ],
+  "juicy_spud.reload.2": [
+   0.914,
+   -0.4,
+   2.8
+  ],
+  "juicy_spud.reload.4": [
+   0.889,
+   -2.7,
+   6.0
+  ],
+  "juicy_spud.reload.5": [
+   0.864,
+   -6.9,
+   5.2
+  ],
+  "juicy_spud.pickup.0": [
+   0.839,
+   10.8,
+   18.4
+  ],
+  "juicy_spud.pickup.2": [
+   0.839,
+   7.8,
+   20.4
+  ],
+  "juicy_spud.pickup.3": [
+   0.79,
+   7.3,
+   1.9
+  ],
+  "juicy_spud.reload_side.0": [
+   0.897,
+   -6.7,
+   4.9
+  ],
+  "juicy_spud.reload_side.1": [
+   0.897,
+   -16.7,
+   4.9
+  ],
+  "juicy_spud.reload_side.2": [
+   0.897,
+   -10.7,
+   4.9
+  ],
+  "juicy_spud.reload_side.4": [
+   0.923,
+   -23.8,
+   4.7
+  ],
+  "juicy_spud.throw_side.0": [
+   1.026,
+   -15.1,
+   1.8
+  ],
+  "juicy_spud.throw_side.1": [
+   1.026,
+   6.9,
+   1.8
+  ],
+  "juicy_spud.throw_side.3": [
+   0.923,
+   13.2,
+   9.7
+  ],
+  "juicy_spud.throw_side.4": [
+   0.871,
+   -2.6,
+   6.2
+  ],
+  "juicy_spud.throw_front.0": [
+   0.975,
+   0.7,
+   -5.8
+  ],
+  "juicy_spud.throw_front.1": [
+   1.025,
+   9.3,
+   -5.2
+  ],
+  "juicy_spud.throw_front.2": [
+   1.025,
+   4.3,
+   -5.2
+  ],
+  "juicy_spud.throw_front.3": [
+   1.025,
+   4.3,
+   -5.2
+  ],
+  "juicy_spud.throw_front.4": [
+   1.025,
+   4.3,
+   -5.2
+  ],
+  "juicy_launcher.front_a.0": [
+   0.692,
+   11.2,
+   44.8
+  ],
+  "juicy_launcher.front_b.0": [
+   0.654,
+   -3.6,
+   45.1
+  ],
+  "juicy_launcher.diag_a.0": [
+   0.692,
+   19.8,
+   45.8
+  ],
+  "juicy_launcher.diag_b.0": [
+   0.654,
+   20.1,
+   50.1
+  ],
+  "juicy_launcher.side_a.0": [
+   0.744,
+   13.8,
+   43.3
+  ],
+  "juicy_launcher.side_b.0": [
+   0.692,
+   12.9,
+   44.8
+  ],
+  "juicy_launcher.bdiag_a.0": [
+   0.689,
+   7.3,
+   46.8
+  ],
+  "juicy_launcher.bdiag_b.0": [
+   0.784,
+   2.1,
+   42.9
+  ],
+  "juicy_launcher.back.0": [
+   0.817,
+   -9.5,
+   30.6
+  ],
+  "juicy_launcher.back_b.0": [
+   0.733,
+   -2.0,
+   36.4
+  ]
+ },
+ "HAIR_FIT_fields": "\"<charId>.<key>.<frameIndex>\": [s, ox, oy]: head in frame = offset + s * run frame 0"
+}

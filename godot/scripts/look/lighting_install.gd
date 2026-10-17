@@ -135,7 +135,7 @@ func _on_node_added(n: Node) -> void:
 	for s in n.get_signal_list():
 		if s.name == "sleep_requested":
 			argc = s.args.size()
-	n.connect("sleep_requested", (func(): bed.sleep(main.get("player"))).unbind(argc))
+	n.connect("sleep_requested", (func(): bed.sleep(null)).unbind(argc))   # (the bed holds the player itself)
 	bed.reach = 0.0
 	bed.remove_from_group("interactable")
 	print("Lighting: the bed's sleep_requested hooked up")

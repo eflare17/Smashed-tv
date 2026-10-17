@@ -253,7 +253,7 @@ func setup(main_: Node, dn: DayNight) -> void:
 	set_quality(quality)
 
 ## Parts of the game whose meshes are lit, also when they're made later (the farm builds its beds as it goes).
-const LIT_PARTS := ["World", "Trampoline", "Farm"]
+const LIT_PARTS := ["World", "Trampoline", "Farm", "LobbyLife"]
 
 func _on_node_added(n: Node) -> void:
 	if n is CharSprite:
@@ -284,6 +284,8 @@ func light_mesh(mi: MeshInstance3D) -> void:
 	if _lit_nodes.has(mi.get_instance_id()):
 		return
 	_lit_nodes[mi.get_instance_id()] = true
+	if mi.name == "PoolWater" and ResourceLoader.exists("res://scripts/lobby_life/pool_fx.gd"):
+		return                           # (the Lobby session's pool takes its water over: see _world_extras)
 	if mi.material_override is StandardMaterial3D:
 		var lm := lit_material(mi.material_override)
 		if lm:
@@ -306,8 +308,9 @@ var _mat_cache: Dictionary = {}
 
 ## The lit version of an unshaded StandardMaterial3D (null to leave it: already lit, or added blending).
 func lit_material(m: StandardMaterial3D) -> ShaderMaterial:
-	if m.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED or m.blend_mode != BaseMaterial3D.BLEND_MODE_MIX:
-		return null
+	if m.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED or m.blend_mode != BaseMaterial3D.BLEND_MODE_MIX \
+			or m.billboard_mode != BaseMaterial3D.BILLBOARD_DISABLED or m.use_point_size:
+		return null                      # (blended, billboards and points keep their own way of drawing)
 	if _mat_cache.has(m):
 		return _mat_cache[m]
 	var mode := "opaque"
@@ -395,8 +398,9 @@ func _world_extras(world: Node) -> void:
 					if _full_caster:
 						world.add_child(_full_caster)
 	# the water
+	# (the Lobby session's pool draws the HTML game's own wobbling water there: then it's left to that)
 	var pw = world.get("pool_water")
-	if pw is MeshInstance3D:
+	if pw is MeshInstance3D and not ResourceLoader.exists("res://scripts/lobby_life/pool_fx.gd"):
 		var old = pw.material_override
 		_water = ShaderMaterial.new()
 		var sh := Shader.new()

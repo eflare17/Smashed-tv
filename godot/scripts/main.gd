@@ -58,9 +58,10 @@ func _ready() -> void:
 		if q is String and q.find("state") >= 0:
 			print_state = true
 	LightingInstall.install(self)       # the day and night cycle and the look (before the farm: its clock)
-	Arcade.install(self)
+	Arcade.install(self).add_to_group("lobby_only")
 	FarmInstall.install(self)
 	FightInstall.install(self)
+	LobbyLife.install(self).add_to_group("lobby_only")
 	print("Smashed TV (Godot) ", hud.build_text, ": ready")
 
 func _on_mode(m: int) -> void:
