@@ -1,5 +1,40 @@
 # Arcade (milestone 5 part): integration note
 
+## Handoff
+
+**State: done and pushed** (`claude/godot-arcade`, last commit "Arcade: input actions (added in code), integration
+note"). Nothing is half-done; there's no uncommitted work. Everything below this section is the full note.
+
+- **Done and working** (tested headless, 42 checks, and in the real web export with screenshots): both cabinets
+  with E / PLAY in both views and live little screens; the full-screen overlay; Snake, Bricks and Sand Miner with
+  keys, pad and touch controls; high scores shared with the HTML game; the Mega Drive / SNES menu with the
+  IndexedDB library, console picker, add files / folder / zip, and EmulatorJS over the game (loaded from the local
+  `emu/`); input actions added in code.
+- **Next steps, in order** (none block merging):
+  1. Main session: add `Arcade.install(self)` at the end of `main.gd`'s `_ready()`; fighting session: call
+     `Arcade.close_all()` when a run starts.
+  2. Try a real Mega Drive / SNES ROM in the web build (only a dummy file was tested here).
+  3. Milestone 4: wire the friend hooks (see "Hooks for other sessions": `friend_send`, `on_friend_message`,
+     `friend_gone`, and the two PeerJS lines `SmashedMD.streamTo` / `SmashedMD.answerCall`).
+  4. Google Drive: fill `SmashedMD.driveConnect` once the owner gives the OAuth client ID (`ArcadeMd.DRIVE_CLIENT_ID`).
+  5. Measure Sand Miner on a real phone.
+- **Gotchas found:**
+  - Godot's default font has no ✕ ♥ ◀ ▶: they are drawn as shapes (`ArcadeGame.cross` / `heart`, triangles).
+  - A file picker opened from GDScript comes a frame after the click; browsers want it inside the click. The page
+    catches the click on the Add buttons itself (`setPickRects` in `md_bridge_js.gd`). In Playwright, register the
+    `filechooser` listener and wait ~0.5 s before clicking, or the first chooser is missed (a harness race).
+  - In the test VM the web build runs at a few frames a second and dt is capped at 0.05, so game time runs slow
+    there; a quick swipe can begin and end in one frame (handled: swipes are latched).
+  - `--check-only` reports "Identifier not found: GameData" (autoloads aren't loaded in that mode): harmless; run
+    the real test instead.
+  - The JS lives in a GDScript raw string (`r"""..."""`): keep backslashes out or mind them.
+  - The emulator base path probes give 404s in the console before finding `emu/data/`: expected.
+- **How to test:** copy `godot/` to a scratch folder with `scenes/arcade/arcade_test.tscn` as the main scene, then
+  `godot --headless --path <copy> --fixed-fps 60 -- --logic` (prints `ARCADE TEST ok/FAIL`, exit 1 on a fail).
+  For the web, export, serve the folder above the copy with a symlink to the repo's `emu/` next to it, and open
+  `.../build/web/index.html?open=miner&play` (also `open=bricks|snake|bricksgame`, `&fp`, `&at[=y]`, `&touch`,
+  `&astate`), screenshot with `godot/tools/gd_shot.mjs`.
+
 Branch `claude/godot-arcade`. Files: `scripts/arcade/`, `scenes/arcade/arcade_test.tscn`, `test/arcade/arcade_test.gd`,
 this note. Nothing else touched.
 
