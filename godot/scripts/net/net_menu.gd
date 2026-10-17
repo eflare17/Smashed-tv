@@ -245,6 +245,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _open and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("release_mouse")):
 		close()
 		get_viewport().set_input_as_handled()
+		return
+	if _open and not (event is InputEventMouseMotion):
+		get_viewport().set_input_as_handled()      # the game behind the menu doesn't get keys, buttons or clicks
 
 func _input(event: InputEvent) -> void:
 	# a pad's B closes the menu (ui_cancel is Esc and the pad's B in Godot's defaults)
