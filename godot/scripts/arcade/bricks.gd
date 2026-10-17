@@ -114,10 +114,13 @@ func draw(ci: CanvasItem, s: Rect2) -> void:
 			ci.draw_rect(Rect2(o.x + b.x + 4, o.y + b.y + 6, 46, 3), Color(0, 0, 0, 0.35))
 	ci.draw_rect(Rect2(o.x + px - 36, o.y + 294, 72, 8), Color("#f6d17a"))
 	ci.draw_rect(Rect2(o.x + bx - 4, o.y + by - 4, 8, 8), Color.WHITE)
-	var txt := "♥".repeat(maxi(0, lives)) + "  LV " + str(level)
+	var txt := "LV " + str(level)
 	var f := font()
 	var w := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-	ci.draw_string(f, Vector2(o.x + s.size.x - 8 - w, o.y + s.size.y - 4), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ff8ad8"))
+	var pink := Color("#ff8ad8")
+	ci.draw_string(f, Vector2(o.x + s.size.x - 8 - w, o.y + s.size.y - 4), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, pink)
+	for i in maxi(0, lives):
+		heart(ci, Vector2(o.x + s.size.x - 8 - w - 14 - i * 13, o.y + s.size.y - 9), 4.5, pink)
 
 static func mini(ci: CanvasItem, r: Rect2, t: float) -> void:
 	ci.draw_rect(r, Color("#16091a"))

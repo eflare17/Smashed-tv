@@ -64,8 +64,17 @@ func _arg(name: String):
 			return a.substr(name.length() + 3)
 	return null
 
+var _state_t := 0.0
+
 func _process(delta: float) -> void:
 	_t += delta
+	_state_t += delta
+	if _arg("astate") != null and _state_t > 0.5:
+		_state_t = 0.0
+		var g := arcade.overlay.game
+		print("ASTATE open=%s md=%s game=%s live=%s over=%s score=%d device=%s label=%s ctl=%s drags=%d next=%s" % [arcade.overlay.is_open(), arcade.md.is_open(),
+			arcade.overlay.game_id if g else "", g.live if g else false, g.over if g else false, g.score if g else 0,
+			arcade.overlay.device, main.player.focus_label, main.player.controls_enabled, arcade.overlay.touch_events, str(g.next) if g is SnakeGame else ""])
 	if _play and arcade.overlay.is_open():
 		var g := arcade.overlay.game
 		if not g.live:
@@ -246,6 +255,34 @@ func _logic() -> void:
 	check("first person: E opens it", ov.is_open())
 	Arcade.close_all()
 	main.rig.set_mode(CameraRig.Mode.TOP_DOWN)
+	# touch: a swipe steers Snake
+	ov.open(GameData.data.CABINETS[1], "snake")
+	await get_tree().create_timer(0.4).timeout
+	var mid := ov.stage_to_view(ArcadeOverlay.SCR.get_center())
+	_touch(true, mid)
+	for i in 6:
+		_drag(mid + Vector2(0, -10 * (i + 1)))
+		await get_tree().process_frame
+	await get_tree().process_frame
+	check("touch: a swipe up starts Snake and turns it up", ov.game.live and ov.game.next == Vector2i(0, -1), "next %s drag %s" % [ov.game.next, ov._drag])
+	_touch(false, mid + Vector2(0, -60))
+	await get_tree().process_frame
+	check("touch: lifting the finger lets go", ov._drag == Vector2.ZERO and ov.device == "touch")
+	Arcade.close_all()
+	# a pad: X is ammo in Sand Miner, B walks away
+	p.place(float(c0.x), 135.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	p.use()
+	await get_tree().create_timer(0.4).timeout
+	ov.game.live = true
+	_pad(JOY_BUTTON_X)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	check("pad: X picks the next ammo in Sand Miner", ov.game.ammo == SandMinerGame.CLAY and ov.device == "pad")
+	_pad(JOY_BUTTON_B)
+	await get_tree().process_frame
+	check("pad: B walks away", not ov.is_open() and p.controls_enabled)
 	# the friend's offer and messages (milestone 4 hooks)
 	var sent: Array = []
 	arcade.md.friend_send = func(msg): sent.append(msg)
@@ -254,6 +291,28 @@ func _logic() -> void:
 	check("friend: other messages aren't", not arcade.md.on_friend_message({"t": "snap"}))
 	arcade.md.on_friend_message({"t": "md", "on": 0})
 	check("friend: stopped clears the offer", arcade.md.offer == null and not arcade.md._ask.visible)
+
+func _pad(b: JoyButton) -> void:
+	var e := InputEventJoypadButton.new()
+	e.button_index = b
+	e.pressed = true
+	Input.parse_input_event(e)
+	var u := e.duplicate()
+	u.pressed = false
+	Input.parse_input_event(u)
+
+func _touch(down: bool, at: Vector2) -> void:
+	var e := InputEventScreenTouch.new()
+	e.index = 0
+	e.pressed = down
+	e.position = at
+	Input.parse_input_event(e)
+
+func _drag(at: Vector2) -> void:
+	var e := InputEventScreenDrag.new()
+	e.index = 0
+	e.position = at
+	Input.parse_input_event(e)
 
 func _key(k: Key) -> void:
 	var e := InputEventKey.new()

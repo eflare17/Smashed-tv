@@ -40,6 +40,7 @@ var _ptr_touch := false
 var _ptr_touch_id := -1
 var _drag_from := Vector2.ZERO
 var _drag := Vector2.ZERO
+var _swipe := Vector2.ZERO          # a swipe seen since the last frame (a quick flick can start and end within one)
 var _paddle = null                   # Bricks: where the mouse or a finger puts the paddle
 var _pressed: Dictionary = {}
 var _btn_touch: Dictionary = {}      # touch index -> button id
@@ -244,8 +245,12 @@ func _touch(e: InputEventScreenTouch) -> void:
 			_drag = Vector2.ZERO
 			_paddle = null
 
+## (tests) how many finger drags and touches have come in
+var touch_events := 0
+
 func _touch_drag(e: InputEventScreenDrag) -> void:
 	device = "touch"
+	touch_events += 1
 	if e.index != _ptr_touch_id:
 		return
 	_ptr = _view_to_screen(e.position)
@@ -259,6 +264,8 @@ func _touch_drag(e: InputEventScreenDrag) -> void:
 		_drag_from = e.position - d.normalized() * lim
 		d = e.position - _drag_from
 	_drag = Vector2(clampf(d.x / lim, -1, 1), clampf(d.y / lim, -1, 1))
+	if _drag.length() > 0.3:
+		_swipe = _drag
 
 ## The stick for this frame (arcadeStick, plus the pointer and the game's buttons).
 func read_stick() -> Dictionary:
@@ -273,6 +280,10 @@ func read_stick() -> Dictionary:
 	if not miner and _drag.length() > 0.3:
 		x = _drag.x
 		y = _drag.y
+	elif not miner and _swipe.length() > 0.3:
+		x = _swipe.x
+		y = _swipe.y
+	_swipe = Vector2.ZERO
 	var held: Dictionary = {}
 	for i in _btn_touch:
 		held[_btn_touch[i]] = true
@@ -396,15 +407,14 @@ class _Stage extends Control:
 		var tw := f.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x
 		draw_string(f, Vector2(s.position.x + s.size.x / 2 - tw / 2, s.position.y - 33 + 8), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, trim)
 		draw_rect(Rect2(s.position.x - 6, s.position.y - 6, s.size.x + 12, s.size.y + 12), Color("#050507"))
-		var back := "B to walk away" if ov.device == "pad" else ("✕ to walk away" if ov.device == "touch" else "E or Esc to walk away")
+		var back := "B to walk away" if ov.device == "pad" else ("X to walk away" if ov.device == "touch" else "E or Esc to walk away")
 		var hint := ov.game.hint(ov.device) + "  ·  " + back
 		var hw := f.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 		draw_string(f, Vector2(s.position.x + s.size.x / 2 - hw / 2, s.end.y + 22), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#cfd4de"))
 		var c := ov._close_center()
 		draw_circle(c, CLOSE_R, Color(20 / 255.0, 12 / 255.0, 28 / 255.0, 0.9))
 		draw_arc(c, CLOSE_R, 0, TAU, 32, trim, 2.0, true)
-		var xw := f.get_string_size("✕", HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-		draw_string(f, c + Vector2(-xw / 2, 5), "✕", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, trim)
+		ArcadeGame.cross(self, c, 5.0, trim, 2.0)
 
 ## The screen: the game, scanlines, the score and the messages.
 class _Screen extends Control:
@@ -475,6 +485,11 @@ class _TouchButtons extends Control:
 			var r: float = b[3]
 			draw_circle(c, r, Color(0.08, 0.05, 0.11, 0.55) if not held.has(b[0]) else Color(trim, 0.5))
 			draw_arc(c, r - 1.5, 0, TAU, 48, trim, 3.0, true)
-			var fs := int(r * 0.42)
+			if b[1] == "<" or b[1] == ">":
+				var d := -1.0 if b[1] == "<" else 1.0
+				var a := r * 0.38
+				draw_colored_polygon(PackedVector2Array([c + Vector2(d * a, 0), c + Vector2(-d * a * 0.7, -a), c + Vector2(-d * a * 0.7, a)]), Color.WHITE)
+				continue
+			var fs := int(r * 0.36)
 			var w := f.get_string_size(b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string(f, c + Vector2(-w / 2, fs * 0.35), b[1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)

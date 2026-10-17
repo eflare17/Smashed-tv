@@ -311,8 +311,13 @@ func _draw_list() -> void:
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		pic.texture = picture(String(g.pic))
 		if pic.texture == null:
-			pic.tooltip_text = "Play it once and it gets a picture"
-		row.add_child(pic)
+			var blank := ColorRect.new()                  # no picture yet: a dark tile in its place
+			blank.color = Color("#111522")
+			blank.custom_minimum_size = Vector2(64, 45)
+			blank.tooltip_text = "Play it once and it gets a picture"
+			row.add_child(blank)
+		else:
+			row.add_child(pic)
 		var id: int = int(g.id)
 		var b := _button(String(g.name), func(): play(id))
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -327,7 +332,7 @@ func _draw_list() -> void:
 		s.add_theme_color_override("font_color", Color("#6b7385"))
 		s.add_theme_font_size_override("font_size", 12)
 		row.add_child(s)
-		var d := _button("✕", func(): _ask_delete(id, String(g.name)))
+		var d := _button("Remove", func(): _ask_delete(id, String(g.name)))
 		d.tooltip_text = "Remove from library"
 		row.add_child(d)
 		_list.add_child(row)
@@ -369,7 +374,29 @@ func _pick_files(folder: bool) -> void:
 	if not _md:
 		note("Adding games works in the web version.")
 		return
-	_md.pick(folder)
+	if _last_pointer_click:
+		return                                     # the page opened the picker in the click itself (_send_pick_rects)
+	_md.pick(folder)                               # the keys: Enter is a user action too, if the browser lets it
+
+var _last_pointer_click := false
+var _rects_sent := ""
+
+## Tell the page where the Add buttons are, as fractions of the canvas (empty when the menu's shut).
+func _send_pick_rects() -> void:
+	if not _md:
+		return
+	var out: Array = []
+	if _open and _panel.visible and not _confirm.visible:
+		var vs := get_viewport().get_visible_rect().size
+		for b in [[_btn_add, false], [_btn_folder, true]]:
+			var btn: Button = b[0]
+			if btn.is_visible_in_tree():
+				var r := btn.get_global_rect()
+				out.append({"x": r.position.x / vs.x, "y": r.position.y / vs.y, "w": r.size.x / vs.x, "h": r.size.y / vs.y, "folder": b[1]})
+	var j := JSON.stringify(out)
+	if j != _rects_sent:
+		_rects_sent = j
+		_md.setPickRects(j)
 
 func _play_builtin(id: String) -> void:
 	var c := cab
@@ -439,6 +466,10 @@ func _on_js(args: Array) -> void:
 					arcade.hold_player(false)
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton or event is InputEventScreenTouch:
+		_last_pointer_click = true
+	elif event is InputEventKey or event is InputEventJoypadButton:
+		_last_pointer_click = false
 	if not _open or not _panel.visible:
 		return
 	if _confirm.visible:
@@ -474,6 +505,7 @@ var _dismissed := ""
 var _offer_at := 0.0
 
 func _process(delta: float) -> void:
+	_send_pick_rects()
 	_offer_at += delta
 	if _offer_at > 3.0 and emu_mode == "play":
 		_offer_to_friend(false)                     # keep saying so, for a friend who connects after

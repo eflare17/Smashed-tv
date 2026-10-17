@@ -159,6 +159,18 @@ function pick(folder) {
   document.body.appendChild(inp);
   inp.click();
 }
+// Browsers only open a file picker inside the click itself (iOS Safari strictly), and Godot handles a click a
+// frame later. So Godot tells the page where its Add buttons are (fractions of the canvas) and the page opens
+// the picker in the click.
+MD.pickRects = [];
+function setPickRects(json) { try { MD.pickRects = JSON.parse(json) || []; } catch (_) { MD.pickRects = []; } }
+addEventListener('pointerup', e => {
+  if (!MD.pickRects.length || MD.mode) return;
+  const c = document.querySelector('canvas'); if (!c) return;
+  const r = c.getBoundingClientRect();
+  const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+  for (const b of MD.pickRects) if (fx >= b.x && fx <= b.x + b.w && fy >= b.y && fy <= b.y + b.h) { pick(!!b.folder); break; }
+}, true);
 function canFolder() { return ('webkitdirectory' in document.createElement('input')) && !/iPhone|iPad|Android/i.test(navigator.userAgent); }
 
 // ---- the box over the game: a bar (name, Set picture, Library, Close), a note, and the screen
@@ -437,7 +449,7 @@ function driveConnect(clientId) {
 
 window.SmashedMD = {
   setListener(cb) { MD.listener = cb; },
-  list: loadList, pick, canFolder, del: id => del(+id), play: id => play(+id), stop: () => { stopGame(); hide(); },
+  list: loadList, pick, canFolder, setPickRects, del: id => del(+id), play: id => play(+id), stop: () => { stopGame(); hide(); },
   close, setPick: k => { setPick(k); sendList(); }, snap, isPlaying: () => !!MD.playing, mode: () => MD.mode || '',
   offer: () => JSON.stringify(offer()), streamTo, endStream, applyPad: b => applyPad((b | 0) & 4095),
   join, answerCall, watch, stopWatching, driveConnect, sys: MD_SYS

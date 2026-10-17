@@ -156,7 +156,7 @@ func hint(device: String) -> String:
 	return "A/D walk · W jump · mouse: left digs, right or F launches · Q ammo · U upgrade"
 
 func touch_buttons() -> Array:
-	return [["left", "◀", "left", 0, 0], ["right", "▶", "left", 0, 1],
+	return [["left", "<", "left", 0, 0], ["right", ">", "left", 0, 1],
 		["jump_btn", "JUMP", "right", 0, 0], ["launch", "LAUNCH", "right", 0, 1],
 		["q", "AMMO", "right", 1, 0], ["u", "UPGRADE", "right", 1, 1]]
 

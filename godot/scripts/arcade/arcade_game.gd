@@ -71,3 +71,14 @@ static func spud(ci: CanvasItem, p: Vector2, r: float) -> void:
 	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	ci.draw_rect(Rect2(p.x - r * 0.4, p.y - r * 0.1, 2, 2), Color("#6b4220"))
 	ci.draw_rect(Rect2(p.x + r * 0.3, p.y + r * 0.2, 2, 2), Color("#6b4220"))
+
+## An X (the close button), drawn: the default font has no ✕.
+static func cross(ci: CanvasItem, c: Vector2, r: float, col: Color, w: float) -> void:
+	ci.draw_line(c + Vector2(-r, -r), c + Vector2(r, r), col, w, true)
+	ci.draw_line(c + Vector2(-r, r), c + Vector2(r, -r), col, w, true)
+
+## A little heart (the default font has no ♥).
+static func heart(ci: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	ci.draw_circle(c + Vector2(-r * 0.5, -r * 0.2), r * 0.55, col)
+	ci.draw_circle(c + Vector2(r * 0.5, -r * 0.2), r * 0.55, col)
+	ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 1.02, 0), c + Vector2(r * 1.02, 0), c + Vector2(0, r * 1.0)]), col)
