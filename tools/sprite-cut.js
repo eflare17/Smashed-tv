@@ -84,13 +84,17 @@
     }
     // too few: frames are touching. Cut the widest run in two, at the column with the least art
     // in it near the middle (where two frames meet, only a hand or a foot crosses over).
-    const each = (runs[runs.length - 1].x1 - runs[0].x0 + 1) / n;   // typical frame width
+    // typical frame width: the median of the runs found. (Not span / n: when Gemini draws fewer
+    // figures than asked, that's too narrow and real bodies get cut in half.)
+    const ws = runs.map(r => r.x1 - r.x0 + 1).sort((a, b) => a - b);
+    // ...unless most of the frames are stuck together, then the median is itself several frames wide
+    const each = runs.length * 2 >= n ? ws[ws.length >> 1] : (runs[runs.length - 1].x1 - runs[0].x0 + 1) / n;
     let guard = 0;
     while (runs.length < n && guard++ < 50) {
       let wi = 0;
       runs.forEach((r, i) => { if (r.x1 - r.x0 > runs[wi].x1 - runs[wi].x0) wi = i; });
       const r = runs[wi], width = r.x1 - r.x0 + 1;
-      if (width < each * 1.3) break;                                // nothing that looks like two frames
+      if (width < each * 1.6) break;                                // nothing that looks like two frames
       // which frame boundary to aim for: the one nearest the middle of this run
       const k = Math.max(1, Math.round(width / each / 2));
       const mid = r.x0 + Math.round(each * k), rad = Math.round(each * 0.35);
