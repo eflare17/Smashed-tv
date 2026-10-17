@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b322';
+const BUILD = 'b323';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -1990,27 +1990,42 @@ const YARD_AREAS = [
   { x0: 860, y0: 58,  x1: 1702, y1: 1898 },          // east of the house: driveway, garage, the crop bed
   { x0: 4,   y0: 884, x1: 1702, y1: 1898 },          // south of the house: the big yard
 ];
-// what you bump into outside: the ground each one stands on
+// what you bump into outside: the ground each one stands on (the tank's round: cx, cy, r). b323: and for first
+// person, how tall each is (h, world units: he's 64 tall, his eyes at 62), what it's made of (m), how far its
+// picture spreads past it on the yard art (art: painted out of the 3D floor, since there it stands up instead),
+// and, for the ute, the blocks it's drawn as (fp: the tray, the cab and the bonnet are different heights)
+const FENCE_H = 58;                                   // a bit under eye height, so you can see over
 const YARD_SOLIDS = [
-  { x0: 488,  y0: 566,  x1: 618,  y1: 634 },         // barbecue
-  { x0: 602,  y0: 702,  x1: 800,  y1: 800 },         // outdoor table and its side chairs
-  { x0: 724,  y0: 662,  x1: 768,  y1: 702 },         //   back chair
-  { x0: 722,  y0: 800,  x1: 770,  y1: 852 },         //   front chair
-  { x0: 905,  y0: 468,  x1: 1234, y1: 948 },         // garage
-  { x0: 980,  y0: 172,  x1: 1144, y1: 456 },         // the ute in the driveway
-  { x0: 1250, y0: 40,   x1: 1278, y1: 852 },         // fence between the driveway and the crop bed
-  { x0: 1218, y0: 838,  x1: 1364, y1: 902 },         // the crop bed's front fence, left of its gap
-  { x0: 1566, y0: 838,  x1: 1704, y1: 902 },         //   and right of it
-  { x0: 1256, y0: 948,  x1: 1346, y1: 1004 },        // bush by the garage
-  { x0: 622,  y0: 1236, x1: 884,  y1: 1452 },        // trampoline
-  { x0: 98,   y0: 1552, x1: 464,  y1: 1898 },        // shed
-  { x0: 36,   y0: 1620, x1: 104,  y1: 1848 },        // bricks and crates beside it
-  { x0: 658,  y0: 1598, x1: 924,  y1: 1716 },        // raised beds
-  { x0: 658,  y0: 1778, x1: 924,  y1: 1896 },
-  { x0: 1124, y0: 1562, x1: 1258, y1: 1812 },
-  { x0: 1296, y0: 1600, x1: 1506, y1: 1798 },        // water tank
-  { x0: 1538, y0: 1636, x1: 1662, y1: 1752 },        // compost bins
+  { x0: 488,  y0: 566,  x1: 618,  y1: 634,  h: 36,  m: 'bbq' },                                     // barbecue
+  { x0: 602,  y0: 702,  x1: 800,  y1: 800,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
+  { x0: 724,  y0: 662,  x1: 768,  y1: 702,  h: 34,  m: 'wood' },                                    //   back chair
+  { x0: 722,  y0: 800,  x1: 770,  y1: 852,  h: 34,  m: 'wood' },                                    //   front chair
+  { x0: 905,  y0: 468,  x1: 1234, y1: 948,  h: 110, m: 'garage', art: [898, 458, 1242, 956] },      // garage
+  { x0: 980,  y0: 172,  x1: 1144, y1: 456,  h: 66,  m: 'car', art: [970, 116, 1154, 510],           // the ute in the driveway, facing the garage
+    fp: [{ x0: 980, y0: 172, x1: 1144, y1: 300, h: 44, m: 'car', part: 'tray' },
+         { x0: 986, y0: 300, x1: 1138, y1: 380, h: 66, m: 'car', part: 'cab' },
+         { x0: 980, y0: 380, x1: 1144, y1: 456, h: 42, m: 'car', part: 'bonnet' }] },
+  { x0: 1250, y0: 40,   x1: 1278, y1: 852,  h: FENCE_H, m: 'fence' },                               // fence between the driveway and the crop bed
+  { x0: 1218, y0: 838,  x1: 1364, y1: 902,  h: FENCE_H, m: 'fence', art: [1214, 792, 1368, 906] },  // the crop bed's front fence, left of its gap
+  { x0: 1566, y0: 838,  x1: 1704, y1: 902,  h: FENCE_H, m: 'fence', art: [1562, 792, 1704, 906] },  //   and right of it
+  { x0: 1256, y0: 948,  x1: 1346, y1: 1004, h: 42,  m: 'bush', art: [1238, 916, 1362, 1014] },      // bush by the garage
+  { x0: 622,  y0: 1236, x1: 884,  y1: 1452, h: 92,  m: 'tramp', art: [610, 1120, 896, 1476] },      // trampoline
+  { x0: 98,   y0: 1552, x1: 464,  y1: 1898, h: 85,  m: 'shed', art: [90, 1542, 474, 1898] },        // shed
+  { x0: 36,   y0: 1620, x1: 104,  y1: 1848, h: 28,  m: 'junk' },                                    // bricks and crates beside it
+  { x0: 658,  y0: 1598, x1: 924,  y1: 1716, h: 16,  m: 'bed' },                                     // raised beds
+  { x0: 658,  y0: 1778, x1: 924,  y1: 1896, h: 16,  m: 'bed' },
+  { x0: 1124, y0: 1562, x1: 1258, y1: 1812, h: 16,  m: 'bed' },
+  { cx: 1400, cy: 1696, r: 104, h: 72, m: 'tank', art: [1286, 1530, 1516, 1808] },                  // water tank
+  { x0: 1538, y0: 1636, x1: 1662, y1: 1752, h: 36,  m: 'compost' },                                 // compost bins
 ];
+// push something round (o, r wide) out of one of them
+function pushOutOfSolid(o, r, s) {
+  if (s.r === undefined) return pushOutOfBox(o, r, s);
+  const dx = o.x - s.cx, dy = o.y - s.cy, d = Math.hypot(dx, dy), m = s.r + r;
+  if (d >= m) return false;
+  if (d < 0.001) { o.y = s.cy + m; return true; }
+  o.x = s.cx + dx / d * m; o.y = s.cy + dy / d * m; return true;
+}
 function worldW(w) { return lobbyTall(w) ? YARD.w : ARENA.w; }
 function worldH(w) { return lobbyTall(w) ? YARD.h : ARENA.h; }
 // outside: past the middle of the lounge's bottom or right wall, and not in the bedroom
@@ -2021,14 +2036,15 @@ function inYard(o) {
 function inBedroom(o) { return o.y > ARENA.h - ARENA.wall / 2 && !inYard(o); }
 // where something r wide can be: the lounge, the bedroom, and the doorway between
 // (shut to someone carrying Gothica: she lives in the lounge)
-function lobbyAreas(r, shut, house) {
+// (b323: the first four are indoors: the lounge, the bedroom and the two doorways; first person counts on it)
+function lobbyAreas(r, shut) {
   const a = [{ x0: ARENA.wall + r, y0: ARENA.wall + r, x1: ARENA.w - ARENA.wall - r, y1: ARENA.h - ARENA.wall - r },
              { x0: BEDROOM.x0 + r, y0: BEDROOM.y0 + r, x1: BEDROOM.x1 - r, y1: BEDROOM.y1 - r }];
   if (!shut) {
     a.push({ x0: BED_DOOR.x - BED_DOOR.w / 2 + r, x1: BED_DOOR.x + BED_DOOR.w / 2 - r, y0: a[0].y0, y1: a[1].y1 });
     // b322: the back door, through the gym wall and the house's back wall, onto the deck
     a.push({ x0: BACK_DOOR.x - BACK_DOOR.w / 2 + r, x1: BACK_DOOR.x + BACK_DOOR.w / 2 - r, y0: a[0].y0, y1: BACK_DOOR.y1 + r + 4 });
-    if (!house) for (const y of YARD_AREAS) a.push({ x0: y.x0 + r, y0: y.y0 + r, x1: y.x1 - r, y1: y.y1 - r });
+    for (const y of YARD_AREAS) a.push({ x0: y.x0 + r, y0: y.y0 + r, x1: y.x1 - r, y1: y.y1 - r });
   }
   return a;
 }
@@ -3382,7 +3398,7 @@ function endShroom() {
 }
 // b286: plain first person (V, the eye button under the zoom one, or the button up top): the mushroom's 3D view
 // with none of the trip (no colours, no wobble, no music, no clock), on until you switch it off. Lobby only, like the trip.
-function fpCan() { const v = net.role === 'client' ? net.view : world; return !!v && !v.started && !v.over && !cal.on && !!T.loungeFloor && !!localMe() && !inYard(localMe()); }
+function fpCan() { const v = net.role === 'client' ? net.view : world; return !!v && !v.started && !v.over && !cal.on && !!T.loungeFloor && !!localMe(); }
 function toggleFirstPerson() {
   if (SHROOM.on) { if (SHROOM.sober) endShroom(); return; }        // (mid-trip, the mushroom's in charge)
   if (!fpCan()) return;
@@ -3480,7 +3496,6 @@ window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && !fp
 // WASD walk and step relative to where you're looking; aim is always straight ahead
 function shroomInput(inp) {
   if (!SHROOM.on || SHROOM.t < SHROOM_IN * 0.5) return;
-  if (SHROOM.sober && localMe() && inYard(localMe())) { endShroom(); return; }   // b322: out the back door: first person is for indoors
   if (SHROOM.sober && fpBusy()) return;                            // b307: stepped aside (sitting, at the arcade...): the normal controls
   const me = localMe(), up = -inp.my, still = { ax: 100, ay: 0, shoot: false, st: false };
   const done = o => { Object.assign(inp, still, o); delete inp.lt; delete inp.tap; };
@@ -3505,25 +3520,201 @@ const SHROOM_LUT = (() => { const L = new Uint8ClampedArray(256 * 3);
   for (let i = 0; i < 256; i++) { const h = i / 256 * 6, k = n => { const v = Math.abs(((h + n) % 6) - 3) - 1; return Math.max(0, Math.min(1, v)); };
     L[i * 3] = 255 * k(0); L[i * 3 + 1] = 255 * k(4); L[i * 3 + 2] = 255 * k(2); }
   return L; })();
-// where a ray from (px,py) along (dx,dy) leaves the lobby's floor: t (in multiples of the ray) and which way the wall runs
-function shroomCast(px, py, dx, dy, A) {
-  let t = 0, side = 0;
-  for (let guard = 0; guard < 8; guard++) {
+// ===== b323: first person, outside too =====
+// What a ray from (px, py) along (dx, dy) meets, near to far, in FP_HITS: where it leaves the floor (a room's
+// wall, the house from outside, or the fence, which you can see over) and the yard's solid things on the way,
+// stopping at the first thing too tall to see past. Each hit: t (how far, in lengths of the ray: the depth into
+// the screen), s (what it is: h tall, made of m), u (across its face, in world units), side (0: the face runs
+// north-south), face (the way it looks: N, E, S or W) and lit (the daylight on it). Returns how many.
+const FP_HITS = Array.from({ length: 12 }, () => ({ t: 0, s: null, u: 0, side: 0, face: '', lit: 1 }));
+const FP_OCC = 6;                                                     // per column, kept for hiding the cut-outs
+const FP_IN = { h: SHROOM_WALL, m: 'in' }, FP_OUT = { h: SHROOM_WALL, m: 'house' }, FP_FENCE = { h: FENCE_H, m: 'fence' };
+const FP_HOUSE = [{ x0: 0, y0: 0, x1: ARENA.w, y1: BACK_DOOR.y1, h: SHROOM_WALL, m: 'house' },    // the house, from outside
+                  { x0: 0, y0: BACK_DOOR.y1, x1: BEDROOM.x1 + ARENA.wall, y1: YARD_AREAS[2].y0, h: SHROOM_WALL, m: 'house' }];
+const FP_LIT = { N: 1, E: 0.9, W: 0.9, S: 0.76 };                    // the sun's to the north
+function fpIndoors(x, y) { return x >= 0 && y >= 0 && ((x <= ARENA.w && y <= BACK_DOOR.y1) || (x <= BEDROOM.x1 + ARENA.wall && y <= YARD_AREAS[2].y0)); }
+let FP_N = 0;
+function fpAdd(t, s, u, side, face, lit) { if (FP_N >= FP_HITS.length) return; const o = FP_HITS[FP_N++]; o.t = t; o.s = s; o.u = u; o.side = side; o.face = face; o.lit = lit; }
+function fpCast(px, py, dx, dy, A) {
+  let t = 0, side = 0, cur = -1;                                      // where it leaves the floor, and off which bit
+  for (let guard = 0; guard < 10; guard++) {
     const x = px + dx * t, y = py + dy * t;
-    let best = -1, bs = 0;
-    for (const a of A) {
+    let best = -1, bs = 0, bi = -1;
+    for (let i = 0; i < A.length; i++) {
+      const a = A[i];
       if (x < a.x0 - 0.01 || x > a.x1 + 0.01 || y < a.y0 - 0.01 || y > a.y1 + 0.01) continue;
       const tx = dx > 0 ? (a.x1 - x) / dx : dx < 0 ? (a.x0 - x) / dx : Infinity;
       const ty = dy > 0 ? (a.y1 - y) / dy : dy < 0 ? (a.y0 - y) / dy : Infinity;
       const te = Math.min(tx, ty);
-      if (te > best) { best = te; bs = tx < ty ? 0 : 1; }
+      if (te > best) { best = te; bs = tx < ty ? 0 : 1; bi = i; }
     }
     if (best < 0) break;
-    t += best + 0.02; side = bs;
+    t += best + 0.02; side = bs; cur = bi;
     const nx = px + dx * t, ny = py + dy * t;
     if (!A.some(a => nx >= a.x0 && nx <= a.x1 && ny >= a.y0 && ny <= a.y1)) break;
   }
-  return { t: Math.max(0.5, t), side };
+  t = Math.max(0.5, t); FP_N = 0;
+  const hx = px + dx * t, hy = py + dy * t, wall = cur >= 0 && cur < 4 ? FP_IN : fpIndoors(hx, hy) ? FP_OUT : FP_FENCE;
+  const face = side ? (dy > 0 ? 'N' : 'S') : (dx > 0 ? 'W' : 'E');
+  fpAdd(t, wall, side ? hx : hy, side, face, FP_LIT[face]);
+  const low = wall === FP_FENCE;
+  for (const s of YARD_SOLIDS) for (const q of (s.fp || [s])) fpSolid(q, px, py, dx, dy, 0, low ? Infinity : t);
+  if (low) for (const q of FP_HOUSE) fpSolid(q, px, py, dx, dy, t, Infinity);   // over the fence: the house's other sides
+  for (let i = 1; i < FP_N; i++) { const o = FP_HITS[i]; let j = i - 1; while (j >= 0 && FP_HITS[j].t > o.t) { FP_HITS[j + 1] = FP_HITS[j]; j--; } FP_HITS[j + 1] = o; }
+  for (let i = 0; i < FP_N; i++) if (FP_HITS[i].s.h >= SHROOM_WALL) return i + 1;
+  return FP_N;
+}
+// where the ray first meets one solid (a box, or round), if it's between tMin and tMax
+function fpSolid(s, px, py, dx, dy, tMin, tMax) {
+  let t0, side, u, face, lit;
+  if (s.r !== undefined) {
+    const ox = px - s.cx, oy = py - s.cy, a = dx * dx + dy * dy, b = ox * dx + oy * dy, c = ox * ox + oy * oy - s.r * s.r, disc = b * b - a * c;
+    if (c <= 0 || disc <= 0) return;
+    t0 = (-b - Math.sqrt(disc)) / a;
+    const nx = (ox + dx * t0) / s.r, ny = (oy + dy * t0) / s.r;
+    side = Math.abs(nx) > Math.abs(ny) ? 0 : 1; face = ''; u = (Math.atan2(ny, nx) + Math.PI) * s.r;
+    lit = 0.7 + 0.3 * Math.max(0, -ny * 0.9 + nx * 0.25);              // round: lit where it faces the sun
+  } else {
+    let t1 = Infinity; t0 = -Infinity; side = 0;
+    if (dx) { let a = (s.x0 - px) / dx, b = (s.x1 - px) / dx; if (a > b) { const q = a; a = b; b = q; } t0 = a; t1 = b; }
+    else if (px <= s.x0 || px >= s.x1) return;
+    if (dy) { let a = (s.y0 - py) / dy, b = (s.y1 - py) / dy; if (a > b) { const q = a; a = b; b = q; } if (a > t0) { t0 = a; side = 1; } if (b < t1) t1 = b; }
+    else if (py <= s.y0 || py >= s.y1) return;
+    if (t0 > t1) return;
+    face = side ? (dy > 0 ? 'N' : 'S') : (dx > 0 ? 'W' : 'E'); u = side ? px + dx * t0 : py + dy * t0; lit = FP_LIT[face];
+  }
+  if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit);
+}
+function fpHash(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; }
+function fpRep(u, n) { return ((u % n) + n) % n; }
+// a wall's colour at u across its face and z up it: into FP_RGB (r, g, b, and how solid: 1; less for the
+// trampoline's net; 0 where there's nothing, like over the ute's tray)
+const FP_RGB = [0, 0, 0, 1];
+function fpMaterial(s, face, u, z) {
+  const H = s.h; let r = 150, g = 150, b = 150, a = 1;
+  switch (s.m) {
+    case 'in':                                                        // a room: painted, a dark skirting
+      r = 168; g = 150; b = 128; if (z < 10.5) { r *= 0.6; g *= 0.6; b *= 0.6; } break;
+    case 'house':                                                     // the house from outside: weatherboards on a dark footing
+      if (z < 7) { r = 74; g = 74; b = 76; break; }
+      r = 160; g = 154; b = 132; if ((z - 7) % 9 < 1.4) { r = 112; g = 108; b = 92; } break;
+    case 'fence': {                                                   // palings, a rail along the top
+      if (fpRep(u, 11) < 1.3) { r = 58; g = 46; b = 32; break; }
+      const k = 0.88 + 0.22 * fpHash(Math.floor(u / 11) + 977);
+      r = 124 * k; g = 102 * k; b = 74 * k;
+      if (z > H - 5) { r *= 0.82; g *= 0.82; b *= 0.82; } else if (z < 4) { r = 80; g = 64; b = 46; }
+      break;
+    }
+    case 'garage': {                                                  // rusty corrugated iron, the roller door out the back
+      if (face === 'S' && u > 948 && u < 1192 && z < 84) {
+        if (z > 80) { r = 58; g = 54; b = 50; } else { const k = z % 7 < 1.2 ? 0.7 : 1; r = 118 * k; g = 114 * k; b = 106 * k; }
+        break;
+      }
+      const k = fpRep(u, 6) < 3 ? 1 : 0.84;
+      if (fpHash(Math.floor(u / 6) + 31) < 0.3) { r = 126 * k; g = 84 * k; b = 60 * k; } else { r = 136 * k; g = 124 * k; b = 110 * k; }
+      if (z > H - 7) { r *= 0.78; g *= 0.78; b *= 0.78; }
+      break;
+    }
+    case 'shed': {                                                    // grey corrugated iron, rust running down it, the door
+      if (face === 'S' && u > 268 && u < 338 && z < 66) { r = 66; g = 60; b = 54; break; }
+      const k = fpRep(u, 5) < 2.5 ? 1 : 0.85, rust = fpHash(Math.floor(u / 5) + 7) < 0.22 && fpHash(Math.floor(u / 5) * 61 + Math.floor(z / 10)) < 0.75;
+      if (rust) { r = 130 * k; g = 88 * k; b = 62 * k; } else { r = 152 * k; g = 152 * k; b = 150 * k; }
+      if (z > H - 5) { r *= 0.78; g *= 0.78; b *= 0.78; }
+      break;
+    }
+    case 'car': {                                                     // the ute: tray, cab and bonnet
+      const p = s.part, sideOn = face === 'E' || face === 'W';
+      if (z < 13) {                                                   // underneath, and the wheels
+        const wheel = sideOn && ((p === 'tray' && u > 200 && u < 248) || (p === 'bonnet' && u > 398 && u < 446));
+        r = g = b = wheel ? 22 : 42; break;
+      }
+      r = 138; g = 134; b = 112;
+      if (p === 'tray') {
+        if (face === 'N' && z > 27 && z < 39 && (u < 996 || u > 1128)) { r = 196; g = 42; b = 36; }   // tail lights
+        else if (z > 40) { r = 104; g = 100; b = 84; }                // the tray's rail
+      } else if (p === 'cab') {
+        if (z > 44 && z < 63 && (sideOn ? u > 306 && u < 374 : u > 996 && u < 1128)) { r = 40; g = 54; b = 66; }   // windows all round
+        else if (sideOn && z < 44 && Math.abs(u - 340) < 1) { r = 92; g = 88; b = 74; }   // the door's edge
+      } else if (face === 'S') {                                      // the front: bumper, grille, headlights
+        if (z < 19) { r = 72; g = 72; b = 74; }
+        else if (z < 32) { if (u < 1004 || u > 1120) { r = 236; g = 230; b = 196; } else { r = 34; g = 36; b = 38; } }
+      }
+      break;
+    }
+    case 'bbq':                                                       // bricks, the bench, the stainless hood
+      if (z < 24) {
+        const row = Math.floor(z / 6), uu = u + (row & 1) * 6;
+        if (z % 6 < 1 || fpRep(uu, 12) < 1) { r = 176; g = 166; b = 152; }
+        else { const k = 0.9 + 0.2 * fpHash(row * 131 + Math.floor(uu / 12)); r = 124 * k; g = 64 * k; b = 50 * k; }
+      } else if (z < 27) { r = 86; g = 86; b = 88; }
+      else { r = 166; g = 168; b = 174; if (Math.abs(z - 31) < 0.8) { r = 90; g = 92; b = 96; } }
+      break;
+    case 'wood':                                                      // the outdoor table and chairs
+      r = 126; g = 88; b = 56; if (z % 7 < 1) { r *= 0.78; g *= 0.78; b *= 0.78; } break;
+    case 'bush': {
+      if (z > H - 10 * fpHash(Math.floor(u / 4) + 5)) { a = 0; break; }   // a lumpy top
+      const k = 0.7 + 0.55 * fpHash(Math.floor(u / 3) * 977 + Math.floor(z / 3));
+      r = 50 * k; g = 104 * k; b = 42 * k; break;
+    }
+    case 'tramp':                                                     // trampoline: the skirt, the blue pad, the net on its poles
+      if (z < 24) { r = 24; g = 24; b = 28; }
+      else if (z < 32) { r = 44; g = 84; b = 172; }
+      else if (z > H - 3 || fpRep(u, 52) < 2.4) { r = 70; g = 72; b = 78; }
+      else { r = 14; g = 14; b = 18; a = fpRep(u, 5) < 0.7 || z % 5 < 0.7 ? 0.32 : 0.1; }   // (the net's mesh: you see through it)
+      break;
+    case 'junk':                                                      // bricks and crates
+      if (fpRep(u, 22) < 11) { r = 134; g = 66; b = 48; } else { r = 152; g = 112; b = 64; }
+      if (z % 6 < 1) { r *= 0.75; g *= 0.75; b *= 0.75; } break;
+    case 'bed':                                                       // a raised garden bed's boards
+      r = 108; g = 76; b = 46; if (z > H - 2) { r = 132; g = 98; b = 62; } else if (z % 8 < 1) { r = 78; g = 54; b = 32; } break;
+    case 'tank': {                                                    // the corrugated water tank
+      const k = z % 6 < 3 ? 1 : 0.84; r = 170 * k; g = 176 * k; b = 178 * k;
+      if (z > H - 3) { r = 192; g = 198; b = 200; } else if (z < 2) { r = 92; g = 94; b = 94; }
+      break;
+    }
+    case 'compost':
+      r = 58; g = 86; b = 50; if (z > H - 4) { r = 44; g = 64; b = 38; } else if (z % 9 < 1) { r = 40; g = 60; b = 34; } break;
+  }
+  FP_RGB[0] = r; FP_RGB[1] = g; FP_RGB[2] = b; FP_RGB[3] = a;
+}
+// The floor first person draws on, built once: the yard picture, the house's floors over it with its walls dark
+// between them (from up the tower, the dark lines round the rooms), and the yard's solid things painted out where
+// their pictures spread past them (in 3D they stand up, so nothing of them should lie flat on the grass round them)
+let FP_FLOOR = null;
+function fpFloor() {
+  if (FP_FLOOR) return FP_FLOOR;
+  const ok = im => im.complete && im.naturalWidth, W = YARD.w, H = YARD.h, wl = ARENA.wall, b = BEDROOM, d = BACK_DOOR;
+  const f = document.createElement('canvas'); f.width = W; f.height = H;
+  const g = f.getContext('2d', { willReadFrequently: true }); g.imageSmoothingEnabled = false;
+  g.fillStyle = 'rgb(82,136,52)'; g.fillRect(0, 0, W, H);
+  if (ok(YARD_IMG)) { g.drawImage(YARD_IMG, YARD.ox, YARD.oy); for (const s of YARD_SOLIDS) if (s.art) fpPaintOut(g, s); }
+  g.fillStyle = '#101218'; g.fillRect(0, 0, ARENA.w, d.y1); g.fillRect(0, d.y1, b.x1 + wl, YARD_AREAS[2].y0 - d.y1);
+  if (ok(LOUNGE_IMG)) g.drawImage(LOUNGE_IMG, wl, wl, ARENA.w - wl * 2, ARENA.h - wl * 2);
+  if (ok(BED_ART)) g.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+  g.fillStyle = '#6a472f'; g.fillRect(BED_DOOR.x - BED_DOOR.w / 2, ARENA.h - wl, BED_DOOR.w, wl);   // the doorways
+  g.fillStyle = '#77736c'; g.fillRect(d.x - d.w / 2, ARENA.h - wl, d.w, d.y1 - ARENA.h + wl + 4);
+  const fl = { data: g.getImageData(0, 0, W, H).data, w: W, h: H };
+  if (ok(YARD_IMG) && ok(LOUNGE_IMG) && ok(BED_ART)) FP_FLOOR = fl;   // (kept, once it's all loaded)
+  return fl;
+}
+// one solid's picture, where it spreads past the ground the solid stands on, filled with the colour round it
+function fpPaintOut(g, s) {
+  const [ax0, ay0, ax1, ay1] = s.art, x0 = Math.max(0, ax0 - 3), y0 = Math.max(0, ay0 - 3), w = ax1 + 3 - x0, h = ay1 + 3 - y0;
+  const id = g.getImageData(x0, y0, w, h), p = id.data, ring = [[], [], []];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const wx = x0 + x, wy = y0 + y;
+    if (wx >= ax0 && wx < ax1 && wy >= ay0 && wy < ay1) continue;
+    const o = (y * w + x) * 4; ring[0].push(p[o]); ring[1].push(p[o + 1]); ring[2].push(p[o + 2]);
+  }
+  const med = ring.map(v => v.sort((m, n) => m - n)[v.length >> 1] || 0);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const wx = x0 + x + 0.5, wy = y0 + y + 0.5;
+    if (wx < ax0 || wx >= ax1 || wy < ay0 || wy >= ay1) continue;
+    if (s.r !== undefined ? Math.hypot(wx - s.cx, wy - s.cy) < s.r : wx > s.x0 && wx < s.x1 && wy > s.y0 && wy < s.y1) continue;
+    const o = (y * w + x) * 4, k = 0.94 + 0.12 * fpHash(((wx | 0) * 7919) ^ ((wy | 0) * 104729));
+    p[o] = med[0] * k; p[o + 1] = med[1] * k; p[o + 2] = med[2] * k;
+  }
+  g.putImageData(id, x0, y0);
 }
 // what's drawn on the canvas at the moment, cut to what isn't see-through (and not a faint shadow)
 // and kept as a cut-out: { img, x0, y0, x1, y1 } in world units, or null
@@ -3546,14 +3737,7 @@ function shroomGrab(k, wx0, wy0, ww, wh) {
 // once a trip: the floor as one picture, and every piece of furniture as a cut-out standing where it is
 function shroomCapture(w) {
   const k = Math.min(2, canvas.width / ARENA.w), quiet = { ...w, players: [] };
-  const f = document.createElement('canvas'); f.width = ARENA.w; f.height = LOBBY_H;
-  const fg = f.getContext('2d'); fg.imageSmoothingEnabled = false;
-  fg.fillStyle = '#101218'; fg.fillRect(0, 0, f.width, f.height);
-  if (LOUNGE_IMG.complete && LOUNGE_IMG.naturalWidth) fg.drawImage(LOUNGE_IMG, ARENA.wall, ARENA.wall, ARENA.w - ARENA.wall * 2, ARENA.h - ARENA.wall * 2);
-  const b = BEDROOM;
-  if (BED_ART.complete && BED_ART.naturalWidth) fg.drawImage(BED_ART, b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-  fg.fillStyle = '#6a472f'; fg.fillRect(BED_DOOR.x - BED_DOOR.w / 2, ARENA.h - ARENA.wall, BED_DOOR.w, ARENA.wall);   // the doorway
-  SHROOM.floor = { data: fg.getImageData(0, 0, f.width, f.height).data, w: f.width, h: f.height };
+  SHROOM.floor = fpFloor();                                            // b323: the house and the whole yard
   const props = [];
   const grab = (fn, dy) => {                                           // draw one thing alone, then keep it
     ctx.save(); ctx.setTransform(k, 0, 0, k, 0, -dy * k); ctx.clearRect(0, dy, ARENA.w, ARENA.h);
@@ -3954,8 +4138,8 @@ function drawShroom(w) {
     else {                                                                // outside the rooms: a slow swirl instead of the dark
       const v = Math.sin(ux * 0.02 + t) + Math.sin(uy * 0.025 - t * 1.2), vi = ((((v + 2) * 55 + tsh) | 0) & 255) * 3;
       r = L[vi] * 0.22; g = L[vi + 1] * 0.22; bb = L[vi + 2] * 0.22;   // kept dark, so the rooms stand out
-      if (sober) { r = 22; g = 24; bb = 30; }
-      if (calm > 0) {                                                     // b281: from up the tower, a lawn of small squares round the building, so you can tell how far down it is
+      if (sober) { r = 82; g = 136; bb = 52; }                           // (b323: plain: paddocks, out past the fences)
+      if (calm > 0 && (!sober || eye > WALL)) {                                                     // b281: from up the tower, a lawn of small squares round the building, so you can tell how far down it is
         const chk = ((Math.floor(ux / 16) + Math.floor(uy / 16)) & 1) ? 1 : 0.86, gx = ((ux % 16) + 16) % 16 < 1 || ((uy % 16) + 16) % 16 < 1 ? 0.75 : 1;
         r += (GRASS[0] * chk * gx - r) * calm * 0.8; g += (GRASS[1] * chk * gx - g) * calm * 0.8; bb += (GRASS[2] * chk * gx - bb) * calm * 0.8;
       }
@@ -3968,6 +4152,10 @@ function drawShroom(w) {
       B[o + 1] = Math.min(255, ((g * (1 - rb) + L[pi + 1] * rb) * (1 - calm * 0.6) + WATER[1] * calm * 0.6) * k);
       B[o + 2] = Math.min(255, ((bb * (1 - rb) + L[pi + 2] * rb) * (1 - calm * 0.6) + WATER[2] * calm * 0.6) * k + 40 * (1 - calm)); B[o + 3] = 255;
       return;
+    }
+    if (sober && !fpIndoors(ux, uy)) {                                 // b323: out in the yard it's daylight: no gloom, a little haze far off
+      const hz = Math.min(0.5, dist / 3200);
+      B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = bb + (232 - bb) * hz; B[o + 3] = 255; return;
     }
     const li = ((((ux + uy) * 0.9 + dist * 0.6 + tsh * 2) | 0) & 255) * 3;
     B[o] = (r * (1 - mix) + L[li] * mix) * shade; B[o + 1] = (g * (1 - mix) + L[li + 1] * mix) * shade; B[o + 2] = (bb * (1 - mix) + L[li + 2] * mix) * shade; B[o + 3] = 255;
@@ -3989,7 +4177,7 @@ function drawShroom(w) {
   }
   else for (let y = 0; y < RH; y++) {
     const below = y > hor, den = below ? (y - hor) : (hor - y);
-    if (den < 0.5) { for (let x = 0; x < RW; x++) { const o = (y * RW + x) * 4; B[o] = B[o + 1] = B[o + 2] = 0; B[o + 3] = 255; } continue; }
+    if (den < 0.5) { for (let x = 0; x < RW; x++) { const o = (y * RW + x) * 4; B[o] = sober ? 170 : 0; B[o + 1] = sober ? 194 : 0; B[o + 2] = sober ? 215 : 0; B[o + 3] = 255; } continue; }   // (b323: plain, outside: the hazy line where the land meets the sky)
     const dist = (below ? eye : Math.max(1, WALL - eye)) * proj / den;
     let wx = px + dist * (dx - rx * tanH), wy = py + dist * (dy - ry * tanH);
     const sx = dist * rx * tanH * 2 / RW, sy = dist * ry * tanH * 2 / RW;
@@ -3998,6 +4186,7 @@ function drawShroom(w) {
       const o = (y * RW + x) * 4;
       let r, g, bb;
       if (below) { floorAt(o, wx, wy, dist, shade); continue; }
+      if (!fpIndoors(wx, wy)) { skyAt(o, x, sv); continue; }               // b323: outside: the sky, not a ceiling
       {                                                           // the ceiling: a slow plasma
         const v = Math.sin(wx * 0.025 + t) + Math.sin(wy * 0.03 - t * 1.3) + Math.sin((wx + wy) * 0.018 + t * 0.7);
         const li = ((((v + 3) * 42 + tsh) | 0) & 255) * 3, s = shade * (0.55 + 0.25 * amp);
@@ -4010,23 +4199,51 @@ function drawShroom(w) {
       B[o] = r; B[o + 1] = g; B[o + 2] = bb; B[o + 3] = 255;
     }
   }
-  // the walls, column by column, melting
-  const A = lobbyAreas(0, false, true), zbuf = SHROOM.zbuf || (SHROOM.zbuf = new Float32Array(RW));
+  // the walls, column by column, melting. b323: and outside, everything in the yard: each column draws what its
+  // ray meets far to near (so you see over the fence and the low things), and keeps how far each one is and where
+  // its top is on the screen, so the cut-outs are hidden behind what's in front of them only up to its top
+  const A = lobbyAreas(0), zbuf = SHROOM.zbuf || (SHROOM.zbuf = new Float32Array(RW));
+  const occN = SHROOM.occN || (SHROOM.occN = new Uint8Array(RW));
+  const occT = SHROOM.occT || (SHROOM.occT = new Float32Array(RW * FP_OCC)), occTop = SHROOM.occTop || (SHROOM.occTop = new Float32Array(RW * FP_OCC));
+  occN.fill(0);
   if (tp) zbuf.fill(1e9);                                                // above them, the walls are just the dark edges of the floor art
   else for (let x = 0; x < RW; x++) {
     const cam = 2 * x / RW - 1, rdx = dx + rx * tanH * cam, rdy = dy + ry * tanH * cam;
-    const hit = shroomCast(px, py, rdx, rdy, A), d = hit.t;
-    zbuf[x] = d;
+    const n = fpCast(px, py, rdx, rdy, A);
     const melt = Math.sin(x * 0.07 + t * 2.3) * 5 * amp + Math.sin(x * 0.023 - t * 1.1) * 4 * amp;
-    const top = Math.max(0, Math.floor(hor - (WALL - eye) * proj / d + melt)), bot = Math.min(RH, Math.ceil(hor + eye * proj / d + melt * 0.5));
-    const u = hit.side ? px + rdx * d : py + rdy * d, span = bot - top || 1;
-    const shade = Math.min(1, 220 / (d + 40)) * (hit.side ? 0.85 : 1) * (0.8 + 0.4 * pulse);
-    for (let y = top; y < bot; y++) {
-      const v = (y - top) / span, o = (y * RW + x) * 4;
-      const li = (((u * 0.9 + v * 180 + tsh * 3) | 0) & 255) * 3;
-      const band = ((u * 0.08 + v * 7 - t * 2.5) % 1 + 1) % 1 < 0.28 ? 0.45 : 1;
-      if (sober) { const sk = v > 0.93 ? 0.6 : 1; B[o] = 168 * shade * sk; B[o + 1] = 150 * shade * sk; B[o + 2] = 128 * shade * sk; continue; }   // (plain: painted walls, a dark skirting)
-      B[o] = L[li] * shade * band; B[o + 1] = L[li + 1] * shade * band; B[o + 2] = L[li + 2] * shade * band;
+    zbuf[x] = 1e9;
+    for (let i = 0; i < n && i < FP_OCC; i++) {                          // what hides what's behind it, and up to where (rooms and the house: all of it)
+      const hh = FP_HITS[i], sh = hh.s;
+      if (zbuf[x] === 1e9 && sh.h >= eye) zbuf[x] = hh.t;
+      occT[x * FP_OCC + i] = hh.t;
+      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : hor - ((sh.m === 'tramp' ? 32 : sh.h) - eye) * proj / hh.t + melt;
+      occN[x] = i + 1;
+    }
+    for (let i = n - 1; i >= 0; i--) {                                   // far to near
+      const hh = FP_HITS[i], sh = hh.s, d = hh.t, H = sh.h, u = hh.u;
+      const yTop = hor - (H - eye) * proj / d + melt, yBot = hor + eye * proj / d + melt * 0.5, span = (yBot - yTop) || 1;
+      const top = Math.max(0, Math.floor(yTop)), bot = Math.min(RH, Math.ceil(yBot));
+      if (!sober) {                                                      // the trip: every wall the same melting rainbow
+        const shade = Math.min(1, 220 / (d + 40)) * (hh.side ? 0.85 : 1) * (0.8 + 0.4 * pulse);
+        for (let y = top; y < bot; y++) {
+          const v = (y - yTop) / span, o = (y * RW + x) * 4;
+          const li = (((u * 0.9 + v * 180 + tsh * 3) | 0) & 255) * 3;
+          const band = ((u * 0.08 + v * 7 - t * 2.5) % 1 + 1) % 1 < 0.28 ? 0.45 : 1;
+          B[o] = L[li] * shade * band; B[o + 1] = L[li + 1] * shade * band; B[o + 2] = L[li + 2] * shade * band;
+        }
+        continue;
+      }
+      const indoor = sh.m === 'in', lit = indoor ? Math.min(1, 220 / (d + 40)) * (hh.side ? 0.85 : 1) * (0.8 + 0.4 * pulse) : hh.lit;
+      const hz = indoor ? 0 : Math.min(0.5, d / 3200);                    // (outside: daylight, a little haze far off)
+      for (let y = top; y < bot; y++) {
+        const o = (y * RW + x) * 4;
+        fpMaterial(sh, hh.face, u, H * (yBot - y - 0.5) / span);
+        const a = FP_RGB[3]; if (a <= 0) continue;
+        let r = FP_RGB[0] * lit, g = FP_RGB[1] * lit, b = FP_RGB[2] * lit;
+        if (hz) { r += (204 - r) * hz; g += (218 - g) * hz; b += (232 - b) * hz; }
+        if (a < 1) { B[o] += (r - B[o]) * a; B[o + 1] += (g - B[o + 1]) * a; B[o + 2] += (b - B[o + 2]) * a; }
+        else { B[o] = r; B[o + 1] = g; B[o + 2] = b; }
+      }
     }
   }
   cv.low.getContext('2d').putImageData(buf, 0, 0);
@@ -4045,21 +4262,27 @@ function drawShroom(w) {
     if (hpx < 0.3) continue;
     const wpx = s.W * sc, x0 = cx - wpx / 2;
     const c0 = Math.max(0, Math.floor(x0)), c1 = Math.min(RW, Math.ceil(x0 + wpx));
-    let run = -1;
+    // b323: each column shows it down to the top of the nearest thing in front of it there (all of it if nothing is)
+    let run = -1, runCut = 0, any = false;
+    vg.save(); vg.beginPath();
     for (let c = c0; c <= c1; c++) {
-      const vis = c < c1 && depth < zbuf[c];
-      if (vis && run < 0) run = c;
-      if (!vis && run >= 0) {
-        const f0 = (run - x0) / wpx, f1 = (c - x0) / wpx, iw = s.img.width;
-        const sx0 = Math.max(0, f0 * iw), sx1 = Math.min(iw, f1 * iw);
-        if (sx1 > sx0) {
-          if (s.glow) vg.globalCompositeOperation = 'lighter';
-          vg.drawImage(s.img, sx0, 0, sx1 - sx0, s.img.height, run * SV, top * SV, (c - run) * SV, hpx * SV);
-          vg.globalCompositeOperation = 'source-over';
-        }
-        run = -1;
+      let cut = -1;
+      if (c < c1) {
+        cut = RH; const base = c * FP_OCC;
+        for (let i = 0; i < occN[c]; i++) if (occT[base + i] < depth && occTop[base + i] < cut) cut = occTop[base + i];
+        cut = cut <= top ? -1 : Math.min(RH, Math.ceil(cut));
+      }
+      if (c === c1 || cut !== runCut) {
+        if (run >= 0 && runCut > 0) { vg.rect(run * SV, 0, (c - run) * SV, runCut * SV); any = true; }
+        run = cut > 0 ? c : -1; runCut = cut;
       }
     }
+    if (any) {
+      vg.clip();
+      if (s.glow) vg.globalCompositeOperation = 'lighter';
+      vg.drawImage(s.img, x0 * SV, top * SV, wpx * SV, hpx * SV);
+    }
+    vg.restore();
   }
   // b308: where a potato or a rocket will land, as a ring on the floor
   if (me.aimOn && ((me.weapon === 'launcher' && me.rockets > 0) || (me.weapon === 'lob' && me.charging))) {
@@ -5167,13 +5390,13 @@ function lobbySolids(w) {
     pushOutOfBox(p, 1, water);
     pushOutOfBox(p, T.radius * 0.7, towerBox());
     for (const b of lobbySolidBoxes()) pushOutOfBox(p, T.radius * 0.5, b);
-    for (const b of YARD_SOLIDS) pushOutOfBox(p, T.radius * 0.5, b);            // b322: outside
+    for (const b of YARD_SOLIDS) pushOutOfSolid(p, T.radius * 0.5, b);          // b322: outside
   }
   if (NPC_GOTH.carrier < 0 && !NPC_GOTH.thrown) pushOutOfBox(NPC_GOTH, 8, tableBox());
   for (const c of (w.cans || [])) {
     if (pushOutOfBox(c, 6, water)) { c.vx *= -0.5; c.vy *= -0.5; }
     pushOutOfBox(c, 6, towerBox());
-    for (const b of lobbySolidBoxes().concat(YARD_SOLIDS)) if (pushOutOfBox(c, 6, b)) { c.vx *= -0.5; c.vy *= -0.5; }
+    for (const b of lobbySolidBoxes().concat(YARD_SOLIDS)) if (pushOutOfSolid(c, 6, b)) { c.vx *= -0.5; c.vy *= -0.5; }
   }
 }
 // Moving water: the pool is redrawn from the floor art in thin rows, each nudged
@@ -7908,7 +8131,6 @@ function camFollow(w) {                                  // once per frame, befo
   CAM.h = worldH(w); CAM.w = worldW(w);
   // the tall lobby, zoomed out: the whole lounge, or the bedroom below it; outside (b322) it follows you
   if (CAM.h > ARENA.h && want === 1 && !seated && !(me && inYard(me))) { tx = ARENA.w / 2; ty = me && inBedroom(me) ? LOBBY_H - ARENA.h / 2 : ARENA.h / 2; }
-  if (SHROOM.on && SHROOM.sober && me && CAM.h > ARENA.h && inYard(me)) endShroom();   // first person is for indoors
   const k = Math.min(1, dt * 8); CAM.x += (tx - CAM.x) * k; CAM.y += (ty - CAM.y) * k;
 }
 function camView() {                                     // what's on screen, kept inside the arena (or the tall lobby)
