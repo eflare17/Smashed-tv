@@ -230,8 +230,8 @@
   <p class="hint">
   <b>build <span id="buildLbl"></span></b> — P1: WASD to move, mouse to aim, hold click to fire. On touch, left half moves and right half aims.
   Press <b>1</b>&ndash;<b>6</b> to pick a weapon (fists, spud gun, potato throw, blasters, shotgun, nuke) from the bar along the bottom (tap it on a phone), and drag a slot onto another to swap them. Press <b>P</b> to drop in a local player 2 (arrow keys + space, or a second gamepad) — that's the same
-  code path the networked player will use. <b>Shift</b> dive-rolls (P2: Ctrl or Enter; two fingers on the move side). <b>R</b> restarts.
-  <br><b>Controller</b> (any pad, Steam Controller included): left stick moves, right stick aims and fires, <b>RT</b> fires
+  code path the networked player will use. <b>Shift</b> dive-rolls (P2: Ctrl; two fingers on the move side). <b>R</b> restarts.
+  <br><b>Controller</b> (any pad, Steam Controller included): left stick moves, right stick aims, <b>RT</b> fires
   (at the pointer if Steam has the gyro or trackpad as the mouse), <b>B</b> / <b>RB</b> / <b>LT</b> roll, <b>A</b> is E (pick up, sit, play),
   <b>LB</b> / <b>Y</b> or the d-pad swap weapons, <b>Menu</b> starts, <b>View</b> is first person, d-pad up zooms, d-pad down (or <b>Tab</b>) shows every control on screen.
   At the card table: <b>X</b> deal, <b>Y</b> hit, <b>B</b> stand. In a cabinet, <b>B</b> leaves.
@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b316 — RT fires in first person; Tab or d-pad down shows every control on screen';
+const BUILD = 'b317 — controller: the right stick only aims, RT is the only fire button';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -8064,7 +8064,7 @@ canvas.addEventListener('pointerleave', () => { mouse.inside = false; });
 // b314: any controller, the Steam Controller included. Under Steam Input it's an Xbox-style pad
 // (the browser's "standard" layout). If Steam turns its gyro or trackpad into a mouse instead, the
 // game aims at the pointer as it always has, and the right trigger still fires.
-//   left stick   move                 right stick  aim and fire (or aim with gyro / trackpad + RT)
+//   left stick   move                 right stick  aim (first person: look); only RT fires
 //   RT           fire                 B, RB or LT  dive roll
 //   A            E: pick up, sit, eat, play a cabinet, pull, throw
 //   LB / Y, d-pad left / right        previous / next weapon
@@ -8111,7 +8111,7 @@ canvas.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') mou
 // controller shows it; it also comes up by itself for a few seconds the first time a controller's used.
 const HELP = { on: false, until: 0, padShown: false };
 const HELP_PAD = [
-  ['Left stick', 'Move'], ['Right stick', 'Aim and fire  (first person: look)'], ['RT', 'Fire'],
+  ['Left stick', 'Move'], ['Right stick', 'Aim  (first person: look)'], ['RT', 'Fire'],
   ['B  /  RB  /  LT', 'Dive roll'], ['A', 'Use: pick up, sit, eat, play, pull, throw'],
   ['LB  /  Y,  d-pad ◀ ▶', 'Change weapon'], ['Menu', 'Start the run  (restart when it’s over)'],
   ['View', 'First person'], ['D-pad ▲', 'Zoom'], ['D-pad ▼', 'Show / hide this list'],
@@ -8228,7 +8228,7 @@ function localInput0() {
     shoot = true; st = true; ax = aimStick.dx; ay = aimStick.dy;
     if (Math.hypot(ax, ay) < 0.06) { ax = 0; ay = 0; }
   } else if (gr.m > 0) {
-    shoot = true; st = true; ax = gr.x; ay = gr.y;
+    shoot = rt; st = true; ax = gr.x; ay = gr.y;                        // b317: the stick only aims; RT fires (it used to fire too)
   } else if (rt && !ptrAim) {
     shoot = true; st = true; ax = PAD.aim[0].x; ay = PAD.aim[0].y;      // the trigger alone: the way you last aimed
   } else if (mouse.inside) {
@@ -8262,12 +8262,12 @@ function localInput1() {
   if (keys.has('arrowup')) my -= 1;
   if (keys.has('arrowdown')) my += 1;
   let ax = 0, ay = 0, shoot = keys.has(' '), st = false;
-  let roll = keys.has('control') || keys.has('enter');
+  let roll = keys.has('control');                                  // b317: not Enter as well: Enter starts the run
   const g = padAt(1);
   if (g) {
     const gl = padStick(g, 0, 1, 0.2), gr = padStick(g, 2, 3, 0.22);
     if (gl.m > 0) { mx = gl.x; my = gl.y; }
-    if (gr.m > 0) { PAD.aim[1] = { x: gr.x, y: gr.y }; shoot = true; st = true; ax = gr.x; ay = gr.y; }
+    if (gr.m > 0) { PAD.aim[1] = { x: gr.x, y: gr.y }; shoot = padBtn(g, 7); st = true; ax = gr.x; ay = gr.y; }
     else if (padBtn(g, 7)) { shoot = true; st = true; ax = PAD.aim[1].x; ay = PAD.aim[1].y; }
     if (padBtn(g, 1) || padBtn(g, 5) || padBtn(g, 6)) roll = true;
   }
