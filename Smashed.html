@@ -611,7 +611,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b327';
+const BUILD = 'b328';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -1987,8 +1987,8 @@ const BACK_DOOR = { x: 645, w: 56, y1: 566 };        // y1: the foot of the hous
 // where you can walk outside; each edge is a wall or fence, and they overlap where they meet
 const YARD_AREAS = [
   { x0: 476, y0: 566, x1: 905,  y1: 945 },           // the deck, in the corner of the L
-  { x0: 860, y0: 58,  x1: 1702, y1: 1898 },          // east of the house: driveway, garage, the crop bed
-  { x0: 4,   y0: 884, x1: 1702, y1: 1898 },          // south of the house: the big yard
+  { x0: 860, y0: 58,  x1: 1706, y1: 1880 },          // east of the house: driveway, garage, the crop bed
+  { x0: 4,   y0: 884, x1: 1706, y1: 1880 },          // south of the house: the big yard
 ];
 // what you bump into outside: the ground each one stands on (the tank's round: cx, cy, r). b323: and for first
 // person, how tall each is (h, world units: he's 64 tall, his eyes at 62), what it's made of (m), how far its
@@ -2000,29 +2000,29 @@ const FENCE_H = 58;                                   // a bit under eye height,
 // phone) pushes you down into the mat as you land, so each bounce goes higher. tz: how high above the mat; dz (what
 // the game already sends and draws for height) is the mat plus that, so everyone sees you up there, and in first
 // person your eyes go up and down with you.
-const TRAMP = { cx: 753, cy: 1350, r: 125, mat: 32, net: 64, g: 520, vbase: 175, vmax: 380, boost: 85, keep: 0.82 };
+const TRAMP = { cx: 707, cy: 1340, r: 122, mat: 32, net: 64, g: 520, vbase: 175, vmax: 380, boost: 85, keep: 0.82 };
 const YARD_SOLIDS = [
   { x0: 488,  y0: 566,  x1: 618,  y1: 634,  h: 36,  m: 'bbq' },                                     // barbecue
-  { x0: 602,  y0: 702,  x1: 800,  y1: 800,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
-  { x0: 724,  y0: 662,  x1: 768,  y1: 702,  h: 34,  m: 'wood' },                                    //   back chair
-  { x0: 722,  y0: 800,  x1: 770,  y1: 852,  h: 34,  m: 'wood' },                                    //   front chair
+  { x0: 604,  y0: 668,  x1: 796,  y1: 748,  h: 27,  m: 'wood' },                                    // outdoor table and its side chairs
+  { x0: 680,  y0: 612,  x1: 722,  y1: 668,  h: 34,  m: 'wood' },                                    //   back chair
+  { x0: 680,  y0: 748,  x1: 722,  y1: 806,  h: 34,  m: 'wood' },                                    //   front chair
   { x0: 905,  y0: 468,  x1: 1234, y1: 948,  h: 110, m: 'garage', art: [898, 458, 1242, 956] },      // garage
-  { x0: 980,  y0: 172,  x1: 1144, y1: 456,  h: 66,  m: 'car', art: [970, 116, 1154, 510],           // the ute in the driveway, facing the garage
-    fp: [{ x0: 980, y0: 172, x1: 1144, y1: 300, h: 44, m: 'car', part: 'tray' },
-         { x0: 986, y0: 300, x1: 1138, y1: 380, h: 66, m: 'car', part: 'cab' },
-         { x0: 980, y0: 380, x1: 1144, y1: 456, h: 42, m: 'car', part: 'bonnet' }] },
-  { x0: 1250, y0: 40,   x1: 1278, y1: 852,  h: FENCE_H, m: 'fence' },                               // fence between the driveway and the crop bed
-  { x0: 1218, y0: 838,  x1: 1364, y1: 902,  h: FENCE_H, m: 'fence', art: [1214, 792, 1368, 906] },  // the crop bed's front fence, left of its gap
-  { x0: 1566, y0: 838,  x1: 1704, y1: 902,  h: FENCE_H, m: 'fence', art: [1562, 792, 1704, 906] },  //   and right of it
-  { x0: 1256, y0: 948,  x1: 1346, y1: 1004, h: 42,  m: 'bush', art: [1238, 916, 1362, 1014] },      // bush by the garage
-  { cx: TRAMP.cx, cy: TRAMP.cy, r: TRAMP.r, h: TRAMP.mat + TRAMP.net, m: 'tramp', art: [606, 1116, 900, 1482] },   // trampoline
-  { x0: 98,   y0: 1552, x1: 464,  y1: 1898, h: 85,  m: 'shed', art: [90, 1542, 474, 1898] },        // shed
-  { x0: 36,   y0: 1620, x1: 104,  y1: 1848, h: 28,  m: 'junk' },                                    // bricks and crates beside it
-  { x0: 658,  y0: 1598, x1: 924,  y1: 1716, h: 16,  m: 'bed' },                                     // raised beds
-  { x0: 658,  y0: 1778, x1: 924,  y1: 1896, h: 16,  m: 'bed' },
-  { x0: 1124, y0: 1562, x1: 1258, y1: 1812, h: 16,  m: 'bed' },
-  { cx: 1400, cy: 1696, r: 104, h: 72, m: 'tank', art: [1286, 1530, 1516, 1808] },                  // water tank
-  { x0: 1538, y0: 1636, x1: 1662, y1: 1752, h: 36,  m: 'compost' },                                 // compost bins
+  { x0: 1000, y0: 124,  x1: 1160, y1: 450,  h: 66,  m: 'car', art: [988, 114, 1172, 458],           // the ute in the driveway, facing the garage
+    fp: [{ x0: 1000, y0: 124, x1: 1160, y1: 222, h: 44, m: 'car', part: 'tray' },
+         { x0: 1006, y0: 222, x1: 1154, y1: 335, h: 66, m: 'car', part: 'cab' },
+         { x0: 1000, y0: 335, x1: 1160, y1: 450, h: 42, m: 'car', part: 'bonnet' }] },
+  { x0: 1280, y0: 30,   x1: 1302, y1: 894,  h: FENCE_H, m: 'fence' },                               // fence between the driveway and the crop bed
+  { x0: 1234, y0: 884,  x1: 1434, y1: 904,  h: FENCE_H, m: 'fence', art: [1236, 796, 1438, 906] },  // the crop bed's front fence, left of its gap
+  { x0: 1594, y0: 884,  x1: 1712, y1: 904,  h: FENCE_H, m: 'fence', art: [1590, 796, 1710, 906] },  //   and right of it
+  { x0: 1240, y0: 896,  x1: 1330, y1: 976,  h: 42,  m: 'bush', art: [1222, 874, 1346, 990] },       // bush by the garage
+  { cx: TRAMP.cx, cy: TRAMP.cy, r: TRAMP.r, h: TRAMP.mat + TRAMP.net, m: 'tramp', art: [578, 1106, 840, 1454] },   // trampoline
+  { x0: 60,   y0: 1528, x1: 418,  y1: 1864, h: 85,  m: 'shed', art: [54, 1520, 424, 1870] },        // shed
+  { x0: 12,   y0: 1600, x1: 60,   y1: 1822, h: 28,  m: 'junk' },                                    // bricks and crates beside it
+  { x0: 614,  y0: 1574, x1: 878,  y1: 1694, h: 16,  m: 'bed' },                                     // raised beds
+  { x0: 614,  y0: 1754, x1: 878,  y1: 1874, h: 16,  m: 'bed' },
+  { x0: 1104, y0: 1538, x1: 1236, y1: 1790, h: 16,  m: 'bed' },
+  { cx: 1380, cy: 1680, r: 100, h: 72, m: 'tank', art: [1268, 1510, 1514, 1792] },                  // water tank
+  { x0: 1520, y0: 1560, x1: 1638, y1: 1728, h: 36,  m: 'compost' },                                 // compost bins
 ];
 // push something round (o, r wide) out of one of them
 function pushOutOfSolid(o, r, s) {
@@ -2276,6 +2276,22 @@ function drawBackDoor() {
   ctx.fillStyle = '#b9b09c'; ctx.fillRect(x - 4, top - 2, 1, h + 2); ctx.fillRect(x + d.w + 3, top - 2, 1, h + 2);
   ctx.fillStyle = '#6b4a30'; ctx.fillRect(x + d.w + 4, ARENA.h - 2, 6, h - wl + 2);   // the door, swung back against the wall
   ctx.fillStyle = '#5b6b3a'; ctx.fillRect(x + 8, d.y1 + 2, d.w - 16, 10);         // mat
+}
+// b328: the tank, cut out of the yard picture and drawn again over anyone standing behind it (the picture's under
+// everyone, so walking up behind it you used to stand on top of it); it goes in with the gym's tall things, by depth
+const TANK_OVER = { y: 1772, box: [1270, 1512, 1522, 1776], img: null,
+  shape: (g, ox, oy) => { g.ellipse(1380 + ox, 1581 + oy, 103, 62, 0, 0, Math.PI * 2); g.rect(1277 + ox, 1581 + oy, 206, 129);
+                          g.ellipse(1380 + ox, 1710 + oy, 103, 62, 0, 0, Math.PI * 2); g.rect(1477 + ox, 1576 + oy, 34, 108); } };
+function drawYardCut(o) {
+  if (!o.img) {
+    if (!YARD_IMG.complete || !YARD_IMG.naturalWidth) return;
+    const [x0, y0, x1, y1] = o.box, c = document.createElement('canvas'); c.width = x1 - x0; c.height = y1 - y0;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    g.drawImage(YARD_IMG, YARD.ox - x0, YARD.oy - y0);
+    g.globalCompositeOperation = 'destination-in'; g.beginPath(); o.shape(g, -x0, -y0); g.fill();
+    o.img = c;
+  }
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(o.img, o.box[0], o.box[1]); ctx.restore();
 }
 // b322: the yard picture, under everything else in the lobby
 function drawYard() {
@@ -3548,7 +3564,8 @@ function shroomMusic(on) {
   sNoise(1.8, 200, 4, 0.3, 'bandpass', 3200);                        // a whoosh up
 }
 // turning: the mouse, while tripping (it keeps working when it leaves the canvas)
-window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045;
+window.addEventListener('mousemove', e => { if (LAST_POINTER !== 'mouse' || (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) return;   // b328: not the mouse moves a phone makes up after a tap
+  if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045;
   if (SHROOM.on && SHROOM.sober) SHROOM.lookY = Math.max(-0.6, Math.min(0.6, (SHROOM.lookY || 0) + (e.movementY || 0) * 0.0035)); });   // b287: and up and down
 // b287: in plain first person the mouse is captured (so it never runs off the screen); Esc lets it go, a click takes it back
 // b310: the browser can say no (asked again too soon after letting go, say), which used to go unnoticed: the
@@ -3652,7 +3669,7 @@ function fpCast(px, py, dx, dy, A) {
 }
 // where the ray first meets one solid (a box, or round), if it's between tMin and tMax
 function fpSolid(s, px, py, dx, dy, tMin, tMax) {
-  let t0, side, u, face, lit;
+  let t0, side, u, face, lit, tFar = 0;                               // (b328: tFar: where it leaves it, for its top)
   if (s.r !== undefined) {
     const ox = px - s.cx, oy = py - s.cy, a = dx * dx + dy * dy, b = ox * dx + oy * dy, c = ox * ox + oy * oy - s.r * s.r, disc = b * b - a * c;
     if (disc <= 0 || (c <= 0 && s.m !== 'tramp')) return;
@@ -3665,10 +3682,11 @@ function fpSolid(s, px, py, dx, dy, tMin, tMax) {
       }
       if (c <= 0) return;                                             // (on it: only the far side)
     }
-    t0 = (-b - sq) / a;
+    t0 = (-b - sq) / a; tFar = (-b + sq) / a;
     const nx = (ox + dx * t0) / s.r, ny = (oy + dy * t0) / s.r;
     side = Math.abs(nx) > Math.abs(ny) ? 0 : 1; face = ''; u = (Math.atan2(ny, nx) + Math.PI) * s.r;
     lit = 0.7 + 0.3 * Math.max(0, -ny * 0.9 + nx * 0.25);              // round: lit where it faces the sun
+    lit *= 0.6 + 0.4 * Math.sqrt(Math.max(0, -(nx * dx + ny * dy) / (Math.hypot(dx, dy) || 1)));   // b328: and darker round its edges, so it reads as round
   } else {
     let t1 = Infinity; t0 = -Infinity; side = 0;
     if (dx) { let a = (s.x0 - px) / dx, b = (s.x1 - px) / dx; if (a > b) { const q = a; a = b; b = q; } t0 = a; t1 = b; }
@@ -3676,9 +3694,10 @@ function fpSolid(s, px, py, dx, dy, tMin, tMax) {
     if (dy) { let a = (s.y0 - py) / dy, b = (s.y1 - py) / dy; if (a > b) { const q = a; a = b; b = q; } if (a > t0) { t0 = a; side = 1; } if (b < t1) t1 = b; }
     else if (py <= s.y0 || py >= s.y1) return;
     if (t0 > t1) return;
+    tFar = t1;
     face = side ? (dy > 0 ? 'N' : 'S') : (dx > 0 ? 'W' : 'E'); u = side ? px + dx * t0 : py + dy * t0; lit = FP_LIT[face];
   }
-  if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit);
+  if (t0 > Math.max(0.5, tMin) && t0 < tMax) fpAdd(t0, s, u, side, face, lit, s.m === 'house' ? 0 : tFar);
 }
 function fpHash(n) { n = Math.imul(n ^ (n >>> 15), 0x2c1b3c6d); n = Math.imul(n ^ (n >>> 12), 0x297a2d39); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; }
 function fpRep(u, n) { return ((u % n) + n) % n; }
@@ -3701,7 +3720,7 @@ function fpMaterial(s, face, u, z) {
       break;
     }
     case 'garage': {                                                  // rusty corrugated iron, the roller door out the back
-      if (face === 'S' && u > 948 && u < 1192 && z < 84) {
+      if (face === 'S' && u > 952 && u < 1208 && z < 84) {
         if (z > 80) { r = 58; g = 54; b = 50; } else { const k = z % 7 < 1.2 ? 0.7 : 1; r = 118 * k; g = 114 * k; b = 106 * k; }
         break;
       }
@@ -3711,7 +3730,7 @@ function fpMaterial(s, face, u, z) {
       break;
     }
     case 'shed': {                                                    // grey corrugated iron, rust running down it, the door
-      if (face === 'S' && u > 268 && u < 338 && z < 66) { r = 66; g = 60; b = 54; break; }
+      if (face === 'S' && u > 230 && u < 292 && z < 66) { r = 66; g = 60; b = 54; break; }
       const k = fpRep(u, 5) < 2.5 ? 1 : 0.85, rust = fpHash(Math.floor(u / 5) + 7) < 0.22 && fpHash(Math.floor(u / 5) * 61 + Math.floor(z / 10)) < 0.75;
       if (rust) { r = 130 * k; g = 88 * k; b = 62 * k; } else { r = 152 * k; g = 152 * k; b = 150 * k; }
       if (z > H - 5) { r *= 0.78; g *= 0.78; b *= 0.78; }
@@ -3719,20 +3738,21 @@ function fpMaterial(s, face, u, z) {
     }
     case 'car': {                                                     // the ute: tray, cab and bonnet
       const p = s.part, sideOn = face === 'E' || face === 'W';
+      const v = sideOn ? (u - s.y0) / (s.y1 - s.y0) : (u - s.x0) / (s.x1 - s.x0);   // 0..1 across this face
       if (z < 13) {                                                   // underneath, and the wheels
-        const wheel = sideOn && ((p === 'tray' && u > 200 && u < 248) || (p === 'bonnet' && u > 398 && u < 446));
+        const wheel = sideOn && ((p === 'tray' && v > 0.25 && v < 0.7) || (p === 'bonnet' && v > 0.3 && v < 0.78));
         r = g = b = wheel ? 22 : 42; break;
       }
       r = 138; g = 134; b = 112;
       if (p === 'tray') {
-        if (face === 'N' && z > 27 && z < 39 && (u < 996 || u > 1128)) { r = 196; g = 42; b = 36; }   // tail lights
+        if (face === 'N' && z > 27 && z < 39 && (v < 0.1 || v > 0.9)) { r = 196; g = 42; b = 36; }   // tail lights
         else if (z > 40) { r = 104; g = 100; b = 84; }                // the tray's rail
       } else if (p === 'cab') {
-        if (z > 44 && z < 63 && (sideOn ? u > 306 && u < 374 : u > 996 && u < 1128)) { r = 40; g = 54; b = 66; }   // windows all round
-        else if (sideOn && z < 44 && Math.abs(u - 340) < 1) { r = 92; g = 88; b = 74; }   // the door's edge
+        if (z > 44 && z < 63 && v > 0.07 && v < 0.93) { r = 40; g = 54; b = 66; }   // windows all round
+        else if (sideOn && z < 44 && Math.abs(v - 0.5) < 0.012) { r = 92; g = 88; b = 74; }   // the door's edge
       } else if (face === 'S') {                                      // the front: bumper, grille, headlights
         if (z < 19) { r = 72; g = 72; b = 74; }
-        else if (z < 32) { if (u < 1004 || u > 1120) { r = 236; g = 230; b = 196; } else { r = 34; g = 36; b = 38; } }
+        else if (z < 32) { if (v < 0.15 || v > 0.85) { r = 236; g = 230; b = 196; } else { r = 34; g = 36; b = 38; } }
       }
       break;
     }
@@ -4327,7 +4347,8 @@ function drawShroom(w) {
       const hh = FP_HITS[i], sh = hh.s;
       if (zbuf[x] === 1e9 && sh.h >= eye && sh.m !== 'tramp') zbuf[x] = hh.t;
       occT[x * FP_OCC + i] = hh.t;
-      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : hor - ((sh.m === 'tramp' ? TRAMP.mat : sh.h) - eye) * proj / hh.t + melt;
+      const oh = sh.m === 'tramp' ? TRAMP.mat : sh.h;
+      occTop[x * FP_OCC + i] = sh.h >= SHROOM_WALL ? -1e9 : (eye > oh && hh.t2 > hh.t && sh.m !== 'tramp') ? hor + (eye - oh) * proj / hh.t2 + melt : hor - (oh - eye) * proj / hh.t + melt;
       occN[x] = i + 1;
     }
     for (let i = n - 1; i >= 0; i--) {                                   // far to near
@@ -4366,6 +4387,24 @@ function drawShroom(w) {
           if (rr < TRAMP.r - 18) { const kk = fpRep(wx + wy, 14) < 1 || fpRep(wx - wy, 14) < 1 ? 1.4 : 1; r = 24 * kk; g = 24 * kk; b = 28 * kk; }   // the mat
           else if (rr < TRAMP.r - 15) { r = 120; g = 124; b = 130; }                                              // the springs at its edge
           else { const seam = fpRep((Math.atan2(wy - TRAMP.cy, wx - TRAMP.cx) + Math.PI) * TRAMP.r, 26) < 1.2 ? 0.8 : 1; r = 46 * seam; g = 88 * seam; b = 178 * seam; }   // the pad over them
+          const hz = Math.min(0.5, dm / 3200);
+          B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = b + (232 - b) * hz;
+        }
+      }
+      if (hh.t2 > d && sh.m !== 'tramp' && eye > H + 0.5) {             // b328: seen from above (up on the trampoline): its top, at its own height
+        const k = (eye - H) * proj, y0 = Math.max(0, Math.floor(hor + k / hh.t2 + melt * 0.5)), y1 = Math.min(RH, Math.ceil(hor + k / d + melt * 0.5));
+        for (let y = y0; y < y1; y++) {
+          const den = y + 0.5 - hor - melt * 0.5; if (den <= 0) continue;
+          const dm = k / den; if (dm > hh.t2 || dm < d) continue;
+          const wx = px + rdx * dm, wy = py + rdy * dm, o = (y * RW + x) * 4;
+          let r, g, b;
+          if (sh.m === 'tank') {                                         // the tank's rim, and the water in it
+            if (Math.hypot(wx - sh.cx, wy - sh.cy) > sh.r - 7) { r = 196; g = 200; b = 204; }
+            else { const kk = fpRep(wx * 0.7 + wy, 18) < 1.2 ? 1.15 : 1; r = 78 * kk; g = 128 * kk; b = 176 * kk; }
+          } else {                                                       // anything else: its own picture off the yard art (the garage's roof, the ute from above...)
+            const ix = wx | 0, iy = wy | 0; if (ix < 0 || iy < 0 || ix >= FW || iy >= FH) continue;
+            const fo = (iy * FW + ix) * 4; r = FD[fo] * 1.05; g = FD[fo + 1] * 1.05; b = FD[fo + 2] * 1.05;
+          }
           const hz = Math.min(0.5, dm / 3200);
           B[o] = r + (204 - r) * hz; B[o + 1] = g + (218 - g) * hz; B[o + 2] = b + (232 - b) * hz;
         }
@@ -11957,7 +11996,8 @@ function renderBase(w, hudRight) {
                           { y: T.legY - 14, draw: () => drawLegStation(w) },
                           { y: WARD.y - 6, draw: () => drawWardrobe() },
                           { y: MIRROR.y - 6, draw: () => drawMirror(w) },
-                          ...CABINETS.map(c => ({ y: cabY() - 6, draw: () => drawCabinet(w, c) }))].sort((a, b) => a.y - b.y) : [];
+                          ...CABINETS.map(c => ({ y: cabY() - 6, draw: () => drawCabinet(w, c) })),
+                          ...(lobbyTall(w) ? [{ y: TANK_OVER.y, draw: () => drawYardCut(TANK_OVER) }] : [])].sort((a, b) => a.y - b.y) : [];   // (b328: the tank)
   const speech = [];
   for (const p of byDepth) {
     while (deep.length && p.y >= deep[0].y) deep.shift().draw();
