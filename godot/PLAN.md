@@ -79,7 +79,13 @@ panel, the farm plans (FARM.md).
 3. **Lobby life.** The pool and dive tower, the gym, the table and the bong, cards with Gothica, the mirror and
    hair, the shirt picture, the wardrobe, the mushroom, the slot and vending machines, the barbecue.
 4. **Playing together online.**
-5. **Extras.** Arcade games, Sand Miner, the farm, phone controls polish, the emulator cabinet if it can come.
+5. **Extras.** Arcade games, Sand Miner, the farm, phone controls polish, the emulator cabinet (web build: open
+   EmulatorJS over the game through JavaScriptBridge, as the HTML game does; the library, the console picker,
+   and a friend joining as player 2 over the milestone 4 connection). With it, the **Google Drive games folder**
+   (decided: built here, not in the HTML game): "Connect Google Drive" in the cabinet's menu, signing in with
+   Google, listing the games in a folder shared with your friend by Gmail. Needs the OAuth client ID from the
+   owner (Google Cloud project, Drive API on, consent screen in Testing with the friends as test users, origin
+   https://eflare17.github.io).
 
 ## Milestone 1: who does what
 
