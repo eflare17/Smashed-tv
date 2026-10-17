@@ -328,6 +328,10 @@ func restart() -> void:
 		saved_char = player.char_id
 	saved_mode = mode
 	Sfx.stop_whistle()
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	for a in ["move_left", "move_right", "move_up", "move_down", "roll"]:
+		Input.action_release(a)
 	get_tree().call_deferred("reload_current_scene")
 
 func step_mode(d: int) -> void:
@@ -360,6 +364,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.device == InputEvent.DEVICE_ID_EMULATION:
 			return
 		if sim.over:
+			# a click on the game-over words restarts (|x - 430| < 220, |y - 260| < 60 on the HTML canvas)
+			var k := get_viewport().get_visible_rect().size.y / 520.0
+			var c := get_viewport().get_visible_rect().size / 2.0
+			if absf(event.position.x - c.x) < 220.0 * k and absf(event.position.y - 260.0 * k) < 60.0 * k:
+				restart()
 			return
 		_fire_mouse = true
 	if event.is_action_pressed("start_run") and not event.is_echo():
@@ -653,6 +662,8 @@ func _process(delta: float) -> void:
 			p2.global_position = GameData.world_to_3d(f2.x, f2.y, 0.0)
 			p2.facing = sim.facing_vec(f2)
 	_drain()
+	if sim.over and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # let the pointer go for the game-over screen
 	_update_sprite()
 	if p2:
 		_update_sprite_of(p2, f2)
