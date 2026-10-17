@@ -596,7 +596,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b310 — first person: never loses the mouse (a key or a click takes it back, an edge keeps turning, and a hint says so)';
+const BUILD = 'b311 — first person: standing up from the table takes the mouse back, and the view never spins on its own';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3308,7 +3308,7 @@ function toggleFirstPerson() {
   SHROOM.keepGone = SHROOM.gone;
   Object.assign(SHROOM, { on: true, sober: true, t: SHROOM_IN + 1, clock: 0, dive: null, lastDive: 0, last: shroomNow(), beat: -1, turn: 0, props: null, floor: null, gone: Infinity, hue: 0, calm: 1 });
   SHROOM.ang = (me.fx || me.fy) ? Math.atan2(me.fy, me.fx) : -Math.PI / 2;
-  SHROOM.chars.clear(); SHROOM.lookY = 0;
+  SHROOM.chars.clear(); SHROOM.lookY = 0; SHROOM.edgeArmed = false;
   fpLock(true);
   fpLabel();
 }
@@ -3381,9 +3381,19 @@ window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.mov
 function fpLocked() { return document.pointerLockElement === document.getElementById('game'); }
 function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (c && !fpLocked() && c.requestPointerLock) { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } }
   else if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (_) {} }
-// any key in first person asks for the mouse again (a key press counts as you asking, so the browser allows it)
-window.addEventListener('keydown', e => { if (SHROOM.on && SHROOM.sober && !fpBusy() && !fpLocked() && !e.repeat && !['escape', 'v'].includes(e.key.toLowerCase())
-  && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable]'))) fpLock(true); });
+// any key in first person asks for the mouse again (a key press counts as you asking, so the browser allows it).
+// b311: and so does the key that takes you back into it: standing up from the table (a move key), or getting off
+// the bench, the leg press or the bed (E or a move key). That used to leave the mouse let go.
+const FP_MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase(), me = localMe();
+  if (!SHROOM.on || !SHROOM.sober || fpLocked() || e.repeat || k === 'escape' || k === 'v') return;
+  if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable]')) return;
+  const leaving = !!me && ((me.sit && FP_MOVE_KEYS.has(k)) || ((me.lift || me.leg || me.bed) && (k === 'e' || FP_MOVE_KEYS.has(k))));
+  if (!fpBusy() || (leaving && !ARC.open && !(typeof MD !== 'undefined' && MD.open) && !SHED.open && !mirrorLook)) fpLock(true);
+});
+// b311: turning at the edge only once you've moved the mouse in first person (not wherever the arrow was left)
+window.addEventListener('mousemove', e => { if (SHROOM.on && SHROOM.sober && !SHROOM.busy && e.target && e.target.id === 'game') SHROOM.edgeArmed = true; });
 window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && !fpBusy() && e.target && e.target.id === 'game') fpLock(true); });
 // WASD walk and step relative to where you're looking; aim is always straight ahead
 function shroomInput(inp) {
@@ -3630,7 +3640,7 @@ function drawShroom(w) {
   else if (!onTower || SHROOM.t < SHROOM_TIME - SHROOM_OUT - 0.2) SHROOM.t += dt;
   const trip = SHROOM.t;
   if (!sober && trip >= SHROOM_TIME) { endShroom(); return; }
-  if (sober && fpBusy()) { SHROOM.turn = 0; SHROOM.busy = true; fpLock(false); return; }   // b307: the top-down screen, till you're done
+  if (sober && fpBusy()) { SHROOM.turn = 0; SHROOM.busy = true; SHROOM.edgeArmed = false; fpLock(false); return; }   // b307: the top-down screen, till you're done
   if (SHROOM.busy) { SHROOM.busy = false; SHROOM.props = null; }   // (back: the room may have changed, so look again)
   const ease = f => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
   const fade = trip < SHROOM_IN ? ease(trip / SHROOM_IN) : trip > SHROOM_TIME - SHROOM_OUT ? ease((SHROOM_TIME - trip) / SHROOM_OUT) : 1;
@@ -3643,7 +3653,7 @@ function drawShroom(w) {
     const da = Math.atan2(Math.sin(lock - SHROOM.ang), Math.cos(lock - SHROOM.ang));
     SHROOM.ang += da * Math.min(1, dt * 6);
   }
-  if (sober && !fpLocked() && mouse.inside) {                    // b310: the mouse not held: its arrow at an edge keeps you turning
+  if (sober && !fpLocked() && mouse.inside && SHROOM.edgeArmed) {                    // b310: the mouse not held: its arrow at an edge keeps you turning
     const ex = mouse.x / ARENA.w, edge = ex < 0.12 ? -(0.12 - ex) / 0.12 : ex > 0.88 ? (ex - 0.88) / 0.12 : 0;
     SHROOM.turn += edge * 2.4 * dt;
   }
