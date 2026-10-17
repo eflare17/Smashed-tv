@@ -981,3 +981,508 @@ Measured from `r = T.radius` and drawn in his lift:
 HIT 4 `#f6d17a` 180 · KILL 14 `#6fd3a0` 260 · WALL 3 `#5a6274` 120 · HURT 10 `#e0473f` 220 · DOWN 24 `#e0473f` 300 ·
 BOOM 36 `#ff9a6a` 420 · LAUNCH 8 `#c9c9c9` 140 · BLAST 40 `#ffb347` 520 · SPLASH 10 `#e6f7ff` 200 · DIVE 16 `#ffffff` 260.
 (Owned with gore/effects; listed here because weapons fire HIT, WALL, LAUNCH, BLAST, SPLASH, KILL, BOOM.)
+
+---
+
+## 12. The weapon bar (`HOTBAR`, L9881–L9990)
+
+```js
+HOTBAR = { order: ['fists', 'spud', 'lob', 'blaster', 'shotgun', 'launcher'], want: null, drag: null, flash: null }
+```
+`order` is loaded from `localStorage 'smashed-hotbar'` if it holds exactly these six ids, and saved there after every
+swap. It's per browser (each player's own bar), not part of the world.
+
+**Layout** (`hotbarGeo`, L9925, b223: bigger and at the bottom): 6 slots of `s = 54`, gap 8, total 364 wide,
+`x0 = 430 − 182 = 248`, `y = 520 − 18 − 54 − 8 = 440` (screen space, not moved by the camera). Each slot is laid out
+at 40 × 40 and scaled by 54/40. `hotbarSlotAt(pt)`: `y` within `[436, 498]`, `i = floor((x − 248)/62)`, 0..5, and
+`x` within the slot plus 4.
+
+**Each slot** (`drawHotbar`, L9942), in 40-unit coordinates:
+- background `rgba(14,16,22,0.78)`; border 1 px `#3a4050` (not owned), `#8b93a4` (owned), 2 px `#f6d17a` (in hand), or
+  `#e0473f` while it's flashing "not yours" (350 ms);
+- its number `1`..`6`, 9 px monospace `#6b7385`, left-aligned at (4, 7);
+- the icon centred at (20, 15), fitted into 34 × 20, alpha 1 (owned) or 0.35 and greyscale (not owned);
+- a label at (20, 30), 9 px monospace: fists `POW` `#9aa3b5`; lob `× n` (whole potatoes, `floor(ammo/10)`) `#d8b878`,
+  red when 0; spud `● n` / `○ 0` (pellets) `#d8b878` / red; blaster `∞` `#9aa3b5` or `—` `#3a4050`; launcher
+  `☢ n` `#f6d17a` or `#3a4050`; shotgun (owned) a 28 × 4 bar at (6, 28): `#2a2f3b` behind, `#f6d17a` for
+  `wTime/T.shotgunTime`, red-blinking under 3 s in a run, else `—`.
+
+**Icons** (`HOT_ICON`, L9893): a crop of Juicy's side-on art for each weapon (b261: the art itself, never the copy
+wearing a shirt print), drawn with nearest filtering:
+| id | set, frame | crop (sx, sy, sw, sh) |
+|---|---|---|
+| blaster | `juicy` `side_run[0]` | 76, 34, 54, 46 |
+| shotgun | `juicy_shotgun` `side_a` | 42, 31, 36, 17 ("barrel and receiver, clear of his head") |
+| launcher | `juicy_launcher` `side_a` | 72, 36, 52, 36 ("the symbol and warhead") |
+| spud | `juicy_spud` `side_run[0]` | 74, 28, 42, 28 |
+| lob | the whole `SPUD_SPRITES[4]`, fitted | |
+| fists | the ✊ glyph (U+270A), 20 px, `#cfd4de` | |
+Until the art has loaded, the word (`HOT_LABEL`: SPUD, BLAST, SHOT, NUKE, FISTS, THROW) is drawn instead.
+
+**Using it** (pointer, L8745/L8782/L8805): a press on a slot starts `drag = {i, x, y, id, moved: 0}` and captures the
+pointer (it doesn't shoot). Moving updates `moved` (the furthest it's been) and the position. On release: moved < 8 →
+`selectSlot(i)`; otherwise, on a real pointer-up over another slot, the two slots swap and the order is saved. While
+dragging (moved ≥ 8), the slot is drawn empty and a copy (54 × 54, `rgba(14,16,22,0.92)`, gold 2 px border, icon fitted
+into 34 × 24) follows the finger. Keys 1–6 and the pad (§6) select. Hidden while calibrating, when the game is over and
+in the slot machine's secret room. Shown in first person too (§13).
+
+---
+
+## 13. First person (shooting in it)
+
+In the HTML, first person is the mushroom-trip renderer in "sober" mode (`SHROOM`, `toggleFirstPerson` L3574). It's
+**lobby only** (`fpCan`, L3573: not in a run, not over, not calibrating, the lounge floor on). The camera spec owns
+the view, the look controls and the 3D drawing; this section is what weapons need.
+
+### 13.1 Looking
+
+Yaw `SHROOM.ang` (radians, HTML ground angle: 0 = east, +π/2 = south), starting at `atan2(fy, fx)` (or north). Pitch
+offset `SHROOM.lookY` in `[−0.6, 0.6]` (negative = looking up). Mouse (pointer locked; any click while locked is a
+shot, b307): `turn += movementX·0.0045`, `lookY += movementY·0.0035`. Arrow keys (when no local player 2):
+±2.4 rad/s turn, ±1.6/s look. Pad right stick: `x·|x|·3.2` rad/s turn, `y·|y|·1.8`/s look. Touch, a finger on the
+right half: `0.0075` rad per px across, `0.004` per px up/down. The touch aim stick: `dx·2.8` rad/s.
+
+### 13.2 Aim and fire (`shroomInput`, L3706)
+
+Applied to player 0's input every frame in first person (unless the top-down screen has stepped in for sitting,
+the arcade, the mirror etc., or you're on the tower):
+```
+(fx, fy) = (cos ang, sin ang); right = (−fy, fx)
+move: mx, my = forward·(−my) + right·mx            // WASD walk relative to the view
+reach = max(60, min(T.lobFar, T.lobDefault × (1 − 1.4·lookY)))      // b308: look up to throw further (60 .. 405)
+ax, ay = (fx, fy) × reach;  st = false                               // aim is always straight ahead
+shoot = FIRE button held (touch) || (no aim-stick finger && (mouse button || RT))
+lt and tap are dropped
+```
+So the launcher and the potato land `reach` ahead (clamped by `T.lobMax` 420 / `T.lobFar` 430), and everything else
+fires straight ahead. Shots, damage and timing are exactly as top-down: the simulation doesn't know about first
+person.
+
+### 13.3 What you see
+
+- **The guns in your hands** (`FP_BLASTER`, L4207; `drawFpGuns`, L4234; b318): only while holding the **blasters**,
+  alive, not on the tower/board/falling. The picture `assets/FP_BLASTER_img_src.png` (172 × 177) is the *left* gun and
+  hand ("drawn by Gemini, from Juicy's guns"); its muzzle is at `(mx, my) = (171, 15)` in the picture. The right gun
+  is its mirror. Both are retinted to the character's skin (`fpGunFor`, L4209): `want` = the most common skin colour
+  in rows 28%–52% of the character's `front_run[0]` (or `front_a`) among opaque pixels with `r > g + 25, g > b,
+  luminance > 90` (bucketed by the top 4 bits per channel; default `#d69668`; `legColours`, L5479). In the gun picture,
+  every "skinish" pixel (`r > g + 25, g > b, lum > 60`, lum = 0.3r + 0.59g + 0.11b) becomes
+  `want × (lum/mean_skin_lum) × 1.08` per channel (× 1.3 more if `want`'s luminance ≤ 40). Cached per character.
+  - Size: `k = CH × 0.44 / 177` (CH = canvas height), so each gun is 44% of the screen's height.
+  - Position: left gun's left edge at `CW·0.335 − w`, right gun at `CW·0.665`; top at `CH − h + 0.05CH`.
+  - Walking bob: `sw = walkPh` (left) or `walkPh + π` (right); `x += sin(sw)·0.008CW·moveK`,
+    `y += |cos(sw)|·0.022CH·moveK`. `walkPh` advances π per 30 units walked; `moveK` eases to 1 while moving
+    (rate 8/s).
+  - Kick: the gun that fired last (`fired = me.gun ? 0 : 1`, i.e. left for gun 0) while `muzzle > 0`:
+    `kick = min(1, muzzle/0.055)`; it moves outward `0.006CW·kick` and down `0.045CH·kick`; and a flash, a radial
+    gradient at its muzzle point, radius `0.15CH·(0.6 + 0.4kick)`: `rgba(255,250,220, 0.95kick)` →
+    `rgba(255,200,90, 0.7kick)` at 0.35 → transparent orange.
+  - **Tracers** (b321, `FP_TRACERS`): each new shot (`muzzle` rose since last frame) adds `{side, t0}`; for 110 ms a
+    glow flies from that gun's muzzle to the screen centre with `q = 1 − (1 − e)²`, radius `CH(0.035 − 0.026q)`, a
+    radial gradient of radius 2.2× that: `rgba(255,255,235,0.95)` → `rgba(255,215,110,0.75)` at 0.4 → transparent.
+- **Other weapons** have no hands in first person. While `muzzle > 0` (and the blaster hands aren't showing), the
+  whole view gets a flash: a radial gradient centred at `(0.5VW, 0.86VH)`, radius 4 → `0.3VH`,
+  `rgba(255,240,190,0.9)` → transparent.
+- **Bullets** (b320): drawn as 3D cut-outs (the 16 × 16 glow: white → `#ffe38a` at 0.4 → transparent orange, drawn
+  additively) 10 × 10 units, between heights 40 and 50, **only once they are more than 70 units from you** ("up close
+  they start from where the guns are top-down, which isn't where they're drawn in your hands, so they looked like they
+  came out of the middle of the screen"). Spud bullets look the same here.
+- Rockets: the glow 26 × 26 centred at the rocket's height (bottom at `max(0, h − 13)`). Blasts: the current
+  `NUKE_SPRITES.boom` frame, width `T.blastRadius·1.6·(0.6 + 0.6f)`, its top at `0.85·height` (so it sinks a bit into
+  the floor), additive. Husks: `SPUD_SPRITES[4]` 14 wide, bottom at `dz` (lobbed) or 26 (husks). Plants: their stage
+  picture 30 wide at `(x, y + 6)` on the floor. (`shroomExtras`, L4096.)
+- **The landing ring** (b308, L4666): when `aimOn` and (launcher with rockets, or potato while charging): a 25-point
+  circle of radius `T.blastRadius` round `(tx, ty)` on the floor, `rgba(246,209,122,0.85)` 2 px.
+- **Crosshair** (L4885): four 5-px lines from 2 to 7 px out of the screen centre, white 0.8, 1.5 px.
+- **The hotbar** is drawn in first person too, with the E prompt.
+- **Phones** (b324): left thumb walks; a finger on the right half drags to look; the **FIRE** button
+  (`fpFireButton`: centre `(705, 405)`, radius 40) fires while held (slide off it and keep firing as you look). It's
+  drawn as a circle (`rgba(14,16,22,0.5)` with a `#e0473f` 2.5 px ring; `rgba(224,71,63,0.6)` with `#ffd0c8` when
+  held), a crosshair glyph and the word FIRE; for the first 6 s, "thumb here to walk" / "drag here to look" hints.
+
+---
+
+## 14. Sounds
+
+All sounds are made in code (Web Audio) except three recordings embedded in the HTML (`CLIPS`, L11160, base64 MP3):
+`pistol` (6 takes), `nuke` (1), `whistle` (1, 2.87 s long). **They are not in `godot/assets/` yet**: they need
+extracting from line 11160 (e.g. `assets/audio/pistol_0..5.mp3`, `nuke.mp3`, `whistle.mp3`).
+
+Master gain 0.5. Noise: one 1.2 s buffer of white noise (`random·2 − 1`), looped.
+
+- `sNoise(dur, freq, q, gain, type = lowpass, sweepTo)` (L11213): noise → biquad filter (`type`, `Q = q`, frequency
+  `freq`, ramped exponentially to `max(40, sweepTo)` over `dur` if given) → gain `gain` ramped exponentially to 0.0008
+  over `dur`; stops at `dur + 0.02`.
+- `sTone(dur, f0, f1, gain, wave = sine)` (L11228): oscillator `wave` at `f0`, ramped exponentially to `max(20, f1)`
+  over `dur` if `f1` is non-zero; gain as above.
+- `sClip(name, gain = 0.9, rate = 1)` (L11176): the next take in rotation, playback rate `rate × (0.96 + 0.08·rand)`;
+  returns false if not decoded yet (then the synth fallback plays).
+- `vary(n, amt = 0.12)` = `n × (1 + (rand − 0.5)·amt)`.
+
+| sound | when | how |
+|---|---|---|
+| `SFX.shot` | blaster shot | clip `pistol` 0.85; fallback `sNoise(0.07, vary(2600), 1.2, 0.30, bandpass → 700)` + `sTone(0.06, vary(320) → 90, 0.16, square)` |
+| `SFX.shotgun` | shotgun shot | clip `pistol` 1.0 at rate 0.62 (always tried) + `sNoise(0.26, vary(1500, 0.08), 0.8, 0.55, lowpass → 180)` + `sNoise(0.10, vary(3800), 1.0, 0.22, bandpass → 900)` + `sTone(0.20, vary(120) → 42, 0.34, square)` |
+| `SFX.pop` | spud gun shot ("a hollow cork pop") | `sNoise(0.045, vary(1400, 0.15), 2.2, 0.32, bandpass → 500)` + `sTone(0.06, vary(520) → 180, 0.22, sine)` |
+| `SFX.jab` | the stab, 2.5/6 into a reload ("a wet crunch") | `sNoise(0.10, vary(2400, 0.2), 1.6, 0.55, bandpass → 380)` + `sNoise(0.18, vary(700), 0.9, 0.45, lowpass → 160)` + `sTone(0.08, vary(160) → 90, 0.24, triangle)` |
+| throw | husk or potato leaves his hand | `sNoise(0.08, 900, 1.4, 0.16, bandpass → 300)`; a whole potato also `sTone(0.12, 300+300pow → 700+400pow, 0.12, triangle)` |
+| pickup | potato picked up ("shunk") | `sNoise(0.12, 600, 1.2, 0.3, lowpass → 120)` + `sTone(0.08, 220 → 160, 0.14, triangle)` |
+| dry click | empty spud gun / no whole potato | `sTone(0.03, 900 → 500, 0.12, square)` |
+| splat | full-power potato bursts | `sNoise(0.12, 500, 1.3, 0.3, lowpass → 500)` + `sTone(0.06, 140 → 60, 0.2, sine)` |
+| punch swing | every punch | `sNoise(0.07, 400, 1.2, 0.12, bandpass → 120)` |
+| punch lands | something was hit | `sNoise(0.06, 250, 1.6, 0.25, lowpass → 400)` + `sTone(0.05, 110 → 60, 0.18, sine)` |
+| switch | weapon changed | `sTone(0.04, 520 → 880, 0.08, square)` |
+| `sfxRocket` | rocket fired ("THUNK-whoosh") | `sTone(0.12, 140 → 60, 0.35, square)` + `sNoise(0.55, 1800, 0.8, 0.3, bandpass → 500)` |
+| `sfxBlast` | rocket lands | clip `nuke` 0.75 at rate 1.25; fallback `sNoise(0.8, 700, 0.7, 0.8, lowpass → 60)` + `sTone(0.6, 110 → 30, 0.45, sawtooth)` |
+| empty launcher | after the `dump` beat | `sTone(0.05, 700 → 300, 0.15, square)` |
+| bought | launcher bought | `sTone(0.08, 500 → 900, 0.2, square)` + `sTone(0.25, 90 → 60, 0.3, square)` |
+| nuke whistle | nuke starts falling | `startWhistle(T.nukeFall)` (below) |
+| nuke boom | nuke lands | clip `nuke` 1.0; fallback `sNoise(1.1, 700, 0.7, 0.85, lowpass → 60)` + `sTone(0.9, 90 → 26, 0.5, sawtooth)` |
+| hits, kills | via `fx` events | `FX.HIT` → `SFX.hit`, `KILL` → `SFX.kill(false)`, `BOOM` → `SFX.kill(true)`, `LAUNCH` → `sfxRocket`, `BLAST` → `sfxBlast` (the gore spec has `hit`/`kill`) |
+| rain thud | a falling potato hits the floor | §9.5 |
+
+`startWhistle(dur)` (L11249): the `whistle` clip at playback rate `2.87/max(0.2, dur)` (so it ends exactly when the
+bomb lands), gain 0.9. Fallback while it decodes: a gain that ramps 0.0001 → 0.30 over 0.18 s and holds; two
+oscillators sliding exponentially from `1750·mul` to `240·mul` Hz over `dur` (`sine` mul 1 gain 0.75, `triangle`
+mul 0.503 gain 0.35); and noise through a bandpass (Q 6) sliding 2600 → 420 Hz, gain 0.16. `stop()` ramps the gain to
+0.0008 over 0.05 s and stops at +0.08 s.
+
+Who hears what: the host plays everything the simulation triggers. The guest hears only the `fx` events in each
+snapshot (`playEventSounds`, L11371), the nuke (driven off the snapshot's nuke phase), and its own shots: while it
+holds fire with the blaster, shotgun or spud gun, it plays `SFX.shot` / `shotgun` / `pop` locally, at most once per
+`1/T.fireRate`, `1/2.4` or `T.spudReload` seconds (L11090). So the guest doesn't hear jabs, throws, pickups, clicks,
+punches or the weapon switch.
+
+---
+
+## 15. Over the network (for milestone 4)
+
+Host-authoritative. The guest sends its input 30 times a second (`{t:'in', i: input}`, L11085); the host sends a
+snapshot 20 times a second (`{t:'snap', s}`, L11104), and its `T` table and barrel maps on connect (`{t:'cfg', T,
+M: MUZZLE_BY_CHAR}`, `sendCfg` L10781). The guest draws `worldFromSnapshot(snap, age)` (L8403), moving bullets,
+enemies and players on by `age` (≤ 0.25 s; 0 while `freeze > 0`).
+
+**Input** the host accepts from the guest (L10845): `mx, my` (clamped to ±1), `ax, ay`, `shoot`, `roll`, `wsel`
+(only if it's a weapon id), `st`, `tc`, `tap` (int), `tx, ty`, `lt` (1/0), `lx, ly`, `sq, bq, ba`. If no input for
+500 ms, the guest's player gets no input.
+
+**Snapshot fields** for weapons (`snapshot`, L8300):
+- Per player, array `p[i]`: `[10]` muzzle·100, `[11]` lastGun, `[16]` weapon as an index into
+  `['blaster','shotgun','spud','launcher','fists','lob']`, `[17]` wTime·10, `[25]` adx·100, `[26]` ady·100,
+  `[27]` firing, `[28]` ammo, `[29]` reload·100, `[30]` blasters, `[31]` pickup·100, `[32]` dryHint·100,
+  `[33]` throw·100, `[34]` mdx·100, `[35]` mdy·100, `[39]` shots & 255, `[40]` rockets, `[41]` buy·100,
+  `[42]` tx, `[43]` ty, `[44]` aimOn. (Also `[1..6]` position, velocity, facing; `[12]` odo; `[13]` kills; `[14]`
+  character; `[15]` coins.)
+- `b` bullets: `[x, y, vx, vy, owner, size, spud, rot·10]`.
+- `hk` husks: `[x, y, rot·50]` (only these: no height, no "whole").
+- `rk` rockets: `[sx, sy, tx, ty, t·1000, H, h0, id]` (the guest runs `rocketAt` itself).
+- `bx` blasts: `[x, y, t·100, id]`.
+- `nk` nuke: `[x, y, t·100, boom ? 1 : 0]`.
+- `pl` plants: `[x, y, t·10]`.
+- `vs` vendSold, `sk` shake, `fz` freeze·1000, `x` the `fx` events `[kind, x, y]` since the last snapshot.
+
+On the guest: the muzzle flash comes from the shot counter, not `muzzle`: when `shots` changes, `muzzle = 0.05` for
+60 ms. `localHasLauncher`/`localHasLob` read `[16] == 3 && [40] > 0` / `[16] == 5` from its own player.
+
+**Not sent** (so the guest can't see them): `charging`, `charge` (no wind-up pose, no power bar, and no potato ring:
+the ring needs `charging`), `punch`, `gun` (in first person the guest's kick/flash side is always the right gun),
+`cooldown`, the husks' height/whole/lob (lobbed potatoes slide along the floor at 22 px), `RAIN`, smoke, the
+hotbar (per screen anyway). Snapshot milestone 4 should add those.
+
+---
+
+## 16. History worth keeping (the `bNNN` notes)
+
+- b153: blast sizes went up (`blastRadius`, `blastSize`, `blastSelf`); older saved sliders are ignored.
+- b156: the spud gun's diagonal run art holds the gun higher: SE/SW spud barrels moved to (±21, −38).
+- b157: up-right (NE) was drawn mirrored, so its blaster muzzles never matched: juicy/tyson2 NE = mirror of NW;
+  `altBdiagFlip` became 1.
+- b158: pointing straight up, spuds leave the top of the raised gun: N spud barrel (10, −66).
+- b170: pockets grew: `spudMaxAmmo` 200 (was 40).
+- b173: `ropeCount` 10 (was 20). b174: `punchTime` restored (lost in a comment since b171).
+- b180/b181: `lobCharge` 0.3 (was 1.1, then 0.55).
+- b215: the vending machine is only out in the run. b218: no cans in the lobby.
+- b223: the weapon bar is bigger, at the bottom. b224: test buttons (shotgun, nuke, magnet) only with `?debug`.
+- b249: hand-placed barrels for juicy (E, SE, S, SW, W), jared E and tyson E.
+- b261: bar icons crop the art itself, not the shirt-printed copy (2× size, so the crop landed on his head).
+- b293: the guest's weapon bar looked in the wrong world (no bar, no switching); a weapon pick from a frame too short
+  to step is carried to the next.
+- b307: first person with the mouse captured: a click is always a shot (the frozen pointer sat on the eye button).
+- b308: the landing ring in first person; look up to throw further.
+- b312: C (calibrate) only with the tweaks out; Ctrl+C copies.
+- b314/b316/b317: controllers; the right stick only aims, RT fires (also in first person).
+- b318: the blasters in your hands in first person. b320: shots only show once 70 out. b321: tracers.
+- b324: first person on a phone: FIRE button. b327: mid-air off the trampoline you can still shoot.
+
+---
+
+## 17. Edge cases and quirks (as the HTML has them)
+
+1. **Dry click rate**: in the normal fire block the click countdown only drops 1/120 per 0.18 s, so after the first
+   click you hear one about every 4 s; in the potato block it drops every step, so a click every 0.18 s. The intent
+   ("how often the empty gun clicks") is every `T.spudEmpty`. Recommend: click every 0.18 s in both.
+2. **Switching doesn't cancel actions**: changing weapon mid-jab/throw/pickup keeps you blocked till it ends (all
+   weapons check `reload/pickup/throw`). Switching away from the potato while winding up leaves `charging = 1`: the
+   wind-up pose sticks (if the new skin has throw art) and switching back throws at once. Recommend: clear `charging`
+   and `charge` on switch.
+3. The potato's `fireRate` 1.5 is unused; the throw is limited by its 0.5 s animation.
+4. The ring is drawn at `T.blastRadius` (110) for the potato too, though its splat is `T.splatRadius` (72).
+5. A whole potato needs `ammo ≥ 10`; with 1..9 pellets the potato slot shows `× 0` and clicks, but "need a spud"
+   only shows at 0.
+6. Kills by punches, husks, lobbed potatoes and splats don't count in `p.kills` (only bullets and rockets do); their
+   coins still go to the owner via `payKill`.
+7. Punches and splats take a dummy's hp below zero without knocking it down (only bullets and blasts do); it pops back
+   at the next bullet hit.
+8. Bullets pass through furniture and solids; only walls stop them. Rockets ignore everything till they land.
+9. Bullets start at the barrel's *screen* offset on the ground plane (north of the player when facing east/west).
+10. The barrel uses `octOf` (no hysteresis) while the drawn pose uses `sectorOf` (hysteresis), so near a sector
+    boundary the shot can come from the neighbouring pose's barrel.
+11. NW/NE barrels for the spud, goth and inky maps are the generic formula unless that set was calibrated or picked
+    (§10.1).
+12. Blaster gun 0 is his right hand in `buildDefault` but the left gun in first person.
+13. A launcher tap that lands during the cooldown is thrown away (`tapFire = 0`).
+14. The empty launcher can't be switched away from during the 0.7 s `dump`.
+15. The shotgun clock doesn't run in the lobby; in the lobby the vending machine isn't there (so no launcher).
+16. `giveWeapon` zeroes `wTime` for anything but the shotgun: being given the blasters or the launcher loses the
+    shotgun.
+17. A punch hits every enemy in reach; a bullet only the first.
+18. Player 1 on the same keyboard can't change weapon.
+19. Saved tuning in `localStorage` overrides `T` and the barrel maps (ignore this in Godot; use `game_data.json`).
+20. The blast's dead-centre push uses the rocket's travel direction reversed for players, and `(dx || vx)` for corpse
+    direction.
+21. Sounds triggered inside the simulation play on the host only (§14).
+
+---
+
+## 18. In Godot
+
+### 18.1 What to build on (milestone 1 contracts, `godot/scripts/`)
+
+- `GameData` (autoload): `data["T"]`, `data["WEAPONS"]`, `data["HOTBAR"]`, `data["FX"]`, `data["P_COLOURS"]`,
+  `data["ARENA"]`, `data["calls"]["lobbyAreas"]`; `manifest` (`CHARS`, `SPUD_SPRITES`, `ROCKET_SPRITES`,
+  `NUKE_SPRITES`, `FP_BLASTER.img.src`); `tex(path)`; `world_to_3d(x, y, z)` / `from_3d(v)`; `UNIT` 0.025.
+- `Player` (CharacterBody3D): `char_id`, `facing`, `odo`, `moving`, `dz`, `on_tramp`, `frozen`, `html_pos()`,
+  `place()`.
+- `CharSprite`: `char_id`, `facing`, `moving`, `odo`, `action` (`""`, `"roll"`, `"victory"`), `roll_t`,
+  `update_view(camera)`.
+- `CameraRig`: `mode` (`TOP_DOWN`, `FIRST_PERSON`), `mode_changed`, `target`, `camera()`.
+- `Interactable`: E things (not needed by weapons, except the vending machine in milestone 3).
+- Input actions already in `project.godot`: `move_*`, `interact`, `roll`, `toggle_view`.
+
+### 18.2 Contract additions weapons need (to agree before milestone 2; don't change them unilaterally)
+
+- **Player**: `id` (0/1); `alive`; `hp`; a way to read and push velocity in HTML units (`func vel_html() -> Vector2`,
+  `func add_vel(v: Vector2)` for recoil and the punch lunge, `func set_vel(v)` for the blast yeet); `func blow_away(t)`
+  (the HTML `launch`); `iframe`; `func can_shoot() -> bool` (false while rolling, blown away, diving, sitting,
+  lifting, in bed, carrying Gothica or a plate, pulling the slot machine); `firing` and `aim_dir` so the body turns to
+  the shot (the HTML `facingVec`); the move direction (`ix, iy`) and facing (`fx, fy`) writable by the weapon code (a
+  shot sets the facing).
+- **CharSprite**: `skin_id` (the weapon sheet, e.g. `"juicy_spud"`, defaulting to `char_id`), the weapon actions
+  `"reload"`, `"pickup"`, `"throw"`, `"charge"` with a progress value 0..1 (frames as §11.1), a `legs_running` flag
+  for the stitched jab-while-running, per-skin pose scales (§11.1), and two read-backs: `shown_oct` (the HTML facing
+  number 0..7 of the frame it chose, relative to the camera: 2 = facing the camera) and `shown_flip`. The muzzle flash
+  needs them.
+- **CameraRig**: in first person, the yaw and pitch (or the camera itself, which `camera()` gives), and whether the
+  pointer is captured; in top-down, `camera()` for the mouse ray.
+- **Input actions** to add: `fire` (mouse left, joypad RT axis 5), `weapon_1`..`weapon_6` (keys 1–6), `weapon_prev`
+  (joypad LB, d-pad left), `weapon_next` (joypad Y, d-pad right); player 2: `p2_fire` (Space), `p2_roll` (Ctrl).
+
+### 18.3 Scripts and scenes (proposed; all new, owned by the milestone 2 weapons task)
+
+| file | what |
+|---|---|
+| `scripts/weapons/weapon_defs.gd` (`class_name WeaponDefs`) | the `WEAPONS` table and `T` lookups (`t("spudReload")`), `fire_rate(id)`, `has_weapon(ws, id)`, `skin_for(char, id)`, `barrel_key(char, id)`, the bar's default order. Static. |
+| `scripts/weapons/muzzle_map.gd` (`class_name MuzzleMap`) | builds the 14 maps exactly as §10 (`build_default`, `CALIBRATED`, the b156/b157/b158 fixes, `derive_mirrors` for **every** set), `oct_of(v)`, `offset(key, oct, gun) -> Vector2`. Or simply the tables in §10.1 as constants. |
+| `scripts/weapons/weapon_state.gd` (`class_name WeaponState`, `RefCounted`) | the per-player fields of §3.1, with `reset_lobby()`, `reset_run()`, `give(id)`. Owned by a `PlayerWeapons` node. |
+| `scripts/weapons/player_weapons.gd` (`class_name PlayerWeapons`, a child `Node` of each Player) | each sim step: switching, timers, the fire blocks (§8.1, §8.5, §8.7), `fire()` (§8.2–§8.7), the action timers (§8.4: throw release, reload, pickup). Reads the player's `InputFrame` (§6). |
+| `scripts/weapons/weapon_sim.gd` (`class_name WeaponSim`, one `Node` under the world) | the world lists (bullets, husks, rockets, blasts, plants, rain, nuke, `blast_id`), stepped at 1/120 in the order of §5; hit tests (§9); `potato_splat`, `detonate`, `punch_land`; `fx` events; `rnd()` (the HTML LCG, so the sim can be replayed). Pure data in HTML units: no nodes per bullet. |
+| `scripts/weapons/weapon_view.gd` (`Node3D`) | draws `WeaponSim` in 3D each frame (§18.5). |
+| `scripts/weapons/muzzle_flash.gd` | the flash on the character (§18.4). |
+| `scripts/weapons/fp_viewmodel.gd` (`CanvasLayer`) | the first-person hands, kick, flash, tracers, the full-view flash, the crosshair (§18.6). |
+| `scripts/ui/hotbar.gd` (`Control`) | the weapon bar (§12): 6 slots, keys, click, drag-swap, saved to `user://hotbar.cfg`. |
+| `scripts/ui/weapon_hud.gd` | the ammo next to the cash, the banner, the touch hint, and the bars/words over heads (§11.6) as `Label3D`/`Sprite3D` billboards or screen-projected controls. |
+| `scripts/audio/synth.gd` (autoload `Synth`, shared with whoever does sound) | `s_noise`, `s_tone`, `s_clip`, `vary`, the whistle (§14, §18.8). |
+| `assets/audio/` | the three extracted recordings (§14). |
+
+Scenes: build nodes in code like milestone 1 does; one `weapons` node added by `main.gd` (`WeaponSim` +
+`WeaponView`), one `PlayerWeapons` per player, the bar and HUD under the UI `CanvasLayer`.
+
+### 18.4 Where shots start in 3D (the barrel)
+
+The HTML spawns a bullet at the barrel's *screen* offset on the ground, which in 3D would put it a metre north of the
+player on the floor. Split it in two:
+- **The simulation muzzle** (where bullets and rockets really start, on the ground): `p + aim·T.muzzleFwd (30) +
+  perp·side`, `perp = (−ay, ax)`; `side = ∓T.muzzleSide (7)` for gun 0 / gun 1 (gun 0 = left hand, to match the
+  first-person view), 0 for two-handed weapons (shotgun, launcher) and the spud gun. Hits stay 2D on the ground
+  (segment vs circle, §9.1), like the HTML. The rocket's start height `h0` = the barrel height below.
+- **The visual muzzle** (where the flash is drawn and where a bullet's picture starts): on the character's billboard.
+  With `o = MuzzleMap.offset(barrel_key, shown_oct, gun)` (the octant the sprite *shows*, relative to the camera, so
+  the art and the barrel always agree), the point is `feet + camera_right·o.x + up·(12.6 − o.y)` in HTML units
+  (then `·UNIT`), pushed 1–2 units towards the camera so it isn't hidden by the sprite. Don't flip `o.x` again: the
+  maps already include the flip of the frame for that facing.
+- Draw a bullet's picture from the visual muzzle to its real position: lerp by `min(1, travelled/70)` (the HTML
+  first-person trick, b320/b321). After that it flies at a fixed height, `SHOT_Z = 45` (the HTML first person draws
+  shots at 40–50).
+- Use `octOf` with the same hysteresis as the sprite (better: use `shown_oct`) so the barrel and the frame never
+  disagree (§17.10).
+- Optional, a deliberate change: stop bullets at solids taller than `SHOT_Z` (garage, shed, wardrobe, machines),
+  which in 3D you can see through... or don't (HTML behaviour). Ask before changing.
+
+### 18.5 Drawing in 3D (both views)
+
+Unshaded materials, nearest filtering, alpha scissor/blend as needed, Compatibility renderer:
+- **Characters with weapons**: `CharSprite` with `skin_id` (§18.2). tyson2 sets: recolour at load into an
+  `ImageTexture` with the §11.1 rule (cache per frame; share with the characters task). The jab-while-running stitch:
+  build the stitched `Image` once per (skin, jab frame, leg frame) with `waistOf` (§11.1), cached.
+- **Bullets**: a `MultiMeshInstance3D` of quads (billboard material), at `SHOT_Z`: blaster a short streak `size` wide,
+  12 units long, along the velocity (`#f6d17a` / `#a8d8ff` by owner); shotgun the same, 5 wide; spud a tiny
+  pre-drawn potato-chunk texture (§11.3) spinning at `rot + t·14`.
+- **Husks, plants, falling potatoes**: `Sprite3D` billboards from `SPUD_SPRITES`, sizes as §11.3 (husk 22, whole 28,
+  plant 30, rain 30), bottom at their height (`dz`; plants on the floor); a round shadow decal (a `MeshInstance3D`
+  quad with a soft ellipse texture) shrinking with height as §11.3. The squash on landing: scale the sprite.
+- **Rockets**: a `Sprite3D` (`lit_b`/`lit_c` at 20 Hz, 61 × 21.5 units) at `(ground, h)`; orient it along the true
+  3D velocity `(dgx, dh, dgy)` (`rocketAt`), turned to face the camera about that axis; the nose 22 units ahead.
+  Smoke: `CPUParticles3D` (works in Compatibility) or pooled quads: a puff every 6 units of tail travel, life
+  0.8–1.4 s, radius 2.5–5 growing ×2.6, greys, alpha 0.75 → 0. Shadow decal as §11.5.
+- **Blasts and the nuke**: billboards with the `NUKE_SPRITES.boom` frames, sizes as §11.5, additive or alpha; the floor
+  rings as flat ring meshes (or a `Decal`-free quad with a ring texture) at y = 0.01 m. The white flashes: a
+  full-screen `ColorRect` on the UI layer (nuke: the whole screen; rocket: a disc, so a billboard disc of radius 1.6R).
+  The falling bomb: a billboard dropping from 60 above the camera's top edge (top-down) or from 400 units up (first
+  person) onto the marker, growing as §11.5.
+- **Landing rings**: a flat ring mesh of radius `T.blastRadius` at `(tx, ty)`: in top-down the filled, dashed and
+  pulsing version (§11.4) as a shader on a quad; the dotted path as 9 small quads at the computed heights
+  (the HTML's `−4Hs(1 − s)` screen lift becomes height, plus 30 at the start, so `z = 30(1 − s) + 4·66·s(1 − s)`).
+- **Muzzle flash**: at the visual muzzle, a camera-facing quad with the §11.2 shapes drawn once into a texture (cone,
+  cross, core), rotated in the view plane to the projected aim direction, scaled by `scale·grow`; plus a short-lived
+  `OmniLight3D` is optional (the HTML has a "light on the floor" disc: a soft additive decal).
+- **Shake and hit-stop**: `w.shake` (decays 90/s) and `w.freeze` go to the camera and the sim (the camera spec).
+
+### 18.6 First person
+
+The plan wants shooting in both views, so allow first person in the arena too (the HTML only allows it in the lobby;
+say so to the user if it matters).
+- **Aim**: `ax, ay` = the camera's forward flattened onto the ground, in HTML axes (Godot `−basis.z` → `(x, z)`),
+  times `reach = clamp(T.lobDefault·(1 + 1.4·pitch_up), 60, T.lobFar)` with `pitch_up` = the camera's pitch above
+  level in radians, clamped to ±0.6 (the HTML's `lookY` with the sign flipped). `st = false`. The launcher and the
+  potato land `reach` ahead; show the ring there.
+- **Fire**: `fire` (left mouse while captured: every click is a shot, b307), RT, or the touch FIRE button (§13.3).
+- **Hands** (`fp_viewmodel.gd`, a `CanvasLayer` above the 3D view): for the blasters, two `TextureRect`s from
+  `FP_BLASTER` (left as is, right mirrored), skin-tinted per character at load (§13.3), placed, bobbed and kicked
+  exactly as §13.3 with the viewport size for CW/CH; `walkPh` from the player's `odo` (π per 30 units), `moveK`
+  eased. The flash and the 110 ms tracers to the crosshair drawn in a `Control._draw()` with radial gradients (a
+  small `GradientTexture2D` radial). For other weapons: the full-view flash (§13.3). (Hands for the other weapons
+  would be new art: not in the HTML.)
+- **Shots in the world**: the same `WeaponView` draws them; hide your own bullets within 70 units of the camera so
+  they seem to come from the hands (b320); the tracers cover the gap.
+- Your own `CharSprite` is hidden in first person (milestone 1), so the visual muzzle isn't used; the flash is the
+  viewmodel's.
+- The crosshair, the hotbar and the E prompt stay on screen.
+
+### 18.7 Simulation and timing
+
+- Step the weapons at a fixed 1/120 s like the HTML (`Engine.physics_ticks_per_second = 120`, or an accumulator in
+  `WeaponSim` capped at 0.1 s per frame), in the order of §5, **after** the player's movement for the step (the
+  HTML adds recoil before moving him, then moves the bullets in the same step). Hit-stop (`freeze`) pauses the whole
+  sim step.
+- Keep the sim in HTML units and plain data (Arrays/Dictionaries or small classes): it's what milestone 4 will
+  serialise. Use the world's own `rnd()` for everything the sim decides; `randf()` only for looks (smoke, sound
+  `vary`, the clip pitch).
+- Enemies, dummies and the janitor (milestone 2's enemies task) should expose, in HTML units: `ground_pos()`,
+  `radius()` (`eRad`), `spawning`, `mass`, and a `take_hit(dmg, dir, knock, stun, owner, big, cause)` that does the
+  flash, stagger, kill, corpse, blood and coins as §9.1 / §8.5 / §8.6 / §8.7 describe. Weapons decide damage and
+  knock; the enemy side applies them.
+
+### 18.8 Sound in Godot (`Synth`)
+
+Web Audio's per-voice filter sweeps don't map onto Godot's bus effects, so bake each sound into an `AudioStreamWAV`
+when it's played (they're 30–1100 ms; at 22050 Hz mono that's cheap) and play it on a pooled `AudioStreamPlayer`
+(16 voices, master −6 dB = gain 0.5):
+- `s_noise`: white noise (a fixed 1.2 s random table, looped) → an RBJ-cookbook biquad (`lowpass`/`bandpass`, the
+  Web Audio definitions: bandpass is constant 0 dB peak gain) whose cutoff moves exponentially from `freq` to
+  `max(40, sweepTo)` over `dur` (recompute coefficients every 32 samples) → gain `gain·(0.0008/gain)^(t/dur)`.
+- `s_tone`: phase-accumulated sine/square/triangle/sawtooth, frequency `f0·(f1/f0)^(t/dur)` (or constant), the
+  same gain curve.
+- `s_clip(name, gain, rate)`: `AudioStreamMP3` takes in rotation, `pitch_scale = rate·(0.96 + 0.08·randf())`.
+- Cache baked sounds whose arguments repeat (most do, apart from `vary`: bake 4–6 variants per sound and pick one).
+- The whistle: the clip with `pitch_scale = 2.87/nukeFall`, or the baked fallback.
+
+### 18.9 Network readiness (milestone 4)
+
+Send what the HTML snapshot sends (§15) plus what it misses: `charging`, `charge`, `punch`, `gun`, the husks'
+`dz`/`whole`/`lob`, so the guest sees wind-ups, power bars, rings, punches and lobbed potatoes. Rockets: send the
+launch parameters once and let each side run `rocketAt`. Sounds: send a small sound-event list (or derive them from
+state changes: `shots`, `reload` crossing the stab point, `throw` crossing the release point, `pickup` starting) so
+the guest hears jabs, throws and pickups too.
+
+### 18.10 Checks when it's built
+
+- Blasters: 9.5 shots/s, alternating guns; a grunt dies to 3 hits, a brute to 8.
+- Spud gun from 20 pellets: shot, jab (0.42 s), ... the 10th shot then a husk thrown (release 0.3 s in) then a jab;
+  20 shots then the husk and "need a spud" on the next press; a ready plant adds 10 and bends him over for 0.36 s.
+- Potato: a tap lands about 110 ahead (keyboard) after 0.71 s; full wind-up (0.3 s) lands on the cursor in 0.45 s and
+  bursts (SPLAT!); a non-burst potato bounces and becomes a pickup; −10 pellets each.
+- Fists: hits land 0.108 s after the press, 24 ahead; a grunt dies to 2.
+- Shotgun: 5 pellets in a 20° cone, 0.417 s apart, 12 s then back to blasters/spud (run only).
+- Launcher: 3 rockets, 0.909 s apart, each lands on the ring 0.75 s after firing; a blast throws you without hurting
+  you; after the last one, 0.7 s then "EMPTY!" and the previous weapon.
+- The nuke: 1.9 s fall with the whistle ending on impact, everything dies, players shoved.
+- The bar: 1–6, LB/Y/d-pad, click, drag-swap saved across restarts; unowned slots flash red.
+- First person: blaster hands with kick on alternate sides, tracers to the crosshair, shots seen past 70 units, look up
+  to throw further.
+
+---
+
+## 19. HTML function index
+
+| what | where |
+|---|---|
+| `T` (tuning), `RANGES` | L255, L481 |
+| `WEAPONS` | L636 |
+| `newPlayer`, `fillLobby` | L711, L733 |
+| `vendHere`, `vendPos` | L756, L757 |
+| `drawFpFireButton`, `fpFireButton`, `FP_TOUCH` | L3600, L3596, L3595 |
+| `fpCan`, `toggleFirstPerson`, mouse look | L3573, L3574, L3672 |
+| `shroomInput` (first-person aim and fire) | L3706 |
+| `shroomExtras` (rockets, blasts, husks, plants in first person) | L4096 |
+| `FP_BLASTER`, `fpGunFor`, `FP_TRACERS`, `fpGunsShown`, `drawFpGuns` | L4207, L4209, L4232, L4233, L4234 |
+| first-person bullets, ring, flash, crosshair | L4334, L4666, L4841, L4885 |
+| `legColours` (skin tone) | L5479 |
+| `plantSpud`, `stepPlants` | L5979, L5994 |
+| `buildWorld`, `rnd` | L6029, L6060 |
+| `FX`, `FX_LOOK`, `fx`, `burst`, `burstShrapnel` | L6072, L6073, L6238, L6246, L6257 |
+| `award` (prizes) | L6278 |
+| `startWave` | L6575 |
+| `BARREL_SETS`, `MUZZLE_BY_CHAR`, `defaultMuzzle`, `buildDefault`, `CALIBRATED` | L6605, L6609, L6612, L6618, L6633 |
+| `mirror`, `deriveMirrors`, `applyCalibrated`, `useChar`, `barrelKey`, `calChar` | L6741, L6747, L6756, L6767, L6774, L6779 |
+| `saveTuning`, saved tuning, b156/b157/b158 fixes | L6783, L6787, L6818 |
+| `octOf`, `barrelToScreen`, `barrelFromScreen`, `muzzlePoint` | L6850, L6856, L6860, L6866 |
+| `weaponOf`, `wFireRate`, `banner`, `giveWeapon` | L6873, L6874, L6876, L6878 |
+| `firePlayer` | L6889 |
+| `potatoSplat`, `punchLand` | L6972, L7010 |
+| `rocketAt`, `stepRockets`, `detonate`, `segmentHit` | L7052, L7064, L7080, L7147 |
+| `stepBase`: switch, timers, shotgun clock, dump, buying | L7206, L7211, L7221, L7243, L7253 |
+| `stepBase`: aim, launcher, potato, fire | L7386, L7392, L7450, L7485 |
+| `stepBase`: bullets, nuke, rockets, plants, husks, action timers | L7688, L8000, L8037, L8039, L8044, L8094 |
+| `snapshot`, `worldFromSnapshot` | L8300, L8403 |
+| `cal`, touch launcher/potato, keys 1–6 | L8578, L8586–L8608, L8630 |
+| pointer: bar drag, calibration, sticks | L8745, L8782, L8805 |
+| `padCycleWeapon`, pad buttons | L8940, L8977 |
+| `localInput0`, `localInput1` | L8985, L9038 |
+| `CHAR_POSE_SCALE`, shotgun scales | L9290, L9300 |
+| `IMG`, `recolourImage`, `cyclePose`, `facingVec`, `sectorOf`, `poseFor` | L9303, L9483, L9538, L9563, L9575, L9597 |
+| `NUKE_SPRITES`, `SPUD_SPRITES`, `ROCKET_SPRITES` | L9380, L9430, L9442 |
+| `HOTBAR`, `hasWeapon`, `HOT_ICON`, `drawHotIcon`, `hotbarGeo`, `hotbarSlotAt`, `selectSlot`, `drawHotbar` | L9881, L9888, L9893, L9899, L9925, L9929, L9936, L9942 |
+| `ROPE`, `RAIN`, `pullRope`, `stepRain`, `drawRain` | L9992, L9993, L9997, L10007, L10069 |
+| `jabRunImage`, `waistOf`, `pickupSkin`, `drawJared` (weapon poses) | L10423, L10390, L10470, L10475 (L10525–L10570) |
+| guest input on the host, `cfg` | L10845, L10860 |
+| guest input sending and local shot sounds, host snapshots | L11085, L11104 |
+| `SND`, `CLIPS`, `sClip`, `audioInit`, `sNoise`, `sTone`, `vary`, `startWhistle` | L11156, L11160, L11176, L11194, L11213, L11228, L11242, L11249 |
+| `SFX`, `sfxRocket`, `sfxBlast`, `playEventSounds` | L11310, L11358, L11363, L11371 |
+| `drawLobMarkers`, `drawRockets`, `drawBlasts` | L11397, L11445, L11505 |
+| `renderBase`: husks, bullets, plants | L11813, L11838, L11990 |
+| `renderBase`: muzzle flash, power bar, shotgun bar, "need a spud" | L12288, L12356, L12364, L12373 |
+| `renderBase`: HUD ammo, calibration crosshairs, nuke, touch hint, banner | L12466, L12481, L12584, L12640, L12666 |
+| `advanceSimulation`, `frame` (guest flash from `shots`) | L12705, L12720 (L12755) |
+| `startGame` (run resets), `restartGame` | L13549, L13541 |
+| `dropTestNuke`, `giveTestGun` | L13660, L13670 |
+| secret-room hazards shot | L13886 |
