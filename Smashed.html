@@ -132,6 +132,7 @@
   <button id="restart">Restart</button>
   <button id="fsBtn">Full screen</button>
   <button id="zoomBtn">Zoom: 1x (Z)</button>
+  <button id="fpBtn">First person (V)</button>
   <button id="muteBtn">Sound: on</button>
   <button id="gunBtn" class="debugOnly">Give shotgun (G)</button>
   <button id="nukeBtn" class="debugOnly">Test nuke (N)</button>
@@ -3227,7 +3228,7 @@ const shroomNow = () => performance.now() / 1000;
 function shroomHere() { return !SHROOM.on && shroomNow() >= SHROOM.gone; }
 function shroomNear(p) { return !!p && p.alive && !p.dive && !p.sit && !p.lift && !p.leg && !p.bed && T.loungeFloor && Math.hypot(p.x - SHROOM_SPOT.x, p.y - SHROOM_SPOT.y) < 26; }
 function shroomTryEat() {                                            // E: eat it (and while tripping, E does nothing else)
-  if (SHROOM.on) return true;
+  if (SHROOM.on) return !SHROOM.sober;                             // (in plain first person, E does its normal things)
   const v = net.role === 'client' ? net.view : world;
   if (!v || v.started || v.over || cal.on || !shroomHere()) return false;
   const me = localMe();
@@ -3240,8 +3241,37 @@ function shroomTryEat() {                                            // E: eat i
 }
 function endShroom() {
   if (!SHROOM.on) return;
-  SHROOM.on = false; SHROOM.gone = shroomNow() + SHROOM_REGROW; SHROOM.props = null; SHROOM.floor = null; SHROOM.dive = null;
+  const sober = SHROOM.sober; SHROOM.sober = false;
+  SHROOM.on = false; SHROOM.props = null; SHROOM.floor = null; SHROOM.dive = null;
+  if (sober) { SHROOM.gone = SHROOM.keepGone || 0; fpLabel(); return; }   // plain first person: the mushroom's left as it was
+  SHROOM.gone = shroomNow() + SHROOM_REGROW;
   shroomMusic(false);
+}
+// b286: plain first person (V, the eye button under the zoom one, or the button up top): the mushroom's 3D view
+// with none of the trip (no colours, no wobble, no music, no clock), on until you switch it off. Lobby only, like the trip.
+function fpCan() { const v = net.role === 'client' ? net.view : world; return !!v && !v.started && !v.over && !cal.on && !!T.loungeFloor && !!localMe(); }
+function toggleFirstPerson() {
+  if (SHROOM.on) { if (SHROOM.sober) endShroom(); return; }        // (mid-trip, the mushroom's in charge)
+  if (!fpCan()) return;
+  const me = localMe();
+  SHROOM.keepGone = SHROOM.gone;
+  Object.assign(SHROOM, { on: true, sober: true, t: SHROOM_IN + 1, clock: 0, dive: null, lastDive: 0, last: shroomNow(), beat: -1, turn: 0, props: null, floor: null, gone: Infinity, hue: 0, calm: 1 });
+  SHROOM.ang = (me.fx || me.fy) ? Math.atan2(me.fy, me.fx) : -Math.PI / 2;
+  SHROOM.chars.clear();
+  fpLabel();
+}
+function fpLabel() { const b = document.getElementById('fpBtn'); if (b) b.textContent = SHROOM.on && SHROOM.sober ? 'Top-down view (V)' : 'First person (V)'; }
+function fpButton() { const z = zoomButton(); return { x: z.x, y: z.y + 40, r: 16 }; }
+function fpShown() { return !cal.on && !(SHROOM.on && !SHROOM.sober) && (fpCan() || (SHROOM.on && SHROOM.sober)); }
+function drawFpButton() {                                          // an eye: tap for first person, tap again to go back
+  if (!fpShown()) return;
+  const b = fpButton(), on = SHROOM.on && SHROOM.sober;
+  ctx.save();
+  ctx.fillStyle = 'rgba(14,16,22,0.72)'; ctx.strokeStyle = on ? '#f6d17a' : '#8b93a4'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(b.x - 9, b.y); ctx.quadraticCurveTo(b.x, b.y - 9, b.x + 9, b.y); ctx.quadraticCurveTo(b.x, b.y + 9, b.x - 9, b.y); ctx.stroke();
+  ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(b.x, b.y, 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 // the pickup, on the lounge floor: a fat red toadstool, glowing a little so you notice it
 function drawShroomPickup(w) {
@@ -3457,13 +3487,14 @@ function drawShroom(w) {
   // two clocks: t runs the colours, trip is how far through the 30 seconds you are, and it waits
   // (short of the come-down) while you're up the tower or on the way down
   const onTower = me.dive === DIVE.CLIMB || me.dive === DIVE.BOARD || me.dive === DIVE.FALL || !!SHROOM.dive;
-  const t = (SHROOM.clock += dt);
-  if (!onTower || SHROOM.t < SHROOM_TIME - SHROOM_OUT - 0.2) SHROOM.t += dt;
+  const t = (SHROOM.clock += dt), sober = !!SHROOM.sober;              // sober: plain first person, no trip and no clock
+  if (sober) SHROOM.t = SHROOM_IN + 1;
+  else if (!onTower || SHROOM.t < SHROOM_TIME - SHROOM_OUT - 0.2) SHROOM.t += dt;
   const trip = SHROOM.t;
-  if (trip >= SHROOM_TIME) { endShroom(); return; }
+  if (!sober && trip >= SHROOM_TIME) { endShroom(); return; }
   const ease = f => f <= 0 ? 0 : f >= 1 ? 1 : f * f * (3 - 2 * f);
   const fade = trip < SHROOM_IN ? ease(trip / SHROOM_IN) : trip > SHROOM_TIME - SHROOM_OUT ? ease((SHROOM_TIME - trip) / SHROOM_OUT) : 1;
-  const amp = 0.4 + 0.6 * fade;                                          // how hard it's hitting
+  const amp = sober ? 0 : 0.4 + 0.6 * fade;                                          // how hard it's hitting
   // turning: the mouse, the arrow keys (unless they're player 2's), the right stick, a gamepad's right stick
   // up the ladder you face it; on the board and all the way down you face out over the pool
   const lock = SHROOM.dive ? 0 : me.dive === DIVE.CLIMB ? -Math.PI / 2 : me.dive === DIVE.BOARD ? 0 : null;
@@ -3478,10 +3509,10 @@ function drawShroom(w) {
   if (aimStick.active && lock === null) SHROOM.ang += aimStick.dx * 2.8 * dt;
   const gp = padAt(0); if (lock === null && gp && Math.abs(gp.axes[2] || 0) > 0.2) SHROOM.ang += gp.axes[2] * 2.8 * dt;
   // the beat: a note of the arpeggio, and a pulse through everything
-  const bpm = 0.21, beat = Math.floor(t / bpm), pulse = Math.max(0, 1 - (t % bpm) / bpm) ** 3;
+  const bpm = 0.21, beat = Math.floor(t / bpm), pulse = sober ? 0 : Math.max(0, 1 - (t % bpm) / bpm) ** 3;
   if (beat !== SHROOM.beat) { SHROOM.beat = beat;
     const scale = [0, 3, 5, 7, 10, 12, 15, 17], n = scale[(beat * 3 + (beat >> 3)) % scale.length];
-    if (SND.ctx && SND.on && fade > 0.2) sTone(0.3, 196 * Math.pow(2, n / 12), 196 * Math.pow(2, n / 12) * 1.004, 0.045 * fade, beat % 4 ? 'triangle' : 'square');
+    if (!sober && SND.ctx && SND.on && fade > 0.2) sTone(0.3, 196 * Math.pow(2, n / 12), 196 * Math.pow(2, n / 12) * 1.004, 0.045 * fade, beat % 4 ? 'triangle' : 'square');
   }
   const CW = canvas.width, CH = canvas.height;
   // b282: the trip's layers (trails, double vision, the colour turn) are put together at a small size and blown
@@ -3571,7 +3602,7 @@ function drawShroom(w) {
   // the swirl round the outside to look at. Now the pool opens out ahead past the end of the board, as big as
   // a real one looks from up there, and it all shrinks back to size as you drop.
   const zs = 1 + 2 * Math.max(0, Math.min(1, (eye - WALL) / (SHROOM_TOWER - WALL))), ZX = POOL.x0 + 20, ZY = (POOL.y0 + POOL.y1) / 2;
-  SHROOM.calm = (SHROOM.calm || 0) + (((me.dive === DIVE.BOARD || me.dive === DIVE.CLIMB) && !dv ? 1 : 0) - (SHROOM.calm || 0)) * Math.min(1, dt * 3);
+  SHROOM.calm = sober ? 1 : (SHROOM.calm || 0) + (((me.dive === DIVE.BOARD || me.dive === DIVE.CLIMB) && !dv ? 1 : 0) - (SHROOM.calm || 0)) * Math.min(1, dt * 3);
   const calm = SHROOM.calm;                                              // up there the colours ease off, so you can see where you are
   // the screen's colours are turned round the wheel as a whole (the hue-rotate below); the water and the grass
   // are turned the other way first, so up the tower they come out blue and green
@@ -3610,6 +3641,7 @@ function drawShroom(w) {
     else {                                                                // outside the rooms: a slow swirl instead of the dark
       const v = Math.sin(ux * 0.02 + t) + Math.sin(uy * 0.025 - t * 1.2), vi = ((((v + 2) * 55 + tsh) | 0) & 255) * 3;
       r = L[vi] * 0.22; g = L[vi + 1] * 0.22; bb = L[vi + 2] * 0.22;   // kept dark, so the rooms stand out
+      if (sober) { r = 22; g = 24; bb = 30; }
       if (calm > 0) {                                                     // b281: from up the tower, a lawn of small squares round the building, so you can tell how far down it is
         const chk = ((Math.floor(ux / 16) + Math.floor(uy / 16)) & 1) ? 1 : 0.86, gx = ((ux % 16) + 16) % 16 < 1 || ((uy % 16) + 16) % 16 < 1 ? 0.75 : 1;
         r += (GRASS[0] * chk * gx - r) * calm * 0.8; g += (GRASS[1] * chk * gx - g) * calm * 0.8; bb += (GRASS[2] * chk * gx - bb) * calm * 0.8;
@@ -3617,7 +3649,8 @@ function drawShroom(w) {
     }
     if (ux > POOL.x0 + 8 && ux < POOL.x1 - 8 && uy > POOL.y0 + 8 && uy < POOL.y1 - 8) {   // b264: the pool glows, rainbow ripples running out across it
       const ring = Math.sin(Math.hypot(ux - PCX, uy - PCY) * 0.12 - t * 5) * 0.5 + 0.5, pi = ((((ring * 90 + t * 70 + ux * 0.3) | 0) & 255)) * 3;
-      const k = 0.7 + 0.5 * ring, rb = 0.7 - 0.4 * calm;                  // (b281: from up the tower it reads as water first, rainbow second)
+      const k = 0.7 + 0.5 * ring, rb = 0.7 - 0.4 * calm;
+      if (sober) { const kk = 0.85 + 0.15 * ring; B[o] = r * 0.35 + WATER[0] * 0.65 * kk; B[o + 1] = g * 0.35 + WATER[1] * 0.65 * kk; B[o + 2] = Math.min(255, bb * 0.35 + WATER[2] * 0.65 * kk); B[o + 3] = 255; return; }                  // (b281: from up the tower it reads as water first, rainbow second)
       B[o] = Math.min(255, ((r * (1 - rb) + L[pi] * rb) * (1 - calm * 0.6) + WATER[0] * calm * 0.6) * k);
       B[o + 1] = Math.min(255, ((g * (1 - rb) + L[pi + 1] * rb) * (1 - calm * 0.6) + WATER[1] * calm * 0.6) * k);
       B[o + 2] = Math.min(255, ((bb * (1 - rb) + L[pi + 2] * rb) * (1 - calm * 0.6) + WATER[2] * calm * 0.6) * k + 40 * (1 - calm)); B[o + 3] = 255;
@@ -3626,7 +3659,8 @@ function drawShroom(w) {
     const li = ((((ux + uy) * 0.9 + dist * 0.6 + tsh * 2) | 0) & 255) * 3;
     B[o] = (r * (1 - mix) + L[li] * mix) * shade; B[o + 1] = (g * (1 - mix) + L[li + 1] * mix) * shade; B[o + 2] = (bb * (1 - mix) + L[li + 2] * mix) * shade; B[o + 3] = 255;
   };
-  const skyAt = (o, x, sv) => {                                           // the sky: rainbow bands rolling up from the horizon
+  const skyAt = (o, x, sv) => {
+    if (sober) { B[o] = 120 - 70 * sv; B[o + 1] = 170 - 70 * sv; B[o + 2] = 235 - 40 * sv; B[o + 3] = 255; return; }   // (plain: a blue sky)                                           // the sky: rainbow bands rolling up from the horizon
     const si = (((sv * 260 + x * 0.35 + Math.sin(x * 0.05 + t) * 18 - tsh * 1.5) | 0) & 255) * 3, sl = 1 - Math.min(0.5, sv * 0.6);
     B[o] = L[si] * sl; B[o + 1] = L[si + 1] * sl; B[o + 2] = L[si + 2] * sl; B[o + 3] = 255;
   };
@@ -3655,6 +3689,7 @@ function drawShroom(w) {
         const v = Math.sin(wx * 0.025 + t) + Math.sin(wy * 0.03 - t * 1.3) + Math.sin((wx + wy) * 0.018 + t * 0.7);
         const li = ((((v + 3) * 42 + tsh) | 0) & 255) * 3, s = shade * (0.55 + 0.25 * amp);
         r = L[li] * s; g = L[li + 1] * s; bb = L[li + 2] * s;
+        if (sober) { r = 96 * shade; g = 92 * shade; bb = 88 * shade; }   // (plain: a grey ceiling)
         if (sky > 0) {                                                   // near the roofline the ceiling gives way to sky
           skyAt(o, x, sv); r += (B[o] - r) * sky; g += (B[o + 1] - g) * sky; bb += (B[o + 2] - bb) * sky;
         }
@@ -3677,6 +3712,7 @@ function drawShroom(w) {
       const v = (y - top) / span, o = (y * RW + x) * 4;
       const li = (((u * 0.9 + v * 180 + tsh * 3) | 0) & 255) * 3;
       const band = ((u * 0.08 + v * 7 - t * 2.5) % 1 + 1) % 1 < 0.28 ? 0.45 : 1;
+      if (sober) { const sk = v > 0.93 ? 0.6 : 1; B[o] = 168 * shade * sk; B[o + 1] = 150 * shade * sk; B[o + 2] = 128 * shade * sk; continue; }   // (plain: painted walls, a dark skirting)
       B[o] = L[li] * shade * band; B[o + 1] = L[li + 1] * shade * band; B[o + 2] = L[li + 2] * shade * band;
     }
   }
@@ -3739,7 +3775,8 @@ function drawShroom(w) {
       const R = c.r * q.sc * SV; if (R < 3 || q.x * SV < -R * 2 || q.x * SV > VW + R * 2 || q.y * SV < -R * 2 || q.y * SV > VH + R * 2) continue;
       for (const [ox, oy, k] of [[-0.55, 0.05, 0.7], [0.5, 0.1, 0.75], [0, -0.2, 0.9], [0.05, 0.15, 1]]) {
         const cx = q.x * SV + ox * R, cy = q.y * SV + oy * R, rr = R * k, g = vg.createRadialGradient(cx, cy, 0, cx, cy, rr);
-        g.addColorStop(0, 'hsla(' + ((c.h + t * 25) % 360).toFixed(0) + ',90%,88%,0.5)'); g.addColorStop(1, 'hsla(' + ((c.h + 60 + t * 25) % 360).toFixed(0) + ',90%,75%,0)');
+        if (sober) { g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); }
+        else { g.addColorStop(0, 'hsla(' + ((c.h + t * 25) % 360).toFixed(0) + ',90%,88%,0.5)'); g.addColorStop(1, 'hsla(' + ((c.h + 60 + t * 25) % 360).toFixed(0) + ',90%,75%,0)'); }
         vg.fillStyle = g; vg.fillRect(cx - rr, cy - rr, rr * 2, rr * 2);
       }
     }
@@ -3882,7 +3919,7 @@ function drawShroom(w) {
   // ---- psychedelia: trails (the last frames linger), double vision, a hue that never sits still
   const ag = cv.acc.getContext('2d');
   ag.save();
-  ag.globalAlpha = flipping ? 0.3 : 0.35 + 0.35 * (1 - amp * 0.6);   // lower = longer trails (the somersaults smear)
+  ag.globalAlpha = sober ? 1 : flipping ? 0.3 : 0.35 + 0.35 * (1 - amp * 0.6);   // lower = longer trails (the somersaults smear)
   if (back) { ag.translate(VW / 2, VH / 2); ag.rotate(Math.PI); ag.translate(-VW / 2, -VH / 2); }   // over the top: upside down
   ag.drawImage(cv.view, 0, 0);
   ag.globalAlpha = 0.12 * amp * (1 - 0.6 * calm); ag.globalCompositeOperation = 'lighter';
@@ -3897,9 +3934,9 @@ function drawShroom(w) {
     ctx.globalAlpha = 1 - fade; ctx.drawImage(cv.under, 0, 0, CW, CH); ctx.restore();
   }
   ctx.globalAlpha = fade;
-  SHROOM.hue = ((SHROOM.hue || 0) + dt * 45 * (1 - 0.85 * calm)) % 360;   // b281: up the tower the colours drift slowly, so water stays blue and grass green
+  SHROOM.hue = sober ? 0 : ((SHROOM.hue || 0) + dt * 45 * (1 - 0.85 * calm)) % 360;   // b281: up the tower the colours drift slowly, so water stays blue and grass green
   const fg = cv.fin.getContext('2d'); fg.clearRect(0, 0, VW, VH);        // the colour turn, done on the small copy
-  if ('filter' in fg) fg.filter = 'hue-rotate(' + SHROOM.hue.toFixed(0) + 'deg) saturate(' + (1.3 + 0.5 * amp - 0.3 * calm).toFixed(2) + ')';
+  if (!sober && 'filter' in fg) fg.filter = 'hue-rotate(' + SHROOM.hue.toFixed(0) + 'deg) saturate(' + (1.3 + 0.5 * amp - 0.3 * calm).toFixed(2) + ')';
   fg.drawImage(cv.acc, 0, 0); fg.filter = 'none';
   const st = dv ? dv.t - SHROOM_FALL : -1, under = dv && dv.wet && st > 0.1 ? Math.min(1, (st - 0.1) / 0.2, (1.3 - st) / 0.3) : 0;
   if (dv && dv.splashed) drawShroomSplash(dv, st, under, t, fg, VW, VH);   // the splash, on the small layer too
@@ -3926,10 +3963,13 @@ function drawShroom(w) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(tip, ARENA.w / 2 + 1, ty + 1);
       ctx.fillStyle = '#fff'; ctx.fillText(tip, ARENA.w / 2, ty); ctx.textAlign = 'left'; }
   }
-  const left = 1 - trip / SHROOM_TIME, bar = ctx.createLinearGradient(0, 0, ARENA.w, 0);
-  for (let i = 0; i <= 6; i++) bar.addColorStop(i / 6, 'hsl(' + ((i * 60 + t * 120) % 360) + ',100%,60%)');
-  ctx.fillStyle = bar; ctx.fillRect(0, 0, ARENA.w * left, 3);
+  if (!sober) {
+    const left = 1 - trip / SHROOM_TIME, bar = ctx.createLinearGradient(0, 0, ARENA.w, 0);
+    for (let i = 0; i <= 6; i++) bar.addColorStop(i / 6, 'hsl(' + ((i * 60 + t * 120) % 360) + ',100%,60%)');
+    ctx.fillStyle = bar; ctx.fillRect(0, 0, ARENA.w * left, 3);
+  }
   ctx.restore();
+  if (sober) { ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0); drawFpButton(); ctx.restore(); }   // (so you can tap your way back out)
 }
 // hitting the water: rainbow spray thrown out across the screen, rings of colour, a big splash and a
 // rising chord. (Missed the pool somehow? Just a thump.)
@@ -7605,6 +7645,7 @@ addEventListener('keydown', e => {
   if (secretActive(world) && ['c','j','g','n','m','p'].includes(k)) return;
   if (k === 'p') { addPlayer(world); return; }
   if (k === 'z' && !e.repeat) { nextZoom(); return; }
+  if (k === 'v' && !e.repeat) { toggleFirstPerson(); return; }
   if (k === 'f' && !e.repeat && mirrorLook) { setLocalBeard(LOCAL_BEARD + (e.shiftKey ? -1 : 1)); return; }   // b274: hair, in the mirror
   if (k >= '1' && k <= '6' && !e.repeat) { selectSlot(k.charCodeAt(0) - 49); return; }
   if (k === 'r') {
@@ -7700,7 +7741,8 @@ canvas.addEventListener('pointerdown', e => {
     return;
   }
   // the carry button: a tap (or click) on it does what E does
-  { const zb = zoomButton(); if (!cal.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
+  { const zb = zoomButton(); if (!cal.on && !SHROOM.on && Math.hypot(pt.x - zb.x, pt.y - zb.y) < zb.r + 6) { nextZoom(); e.preventDefault(); return; } }
+  { const fb = fpButton(); if (fpShown() && Math.hypot(pt.x - fb.x, pt.y - fb.y) < fb.r + 6) { toggleFirstPerson(); e.preventDefault(); return; } }
   { const ha = hairArrows().find(a => Math.hypot(pt.x - a.x, pt.y - a.y) < a.r + 8); if (ha) { setLocalBeard(LOCAL_BEARD + ha.d); e.preventDefault(); return; } }   // b285: the next hair, or the one before
   { const ma = mirrorArrows().find(a => Math.hypot(pt.x - a.x, pt.y - a.y) < a.r + 8); if (ma) { mirrorSpin(ma.d); e.preventDefault(); return; } }   // b277: turn round
   { const bb = bjButtonAt(pt); if (bb) { doBJ(bb.a); e.preventDefault(); return; } }   // blackjack: deal / hit / stand / done
@@ -11208,6 +11250,7 @@ function renderBase(w, hudRight) {
   drawBJPanel(w);
   drawHotbar(w);
   drawZoomButton();
+  drawFpButton();
   drawArcade();
   drawMirrorHint();
   drawHairButton();
@@ -12471,6 +12514,7 @@ document.getElementById('muteBtn').addEventListener('click', e => {
 
 document.getElementById('fsBtn').addEventListener('click', goFullscreen);
 document.getElementById('zoomBtn').addEventListener('click', () => nextZoom());
+document.getElementById('fpBtn').addEventListener('click', e => { toggleFirstPerson(); e.currentTarget.blur(); });
 setZoom(CAM.lvl);                                        // the button's label, from what was saved
 document.addEventListener('fullscreenchange', () => {
   resize();
