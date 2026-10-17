@@ -43,6 +43,8 @@ func go(x: float, y: float, face: Vector2 = Vector2(0, -1)) -> void:
 	var p := ll.player
 	p.place(x, y)
 	p.facing = face
+	p.look_ang = atan2(face.y, face.x)
+	p.look_y = 0.0
 	ll.rig.snap()
 
 func fp(on: bool = true) -> void:
