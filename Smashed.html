@@ -596,7 +596,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b309 — online: each shirt picture shows on its own player, and the guest can use the gym, rope, wardrobe, bong and Gothica';
+const BUILD = 'b310 — first person: never loses the mouse (a key or a click takes it back, an edge keeps turning, and a hint says so)';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3376,8 +3376,14 @@ function shroomMusic(on) {
 window.addEventListener('mousemove', e => { if (SHROOM.on) SHROOM.turn += (e.movementX || 0) * 0.0045;
   if (SHROOM.on && SHROOM.sober) SHROOM.lookY = Math.max(-0.6, Math.min(0.6, (SHROOM.lookY || 0) + (e.movementY || 0) * 0.0035)); });   // b287: and up and down
 // b287: in plain first person the mouse is captured (so it never runs off the screen); Esc lets it go, a click takes it back
-function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (c && document.pointerLockElement !== c && c.requestPointerLock) c.requestPointerLock(); }
+// b310: the browser can say no (asked again too soon after letting go, say), which used to go unnoticed: the
+// mouse then ran off the edge of the screen and the turning stopped. fpLocked() says whether it's really held.
+function fpLocked() { return document.pointerLockElement === document.getElementById('game'); }
+function fpLock(on) { try { const c = document.getElementById('game'); if (on) { if (c && !fpLocked() && c.requestPointerLock) { const r = c.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } }
   else if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); } catch (_) {} }
+// any key in first person asks for the mouse again (a key press counts as you asking, so the browser allows it)
+window.addEventListener('keydown', e => { if (SHROOM.on && SHROOM.sober && !fpBusy() && !fpLocked() && !e.repeat && !['escape', 'v'].includes(e.key.toLowerCase())
+  && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable]'))) fpLock(true); });
 window.addEventListener('mousedown', e => { if (SHROOM.on && SHROOM.sober && !fpBusy() && e.target && e.target.id === 'game') fpLock(true); });
 // WASD walk and step relative to where you're looking; aim is always straight ahead
 function shroomInput(inp) {
@@ -3636,6 +3642,10 @@ function drawShroom(w) {
     SHROOM.turn = 0;
     const da = Math.atan2(Math.sin(lock - SHROOM.ang), Math.cos(lock - SHROOM.ang));
     SHROOM.ang += da * Math.min(1, dt * 6);
+  }
+  if (sober && !fpLocked() && mouse.inside) {                    // b310: the mouse not held: its arrow at an edge keeps you turning
+    const ex = mouse.x / ARENA.w, edge = ex < 0.12 ? -(0.12 - ex) / 0.12 : ex > 0.88 ? (ex - 0.88) / 0.12 : 0;
+    SHROOM.turn += edge * 2.4 * dt;
   }
   SHROOM.ang += SHROOM.turn; SHROOM.turn = 0;
   const arrows = lock === null && !(w.players.length > 1 && !net.conn && net.role !== 'client'), arrowsOk = arrows;
@@ -4123,6 +4133,11 @@ function drawShroom(w) {
     ctx.save(); ctx.setTransform(CW / ARENA.w, 0, 0, CH / ARENA.h, 0, 0);
     drawFpButton();                                                    // (so you can tap your way back out)
     // b307: what E would do right now, under the crosshair; the same button as top-down (for a tap); and the weapons
+    if (!fpLocked() && !('ontouchstart' in window && navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches)) {   // b310
+      ctx.font = 'bold 13px ui-sans-serif, system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('click to look around with the mouse', ARENA.w / 2 + 1, ARENA.h / 2 - 17);
+      ctx.fillStyle = '#f6d17a'; ctx.fillText('click to look around with the mouse', ARENA.w / 2, ARENA.h / 2 - 18); ctx.textAlign = 'left';
+    }
     const cb = !dv && carryButton();
     if (cb) {
       const txt = 'E: ' + cb.label.toLowerCase();
