@@ -45,3 +45,16 @@ seeds, rare seeds dropped by raiders, and later breeding (cross two plants).
 - `tools/strains.py` draws every strain's 4 growth stages (seedling, young, full fan leaves, ready with buds) as
   pixel art: indicas short and bushy with broad leaflets, sativas tall with thin leaflets, hybrids in between,
   each with its own leaf, tip and bud colours, orange hairs, and frost on the frosty ones.
+
+## Strain cards
+`tools/strain_cards.py` makes a stat card for each strain (plant, potency, price, grow time, buds per plant, buff
+length, raid risk, effect, fun fact). The game numbers in it are a first go and all tunable:
+
+| Strain | Potency | Sells for | Grows in | Buds | Buff | Raid risk |
+|---|---|---|---|---|---|---|
+| Northern Lights | 4/10 | $40 | 4 min or 2 waves | 3 | 1 wave | Low |
+| Sour Diesel | 6/10 | $75 | 6 min or 3 waves | 3 | 1 wave | Medium |
+| Granddaddy Purple | 6/10 | $80 | 6 min or 3 waves | 4 | 1 wave | Medium |
+| Blue Dream | 7/10 | $140 | 9 min or 4 waves | 3 | 2 waves | High |
+| Acapulco Gold | 7/10 | $150 | 10 min or 4 waves | 2 | 2 waves | High |
+| White Widow | 9/10 | $300 | 15 min or 6 waves | 2 | 2 waves | Very high |
