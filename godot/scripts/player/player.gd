@@ -239,7 +239,16 @@ func _step(dt: float) -> void:
 	velocity = Vector3(vel.x, 0.0, vel.y) * GameData.UNIT
 	global_position.y = dz * GameData.UNIT
 	move_and_slide()
-	vel = Vector2(velocity.x, velocity.z) / GameData.UNIT
+	# what hit something loses the part of its speed going into it (lobbyClamp: hit.x -> vx = 0)
+	for i in get_slide_collision_count():
+		var n3 := get_slide_collision(i).get_normal()
+		var n := Vector2(n3.x, n3.z)
+		if n.length() < 0.2:
+			continue
+		n = n.normalized()
+		var into := vel.dot(n)
+		if into < 0.0:
+			vel -= n * into
 	global_position.y = dz * GameData.UNIT
 
 # Where the mouse points on the ground plane (HTML units), or null.
