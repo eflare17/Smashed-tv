@@ -155,6 +155,9 @@ func _draw() -> void:
 	# the vending machine
 	var vp := s.vend_pos()
 	var vk := "sold" if s.vend_sold else ("idle_b" if int(floor(s.t * 2.5)) % 2 else "idle_a")
+	if s.secret and s.secret.room:
+		_vend.visible = false
+		return
 	floor_ellipse(floor_c, vp.x, vp.y - 2.0, 39.6, 12.0, Color(0, 0, 0, 0.35))
 	_put(_vend, _tex("VEND_SPRITES", vk), vp.x, vp.y - 4.0, s.tv("vendHeight", 150), Color.WHITE)
 	for p: FT.Fighter in s.players:

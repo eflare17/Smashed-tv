@@ -221,6 +221,18 @@ func _make(name: String) -> PackedFloat32Array:
 			return _mix([_noise_s(0.22, 900, 1.2, 0.5, "lowpass", 140), _tone(0.18, 150, 50, 0.3, "square")])
 		"bounce":   # a launched player hits a wall
 			return _mix([_noise_s(0.14, 500, 1.1, 0.34, "lowpass", 90), _tone(0.12, 120, 46, 0.2, "square")])
+		"stamp", "s_hammer":
+			return _mix([_noise_s(0.12, 1400, 2, 0.3, "bandpass", 250), _tone(0.1, 130, 60, 0.2, "square")])
+		"s_reels":
+			return _mix([_tone(0.6, 650, 170, 0.12, "triangle")])
+		"s_suction":
+			return _mix([_noise_s(2.6, 180, 1, 0.15, "lowpass", 1300), _tone(2.6, 65, 280, 0.07, "sawtooth")])
+		"s_pop":
+			return _mix([_tone(0.13, 600, 50, 0.3, "sine"), _noise_s(0.1, 1400, 1, 0.22, "lowpass", 120)])
+		"s_landing":
+			return _mix([_noise_s(0.15, 450, 1, 0.2, "lowpass", 70)])
+		"s_payout":
+			return _mix([_tone(0.35, 440, 880, 0.14, "triangle")])
 		"windup":   # new (first person): the batter's tell you can hear
 			return _mix([_tone(0.38, 180, 520, 0.12, "sawtooth")])
 	return PackedFloat32Array()

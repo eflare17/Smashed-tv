@@ -288,6 +288,7 @@ class Janitor:
 	var odo := 0.0
 	var wdx := 0.0
 	var wdy := 1.0
+	var secret_return := false   ## shot as he left: he goes back to the cabinet, and the machine swallows you
 
 ## Gothica in Protect mode (modes_hud.md 2.2).
 class Goth:
@@ -329,3 +330,24 @@ class Slot:
 	var broken := false
 	var prize := -1
 	var decoy := [0, 0]
+
+## A skull stamp in the bonus room (gore_loot.md 14.3).
+class Hazard:
+	var x := 0.0
+	var y := 0.0
+	var t := 0.0
+	var hp := 3.0
+	var hit := false
+
+## The secret bonus room inside the slot machine (gore_loot.md 14).
+class Secret:
+	var phase := "intro"         ## intro, landing, bonus, payout, return, done
+	var t := 0.0
+	var room := false
+	var saved: Dictionary = {}
+	var origins: Array = []      ## [Vector2] where each player stood
+	var hazards: Array = []
+	var earned := 0
+	var next_drop := 0.5
+	var next_cash := 0.0
+	var survived := false

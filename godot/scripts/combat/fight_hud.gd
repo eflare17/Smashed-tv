@@ -138,7 +138,7 @@ func _process(delta: float) -> void:
 		_launcher_hint_t = -1.0
 	if fight.is_fp() and fight.touch_seen:
 		_fp_hint_t += delta
-	_bar.visible = not s.over
+	_bar.visible = not s.over and not (s.secret and s.secret.room)
 	# with the pointer held (first person) a click is always a shot, never a button (b307)
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
@@ -335,6 +335,9 @@ func draw_all(c: Control) -> void:
 	var k := sc()
 	var vp := c.size
 	var fp := fight.is_fp()
+	if s.secret and s.secret.phase != "done":
+		_draw_secret(c, s.secret)
+		return
 	if fp:
 		_draw_fp(c)
 	# the run's top line (26, 38) and the wallet (26, 64) + ammo (88, 64)
@@ -422,6 +425,54 @@ func draw_all(c: Control) -> void:
 		_text(c, vp.x / 2.0, 90 * k + 12 * k, _banner, 34, GOLD, 1, 5, Color(INK, 0.9))
 	if s.over:
 		_game_over(c)
+
+# The bonus room's words (gore_loot 14.5): bold monospace with a dark outline.
+func _stext(c: Control, y: float, txt: String, size: int, col := Color("#d9f9ff")) -> void:
+	_text(c, c.size.x / 2.0, y * sc(), txt, size, col, 1, 4, Color("#111620"))
+
+func _draw_secret(c: Control, sec: FT.Secret) -> void:
+	var s := fight.sim
+	var t := sec.t
+	var vp := c.size
+	var k := sc()
+	match sec.phase:
+		"intro":
+			var sp = to_screen(s.slot.x, s.slot.y + 120.0, 0.0)
+			if sp != null:
+				if t > 3.6 and t < 4.15:
+					_text(c, sp.x, sp.y, "...", 18, Color("#d9f9ff"), 1, 4, Color("#111620"))
+				if t > 4.15 and t < 4.55:
+					_text(c, sp.x, sp.y - 60 * k, "POP!", 24, Color("#c5ffff"), 1, 4, Color("#111620"))
+			if t > 5.6:
+				c.draw_rect(Rect2(Vector2.ZERO, vp), Color(5 / 255.0, 9 / 255.0, 18 / 255.0, minf(1.0, (t - 5.6) / 0.5)))
+		"landing":
+			var f := minf(1.0, t / 0.85)
+			c.draw_rect(Rect2(Vector2.ZERO, vp), Color(8 / 255.0, 15 / 255.0, 24 / 255.0, (1.0 - f) * 0.7))
+			_stext(c, 208, "YOU ARE THE PRIZE", 22, Color("#e7d387"))
+		"payout":
+			_stext(c, 320, "THANK YOU FOR YOUR CUSTOM" if sec.survived else "FAULT DETECTED — EJECTING", 20)
+			if t > 1.05:
+				c.draw_rect(Rect2(Vector2.ZERO, vp), Color(190 / 255.0, 250 / 255.0, 1.0, minf(1.0, (t - 1.05) / 0.55)))
+		"return":
+			_stext(c, 350, "PLEASE CHECK THE PAYOUT TRAY", 18, GOLD)
+			c.draw_rect(Rect2(Vector2.ZERO, vp), Color(190 / 255.0, 250 / 255.0, 1.0, maxf(0.0, 1.0 - 3.0 * t)))
+	if sec.room:
+		var top := Rect2(vp.x / 2.0 - 147 * k, 87 * k, 294 * k, 27 * k)
+		c.draw_rect(top, Color(8 / 255.0, 15 / 255.0, 24 / 255.0, 0.92))
+		var head := "INSIDE THE MACHINE"
+		if sec.phase == "bonus":
+			head = "HOUSE MONEY  %ds" % int(ceil(maxf(0.0, 20.0 - t)))
+		elif sec.phase == "payout":
+			head = "PAYOUT"
+		_stext(c, 107, head, 17)
+		var bot := Rect2(vp.x / 2.0 - 250 * k, 482 * k, 500 * k, 33 * k)
+		c.draw_rect(bot, Color(8 / 255.0, 15 / 255.0, 24 / 255.0, 0.9))
+		_stext(c, 496, "BANKED $%d" % sec.earned + ("  + $10 EACH" if sec.phase == "payout" and sec.survived else ""), 13, Color("#b1efb7"))
+		_stext(c, 509, "COLLECT CASH  /  SHOOT SKULLS  /  DODGE STAMPS", 10, Color("#9db7c3"))
+		for fl: FT.Floater in s.floaters:
+			var p = to_screen(fl.x, fl.y, 30.0)
+			if p != null:
+				_text(c, p.x, p.y, fl.text, 14, fl.col, 1)
 
 func _pad_last() -> bool:
 	var h = fight.main.get("hud") if fight.main else null

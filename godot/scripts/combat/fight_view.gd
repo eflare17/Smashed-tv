@@ -76,7 +76,7 @@ func stand_ellipse(b: Batch, c: Vector3, rx: float, ry: float, col: Color, segs 
 func _process(delta: float) -> void:
 	var camera := get_viewport().get_camera_3d()
 	begin(camera)
-	if sim and camera:
+	if sim and camera and not (sim.secret and sim.secret.phase == "intro"):
 		_draw_all(minf(delta, 0.05))
 	finish()
 

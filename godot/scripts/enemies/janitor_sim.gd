@@ -41,6 +41,8 @@ static func step(s: FightSim, dt: float) -> void:
 				if j.phase == "enter":
 					j.phase = "yeet"
 					j.flip = true
+				elif j.secret_return:
+					j.phase = "swing"
 				else:
 					j.phase = "yeet" if j.resume == "enter" else (j.resume if j.resume != "" else "swing")
 				j.t = 0.0
@@ -62,6 +64,9 @@ static func step(s: FightSim, dt: float) -> void:
 			if j.t > 0.30:
 				j.t = 0.0
 				j.hits += 1
+				if j.secret_return and not s.secret_used:
+					BonusRoom.begin(s)
+					return
 				s.fx(FightSim.FX_WALL, sx + (-14.0 if j.from < 0 else 14.0), sy - 6.0)
 				s.snd("clank")
 				if j.hits >= int(s.tv("janitorHits", 3)):
@@ -189,7 +194,13 @@ static func on_shot(s: FightSim, b: FT.Bullet) -> void:
 		_:
 			j.shots += 1
 			if j.shots == 1:
-				j.resume = j.phase
+				if j.phase == "exit" and not s.slot.broken and not s.secret_used:
+					# the hidden door: he goes back to the cabinet, and his next swing opens it
+					j.secret_return = true
+					j.hits = 0
+					j.resume = "trudge"
+				else:
+					j.resume = j.phase
 				j.phase = "down"
 				j.t = 0.0
 				j.vx = 90.0 if (b.vx if b.vx != 0.0 else 1.0) > 0.0 else -90.0

@@ -34,6 +34,7 @@ func _ready() -> void:
 	test_coins()
 	test_vending()
 	test_slot()
+	test_bonus_room()
 	print("logic tests: %d passed, %d failed" % [passes, fails])
 	get_tree().quit(1 if fails > 0 else 0)
 
@@ -317,3 +318,40 @@ func test_slot() -> void:
 	ok(f.spin > 0.0 and f.coins == 2495, "a live machine takes $5 and roots him")
 	steps(s, 200)
 	ok(f.spin == 0.0 and s.slot.cool > 0.0, "the prize is paid and the machine recharges")
+
+func test_bonus_room() -> void:
+	var s := sim_with_player(200, 400)
+	s.start_run("classic")
+	s.wave = 1
+	s.breather = 2.0
+	var f: FT.Fighter = s.players[0]
+	f.iframe = 999.0
+	var exiting := false
+	for k in 120 * 20:
+		s.step([inp()])
+		if s.janitor.phase == "exit":
+			exiting = true
+			break
+	ok(exiting, "Gary finishes and walks out")
+	var b := FT.Bullet.new()
+	b.owner = 0
+	b.vx = 100
+	JanitorSim.on_shot(s, b)
+	ok(s.janitor.secret_return and s.janitor.phase == "down", "shot as he leaves: he'll go back")
+	var began := false
+	for k in 120 * 20:
+		s.step([inp()])
+		if s.secret != null:
+			began = true
+			break
+	ok(began, "his swing at the cabinet opens the machine")
+	var wave := s.wave
+	var phases := {}
+	for k in 120 * 35:
+		s.step([inp()])
+		phases[s.secret.phase] = true
+		if s.secret.phase == "done":
+			break
+	ok(phases.has("landing") and phases.has("bonus") and phases.has("payout") and phases.has("return"), "intro, landing, 20 s inside, payout, return")
+	ok(s.secret.phase == "done" and s.wave == wave and s.started and not s.over, "the run comes back as it was (wave %d)" % s.wave)
+	ok(f.coins >= 2500, "he keeps his money (%d)" % f.coins)

@@ -87,6 +87,8 @@ var lobby_areas: Array = []      ## Rect2s: in the lobby a bullet is stopped out
 var world_w := 2003.0
 var world_h := 1998.0
 var enemy_uid := 0
+var secret: FT.Secret = null     ## the bonus room inside the slot machine, while it runs
+var secret_used := false
 var thud_cd := 0.0
 
 # ETYPE as arrays (index t)
@@ -877,6 +879,9 @@ func start_wave() -> void:
 ## One fixed step. inputs: an FT.Inp per player. drive: the sim moves the players (the run); in the lobby the
 ## Player nodes move themselves and the sim only reads their positions and adds its pushes to their velocity.
 func step(inputs: Array, dt: float = DT) -> void:
+	if secret and secret.phase != "done":
+		BonusRoom.step(self, inputs, dt)
+		return
 	if over:
 		shake = maxf(0.0, shake - 90.0 * dt)          # (the HTML's shake froze at game over: let it settle)
 		return
@@ -884,22 +889,29 @@ func step(inputs: Array, dt: float = DT) -> void:
 		freeze -= dt
 		return
 	t += dt
+	step_world(inputs, dt, false)
+
+## The world's step (stepBase). room: inside the slot machine (no waves, no Gary, no growing potatoes, no Gothica).
+func step_world(inputs: Array, dt: float, room: bool) -> void:
 	thud_cd = maxf(0.0, thud_cd - dt)
 	for i in players.size():
 		var inp: FT.Inp = inputs[i] if i < inputs.size() and inputs[i] != null else FT.Inp.new()
 		_step_player(players[i], inp, dt)
-	if started and not over:
+	if started and not over and not room:
 		EnemySim.step_director(self, dt)
 	EnemySim.step_enemies(self, dt)
 	_step_bullets(dt)
 	EnemySim.step_shards(self, dt)
-	if started:
+	if started and not room:
 		JanitorSim.step(self, dt)
+		if secret and secret.phase == "intro":
+			return
 	_step_nuke(dt)
 	_step_rockets(dt)
 	shake = maxf(0.0, shake - 90.0 * dt)
-	_step_plants(dt)
-	if goth:
+	if not room:
+		_step_plants(dt)
+	if goth and not room:
 		ProtectSim.step(self, dt)
 	_step_rain(dt)
 	_step_husks(dt)

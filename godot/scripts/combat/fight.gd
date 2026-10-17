@@ -54,6 +54,11 @@ var _was_alive := true
 var _hp_seen := 5.0
 var _last_spin := false
 var _log_t := 0.0
+var _secret_scale := 1.0
+var _secret_hidden := false
+var _secret_tumble := false
+var _secret_beat := ""
+var _zoom_before := -1
 
 func _enter_tree() -> void:
 	me = self
@@ -95,6 +100,9 @@ func _ready() -> void:
 	eview = EnemyView.new()
 	eview.sim = sim
 	add_child(eview)
+	var bview := BonusView.new()
+	bview.sim = sim
+	add_child(bview)
 	hud = FightHud.new()
 	hud.fight = self
 	add_child(hud)
@@ -116,6 +124,8 @@ func _ready() -> void:
 		call_deferred("_debug_weapon")
 	if debug.has("gallery"):
 		call_deferred("_gallery")
+	if debug.has("secret"):
+		call_deferred("_debug_secret")
 
 func _read_debug() -> void:
 	var q := ""
@@ -217,6 +227,17 @@ func _gallery() -> void:
 		sim.slot.decoy = [2, 5]
 		sim.janitor.phase = "done"
 	set_meta("frozen", true)
+
+## Debug (the HTML's "secret preview"): a run at wave 1 with Gary swinging at the live machine, straight in.
+func _debug_secret() -> void:
+	start_run()
+	sim.wave = 1
+	sim.breather = 999.0
+	sim.slot.broken = false
+	sim.janitor.phase = "swing"
+	BonusRoom.begin(sim)
+	if debug.get("secret") == "room":
+		sim.secret.t = BonusRoom.INTRO
 
 func _load_hotbar() -> void:
 	hotbar_order.assign(WeaponDefs.ORDER)
@@ -538,6 +559,7 @@ func _process(delta: float) -> void:
 		_place_player()
 	_drain()
 	_update_sprite()
+	_secret_frame()
 	if debug.has("log"):
 		_log_t += delta
 		if _log_t >= 1.0:
@@ -553,6 +575,12 @@ func _place_player() -> void:
 	player.vel = Vector2.ZERO
 	player.velocity = Vector3.ZERO
 	player.global_position = GameData.world_to_3d(f.x, f.y, 0.0)
+	_secret_scale = 1.0
+	_secret_hidden = false
+	_secret_tumble = false
+	var sec := sim.secret
+	if sec and sec.phase != "done":
+		_secret_place(sec)
 	player.facing = sim.facing_vec(f)
 	player.moving = f.moving
 	player.odo = f.odo
@@ -603,6 +631,10 @@ func _update_sprite() -> void:
 		spr.visible = false
 		return
 	var blink := f.iframe > 0.0 and int(floor(f.iframe * 20.0)) % 2 == 0
+	spr.scale = Vector3.ONE * _secret_scale
+	if _secret_hidden:
+		spr.visible = false
+		return
 	var carried := sim.goth != null and sim.goth.carrier == f.id
 	spr.visible = not fp and not blink
 	if fp:
@@ -616,7 +648,7 @@ func _update_sprite() -> void:
 	spr.moving = f.moving if sim.started else player.moving
 	spr.odo = f.odo if sim.started else player.odo
 	var roll := f.roll if sim.started else player.roll
-	if f.launch > 0.0:
+	if f.launch > 0.0 or _secret_tumble:
 		spr.action = "tumble"
 		spr.odo = Time.get_ticks_msec() / 1000.0 * 120.0
 	elif roll > 0.0:
@@ -659,6 +691,71 @@ func _update_sprite() -> void:
 		spr.current_key = key
 	if carried:
 		spr.visible = not blink
+
+# The bonus room's cinematics (gore_loot 14.5): dragged feet first into the cabinet and shrinking into it, then
+# tumbling in from the bottom of the room, and back out of the machine at the end.
+func _secret_place(sec: FT.Secret) -> void:
+	var t := sec.t
+	var side := -1.0
+	var hx := sim.slot.x
+	var hy := sim.slot.y + 4.0
+	match sec.phase:
+		"intro":
+			var o: Vector2 = sec.origins[0] if not sec.origins.is_empty() else Vector2(f.x, f.y)
+			if t < 1.5:
+				player.global_position = GameData.world_to_3d(o.x, o.y, 0.0)
+			elif t < 4.15:
+				var k := minf(1.0, (t - 1.5) / 2.1)
+				k = k * k * (3.0 - 2.0 * k)
+				var at := o.lerp(Vector2(hx + side * 11.0, hy + 12.0), k)
+				at.x += sin(t * 30.0) * 2.0 * k
+				player.global_position = GameData.world_to_3d(at.x, at.y, 0.0)
+				_secret_scale = 1.0 - 0.18 * k
+				_secret_tumble = k > 0.3
+			elif t < 4.43:
+				var k2 := (t - 4.15) / 0.28
+				player.global_position = GameData.world_to_3d(hx + side * 11.0, hy + 12.0, 0.0)
+				_secret_scale = 0.82 * (1.0 - k2)
+				_secret_tumble = true
+			else:
+				_secret_hidden = true
+		"landing", "return":
+			var dur := 0.85 if sec.phase == "landing" else 1.15
+			var k3 := minf(1.0, t / dur)
+			k3 = 1.0 - (1.0 - k3) * (1.0 - k3)
+			var from := Vector2(430, 505) if sec.phase == "landing" else Vector2(hx, hy)
+			var at2 := from.lerp(Vector2(f.x, f.y), k3)
+			player.global_position = GameData.world_to_3d(at2.x, at2.y, 45.0 * 4.0 * k3 * (1.0 - k3))
+			_secret_tumble = k3 < 1.0
+		"payout":
+			pass
+
+func _secret_frame() -> void:
+	var sec := sim.secret
+	var beat := ""
+	if sec and sec.phase != "done":
+		if sec.phase == "intro":
+			beat = "s_hammer" if sec.t < 0.5 else ("s_reels" if sec.t < 1.5 else ("s_suction" if sec.t < 4.15 else ("s_pop" if sec.t < 4.6 else "quiet")))
+		else:
+			beat = sec.phase
+	if beat != _secret_beat:
+		_secret_beat = beat
+		match beat:
+			"s_hammer", "s_reels", "s_suction", "s_pop":
+				Sfx.play(beat)
+			"landing":
+				Sfx.play("s_landing")
+			"payout":
+				Sfx.play("s_payout")
+	# the camera shows the whole room inside the machine
+	var inside := sec != null and sec.room
+	if rig:
+		if inside and _zoom_before < 0:
+			_zoom_before = rig.zoom_level
+			rig.set_zoom(0)
+		elif not inside and _zoom_before >= 0:
+			rig.set_zoom(_zoom_before)
+			_zoom_before = -1
 
 ## Where a player's gun is in 3D: the barrel map's point for the frame his picture shows (weapons 18.4), or near
 ## the camera in first person. INF if unknown.

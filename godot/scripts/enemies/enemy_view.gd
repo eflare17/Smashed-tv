@@ -81,7 +81,7 @@ func view_oct(x: float, y: float, vx: float, vy: float) -> int:
 
 func _process(_delta: float) -> void:
 	begin(get_viewport().get_camera_3d())
-	if sim and cam:
+	if sim and cam and not (sim.secret and sim.secret.phase == "intro"):
 		_draw()
 	else:
 		for s in _pool:
