@@ -26,6 +26,9 @@ var clock_hud: ClockHud
 var bed: BedSleep
 
 var _save_t := 0.0
+## The save is read once per run of the game: after that the clock (an autoload, outliving a restart's reload)
+## is ahead of it, and loading it again would wind the time back.
+static var _clock_loaded := false
 
 ## Adds everything to main (the running game: main.world, main.sun, main.player, main.rig, main.hud...).
 static func install(main_: Node) -> LightingInstall:
@@ -43,7 +46,9 @@ func _setup() -> void:
 	clock = _ensure_clock(main.get_tree())
 	var args := _page_args()
 	var loaded := false
-	if args.has("hour"):
+	if _clock_loaded:
+		pass
+	elif args.has("hour"):
 		clock.hour = clampf(float(args.hour), 0.0, 23.99)
 		clock.day = maxi(1, int(args.get("day", clock.day)))
 		loaded = true
@@ -55,6 +60,7 @@ func _setup() -> void:
 			clock.day = maxi(1, int(v.get("day", 1)))
 			clock.hour = clampf(float(v.get("hour", 7.0)), 0.0, 23.9999)
 			loaded = true
+	_clock_loaded = true
 	if args.has("speed"):
 		clock.speed = float(args.speed)
 	main.add_child(self)
@@ -71,6 +77,9 @@ func _setup() -> void:
 	var q := "low" if _is_phone() else "high"
 	if args.has("look"):
 		q = "low" if String(args.look) == "low" else "high"
+		look.auto_quality = false
+	elif LookPass.remembered() != "":
+		q = LookPass.remembered()          # measured (or picked with F8) before: no measuring again
 		look.auto_quality = false
 	look.quality = q
 	add_child(look)
@@ -149,6 +158,9 @@ func _process(dt: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("clock_skip") and not event.is_echo():
 		clock.advance_hours(1.0)
+
+func _exit_tree() -> void:
+	save()                                 # (a restart reloads the scene: the clock goes on from here)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:

@@ -21,7 +21,9 @@ static func add_actions() -> void:
 	for i in 6:
 		_add("weapon_%d" % (i + 1), [_key(KEY_1 + i)])
 	_add("weapon_prev", [_pad(JOY_BUTTON_LEFT_SHOULDER), _pad(JOY_BUTTON_DPAD_LEFT), _key(KEY_Q)])
-	_add("weapon_next", [_pad(JOY_BUTTON_Y), _pad(JOY_BUTTON_DPAD_RIGHT)])
+	# (pad Y is the farm bag's, and the cards' "hit": one job per button)
+	_add("weapon_next", [_pad(JOY_BUTTON_DPAD_RIGHT)])
+	_add("mode_next", [_pad(JOY_BUTTON_RIGHT_STICK)])     # the lobby's game mode (Classic / Protect Gothica)
 	_add("start_run", [_key(KEY_ENTER), _key(KEY_KP_ENTER), _pad(JOY_BUTTON_START)])
 	_add("restart", [_key(KEY_R)])
 	_add("add_player", [_key(KEY_P)])

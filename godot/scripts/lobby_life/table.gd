@@ -535,7 +535,7 @@ func _build_panel() -> void:
 	pc.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	pc.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	pc.offset_right = -66
-	pc.offset_top = 52
+	pc.offset_top = 136                  # under the clock, the view line and the touch ZOOM / VIEW buttons
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	pc.add_child(box)

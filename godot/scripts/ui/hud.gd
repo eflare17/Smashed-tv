@@ -13,6 +13,9 @@ extends CanvasLayer
 const CHARACTERS := [["juicy", "Juicy Jared"], ["tyson2", "Tornado Tyson"], ["goth", "Gothica"]]
 const KEY_HELP := "WASD move   Shift roll   E use   V view   Z zoom   1 2 3 character"
 const PAD_HELP := "left stick move   right stick aim / look   B roll   A use   View: first person   d-pad up zoom"
+## Once the weapon bar has the number keys (number_keys_pick false).
+const KEY_HELP_FIGHT := "WASD move   Shift roll   E use   V view   Z zoom   1-6 weapon   Enter start   Tab controls"
+const PAD_HELP_FIGHT := "left stick move   right stick aim   RT fire   B roll   A use   d-pad left / right weapon   Menu start   d-pad down controls"
 const PINK := Color("#f7a8ff")
 const GOLD := Color("#f6d17a")
 
@@ -35,6 +38,10 @@ var _cross: Control
 var _ebtn: _EButton
 var _picker: HBoxContainer
 var _pick_btns: Array[Button] = []
+var _sound_btn: Button
+## Sound on or off (the HTML game's #muteBtn "Sound: on"): the Master bus muted, remembered in user://smashed.cfg.
+static var sound_on := true
+static var _sound_loaded := false
 
 func _ready() -> void:
 	layer = 10
@@ -100,7 +107,7 @@ func _ready() -> void:
 	root.add_child(_picker)
 	for i in CHARACTERS.size():
 		var b := Button.new()
-		b.text = "%d  %s" % [i + 1, CHARACTERS[i][1]]
+		b.text = _pick_text(i)
 		b.focus_mode = Control.FOCUS_NONE
 		b.toggle_mode = true
 		b.add_theme_font_size_override("font_size", 13)
@@ -108,6 +115,23 @@ func _ready() -> void:
 		b.pressed.connect(func(): pick(id))
 		_picker.add_child(b)
 		_pick_btns.append(b)
+
+	_sound_btn = Button.new()
+	_sound_btn.focus_mode = Control.FOCUS_NONE
+	_sound_btn.add_theme_font_size_override("font_size", 13)
+	_sound_btn.pressed.connect(func(): set_sound(not sound_on))
+	_picker.add_child(_sound_btn)
+	if not InputMap.has_action("mute"):
+		InputMap.add_action("mute")
+		var mk := InputEventKey.new()
+		mk.physical_keycode = KEY_F9
+		InputMap.action_add_event("mute", mk)
+	if not _sound_loaded:
+		_sound_loaded = true
+		var cf := ConfigFile.new()
+		if cf.load("user://smashed.cfg") == OK:
+			sound_on = bool(cf.get_value("sound", "on", true))
+	set_sound(sound_on, false)
 
 	touch = TouchControls.new()
 	touch.name = "Touch"
@@ -128,8 +152,27 @@ func _label(parent: Control, text: String, size: int, col: Color) -> Label:
 	parent.add_child(l)
 	return l
 
+## Sound on or off (F9, or the Sound button).
+func set_sound(on: bool, save: bool = true) -> void:
+	sound_on = on
+	AudioServer.set_bus_mute(0, not on)
+	if _sound_btn:
+		_sound_btn.text = "Sound: on" if on else "Sound: off"
+	if save:
+		var cf := ConfigFile.new()
+		cf.load("user://smashed.cfg")
+		cf.set_value("sound", "on", on)
+		cf.save("user://smashed.cfg")
+
+func _pick_text(i: int) -> String:
+	return ("%d  %s" % [i + 1, CHARACTERS[i][1]]) if number_keys_pick else String(CHARACTERS[i][1])
+
 ## Make the player this character ("juicy", "tyson2", "goth").
 func pick(id: String) -> void:
+	# (not while lobby life holds him: lying in bed, lifting, at the mirror its picture of him stays as it was)
+	var ll := LobbyLife.current
+	if player and ll and (ll.busy.has(player) or ll.pose_of(player) != null):
+		return
 	if player:
 		player.char_id = id
 
@@ -145,6 +188,10 @@ func _input(event: InputEvent) -> void:
 		pad_last = false
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("mute") and not event.is_echo():
+		set_sound(not sound_on)
+		get_viewport().set_input_as_handled()
+		return
 	if not number_keys_pick or event.is_echo():
 		return
 	for i in CHARACTERS.size():
@@ -183,18 +230,34 @@ func _process(_delta: float) -> void:
 	_find()
 	_build.text = build_text
 	var fp := rig != null and rig.mode == CameraRig.Mode.FIRST_PERSON
-	var view := "First person (V)" if fp else "Top-down (V)"
+	var keys := not pad_last and not (touch and touch.active)
+	var view := "First person" if fp else "Top-down"
+	if keys:
+		view += " (V)"
+	elif pad_last:
+		view += " (View)"
 	if rig and not fp:
-		view += "    " + rig.zoom_text()
+		var zt := rig.zoom_text()
+		if not keys:
+			zt = zt.replace(" (Z)", "")
+		view += "    " + zt
 	_view.text = view
 	_cross.visible = fp
 	_hint.visible = fp and rig != null and not rig.mouse_captured() and not _touch_only() and not (touch and touch.active)
 	var label := player.focus_label if player else ""
 	var txt := (("A: " if pad_last else "E: ") + label.to_lower()) if label != "" else ""
-	_help.text = PAD_HELP if pad_last else KEY_HELP
+	if number_keys_pick:
+		_help.text = PAD_HELP if pad_last else KEY_HELP
+	else:
+		_help.text = PAD_HELP_FIGHT if pad_last else KEY_HELP_FIGHT
+	for i in _pick_btns.size():
+		var pt := _pick_text(i)
+		if _pick_btns[i].text != pt:
+			_pick_btns[i].text = pt
 	_help.visible = touch == null or not touch.active
 	_prompt.text = txt
-	_prompt.visible = txt != ""
+	# first person only, under the crosshair (the HTML game's spot); top-down the round E button says it
+	_prompt.visible = txt != "" and fp
 	# under the crosshair in first person (the HTML game's spot); top-down, above the help line
 	var vp := get_viewport().get_visible_rect().size
 	if fp:
@@ -209,7 +272,7 @@ func _process(_delta: float) -> void:
 	# stale then, wherever it was let go
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	_ebtn.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
-	for b in _pick_btns:
+	for b in _pick_btns + [_sound_btn]:
 		b.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
 	for i in _pick_btns.size():
 		_pick_btns[i].set_pressed_no_signal(player != null and player.char_id == CHARACTERS[i][0])

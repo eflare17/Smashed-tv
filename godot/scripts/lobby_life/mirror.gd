@@ -379,8 +379,12 @@ func _sync_ui() -> void:
 	_hint.text = "HAIR  %d of %d" % [LobbyLook.style + 1, LobbyLook.beards().size()]
 	_title.text = LobbyLook.style_label()
 	var touch := DisplayServer.is_touchscreen_available()
-	_tip.text = ("big arrows to turn round  ·  small arrows: hair  ·  BACK to step away" if touch
-		else "A / D or the big arrows: turn round  ·  F or the small arrows: hair  ·  S or E: step away")
+	var h = ll._main_get("hud") if ll else null
+	if h and h.get("pad_last") == true:
+		_tip.text = "left stick: turn round  ·  LB / RB: hair  ·  B: step away"
+	else:
+		_tip.text = ("big arrows to turn round  ·  small arrows: hair  ·  BACK to step away" if touch
+			else "A / D or the big arrows: turn round  ·  F or the small arrows: hair  ·  S or E: step away")
 
 # ------------------------------------------------------------------ test
 

@@ -104,8 +104,8 @@ func apply(key: String, parent: Node, list: Array, offset := Vector3.ZERO) -> vo
 		have.append(p)
 	for i in have.size():
 		var p: LobbyPic = have[i]
-		if not is_instance_valid(p):
-			continue
+		if not is_instance_valid(p) or not p.is_inside_tree():
+			continue                           # (the old game's, while a restart reloads the scene)
 		if i >= list.size():
 			p.visible = false
 			continue

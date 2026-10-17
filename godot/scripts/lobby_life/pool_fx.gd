@@ -146,6 +146,7 @@ func _make_ducks() -> void:
 		var l: Array = DUCK_LOOKS[i]
 		var pic := LobbyPic.new()
 		pic.name = "Duck%d" % i
+		pic.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # bobbed in _process
 		pic.texture = _duck_tex(l[0])
 		pic.units_per_px = 1.0
 		pic.foot_px = 4.0                     # the bottom four rows are under the water

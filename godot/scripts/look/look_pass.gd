@@ -601,6 +601,7 @@ func _add_char(cs: Node) -> void:
 	mat.shader = _char_shader_for(quality == "high")
 	var caster := Sprite3D.new()
 	caster.name = "SunShadow"
+	caster.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # follows the picture each frame
 	caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 	caster.centered = true
 	caster.double_sided = true
@@ -699,12 +700,31 @@ func _watch_speed(dt: float) -> void:
 			set_quality("low")
 		else:
 			print("LookPass: high look, %.1f ms a frame" % med)
+		remember(quality)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("look_quality") and not event.is_echo():
 		auto_quality = false
 		set_quality("low" if quality == "high" else "high")
+		remember(quality)
 		print("LookPass: quality ", quality)
+
+## The look chosen (measured, or F8), kept in user://smashed.cfg so the next load (a restart's reload, the next
+## visit) starts with it instead of measuring again. "" when nothing is stored.
+static func remembered() -> String:
+	var cf := ConfigFile.new()
+	if cf.load("user://smashed.cfg") != OK:
+		return ""
+	var q := String(cf.get_value("look", "quality", ""))
+	return q if q == "high" or q == "low" else ""
+
+static func remember(q: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var cf := ConfigFile.new()
+	cf.load("user://smashed.cfg")
+	cf.set_value("look", "quality", q)
+	cf.save("user://smashed.cfg")
 
 ## "high" or "low" (see above).
 func set_quality(q: String) -> void:

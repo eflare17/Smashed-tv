@@ -32,9 +32,13 @@ var target: Player:
 
 ## --- Not contract ---
 signal zoom_changed(level: int)
-## The HTML game's zoom steps: 0 = 1x, 1 = 1.5x (ZOOM_IN), 2 = 2x (ZOOM_LOBBY). Lobby default 2x.
+## The HTML game's zoom steps: 0 = 1x, 1 = 1.5x (ZOOM_IN), 2 = 2x (ZOOM_LOBBY). 1x to start (CAM.lvl 0), and the
+## player's choice (Z) is remembered in user://smashed.cfg like the HTML game's localStorage 'smashed-zoom'.
 const ZOOMS := [1.0, 1.5, 2.0]
-var zoom_level: int = 2
+const CFG := "user://smashed.cfg"
+var zoom_level: int = 0
+static var _zoom_loaded := false
+static var _zoom_saved := 0
 ## In a run (the arena) the 2x step is 1.5x, like zoomWanted().
 var in_run: bool = false
 ## How steeply the top-down camera looks down, in degrees (90 = straight down).
@@ -84,6 +88,12 @@ func _ready() -> void:
 	_cam.far = 400.0
 	add_child(_cam)
 	_cam.current = true
+	if not _zoom_loaded:
+		_zoom_loaded = true
+		var cf := ConfigFile.new()
+		if cf.load(CFG) == OK:
+			_zoom_saved = clampi(int(cf.get_value("view", "zoom", 0)), 0, 2)
+	zoom_level = _zoom_saved
 	_z = zoom_wanted()
 	_apply_mode()
 	snap()
@@ -113,8 +123,14 @@ func set_zoom(level: int) -> void:
 	zoom_level = posmod(level, 3)
 	zoom_changed.emit(zoom_level)
 
+## Z: the next step, remembered (over a restart's reload and the next visit).
 func next_zoom() -> void:
 	set_zoom(zoom_level + 1)
+	_zoom_saved = zoom_level
+	var cf := ConfigFile.new()
+	cf.load(CFG)
+	cf.set_value("view", "zoom", zoom_level)
+	cf.save(CFG)
 
 ## The zoom the view eases to (zoomWanted).
 func zoom_wanted() -> float:
@@ -165,6 +181,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("zoom") and not event.is_echo():
+		if Fight.me and Fight.me.modal_open():
+			return                             # (a panel or the mirror has the d-pad)
 		next_zoom()                            # Z, or d-pad up like the HTML game's pad
 		get_viewport().set_input_as_handled()
 		return

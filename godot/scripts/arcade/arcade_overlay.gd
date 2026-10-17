@@ -129,12 +129,17 @@ func _reset_pointer() -> void:
 func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	var side := 0.0
+	var below := 0.0
 	if device == "touch" and game and not game.touch_buttons().is_empty():
-		side = _buttons.side_width(vp)
-	var k := minf((vp.x - 2.0 * side) / STAGE.x, vp.y / STAGE.y)
+		if vp.y > vp.x:
+			# held upright: the buttons' rows along the bottom, the game the full width above them
+			below = _buttons.bottom_height(vp)
+		else:
+			side = _buttons.side_width(vp)
+	var k := minf((vp.x - 2.0 * side) / STAGE.x, (vp.y - below) / STAGE.y)
 	k = maxf(0.2, k)
 	_stage.scale = Vector2(k, k)
-	_stage.position = ((vp - STAGE * k) / 2.0).floor()
+	_stage.position = (Vector2((vp.x - STAGE.x * k) / 2.0, (vp.y - below - STAGE.y * k) / 2.0)).floor()
 
 func stage_to_view(p: Vector2) -> Vector2:
 	return _stage.position + p * _stage.scale
@@ -428,6 +433,12 @@ class _TouchButtons extends Control:
 		for b in ov.game.touch_buttons():
 			cols = maxi(cols, int(b[4]) + 1)
 		return cols * _rad(vp) * 2.3 + 12.0
+	## The height the button rows take at the bottom (and a gap over them).
+	func bottom_height(vp: Vector2) -> float:
+		var rows := 1
+		for b in ov.game.touch_buttons():
+			rows = maxi(rows, int(b[3]) + 1)
+		return rows * _rad(vp) * 2.3 + 16.0 + 8.0
 	## [id, label, centre, radius] for each button now.
 	func layout() -> Array:
 		var out: Array = []

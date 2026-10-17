@@ -5,9 +5,9 @@ extends CanvasLayer
 ## buffs and dropped seeds, the BAG button, and the farm panel.
 ##
 ## The panel opens at the crate (shop), the garage door (sell), a FOR SALE sign or the tractor shed (land and
-## upgrades), the breeding table (breed), or anywhere with Tab / I / the pad's Y / the BAG button (your bag: pick
+## upgrades), the breeding table (breed), or anywhere with I / the pad's Y / the BAG button (your bag: pick
 ## the seed and the fertiliser E uses, smoke a bud). It's all buttons: click or tap them, or move between them
-## with the arrows, the d-pad or the stick and press Enter / Space / A; Esc, B, Tab or the X closes it. While it's
+## with the arrows, the d-pad or the stick and press Enter / Space / A; Esc, B, I, Tab or the X closes it. While it's
 ## open the player stands still and the mouse is free.
 
 const D := preload("res://scripts/farm/farm_data.gd")
@@ -149,6 +149,7 @@ func setup(f: Farm, w: FarmWorld, p: Node, r: Node) -> void:
 	if world:
 		farm.floater.connect(world_floater)
 		_can3d = Sprite3D.new()
+		_can3d.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # (placed in _process)
 		_can3d.texture = _icon("can")
 		_can3d.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		_can3d.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -174,7 +175,7 @@ static func _ensure_actions() -> void:
 				InputMap.action_add_event(a, j)
 	if not InputMap.has_action("farm_bag"):
 		InputMap.add_action("farm_bag")
-		for k in [KEY_TAB, KEY_I]:
+		for k in [KEY_I]:                  # (Tab is the controls list's)
 			var e := InputEventKey.new()
 			e.physical_keycode = k
 			InputMap.action_add_event("farm_bag", e)
@@ -284,10 +285,16 @@ func close() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("farm_bag") and not event.is_echo():
-		toggle("bag")
-		get_viewport().set_input_as_handled()
+		# (not while lobby life has him: at the cards table Y is "hit")
+		var ll := LobbyLife.current
+		if _panel.visible or ll == null or not ll.busy.has(ll.player):
+			toggle("bag")
+			get_viewport().set_input_as_handled()
 	elif _panel.visible and event.is_action_pressed("ui_cancel"):
 		close()
+		get_viewport().set_input_as_handled()
+	elif _panel.visible and not (event is InputEventMouse or event is InputEventScreenTouch or event is InputEventScreenDrag):
+		# the panel has the keys and the pad while it's open: nothing behind it reacts (the HTML bag's DOM box)
 		get_viewport().set_input_as_handled()
 
 func _input(event: InputEvent) -> void:
@@ -331,10 +338,19 @@ func _rebuild(grab: bool) -> void:
 	_layout()
 	buttons = _all_buttons()
 	if grab or focus_i < 0:
+		var got: Button = null
 		for b in buttons:
 			if b.get_parent() != _tabs and not b.disabled and b.text != "X":
-				b.grab_focus.call_deferred()
+				got = b
 				break
+		if got == null:
+			# nothing in the body to press (an empty bag): the X, so the d-pad and A stay in the panel
+			for b in buttons:
+				if b.text == "X" and not b.disabled:
+					got = b
+					break
+		if got:
+			got.grab_focus.call_deferred()
 	elif focus_i >= 0 and focus_i < buttons.size():
 		buttons[focus_i].grab_focus.call_deferred()
 
@@ -653,7 +669,10 @@ func _update_hint() -> void:
 		var vp := get_viewport().get_visible_rect().size
 		var fp: bool = rig != null and rig.get("mode") == 1
 		_hint.size = Vector2(vp.x, 50)
-		_hint.position = Vector2(0, vp.y / 2.0 + 64.0 if fp else vp.y - 136.0)   # under the crosshair's E, or over the prompt
+		# under the crosshair's E in first person; top-down above the weapon bar (its top: the HTML canvas's y 440,
+		# or two thirds down held upright)
+		var bar_top := vp.y * 0.66 if vp.y > vp.x else vp.y - 80.0 * minf(vp.y / 520.0, vp.x / 372.0)
+		_hint.position = Vector2(0, vp.y / 2.0 + 64.0 if fp else bar_top - 58.0)
 
 ## The watering can, while you're carrying it: in his hand top-down, at the bottom of the screen in first person.
 func _update_can() -> void:

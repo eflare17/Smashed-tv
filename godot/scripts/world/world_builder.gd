@@ -473,9 +473,19 @@ func _floors() -> void:
 	var B: Dictionary = d.BEDROOM
 	var Y: Dictionary = d.YARD
 	# the yard picture, its solids' spread-out art painted over
-	var yim := _img("YARD_IMG@1985")
 	_yard_ox = Y.ox
 	_yard_oy = Y.oy
+	# the painted floors are the same every time: made once per run of the game and kept (a restart reloads the
+	# scene, and painting them again was most of the second and a half the World took to build)
+	if not _floor_cache.is_empty():
+		_yard_orig = _floor_cache.get("yard_orig")
+		_yard_size = _floor_cache.get("yard_size", _yard_size)
+		_yard_tex = _floor_cache.get("yard_tex")
+		_lounge_tex = _floor_cache.get("lounge_tex")
+		_bed_tex = _floor_cache.get("bed_tex")
+		_floor_meshes()
+		return
+	var yim := _img("YARD_IMG@1985")
 	if yim:
 		_yard_orig = yim.duplicate()
 		_yard_size = Vector2(yim.get_width(), yim.get_height())
@@ -504,6 +514,22 @@ func _floors() -> void:
 		bim.resize(int(bw * 2), int(bh * 2), Image.INTERPOLATE_NEAREST)
 		_print_shadows(bim, B.x0, B.y0)
 		_bed_tex = _tex_from(bim)
+	_floor_cache = {"yard_orig": _yard_orig, "yard_size": _yard_size, "yard_tex": _yard_tex, "lounge_tex": _lounge_tex,
+		"bed_tex": _bed_tex}
+	_floor_meshes()
+
+static var _floor_cache: Dictionary = {}
+
+func _floor_meshes() -> void:
+	var d := _d()
+	var A: Dictionary = d.ARENA
+	var wl: float = A.wall
+	var B: Dictionary = d.BEDROOM
+	var Y: Dictionary = d.YARD
+	var lw: float = float(A.w) - wl * 2
+	var lh: float = float(A.h) - wl * 2
+	var bw: float = float(B.x1) - float(B.x0)
+	var bh: float = float(B.y1) - float(B.y0)
 	# the lounge's floor, round the pool's hole
 	var lst := _st("lounge", func(): return _in_mat(_lounge_tex))
 	var luv := func(x: float, y: float) -> Vector2: return Vector2((x - wl) / lw, (y - wl) / lh)

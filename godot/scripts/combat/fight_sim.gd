@@ -58,6 +58,9 @@ var pending := 0
 var queue: Array = []
 var spawn_timer := 0.0
 var breather := 1.2
+var waves_cleared := 0           ## counts up when a wave's last enemy dies (the Fight tells the farm)
+## The farm's smoked buff (Farm.active_buff(), FarmData.BUFF_NEUTRAL's keys), set by the Fight each tick.
+var buff: Dictionary = {}
 var players: Array = []          ## FT.Fighter
 var enemies: Array = []          ## FT.Enemy
 var shards: Array = []           ## FT.Shard
@@ -312,7 +315,7 @@ func _corpse_base(e: FT.Enemy, dx: float) -> FT.Corpse:
 
 ## payKill (11.1): straight to the killer's wallet with a floater; split between the living if nobody owns it.
 func pay_kill(x: float, y: float, et: int, owner: int) -> void:
-	var n := int(round(e_coins[et] * tv("coinMult", 1)))
+	var n := int(round(e_coins[et] * tv("coinMult", 1) * bfv("cash_mult")))
 	if n <= 0:
 		return
 	var killer: FT.Fighter = players[owner] if owner >= 0 and owner < players.size() else null
@@ -354,6 +357,11 @@ func _coin(x: float, y: float, vx: float, vy: float, life: float, arm: float) ->
 	coins.append(c)
 	return c
 
+## One multiplier of the farm's buff (1.0 when nothing changes it).
+func bfv(key: String) -> float:
+	var v = buff.get(key, 1.0)
+	return float(v) if (v is float or v is int) else 1.0
+
 ## burstShrapnel: the brute goes off like a grenade.
 func burst_shrapnel(x: float, y: float) -> void:
 	fx(FX_BOOM, x, y)
@@ -390,7 +398,7 @@ func kill_enemy(e: FT.Enemy, dx: float, dy: float, big: bool, owner: int, shake_
 
 ## A player hurt (contact, the swing, shrapnel, a stamp): hp, iframes, push, HURT or DOWN.
 func hurt_player(p: FT.Fighter, dmg: float, nx: float, ny: float, push: float) -> void:
-	p.hp -= dmg
+	p.hp -= dmg * bfv("damage_taken_mult")
 	p.iframe = tv("iframes", 0.9)
 	p.vx += nx * push
 	p.vy += ny * push
@@ -619,7 +627,7 @@ func punch_land(p: FT.Fighter) -> void:
 			continue
 		any = true
 		var mass: float = e_mass[e.t]
-		e.hp -= maxf(0.1, tv("enemyHp", 3) * tv("punchDmg", 0.7))
+		e.hp -= maxf(0.1, tv("enemyHp", 3) * tv("punchDmg", 0.7)) * bfv("damage_mult")
 		e.flash = 0.08
 		e.stun = maxf(e.stun, tv("stagger", 0.13) * 1.5 / (mass if tv("staggerMass", 1) > 0.0 else 1.0))
 		e.vx += f.x * tv("knockback", 170) * tv("punchKnock", 2.8) / mass
@@ -1187,11 +1195,11 @@ func _step_player(p: FT.Fighter, inp: FT.Inp, dt: float) -> void:
 				p.cooldown += tv("spudEmpty", 0.18)
 			else:
 				fire_player(p, ax, ay)
-				p.cooldown += 1.0 / WeaponDefs.fire_rate(p.weapon)
+				p.cooldown += 1.0 / (WeaponDefs.fire_rate(p.weapon) * bfv("fire_rate_mult"))
 	elif p.cooldown < 0.0:
 		p.cooldown = 0.0
 	if drive:
-		var cap := tv("maxSpeed", 260) * (tv("speedMul", 1.55) if p.speed > 0.0 else 1.0) * (ProtectSim.carry_slow() if _carrying(p) else 1.0)
+		var cap := tv("maxSpeed", 260) * (tv("speedMul", 1.55) if p.speed > 0.0 else 1.0) * (ProtectSim.carry_slow() if _carrying(p) else 1.0) * bfv("speed_mult")
 		var sp2 := Vector2(p.vx, p.vy).length()
 		if sp2 > cap:
 			p.vx = p.vx / sp2 * cap
@@ -1400,7 +1408,7 @@ func _step_bullets(dt: float) -> void:
 			b.x = ox + (b.x - ox) * bt
 			b.y = oy + (b.y - oy) * bt
 			var mass: float = e_mass[best.t]
-			best.hp -= b.dmg
+			best.hp -= b.dmg * bfv("damage_mult")
 			best.flash = 0.08
 			best.stun = maxf(best.stun, tv("stagger", 0.13) / (mass if tv("staggerMass", 1) > 0.0 else 1.0))
 			var sp := Vector2(b.vx, b.vy).length()
@@ -1493,7 +1501,7 @@ func _step_husks(dt: float) -> void:
 					continue
 				var mass: float = e_mass[e.t]
 				var dmg: float = h.dmg if h.dmg >= 0.0 else tv("enemyHp", 3) * tv("spudThrowFrac", 1) * (tv("lobWhole", 2.2) if h.whole else 1.0)
-				e.hp -= maxf(0.1, dmg)
+				e.hp -= maxf(0.1, dmg) * bfv("damage_mult")
 				e.flash = 0.08
 				e.stun = maxf(e.stun, tv("stagger", 0.13))
 				if h.whole:

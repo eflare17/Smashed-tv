@@ -48,10 +48,13 @@ var _pad_seen := false
 const HELP_KEYS := [["W A S D", "Move"], ["Mouse", "Aim  (first person: look)"], ["Click (hold)", "Fire"],
 	["Shift", "Dive roll"], ["E", "Use: pick up, sit, eat, play, pull, throw"], ["1 – 6", "Change weapon"],
 	["Enter", "Start the run"], ["R", "Restart"], ["V", "First person"], ["Z", "Zoom"], ["Tab", "Show / hide this list"],
+	["I", "Your bag (the farm)"], ["O", "Play online"], ["F9", "Sound on / off"],
 	["P", "Add a player 2 on this keyboard (arrows + space)"]]
 const HELP_PAD := [["Left stick", "Move"], ["Right stick", "Aim  (first person: look)"], ["RT", "Fire"],
 	["B  /  RB  /  LT", "Dive roll"], ["A", "Use: pick up, sit, eat, play, pull, throw"],
-	["LB  /  Y,  d-pad left / right", "Change weapon"], ["Menu", "Start the run  (restart when it's over)"],
+	["LB,  d-pad left / right", "Change weapon"], ["Menu", "Start the run  (restart when it's over)"],
+	["R3 (right stick click)", "Game mode, in the lobby"], ["Y", "Your bag (the farm)"],
+	["L3 (left stick click)", "Play online"],
 	["View", "First person"], ["D-pad up", "Zoom"], ["D-pad down", "Show / hide this list"]]
 var _touch_driving := false
 
@@ -98,6 +101,26 @@ func _ready() -> void:
 	var hp = GameData.manifest.get("FP_BLASTER.img.src")
 	if hp is String and ResourceLoader.exists("res://" + hp):
 		_hands = GameData.tex(hp)
+
+## Start's words for the device in use: Enter on a keyboard, Menu on a pad, plain on touch.
+func start_text() -> String:
+	if _pad_last():
+		return "Start (Menu)"
+	if fight.touch_seen:
+		var t = fight.main.get("hud") if fight.main else null
+		var tc = t.get("touch") if t else null
+		if tc and tc.active:
+			return "Start"
+	return "Start (Enter)"
+
+## A length in the page's CSS pixels as canvas pixels (the canvas is stretched to the window; on the web the
+## window is in device pixels, devicePixelRatio of them to a CSS pixel).
+func css_px(css: float) -> float:
+	var win := Vector2(DisplayServer.window_get_size())
+	if win.y <= 0.0:
+		return css
+	var dpr := DisplayServer.screen_get_scale() if OS.has_feature("web") else 1.0
+	return css * dpr * _draw_c.size.y / win.y
 
 func fp_hint_on() -> bool:
 	return fight.is_fp() and fight.touch_seen
@@ -177,8 +200,18 @@ func _process(delta: float) -> void:
 		if _lobby_ui:
 			_lobby_ui.set("show_money", false)
 	var s := fight.sim
-	_picker.visible = not s.started
+	# the mode picker: the lobby only, and not over a close-up or a panel (the mirror, a seat, the bag, a menu)
+	var busy := fight.modal_open()
+	_picker.visible = not s.started and not busy and not fight.lobby_holds()
 	_mode_lbl.text = Fight.mode_name(fight.mode)
+	_start.text = start_text()
+	# on a touch screen the arrows and Start are thumb-sized (about 44 CSS px)
+	var bh := maxf(26.0, css_px(44.0)) if fight.touch_seen else 0.0
+	for b in _picker.get_children():
+		if b is Button:
+			b.custom_minimum_size = Vector2(0.0 if b == _start else bh, bh)
+			b.add_theme_font_size_override("font_size", int(maxf(14.0, bh * 0.36)))
+	_mode_lbl.add_theme_font_size_override("font_size", int(maxf(15.0, bh * 0.38)))
 	_picker.position.x = (_draw_c.size.x - _picker.size.x) / 2.0
 	_picker.position.y = 10.0
 	if portrait():
@@ -203,7 +236,7 @@ func _process(delta: float) -> void:
 		_fp_hint_t += delta
 	if _help_auto > 0.0:
 		_help_auto -= delta
-	_bar.visible = not s.over and not (s.secret and s.secret.room)
+	_bar.visible = not s.over and not (s.secret and s.secret.room) and not busy
 	# with the pointer held (first person) a click is always a shot, never a button (b307)
 	var held := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE if held else Control.MOUSE_FILTER_STOP
@@ -225,6 +258,8 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("help") and not event.is_echo():
+		if fight and fight.modal_open():
+			return                             # (the d-pad is the panel's)
 		help_on = not help_on
 		_help_auto = -1.0
 		get_viewport().set_input_as_handled()
@@ -297,6 +332,10 @@ func _shared_touch(event: InputEventScreenTouch) -> void:
 		elif fight.f.weapon == "lob":
 			fight.touch_tap_spot = Vector2(g.x, g.y)
 			get_tree().create_timer(0.13).timeout.connect(func(): fight.touch_tap_spot = null)
+
+## Is screen point p on the fight's HUD buttons (the weapon bar, the mode picker...)? The touch sticks leave those.
+func on_ui(p: Vector2) -> bool:
+	return _on_ui(p)
 
 func _on_ui(p: Vector2) -> bool:
 	if _bar.visible and _bar.get_global_rect().grow(4).has_point(p):
@@ -463,6 +502,10 @@ func draw_all(c: Control) -> void:
 	var x0 := 18.0 * k
 	var y0 := 46.0 * k
 	var line_h := 21.0 * k
+	# the mode picker's backing, like the cash line's, so it reads over the marquee or the mirror's frame
+	if _picker.visible:
+		var pr := Rect2(_picker.position, _picker.size).grow(6.0)
+		c.draw_rect(pr, Color(0, 0, 0, 0.5))
 	# a soft dark backing, so the line reads over whatever art is behind it (as wide as last frame's line)
 	var rows := s.players.size() + (1 if s.started else 0)
 	if _line_w > 0.0:
@@ -738,7 +781,11 @@ func _draw_fp(c: Control) -> void:
 			if side == 0:
 				c.draw_texture_rect(_hands, Rect2(x, y, w, h), false)
 			else:
-				c.draw_texture_rect(_hands, Rect2(x + w, y, -w, h), false)
+				# mirrored: a negative rect width only flips the picture in Godot (the rect still starts at
+				# x + w), so flip with a transform around the gun's own centre instead
+				c.draw_set_transform_matrix(Transform2D(Vector2(-1, 0), Vector2(0, 1), Vector2(2.0 * x + w, 0)))
+				c.draw_texture_rect(_hands, Rect2(x, y, w, h), false)
+				c.draw_set_transform_matrix(Transform2D.IDENTITY)
 				mx = w - mx
 			if kick > 0.0:
 				var mp := Vector2(x + mx, y + my)

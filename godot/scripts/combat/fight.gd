@@ -46,6 +46,7 @@ var touch_tap_id := 0
 var goth_carry: Interactable
 
 var _acc := 0.0
+var _fs_hidden := false
 var _fire_mouse := false
 var _wsel := ""
 var _use := false
@@ -131,6 +132,7 @@ func _ready() -> void:
 		var tc = main.hud.get("touch")
 		if tc:
 			tc.fire_enabled = true          # its FIRE button presses the "fire" action
+			tc.suspend_check = modal_open
 	if debug.has("run") or debug.has("protect"):
 		if debug.has("protect"):
 			mode = "protect"
@@ -143,6 +145,7 @@ func _ready() -> void:
 		call_deferred("_gallery")
 	if debug.has("secret"):
 		call_deferred("_debug_secret")
+	call_deferred("_hook_lobby")
 	if saved_two or debug.has("p2"):
 		call_deferred("add_player2")
 	if debug.has("at") and player:
@@ -386,6 +389,100 @@ func award(node: Node, key: String) -> void:
 				if FightSim.PRIZES[i].key == key:
 					sim.award(p, i)
 
+## A panel, a menu or a full-screen lobby activity has the player (the farm panel, the online menu, an arcade
+## game, a lobby menu, the shirt editor, the mirror's close look): the fight's keys and pad buttons, the help
+## list and the zoom leave it alone, and the fight's HUD and touch buttons step aside.
+func modal_open() -> bool:
+	if Arcade.is_open():
+		return true
+	if Net.me and Net.me.menu_open():
+		return true
+	if main:
+		var fu := main.get_node_or_null("FarmUI")
+		if fu and fu.has_method("is_open") and fu.is_open():
+			return true
+	return lobby_screen_busy()
+
+## Lobby life has the screen (a menu, the shirt editor, the mirror's close look).
+func lobby_screen_busy() -> bool:
+	var ll := LobbyLife.current
+	if ll == null or sim.started:
+		return false
+	if ll.ui and ll.ui.menu_open():
+		return true
+	var w = ll.things.get("wardrobe")
+	if w and w.has_method("editor_open") and w.editor_open():
+		return true
+	var th = ll.busy_with(player) if player else null
+	return th is LobbyMirror
+
+## Lobby life holds him (any activity: the mirror, the table, the gym, the bed...): its own keys come first.
+func lobby_holds() -> bool:
+	var ll := LobbyLife.current
+	return ll != null and not sim.started and player != null and ll.busy.has(player)
+
+## The fight record of a player node, or null.
+func fighter_of(node: Node) -> FT.Fighter:
+	for p: FT.Fighter in sim.players:
+		if p.node == node:
+			return p
+	return null
+
+## Lobby life's things that change your fighter (award L6278, pullRope, bbqAction): the lobby slot's weapon,
+## health prizes, a snag off the barbecue (+1 health), and the rope's potatoes (each one picked up loads the
+## spud gun with its ten pellets, as the HTML game's w.plants pickups do).
+func _hook_lobby() -> void:
+	var ll := LobbyLife.current
+	if ll == null:
+		return
+	var slot = ll.things.get("slot")
+	if slot and slot.has_signal("prize") and not slot.prize.is_connected(_on_lobby_prize):
+		slot.prize.connect(_on_lobby_prize)
+	var farm := Farm.instance
+	if farm and not farm.smoked.is_connected(_on_smoked):
+		farm.smoked.connect(_on_smoked)
+	var rope = ll.things.get("rope")
+	if rope and rope.has_signal("picked") and not rope.picked.is_connected(_on_lobby_spud):
+		rope.picked.connect(_on_lobby_spud)
+	var bbq = ll.things.get("bbq")
+	if bbq and bbq.has_signal("ate") and not bbq.ate.is_connected(_on_lobby_ate):
+		bbq.ate.connect(_on_lobby_ate)
+
+func _on_lobby_prize(node: Node, key: String) -> void:
+	# cash, magnet and speed the lobby machine does itself (and shows the prize's banner); the weapons and the
+	# health are the fighter's (the lobby has no enemies for SCREEN CLEAR to clear)
+	var ff := fighter_of(node)
+	if ff == null or sim.started:
+		return
+	match key:
+		"blasters":
+			if ff.blasters > 0:
+				ff.ammo = mini(int(sim.tv("spudMaxAmmo", 200)), ff.ammo + int(sim.tv("spudPellets", 10) * 2))
+			else:
+				sim.give_weapon(ff, "blaster")
+		"shotgun":
+			sim.give_weapon(ff, "shotgun")
+		"health":
+			ff.hp = minf(sim.tv("playerHp", 5) + sim.tv("overheal", 6), ff.hp + 2.0)
+
+## A smoked bud's heal (Northern Lights: +2 health) lands on the smoker (player 1, or player 2 online / P).
+func _on_smoked(pid: int, _strain: int, buff: Dictionary) -> void:
+	var heal := int(buff.get("heal", 0))
+	if heal <= 0:
+		return
+	var ff: FT.Fighter = sim.players[pid] if pid >= 0 and pid < sim.players.size() else f
+	ff.hp = minf(sim.tv("playerHp", 5) + sim.tv("overheal", 6), ff.hp + heal)
+
+func _on_lobby_spud(node: Node, _total: int) -> void:
+	var ff := fighter_of(node)
+	if ff and not sim.started:
+		ff.ammo = mini(int(sim.tv("spudMaxAmmo", 200)), ff.ammo + int(sim.tv("spudPellets", 10)))
+
+func _on_lobby_ate(node: Node, burnt: bool) -> void:
+	var ff := fighter_of(node)
+	if ff and not burnt and ff.hp < sim.tv("playerHp", 5):
+		ff.hp = minf(sim.tv("playerHp", 5), ff.hp + 1.0)
+
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -404,6 +501,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				restart()
 			return
 		_fire_mouse = true
+	if modal_open() or lobby_holds():
+		# a panel, a menu or a lobby activity has the keys and the pad (the HTML game routes them to it only)
+		if not (event is InputEventMouse or event is InputEventScreenTouch or event is InputEventScreenDrag):
+			return
 	if event is InputEventAction and event.action == "fire":
 		_fire_mouse = event.pressed          # the touch layer's FIRE button
 		touch_fire = event.pressed and is_fp()
@@ -412,6 +513,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			restart()
 		elif not sim.started:
 			start_run()
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed("mode_next") and not event.is_echo():
+		step_mode(1)
 		get_viewport().set_input_as_handled()
 		return
 	if event.is_action_pressed("add_player") and not event.is_echo():
@@ -430,8 +535,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	if event.is_action_pressed("weapon_next") and not event.is_echo():
 		cycle_weapon(1)
+		get_viewport().set_input_as_handled()
+		return
 	elif event.is_action_pressed("weapon_prev") and not event.is_echo():
 		cycle_weapon(-1)
+		get_viewport().set_input_as_handled()
+		return
 	if sim.started and event.is_action_pressed("interact") and not event.is_echo():
 		# (the Player's own E is off while the run moves him)
 		if player and player.focus:
@@ -531,8 +640,8 @@ func screen_to_ground(sp: Vector2):
 func _build_input() -> FT.Inp:
 	var inp := FT.Inp.new()
 	inp.tc = touch_seen
-	if sim.over or player == null:
-		return inp
+	if sim.over or player == null or modal_open():
+		return inp                           # (a panel or a close-up has the pad's RT and the mouse)
 	var m := _steer()
 	inp.mx = m.x
 	inp.my = m.y
@@ -695,7 +804,14 @@ func _physics_process(delta: float) -> void:
 		if net_step.is_valid():
 			net_step.call(inputs, dt)
 		else:
+			var farm := Farm.instance
+			sim.buff = farm.active_buff() if farm else {}
+			var cleared := sim.waves_cleared
 			sim.step(inputs, dt)
+			if farm and sim.waves_cleared != cleared:
+				# a wave survived (farmWave, L7886): the clock moves on, the crops grow, a raid is rolled,
+				# the buff counts down (the host's farm when online; the guest follows its snapshot)
+				farm.on_wave_survived(sim.wave)
 		_wsel = ""
 		_use = false
 		_roll_tap = false
@@ -729,6 +845,12 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if player == null:
 		return
+	if OS.has_feature("web"):
+		# the page's FULL SCREEN button steps aside while a panel or a close-up has the screen
+		var hide := modal_open()
+		if hide != _fs_hidden:
+			_fs_hidden = hide
+			JavaScriptBridge.eval("window.smashedFsHide&&window.smashedFsHide(%s)" % ("true" if hide else "false"), true)
 	_drain()
 	if sim.over and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # let the pointer go for the game-over screen

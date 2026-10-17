@@ -452,7 +452,14 @@ func _draw_player_extras(p: FT.Fighter, col: Batch, floor_c: Batch, top: Batch, 
 		return
 	# hp pips over his head
 	var shown := maxi(int(s.tv("playerHp", 5)), int(ceil(p.hp)))
-	var pip_z := head * s.tv("hpHeight", 1.05) + 4.0
+	# (over his head wherever it is: up on a bounce or the dive board too, as the HTML draws them inside its
+	# translate(0, -p.dz))
+	var lift := 0.0
+	if p.node and is_instance_valid(p.node):
+		var dz = p.node.get("dz")
+		if dz != null:
+			lift = maxf(0.0, float(dz))
+	var pip_z := head * s.tv("hpHeight", 1.05) + 4.0 + lift
 	for i in shown:
 		var c: Color
 		if i < int(ceil(p.hp)):

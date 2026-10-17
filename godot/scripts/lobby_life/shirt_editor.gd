@@ -60,8 +60,10 @@ func _ready() -> void:
 	_title.add_theme_color_override("font_color", Color("#f7a8ff"))
 	_panel.add_child(_title)
 	var foot := Label.new()
-	foot.text = "drag to move · drag a corner to stretch · it only goes on the shirt"
+	foot.text = "drag to move · drag a corner to stretch · only on the shirt"
 	foot.position = Vector2(16, 304)
+	foot.size = Vector2(398, 20)
+	foot.clip_text = true
 	foot.add_theme_font_size_override("font_size", 11)
 	foot.add_theme_color_override("font_color", Color("#8b93a4"))
 	_panel.add_child(foot)
@@ -104,6 +106,42 @@ func _btn(text: String, pos: Vector2, col: Color, cb: Callable) -> Button:
 
 func is_open() -> bool:
 	return visible
+
+## Sized for the screen: on a touch screen big enough for thumbs (buttons about 44 CSS px tall, as far as the
+## screen allows), never bigger than fits; on a desktop as it is unless the window is too small for it.
+func _fit_scale() -> void:
+	var vp := get_viewport_rect().size
+	var fit := minf(vp.x * 0.96 / 430.0, vp.y * 0.96 / 330.0)
+	var want := 1.0
+	if DisplayServer.is_touchscreen_available():
+		var win := Vector2(DisplayServer.window_get_size())
+		var dpr := DisplayServer.screen_get_scale() if OS.has_feature("web") else 1.0
+		var css := dpr * vp.y / win.y if win.y > 0.0 else 1.0     # canvas pixels per CSS pixel
+		want = maxf(1.0, 44.0 * css / 28.0)
+	var k := minf(want, fit)
+	_panel.pivot_offset = _panel.size / 2.0
+	_panel.scale = Vector2(k, k)
+
+## The pad (the HTML editor is mouse and touch only): the right stick moves the picture, RT / LT stretch it
+## (the left stick and the d-pad move between the buttons).
+func _process(dt: float) -> void:
+	if not visible:
+		return
+	_fit_scale()
+	var pads := Input.get_connected_joypads()
+	if pads.is_empty() or _box.size.x <= 0:
+		return
+	var st := Player.pad_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, 0.22)
+	var grow := Input.get_joy_axis(pads[0], JOY_AXIS_TRIGGER_RIGHT) - Input.get_joy_axis(pads[0], JOY_AXIS_TRIGGER_LEFT)
+	if absf(grow) < 0.15:
+		grow = 0.0
+	if st == Vector2.ZERO and grow == 0.0:
+		return
+	var c := place.get_center() + st * 0.6 * dt
+	var s := place.size * (1.0 + grow * 0.9 * dt)
+	s = Vector2(maxf(0.08, s.x), maxf(0.08, s.y))
+	place = Rect2(c - s / 2.0, s)
+	_refresh()
 
 ## openShirtEditor: starts on the front with the saved place.
 func open() -> void:

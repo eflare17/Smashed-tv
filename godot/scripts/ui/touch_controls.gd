@@ -21,6 +21,10 @@ var hud: Hud
 var active: bool = false
 ## Show the FIRE button (milestone 2 turns it on and listens to the "fire" action).
 var fire_enabled: bool = false
+## Something full-screen has the player (the farm panel, the mirror, the wardrobe, a menu): the sticks and buttons
+## step aside (not drawn, their touches left to the panel). Ask the callable each frame (the Fight sets it).
+var suspend_check: Callable
+var suspended: bool = false
 
 const PINK := Color("#f7a8ff")
 const DARK := Color(20 / 255.0, 12 / 255.0, 28 / 255.0, 0.55)
@@ -85,7 +89,7 @@ func _set_active(on: bool) -> void:
 	if on == active:
 		return
 	active = on
-	visible = on
+	visible = on and not suspended
 	var p := _player()
 	if p:
 		p.face_mouse = not on
@@ -104,6 +108,8 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_set_active(true)
+			if suspended:
+				return
 			if _touch_down(event.index, event.position):
 				get_viewport().set_input_as_handled()
 		elif _fingers.has(event.index):
@@ -128,6 +134,8 @@ func _touch_down(i: int, pos: Vector2) -> bool:
 			return true
 	if pos.y < vp.y * 0.22 and pos.x < vp.x * 0.5:
 		return false                                    # the character picker up there
+	if Fight.me and Fight.me.hud and Fight.me.hud.on_ui(pos):
+		return false                                    # the weapon bar, the mode picker: their own touches
 	var role := "move" if pos.x < vp.x * 0.45 else ("look" if _fp() else "aim")
 	for f in _fingers.values():
 		if f.role == role:
@@ -204,7 +212,13 @@ func _send(action: String, pressed: bool) -> void:
 	Input.parse_input_event(e)
 
 func _process(dt: float) -> void:
-	if not active:
+	var sus := suspend_check.is_valid() and bool(suspend_check.call())
+	if sus != suspended:
+		suspended = sus
+		if sus:
+			_release_all()
+		visible = active and not sus
+	if not active or suspended:
 		return
 	dt = minf(dt, 0.1)
 	var p := _player()
@@ -246,6 +260,9 @@ func _draw() -> void:
 		_text(font, c, "MOVE", int(13 * k), Color(1, 1, 1, 0.35))
 	if not shown.has("aim") and not _fp():
 		var c2 := Vector2(vp.x * 0.62, vp.y - 150.0 * k)
+		if vp.x > vp.y and fire_enabled:
+			# landscape: clear of the weapon bar along the bottom (its top is the HTML canvas's y 440)
+			c2.y = minf(c2.y, vp.y - 80.0 * minf(vp.y / 520.0, vp.x / 372.0) - R - 12.0)
 		draw_arc(c2, R, 0, TAU, 48, Color(1, 1, 1, 0.12), 2.0 * k, true)
 		_text(font, c2, "AIM", int(13 * k), Color(1, 1, 1, 0.3))
 	if _fp() and not _fingers.values().any(func(f): return f.role == "look"):

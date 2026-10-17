@@ -54,6 +54,12 @@ func send(data: PackedByteArray) -> void:
 func is_open() -> bool:
 	return _open
 
+func drop_peer() -> void:
+	if _peer:
+		_peer.peer_disconnect_now()
+	_peer = null
+	_open = false
+
 func set_port(p: int) -> void:
 	_port = p
 

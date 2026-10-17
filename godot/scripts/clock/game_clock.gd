@@ -28,6 +28,8 @@ var paused: bool = false
 var day_length_sec: float = 1200.0
 
 ## The whole hour has changed (also after a skip): 0 to 23.
+## The day and time were set from outside (a host's snapshot, a save) rather than reached by time passing.
+signal clock_synced
 signal hour_changed(hour: int)
 ## A new day has begun (7 am): a new market day.
 signal day_started(day: int)
@@ -109,10 +111,12 @@ func load_state(d: Dictionary) -> void:
 		else:
 			_move(diff)               # the snapshot's usual small step
 		return
+	# a jump backwards or a long way (joining a host whose time is earlier, back to our own save on leaving):
+	# not a new market day, so no day_started; clock_synced tells listeners to read the time again
 	day = nd
 	hour = nh
 	hour_changed.emit(int(hour))
-	day_started.emit(day)
+	clock_synced.emit()
 
 ## Game hours since 7 am on day 1 (for counting growth, interest...).
 func total_hours() -> float:

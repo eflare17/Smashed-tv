@@ -36,6 +36,11 @@ func close() -> void:
 func is_open() -> bool:
 	return false
 
+## Let the other side go without closing the room (they've gone quiet: a closed tab, a phone asleep). No
+## disconnected signal: the caller handles it. The host's room stays open for them to join again.
+func drop_peer() -> void:
+	pass
+
 ## What kind it is, for the menu ("PeerJS", "LAN").
 func kind() -> String:
 	return ""

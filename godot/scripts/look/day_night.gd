@@ -71,6 +71,8 @@ func _init() -> void:
 func setup(sun_: DirectionalLight3D, env_: Environment) -> void:
 	sun = sun_
 	env = env_
+	if sun:
+		sun.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # turned in _process by the clock
 	sky_mat = ShaderMaterial.new()
 	sky_mat.shader = SKY_SHADER
 	if env:

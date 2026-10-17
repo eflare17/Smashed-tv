@@ -136,6 +136,7 @@ N.send = function (s) {
   for (let i = 0; i < n; i++) c.send('~' + id + '|' + i + '|' + n + '|' + s.slice(i * MAX, (i + 1) * MAX));
 };
 N.isOpen = () => !!(N.conn && N.conn.open);
+N.drop = function () { const c = N.conn; N.conn = null; N.parts = {}; if (c) { try { c.close(); } catch (_) {} } };
 })();
 """
 
@@ -203,6 +204,11 @@ func send(data: PackedByteArray) -> void:
 
 func is_open() -> bool:
 	return _open
+
+func drop_peer() -> void:
+	_open = false
+	if _js:
+		_js.drop()
 
 func close() -> void:
 	_open = false

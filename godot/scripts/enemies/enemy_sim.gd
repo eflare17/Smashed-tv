@@ -73,6 +73,7 @@ static func step_director(s: FightSim, dt: float) -> void:
 			s.spawn_timer = s.tv("spawnGap", 0.45)
 	elif s.enemies.is_empty():
 		s.breather = s.tv("intermission", 2.2)
+		s.waves_cleared += 1
 
 ## spawnEnemy (4.4): a random side, away from the players if it can.
 static func spawn(s: FightSim, et: int) -> FT.Enemy:
@@ -108,7 +109,7 @@ static func spawn(s: FightSim, et: int) -> FT.Enemy:
 static func step_enemies(s: FightSim, dt: float) -> void:
 	if s.enemies.is_empty():
 		return
-	var wspeed := wave_speed(s, s.wave)
+	var wspeed := wave_speed(s, s.wave) * s.bfv("enemy_speed_mult")
 	for e: FT.Enemy in s.enemies.duplicate():
 		e.flash = maxf(0.0, e.flash - dt)
 		e.spawn = maxf(0.0, e.spawn - dt)

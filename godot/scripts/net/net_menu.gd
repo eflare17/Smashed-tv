@@ -270,7 +270,13 @@ func _refresh() -> void:
 	_code_big.visible = net.role != "local" and net.code != ""
 	_leave_b.visible = net.role != "local"
 	_host_b.text = "HOST A NEW ROOM" if hosting else "HOST A GAME"
+	var hud = net.main.get("hud") if net.main else null
+	var tc = hud.get("touch") if hud else null
 	var label := "ONLINE (O)"
+	if hud and hud.get("pad_last") == true:
+		label = "ONLINE (L3)"
+	elif tc and tc.get("active") == true:
+		label = "ONLINE"
 	if net.live:
 		label = "ONLINE: %s  %s  %dms" % [net.code, "host" if hosting else "guest", net.ping_ms]
 	elif net.role == "host":

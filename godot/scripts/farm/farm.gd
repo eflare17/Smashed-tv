@@ -74,9 +74,16 @@ func _ready() -> void:
 		clock = get_node_or_null("/root/GameClock")
 	if wallet == null:
 		wallet = get_node_or_null("/root/Wallet")
+	if wallet and wallet.has_signal("cash_changed"):
+		# the wallet saves itself a second after a change: save the farm's side of a purchase soon too
+		wallet.cash_changed.connect(_on_wallet_changed)
 	if persist:
 		load_save()
 	_clock_reset()
+
+func _on_wallet_changed(_c: int) -> void:
+	if _dirty:
+		_save_t = maxf(_save_t, 9.0)
 
 func _on_state_changed() -> void:
 	_dirty = true

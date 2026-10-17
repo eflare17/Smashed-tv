@@ -55,6 +55,13 @@ var last_snap_size := 0
 var pack_ms := 0.0
 
 var _remote_in := FT.Inp.new()   # host: the guest's latest input
+var _remote_in_ms := 0           # host: when it came (older than INPUT_STALE_MS: player 2 stands still)
+var _heard_ms := 0               # when anything last came from the other side
+## The other side's input is this old: they stopped sending (a tab in the background, a stall): no input (the
+## HTML game's `performance.now() - net.inputAt < 500 ? net.remoteInput : NO_INPUT`).
+const INPUT_STALE_MS := 500
+## Nothing at all heard for this long (a ping goes out every 2 s): they're gone, as if the connection closed.
+const SILENT_MS := 7000
 var _edge_use := false
 var _edge_wsel := ""
 var _out_in: FT.Inp              # guest: input gathered since the last send
@@ -110,6 +117,10 @@ static func is_online() -> bool:
 
 static func is_guest() -> bool:
 	return me != null and me.role == "client"
+
+## Is the online menu (O) open?
+func menu_open() -> bool:
+	return _menu != null and is_instance_valid(_menu) and _menu.is_open()
 
 func _enter_tree() -> void:
 	me = self
@@ -292,6 +303,9 @@ func _on_connected() -> void:
 	mirror.reset_local()
 	mirror.reset_remote()
 	_remote_in = FT.Inp.new()
+	_remote_in_ms = 0
+	_heard_ms = Time.get_ticks_msec()
+	ping_ms = 0
 	_out_in = null
 	_game_live(true)
 	_send({"t": "hello", "v": PROTO, "ch": player.char_id if player else "juicy"})
@@ -309,6 +323,7 @@ func _on_disconnected() -> void:
 	if live:
 		_game_live(false)
 	live = false
+	ping_ms = 0
 	remote_av = {}
 	changed.emit()
 	if guest_run and fight:
@@ -440,6 +455,9 @@ func _goth_puppet(on: bool) -> void:
 
 func _on_request(what: String) -> bool:
 	if not live:
+		if what == "restart":
+			_reloading = true                  # (the old game's nodes are going: leave them alone till attach)
+			_snap_pending = null
 		return false
 	match what:
 		"add_player":
@@ -481,6 +499,7 @@ func _on_bytes(b: PackedByteArray) -> void:
 		return
 	var d = bytes_to_var(raw)
 	if d is Dictionary:
+		_heard_ms = Time.get_ticks_msec()
 		if String(d.get("t", "")) == "snap":
 			last_snap_size = b.size()
 		_on_message(d)
@@ -515,6 +534,7 @@ func _on_message(d: Dictionary) -> void:
 			if role == "host":
 				var inp := NetCodec.unpack_inp(d.get("i"))
 				_remote_in = inp
+				_remote_in_ms = Time.get_ticks_msec()
 				if inp.use:
 					_edge_use = true
 				if inp.wsel != "":
@@ -569,6 +589,14 @@ func _process(dt: float) -> void:
 		_send_av()
 	if LobbyLook.rev != _look_rev:
 		_send_look()
+	if Time.get_ticks_msec() - _heard_ms > SILENT_MS:
+		# gone quiet (a closed tab or a sleeping phone doesn't always send the close): the same as a close
+		print("Net: nothing heard for %d s: the other player has gone" % (SILENT_MS / 1000))
+		if transport:
+			transport.drop_peer()
+		_on_status(("player 2 left — room %s still open" % code) if role == "host" else "the host has gone quiet — join again or Leave", "bad")
+		_on_disconnected()
+		return
 	_ping_t += dt
 	if _ping_t >= 2.0:
 		_ping_t = 0.0
@@ -598,7 +626,7 @@ func _process(dt: float) -> void:
 			_out_in = null
 
 func _physics_process(dt: float) -> void:
-	if not live or p2 == null or not is_instance_valid(p2) or fight == null:
+	if not live or _reloading or p2 == null or not is_instance_valid(p2) or not p2.is_inside_tree() or fight == null:
 		return
 	if fight.sim.started:
 		_have_target = false
@@ -634,7 +662,7 @@ func _physics_process(dt: float) -> void:
 ## After the Fight has set the other player's picture: hide it while lobby life shows a pose of theirs, put
 ## their hair and shirt on it, and stand their pose pictures (and the host's Gothica's) here.
 func late_process() -> void:
-	if not live or p2 == null or not is_instance_valid(p2) or fight == null:
+	if not live or _reloading or p2 == null or not is_instance_valid(p2) or not p2.is_inside_tree() or fight == null:
 		return
 	var lobby := not fight.sim.started
 	var spr := p2.sprite
@@ -810,6 +838,13 @@ func _input2() -> FT.Inp:
 		return inp
 	var r := _remote_in
 	var inp := FT.Inp.new()
+	if Time.get_ticks_msec() - _remote_in_ms > INPUT_STALE_MS:
+		# their input has stopped coming: player 2 stands still and holds fire (only a fresh press counts)
+		inp.use = _edge_use
+		inp.wsel = _edge_wsel
+		_edge_use = false
+		_edge_wsel = ""
+		return inp
 	inp.mx = r.mx
 	inp.my = r.my
 	inp.ax = r.ax
