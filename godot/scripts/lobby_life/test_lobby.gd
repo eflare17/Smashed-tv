@@ -22,7 +22,7 @@ func _ready() -> void:
 	if OS.has_feature("web"):
 		var q = JavaScriptBridge.eval("window.location.search", true)
 		if q is String:
-			var i := q.find("lobby=")
+			var i: int = q.find("lobby=")
 			if i >= 0:
 				scene_name = q.substr(i + 6).split("&")[0]
 	if scene_name != "":
