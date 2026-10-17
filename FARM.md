@@ -58,3 +58,30 @@ length, raid risk, effect, fun fact). The game numbers in it are a first go and 
 | Blue Dream | 7/10 | $140 | 9 min or 4 waves | 3 | 2 waves | High |
 | Acapulco Gold | 7/10 | $150 | 10 min or 4 waves | 2 | 2 waves | High |
 | White Widow | 9/10 | $300 | 15 min or 6 waves | 2 | 2 waves | Very high |
+
+## Speeding crops up (agreed 17 Oct)
+- **Water (free):** watered = full speed (dark soil, a drop icon); dry = half speed and droops; left dry too long it
+  wilts and loses a bud. Fill the watering can at the water tank; the stage 2 sprinkler does it for you.
+- **Fertiliser (bought at the shed, one bag per plant per harvest):** Basic $10 = 25% faster; Premium $30 = 50%
+  faster, +1 bud; Super Grow $80 = twice as fast, +1 bud, +1 potency.
+- **Later:** grow lights in the grow house (plants keep going between waves); a compost bin that turns old plants
+  into free Basic fertiliser.
+- All of it stacks with the wave boost. The numbers say Super Grow loses money on cheap strains and pays well on
+  the good ones, which is the point.
+
+## Breeding (agreed 17 Oct)
+Cross two seeds at a breeding table in the grow house; the new seed is ready after the next wave.
+Two seeds of one tier make one of the next (so a White Widow takes 8 Northern Lights seeds the long way):
+
+| Parent 1 | Parent 2 | Makes |
+|---|---|---|
+| Northern Lights | Northern Lights | Granddaddy Purple (indica stays indica) |
+| Sour Diesel | Sour Diesel | Acapulco Gold (sativa stays sativa) |
+| Granddaddy Purple | Sour Diesel | Blue Dream (indica + sativa makes a hybrid) |
+| Blue Dream | Acapulco Gold | White Widow |
+
+A small lucky chance (5%) that a cross jumps a tier or comes out as a special frosty seed that sells for more.
+Seeds you can buy: Northern Lights and Sour Diesel (prices still to decide; first guesses $10 and $30).
+
+All of these numbers live in `farm-numbers.xlsx` (water, fertiliser, strains, a grow and profit calculator,
+breeding, upgrades); change the yellow cells and the rest works itself out.
