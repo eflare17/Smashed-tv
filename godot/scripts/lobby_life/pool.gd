@@ -781,6 +781,7 @@ func test_scene(tl: Node, parts: PackedStringArray) -> void:
 	var g := tower_geo()
 	var p := ll.player
 	tl.go(float(g.ladderX), 214.0, Vector2(0, -1))
+	tl.later(3.0, func(): if _s.has(p): print("POOLDBG lift ", _lift(p, _s[p].x, _s[p].y, _s[p].hz), " pos ", p.global_position, " scale ", p.sprite.scale, " cam ", get_viewport().get_camera_3d().global_position))
 	tl.later(3.0, func(): if false: print("POOLDBG tip ", _tip.visible, " ", _tip.text, " ", _tip.position, " ", _tip.size, " lbl=", ll.player.focus_label, " feet=", get_viewport().get_camera_3d().unproject_position(ll.player.global_position), " k=", vis_k(), " gp=", ll.player.global_position, " vp=", get_viewport().get_visible_rect().size))
 	if parts.has("splash"):
 		tl.go(690.0, 235.0, Vector2(0, -1))

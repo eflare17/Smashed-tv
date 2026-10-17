@@ -69,7 +69,9 @@ That's all. It finds `world`, `player`, `rig`, `hud` and `gothica` on main by na
 - `lobby_prev`: [ , / LB, d-pad left
 - `lobby_next`: ] . / RB, d-pad right
 
-The things add more with `LobbyLife.ensure_action`; list them here as they're built.
+The things add more with `LobbyLife.ensure_action`:
+- `lobby_hair`: F (mirror, Shift+F goes back)
+- `table_deal`: B / pad X, `table_hit`: H / pad Y, `table_stand`: T / pad B (table, bong, cards)
 
 ## Contract changes wanted
 - `Player.coins` (the wallet), so lobby money and the fighting session's money are one. Until it exists, LobbyLife keeps its own.
@@ -80,3 +82,11 @@ The things add more with `LobbyLife.ensure_action`; list them here as they're bu
 - The wardrobe also offers a character change ("change clothes", from the owner's brief) besides the HTML's ART/shirt-picture button.
 - The vending machine stands in the lounge (`calls.vendPos` 235, 154), because the HTML only has it during a run.
 - The slot machine can also be started with E ("SPIN $5"), for pad and touch players. The HTML starts it when you stand still near it.
+
+## Table, gym, rope (built by a helper, tested: t_table, t_gym, t_rope)
+- Table: SIT at a chair, BONG / HIT (6.2 s); a second hit 3..30 s after the first starts the 13.8 s mantis trip (local player only); blackjack with Gothica dealing (bet 10, blackjack pays 25). Sit panel, CARDS circle and blackjack panel are real buttons (touch ok). First person sits low and can look round.
+- Gym: bench, plate tree, leg press with the HTML's labels; `LobbyGym` has `signal rep(player, machine, reps)`, `lifting(p)`, `reps(p)`, `machine_of(p)`, `watch_spot(machine)`, `watch_at(machine)`, `holding_plate(p)`, `drop_plate(p)` (the pool calls it on a dive).
+- Rope: PULL rings the bell, 10 potatoes drop; walking over one gives +10 `spud_ammo` (player meta, cap 200), `signal picked`.
+- Player meta `carrying_goth` blocks sitting, the gym and the rope.
+- Decisions: Tyson reuses Jared's sit/bench/leg-press art (recoloured); the top-down seated zoom is skipped.
+- Left: second seat for a second player, generic seated pose for non-Jared, potato spin, run-start auto-rack of held plates; wanted Player hook to suppress roll while holding a plate.
