@@ -111,7 +111,7 @@ panel, the farm plans (FARM.md).
    Google, listing the games in a folder shared with your friend by Gmail. Needs the OAuth client ID from the
    owner (Google Cloud project, Drive API on, consent screen in Testing with the friends as test users, origin
    https://eflare17.github.io).
-6. **VR (decided by the owner, 17 Oct: they have a Meta Quest).** Play it in the Quest's browser from the same
+6. **VR (on hold: the owner said leave it out for now, 17 Oct; start only when they say "do VR"). They have a Meta Quest.** Play it in the Quest's browser from the same
    link (WebXR through Godot's WebXRInterface, Compatibility renderer; GitHub Pages is HTTPS, which WebXR needs),
    an "Enter VR" button when a headset is there. Head-tracked first person, stick to walk, snap turn (and smooth
    as an option), hands from the Touch controllers: aim and shoot with them, point and pull the trigger for

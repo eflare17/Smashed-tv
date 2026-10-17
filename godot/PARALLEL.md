@@ -65,7 +65,7 @@ install adds the node there):
 15:00 UTC: arcade, farm, fighting, lobby and lighting are all done and merged (main.gd installs them all; the
 lighting session merged itself into the dev branch and main). Fighting now does the HUD/wallet polish
 ("Polish status: done" at the top of integration/fighting.md when finished). The others need no waking unless
-asked to fix something. Next after online: M6 VR.
+asked to fix something. After online: polish. VR is on hold until the owner says "do VR".
 
 (13:43 UTC: lobby, arcade and farm moved to Sonnet to stretch the usage limit, at the owner's request; the Opus
 sessions handed off and are archived.)

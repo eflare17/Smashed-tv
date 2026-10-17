@@ -48,3 +48,4 @@ it out."
 - 14:35 UTC: fighting merged (Status: done), FightInstall.install after FarmInstall; godot-play/ updated (M1 + arcade + farm + fighting). Fighting session idle/done.
 - 14:45 UTC: lobby life merged (Status: done), LobbyLife.install last in main.gd; lobby life and arcade join group lobby_only, which Fight hides at the start of a run (they showed in the arena). godot-play/ updated (M1 + arcade + farm + fighting + lobby).
 - 15:00 UTC: lighting merged (by its own session, into dev and main) and live. All five parts done. Online (M4) session started (claude/godot-online). Fighting session doing the HUD/one-wallet polish.
+- 15:05 UTC: the owner put VR on hold (don't start it until they say "do VR").
