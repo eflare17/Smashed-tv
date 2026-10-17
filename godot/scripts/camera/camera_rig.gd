@@ -322,8 +322,18 @@ func _frame(c: Vector2, pitch: float, half_f: float, aspect: float) -> Vector3:
 	var cot_b := cos(b) / maxf(0.0001, sin(b))
 	var h := (y1 - y0) / maxf(0.0001, cot_a - cot_b)          # the camera's height over the ground
 	var near_half := h / maxf(0.0001, sin(b)) * cos(half_f) * tan(half_f) * aspect
-	if near_half < half_w:
-		h *= half_w / maxf(0.0001, near_half)
+	# an upright phone can't show the whole width without big empty bands above and below: in a run it shows
+	# part of it (down to about half) and slides across with him
+	var need := half_w
+	if in_run:
+		need = half_w * clampf(aspect * 1.25, 0.5, 1.0)
+	if near_half < need:
+		h *= need / maxf(0.0001, near_half)
+		near_half = need
+	var x := c.x
+	if near_half < half_w and target:
+		var slack := half_w - near_half
+		x = clampf(target.visual_pos().x, c.x - slack, c.x + slack)
 	var cam_y := (y0 + y1) / 2.0 + h * (cot_a + cot_b) / 2.0  # where the camera stands, on the ground
 	var d := h / sin(pitch)
-	return Vector3(c.x, cam_y - d * cos(pitch), d)
+	return Vector3(x, cam_y - d * cos(pitch), d)
