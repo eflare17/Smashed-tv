@@ -151,6 +151,64 @@
     }
   }
 
+  // Every figure as its own blob of connected art. Big blobs are figures (left to right); small
+  // ones (a hand drawn apart from the arm, a strand of hair) join the figure they sit over.
+  // Returns { boxes, owner } with owner[pixel] = figure number, or null if it isn't n figures.
+  function blobFrames(mask, w, h, n) {
+    const lab = new Int32Array(w * h), comps = [], stack = [];
+    for (let p0 = 0; p0 < w * h; p0++) {
+      if (lab[p0] || !mask[p0]) continue;
+      const c = { id: comps.length + 1, area: 0, x0: w, x1: 0, y0: h, y1: 0 };
+      lab[p0] = c.id; stack.push(p0);
+      while (stack.length) {
+        const q = stack.pop(), qx = q % w, qy = (q - qx) / w;
+        c.area++;
+        if (qx < c.x0) c.x0 = qx; if (qx > c.x1) c.x1 = qx; if (qy < c.y0) c.y0 = qy; if (qy > c.y1) c.y1 = qy;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = qx + dx, ny = qy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const np = ny * w + nx;
+          if (!lab[np] && mask[np]) { lab[np] = c.id; stack.push(np); }
+        }
+      }
+      comps.push(c);
+    }
+    if (!comps.length) return null;
+    const maxA = Math.max(...comps.map(c => c.area));
+    const big = comps.filter(c => c.area >= maxA * 0.12).sort((a, b) => (a.x0 + a.x1) - (b.x0 + b.x1));
+    if (big.length !== n) return null;
+    const fig = new Int32Array(comps.length + 1).fill(-1);
+    big.forEach((c, i) => { fig[c.id] = i; });
+    for (const c of comps) {
+      if (fig[c.id] >= 0 || c.area < 20) continue;
+      const cx = (c.x0 + c.x1) / 2, cy = (c.y0 + c.y1) / 2;
+      let best = -1, bd = Infinity;
+      big.forEach((b, i) => {
+        const pad = (b.x1 - b.x0) * 0.25;
+        if (cx < b.x0 - pad || cx > b.x1 + pad || cy < b.y0 - pad || cy > b.y1 + pad) return;
+        const d = Math.abs(cx - (b.x0 + b.x1) / 2) + Math.abs(cy - (b.y0 + b.y1) / 2);
+        if (d < bd) { bd = d; best = i; }
+      });
+      fig[c.id] = best;
+    }
+    const owner = new Int16Array(w * h).fill(-1);
+    const boxes = big.map(() => ({ x0: w, x1: -1, y0: h, y1: -1 }));
+    for (let p = 0; p < w * h; p++) {
+      const f = lab[p] ? fig[lab[p]] : -1;
+      if (f < 0) continue;
+      owner[p] = f;
+      const x = p % w, y = (p - x) / w, b = boxes[f];
+      if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+    }
+    for (let f = 0; f < boxes.length; f++) {      // centre of the head and chest, as in frameBox
+      const b = boxes[f], yTop = b.y0 + Math.round((b.y1 - b.y0) * 0.4);
+      let sx = 0, c = 0;
+      for (let y = b.y0; y <= yTop; y++) for (let x = b.x0; x <= b.x1; x++) if (owner[y * w + x] === f) { sx += x; c++; }
+      b.ax = c ? sx / c : (b.x0 + b.x1) / 2;
+    }
+    return { boxes, owner };
+  }
+
   // Box around the art in columns x0..x1, plus where the head and body are (for centring).
   function frameBox(mask, w, h, f) {
     let y0 = h, y1 = -1, x0 = f.x1, x1 = f.x0;
@@ -169,7 +227,7 @@
 
   // Shrink a box of the sheet by s with a proper average (so the big "pixels" Gemini draws
   // become one pixel each), then make the edges hard again.
-  function shrink(img, b, s) {
+  function shrink(img, b, s, owner, id) {
     const { width: w, data: d } = img;
     const sw = b.x1 - b.x0 + 1, sh = b.y1 - b.y0 + 1;
     const tw = Math.max(1, Math.round(sw * s)), th = Math.max(1, Math.round(sh * s));
@@ -180,7 +238,7 @@
         const xa = b.x0 + Math.floor(tx / s), xb = Math.max(xa + 1, b.x0 + Math.floor((tx + 1) / s));
         let r = 0, g = 0, bl = 0, a = 0, n = 0;
         for (let y = ya; y < Math.min(yb, img.height); y++) for (let x = xa; x < Math.min(xb, w); x++) {
-          const i = (y * w + x) * 4, al = d[i + 3] / 255;
+          const i = (y * w + x) * 4, al = owner && owner[y * w + x] !== id ? 0 : d[i + 3] / 255;
           r += d[i] * al; g += d[i + 1] * al; bl += d[i + 2] * al; a += al; n++;
         }
         const o = (ty * tw + tx) * 4;
@@ -205,8 +263,15 @@
     const mask = keyGreen(img);
     const want = o.frames + (o.dropFirst ? 1 : 0);
     const cols = findFrames(mask, w, h, want);
-    for (const f of cols) cleanFrame(img, mask, w, h, f);
-    let boxes = cols.map(f => frameBox(mask, w, h, f)).filter(Boolean);
+    let boxes, owner = null;
+    // columns didn't give the right count (figures overlapping side to side, like a dive over a
+    // tucked ball): try each figure as its own blob instead
+    const blob = cols.length !== want ? blobFrames(mask, w, h, want) : null;
+    if (blob) { boxes = blob.boxes; owner = blob.owner; }
+    else {
+      for (const f of cols) cleanFrame(img, mask, w, h, f);
+      boxes = cols.map(f => frameBox(mask, w, h, f)).filter(Boolean);
+    }
     const found = boxes.length;
     const notes = [];
     if (found !== want) notes.push('found ' + found + ' frames, expected ' + want);
@@ -219,8 +284,9 @@
     const groundY = Math.max(...boxes.map(b => b.y1));
     if (o.dropFirst) boxes = boxes.slice(1);
     // shrink each frame, then lay them out in equal cells
-    const parts = boxes.map(b => {
-      const im = shrink(img, b, scale);
+    const first = o.dropFirst ? 1 : 0;
+    const parts = boxes.map((b, i) => {
+      const im = shrink(img, b, scale, owner, i + first);
       const ax = (b.ax - b.x0) * scale;                         // anchor within the shrunk frame
       const lift = o.ground === 'sheet' ? Math.round((groundY - b.y1) * scale) : 0;
       return { im, ax, lift };
