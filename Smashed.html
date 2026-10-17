@@ -596,7 +596,7 @@ const RANGES = {
 // with ?debug on the end of the address; players get just the wave count
 const DEBUG = /[?&]debug\b/.test(location.search);
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b307 — first person: clicks shoot, E shows what it does, and sitting or the arcade step out of it till you are done';
+const BUILD = 'b308 — first person shows what top-down does: cans, potatoes, rockets, ducks, words, Gothica thrown, the landing ring';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson'];
@@ -3345,7 +3345,8 @@ function shroomInput(inp) {
   const fwd = -inp.my, side = inp.mx;
   inp.mx = fwd * fx + side * rx; inp.my = fwd * fy + side * ry;
   const touchTurn = aimStick.active;
-  inp.ax = fx * 100; inp.ay = fy * 100; inp.st = false;
+  const reach = Math.max(60, Math.min(T.lobFar || 400, (T.lobDefault || 220) * (1 - (SHROOM.lookY || 0) * 1.4)));   // b308: look up to throw further
+  inp.ax = fx * reach; inp.ay = fy * reach; inp.st = false;
   inp.shoot = !touchTurn && !!mouse.down;
   delete inp.lt; delete inp.tap;
 }
@@ -3433,6 +3434,73 @@ function shroomCapture(w) {
   const gr = bg.createRadialGradient(8, 8, 1, 8, 8, 8); gr.addColorStop(0, '#fff'); gr.addColorStop(0.4, '#ffe38a'); gr.addColorStop(1, 'rgba(255,120,40,0)');
   bg.fillStyle = gr; bg.fillRect(0, 0, 16, 16);
   SHROOM.dummy = dm; SHROOM.glow = bl;
+}
+// b308: floating words (+$, OOF, WHEEE!) and Gothica's speech, where they are in the room (hidden behind walls)
+function shroomWords(w) {
+  const V = SHROOM.view; if (!V) return;
+  const at = (x, y, z) => { const q = V.toScreen(V.ZX + (x - V.ZX) * V.zs, V.ZY + (y - V.ZY) * V.zs, z * V.zs);
+    if (!q) return null; const c = Math.max(0, Math.min(SHROOM_RW - 1, Math.round(q.x))); if (q.d > V.zbuf[c] + 2) return null;
+    return { x: q.x / SHROOM_RW * ARENA.w, y: q.y / SHROOM_RH * ARENA.h }; };
+  ctx.save(); ctx.textAlign = 'center';
+  for (const f of (w.floaters || [])) {
+    const a = f.t < 0.6 ? 1 : 1 - (f.t - 0.6) / 0.3, q = at(f.x, f.y + 40, 40 + f.t * 30); if (!q || a <= 0) continue;
+    ctx.globalAlpha = a; ctx.font = 'bold 16px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(f.text, q.x + 1, q.y + 1); ctx.fillStyle = f.col || '#7fd89a'; ctx.fillText(f.text, q.x, q.y);
+  }
+  const n = !w.started && net.role !== 'client' ? NPC_GOTH : w.goth;
+  if (n && n.bubble && n.carrier < 0) {
+    const b = n.bubble, q = at(n.x, n.y, 92 + (n.dz || 0));
+    if (q) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, (b.dur - b.t) / 0.4, b.t / 0.12));
+      ctx.font = 'bold 14px ui-sans-serif, system-ui, sans-serif';
+      const tw = ctx.measureText(b.text).width + 16, x0 = q.x - tw / 2, y0 = q.y - 26;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y0, tw, 24, 8) : ctx.rect(x0, y0, tw, 24); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(q.x - 5, y0 + 24); ctx.lineTo(q.x, y0 + 31); ctx.lineTo(q.x + 5, y0 + 24); ctx.fill();
+      ctx.fillStyle = '#2a1f3e'; ctx.fillText(b.text, q.x, y0 + 17);
+    }
+  }
+  ctx.restore();
+}
+// b308: everything else that moves in the lobby, so first person shows what the top-down view does: cans,
+// potatoes growing and thrown, rockets and their blasts, the ducks, and Gothica when she's been thrown
+function shroomExtras(w, me, sprites, npc) {
+  const X = SHROOM.x || (SHROOM.x = {});
+  if (!X.can) {                                                          // a can on its side
+    const c = X.can = document.createElement('canvas'); c.width = 16; c.height = 10; const g = c.getContext('2d');
+    g.fillStyle = '#8b93a4'; g.fillRect(0, 0, 16, 10); g.fillStyle = '#cfd4de'; g.fillRect(0, 0, 16, 3); g.fillStyle = '#e0473f'; g.fillRect(5, 3, 6, 5);
+  }
+  for (const c of (w.cans || [])) sprites.push({ img: X.can, x: c.x, y: c.y, W: 16, H: 10, foot: 10 });
+  for (const pl of (w.plants || [])) {
+    const f = Math.min(1, pl.t / T.spudGrow), im = SPUD_IMG[f >= 1 ? 4 : Math.min(3, Math.floor(f * 4))];
+    if (im && im.complete && im.naturalWidth) { const dh = 30 * im.naturalHeight / im.naturalWidth; sprites.push({ img: im, x: pl.x, y: pl.y + 6, W: 30, H: dh, foot: dh }); }
+  }
+  const spud = SPUD_IMG[4];
+  if (spud && spud.complete && spud.naturalWidth) for (const h of (w.husks || [])) {
+    const hh = 14 * spud.naturalHeight / spud.naturalWidth, z = h.lob ? (h.dz || 0) : 26;
+    sprites.push({ img: spud, x: h.x, y: h.y, W: 14, H: hh, foot: z + hh });
+  }
+  for (const r of (w.rockets || [])) { const q = rocketAt(r, r.t); sprites.push({ img: SHROOM.glow, x: q.x, y: q.y, W: 26, H: 26, foot: Math.max(13, q.h + 13), glow: true }); }
+  for (const b of (w.blasts || [])) {
+    const f = Math.min(0.999, b.t / T.blastTime), set = NUKE.boom || [], im = set[Math.floor(f * set.length)];
+    if (im && im.naturalWidth) { const dw = T.blastRadius * 1.6 * (0.6 + f * 0.6), dh = dw * im.naturalHeight / im.naturalWidth; sprites.push({ img: im, x: b.x, y: b.y, W: dw, H: dh, foot: dh * 0.85, glow: true }); }
+  }
+  if (T.loungeFloor && !w.started) for (const d of DUCKS) { const im = duckImg(d.look); sprites.push({ img: im, x: d.x, y: d.y, W: im.width, H: im.height, foot: im.height - 4 }); }
+  // Gothica, thrown: flying, flat out on the floor, or paddling in the pool
+  if (npc && npc.thrown) {
+    const im = IMG.goth && IMG.goth.front_run && IMG.goth.front_run[0];
+    if (im && im.complete && im.naturalWidth) {
+      const h = T.radius * T.spriteScale * (CHARS.goth.scale || 1) * T.altScale, dw = h * (im.naturalWidth / im.naturalHeight) * T.altWide;
+      if (npc.thrown === 'air') sprites.push({ img: im, x: npc.x, y: npc.y, W: dw, H: h, foot: (npc.dz || 0) + h });
+      else if (npc.thrown === 'floor') {
+        if (!X.flat) { const c = X.flat = document.createElement('canvas'); c.width = im.naturalHeight; c.height = im.naturalWidth; const g = c.getContext('2d');
+          g.translate(c.width / 2, c.height / 2); g.rotate(Math.PI / 2); g.drawImage(im, -im.naturalWidth / 2, -im.naturalHeight / 2); }
+        sprites.push({ img: X.flat, x: npc.x, y: npc.y, W: h, H: dw * 0.6, foot: dw * 0.6 });
+      } else {                                                           // swimming: her head and shoulders above the water
+        if (!X.swim) { const c = X.swim = document.createElement('canvas'); c.width = im.naturalWidth; c.height = Math.round(im.naturalHeight * 0.38); c.getContext('2d').drawImage(im, 0, 0); }
+        sprites.push({ img: X.swim, x: npc.x, y: npc.y, W: dw, H: h * 0.38, foot: h * 0.38 });
+      }
+    }
+  }
 }
 // another character as a cut-out, turned the way they'd look from where you are
 function shroomCharacter(w, p, me) {
@@ -3542,6 +3610,8 @@ function drawShroom(w) {
   for (const k of ['view', 'acc', 'under', 'fin']) if (cv[k].width !== VW || cv[k].height !== VH) { cv[k].width = VW; cv[k].height = VH; }
   // what's on screen now (the lobby from above), for the fade in and out
   if (SHROOM.t < SHROOM_IN + 0.1 || SHROOM.t > SHROOM_TIME - SHROOM_OUT - 0.1) { const ug = cv.under.getContext('2d'); ug.clearRect(0, 0, VW, VH); ug.drawImage(canvas, 0, 0, VW, VH); }   // (only needed while it fades in or out)
+  { const sig = JSON.stringify([WARD.open, GYM.bar, GYM.pegs, LEG.horn]);       // b308: the furniture's grabbed again when it changes
+    if (SHROOM.propSig !== sig) { SHROOM.propSig = sig; SHROOM.props = null; } }
   if (!SHROOM.props) shroomCapture(w);
   // everyone else, as cut-outs (drawn on the canvas one at a time, then kept)
   const sprites = SHROOM.props.filter(s => !(s.tower && (me.dive === DIVE.CLIMB || me.dive === DIVE.BOARD)));
@@ -3550,6 +3620,7 @@ function drawShroom(w) {
   for (const p of cast) sprites.push(shroomCharacter(w, p, me));
   for (const d of (w.dummies || [])) if (!(d.down > 0)) sprites.push({ img: SHROOM.dummy, x: d.x, y: d.y + 16, W: 30, H: 50, foot: 50, wob: d.wob });
   for (const b of (w.bullets || [])) sprites.push({ img: SHROOM.glow, x: b.x, y: b.y, W: 10, H: 10, foot: 50, glow: true });
+  shroomExtras(w, me, sprites, npc);                                     // b308: the rest of what moves, as it is top-down
 
   // ---- the 3D view, in its own low-res pixels
   const RW = SHROOM_RW, RH = SHROOM_RH, EYE = SHROOM_EYE, WALL = SHROOM_WALL;
@@ -3767,6 +3838,15 @@ function drawShroom(w) {
       }
     }
   }
+  // b308: where a potato or a rocket will land, as a ring on the floor
+  if (me.aimOn && ((me.weapon === 'launcher' && me.rockets > 0) || (me.weapon === 'lob' && me.charging))) {
+    const R = T.blastRadius, pts = [];
+    for (let i = 0; i <= 24; i++) { const a = i / 24 * Math.PI * 2, q = toScreen(ZX + (me.tx + Math.cos(a) * R - ZX) * zs, ZY + (me.ty + Math.sin(a) * R - ZY) * zs, 0); pts.push(q); }
+    vg.save(); vg.strokeStyle = 'rgba(246,209,122,0.85)'; vg.lineWidth = 2; vg.beginPath();
+    let pen = false; for (const q of pts) { if (!q) { pen = false; continue; } if (pen) vg.lineTo(q.x * SV, q.y * SV); else { vg.moveTo(q.x * SV, q.y * SV); pen = true; } }
+    vg.stroke(); vg.restore();
+  }
+  SHROOM.view = { toScreen, zbuf, ZX, ZY, zs };                          // (for the words over things, drawn after)
   // up the ladder: its rails either side of you, rungs sliding down past as you climb
   if (me.dive === DIVE.CLIMB && !dv) {
     const gap = VH * 0.2, slide = (eye * 3 * SV) % gap;
@@ -4001,6 +4081,7 @@ function drawShroom(w) {
       drawCarryButton();
     }
     if (!dv) drawHotbar(w);
+    if (!dv) shroomWords(w);
     ctx.restore();
   }
 }
