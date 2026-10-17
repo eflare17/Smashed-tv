@@ -41,8 +41,8 @@ var _look_pending := Vector2.ZERO    # first person drag not yet turned into loo
 const MOVE_DEAD := 0.22
 const AIM_DEAD := 0.18
 const MOVE_CURVE := 1.5
-const LOOK_X := 0.0052
-const LOOK_Y := 0.0042
+const LOOK_X := 0.0042
+const LOOK_Y := 0.0034
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -161,7 +161,9 @@ func _touch_drag(i: int, pos: Vector2, rel: Vector2) -> void:
 		"look":
 			# `rel` is in the game's own units (the same on any phone: the stretch already accounts for the
 			# screen's density), taken in over the next frames by _process
-			_look_pending += rel
+			# (a single jump this big is the browser losing track of a finger, not a swipe: it would whip the
+			# view round, so it's capped)
+			_look_pending += rel.limit_length(60.0)
 	queue_redraw()
 
 func _touch_up(i: int) -> void:
@@ -231,7 +233,9 @@ func _process(dt: float) -> void:
 	if _look_pending != Vector2.ZERO:
 		var take := _look_pending * (1.0 - exp(-dt * 30.0))
 		_look_pending -= take
-		if p and p.controls_enabled and _fp():
+		# (in a run the fight drives him and his own controls are off, but the look is still his)
+		var in_run: bool = Fight.me != null and Fight.me.sim != null and Fight.me.sim.started and not Fight.me.sim.over
+		if p and (p.controls_enabled or in_run) and _fp():
 			p.look_ang = wrapf(p.look_ang + take.x * LOOK_X, -PI, PI)
 			p.look_y = clampf(p.look_y + take.y * LOOK_Y, -CameraRig.LOOK_MAX, CameraRig.LOOK_MAX)
 		if _look_pending.length() < 0.05:

@@ -282,10 +282,8 @@ func _input(event: InputEvent) -> void:
 		else:
 			_touch_up(event.index, p)
 	elif event is InputEventScreenDrag and not own_sticks:
-		if fight.is_fp() and fight.sim.started and event.position.x > _draw_c.size.x * 0.45 and fight.player:
-			var kk := 720.0 / maxf(1.0, _draw_c.size.y)
-			fight.player.look_ang = wrapf(fight.player.look_ang + event.screen_relative.x * 0.0075 * kk, -PI, PI)
-			fight.player.look_y = clampf(fight.player.look_y + event.screen_relative.y * 0.006 * kk, -0.6, 0.6)
+		# (no looking here: the shared touch layer's look finger turns him. Turning on any drag on the right side
+		# also turned him when the move thumb slid past the middle, and doubled every look drag)
 		var td: Dictionary = _taps.get(event.index, {})
 		if not td.is_empty():
 			td.moved = maxf(td.moved, (event.position - td.at).length())
