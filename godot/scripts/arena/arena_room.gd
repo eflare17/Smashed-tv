@@ -145,6 +145,8 @@ func _draw() -> void:
 	if s.slot.cool > 0.0:
 		bar(batch(null, true, true, 4), s.slot.x - 28.0, s.slot.y + 14.0, 2.0, 56.0, 5.0, Color(20 / 255.0, 22 / 255.0, 28 / 255.0, 0.75))
 		bar(batch(null, true, true, 4), s.slot.x - 28.0, s.slot.y + 14.0, 2.0, 56.0 * (1.0 - s.slot.cool / s.tv("spinCool", 8)), 5.0, Color("#5a6274"))
+	if spinning or s.slot.flash > 0.001:
+		_reels(h, spinning)
 	# the OUT OF ORDER sign: on the cabinet, or thrown on the floor
 	if s.sign == "stand":
 		_card(p3(s.slot.x + 4.0, s.slot.y + 2.0, 60.0) + to_cam * 0.12, cam_right, stand_up, -0.06, col)
@@ -160,6 +162,81 @@ func _draw() -> void:
 			var tb := batch(null, true, true, 4)
 			bar(tb, vp.x - 35.0, vp.y + 20.0, 2.0, 70.0, 6.0, Color(20 / 255.0, 22 / 255.0, 28 / 255.0, 0.8))
 			bar(tb, vp.x - 35.0, vp.y + 20.0, 2.0, 70.0 * p.buy / s.tv("vendHold", 0.8), 6.0, Color("#9be29b"))
+
+# The reels in the cabinet's window (13.5): the first two land on the decoys at 45% and 70% of the pull, the
+# third keeps turning; when the prize is paid all three show its symbol.
+func _reels(h: float, spinning: bool) -> void:
+	var s := sim
+	# drawn over the cabinet's picture (its depth is a standing figure's, nearer than its tipped-back top)
+	var b := batch(null, false, true, 1)
+	var dw := h * 89.0 / 128.0
+	var rw := dw * 0.16 * 1.9
+	var rh := h * 0.115 * 1.9
+	var zc := h * 0.497 - 2.0
+	var base := p3(s.slot.x, s.slot.y - 4.0, zc) + to_cam * 0.5
+	var frac := 1.0
+	for p: FT.Fighter in s.players:
+		if p.spin > 0.0:
+			frac = 1.0 - p.spin / maxf(0.05, s.tv("spinTime", 1.6))
+	var cols := [-18.4, 2.1, 22.6]
+	var stops := [0.45, 0.70, 1.0]
+	quad(b, base, cam_right * ((cols[2] - cols[0] + rw) * 0.5 + rw * 0.22) * U, stand_up * (rh * 0.5 + rh * 0.3) * U,
+		Color(12 / 255.0, 13 / 255.0, 18 / 255.0, 1.0))
+	var prize_sym: int = FightSim.PRIZES[clampi(s.slot.prize, 0, 7)].sym
+	for i in 3:
+		var c: Vector3 = base + cam_right * (cols[i] * U) + to_cam * 0.01
+		quad(b, c, cam_right * (rw * 0.5 * U), stand_up * (rh * 0.5 * U), Color("#f2efe6"))
+		var sym: int
+		if spinning and frac < stops[i]:
+			sym = (i * 2 + int(floor(s.t * 9.0))) % 6
+		else:
+			sym = prize_sym if (i == 2 or s.slot.flash > 0.001) else int(s.slot.decoy[i])
+		_sym(b, c + to_cam * 0.01, sym, rh * 0.8)
+		if spinning and frac < stops[i]:
+			quad(batch(null, true, true, 2), c + to_cam * 0.02, cam_right * (rw * 0.5 * U), stand_up * (rh * 0.5 * U), Color(0.95, 0.94, 0.9, 0.45))
+
+# drawSym: heart, shotgun, coin, bolt, star, skull.
+func _sym(b: Batch, c: Vector3, sym: int, size: float) -> void:
+	var u := size / 10.0 * U
+	var R := cam_right * u
+	var Up := stand_up * u
+	match sym:
+		0:
+			_disc(b, c - R * 2.0 + Up * 1.0, 2.4 * u, Color("#e0473f"))
+			_disc(b, c + R * 2.0 + Up * 1.0, 2.4 * u, Color("#e0473f"))
+			tri(b, c - R * 4.2, c + R * 4.2, c - Up * 4.4, Color("#e0473f"))
+		1:
+			quad(b, c - R * 0.5, R * 4.0, Up * 1.1, Color("#4a5260"))
+			quad(b, c + R * 3.75, R * 1.25, Up * 1.6, Color("#8a5a33"))
+		2:
+			_disc(b, c, 3.6 * u, Color("#d9a520"))
+			_disc(b, c + to_cam * 0.002, 2.4 * u, Color("#f6d17a"))
+		3:
+			var pts := [Vector2(1.5, -4), Vector2(-2.5, 0.6), Vector2(-0.2, 0.6), Vector2(-1.5, 4), Vector2(2.5, -0.6), Vector2(0.2, -0.6)]
+			tri(b, c + R * pts[0].x - Up * pts[0].y, c + R * pts[1].x - Up * pts[1].y, c + R * pts[2].x - Up * pts[2].y, Color("#6fd3a0"))
+			tri(b, c + R * pts[3].x - Up * pts[3].y, c + R * pts[4].x - Up * pts[4].y, c + R * pts[5].x - Up * pts[5].y, Color("#6fd3a0"))
+			tri(b, c + R * pts[0].x - Up * pts[0].y, c + R * pts[2].x - Up * pts[2].y, c + R * pts[5].x - Up * pts[5].y, Color("#6fd3a0"))
+			tri(b, c + R * pts[3].x - Up * pts[3].y, c + R * pts[5].x - Up * pts[5].y, c + R * pts[2].x - Up * pts[2].y, Color("#6fd3a0"))
+		4:
+			for k in 5:
+				var a0 := -PI / 2.0 + k * TAU / 5.0
+				var a1 := a0 + PI / 5.0
+				var a2 := a0 - PI / 5.0
+				tri(b, c, c + (R * cos(a0) - Up * sin(a0)) * 4.0, c + (R * cos(a1) - Up * sin(a1)) * 1.7, Color("#f6d17a"))
+				tri(b, c, c + (R * cos(a0) - Up * sin(a0)) * 4.0, c + (R * cos(a2) - Up * sin(a2)) * 1.7, Color("#f6d17a"))
+		_:
+			_disc(b, c + Up * 0.6, 3.4 * u, Color("#cfd4de"))
+			quad(b, c - Up * 2.5, R * 2.0, Up * 1.1, Color("#cfd4de"))
+			quad(b, c - R * 1.2 + Up * 0.5 + to_cam * 0.002, R * 0.8, Up * 0.9, Color("#14161c"))
+			quad(b, c + R * 1.2 + Up * 0.5 + to_cam * 0.002, R * 0.8, Up * 0.9, Color("#14161c"))
+
+func _disc(b: Batch, c: Vector3, r: float, col: Color) -> void:
+	var prev := c + cam_right * r
+	for i in range(1, 15):
+		var a := float(i) / 14.0 * TAU
+		var p := c + cam_right * (cos(a) * r) + stand_up * (sin(a) * r)
+		tri(b, c, prev, p, col)
+		prev = p
 
 # The cardboard sign (drawSign): a card with a strip, two bits of tape, and OUT OF / ORDER marks.
 func _card(c: Vector3, r: Vector3, u: Vector3, rot: float, b: Batch) -> void:

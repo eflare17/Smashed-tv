@@ -208,6 +208,14 @@ func _gallery() -> void:
 	sim.janitor.y = 160
 	sim.sign = "floor"
 	sim.slot.broken = false
+	if debug.get("gallery") == "slot":
+		f.x = sim.slot.x
+		f.y = sim.slot.y + 30.0
+		f.spin = 0.5
+		sim.slot.busy = 0
+		sim.slot.prize = 4
+		sim.slot.decoy = [2, 5]
+		sim.janitor.phase = "done"
 	set_meta("frozen", true)
 
 func _load_hotbar() -> void:

@@ -32,6 +32,8 @@ func _ready() -> void:
 	test_game_over()
 	test_protect()
 	test_coins()
+	test_vending()
+	test_slot()
 	print("logic tests: %d passed, %d failed" % [passes, fails])
 	get_tree().quit(1 if fails > 0 else 0)
 
@@ -289,3 +291,29 @@ func test_coins() -> void:
 	s._coin(470, 300, 0, 0, 6, 0)
 	steps(s, 60)
 	ok(f.coins == c0 + 1, "a note drifts in and is picked up")
+
+func test_vending() -> void:
+	var s := sim_with_player()
+	s.start_run("classic")
+	s.breather = 999.0
+	var f: FT.Fighter = s.players[0]
+	var vp := s.vend_pos()
+	f.x = vp.x
+	f.y = vp.y + 20
+	steps(s, 120)
+	ok(f.weapon == "launcher" and f.rockets == 3 and f.coins == 0 and s.vend_sold, "standing still at the vending machine buys the launcher")
+
+func test_slot() -> void:
+	var s := sim_with_player()
+	s.start_run("classic")
+	s.breather = 999.0
+	var f: FT.Fighter = s.players[0]
+	f.x = s.slot.x
+	f.y = s.slot.y + 20
+	steps(s, 60)
+	ok(f.spin == 0.0 and f.coins == 2500, "the broken machine doesn't take money")
+	s.slot.broken = false
+	steps(s, 2)
+	ok(f.spin > 0.0 and f.coins == 2495, "a live machine takes $5 and roots him")
+	steps(s, 200)
+	ok(f.spin == 0.0 and s.slot.cool > 0.0, "the prize is paid and the machine recharges")
