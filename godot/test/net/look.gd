@@ -1,8 +1,8 @@
 extends Node
 ## A visual online test (screenshots, test/net/two_pages.mjs with DRIVE=res://test/net/look.gd): seeing what the
 ## other player is doing. The host takes a hair style and lies in bed; the guest stands by the bed watching
-## (top-down for 70 s), then turns to first person looking at the host (70 s more), then the host gets up and
-## walks over to the guest. Prints "LOOK <phase>" as each starts.
+## (top-down), then turns to first person looking at the host, then (as Jared) picks up lobby Gothica, which the
+## host's game runs. Prints "LOOK <phase>" as each starts (game seconds: a slow page runs slower than real time).
 ## Owned by the Online task.
 
 var net: Net
@@ -32,7 +32,7 @@ func _process(dt: float) -> void:
 			me.char_id = "tyson2"
 			me.place(330, 640)
 			me.facing = Vector2(0, -1)
-	elif phase == 1 and t > 70.0:
+	elif phase == 1 and t > 12.0:
 		phase = 2
 		print("LOOK first person")
 		if not host:
@@ -41,8 +41,22 @@ func _process(dt: float) -> void:
 			var at := me.html_pos()
 			me.look_ang = atan2(them.y - at.y, them.x - at.x)
 			me.look_y = 0.25
-	elif phase == 2 and t > 140.0:
+	elif phase == 2 and t > 24.0:
 		phase = 3
-		print("LOOK up")
+		print("LOOK carry")
 		if host:
 			bed.get_up(me)
+		else:
+			net.main.rig.set_mode(CameraRig.Mode.TOP_DOWN)
+			me.char_id = "juicy"
+	elif phase == 3 and not host:
+		var gl = LobbyLife.current.things["goth_life"]
+		if gl.carrier != me:
+			if me.focus_label == "PICK UP":
+				me.use()
+			else:
+				var g := GameData.from_3d(net.main.gothica.global_position)
+				me.place(g.x + 20.0, g.y)
+		else:
+			phase = 4
+			print("LOOK carrying")

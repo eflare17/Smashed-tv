@@ -37,10 +37,13 @@ enet_transport.gd, net_codec.gd, net_mirror.gd, net_menu.gd), `test/net/`, this 
 - **Every E action on both screens**: each player's E things run on their own screen for their own player (the
   wardrobe and clothes, the mirror, the bong and its trip only for your own hits, the gym, the pool and tower,
   the slot and vending machines, the barbecue, the mushroom, the arcade), which is what the HTML game's b309 fixes
-  get to. **Gothica in the lobby is the host's**: the guest sees her where she is on the host's screen
-  (position, walk, her poses: carried, swimming, thrown).
+  get to. **Lobby Gothica is one Gothica for both** (b309): the host's game runs her at first and the guest sees
+  her where she is on the host's screen (position, walk, her poses: carried, swimming, thrown); either player
+  (as Jared) can pick her up: E on the other game's Gothica asks for her, and from then on the game of whoever
+  picked her up runs her (carrying, putting down, throwing her off the board, her wandering) until the other
+  picks her up again.
 - **The clock is the host's** (in every snapshot; the guest's GameClock follows with `is_host = false`, firing
-  the same signals). **Sleeping needs both in bed**: when the second lies down, both screens fade to 7 am of the
+  the same signals; the guest's own saved day and time are left alone and come back when it leaves). **Sleeping needs both in bed**: when the second lies down, both screens fade to 7 am of the
   next day.
 - **The farm** is shared and saved on the host: whoever acts (plant, water, harvest, buy, sell, breed) sends the
   farm's state; the host's copy goes every 4 s and on every change. Each player has their own bag (the guest's
@@ -66,6 +69,9 @@ Changes to existing files (done on this branch):
   unless forced; player 2 only slides through the lobby by himself when `f2.driven`; the arrows aren't taken from
   first-person turning when player 2 is online; and (a fix found here) a lobby life pose (lying in bed, lifting...)
   hides the fighter's sprite instead of being drawn over by it.
+- `scripts/combat/fight_sim.gd`: at a run's start two players coming from the yard or the bedroom stand side by
+  side at the back door instead of on top of each other.
+- `scripts/look/lighting_install.gd`: the clock save is skipped while the clock is a guest's (`is_host` false).
 
 Input actions added (in code): `net_menu` (O, pad left-stick click).
 

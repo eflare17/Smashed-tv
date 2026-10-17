@@ -10,11 +10,24 @@ const b = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw
   args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 const drive = process.env.DRIVE || 'res://test/net/drive.gd';
 const q = (role) => base + '?' + role + '&netdrive=' + drive + '&netstate' + (extra ? '&' + extra : '');
+// a "LOOK <what>" line from either page: both screens a few seconds later (look_<what>_host.png, ..._guest.png)
+const pages = {};
+let lookN = 0;
+function onLook(t) {
+  const what = t.slice(5).trim().replace(/[^a-z0-9]+/gi, '_');
+  const n = ++lookN;
+  setTimeout(async () => {
+    for (const k of Object.keys(pages)) { try { await pages[k].screenshot({ path: `${out}/look${n}_${what}_${k}.png` }); } catch (_) {} }
+    console.log('shot look', n, what);
+  }, 8000);
+}
 async function page(name, url) {
   const ctx = await b.newContext({ viewport: { width: 960, height: 540 } });
   const p = await ctx.newPage();
-  p.on('console', m => { const t = m.text(); if (/CHECK|DRIVE|Net:|ERROR|error|SCRIPT/.test(t) || (/^NET /.test(t) && Math.random() < 0.1)) console.log(name + ': ' + t.slice(0, 300)); });
+  p.on('console', m => { const t = m.text(); if (/CHECK|DRIVE|LOOK|Net:|ERROR|error|SCRIPT/.test(t) || (/^NET /.test(t) && Math.random() < 0.1)) console.log(name + ': ' + t.slice(0, 300)); });
   p.on('pageerror', e => console.log(name + ' pageerror: ' + e.message));
+  p.on('console', m => { const t = m.text(); if (t.startsWith('LOOK ') && name === 'guest') onLook(t); });
+  pages[name] = p;
   await p.goto(url);
   return p;
 }

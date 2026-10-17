@@ -293,8 +293,6 @@ func _on_connected() -> void:
 	mirror.reset_remote()
 	_remote_in = FT.Inp.new()
 	_out_in = null
-	if role == "host" and fight and fight.sim.over:
-		pass
 	_game_live(true)
 	_send({"t": "hello", "v": PROTO, "ch": player.char_id if player else "juicy"})
 	_send_look()
@@ -346,6 +344,11 @@ func _game_live(on: bool) -> void:
 		if player and player.has_meta("farm_pid"):
 			player.remove_meta("farm_pid")
 		if role == "client":
+			# back to our own day and time, then our own farm (whose growth starts counting from there)
+			if gc and FileAccess.file_exists("user://gameclock.json"):
+				var j = JSON.parse_string(FileAccess.get_file_as_string("user://gameclock.json"))
+				if j is Dictionary:
+					gc.load_state(j)
 			if fm:
 				fm.persist = true
 				_farm_applying = true

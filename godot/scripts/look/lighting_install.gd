@@ -155,6 +155,8 @@ func _notification(what: int) -> void:
 		save()
 
 func save() -> void:
+	if clock.get("is_host") == false:
+		return              # online as the guest: the host's time isn't ours to keep
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(clock.save_state()))
