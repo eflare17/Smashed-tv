@@ -212,6 +212,7 @@ func _process(delta: float) -> void:
 			b.custom_minimum_size = Vector2(0.0 if b == _start else bh, bh)
 			b.add_theme_font_size_override("font_size", int(maxf(14.0, bh * 0.36)))
 	_mode_lbl.add_theme_font_size_override("font_size", int(maxf(15.0, bh * 0.38)))
+	_picker.reset_size()                     # (shrink-wrap: its backing is drawn to its size)
 	_picker.position.x = (_draw_c.size.x - _picker.size.x) / 2.0
 	_picker.position.y = 10.0
 	if portrait():

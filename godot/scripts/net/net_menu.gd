@@ -212,6 +212,7 @@ func open() -> void:
 		return
 	_open = true
 	_panel.visible = true
+	_size_keys()
 	var p: Player = net.player if net else null
 	if p and is_instance_valid(p):
 		_was_controls = p.controls_enabled
@@ -221,6 +222,21 @@ func open() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh()
 	(_leave_b if net and net.role != "local" else _host_b).grab_focus()
+
+## The room-code letters on a touch screen: about 40 CSS px each (as big as the screen's height allows), so a
+## thumb can hit them; 34 px with a mouse.
+func _size_keys() -> void:
+	var k := 34.0
+	if DisplayServer.is_touchscreen_available():
+		var vp := get_viewport().get_visible_rect().size
+		var win := Vector2(DisplayServer.window_get_size())
+		var dpr := DisplayServer.screen_get_scale() if OS.has_feature("web") else 1.0
+		var css := dpr * vp.y / win.y if win.y > 0.0 else 1.0
+		k = clampf(40.0 * css, 34.0, minf(minf(72.0, (vp.y - 330.0) / 4.0), (vp.x - 100.0) / 11.0 - 4.0))
+	for b in _keys.get_children():
+		if b is Button:
+			b.custom_minimum_size = Vector2(k, k)
+			b.add_theme_font_size_override("font_size", int(maxf(16.0, k * 0.42)))
 
 func close() -> void:
 	if not _open:

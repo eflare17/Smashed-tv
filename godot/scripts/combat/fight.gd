@@ -846,8 +846,9 @@ func _process(delta: float) -> void:
 	if player == null:
 		return
 	if OS.has_feature("web"):
-		# the page's FULL SCREEN button steps aside while a panel or a close-up has the screen
-		var hide := modal_open()
+		# the page's FULL SCREEN button (top left, under the cash) is the lobby's: it steps aside in a run and while
+		# a panel or a close-up has the screen
+		var hide := modal_open() or sim.started
 		if hide != _fs_hidden:
 			_fs_hidden = hide
 			JavaScriptBridge.eval("window.smashedFsHide&&window.smashedFsHide(%s)" % ("true" if hide else "false"), true)
