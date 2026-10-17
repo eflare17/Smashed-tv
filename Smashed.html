@@ -607,7 +607,7 @@ function applyTweaks() {
   if (!TWEAKS && typeof cal !== 'undefined' && cal.on) cal.on = false;
 }
 if (!DEBUG) document.querySelectorAll('.debugOnly').forEach(el => { el.style.display = 'none'; });
-const BUILD = 'b312 — tweaks hidden behind Show tweaks, and Ctrl/Cmd shortcuts (copy, paste) never reach the game';
+const BUILD = 'b313 — Inky joins (made with the Sprite Maker), and picking a character no longer stops WASD working';
 const ARENA = { w: 860, h: 520, wall: 18 };
 const P_COLOURS = ['#e0473f', '#4f9fe8'];
 const CHAR_IDS = ['juicy', 'tyson2', 'goth', 'jared', 'tyson', 'inky'];
@@ -12818,6 +12818,10 @@ charSel.addEventListener('change', e => {
   // a joined client is player 2, so their pick lands in slot 1
   setChar(net.role === 'client' ? 1 : 0, e.target.value);
 });
+// b313: let go of the dropdown once a character is picked. The game ignores keys while a dropdown
+// has focus, so after picking one WASD did nothing until you clicked the game.
+for (const id of ['charSel', 'charSel2'])
+  document.getElementById(id).addEventListener('change', e => setTimeout(() => e.target.blur(), 0));
 document.getElementById('charSel2').addEventListener('change', e => {
   if (net.role === 'client' || (net.conn && net.conn.open)) return syncCharUI();   // the guest picks their own
   setChar(1, e.target.value);
