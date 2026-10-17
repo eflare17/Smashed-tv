@@ -88,6 +88,7 @@ func show_plot(p: Dictionary, stg: int, lk: int, wet: bool, open: bool) -> void:
 	_drop.visible = planted and lk > 0
 	_glint.visible = false
 	set_meta("ready", planted and stg == 3)
+	set_process(_drop.visible or (planted and stg == 3))   # only the drop and the glint move
 
 func _process(delta: float) -> void:
 	_t += delta
