@@ -57,6 +57,7 @@ func _ready() -> void:
 		var q = JavaScriptBridge.eval("window.location.search", true)
 		if q is String and q.find("state") >= 0:
 			print_state = true
+	LightingInstall.install(self)       # the day and night cycle and the look (before the farm: its clock)
 	Arcade.install(self)
 	FarmInstall.install(self)
 	FightInstall.install(self)

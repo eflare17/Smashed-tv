@@ -29,6 +29,9 @@ var _save_t := 0.0
 
 ## Adds everything to main (the running game: main.world, main.sun, main.player, main.rig, main.hud...).
 static func install(main_: Node) -> LightingInstall:
+	var had := main_.get_node_or_null("Lighting")
+	if had is LightingInstall:
+		return had                       # (already in: main.gd installs it, a test may ask again)
 	var li := LightingInstall.new()
 	li.name = "Lighting"
 	li.main = main_
