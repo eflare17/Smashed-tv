@@ -126,6 +126,10 @@ func _ready() -> void:
 		call_deferred("_gallery")
 	if debug.has("secret"):
 		call_deferred("_debug_secret")
+	if debug.has("at") and player:
+		var xy: PackedStringArray = String(debug["at"]).split(":")
+		if xy.size() == 2:
+			player.call_deferred("place", float(xy[0]), float(xy[1]))
 
 func _read_debug() -> void:
 	var q := ""

@@ -61,7 +61,14 @@ Tested in the real web export (screenshots looked at) and in headless logic test
 - **The janitor (Gary)**: all his phases: walks in after wave 1, throws the sign down, three hammer clanks, three
   notes, pockets what's left, MACHINE IS LIVE, walks out; shot once he's knocked flat and gripes in a speech bubble;
   shot again he stares, charges and whacks you across the room; "..." when he gives up. Then the slot machine pays
-  out its eight prizes ($5 a pull, 1.6 s rooted, 8 s recharge).
+  out its eight prizes ($5 a pull, 1.6 s rooted, 8 s recharge), its reels turning in the window (two decoys land,
+  three of a kind on the prize).
+- **The secret bonus room**: shoot Gary once as he walks out after the repair; he trudges back, and his first swing
+  at the cabinet sucks you in (the cyan cone, notes spiralling, you dragged in and popping into the slot). Inside
+  the machine (its art for the floor, four cogs turning, chasing lamps): 20 s of HOUSE MONEY, notes raining, skull
+  stamps to shoot (3 hits, +3 notes) or dodge; YOU ARE THE PRIZE, THANK YOU FOR YOUR CUSTOM / FAULT DETECTED, PLEASE
+  CHECK THE PAYOUT TRAY; then the run comes back exactly as it was, your cash the better of the two (+$10 if you
+  survived), GARY KEEPS THE CHANGE. Once per world.
 - **Protect Gothica**: the mode picker (`<  Classic  >  Start (Enter)` at the top of the lobby), Gothica in the run
   with her bar, wandering, panicking, eating ripe potatoes to heal (+2), speech bubbles, enemies choosing her or you,
   Juicy Jared carrying her with E (the milestone 1 E prompt and round button: PICK UP / PUT DOWN), slow and unable to
@@ -135,12 +142,11 @@ Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and
 
 ## What's left
 
-- **The secret bonus room** inside the slot machine (gore_loot 14: shoot Gary as he leaves after the repair...). Not
-  built; Gary simply carries on.
 - **A second local player** (P, arrows / Space / Ctrl, pad 2). The sim takes any number of players
   (`sim.add_player`), but nothing adds one yet; the HUD lists every wallet.
-- The batter's procedural rig (his own walk frames are used), the lean on idle poses, the slot machine's spinning
-  reels drawn in the window (the machine shows its spin/win pictures and the banner says the prize).
+- The batter's procedural rig (his own walk frames are used), the lean on idle poses; in the bonus room's intro Gary
+  stays where he swung (the HTML stands him beside the cabinet with his own frames) and the players aren't turned
+  feet-first (a CharSprite can't rotate).
 - The tyson2 recolour for the first-person hands' skin tint (the hands are Juicy's colour for everyone).
 - Calibration mode (C) and the tuning panel: not ported (the maps are the HTML's derived ones).
 - Network snapshot packing (milestone 4).
@@ -149,10 +155,13 @@ Debug keys (debug builds, or `?fight=keys`): G shotgun, N the nuke, M magnet and
 
 ## Testing
 
-- Logic: `godot --headless --path godot res://test/combat/logic_test.tscn` (exit code 0 = all pass).
+- Logic: `godot --headless --path godot res://test/combat/logic_test.tscn` (53 checks; exit code 0 = all pass).
+- Protect mode's E through the real prompt: `godot --headless --fixed-fps 60 --path godot res://test/combat/carry_test.tscn`.
+- Touch: `node godot/test/combat/touch_test.mjs <url> out.png` (Chrome touch events: the move stick, the aim stick).
 - The game headless with the fight: `godot --headless --fixed-fps 60 --path godot res://test/combat/game_test.tscn -- --fight=run,auto --secs=30`.
 - Web: `bash godot/test/combat/web_test.sh out.png 20000 "fight=run,auto"` builds a scratch copy with the install line,
   serves it and screenshots. `node godot/test/combat/play_test.mjs <url> <dir>` plays it with real keys and clicks.
 - Debug flags (`?fight=a,b` on the web, `--fight=a,b` after `--`): `run`, `protect`, `auto` (aims and fires at the
-  nearest enemy), `fp`, `god`, `wave=N`, `weapon=ID`, `gallery` (a frozen scene with one of everything), `log`,
-  `keys`.
+  nearest enemy, or the lobby dummies), `fp`, `god`, `wave=N`, `weapon=ID`, `gallery` (a frozen scene with one of
+  everything; `gallery=slot` mid-pull), `secret` (the bonus room, as the HTML's "secret preview"; `secret=room`
+  skips the intro), `at=X:Y` (put him there in the lobby), `log`, `keys`.
