@@ -261,6 +261,27 @@
     return { width: tw, height: th, data: out };
   }
 
+  // At game size, a piece that isn't joined to the body floats (a hand whose arm is hidden behind her in
+  // a back view, a sparkle Gemini added): anything loose that's under 6% of the body goes.
+  function dropLoose(f) {
+    const { width: w, height: h, data: d } = f, lab = new Int32Array(w * h), areas = [0], stack = [];
+    for (let p0 = 0; p0 < w * h; p0++) {
+      if (lab[p0] || !d[p0 * 4 + 3]) continue;
+      const id = areas.length; let n = 0; lab[p0] = id; stack.push(p0);
+      while (stack.length) {
+        const q = stack.pop(), qx = q % w, qy = (q - qx) / w; n++;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = qx + dx, ny = qy + dy; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const np = ny * w + nx; if (!lab[np] && d[np * 4 + 3]) { lab[np] = id; stack.push(np); }
+        }
+      }
+      areas.push(n);
+    }
+    const main = Math.max(...areas);
+    for (let p = 0; p < w * h; p++) if (lab[p] && areas[lab[p]] < main * 0.06) d[p * 4 + 3] = 0;
+    return f;
+  }
+
   // The whole job. opts:
   //   frames   how many frames the sheet should have
   //   sizeBy   'median' (the usual height of the frames) or 'first' (frame 1 is a standing pose)
@@ -320,7 +341,7 @@
           out[di] = p.im.data[si]; out[di + 1] = p.im.data[si + 1]; out[di + 2] = p.im.data[si + 2]; out[di + 3] = 255;
         }
       }
-      return { width: cellW, height: FRAME_H, data: out };
+      return dropLoose({ width: cellW, height: FRAME_H, data: out });
     });
     return { frames, cellW, scale, found, note: notes.join('; ') };
   }
