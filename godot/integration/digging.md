@@ -41,9 +41,10 @@ level 2's ground (the plan's "level 2's depth grid seeds it"; nothing saved by l
   their hole.
 - **The shovel** (the rack against the shed's east wall, E: TAKE SHOVEL / PUT BACK SHOVEL):
   - **Hold E to dig** (pad A, the round touch button taps): a dig every 0.28 s, a capsule of earth about a body
-    wide. Top-down it digs in front of him from the floor there (never more than 40 below his feet): held, it
-    sinks a hole in front of him; stepping in and digging on, he goes down a ramp. **In first person he digs
-    where he looks**: down, ahead into a wall (tunnels), up.
+    wide. **Standing still, it digs straight down under him** (a shaft, 16 units a dig: he drops into it; in
+    first person when looking well down). **Walking, it digs ahead**: top-down from the floor in front (never
+    more than 40 below his feet), so he goes down a ramp; **in first person where he looks**: ahead into a wall
+    (tunnels), up, down in front.
   - **Feel:** the shovel swings down hard (top-down and the first-person picture), dirt chunks burst out
     (coloured by the layer: dirt, clay, stone), the screen shakes a little, a chunky sound.
   - **Q / pad X / the touch FILL button** puts earth back in front of him (never into anyone, never above the
@@ -111,7 +112,7 @@ None added. E / pad A / the HUD button is `interact` (hold it to keep digging); 
 ## Tests
 
 - `test/dig/dig_test.tscn` (inside the real game):
-  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 86 passed, 0 failed`.
+  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 87 passed, 0 failed`.
   The mask; the volume (carving, the hole's floor, the lawn beside it level, nothing under the garage, bedrock
   stays, the smooth mesh); collision (rays into the hole, on the lawn, the house floor, past the region);
   moving (falling down a shaft, its walls holding him, walking a tunnel along its floor, climbing out of a
@@ -164,7 +165,8 @@ None added. E / pad A / the HUD button is `interact` (hold it to keep digging); 
   everything else.
 - **Climbing up to 60 units** (chest high) so a hole never traps him; deeper shafts need a ramp or digging
   steps.
-- **Top-down digging goes down a ramp** (from the floor in front, at most 40 below his feet); level tunnels,
+- **Standing still digs straight down, walking digs ahead** (the owner couldn't dig straight down, 18 Oct): no
+  extra button, so it works the same on a phone. Top-down, walking and digging goes down a ramp; level tunnels,
   digging up and into walls are first person's (dig where you look).
 - **Finds hang on places** (a hash of the sample), so both screens agree with no messages, each spot gives at
   most once, and deeper is richer. They're picked up by walking over them, so there's a moment of "what's

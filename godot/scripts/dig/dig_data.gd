@@ -26,6 +26,11 @@ const DIG_MAX := 40.0
 const DIG_UP := 58.0
 const FP_REACH := 80.0
 const DIG_EVERY := 0.28
+## Standing still (in first person, looking down past LOOK_DOWN), it digs straight down under him instead: a
+## shaft SHAFT_R round, SHAFT_STEP deeper a dig (he drops into it).
+const SHAFT_R := 17.0
+const SHAFT_STEP := 16.0
+const LOOK_DOWN := 0.4
 ## Filling puts a ball of FILL_R back in front of him (never into anyone, never over the ground's top).
 const FILL_R := 16.0
 ## No digging this close to anything solid (the shed, garage, tank, trampoline, fences, crop beds...).

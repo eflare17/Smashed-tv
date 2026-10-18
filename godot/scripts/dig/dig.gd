@@ -271,7 +271,13 @@ func dig_shape(p: Node) -> Dictionary:
 	var hp := pos_of(p)
 	var feet := feet_of(p)
 	var vol := grid.vol
-	if p.has_method("is_first_person") and p.is_first_person():
+	var fp: bool = p.has_method("is_first_person") and p.is_first_person()
+	# standing still (and in first person, looking down): straight down under him, a shaft he sinks into
+	if not bool(p.get("moving")) and (not fp or float(p.get("look_y")) > D.LOOK_DOWN):
+		var c := Vector3(hp.x, hp.y, maxf(feet + D.SHAFT_R - D.SHAFT_STEP, D.ZMIN + 2.0 * D.CELL + 1.0))
+		if _diggable3(c) and vol.solid(hp.x, hp.y, feet - 6.0) and feet - 6.0 > D.ZMIN + 2.0 * D.CELL:
+			return {"a": c, "b": Vector3(hp.x, hp.y, feet + 30.0), "r": D.SHAFT_R, "at": hp}
+	if fp:
 		var a := float(p.get("look_ang"))
 		var ly := float(p.get("look_y"))
 		var dir := Vector3(cos(a) * cos(ly), sin(a) * cos(ly), -sin(ly))

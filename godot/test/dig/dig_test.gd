@@ -211,25 +211,37 @@ func _t_tools_and_digging() -> void:
 	await frames(3)
 	ok(player.focus_label == "DIG", "on the lawn E says DIG (%s)" % player.focus_label)
 	var d0: int = dig.grid.stats.digs
+	player.moving = true                     # (walking: it digs ahead; standing still it digs down)
 	player.use()
 	ok(dig.grid.stats.digs == d0 + 1, "E digs")
 	ok(dig.grid.vol.surface_height(1250 + D.REACH, 1350) < -5.0, "a hole in front of him")
 	Input.action_press("interact")
-	await frames(120)                        # (a second: 120 physics ticks)
+	await frames(120)                        # (a second: 120 physics ticks; standing: down)
 	Input.action_release("interact")
 	ok(dig.grid.stats.digs >= d0 + 3, "held, it digs on (%d digs)" % (dig.grid.stats.digs - d0))
 	ok(dig._swing >= 0.0 and dig.grid.soil_at(1250 + D.REACH, 1350) == D.DIRT, "the top's dug-over dirt")
 	# walking on and digging: down a ramp
 	for i in 6:
+		Input.action_press("move_right")
+		await frames(2)
 		dig.dig_now(player)
-		await walk("move_right", 8)
+		await frames(6)
+		Input.action_release("move_right")
+		await frames(4)
 	ok(dig.feet_of(player) < -25.0, "digging on and walking in, he goes down (%.0f)" % dig.feet_of(player))
+	# standing still: straight down, a shaft he sinks into
+	put(1520, 1180, Vector2(1, 0))
+	await frames(3)
+	for i in 6:
+		dig.dig_now(player)
+		await frames(30)
+	ok(dig.feet_of(player) < -60.0 and dig.feet_of(player) > -110.0 and player.html_pos().distance_to(Vector3(1520, 1180, player.html_pos().z)) < 4.0, "standing still he digs straight down, about 16 a dig (%.0f)" % dig.feet_of(player))
 	# first person: where he looks
 	put(1500, 1350, Vector2(1, 0))
 	main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)
 	await frames(3)
 	player.look_ang = 0.0
-	player.look_y = 0.9                      # looking down in front
+	player.look_y = 0.35                     # looking down in front (not past LOOK_DOWN: that's straight down)
 	var sh := dig.dig_shape(player)
 	ok(not sh.is_empty() and sh.a.x > 1500.0 and sh.a.z < 0.0, "first person: he digs where he looks (%s)" % str(sh.get("a", "")))
 	var n := dig.dig_now(player).size()
