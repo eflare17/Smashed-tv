@@ -62,6 +62,7 @@ func _ready() -> void:
 	FarmInstall.install(self)
 	DigInstall.install(self)            # digging and ploughing the yard (after the farm: its field plots)
 	FightInstall.install(self)
+	ZombieInstall.install(self)         # the skeleton zombie: night zombies in the yard (the arena's are in the waves)
 	LobbyLife.install(self).add_to_group("lobby_only")
 	PadSetup.install(self)              # the controller setup (hold Back / View, or F7)
 	Net.install(self)                   # playing together online (milestone 4): last, it hooks into all the above

@@ -25,10 +25,13 @@ static func wave_mix(s: FightSim, n: int) -> Array:
 	var swarmers := (n - sw + 1) * 2 if n >= sw else 0
 	var base := 3 if int(s.tv("baseEnemy", 3)) == 3 else 0
 	var batters := (n - batw) / 2 + 1 if (base != 3 and n >= batw) else 0
+	var zw := int(s.tv("zombieWave", 3))
+	var zombies := (n - zw) / 2 + 1 if n >= zw else 0
 	brutes = mini(brutes, total / 4)
 	batters = mini(batters, total / 4)
 	swarmers = mini(swarmers, total / 2)
-	var fillers := maxi(0, total - brutes - swarmers - batters)
+	zombies = mini(zombies, total / 4)
+	var fillers := maxi(0, total - brutes - swarmers - batters - zombies)
 	var q := []
 	for i in fillers:
 		q.append(base)
@@ -38,6 +41,8 @@ static func wave_mix(s: FightSim, n: int) -> Array:
 		q.append(2)
 	for i in batters:
 		q.append(3)
+	for i in zombies:
+		q.append(ZombieSim.T)
 	for i in range(q.size() - 1, 0, -1):
 		var j := int(floor(s.rnd() * (i + 1)))
 		var tmp = q[i]
@@ -55,6 +60,8 @@ static func incoming_text(s: FightSim, n: int) -> String:
 		list.append("batters")
 	if n >= int(s.tv("bruteWave", 5)):
 		list.append("brutes")
+	if n >= int(s.tv("zombieWave", 3)):
+		list.append("zombies")
 	if not list.is_empty():
 		txt += " — " + " and ".join(list)
 	return txt
@@ -77,6 +84,8 @@ static func step_director(s: FightSim, dt: float) -> void:
 
 ## spawnEnemy (4.4): a random side, away from the players if it can.
 static func spawn(s: FightSim, et: int) -> FT.Enemy:
+	if et == ZombieSim.T:
+		return ZombieSim.spawn_arena(s)          # (up through the floor, not in from a wall)
 	var m := FightSim.WALL + s.tv("enemyRadius", 15) * s.e_r[et] + 2.0
 	var x := 0.0
 	var y := 0.0
@@ -129,6 +138,9 @@ static func step_enemies(s: FightSim, dt: float) -> void:
 			if g.x > -1e8:
 				target = Vector2(g.x, g.y)
 				best = g.z
+		if e.t == ZombieSim.T:
+			ZombieSim.step(s, e, wspeed, dt)
+			continue
 		e.stun = maxf(0.0, e.stun - dt)
 		var espeed: float = wspeed * s.e_speed[e.t] * (0.0 if e.stun > 0.0 else 1.0)
 		if e.t == 3:
@@ -156,6 +168,11 @@ static func step_enemies(s: FightSim, dt: float) -> void:
 		e.y += e.vy * dt
 		e.odo += Vector2(e.vx, e.vy).length() * dt
 	# separation: the heavier shoves the lighter
+	var zpos := {}
+	if s.lobby():
+		for e: FT.Enemy in s.enemies:
+			if e.t == ZombieSim.T:
+				zpos[e] = Vector2(e.x, e.y)
 	var n := s.enemies.size()
 	for i in n:
 		var a: FT.Enemy = s.enemies[i]
@@ -180,6 +197,9 @@ static func step_enemies(s: FightSim, dt: float) -> void:
 				b.y += ny * push * ma / (ma + mb)
 	# the arena clamp (always the ARENA rectangle, the lobby too: a BUST brute stays in the lounge)
 	for e: FT.Enemy in s.enemies:
+		if zpos.has(e):
+			ZombieSim.keep_in_yard(s, e, zpos[e].x, zpos[e].y)      # (in the backyard at night)
+			continue
 		var r := s.e_rad(e.t)
 		e.x = clampf(e.x, FightSim.WALL + r, FightSim.AW - FightSim.WALL - r)
 		e.y = clampf(e.y, FightSim.WALL + r, FightSim.AH - FightSim.WALL - r)
