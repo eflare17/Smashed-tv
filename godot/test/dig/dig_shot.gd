@@ -6,6 +6,7 @@ extends Node
 ##   fp            first person   yaw=A   look that way (radians, HTML ground: 0 east, pi/2 south)   pitch=P
 ##   zoom=N        the top-down zoom level      tool=shovel|hoe   hand him a tool
 ##   nodig         draw the World's own flat yard floor instead of the dig's chunks (to compare frame times)
+##   dmg           the block he aims at half broken (the health bar)
 ##   perf          from 6 s in, print frame times (median, 95th) and draw calls over 5 s: "DIGPERF ..."
 
 const D := preload("res://scripts/dig/dig_data.gd")
@@ -53,6 +54,13 @@ func _setup() -> void:
 		dig.carve(Vector3(1380, 1330, -150), Vector3(1500, 1330, -150), 40.0)       # the cave
 		dig.carve(Vector3(1440, 1300, -120), Vector3(1440, 1380, -170), 34.0)
 		dig.carve(Vector3(1560, 1250, -180), Vector3(1560, 1250, 20), 18.0)          # a shaft
+		# a little wall of placed blocks (dirt and stone, two high) on the lawn, and a backpack
+		for bx in 3:
+			for bz in 2:
+				dig.grid.vol.fill_block(DigVolume.block_of(Vector3(1300 + bx * D.BLOCK, 1120, 16 + bz * D.BLOCK)), D.STONE_M if bz == 0 else D.DIRT_M)
+		dig.inv.res = [24, 9, 13, 4, 3]
+		dig.inv.pickaxe = true
+		dig.inv.tiers.pickaxe = 1
 		dig.ground.flush()
 		# a field: rows ploughed across, a crop on some spots
 		for r in 7:
@@ -132,7 +140,11 @@ func _setup() -> void:
 	if opts.has("zoom"):
 		main.rig.set_zoom(int(opts.zoom))
 	main.rig.snap()
-
+	if opts.has("dmg"):
+		await get_tree().create_timer(1.0).timeout
+		var tb = dig.target.get("b")
+		if tb != null:
+			dig._damage[tb] = 1.6
 func _process(delta: float) -> void:
 	if not opts.has("perf"):
 		return

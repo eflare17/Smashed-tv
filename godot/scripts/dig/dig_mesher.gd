@@ -4,7 +4,7 @@ extends RefCounted
 ## into 6 tetrahedra along its long diagonal; no case tables needed), vertices placed where the density crosses
 ## 0, normals from the density's gradient (smooth shading). Triangles at the ground's top (level, facing up) wear
 ## the yard picture, or the cell's soil (furrows, dug dirt) if it was ploughed or dug over; the rest is earth,
-## tinted by depth: dirt, then clay, then stone, darker the deeper.
+## tinted by its block's material (dirt, clay, stone, coal, iron: DigVolume.material), darker the deeper.
 ##
 ## Output arrays (metres, Godot axes) for DigGround's terrain shader: UV the yard picture, UV2 (soil tile,
 ## turned), COLOR (shade; alpha 1 = the yard picture, 0 = the soil atlas).
@@ -18,10 +18,6 @@ const CORNERS := [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(1, 1, 0), Vecto
 	Vector3i(0, 0, 1), Vector3i(1, 0, 1), Vector3i(1, 1, 1), Vector3i(0, 1, 1)]
 const TETRAS := [[0, 5, 1, 6], [0, 1, 2, 6], [0, 2, 3, 6], [0, 3, 7, 6], [0, 7, 4, 6], [0, 4, 5, 6]]
 
-## Earth colours by depth (z, units, down): dirt, clay, stone.
-const DIRT_TINT := Color(1.0, 1.0, 1.0)
-const CLAY_TINT := Color(1.08, 0.78, 0.6)
-const STONE_TINT := Color(0.72, 0.72, 0.78)
 
 var vol: DigVolume
 var grid: DigGrid
@@ -225,7 +221,7 @@ func _cube(a: int, b: int, c: int, base: int, vals: PackedFloat32Array, i0: int,
 			var n2 := _enrm[i_c]
 			# the ground's top (level, facing up) wears the yard picture or the soil; the rest is earth
 			var key := -1
-			if p0.z > -3.0 and p1.z > -3.0 and p2.z > -3.0 and n0.z + n1.z + n2.z > 2.25:
+			if p0.z > -3.0 and p1.z > -3.0 and p2.z > -3.0 and p0.z < 3.0 and p1.z < 3.0 and p2.z < 3.0 and n0.z + n1.z + n2.z > 2.25:
 				if top_key == -2:
 					top_key = _top_key(i0 + a, j0 + b)
 				key = top_key
@@ -248,12 +244,10 @@ func _vert(p: Vector3, n: Vector3, key: int) -> void:
 		cols.append(Color(0.92, 0.92, 0.92, 0.0))
 		return
 	uv2s.append(Vector2.ZERO)
+	# the earth's colour is its block's material (a bit inside the surface): dirt, clay, stone, coal, iron
+	var m := vol.material(DigVolume.block_of(p - n * 5.0))
+	var tint: Color = D.MATS[m].tint
 	var depth := clampf(-p.z, 0.0, 320.0)
-	var tint := DIRT_TINT
-	if depth > 200.0:
-		tint = CLAY_TINT.lerp(STONE_TINT, clampf((depth - 200.0) / 40.0, 0.0, 1.0))
-	elif depth > 80.0:
-		tint = DIRT_TINT.lerp(CLAY_TINT, clampf((depth - 80.0) / 40.0, 0.0, 1.0))
 	# (darker the deeper, quickly at first: from above a hole's depth reads by its shade)
 	var k := 1.0 - 0.45 * sqrt(depth / 320.0)
 	cols.append(Color(tint.r * k, tint.g * k, tint.b * k, 0.0))

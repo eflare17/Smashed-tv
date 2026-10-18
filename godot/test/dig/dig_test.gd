@@ -206,53 +206,104 @@ func _t_tools_and_digging() -> void:
 	ok(dig.tool_of(player) == "shovel", "he has the shovel")
 	await frames(2)
 	ok(player.get_node_or_null("DigTool") != null, "the shovel's in his hand")
-	# E digs; held, it digs on
+	# standing still: the block under his feet; hits until it breaks
+	dig.inv.res = [0, 0, 0, 0, 0]
 	put(1250, 1350, Vector2(1, 0))
 	await frames(3)
-	ok(player.focus_label == "DIG", "on the lawn E says DIG (%s)" % player.focus_label)
+	ok(player.focus_label == "DIG DIRT", "on the lawn E says DIG DIRT (%s)" % player.focus_label)
+	var tg := dig.block_target(player)
+	ok(tg.b == DigVolume.block_of(Vector3(1250, 1350, -10)), "standing still he aims at the block under him")
+	var b: Vector3i = tg.b
 	var d0: int = dig.grid.stats.digs
-	player.moving = true                     # (walking: it digs ahead; standing still it digs down)
 	player.use()
-	ok(dig.grid.stats.digs == d0 + 1, "E digs")
-	ok(dig.grid.vol.surface_height(1250 + D.REACH, 1350) < -5.0, "a hole in front of him")
+	ok(dig.damage_of(b) > 0.0 and dig.damage_of(b) < 1.0 and dig.grid.stats.digs == d0, "a hit cracks it (%.2f) but it holds" % dig.damage_of(b))
+	player.use()
+	ok(dig.grid.stats.digs == d0 + 1, "dirt breaks in two shovel hits")
+	ok(not dig.grid.vol.block_solid(b), "the block's gone")
+	await frames(80)
+	ok(int(dig.inv.res[D.DIRT_M]) >= 1, "it dropped dirt into his backpack (%d)" % dig.inv.res[D.DIRT_M])
+	ok(dig.feet_of(player) < -20.0, "he drops into the hole (%.0f)" % dig.feet_of(player))
+	# held, it keeps hitting: down a shaft
+	var f0 := dig.feet_of(player)
 	Input.action_press("interact")
-	await frames(120)                        # (a second: 120 physics ticks; standing: down)
+	await frames(240)                        # (two seconds: 120 physics ticks a second)
 	Input.action_release("interact")
-	ok(dig.grid.stats.digs >= d0 + 3, "held, it digs on (%d digs)" % (dig.grid.stats.digs - d0))
-	ok(dig._swing >= 0.0 and dig.grid.soil_at(1250 + D.REACH, 1350) == D.DIRT, "the top's dug-over dirt")
-	# walking on and digging: down a ramp
-	for i in 6:
-		Input.action_press("move_right")
-		await frames(2)
-		dig.dig_now(player)
-		await frames(6)
-		Input.action_release("move_right")
-		await frames(4)
-	ok(dig.feet_of(player) < -25.0, "digging on and walking in, he goes down (%.0f)" % dig.feet_of(player))
-	# standing still: straight down, a shaft he sinks into
-	put(1520, 1180, Vector2(1, 0))
-	await frames(3)
-	for i in 6:
-		dig.dig_now(player)
-		await frames(30)
-	ok(dig.feet_of(player) < -60.0 and dig.feet_of(player) > -110.0 and player.html_pos().distance_to(Vector3(1520, 1180, player.html_pos().z)) < 4.0, "standing still he digs straight down, about 16 a dig (%.0f)" % dig.feet_of(player))
-	# first person: where he looks
+	ok(dig.feet_of(player) < f0 - 50.0, "held, he digs on down (%.0f)" % dig.feet_of(player))
+	ok(absf(player.html_pos().x - 1250) < 6.0, "straight down")
+	# the materials: clay, then stone; harder; the pickaxe is better on stone
+	var vol := dig.grid.vol
+	ok(DigVolume.natural_material(Vector3i(0, 0, -1)) == D.DIRT_M, "near the top: dirt")
+	var clay := 0
+	var stone := 0
+	var ore := 0
+	for i in 60:
+		var m1 := DigVolume.natural_material(Vector3i(i, 7, -5))
+		var m2 := DigVolume.natural_material(Vector3i(i, 7, -9))
+		clay += 1 if m1 == D.CLAY_M else 0
+		stone += 1 if m2 == D.STONE_M else 0
+		ore += 1 if m2 == D.IRON_M or m2 == D.COAL_M else 0
+	ok(clay > 45 and stone > 40 and ore > 0, "deeper: clay, then stone with coal and iron in it (%d, %d, %d)" % [clay, stone, ore])
+	ok(dig.tool_damage(player, D.STONE_M) < 0.5, "the shovel is poor on stone")
+	dig.set_tool(player, "pickaxe")
+	ok(dig.tool_damage(player, D.STONE_M) > 1.5, "the pickaxe is good on it")
+	dig.set_tool(player, "shovel")
+	# walking: the block ahead
 	put(1500, 1350, Vector2(1, 0))
+	player.moving = true
+	tg = dig.block_target(player)
+	ok(tg.b != null and DigVolume.block_centre(tg.b).x > 1500.0, "walking he aims ahead")
+	# first person: where he looks
 	main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)
 	await frames(3)
 	player.look_ang = 0.0
-	player.look_y = 0.35                     # looking down in front (not past LOOK_DOWN: that's straight down)
-	var sh := dig.dig_shape(player)
-	ok(not sh.is_empty() and sh.a.x > 1500.0 and sh.a.z < 0.0, "first person: he digs where he looks (%s)" % str(sh.get("a", "")))
-	var n := dig.dig_now(player).size()
-	ok(n > 0, "and it digs there (%d)" % n)
+	player.look_y = 0.35
+	tg = dig.block_target(player)
+	ok(tg.b != null and DigVolume.block_centre(tg.b).x > 1510.0 and DigVolume.block_centre(tg.b).z < 0.0, "first person: the block he looks at (%s)" % str(tg.get("b")))
 	player.look_y = 0.0
 	main.rig.set_mode(CameraRig.Mode.TOP_DOWN)
 	await frames(2)
+	# placing: Q puts a block from the backpack where he aims (not into anyone)
+	dig.inv.res = [3, 0, 0, 0, 0]
+	put(1240, 1150, Vector2(1, 0))
+	await frames(3)
+	tg = dig.block_target(player)
+	ok(tg.get("place") != null, "there's somewhere to place a block (%s)" % str(tg.get("place")))
+	var pb = tg.place
+	ok(dig.place_now(player), "Q places it")
+	ok(vol.block_solid(pb) and int(dig.inv.res[D.DIRT_M]) == 2, "a dirt block stands there, one used")
+	ok(vol.material(pb) == D.DIRT_M, "made of dirt")
+	ok(not dig._block_has_player(pb), "not inside him")
+	await walk("move_right", 40)
+	ok(player.html_pos().x < DigVolume.block_centre(pb).x - 10.0 or dig.feet_of(player) > 20.0, "it's solid: a wall, or he climbs onto it (x %.0f, feet %.0f)" % [player.html_pos().x, dig.feet_of(player)])
+	dig.inv.res = [0, 0, 0, 0, 0]
+	ok(not dig.can_place(player), "nothing to place with an empty backpack")
+	# the pickaxe: bought at the rack; the workbench upgrades
+	var w := get_node_or_null("/root/Wallet")
+	dig.inv.pickaxe = false
+	var pp := Dig.rack_pos("pickaxe")
+	put(pp.x + 22, pp.y, Vector2(-1, 0))
+	await frames(3)
+	ok(player.focus_label.begins_with("BUY PICKAXE"), "the rack sells a pickaxe (%s)" % player.focus_label)
+	var cash0: int = w.get_cash()
+	player.use()
+	ok(dig.inv.pickaxe and w.get_cash() == cash0 - D.PICKAXE_PRICE, "bought")
+	await frames(2)
+	player.use()
+	ok(dig.tool_of(player) == "pickaxe", "and taken")
+	dig.inv.res = [0, 0, 0, 0, 4]
+	var dmg0 := dig.tool_damage(player, D.STONE_M)
+	put(D.BENCH.x + 22, D.BENCH.y, Vector2(-1, 0))
+	await frames(3)
+	ok(player.focus_label.begins_with("UPGRADE PICKAXE"), "the workbench offers an upgrade (%s)" % player.focus_label)
+	player.use()
+	ok(int(dig.inv.tiers.pickaxe) == 1 and dig.tool_damage(player, D.STONE_M) > dmg0 * 1.5 and int(dig.inv.res[D.IRON_M]) == 0, "an iron pickaxe: harder hits, the iron used")
+	player.use()
+	ok(int(dig.inv.tiers.pickaxe) == 1, "steel needs more than he has")
+	dig.set_tool(player, "shovel")
 	# not by the tank
 	put(1380 - 140 - D.REACH, 1680, Vector2(1, 0))
 	await frames(3)
-	ok(player.focus_label != "DIG", "no digging by the tank (%s)" % player.focus_label)
+	ok(not player.focus_label.begins_with("DIG"), "no digging by the tank (%s)" % player.focus_label)
 	# the cutaway: top-down and underground, the earth over him isn't drawn
 	put(1350, 1250, Vector2(1, 0))
 	await frames(40)
@@ -316,28 +367,15 @@ func _t_finds() -> void:
 # ---------------------------------------------------------------- filling
 
 func _t_fill() -> void:
+	# a hole filled back in with blocks: level again, dug-over dirt
 	var v := dig.grid.vol
-	dig.carve(Vector3(1550, 1200, -30), Vector3(1550, 1200, 10), 18.0)
-	ok(v.surface_height(1550, 1200) < -30.0, "a hole to fill")
-	put(1550 - D.REACH - 4, 1200, Vector2(1, 0))
-	await frames(3)
-	var n := 0
-	while v.surface_height(1550, 1200) < -1.0 and n < 30:
-		var ev := InputEventAction.new()
-		ev.action = "lobby_alt"
-		ev.pressed = true
-		Input.parse_input_event(ev)
-		await frames(1)
-		var ev2 := InputEventAction.new()
-		ev2.action = "lobby_alt"
-		ev2.pressed = false
-		Input.parse_input_event(ev2)
-		await frames(1)
-		n += 1
-	ok(v.surface_height(1550, 1200) > -1.5, "Q fills it back in (%d presses, %.1f)" % [n, v.surface_height(1550, 1200)])
-	ok(v.surface_height(1550, 1200) < 1.0, "and never over the ground's top")
-	ok(dig.grid.soil_at(1550, 1200) == D.DIRT, "dug-over dirt where it was")
-	ok(dig.fill_centre(player) == null, "nothing to fill on level ground")
+	var b := DigVolume.block_of(Vector3(1600, 1220, -16))
+	var c := DigVolume.block_centre(b)
+	dig.break_block(b, null)
+	ok(v.surface_height(c.x, c.y) < -20.0, "a hole to fill")
+	ok(v.fill_block(b, D.DIRT_M), "a block back in it")
+	ok(absf(v.surface_height(c.x, c.y)) < 3.0, "level again (%.1f)" % v.surface_height(c.x, c.y))
+	ok(dig.grid.soil_at(c.x, c.y) == D.DIRT, "dug-over dirt where it was")
 
 # ---------------------------------------------------------------- the hoe, planting, growing back
 
@@ -469,6 +507,17 @@ func _t_net() -> void:
 			same = false
 	ok(same and not host.vol.chunks.is_empty(), "an op digs the same on both games (and twice is once)")
 	ok(host.diggable_cell(160, 170) and host.soil[170 * D.NX + 160] == D.ROWS_Y, "ploughing goes over too")
+	# blocks broken and placed: the same on both
+	dig.grid = host
+	dig.apply_op(["break", 39, 30, -1])
+	dig.apply_op(["place", 39, 31, 0, D.STONE_M])
+	dig.grid = guest
+	dig.apply_op(["break", 39, 30, -1])
+	dig.apply_op(["place", 39, 31, 0, D.STONE_M])
+	dig.grid = saved
+	ok(not host.vol.block_solid(Vector3i(39, 30, -1)) and host.vol.block_solid(Vector3i(39, 31, 0)) and host.vol.material(Vector3i(39, 31, 0)) == D.STONE_M,
+		"a broken block and a placed stone one go over")
+	ok(guest.vol.placed == host.vol.placed, "both games know what the placed block is")
 	ok(host.stats.coins == 0 and host.stats.spuds == 0, "without finds")
 	var p := host.pack()
 	var bytes := var_to_bytes({"t": "dig", "k": "snap", "p": p}).compress(FileAccess.COMPRESSION_DEFLATE)

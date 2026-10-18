@@ -74,6 +74,13 @@ var _quiet := 0.0
 var _remote_feet := 0.0
 var _feet_t := 0.0
 var _feet_sent := 0.0
+## Blocks (7 Days to Die style): the local player's backpack and tools, damage done to blocks, what he aims at.
+var inv := {"res": [0, 0, 0, 0, 0], "tiers": {"shovel": 0, "pickaxe": 0}, "pickaxe": false}
+var _damage: Dictionary = {}          # Vector3i -> damage done (health lost)
+var target: Dictionary = {}           # {b: Vector3i (to hit), place: Vector3i or null, mat: int}
+## A finger held on the HUD's round button (DigUI sets it): keeps digging, like holding E.
+var touch_hold := false
+var _outline: MeshInstance3D
 
 func _enter_tree() -> void:
 	instance = self
@@ -111,7 +118,7 @@ func setup(m: Node) -> void:
 	_spot.dig = self
 	_spot.name = "DigSpot"
 	add_child(_spot)
-	for t in ["shovel", "hoe"]:
+	for t in ["shovel", "pickaxe", "hoe"]:
 		var r := _Rack.new()
 		r.dig = self
 		r.tool = t
@@ -129,9 +136,25 @@ func setup(m: Node) -> void:
 		_rack_meshes[t] = mesh
 	for i in 4:
 		_fx.append(_make_fx())
+	# the workbench (tool upgrades), a low table beside the rack
+	var bench := _Bench.new()
+	bench.dig = self
+	bench.name = "Workbench"
+	bench.position = GameData.world_to_3d(D.BENCH.x, D.BENCH.y, 0.0)
+	add_child(bench)
+	_box(bench, Vector3(0, 12, 0), Vector3(14, 3, 30), Color8(150, 104, 58))
+	for o in [Vector3(-5, 5, -12), Vector3(5, 5, -12), Vector3(-5, 5, 12), Vector3(5, 5, 12)]:
+		_box(bench, o, Vector3(3, 10, 3), Color8(110, 76, 42))
+	_box(bench, Vector3(0, 15, -6), Vector3(6, 3, 8), Color8(84, 88, 96))     # a vice
+	_outline = _make_outline()
+	world.add_child.call_deferred(_outline)
+	if persist:
+		_load_inv()
+	for k in _rack_meshes:
+		_rack_meshes[k].visible = k != "pickaxe" or inv.pickaxe
 
 static func rack_pos(t: String) -> Vector2:
-	return Vector2(D.RACK.x, D.RACK.y + (-24.0 if t == "shovel" else 24.0))
+	return Vector2(D.RACK.x, D.RACK.y + {"shovel": -32.0, "pickaxe": 0.0, "hoe": 32.0}.get(t, 0.0))
 
 func _on_grid_changed() -> void:
 	_dirty = true
@@ -152,7 +175,7 @@ func set_tool(p: Node, t: String) -> void:
 	tool_changed.emit(p, t)
 	if p == _local():
 		for k in _rack_meshes:
-			_rack_meshes[k].visible = k != t
+			_rack_meshes[k].visible = k != t and (k != "pickaxe" or inv.pickaxe)
 		_net_send({"k": "tool", "tool": t})
 
 func _show_tool(p: Node, t: String) -> void:
@@ -181,6 +204,11 @@ static func tool_mesh(t: String) -> Node3D:
 		_box(root, Vector3(0, 13 + handle_h + 2, 0), Vector3(10, 3, 3), wood)         # the D grip
 		_box(root, Vector3(0, 7, 0), Vector3(12, 14, 2), steel)                        # the blade
 		_box(root, Vector3(0, 13.5, 0), Vector3(5, 3, 3), dark)
+	elif t == "pickaxe":
+		_box(root, Vector3(0, handle_h / 2.0, 0), Vector3(3, handle_h, 3), wood)
+		_box(root, Vector3(0, handle_h - 2, 0), Vector3(3, 4, 26), steel)               # the head
+		_box(root, Vector3(0, handle_h - 3, 13), Vector3(2, 3, 4), dark)
+		_box(root, Vector3(0, handle_h - 3, -13), Vector3(2, 3, 4), dark)
 	else:
 		_box(root, Vector3(0, 4 + handle_h / 2.0, 0), Vector3(3, handle_h + 8, 3), wood)
 		_box(root, Vector3(0, 3, 5), Vector3(14, 6, 2), steel)                         # the blade, square to the handle
@@ -265,48 +293,6 @@ func feet_of(p: Node) -> float:
 func target_of(p: Node) -> Vector2:
 	return pos_of(p) + facing_of(p) * D.REACH
 
-## What the shovel would dig now: {a, b (HTML units, a capsule's ends), r, at (Vector2)}, or {} if nothing there
-## can be dug (no earth within reach, or ground that can't be dug).
-func dig_shape(p: Node) -> Dictionary:
-	var hp := pos_of(p)
-	var feet := feet_of(p)
-	var vol := grid.vol
-	var fp: bool = p.has_method("is_first_person") and p.is_first_person()
-	# standing still (and in first person, looking down): straight down under him, a shaft he sinks into
-	if not bool(p.get("moving")) and (not fp or float(p.get("look_y")) > D.LOOK_DOWN):
-		var c := Vector3(hp.x, hp.y, maxf(feet + D.SHAFT_R - D.SHAFT_STEP, D.ZMIN + 2.0 * D.CELL + 1.0))
-		if _diggable3(c) and vol.solid(hp.x, hp.y, feet - 6.0) and feet - 6.0 > D.ZMIN + 2.0 * D.CELL:
-			return {"a": c, "b": Vector3(hp.x, hp.y, feet + 30.0), "r": D.SHAFT_R, "at": hp}
-	if fp:
-		var a := float(p.get("look_ang"))
-		var ly := float(p.get("look_y"))
-		var dir := Vector3(cos(a) * cos(ly), sin(a) * cos(ly), -sin(ly))
-		var eye := Vector3(hp.x, hp.y, feet + 62.0)
-		var hit = vol.raycast(eye, dir, D.FP_REACH)
-		if hit == null:
-			return {}
-		var c: Vector3 = hit + dir * 6.0
-		if not _diggable3(c):
-			return {}
-		return {"a": c, "b": c, "r": D.DIG_R, "at": Vector2(c.x, c.y)}
-	var f := facing_of(p)
-	var t := hp + f * D.REACH
-	var ft := vol.floor_below(t.x, t.y, feet + D.STEP)
-	var bottom := maxf(maxf(ft - D.DIG_DOWN, feet - D.DIG_MAX), D.ZMIN + 2.0 * D.CELL + 1.0)
-	var a3 := Vector3(t.x, t.y, bottom)
-	var b3 := Vector3(t.x, t.y, feet + D.DIG_UP)
-	if not _diggable3(a3):
-		return {}
-	# (something to dig: earth in the capsule)
-	var any := false
-	for z in [bottom - D.DIG_R * 0.6, feet + 10.0, feet + 34.0]:
-		if vol.solid(t.x, t.y, z):
-			any = true
-			break
-	if not any:
-		return {}
-	return {"a": a3, "b": b3, "r": D.DIG_R, "at": t}
-
 ## Can the earth at c be dug (its column is diggable and it's above the bedrock)?
 func _diggable3(c: Vector3) -> bool:
 	return grid.diggable_at(c.x, c.y) and c.z > D.ZMIN + 2.0 * D.CELL and c.z < D.ZMAX
@@ -316,11 +302,14 @@ func label_for(p: Node) -> String:
 	if p != _local() or p.get("on_tramp") or p.get("frozen"):
 		return ""
 	var t := tool_of(p)
-	if t == "shovel":
-		var sh := dig_shape(p)
-		if sh.is_empty() or _field_near(sh.at, D.SPOT * 0.75) >= 0:
+	if t == "shovel" or t == "pickaxe":
+		var tg := block_target(p)
+		if tg.is_empty() or tg.b == null:
 			return ""
-		return "DIG"
+		var c := DigVolume.block_centre(tg.b)
+		if _field_near(Vector2(c.x, c.y), D.SPOT * 0.75) >= 0:
+			return ""
+		return "DIG " + String(D.MATS[tg.mat].name)
 	# planting on ploughed or dug-over soil (any tool but the shovel): the spot he stands on or faces
 	return _plant_label(p)
 
@@ -352,19 +341,241 @@ func _field_near(at: Vector2, r: float) -> int:
 ## E (the DigSpot's act).
 func act(p: Node) -> void:
 	var l := label_for(p)
-	if l == "DIG":
-		dig_now(p)
+	if l.begins_with("DIG"):
+		hit_now(p)
 	elif l.begins_with("PLANT"):
 		plant_at(p)
 
-## One dig for player p, where dig_shape says: the earth goes, dirt flies, finds pop out. Returns the samples dug
-## out (empty if nothing was).
-func dig_now(p: Node) -> Array:
-	var sh := dig_shape(p)
-	if sh.is_empty():
-		return []
-	_dig_cd = D.DIG_EVERY
-	return carve(sh.a, sh.b, sh.r, p)
+## ---------------------------------------------------------------- blocks (7 Days to Die style)
+
+## What p aims at: {b: the block to hit (or null), place: the empty block to put one in (or null), mat}. {} if
+## nothing. Standing still (in first person, looking well down) it's the block under his feet; walking, the
+## block ahead at his body's height, or the ground ahead if that's open; in first person, where he looks.
+func block_target(p: Node) -> Dictionary:
+	var hp := pos_of(p)
+	var feet := feet_of(p)
+	var vol := grid.vol
+	var fp: bool = p.has_method("is_first_person") and p.is_first_person()
+	var hit_b = null
+	var place_b = null
+	if fp and float(p.get("look_y")) <= D.LOOK_DOWN or (fp and bool(p.get("moving"))):
+		var a := float(p.get("look_ang"))
+		var ly := float(p.get("look_y"))
+		var dir := Vector3(cos(a) * cos(ly), sin(a) * cos(ly), -sin(ly))
+		var eye := Vector3(hp.x, hp.y, feet + 62.0)
+		var hit = vol.raycast(eye, dir, D.FP_REACH)
+		if hit != null:
+			hit_b = DigVolume.block_of(hit + dir * 3.0)
+			place_b = DigVolume.block_of(hit - dir * 4.0)
+	elif not bool(p.get("moving")):
+		# (a little under his feet: standing on a broken block's rounded bottom, it's the next one down)
+		hit_b = DigVolume.block_of(Vector3(hp.x, hp.y, feet - 10.0))
+		var f := facing_of(p)
+		place_b = DigVolume.block_of(Vector3(hp.x + f.x * (D.BLOCK + 14.0), hp.y + f.y * (D.BLOCK + 14.0), feet + 8.0))
+	else:
+		var f2 := facing_of(p)
+		var t := hp + f2 * (D.BODY_R + 22.0)
+		var body := DigVolume.block_of(Vector3(t.x, t.y, feet + 20.0))
+		hit_b = body if vol.block_solid(body) else DigVolume.block_of(Vector3(t.x, t.y, feet - 6.0))
+		var t2 := hp + f2 * (D.BLOCK + 14.0)
+		place_b = DigVolume.block_of(Vector3(t2.x, t2.y, vol.floor_below(t2.x, t2.y, feet + D.STEP) + 8.0))
+	if hit_b != null and not (_block_ok(hit_b) and vol.block_solid(hit_b)):
+		hit_b = null
+	if place_b != null and not (_block_ok(place_b) and not vol.block_solid(place_b) and not _block_has_player(place_b)):
+		place_b = null
+	if hit_b == null and place_b == null:
+		return {}
+	return {"b": hit_b, "place": place_b, "mat": vol.material(hit_b) if hit_b != null else 0}
+
+## Can block b be dug or built (its column is diggable, it's above the bedrock)?
+func _block_ok(b: Vector3i) -> bool:
+	var c := DigVolume.block_centre(b)
+	return grid.diggable_at(c.x, c.y) and c.z - D.BLOCK / 2.0 >= D.ZMIN + 2.0 * D.CELL and c.z + D.BLOCK / 2.0 <= D.ZMAX - D.CELL
+
+func _block_has_player(b: Vector3i) -> bool:
+	var c := DigVolume.block_centre(b)
+	for q in _players():
+		var qp := pos_of(q)
+		var qf := feet_of(q)
+		if absf(qp.x - c.x) < D.BLOCK / 2.0 + 12.0 and absf(qp.y - c.y) < D.BLOCK / 2.0 + 12.0 \
+				and c.z + D.BLOCK / 2.0 > qf and c.z - D.BLOCK / 2.0 < qf + 66.0:
+			return true
+	return false
+
+## How much damage the tool p holds does to material m a hit.
+func tool_damage(p: Node, m: int) -> float:
+	var t := tool_of(p)
+	if not D.TOOL_DAMAGE.has(t):
+		return 0.0
+	var tier := int(inv.tiers.get(t, 0)) if p == _local() else 0
+	return float(D.TOOL_DAMAGE[t][m]) * float(D.TIER_MULT[tier])
+
+## One hit on what p aims at: damage; broken when its health is gone. Returns true if something was hit.
+func hit_now(p: Node) -> bool:
+	var tg := block_target(p)
+	if tg.is_empty() or tg.b == null:
+		return false
+	_dig_cd = D.HIT_EVERY
+	var b: Vector3i = tg.b
+	var m: int = tg.mat
+	var dmg := tool_damage(p, m)
+	if dmg <= 0.0:
+		return false
+	var done := float(_damage.get(b, 0.0)) + dmg
+	_swing = 1.0
+	_shake = maxf(_shake, 0.35)
+	sound.emit("dig")
+	_burst(DigVolume.block_centre(b), D.MATS[m].tint * Color8(112, 80, 50))
+	if done >= float(D.MATS[m].hp) - 0.001:
+		_damage.erase(b)
+		break_block(b, p)
+	else:
+		_damage[b] = done
+	return true
+
+## How broken block b is (0..1), for the health bar.
+func damage_of(b) -> float:
+	if b == null:
+		return 0.0
+	var m := grid.vol.material(b)
+	return clampf(float(_damage.get(b, 0.0)) / float(D.MATS[m].hp), 0.0, 1.0)
+
+## Block b breaks: out it comes (a rounded cube), its material drops, buried finds pop out. p: who broke it
+## (gets the drops; null: no drops, e.g. replaying the other game's).
+func break_block(b: Vector3i, p: Node = null) -> Array:
+	var m := grid.vol.material(b)
+	var c := DigVolume.block_centre(b)
+	var out := grid.vol.carve_block(b)
+	if c.z + D.BLOCK / 2.0 > -4.0 and c.z - D.BLOCK / 2.0 < 4.0:
+		grid.mark_dug(c.x, c.y, D.BLOCK / 2.0 - 2.0)
+	grid.stats.digs += 1
+	if p != null:
+		_shake = maxf(_shake, 0.8)
+		_burst(c, D.MATS[m].tint * Color8(112, 80, 50))
+		_net_op(["break", b.x, b.y, b.z])
+		var dr: Array = D.MATS[m].drop
+		var n: int = int(dr[0]) + grid.rng.randi() % (int(dr[1]) - int(dr[0]) + 1)
+		_spawn_pickup({"kind": "res%d" % m, "n": n}, c, true)
+		for s in out:
+			var f := find_at(s.x, s.y, s.z)
+			if not f.is_empty():
+				_count_find(f)
+				_spawn_pickup(f, Vector3(D.X0 + s.x * D.CELL, D.Y0 + s.y * D.CELL, D.ZMIN + s.z * D.CELL))
+	return out
+
+## Q / pad X / the touch PLACE button: a block from his backpack where he aims (the material he has most of).
+func place_now(p: Node) -> bool:
+	var tg := block_target(p)
+	if tg.is_empty() or tg.place == null:
+		return false
+	var m := place_material()
+	if m < 0:
+		floater.emit("NOTHING TO PLACE: DIG FIRST", Color("#ff9a7a"), pos_of(p))
+		return false
+	if not grid.vol.fill_block(tg.place, m):
+		return false
+	inv.res[m] -= 1
+	_inv_changed()
+	_swing = 1.0
+	_shake = maxf(_shake, 0.3)
+	sound.emit("fill")
+	var c := DigVolume.block_centre(tg.place)
+	_burst(c, D.MATS[m].tint * Color8(112, 80, 50))
+	_net_op(["place", tg.place.x, tg.place.y, tg.place.z, m])
+	return true
+
+## What Q puts down: the material he has most of (-1: none).
+func place_material() -> int:
+	var best := -1
+	var most := 0
+	for m in inv.res.size():
+		if int(inv.res[m]) > most:
+			most = int(inv.res[m])
+			best = m
+	return best
+
+func can_place(p: Node) -> bool:
+	if tool_of(p) != "shovel" and tool_of(p) != "pickaxe":
+		return false
+	var tg := block_target(p)
+	return not tg.is_empty() and tg.place != null and place_material() >= 0
+
+func _inv_changed() -> void:
+	_dirty = true
+	changed.emit()
+
+## The tool p holds, upgraded to its next tier if he can pay (cash and ore): a word saying what happened.
+func upgrade(p: Node) -> String:
+	var t := tool_of(p)
+	if not inv.tiers.has(t):
+		return "HOLD A SHOVEL OR A PICKAXE"
+	var tier := int(inv.tiers[t])
+	if tier >= D.UPGRADES.size():
+		return "THE BEST THERE IS"
+	var cost: Array = D.UPGRADES[tier]
+	var w := get_node_or_null("/root/Wallet")
+	var cash: int = w.get_cash() if w else 0
+	if cash < int(cost[0]) or int(inv.res[D.IRON_M]) < int(cost[1]) or int(inv.res[D.COAL_M]) < int(cost[2]):
+		return "NEED " + upgrade_cost_text(t)
+	if w:
+		w.spend_cash(int(cost[0]), "tool")
+	inv.res[D.IRON_M] -= int(cost[1])
+	inv.res[D.COAL_M] -= int(cost[2])
+	inv.tiers[t] = tier + 1
+	_inv_changed()
+	sound.emit("find")
+	return "%s%s!" % [D.TIER_NAMES[tier + 1], t.to_upper()]
+
+func upgrade_cost_text(t: String) -> String:
+	var tier := int(inv.tiers.get(t, 0))
+	if tier >= D.UPGRADES.size():
+		return ""
+	var cost: Array = D.UPGRADES[tier]
+	var txt := "$%d + %d IRON" % [cost[0], cost[1]]
+	if int(cost[2]) > 0:
+		txt += " + %d COAL" % cost[2]
+	return txt
+
+## The outline round the block he aims at (12 edges, drawn over everything).
+func _make_outline() -> MeshInstance3D:
+	var im := ImmediateMesh.new()
+	var mi := MeshInstance3D.new()
+	mi.name = "DigOutline"
+	mi.mesh = im
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.no_depth_test = true
+	m.albedo_color = Color(1, 1, 1, 0.7)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.render_priority = 4
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var h := D.BLOCK / 2.0 * U
+	var v := []
+	for x in [-h, h]:
+		for y in [-h, h]:
+			for z in [-h, h]:
+				v.append(Vector3(x, y, z))
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	for e in [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]:
+		im.surface_add_vertex(v[e[0]])
+		im.surface_add_vertex(v[e[1]])
+	im.surface_end()
+	mi.visible = false
+	return mi
+
+func _update_target() -> void:
+	var p := _local()
+	target = {}
+	if p and (tool_of(p) == "shovel" or tool_of(p) == "pickaxe") and not p.get("frozen"):
+		target = block_target(p)
+	if _outline == null or not _outline.is_inside_tree():
+		return
+	var b = target.get("b")
+	_outline.visible = b != null
+	if b != null:
+		var c := DigVolume.block_centre(b)
+		_outline.global_position = GameData.world_to_3d(c.x, c.y, c.z)
 
 ## Takes out a capsule of earth (a guest's own dig, the host replaying it, a test). p: who dug (gets the finds;
 ## null: no finds).
@@ -389,40 +600,6 @@ func carve(a: Vector3, b: Vector3, r: float, p: Node = null) -> Array:
 				_spawn_pickup(f, Vector3(D.X0 + s.x * D.CELL, D.Y0 + s.y * D.CELL, D.ZMIN + s.z * D.CELL))
 	return out
 
-## Q / pad X / the touch FILL button: earth back in front of him.
-func fill_now(p: Node) -> bool:
-	var c = fill_centre(p)
-	if c == null:
-		return false
-	return fill(c, D.FILL_R, p)
-
-func fill_centre(p: Node):
-	var hp := pos_of(p)
-	var feet := feet_of(p)
-	var c: Vector3
-	if p.has_method("is_first_person") and p.is_first_person():
-		var a := float(p.get("look_ang"))
-		var ly := float(p.get("look_y"))
-		var dir := Vector3(cos(a) * cos(ly), sin(a) * cos(ly), -sin(ly))
-		var eye := Vector3(hp.x, hp.y, feet + 62.0)
-		var hit = grid.vol.raycast(eye, dir, D.FP_REACH)
-		if hit == null:
-			return null
-		c = hit - dir * 10.0
-	else:
-		var t := hp + facing_of(p) * (D.REACH + 4.0)
-		c = Vector3(t.x, t.y, grid.vol.floor_below(t.x, t.y, feet + 20.0) + 4.0)
-	if not _diggable3(c) or c.z > -2.0:
-		return null
-	# never into anyone
-	for q in _players():
-		var qp := pos_of(q)
-		var qf := feet_of(q)
-		var seg := DigVolume._seg_dist(c, Vector3(qp.x, qp.y, qf), Vector3(qp.x, qp.y, qf + 66.0))
-		if seg < D.FILL_R + 14.0:
-			return null
-	return c
-
 func fill(c: Vector3, r: float, p: Node = null) -> bool:
 	var ok := grid.vol.fill(c, r, 0.0)
 	if ok and p != null:
@@ -434,7 +611,7 @@ func fill(c: Vector3, r: float, p: Node = null) -> bool:
 	return ok
 
 func can_fill(p: Node) -> bool:
-	return tool_of(p) == "shovel" and fill_centre(p) != null
+	return can_place(p)
 
 ## ---------------------------------------------------------------- finds
 
@@ -477,7 +654,7 @@ func _count_find(f: Dictionary) -> void:
 		"fossil": grid.stats.fossils += 1
 
 ## A find popping out of the earth at `at` (HTML units) and landing on the floor nearby, to be picked up.
-func _spawn_pickup(f: Dictionary, at: Vector3) -> void:
+func _spawn_pickup(f: Dictionary, at: Vector3, quiet: bool = false) -> void:
 	var pk := _Pickup.new()
 	pk.dig = self
 	pk.kind = String(f.kind)
@@ -487,7 +664,8 @@ func _spawn_pickup(f: Dictionary, at: Vector3) -> void:
 	var floor_z := grid.vol.floor_below(land.x, land.y, at.z + 20.0)
 	pk.start(at, Vector3(land.x, land.y, floor_z))
 	_pickups.append(pk)
-	floater.emit(_find_word(pk.kind), Color("#ffe9a8"), Vector2(at.x, at.y))
+	if not quiet:
+		floater.emit(_find_word(pk.kind), Color("#ffe9a8"), Vector2(at.x, at.y))
 
 static func _find_word(kind: String) -> String:
 	return {"spuds": "SPUDS!", "coins": "COINS!", "bone": "A BONE!", "stash": "A STASH!", "gem": "A GEM!",
@@ -502,6 +680,13 @@ func pick_up(pk: Node, p: Node) -> void:
 
 func _award(p: Node, kind: String, n: int, at: Vector2) -> void:
 	var pid := Farm.pid_of(p)
+	if kind.begins_with("res"):
+		var m := int(kind.substr(3))
+		inv.res[m] += n
+		_inv_changed()
+		floater.emit("+%d %s" % [n, D.MATS[m].name], Color("#e6d2b0"), at)
+		sound.emit("tool")
+		return
 	match kind:
 		"spuds":
 			var fight = Fight.me if Fight.me else null
@@ -623,14 +808,15 @@ func _shake_cam(dt: float) -> void:
 
 ## ---------------------------------------------------------------- every step
 
-## Q / pad X (lobby_alt) with the shovel: fill in front. (The touch FILL button calls fill_now.)
+## Q / pad X (lobby_alt) with the shovel or the pickaxe: a block from his backpack where he aims. (The touch
+## PLACE button calls place_now.)
 func _unhandled_input(event: InputEvent) -> void:
 	if not event.is_action_pressed("lobby_alt") or event.is_echo():
 		return
 	var p := _local()
-	if p == null or tool_of(p) != "shovel" or p.get("frozen") or not p.get("controls_enabled"):
+	if p == null or (tool_of(p) != "shovel" and tool_of(p) != "pickaxe") or p.get("frozen") or not p.get("controls_enabled"):
 		return
-	if fill_now(p):
+	if place_now(p):
 		get_viewport().set_input_as_handled()
 
 func _players() -> Array:
@@ -657,9 +843,9 @@ func _physics_process(dt: float) -> void:
 		_plough_step(me, dt)
 		# held E with the shovel digs on
 		_dig_cd = maxf(0.0, _dig_cd - dt)
-		if _dig_cd <= 0.0 and tool_of(me) == "shovel" and me.get("controls_enabled") and not me.get("frozen") \
-				and Input.is_action_pressed("interact") and me.get("focus") == _spot:
-			dig_now(me)
+		if _dig_cd <= 0.0 and (tool_of(me) == "shovel" or tool_of(me) == "pickaxe") and me.get("controls_enabled") \
+				and not me.get("frozen") and (Input.is_action_pressed("interact") or touch_hold) and me.get("focus") == _spot:
+			hit_now(me)
 	_swing = maxf(0.0, _swing - dt * 4.0)
 
 ## Moves p on the earth (see the class notes): walls, the floor, steps, climbing, falling.
@@ -786,6 +972,7 @@ func _process(dt: float) -> void:
 	if main == null:
 		return
 	_pose_tools()
+	_update_target()
 	_shake_cam(dt)
 	_update_cut()
 	_net_step(dt)
@@ -866,7 +1053,10 @@ func save() -> void:
 		return
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify(grid.to_json_dict()))
+		var d := grid.to_json_dict()
+		if not _is_guest():
+			d["inv"] = inv
+		f.store_string(JSON.stringify(d))
 
 func load_save() -> bool:
 	if not FileAccess.file_exists(save_path):
@@ -876,6 +1066,23 @@ func load_save() -> bool:
 		return false
 	var d = JSON.parse_string(f.get_as_text())
 	return d is Dictionary and grid.unpack(d)
+
+## The backpack and the tools from the save (also kept while a guest: the ground is the host's, the backpack yours).
+func _load_inv() -> void:
+	if not FileAccess.file_exists(save_path):
+		return
+	var f := FileAccess.open(save_path, FileAccess.READ)
+	var d = JSON.parse_string(f.get_as_text()) if f else null
+	if not (d is Dictionary) or not (d.get("inv") is Dictionary):
+		return
+	var iv: Dictionary = d.inv
+	var res: Array = iv.get("res", [])
+	for m in mini(res.size(), inv.res.size()):
+		inv.res[m] = maxi(0, int(res[m]))
+	var tiers: Dictionary = iv.get("tiers", {})
+	for t in inv.tiers:
+		inv.tiers[t] = clampi(int(tiers.get(t, 0)), 0, D.UPGRADES.size())
+	inv.pickaxe = bool(iv.get("pickaxe", false))
 
 ## Everything back to grass (and the save with it).
 func wipe() -> void:
@@ -982,6 +1189,12 @@ func apply_op(op: Array) -> void:
 		"carve":
 			if op.size() >= 8:
 				carve(Vector3(float(op[1]), float(op[2]), float(op[3])), Vector3(float(op[4]), float(op[5]), float(op[6])), float(op[7]))
+		"break":
+			if op.size() >= 4:
+				break_block(Vector3i(int(op[1]), int(op[2]), int(op[3])))
+		"place":
+			if op.size() >= 5:
+				grid.vol.fill_block(Vector3i(int(op[1]), int(op[2]), int(op[3])), int(op[4]))
 		"fill":
 			if op.size() >= 5:
 				fill(Vector3(float(op[1]), float(op[2]), float(op[3])), float(op[4]))
@@ -1026,16 +1239,49 @@ class _Rack extends Interactable:
 	func label_for(player: Node) -> String:
 		if dig == null:
 			return ""
-		return ("PUT BACK " if dig.tool_of(player) == tool else "TAKE ") + tool.to_upper()
+		if tool == "pickaxe" and not dig.inv.pickaxe and player == dig._local():
+			return "BUY PICKAXE $%d" % D.PICKAXE_PRICE
+		var tier := String(D.TIER_NAMES[int(dig.inv.tiers.get(tool, 0))]) if player == dig._local() else ""
+		return ("PUT BACK " if dig.tool_of(player) == tool else "TAKE ") + tier + tool.to_upper()
 	func act(player: Node) -> void:
 		if dig == null:
+			return
+		if tool == "pickaxe" and not dig.inv.pickaxe:
+			var w := dig.get_node_or_null("/root/Wallet")
+			if w and w.spend_cash(D.PICKAXE_PRICE, "pickaxe"):
+				dig.inv.pickaxe = true
+				dig._inv_changed()
+				dig.sound.emit("find")
+				dig.floater.emit("PICKAXE! STONE AND ORE COME EASIER", Color("#ffd36b"), Dig.pos_of(player))
+			else:
+				dig.floater.emit("NOT ENOUGH CASH", Color("#ff9a7a"), Dig.pos_of(player))
 			return
 		var had := dig.tool_of(player)
 		dig.set_tool(player, "" if had == tool else tool)
 		dig.sound.emit("tool")
 		if had != tool:
-			dig.floater.emit(("SHOVEL: HOLD E TO DIG, Q FILLS" if tool == "shovel" else "HOE: WALK TO PLOUGH, E PLANTS"),
-				Color("#e6e8ee"), Dig.pos_of(player))
+			dig.floater.emit({"shovel": "SHOVEL: HOLD E TO DIG, Q PLACES A BLOCK", "pickaxe": "PICKAXE: FOR STONE AND ORE",
+				"hoe": "HOE: WALK TO PLOUGH, E PLANTS"}.get(tool, ""), Color("#e6e8ee"), Dig.pos_of(player))
+
+## The workbench: E upgrades the tool in his hand (cash, iron, coal).
+class _Bench extends Interactable:
+	var dig: Dig
+	func _ready() -> void:
+		reach = 34.0
+	func label_for(player: Node) -> String:
+		if dig == null or player != dig._local():
+			return ""
+		var t := dig.tool_of(player)
+		if t != "shovel" and t != "pickaxe":
+			return "WORKBENCH: HOLD A TOOL TO UPGRADE"
+		var c := dig.upgrade_cost_text(t)
+		return ("UPGRADE %s: %s" % [t.to_upper(), c]) if c != "" else ""
+	func act(player: Node) -> void:
+		if dig == null:
+			return
+		var r := dig.upgrade(player)
+		if r != "":
+			dig.floater.emit(r, Color("#ffd36b") if r.ends_with("!") else Color("#ff9a7a"), Dig.pos_of(player))
 
 ## A find lying where it popped out: it bobs and glints; walk over it to pick it up.
 class _Pickup extends Node3D:
@@ -1089,6 +1335,27 @@ static func find_tex(kind: String) -> Texture2D:
 		return _find_texs[kind]
 	var im := Image.create(16, 16, false, Image.FORMAT_RGBA8)
 	var ink := Color8(30, 22, 16)
+	if kind.begins_with("res"):
+		# a little block of its material
+		var m := int(kind.substr(3))
+		var base: Color = (D.MATS[m].tint as Color) * Color8(140, 100, 64)
+		for y in range(3, 14):
+			for x in range(3, 14):
+				var c := base
+				if x == 3 or y == 3:
+					c = base.lightened(0.25)
+				elif x == 13 or y == 13:
+					c = base.darkened(0.35)
+				elif (x * 7 + y * 13) % 9 == 0:
+					c = base.darkened(0.2)
+				if m == D.IRON_M and (x * 5 + y * 3) % 7 == 0:
+					c = Color8(230, 150, 90)
+				if m == D.COAL_M and (x * 3 + y * 5) % 5 == 0:
+					c = Color8(20, 18, 20)
+				im.set_pixel(x, y, c)
+		var tt := ImageTexture.create_from_image(im)
+		_find_texs[kind] = tt
+		return tt
 	match kind:
 		"spuds":
 			_blob(im, Vector2(5.5, 9), 4.0, 3.2, Color8(176, 132, 74), ink)

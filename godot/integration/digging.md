@@ -9,6 +9,38 @@ owner found the digging flat ("no feel / feedback", "holes look bad") and asked 
 explorable** digging with **smooth caves**, **for farming too**. This is that: level 3, which took over
 level 2's ground (the plan's "level 2's depth grid seeds it"; nothing saved by level 2 is kept, see Decisions).
 
+## Blocks, like 7 Days to Die (the owner, 18 Oct)
+
+Asked for digging "more like 7 Days to Die": hit blocks to break, collect resources, place blocks back, tools
+and upgrades; the smooth look kept (block-sized digs).
+
+- **Blocks:** the earth is cut into 32-unit cubes (0.8 m) on a grid. With the shovel or the pickaxe, E aims at
+  one (a white outline; in first person the block under the crosshair) and **each hit chips it** (a hit every
+  0.3 s while E or the touch button is held), with a **health bar** and its material's name over it. Dirt
+  takes 2 shovel hits, clay 5, stone 8, coal 8, iron 10 (by the tool). It comes out as a cube a hair oversize,
+  so broken neighbours join smoothly (the 8-unit samples bevel the edges). Standing still he hits the block
+  under his feet (dig straight down); walking, the block ahead (or the ground ahead if that's open); first
+  person, the one he looks at.
+- **Materials by depth:** dirt to about 2 m, red clay (with coal) to 5 m, grey stone (coal and iron ore) below.
+  Ore shows as dark (coal) and rusty (iron) patches in the walls, fixed by where the block is (both screens).
+- **Resources:** a broken block drops its material (1-2) as a little block you walk over to pick up, into the
+  **backpack** (DIRT, CLAY, STONE, COAL, IRON down the left of the screen, the one Q places marked). The rare
+  finds (potatoes, coins, bones, gems, fossils, stashes) still pop out too.
+- **Placing:** Q / pad X / the touch PLACE button puts a block of what you have most of where you aim (the open
+  block ahead, or next to the face you look at in first person): fill holes level, build walls, steps,
+  bunkers, up to about 4 m high. Never into anyone. Placed blocks keep their material (saved and sent). You can
+  climb onto a block (up to 60 units).
+- **Tools:** the shovel (at the rack) is quick on dirt and clay and poor on stone; the **pickaxe** (BUY PICKAXE
+  $150 at the rack) the other way round. The **workbench** beside the rack upgrades the tool in your hand:
+  iron ($100 + 4 iron, 1.7x) then steel ($300 + 8 iron + 6 coal, 2.6x).
+- Saved with the ground (the backpack, the pickaxe, the tiers); online, breaking and placing go over as ops
+  (`break`, `place`), so both games have the same blocks; each player's backpack is their own.
+- Tests: `test/dig/dig_test.tscn` 107 passed, 0 failed (the new ones: aiming under him, a hit cracking a block,
+  two shovel hits breaking dirt, the drop into the backpack, held digging straight down, clay and stone and ore
+  by depth, the shovel poor and the pickaxe good on stone, aiming ahead and where he looks, placing (made of
+  dirt, one used, not into him, solid: a wall or climbed), nothing to place with an empty backpack, buying the
+  pickaxe, upgrading it at the workbench and not past what he can pay, breaking and placing over the network).
+
 ## What works
 
 - **The earth under the yard is a density volume** (`DigVolume`): samples every 8 units across, down and deep,
@@ -112,7 +144,7 @@ None added. E / pad A / the HUD button is `interact` (hold it to keep digging); 
 ## Tests
 
 - `test/dig/dig_test.tscn` (inside the real game):
-  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 87 passed, 0 failed`.
+  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 107 passed, 0 failed`.
   The mask; the volume (carving, the hole's floor, the lawn beside it level, nothing under the garage, bedrock
   stays, the smooth mesh); collision (rays into the hole, on the lawn, the house floor, past the region);
   moving (falling down a shaft, its walls holding him, walking a tunnel along its floor, climbing out of a

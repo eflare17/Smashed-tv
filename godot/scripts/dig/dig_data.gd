@@ -12,7 +12,7 @@ const NY := 230                     # cells down (to y 1888)
 ## The earth under it (level 3, smooth caves): samples every CELL from ZMIN (bedrock, about 8 m down) up to ZMAX
 ## (DigVolume, drawn by DigMesher).
 const ZMIN := -320.0
-const ZMAX := 24.0
+const ZMAX := 160.0                 # (blocks can be built about 4 m up)
 ## The flat yard meshes: CHUNK x CHUNK cells each.
 const CHUNK := 32
 ## The shovel (level 3): each dig takes out a capsule of earth DIG_R round (about a body wide). Top-down it goes
@@ -31,6 +31,45 @@ const DIG_EVERY := 0.28
 const SHAFT_R := 17.0
 const SHAFT_STEP := 16.0
 const LOOK_DOWN := 0.4
+## Blocks (like 7 Days to Die): the earth is cut into BLOCK-unit cubes on a grid (z from the ground's top, 0). A
+## block takes hits to break (its health by material; a tool's damage by tool, material and tier), comes out as
+## a cube a hair (BLOCK_GROW) bigger than its cell, so broken neighbours join with no seam (the 8-unit samples
+## bevel its edges: smooth, block-sized digs), and drops its material. Blocks can be put back.
+const BLOCK := 32.0
+const BLOCK_GROW := 1.0
+const HIT_EVERY := 0.3
+## Materials: what they're called, their health, what a break drops, their colour (a tint on the earth).
+const MATS := [
+	{"name": "DIRT", "hp": 3.0, "drop": [1, 2], "tint": Color(1.0, 1.0, 1.0)},
+	{"name": "CLAY", "hp": 5.0, "drop": [1, 2], "tint": Color(1.08, 0.78, 0.6)},
+	{"name": "STONE", "hp": 8.0, "drop": [1, 1], "tint": Color(0.72, 0.72, 0.78)},
+	{"name": "COAL", "hp": 8.0, "drop": [1, 2], "tint": Color(0.3, 0.28, 0.3)},
+	{"name": "IRON", "hp": 10.0, "drop": [1, 1], "tint": Color(1.25, 0.72, 0.5)},
+]
+const DIRT_M := 0
+const CLAY_M := 1
+const STONE_M := 2
+const COAL_M := 3
+const IRON_M := 4
+## Where the clay and the stone start (units down), and how much ore there is in them.
+const CLAY_Z := 80.0
+const STONE_Z := 200.0
+const COAL_IN_CLAY := 0.05
+const COAL_IN_STONE := 0.06
+const IRON_IN_STONE := 0.06
+## Tools: damage a hit by material (dirt, clay, stone, coal, iron), times the tier's.
+const TOOL_DAMAGE := {
+	"shovel": [1.5, 1.0, 0.35, 0.35, 0.3],
+	"pickaxe": [0.8, 1.2, 1.6, 1.8, 1.4],
+}
+const TIER_NAMES := ["", "IRON ", "STEEL "]
+const TIER_MULT := [1.0, 1.7, 2.6]
+## The pickaxe's price at the rack; upgrades at the workbench: [cash, iron, coal] to tier 1 and to tier 2.
+const PICKAXE_PRICE := 150
+const UPGRADES := [[100, 4, 0], [300, 8, 6]]
+## The workbench, by the shed's tool rack.
+const BENCH := {"x": 440.0, "y": 1666.0}
+
 ## Filling puts a ball of FILL_R back in front of him (never into anyone, never over the ground's top).
 const FILL_R := 16.0
 ## No digging this close to anything solid (the shed, garage, tank, trampoline, fences, crop beds...).

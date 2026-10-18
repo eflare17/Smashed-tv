@@ -342,5 +342,5 @@ func to_json_dict() -> Dictionary:
 	var cs := {}
 	for key in vp.cs:
 		cs[key] = Marshalls.raw_to_base64(vp.cs[key])
-	p.vol = {"v": vp.v, "cs": cs, "ver": vp.ver}
+	p.vol = {"v": vp.v, "cs": cs, "ver": vp.ver, "pl": Array(vp.pl)}
 	return p

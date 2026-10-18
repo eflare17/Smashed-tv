@@ -249,13 +249,131 @@ func top_stored(cx: int, cy: int) -> bool:
 static func top_layer() -> int:
 	return int((0.0 - D.ZMIN) / D.CELL) >> 4
 
+## ---------------------------------------------------------------- blocks
+
+## Blocks put back (Vector3i -> material): what they're made of (the rest by where they are).
+var placed: Dictionary = {}
+
+## The block holding (x, y, z).
+static func block_of(p: Vector3) -> Vector3i:
+	return Vector3i(floori((p.x - D.X0) / D.BLOCK), floori((p.y - D.Y0) / D.BLOCK), floori(p.z / D.BLOCK))
+
+static func block_centre(b: Vector3i) -> Vector3:
+	return Vector3(D.X0 + (b.x + 0.5) * D.BLOCK, D.Y0 + (b.y + 0.5) * D.BLOCK, (b.z + 0.5) * D.BLOCK)
+
+## What block b is made of: what was put there, else by depth (dirt, clay, stone) with coal and iron ore
+## scattered in (fixed by where it is: the same on both screens).
+func material(b: Vector3i) -> int:
+	if placed.has(b):
+		return int(placed[b])
+	return natural_material(b)
+
+static func natural_material(b: Vector3i) -> int:
+	var depth := -(b.z + 0.5) * D.BLOCK
+	var h := float(_bhash(b.x, b.y, b.z) % 10000) / 10000.0
+	if depth >= D.STONE_Z:
+		if h < D.IRON_IN_STONE:
+			return D.IRON_M
+		if h < D.IRON_IN_STONE + D.COAL_IN_STONE:
+			return D.COAL_M
+		return D.STONE_M
+	if depth >= D.CLAY_Z:
+		return D.COAL_M if h < D.COAL_IN_CLAY else D.CLAY_M
+	return D.DIRT_M
+
+static func _bhash(i: int, j: int, k: int) -> int:
+	var h := (i * 92837111) ^ (j * 689287499) ^ (k * 283923481)
+	h = (h ^ (h >> 15)) * 2246822519
+	return (h ^ (h >> 13)) & 0x7fffffff
+
+## Is there earth in block b (worth hitting)?
+func block_solid(b: Vector3i) -> bool:
+	var c := block_centre(b)
+	if solid(c.x, c.y, c.z):
+		return true
+	for o in [Vector3(-8, -8, -8), Vector3(8, 8, 8), Vector3(8, -8, 0), Vector3(-8, 8, 0), Vector3(0, 0, 10)]:
+		if solid(c.x + o.x, c.y + o.y, c.z + o.z):
+			return true
+	return false
+
+## The block's cube's distance (negative inside) from p, for block centre c, a hair (BLOCK_GROW) oversize.
+static func _box_sd(p: Vector3, c: Vector3) -> float:
+	var hh := D.BLOCK / 2.0
+	var q := (p - c).abs() - Vector3(hh, hh, hh)
+	var outside := Vector3(maxf(q.x, 0.0), maxf(q.y, 0.0), maxf(q.z, 0.0)).length()
+	return outside + minf(maxf(q.x, maxf(q.y, q.z)), 0.0) - D.BLOCK_GROW
+
+## Breaks block b: its cube of earth out. Returns the samples that went from earth to air (for finds).
+func carve_block(b: Vector3i) -> Array:
+	var out: Array = []
+	var c := block_centre(b)
+	var r := D.BLOCK / 2.0 + FMAX
+	var lo := to_s(c.x - r, c.y - r, c.z - r)
+	var hi := to_s(c.x + r, c.y + r, c.z + r)
+	var any := false
+	for k in range(maxi(2, floori(lo.z)), mini(NZ - 1, ceili(hi.z)) + 1):
+		var z := D.ZMIN + k * D.CELL
+		for j in range(floori(lo.y), ceili(hi.y) + 1):
+			for i in range(floori(lo.x), ceili(hi.x) + 1):
+				if not _column_ok(i, j):
+					continue
+				var sd := _box_sd(Vector3(D.X0 + i * D.CELL, D.Y0 + j * D.CELL, z), c)
+				if sd > FMAX:
+					continue
+				var old := sample(i, j, k)
+				var nf := minf(old, sd)
+				if nf < old - 0.01:
+					_set_sample(i, j, k, nf)
+					_touch_sample(i, j, k)
+					any = true
+					if old > 0.0 and sample(i, j, k) <= 0.0:
+						out.append(Vector3i(i, j, k))
+	if placed.has(b):
+		placed.erase(b)
+	if any:
+		_changed()
+	return out
+
+## Puts a block of material m at b (a cube of earth). False if nothing changed.
+func fill_block(b: Vector3i, m: int) -> bool:
+	var c := block_centre(b)
+	if c.z + D.BLOCK / 2.0 > D.ZMAX - D.CELL or c.z - D.BLOCK / 2.0 < D.ZMIN + 2.0 * D.CELL:
+		return false
+	var r := D.BLOCK / 2.0 + FMAX
+	var lo := to_s(c.x - r, c.y - r, c.z - r)
+	var hi := to_s(c.x + r, c.y + r, c.z + r)
+	var any := false
+	for k in range(maxi(2, floori(lo.z)), mini(NZ - 1, ceili(hi.z)) + 1):
+		var z := D.ZMIN + k * D.CELL
+		for j in range(floori(lo.y), ceili(hi.y) + 1):
+			for i in range(floori(lo.x), ceili(hi.x) + 1):
+				if not _column_ok(i, j):
+					continue
+				var sd := _box_sd(Vector3(D.X0 + i * D.CELL, D.Y0 + j * D.CELL, z), c)
+				if sd > FMAX:
+					continue
+				var old := sample(i, j, k)
+				var nf := maxf(old, -sd)
+				if nf > old + 0.01:
+					_set_sample(i, j, k, nf)
+					_touch_sample(i, j, k)
+					any = true
+	if any:
+		if m != natural_material(b) or c.z > 0.0:
+			placed[b] = m
+		_changed()
+	return any
+
 ## ---------------------------------------------------------------- saving and sending
 
 func pack() -> Dictionary:
 	var cs := {}
 	for key in chunks:
 		cs["%d,%d,%d" % [key.x, key.y, key.z]] = (chunks[key].d as PackedByteArray).compress(FileAccess.COMPRESSION_DEFLATE)
-	return {"v": 3, "cs": cs, "ver": version}
+	var pl := PackedInt32Array()
+	for b in placed:
+		pl.append_array([b.x, b.y, b.z, int(placed[b])])
+	return {"v": 3, "cs": cs, "ver": version, "pl": pl}
 
 func unpack(p: Dictionary) -> bool:
 	if int(p.get("v", 0)) != 3:
@@ -285,6 +403,11 @@ func unpack(p: Dictionary) -> bool:
 		if not seen.has(key):
 			chunks.erase(key)
 			dirty[key] = true
+	placed.clear()
+	var pl = p.get("pl", PackedInt32Array())
+	if pl is Array or pl is PackedInt32Array:
+		for n in range(0, pl.size() - 3, 4):
+			placed[Vector3i(int(pl[n]), int(pl[n + 1]), int(pl[n + 2]))] = int(pl[n + 3])
 	version = maxi(version + 1, int(p.get("ver", 0)))
 	changed.emit()
 	return true
@@ -293,4 +416,5 @@ func clear() -> void:
 	for key in chunks:
 		dirty[key] = true
 	chunks.clear()
+	placed.clear()
 	_changed()
