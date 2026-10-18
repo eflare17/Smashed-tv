@@ -98,7 +98,12 @@ static func _load_clip(path: String) -> Dictionary:
 		if best:
 			var tracks := {}
 			for t in best.get_track_count():
-				var bone := String(best.track_get_path(t).get_concatenated_subnames())
+				# "Skeleton3D:mixamorig_Hips" (bones), or ".../mixamorig_Spine/mixamorig_Hips" when the bones came in
+				# as plain nodes (a file with no skin can): the bone's name either way
+				var np := best.track_get_path(t)
+				var bone := String(np.get_concatenated_subnames())
+				if bone == "" and np.get_name_count() > 0:
+					bone = String(np.get_name(np.get_name_count() - 1))
 				if bone == "":
 					continue
 				bone = bone.trim_prefix("mixamorig_").trim_prefix("mixamorig:")
@@ -108,10 +113,13 @@ static func _load_clip(path: String) -> Dictionary:
 					Animation.TYPE_ROTATION_3D: tracks[bone][0] = t
 					Animation.TYPE_POSITION_3D: tracks[bone][1] = t
 			var hy := 1.0
-			if sk:
-				var hi := sk.find_bone("mixamorig_Hips")
-				if hi >= 0:
-					hy = sk.get_bone_rest(hi).origin.y
+			var hi := sk.find_bone("mixamorig_Hips") if sk else -1
+			if hi >= 0:
+				hy = sk.get_bone_rest(hi).origin.y
+			else:
+				var hn := root.find_child("mixamorig_Hips", true, false)
+				if hn is Node3D:
+					hy = (hn as Node3D).position.y
 			out = {"anim": best, "tracks": tracks, "hips_y": hy}
 	root.free()
 	return out

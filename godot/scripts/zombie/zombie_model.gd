@@ -68,8 +68,11 @@ void fragment() {
 	%ALPHA%
 	// the shape: a soft light from above and the north, so it reads as round without real lights
 	vec3 n = normalize(wnorm);
-	float shape = 0.58 + 0.42 * clamp(dot(n, normalize(vec3(0.25, 1.0, -0.45))) * 0.5 + 0.5, 0.0, 1.0);
-	vec3 c = mix(a.rgb * tint, vec3(1.0), flash * 0.55);
+	float shape = 0.42 + 0.5 * clamp(dot(n, normalize(vec3(0.25, 1.0, -0.45))) * 0.5 + 0.5, 0.0, 1.0);
+	// (as the high look's lit, rough skin comes out: a little greyer and darker than the picture)
+	vec3 base = a.rgb * tint;
+	base = mix(vec3(dot(base, vec3(0.3, 0.59, 0.11))), base, 0.8) * 0.85;
+	vec3 c = mix(base, vec3(1.0), flash * 0.55);
 	ALBEDO = c * look_light(wpos + n * 0.15) * shape + texture(glow_tex, UV).rgb * glow * 1.6 + vec3(0.5, 0.1, 0.08) * flash;
 }
 """

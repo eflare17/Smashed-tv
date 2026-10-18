@@ -84,6 +84,7 @@ func _take(uid: int) -> ZombieModel:
 		m = _spare.pop_back()
 		m.anim.seed = _seed(uid)
 		m.anim.move = ""
+		m.remove_meta("lying")
 		m.visible = true
 	m.set_quality(_quality)
 	m.set_fade(1.0)
@@ -161,7 +162,11 @@ func _pose_live(e: FT.Enemy, z: Dictionary, dt: float, glow: float) -> void:
 				else:
 					move = "walk"
 					u = fposmod(e.odo / WALK_CYCLE + float(z.seed), 1.0)
-	m.position = GameData.world_to_3d(e.x, e.y, 0.0) + Vector3(0, y, 0)
+	# drawn between the sim's ticks: on a little by its speed (as physics interpolation does for the players)
+	var ahead := Engine.get_physics_interpolation_fraction() / float(Engine.physics_ticks_per_second)
+	if sim.freeze > 0.0 or e.stun > 0.0:
+		ahead = 0.0
+	m.position = GameData.world_to_3d(e.x + e.vx * ahead, e.y + e.vy * ahead, 0.0) + Vector3(0, y, 0)
 	m.rotation = Vector3(0, float(z.yaw), 0)
 	m.anim.apply(move, u, dt, hit)
 	m.set_flash(clampf(e.flash / 0.08, 0.0, 1.0))
@@ -180,7 +185,12 @@ func _pose_dead(c: FT.Corpse, m: ZombieModel, dt: float, glow: float) -> void:
 	var f := clampf(c.life / FADE_TIME, 0.0, 1.0)
 	y -= (1.0 - f) * 0.35
 	m.position = GameData.world_to_3d(c.x, c.y, 0.0) + Vector3(0, y, 0)
-	m.anim.apply("death", clampf(age / ZombieAnim.length("death", DEATH_TIME), 0.0, 1.0), dt)
+	var u := clampf(age / ZombieAnim.length("death", DEATH_TIME), 0.0, 1.0)
+	# (lying still: posed once more after the fall, then left alone)
+	if u < 1.0 or not m.has_meta("lying"):
+		m.anim.apply("death", u, dt if u < 1.0 else 1.0)
+		if u >= 1.0:
+			m.set_meta("lying", true)
 	m.set_fade(f)
 
 ## How many models are showing (tests).

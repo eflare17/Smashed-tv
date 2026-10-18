@@ -141,6 +141,8 @@ func _physics_process(dt: float) -> void:
 	var at = _spot(s, out)
 	if at != null:
 		ZombieSim.spawn_at(s, at.x, at.y)
+		if force_night:
+			print("ZombieNight: a zombie climbs out at %d, %d (%d now)" % [at.x, at.y, live + 1])
 
 ## Somewhere a zombie can climb out: in the yard, clear of things, NEAR..FAR from the nearest player out there.
 func _spot(s: FightSim, out: Array):
@@ -206,7 +208,9 @@ func _bring_back_own() -> void:
 		var was := bool(_dead_seen.get(key, false))
 		_dead_seen[key] = not f.alive
 		if was and f.alive and not s.started:
-			var at := Vector2(INSIDE.x - 34.0 * f.id, INSIDE.y)
+			# (the same spot the host's game gave it: a guest's own player is player 2 there)
+			var slot := f.id + (1 if Net.is_guest() else 0)
+			var at := Vector2(INSIDE.x - 34.0 * slot, INSIDE.y)
 			pl.place(at.x, at.y)
 			pl.vel = Vector2.ZERO
 			f.x = at.x
