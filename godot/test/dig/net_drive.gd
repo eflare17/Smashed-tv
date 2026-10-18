@@ -1,7 +1,7 @@
 extends Node
 ## Two games online, digging (both load it with --netdrive=res://test/dig/net_drive.gd): the guest digs and the
-## host's ground follows (its op), the host ploughs and digs and the guest's follows (the snapshot), each sees
-## the other's tool, and the other player stands in a hole on both screens. Prints "CHECK <name> ok|FAIL" and
+## host's ground follows (its op), the host ploughs and digs a shaft and the guest's follows (the ops passed on),
+## each sees the other's tool, and the host drops down his shaft on both screens. Prints "CHECK <name> ok|FAIL" and
 ## "DRIVE DONE fails=N". Run (in a work copy):
 ##   godot --headless --path $W --fixed-fps 60 -- --host=TEST --netdrive=res://test/dig/net_drive.gd &
 ##   godot --headless --path $W --fixed-fps 60 -- --join=127.0.0.1 --netdrive=res://test/dig/net_drive.gd
@@ -58,29 +58,27 @@ func _process(dt: float) -> void:
 		2:
 			if not host:
 				dig.set_tool(me, "shovel")
-				dig.dig_at(me, Vector2(1100, 1300))
-				dig.dig_at(me, Vector2(1100, 1300))
-				expect("keeps its own dig", func(): return absf(g.depth_at(1100, 1300) - 18.0) < 0.01, 10.0,
-					func(): return "%.1f" % g.depth_at(1100, 1300))
+				dig.carve(Vector3(1100, 1300, -40), Vector3(1100, 1300, 40), 20.0, me)
+				expect("keeps its own dig", func(): return g.vol.surface_height(1100, 1300) < -30.0, 10.0,
+					func(): return "%.1f" % g.vol.surface_height(1100, 1300))
 			else:
-				expect("sees the guest's dig", func(): return absf(g.depth_at(1100, 1300) - 18.0) < 0.01, 20.0,
-					func(): return "%.1f" % g.depth_at(1100, 1300))
+				expect("sees the guest's dig", func(): return g.vol.surface_height(1100, 1300) < -30.0, 20.0,
+					func(): return "%.1f" % g.vol.surface_height(1100, 1300))
 				expect("sees the guest's shovel", func(): return dig.tool_of(net.p2) == "shovel", 20.0)
 		3:
 			if host:
 				dig.set_tool(me, "hoe")
 				g.plough(1300, 1150, Vector2.RIGHT)
-				for i in 4:
-					dig.dig_at(me, Vector2(1250, 1350))
+				dig.carve(Vector3(1250, 1350, -150), Vector3(1250, 1350, 30), 22.0, me)
 				me.place(1250, 1350)
-				expect("stands in its own hole", func(): return absf(me.global_position.y / U + 36.0) < 0.6, 10.0,
+				expect("falls into its own shaft", func(): return me.global_position.y / U < -120.0, 10.0,
 					func(): return "%.1f" % (me.global_position.y / U))
 			else:
 				expect("sees the host's ploughing", func(): return g.soil_at(1300, 1150) == 1, 20.0)
-				expect("sees the host's hole", func(): return absf(g.depth_at(1250, 1350) - 36.0) < 0.01, 20.0,
-					func(): return "%.1f" % g.depth_at(1250, 1350))
+				expect("sees the host's shaft", func(): return g.vol.surface_height(1250, 1350) < -120.0, 20.0,
+					func(): return "%.1f" % g.vol.surface_height(1250, 1350))
 				expect("sees the host's hoe", func(): return dig.tool_of(net.p2) == "hoe", 20.0)
-				expect("sees the host standing in it", func(): return is_instance_valid(net.p2) and absf(net.p2.global_position.y / U + 36.0) < 1.0, 20.0,
+				expect("sees the host down in it", func(): return is_instance_valid(net.p2) and net.p2.global_position.y / U < -120.0, 20.0,
 					func(): return "%.1f" % (net.p2.global_position.y / U) if is_instance_valid(net.p2) else "gone")
 		4:
 			done = true

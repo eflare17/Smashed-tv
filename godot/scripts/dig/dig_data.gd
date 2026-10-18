@@ -39,6 +39,8 @@ const BODY_R := 9.0
 ## Top-down, underground: the earth over him within CUT_R isn't drawn (from CUT_OVER above his feet).
 const CUT_R := 230.0
 const CUT_OVER := 70.0
+## The lamp round him underground: its reach.
+const LAMP_R := 260.0
 
 ## Finds: each bit of earth dug out (a sample going from earth to air) may hold one, by where it is (the same for
 ## both players online). Chance a sample, by depth: near the top, the clay, the stone.

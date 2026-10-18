@@ -247,6 +247,15 @@ static func facing_of(p: Node) -> Vector2:
 		f = Vector2(cos(a), sin(a))
 	return f.normalized() if f is Vector2 and f.length() > 0.001 else Vector2(0, 1)
 
+## Puts p's feet on the floor under (his x, y) at or below z (a teleport into a cave: tests, demos).
+func drop_to(p: Node, z: float) -> void:
+	var hp := pos_of(p)
+	var f := grid.vol.floor_below(hp.x, hp.y, z)
+	_bodies[p.get_instance_id()] = {"feet": f, "vz": 0.0, "prev": hp, "climb": -INF}
+	p.global_position = GameData.world_to_3d(hp.x, hp.y, f)
+	if p.has_method("reset_physics_interpolation"):
+		p.reset_physics_interpolation()
+
 ## Where his feet are (HTML z, units: 0 on the untouched ground, down in a hole or a tunnel).
 func feet_of(p: Node) -> float:
 	var b = _bodies.get(p.get_instance_id())
@@ -355,9 +364,9 @@ func dig_now(p: Node) -> Array:
 ## null: no finds).
 func carve(a: Vector3, b: Vector3, r: float, p: Node = null) -> Array:
 	var out := grid.vol.carve(a, b, r)
-	# at the ground's top it's dug-over dirt from now on
+	# at the ground's top it's dug-over dirt from now on (the hole's own cells: filled in, they're soil to plant)
 	if maxf(a.z, b.z) + r > -6.0 and minf(a.z, b.z) - r < 4.0:
-		grid.mark_dug(a.x, a.y, r + 4.0)
+		grid.mark_dug(a.x, a.y, r - 4.0)
 	if out.is_empty():
 		return out
 	grid.stats.digs += 1
@@ -783,10 +792,17 @@ func _process(dt: float) -> void:
 ## Is the earth over him cut away just now (top-down, underground)?
 var cut_on := false
 
-## Top-down, with him underground: the earth over him near him isn't drawn.
+## Top-down, with him underground: the earth over him near him isn't drawn. Underground in either view, a lamp
+## lights the earth round him (it's dark down there).
 func _update_cut() -> void:
 	var p := _local()
 	var on := false
+	var lamp := Vector4.ZERO
+	if p and feet_of(p) < -24.0:
+		var lp := GameData.from_3d(p.get_global_transform_interpolated().origin)
+		var lw := GameData.world_to_3d(lp.x, lp.y, feet_of(p) + 40.0)
+		lamp = Vector4(lw.x, lw.y, lw.z, D.LAMP_R * U)
+	RenderingServer.global_shader_parameter_set("dig_lamp", lamp)
 	if p and not (p.has_method("is_first_person") and p.is_first_person()):
 		var feet := feet_of(p)
 		if feet < -24.0:
@@ -797,6 +813,8 @@ func _update_cut() -> void:
 	if not on:
 		RenderingServer.global_shader_parameter_set("dig_cut", Vector4.ZERO)
 	cut_on = on
+	if ground and ground.bottom:
+		ground.bottom.visible = on
 
 ## Soil grows back on the game clock (the host's: a guest follows the host's snapshots), crops keep theirs.
 func _grow(dt: float) -> void:

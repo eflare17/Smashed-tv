@@ -1,8 +1,8 @@
 extends Node
 ## The game with digging set up for screenshots and speed checks (web export: set this as the main scene in a
 ## work copy, and let test/dig/ into the export). Options (the address's ?query on the web, or user args):
-##   digdemo       holes (one at each depth), piles, ploughed rows with a crop growing, weedy rows
-##   at=X,Y        put the player there (HTML units)   in       stand him in the deep hole
+##   digdemo       holes (deeper each), a ramp down to a cave, a shaft, ploughed rows with crops, weedy rows
+##   at=X,Y        put the player there (HTML units)   in       stand him in the cave
 ##   fp            first person   yaw=A   look that way (radians, HTML ground: 0 east, pi/2 south)   pitch=P
 ##   zoom=N        the top-down zoom level      tool=shovel|hoe   hand him a tool
 ##   nodig         draw the World's own flat yard floor instead of the dig's chunks (to compare frame times)
@@ -44,10 +44,16 @@ func _setup() -> void:
 	if opts.has("digdemo"):
 		var g := dig.grid
 		g.clear()
-		# holes along the lawn east of the trampoline: 1, 2, 3 and 4 presses deep
+		# holes along the lawn east of the trampoline, deeper each; a ramp down into a cave; a shaft
 		for k in 4:
-			for i in k + 1:
-				g.dig(1000 + k * 90, 1230, Vector2.DOWN, false)
+			dig.carve(Vector3(1000 + k * 90, 1230, -12.0 - k * 22.0), Vector3(1000 + k * 90, 1230, 30), 20.0)
+		for k in 9:
+			var x := 1180.0 + k * 22.0
+			dig.carve(Vector3(x, 1330, -k * 16.0 - 8.0), Vector3(x, 1330, -k * 16.0 + 56.0), 22.0)
+		dig.carve(Vector3(1380, 1330, -150), Vector3(1500, 1330, -150), 40.0)       # the cave
+		dig.carve(Vector3(1440, 1300, -120), Vector3(1440, 1380, -170), 34.0)
+		dig.carve(Vector3(1560, 1250, -180), Vector3(1560, 1250, 20), 18.0)          # a shaft
+		dig.ground.flush()
 		# a field: rows ploughed across, a crop on some spots
 		for r in 7:
 			var y := 1420.0 + r * 8.0
@@ -112,7 +118,8 @@ func _setup() -> void:
 		var xy := String(opts.at).split(",")
 		p.place(float(xy[0]), float(xy[1]))
 	elif opts.has("in"):
-		p.place(1000 + 3 * 90, 1230)
+		p.place(1440, 1330)                      # in the cave
+		dig.drop_to(p, -110.0)
 	p.facing = Vector2(0, 1)
 	if opts.has("fp"):
 		main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)

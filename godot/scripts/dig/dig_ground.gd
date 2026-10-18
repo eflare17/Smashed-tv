@@ -29,6 +29,7 @@ var _oarr: Dictionary = {}            # flat chunk index -> [vertices, uv2s, col
 var _grass_mi: MeshInstance3D
 var _soil_mi: MeshInstance3D
 var _solid_mi: MeshInstance3D
+var bottom: MeshInstance3D            # the cutaway's floor
 var _caves: Dictionary = {}           # Vector3i -> MeshInstance3D
 var _cave_shapes: Dictionary = {}     # Vector3i -> CollisionShape3D
 var _col_boxes: Dictionary = {}       # Vector2i (16-cell column) -> CollisionShape3D (flat, untouched)
@@ -68,6 +69,15 @@ func setup(g: DigGrid, v: DigVolume, w: Node3D) -> void:
 	_grass_mi = _mi("DigGrass", _mats.pic)
 	_solid_mi = _mi("DigSoilSolid", _mats.soil)
 	_soil_mi = _mi("DigSoil", _mats.edge)
+	# the cutaway's floor: dark earth under everything, shown only while the cutaway is on
+	bottom = _mi("DigBottom", _mats.bottom)
+	var r := Rect2(D.X0, D.Y0, D.NX * D.CELL, D.NY * D.CELL).grow(800.0)
+	var bv := PackedVector3Array()
+	var zb := (D.ZMIN + 2.0) * U
+	for q in [r.position, Vector2(r.end.x, r.position.y), r.end, r.position, r.end, Vector2(r.position.x, r.end.y)]:
+		bv.append(Vector3(q.x * U, zb, q.y * U))
+	bottom.mesh = _mesh(bv, PackedVector2Array(), PackedVector2Array(), PackedColorArray())
+	bottom.visible = false
 	_body = StaticBody3D.new()
 	_body.name = "DigGroundBody"
 	_body.collision_layer = 1
@@ -118,9 +128,12 @@ render_mode cull_disabled%RM%;
 %LOWFN%
 uniform sampler2D pic : source_color, filter_nearest_mipmap;
 uniform sampler2D atlas : source_color, filter_nearest, repeat_enable;
-// 0 the yard picture; 1 the soil atlas (COLOR.a: the soil's edge, cut at a half); 2 either (COLOR.a 1: picture)
+// 0 the yard picture; 1 the soil atlas (COLOR.a: the soil's edge, cut at a half); 2 either (COLOR.a 1: picture);
+// 3 the cutaway's floor (dark earth)
 uniform int mode = 0;
 global uniform vec4 dig_cut;
+// a lamp round him while he's underground (both views): xyz where (m), w its reach (0 off)
+global uniform vec4 dig_lamp;
 varying vec3 wpos;
 varying vec3 wnrm;
 vec3 lin(vec3 c) {
@@ -135,8 +148,22 @@ void fragment() {
 		vec2 d = wpos.xz - dig_cut.xz;
 		if (dot(d, d) < dig_cut.w * dig_cut.w) discard;
 	}
-	vec4 c;
-	if (mode == 0 || (mode == 2 && COLOR.a > 0.5)) {
+	vec4 c = vec4(1.0);
+	// the cutaway's slice: earth seen from inside (a back face under the cut) or the floor under everything
+	bool cut_here = dig_cut.w > 0.0 && wpos.y < dig_cut.y && dot(wpos.xz - dig_cut.xz, wpos.xz - dig_cut.xz) < dig_cut.w * dig_cut.w;
+	// (the triangles face either way: which side is earth comes from the normal, which points to the air)
+	bool from_earth = dot(wnrm, CAMERA_POSITION_WORLD - wpos) < 0.0;
+	NORMAL = normalize((VIEW_MATRIX * vec4(from_earth ? -wnrm : wnrm, 0.0)).xyz);
+	float lamp = 0.0;
+	if (dig_lamp.w > 0.0) {
+		float d = length(wpos - dig_lamp.xyz) / dig_lamp.w;
+		lamp = clamp(1.0 - d, 0.0, 1.0);
+		lamp *= lamp;
+	}
+	if ((cut_here && from_earth) || mode == 3) {
+		ALBEDO = vec3(0.075, 0.05, 0.034);
+		%LIGHT%
+	} else if (mode == 0 || (mode == 2 && COLOR.a > 0.5)) {
 		c = texture(pic, UV);
 	} else {
 		// the soil atlas, laid on whichever plane the face is most along (a tile is 32 units: 0.8 m)
@@ -146,9 +173,12 @@ void fragment() {
 		if (UV2.y > 0.5) p = p.yx;
 		c = texture(atlas, vec2((UV2.x + fract(p.x)) / 4.0, fract(p.y)));
 	}
-	ALBEDO = c.rgb * lin(max(COLOR.rgb, vec3(0.0)));
+	if (!((cut_here && from_earth) || mode == 3)) {
+		ALBEDO = c.rgb * lin(max(COLOR.rgb, vec3(0.0)));
+		%LIGHT%
+		%LAMP%
+	}
 	%ALPHA%
-	%LIGHT%
 }
 """
 
@@ -159,15 +189,17 @@ static func register_globals() -> void:
 	if _globals_done:
 		return
 	_globals_done = true
-	if not ProjectSettings.has_setting("shader_globals/dig_cut"):
-		RenderingServer.global_shader_parameter_add("dig_cut", RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4.ZERO)
+	for g in ["dig_cut", "dig_lamp"]:
+		if not ProjectSettings.has_setting("shader_globals/" + g):
+			RenderingServer.global_shader_parameter_add(g, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4.ZERO)
 	LookPass.register_globals()
 
 func _code(high: bool, scissor: bool) -> String:
 	return SHADER.replace("%RM%", ", specular_disabled, diffuse_lambert" if high else ", unshaded") \
 		.replace("%LOWFN%", "" if high else LookPass.LOW_FN) \
 		.replace("%ALPHA%", "ALPHA = COLOR.a; ALPHA_SCISSOR_THRESHOLD = 0.5;" if scissor else "") \
-		.replace("%LIGHT%", "ROUGHNESS = 1.0;" if high else "ALBEDO *= look_light(wpos);")
+		.replace("%LIGHT%", "ROUGHNESS = 1.0;" if high else "ALBEDO *= look_light(wpos);") \
+		.replace("%LAMP%", "EMISSION = ALBEDO * lamp * 3.0;" if high else "ALBEDO *= 1.0 + lamp * 2.6;")
 
 static var _shaders: Dictionary = {}
 func _shader(high: bool, scissor: bool) -> Shader:
@@ -187,12 +219,12 @@ func _make_mats() -> void:
 	_quality = _quality_now()
 	var high := _quality == "high"
 	var atlas := soil_atlas()
-	for k in ["pic", "soil", "edge", "cave"]:
+	for k in ["pic", "soil", "edge", "cave", "bottom"]:
 		var m := ShaderMaterial.new()
 		m.shader = _shader(high, k == "edge")
 		m.set_shader_parameter("pic", _yard_tex)
 		m.set_shader_parameter("atlas", atlas)
-		m.set_shader_parameter("mode", {"pic": 0, "soil": 1, "edge": 1, "cave": 2}[k])
+		m.set_shader_parameter("mode", {"pic": 0, "soil": 1, "edge": 1, "cave": 2, "bottom": 3}[k])
 		_mats[k] = m
 
 ## The look changed (F8, or the automatic drop on a slow desktop): the same materials, the other shaders.

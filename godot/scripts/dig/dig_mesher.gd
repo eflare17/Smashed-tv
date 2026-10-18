@@ -254,7 +254,8 @@ func _vert(p: Vector3, n: Vector3, key: int) -> void:
 		tint = CLAY_TINT.lerp(STONE_TINT, clampf((depth - 200.0) / 40.0, 0.0, 1.0))
 	elif depth > 80.0:
 		tint = DIRT_TINT.lerp(CLAY_TINT, clampf((depth - 80.0) / 40.0, 0.0, 1.0))
-	var k := 1.0 - 0.45 * depth / 320.0
+	# (darker the deeper, quickly at first: from above a hole's depth reads by its shade)
+	var k := 1.0 - 0.45 * sqrt(depth / 320.0)
 	cols.append(Color(tint.r * k, tint.g * k, tint.b * k, 0.0))
 
 ## How the ground's top looks at cell (cx, cy): 0 the yard picture, else 1 + tile * 2 + turned (the soil).
