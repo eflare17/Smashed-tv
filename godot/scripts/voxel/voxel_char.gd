@@ -26,6 +26,8 @@ var lobby_pose_f: float = 0.0
 ## Pressed flat (north to south) against what's behind: the mirror's reflection, which stands just in front of the
 ## glass.
 var flatten: bool = false
+## Face this way instead of the sprite's facing (HTML ground axes), when not zero: the lobby poses, tests.
+var facing_override: Vector2 = Vector2.ZERO
 ## A Player this belongs to (for the fight's weapon), found by itself.
 var player: Node = null
 
@@ -55,6 +57,7 @@ static var _shaders := {}
 var last_state: Dictionary = {}
 
 func _ready() -> void:
+	made += 1
 	process_priority = 900          # after the Player, the Fight and lobby life have told the sprite what to show
 	if source == null and get_parent() is CharSprite:
 		source = get_parent()
@@ -90,6 +93,8 @@ func _ensure(sheet: String) -> bool:
 		return false
 	if skeleton == null:
 		skeleton = model.make_skeleton()
+		if flatten:
+			skeleton.scale = Vector3(1.0, 1.0, 0.15)
 		add_child(skeleton)
 		mesh_inst = MeshInstance3D.new()
 		mesh_inst.name = "Blocks"
@@ -111,7 +116,12 @@ func _ensure(sheet: String) -> bool:
 		mesh_inst.mesh = model.build_mesh(key, style, lod, VoxelWeapons.attachments(model, weapon, lod), pal)
 	return true
 
+## Frames drawn (for tests).
+var frames := 0
+static var made := 0
+
 func _process(delta: float) -> void:
+	frames += 1
 	if source == null or not is_instance_valid(source):
 		return
 	var sheet := source.char_id
@@ -131,7 +141,7 @@ func _process(delta: float) -> void:
 		_speed = lerpf(_speed, minf(d, 400.0), 1.0 - exp(-delta * 10.0))
 	_last_pos = gp
 	# facing: turn smoothly toward the sprite's facing
-	var f := source.facing
+	var f := source.facing if facing_override == Vector2.ZERO else facing_override
 	if f.length_squared() > 0.0001:
 		var want := atan2(f.x, f.y)
 		if not _yaw_set:
@@ -223,15 +233,18 @@ func _apply(p: Dictionary) -> void:
 	var rot: Dictionary = p.rot
 	for i in model.bone_names.size():
 		var nm := model.bone_names[i]
-		skeleton.set_bone_pose_rotation(i, rot.get(nm, Quaternion.IDENTITY))
-	# the whole body: turned about its pivot, lifted, then faced
-	var pv: Vector3 = p.pivot * m
-	var turn := Transform3D(Basis(p.turn as Quaternion), Vector3.ZERO)
-	var body := Transform3D(Basis.IDENTITY, pv + (p.pos as Vector3) * m) * turn * Transform3D(Basis.IDENTITY, -pv)
-	var xf := Transform3D(Basis(Vector3.UP, yaw), Vector3.ZERO) * body
-	if flatten:
-		xf = Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.15)), Vector3.ZERO) * xf
-	skeleton.transform = xf
+		if model.bone_parent[i] >= 0:
+			skeleton.set_bone_pose_rotation(i, rot.get(nm, Quaternion.IDENTITY))
+	# the root bone carries the whole body: turned about the pose's pivot, lifted, then faced (in the bone, not the
+	# node: a node's transform set every frame under the physics-interpolated Player wouldn't show)
+	var root := maxi(0, model.bone("hips"))
+	var face := Quaternion(Vector3.UP, yaw)
+	var turn: Quaternion = p.turn
+	var pv: Vector3 = p.pivot
+	var ph: Vector3 = model.bone_pivot[root]
+	var at: Vector3 = pv + (p.pos as Vector3) + turn * (ph - pv)
+	skeleton.set_bone_pose_position(root, face * (at * m))
+	skeleton.set_bone_pose_rotation(root, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
 
 # ---------------------------------------------------------------- the look
 
@@ -282,11 +295,24 @@ static func shader_for(low: bool) -> Shader:
 		code = code.replace("%RENDER%", "unshaded").replace("%LOWFN%", LookPass.LOW_FN) \
 			.replace("%LIGHT%", "ALBEDO *= look_light(wpos + vec3(0.0, 0.4, 0.0));")
 	else:
-		code = code.replace("%RENDER%", "diffuse_lambert_wrap, specular_disabled").replace("%LOWFN%", "") \
-			.replace("%LIGHT%", "ROUGHNESS = 1.0;")
+		code = code.replace("%RENDER%", "diffuse_lambert_wrap, specular_disabled, shadows_disabled").replace("%LOWFN%", "") \
+			.replace("%LIGHT%", LIGHT_NORMAL)
 	s.code = code
 	_shaders[low] = s
 	return s
+
+## The high look's light: mostly the normal LookPass gives the pictures (toward the camera across the ground, well
+## up to the sky: even light, as the pixel art has its shading drawn in), a little of the blocks' own for shape.
+const LIGHT_NORMAL := """
+	{
+		vec3 back = INV_VIEW_MATRIX[2].xyz;
+		vec3 hz = vec3(back.x, 0.0, back.z);
+		hz = length(hz) > 0.001 ? normalize(hz) : vec3(0.0, 0.0, 1.0);
+		vec3 pic = normalize((VIEW_MATRIX * vec4(normalize(hz * 0.55 + vec3(0.0, 1.0, 0.0)), 0.0)).xyz);
+		NORMAL = normalize(pic + NORMAL * 0.15);
+		ROUGHNESS = 1.0;
+	}
+"""
 
 const SHADER := """
 shader_type spatial;
@@ -296,6 +322,7 @@ uniform float tip = 0.5;          // lean toward a steeply looking-down camera, 
 uniform float tip_from = 0.55;    // the camera's look-down (sine of its pitch) where the lean starts
 uniform float tip_to = 0.9;       // and where it's full
 uniform vec4 modulate : source_color = vec4(1.0);
+uniform bool srgb_colors = false;  // true: convert the colours from sRGB (they arrive linear in the Compatibility renderer)
 varying vec3 wpos;
 
 vec3 to_linear(vec3 c) {
@@ -314,16 +341,22 @@ void vertex() {
 	float ortho = step(0.5, PROJECTION_MATRIX[3][3]);
 	float a = (1.0 - ortho) * tip * smoothstep(tip_from, tip_to, clamp(cb.y, 0.0, 1.0)) * asin(clamp(cb.y, 0.0, 1.0));
 	vec3 v = wp - origin;
-	// turned about 'right' through the feet: up leans toward the camera
+	// turned about 'right' through the feet: the top tips back, away from the camera, toward facing it
+	a = -a;
 	vec3 drawn = origin + v * cos(a) + cross(right, v) * sin(a) + right * dot(right, v) * (1.0 - cos(a));
-	vec4 ct = PROJECTION_MATRIX * VIEW_MATRIX * vec4(wp, 1.0);
-	vec4 cd = PROJECTION_MATRIX * VIEW_MATRIX * vec4(drawn, 1.0);
-	// drawn where it leans, but as deep as the upright body (so it sorts with the world like the pictures do)
-	POSITION = vec4(cd.xy / cd.w * ct.w, ct.z, ct.w);
+	// its own parts sort as drawn (leaning), but the whole body sits as deep as the upright one at chest height,
+	// so it sorts with the world like the pictures (things south of him cover him, a wall behind him doesn't)
+	vec3 chest = vec3(0.0, 1.0, 0.0);
+	vec3 chest_drawn = chest * cos(a) + cross(right, chest) * sin(a) + right * dot(right, chest) * (1.0 - cos(a));
+	float dz = (VIEW_MATRIX * vec4(origin + chest, 1.0)).z - (VIEW_MATRIX * vec4(origin + chest_drawn, 1.0)).z;
+	vec4 vd = VIEW_MATRIX * vec4(drawn, 1.0);
+	vec4 cd = PROJECTION_MATRIX * vd;
+	vec4 ca = PROJECTION_MATRIX * (vd + vec4(0.0, 0.0, dz, 0.0));
+	POSITION = vec4(cd.xy / cd.w * ca.w, ca.z, ca.w);
 }
 
 void fragment() {
-	ALBEDO = to_linear(COLOR.rgb) * modulate.rgb;
+	ALBEDO = (srgb_colors ? to_linear(COLOR.rgb) : COLOR.rgb) * modulate.rgb;
 	%LIGHT%
 }
 """

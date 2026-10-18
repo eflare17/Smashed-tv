@@ -102,7 +102,8 @@ static func _quad(verts: PackedVector3Array, normals: PackedVector3Array, colors
 		verts.append(p[j])
 		normals.append(nrm)
 		colors.append(col)
-	# Godot draws clockwise faces as the front: (u, v, normal) is right-handed, so +dir needs the reverse order
+	# Godot draws clockwise faces as the front (checked in the web build): (u, v, normal) is right-handed, so +dir
+	# needs the reverse order
 	if dir > 0:
 		indices.append_array([b, b + 2, b + 1, b, b + 3, b + 2])
 	else:

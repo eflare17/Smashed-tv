@@ -121,6 +121,8 @@ func _scan() -> void:
 	var on := mode == "blocks"
 	for n in get_tree().root.find_children("*", "CharSprite", true, false):
 		var cs := n as CharSprite
+		if cs.has_meta("no_blocks"):
+			continue
 		var vc := cs.get_node_or_null("Blocks") as VoxelChar
 		if on:
 			if vc == null and VoxelModel.model_for_sheet(cs.char_id) != "":

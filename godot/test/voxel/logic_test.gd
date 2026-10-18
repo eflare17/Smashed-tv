@@ -63,7 +63,7 @@ func _mesher() -> void:
 	var two := PackedInt32Array([0xff0000 + 1, 0x00ff00 + 1])
 	m = VoxMesher.mesh({"size": Vector3i(2, 1, 1), "cells": two})
 	check(m.quads == 10, "two colours: 10 quads (%d)" % m.quads)
-	# front faces are clockwise seen from outside (Godot's front)
+	# front faces are clockwise seen from outside (what Godot draws as the front)
 	var ok := true
 	for q in m.quads:
 		var a: Vector3 = m.verts[m.indices[q * 6]]
