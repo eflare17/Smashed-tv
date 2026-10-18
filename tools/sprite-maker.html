@@ -119,6 +119,10 @@
           <button id="describe">Describe from the picture</button>
           <span class="hint" id="descState"></span>
         </div>
+        <div class="row" style="margin-top:8px">
+          <button id="openJson">Open a downloaded .json</button><input type="file" id="openFile" accept=".json,application/json" hidden>
+          <span class="hint">to carry on with a character you made before (its sheets and blocks)</span>
+        </div>
       </div>
     </div>
   </div>
@@ -137,6 +141,7 @@
 
 <script src="gothica-refs.js"></script>
 <script src="sprite-cut.js"></script>
+<script src="sprite-blocks.js"></script>
 <script>
 'use strict';
 // ------------------------------------------------------------------ the sheets
@@ -217,7 +222,7 @@ function save() {
   clearTimeout(saveT);
   saveT = setTimeout(() => {
     const keep = {};
-    for (const [id, s] of Object.entries(S.sheets)) keep[id] = { raw: s.raw || null, size: s.size, mirror: s.mirror, fix: s.fix, count: s.count };
+    for (const [id, s] of Object.entries(S.sheets)) keep[id] = { raw: s.raw || null, size: s.size, mirror: s.mirror, fix: s.fix, count: s.count, imported: s.imported || null };
     DB.set('char:' + charKey(), { design: S.design, desc: $('charDesc').value, sheets: keep });
     store.set('last', $('charName').value.trim());
   }, 300);
@@ -229,10 +234,52 @@ async function load(name) {
   S.sheets = {};
   for (const sh of SHEETS) {
     const o = v && v.sheets && v.sheets[sh.id] || {};
-    S.sheets[sh.id] = { raw: o.raw || null, size: o.size || 1, mirror: !!o.mirror, fix: o.fix || '', count: o.count || sh.frames, frames: null, note: '' };
+    S.sheets[sh.id] = { raw: o.raw || null, size: o.size || 1, mirror: !!o.mirror, fix: o.fix || '', count: o.count || sh.frames, frames: null, note: '', imported: o.imported || null };
   }
   showDesign();
-  for (const sh of SHEETS) { renderSheet(sh); if (S.sheets[sh.id].raw) recut(sh); }
+  const cuts = [];
+  for (const sh of SHEETS) {
+    const s = S.sheets[sh.id];
+    renderSheet(sh);
+    if (s.raw) cuts.push(recut(sh));
+    else if (s.imported) cuts.push(framesFrom(s.imported).then(f => { s.frames = f; renderSheet(sh); }));
+  }
+  await Promise.all(cuts);
+  if (window.BlocksUI) { BlocksUI.load(); BlocksUI.designPalette(); }
+}
+// frames ({width, height, data}) from picture URLs
+async function framesFrom(urls) {
+  const out = [];
+  for (const u of urls) {
+    const im = await loadImg(u);
+    const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height);
+    out.push({ width: d.width, height: d.height, data: d.data });
+  }
+  return out;
+}
+// a character file this page downloaded: its sprites back into the sheets (as they were cut), its blocks into the
+// Blocks card
+async function openChar(f) {
+  let ch;
+  try { ch = JSON.parse(await f.text()); } catch (e) { alert('That isn\'t a character .json: ' + e.message); return; }
+  if (!ch || !ch.sprites) { alert('No sprites in that file.'); return; }
+  $('charName').value = ch.name || ch.id || '';
+  await load($('charName').value);
+  for (const sh of SHEETS) {
+    const s = S.sheets[sh.id];
+    let urls;
+    if (Array.isArray(sh.keys)) urls = sh.keys.map(k => ch.sprites[[].concat(k)[0]] || [].concat(k).map(q => ch.sprites[q]).find(Boolean)).filter(Boolean);
+    else urls = [].concat(ch.sprites[sh.keys] || []);
+    urls = urls.map(u => Array.isArray(u) ? u[0] : u);
+    if (!urls.length) continue;
+    s.raw = null; s.imported = urls; s.note = ''; s.err = '';
+    s.frames = await framesFrom(urls);
+    renderSheet(sh);
+  }
+  save();
+  if (window.BlocksUI) { if (ch.voxel) BlocksUI.fromGame(ch.voxel); BlocksUI.designPalette(); }
 }
 
 // ------------------------------------------------------------------ pictures
@@ -364,7 +411,7 @@ async function makeSheet(sh) {
     const design = await shrinkForSend(S.design);
     const res = await gemini({ model: $('imgModel').value.trim(), text: promptFor(sh), images: [design, GOTH_REFS[sh.ref]], image: true, aspect: sh.aspect });
     if (!res.img) throw new Error('Gemini sent back no picture' + (res.why ? ' (' + res.why + ')' : '') + (res.text ? ':\n' + res.text.slice(0, 400) : '.'));
-    s.raw = res.img; s.mirror = false;
+    s.raw = res.img; s.mirror = false; s.imported = null;
     save();
     await recut(sh);
   } catch (e) {
@@ -375,7 +422,7 @@ async function makeSheet(sh) {
 }
 async function recut(sh) {
   const s = S.sheets[sh.id];
-  if (!s.raw) { s.frames = null; return; }
+  if (!s.raw) { if (!s.imported) s.frames = null; return; }
   const im = await loadImg(s.raw);
   const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
   const g = c.getContext('2d'); g.drawImage(im, 0, 0);
@@ -458,7 +505,7 @@ function renderSheet(sh) {
   const mirror = el('input', { type: 'checkbox' }); mirror.checked = s.mirror;
   mirror.onchange = () => { s.mirror = mirror.checked; save(); recut(sh); };
   const own = el('input', { type: 'file', accept: 'image/*', hidden: true });
-  own.onchange = async () => { if (!own.files[0]) return; s.raw = await fileToDataURL(own.files[0]); s.err = ''; save(); recut(sh); };
+  own.onchange = async () => { if (!own.files[0]) return; s.raw = await fileToDataURL(own.files[0]); s.imported = null; s.err = ''; save(); recut(sh); };
   const controls = el('div', { class: 'controls' },
     makeBtn, fix,
     el('span', null, el('label', null, 'Size '), size, ' ', sizeVal),
@@ -469,7 +516,7 @@ function renderSheet(sh) {
     el('button', { onclick: async e => { await navigator.clipboard.writeText(promptFor(sh)).catch(() => {}); e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy prompt', 1500); } }, 'Copy prompt'),
     el('button', { onclick: () => downloadURL(GOTH_REFS[sh.ref], 'gothica_' + sh.id + '.png') }, 'Save reference'),
     el('button', { onclick: () => own.click() }, 'Use my own picture'), own,
-    s.raw ? el('button', { onclick: () => { s.raw = null; s.frames = null; s.note = ''; save(); renderSheet(sh); } }, 'Clear') : null,
+    s.raw || s.imported ? el('button', { onclick: () => { s.raw = null; s.imported = null; s.frames = null; s.note = ''; save(); renderSheet(sh); } }, 'Clear') : null,
     el('span', { class: 'hint' }, 'Made it in the Gemini app instead? Use my own picture.'),
   );
   card.replaceChildren(...[head, pics, strip, s.note ? el('div', { class: 'note' }, s.note + ' — check the frames, or Redo with a fix note.') : null,
@@ -526,6 +573,9 @@ function exportChar() {
   if (missing.length && !confirm('Not finished:\n- ' + missing.join('\n- ') + '\n\nDownload what there is anyway?')) return;
   const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'new_character';
   const out = { id, name, made: new Date().toISOString().slice(0, 10), tool: 'sprite-maker', sprites };
+  // the block character for the Godot port (tools/add_godot_character.py); add_character.py leaves it alone
+  const voxel = window.BlocksUI && BlocksUI.exportField(id);
+  if (voxel) out.voxel = voxel;
   const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
   downloadURL(URL.createObjectURL(blob), id + '.json');
 }
@@ -577,7 +627,7 @@ async function describe() {
   $('charDesc').oninput = save;
 
   const drop = $('drop'), file = $('designFile');
-  const take = async f => { if (!f || !/^image\//.test(f.type)) return; S.design = await fileToDataURL(f); showDesign(); save(); };
+  const take = async f => { if (!f || !/^image\//.test(f.type)) return; S.design = await fileToDataURL(f); showDesign(); save(); if (window.BlocksUI) BlocksUI.designPalette(); };
   drop.onclick = () => file.click();
   drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') file.click(); };
   file.onchange = () => take(file.files[0]);
@@ -587,10 +637,13 @@ async function describe() {
   document.addEventListener('paste', e => { const f = [...(e.clipboardData && e.clipboardData.files || [])][0]; if (f && document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') take(f); });
 
   $('describe').onclick = describe;
+  $('openJson').onclick = () => $('openFile').click();
+  $('openFile').onchange = () => { if ($('openFile').files[0]) openChar($('openFile').files[0]); $('openFile').value = ''; };
   $('makeAll').onclick = makeAll;
   $('stop').onclick = () => { stopAll = true; $('allState').textContent = 'Stopping after the ones already drawing...'; };
   $('export').onclick = exportChar;
 })();
 </script>
+<script src="sprite-blocks-ui.js"></script>
 </body>
 </html>

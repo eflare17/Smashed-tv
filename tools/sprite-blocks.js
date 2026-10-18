@@ -91,12 +91,16 @@
     for (let r = R(0.33); r <= R(0.6); r++) { const e = Fr.extent(r); if (e) cs.push((e[0] + e[1] + 1) / 2); }
     const cx0 = Math.round(median(cs));
     const cen = r => runAt(Fr, r, cx0);
-    // the neck: the narrowest row of the middle run, a fifth to a third of the way down
-    let neck = R(0.27), nw = 1e9;
-    for (let r = R(0.17); r <= R(0.34); r++) { const rn = cen(r); if (rn && rn[1] - rn[0] < nw) { nw = rn[1] - rn[0]; neck = r; } }
-    neck = Math.max(neck, R(0.2));
-    const headEnd = neck + S(2);              // rows above it are head
-    const rs = neck + S(4);                   // the arms start (top of the shoulders)
+    // the head: its width and middle near the top; the shoulders start where a row gets much wider than the head;
+    // the chin hangs a little below that, between the shoulders (as Jared's builder cuts his head)
+    const hws = [], hcs = [];
+    for (let r = R(0.06); r <= R(0.18); r++) { const e = Fr.extent(r); if (e) { hws.push(e[1] + 1 - e[0]); hcs.push((e[0] + e[1] + 1) / 2); } }
+    const headW = median(hws) || H * 0.24, headC = median(hcs) || cx0 + 0.5;
+    let rs = R(0.27);
+    for (let r = R(0.16); r <= R(0.32); r++) { const e = Fr.extent(r); if (e && e[1] + 1 - e[0] > 1.4 * headW) { rs = r; break; } }
+    const headEnd = Math.min(rs + S(12), R(0.33));     // rows above it can be head
+    const neck = rs + S(6);                             // the head's pivot
+    const inHead = (c, r) => r < rs || (r < headEnd && Math.abs(c + 0.5 - headC) <= 0.42 * headW);
     // the crotch: the first row (below the middle) where the gap between the legs starts and stays
     let crotch = -1;
     for (let r = R(0.5); r < foot - S(16) && crotch < 0; r++) {
@@ -172,7 +176,7 @@
       if (!Fr.op(c, r)) continue;
       const id = r * 4096 + c;
       let p;
-      if (r < headEnd) p = 'head';
+      if (inHead(c, r)) p = 'head';
       else if (armSets[0][id]) p = armSets[0][id];
       else if (armSets[1][id]) p = armSets[1][id];
       else if (r < crotch) p = r <= waist ? 'torso' : 'pelvis';
@@ -213,6 +217,12 @@
       }
     }
     const sideAt = r => sideRun[r - foot + (Sd ? Sd.foot : foot)] || null;    // feet on the same line
+    let bodySide = null;
+    {
+      const hs = [], ms = [];
+      for (let r = rs + S(6); r < crotch; r++) { const q = sideAt(r); if (q) { hs.push((q[1] - q[0]) / 2); ms.push((q[0] + q[1]) / 2); } }
+      if (hs.length) bodySide = { half: median(hs), mid: median(ms) };
+    }
     function depth(part, r, c0, c1) {
       const hw = (c1 + 1 - c0) / 2;
       const s = sideAt(r);
@@ -220,12 +230,20 @@
       if (base === 'head') {
         if (!s) return [-hw, hw * 1.1];
         let [zb, zf] = s;
+        // the chin, between the shoulders: no deeper than the head just above (the side frame's row there is the body)
+        const ref = r >= rs ? sideAt(rs - S(3)) : null;
+        if (ref) { zb = Math.max(zb, ref[0] + (ref[1] - ref[0]) * 0.25); zf = Math.min(zf, ref[1]); }
         if (zf - zb < hw * 1.2) { const m = (zb + zf) / 2; zb = m - hw * 0.6; zf = m + hw * 0.6; }
         return [zb, zf];
       }
       if (base === 'torso' || base === 'pelvis') {
+        // the body's depth: this row's in the side frame, but no deeper than the body's usual (held things and
+        // swinging arms stick out of it), and centred where the body usually is
         let m = 0, half = hw * 0.62;
-        if (s) { m = clamp((s[0] + s[1]) / 2, -0.25 * hw, 0.25 * hw); half = clamp((s[1] - s[0]) / 2, 0.45 * hw, 0.8 * hw); }
+        if (s && bodySide) {
+          half = clamp(Math.min((s[1] - s[0]) / 2, bodySide.half * 1.1), 0.42 * hw, 0.72 * hw);
+          m = clamp(bodySide.mid, -0.15 * hw, 0.15 * hw);
+        }
         return [m - half, m + half];
       }
       if (base === 'foot') {
@@ -267,6 +285,9 @@
       }
     }
 
+    const occAll = new Set();
+    for (const p of PARTS) for (const k of parts[p].keys()) occAll.add(k);
+    for (const p of PARTS) dropSpecks(parts[p], src, occAll);
     const model = { parts, bones: [], meta: {} };
     colourise(model, views, { foot, src, Fr });
     // mirrored limbs: the colours of the one they copy
@@ -277,7 +298,12 @@
 
     // -- the bones (front-frame pixels: x = column - cx0, y = foot - row)
     const J = (c, r, z) => [c - cx0, foot - r, z || 0];
-    const midOf = (p, r) => { const rows = own[p] || {}; let rr = r; for (let k = 0; k < 40 && !rows[rr]; k++) rr += k % 2 ? -k : k; const cs2 = rows[rr] || [cx0]; return (Math.min(...cs2) + Math.max(...cs2) + 1) / 2; };
+    const midOf = (p, r) => {
+      if (!own[p] || !Object.keys(own[p]).length) {            // an empty part: the one above it in the limb
+        const up = { hand: 'forearm', forearm: 'arm', foot: 'shin', shin: 'thigh' }[p.replace(/_[lr]$/, '')];
+        if (up) return midOf(up + p.slice(-2), r);
+      }
+      const rows = own[p] || {}; let rr = r; for (let k = 0; k < 40 && !rows[rr]; k++) rr += k % 2 ? -k : k; const cs2 = rows[rr] || [cx0]; return (Math.min(...cs2) + Math.max(...cs2) + 1) / 2; };
     const armJ = (a, s) => {
       const L = a.bottom - a.top, sh = a.top + Math.round(0.12 * L), el = a.top + Math.round(0.57 * L), wr = a.top + Math.round(0.82 * L);
       return { sh: J(midOf('arm' + s, sh), sh, -S(2)), el: J(midOf('forearm' + s, el), el, -S(2)), wr: J(midOf('hand' + s, wr), wr, -S(2)), wrRow: wr, wrCol: midOf('hand' + s, wr) };
@@ -301,9 +327,26 @@
     model.meta = {
       cx0, foot, cz0, ref_rows: Fr.h, height: H,
       grip_r: [+(ar.wrCol - cx0).toFixed(1), foot - (ar.wrRow + S(7)), 0],
-      rows: { top, neck, crotch, waist, hipRow, skirt }, mirrored: Object.keys(mirrored),
+      rows: { top, shoulders: rs, chin: headEnd, neck, crotch, waist, hipRow, skirt }, mirrored: Object.keys(mirrored),
     };
     return model;
+  }
+  // bits of a part not joined to its main piece and under a few blocks (stray pixels round the art) go
+  function dropSpecks(m, src, occAll) {
+    const seen = new Set();
+    for (const k0 of m.keys()) {
+      if (seen.has(k0)) continue;
+      const piece = [k0]; seen.add(k0);
+      for (let i = 0; i < piece.length; i++) {
+        const k = piece[i], x = kx(k), y = ky(k), z = kz(k);
+        for (const q of [key(x + 1, y, z), key(x - 1, y, z), key(x, y + 1, z), key(x, y - 1, z), key(x, y, z + 1), key(x, y, z - 1)]) {
+          if (m.has(q) && !seen.has(q)) { seen.add(q); piece.push(q); }
+        }
+      }
+      // (a whole part that small goes too if it floats free of every other part)
+      const touches = () => piece.some(k => { const x = kx(k), y = ky(k), z = kz(k); return [key(x + 1, y, z), key(x - 1, y, z), key(x, y + 1, z), key(x, y - 1, z), key(x, y, z + 1), key(x, y, z - 1)].some(q => occAll.has(q) && !m.has(q)); });
+      if (piece.length < 24 && (piece.length < m.size * 0.2 || !touches())) for (const k of piece) { m.delete(k); src.delete(k); occAll.delete(k); }
+    }
   }
   function range(a, b) { const o = []; for (let i = a; i <= b; i++) o.push(i); return o; }
 
@@ -351,7 +394,6 @@
       const d = v.d, right = [d[2], 0, -d[0]];
       const zb = new Map();
       const proj = new Map();
-      let msum = 0, mn = 0;
       for (const k of surf) {
         const px = kx(k) + 0.5, py = ky(k), pz = kz(k) + 0.5;
         const sx = px * right[0] + pz * right[2], dep = px * d[0] + pz * d[2];
@@ -360,15 +402,28 @@
         const was = zb.get(id);
         if (was === undefined || dep > was) zb.set(id, dep);
       }
-      // line the picture up with the model: the middle of what's drawn, over the body's middle rows
-      const y0 = Math.round(0.1 * H), y1 = Math.round(0.7 * H);
-      for (const id of zb.keys()) { const py = Math.floor(id / 4096); if (py >= y0 && py <= y1) { msum += (id % 4096) - 2048 + 0.5; mn++; } }
-      let isum = 0, inn = 0;
-      for (let py = y0; py <= y1; py++) {
-        const r = v.f.foot - 1 - py;
-        for (let c = 0; c < v.f.w; c++) if (v.f.op(c, r)) { isum += c + 0.5; inn++; }
+      // line the picture up with the model, row by row (the head can sit forward of the body in a side frame):
+      // the middle of each row's outline in the picture against the model's, smoothed, kept near the whole body's
+      const mExt = {};
+      for (const id of zb.keys()) {
+        const py = Math.floor(id / 4096), c = (id % 4096) - 2048;
+        const e = mExt[py] || (mExt[py] = [c, c]); if (c < e[0]) e[0] = c; if (c > e[1]) e[1] = c;
       }
-      v.off = (inn && mn) ? isum / inn - msum / mn : 0;
+      const raw = {};
+      const y0 = Math.round(0.1 * H), y1 = Math.round(0.7 * H);
+      for (const py of Object.keys(mExt).map(Number)) {
+        const e = v.f.extent(v.f.foot - 1 - py);
+        if (e) raw[py] = (e[0] + e[1] + 1) / 2 - (mExt[py][0] + mExt[py][1] + 1) / 2;
+      }
+      const all = Object.keys(raw).map(Number).filter(py => py >= y0 && py <= y1).map(py => raw[py]);
+      const whole = all.length ? median(all) : 0;
+      v.offs = {};
+      for (const py of Object.keys(mExt).map(Number)) {
+        const w = [];
+        for (let k = -6; k <= 6; k++) if (raw[py + k] !== undefined) w.push(raw[py + k]);
+        v.offs[py] = w.length ? clamp(median(w), whole - 0.12 * H, whole + 0.12 * H) : whole;
+      }
+      v.off = whole;
       v.zb = zb; v.proj = proj;
     }
     for (const k of surf) {
@@ -383,7 +438,7 @@
         const col = Math.floor(sx);
         const front = v.zb.get(py * 4096 + col + 2048);
         if (front !== undefined && dep < front - 1.6) continue;          // hidden in this view
-        const c = Math.floor(sx + v.off), r = v.f.foot - 1 - py;
+        const c = Math.floor(sx + (v.offs[py] !== undefined ? v.offs[py] : v.off)), r = v.f.foot - 1 - py;
         let got = -1;
         if (v.f.op(c, r)) got = v.f.col(c, r);
         else if (v.f.op(c - 1, r)) got = v.f.col(c - 1, r);
