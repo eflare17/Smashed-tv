@@ -1,0 +1,361 @@
+{
+ "char": "batter",
+ "bones": [
+  {
+   "name": "hips",
+   "parent": "",
+   "pivot": [
+    0.0,
+    36.0,
+    0.0
+   ]
+  },
+  {
+   "name": "chest",
+   "parent": "hips",
+   "pivot": [
+    0.0,
+    48.8,
+    0.0
+   ]
+  },
+  {
+   "name": "head",
+   "parent": "chest",
+   "pivot": [
+    0.0,
+    64.0,
+    0.5
+   ]
+  },
+  {
+   "name": "arm_r",
+   "parent": "chest",
+   "pivot": [
+    -17.0,
+    62.0,
+    0.0
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "parent": "arm_r",
+   "pivot": [
+    -21.0,
+    48.0,
+    0.0
+   ]
+  },
+  {
+   "name": "hand_r",
+   "parent": "forearm_r",
+   "pivot": [
+    -22.0,
+    38.0,
+    0.0
+   ]
+  },
+  {
+   "name": "arm_l",
+   "parent": "chest",
+   "pivot": [
+    17.0,
+    62.0,
+    0.0
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "parent": "arm_l",
+   "pivot": [
+    21.0,
+    48.0,
+    0.0
+   ]
+  },
+  {
+   "name": "hand_l",
+   "parent": "forearm_l",
+   "pivot": [
+    22.0,
+    38.0,
+    0.0
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "parent": "hips",
+   "pivot": [
+    6.0,
+    34.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_l",
+   "parent": "thigh_l",
+   "pivot": [
+    6.0,
+    21.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_l",
+   "parent": "shin_l",
+   "pivot": [
+    6.0,
+    10.0,
+    0.0
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "parent": "hips",
+   "pivot": [
+    -6.0,
+    34.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_r",
+   "parent": "thigh_r",
+   "pivot": [
+    -6.0,
+    21.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_r",
+   "parent": "shin_r",
+   "pivot": [
+    -6.0,
+    10.0,
+    0.0
+   ]
+  }
+ ],
+ "parts": [
+  {
+   "name": "head",
+   "bone": "head",
+   "file": "head.vox",
+   "origin": [
+    -10,
+    63,
+    -10
+   ],
+   "size": [
+    22,
+    21,
+    25
+   ]
+  },
+  {
+   "name": "torso",
+   "bone": "chest",
+   "file": "torso.vox",
+   "origin": [
+    -14,
+    35,
+    -9
+   ],
+   "size": [
+    29,
+    18,
+    33
+   ]
+  },
+  {
+   "name": "arm_r",
+   "bone": "arm_r",
+   "file": "arm_r.vox",
+   "origin": [
+    -24,
+    48,
+    -5
+   ],
+   "size": [
+    10,
+    10,
+    17
+   ]
+  },
+  {
+   "name": "arm_l",
+   "bone": "arm_l",
+   "file": "arm_l.vox",
+   "origin": [
+    14,
+    48,
+    -5
+   ],
+   "size": [
+    10,
+    10,
+    16
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "bone": "forearm_r",
+   "file": "forearm_r.vox",
+   "origin": [
+    -26,
+    39,
+    -6
+   ],
+   "size": [
+    12,
+    12,
+    9
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "bone": "forearm_l",
+   "file": "forearm_l.vox",
+   "origin": [
+    14,
+    39,
+    -6
+   ],
+   "size": [
+    12,
+    12,
+    9
+   ]
+  },
+  {
+   "name": "hand_r",
+   "bone": "hand_r",
+   "file": "hand_r.vox",
+   "origin": [
+    -26,
+    31,
+    -4
+   ],
+   "size": [
+    9,
+    8,
+    8
+   ]
+  },
+  {
+   "name": "hand_l",
+   "bone": "hand_l",
+   "file": "hand_l.vox",
+   "origin": [
+    17,
+    31,
+    -4
+   ],
+   "size": [
+    9,
+    8,
+    8
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "bone": "thigh_l",
+   "file": "thigh_l.vox",
+   "origin": [
+    0,
+    21,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    14
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "bone": "thigh_r",
+   "file": "thigh_r.vox",
+   "origin": [
+    -13,
+    21,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    15
+   ]
+  },
+  {
+   "name": "shin_l",
+   "bone": "shin_l",
+   "file": "shin_l.vox",
+   "origin": [
+    0,
+    10,
+    -6
+   ],
+   "size": [
+    12,
+    12,
+    11
+   ]
+  },
+  {
+   "name": "shin_r",
+   "bone": "shin_r",
+   "file": "shin_r.vox",
+   "origin": [
+    -12,
+    10,
+    -6
+   ],
+   "size": [
+    12,
+    12,
+    11
+   ]
+  },
+  {
+   "name": "foot_l",
+   "bone": "foot_l",
+   "file": "foot_l.vox",
+   "origin": [
+    -1,
+    0,
+    -4
+   ],
+   "size": [
+    11,
+    10,
+    10
+   ]
+  },
+  {
+   "name": "foot_r",
+   "bone": "foot_r",
+   "file": "foot_r.vox",
+   "origin": [
+    -10,
+    0,
+    -4
+   ],
+   "size": [
+    11,
+    10,
+    10
+   ]
+  }
+ ],
+ "ref_enemy": "batter",
+ "ref_rows": 88,
+ "cx0": 27,
+ "foot": 88,
+ "grip_r": [
+  -21.5,
+  35,
+  0
+ ]
+}

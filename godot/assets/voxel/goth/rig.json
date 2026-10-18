@@ -1,0 +1,396 @@
+{
+ "char": "goth",
+ "bones": [
+  {
+   "name": "hips",
+   "parent": "",
+   "pivot": [
+    0.0,
+    68.0,
+    0.0
+   ]
+  },
+  {
+   "name": "chest",
+   "parent": "hips",
+   "pivot": [
+    0.0,
+    80.0,
+    0.0
+   ]
+  },
+  {
+   "name": "head",
+   "parent": "chest",
+   "pivot": [
+    1.0,
+    106.0,
+    1.0
+   ]
+  },
+  {
+   "name": "arm_r",
+   "parent": "chest",
+   "pivot": [
+    -17.5,
+    102.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "parent": "arm_r",
+   "pivot": [
+    -18.5,
+    85.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "hand_r",
+   "parent": "forearm_r",
+   "pivot": [
+    -19.5,
+    74.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "arm_l",
+   "parent": "chest",
+   "pivot": [
+    17.5,
+    102.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "parent": "arm_l",
+   "pivot": [
+    18.5,
+    85.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "hand_l",
+   "parent": "forearm_l",
+   "pivot": [
+    19.5,
+    74.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "parent": "hips",
+   "pivot": [
+    -5.5,
+    50.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_r",
+   "parent": "thigh_r",
+   "pivot": [
+    -5.5,
+    31.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_r",
+   "parent": "shin_r",
+   "pivot": [
+    -5.5,
+    13.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "parent": "hips",
+   "pivot": [
+    5.5,
+    50.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_l",
+   "parent": "thigh_l",
+   "pivot": [
+    5.5,
+    31.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_l",
+   "parent": "shin_l",
+   "pivot": [
+    5.5,
+    13.0,
+    -1.0
+   ]
+  }
+ ],
+ "parts": [
+  {
+   "name": "head",
+   "bone": "head",
+   "file": "head.vox",
+   "origin": [
+    -8,
+    103,
+    -9
+   ],
+   "size": [
+    21,
+    22,
+    33
+   ]
+  },
+  {
+   "name": "torso",
+   "bone": "chest",
+   "file": "torso.vox",
+   "origin": [
+    -14,
+    80,
+    -9
+   ],
+   "size": [
+    28,
+    20,
+    26
+   ]
+  },
+  {
+   "name": "skirt",
+   "bone": "hips",
+   "file": "skirt.vox",
+   "origin": [
+    -23,
+    50,
+    -15
+   ],
+   "size": [
+    45,
+    31,
+    32
+   ],
+   "group": "skirt"
+  },
+  {
+   "name": "thigh_r",
+   "bone": "thigh_r",
+   "file": "thigh_r.vox",
+   "origin": [
+    -14,
+    31,
+    -9
+   ],
+   "size": [
+    17,
+    18,
+    19
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "bone": "thigh_l",
+   "file": "thigh_l.vox",
+   "origin": [
+    -3,
+    31,
+    -9
+   ],
+   "size": [
+    17,
+    18,
+    19
+   ]
+  },
+  {
+   "name": "shin_r",
+   "bone": "shin_r",
+   "file": "shin_r.vox",
+   "origin": [
+    -12,
+    13,
+    -9
+   ],
+   "size": [
+    15,
+    16,
+    18
+   ]
+  },
+  {
+   "name": "shin_l",
+   "bone": "shin_l",
+   "file": "shin_l.vox",
+   "origin": [
+    -3,
+    13,
+    -9
+   ],
+   "size": [
+    15,
+    16,
+    18
+   ]
+  },
+  {
+   "name": "foot_r",
+   "bone": "foot_r",
+   "file": "foot_r.vox",
+   "origin": [
+    -13,
+    0,
+    -9
+   ],
+   "size": [
+    16,
+    22,
+    13
+   ]
+  },
+  {
+   "name": "foot_l",
+   "bone": "foot_l",
+   "file": "foot_l.vox",
+   "origin": [
+    -3,
+    0,
+    -9
+   ],
+   "size": [
+    16,
+    22,
+    13
+   ]
+  },
+  {
+   "name": "arm_r",
+   "bone": "arm_r",
+   "file": "arm_r.vox",
+   "origin": [
+    -22,
+    85,
+    -5
+   ],
+   "size": [
+    12,
+    8,
+    21
+   ]
+  },
+  {
+   "name": "arm_l",
+   "bone": "arm_l",
+   "file": "arm_l.vox",
+   "origin": [
+    11,
+    85,
+    -5
+   ],
+   "size": [
+    11,
+    8,
+    21
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "bone": "forearm_r",
+   "file": "forearm_r.vox",
+   "origin": [
+    -24,
+    74,
+    -5
+   ],
+   "size": [
+    10,
+    8,
+    11
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "bone": "forearm_l",
+   "file": "forearm_l.vox",
+   "origin": [
+    14,
+    74,
+    -5
+   ],
+   "size": [
+    10,
+    8,
+    11
+   ]
+  },
+  {
+   "name": "hand_r",
+   "bone": "hand_r",
+   "file": "hand_r.vox",
+   "origin": [
+    -24,
+    70,
+    -3
+   ],
+   "size": [
+    6,
+    4,
+    4
+   ]
+  },
+  {
+   "name": "hand_l",
+   "bone": "hand_l",
+   "file": "hand_l.vox",
+   "origin": [
+    18,
+    70,
+    -3
+   ],
+   "size": [
+    6,
+    4,
+    4
+   ]
+  },
+  {
+   "name": "hair",
+   "bone": "head",
+   "file": "hair.vox",
+   "origin": [
+    -27,
+    56,
+    -30
+   ],
+   "size": [
+    56,
+    46,
+    92
+   ],
+   "group": "hair_long"
+  }
+ ],
+ "ref_sheet": "goth",
+ "ref_key": "front_a",
+ "ref_frame": 0,
+ "ref_rows": 160,
+ "cx0": 29,
+ "foot": 160,
+ "cz0": 37,
+ "grip_r": [
+  -19.5,
+  70,
+  0
+ ]
+}
