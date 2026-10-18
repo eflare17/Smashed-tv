@@ -18,6 +18,7 @@ func _ready() -> void:
 	_vox_round_trip()
 	_mesher()
 	_model()
+	_goth()
 	_poses()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
@@ -105,6 +106,19 @@ func _model() -> void:
 	for w in ["spud", "blaster", "shotgun", "launcher"]:
 		check(not VoxelModel.weapon_arrays(w, 0, md.voxel_m).is_empty(), "weapon " + w)
 
+func _goth() -> void:
+	var g := VoxelModel.get_model("goth")
+	check(g != null, "Gothica's model loads")
+	if g == null:
+		return
+	check(g.parts.has("hair") and g.parts.has("skirt"), "her hair and skirt are parts")
+	var mesh := g.build_mesh("test_goth", "classic", 0, VoxelWeapons.attachments(g, "", 0))
+	var h := 0.0
+	for v in mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]:
+		h = maxf(h, v.y)
+	check(h > 1.7 and h < 2.2, "Gothica is as tall as her picture (%.2f)" % h)
+	check(VoxelModel.model_for_sheet("goth") == "goth", "the goth sheet shows her blocks")
+
 func _poses() -> void:
 	var idle := VoxelAnim.pose({"t": 1.0})
 	check(idle.rot.has("chest"), "idle breathes")
@@ -158,7 +172,7 @@ func _in_game() -> void:
 		var f := pl.sprite.facing
 		check(absf(wrapf(vc.yaw - atan2(f.x, f.y), -PI, PI)) < 0.3, "turned to the sprite's facing (%.2f)" % vc.yaw)
 	var gv: Node = main.gothica.sprite.get_node_or_null("Blocks")
-	check(gv == null or gv is VoxelChar, "Gothica: blocks only if she has a model")
+	check(gv is VoxelChar and (main.gothica.sprite.get("_spr") as Node3D).visible == not VoxelModel.has_model("goth"), "Gothica: blocks when she has a model")
 	sw.set_mode("pixel", false)
 	await get_tree().process_frame
 	check(pl.sprite.get_node_or_null("Blocks") == null, "pixel: the blocks go")

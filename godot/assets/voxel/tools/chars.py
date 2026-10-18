@@ -429,8 +429,223 @@ def is_hairish(p):
     return is_hair(p) and p[0] > p[1] + 4
 
 
+# ------------------------------------------------------------------ Gothica
+
+def side_run(img, r, from_left):
+    """The arm hanging at one side of a frame: skin and its outline from the edge inward."""
+    w = img.shape[1]
+    cs = range(0, w) if from_left else range(w - 1, -1, -1)
+    out = []
+    started = False
+    for c in cs:
+        if not opaque(img, c, r):
+            if started:
+                break
+            continue
+        p = img[r, c]
+        if is_skin(p) or (p[0] > 120 and p[0] > p[2] + 20):
+            out.append(c)
+            started = True
+        elif not started and dark(p):
+            out = [c]              # (hair or outline before the arm: keep only the last, its outline)
+            if abs(c - (cs[0] if from_left else cs[0])) > 18:
+                break
+        elif started and dark(p):
+            out.append(c)
+            break
+        else:
+            break
+    if not any(is_skin(img[r, c]) for c in out):
+        return []
+    return sorted(out)
+
+
+def goth():
+    front = load("goth", "front_a")
+    side = load("goth", "side_a")
+    back = load("goth", "back_a")
+    m = Model("goth", front, cx0=29, foot=160, back=back, side=side, cz0=37)
+
+    def j(c, r, z=0.0):
+        return (c - m.cx0, m.foot - r, z)
+
+    sh, el, wr = j(11.5, 58, -1), j(10.5, 75, -1), j(9.5, 86, -1)
+    hip, kn, an = j(23.5, 110, 0), j(23.5, 129, 0), j(23.5, 147, -1)
+    m.bone("hips", "", j(29, 92))
+    m.bone("chest", "hips", j(29, 80))
+    m.bone("head", "chest", j(30, 54, 1))
+    m.bone("arm_r", "chest", sh)
+    m.bone("forearm_r", "arm_r", el)
+    m.bone("hand_r", "forearm_r", wr)
+    m.bone("arm_l", "chest", mirror_pt(sh))
+    m.bone("forearm_l", "arm_l", mirror_pt(el))
+    m.bone("hand_l", "forearm_l", mirror_pt(wr))
+    m.bone("thigh_r", "hips", hip)
+    m.bone("shin_r", "thigh_r", kn)
+    m.bone("foot_r", "shin_r", an)
+    m.bone("thigh_l", "hips", mirror_pt(hip))
+    m.bone("shin_l", "thigh_l", mirror_pt(kn))
+    m.bone("foot_l", "shin_l", mirror_pt(an))
+
+    # the face (her hair is its own part, over it)
+    def head_cols(r):
+        return cols_where(front, r, 21, 41) if r >= 26 else []
+    head_prof = [(26, -8, 9), (34, -9, 13), (46, -8, 12), (56, -5, 6)]
+    m.add_shape("head", "head", range(24, 57), lambda r: cols_where(front, r, 21, 41) if r >= 24 else [],
+                lambda r, a, b: lerp(head_prof, r), power=2.6, side_img=(30, 24, 52, 56))
+
+    def larm(r):
+        return side_run(front, r, True)
+
+    def rarm(r):
+        return side_run(front, r, False)
+
+    def torso_cols(r):
+        a = larm(r)
+        b = rarm(r)
+        lo = (a[-1] + 1) if a else 14
+        hi = (b[0] - 1) if b else 44
+        lo, hi = max(lo, 15), min(hi, 43)
+        return cols_where(front, r, lo, hi)
+    torso_prof = [(54, -7, 6), (62, -9, 11), (70, -8, 9), (80, -8, 8)]
+    m.add_shape("torso", "chest", range(54, 80), torso_cols, lambda r, a, b: lerp(torso_prof, r), power=2.3,
+                back_box=(20, 56, 50, 80))
+
+    # the skirt (on the hips; flares out)
+    def skirt_cols(r):
+        cs = cols_where(front, r, 6, 52, lambda p: not is_skin(p))
+        a = larm(r)
+        b = rarm(r)
+        if a:
+            cs = [c for c in cs if c > a[-1]]
+        if b:
+            cs = [c for c in cs if c < b[0]]
+        return cs
+    skirt_prof = [(78, -9, 9), (92, -12, 13), (108, -15, 16)]
+    m.add_shape("skirt", "hips", range(78, 110), skirt_cols, lambda r, a, b: lerp(skirt_prof, r), power=2.0,
+                back_box=(12, 76, 58, 118))
+    m.parts["skirt"]["meta"] = {"group": "skirt"}
+
+    def round_depth(k=1.0, zc=0.0):
+        def f(r, c0, c1):
+            w = (c1 + 1 - c0) * k
+            return (zc - w / 2.0, zc + w / 2.0)
+        return f
+
+    foot_prof = [(146, -7, 7), (151, -9, 12), (159, -9, 13)]
+    legs = [("thigh", range(110, 129), (15, 31), round_depth(1.0), (18, 118, 36, 132)),
+            ("shin", range(129, 147), (15, 31), round_depth(1.0, -1.0), (18, 132, 36, 147)),
+            ("foot", range(147, 160), (14, 33), lambda r, a, b: lerp(foot_prof, r), (18, 147, 36, 159))]
+    for nm, rows, (c0, c1), dep, bb in legs:
+        rr = list(rows)
+        f = (lambda c0_, c1_: (lambda r: cols_where(front, r, c0_, c1_)))(c0, c1)
+        m.add_shape(nm + "_r", nm + "_r", rr, f, dep, power=2.4 if nm != "foot" else 3.0, back_box=bb)
+        m.add_shape(nm + "_l", nm + "_l", rr, f, dep, power=2.4 if nm != "foot" else 3.0, mirror=True,
+                    back_box=(bb[0] + 18, bb[1], bb[2] + 18, bb[3]))
+        m.parts[nm + "_r"]["back_mirror"] = False
+
+    arm_depth = round_depth(0.95, -1.0)
+    for nm, r0, r1 in [("arm", 54, 74), ("forearm", 75, 85), ("hand", 86, 92)]:
+        f = (lambda a_, b_: (lambda r: larm(r) if a_ <= r <= b_ else []))(r0, r1)
+        m.add_shape(nm + "_r", nm + "_r", range(r0, r1 + 1), f, arm_depth, power=2.2)
+        m.add_shape(nm + "_l", nm + "_l", range(r0, r1 + 1), f, arm_depth, power=2.2, mirror=True)
+
+    # parts don't share voxels: the earlier wins (the skirt over the thighs' tops, the torso over the skirt's)
+    order = ["head", "torso", "skirt"]
+    for i, a in enumerate(order):
+        for b in list(m.parts.keys()):
+            if b in order[: i + 1]:
+                continue
+            for k in [k for k in m.parts[b]["vox"] if k in m.parts[a]["vox"]]:
+                del m.parts[b]["vox"][k]
+    m.colourise()
+    long_hair(m, front, side, back)
+    m.save({"ref_sheet": "goth", "ref_key": "front_a", "ref_frame": 0, "ref_rows": 160,
+            "cx0": m.cx0, "foot": m.foot, "cz0": m.cz0, "grip_r": list(j(9.5, 90, 0))})
+    return m
+
+
+def is_goth_hair(p):
+    return not is_skin(p) and max(p[0], p[1], p[2]) < 140 and not (p[0] > 200 and p[1] > 200)
+
+
+def long_hair(m, front, side, back):
+    """Her hair: the front frame's hair (and, behind her, the back frame's, mirrored) across, the side frame's front
+    to back, kept outside her body; coloured from the frame facing each voxel."""
+    occ = set()
+    for p in m.parts.values():
+        occ.update(p["vox"].keys())
+    W = front.shape[1]
+    bw = back.shape[1]
+    # the back frame: centred on its own body (its hair's middle)
+    bcx = 32.0
+
+    def front_hair(c, r):
+        return opaque(front, c, r) and is_goth_hair(front[r, c]) and r < 58 and not (21 <= c <= 41 and 27 <= r <= 56)
+
+    def back_hair(x, r):
+        bc = int(round(bcx - (x + 0.5)))     # model x -> back frame column (mirrored)
+        return opaque(back, bc, r) and is_goth_hair(back[r, bc]) and r < 104
+
+    def side_hair(z, r):
+        sc = int(np.floor(z + m.cz0))
+        return opaque(side, sc, r) and is_goth_hair(side[r, sc])
+
+    hair = {}
+    for r in range(10, 106):
+        y = m.foot - 1 - r
+        for x in range(-30, 32):
+            c = int(x + m.cx0)
+            fh = front_hair(c, r)
+            bh = back_hair(x, r)
+            if not (fh or bh):
+                continue
+            for z in range(-30, 20):
+                if (x, y, z) in occ:
+                    continue
+                if not side_hair(z, r):
+                    continue
+                # in front of the face only where the front frame shows hair; behind her, the back frame's
+                if z > 0 and not fh:
+                    continue
+                hair[(x, y, z)] = None
+    # keep a shell 4 deep from the outside
+    shell = {}
+    for k in hair:
+        if any(q not in hair and q not in occ for q in neighbours6(k)):
+            shell[k] = True
+    for _ in range(3):
+        for k in list(shell.keys()):
+            for q in neighbours6(k):
+                if q in hair:
+                    shell[q] = True
+    out = {}
+    for k in shell:
+        x, y, z = k
+        r = m.foot - 1 - y
+        nb = [q for q in neighbours6(k) if q not in hair and q not in occ]
+        c = None
+        if any(q[2] > z for q in nb):
+            cc = int(x + m.cx0)
+            if front_hair(cc, r):
+                c = rgb(front, cc, r)
+        if c is None and any(q[2] < z for q in nb):
+            bc = int(round(bcx - (x + 0.5)))
+            if back_hair(x, r):
+                c = rgb(back, bc, r)
+        if c is None:
+            sc = int(np.floor(z + m.cz0))
+            if side_hair(z, r):
+                c = rgb(side, sc, r)
+        out[k] = c or (40, 30, 50)
+    m.add_voxels("hair", "head", out)
+    m.parts["hair"]["meta"] = {"group": "hair_long"}
+
+
 def build(which):
     if which in ("jared", "all"):
         jared()
+    if which in ("goth", "all"):
+        goth()
     if which in ("weapons", "all"):
         weapons()

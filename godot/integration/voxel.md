@@ -1,0 +1,140 @@
+Jared: ready for review (screenshots in `integration/voxel_shots/`, see "Screenshots" below)
+
+# Block (voxel) characters: integration note
+
+Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,
+`integration/voxel_shots/`. No existing file was edited.
+
+The characters "recreated in voxel graphics but in the same style": hand-built block models with moving parts, made
+from each character's own pixel art (one voxel per sprite pixel, the sprites' colours and outlines), rigged, animated
+in code, and switched on with a setting **Characters: pixel / blocks** (default pixel until the owner approves).
+
+## Install (for the main session, when merging)
+
+1. In `scripts/main.gd`, at the end of `_ready()` (after `Net.install(self)`, before the `print`):
+   ```gdscript
+   	VoxelSwitch.install(self)           # Characters: pixel / blocks (F10, the HUD's "Chars" button)
+   ```
+2. In `export_presets.cfg`, the Web preset must pack the `.vox` files (they're plain files, like the JSON):
+   ```
+   include_filter="*.json,*.vox"
+   ```
+   Without it the web build has no models and every character just stays a picture (nothing breaks).
+
+That's all. The switch finds every CharSprite (the player, player 2 on the keyboard or online, Gothica, the mirror's
+reflection) by itself, now and as new ones appear.
+
+## Using it
+
+- **F10** or the HUD's **Chars: pixel / blocks** button (in the top row, after Sound) switches; kept in
+  `user://smashed.cfg` (`[chars] look`). The web address can say `?voxel=blocks` (or `?voxel=pixel`); the
+  command line `--voxel=blocks` after `--`.
+- Input action added in code: `voxel_toggle` (F10).
+- Characters with a model: Juicy Jared (`juicy` and all its weapon sheets) and Tornado Tyson (`tyson2`: Jared's
+  blocks recoloured the way the pictures are, `recolourImage`'s green and blue hue swaps). Gothica (`goth`) stays a
+  picture until her model is built (in progress, see "What's left").
+
+## How it works
+
+- **Models as data** (`assets/voxel/<char>/`): one MagicaVoxel `.vox` per part (head, hair_<style>, glasses, torso
+  = the singlet, pelvis, arm/forearm/hand _l/_r, thigh/shin/foot _l/_r) plus `rig.json` (the bones, their pivots, which
+  part hangs on which bone and where each grid sits). Open any part in MagicaVoxel to edit it; the game reads the
+  files at run time (`VoxFile`, a small SIZE/XYZI/RGBA reader and writer). Weapons: `assets/voxel/weapons/`
+  (spud gun, blaster, shotgun, nuke launcher), grip at the origin, barrel toward +z.
+- **Built from the sprites** by `assets/voxel/tools/vox_build.py` (+ `chars.py`, the part tables; `preview.py` draws
+  six views without Godot): each row of a part is the front frame's silhouette across (so from the front it's the
+  pixel art pixel for pixel) and a depth range from the side frame (the head) or a written profile (torso, limbs),
+  rounded; every surface voxel takes its colour from the frame that faces it (front, back, side, or the front's colour
+  just inside its outline for the sides). Jared: front `juicy_spud/reload_0` (standing, arms down), side
+  `juicy_spud/reload_side_1`, back `juicy_spud/back`. The right arm and leg are the left ones mirrored. Hair styles:
+  each mirror style's front/side/back art (`scripts/lobby_life/art/bedroom/hair`) as a hull outside the bald head.
+  Re-run: `python3 godot/assets/voxel/tools/vox_build.py all` (needs numpy and Pillow). Hand edits in MagicaVoxel are
+  lost if the builder is re-run for that character, so once the owner edits a model, stop rebuilding it.
+- **Meshes** (`VoxMesher`): greedy meshing (faces of one colour on one plane merge), vertex colours, all parts in one
+  skinned mesh on a `Skeleton3D` (each vertex on its part's bone): **one draw call a character**, one material.
+  Jared: 53k triangles full, 22k at half detail.
+- **Rig and animation** (`VoxelAnim`, all in code): idle breathing and a look round; walk/run from the sprite's odo
+  (stride, the knees, the bob, the chest twist, arms swinging) with the stride's size from his measured speed; the
+  dive roll (tucked, turning over once, the roll's hop); tumbling when thrown; the victory flex; holding each weapon
+  (blasters: both arms aim and kick in turn; spud gun: the right arm aims; shotgun: two hands; launcher: on the right
+  shoulder; fists: a guard, the jab), the reload, the potato wind-up and throw, bending to pick up; the lobby's poses
+  (lying in bed, sitting at the table, swimming; also bench, leg press, lift, carry, carried, in VoxelAnim but not yet
+  shown, see below). Facing turns smoothly (no 5-direction flips).
+- **Hooked in** (`VoxelChar`, `VoxelSwitch`): a VoxelChar is added under each CharSprite and stands in for its
+  picture: it reads what the sprite was told (char_id = the weapon sheet, facing, moving, odo, action, roll_t, the
+  fight's frame keys for the weapon actions, modulate for the hit flash) and hides the picture (the contact shadow
+  stays). Hanging under the sprite, whatever hides or scales the sprite (first person, the iframe blink, lobby
+  pictures, the bonus room) does the same to the blocks. The weapon held comes from the fight's record (`Fight.me.f`,
+  `f2`) when there is one, else from the sheet.
+- **The look**: lit like the world's pictures on the high look (LookPass's picture normal, mostly, so the pixel art's
+  drawn shading isn't fought by the light), the look's tint and lamps on the low look, which also gets **half-size
+  blocks** (phones). The blocks **cast** sun shadows; they don't receive them (self-shadow acne on voxels in the
+  Compatibility renderer). Seen from the top-down camera the body **leans back** toward the camera (half the camera's
+  pitch), the way the pictures tip back, so the face and singlet read from up there; its depth is kept at the upright
+  body's chest so it sorts against the world like the pictures. In first person nothing leans.
+- **Mirror and wardrobe**: the hair style picks the hair part; the shirt picture is painted onto the singlet's front
+  (and back) voxels, darkened by its folds as LobbyLook does on the pictures. The mirror's reflection is blocks too,
+  pressed flat against the glass.
+
+## Decisions (made for the owner; easy to change)
+
+- Default **pixel** (as asked); F10 because F6-F9 are taken (clock skip, pad setup, look quality, mute).
+- One voxel = one sprite pixel (0.0125 m), so the blocks are exactly as big as the picture.
+- Built from the spud-gun sheet's frames (the look players see most: the lobby starts with the spud gun) and its
+  camo-print singlet with JUICY JARED on the front; the plain blaster sheet's green singlet isn't separate.
+- The lean toward the top-down camera (`VoxelChar.tip` = 0.5): without it a 3D body seen from 65 degrees up shows
+  mostly the top of his head. 0 turns it off.
+- Shadows cast but not received (see above). Lighting kept flat-ish, like the pictures.
+- The gym's lifts and carrying Gothica keep lobby life's pictures for now: those pictures draw the machine (or
+  Gothica) together with him, so they can't be swapped for blocks without redrawing the machines.
+- Tornado Tyson uses Jared's blocks recoloured (as his pictures are Juicy's recoloured); his recolour is per vertex in
+  HSV (the shader's is HSL), close enough by eye.
+- The fight's bullets and muzzle flashes still start where the pictures' barrel maps put them (a few pixels off the
+  block guns at some angles).
+- Gothica stays a picture until her model exists (the switch leaves sprites with no model alone).
+
+## Contract changes wanted
+
+None needed. Nice to have: a public `CharSprite.picture()` (VoxelChar reaches the private `_spr` to hide it) and a
+`LobbyLife` hook to replace a pose picture (VoxelSwitch hides `pose_of(p)` itself each frame).
+
+## Testing
+
+- Logic: `godot --headless --fixed-fps 60 --path godot res://test/voxel/logic_test.tscn` (65 checks: .vox round trip
+  byte for byte, greedy mesh counts and winding, the model and rig, every pose, VoxelChar in the real game: the
+  picture hidden, the weapon, walking, turning, switching back). Exit code 0 = all pass.
+- CPU cost: `godot --headless --fixed-fps 60 --path godot res://test/voxel/perf_test.tscn`. First build of Jared's
+  meshes ~0.45 s full, ~0.15 s half (desktop; a one-off when blocks first show); each block character ~0.1 ms a frame
+  after that.
+- Look: `test/voxel/voxel_view.tscn` is the real game with the blocks on and options from the address
+  (`?vox=pair,face=0,weapon=shotgun,zoom=2`, `fp`, `jog`, `act=roll|victory`, `lobby=bed|sit`, `style=N`,
+  `print`, `pixel`, `pairblocks`...; see the script's header). To build it for the web, in a copy of godot/: set
+  `run/main_scene` to it, add `*.vox` to the include filter and drop `test/*` from the exclude filter, export.
+- Existing tests re-run with the install line in a copy (see below).
+
+## Screenshots (`integration/voxel_shots/`)
+
+Each top-down shot has the blocks Jared on the left and the pixel Jared (a copy of the same sprite) on the right.
+First-person shots look at a blocks Jared standing in front of you. `overview.png` has them all on one page.
+
+| file | what |
+|---|---|
+| `td_1x.png` | the whole lounge at 1x, blocks Jared (left of the pair) and the pixel one |
+| `td_idle_spud.png` | standing with the spud gun (aimed at you: from above the arm points down the screen) |
+| `td_run.png` | running (stride from his speed) |
+| `td_blasters.png`, `td_shotgun.png`, `td_launcher.png`, `td_fists.png` | each weapon held |
+| `td_roll.png`, `td_victory.png` | mid-roll, the victory flex |
+| `td_hair_print.png` | the mirror's mohawk and a shirt picture, on both |
+| `td_bed.png`, `td_sit.png` | lying in bed, sitting at the table (the lobby's poses) |
+| `td_low_look.png` | the phones' low look: half-size blocks, the look's tint |
+| `fp_front_blasters.png`, `fp_back.png` | first person: a blocks Jared from the front (blasters) and from behind |
+| `fp_spud.png`, `fp_shotgun.png`, `fp_launcher.png`, `fp_fists.png` | first person, each weapon |
+| `fp_run.png`, `fp_mullet.png` | first person: running, the mullet |
+
+(Shot in the cloud's software-rendered browser, so the lighting is the high look at 7 am.)
+
+## What's left
+
+- Gothica's model, then Tornado Tyson's own look (his hair and colours beyond the recolour), then the enemies.
+- The gym and carry poses as blocks (needs the machines drawn without him).
+- Frame times on a real phone (the cloud's browser has no GPU: everything, pictures included, runs at ~1 fps there).

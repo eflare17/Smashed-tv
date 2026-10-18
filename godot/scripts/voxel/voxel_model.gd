@@ -35,8 +35,12 @@ static func model_for_sheet(sheet: String) -> String:
 			return "goth" if has_model("goth") else ""
 	return base if has_model(base) else ""
 
+static var _has := {}
+
 static func has_model(ch: String) -> bool:
-	return FileAccess.file_exists(DIR + ch + "/rig.json")
+	if not _has.has(ch):
+		_has[ch] = FileAccess.file_exists(DIR + ch + "/rig.json")
+	return _has[ch]
 
 static func get_model(ch: String) -> VoxelModel:
 	if _models.has(ch):

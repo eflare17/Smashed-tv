@@ -105,8 +105,9 @@ static func _arms(s: Dictionary, out: Dictionary, t: float) -> void:
 			if amp <= 0.0:
 				l = [q(-0.05, 0.0, 0.22), q(-0.9), q()]
 		"shotgun":
-			r = [q(-0.45 - aim * 0.5 + 0.15 * recoil, 0.05, -0.12), q(-1.15 + 0.15 * recoil), q(0.0, 0.0, 0.0)]
-			l = [q(-1.15 - aim + 0.15 * recoil, -0.55, 0.12), q(-0.55), q()]
+			# stock at the hip, barrel level: the right hand on the grip, the left reaching along the barrel
+			r = [q(-0.75 - aim * 0.5 + 0.15 * recoil, 0.25, -0.1), q(-0.8 + 0.15 * recoil), q()]
+			l = [q(-1.3 - aim + 0.15 * recoil, -0.7, 0.1), q(-0.25), q()]
 		"launcher":
 			r = [q(-0.55, 0.15, -0.35), q(-1.55), q()]
 			l = [q(-1.05, -0.45, 0.25), q(-0.95), q()]

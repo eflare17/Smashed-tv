@@ -17,6 +17,7 @@ static var _loaded := false
 var main: Node
 var _btn: Button
 var _scan_t := 0.0
+var _pending := false
 
 static func install(main_: Node) -> VoxelSwitch:
 	var s := VoxelSwitch.new()
@@ -70,7 +71,13 @@ func _ready() -> void:
 		k.physical_keycode = KEY_F10
 		InputMap.action_add_event("voxel_toggle", k)
 	_add_button()
+	get_tree().node_added.connect(_on_node_added)
 	_scan()
+
+# a CharSprite made later (player 2, the mirror's reflection...) gets its blocks a frame later
+func _on_node_added(n: Node) -> void:
+	if n is CharSprite and mode == "blocks":
+		_pending = true
 
 func _add_button() -> void:
 	var hud = main.get("hud") if main else null
@@ -109,8 +116,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
+	# a full look round now and then (a sheet changing to one that has a model), and whenever a CharSprite appears
 	_scan_t += delta
-	if _scan_t >= 0.25:
+	if _pending or _scan_t >= 3.0:
+		_pending = false
 		_scan_t = 0.0
 		_scan()
 	if mode == "blocks":
@@ -163,7 +172,7 @@ func _scan() -> void:
 			continue
 		var vc := cs.get_node_or_null("Blocks") as VoxelChar
 		if on:
-			if vc == null and VoxelModel.model_for_sheet(cs.char_id) != "":
+			if vc == null:          # (every sprite: a VoxelChar with no model for its sheet just leaves the picture)
 				vc = VoxelChar.new()
 				vc.name = "Blocks"
 				vc.source = cs
