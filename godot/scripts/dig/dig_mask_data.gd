@@ -1,0 +1,14 @@
+extends RefCounted
+## The diggable cells (DigMask.build), worked out ahead by test/dig/make_mask.gd so the game doesn't spend a
+## moment on it at start: NX x NY bytes (1 diggable), deflated, base64. Empty: Dig works it out at start.
+
+const NX := 214
+const NY := 230
+const B64 := "eJzt3dli4yAMBVDz/z89kxanYAt8EWKRLD20WUDoBIckuMtxeHh46I7wif9f0ZbpFTRG1l+pFRpXm+rzDWl5aFJ9SM8j5wWyJnhmgFN1PwKh5KtUP2NDjXSpsIGvKjj3sjXQVd8rcH5ubfyAV1/eGqhOhednF8cO/JVS0xpoWoW2TK/A+bm18cP0ys44AvH83Nr4MVil7nmFp+fWxg9fLd7wvFLweuWrRbyC52eW1hMmX6/gvbPAUi06Ao2qfLXQtrKjLdMrcH5ubfz42Wc2N1dxaKyVJlXDYqHn9QosUZ2Kt88OZt57rtSpBp4TUXcE7q6yuLL7OyZXNTYUjQCz3qHC07OLY8fgubL5vFKnwvMzS5sfrrKnWvaOiRWbrxbM2PxVmBlmn1c2j0C4oavWhtkj0KYKbadLZXOubL4Kv1il7ghE2xlUqTsC4YauWhtmVwujqiSu1z+S9LKSuClqsbpYOFzlqrXhKletDVe5am24ylVrw1WuWhuvVh0B37fZIGAV9leRNolXH4HaVMfxPb6IHaZo+dlqWl0qPzRPUDlcpSdcpSdcpSkMkg5XaYrXqujbL59VYvdNHhdE9Xs2+UrI+sV3yrucfoVVt4m5dLyg9lfdGtxVcS4XqqiayKDawwlUqVo7a1RV7ttfNbtCTkxVwYPFAb9fK4OS926tqtSdJVWoyonXhNpUJJFOalPVnddVogW8S9WFWq0ih+4TJR+oFs5VuIzdawph+VxlRUij1qokQVnG5SoJS55xtUo+jKny7RcrqhiuerkquW22+regEarkRlo91pQWJqoqX3NVL0pSdZhU2Zwrg8+rw6SKcEx9vZqvmqNLMRKq7yVaRfBH0gaoqPv1qgq759m9OlWFFjNVf8OKqGonpFylRpU01KbCGrrKVTeWq1z1BtXs5cJVr1LhLV3lKle9W2VzDdxFlewy2FEd01UTUOKq5xSTTKKfGh9TjEeNUD3lmKAK01VTQFkZQudEFqqSXw+TVtWyjEXFTdTj8ptxMqpymsGo71nOIapSntGoQD22gucal5j+Bh+kKpy/Gg+6VyCqypNNIU1RLQj6eaU9bKrOSA88zhG4uv5KbKR6HAUduetnOeeqGgZXo2ocfoyKJa6MUryncPsIVemvq7FV5QKmqNgdq6pKonoP1nuLSapaokJ6oG9DfbxebBX9UytwHWh9vF58VSl9a5d6gaxOrgLTt3apF8jq5CowfWuXen28Xq7C0rd2oXKMVXEqau5DJbGkCvcS4WFHqvq2ltI041SsemSy7KUSTbWLSvYBcpUSlc3nlU2VwD5aIS+nlD5KOvQ2Kslpb8jWppq/b9FQQD6sHtWouWqtUUoVYrJBqupsxa3iPDdceTlvkg7sIasK8d+MnN8Ej8CWbM2q6vbt2eC8JKL62/0dqCLuDMTHu5PXrqiW2tC0UXW9N5+gPMkuKqxxJUHSCK+DHi+/0KFqavwE6kNdJrpjrjgCUnUIq671Aarv8KKq/EfpOKpwrjdJXlRV4XaYQvwT8p2u30Ttqlq+Llq2CPKOReLxWqU604Y0/WQVmo+ajNrtZxIOxsPD4zn+AVnnNqQ="
+
+static func mask() -> PackedByteArray:
+	if B64 == "":
+		return PackedByteArray()
+	var raw := Marshalls.base64_to_raw(B64)
+	var out := raw.decompress(NX * NY, FileAccess.COMPRESSION_DEFLATE)
+	return out if out.size() == NX * NY else PackedByteArray()

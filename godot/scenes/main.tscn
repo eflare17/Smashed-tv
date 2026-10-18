@@ -1,0 +1,35 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" uid="uid://dby6tf4tpdo5a" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" uid="uid://dq2v7ldnkuqm8" path="res://scripts/world/world_builder.gd" id="2"]
+[ext_resource type="Script" uid="uid://c8cu2yb02jmvk" path="res://scripts/lobby/trampoline.gd" id="3"]
+[ext_resource type="Script" uid="uid://bxededt6wbg8t" path="res://scripts/npc/gothica.gd" id="4"]
+[ext_resource type="Script" uid="uid://bg2neqsy73nd0" path="res://scripts/player/player.gd" id="5"]
+[ext_resource type="Script" uid="uid://d0xry18nc2s6o" path="res://scripts/camera/camera_rig.gd" id="6"]
+[ext_resource type="Script" uid="uid://d0w8yar8776wu" path="res://scripts/ui/hud.gd" id="7"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1")
+
+[node name="World" type="Node3D" parent="." groups=["world_builder"]]
+script = ExtResource("2")
+include_trampoline = false
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-1, 0, 0, 0, 0.642788, 0.766044, 0, 0.766044, -0.642788, 0, 10, 0)
+light_energy = 0.9
+
+[node name="Trampoline" type="Node3D" parent="."]
+script = ExtResource("3")
+
+[node name="Gothica" type="CharacterBody3D" parent="."]
+script = ExtResource("4")
+
+[node name="Player" type="CharacterBody3D" parent="."]
+script = ExtResource("5")
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("6")
+
+[node name="Hud" type="CanvasLayer" parent="."]
+script = ExtResource("7")

@@ -6,3 +6,6 @@ reference-images/
 .claude/*
 !.claude/launch.json
 !.claude/serve.ps1
+
+# python cache from the tools scripts
+__pycache__/

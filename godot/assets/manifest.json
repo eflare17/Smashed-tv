@@ -1,0 +1,985 @@
+{
+ "LOUNGE_IMG.src": "assets/LOUNGE_IMG_src.webp",
+ "TOWER_IMG.src": "assets/TOWER_IMG_src.png",
+ "gymImg@783": [],
+ "line@786": [
+  "assets/misc/line786_0.png"
+ ],
+ "line@787": [
+  "assets/misc/line787_0.png"
+ ],
+ "line@788": [
+  "assets/misc/line788_0.png"
+ ],
+ "line@789": [
+  "assets/misc/line789_0.png"
+ ],
+ "artSrc@1038": [],
+ "u@1174": [],
+ "ok@1178": [],
+ "HAIR_ART@1418": [
+  "assets/misc/line1418_0.png",
+  "assets/misc/line1418_1.png",
+  "assets/misc/line1418_2.png",
+  "assets/misc/line1418_3.png",
+  "assets/misc/line1418_4.png",
+  "assets/misc/line1418_5.png",
+  "assets/misc/line1418_6.png",
+  "assets/misc/line1418_7.png",
+  "assets/misc/line1418_8.png",
+  "assets/misc/line1418_9.png",
+  "assets/misc/line1418_10.png",
+  "assets/misc/line1418_11.png",
+  "assets/misc/line1418_12.png",
+  "assets/misc/line1418_13.png",
+  "assets/misc/line1418_14.png"
+ ],
+ "HAIR_ART.tyson": {
+  "front": [
+   27,
+   11,
+   "assets/HAIR_ART_tyson/front_2.png"
+  ],
+  "diag": [
+   29,
+   14,
+   "assets/HAIR_ART_tyson/diag_2.png"
+  ],
+  "side": [
+   37,
+   9,
+   "assets/HAIR_ART_tyson/side_2.png"
+  ],
+  "bdiag": [
+   27,
+   8,
+   "assets/HAIR_ART_tyson/bdiag_2.png"
+  ],
+  "back": [
+   26,
+   8,
+   "assets/HAIR_ART_tyson/back_2.png"
+  ]
+ },
+ "HAIR_ART.mohawk": {
+  "front": [
+   20,
+   0,
+   "assets/HAIR_ART_mohawk/front_2.png"
+  ],
+  "diag": [
+   25,
+   0,
+   "assets/HAIR_ART_mohawk/diag_2.png"
+  ],
+  "side": [
+   32,
+   0,
+   "assets/HAIR_ART_mohawk/side_2.png"
+  ],
+  "bdiag": [
+   24,
+   0,
+   "assets/HAIR_ART_mohawk/bdiag_2.png"
+  ],
+  "back": [
+   21,
+   0,
+   "assets/HAIR_ART_mohawk/back_2.png"
+  ]
+ },
+ "HAIR_ART.mohawk_blue": {
+  "front": [
+   20,
+   0,
+   "assets/HAIR_ART_mohawk_blue/front_2.png"
+  ],
+  "diag": [
+   25,
+   0,
+   "assets/HAIR_ART_mohawk_blue/diag_2.png"
+  ],
+  "side": [
+   32,
+   0,
+   "assets/HAIR_ART_mohawk_blue/side_2.png"
+  ],
+  "bdiag": [
+   24,
+   0,
+   "assets/HAIR_ART_mohawk_blue/bdiag_2.png"
+  ],
+  "back": [
+   21,
+   0,
+   "assets/HAIR_ART_mohawk_blue/back_2.png"
+  ]
+ },
+ "HAIR_ART.mohawk_purple": {
+  "front": [
+   20,
+   0,
+   "assets/HAIR_ART_mohawk_purple/front_2.png"
+  ],
+  "diag": [
+   25,
+   0,
+   "assets/HAIR_ART_mohawk_purple/diag_2.png"
+  ],
+  "side": [
+   32,
+   0,
+   "assets/HAIR_ART_mohawk_purple/side_2.png"
+  ],
+  "bdiag": [
+   24,
+   0,
+   "assets/HAIR_ART_mohawk_purple/bdiag_2.png"
+  ],
+  "back": [
+   21,
+   0,
+   "assets/HAIR_ART_mohawk_purple/back_2.png"
+  ]
+ },
+ "HAIR_ART.mohawk_green": {
+  "front": [
+   20,
+   0,
+   "assets/HAIR_ART_mohawk_green/front_2.png"
+  ],
+  "diag": [
+   25,
+   0,
+   "assets/HAIR_ART_mohawk_green/diag_2.png"
+  ],
+  "side": [
+   32,
+   0,
+   "assets/HAIR_ART_mohawk_green/side_2.png"
+  ],
+  "bdiag": [
+   24,
+   0,
+   "assets/HAIR_ART_mohawk_green/bdiag_2.png"
+  ],
+  "back": [
+   21,
+   0,
+   "assets/HAIR_ART_mohawk_green/back_2.png"
+  ]
+ },
+ "line@1743": [],
+ "YARD_IMG@1985": [
+  "assets/misc/line1985_0.webp"
+ ],
+ "MINER_SHEET.src": "assets/MINER_SHEET_src.png",
+ "MINER_ORES.src": "assets/MINER_ORES_src.png",
+ "FP_BLASTER.img.src": "assets/FP_BLASTER_img_src.png",
+ "CHARS": {
+  "goth": {
+   "name": "Gothica (test)",
+   "scale": 1.0,
+   "sprites": {
+    "front_run": [
+     "assets/CHARS/goth/sprites/front_run_0.png",
+     "assets/CHARS/goth/sprites/front_run_1.png",
+     "assets/CHARS/goth/sprites/front_run_2.png",
+     "assets/CHARS/goth/sprites/front_run_3.png",
+     "assets/CHARS/goth/sprites/front_run_4.png",
+     "assets/CHARS/goth/sprites/front_run_5.png",
+     "assets/CHARS/goth/sprites/front_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/goth/sprites/diag_run_0.png",
+     "assets/CHARS/goth/sprites/diag_run_1.png",
+     "assets/CHARS/goth/sprites/diag_run_2.png",
+     "assets/CHARS/goth/sprites/diag_run_3.png",
+     "assets/CHARS/goth/sprites/diag_run_4.png",
+     "assets/CHARS/goth/sprites/diag_run_5.png",
+     "assets/CHARS/goth/sprites/diag_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/goth/sprites/side_run_0.png",
+     "assets/CHARS/goth/sprites/side_run_1.png",
+     "assets/CHARS/goth/sprites/side_run_2.png",
+     "assets/CHARS/goth/sprites/side_run_3.png",
+     "assets/CHARS/goth/sprites/side_run_4.png",
+     "assets/CHARS/goth/sprites/side_run_5.png",
+     "assets/CHARS/goth/sprites/side_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/goth/sprites/bdiag_run_0.png",
+     "assets/CHARS/goth/sprites/bdiag_run_1.png",
+     "assets/CHARS/goth/sprites/bdiag_run_2.png",
+     "assets/CHARS/goth/sprites/bdiag_run_3.png",
+     "assets/CHARS/goth/sprites/bdiag_run_4.png",
+     "assets/CHARS/goth/sprites/bdiag_run_5.png",
+     "assets/CHARS/goth/sprites/bdiag_run_6.png"
+    ],
+    "back_run": [
+     "assets/CHARS/goth/sprites/back_run_0.png",
+     "assets/CHARS/goth/sprites/back_run_1.png",
+     "assets/CHARS/goth/sprites/back_run_2.png",
+     "assets/CHARS/goth/sprites/back_run_3.png",
+     "assets/CHARS/goth/sprites/back_run_4.png",
+     "assets/CHARS/goth/sprites/back_run_5.png",
+     "assets/CHARS/goth/sprites/back_run_6.png"
+    ],
+    "front_a": "assets/CHARS/goth/sprites/front_a.png",
+    "front_b": "assets/CHARS/goth/sprites/front_b.png",
+    "diag_a": "assets/CHARS/goth/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/goth/sprites/diag_b.png",
+    "side_a": "assets/CHARS/goth/sprites/side_a.png",
+    "side_b": "assets/CHARS/goth/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/goth/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/goth/sprites/bdiag_b.png",
+    "back_a": "assets/CHARS/goth/sprites/back_a.png",
+    "back_b": "assets/CHARS/goth/sprites/back_b.png",
+    "back": "assets/CHARS/goth/sprites/back.png",
+    "roll1": "assets/CHARS/goth/sprites/roll1.png",
+    "roll2": "assets/CHARS/goth/sprites/roll2.png",
+    "roll3": "assets/CHARS/goth/sprites/roll3.png",
+    "roll4": "assets/CHARS/goth/sprites/roll4.png",
+    "victory": [
+     "assets/CHARS/goth/sprites/victory_0.png",
+     "assets/CHARS/goth/sprites/victory_1.png",
+     "assets/CHARS/goth/sprites/victory_2.png",
+     "assets/CHARS/goth/sprites/victory_3.png",
+     "assets/CHARS/goth/sprites/victory_4.png",
+     "assets/CHARS/goth/sprites/victory_5.png",
+     "assets/CHARS/goth/sprites/victory_6.png"
+    ]
+   }
+  },
+  "jared": {
+   "name": "Jucy Jared",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/jared/sprites/front_a.png",
+    "front_b": "assets/CHARS/jared/sprites/front_b.png",
+    "diag_a": "assets/CHARS/jared/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/jared/sprites/diag_b.png",
+    "side_a": "assets/CHARS/jared/sprites/side_a.png",
+    "side_b": "assets/CHARS/jared/sprites/side_b.png",
+    "back": "assets/CHARS/jared/sprites/back.png",
+    "roll1": "assets/CHARS/jared/sprites/roll1.png",
+    "roll2": "assets/CHARS/jared/sprites/roll2.png",
+    "roll3": "assets/CHARS/jared/sprites/roll3.png",
+    "roll4": "assets/CHARS/jared/sprites/roll4.png",
+    "bdiag_a": "assets/CHARS/jared/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/jared/sprites/bdiag_b.png",
+    "front_run": [
+     "assets/CHARS/jared/sprites/front_run_0.png",
+     "assets/CHARS/jared/sprites/front_run_1.png",
+     "assets/CHARS/jared/sprites/front_run_2.png",
+     "assets/CHARS/jared/sprites/front_run_3.png",
+     "assets/CHARS/jared/sprites/front_run_4.png",
+     "assets/CHARS/jared/sprites/front_run_5.png",
+     "assets/CHARS/jared/sprites/front_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/jared/sprites/diag_run_0.png",
+     "assets/CHARS/jared/sprites/diag_run_1.png",
+     "assets/CHARS/jared/sprites/diag_run_2.png",
+     "assets/CHARS/jared/sprites/diag_run_3.png",
+     "assets/CHARS/jared/sprites/diag_run_4.png",
+     "assets/CHARS/jared/sprites/diag_run_5.png",
+     "assets/CHARS/jared/sprites/diag_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/jared/sprites/side_run_0.png",
+     "assets/CHARS/jared/sprites/side_run_1.png",
+     "assets/CHARS/jared/sprites/side_run_2.png",
+     "assets/CHARS/jared/sprites/side_run_3.png",
+     "assets/CHARS/jared/sprites/side_run_4.png",
+     "assets/CHARS/jared/sprites/side_run_5.png",
+     "assets/CHARS/jared/sprites/side_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/jared/sprites/bdiag_run_0.png",
+     "assets/CHARS/jared/sprites/bdiag_run_1.png",
+     "assets/CHARS/jared/sprites/bdiag_run_2.png",
+     "assets/CHARS/jared/sprites/bdiag_run_3.png",
+     "assets/CHARS/jared/sprites/bdiag_run_4.png",
+     "assets/CHARS/jared/sprites/bdiag_run_5.png",
+     "assets/CHARS/jared/sprites/bdiag_run_6.png"
+    ],
+    "back_run": [
+     "assets/CHARS/jared/sprites/back_run_0.png",
+     "assets/CHARS/jared/sprites/back_run_1.png",
+     "assets/CHARS/jared/sprites/back_run_2.png",
+     "assets/CHARS/jared/sprites/back_run_3.png",
+     "assets/CHARS/jared/sprites/back_run_4.png",
+     "assets/CHARS/jared/sprites/back_run_5.png",
+     "assets/CHARS/jared/sprites/back_run_6.png"
+    ]
+   }
+  },
+  "tyson": {
+   "name": "Tornado Tyson",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/tyson/sprites/front_a.png",
+    "front_b": "assets/CHARS/tyson/sprites/front_b.png",
+    "diag_a": "assets/CHARS/tyson/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/tyson/sprites/diag_b.png",
+    "side_a": "assets/CHARS/tyson/sprites/side_a.png",
+    "side_b": "assets/CHARS/tyson/sprites/side_b.png",
+    "back": "assets/CHARS/tyson/sprites/back.png",
+    "victory": [
+     "assets/CHARS/tyson/sprites/victory_0.png",
+     "assets/CHARS/tyson/sprites/victory_1.png",
+     "assets/CHARS/tyson/sprites/victory_2.png",
+     "assets/CHARS/tyson/sprites/victory_3.png"
+    ],
+    "roll1": "assets/CHARS/tyson/sprites/roll1.png",
+    "roll2": "assets/CHARS/tyson/sprites/roll2.png",
+    "roll3": "assets/CHARS/tyson/sprites/roll3.png",
+    "roll4": "assets/CHARS/tyson/sprites/roll4.png",
+    "victory_old": "assets/CHARS/tyson/sprites/victory_old.png",
+    "bdiag_a": "assets/CHARS/tyson/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/tyson/sprites/bdiag_b.png",
+    "front_run": [
+     "assets/CHARS/tyson/sprites/front_run_0.png",
+     "assets/CHARS/tyson/sprites/front_run_1.png",
+     "assets/CHARS/tyson/sprites/front_run_2.png",
+     "assets/CHARS/tyson/sprites/front_run_3.png",
+     "assets/CHARS/tyson/sprites/front_run_4.png",
+     "assets/CHARS/tyson/sprites/front_run_5.png",
+     "assets/CHARS/tyson/sprites/front_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/tyson/sprites/diag_run_0.png",
+     "assets/CHARS/tyson/sprites/diag_run_1.png",
+     "assets/CHARS/tyson/sprites/diag_run_2.png",
+     "assets/CHARS/tyson/sprites/diag_run_3.png",
+     "assets/CHARS/tyson/sprites/diag_run_4.png",
+     "assets/CHARS/tyson/sprites/diag_run_5.png",
+     "assets/CHARS/tyson/sprites/diag_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/tyson/sprites/side_run_0.png",
+     "assets/CHARS/tyson/sprites/side_run_1.png",
+     "assets/CHARS/tyson/sprites/side_run_2.png",
+     "assets/CHARS/tyson/sprites/side_run_3.png",
+     "assets/CHARS/tyson/sprites/side_run_4.png",
+     "assets/CHARS/tyson/sprites/side_run_5.png",
+     "assets/CHARS/tyson/sprites/side_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/tyson/sprites/bdiag_run_0.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_1.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_2.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_3.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_4.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_5.png",
+     "assets/CHARS/tyson/sprites/bdiag_run_6.png"
+    ],
+    "back_run": [
+     "assets/CHARS/tyson/sprites/back_run_0.png",
+     "assets/CHARS/tyson/sprites/back_run_1.png",
+     "assets/CHARS/tyson/sprites/back_run_2.png",
+     "assets/CHARS/tyson/sprites/back_run_3.png",
+     "assets/CHARS/tyson/sprites/back_run_4.png",
+     "assets/CHARS/tyson/sprites/back_run_5.png",
+     "assets/CHARS/tyson/sprites/back_run_6.png"
+    ]
+   }
+  },
+  "jared_shotgun": {
+   "name": "Jucy Jared (shotgun)",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/jared_shotgun/sprites/front_a.png",
+    "front_b": "assets/CHARS/jared_shotgun/sprites/front_b.png",
+    "diag_a": "assets/CHARS/jared_shotgun/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/jared_shotgun/sprites/diag_b.png",
+    "side_a": "assets/CHARS/jared_shotgun/sprites/side_a.png",
+    "side_b": "assets/CHARS/jared_shotgun/sprites/side_b.png",
+    "back": "assets/CHARS/jared_shotgun/sprites/back.png",
+    "overhead": "assets/CHARS/jared_shotgun/sprites/overhead.png",
+    "roll1": "assets/CHARS/jared_shotgun/sprites/roll1.png",
+    "roll2": "assets/CHARS/jared_shotgun/sprites/roll2.png",
+    "roll3": "assets/CHARS/jared_shotgun/sprites/roll3.png",
+    "roll4": "assets/CHARS/jared_shotgun/sprites/roll4.png",
+    "bdiag_a": "assets/CHARS/jared_shotgun/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/jared_shotgun/sprites/bdiag_b.png"
+   }
+  },
+  "tyson_shotgun": {
+   "name": "Tornado Tyson (shotgun)",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/tyson_shotgun/sprites/front_a.png",
+    "front_b": "assets/CHARS/tyson_shotgun/sprites/front_b.png",
+    "diag_a": "assets/CHARS/tyson_shotgun/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/tyson_shotgun/sprites/diag_b.png",
+    "side_a": "assets/CHARS/tyson_shotgun/sprites/side_a.png",
+    "side_b": "assets/CHARS/tyson_shotgun/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/tyson_shotgun/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/tyson_shotgun/sprites/bdiag_b.png",
+    "back": "assets/CHARS/tyson_shotgun/sprites/back.png",
+    "back_b": "assets/CHARS/tyson_shotgun/sprites/back_b.png",
+    "victory": [
+     "assets/CHARS/tyson_shotgun/sprites/victory_0.png",
+     "assets/CHARS/tyson_shotgun/sprites/victory_1.png",
+     "assets/CHARS/tyson_shotgun/sprites/victory_2.png",
+     "assets/CHARS/tyson_shotgun/sprites/victory_3.png"
+    ],
+    "roll1": "assets/CHARS/tyson_shotgun/sprites/roll1.png",
+    "roll2": "assets/CHARS/tyson_shotgun/sprites/roll2.png",
+    "roll3": "assets/CHARS/tyson_shotgun/sprites/roll3.png",
+    "roll4": "assets/CHARS/tyson_shotgun/sprites/roll4.png"
+   }
+  },
+  "juicy": {
+   "name": "Juicy Jared (new)",
+   "scale": 1.0,
+   "sprites": {
+    "front_run": [
+     "assets/CHARS/juicy/sprites/front_run_0.png",
+     "assets/CHARS/juicy/sprites/front_run_1.png",
+     "assets/CHARS/juicy/sprites/front_run_2.png",
+     "assets/CHARS/juicy/sprites/front_run_3.png",
+     "assets/CHARS/juicy/sprites/front_run_4.png",
+     "assets/CHARS/juicy/sprites/front_run_5.png",
+     "assets/CHARS/juicy/sprites/front_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/juicy/sprites/diag_run_0.png",
+     "assets/CHARS/juicy/sprites/diag_run_1.png",
+     "assets/CHARS/juicy/sprites/diag_run_2.png",
+     "assets/CHARS/juicy/sprites/diag_run_3.png",
+     "assets/CHARS/juicy/sprites/diag_run_4.png",
+     "assets/CHARS/juicy/sprites/diag_run_5.png",
+     "assets/CHARS/juicy/sprites/diag_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/juicy/sprites/side_run_0.png",
+     "assets/CHARS/juicy/sprites/side_run_1.png",
+     "assets/CHARS/juicy/sprites/side_run_2.png",
+     "assets/CHARS/juicy/sprites/side_run_3.png",
+     "assets/CHARS/juicy/sprites/side_run_4.png",
+     "assets/CHARS/juicy/sprites/side_run_5.png",
+     "assets/CHARS/juicy/sprites/side_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/juicy/sprites/bdiag_run_0.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_1.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_2.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_3.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_4.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_5.png",
+     "assets/CHARS/juicy/sprites/bdiag_run_6.png"
+    ],
+    "back_run": [
+     "assets/CHARS/juicy/sprites/back_run_0.png",
+     "assets/CHARS/juicy/sprites/back_run_1.png",
+     "assets/CHARS/juicy/sprites/back_run_2.png",
+     "assets/CHARS/juicy/sprites/back_run_3.png",
+     "assets/CHARS/juicy/sprites/back_run_4.png",
+     "assets/CHARS/juicy/sprites/back_run_5.png",
+     "assets/CHARS/juicy/sprites/back_run_6.png"
+    ],
+    "roll1": "assets/CHARS/juicy/sprites/roll1.png",
+    "roll2": "assets/CHARS/juicy/sprites/roll2.png",
+    "roll3": "assets/CHARS/juicy/sprites/roll3.png",
+    "roll4": "assets/CHARS/juicy/sprites/roll4.png",
+    "front_a": "assets/CHARS/juicy/sprites/front_a.png",
+    "front_b": "assets/CHARS/juicy/sprites/front_b.png",
+    "diag_a": "assets/CHARS/juicy/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/juicy/sprites/diag_b.png",
+    "side_a": "assets/CHARS/juicy/sprites/side_a.png",
+    "side_b": "assets/CHARS/juicy/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/juicy/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/juicy/sprites/bdiag_b.png",
+    "back_a": "assets/CHARS/juicy/sprites/back_a.png",
+    "back_b": "assets/CHARS/juicy/sprites/back_b.png",
+    "back": "assets/CHARS/juicy/sprites/back.png"
+   }
+  },
+  "juicy_shotgun": {
+   "name": "Juicy Jared (shotgun)",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/juicy_shotgun/sprites/front_a.png",
+    "front_b": "assets/CHARS/juicy_shotgun/sprites/front_b.png",
+    "diag_a": "assets/CHARS/juicy_shotgun/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/juicy_shotgun/sprites/diag_b.png",
+    "side_a": "assets/CHARS/juicy_shotgun/sprites/side_a.png",
+    "side_b": "assets/CHARS/juicy_shotgun/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/juicy_shotgun/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/juicy_shotgun/sprites/bdiag_b.png",
+    "back": "assets/CHARS/juicy_shotgun/sprites/back.png",
+    "back_b": "assets/CHARS/juicy_shotgun/sprites/back_b.png",
+    "roll1": "assets/CHARS/juicy_shotgun/sprites/roll1.png",
+    "roll2": "assets/CHARS/juicy_shotgun/sprites/roll2.png",
+    "roll3": "assets/CHARS/juicy_shotgun/sprites/roll3.png",
+    "roll4": "assets/CHARS/juicy_shotgun/sprites/roll4.png"
+   }
+  },
+  "juicy_spud": {
+   "name": "Juicy Jared (spud gun)",
+   "scale": 1.0,
+   "sprites": {
+    "back_run": [
+     "assets/CHARS/juicy_spud/sprites/back_run_0.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_1.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_2.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_3.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_4.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_5.png",
+     "assets/CHARS/juicy_spud/sprites/back_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_0.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_1.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_2.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_3.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_4.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_5.png",
+     "assets/CHARS/juicy_spud/sprites/bdiag_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/juicy_spud/sprites/diag_run_0.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_1.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_2.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_3.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_4.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_5.png",
+     "assets/CHARS/juicy_spud/sprites/diag_run_6.png"
+    ],
+    "front_run": [
+     "assets/CHARS/juicy_spud/sprites/front_run_0.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_1.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_2.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_3.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_4.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_5.png",
+     "assets/CHARS/juicy_spud/sprites/front_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/juicy_spud/sprites/side_run_0.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_1.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_2.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_3.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_4.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_5.png",
+     "assets/CHARS/juicy_spud/sprites/side_run_6.png"
+    ],
+    "front_a": "assets/CHARS/juicy_spud/sprites/front_a.png",
+    "front_b": "assets/CHARS/juicy_spud/sprites/front_b.png",
+    "diag_a": "assets/CHARS/juicy_spud/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/juicy_spud/sprites/diag_b.png",
+    "side_a": "assets/CHARS/juicy_spud/sprites/side_a.png",
+    "side_b": "assets/CHARS/juicy_spud/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/juicy_spud/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/juicy_spud/sprites/bdiag_b.png",
+    "back": "assets/CHARS/juicy_spud/sprites/back.png",
+    "back_b": "assets/CHARS/juicy_spud/sprites/back_b.png",
+    "roll1": "assets/CHARS/juicy_spud/sprites/roll1.png",
+    "roll2": "assets/CHARS/juicy_spud/sprites/roll2.png",
+    "roll3": "assets/CHARS/juicy_spud/sprites/roll3.png",
+    "roll4": "assets/CHARS/juicy_spud/sprites/roll4.png",
+    "reload": [
+     "assets/CHARS/juicy_spud/sprites/reload_0.png",
+     "assets/CHARS/juicy_spud/sprites/reload_1.png",
+     "assets/CHARS/juicy_spud/sprites/reload_2.png",
+     "assets/CHARS/juicy_spud/sprites/reload_3.png",
+     "assets/CHARS/juicy_spud/sprites/reload_4.png",
+     "assets/CHARS/juicy_spud/sprites/reload_5.png"
+    ],
+    "pickup": [
+     "assets/CHARS/juicy_spud/sprites/pickup_0.png",
+     "assets/CHARS/juicy_spud/sprites/pickup_1.png",
+     "assets/CHARS/juicy_spud/sprites/pickup_2.png",
+     "assets/CHARS/juicy_spud/sprites/pickup_3.png"
+    ],
+    "reload_side": [
+     "assets/CHARS/juicy_spud/sprites/reload_side_0.png",
+     "assets/CHARS/juicy_spud/sprites/reload_side_1.png",
+     "assets/CHARS/juicy_spud/sprites/reload_side_2.png",
+     "assets/CHARS/juicy_spud/sprites/reload_side_3.png",
+     "assets/CHARS/juicy_spud/sprites/reload_side_4.png",
+     "assets/CHARS/juicy_spud/sprites/reload_side_5.png"
+    ],
+    "throw_side": [
+     "assets/CHARS/juicy_spud/sprites/throw_side_0.png",
+     "assets/CHARS/juicy_spud/sprites/throw_side_1.png",
+     "assets/CHARS/juicy_spud/sprites/throw_side_2.png",
+     "assets/CHARS/juicy_spud/sprites/throw_side_3.png",
+     "assets/CHARS/juicy_spud/sprites/throw_side_4.png"
+    ],
+    "throw_front": [
+     "assets/CHARS/juicy_spud/sprites/throw_front_0.png",
+     "assets/CHARS/juicy_spud/sprites/throw_front_1.png",
+     "assets/CHARS/juicy_spud/sprites/throw_front_2.png",
+     "assets/CHARS/juicy_spud/sprites/throw_front_3.png",
+     "assets/CHARS/juicy_spud/sprites/throw_front_4.png"
+    ]
+   }
+  },
+  "tyson2": {
+   "name": "Tornado Tyson (new art)",
+   "scale": 1.0,
+   "recolourOf": "juicy",
+   "palette": {
+    "green": 22,
+    "blue": 125,
+    "boost": 1.15
+   },
+   "sprites": {}
+  },
+  "tyson2_shotgun": {
+   "name": "Tornado Tyson (shotgun)",
+   "scale": 1.0,
+   "recolourOf": "juicy_shotgun",
+   "palette": {
+    "green": 22,
+    "blue": 125,
+    "boost": 1.15
+   },
+   "sprites": {}
+  },
+  "tyson2_launcher": {
+   "name": "Tornado Tyson (nuke launcher)",
+   "scale": 1.0,
+   "recolourOf": "juicy_launcher",
+   "palette": {
+    "green": 22,
+    "blue": 125,
+    "boost": 1.15
+   },
+   "sprites": {}
+  },
+  "tyson2_spud": {
+   "name": "Tornado Tyson (spud)",
+   "scale": 1.0,
+   "recolourOf": "juicy_spud",
+   "palette": {
+    "green": 22,
+    "blue": 125,
+    "boost": 1.15
+   },
+   "sprites": {}
+  },
+  "juicy_launcher": {
+   "name": "Juicy Jared (nuke launcher)",
+   "scale": 1.0,
+   "sprites": {
+    "front_a": "assets/CHARS/juicy_launcher/sprites/front_a.png",
+    "front_b": "assets/CHARS/juicy_launcher/sprites/front_b.png",
+    "diag_a": "assets/CHARS/juicy_launcher/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/juicy_launcher/sprites/diag_b.png",
+    "side_a": "assets/CHARS/juicy_launcher/sprites/side_a.png",
+    "side_b": "assets/CHARS/juicy_launcher/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/juicy_launcher/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/juicy_launcher/sprites/bdiag_b.png",
+    "back": "assets/CHARS/juicy_launcher/sprites/back.png",
+    "back_b": "assets/CHARS/juicy_launcher/sprites/back_b.png",
+    "roll1": "assets/CHARS/juicy_launcher/sprites/roll1.png",
+    "roll2": "assets/CHARS/juicy_launcher/sprites/roll2.png",
+    "roll3": "assets/CHARS/juicy_launcher/sprites/roll3.png",
+    "roll4": "assets/CHARS/juicy_launcher/sprites/roll4.png"
+   }
+  },
+  "inky": {
+   "name": "Inky",
+   "scale": 1.0,
+   "sprites": {
+    "front_run": [
+     "assets/CHARS/inky/sprites/front_run_0.png",
+     "assets/CHARS/inky/sprites/front_run_1.png",
+     "assets/CHARS/inky/sprites/front_run_2.png",
+     "assets/CHARS/inky/sprites/front_run_3.png",
+     "assets/CHARS/inky/sprites/front_run_4.png",
+     "assets/CHARS/inky/sprites/front_run_5.png",
+     "assets/CHARS/inky/sprites/front_run_6.png"
+    ],
+    "diag_run": [
+     "assets/CHARS/inky/sprites/diag_run_0.png",
+     "assets/CHARS/inky/sprites/diag_run_1.png",
+     "assets/CHARS/inky/sprites/diag_run_2.png",
+     "assets/CHARS/inky/sprites/diag_run_3.png",
+     "assets/CHARS/inky/sprites/diag_run_4.png",
+     "assets/CHARS/inky/sprites/diag_run_5.png",
+     "assets/CHARS/inky/sprites/diag_run_6.png"
+    ],
+    "side_run": [
+     "assets/CHARS/inky/sprites/side_run_0.png",
+     "assets/CHARS/inky/sprites/side_run_1.png",
+     "assets/CHARS/inky/sprites/side_run_2.png",
+     "assets/CHARS/inky/sprites/side_run_3.png",
+     "assets/CHARS/inky/sprites/side_run_4.png",
+     "assets/CHARS/inky/sprites/side_run_5.png",
+     "assets/CHARS/inky/sprites/side_run_6.png"
+    ],
+    "bdiag_run": [
+     "assets/CHARS/inky/sprites/bdiag_run_0.png",
+     "assets/CHARS/inky/sprites/bdiag_run_1.png",
+     "assets/CHARS/inky/sprites/bdiag_run_2.png",
+     "assets/CHARS/inky/sprites/bdiag_run_3.png",
+     "assets/CHARS/inky/sprites/bdiag_run_4.png",
+     "assets/CHARS/inky/sprites/bdiag_run_5.png",
+     "assets/CHARS/inky/sprites/bdiag_run_6.png"
+    ],
+    "back_run": [
+     "assets/CHARS/inky/sprites/back_run_0.png",
+     "assets/CHARS/inky/sprites/back_run_1.png",
+     "assets/CHARS/inky/sprites/back_run_2.png",
+     "assets/CHARS/inky/sprites/back_run_3.png",
+     "assets/CHARS/inky/sprites/back_run_4.png",
+     "assets/CHARS/inky/sprites/back_run_5.png",
+     "assets/CHARS/inky/sprites/back_run_6.png"
+    ],
+    "front_a": "assets/CHARS/inky/sprites/front_a.png",
+    "front_b": "assets/CHARS/inky/sprites/front_b.png",
+    "diag_a": "assets/CHARS/inky/sprites/diag_a.png",
+    "diag_b": "assets/CHARS/inky/sprites/diag_b.png",
+    "side_a": "assets/CHARS/inky/sprites/side_a.png",
+    "side_b": "assets/CHARS/inky/sprites/side_b.png",
+    "bdiag_a": "assets/CHARS/inky/sprites/bdiag_a.png",
+    "bdiag_b": "assets/CHARS/inky/sprites/bdiag_b.png",
+    "back_a": "assets/CHARS/inky/sprites/back_a.png",
+    "back_b": "assets/CHARS/inky/sprites/back_b.png",
+    "back": "assets/CHARS/inky/sprites/back.png",
+    "roll1": "assets/CHARS/inky/sprites/roll1.png",
+    "roll2": "assets/CHARS/inky/sprites/roll2.png",
+    "roll3": "assets/CHARS/inky/sprites/roll3.png",
+    "roll4": "assets/CHARS/inky/sprites/roll4.png",
+    "victory": [
+     "assets/CHARS/inky/sprites/victory_0.png",
+     "assets/CHARS/inky/sprites/victory_1.png",
+     "assets/CHARS/inky/sprites/victory_2.png",
+     "assets/CHARS/inky/sprites/victory_3.png",
+     "assets/CHARS/inky/sprites/victory_4.png",
+     "assets/CHARS/inky/sprites/victory_5.png",
+     "assets/CHARS/inky/sprites/victory_6.png"
+    ],
+    "datapad": [
+     "assets/CHARS/inky/sprites/datapad_0.png",
+     "assets/CHARS/inky/sprites/datapad_1.png",
+     "assets/CHARS/inky/sprites/datapad_2.png",
+     "assets/CHARS/inky/sprites/datapad_3.png"
+    ]
+   }
+  }
+ },
+ "NEW_ROLL": [
+  "assets/NEW_ROLL_0.png",
+  "assets/NEW_ROLL_1.png",
+  "assets/NEW_ROLL_2.png",
+  "assets/NEW_ROLL_3.png"
+ ],
+ "ENEMY_SPRITES": {
+  "brute": {
+   "back": "assets/ENEMY_SPRITES/brute/back.png",
+   "diag": "assets/ENEMY_SPRITES/brute/diag.png",
+   "front": "assets/ENEMY_SPRITES/brute/front.png",
+   "idle": "assets/ENEMY_SPRITES/brute/idle.png",
+   "side": "assets/ENEMY_SPRITES/brute/side.png"
+  },
+  "grunt": {
+   "back": "assets/ENEMY_SPRITES/grunt/back.png",
+   "diag": "assets/ENEMY_SPRITES/grunt/diag.png",
+   "front": "assets/ENEMY_SPRITES/grunt/front.png",
+   "idle": "assets/ENEMY_SPRITES/grunt/idle.png",
+   "side": "assets/ENEMY_SPRITES/grunt/side.png"
+  },
+  "swarmer": {
+   "back": "assets/ENEMY_SPRITES/swarmer/back.png",
+   "diag": "assets/ENEMY_SPRITES/swarmer/diag.png",
+   "front": "assets/ENEMY_SPRITES/swarmer/front.png",
+   "idle": "assets/ENEMY_SPRITES/swarmer/idle.png",
+   "side": "assets/ENEMY_SPRITES/swarmer/side.png"
+  },
+  "batter": {
+   "front": [
+    "assets/ENEMY_SPRITES/batter/front_0.png",
+    "assets/ENEMY_SPRITES/batter/front_1.png",
+    "assets/ENEMY_SPRITES/batter/front_2.png",
+    "assets/ENEMY_SPRITES/batter/front_3.png"
+   ],
+   "diag": [
+    "assets/ENEMY_SPRITES/batter/diag_0.png",
+    "assets/ENEMY_SPRITES/batter/diag_1.png",
+    "assets/ENEMY_SPRITES/batter/diag_2.png",
+    "assets/ENEMY_SPRITES/batter/diag_3.png"
+   ],
+   "side": [
+    "assets/ENEMY_SPRITES/batter/side_0.png",
+    "assets/ENEMY_SPRITES/batter/side_1.png",
+    "assets/ENEMY_SPRITES/batter/side_2.png",
+    "assets/ENEMY_SPRITES/batter/side_3.png",
+    "assets/ENEMY_SPRITES/batter/side_4.png",
+    "assets/ENEMY_SPRITES/batter/side_5.png",
+    "assets/ENEMY_SPRITES/batter/side_6.png",
+    "assets/ENEMY_SPRITES/batter/side_7.png"
+   ],
+   "back": [
+    "assets/ENEMY_SPRITES/batter/back_0.png",
+    "assets/ENEMY_SPRITES/batter/back_1.png",
+    "assets/ENEMY_SPRITES/batter/back_2.png",
+    "assets/ENEMY_SPRITES/batter/back_3.png"
+   ],
+   "idle": "assets/ENEMY_SPRITES/batter/idle.png",
+   "swing": [
+    "assets/ENEMY_SPRITES/batter/swing_0.png",
+    "assets/ENEMY_SPRITES/batter/swing_1.png",
+    "assets/ENEMY_SPRITES/batter/swing_2.png",
+    "assets/ENEMY_SPRITES/batter/swing_3.png",
+    "assets/ENEMY_SPRITES/batter/swing_4.png",
+    "assets/ENEMY_SPRITES/batter/swing_5.png"
+   ]
+  }
+ },
+ "POSTER.src": "assets/POSTER_src.jpg",
+ "BLOOD_SPRITES": {
+  "hit": [
+   "assets/BLOOD_SPRITES/hit_0.png",
+   "assets/BLOOD_SPRITES/hit_1.png",
+   "assets/BLOOD_SPRITES/hit_2.png",
+   "assets/BLOOD_SPRITES/hit_3.png",
+   "assets/BLOOD_SPRITES/hit_4.png",
+   "assets/BLOOD_SPRITES/hit_5.png",
+   "assets/BLOOD_SPRITES/hit_6.png",
+   "assets/BLOOD_SPRITES/hit_7.png"
+  ],
+  "boom": [
+   "assets/BLOOD_SPRITES/boom_0.png",
+   "assets/BLOOD_SPRITES/boom_1.png",
+   "assets/BLOOD_SPRITES/boom_2.png",
+   "assets/BLOOD_SPRITES/boom_3.png",
+   "assets/BLOOD_SPRITES/boom_4.png",
+   "assets/BLOOD_SPRITES/boom_5.png",
+   "assets/BLOOD_SPRITES/boom_6.png",
+   "assets/BLOOD_SPRITES/boom_7.png"
+  ],
+  "splat": [
+   "assets/BLOOD_SPRITES/splat_0.png",
+   "assets/BLOOD_SPRITES/splat_1.png",
+   "assets/BLOOD_SPRITES/splat_2.png",
+   "assets/BLOOD_SPRITES/splat_3.png",
+   "assets/BLOOD_SPRITES/splat_4.png",
+   "assets/BLOOD_SPRITES/splat_5.png"
+  ]
+ },
+ "NUKE_SPRITES": {
+  "bomb": [
+   "assets/NUKE_SPRITES/bomb_0.png",
+   "assets/NUKE_SPRITES/bomb_1.png",
+   "assets/NUKE_SPRITES/bomb_2.png",
+   "assets/NUKE_SPRITES/bomb_3.png"
+  ],
+  "boom": [
+   "assets/NUKE_SPRITES/boom_0.png",
+   "assets/NUKE_SPRITES/boom_1.png",
+   "assets/NUKE_SPRITES/boom_2.png",
+   "assets/NUKE_SPRITES/boom_3.png",
+   "assets/NUKE_SPRITES/boom_4.png",
+   "assets/NUKE_SPRITES/boom_5.png",
+   "assets/NUKE_SPRITES/boom_6.png",
+   "assets/NUKE_SPRITES/boom_7.png"
+  ]
+ },
+ "JANITOR_SPRITES": {
+  "walk1": "assets/JANITOR_SPRITES/walk1.png",
+  "walk2": "assets/JANITOR_SPRITES/walk2.png",
+  "walk3": "assets/JANITOR_SPRITES/walk3.png",
+  "walk4": "assets/JANITOR_SPRITES/walk4.png",
+  "yeet_wind": "assets/JANITOR_SPRITES/yeet_wind.png",
+  "yeet": "assets/JANITOR_SPRITES/yeet.png",
+  "swing_start": "assets/JANITOR_SPRITES/swing_start.png",
+  "swing_up": "assets/JANITOR_SPRITES/swing_up.png",
+  "swing_down": "assets/JANITOR_SPRITES/swing_down.png",
+  "swing_hit": "assets/JANITOR_SPRITES/swing_hit.png",
+  "crouch_start": "assets/JANITOR_SPRITES/crouch_start.png",
+  "bend": "assets/JANITOR_SPRITES/bend.png",
+  "stand_up": "assets/JANITOR_SPRITES/stand_up.png",
+  "pocket": "assets/JANITOR_SPRITES/pocket.png",
+  "flinch": "assets/JANITOR_SPRITES/flinch.png",
+  "flinch_recover": "assets/JANITOR_SPRITES/flinch_recover.png",
+  "down_flat": "assets/JANITOR_SPRITES/down_flat.png",
+  "down_elbow": "assets/JANITOR_SPRITES/down_elbow.png",
+  "getting_up": "assets/JANITOR_SPRITES/getting_up.png",
+  "angry": "assets/JANITOR_SPRITES/angry.png",
+  "pickup": "assets/JANITOR_SPRITES/pickup.png",
+  "charge_a": "assets/JANITOR_SPRITES/charge_a.png",
+  "charge_b": "assets/JANITOR_SPRITES/charge_b.png",
+  "giveup": "assets/JANITOR_SPRITES/giveup.png",
+  "hammer_prop": "assets/JANITOR_SPRITES/hammer_prop.png",
+  "front1": "assets/JANITOR_SPRITES/front1.png",
+  "front2": "assets/JANITOR_SPRITES/front2.png",
+  "front3": "assets/JANITOR_SPRITES/front3.png",
+  "front4": "assets/JANITOR_SPRITES/front4.png",
+  "back1": "assets/JANITOR_SPRITES/back1.png",
+  "back2": "assets/JANITOR_SPRITES/back2.png",
+  "back3": "assets/JANITOR_SPRITES/back3.png",
+  "back4": "assets/JANITOR_SPRITES/back4.png"
+ },
+ "SPUD_SPRITES": [
+  "assets/SPUD_SPRITES_0.png",
+  "assets/SPUD_SPRITES_1.png",
+  "assets/SPUD_SPRITES_2.png",
+  "assets/SPUD_SPRITES_3.png",
+  "assets/SPUD_SPRITES_4.png"
+ ],
+ "VEND_SPRITES": {
+  "idle_a": "assets/VEND_SPRITES/idle_a.png",
+  "idle_b": "assets/VEND_SPRITES/idle_b.png",
+  "sold": "assets/VEND_SPRITES/sold.png"
+ },
+ "ROCKET_SPRITES": {
+  "cold": "assets/ROCKET_SPRITES/cold.png",
+  "lit_a": "assets/ROCKET_SPRITES/lit_a.png",
+  "lit_b": "assets/ROCKET_SPRITES/lit_b.png",
+  "lit_c": "assets/ROCKET_SPRITES/lit_c.png"
+ },
+ "SLOT_SPRITES": {
+  "idle_a": "assets/SLOT_SPRITES/idle_a.png",
+  "idle_b": "assets/SLOT_SPRITES/idle_b.png",
+  "spin": "assets/SLOT_SPRITES/spin.png",
+  "win": "assets/SLOT_SPRITES/win.png"
+ },
+ "CARRY_FRAMES@9741": [
+  "assets/misc/line9741_0.png",
+  "assets/misc/line9741_1.png",
+  "assets/misc/line9741_2.png"
+ ],
+ "line@13484": [],
+ "MACHINE_ART.src": "assets/MACHINE_ART_src.jpg",
+ "COG_ART.src": "assets/COG_ART_src.png",
+ "SOUNDS": {
+  "pistol": [
+   "assets/sounds/pistol_0.mp3",
+   "assets/sounds/pistol_1.mp3",
+   "assets/sounds/pistol_2.mp3",
+   "assets/sounds/pistol_3.mp3",
+   "assets/sounds/pistol_4.mp3",
+   "assets/sounds/pistol_5.mp3"
+  ],
+  "nuke": "assets/sounds/nuke.mp3",
+  "whistle": "assets/sounds/whistle.mp3"
+ },
+ "PROPS": {
+  "bench": "assets/props/bench.png",
+  "bench_shadow": "assets/props/bench_shadow.png",
+  "cab_bricks": "assets/props/cab_bricks.png",
+  "cab_bricks_shadow": "assets/props/cab_bricks_shadow.png",
+  "cab_miner": "assets/props/cab_miner.png",
+  "cab_miner_shadow": "assets/props/cab_miner_shadow.png",
+  "legpress": "assets/props/legpress.png",
+  "legpress_shadow": "assets/props/legpress_shadow.png",
+  "mirror": "assets/props/mirror.png",
+  "mirror_shadow": "assets/props/mirror_shadow.png",
+  "rack": "assets/props/rack.png",
+  "rack_shadow": "assets/props/rack_shadow.png",
+  "rope": "assets/props/rope.png",
+  "rope_shadow": "assets/props/rope_shadow.png",
+  "slot_shadow": "assets/props/slot_shadow.png",
+  "table": "assets/props/table.png",
+  "table_shadow": "assets/props/table_shadow.png",
+  "wardrobe_shadow": "assets/props/wardrobe_shadow.png"
+ }
+}
