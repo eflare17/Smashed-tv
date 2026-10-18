@@ -190,6 +190,11 @@ panel, the farm plans (FARM.md).
   grass into ploughed soil rows: the ground texture changes to furrows (painted into the yard's ground picture
   and its depth grid), and ploughed land is where crops can go, so the farm can grow beyond its beds. Grass
   slowly grows back over unused soil. Saved and synced online like the digs.
+- **Petrol hoe upgrade (the owner, 18 Oct: "the option to upgrade to a petrol hoe later"):** after the hand hoe
+  is live, an upgrade bought with the shared wallet (the shed, or the shop): a petrol rotary tiller that ploughs a
+  wide strip as you walk, much faster than the hand hoe. Engine sound and shake, pull-start, a fuel can that runs
+  down and gets refilled. Same soil mask and depth grid as the hoe, saved and synced online. Do it when the owner
+  says.
 - **Level 3, tunnels and caves:** the yard (or a separate area) becomes voxel terrain (chunked, marching cubes or
   blocky, in GDScript: the web export can't use native voxel modules); level 2's depth grid seeds it. The shovel,
   finds, saving and online code carry over; the ground mesh is what gets replaced. Check phone speed.
