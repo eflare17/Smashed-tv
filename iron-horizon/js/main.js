@@ -15,6 +15,7 @@ import * as T from './track.js';
 import * as S from './sim.js';
 import * as FX from './fx.js';
 import { makeStation } from './models.js';
+import * as Tut from './tutorial.js';
 
 const $ = (s) => document.querySelector(s);
 window.IH = G;   // handy in the console
@@ -345,6 +346,7 @@ function showSettings() {
     <h3>Labels</h3>${seg('labels', [['1', 'On'], ['0', 'Off']], G.labels ? '1' : '0')}
     <h3>Sound</h3>${seg('sound', [['1', 'On'], ['0', 'Off']], G.sound ? '1' : '0')}
     <h3>Game</h3><div class="btns"><button class="btn" id="bSave">Save</button><button class="btn ghost" id="bLoad">Load</button><button class="btn danger" id="bNew">New map</button></div>
+    <h3>Help</h3><div class="btns"><button class="btn" id="bTut">${Tut.active() ? 'Tutorial is running' : 'Start the tutorial'}</button></div>
     <div class="note">The game also saves itself every new year.</div>`, { kind: 'settings' });
   document.querySelectorAll('.seg').forEach(s => s.querySelectorAll('button').forEach(b => b.onclick = () => {
     const k = s.dataset.set, v = b.dataset.v;
@@ -356,6 +358,7 @@ function showSettings() {
   }));
   $('#bSave').onclick = () => saveGame();
   $('#bLoad').onclick = () => { if (localStorage.getItem(SAVE_KEY)) location.search = '?load=1'; else toast('No saved game', 'bad'); };
+  $('#bTut').onclick = () => { if (!Tut.active()) startTutorial(); };
   $('#bNew').onclick = () => { if (confirm('Start a new map? Unsaved progress is lost.')) location.search = '?new=1'; };
 }
 function refreshPanel() {
@@ -617,22 +620,35 @@ function boot() {
   else {
     $('#title').classList.remove('hidden');
     $('#continueGame').classList.toggle('hidden', !save);
-    if (params.has('new')) { $('#title').classList.add('hidden'); start(); }
+    if (params.has('new')) { $('#title').classList.add('hidden'); start(params.has('tutorial')); }
   }
   requestAnimationFrame(loop);
 }
-$('#newGame').onclick = () => { $('#title').classList.add('hidden'); start(); };
+$('#newGame').onclick = () => { $('#title').classList.add('hidden'); start(!Tut.seen()); };
+$('#tutorialGame').onclick = () => { $('#title').classList.add('hidden'); start(true); };
 $('#continueGame').onclick = () => { location.search = '?load=1'; };
-function start() {
+function start(tutorial = false) {
   G.started = true;
   $('#hud').classList.remove('hidden');
   $('#title').classList.add('hidden');
   setSpeed(1); setTool('inspect');
-  if (!loading) {
-    history.replaceState(null, '', location.pathname);
+  history.replaceState(null, '', location.pathname);
+  if (tutorial) startTutorial();
+  else if (!loading) {
     toast(`Welcome to the ${year()} frontier. You have ${money(G.cash)} to start a railroad.`);
-    setTimeout(() => toast('Tip: put a station in each of two big towns, join them with track, and buy a train.'), 3500);
-  } else history.replaceState(null, '', location.pathname);
+    setTimeout(() => toast('New here? The tutorial is in Settings (the gear button).'), 3500);
+  }
+}
+function startTutorial() {
+  closePanel(); setTool('inspect');
+  // look at the two towns the tutorial suggests (before it starts watching the camera)
+  const v = Tut.startView();
+  if (v) {
+    const h = W.heightAt(v.x, v.z), d = Math.max(230, v.span * 1.5);
+    controls.target.set(v.x, h, v.z); camera.position.set(v.x + d * 0.15, h + d * 0.9, v.z + d * 0.55);
+    controls.update();
+  }
+  Tut.start({ setSpeed, setTool });
 }
 
 // ---------------- main loop ----------------
@@ -657,6 +673,7 @@ function loop() {
       saveGame(true);
     }
     S.updateTrains(gdt, FX.emitSmoke);
+    Tut.tick(dt);
     cameraKeys(dt);
     if (G.follow) followTick(dt);
     updateHud(dt);
