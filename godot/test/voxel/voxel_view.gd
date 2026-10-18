@@ -20,6 +20,7 @@ var pair: CharSprite
 var _t := 0.0
 
 func _ready() -> void:
+	process_priority = 850      # after the Player and the Fight have told the sprite what to show, before the blocks read it
 	opts = _opts()
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
@@ -33,6 +34,11 @@ func _ready() -> void:
 		LobbyLook.load_saved()
 		LobbyLook.style = int(opts["style"])
 		LobbyLook.rev += 1
+	if opts.has("print"):
+		LobbyLook.load_saved()
+		var im := (load("res://assets/COG_ART_src.png") as Texture2D).get_image()
+		im.decompress()
+		LobbyLook.set_art(im, false)
 	if opts.has("at"):
 		var a := String(opts["at"]).split(":")
 		pl.place(float(a[0]), float(a[1]))
@@ -48,6 +54,15 @@ func _ready() -> void:
 		main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)
 		pl.look_y = 0.12
 	pl.face_mouse = false
+	if opts.has("lobby"):
+		for i in 10:
+			await get_tree().process_frame
+		var ll := LobbyLife.current
+		match String(opts["lobby"]):
+			"bed":
+				ll.things["bed"].lie_down(pl, 1)
+			"sit":
+				ll.things["table"].sit(pl, 1)
 	print("VOXVIEW ready ", opts)
 
 func _opts() -> Dictionary:
@@ -108,13 +123,19 @@ func _process(_d: float) -> void:
 		var d := deg_to_rad(float(opts["face"]))
 		pl.facing = Vector2(sin(d), cos(d))
 		spr.facing = pl.facing
+	if opts.has("jog"):
+		spr.moving = true
+		spr.odo = _t * 150.0
+		var vj := spr.get_node_or_null("Blocks") as VoxelChar
+		if vj:
+			vj.speed_override = 150.0
 	if opts.has("act"):
 		match String(opts["act"]):
 			"victory":
 				spr.action = "victory"
 			"roll":
 				spr.action = "roll"
-				spr.roll_t = fmod(_t * 1.2, 1.0)
+				spr.roll_t = float(opts["rollt"]) if opts.has("rollt") else fmod(_t * 1.2, 1.0)
 	var vc := spr.get_node_or_null("Blocks") as VoxelChar
 	if vc and opts.has("face") and not opts.has("run"):
 		var d2 := deg_to_rad(float(opts["face"]))
@@ -158,6 +179,10 @@ func _process(_d: float) -> void:
 			fw = Vector3(fw.x, 0.0, fw.z).normalized()
 			pair.global_position = Vector3(cam.global_position.x, 0.0, cam.global_position.z) + fw * 2.6
 			var pb := pair.get_node_or_null("Blocks") as VoxelChar
+			if pb and opts.has("jog"):
+				pb.speed_override = 150.0
+			if pb and opts.has("weapon"):
+				pb.weapon_override = String(opts["weapon"])
 			if pb and opts.has("face"):
 				var d3 := deg_to_rad(float(opts["face"]))
 				pb.facing_override = Vector2(sin(d3), cos(d3))

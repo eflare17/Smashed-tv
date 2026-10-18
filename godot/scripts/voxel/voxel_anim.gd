@@ -215,12 +215,13 @@ static func _lobby(s: Dictionary, out: Dictionary, p: String, t: float) -> void:
 			rot["arm_r"] = q(-0.5, 0.0, -0.15)
 			rot["forearm_l"] = q(-0.9)
 			rot["forearm_r"] = q(-0.9)
-			out.pos = Vector3(0, -40, -6)
+			out.pos = Vector3(0, -27, -8)
 		"lie":
-			# on his back (the bed): the whole body turned back about the feet, arms by his sides
+			# on his back on the bed, head on the pillow: the whole body turned back about the feet, which lie 40 voxels
+			# (20 units) south of where he's put (LobbyBed's spot is 70 units down from the bed's head end)
 			out.pivot = Vector3(0, 0, 0)
 			out.turn = q(-PI / 2.0)
-			out.pos = Vector3(0, 12, 0)
+			out.pos = Vector3(0, 44, 56)
 			rot["chest"] = q(0.02 * breathe)
 			rot["arm_l"] = q(0.0, 0.0, 0.12)
 			rot["arm_r"] = q(0.0, 0.0, -0.12)

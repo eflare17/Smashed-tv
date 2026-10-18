@@ -118,6 +118,8 @@ def jared():
     def torso_cols(r):
         lo = arm_end(r) + 1
         hi = int(2 * m.cx0) - lo
+        if r >= 80:
+            lo, hi = max(lo, 20), min(hi, 63 if r < 85 else 60)     # (the sprite's gun at his side, his other hand on his hip)
         if r >= 62:
             return cols_where(front, r, lo, hi, lambda p: not is_skin(p) and not (p[0] > 150 and p[0] > p[2] + 30))
         return cols_where(front, r, lo, hi)
@@ -129,8 +131,8 @@ def jared():
 
     # -- pelvis (the shorts' top)
     def pelvis_cols(r):
-        lo = max(arm_end(r) + 1, 19)
-        hi = int(2 * m.cx0) - lo
+        lo = max(arm_end(r) + 1, 20)
+        hi = min(int(2 * m.cx0) - lo, 64)
         cs = cols_where(front, r, lo, hi, lambda p: not is_skin(p) and not (p[0] > 150 and p[0] > p[2] + 30))
         return [c for c in cs if c <= 70 - max(0, 100 - r)] if r < 108 else cs
 

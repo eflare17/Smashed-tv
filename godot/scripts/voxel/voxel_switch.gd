@@ -113,6 +113,44 @@ func _process(delta: float) -> void:
 	if _scan_t >= 0.25:
 		_scan_t = 0.0
 		_scan()
+	if mode == "blocks":
+		_lobby_poses()
+
+## Lobby life's poses the blocks do themselves: lying in bed, sitting at the table, swimming. For those the lobby's
+## own picture is hidden and the sprite (whose picture the blocks hide) shown, posed. (The gym's lifts and carrying
+## Gothica stay the lobby's pictures: they draw the machine, or her, in the same picture.)
+func _lobby_poses() -> void:
+	var ll := LobbyLife.current
+	for pl in get_tree().get_nodes_in_group("player"):
+		if not (pl is Player) or pl.sprite == null:
+			continue
+		var vc := pl.sprite.get_node_or_null("Blocks") as VoxelChar
+		if vc == null:
+			continue
+		var pose := pose_for(ll, pl)
+		vc.lobby_pose = pose
+		vc.facing_override = Vector2.ZERO
+		if pose == "":
+			continue
+		var pic = ll.pose_of(pl) if ll else null
+		if pic and is_instance_valid(pic):
+			pic.visible = false
+		pl.sprite.visible = not pl.is_first_person()
+		if pose == "lie":
+			vc.facing_override = Vector2(0, 1)
+
+## Which of the blocks' lobby poses a player is in ("" for none).
+static func pose_for(ll: LobbyLife, pl: Player) -> String:
+	if ll == null or not ll.busy.has(pl):
+		return ""
+	var th = ll.busy[pl]
+	if th is LobbyBed:
+		return "lie"
+	if th is LobbyTable and (th as LobbyTable).sitters.has(pl):
+		return "sit"
+	if th is LobbyPool and (th as LobbyPool).swimming(pl):
+		return "swim"
+	return ""
 
 ## Adds a VoxelChar to every CharSprite that can have one (blocks), or takes them all away (pixel).
 func _scan() -> void:

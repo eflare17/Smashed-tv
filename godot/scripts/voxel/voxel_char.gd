@@ -28,6 +28,10 @@ var lobby_pose_f: float = 0.0
 var flatten: bool = false
 ## Face this way instead of the sprite's facing (HTML ground axes), when not zero: the lobby poses, tests.
 var facing_override: Vector2 = Vector2.ZERO
+## Run at this speed (HTML units a second) instead of the one measured from moving (< 0: measured): tests.
+var speed_override: float = -1.0
+## Hold this weapon instead of working it out ("" works it out): tests, cut scenes.
+var weapon_override: String = ""
 ## A Player this belongs to (for the fight's weapon), found by itself.
 var player: Node = null
 
@@ -125,7 +129,7 @@ func _process(delta: float) -> void:
 	if source == null or not is_instance_valid(source):
 		return
 	var sheet := source.char_id
-	weapon = _weapon_of(sheet)
+	weapon = _weapon_of(sheet) if lobby_pose == "" else ""
 	_update_quality()
 	if not _ensure(sheet):
 		visible = false
@@ -152,7 +156,7 @@ func _process(delta: float) -> void:
 	_recoil = maxf(0.0, _recoil - delta * 7.0)
 	_read_fight()
 	var st := {
-		"t": _t, "moving": source.moving, "speed": _speed if source.moving else 0.0, "odo": source.odo,
+		"t": _t, "moving": source.moving, "speed": (_speed if speed_override < 0.0 else speed_override) if source.moving else 0.0, "odo": source.odo,
 		"action": source.action, "roll_t": source.roll_t, "weapon": weapon, "recoil": _recoil, "gun": _gun,
 		"pose": lobby_pose, "pose_f": lobby_pose_f,
 	}
@@ -210,6 +214,8 @@ func _read_fight() -> void:
 
 # the weapon the blocks hold: the fight's own (fists and blasters share the plain sheet), else the sheet's
 func _weapon_of(sheet: String) -> String:
+	if weapon_override != "":
+		return "" if weapon_override == "none" else weapon_override
 	var ff = _fighter()
 	if ff != null:
 		var w := String(ff.weapon)
