@@ -1,0 +1,356 @@
+{
+ "char": "grunt",
+ "bones": [
+  {
+   "name": "hips",
+   "parent": "",
+   "pivot": [
+    0.0,
+    26.5,
+    0.0
+   ]
+  },
+  {
+   "name": "chest",
+   "parent": "hips",
+   "pivot": [
+    0.0,
+    41.8,
+    0.0
+   ]
+  },
+  {
+   "name": "head",
+   "parent": "chest",
+   "pivot": [
+    0.0,
+    63.0,
+    0.5
+   ]
+  },
+  {
+   "name": "arm_r",
+   "parent": "chest",
+   "pivot": [
+    -19.0,
+    58.0,
+    0.0
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "parent": "arm_r",
+   "pivot": [
+    -22.0,
+    44.0,
+    0.0
+   ]
+  },
+  {
+   "name": "hand_r",
+   "parent": "forearm_r",
+   "pivot": [
+    -23.0,
+    36.0,
+    0.0
+   ]
+  },
+  {
+   "name": "arm_l",
+   "parent": "chest",
+   "pivot": [
+    19.0,
+    58.0,
+    0.0
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "parent": "arm_l",
+   "pivot": [
+    22.0,
+    44.0,
+    0.0
+   ]
+  },
+  {
+   "name": "hand_l",
+   "parent": "forearm_l",
+   "pivot": [
+    23.0,
+    36.0,
+    0.0
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "parent": "hips",
+   "pivot": [
+    9.0,
+    24.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_l",
+   "parent": "thigh_l",
+   "pivot": [
+    9.0,
+    15.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_l",
+   "parent": "shin_l",
+   "pivot": [
+    9.0,
+    8.0,
+    0.0
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "parent": "hips",
+   "pivot": [
+    -9.0,
+    24.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_r",
+   "parent": "thigh_r",
+   "pivot": [
+    -9.0,
+    15.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_r",
+   "parent": "shin_r",
+   "pivot": [
+    -9.0,
+    8.0,
+    0.0
+   ]
+  }
+ ],
+ "parts": [
+  {
+   "name": "head",
+   "bone": "head",
+   "file": "head.vox",
+   "origin": [
+    -10,
+    62,
+    -10
+   ],
+   "size": [
+    21,
+    21,
+    16
+   ]
+  },
+  {
+   "name": "torso",
+   "bone": "chest",
+   "file": "torso.vox",
+   "origin": [
+    -14,
+    26,
+    -9
+   ],
+   "size": [
+    29,
+    18,
+    38
+   ]
+  },
+  {
+   "name": "arm_r",
+   "bone": "arm_r",
+   "file": "arm_r.vox",
+   "origin": [
+    -28,
+    44,
+    -7
+   ],
+   "size": [
+    14,
+    14,
+    19
+   ]
+  },
+  {
+   "name": "arm_l",
+   "bone": "arm_l",
+   "file": "arm_l.vox",
+   "origin": [
+    15,
+    44,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    19
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "bone": "forearm_r",
+   "file": "forearm_r.vox",
+   "origin": [
+    -28,
+    36,
+    -7
+   ],
+   "size": [
+    14,
+    14,
+    8
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "bone": "forearm_l",
+   "file": "forearm_l.vox",
+   "origin": [
+    15,
+    36,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    8
+   ]
+  },
+  {
+   "name": "hand_r",
+   "bone": "hand_r",
+   "file": "hand_r.vox",
+   "origin": [
+    -27,
+    26,
+    -6
+   ],
+   "size": [
+    13,
+    12,
+    10
+   ]
+  },
+  {
+   "name": "hand_l",
+   "bone": "hand_l",
+   "file": "hand_l.vox",
+   "origin": [
+    16,
+    27,
+    -6
+   ],
+   "size": [
+    11,
+    12,
+    9
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "bone": "thigh_l",
+   "file": "thigh_l.vox",
+   "origin": [
+    1,
+    15,
+    -7
+   ],
+   "size": [
+    16,
+    14,
+    11
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "bone": "thigh_r",
+   "file": "thigh_r.vox",
+   "origin": [
+    -17,
+    15,
+    -7
+   ],
+   "size": [
+    16,
+    14,
+    11
+   ]
+  },
+  {
+   "name": "shin_l",
+   "bone": "shin_l",
+   "file": "shin_l.vox",
+   "origin": [
+    4,
+    8,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    7
+   ]
+  },
+  {
+   "name": "shin_r",
+   "bone": "shin_r",
+   "file": "shin_r.vox",
+   "origin": [
+    -17,
+    8,
+    -7
+   ],
+   "size": [
+    13,
+    14,
+    7
+   ]
+  },
+  {
+   "name": "foot_l",
+   "bone": "foot_l",
+   "file": "foot_l.vox",
+   "origin": [
+    6,
+    0,
+    -5
+   ],
+   "size": [
+    15,
+    13,
+    8
+   ]
+  },
+  {
+   "name": "foot_r",
+   "bone": "foot_r",
+   "file": "foot_r.vox",
+   "origin": [
+    -21,
+    0,
+    -5
+   ],
+   "size": [
+    15,
+    13,
+    8
+   ]
+  }
+ ],
+ "ref_enemy": "grunt",
+ "ref_rows": 80,
+ "cx0": 28,
+ "foot": 78
+}

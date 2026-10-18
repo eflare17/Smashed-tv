@@ -18,6 +18,7 @@ var main: Node
 var _btn: Button
 var _scan_t := 0.0
 var _pending := false
+var _enemies: VoxelEnemies
 
 static func install(main_: Node) -> VoxelSwitch:
 	var s := VoxelSwitch.new()
@@ -124,12 +125,19 @@ func _process(delta: float) -> void:
 		_scan()
 	if mode == "blocks":
 		_lobby_poses()
+		if _enemies == null and Fight.me != null:
+			_enemies = VoxelEnemies.new()
+			_enemies.name = "VoxelEnemies"
+			_enemies.fight = Fight.me
+			main.add_child(_enemies)
 
 ## Lobby life's poses the blocks do themselves: lying in bed, sitting at the table, swimming. For those the lobby's
 ## own picture is hidden and the sprite (whose picture the blocks hide) shown, posed. (The gym's lifts and carrying
 ## Gothica stay the lobby's pictures: they draw the machine, or her, in the same picture.)
 func _lobby_poses() -> void:
 	var ll := LobbyLife.current
+	var gl: GothLife = ll.things.get("goth_life") as GothLife if ll else null
+	var carried := false
 	for pl in get_tree().get_nodes_in_group("player"):
 		if not (pl is Player) or pl.sprite == null:
 			continue
@@ -137,6 +145,9 @@ func _lobby_poses() -> void:
 		if vc == null:
 			continue
 		var pose := pose_for(ll, pl)
+		if gl and gl.carrier == pl and VoxelModel.has_model("goth"):
+			pose = "carry"
+			carried = _carry_goth(gl, pl, vc)
 		vc.lobby_pose = pose
 		vc.facing_override = Vector2.ZERO
 		if pose == "":
@@ -147,6 +158,33 @@ func _lobby_poses() -> void:
 		pl.sprite.visible = not pl.is_first_person()
 		if pose == "lie":
 			vc.facing_override = Vector2(0, 1)
+	if not carried:
+		var gvc := _goth_blocks(gl)
+		if gvc and gvc.lobby_pose == "carried":
+			gvc.lobby_pose = ""
+			gvc.world_offset = Vector3.ZERO
+			gvc.facing_override = Vector2.ZERO
+
+func _goth_blocks(gl: GothLife) -> VoxelChar:
+	if gl == null or gl.goth == null or not is_instance_valid(gl.goth):
+		return null
+	var sp = gl.goth.get("sprite")
+	return (sp as Node).get_node_or_null("Blocks") as VoxelChar if sp is CharSprite else null
+
+# Gothica as blocks lying across his arms (the lobby's carry picture draws them both; hidden here)
+func _carry_goth(gl: GothLife, pl: Player, vc: VoxelChar) -> bool:
+	var gvc := _goth_blocks(gl)
+	if gvc == null:
+		return false
+	var sp: CharSprite = gvc.source
+	sp.visible = true
+	gl.goth.visible = true                             # (lobby life hides her while the carry picture draws her)
+	gvc.lobby_pose = "carried"
+	var f := pl.facing if pl.facing.length_squared() > 0.001 else Vector2(0, 1)
+	gvc.facing_override = f.rotated(-PI / 2.0)        # lying across him, head on his right
+	var fw := Vector3(f.x, 0.0, f.y).normalized()
+	gvc.world_offset = fw * 0.3 + Vector3(fw.z, 0.0, -fw.x) * 0.12 + Vector3(0, 0.06, 0)
+	return true
 
 ## Which of the blocks' lobby poses a player is in ("" for none).
 static func pose_for(ll: LobbyLife, pl: Player) -> String:

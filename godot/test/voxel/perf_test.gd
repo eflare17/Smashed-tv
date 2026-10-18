@@ -13,6 +13,11 @@ func _ready() -> void:
 	var t2 := Time.get_ticks_usec()
 	print("PERF build: full %.0f ms, half %.0f ms" % [(t1 - t0) / 1000.0, (t2 - t1) / 1000.0])
 	print("PERF triangles: full %d, half %d" % [m0.surface_get_array_index_len(0) / 3, m1.surface_get_array_index_len(0) / 3])
+	for k in ["goth", "grunt", "swarmer", "brute", "batter"]:
+		var em := VoxelModel.get_model(k)
+		var a := em.build_mesh("perf_" + k, "classic", 0, [])
+		var b := em.build_mesh("perf_l_" + k, "classic", 1, [])
+		print("PERF %s triangles: full %d, half %d" % [k, a.surface_get_array_index_len(0) / 3, b.surface_get_array_index_len(0) / 3])
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	add_child(main)
 	await get_tree().process_frame

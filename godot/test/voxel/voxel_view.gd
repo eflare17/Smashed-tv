@@ -63,6 +63,11 @@ func _ready() -> void:
 				ll.things["bed"].lie_down(pl, 1)
 			"sit":
 				ll.things["table"].sit(pl, 1)
+			"carry":
+				var gp: Vector2 = main.gothica.html_pos2()
+				pl.place(gp.x, gp.y + 20.0)
+				await get_tree().process_frame
+				ll.things["goth_life"].pick_up(pl)
 	print("VOXVIEW ready ", opts)
 
 func _opts() -> Dictionary:
@@ -158,6 +163,12 @@ func _process(_d: float) -> void:
 		if opts.has("noskel") and vc.mesh_inst.skeleton != NodePath(""):
 			vc.mesh_inst.skeleton = NodePath("")
 			vc.mesh_inst.skin = null
+	if opts.has("debug") and Engine.get_process_frames() % 20 == 0 and LobbyLife.current:
+		var gl = LobbyLife.current.things.get("goth_life")
+		var gb = main.gothica.sprite.get_node_or_null("Blocks")
+		print("VOXCARRY carrier=%s pose=%s goth=%s gvis=%s" % [gl.carrier if gl else null, vc.lobby_pose if vc else "-", gb.lobby_pose if gb else "-", main.gothica.sprite.visible])
+		if gb:
+			print("VOXGOTH vis=%s tree=%s pos=%s gpos=%s root=%s mesh=%s goth_vis=%s" % [gb.visible, gb.is_visible_in_tree(), gb.global_position, main.gothica.global_position, gb.skeleton.get_bone_global_pose(0).origin if gb.skeleton else null, gb.mesh_inst.mesh if gb.mesh_inst else null, main.gothica.visible])
 	if vc and vc.skeleton and opts.has("debug") and Engine.get_process_frames() % 20 == 0:
 		print("VOXDBG st=%s key=%s made=%d pf=%d frames=%d vis=%s yaw=%.2f facing=%s root=%s mi=%s skel=%s" % [vc.last_state, spr.current_key, VoxelChar.made, Engine.get_process_frames(), vc.frames, vc.visible, vc.yaw, spr.facing, vc.skeleton.get_bone_global_pose(0), vc.mesh_inst.global_transform.origin, vc.skeleton.global_transform.basis.get_euler()])
 	if opts.has("fp"):

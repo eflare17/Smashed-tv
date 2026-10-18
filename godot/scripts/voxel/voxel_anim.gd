@@ -263,6 +263,7 @@ static func _lobby(s: Dictionary, out: Dictionary, p: String, t: float) -> void:
 			# lying across someone's arms: turned on her back, knees over one arm
 			out.pivot = Vector3(0, 50, 0)
 			out.turn = q(-PI / 2.0 + 0.2, 0.0, 0.0)
+			out.pos = Vector3(0, 30, 0)
 			rot["thigh_l"] = q(-1.2)
 			rot["thigh_r"] = q(-1.2)
 			rot["shin_l"] = q(1.3 + 0.1 * sin(t * 6.0))

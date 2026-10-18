@@ -30,6 +30,8 @@ var flatten: bool = false
 var facing_override: Vector2 = Vector2.ZERO
 ## Run at this speed (HTML units a second) instead of the one measured from moving (< 0: measured): tests.
 var speed_override: float = -1.0
+## Moved this far from where the sprite stands (metres, world axes): Gothica in someone's arms.
+var world_offset: Vector3 = Vector3.ZERO
 ## Hold this weapon instead of working it out ("" works it out): tests, cut scenes.
 var weapon_override: String = ""
 ## A Player this belongs to (for the fight's weapon), found by itself.
@@ -249,7 +251,10 @@ func _apply(p: Dictionary) -> void:
 	var pv: Vector3 = p.pivot
 	var ph: Vector3 = model.bone_pivot[root]
 	var at: Vector3 = pv + (p.pos as Vector3) + turn * (ph - pv)
-	skeleton.set_bone_pose_position(root, face * (at * m))
+	var off := world_offset
+	if off != Vector3.ZERO and skeleton.is_inside_tree():
+		off = skeleton.global_transform.basis.inverse() * off
+	skeleton.set_bone_pose_position(root, face * (at * m) + off)
 	skeleton.set_bone_pose_rotation(root, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
 
 # ---------------------------------------------------------------- the look

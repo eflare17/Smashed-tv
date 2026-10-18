@@ -421,6 +421,7 @@ def weapons():
     out["launcher"] = weapon("launcher", "juicy_launcher", "side_a", (0, 52, 124, 92), (84, 90), 20,
                              drop=lambda p, c, r: is_skin(p) or (r > 82 and not (78 <= c <= 92)) or (52 <= c <= 76 and r > 60 and dark(p) and r > 64 and is_hairish(p)),
                              round_k=0.9)
+    out["bat"] = bat()
     with open(os.path.join(OUT, "weapons", "weapons.json"), "w") as f:
         json.dump(out, f, indent=1)
 
@@ -642,10 +643,159 @@ def long_hair(m, front, side, back):
     m.parts["hair"]["meta"] = {"group": "hair_long"}
 
 
+# ------------------------------------------------------------------ the enemies (80 px sprites: chunkier blocks)
+
+def load_enemy(key, frame):
+    from PIL import Image
+    p = os.path.join(GODOT, "assets", "ENEMY_SPRITES", key, frame + ".png")
+    return np.array(Image.open(p).convert("RGBA")).astype(int)
+
+
+ENEMIES = {
+    # cx0, foot row, head (r0, r1, c0, c1), torso (r0, r1, c0, c1), the frame's left arm cols and rows
+    # (upper, fore, hand) + joints (shoulder, elbow, wrist), the frame's right leg cols and rows (thigh, shin, foot)
+    # + joints (hip, knee, ankle), the foot's cols
+    "grunt": dict(cx0=28, foot=78, head=(0, 15, 18, 38), torso=(14, 51, 14, 42), arm_c=(0, 13),
+                  arm=[(15, 33), (34, 41), (42, 51)], arm_j=[(9, 20), (6, 34), (5, 42)],
+                  leg_c=(29, 46), leg=[(52, 62), (63, 69), (70, 77)], leg_j=[(37, 54), (37, 63), (37, 70)], foot_c=(33, 50)),
+    "brute": dict(cx0=30, foot=80, head=(0, 14, 20, 40), torso=(14, 50, 15, 45), arm_c=(0, 14),
+                  arm=[(15, 34), (35, 46), (47, 58)], arm_j=[(9, 20), (7, 35), (6, 47)],
+                  leg_c=(31, 47), leg=[(50, 62), (63, 70), (71, 79)], leg_j=[(39, 52), (39, 63), (39, 71)], foot_c=(31, 48)),
+    "batter": dict(cx0=27, foot=88, front="front_0", back="back_0", head=(0, 24, 17, 38), torso=(20, 52, 13, 41),
+                   arm_c=(1, 13), arm=[(22, 39), (40, 48), (49, 56)], arm_j=[(10, 26), (6, 40), (5, 50)],
+                   leg_c=(27, 41), leg=[(52, 66), (67, 77), (78, 87)], leg_j=[(33, 54), (33, 67), (33, 78)], foot_c=(26, 43),
+                   grip=(5.5, 53)),
+    "swarmer": dict(cx0=24, foot=78, head=(0, 22, 12, 36), torso=(22, 55, 14, 34), arm_c=(0, 13),
+                    arm=[(23, 38), (39, 47), (48, 55)], arm_j=[(9, 26), (6, 38), (5, 47)],
+                    leg_c=(25, 38), leg=[(55, 63), (64, 71), (72, 77)], leg_j=[(31, 57), (31, 64), (31, 72)], foot_c=(25, 44)),
+}
+
+
+def enemy(key):
+    P = ENEMIES[key]
+    front = load_enemy(key, P.get("front", "idle"))
+    back = load_enemy(key, P.get("back", "back"))
+    m = Model(key, front, cx0=P["cx0"], foot=P["foot"], back=back)
+    fw, bw = front.shape[1], back.shape[1]
+
+    def j(c, r, z=0.0):
+        return (c - m.cx0, m.foot - r, z)
+
+    def bbox(c0, r0, c1, r1, mirror_side=False):
+        k = bw / float(fw)
+        return (int(c0 * k), r0, min(bw - 1, int(c1 * k)), r1)
+
+    hr0, hr1, hc0, hc1 = P["head"]
+    tr0, tr1, tc0, tc1 = P["torso"]
+    m.bone("hips", "", j(m.cx0, (tr1 + P["leg"][0][0]) / 2.0))
+    m.bone("chest", "hips", j(m.cx0, tr0 + (tr1 - tr0) * 0.6))
+    m.bone("head", "chest", j(m.cx0, hr1, 0.5))
+    (sc, sr), (ec, er), (wc, wr) = P["arm_j"]
+    (hc, hrr), (kc, kr), (ac, ar) = P["leg_j"]
+    m.bone("arm_r", "chest", j(sc, sr))
+    m.bone("forearm_r", "arm_r", j(ec, er))
+    m.bone("hand_r", "forearm_r", j(wc, wr))
+    m.bone("arm_l", "chest", mirror_pt(j(sc, sr)))
+    m.bone("forearm_l", "arm_l", mirror_pt(j(ec, er)))
+    m.bone("hand_l", "forearm_l", mirror_pt(j(wc, wr)))
+    m.bone("thigh_l", "hips", j(hc, hrr))
+    m.bone("shin_l", "thigh_l", j(kc, kr))
+    m.bone("foot_l", "shin_l", j(ac, ar))
+    m.bone("thigh_r", "hips", mirror_pt(j(hc, hrr)))
+    m.bone("shin_r", "thigh_r", mirror_pt(j(kc, kr)))
+    m.bone("foot_r", "shin_r", mirror_pt(j(ac, ar)))
+
+    def round_depth(k=1.0, zc=0.0, lo=0.0):
+        def f(r, c0, c1):
+            w = max(lo, (c1 + 1 - c0) * k)
+            return (zc - w / 2.0, zc + w / 2.0)
+        return f
+
+    hw = hc1 + 1 - hc0
+    m.add_shape("head", "head", range(hr0, hr1 + 1), lambda r: cols_where(front, r, hc0, hc1), round_depth(1.0, 0.5),
+                power=2.4, back_box=bbox(hc0, hr0, hc1, hr1))
+    tw = tc1 + 1 - tc0
+    m.add_shape("torso", "chest", range(tr0, tr1 + 1), lambda r: cols_where(front, r, tc0, tc1),
+                lambda r, a, b: (-tw * 0.3, tw * 0.3), power=2.4, back_box=bbox(tc0, tr0, tc1, tr1))
+    ac0, ac1 = P["arm_c"]
+    for nm, (r0, r1) in zip(("arm", "forearm", "hand"), P["arm"]):
+        f = (lambda a_, b_: (lambda r: cols_where(front, r, ac0, ac1) if a_ <= r <= b_ else []))(r0, r1)
+        m.add_shape(nm + "_r", nm + "_r", range(r0, r1 + 1), f, round_depth(0.95), power=2.2)
+        m.add_shape(nm + "_l", nm + "_l", range(r0, r1 + 1), f, round_depth(0.95), power=2.2, mirror=True)
+    lc0, lc1 = P["leg_c"]
+    fc0, fc1 = P["foot_c"]
+    for nm, (r0, r1) in zip(("thigh", "shin", "foot"), P["leg"]):
+        c0, c1 = (fc0, fc1) if nm == "foot" else (lc0, lc1)
+        f = (lambda a_, b_, c0_, c1_: (lambda r: cols_where(front, r, c0_, c1_) if a_ <= r <= b_ else []))(r0, r1, c0, c1)
+        dep = round_depth(1.0) if nm != "foot" else (lambda r, a, b: (-(b - a) * 0.35, (b - a) * 0.6))
+        bb = (0, r0, bw // 2, r1)
+        m.add_shape(nm + "_l", nm + "_l", range(r0, r1 + 1), f, dep, power=2.4 if nm != "foot" else 3.0, back_box=bb)
+        m.add_shape(nm + "_r", nm + "_r", range(r0, r1 + 1), f, dep, power=2.4 if nm != "foot" else 3.0, mirror=True,
+                    back_box=(bw // 2, r0, bw - 1, r1))
+        m.parts[nm + "_r"]["back_mirror"] = False
+    for a in ("head", "torso"):
+        for b in list(m.parts.keys()):
+            if b == a or (a == "torso" and b == "head"):
+                continue
+            for k in [k for k in m.parts[b]["vox"] if k in m.parts[a]["vox"]]:
+                del m.parts[b]["vox"][k]
+    m.colourise()
+    extra = {"ref_enemy": key, "ref_rows": front.shape[0], "cx0": m.cx0, "foot": m.foot}
+    if "grip" in P:
+        extra["grip_r"] = list(j(P["grip"][0], P["grip"][1], 0))
+    m.save(extra)
+    return m
+
+
+def bat():
+    """The batter's nail bat, straight: a tapering round club (the sprite's own browns, its grey nails), the grip at
+    the origin, the fat end toward +z."""
+    im = load_enemy("batter", "front_0")
+    browns = []
+    for r in range(56, 86):
+        for c in range(44, 70):
+            if opaque(im, c, r):
+                p = im[r, c]
+                if p[0] > p[2] + 20 and p[0] < 200 and not is_skin(p):
+                    browns.append(rgb(im, c, r))
+    browns.sort(key=lambda c: sum(c))
+    dark_, mid, light = browns[len(browns) // 8], browns[len(browns) // 2], browns[len(browns) * 7 // 8]
+    vox = {}
+    L = 40
+    import random
+    rnd = random.Random(7)
+    for z in range(-3, L):
+        t = max(0.0, z) / L
+        rad = 1.6 + 2.4 * t * t + (0.4 if z > L - 4 else 0.0)
+        for x in range(-5, 6):
+            for y in range(-5, 6):
+                d = (x * x + y * y) ** 0.5
+                if d <= rad:
+                    c = mid
+                    if d > rad - 1.0:
+                        c = dark_ if (x + y) < 0 else light
+                    if z < 6:
+                        c = darker(dark_, 0.8)       # the taped grip
+                    vox[(x, y, z)] = c
+    for _ in range(14):                              # the nails
+        z = rnd.randint(L // 2, L - 2)
+        a = rnd.random() * 6.283
+        rad = 1.6 + 2.4 * (z / L) ** 2
+        x, y = int(round(np.cos(a) * (rad + 1))), int(round(np.sin(a) * (rad + 1)))
+        vox[(x, y, z)] = (170, 170, 176)
+    d = os.path.join(OUT, "weapons")
+    origin, size = write_vox(os.path.join(d, "bat.vox"), vox)
+    print("weapon bat: %d voxels" % len(vox))
+    return {"file": "bat.vox", "origin": origin, "size": size}
+
+
 def build(which):
     if which in ("jared", "all"):
         jared()
     if which in ("goth", "all"):
         goth()
+    for k in ENEMIES:
+        if which in (k, "enemies", "all"):
+            enemy(k)
     if which in ("weapons", "all"):
         weapons()

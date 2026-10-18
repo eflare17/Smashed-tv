@@ -173,6 +173,37 @@ func _in_game() -> void:
 		check(absf(wrapf(vc.yaw - atan2(f.x, f.y), -PI, PI)) < 0.3, "turned to the sprite's facing (%.2f)" % vc.yaw)
 	var gv: Node = main.gothica.sprite.get_node_or_null("Blocks")
 	check(gv is VoxelChar and (main.gothica.sprite.get("_spr") as Node3D).visible == not VoxelModel.has_model("goth"), "Gothica: blocks when she has a model")
+	# carrying Gothica: both as blocks, the lobby's carry picture hidden
+	var ll := LobbyLife.current
+	if ll and VoxelModel.has_model("goth"):
+		var gp: Vector2 = main.gothica.html_pos2()
+		pl.place(gp.x, gp.y + 20.0)
+		await get_tree().process_frame
+		ll.things["goth_life"].pick_up(pl)
+		for i in 30:
+			await get_tree().process_frame
+		var gb := main.gothica.sprite.get_node_or_null("Blocks") as VoxelChar
+		check(vc != null and vc.lobby_pose == "carry", "carrying: his blocks hold her (%s)" % (vc.lobby_pose if vc else "-"))
+		check(gb != null and gb.lobby_pose == "carried" and gb.is_visible_in_tree(), "carried: her blocks lie in his arms")
+		ll.things["goth_life"]._put_down(pl)
+		for i in 5:
+			await get_tree().process_frame
+		check(gb != null and gb.lobby_pose == "", "put down: she stands again")
+	# a run: grunts, swarmers and brutes in blocks (their pictures hidden)
+	if Fight.me:
+		Fight.me.start_run(true)
+		var blocks := 0
+		for i in 400:
+			await get_tree().process_frame
+			var ve := main.get_node_or_null("VoxelEnemies")
+			if ve:
+				blocks = 0
+				for c in ve.get_children():
+					if c.visible:
+						blocks += 1
+				if blocks > 0:
+					break
+		check(blocks > 0, "enemies in blocks in a run (%d)" % blocks)
 	sw.set_mode("pixel", false)
 	await get_tree().process_frame
 	check(pl.sprite.get_node_or_null("Blocks") == null, "pixel: the blocks go")

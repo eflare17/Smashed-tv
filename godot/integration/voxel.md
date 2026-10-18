@@ -30,9 +30,13 @@ reflection) by itself, now and as new ones appear.
   `user://smashed.cfg` (`[chars] look`). The web address can say `?voxel=blocks` (or `?voxel=pixel`); the
   command line `--voxel=blocks` after `--`.
 - Input action added in code: `voxel_toggle` (F10).
-- Characters with a model: Juicy Jared (`juicy` and all its weapon sheets) and Tornado Tyson (`tyson2`: Jared's
-  blocks recoloured the way the pictures are, `recolourImage`'s green and blue hue swaps). Gothica (`goth`) stays a
-  picture until her model is built (in progress, see "What's left").
+- Characters with a model: Juicy Jared (`juicy` and all its weapon sheets), Tornado Tyson (`tyson2`: Jared's blocks
+  recoloured the way the pictures are, `recolourImage`'s green and blue hue swaps), Gothica (`goth`: the lobby's
+  wandering Gothica, Protect mode's, or playing as her) with her long hair and skirt as their own parts.
+- **Enemies** (`VoxelEnemies`, added by the switch once a fight exists): grunt, swarmer, brute and the batter (with a
+  nail bat: the wind-up lifts it back over his shoulder, the swing sweeps it across, the recovery follows through)
+  stand in for EnemyView's pictures, facing where they walk, legs by their odo, white when hit. Gary the janitor,
+  corpses and gore stay pictures. On the low look they're made at half detail.
 
 ## How it works
 
@@ -52,7 +56,8 @@ reflection) by itself, now and as new ones appear.
   lost if the builder is re-run for that character, so once the owner edits a model, stop rebuilding it.
 - **Meshes** (`VoxMesher`): greedy meshing (faces of one colour on one plane merge), vertex colours, all parts in one
   skinned mesh on a `Skeleton3D` (each vertex on its part's bone): **one draw call a character**, one material.
-  Jared: 53k triangles full, 22k at half detail.
+  Triangles (full / half detail): Jared 53k / 22k, Gothica 53k / 23k, grunt 13k / 6k, swarmer 11k / 5k, brute 15k / 7k,
+  batter 14k / 6k.
 - **Rig and animation** (`VoxelAnim`, all in code): idle breathing and a look round; walk/run from the sprite's odo
   (stride, the knees, the bob, the chest twist, arms swinging) with the stride's size from his measured speed; the
   dive roll (tucked, turning over once, the roll's hop); tumbling when thrown; the victory flex; holding each weapon
@@ -85,13 +90,18 @@ reflection) by itself, now and as new ones appear.
 - The lean toward the top-down camera (`VoxelChar.tip` = 0.5): without it a 3D body seen from 65 degrees up shows
   mostly the top of his head. 0 turns it off.
 - Shadows cast but not received (see above). Lighting kept flat-ish, like the pictures.
-- The gym's lifts and carrying Gothica keep lobby life's pictures for now: those pictures draw the machine (or
-  Gothica) together with him, so they can't be swapped for blocks without redrawing the machines.
+- The gym's lifts keep lobby life's pictures: those pictures draw the machine and him together. Carrying Gothica is
+  blocks (his arms out, hers lying across them; the lobby's carry picture and her hidden node are swapped for it).
 - Tornado Tyson uses Jared's blocks recoloured (as his pictures are Juicy's recoloured); his recolour is per vertex in
   HSV (the shader's is HSL), close enough by eye.
 - The fight's bullets and muzzle flashes still start where the pictures' barrel maps put them (a few pixels off the
   block guns at some angles).
-- Gothica stays a picture until her model exists (the switch leaves sprites with no model alone).
+- Sprites with no model (old-art sheets, Inky) are left as pictures.
+- Gothica holds the fight's weapons in blocks (her pictures have no weapon sheets; with blocks her arms aim anyway).
+- Enemies are built from their idle frames (the batter from his walk frame: his idle has the bat over his shoulder);
+  one voxel per sprite pixel, so they're chunkier than the characters, as their pictures are. The batter's bat is
+  built in code (a straight tapering club in the sprite's browns with grey nails) rather than cut from the diagonal
+  sprite.
 
 ## Contract changes wanted
 
@@ -135,6 +145,10 @@ First-person shots look at a blocks Jared standing in front of you. `overview.pn
 
 ## What's left
 
-- Gothica's model, then Tornado Tyson's own look (his hair and colours beyond the recolour), then the enemies.
-- The gym and carry poses as blocks (needs the machines drawn without him).
+- The gym poses as blocks (needs the machines drawn without him); Gary the janitor; Inky.
 - Frame times on a real phone (the cloud's browser has no GPU: everything, pictures included, runs at ~1 fps there).
+  A full wave in blocks is ~20 skinned meshes (~250k triangles high, ~120k low): if a phone struggles, a lower
+  detail for the low look (a third) is a one-line change in `VoxelMesher.downsample`'s use.
+- The first switch to blocks builds the meshes (~0.4 s a character on desktop, more on the web): a one-off hitch.
+- Mixamo / UniMate clips (the owner's ideas): the rig is a plain 16-bone humanoid, so clips made on it could be
+  baked into VoxelAnim as extra moves (dances, deaths); the game-driven moves stay in code.
