@@ -1,3 +1,5 @@
 .godot/
 build/
 *.import
+# the zombie model: its own import settings (no embedded textures, mipmapped lossy textures)
+!assets/models/zombie/*.import
