@@ -186,6 +186,10 @@ panel, the farm plans (FARM.md).
   a shovel (from the shed) lowers it about waist-deep and fills it back in; finds (potatoes, coins, a bone, a rare
   stash); dug spots can be planted (the farm); saved, and synced online. The house floors, lobby and arena stay
   as they are. Store digs as a depth grid so level 3 can take them over.
+- **Plowing (the owner, 18 Oct, with level 2):** a hoe (hand, slow) and later a push tiller / ride-on (fast) turn
+  grass into ploughed soil rows: the ground texture changes to furrows (painted into the yard's ground picture
+  and its depth grid), and ploughed land is where crops can go, so the farm can grow beyond its beds. Grass
+  slowly grows back over unused soil. Saved and synced online like the digs.
 - **Level 3, tunnels and caves:** the yard (or a separate area) becomes voxel terrain (chunked, marching cubes or
   blocky, in GDScript: the web export can't use native voxel modules); level 2's depth grid seeds it. The shovel,
   finds, saving and online code carry over; the ground mesh is what gets replaced. Check phone speed.
