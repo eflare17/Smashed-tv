@@ -68,12 +68,13 @@ func _t_ground() -> void:
 	var w: Node3D = main.world
 	var g := w.get_node_or_null("DigGround")
 	ok(g != null, "the ground is in the World (lit with it)")
-	var n := DigGrid.chunks_x() * DigGrid.chunks_y()
-	var meshes := 0
+	var gm: MeshInstance3D = g.get_node_or_null("DigGrass")
+	ok(gm != null and gm.mesh != null and gm.mesh.get_surface_count() == 1, "the grass is one mesh")
+	var draws := 0
 	for c in g.get_children():
-		if c is MeshInstance3D and c.name.begins_with("DigG") and c.visible:
-			meshes += 1
-	ok(meshes >= n - 4, "every chunk has its grass mesh (%d of %d)" % [meshes, n])
+		if c is MeshInstance3D and c.visible:
+			draws += 1
+	ok(draws <= 3, "the yard's ground is at most three draws (%d)" % draws)
 	var wm: MeshInstance3D = w.get_node("WorldMesh")
 	var hidden := false
 	for i in wm.mesh.get_surface_count():
@@ -418,8 +419,9 @@ func _t_speed() -> void:
 	var n := DigGrid.chunks_x() * DigGrid.chunks_y()
 	print("SPEED all %d chunks rebuilt in %.1f ms (%.2f ms a chunk)" % [n, all_ms, all_ms / n])
 	t0 = Time.get_ticks_usec()
-	dig.grid.dig(1250, 1600, Vector2.RIGHT)
+	var r := dig.grid.dig(1250, 1350, Vector2.RIGHT)
 	dig.ground.flush()
+	ok(r.get("ok", false), "(the timed dig dug)")
 	var one_ms := (Time.get_ticks_usec() - t0) / 1000.0
 	print("SPEED one dig, redrawn with collision: %.2f ms" % one_ms)
 	ok(one_ms < 40.0, "a dig redraws fast natively (%.1f ms)" % one_ms)

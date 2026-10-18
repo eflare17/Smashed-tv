@@ -14,6 +14,8 @@ var main: Node
 var opts := {}
 var _times: Array = []
 var _t := 0.0
+var _proc := 0.0
+var _phys := 0.0
 
 func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
@@ -87,11 +89,23 @@ func _setup() -> void:
 			var m := wm.get_surface_override_material(i)
 			if m is ShaderMaterial and m.shader and m.shader.code.contains("discard"):
 				wm.set_surface_override_material(i, null)
-				var lp = main.get_node_or_null("LookPass")
+				var lp = main.find_child("LookPass", true, false)
 				if lp and lp.has_method("light_mesh"):
 					var base := wm.mesh.surface_get_material(i)
 					if base is StandardMaterial3D:
 						wm.set_surface_override_material(i, lp.lit_material(base))
+	if opts.has("nosoil"):
+		dig.ground.remove_child(dig.ground.get_node("DigSoil"))
+	if opts.has("worldmat") or opts.has("unlit"):
+		var wm2: MeshInstance3D = main.world.get_node("WorldMesh")
+		for i in wm2.mesh.get_surface_count():
+			var base := wm2.mesh.surface_get_material(i)
+			if base is StandardMaterial3D and base.albedo_texture == main.world.get("_yard_tex"):
+				var lp2 = main.find_child("LookPass", true, false)
+				dig.ground.get_node("DigGrass").material_override = base if opts.has("unlit") else lp2.lit_material(base)
+		print("DIGSHOT grass material: ", dig.ground.get_node("DigGrass").material_override)
+	if opts.has("nograss"):
+		dig.ground.get_node("DigGrass").visible = false
 	if opts.has("tool"):
 		dig.set_tool(p, String(opts.tool))
 	if opts.has("at"):
@@ -100,13 +114,14 @@ func _setup() -> void:
 	elif opts.has("in"):
 		p.place(1000 + 3 * 90, 1230)
 	p.facing = Vector2(0, 1)
+	if opts.has("fp"):
+		main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)
+	await get_tree().process_frame
 	if opts.has("yaw"):
 		p.look_ang = float(opts.yaw)
 		p.facing = Vector2(cos(p.look_ang), sin(p.look_ang))
 	if opts.has("pitch"):
 		p.look_y = float(opts.pitch)
-	if opts.has("fp"):
-		main.rig.set_mode(CameraRig.Mode.FIRST_PERSON)
 	if opts.has("zoom"):
 		main.rig.set_zoom(int(opts.zoom))
 	main.rig.snap()
@@ -117,10 +132,13 @@ func _process(delta: float) -> void:
 	_t += delta
 	if _t > 6.0 and _t < 11.0:
 		_times.append(delta * 1000.0)
+		_proc += Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+		_phys += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 	elif _t >= 11.0 and not _times.is_empty():
 		_times.sort()
 		var med: float = _times[_times.size() / 2]
 		var p95: float = _times[int(_times.size() * 0.95)]
+		print("DIGPERF process=%.1fms physics=%.1fms a frame" % [_proc / _times.size(), _phys / _times.size()])
 		print("DIGPERF frames=%d median=%.1fms p95=%.1fms draws=%d objects=%d prims=%d look=%s" % [_times.size(), med, p95,
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),

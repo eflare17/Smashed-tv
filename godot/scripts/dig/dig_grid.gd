@@ -22,6 +22,8 @@ var mask := PackedByteArray()          # per cell: 1 diggable (grass in the yard
 var vmask := PackedByteArray()         # per vertex: 1 if every cell round it is diggable
 ## Chunk index -> true: chunks whose look changed since the last redraw.
 var dirty: Dictionary = {}
+## Chunk index -> true: chunks whose corner depths changed (the heightmap's to update).
+var hdirty: Dictionary = {}
 ## Bumped on every change (the network sends only changed grids).
 var version := 0
 var stats := {"holes": 0, "spuds": 0, "coins": 0, "bones": 0, "stashes": 0, "ploughed": 0}
@@ -481,7 +483,9 @@ func _touch_cell(cx: int, cy: int) -> void:
 func _touch_vertex(vx: int, vy: int) -> void:
 	for c in [[vx - 1, vy - 1], [vx, vy - 1], [vx - 1, vy], [vx, vy]]:
 		if c[0] >= 0 and c[1] >= 0 and c[0] < D.NX and c[1] < D.NY:
-			dirty[chunk_of_cell(c[0], c[1])] = true
+			var k := chunk_of_cell(c[0], c[1])
+			dirty[k] = true
+			hdirty[k] = true
 
 func _changed() -> void:
 	version += 1
@@ -490,6 +494,7 @@ func _changed() -> void:
 func touch_all() -> void:
 	for i in chunks_x() * chunks_y():
 		dirty[i] = true
+		hdirty[i] = true
 
 ## ---------------------------------------------------------------- saving and sending
 

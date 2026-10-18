@@ -29,12 +29,16 @@ func _process(_dt: float) -> void:
 	var p := dig._local() if dig else null
 	var t := dig.tool_of(p) if p else ""
 	var fp: bool = p != null and p.has_method("is_first_person") and p.is_first_person()
-	_pic.tool = t if fp else ""
-	_pic.swing = dig._swing
-	_pic.queue_redraw()
+	var want := t if fp else ""
+	if want != _pic.tool or dig._swing != _pic.swing:
+		_pic.tool = want
+		_pic.swing = dig._swing
+		_pic.queue_redraw()
 	var touch = _touch()
-	_fill.shown = touch != null and touch.active and t == "shovel" and dig.can_fill(p)
-	_fill.queue_redraw()
+	var shown: bool = touch != null and touch.active and t == "shovel" and dig.can_fill(p)
+	if shown != _fill.shown:
+		_fill.shown = shown
+		_fill.queue_redraw()
 
 func _touch():
 	var hud = dig.main.get("hud") if dig and dig.main else null
