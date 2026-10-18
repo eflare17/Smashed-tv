@@ -143,8 +143,8 @@ func set_tool(p: Node, t: String) -> void:
 
 func _show_tool(p: Node, t: String) -> void:
 	var id := p.get_instance_id()
-	var old: Node = _tool_meshes.get(id)
-	if old and is_instance_valid(old):
+	var old = _tool_meshes.get(id)
+	if old != null and is_instance_valid(old):
 		old.queue_free()
 	_tool_meshes.erase(id)
 	if t == "" or not (p is Node3D):
@@ -193,10 +193,12 @@ static func _box(parent: Node3D, at: Vector3, size: Vector3, c: Color) -> void:
 ## Where a player's held tool is drawn: at his side, toward where he faces, leaning forward; a dig swings it.
 func _pose_tools() -> void:
 	for id in _tool_meshes.keys():
-		var m: Node3D = _tool_meshes[id]
-		if not is_instance_valid(m):
+		var mv = _tool_meshes[id]
+		if not is_instance_valid(mv):
 			_tool_meshes.erase(id)
+			_tools.erase(id)
 			continue
+		var m: Node3D = mv
 		var p := m.get_parent() as Node3D
 		if p == null:
 			continue
@@ -384,7 +386,12 @@ func _physics_process(dt: float) -> void:
 	if main == null:
 		return
 	var me := _local()
-	for p in get_tree().get_nodes_in_group("player"):
+	var players := get_tree().get_nodes_in_group("player")
+	var n = _net()
+	var p2 = n.get("p2") if n else null
+	if p2 and is_instance_valid(p2) and not players.has(p2):
+		players.append(p2)                   # (the online other player isn't in the group)
+	for p in players:
 		if not (p is CharacterBody3D) or not p.is_inside_tree():
 			continue
 		var id := p.get_instance_id()
