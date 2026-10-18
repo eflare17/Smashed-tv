@@ -28,6 +28,8 @@ const ABC := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"     # no O/0, no I/1 (makeCode)
 static var me: Net
 
 signal changed
+## A message none of the above knows (other parts' own, e.g. the dig's {"t": "dig", ...}); send them with _send.
+signal message(d: Dictionary)
 
 var role := "local"              ## "local", "host" or "client" (the HTML's net.role)
 var code := ""
@@ -571,6 +573,8 @@ func _on_message(d: Dictionary) -> void:
 			_send({"t": "pong", "a": d.get("a", 0)})
 		"pong":
 			ping_ms = Time.get_ticks_msec() - int(d.get("a", 0))
+		_:
+			message.emit(d)
 
 ## ---------------------------------------------------------------- every frame
 

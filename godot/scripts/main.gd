@@ -60,6 +60,7 @@ func _ready() -> void:
 	LightingInstall.install(self)       # the day and night cycle and the look (before the farm: its clock)
 	Arcade.install(self).add_to_group("lobby_only")
 	FarmInstall.install(self)
+	DigInstall.install(self)            # digging and ploughing the yard (after the farm: its field plots)
 	FightInstall.install(self)
 	LobbyLife.install(self).add_to_group("lobby_only")
 	PadSetup.install(self)              # the controller setup (hold Back / View, or F7)

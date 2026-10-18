@@ -49,12 +49,13 @@ var _pad_seen := false
 const HELP_KEYS := [["W A S D", "Move"], ["Mouse", "Aim  (first person: look)"], ["Click (hold)", "Fire"],
 	["Shift", "Dive roll"], ["E", "Use: pick up, sit, eat, play, pull, throw"], ["1 – 6", "Change weapon"],
 	["Enter", "Start the run"], ["R", "Restart"], ["V", "First person"], ["Z", "Zoom"], ["Tab", "Show / hide this list"],
-	["I", "Your bag (the farm)"], ["O", "Play online"], ["F9", "Sound on / off"],
+	["I", "Your bag (the farm)"], ["E at the shed", "Shovel (E dig, Q fill) / hoe (walk to plough)"], ["O", "Play online"], ["F9", "Sound on / off"],
 	["P", "Add a player 2 on this keyboard (arrows + space)"]]
 const HELP_PAD := [["Left stick", "Move"], ["Right stick", "Aim  (first person: look)"], ["RT", "Fire"],
 	["B  /  RB  /  LT", "Dive roll"], ["A", "Use: pick up, sit, eat, play, pull, throw"],
 	["LB,  d-pad left / right", "Change weapon"], ["Menu", "Start the run  (restart when it's over)"],
 	["R3 (right stick click)", "Game mode, in the lobby"], ["Y", "Your bag (the farm)"],
+	["A at the shed", "Shovel (A dig, X fill) / hoe (walk to plough)"],
 	["L3 (left stick click)", "Play online"],
 	["View", "First person"], ["D-pad up", "Zoom"], ["D-pad down", "Show / hide this list"]]
 var _touch_driving := false

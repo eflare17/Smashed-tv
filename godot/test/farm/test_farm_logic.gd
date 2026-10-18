@@ -36,7 +36,7 @@ func _fresh() -> FarmState:
 
 func _state_tests() -> void:
 	var s := _fresh()
-	ok(s.plots.size() == 8 + 24 + 120, "plots: 8 yard + 24 neighbour + 120 paddock")
+	ok(s.plots.size() == 8 + 24 + 120 + D.FIELD_PLOTS, "plots: 8 yard + 24 neighbour + 120 paddock + the field plots (scripts/dig)")
 	ok(s.plot_open(0) and not s.plot_open(8) and not s.plot_open(40), "only the yard is open at first")
 	ok(s.plot_label(0, 0) == "", "nothing to plant without seeds")
 	s.add_seed(0, 0, 2)

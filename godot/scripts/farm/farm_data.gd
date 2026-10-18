@@ -113,6 +113,9 @@ const P_GATE := {"x": 955, "y": 1882}
 const P_SIGN := {"x": 1060, "y": 1830}
 const P_ROWS := 12
 const P_ROW_PLANTS := 10
+## Plots on ploughed soil in the yard (the digging part, scripts/dig/, places them where you plant): zone "field",
+## open while placed ("on").
+const FIELD_PLOTS := 48
 const P_ROW_X0 := 520.0
 const P_ROW_DX := 150.0
 const P_ROW_Y0 := 2080.0

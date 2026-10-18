@@ -14,6 +14,7 @@ const U := 0.025
 var farm: Farm
 var views: Array = []                 # FarmPlotView per plot (index = plot index)
 var spots: Array = []                 # every FarmSpot
+var _field_spots: Dictionary = {}      # plot index -> its FarmSpot, for the plots on ploughed soil
 var _for_sale := {}                   # land -> the sign's node
 var _owned_only := {}                 # land -> nodes shown once it's bought
 var _tractor: Node3D
@@ -47,6 +48,8 @@ func build(f: Farm) -> void:
 		if p.zone != "paddock":
 			var s := _spot("plot", i, Vector2(p.x, p.y), D.HOLE_REACH)
 			s.name = "PlotSpot%d" % i
+			if p.zone == "field":
+				_field_spots[i] = s
 	for r in D.P_ROWS:
 		var y := D.P_ROW_Y0 + r * D.P_ROW_DY
 		var x1 := D.P_ROW_X0 + (D.P_ROW_PLANTS - 1) * D.P_ROW_DX
@@ -71,6 +74,12 @@ func refresh() -> void:
 	var st := farm.state
 	for i in views.size():
 		var p: Dictionary = st.plots[i]
+		if _field_spots.has(i):
+			# (plots on ploughed soil move to wherever they're planted: scripts/dig)
+			var at := P(p.x, p.y)
+			if views[i].position != at:
+				views[i].position = at
+				_field_spots[i].position = at
 		views[i].show_plot(p, st.stage(i), st.look(i), st.watered(i), st.plot_open(i))
 	for k in _for_sale:
 		_for_sale[k].visible = not st.land[k]

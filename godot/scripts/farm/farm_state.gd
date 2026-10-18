@@ -17,7 +17,7 @@ signal changed
 ## wilted, ready, the breeding table), so the panel isn't rebuilt every frame.
 signal grew
 
-## Every plot: {zone ("yard", "neighbour", "paddock"), row (paddock row, else -1), x, y (HTML units), s (strain,
+## Every plot: {zone ("yard", "neighbour", "paddock", "field": on ploughed soil, with "on" while placed), row (paddock row, else -1), x, y (HTML units), s (strain,
 ## -1 empty), g (0..1 grown), wet (game hours of water left), dry (hours dry), wilt (0/1), fert (0 none, 1-3),
 ## frosty (bool)}.
 var plots: Array = []
@@ -49,6 +49,10 @@ func reset() -> void:
 	for r in D.P_ROWS:
 		for k in D.P_ROW_PLANTS:
 			plots.append(_plot("paddock", r, D.P_ROW_X0 + k * D.P_ROW_DX, D.P_ROW_Y0 + r * D.P_ROW_DY))
+	for k in D.FIELD_PLOTS:
+		var fp := _plot("field", -1, 0.0, 0.0)
+		fp["on"] = false
+		plots.append(fp)
 	inv = {0: _fresh_inv(), 1: _fresh_inv()}
 	land = {"neighbour": false, "paddock": false}
 	upgrades = {"compost": false, "sprinkler": false, "lights": false, "tractor": false}
@@ -85,7 +89,46 @@ func inv_of(pid: int) -> Dictionary:
 
 func plot_open(i: int) -> bool:
 	var p: Dictionary = plots[i]
-	return p.zone == "yard" or bool(land.get(p.zone, false))
+	return _is_open(p)
+
+static func _is_open_in(p: Dictionary, land_: Dictionary) -> bool:
+	if p.zone == "field":
+		return bool(p.get("on", false))
+	return p.zone == "yard" or bool(land_.get(p.zone, false))
+
+func _is_open(p: Dictionary) -> bool:
+	return _is_open_in(p, land)
+
+## ---------------------------------------------------------------- plots on ploughed soil (scripts/dig)
+
+## Puts a free field plot at (x, y) and returns its index, or -1 if all are in use.
+func field_plot(x: float, y: float) -> int:
+	for i in plots.size():
+		var p: Dictionary = plots[i]
+		if p.zone == "field" and not p.on:
+			p.on = true
+			p.x = x
+			p.y = y
+			_clear(p)
+			changed.emit()
+			return i
+	return -1
+
+## Takes field plot i away (its soil grew back), crop and all.
+func field_free(i: int) -> void:
+	var p: Dictionary = plots[i]
+	if p.zone == "field" and p.on:
+		p.on = false
+		_clear(p)
+		changed.emit()
+
+## The placed field plot within r of (x, y), or -1.
+func field_near(x: float, y: float, r: float) -> int:
+	for i in plots.size():
+		var p: Dictionary = plots[i]
+		if p.zone == "field" and p.on and Vector2(p.x - x, p.y - y).length() <= r:
+			return i
+	return -1
 
 func stage(i: int) -> int:
 	var p: Dictionary = plots[i]
@@ -382,7 +425,7 @@ func grow(hours: float) -> void:
 	for p in plots:
 		if p.s < 0 or p.g >= 1.0:
 			continue
-		if p.zone != "yard" and not land.get(p.zone, false):
+		if not _is_open(p):
 			continue
 		var left := hours
 		var sp := speed(p)
@@ -596,7 +639,11 @@ func to_dict() -> Dictionary:
 	var iv := {}
 	for k in inv:
 		iv[str(k)] = inv[k].duplicate(true)
-	return {"v": 2, "plots": ps, "inv": iv, "land": land.duplicate(), "upgrades": upgrades.duplicate(),
+	var fl := []
+	for p in plots:
+		if p.zone == "field":
+			fl.append([snappedf(p.x, 0.5), snappedf(p.y, 0.5), 1 if p.on else 0])
+	return {"v": 2, "plots": ps, "field": fl, "inv": iv, "land": land.duplicate(), "upgrades": upgrades.duplicate(),
 		"compost": [compost_count, compost_bags], "breeding": breeding.duplicate(), "buff": buff.duplicate(),
 		"stats": stats.duplicate()}
 
@@ -620,6 +667,20 @@ func from_dict(d: Dictionary) -> void:
 		p.wilt = 1 if int(a[4]) else 0
 		p.fert = clampi(int(a[5]), 0, 3)
 		p.frosty = int(a[6]) != 0
+	var fl: Array = d.get("field", [])
+	var fk := 0
+	for p in plots:
+		if p.zone != "field":
+			continue
+		var a = _at(fl, fk)
+		fk += 1
+		if a is Array and a.size() >= 3 and int(a[2]):
+			p.on = true
+			p.x = float(a[0])
+			p.y = float(a[1])
+		else:
+			p.on = false
+			_clear(p)
 	var iv: Dictionary = d.get("inv", {})
 	for k in iv:
 		var src: Dictionary = iv[k]
