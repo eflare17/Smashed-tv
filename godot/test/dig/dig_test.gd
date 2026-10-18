@@ -407,6 +407,9 @@ func _t_net() -> void:
 	g3.set_mask(dig.grid.mask)
 	ok(g3.unpack(p) and g3.depth == host.depth and g3.soil == host.soil, "a snapshot loads on the guest")
 	ok(g3.dirty.size() > 0 and g3.dirty.size() < 10, "redrawing only the chunks that changed (%d)" % g3.dirty.size())
+	# the plough's API: painting soil
+	var n := g3.set_soil(1300, 1300, 20, D.ROWS_Y)
+	ok(n > 10 and g3.soil_at(1300, 1300) == D.ROWS_Y and g3.soil_at(1300, 1330) == D.GRASS, "set_soil paints a round patch (%d cells)" % n)
 
 # ---------------------------------------------------------------- speed
 

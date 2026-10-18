@@ -381,6 +381,28 @@ func plough_cell(cx: int, cy: int, kind: int) -> bool:
 	stats.ploughed += 1
 	return true
 
+## Paints soil kind s (D.GRASS, ROWS_X, ROWS_Y, DIRT) on the diggable cells within r of (x, y) (a push
+## tiller, a ride-on, a test). Returns how many cells changed.
+func set_soil(x: float, y: float, r: float, s: int) -> int:
+	var c := cell_of(x, y)
+	if c.x < 0:
+		return 0
+	var n := int(ceil(r / D.CELL))
+	var count := 0
+	for cy in range(c.y - n, c.y + n + 1):
+		for cx in range(c.x - n, c.x + n + 1):
+			if not diggable_cell(cx, cy):
+				continue
+			if Vector2(D.X0 + (cx + 0.5) * D.CELL - x, D.Y0 + (cy + 0.5) * D.CELL - y).length() > r:
+				continue
+			var i := cy * D.NX + cx
+			if soil[i] != s:
+				_set_soil(cx, cy, s)
+				count += 1
+	if count > 0:
+		_changed()
+	return count
+
 ## ---------------------------------------------------------------- planting on ploughed soil
 
 ## The planting spot nearest (x, y) (on the SPOT grid, in the middle of a furrow), if the soil round it is
