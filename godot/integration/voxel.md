@@ -1,3 +1,6 @@
+Merged and live (18 Oct, at the owner's request): main.gd installs it, the web preset packs `*.vox`, godot-play/ rebuilt.
+Default still pixel: F10, the "Chars" button, or `?voxel=blocks` on the live link.
+
 Status: done (Jared, Tornado Tyson, Gothica and the four enemies in blocks; tests 73/73, and the fight, lobby and
 arcade suites pass with the install line in both modes)
 

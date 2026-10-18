@@ -65,6 +65,7 @@ func _ready() -> void:
 	LobbyLife.install(self).add_to_group("lobby_only")
 	PadSetup.install(self)              # the controller setup (hold Back / View, or F7)
 	Net.install(self)                   # playing together online (milestone 4): last, it hooks into all the above
+	VoxelSwitch.install(self)           # Characters: pixel / blocks (F10, the HUD's "Chars" button; default pixel)
 	print("Smashed TV (Godot) ", hud.build_text, ": ready")
 
 func _on_mode(m: int) -> void:
