@@ -52,7 +52,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and event.pressed and _fill.hit(event.position):
 		var p := dig._local()
 		if p and dig.can_fill(p):
-			dig.fill_at(p, dig.target_of(p))
+			dig.fill_now(p)
 		get_viewport().set_input_as_handled()
 
 ## A word rising over the ground (like the farm's floaters).

@@ -1,5 +1,5 @@
 extends RefCounted
-## Every number of the yard's digging and ploughing (PLAN.md "Later: digging", level 2), in HTML units and game
+## Every number of the yard's digging and ploughing (PLAN.md "Later: digging", levels 2 and 3), in HTML units and game
 ## hours. Owned by the digging part (scripts/dig/).
 
 ## The depth grid: square cells CELL units across over the yard, its corner heights stored per vertex.
@@ -9,36 +9,52 @@ const X0 := 0.0
 const Y0 := 48.0
 const NX := 214                     # cells across (to x 1712)
 const NY := 230                     # cells down (to y 1888)
-## The meshes: CHUNK x CHUNK cells each.
+## The earth under it (level 3, smooth caves): samples every CELL from ZMIN (bedrock, about 8 m down) up to ZMAX
+## (DigVolume, drawn by DigMesher).
+const ZMIN := -320.0
+const ZMAX := 24.0
+## The flat yard meshes: CHUNK x CHUNK cells each.
 const CHUNK := 32
-## Depths are kept in half units (int8 when saved or sent): up to +-63 units.
-const QUANT := 2.0
-
-## The shovel: one press lowers the hole by STEP, down to MAX_DEPTH (about waist-deep: his eyes are at 62,
-## the body 66 tall). The hole's floor is flat out to R_IN, then slopes up to the rim at R_OUT.
-const STEP := 9.0
-const MAX_DEPTH := 36.0
-const R_IN := 13.0
-const R_OUT := 30.0
-## Where the hole goes: this far in front of him.
-const REACH := 30.0
-## The pile beside it: a mound PILE_R wide, PILE_PER_STEP higher a press (to PILE_MAX), PILE_OFF from the hole.
-const PILE_R := 22.0
-const PILE_PER_STEP := 3.5
-const PILE_MAX := 15.0
-const PILE_OFF := 56.0
-## Filling takes dirt back from a pile within this distance.
-const PILE_FIND := 110.0
+## The shovel (level 3): each dig takes out a capsule of earth DIG_R round (about a body wide). Top-down it goes
+## REACH in front of him, from the floor there (DIG_DOWN under it, never more than DIG_MAX under his feet: held,
+## it digs a hole in front of him; stepping in and digging on, he goes down a ramp) up to DIG_UP over his feet;
+## in first person it's a ball where he looks (up to FP_REACH away). Held, it digs again every DIG_EVERY s.
+const DIG_R := 17.0
+const REACH := 26.0
+const DIG_DOWN := 0.0
+const DIG_MAX := 40.0
+const DIG_UP := 58.0
+const FP_REACH := 80.0
+const DIG_EVERY := 0.28
+## Filling puts a ball of FILL_R back in front of him (never into anyone, never over the ground's top).
+const FILL_R := 16.0
 ## No digging this close to anything solid (the shed, garage, tank, trampoline, fences, crop beds...).
 const MARGIN := 22.0
+## Moving in the earth: he steps up STEP, climbs ledges up to CLIMB (at CLIMB_SPEED), falls at GRAVITY.
+const STEP := 14.0
+const CLIMB := 60.0
+const CLIMB_SPEED := 150.0
+const GRAVITY := 1500.0
+const BODY_R := 9.0
+## Top-down, underground: the earth over him within CUT_R isn't drawn (from CUT_OVER above his feet).
+const CUT_R := 230.0
+const CUT_OVER := 70.0
 
-## Finds, rolled when a hole first reaches the bottom (each spot once): chances out of 1, the rest nothing.
-const FINDS := [
-	{"kind": "spuds", "p": 0.30, "min": 2, "max": 5},       # potatoes: each loads the spud gun (spudPellets)
-	{"kind": "coins", "p": 0.25, "min": 3, "max": 18},      # dollars, into the shared Wallet
-	{"kind": "bone", "p": 0.07, "min": 1, "max": 1},
-	{"kind": "stash", "p": 0.02, "min": 120, "max": 250},   # a rare buried stash: dollars, and a seed
+## Finds: each bit of earth dug out (a sample going from earth to air) may hold one, by where it is (the same for
+## both players online). Chance a sample, by depth: near the top, the clay, the stone.
+const FIND_P := [0.0035, 0.0055, 0.008]
+## What, by depth band: [kind, weight, min, max] (spuds: potatoes, each loads the spud gun; coins, stash, gem,
+## fossil: dollars; a stash brings a seed you can't buy too).
+const FIND_TABLE := [
+	[["spuds", 45, 2, 5], ["coins", 35, 3, 18], ["bone", 15, 1, 1], ["stash", 5, 120, 250]],
+	[["coins", 30, 8, 30], ["bone", 20, 1, 1], ["gem", 20, 40, 90], ["spuds", 15, 3, 6], ["stash", 15, 150, 300]],
+	[["gem", 40, 60, 140], ["fossil", 25, 80, 180], ["coins", 20, 15, 40], ["stash", 15, 200, 400]],
 ]
+## How deep each band starts (units down).
+const BAND_Z := [0.0, 90.0, 210.0]
+## Finds lying about vanish after this long (s); he picks one up within PICK_R.
+const FIND_LIFE := 120.0
+const PICK_R := 30.0
 
 ## The hoe: ploughs the cells within PLOUGH_R of a point PLOUGH_AHEAD in front of him as he walks.
 const PLOUGH_R := 11.0
