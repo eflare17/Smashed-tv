@@ -1,0 +1,54 @@
+{
+ "spud": {
+  "file": "spud.vox",
+  "origin": [
+   -3,
+   -4,
+   -10
+  ],
+  "size": [
+   6,
+   47,
+   20
+  ]
+ },
+ "blaster": {
+  "file": "blaster.vox",
+  "origin": [
+   -5,
+   -4,
+   -16
+  ],
+  "size": [
+   10,
+   55,
+   20
+  ]
+ },
+ "shotgun": {
+  "file": "shotgun.vox",
+  "origin": [
+   -3,
+   -6,
+   -24
+  ],
+  "size": [
+   6,
+   104,
+   29
+  ]
+ },
+ "launcher": {
+  "file": "launcher.vox",
+  "origin": [
+   -10,
+   -2,
+   -84
+  ],
+  "size": [
+   20,
+   125,
+   41
+  ]
+ }
+}
