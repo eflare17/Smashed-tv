@@ -288,8 +288,39 @@
     const occAll = new Set();
     for (const p of PARTS) for (const k of parts[p].keys()) occAll.add(k);
     for (const p of PARTS) dropSpecks(parts[p], src, occAll);
+    // the face's width in the front frame: skin like the middle of the face, out from the middle (eyes and brows
+    // are skipped over when there's more face just past them)
+    function faceSpan() {
+      const L1 = (p, q) => Math.abs(((p >> 16) & 255) - ((q >> 16) & 255)) + Math.abs(((p >> 8) & 255) - ((q >> 8) & 255)) + Math.abs((p & 255) - (q & 255));
+      const halves = [], c0 = Math.floor(headC);
+      // hair: the top of the head; the face's colours: down the middle of the head, unlike the hair
+      const tops = [];
+      for (let r = top; r < top + S(5); r++) for (let c = c0 - 2; c <= c0 + 2; c++) if (Fr.op(c, r)) tops.push(Fr.col(c, r));
+      const hair = tops.length ? tops.sort((p, q) => p - q)[tops.length >> 1] : -1;
+      const faceCols = [];
+      for (let r = R(0.1); r < rs; r++) if (Fr.op(c0, r) && (hair < 0 || L1(Fr.col(c0, r), hair) > 100)) faceCols.push(Fr.col(c0, r));
+      const isFace = q => faceCols.some(f => L1(q, f) < 60);
+      for (let r = R(0.1); r < rs; r++) {
+        if (!Fr.op(c0, r) || !isFace(Fr.col(c0, r))) continue;
+        const reach = dir => {
+          let last = c0;
+          for (let k = 1; k < headW; k++) {
+            const q = c0 + dir * k;
+            if (!Fr.op(q, r)) break;
+            if (isFace(Fr.col(q, r))) last = q;
+            else if (Math.abs(q - last) > 3) break;
+          }
+          return Math.abs(last - c0) + 0.5;
+        };
+        halves.push(Math.min(reach(-1), reach(1)));
+      }
+      const zs = [...parts.head.keys()].map(kz);
+      if (!halves.length || !zs.length) return null;
+      return { xc: headC - cx0, half: median(halves), zc: median(zs), isFace };
+    }
     const model = { parts, bones: [], meta: {} };
-    colourise(model, views, { foot, src, Fr });
+    const face = faceSpan();
+    colourise(model, views, { foot, src, Fr, face });
     // mirrored limbs: the colours of the one they copy
     for (const p of Object.keys(mirrored)) {
       const from = parts[mirrored[p]];
@@ -327,7 +358,7 @@
     model.meta = {
       cx0, foot, cz0, ref_rows: Fr.h, height: H,
       grip_r: [+(ar.wrCol - cx0).toFixed(1), foot - (ar.wrRow + S(7)), 0],
-      rows: { top, shoulders: rs, chin: headEnd, neck, crotch, waist, hipRow, skirt }, mirrored: Object.keys(mirrored),
+      face: face && { half: face.half, zc: face.zc }, rows: { top, shoulders: rs, chin: headEnd, neck, crotch, waist, hipRow, skirt }, mirrored: Object.keys(mirrored),
     };
     return model;
   }
@@ -345,7 +376,7 @@
       }
       // (a whole part that small goes too if it floats free of every other part)
       const touches = () => piece.some(k => { const x = kx(k), y = ky(k), z = kz(k); return [key(x + 1, y, z), key(x - 1, y, z), key(x, y + 1, z), key(x, y - 1, z), key(x, y, z + 1), key(x, y, z - 1)].some(q => occAll.has(q) && !m.has(q)); });
-      if (piece.length < 24 && (piece.length < m.size * 0.2 || !touches())) for (const k of piece) { m.delete(k); src.delete(k); occAll.delete(k); }
+      if (piece.length < 24 && (piece.length < m.size * 0.2 || m.size < 24 || !touches())) for (const k of piece) { m.delete(k); src.delete(k); occAll.delete(k); }
     }
   }
   function range(a, b) { const o = []; for (let i = a; i <= b; i++) o.push(i); return o; }
@@ -430,10 +461,8 @@
       const n = nrm.get(k);
       let best = null, bw = 0.2;
       for (const v of V) {
-        const w = n[0] * v.d[0] + n[1] * 0.0 + n[2] * v.d[2];
-        // top and bottom faces lean on whichever side view they tip toward
-        const wt = w + (Math.abs(n[1]) > 0.6 ? 0.05 : 0);
-        if (wt <= bw) continue;
+        const w = n[0] * v.d[0] + n[2] * v.d[2] + (Math.abs(n[1]) > 0.6 ? 0.05 : 0);    // tops and bottoms lean on a side
+        if (w <= bw) continue;
         const [sx, dep, py] = v.proj.get(k);
         const col = Math.floor(sx);
         const front = v.zb.get(py * 4096 + col + 2048);
@@ -444,8 +473,13 @@
         else if (v.f.op(c - 1, r)) got = v.f.col(c - 1, r);
         else if (v.f.op(c + 1, r)) got = v.f.col(c + 1, r);
         if (got < 0) continue;
-        best = got; bw = wt;
+        best = got; bw = w;
       }
+      // hair framing the face in the front frame: the head's sides out past the face, in its front half, are that
+      // hair, not the side frame's face (which belongs nearer the middle)
+      const s = ctx.src.get(k), fc = ctx.face;
+      if (s && s[2] === 'head' && fc && best !== null && Math.abs(n[0]) > 0.5 && kz(k) > fc.zc && Math.abs(kx(k) + 0.5 - fc.xc) > fc.half + 1 &&
+          fc.isFace(best) && !fc.isFace(ctx.Fr.col(s[0], s[1]))) best = ctx.Fr.col(s[0], s[1]);
       if (best === null) {
         const s = ctx.src.get(k);
         best = s ? shade(ctx.Fr.col(s[0], s[1]), n[2] < -0.3 ? 0.8 : 0.95) : 0x503c32;
