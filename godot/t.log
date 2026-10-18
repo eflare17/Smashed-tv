@@ -1,8 +1,0 @@
-Godot Engine v4.4.1.stable.official.49a5bc7b6 - https://godotengine.org
-
-ERROR: Cannot open file 'res://test/voxel/logic_test.tscn'.
-   at: load (scene/resources/resource_format_text.cpp:1388)
-ERROR: Failed loading resource: res://test/voxel/logic_test.tscn. Make sure resources have been imported by opening the project in the editor at least once.
-   at: _load (core/io/resource_loader.cpp:343)
-ERROR: Failed loading scene: res://test/voxel/logic_test.tscn.
-   at: start (main/main.cpp:4301)
