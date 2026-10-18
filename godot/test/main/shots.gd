@@ -12,7 +12,8 @@ func _ready() -> void:
 	while i < a.size():
 		if a[i] == "--out":
 			out = a[i + 1]; i += 2; continue
-		shots.append(a[i].split(","))
+		if not a[i].begins_with("--"):          # (--look=low, --hour=13: the lighting reads those)
+			shots.append(a[i].split(","))
 		i += 1
 	main = load("res://scenes/main.tscn").instantiate()
 	add_child(main)

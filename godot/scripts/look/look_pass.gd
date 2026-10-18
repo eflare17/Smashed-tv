@@ -408,7 +408,14 @@ func _world_extras(world: Node) -> void:
 	for c in world.get_children():
 		if c is MeshInstance3D:
 			match String(c.name):
-				"WorldMesh", "CutMesh":
+				"WorldMesh":
+					# the ground itself casts nothing: lying in its own shadow map it shadowed itself in rings
+					# across the lawn (shadow acne); a copy without it casts the rest
+					c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					var caster := _caster_without_ground(c)
+					if caster:
+						world.add_child(caster)
+				"CutMesh":
 					c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 				"FullMesh":
 					_full_mesh = c
@@ -477,6 +484,48 @@ func _caster_without_roof(full: MeshInstance3D) -> MeshInstance3D:
 	mi.mesh = out
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 	return mi
+
+## A shadow-only copy of mi without its level faces at ground height (the yard, the floors, the grass out to the
+## horizon): they have nothing under them to shadow but themselves.
+func _caster_without_ground(mi: MeshInstance3D) -> MeshInstance3D:
+	var src: ArrayMesh = mi.mesh as ArrayMesh
+	if src == null:
+		return null
+	var out := ArrayMesh.new()
+	for i in src.get_surface_count():
+		var arr := src.surface_get_arrays(i)
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var uvs = arr[Mesh.ARRAY_TEX_UV]
+		var has_uv: bool = uvs is PackedVector2Array and uvs.size() == verts.size()
+		var keep := PackedVector3Array()
+		var keep_uv := PackedVector2Array()
+		for t in range(0, verts.size() - 2, 3):
+			var a := verts[t]
+			var b := verts[t + 1]
+			var c := verts[t + 2]
+			if maxf(a.y, maxf(b.y, c.y)) < 0.02:
+				continue
+			keep.append(a); keep.append(b); keep.append(c)
+			if has_uv:
+				keep_uv.append(uvs[t]); keep_uv.append(uvs[t + 1]); keep_uv.append(uvs[t + 2])
+		if keep.is_empty():
+			continue
+		var na := []
+		na.resize(Mesh.ARRAY_MAX)
+		na[Mesh.ARRAY_VERTEX] = keep
+		if has_uv:
+			na[Mesh.ARRAY_TEX_UV] = keep_uv
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, na)
+		var m := mi.get_surface_override_material(i)
+		if m == null:
+			m = src.surface_get_material(i)
+		out.surface_set_material(out.get_surface_count() - 1, m)
+	var copy := MeshInstance3D.new()
+	copy.name = "WorldShadow"
+	copy.mesh = out
+	copy.layers = mi.layers
+	copy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	return copy
 
 func _in_house(p: Vector3) -> bool:
 	# the house's blocks (the lounge, and the bedroom wing down to the yard), with its eaves round them
