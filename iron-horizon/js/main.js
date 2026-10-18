@@ -16,13 +16,14 @@ import * as S from './sim.js';
 import * as FX from './fx.js';
 import { makeStation } from './models.js';
 import * as Tut from './tutorial.js';
+import { createSketch } from './sketch.js';
 
 const $ = (s) => document.querySelector(s);
 window.IH = G;   // handy in the console
 window.IHrender = () => { controls.update(); renderFrame(); labelRenderer.render(scene, camera); };
 const SAVE_KEY = 'ironHorizonSave1';
-try { const q = JSON.parse(localStorage.getItem('ironHorizonPrefs') || '{}'); Object.assign(G, { quality: q.quality ?? G.quality, labels: q.labels ?? true, sound: q.sound ?? true, tod: q.tod ?? 'day' }); } catch { }
-const savePrefs = () => { try { localStorage.setItem('ironHorizonPrefs', JSON.stringify({ quality: G.quality, labels: G.labels, sound: G.sound, tod: G.tod })); } catch { } };
+try { const q = JSON.parse(localStorage.getItem('ironHorizonPrefs') || '{}'); Object.assign(G, { quality: q.quality ?? G.quality, labels: q.labels ?? true, sound: q.sound ?? true, tod: q.tod ?? 'day', art: q.art ?? 'real' }); } catch { }
+const savePrefs = () => { try { localStorage.setItem('ironHorizonPrefs', JSON.stringify({ quality: G.quality, labels: G.labels, sound: G.sound, tod: G.tod, art: G.art })); } catch { } };
 
 // ---------------- renderer & scene ----------------
 const renderer = new THREE.WebGLRenderer({ antialias: G.quality === 'low', powerPreference: 'high-performance' });
@@ -86,7 +87,8 @@ const GRADE = {
       c.rgb *= vec3(1.02, 1.0, 0.97);
       vec2 d = vUv - 0.5; c.rgb *= 1.0 - dot(d, d) * 0.6; gl_FragColor = c; }`,
 };
-let composer = null;
+let composer = null, frameDt = 0;
+const sketch = createSketch(renderer);
 function setupComposer() {
   composer = null;
   if (G.quality === 'low') return;
@@ -342,6 +344,7 @@ function showSettings() {
   openPanel(`<h2>Settings</h2><div class="sub">Map seed ${G.seed}</div>
     <h3>Graphics</h3>${seg('quality', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], G.quality)}
     <div class="note">Changing quality reloads the page (your game is saved first).</div>
+    <h3>Art style</h3>${seg('art', [['real', 'Realistic'], ['sketch', 'Hand-drawn']], G.art)}
     <h3>Time of day</h3>${seg('tod', [['morning', 'Morning'], ['day', 'Midday'], ['evening', 'Evening']], G.tod)}
     <h3>Labels</h3>${seg('labels', [['1', 'On'], ['0', 'Off']], G.labels ? '1' : '0')}
     <h3>Sound</h3>${seg('sound', [['1', 'On'], ['0', 'Off']], G.sound ? '1' : '0')}
@@ -352,6 +355,7 @@ function showSettings() {
     const k = s.dataset.set, v = b.dataset.v;
     if (k === 'quality') { G.quality = v; savePrefs(); if (G.started) saveGame(true); location.search = G.started ? '?load=1' : ''; return; }
     if (k === 'tod') { G.tod = v; applyTimeOfDay(); }
+    if (k === 'art') G.art = v;
     if (k === 'labels') { G.labels = v === '1'; document.body.classList.toggle('nolabels', !G.labels); }
     if (k === 'sound') G.sound = v === '1';
     savePrefs(); showSettings();
@@ -595,6 +599,7 @@ function resize() {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
   if (composer) { composer.setSize(innerWidth, innerHeight); }
+  sketch.setSize();
 }
 addEventListener('resize', resize);
 
@@ -657,6 +662,7 @@ let titleSpin = 0, lastYear = null;
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, clock.getDelta());
+  frameDt = dt;
   const gdt = G.started ? dt * G.speed : 0;
   if (G.started) {
     if (lastYear === null) lastYear = year();
@@ -703,7 +709,8 @@ function loop() {
   renderFrame();
 }
 function renderFrame() {
-  if (composer) composer.render(); else renderer.render(scene, camera);
+  if (G.art === 'sketch') sketch.render(scene, camera, frameDt);
+  else if (composer) composer.render(); else renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
 void START_YEAR; void spend;
