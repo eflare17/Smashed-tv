@@ -99,6 +99,15 @@ func _draw() -> void:
 		var key: String = s.e_key[e.t]
 		var r := s.e_rad(e.t)
 		var col: Color = s.e_col[e.t]
+		if e.t == ZombieSim.T:
+			# the zombie is a 3D model (ZombieView): only its contact shadow and hp bar here
+			if e.st != ZombieSim.RISE and e.st != ZombieSim.SINK:
+				floor_ellipse(floor_c, e.x, e.y, r * 1.1, r * 0.75, Color(0, 0, 0, 0.28))
+				var zh := s.e_max_hp(e.t)
+				if e.hp < zh:
+					bar(top, e.x - r, e.y, 84.0, 2.0 * r, 3.0, Color(20 / 255.0, 22 / 255.0, 28 / 255.0, 0.75))
+					bar(top, e.x - r, e.y, 84.0, 2.0 * r * maxf(0.0, e.hp) / zh, 3.0, Color("#f6d17a"))
+			continue
 		if e.spawn > 0.0:
 			floor_ring(floor_c, e.x, e.y, r * (0.6 + e.spawn * 1.6), r * (0.6 + e.spawn * 1.6), 2.0, Color(col, 0.7), 1.0, 32)
 			continue

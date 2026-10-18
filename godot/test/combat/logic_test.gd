@@ -61,12 +61,18 @@ func test_rng() -> void:
 
 func test_wave_mix() -> void:
 	var s := FightSim.new()
+	s.T = s.T.duplicate()
+	s.T["zombieWave"] = 99               # (the HTML game's mix: no skeleton zombies; they're checked below)
 	var q := EnemySim.wave_mix(s, 1)
 	ok(q.size() == 6 and q.count(3) == 6, "wave 1 is six batters")
 	var q5 := EnemySim.wave_mix(s, 5)
 	ok(q5.size() == 18 and q5.count(1) == 6 and q5.count(2) == 1 and q5.count(3) == 11, "wave 5: 11 batters, 6 swarmers, 1 brute")
 	ok(EnemySim.incoming_text(s, 5) == "18 incoming — swarmers and brutes", "wave 5 banner text")
 	ok(near(EnemySim.wave_speed(s, 2), 42.4, 0.001), "wave 2 speed 42.4")
+	var z := FightSim.new()
+	var z5 := EnemySim.wave_mix(z, 5)
+	ok(z5.size() == 18 and z5.count(ZombieSim.T) == 2 and EnemySim.wave_mix(z, 2).count(ZombieSim.T) == 0,
+		"zombies from wave 3 (wave 5: 2 of 18)")
 
 func test_blasters() -> void:
 	var s := sim_with_player()

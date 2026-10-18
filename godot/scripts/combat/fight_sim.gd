@@ -117,6 +117,7 @@ func _init() -> void:
 		e_coins.append(int(e.get("coins", 1)))
 		e_melee.append(bool(e.get("melee", false)))
 		e_col.append(Color(String(e.get("colour", "#6fd3a0"))))
+	ZombieSim.add_type(self)             # the skeleton zombie: type 4
 	var calls: Dictionary = GameData.data.get("calls", {})
 	for a in calls.get("lobbyAreas", []):
 		lobby_areas.append(Rect2(float(a.x0), float(a.y0), float(a.x1) - float(a.x0), float(a.y1) - float(a.y0)))
@@ -274,6 +275,18 @@ func make_corpse(e: FT.Enemy, dx: float, dy: float, big: bool) -> void:
 	var d := sqrt(dx * dx + dy * dy)
 	if d < 0.0001:
 		d = 1.0
+	if e.t == ZombieSim.T:
+		# the zombie falls whole, away from the blow (its model plays the fall: rot is the way it goes)
+		var zc := _corpse_base(e, dx)
+		zc.rot = atan2(dy, dx) if dx != 0.0 or dy != 0.0 else atan2(e.sdy, e.sdx) + PI
+		zc.vx = dx / d * 40.0
+		zc.vy = dy / d * 40.0
+		zc.life = tv("corpseLife", 7) + 3.0
+		zc.max_life = zc.life
+		corpses.append(zc)
+		while corpses.size() > 90:
+			corpses.pop_front()
+		return
 	var angle := atan2(dy, dx)
 	var sp := (170.0 + rnd() * 130.0) * tv("corpseFly", 1.35) * (1.7 if big else 1.0) / e_mass[e.t]
 	var parts := [0, 1, 2, 3, 4] if big else [1 + int(floor(rnd() * 2)), 3 + int(floor(rnd() * 2))]
