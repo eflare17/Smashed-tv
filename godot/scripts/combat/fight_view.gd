@@ -237,6 +237,8 @@ func _gun_point(owner: int) -> Vector3:
 func _draw_corpses(col: Batch, floor_c: Batch, dt: float) -> void:
 	var s := sim
 	for c: FT.Corpse in s.corpses:
+		if c.t == ZombieSim.T:
+			continue                     # (the zombie falls as its 3D model: ZombieView)
 		var key: String = s.e_key[c.t]
 		var im := EnemyArt.corpse_tex(key, c.odo)
 		var f := clampf(c.life / c.max_life, 0.0, 1.0)

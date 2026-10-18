@@ -187,6 +187,8 @@ class Enemy:
 	var stun := 0.0
 	var hit := false
 	var uid := 0
+	var zf := 0                  ## the zombie's flags (ZombieSim: 1 screamed, 2 this swipe landed)
+	var zt := 0.0                ## the zombie's charge left after its scream
 
 class Shard:
 	var x := 0.0
