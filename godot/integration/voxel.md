@@ -1,3 +1,6 @@
+Status: done (Jared, Tornado Tyson, Gothica and the four enemies in blocks; tests 73/73, and the fight, lobby and
+arcade suites pass with the install line in both modes)
+
 Jared: ready for review (screenshots in `integration/voxel_shots/`, see "Screenshots" below)
 
 # Block (voxel) characters: integration note
@@ -120,7 +123,9 @@ None needed. Nice to have: a public `CharSprite.picture()` (VoxelChar reaches th
   (`?vox=pair,face=0,weapon=shotgun,zoom=2`, `fp`, `jog`, `act=roll|victory`, `lobby=bed|sit`, `style=N`,
   `print`, `pixel`, `pairblocks`...; see the script's header). To build it for the web, in a copy of godot/: set
   `run/main_scene` to it, add `*.vox` to the include filter and drop `test/*` from the exclude filter, export.
-- Existing tests re-run with the install line in a copy (see below).
+- Existing tests re-run in a copy with the install line in `main.gd`, both as pictures and with `--voxel=blocks`:
+  `test/combat/logic_test.tscn` 53/53, `test/lobby_life/run.tscn` 286/286, `scenes/arcade/arcade_test.tscn -- --logic`
+  0 failed (all with `--fixed-fps 60`).
 
 ## Screenshots (`integration/voxel_shots/`)
 
@@ -140,6 +145,9 @@ First-person shots look at a blocks Jared standing in front of you. `overview.pn
 | `fp_front_blasters.png`, `fp_back.png` | first person: a blocks Jared from the front (blasters) and from behind |
 | `fp_spud.png`, `fp_shotgun.png`, `fp_launcher.png`, `fp_fists.png` | first person, each weapon |
 | `fp_run.png`, `fp_mullet.png` | first person: running, the mullet |
+| `goth_td.png`, `goth_fp_front.png`, `goth_fp_back.png` | Gothica in blocks (playing as her) beside her picture; first person front and back |
+| `td_carry.png` | carrying Gothica: both blocks |
+| `enemies_wave.png`, `enemies_wave_pixel.png` | a wave in blocks (batters with bats, swarmers, brutes) and the same wave as pictures |
 
 (Shot in the cloud's software-rendered browser, so the lighting is the high look at 7 am.)
 
