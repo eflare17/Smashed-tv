@@ -32,19 +32,22 @@ const SHAFT_R := 17.0
 const SHAFT_STEP := 16.0
 const LOOK_DOWN := 0.4
 ## Blocks (like 7 Days to Die): the earth is cut into BLOCK-unit cubes on a grid (z from the ground's top, 0). A
-## block takes hits to break (its health by material; a tool's damage by tool, material and tier), comes out as
-## a cube a hair (BLOCK_GROW) bigger than its cell, so broken neighbours join with no seam (the 8-unit samples
-## bevel its edges: smooth, block-sized digs), and drops its material. Blocks can be put back.
+## block takes hits to break (its health by material; a tool's damage by tool, material and tier) and drops its
+## material. A broken one comes out as a ball a little bigger than its cell (radius BREAK_HALF, nudged a
+## little by the block: broken neighbours run into one smooth, uneven tunnel); a placed one is a rounded lump
+## about its cell.
 const BLOCK := 32.0
-const BLOCK_GROW := 1.0
-const HIT_EVERY := 0.3
+const BREAK_HALF := 25.0
+const PLACE_HALF := 17.0
+const PLACE_ROUND := 9.0
+const HIT_EVERY := 0.25
 ## Materials: what they're called, their health, what a break drops, their colour (a tint on the earth).
 const MATS := [
-	{"name": "DIRT", "hp": 3.0, "drop": [1, 2], "tint": Color(1.0, 1.0, 1.0)},
-	{"name": "CLAY", "hp": 5.0, "drop": [1, 2], "tint": Color(1.08, 0.78, 0.6)},
-	{"name": "STONE", "hp": 8.0, "drop": [1, 1], "tint": Color(0.72, 0.72, 0.78)},
-	{"name": "COAL", "hp": 8.0, "drop": [1, 2], "tint": Color(0.3, 0.28, 0.3)},
-	{"name": "IRON", "hp": 10.0, "drop": [1, 1], "tint": Color(1.25, 0.72, 0.5)},
+	{"name": "DIRT", "hp": 1.5, "drop": [1, 2], "tint": Color(1.0, 1.0, 1.0)},
+	{"name": "CLAY", "hp": 3.0, "drop": [1, 2], "tint": Color(1.08, 0.78, 0.6)},
+	{"name": "STONE", "hp": 5.0, "drop": [1, 1], "tint": Color(0.72, 0.72, 0.78)},
+	{"name": "COAL", "hp": 5.0, "drop": [1, 2], "tint": Color(0.3, 0.28, 0.3)},
+	{"name": "IRON", "hp": 7.0, "drop": [1, 1], "tint": Color(1.25, 0.72, 0.5)},
 ]
 const DIRT_M := 0
 const CLAY_M := 1

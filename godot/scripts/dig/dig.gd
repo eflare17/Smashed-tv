@@ -447,7 +447,7 @@ func break_block(b: Vector3i, p: Node = null) -> Array:
 	var c := DigVolume.block_centre(b)
 	var out := grid.vol.carve_block(b)
 	if c.z + D.BLOCK / 2.0 > -4.0 and c.z - D.BLOCK / 2.0 < 4.0:
-		grid.mark_dug(c.x, c.y, D.BLOCK / 2.0 - 2.0)
+		grid.mark_dug(c.x, c.y, D.BLOCK / 2.0 - 6.0)     # (well inside the round hole: no square dirt at its rim)
 	grid.stats.digs += 1
 	if p != null:
 		_shake = maxf(_shake, 0.8)

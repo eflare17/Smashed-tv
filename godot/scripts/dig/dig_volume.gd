@@ -9,7 +9,7 @@ extends RefCounted
 ## Positions are the HTML game's: x across, y down the screen, z up (units).
 
 const D := preload("res://scripts/dig/dig_data.gd")
-const CS := 16                          # samples per chunk side
+const CS := 8                           # samples per chunk side (small: a dig redraws little)
 const FMAX := 31.0                      # densities are held to +-FMAX units
 const Q := 4.0                          # int8 steps a unit
 
@@ -42,19 +42,19 @@ static func chunk_key(i: int, j: int, k: int) -> Vector3i:
 
 ## The density at sample (i, j, k).
 func sample(i: int, j: int, k: int) -> float:
-	var key := Vector3i(i >> 4, j >> 4, k >> 4) if i >= 0 and j >= 0 and k >= 0 else chunk_key(i, j, k)
+	var key := Vector3i(i >> 3, j >> 3, k >> 3) if i >= 0 and j >= 0 and k >= 0 else chunk_key(i, j, k)
 	var c = chunks.get(key)
 	if c == null:
 		return default_f(k)
-	return c.d.decode_s8(((k & 15) * CS + (j & 15)) * CS + (i & 15)) / Q
+	return c.d.decode_s8(((k & 7) * CS + (j & 7)) * CS + (i & 7)) / Q
 
 func _set_sample(i: int, j: int, k: int, f: float) -> void:
-	var key := Vector3i(i >> 4, j >> 4, k >> 4)
+	var key := Vector3i(i >> 3, j >> 3, k >> 3)
 	var c = chunks.get(key)
 	if c == null:
 		c = _new_chunk(key)
 		chunks[key] = c
-	c.put(((k & 15) * CS + (j & 15)) * CS + (i & 15), clampi(int(roundf(f * Q)), -127, 127))
+	c.put(((k & 7) * CS + (j & 7)) * CS + (i & 7), clampi(int(roundf(f * Q)), -127, 127))
 
 static func _new_chunk(key: Vector3i) -> Chunk:
 	var b := PackedByteArray()
@@ -98,7 +98,7 @@ func touched_near(x: float, y: float) -> bool:
 			var i := floori(s.x + oi * 0.6)
 			var j := floori(s.y + oj * 0.6)
 			for kc in range(0, int(ceil(float(NZ) / CS))):
-				if chunks.has(Vector3i(i >> 4, j >> 4, kc)):
+				if chunks.has(Vector3i(i >> 3, j >> 3, kc)):
 					return true
 	return false
 
@@ -230,7 +230,7 @@ func _touch_sample(i: int, j: int, k: int) -> void:
 	for dk in [0, -1]:
 		for dj in [0, -1]:
 			for di in [0, -1]:
-				var key := Vector3i((i + di) >> 4, (j + dj) >> 4, (k + dk) >> 4)
+				var key := Vector3i((i + di) >> 3, (j + dj) >> 3, (k + dk) >> 3)
 				if i + di < 0 or j + dj < 0 or k + dk < 0:
 					continue
 				if not chunks.has(key):
@@ -244,10 +244,11 @@ func _changed() -> void:
 ## Is the top layer of the chunk column holding cell (cx, cy) stored (then the smooth mesh draws the ground's top
 ## there, not the flat yard)?
 func top_stored(cx: int, cy: int) -> bool:
-	return chunks.has(Vector3i(cx >> 4, cy >> 4, top_layer()))
+	return chunks.has(Vector3i(cx >> 3, cy >> 3, top_layer()))
 
+## (the layer of the cells the untouched ground's top crosses: those just under z = 0)
 static func top_layer() -> int:
-	return int((0.0 - D.ZMIN) / D.CELL) >> 4
+	return (int((0.0 - D.ZMIN) / D.CELL) - 1) >> 3
 
 ## ---------------------------------------------------------------- blocks
 
@@ -296,18 +297,22 @@ func block_solid(b: Vector3i) -> bool:
 			return true
 	return false
 
-## The block's cube's distance (negative inside) from p, for block centre c, a hair (BLOCK_GROW) oversize.
-static func _box_sd(p: Vector3, c: Vector3) -> float:
-	var hh := D.BLOCK / 2.0
+## A rounded cube's distance (negative inside) from p: centre c, half size half, its edges rounded by round
+## (a placed block's lump).
+static func _box_sd(p: Vector3, c: Vector3, half: float = D.PLACE_HALF, round: float = D.PLACE_ROUND) -> float:
+	var hh := half - round
 	var q := (p - c).abs() - Vector3(hh, hh, hh)
 	var outside := Vector3(maxf(q.x, 0.0), maxf(q.y, 0.0), maxf(q.z, 0.0)).length()
-	return outside + minf(maxf(q.x, maxf(q.y, q.z)), 0.0) - D.BLOCK_GROW
+	return outside + minf(maxf(q.x, maxf(q.y, q.z)), 0.0) - round
 
-## Breaks block b: its cube of earth out. Returns the samples that went from earth to air (for finds).
+## Breaks block b: a ball of earth out, a little bigger than its cell (see BREAK_HALF). Returns the samples that went from earth to air (for finds).
 func carve_block(b: Vector3i) -> Array:
 	var out: Array = []
-	var c := block_centre(b)
-	var r := D.BLOCK / 2.0 + FMAX
+	# (a little off the block's centre and size, fixed by the block: a row of them is a dug tunnel, not tiles)
+	var h := _bhash(b.x, b.y, b.z)
+	var c := block_centre(b) + Vector3(float(h & 7) - 3.5, float((h >> 3) & 7) - 3.5, float((h >> 6) & 3) - 1.5)
+	var rr := D.BREAK_HALF + float((h >> 8) & 3) - 1.0
+	var r := rr + 14.0
 	var lo := to_s(c.x - r, c.y - r, c.z - r)
 	var hi := to_s(c.x + r, c.y + r, c.z + r)
 	var any := false
@@ -317,8 +322,8 @@ func carve_block(b: Vector3i) -> Array:
 			for i in range(floori(lo.x), ceili(hi.x) + 1):
 				if not _column_ok(i, j):
 					continue
-				var sd := _box_sd(Vector3(D.X0 + i * D.CELL, D.Y0 + j * D.CELL, z), c)
-				if sd > FMAX:
+				var sd := Vector3(D.X0 + i * D.CELL, D.Y0 + j * D.CELL, z).distance_to(c) - rr
+				if sd > 8.0:
 					continue
 				var old := sample(i, j, k)
 				var nf := minf(old, sd)
@@ -334,12 +339,12 @@ func carve_block(b: Vector3i) -> Array:
 		_changed()
 	return out
 
-## Puts a block of material m at b (a cube of earth). False if nothing changed.
+## Puts a block of material m at b (a rounded lump about its cell). False if nothing changed.
 func fill_block(b: Vector3i, m: int) -> bool:
 	var c := block_centre(b)
 	if c.z + D.BLOCK / 2.0 > D.ZMAX - D.CELL or c.z - D.BLOCK / 2.0 < D.ZMIN + 2.0 * D.CELL:
 		return false
-	var r := D.BLOCK / 2.0 + FMAX
+	var r := D.PLACE_HALF + 8.0
 	var lo := to_s(c.x - r, c.y - r, c.z - r)
 	var hi := to_s(c.x + r, c.y + r, c.z + r)
 	var any := false
@@ -350,7 +355,7 @@ func fill_block(b: Vector3i, m: int) -> bool:
 				if not _column_ok(i, j):
 					continue
 				var sd := _box_sd(Vector3(D.X0 + i * D.CELL, D.Y0 + j * D.CELL, z), c)
-				if sd > FMAX:
+				if sd > 8.0:
 					continue
 				var old := sample(i, j, k)
 				var nf := maxf(old, -sd)
@@ -373,10 +378,10 @@ func pack() -> Dictionary:
 	var pl := PackedInt32Array()
 	for b in placed:
 		pl.append_array([b.x, b.y, b.z, int(placed[b])])
-	return {"v": 3, "cs": cs, "ver": version, "pl": pl}
+	return {"v": 4, "cs": cs, "ver": version, "pl": pl}
 
 func unpack(p: Dictionary) -> bool:
-	if int(p.get("v", 0)) != 3:
+	if int(p.get("v", 0)) != 4:
 		return false
 	var cs: Dictionary = p.get("cs", {})
 	var seen := {}

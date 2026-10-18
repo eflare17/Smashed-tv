@@ -16,9 +16,12 @@ and upgrades; the smooth look kept (block-sized digs).
 
 - **Blocks:** the earth is cut into 32-unit cubes (0.8 m) on a grid. With the shovel or the pickaxe, E aims at
   one (a white outline; in first person the block under the crosshair) and **each hit chips it** (a hit every
-  0.3 s while E or the touch button is held), with a **health bar** and its material's name over it. Dirt
-  takes 2 shovel hits, clay 5, stone 8, coal 8, iron 10 (by the tool). It comes out as a cube a hair oversize,
-  so broken neighbours join smoothly (the 8-unit samples bevel the edges). Standing still he hits the block
+  0.25 s while E or the touch button is held), with a **health bar** and its material's name over it. Dirt
+  takes 1 shovel hit, clay 3; with the pickaxe stone 4, coal 3, iron 5 (fewer with upgrades). It
+  comes out as a **ball** (radius 25, a little off-centre and sized by the block, fixed so both screens
+  match), not a cube: broken neighbours run into one smooth, uneven tunnel, nothing like Minecraft. Placed
+  blocks are rounded lumps about their cell. Where the dug ground meets the lawn the shader picks grass or
+  earth per pixel (by height), so a hole's rim is a smooth curve, not steps. Standing still he hits the block
   under his feet (dig straight down); walking, the block ahead (or the ground ahead if that's open); first
   person, the one he looks at.
 - **Materials by depth:** dirt to about 2 m, red clay (with coal) to 5 m, grey stone (coal and iron ore) below.
@@ -35,8 +38,8 @@ and upgrades; the smooth look kept (block-sized digs).
   iron ($100 + 4 iron, 1.7x) then steel ($300 + 8 iron + 6 coal, 2.6x).
 - Saved with the ground (the backpack, the pickaxe, the tiers); online, breaking and placing go over as ops
   (`break`, `place`), so both games have the same blocks; each player's backpack is their own.
-- Tests: `test/dig/dig_test.tscn` 107 passed, 0 failed (the new ones: aiming under him, a hit cracking a block,
-  two shovel hits breaking dirt, the drop into the backpack, held digging straight down, clay and stone and ore
+- Tests: `test/dig/dig_test.tscn` 106 passed, 0 failed (the new ones: aiming under him, one shovel hit
+  breaking dirt, the drop into the backpack, held digging straight down, clay and stone and ore
   by depth, the shovel poor and the pickaxe good on stone, aiming ahead and where he looks, placing (made of
   dirt, one used, not into him, solid: a wall or climbed), nothing to place with an empty backpack, buying the
   pickaxe, upgrading it at the workbench and not past what he can pay, breaking and placing over the network).
@@ -63,7 +66,7 @@ and upgrades; the smooth look kept (block-sized digs).
     so his tunnels and caves read as lit hollows in the earth.
   - **A lamp** round him underground in both views (it's dark down there).
 - **Collision:** the World's endless ground plane becomes slabs round the yard; inside it, a flat box for each
-  untouched 16-cell column and each dug chunk's triangles (ConcavePolygonShape3D), on layer 1: anything physical
+  untouched 8-cell column and each dug chunk's triangles (ConcavePolygonShape3D), on layer 1: anything physical
   lands in holes and tunnels (rays tested).
 - **Moving in the earth** (`Dig._move_body`, stepping after the Player): he stands on the floor under him, steps
   up 14-unit lips, falls down shafts (gravity), climbs ledges he walks into up to 60 units (about chest high,
@@ -144,7 +147,7 @@ None added. E / pad A / the HUD button is `interact` (hold it to keep digging); 
 ## Tests
 
 - `test/dig/dig_test.tscn` (inside the real game):
-  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 107 passed, 0 failed`.
+  `godot --headless --path <copy> --fixed-fps 60 res://test/dig/dig_test.tscn` ends `DIG TESTS: 106 passed, 0 failed`.
   The mask; the volume (carving, the hole's floor, the lawn beside it level, nothing under the garage, bedrock
   stays, the smooth mesh); collision (rays into the hole, on the lawn, the house floor, past the region);
   moving (falling down a shaft, its walls holding him, walking a tunnel along its floor, climbing out of a
@@ -175,8 +178,11 @@ None added. E / pad A / the HUD button is `interact` (hold it to keep digging); 
 
 ## Speed
 
-- Natively: a dig takes about 2 ms; each chunk it changes redraws in 2-8 ms (a chunk with a big hole's walls
-  the most). Chunks redraw **one a frame**, nearest the player first, so a dig never stalls a frame for long.
+- Chunks are 8 samples a side (64 units), so a broken block redraws only a small patch. Natively: a break
+  takes about 2 ms; each chunk it changes (about 5) redraws in about 2 ms. Chunks redraw nearest the player
+  first, as many as fit in 5 ms a frame (at least one), so on a quick machine a hole appears the same frame
+  and a slow phone spreads it over a few frames without a stall. (Before: 16-sample chunks at 6-10 ms each,
+  one a frame, and two hits for dirt: the "delay" the owner felt.)
   His steps on the earth: about 1 ms a second of game.
 - The game's script time per frame is the same with and without dug ground (natively, 16-22 ms a frame in the
   headless test either way: the rest of the game).

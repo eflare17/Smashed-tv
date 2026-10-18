@@ -46,11 +46,14 @@ func _setup() -> void:
 		var g := dig.grid
 		g.clear()
 		# holes along the lawn east of the trampoline, deeper each; a ramp down into a cave; a shaft
+		# (broken blocks, as in play: 1 to 4 deep; then steps down, 2 blocks wide)
 		for k in 4:
-			dig.carve(Vector3(1000 + k * 90, 1230, -12.0 - k * 22.0), Vector3(1000 + k * 90, 1230, 30), 20.0)
-		for k in 9:
-			var x := 1180.0 + k * 22.0
-			dig.carve(Vector3(x, 1330, -k * 16.0 - 8.0), Vector3(x, 1330, -k * 16.0 + 56.0), 22.0)
+			for d in k + 1:
+				dig.break_block(DigVolume.block_of(Vector3(1000 + k * 90, 1230, -16.0 - d * D.BLOCK)))
+		for k in 7:
+			for w in 2:
+				for d in k + 1:
+					dig.break_block(DigVolume.block_of(Vector3(1180.0 + k * D.BLOCK, 1320 + w * D.BLOCK, -16.0 - d * D.BLOCK)))
 		dig.carve(Vector3(1380, 1330, -150), Vector3(1500, 1330, -150), 40.0)       # the cave
 		dig.carve(Vector3(1440, 1300, -120), Vector3(1440, 1380, -170), 34.0)
 		dig.carve(Vector3(1560, 1250, -180), Vector3(1560, 1250, 20), 18.0)          # a shaft

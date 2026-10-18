@@ -13,7 +13,7 @@ extends Node3D
 ##   drawn (the global dig_cut), so he can be seen in his tunnel.
 ## - The World's yard floor surface is hidden (a material that draws nothing).
 ## - Collision: the World's Ground (an endless plane at 0) becomes slabs round the region; inside, a flat box for
-##   each untouched 16-cell column and the dug chunks' triangles (ConcavePolygonShape3D), on layer 1 (the world).
+##   each untouched 8-cell column and the dug chunks' triangles (ConcavePolygonShape3D), on layer 1 (the world).
 ##   Players walk by DigBody (Dig moves them on the volume), so their capsules don't collide with it.
 
 const D := preload("res://scripts/dig/dig_data.gd")
@@ -32,7 +32,8 @@ var _solid_mi: MeshInstance3D
 var bottom: MeshInstance3D            # the cutaway's floor
 var _caves: Dictionary = {}           # Vector3i -> MeshInstance3D
 var _cave_shapes: Dictionary = {}     # Vector3i -> CollisionShape3D
-var _col_boxes: Dictionary = {}       # Vector2i (16-cell column) -> CollisionShape3D (flat, untouched)
+const REDRAW_MS := 5                 # time a frame for redrawing dug chunks
+var _col_boxes: Dictionary = {}       # Vector2i (8-cell column) -> CollisionShape3D (flat, untouched)
 var _yard_tex: Texture2D
 var _yard_rects: Array = []
 var _yard_o := Vector2(-45, -50)
@@ -128,7 +129,8 @@ render_mode cull_disabled%RM%;
 %LOWFN%
 uniform sampler2D pic : source_color, filter_nearest_mipmap;
 uniform sampler2D atlas : source_color, filter_nearest, repeat_enable;
-// 0 the yard picture; 1 the soil atlas (COLOR.a: the soil's edge, cut at a half); 2 either (COLOR.a 1: picture);
+// 0 the yard picture; 1 the soil atlas (COLOR.a: the soil's edge, cut at a half); 2 the dug ground (COLOR.rgb
+// its earth; where it's the top, level and facing up, COLOR.a 1 the picture, a half the soil tile UV2);
 // 3 the cutaway's floor (dark earth)
 uniform int mode = 0;
 global uniform vec4 dig_cut;
@@ -160,21 +162,26 @@ void fragment() {
 		lamp = clamp(1.0 - d, 0.0, 1.0);
 		lamp *= lamp;
 	}
+	// (the dug ground's top, by pixel: within 4 units of it, not a wall; a hole's rim curves smoothly)
+	bool top_px = mode == 2 && COLOR.a > 0.25 && wpos.y > -0.1 && wnrm.y > 0.3;
+	vec3 tint = COLOR.rgb;
+	if (top_px) tint = COLOR.a > 0.75 ? vec3(1.0) : vec3(0.92);
 	if ((cut_here && from_earth) || mode == 3) {
 		ALBEDO = vec3(0.075, 0.05, 0.034);
 		%LIGHT%
-	} else if (mode == 0 || (mode == 2 && COLOR.a > 0.5)) {
+	} else if (mode == 0 || (top_px && COLOR.a > 0.75)) {
 		c = texture(pic, UV);
 	} else {
 		// the soil atlas, laid on whichever plane the face is most along (a tile is 32 units: 0.8 m)
 		vec3 n = abs(wnrm);
 		vec2 p = (n.y >= n.x && n.y >= n.z) ? wpos.xz : ((n.x >= n.z) ? wpos.zy : wpos.xy);
 		p /= 0.8;
-		if (UV2.y > 0.5) p = p.yx;
-		c = texture(atlas, vec2((UV2.x + fract(p.x)) / 4.0, fract(p.y)));
+		vec2 t = (mode == 2 && !top_px) ? vec2(0.0) : UV2;
+		if (t.y > 0.5) p = p.yx;
+		c = texture(atlas, vec2((t.x + fract(p.x)) / 4.0, fract(p.y)));
 	}
 	if (!((cut_here && from_earth) || mode == 3)) {
-		ALBEDO = c.rgb * lin(max(COLOR.rgb, vec3(0.0)));
+		ALBEDO = c.rgb * lin(max(tint, vec3(0.0)));
 		%LIGHT%
 		%LAMP%
 	}
@@ -291,11 +298,11 @@ func body() -> StaticBody3D:
 ## ---------------------------------------------------------------- collision inside the region
 
 func _columns_all() -> void:
-	for cj in int(ceil(float(D.NY) / 16.0)):
-		for ci in int(ceil(float(D.NX) / 16.0)):
+	for cj in int(ceil(float(D.NY) / DigVolume.CS)):
+		for ci in int(ceil(float(D.NX) / DigVolume.CS)):
 			_column(Vector2i(ci, cj))
 
-## A 16-cell column: a flat box while its top is untouched, else nothing (its chunks' triangles are the floor).
+## An 8-cell column: a flat box while its top is untouched, else nothing (its chunks' triangles are the floor).
 func _column(c: Vector2i) -> void:
 	var stored := vol.chunks.has(Vector3i(c.x, c.y, DigVolume.top_layer()))
 	var box: CollisionShape3D = _col_boxes.get(c)
@@ -303,7 +310,8 @@ func _column(c: Vector2i) -> void:
 		box.queue_free()
 		_col_boxes.erase(c)
 	elif not stored and box == null:
-		var r := Rect2(D.X0 + c.x * 16 * D.CELL, D.Y0 + c.y * 16 * D.CELL, 16 * D.CELL, 16 * D.CELL)
+		var n := DigVolume.CS
+		var r := Rect2(D.X0 + c.x * n * D.CELL, D.Y0 + c.y * n * D.CELL, n * D.CELL, n * D.CELL)
 		box = _box_shape(r)
 		_body.add_child(box)
 		_col_boxes[c] = box
@@ -314,12 +322,16 @@ func _process(delta: float) -> void:
 	if grid == null:
 		return
 	_check_quality(delta)
-	# dug chunks: one a frame, the nearest to the player first (a dig changes a few: spread out, no stall)
-	if not vol.dirty.is_empty():
+	# dug chunks, the nearest to the player first: as many as fit in REDRAW_MS a frame (at least one; a dig
+	# changes a few small ones: all at once on a quick machine, spread out on a slow one, never a stall)
+	var t0 := Time.get_ticks_usec()
+	while not vol.dirty.is_empty():
 		var near := _nearest_dirty()
 		vol.dirty.erase(near)
 		_cave_changed(near)
 		_column(Vector2i(near.x, near.y))
+		if Time.get_ticks_usec() - t0 > REDRAW_MS * 1000:
+			break
 	# the flat yard: at most ten times a second (ploughing changes cells on every step)
 	_draw_t += delta
 	if _draw_t < 0.1 or grid.dirty.is_empty():
@@ -335,7 +347,8 @@ func _nearest_dirty() -> Vector3i:
 	var best: Vector3i = vol.dirty.keys()[0]
 	var best_d := INF
 	for key in vol.dirty:
-		var c := Vector3(D.X0 + (key.x * 16 + 8) * D.CELL, D.Y0 + (key.y * 16 + 8) * D.CELL, D.ZMIN + (key.z * 16 + 8) * D.CELL)
+		var n := DigVolume.CS
+		var c := Vector3(D.X0 + (key.x * n + n / 2) * D.CELL, D.Y0 + (key.y * n + n / 2) * D.CELL, D.ZMIN + (key.z * n + n / 2) * D.CELL)
 		var d := c.distance_squared_to(at)
 		if d < best_d:
 			best_d = d
@@ -359,8 +372,9 @@ func flush_draw() -> void:
 func _cave_changed(key: Vector3i) -> void:
 	_build_cave(key)
 	if key.z == DigVolume.top_layer():
-		for cy in range(key.y * 16, mini(D.NY, key.y * 16 + 16), 8):
-			for cx in range(key.x * 16, mini(D.NX, key.x * 16 + 16), 8):
+		var n := DigVolume.CS
+		for cy in range(key.y * n, mini(D.NY, key.y * n + n), 8):
+			for cx in range(key.x * n, mini(D.NX, key.x * n + n), 8):
 				grid.dirty[DigGrid.chunk_of_cell(cx, cy)] = true
 
 ## The flat yard's changed chunks; soil on dug ground changes its chunks' tops' look too.
@@ -375,9 +389,9 @@ func _flat_changed() -> void:
 		var ncx := DigGrid.chunks_x()
 		var fx: int = (i % ncx) * D.CHUNK
 		var fy: int = (i / ncx) * D.CHUNK
-		for oy in [0, 16]:
-			for ox in [0, 16]:
-				var key := Vector3i((fx + ox) >> 4, (fy + oy) >> 4, DigVolume.top_layer())
+		for oy in range(0, D.CHUNK, DigVolume.CS):
+			for ox in range(0, D.CHUNK, DigVolume.CS):
+				var key := Vector3i((fx + ox) >> 3, (fy + oy) >> 3, DigVolume.top_layer())
 				if vol.chunks.has(key):
 					redo[key] = true
 	_commit()

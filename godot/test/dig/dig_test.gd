@@ -216,9 +216,7 @@ func _t_tools_and_digging() -> void:
 	var b: Vector3i = tg.b
 	var d0: int = dig.grid.stats.digs
 	player.use()
-	ok(dig.damage_of(b) > 0.0 and dig.damage_of(b) < 1.0 and dig.grid.stats.digs == d0, "a hit cracks it (%.2f) but it holds" % dig.damage_of(b))
-	player.use()
-	ok(dig.grid.stats.digs == d0 + 1, "dirt breaks in two shovel hits")
+	ok(dig.grid.stats.digs == d0 + 1, "dirt breaks in one shovel hit")
 	ok(not dig.grid.vol.block_solid(b), "the block's gone")
 	await frames(80)
 	ok(int(dig.inv.res[D.DIRT_M]) >= 1, "it dropped dirt into his backpack (%d)" % dig.inv.res[D.DIRT_M])

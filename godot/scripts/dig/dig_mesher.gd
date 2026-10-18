@@ -11,7 +11,7 @@ extends RefCounted
 
 const D := preload("res://scripts/dig/dig_data.gd")
 const U := 0.025
-const CS := 16
+const CS := 8
 const P := CS + 3                       # samples a padded side (one before, two after)
 
 const CORNERS := [Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(1, 1, 0), Vector3i(0, 1, 0),
@@ -25,6 +25,7 @@ var yard_o := Vector2(-45, -50)
 var yard_size := Vector2(2048, 2048)
 
 var _f := PackedFloat32Array()
+var _mats: Dictionary = {}           # block -> material, this build
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
 var uvs := PackedVector2Array()
@@ -38,6 +39,7 @@ func build(key: Vector3i) -> void:
 	uvs = PackedVector2Array()
 	uv2s = PackedVector2Array()
 	cols = PackedColorArray()
+	_mats.clear()
 	var i0 := key.x * CS
 	var j0 := key.y * CS
 	var k0 := key.z * CS
@@ -108,7 +110,7 @@ func build(key: Vector3i) -> void:
 ## The padded samples round the chunk, copied a chunk's block at a time (the chunk and its neighbours).
 func _fetch(i0: int, j0: int, k0: int) -> void:
 	_f.resize(P * P * P)
-	var key0 := Vector3i(i0 >> 4, j0 >> 4, k0 >> 4)
+	var key0 := Vector3i(i0 >> 3, j0 >> 3, k0 >> 3)
 	for dz in [-1, 0, 1]:
 		for dy in [-1, 0, 1]:
 			for dx in [-1, 0, 1]:
@@ -219,9 +221,11 @@ func _cube(a: int, b: int, c: int, base: int, vals: PackedFloat32Array, i0: int,
 			var n0 := _enrm[i_a]
 			var n1 := _enrm[i_b]
 			var n2 := _enrm[i_c]
-			# the ground's top (level, facing up) wears the yard picture or the soil; the rest is earth
+			# near the ground's top a triangle carries what the top there wears (the yard picture or the soil) as
+			# well as its earth; the shader picks per pixel (level and facing up: the top), so a hole's rim is a
+			# smooth curve, not stairs of whole triangles. The rest is earth.
 			var key := -1
-			if p0.z > -3.0 and p1.z > -3.0 and p2.z > -3.0 and p0.z < 3.0 and p1.z < 3.0 and p2.z < 3.0 and n0.z + n1.z + n2.z > 2.25:
+			if maxf(p0.z, maxf(p1.z, p2.z)) > -12.0 and maxf(p0.z, maxf(p1.z, p2.z)) < 4.0:
 				if top_key == -2:
 					top_key = _top_key(i0 + a, j0 + b)
 				key = top_key
@@ -230,27 +234,25 @@ func _cube(a: int, b: int, c: int, base: int, vals: PackedFloat32Array, i0: int,
 			_vert(p2, n2, key)
 			n += 6
 
-## One vertex: key -1 earth (tinted by depth), 0 the yard picture, else a soil tile (see _top_key).
+## One vertex: its earth's colour (tinted by depth) and, where the top is near, what the top wears (key 0 the
+## yard picture: COLOR.a 1; else a soil tile, UV2: COLOR.a 0.5; -1 none: 0. See _top_key).
 func _vert(p: Vector3, n: Vector3, key: int) -> void:
 	verts.append(Vector3(p.x * U, p.z * U, p.y * U))
 	normals.append(Vector3(n.x, n.z, n.y))
 	uvs.append(Vector2((p.x - yard_o.x) / yard_size.x, (p.y - yard_o.y) / yard_size.y))
-	if key == 0:
-		uv2s.append(Vector2.ZERO)
-		cols.append(Color(1, 1, 1, 1))
-		return
-	if key > 0:
-		uv2s.append(Vector2(float((key - 1) >> 1), float((key - 1) & 1)))
-		cols.append(Color(0.92, 0.92, 0.92, 0.0))
-		return
-	uv2s.append(Vector2.ZERO)
+	uv2s.append(Vector2(float((key - 1) >> 1), float((key - 1) & 1)) if key > 0 else Vector2.ZERO)
+	var a := 1.0 if key == 0 else (0.5 if key > 0 else 0.0)
 	# the earth's colour is its block's material (a bit inside the surface): dirt, clay, stone, coal, iron
-	var m := vol.material(DigVolume.block_of(p - n * 5.0))
+	var bk := DigVolume.block_of(p - n * 5.0)
+	var m: int = _mats.get(bk, -1)
+	if m < 0:
+		m = vol.material(bk)
+		_mats[bk] = m
 	var tint: Color = D.MATS[m].tint
 	var depth := clampf(-p.z, 0.0, 320.0)
 	# (darker the deeper, quickly at first: from above a hole's depth reads by its shade)
 	var k := 1.0 - 0.45 * sqrt(depth / 320.0)
-	cols.append(Color(tint.r * k, tint.g * k, tint.b * k, 0.0))
+	cols.append(Color(tint.r * k, tint.g * k, tint.b * k, a))
 
 ## How the ground's top looks at cell (cx, cy): 0 the yard picture, else 1 + tile * 2 + turned (the soil).
 func _top_key(cx: int, cy: int) -> int:
@@ -271,9 +273,8 @@ func _strip(i0: int, i1: int, j: int, z: float, key: int) -> void:
 	var x1 := D.X0 + i1 * D.CELL
 	var y0 := D.Y0 + j * D.CELL
 	var y1 := y0 + D.CELL
-	var flag := 1.0 if key == 0 else 0.0
 	var tile := Vector2.ZERO if key == 0 else Vector2(float((key - 1) >> 1), float((key - 1) & 1))
-	var col := Color(1, 1, 1, flag) if key == 0 else Color(0.92, 0.92, 0.92, 0.0)
+	var col := Color(1, 1, 1, 1.0 if key == 0 else 0.5)
 	for q in [Vector2(x0, y0), Vector2(x1, y0), Vector2(x1, y1), Vector2(x0, y0), Vector2(x1, y1), Vector2(x0, y1)]:
 		verts.append(Vector3(q.x * U, z * U, q.y * U))
 		normals.append(Vector3.UP)
