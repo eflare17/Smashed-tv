@@ -1,0 +1,567 @@
+{
+ "char": "jared",
+ "bones": [
+  {
+   "name": "hips",
+   "parent": "",
+   "pivot": [
+    0.0,
+    62.0,
+    0.0
+   ]
+  },
+  {
+   "name": "chest",
+   "parent": "hips",
+   "pivot": [
+    0.0,
+    68.0,
+    0.0
+   ]
+  },
+  {
+   "name": "head",
+   "parent": "chest",
+   "pivot": [
+    0.0,
+    110.0,
+    1.0
+   ]
+  },
+  {
+   "name": "arm_r",
+   "parent": "chest",
+   "pivot": [
+    -29.5,
+    108.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "parent": "arm_r",
+   "pivot": [
+    -32.5,
+    79.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "hand_r",
+   "parent": "forearm_r",
+   "pivot": [
+    -34.5,
+    63.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "arm_l",
+   "parent": "chest",
+   "pivot": [
+    29.5,
+    108.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "parent": "arm_l",
+   "pivot": [
+    32.5,
+    79.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "hand_l",
+   "parent": "forearm_l",
+   "pivot": [
+    34.5,
+    63.0,
+    -2.0
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "parent": "hips",
+   "pivot": [
+    16.5,
+    52.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_l",
+   "parent": "thigh_l",
+   "pivot": [
+    17.5,
+    28.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_l",
+   "parent": "shin_l",
+   "pivot": [
+    19.0,
+    12.0,
+    -1.0
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "parent": "hips",
+   "pivot": [
+    -16.5,
+    52.0,
+    0.0
+   ]
+  },
+  {
+   "name": "shin_r",
+   "parent": "thigh_r",
+   "pivot": [
+    -17.5,
+    28.0,
+    0.0
+   ]
+  },
+  {
+   "name": "foot_r",
+   "parent": "shin_r",
+   "pivot": [
+    -19.0,
+    12.0,
+    -1.0
+   ]
+  }
+ ],
+ "parts": [
+  {
+   "name": "head",
+   "bone": "head",
+   "file": "head.vox",
+   "origin": [
+    -17,
+    104,
+    -11
+   ],
+   "size": [
+    35,
+    35,
+    44
+   ]
+  },
+  {
+   "name": "torso",
+   "bone": "chest",
+   "file": "torso.vox",
+   "origin": [
+    -41,
+    64,
+    -19
+   ],
+   "size": [
+    78,
+    39,
+    52
+   ]
+  },
+  {
+   "name": "pelvis",
+   "bone": "hips",
+   "file": "pelvis.vox",
+   "origin": [
+    -22,
+    51,
+    -20
+   ],
+   "size": [
+    45,
+    37,
+    13
+   ]
+  },
+  {
+   "name": "thigh_l",
+   "bone": "thigh_l",
+   "file": "thigh_l.vox",
+   "origin": [
+    2,
+    28,
+    -12
+   ],
+   "size": [
+    26,
+    24,
+    23
+   ]
+  },
+  {
+   "name": "thigh_r",
+   "bone": "thigh_r",
+   "file": "thigh_r.vox",
+   "origin": [
+    -28,
+    28,
+    -12
+   ],
+   "size": [
+    26,
+    24,
+    23
+   ]
+  },
+  {
+   "name": "shin_l",
+   "bone": "shin_l",
+   "file": "shin_l.vox",
+   "origin": [
+    9,
+    12,
+    -10
+   ],
+   "size": [
+    21,
+    18,
+    16
+   ]
+  },
+  {
+   "name": "shin_r",
+   "bone": "shin_r",
+   "file": "shin_r.vox",
+   "origin": [
+    -30,
+    12,
+    -10
+   ],
+   "size": [
+    21,
+    18,
+    16
+   ]
+  },
+  {
+   "name": "foot_l",
+   "bone": "foot_l",
+   "file": "foot_l.vox",
+   "origin": [
+    12,
+    1,
+    -10
+   ],
+   "size": [
+    23,
+    27,
+    11
+   ]
+  },
+  {
+   "name": "foot_r",
+   "bone": "foot_r",
+   "file": "foot_r.vox",
+   "origin": [
+    -35,
+    1,
+    -10
+   ],
+   "size": [
+    23,
+    27,
+    11
+   ]
+  },
+  {
+   "name": "arm_r",
+   "bone": "arm_r",
+   "file": "arm_r.vox",
+   "origin": [
+    -42,
+    78,
+    -11
+   ],
+   "size": [
+    22,
+    18,
+    38
+   ]
+  },
+  {
+   "name": "arm_l",
+   "bone": "arm_l",
+   "file": "arm_l.vox",
+   "origin": [
+    20,
+    78,
+    -11
+   ],
+   "size": [
+    22,
+    18,
+    38
+   ]
+  },
+  {
+   "name": "forearm_r",
+   "bone": "forearm_r",
+   "file": "forearm_r.vox",
+   "origin": [
+    -42,
+    62,
+    -10
+   ],
+   "size": [
+    17,
+    16,
+    16
+   ]
+  },
+  {
+   "name": "forearm_l",
+   "bone": "forearm_l",
+   "file": "forearm_l.vox",
+   "origin": [
+    25,
+    62,
+    -10
+   ],
+   "size": [
+    17,
+    16,
+    16
+   ]
+  },
+  {
+   "name": "hand_r",
+   "bone": "hand_r",
+   "file": "hand_r.vox",
+   "origin": [
+    -42,
+    51,
+    -8
+   ],
+   "size": [
+    12,
+    12,
+    11
+   ]
+  },
+  {
+   "name": "hand_l",
+   "bone": "hand_l",
+   "file": "hand_l.vox",
+   "origin": [
+    30,
+    51,
+    -8
+   ],
+   "size": [
+    12,
+    12,
+    11
+   ]
+  },
+  {
+   "name": "hair_classic",
+   "bone": "head",
+   "file": "hair_classic.vox",
+   "origin": [
+    -17,
+    115,
+    -14
+   ],
+   "size": [
+    34,
+    35,
+    33
+   ],
+   "group": "hair",
+   "style": "classic"
+  },
+  {
+   "name": "glasses",
+   "bone": "head",
+   "file": "glasses.vox",
+   "origin": [
+    -17,
+    123,
+    11
+   ],
+   "size": [
+    33,
+    11,
+    7
+   ],
+   "group": "glasses"
+  },
+  {
+   "name": "hair_braids",
+   "bone": "head",
+   "file": "hair_braids.vox",
+   "origin": [
+    -17,
+    110,
+    -8
+   ],
+   "size": [
+    35,
+    28,
+    34
+   ],
+   "group": "hair",
+   "style": "braids",
+   "optional": true
+  },
+  {
+   "name": "hair_mullet",
+   "bone": "head",
+   "file": "hair_mullet.vox",
+   "origin": [
+    -17,
+    101,
+    -9
+   ],
+   "size": [
+    35,
+    32,
+    46
+   ],
+   "group": "hair",
+   "style": "mullet",
+   "optional": true
+  },
+  {
+   "name": "hair_slick",
+   "bone": "head",
+   "file": "hair_slick.vox",
+   "origin": [
+    -17,
+    107,
+    -9
+   ],
+   "size": [
+    35,
+    30,
+    41
+   ],
+   "group": "hair",
+   "style": "slick",
+   "optional": true
+  },
+  {
+   "name": "hair_tyson",
+   "bone": "head",
+   "file": "hair_tyson.vox",
+   "origin": [
+    -18,
+    107,
+    -14
+   ],
+   "size": [
+    38,
+    37,
+    39
+   ],
+   "group": "hair",
+   "style": "tyson",
+   "optional": true
+  },
+  {
+   "name": "hair_mohawk",
+   "bone": "head",
+   "file": "hair_mohawk.vox",
+   "origin": [
+    -20,
+    119,
+    -20
+   ],
+   "size": [
+    44,
+    47,
+    34
+   ],
+   "group": "hair",
+   "style": "mohawk",
+   "optional": true
+  },
+  {
+   "name": "hair_mohawk_blue",
+   "bone": "head",
+   "file": "hair_mohawk_blue.vox",
+   "origin": [
+    -21,
+    119,
+    -20
+   ],
+   "size": [
+    45,
+    47,
+    34
+   ],
+   "group": "hair",
+   "style": "mohawk_blue",
+   "optional": true
+  },
+  {
+   "name": "hair_mohawk_purple",
+   "bone": "head",
+   "file": "hair_mohawk_purple.vox",
+   "origin": [
+    -21,
+    119,
+    -20
+   ],
+   "size": [
+    45,
+    48,
+    35
+   ],
+   "group": "hair",
+   "style": "mohawk_purple",
+   "optional": true
+  },
+  {
+   "name": "hair_mohawk_green",
+   "bone": "head",
+   "file": "hair_mohawk_green.vox",
+   "origin": [
+    -21,
+    119,
+    -20
+   ],
+   "size": [
+    45,
+    47,
+    35
+   ],
+   "group": "hair",
+   "style": "mohawk_green",
+   "optional": true
+  }
+ ],
+ "ref_sheet": "juicy_spud",
+ "ref_key": "reload",
+ "ref_frame": 0,
+ "ref_rows": 160,
+ "cx0": 42,
+ "foot": 160,
+ "cz0": 35,
+ "grip_r": [
+  -34.5,
+  56,
+  0
+ ],
+ "styles": [
+  "classic",
+  "braids",
+  "mullet",
+  "slick",
+  "tyson",
+  "mohawk",
+  "mohawk_blue",
+  "mohawk_purple",
+  "mohawk_green"
+ ]
+}
