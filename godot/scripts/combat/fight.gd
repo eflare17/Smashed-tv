@@ -714,11 +714,11 @@ func _build_input2() -> FT.Inp:
 	var pads := Input.get_connected_joypads()
 	if pads.size() > 1:
 		var d: int = pads[1]
-		var ls := Vector2(Input.get_joy_axis(d, JOY_AXIS_LEFT_X), Input.get_joy_axis(d, JOY_AXIS_LEFT_Y))
+		var ls := Vector2(PadSetup.read(d, JOY_AXIS_LEFT_X), PadSetup.read(d, JOY_AXIS_LEFT_Y))
 		if ls.length() > 0.2:
 			mx = ls.x
 			my = ls.y
-		var rs := Vector2(Input.get_joy_axis(d, JOY_AXIS_RIGHT_X), Input.get_joy_axis(d, JOY_AXIS_RIGHT_Y))
+		var rs := Vector2(PadSetup.read(d, JOY_AXIS_RIGHT_X), PadSetup.read(d, JOY_AXIS_RIGHT_Y))
 		if rs.length() > 0.22:
 			inp.st = true
 			inp.ax = rs.x

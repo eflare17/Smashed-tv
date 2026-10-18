@@ -318,7 +318,7 @@ static func pad_stick(ax: int, ay: int, dead: float = 0.2) -> Vector2:
 	var pads := Input.get_connected_joypads()
 	if pads.is_empty():
 		return Vector2.ZERO
-	var v := Vector2(Input.get_joy_axis(pads[0], ax), Input.get_joy_axis(pads[0], ay))
+	var v := Vector2(PadSetup.read(pads[0], ax), PadSetup.read(pads[0], ay))      # (the learned axes: PadSetup)
 	var m := v.length()
 	if m < dead:
 		return Vector2.ZERO
