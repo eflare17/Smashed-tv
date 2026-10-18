@@ -6,6 +6,9 @@ arcade suites pass with the install line in both modes)
 
 Jared: ready for review (screenshots in `integration/voxel_shots/`, see "Screenshots" below)
 
+Sprite maker blocks: done (18 Oct, branch `claude/sprite-maker-blocks`; see "Block characters from the sprite maker"
+below, screenshots `integration/voxel_shots/sprite_maker_*.png`)
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,
@@ -163,3 +166,67 @@ First-person shots look at a blocks Jared standing in front of you. `overview.pn
 - The first switch to blocks builds the meshes (~0.4 s a character on desktop, more on the web): a one-off hitch.
 - Mixamo / UniMate clips (the owner's ideas): the rig is a plain 16-bone humanoid, so clips made on it could be
   baked into VoxelAnim as extra moves (dances, deaths); the game-driven moves stay in code.
+
+## Block characters from the sprite maker
+
+`tools/sprite-maker.html` (the owner's page that turns one design picture into a character's sprite sheets) has a
+**Blocks** card that makes the same thing `vox_build.py` makes for Jared, from the sheets the page already made:
+
+- **Make blocks** carves the model (`tools/sprite-blocks.js`): the standing sheet's front frame cut into the same
+  parts as Jared (head, torso, pelvis, arm/forearm/hand, thigh/shin/foot _l/_r: the arms, neck, waist and crotch found
+  in the picture), each row rounded front to back with its depth from the side frame (a super-ellipse, as
+  `add_shape`), so the head is round and the limbs round. Every surface block takes its colour from whichever frame
+  (front, back, side, the diagonals; the right-facing ones flipped for the other side) looks at it most squarely and
+  can see it, so the side-on face is on the side of the head and the clothes wrap round; hair that frames the face in
+  front stays hair on the head's sides. A leg drawn lifted or an arm lost against the body is the other one
+  mirrored. The rig is Jared's 15 bones with pivots found the same way (shoulder, elbow, wrist, hip, knee, ankle).
+- **Size**: one block per sprite pixel, as Jared. The game draws the new art's 160 px frame 80 units (2 m) tall, so a
+  160 px sprite makes a model about 150 blocks tall (Jared's are 150; the sprite maker draws everyone at Gothica's
+  148 px). `rig.json` says `ref_sheet: goth` so the game sizes the blocks the way it sizes her pixels (0.0125 m).
+- **Preview**: plain WebGL (no library): drag to spin, pinch or scroll to zoom, Stand / Walk / Attack (VoxelAnim's
+  walk and the fists' jab, ported).
+- **Painter** (touch-friendly): pick a part, look from the front, side or top, step through the layers; Add puts
+  blocks on the layer, Paint / Remove / Pick work on the block you see; colours from the model and the design
+  picture or any colour; mirror left/right; zoom; undo and redo. Or tick **Tap to paint** and use the tools on the
+  3D model directly.
+- **Cleaner views from Gemini** (optional): sends the design and the standing turnaround and asks for straight
+  front, side and back views with the arms and legs apart (Copy prompt and Use my own picture work without a key);
+  Make blocks then carves from those.
+- **Download for the game** adds a `voxel` field to the same JSON: `{format: "smashed-blocks-1", rig: <rig.json>,
+  files: {"head.vox": <base64>, ...}}`. `tools/add_character.py` ignores it (Smashed.html is unchanged by it).
+- **Open a downloaded .json** (in "The character") brings a character's sheets and blocks back to carry on.
+
+### Putting one in the Godot game
+
+```
+python3 tools/add_godot_character.py inky.json           # --check to just look; --godot DIR for another copy
+```
+
+writes `godot/assets/voxel/<id>/` (`rig.json` and a `.vox` per part, exactly like Jared's) and her pictures to
+`godot/assets/CHARS/<id>/sprites/` with her entry in `assets/manifest.json`'s CHARS (like Inky's). `VoxelModel` finds
+the blocks by the character's id (`model_for_sheet`), so any CharSprite showing her sheet is blocks when the game is set
+to blocks (F10). Nothing else changes; she isn't added to a character menu (`CharFrames.PLAYABLE`, and `NEW_ART` for
+her pictures' size, are the Characters task's lists). Look at her in `test/voxel/voxel_view.tscn` with
+`?vox=char=<id>` (or `--vox=char=<id>`). Each part is a normal MagicaVoxel file, so it can be edited there too.
+
+### Tests
+
+- `node tools/test/sprite_blocks_shots.js [out dir]`: the page on a 390 x 844 touch phone in headless Chromium,
+  with a test character made from Juicy Jared's sprites (`godot/assets/CHARS/juicy/sprites`; `CHAR=goth` for
+  Gothica's): opens it as a .json, makes the blocks, screenshots the preview from four sides plus walking and
+  attacking, paints a block with a tap (mirror on: 2 blocks), undo / redo, screenshots the painter and the card, and
+  downloads the game JSON (`$JSON_OUT`). No page errors.
+- `tools/add_godot_character.py` on that download into a copy of godot/, then `tools/test/godot_blocks_check.gd`
+  (in a one-node scene, headless): the model loads, the same 15 bones as Jared, the same block size (0.0125 m), 1.87 m
+  tall like Jared, a 48k-triangle mesh, the player set to that character gets the blocks and walks: 9/9.
+- `tools/add_character.py` on the same download (into a copy of Smashed.html): adds the character as before.
+
+| file | what |
+|---|---|
+| `sprite_maker_front.png`, `_side`, `_back`, `_diag` | the test Jared's blocks from four sides (made from his run-and-gun sheet: his blasters come along) |
+| `sprite_maker_walk.png`, `sprite_maker_attack.png` | walking, the jab |
+| `sprite_maker_card_phone.png`, `sprite_maker_painter_phone.png` | the card and the painter on a phone |
+
+Known limits: carved from single frames, so what a picture hides (inside the arms, under hair) is a guess; a
+character holding something in its standing frame gets it in its hands (the test Jared's blasters); long hair over
+the shoulders is carved into the body and arms (paint it, or ask Gemini for the cleaner views).
