@@ -44,6 +44,8 @@ func setup(g: DigGrid, w: Node3D) -> void:
 	_yard_rects = yard_rects()
 	_yard_mat = _mat(tex)
 	_soil_mat = _mat(soil_atlas())
+	_soil_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	_soil_mat.alpha_scissor_threshold = 0.5
 	_hide_world_yard(tex)
 	_collision()
 	for i in DigGrid.chunks_x() * DigGrid.chunks_y():
@@ -186,18 +188,54 @@ func _build_chunk(ci: int) -> void:
 	var suv := PackedVector2Array()
 	var sc := PackedColorArray()
 	var crect := Rect2(D.X0 + cx0 * D.CELL, D.Y0 + cy0 * D.CELL, (cx1 - cx0) * D.CELL, (cy1 - cy0) * D.CELL)
-	# level grass: runs of flat cells along each row, clipped to the yard picture's rectangles
+	# each cell's state, one cell round the chunk too: 0 grass (level), 1 soil (level), 2 off level (a hole or a pile)
+	var w := cx1 - cx0 + 2
+	var h := cy1 - cy0 + 2
+	var st := PackedByteArray()
+	st.resize(w * h)
+	var any := false
+	for cy in range(cy0 - 1, cy1 + 1):
+		for cx in range(cx0 - 1, cx1 + 1):
+			if cx < 0 or cy < 0 or cx >= D.NX or cy >= D.NY:
+				continue
+			var k := 0
+			if grid._cell_off_level(cx, cy):
+				k = 2
+			elif grid.soil[cy * D.NX + cx] != D.GRASS:
+				k = 1
+			if k:
+				st[(cy - cy0 + 1) * w + cx - cx0 + 1] = k
+				any = true
+	# how much each corner is soil: 1 next to a hole or pile, else the share of soil cells round it. Drawn with
+	# an alpha scissor at a half, the soil's edge runs round between the cells instead of along their sides
+	var va := PackedFloat32Array()
+	if any:
+		va.resize((w - 1) * (h - 1))
+		for vy in h - 1:
+			for vx in w - 1:
+				var a0 := st[vy * w + vx]
+				var a1 := st[vy * w + vx + 1]
+				var a2 := st[(vy + 1) * w + vx]
+				var a3 := st[(vy + 1) * w + vx + 1]
+				if a0 == 2 or a1 == 2 or a2 == 2 or a3 == 2:
+					va[vy * (w - 1) + vx] = 1.0
+				else:
+					va[vy * (w - 1) + vx] = (a0 + a1 + a2 + a3) / 4.0
 	for cy in range(cy0, cy1):
 		var run := -1
 		for cx in range(cx0, cx1 + 1):
-			var flat := cx < cx1 and grid.cell_flat(cx, cy)
-			if flat and run < 0:
+			# level cells wear the yard picture (soil drawn over it where it's ploughed or dug over)
+			var level := cx < cx1 and st[(cy - cy0 + 1) * w + cx - cx0 + 1] != 2
+			if level and run < 0:
 				run = cx
-			elif not flat and run >= 0:
+			elif not level and run >= 0:
 				_grass(gv, guv, Rect2(D.X0 + run * D.CELL, D.Y0 + cy * D.CELL, (cx - run) * D.CELL, D.CELL))
 				run = -1
-			if not flat and cx < cx1:
-				_soil_cell(sv, suv, sc, cx, cy)
+			if any and cx < cx1:
+				var i0 := (cy - cy0) * (w - 1) + cx - cx0
+				var al := [va[i0], va[i0 + 1], va[i0 + w], va[i0 + w - 1]]
+				if al[0] > 0.0 or al[1] > 0.0 or al[2] > 0.0 or al[3] > 0.0:
+					_soil_cell(sv, suv, sc, cx, cy, al, st[(cy - cy0 + 1) * w + cx - cx0 + 1] != 2)
 	# (the region's edge chunks: the yard picture past the region, round it)
 	if cx0 == 0 or cy0 == 0 or cx1 == D.NX or cy1 == D.NY:
 		_outside(gv, guv, crect, cx0 == 0, cy0 == 0, cx1 == D.NX, cy1 == D.NY)
@@ -248,17 +286,29 @@ func _grass(gv: PackedVector3Array, guv: PackedVector2Array, r: Rect2) -> void:
 			gv.append(Vector3(p.x * U, 0.0, p.y * U))
 			guv.append((p - _yard_o) / _yard_size)
 
-## A soil cell: its four corners at their depths, the atlas tile for its soil, shaded by slope and depth.
-func _soil_cell(sv: PackedVector3Array, suv: PackedVector2Array, sc: PackedColorArray, cx: int, cy: int) -> void:
+## A soil cell: its four corners at their depths (alpha: how much each corner is soil), the atlas tile for its soil
+## (a grass cell on the soil's edge takes its neighbour's), shaded by slope and depth. Level ones sit a hair over
+## the yard picture drawn under them.
+func _soil_cell(sv: PackedVector3Array, suv: PackedVector2Array, sc: PackedColorArray, cx: int, cy: int, al: Array, level: bool) -> void:
 	var i := cy * D.NX + cx
 	var s := grid.soil[i]
+	var src := i
+	if s == D.GRASS:
+		for o in [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]:
+			var nx: int = cx + o[0]
+			var ny: int = cy + o[1]
+			if nx >= 0 and ny >= 0 and nx < D.NX and ny < D.NY and grid.soil[ny * D.NX + nx] != D.GRASS:
+				src = ny * D.NX + nx
+				s = grid.soil[src]
+				break
 	var tile := 0                                    # dirt
 	if s == D.ROWS_X or s == D.ROWS_Y:
-		tile = 2 if grid.weedy(i) else 1
-	elif s == D.DIRT and grid.weedy(i):
+		tile = 2 if grid.weedy(src) else 1
+	elif s == D.DIRT and grid.weedy(src):
 		tile = 3
 	var vi := cy * DigGrid.VW + cx
-	var h := [grid.depth[vi], grid.depth[vi + 1], grid.depth[vi + DigGrid.VW + 1], grid.depth[vi + DigGrid.VW]]
+	var hh := [grid.depth[vi], grid.depth[vi + 1], grid.depth[vi + DigGrid.VW + 1], grid.depth[vi + DigGrid.VW]]
+	var lift := 0.3 if level else 0.0
 	var x0 := D.X0 + cx * D.CELL
 	var y0 := D.Y0 + cy * D.CELL
 	var ps := [Vector2(x0, y0), Vector2(x0 + D.CELL, y0), Vector2(x0 + D.CELL, y0 + D.CELL), Vector2(x0, y0 + D.CELL)]
@@ -269,18 +319,18 @@ func _soil_cell(sv: PackedVector3Array, suv: PackedVector2Array, sc: PackedColor
 	if s == D.ROWS_Y:
 		for k in 4:
 			uvs[k] = Vector2(uvs[k].y, uvs[k].x)
-	# light from the north and a little from above (the sun's to the north), darker deeper down
-	var gx: float = ((h[1] + h[2]) - (h[0] + h[3])) * 0.5 / D.CELL
-	var gy: float = ((h[2] + h[3]) - (h[0] + h[1])) * 0.5 / D.CELL
-	var n := Vector3(gx, 1.0, gy).normalized()        # (depth grows down: a wall facing north has gy > 0)
-	var lit := clampf(0.78 + 0.3 * n.dot(Vector3(0.0, 0.55, -0.83).normalized()) - 0.1, 0.55, 1.05)
+	# light from the north and a little from above (the sun's to the north), a little darker deeper down
+	var gx: float = ((hh[1] + hh[2]) - (hh[0] + hh[3])) * 0.5 / D.CELL
+	var gy: float = ((hh[2] + hh[3]) - (hh[0] + hh[1])) * 0.5 / D.CELL
+	var n := Vector3(gx, 1.0, gy).normalized()        # (depth grows down: a wall facing north has gy < 0)
+	var lit := clampf(0.86 + 0.32 * (n.dot(Vector3(0.0, 0.55, -0.83).normalized()) - 0.55), 0.6, 1.08)
 	var cols: Array = []
 	for k in 4:
-		var deep := clampf(float(h[k]) / D.MAX_DEPTH, 0.0, 1.0)
-		var v := lit * (1.0 - 0.32 * deep)
-		cols.append(Color(v, v, v))
+		var deep := clampf(float(hh[k]) / D.MAX_DEPTH, 0.0, 1.0)
+		var v := lit * (1.0 - 0.18 * deep)
+		cols.append(Color(v, v, v, float(al[k])))
 	for k in [0, 1, 2, 0, 2, 3]:
-		sv.append(Vector3(ps[k].x * U, -h[k] * U, ps[k].y * U))
+		sv.append(Vector3(ps[k].x * U, (lift - float(hh[k])) * U, ps[k].y * U))
 		suv.append(Vector2((float(tile) + uvs[k].x) / 4.0, uvs[k].y))
 		sc.append(cols[k])
 

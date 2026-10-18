@@ -205,10 +205,11 @@ func _pose_tools() -> void:
 			f = Vector2(0, 1)
 		f = f.normalized()
 		var side := Vector2(-f.y, f.x)
-		var off := f * 14.0 + side * 12.0
+		var off := f * 4.0 + side * 15.0
 		m.position = Vector3(off.x, 0.0, off.y) * U
 		var yaw := atan2(f.x, f.y)
-		var lean := 0.35 + (0.6 * sin(clampf(_swing, 0.0, 1.0) * PI) if p == _local() else 0.0)
+		# (leaning well forward: seen from above an upright tool would be a dot)
+		var lean := 1.0 + (0.5 * sin(clampf(_swing, 0.0, 1.0) * PI) if p == _local() else 0.0)
 		m.basis = Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, lean)
 		m.visible = not (p.has_method("is_first_person") and p.is_first_person())
 
