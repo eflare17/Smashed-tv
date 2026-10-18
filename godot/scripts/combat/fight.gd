@@ -356,6 +356,14 @@ func add_player2() -> void:
 		p2.collision_mask = 0
 	saved_two = true
 
+var _pad_up := {}                    # pad buttons seen let go since the page loaded
+var _start_held := 0.0
+
+## Out of a run, back to the lobby (the LOBBY button, Esc top-down, or holding the pad's Start/Menu).
+func leave_run() -> void:
+	if sim.started:
+		restart()
+
 ## forced: the network says so (the host restarted); otherwise online, the guest asks the host instead.
 func restart(forced: bool = false) -> void:
 	if not forced and net_request.is_valid() and net_request.call("restart"):
@@ -508,6 +516,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventAction and event.action == "fire":
 		_fire_mouse = event.pressed          # the touch layer's FIRE button
 		touch_fire = event.pressed and is_fp()
+	if event is InputEventJoypadButton and not event.pressed:
+		_pad_up[event.button_index] = true
+	if event is InputEventJoypadButton and event.pressed and not _pad_up.get(event.button_index, false):
+		# a pad button that was already down when the page loaded (some pads in a browser report one held
+		# from the start): it must be let go once before it counts, or the game drops straight into a run
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE \
+			and sim.started and not is_fp():
+		leave_run()                          # Esc: back to the lobby (in first person Esc lets the mouse go)
+		get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("start_run") and not event.is_echo():
 		if sim.over:
 			restart()
@@ -843,6 +862,16 @@ func _physics_process(delta: float) -> void:
 		debug.erase("wave")
 
 func _process(delta: float) -> void:
+	# holding the pad's Start/Menu for 1.5 s in a run goes back to the lobby
+	var pads := Input.get_connected_joypads()
+	if sim.started and not sim.over and not pads.is_empty() and Input.is_joy_button_pressed(pads[0], JOY_BUTTON_START) \
+			and _pad_up.get(JOY_BUTTON_START, false):
+		_start_held += delta
+		if _start_held >= 1.5:
+			_start_held = -999.0
+			leave_run()
+	else:
+		_start_held = 0.0
 	if player == null:
 		return
 	if OS.has_feature("web"):

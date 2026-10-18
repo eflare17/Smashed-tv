@@ -20,6 +20,7 @@ var fight: Fight
 var _draw_c: _Draw
 var _bar: _Hotbar
 var _picker: HBoxContainer
+var _leave: Button              # LOBBY: out of a run, back to the lobby
 var _mode_lbl: Label
 var _start: Button
 var _banner := ""
@@ -98,6 +99,11 @@ func _ready() -> void:
 	_start.add_theme_stylebox_override("hover", sb)
 	_start.add_theme_stylebox_override("pressed", sb)
 	_picker.add_child(_start)
+	_leave = _btn("LOBBY", func(): fight.leave_run())
+	_leave.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_leave.position.y = 10
+	_leave.visible = false
+	add_child(_leave)
 	var hp = GameData.manifest.get("FP_BLASTER.img.src")
 	if hp is String and ResourceLoader.exists("res://" + hp):
 		_hands = GameData.tex(hp)
@@ -203,6 +209,10 @@ func _process(delta: float) -> void:
 	# the mode picker: the lobby only, and not over a close-up or a panel (the mirror, a seat, the bag, a menu)
 	var busy := fight.modal_open()
 	_picker.visible = not s.started and not busy and not fight.lobby_holds()
+	_leave.visible = s.started and not busy
+	_leave.text = "LOBBY (hold Menu)" if _pad_last() else ("LOBBY" if fight.touch_seen or fight.is_fp() else "LOBBY (Esc)")
+	_leave.reset_size()
+	_leave.position.x = (_draw_c.size.x - _leave.size.x) / 2.0 if _draw_c else _leave.position.x
 	_mode_lbl.text = Fight.mode_name(fight.mode)
 	_start.text = start_text()
 	# on a touch screen the arrows and Start are thumb-sized (about 44 CSS px)
@@ -338,6 +348,8 @@ func on_ui(p: Vector2) -> bool:
 
 func _on_ui(p: Vector2) -> bool:
 	if _bar.visible and _bar.get_global_rect().grow(4).has_point(p):
+		return true
+	if _leave and _leave.visible and _leave.get_global_rect().has_point(p):
 		return true
 	if _picker.visible and _picker.get_global_rect().has_point(p):
 		return true
