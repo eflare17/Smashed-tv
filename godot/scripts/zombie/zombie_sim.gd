@@ -40,7 +40,7 @@ const CHARGE := 1.75
 const CHARGE_TIME := 2.2
 
 ## The ETYPE record (the HTML game's form): a slow, tough, heavy one that claws.
-const ETYPE := {"key": "zombie", "facesRight": true, "speed": 0.62, "hp": 2.7, "r": 1.15, "dmg": 1, "mass": 1.8,
+const ETYPE := {"key": "zombie", "facesRight": true, "speed": 0.8, "hp": 2.7, "r": 1.15, "dmg": 1, "mass": 1.8,
 	"colour": "#9fb28a", "coins": 4, "melee": true}
 
 ## Event kinds for the views and sounds (FightSim.events: [kind, x, y]).
