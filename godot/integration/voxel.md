@@ -19,8 +19,18 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
 `voxel_arena`: `project.godot` picks that scene and Forward+ for it; the main game and the web build are unchanged).
 
 - Block enemies one at a time (the owner, 20 Oct; F3 / F5 send in more; grunt, swarmer, brute, batter, about 1.7-2.2 m tall, 2.3 cm cubes = one sprite pixel a
-  cube; F2 switches to two pixels a cube) come at you. Blaster (left click, 10 a second, holes about 4 cubes wide)
-  and shotgun (right click, 9 pellets).
+  cube; F2 switches to two pixels a cube) come at you.
+- **Weapons on the number keys** (the owner, 20 Oct; `voxel_loadout.gd`, `voxel_weapon_bar.gd`): 1 blaster, 2 shotgun,
+  3 sword, 4 bat, 5 sledgehammer, 6 chainsaw, 7 spear, 8 vacuum (a melee weapon whose script isn't there is left out);
+  the wheel cycles, Q goes back to the last one, E to the vacuum and back. Each uses both mouse buttons: blaster fire
+  (10 a second, holes about 4 cubes wide) / aim in (zoom, tighter, slower look); shotgun fire (9 pellets) / both
+  barrels (18, wider, longer reload); sword slash / chop; vacuum suck / right click held + wheel sizes the brush. A
+  switch takes 0.25 s (the old one goes down, the new comes up; buttons held through it count for nothing till let go).
+  The weapon bar along the bottom: each slot's number, a drawing, its name (the vacuum's with the cubes taken), the
+  one out lit and taller, a cooldown filling its edge, and what the two buttons do above. In first person the game's
+  own block blaster and shotgun are in your hands (kick when fired, closing in when aimed); top-down Jared holds the one
+  out (two blasters, one a hand, as in the game). Melee weapons share `voxel_melee.gd` (press / hold / release, a view,
+  a hand mesh, a drawing, checks) and `voxel_pieces.gd` (the bits cut off, as rigid bodies).
 - **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
   that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
   MultiMesh of up to 8000 cubes in one draw call, bouncing; once at rest they stay, in a second MultiMesh of up to
@@ -32,18 +42,18 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   for about a third of a second, a shove back along the shot by how many cubes it took, the chest and head thrown
   back); after a stagger they push through for 0.6 s (hits only nudge), so held fire slows them but can't pin them. Walking: the step is scaled to each kind's leg length so the feet
   keep up with the ground (they skated before), arms swing against the legs. The dead topple and lie 12 s.
-- **Sword** (the owner 20 Oct; `voxel_sword.gd`), with the guns still in hand: F (or a mouse side button) slashes the
-  way the mouse was moving (still mouse: back and forth), C chops down (top-down: a low sweep at the legs); the blade
-  shows only while it swings. The slash is the plane through your eye along
+- **Sword** (the owner 20 Oct; `voxel_sword.gd`; slot 3: left click slashes the way the mouse was moving, still mouse
+  back and forth, right click chops down, top-down a low sweep at the legs); F (or a mouse side button) slashes with
+  any weapon out, C chops (the blade shows only while it swings). The slash is the plane through your eye along
   where you look and the swing; every cube within a cube of it, inside 2.6 m and the 160-degree sweep, is cut out
   (`VoxelBody.slice`), then whatever is no longer joined to its part's joint comes off as one rigid body with real
   meshes and boxes: an arm, half a forearm, the legs at the knee (then they crawl), the top of the head, the head
   (kills). A joint inside the cut keeps the side toward its parent, so a neck cut takes the whole head. A slash
   through the body takes a third of its health; cut through the middle, the top half comes off. A hit freezes the
   game for 70 ms (hit-stop). A cut costs 6-15 ms here (worker threads mesh the cut-off ends).
-- **Vacuum gun** (E swaps it for the guns; `voxel_vacuum.gd`), sucking like Astroneer's terrain tool (the owner, 20
-  Oct): a see-through brush sphere sits where you point (the floor, a wall, or 6.5 m out), the mouse wheel sizes it
-  (0.35-1.6 m). Hold click: the cubes inside it (lying or flying) come loose at 1500 a second, nearest the middle
+- **Vacuum gun** (slot 8, or E; `voxel_vacuum.gd`), sucking like Astroneer's terrain tool (the owner, 20
+  Oct): a see-through brush sphere sits where you point (the floor, a wall, or 6.5 m out), right click + the wheel
+  sizes it (0.35-1.6 m). Hold click: the cubes inside it (lying or flying) come loose at 1500 a second, nearest the middle
   first, and swirl up a twisting beam into the nozzle, counted as resources by colour (blocks, meat, bone, brain; the
   HUD's last line); a cut-off piece in the brush comes apart and goes in too. Let go and the ones in the air fall.
 - Each body part is its own mesh on its bone (BoneAttachment3D, no skinning), so a hit re-meshes only that part, on a
