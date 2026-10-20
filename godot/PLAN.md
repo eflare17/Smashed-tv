@@ -44,6 +44,25 @@ folder is the Godot 4.4.1 version, built alongside it, milestone by milestone, e
 - **What comes across:** everything (decided for the owner; they can trim it).
 - **Lighting:** dynamic, from the day and night cycle (1.4).
 
+## Decided with the owner (20 Oct): PC only, voxel destruction
+
+- **PC only** (Windows desktop builds; the owner plays on an RTX 4090). The browser build and phones/tablets are no
+  longer targets: this replaces 17 Oct's "really good phone and tablet support". A web build may be kept for quick
+  sharing for a while, but nothing is designed around it. Keyboard/mouse and gamepads stay.
+- **What it opens up:** Godot's desktop renderer (Forward+: proper lighting, shadows, effects) instead of
+  Compatibility; threads (WorkerThreadPool) for background work; faster code for hot paths (C# or a GDExtension, or
+  the Voxel Tools module) where GDScript is too slow.
+- **The look the owner wants (Paint the Town Red, a bit more detailed):** block characters with cubes about half
+  the size of Paint the Town Red's (about two sprite pixels a cube, like `scripts/voxel`'s half-detail blocks), and
+  **shooting makes a hole exactly where it hits**: the shot is traced into the part's voxel grid, the cubes there are
+  removed (flesh colours inside, bits flying out), and only that body part is rebuilt (at most a few a frame, split
+  big parts into chunks, in the background). Also wanted: something like the owner's "mechanic mechanical" style
+  (ask them for it before matching it).
+- **Not started (the owner, 20 Oct: "don't make it yet").** First step when they say go: a one-arena PC test
+  (grunts at the new block size, holes where shots land, an on-screen frame-rate counter), built as a Windows
+  download, played by the owner on their PC before anything is rolled out. Online co-op will need a desktop
+  connection (ENet, already started in `scripts/net/`, or Steam later) instead of PeerJS.
+
 ## What the HTML game has (the inventory)
 
 **Places.** The lounge (wood floor and rug: the table and two chairs, a bong, cards; the gym: bench press with a
