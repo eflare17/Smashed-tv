@@ -23,23 +23,37 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   and shotgun (right click, 9 pellets).
 - **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
   that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
-  MultiMesh of up to 8000 cubes in one draw call, bouncing and settling, gone after 4-7 s); inside is flesh, bone
+  MultiMesh of up to 8000 cubes in one draw call, bouncing; once at rest they stay, in a second MultiMesh of up to
+  150,000 that only changes when cubes are taken, so a covered floor costs nothing a frame); inside is flesh, bone
   down the limbs and a skull round the head. A limb hit 1-3 times comes off (with what hangs from it) without killing (the
-  owner, 20 Oct): one leg off and they limp, both and they crawl on their arms; the chest and hips take health, ten
+  owner, 20 Oct): one leg off and they limp, both and they worm-crawl (hump up, stretch out, wiggle, moving in pulses); the chest and hips take health, ten
   times slower than at first (a grunt survives 30 chest shots); the head kills once a quarter of the brain (pink cubes
   inside the skull) is knocked out (a grunt took 39 blaster shots spread over his face). F6: can't die at all. Every hit staggers them (no pushing forward
   for about a third of a second, a shove back along the shot by how many cubes it took, the chest and head thrown
   back); after a stagger they push through for 0.6 s (hits only nudge), so held fire slows them but can't pin them. Walking: the step is scaled to each kind's leg length so the feet
   keep up with the ground (they skated before), arms swing against the legs. The dead topple and lie 12 s.
+- **Sword** (Q, the owner 20 Oct; `voxel_sword.gd`): a click slashes the way the mouse was moving (still mouse: back
+  and forth), right click chops down (top-down: a low sweep at the legs). The slash is the plane through your eye along
+  where you look and the swing; every cube within a cube of it, inside 2.6 m and the 160-degree sweep, is cut out
+  (`VoxelBody.slice`), then whatever is no longer joined to its part's joint comes off as one rigid body with real
+  meshes and boxes: an arm, half a forearm, the legs at the knee (then they crawl), the top of the head, the head
+  (kills). A joint inside the cut keeps the side toward its parent, so a neck cut takes the whole head. A slash
+  through the body takes a third of its health; cut through the middle, the top half comes off. A hit freezes the
+  game for 70 ms (hit-stop). A cut costs 6-15 ms here (worker threads mesh the cut-off ends).
+- **Vacuum gun** (E, hold click): cubes lying (or flying) in a 25-degree cone up to 7 m in front of the nozzle lift
+  off and fly in, counted as resources by colour (blocks, meat, bone, brain; the HUD's last line); cut-off pieces in
+  front of it come apart and go in too. Let go and the ones in the air fall back.
 - Each body part is its own mesh on its bone (BoneAttachment3D, no skinning), so a hit re-meshes only that part, on a
   worker thread (WorkerThreadPool, 12 at a time); fresh enemies share ready-made meshes until they're shot.
 - V: top-down (Juicy Jared in blocks in the middle, aim with the mouse); first person otherwise. F1 shadows, F3 +10
-  enemies, F4 freeze, F5 a wave of 40. Top left: fps, ms a frame, the arena's own code time, draw calls,
+  enemies, F4 freeze, F5 a wave of 40. Clicking in top-down no longer grabs the mouse (the aim stuck to the middle). Top left: fps, ms a frame, the arena's own code time, draw calls,
   triangles, cubes flying, meshing jobs.
 - Measured here (no GPU in the cloud, so only the CPU side counts): the arena's own code is about 1-3 ms a frame with
   20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
   hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
-- Tests: `test/voxel/logic_test.tscn` checks the tracing and holes (80/80); the arena's own self-test:
+- Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts and vacuum (98/98); `-- --swordtest=dir`
+  slashes a standing grunt (an arm, the neck, the knees) then vacuums, saving frames; `-- --walkcheck=dir --legless`
+  shows the worm crawl. The arena's own self-test:
   `godot --path godot res://scripts/voxel/arena/voxel_arena.tscn -- --auto --secs=30 --stats` (or the built exe with
   `-- --auto --secs=30 --shot=out.png`). Screenshots: `voxel_shots/arena_fp1.png`, `arena_fp2.png`, `arena_td2.png`
   (software-rendered, so the fps there means nothing).

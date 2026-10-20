@@ -55,6 +55,14 @@ var _frames := PackedFloat32Array()
 var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
 var _prof := {}                 # section -> microseconds this second (--stats)
+var sword: VoxelSword
+var sword_out := false          # Q: the sword in hand instead of the guns
+var vacuum_out := false         # E: the vacuum gun (hold click: sucks up the cubes lying about)
+var _vac_view: Node3D
+var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
+var _lmb_was := false
+var _rmb_was := false
+var _flip := 1.0                # still mouse: slashes go back and forth
 
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -82,9 +90,16 @@ func _ready() -> void:
 	_tracers.material_override = tm
 	_tracers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tracers)
+	sword = VoxelSword.new()
+	add_child(sword)
+	sword.setup(self, cam)
+	_vac_view = _vacuum_model()
+	cam.add_child(_vac_view)
 	_warm_up()
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
+	elif _opts.has("swordtest"):
+		_swordtest_setup()
 	elif _opts.has("enemies"):
 		wave = 1
 		spawn(int(_opts.enemies))
@@ -225,7 +240,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "WASD move   mouse look   left click blaster   right click shotgun   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "WASD move   mouse look   left click blaster   right click shotgun   Q sword (click: slash the way you move the mouse, right click: chop / low sweep)   E vacuum (hold click: suck up cubes)   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -259,7 +274,7 @@ func spawn(n: int) -> void:
 		b.setup(key, _cube_m(key), chunk, _mat)
 		var a := randf() * TAU
 		b.position = Vector3(cos(a), 0.0, sin(a)) * (ARENA - 2.0) * randf_range(0.7, 1.0)
-		b.speed = randf_range(1.8, 3.2) * (1.4 if key == "swarmer" else (0.75 if key == "brute" else 1.0))
+		b.speed = randf_range(1.1, 1.9) * (1.4 if key == "swarmer" else (0.75 if key == "brute" else 1.0))
 		b.died.connect(_on_died)
 		bodies.append(b)
 
@@ -282,10 +297,12 @@ func _respawn_all() -> void:
 		b.queue_free()
 	bodies.clear()
 	_jobs.clear()
+	var got := debris.got
 	debris.queue_free()
 	debris = VoxelDebris.new()
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
+	debris.got = got
 	spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
@@ -294,10 +311,20 @@ func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		look_yaw -= e.relative.x * 0.0025
 		look_pitch = clampf(look_pitch - e.relative.y * 0.0025, -1.4, 1.4)
-	elif e is InputEventMouseButton and e.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_mouse_v += e.relative
+	elif e is InputEventMouseMotion:
+		_mouse_v += e.relative
+	elif e is InputEventMouseButton and e.pressed and not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		# first person grabs the mouse on a click; top-down keeps it free (aiming follows the pointer)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
+			KEY_Q:
+				sword_out = not sword_out
+				vacuum_out = false
+			KEY_E:
+				vacuum_out = not vacuum_out
+				sword_out = false
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_V:
@@ -319,6 +346,67 @@ func _unhandled_input(e: InputEvent) -> void:
 				VoxelBody.immortal = not VoxelBody.immortal
 
 # ---------------------------------------------------------------- each frame
+
+# --swordtest=dir: a grunt standing in front, frozen, slashed through an arm, at the neck, then at the knees,
+# a frame saved round each cut (sword_<cut>_<k>.png), what each cut did printed, then quit
+const SWORD_CUTS := [[1.15, Vector2(0.3, 1.0), -0.5], [1.45, Vector2(-1, 0), 0.0], [0.25, Vector2(1, 0), 0.0]]   # [height, slash, across]
+var _st_i := 0
+var _st_t := 0.0
+func _swordtest_setup() -> void:
+	var b := VoxelBody.new()
+	add_child(b)
+	b.setup("grunt", _cube_m("grunt"), chunk, _mat)
+	b.position = Vector3(0, 0, 4.5)
+	b.yaw = 0.0
+	b.died.connect(_on_died)
+	bodies.append(b)
+	frozen = true
+	VoxelBody.immortal = _opts.has("immortal")
+	sword_out = true
+	player.position = Vector3(0.25, 0, 6.0)
+	look_yaw = 0.0
+
+func _swordtest(dt: float) -> void:
+	_st_t += dt
+	if _st_i >= SWORD_CUTS.size():
+		# then the vacuum, looking down at the mess, for two seconds
+		sword_out = false
+		vacuum_out = true
+		look_pitch = -0.75
+		if _st_t > 1.0:
+			_suck(dt)
+		for k in 3:
+			var tag := "vf%d" % k
+			if _st_t >= [0.95, 1.6, 3.0][k] and not _opts.has(tag):
+				_opts[tag] = "1"
+				_shot_png("%s/vacuum_%d.png" % [String(_opts.swordtest), k])
+		if _st_t > 3.1:
+			print("SWORD vacuum: got %s, lying %d, pieces %d" % [str(debris.got), debris.lying(), sword.pieces()])
+			_finish()
+		return
+	var c: Array = SWORD_CUTS[_st_i]
+	var b: VoxelBody = bodies[0]
+	var target := b.global_position + Vector3(float(c[2]), float(c[0]), 0)
+	var to := target - cam.global_position
+	look_yaw = atan2(-to.x, -to.z)
+	look_pitch = atan2(to.y, Vector2(to.x, to.z).length())
+	if _st_t > 1.0 and sword.ready_to_swing() and not _opts.has("sc%d" % _st_i):
+		_opts["sc%d" % _st_i] = "1"
+		slash(c[1])
+	for k in 6:
+		var at: float = 1.0 + [0.02, 0.06, 0.15, 0.3, 0.6, 1.2][k]
+		var tag := "sf%d_%d" % [_st_i, k]
+		if _st_t >= at and not _opts.has(tag):
+			_opts[tag] = "1"
+			_shot_png("%s/sword_%d_%d.png" % [String(_opts.swordtest), _st_i, k])
+	if _st_t > 2.4:
+		print("SWORD cut %d at %.2f m: %s; legs lost %d, alive %s" % [_st_i, c[0], str(sword.last), b.legs_lost(), str(b.alive)])
+		_st_i += 1
+		_st_t = 0.8
+
+func _shot_png(path: String) -> void:
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path)
 
 # --walkcheck=dir: the four kinds side by side, walking on the spot side-on to the camera, a frame saved every
 # tenth of a second (walk_0.png ...), then quit
@@ -435,6 +523,8 @@ func _process(dt: float) -> void:
 		_camera(dt)
 		_walkcheck(dt)
 		return
+	if _opts.has("swordtest"):
+		_swordtest(dt)
 	var t0 := Time.get_ticks_usec()
 	_camera(dt)
 	var t1 := Time.get_ticks_usec()
@@ -469,6 +559,10 @@ func _process(dt: float) -> void:
 	_prof["jobs"] = _prof.get("jobs", 0) + t5 - t4
 	_code_ms = lerpf(_code_ms, (t5 - t0) / 1000.0, 0.1)
 	_draw_tracers(dt)
+	_mouse_v *= exp(-dt * 14.0)
+	sword.view.visible = sword_out and not top_down
+	_vac_view.visible = vacuum_out and not top_down
+	sword.step(dt)
 	_flash_t = maxf(0.0, _flash_t - dt)
 	_flash.light_energy = 4.0 * _flash_t / 0.05 if _flash_t > 0.0 else 0.0
 	_hud_t += dt
@@ -488,6 +582,7 @@ func _camera(dt: float) -> void:
 			avatar.yaw = atan2(to.x, to.z)
 		avatar.speed = Vector2(player.velocity.x, player.velocity.z).length()
 		avatar.odo += avatar.speed * dt
+		avatar.attack = maxf(0.0, avatar.attack - dt * 2.5)    # a sword swing's arms, back down
 		avatar.animate(dt, avatar.speed > 0.2)
 		cam.global_position = pp + Vector3(0, 13.0, 6.0)
 		cam.look_at(pp + Vector3(0, 0.8, 0), Vector3.UP)
@@ -517,6 +612,7 @@ func _aim() -> Array:
 	return [cam.global_position, -cam.global_transform.basis.z]
 
 func _shoot(dt: float) -> void:
+	debris.target = Vector3.INF
 	_fire_cd = maxf(0.0, _fire_cd - dt)
 	_sg_cd = maxf(0.0, _sg_cd - dt)
 	if _opts.has("auto"):
@@ -527,12 +623,112 @@ func _shoot(dt: float) -> void:
 	var a := _aim()
 	if a.is_empty():
 		return
+	if sword_out:
+		_sword_input()
+		return
+	if vacuum_out:
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			_suck(dt)
+		return
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _fire_cd <= 0.0:
 		_fire_cd = 1.0 / 10.0
 		fire(a[0], a[1], 1, 0.6, 1.9)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and _sg_cd <= 0.0:
 		_sg_cd = 0.9
 		fire(a[0], a[1], 9, 4.5, 1.4)
+
+# the sword: a click slashes the way the mouse was moving (still: back and forth); right click chops down (first
+# person) or sweeps low at the legs (top-down)
+func _sword_input() -> void:
+	var lmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	var l_now := lmb and not _lmb_was
+	var r_now := rmb and not _rmb_was
+	_lmb_was = lmb
+	_rmb_was = rmb
+	if not (l_now or r_now) or not sword.ready_to_swing():
+		return
+	var sv := Vector2(_flip, 0.0)
+	if r_now:
+		sv = Vector2(0.0, 1.0)
+	elif _mouse_v.length() > 30.0:
+		sv = _mouse_v.normalized()
+	else:
+		_flip = -_flip
+	slash(sv, r_now)
+
+# the vacuum: the cone in front of the nozzle pulls in the cubes lying about (and pieces, pulled apart)
+func _suck(_dt: float) -> void:
+	var nozzle: Vector3
+	var dir: Vector3
+	if top_down:
+		var pp := player.global_position + Vector3(0, 1.0, 0)
+		var mp := get_viewport().get_mouse_position()
+		var o := cam.project_ray_origin(mp)
+		var d := cam.project_ray_normal(mp)
+		var at := o + d * (-o.y / d.y) if d.y < -0.0001 else pp + Vector3(0, -1, -1)
+		dir = (at - pp).normalized()
+		nozzle = pp + dir * 0.4
+	else:
+		var bs := cam.global_transform.basis
+		nozzle = cam.global_position + bs * Vector3(0.18, -0.25, -0.65)
+		dir = -bs.z
+	debris.target = nozzle
+	debris.aim = dir
+	sword.vacuum(nozzle, dir)
+	_kick = maxf(_kick, 0.15 + randf() * 0.1)
+
+func _vacuum_model() -> Node3D:
+	var root := Node3D.new()
+	var body := StandardMaterial3D.new()
+	body.albedo_color = Color(0.2, 0.45, 0.3)
+	body.metallic = 0.4
+	body.roughness = 0.5
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.08, 0.08, 0.1)
+	dark.roughness = 0.6
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.4, 1.0, 0.6)
+	glow.emission_enabled = true
+	glow.emission = Color(0.3, 1.0, 0.5)
+	glow.emission_energy_multiplier = 1.5
+	for b in [[Vector3(0.12, 0.13, 0.42), Vector3(0, 0, 0), body], [Vector3(0.2, 0.2, 0.08), Vector3(0, 0, -0.25), dark],
+			[Vector3(0.14, 0.14, 0.02), Vector3(0, 0, -0.295), glow], [Vector3(0.09, 0.2, 0.16), Vector3(0, 0.15, 0.06), body],
+			[Vector3(0.05, 0.14, 0.06), Vector3(0, -0.12, 0.1), dark], [Vector3(0.06, 0.06, 0.2), Vector3(0, 0.15, 0.06), glow]]:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = b[0]
+		mi.mesh = bm
+		mi.position = b[1]
+		mi.material_override = b[2]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	root.position = Vector3(0.24, -0.23, -0.5)
+	root.rotation = Vector3(0.05, 0.08, 0)
+	root.scale = Vector3.ONE * 0.5
+	root.visible = false
+	return root
+
+## One slash, sv the way it goes on screen (x right, y down); low: top-down's leg sweep.
+func slash(sv: Vector2, low: bool = false) -> void:
+	if top_down:
+		var pp := player.global_position
+		var at := _mouse_floor()
+		var f := Vector3(-sin(look_yaw), 0, -cos(look_yaw))
+		if at != Vector3.INF:
+			f = Vector3(at.x - pp.x, 0, at.z - pp.z).normalized()
+		var eye := pp + Vector3(0, 0.45 if low else 1.15, 0)
+		var right := f.cross(Vector3.UP).normalized()
+		var tilt := 0.0 if low else 0.3 * signf(sv.x if absf(sv.x) > 0.01 else 1.0)
+		var side := (right * signf(sv.x if absf(sv.x) > 0.01 else 1.0) * cos(tilt) + Vector3.DOWN * sin(absf(tilt))).normalized()
+		avatar.attack = 0.5
+		sword.swing(eye, f, side, eye, Vector3(1, 0, 0))
+		return
+	var bs := cam.global_transform.basis
+	var side_cam := Vector3(sv.x, -sv.y, 0.0).normalized()
+	var side := (bs * side_cam).normalized()
+	var apex := cam.global_position + bs * Vector3(0.05, -0.28, -0.1)
+	sword.swing(cam.global_position, -bs.z, side, apex, side_cam)
 
 ## One trigger pull: pellets rays spread degrees apart, each knocking a hole r cubes round where it lands.
 func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float) -> void:
@@ -626,13 +822,15 @@ func _hud_text() -> void:
 			alive += 1
 		tris += b.triangles()
 	var fps := Engine.get_frames_per_second()
-	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s" % [
+	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s\n%s   cubes lying %s   pieces %d   sucked up: %d blocks  %d meat  %d bone  %d brain" % [
 		fps, 1000.0 / maxf(1.0, fps), _code_ms + debris.last_ms,
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		_k(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)), _k(tris),
 		wave, alive, bodies.size() - alive, kills, knocked, debris.count(), _jobs.size(), _jobs_done,
 		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
-		RenderingServer.get_current_rendering_method()]
+		RenderingServer.get_current_rendering_method(),
+		"SWORD" if sword_out else ("VACUUM" if vacuum_out else "GUNS"), _k(debris.lying()), sword.pieces(),
+		debris.got.blocks, debris.got.meat, debris.got.bone, debris.got.brain]
 
 static func _k(n: int) -> String:
 	return "%.1fk" % (n / 1000.0) if n >= 1000 else str(n)
@@ -666,7 +864,14 @@ func _burst_save(k: int) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/burst_%d.png" % [String(_opts.burst), k])
 
+# closing the window: no meshing job left running on a worker thread
+func _exit_tree() -> void:
+	for j in _jobs:
+		WorkerThreadPool.wait_for_task_completion(j.id)
+	_jobs.clear()
+
 func _finish() -> void:
+	sword.finish_jobs()
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)
 	_jobs.clear()

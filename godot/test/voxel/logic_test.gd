@@ -21,6 +21,8 @@ func _ready() -> void:
 	_goth()
 	_poses()
 	_holes()
+	_sword()
+	_vacuum()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
 	get_tree().quit(1 if failed > 0 else 0)
@@ -121,6 +123,62 @@ func _goth() -> void:
 	check(VoxelModel.model_for_sheet("goth") == "goth", "the goth sheet shows her blocks")
 
 # the PC arena's shooting: a ray into a grunt finds a cube exactly, a hit knocks a round hole there
+func _grunt() -> VoxelBody:
+	var b := VoxelBody.new()
+	add_child(b)
+	b.setup("grunt", 0.023, 1, StandardMaterial3D.new())
+	b.animate(0.0, false)
+	return b
+
+# a sword cut: a level sweep at the height h (metres) from 2 m in front
+func _cut(b: VoxelBody, h: float) -> Dictionary:
+	return b.slice(Vector3(0, h, 2.0), Vector3(0, -1, 0), Vector3(0, 0, -1), 2.6, 0.17, b.vm * 0.9)
+
+func _sword() -> void:
+	var b := _grunt()
+	var r := _cut(b, 0.27)
+	check(int(r.cut) > 50, "a sword cut through the shins cuts cubes out (%d)" % r.cut)
+	check(b.parts.foot_l.gone and b.parts.foot_r.gone, "the feet come off with the shins below the cut")
+	check(b.legs_lost() == 2 and b.alive, "legs cut off: he crawls on, alive")
+	check((r.pieces as Array).size() >= 4, "the shins' lower halves and the feet are pieces (%d)" % (r.pieces as Array).size())
+	check(not b.parts.shin_l.gone and int(b.parts.shin_l.left) > 0, "the shins' tops stay on")
+	b.queue_free()
+	var b2 := _grunt()
+	var r2 := _cut(b2, 63.0 * 0.023)
+	check(b2.parts.head.gone and bool(r2.head_off), "cut at the neck, the head comes off whole")
+	check(not b2.alive and bool(r2.killed), "and that kills him")
+	check(not b2.parts.arm_l.gone, "his arms stay on")
+	b2.queue_free()
+	var b3 := _grunt()
+	var r3 := _cut(b3, 1.1)
+	check(b3.parts.head.gone and b3.parts.arm_l.gone and b3.parts.arm_r.gone, "cut through the middle, the top half comes off (head, arms)")
+	check(int(b3.parts.torso.left) > 0 and not b3.alive, "the bottom half stays, dead")
+	b3.queue_free()
+
+func _vacuum() -> void:
+	var d := VoxelDebris.new()
+	add_child(d)
+	d.set_process(false)
+	d.setup(0.023)
+	var bits := []
+	for i in 200:
+		bits.append({"pos": Vector3(randf_range(-0.2, 0.2), 1.0, randf_range(-0.2, 0.2)), "col": VoxelBody.BONE if i < 50 else Color8(20, 140, 40)})
+	d.burst(bits, Vector3(0, 0, 1), 1.0)
+	for i in 600:
+		d._process(1.0 / 60.0)
+	check(d.lying() == 200 and d.count() == 0, "knocked-out cubes come to rest and stay (%d lying, %d flying)" % [d.lying(), d.count()])
+	d.target = Vector3(0, 1.0, -2.5)
+	d.aim = Vector3(0, -0.4, 1).normalized()
+	for i in 240:
+		d._process(1.0 / 60.0)
+	var got: int = d.got.blocks + d.got.bone
+	check(got > 150 and d.got.bone > 30, "the vacuum sucks them up as resources (%d: %d bone, %d blocks)" % [got, d.got.bone, d.got.blocks])
+	d.target = Vector3.INF
+	for i in 600:
+		d._process(1.0 / 60.0)
+	check(d.lying() + got == 200, "let go, the ones in the air fall back (%d lying)" % d.lying())
+	d.queue_free()
+
 func _holes() -> void:
 	var mat := StandardMaterial3D.new()
 	var b := VoxelBody.new()

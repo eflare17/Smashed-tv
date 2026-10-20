@@ -263,8 +263,9 @@ func triangles() -> int:
 func legs_lost() -> int:
 	var n := 0
 	for side in ["_l", "_r"]:
-		for leg in ["thigh", "shin"]:
-			if parts.has(leg + side) and parts[leg + side].gone:
+		for leg in ["thigh", "shin", "foot"]:
+			# gone, or cut through (the sword took the rest of the leg below)
+			if parts.has(leg + side) and (parts[leg + side].gone or (leg != "foot" and parts[leg + side].get("severed", false))):
 				n += 1
 				break
 	return n
@@ -547,4 +548,283 @@ func _blow(n: String) -> Array:
 		p.gone = true
 		p.dirty = false
 		(p.mesh as MeshInstance3D).visible = false
+	return out
+
+# ---------------------------------------------------------------- the sword
+
+## A sword cut (the owner, 20 Oct): the blade sweeps the plane through eye with normal n. Cubes within half_t metres
+## of it, no further than reach from eye and inside the swing's arc (cos_arc round fwd), are cut out; then whatever
+## the cut left no longer joined to its part's joint comes off as a piece, with every part hanging from it.
+## Returns {bits: [{pos, col}] (the cut-out cubes, for the flying bits), cut: int, parts: [cut part names],
+## pieces: [{part, grid, origin, xform}] (the part's cells that came off, its mesh origin and its mesh's world
+## transform now), killed: bool, head_off: bool}.
+func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float, half_t: float) -> Dictionary:
+	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
+	var by_bone := {}
+	for nm in parts:
+		by_bone[int(parts[nm].bone)] = nm
+	var names := parts.keys()
+	names.sort_custom(func(a, b): return int(parts[a].bone) < int(parts[b].bone))
+	var root: String = names[0]
+	var stat := {}            # part -> PackedByteArray: 0 empty, 1 kept, 2 cut, 3 came off (this cut)
+	var whole := {}           # part -> true: off whole (its joint went with its parent's piece)
+	var body_cut := 0
+	var brain_hit := 0
+	for nm in names:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var b: int = p.bone
+		var g: Dictionary = p.grid
+		var s: Vector3i = g.size
+		var cells: PackedInt32Array = g.cells
+		var bind := Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+		var att := skeleton.global_transform * skeleton.get_bone_global_pose(b)
+		var m := att * bind
+		var o := Vector3(p.origin)
+		# off whole if the nearest part up the chain lost the cubes this one hangs from
+		var pb := model.bone_parent[b]
+		while pb >= 0 and not by_bone.has(pb):
+			pb = model.bone_parent[pb]
+		if pb >= 0:
+			var par: String = by_bone[pb]
+			if whole.has(par):
+				whole[nm] = true
+			elif stat.has(par):
+				var pp: Dictionary = parts[par]
+				var jt: Vector3 = model.bone_pivot[b] * model.voxel_m / vm - Vector3(pp.origin) - Vector3(0.5, 0.5, 0.5)
+				var near := _near_cells(stat[par], pp.grid.size, jt, 1.5)
+				var kept := false
+				for i in near:
+					if stat[par][i] == 1:
+						kept = true
+						break
+				if not near.is_empty() and not kept:
+					whole[nm] = true
+		if whole.has(nm):
+			var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
+			var bb := mesh.get_aabb() if mesh else AABB()
+			res.pieces.append({"part": nm, "grid": {"size": s, "cells": cells}, "origin": mesh_origin(nm), "xform": att,
+				"mesh": mesh, "box_at": bb.get_center(), "box": bb.size, "count": int(p.left)})
+			if nm == "head":
+				res.head_off = true
+			p.grid = {"size": s, "cells": PackedInt32Array()}
+			(p.grid.cells as PackedInt32Array).resize(cells.size())
+			p.left = 0
+			p.gone = true
+			p.dirty = false
+			(p.mesh as MeshInstance3D).visible = false
+			res.parts.append(nm)
+			continue
+		# the cut: distance from the plane is linear in the cell, so step it
+		var base := m * ((o + Vector3(0.5, 0.5, 0.5)) * vm)
+		var ex := m.basis.x * vm
+		var ey := m.basis.y * vm
+		var ez := m.basis.z * vm
+		var d0 := n.dot(base - eye)
+		var dx := n.dot(ex)
+		var dy := n.dot(ey)
+		var dz := n.dot(ez)
+		# quick out: the grid's corners all one side of the blade
+		var lo := INF
+		var hi := -INF
+		for c in 8:
+			var dc := d0 + dx * float((c & 1) * (s.x - 1)) + dy * float(((c >> 1) & 1) * (s.y - 1)) + dz * float(((c >> 2) & 1) * (s.z - 1))
+			lo = minf(lo, dc)
+			hi = maxf(hi, dc)
+		if lo > half_t or hi < -half_t:
+			continue
+		# st while cutting: 2 cut, 4 still joined (reached from the joint), 0 anything else
+		var st := PackedByteArray()
+		st.resize(cells.size())
+		var ncut := 0
+		for z in s.z:
+			for y in s.y:
+				# only the stretch of the row the blade passes through
+				var dyz := d0 + dy * y + dz * z
+				var x0 := 0
+				var x1 := s.x - 1
+				if absf(dx) > 0.000001:
+					var xa := (-half_t - dyz) / dx
+					var xb := (half_t - dyz) / dx
+					x0 = maxi(0, ceili(minf(xa, xb)))
+					x1 = mini(s.x - 1, floori(maxf(xa, xb)))
+				elif absf(dyz) > half_t:
+					continue
+				var row := s.x * (y + s.y * z)
+				for x in range(x0, x1 + 1):
+					if cells[row + x] != 0:
+						var q := base + ex * x + ey * y + ez * z - eye
+						var ql := q.length()
+						if ql <= reach and q.dot(fwd) >= ql * cos_arc:
+							st[row + x] = 2
+							ncut += 1
+		if ncut == 0:
+			continue
+		p.grid = {"size": s, "cells": cells.duplicate()}
+		cells = p.grid.cells
+		# what stays is what's still joined to the joint (the root part's: the hips, where the legs hang); a joint
+		# in the cut itself keeps the side toward its parent (the head cut at the neck comes off whole)
+		var jb := b if nm != root else 0
+		var sk := skeleton.global_transform
+		var jw: Vector3 = sk * skeleton.get_bone_global_pose(jb).origin
+		var jp: Vector3 = model.bone_pivot[jb] * model.voxel_m / vm - o - Vector3(0.5, 0.5, 0.5)
+		var keep_side := 0.0
+		if absf(n.dot(jw - eye)) <= half_t + vm:
+			var ref := jw + Vector3.DOWN
+			if nm != root and model.bone_parent[b] >= 0:
+				ref = sk * skeleton.get_bone_global_pose(model.bone_parent[b]).origin
+			keep_side = signf(n.dot(ref - eye))
+		var seed := _near_filled(cells, s, jp, 1.5 if keep_side == 0.0 else 4.0)
+		var q2 := PackedInt32Array()
+		for k in seed:
+			if st[k] != 0:
+				continue
+			if keep_side != 0.0 and signf(d0 + dx * (k % s.x) + dy * ((k / s.x) % s.y) + dz * (k / (s.x * s.y))) != keep_side:
+				continue
+			st[k] = 4
+			q2.append(k)
+		var head_i := 0
+		var sx := s.x
+		var sxy := s.x * s.y
+		var nall := cells.size()
+		while head_i < q2.size():
+			var k: int = q2[head_i]
+			head_i += 1
+			var kx := k % sx
+			var k2 := k - 1
+			if kx > 0 and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+			k2 = k + 1
+			if kx < sx - 1 and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+			var ky := (k / sx) % s.y
+			k2 = k - sx
+			if ky > 0 and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+			k2 = k + sx
+			if ky < s.y - 1 and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+			k2 = k - sxy
+			if k2 >= 0 and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+			k2 = k + sxy
+			if k2 < nall and st[k2] == 0 and cells[k2] != 0:
+				st[k2] = 4
+				q2.append(k2)
+		# st after: 1 kept, 2 cut, 3 came off, 0 empty
+		var off_cells := PackedInt32Array()
+		off_cells.resize(cells.size())
+		var noff := 0
+		var nkept := q2.size()
+		var olo := Vector3i(s)
+		var ohi := Vector3i(-1, -1, -1)
+		var i := 0
+		for z in s.z:
+			for y in s.y:
+				for x in s.x:
+					var v := cells[i]
+					if v != 0:
+						var sv := st[i]
+						if sv == 4:
+							st[i] = 1
+						elif sv == 2:
+							if (i & 1) == 0:
+								var k3 := v - 1
+								res.bits.append({"pos": base + ex * x + ey * y + ez * z, "col": Color8((k3 >> 16) & 255, (k3 >> 8) & 255, k3 & 255)})
+							if _brain_ints.has(v):
+								brain_hit += 1
+							cells[i] = 0
+						else:
+							st[i] = 3
+							if _brain_ints.has(v):
+								brain_hit += 1
+							off_cells[i] = v
+							cells[i] = 0
+							noff += 1
+							olo = Vector3i(mini(olo.x, x), mini(olo.y, y), mini(olo.z, z))
+							ohi = Vector3i(maxi(ohi.x, x), maxi(ohi.y, y), maxi(ohi.z, z))
+					i += 1
+		stat[nm] = st
+		res.cut += ncut
+		res.parts.append(nm)
+		if nm == "torso":
+			body_cut += ncut
+		if noff > 0:
+			if noff * 4 > noff + nkept:
+				p["severed"] = true     # a real chunk of it, not a sliver off the skin
+			var mo := mesh_origin(nm)
+			res.pieces.append({"part": nm, "grid": {"size": s, "cells": off_cells}, "origin": mo, "xform": att,
+				"box_at": ((Vector3(olo) + Vector3(ohi) + Vector3.ONE) * 0.5 + mo) * vm, "box": (Vector3(ohi - olo) + Vector3.ONE) * vm, "count": noff})
+		p.left = nkept
+		if nkept == 0:
+			p.gone = true
+			(p.mesh as MeshInstance3D).visible = false
+			if nm == "head":
+				res.head_off = true
+		else:
+			p.dirty = true
+	brain_lost += brain_hit
+	if alive and not res.parts.is_empty():
+		# a slash through the body takes a third of its health; the head off (or a quarter of the brain) kills
+		if body_cut > 6:
+			hp -= 34.0
+		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
+		if (hp <= 0.0 or brain_dead or res.head_off) and not immortal:
+			res.killed = true
+			alive = false
+			died.emit(self)
+	return res
+
+# the filled cells nearest pt (in cells), and any within slack cells further than the nearest
+static func _near_filled(cells: PackedInt32Array, s: Vector3i, pt: Vector3, slack: float) -> PackedInt32Array:
+	var st := PackedByteArray()
+	st.resize(cells.size())
+	var x0 := clampi(floori(pt.x) - 8, 0, s.x - 1)
+	var x1 := clampi(ceili(pt.x) + 8, 0, s.x - 1)
+	for z in range(clampi(floori(pt.z) - 8, 0, s.z - 1), clampi(ceili(pt.z) + 8, 0, s.z - 1) + 1):
+		for y in range(clampi(floori(pt.y) - 8, 0, s.y - 1), clampi(ceili(pt.y) + 8, 0, s.y - 1) + 1):
+			var row := s.x * (y + s.y * z)
+			for x in range(x0, x1 + 1):
+				if cells[row + x] != 0:
+					st[row + x] = 1
+	var out := _near_cells(st, s, pt, slack)
+	if out.is_empty():
+		for i in cells.size():
+			st[i] = 1 if cells[i] != 0 else 0
+		out = _near_cells(st, s, pt, slack)
+	return out
+
+# the filled cells (status > 0) nearest pt (in cells), and any within slack cells further than the nearest
+static func _near_cells(st: PackedByteArray, s: Vector3i, pt: Vector3, slack: float) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	for r in [6, 1000]:
+		var x0 := clampi(floori(pt.x) - r, 0, s.x - 1)
+		var x1 := clampi(ceili(pt.x) + r, 0, s.x - 1)
+		var y0 := clampi(floori(pt.y) - r, 0, s.y - 1)
+		var y1 := clampi(ceili(pt.y) + r, 0, s.y - 1)
+		var z0 := clampi(floori(pt.z) - r, 0, s.z - 1)
+		var z1 := clampi(ceili(pt.z) + r, 0, s.z - 1)
+		var best := INF
+		var found := []
+		for z in range(z0, z1 + 1):
+			for y in range(y0, y1 + 1):
+				for x in range(x0, x1 + 1):
+					var i := x + s.x * (y + s.y * z)
+					if st[i] == 0:
+						continue
+					var d := Vector3(x, y, z).distance_to(pt)
+					if d <= best + slack:
+						found.append([d, i])
+						best = minf(best, d)
+		for f in found:
+			if f[0] <= best + slack:
+				out.append(f[1])
+		if not out.is_empty():
+			return out
 	return out
