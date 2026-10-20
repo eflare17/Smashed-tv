@@ -25,6 +25,7 @@ func _ready() -> void:
 	_vacuum()
 	_loadout()
 	_carve()
+	_fixes()
 	_melee_checks()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
@@ -227,6 +228,53 @@ func _carve() -> void:
 		b2.react_step(1.0 / 60.0)
 	check(not b2.floored(), "then back up")
 	b2.queue_free()
+
+# the review's finds, kept fixed
+func _fixes() -> void:
+	var b := _grunt()
+	# a blade just nicking the front of the knee: nothing comes off
+	var kb := b.model.bone("shin_l")
+	var knee: Vector3 = b.skeleton.global_transform * b.skeleton.get_bone_global_pose(kb).origin
+	var eye := Vector3(knee.x, knee.y - b.vm * 0.3, knee.z + 0.6)
+	var r := b.slice(eye, Vector3.UP, Vector3(0, 0, -1), 0.6 - 0.12, -1.0, b.vm * 0.5)
+	check((r.pieces as Array).is_empty() and b.legs_lost() == 0, "a nick at the front of the knee takes nothing off (%d pieces)" % (r.pieces as Array).size())
+	# a shave down the side of each thigh: still two legs
+	for sx in [-1.0, 1.0]:
+		b.slice(Vector3(0.21 * sx, 0.47, 0.06), Vector3.BACK, Vector3(sx, 0, 0), 0.2, -1.0, b.vm * 0.6)
+	check(b.legs_lost() == 0, "a shave off the thighs isn't a lost leg (%d)" % b.legs_lost())
+	b.queue_free()
+	# a chop down the middle: one half comes off, not both kept
+	var b2 := _grunt()
+	var r2 := b2.slice(Vector3(0, 1.65, 1.5), Vector3.RIGHT, Vector3(0, -0.4, -1).normalized(), 2.6, 0.17, b2.vm * 0.9)
+	check(not (r2.pieces as Array).is_empty() and not b2.alive, "a chop down the middle takes a half off (%d pieces)" % (r2.pieces as Array).size())
+	b2.queue_free()
+	# every part starts as one lump of touching cubes
+	var b3 := _grunt()
+	var lumpy := []
+	for n in b3.parts:
+		var g: Dictionary = b3.parts[n].grid
+		if VoxelBody._lumps(g.cells, g.size, Vector3i.ZERO, (g.size as Vector3i) - Vector3i.ONE).size() > 1:
+			lumpy.append(n)
+	check(lumpy.is_empty(), "every part is one lump to start with %s" % str(lumpy))
+	# hit again in the air: it keeps turning over
+	b3.launch(Vector3(0, 5, -2), 6.0)
+	for i in 20:
+		b3.react_step(1.0 / 60.0)
+	var t0 := b3.tumble
+	b3.launch(Vector3(0, 4, -2), 6.0)
+	check(b3.tumble >= t0, "hit again in the air, the tumble carries on (%.2f -> %.2f)" % [t0, b3.tumble])
+	b3.queue_free()
+	# flying cubes bounce off the walls
+	var d := VoxelDebris.new()
+	add_child(d)
+	d.set_process(false)
+	d.setup(0.023)
+	d.bound = 2.0
+	d.burst([{"pos": Vector3(1.9, 1.0, 0), "col": Color8(1, 2, 3)}], Vector3(1, 0, 0), 8.0)
+	for i in 300:
+		d._process(1.0 / 60.0)
+	check(d.lying() == 1 and absf(d._lp[0].x) <= 2.0, "flying cubes stay inside the walls (x %.2f)" % d._lp[0].x)
+	d.queue_free()
 
 # each melee weapon's own checks (VoxelMelee.checks)
 func _melee_checks() -> void:

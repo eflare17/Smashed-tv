@@ -70,6 +70,8 @@ var _sucking := false
 var _guns := {}                 # "blaster" / "shotgun" -> its first-person view (a block gun on the camera)
 var _held := {}                 # mouse button -> true: down since a press the melee weapon out was told of
 var _ignore := {}               # mouse button -> true: down since before the last switch (ignored till let go)
+var _clicked := {}              # mouse button -> true: pressed since the last frame (a click quicker than a frame)
+var _hand_meshes := {}          # top-down: the guns' meshes for Jared's hand, built once
 var _recoil := 0.0              # the gun in hand kicking back (1 just fired)
 var _aiming := false            # blaster right click
 var _aim_k := 0.0               # 0 at the hip .. 1 aimed (the view closes in)
@@ -97,6 +99,7 @@ func _ready() -> void:
 	debris = VoxelDebris.new()
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
+	debris.bound = ARENA - 0.5 - _cube_m("grunt")     # the walls' inner faces: cubes bounce off them
 	_tracers = MeshInstance3D.new()
 	_tracers.mesh = ImmediateMesh.new()
 	var tm := StandardMaterial3D.new()
@@ -336,18 +339,24 @@ func _respawn_all() -> void:
 			n += 1
 		b.queue_free()
 	bodies.clear()
+	for j in _jobs:
+		WorkerThreadPool.wait_for_task_completion(j.id)     # (a task never waited on crashes the game at quit)
 	_jobs.clear()
 	var got := debris.got
 	debris.queue_free()
 	debris = VoxelDebris.new()
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
+	debris.bound = ARENA - 0.5 - _cube_m("grunt")
 	debris.got = got
 	spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(e: InputEvent) -> void:
+	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] \
+			and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
+		_clicked[e.button_index] = true                  # (a click quicker than a frame still counts)
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sens := 0.0025 * cam.fov / 80.0           # slower when aimed in
 		look_yaw -= e.relative.x * sens
@@ -356,6 +365,8 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventMouseMotion:
 		_mouse_v += e.relative
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		if not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			return                                       # the mouse let go (Esc): the wheel does nothing either
 		var up: bool = e.button_index == MOUSE_BUTTON_WHEEL_UP
 		if loadout.id() == "vacuum" and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			vacuum.wheel(up)                          # vacuum: right click held + wheel sizes the brush
@@ -364,8 +375,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2] and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
 		_sword_key(false)
 	elif e is InputEventMouseButton and e.pressed and not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		# first person grabs the mouse on a click; top-down keeps it free (aiming follows the pointer)
+		# first person grabs the mouse on a click (that click does nothing else); top-down keeps it free (aiming
+		# follows the pointer)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_ignore[e.button_index] = true
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
 			KEY_F:
@@ -697,7 +710,7 @@ func _process(dt: float) -> void:
 		var moving := b.alive and not frozen
 		if not b.alive:
 			b.dead_t += dt
-			if b.dead_t > 0.7 and not b.airborne:
+			if b.dead_t > 0.7 and not b.airborne and b.since_air > 0.5 and b.knock.length_squared() <= 0.0001:
 				continue          # lying still
 		b.animate(dt, moving and b.attack <= 0.0)
 	# the dead lie a while, then go
@@ -786,28 +799,37 @@ func _shoot(dt: float) -> void:
 	for btn in _ignore.keys():
 		if not Input.is_mouse_button_pressed(btn):
 			_ignore.erase(btn)
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not top_down:
-		return
-	var a := _aim()
-	if a.is_empty():
-		return
+	var free := Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not top_down    # first person, the mouse let go
 	var id := loadout.id()
-	var lmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _ignore.has(MOUSE_BUTTON_LEFT)
-	var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not _ignore.has(MOUSE_BUTTON_RIGHT)
+	var tapped_l := _clicked.has(MOUSE_BUTTON_LEFT)
+	var tapped_r := _clicked.has(MOUSE_BUTTON_RIGHT)
+	_clicked.clear()
+	var lmb := (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or tapped_l) and not _ignore.has(MOUSE_BUTTON_LEFT)
+	var rmb := (Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or tapped_r) and not _ignore.has(MOUSE_BUTTON_RIGHT)
 	if melee.has(id):
-		# a melee weapon: told of each press, each frame held, each let-go
+		# a melee weapon: told of each press, each frame held, each let-go (let-gos even with the mouse free, so
+		# nothing stays held; no new press then)
 		var w: VoxelMelee = melee[id]
 		for btn in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			var down := lmb if btn == MOUSE_BUTTON_LEFT else rmb
+			var still := Input.is_mouse_button_pressed(btn)    # a tap pressed and let go in one frame: press, then release
 			var was: bool = _held.get(btn, false)
-			if down and not was and loadout.usable():
+			if down and not was and loadout.usable() and not free:
 				_held[btn] = true
 				w.press(btn)
+				if not still:
+					_held[btn] = false
+					w.release(btn)
 			elif down and was:
 				w.hold(btn, dt)
 			elif not down and was:
 				_held[btn] = false
 				w.release(btn)
+		return
+	if free:
+		return
+	var a := _aim()
+	if a.is_empty():
 		return
 	if not loadout.usable():
 		return
@@ -855,6 +877,7 @@ func _switch(change: Callable) -> void:
 				melee[before].release(btn)
 		melee[before].on_deselect()
 	_held.clear()
+	_clicked.clear()
 	for btn in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 		if Input.is_mouse_button_pressed(btn):
 			_ignore[btn] = true
@@ -909,10 +932,15 @@ func _weapons_step(dt: float) -> void:
 	_recoil = maxf(0.0, _recoil - dt * 6.0)
 	_aim_k = move_toward(_aim_k, 1.0 if _aiming else 0.0, dt * 6.0)
 	cam.fov = lerpf(80.0, 50.0, _aim_k)
-	var drop := -0.35 * loadout.switch_frac()
+	# a switch: the first half the old one goes down, the second half the new one comes up
+	var k := 1.0 - loadout.switch_frac()
+	var shown := cur
+	if k < 0.5 and loadout.last < loadout.slots.size():
+		shown = String(loadout.slots[loadout.last].id)
+	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
 	for id in _guns:
 		var gv: Node3D = _guns[id]
-		gv.visible = id == cur and not top_down
+		gv.visible = id == shown and not top_down
 		if gv.visible:
 			var base: Vector3 = gv.get_meta("base")
 			var aimed := Vector3(0.0, -0.12, -0.34)
@@ -920,9 +948,10 @@ func _weapons_step(dt: float) -> void:
 			gv.rotation = Vector3(0.12 * _recoil, 0, 0)
 	for id in melee:
 		var w: VoxelMelee = melee[id]
-		w.view.visible = not top_down and (id == cur or w.busy())
-		w.view.position = Vector3(0, drop if id == cur else 0.0, 0)
-	vacuum.view.position = Vector3(0.24, -0.23 + (drop if cur == "vacuum" else 0.0), -0.5)
+		w.view.visible = not top_down and (id == shown or w.busy())
+		w.view.position = Vector3(0, drop if id == shown else 0.0, 0)
+	vacuum.view.visible = shown == "vacuum" and not top_down
+	vacuum.view.position = Vector3(0.24, -0.23 + (drop if shown == "vacuum" else 0.0), -0.5)
 	avatar.recoil = _recoil
 	if top_down and _hand_id != cur:
 		_hold_in_hand(cur)
@@ -946,7 +975,9 @@ func _hold_in_hand(id: String) -> void:
 		var node: Node3D = null
 		if id == "blaster" or id == "shotgun":
 			node = MeshInstance3D.new()
-			(node as MeshInstance3D).mesh = _gun_mesh(id, m)
+			if not _hand_meshes.has(id):
+				_hand_meshes[id] = _gun_mesh(id, m)        # (built once: a .vox read and meshed takes ~20 ms)
+			(node as MeshInstance3D).mesh = _hand_meshes[id]
 			(node as MeshInstance3D).material_override = _mat
 		elif id == "vacuum":
 			node = Node3D.new()

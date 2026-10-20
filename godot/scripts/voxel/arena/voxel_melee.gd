@@ -15,6 +15,7 @@ var arena: Node3D               # VoxelArena (untyped: the two scripts know each
 var view: Node3D                # the first-person view: a child of the camera; the arena shows/hides it
 var last := {}                  # what the last hit did (the self-tests print it)
 static var _stop_n := 0
+static var _stop_end_ms := 0
 
 func setup(arena_: Node3D, cam: Camera3D) -> void:
 	arena = arena_
@@ -140,15 +141,23 @@ func fling(b: VoxelBody, res: Dictionary, vel: Vector3, spin: Vector3) -> void:
 	if not (res.pieces as Array).is_empty():
 		arena.pieces.spawn(b, res.pieces, vel, spin)
 
-## The game all but stops for a blink as a blow lands (secs of real time, at scale speed).
+## The game all but stops for a blink as a blow lands (secs of real time, at scale speed). Blows landing together:
+## the deepest stop and the latest end win.
 func hit_stop(secs: float = 0.07, scale: float = 0.05) -> void:
 	_stop_n += 1
 	var me := _stop_n
+	var now := Time.get_ticks_msec()
+	var end := now + int(secs * 1000.0)
+	if now < _stop_end_ms:
+		scale = minf(scale, Engine.time_scale)
+		end = maxi(end, _stop_end_ms)
+	_stop_end_ms = end
 	Engine.time_scale = scale
 	arena._kick = maxf(float(arena._kick), 0.5)
-	await get_tree().create_timer(secs, true, false, true).timeout
+	await get_tree().create_timer(maxf(0.001, (end - now) / 1000.0), true, false, true).timeout
 	if me == _stop_n:
 		Engine.time_scale = 1.0
+		_stop_end_ms = 0
 
 ## A box part for a view or hand model.
 static func box(parent: Node3D, size: Vector3, at: Vector3, mat: Material, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:

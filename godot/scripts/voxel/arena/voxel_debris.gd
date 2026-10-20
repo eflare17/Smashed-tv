@@ -35,6 +35,7 @@ var brush := Vector3.INF              # the brush's centre, INF: not sucking
 var brush_r := 0.8                    # its radius, metres
 var _budget := 0.0                    # cubes the brush may still pull loose this frame
 var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0}
+var bound := INF                      # metres from the middle (x and z) the walls stop flying cubes at
 
 func setup(cube_m: float) -> void:
 	# moved every frame, not on physics ticks: no interpolation (it would lag and warn)
@@ -110,12 +111,16 @@ func pop(centre: Vector3, r: float, up: float = 4.0, cap: int = 1500) -> int:
 				var off := Vector2(_lp[i].x - centre.x, _lp[i].z - centre.z)
 				if off.length() <= r:
 					near.append(i)
+					if near.size() >= cap:
+						break                    # enough (no need to find them all first)
+			if near.size() >= cap:
+				break
+		if near.size() >= cap:
+			break
 	near.sort()
-	near.reverse()
+	near.reverse()                       # taken from the end down, so the slots moved in are ones already seen
 	var n := 0
 	for i in near:
-		if n >= cap:
-			break
 		var p := _lp[i]
 		var c := _lc[i]
 		var off2 := Vector3(p.x - centre.x, 0, p.z - centre.z)
@@ -206,6 +211,13 @@ func _process(dt: float) -> void:
 			_budget -= 1.0
 		v.y -= 9.8 * dt
 		p += v * dt
+		# the walls: a bounce back in (cubes lying outside could never be got at)
+		if absf(p.x) > bound:
+			p.x = signf(p.x) * bound
+			v.x = -v.x * 0.3
+		if absf(p.z) > bound:
+			p.z = signf(p.z) * bound
+			v.z = -v.z * 0.3
 		var rest := false
 		if p.y < _floor:
 			p.y = _floor
@@ -280,15 +292,24 @@ func _pick() -> void:
 	var cz := floori(brush.z)
 	var rc := ceili(brush_r)
 	var r2 := brush_r * brush_r
+	# the floor cells nearest the brush's middle first, stopping once there are plenty to choose the nearest from
+	var order := []
 	for dz in range(-rc, rc + 1):
 		for dx in range(-rc, rc + 1):
-			var k := (cx + dx + 1024) * 4096 + (cz + dz + 1024)
-			if not _cells.has(k):
-				continue
-			for i in (_cells[k] as PackedInt32Array):
-				var d2 := _lp[i].distance_squared_to(brush)
-				if d2 <= r2:
-					near.append(Vector2(d2, i))
+			var mid := Vector2(cx + dx + 0.5 - brush.x, cz + dz + 0.5 - brush.z)
+			order.append(Vector2(mid.length_squared(), (cx + dx + 1024) * 4096 + (cz + dz + 1024)))
+	order.sort()
+	var want := int(_budget) * 3
+	for o in order:
+		var k := int(o.y)
+		if not _cells.has(k):
+			continue
+		for i in (_cells[k] as PackedInt32Array):
+			var d2 := _lp[i].distance_squared_to(brush)
+			if d2 <= r2:
+				near.append(Vector2(d2, i))
+		if near.size() >= want:
+			break
 	if near.is_empty():
 		return
 	near.sort()

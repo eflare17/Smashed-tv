@@ -86,6 +86,11 @@ func step(dt: float) -> void:
 		if not is_instance_valid(rb):
 			_pieces.remove_at(i)
 			continue
+		if rb.global_position.y < -3.0:
+			# knocked over the walls: nothing out there to land on
+			rb.queue_free()
+			_pieces.remove_at(i)
+			continue
 		if pc.t > PIECE_LIFE:
 			var k := clampf(1.0 - (pc.t - PIECE_LIFE) / 0.5, 0.0, 1.0)
 			for c in rb.get_children():
@@ -103,18 +108,27 @@ func vacuum(brush: Vector3, r: float) -> void:
 		var rb: RigidBody3D = pc.rb
 		if pc.t < 0.4 or rb.global_position.distance_to(brush) > r + 0.3:
 			continue
-		var bits := cubes_of(pc)
-		# a few hundred fly in; the rest count straight away
-		bits.shuffle()
-		arena.debris.suck(bits.slice(0, 400))
-		for bt in bits.slice(400):
-			arena.debris.take(bt.col)
+		# a few hundred fly in; the rest count straight away, a colour at a time
+		var counts := {}
+		var bits := cubes_of(pc, 400, counts)
+		arena.debris.suck(bits)
+		for v in counts:
+			var k := int(v) - 1
+			arena.debris.take(Color8((k >> 16) & 255, (k >> 8) & 255, k & 255), int(counts[v]))
 		rb.queue_free()
 		_pieces.remove_at(i)
 
-## A piece's cubes where they are now: [{pos, col}].
-static func cubes_of(pc: Dictionary) -> Array:
+## A piece's cubes where they are now: [{pos, col}]; with most > 0 only about that many, spread through it, the rest
+## counted into counts (cell value -> how many).
+static func cubes_of(pc: Dictionary, most: int = 0, counts: Dictionary = {}) -> Array:
 	var bits := []
+	var total := 0
+	for e in pc.cells:
+		for v in (e.grid.cells as PackedInt32Array):
+			if v != 0:
+				total += 1
+	var every := maxi(1, ceili(float(total) / float(most))) if most > 0 else 1
+	var seen := 0
 	var rb: RigidBody3D = pc.rb
 	var vm: float = pc.vm
 	for e in pc.cells:
@@ -129,9 +143,13 @@ static func cubes_of(pc: Dictionary) -> Array:
 				for x in s.x:
 					var v := cells[j]
 					if v != 0:
-						var k := v - 1
-						bits.append({"pos": xf * ((Vector3(x, y, z) + o + Vector3(0.5, 0.5, 0.5)) * vm),
-							"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
+						if seen % every == 0:
+							var k := v - 1
+							bits.append({"pos": xf * ((Vector3(x, y, z) + o + Vector3(0.5, 0.5, 0.5)) * vm),
+								"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
+						else:
+							counts[v] = int(counts.get(v, 0)) + 1
+						seen += 1
 					j += 1
 	return bits
 

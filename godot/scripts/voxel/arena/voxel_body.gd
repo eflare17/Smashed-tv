@@ -40,6 +40,7 @@ var tumble := 0.0
 var tumble_v := 0.0
 var down_t := 0.0
 var up_t := 0.0
+var since_air := 9.0               # seconds since it last came down (a dead one is posed lying a moment after)
 const UP_T := 0.6
 const DOWN_T := 1.3
 ## Top-down Jared: the weapon held (a VoxelAnim weapon pose: "", "blaster", "shotgun", "spud" ...) and its kick.
@@ -48,9 +49,10 @@ var recoil := 0.0
 
 ## Sent flying at v (m/s, world), turning over backward at spin radians a second.
 func launch(v: Vector3, spin: float = 6.0) -> void:
+	if not airborne:
+		tumble = 0.0             # hit again in the air: it keeps turning over from where it was
 	airborne = true
 	air_v = v
-	tumble = 0.0
 	tumble_v = spin
 	knock = Vector3.ZERO
 	down_t = 0.0
@@ -88,13 +90,15 @@ func react_step(dt: float) -> void:
 			knock = Vector3(air_v.x, 0.0, air_v.z) * 0.35
 			down_t = DOWN_T
 			stagger = 0.0
+			since_air = 0.0
 	elif down_t > 0.0:
 		down_t -= dt
 		if down_t <= 0.0:
 			down_t = 0.0
-			up_t = UP_T
+			up_t = UP_T if legs_lost() < 2 else 0.0     # no legs to get up on: straight back to crawling
 	elif up_t > 0.0:
 		up_t = maxf(0.0, up_t - dt)
+	since_air += dt
 	position += knock * dt
 	knock *= exp(-dt * 6.0)
 	stagger = maxf(0.0, stagger - dt)
@@ -239,12 +243,24 @@ static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary
 						else:
 							c = BRAIN[rng.randi() % BRAIN.size()]
 					cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
-		out[n] = {"size": s, "cells": cells}
+		out[n] = {"size": s, "cells": _largest_lump(cells, s)}
 	_flesh_cache[ck] = out
 	if _brain_ints.is_empty():
 		for c in BRAIN:
 			_brain_ints[((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1] = true
 	return out
+
+# a part's grid keeping only its biggest lump of touching cubes (a few drawn pixels stand loose of the rest: they'd
+# fall off at the first cut anywhere on the part)
+static func _largest_lump(cells: PackedInt32Array, s: Vector3i) -> PackedInt32Array:
+	var lumps := _lumps(cells, s, Vector3i.ZERO, s - Vector3i.ONE)
+	if lumps.size() <= 1:
+		return cells
+	var best: Dictionary = lumps[0]
+	for l in lumps:
+		if int(l.n) > int(best.n):
+			best = l
+	return best.cells
 
 static func _filled(g: Dictionary, x: int, y: int, z: int) -> bool:
 	var s: Vector3i = g.size
@@ -312,8 +328,8 @@ func legs_lost() -> int:
 	var n := 0
 	for side in ["_l", "_r"]:
 		for leg in ["thigh", "shin", "foot"]:
-			# gone, or cut through (the sword took the rest of the leg below)
-			if parts.has(leg + side) and (parts[leg + side].gone or (leg != "foot" and parts[leg + side].get("severed", false))):
+			# gone (a leg cut through has what's below taken off whole, so that counts)
+			if parts.has(leg + side) and parts[leg + side].gone:
 				n += 1
 				break
 	return n
@@ -386,7 +402,10 @@ func animate(dt: float, moving: bool) -> void:
 			"forearm_l": Quaternion.from_euler(Vector3(-1.1 * h, 0, 0))}
 	elif alive and lost == 1:
 		# one leg: a hop and a lean onto the one left
-		var side := 1.0 if (parts.has("thigh_l") and parts["thigh_l"].gone) or (parts.has("shin_l") and parts["shin_l"].gone) else -1.0
+		var side := -1.0
+		for leg in ["thigh_l", "shin_l", "foot_l"]:
+			if parts.has(leg) and parts[leg].gone:
+				side = 1.0
 		turn = Quaternion.from_euler(Vector3(0.15, 0, -0.12 * side))
 		lift.y += absf(sin(odo / 0.5 * PI)) * 0.06
 	if airborne:
@@ -400,7 +419,8 @@ func animate(dt: float, moving: bool) -> void:
 			"head": Quaternion.from_euler(Vector3(-0.5, 0, 0))}
 	elif not alive:
 		# toppled backward about the feet, over half a second
-		var k2 := smoothstep(0.0, 0.55, dead_t)
+		# (already on the floor, crawling or knocked down: lying at once, no getting up to fall)
+		var k2 := 1.0 if (lost == 2 or down_t > 0.0 or up_t > 0.0 or since_air < 1.0) else smoothstep(0.0, 0.55, dead_t)
 		turn = Quaternion.from_euler(Vector3(-PI / 2.0 * k2, 0, 0))
 		lift = Vector3(0, 0.12 * k2, 0)
 		rot = {}
@@ -709,7 +729,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 			var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
 			var bb := mesh.get_aabb() if mesh else AABB()
 			res.pieces.append({"part": nm, "grid": {"size": s, "cells": cells}, "origin": mesh_origin(nm), "xform": att,
-				"mesh": mesh, "box_at": bb.get_center(), "box": bb.size, "count": int(p.left)})
+				"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bb.get_center(), "box": bb.size, "count": int(p.left)})
 			if nm == "head":
 				res.head_off = true
 			p.grid = {"size": s, "cells": PackedInt32Array()}
@@ -792,7 +812,9 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var jp: Vector3 = model.bone_pivot[jb] * model.voxel_m / vm - o - Vector3(0.5, 0.5, 0.5)
 		var keep_side := 0.0
 		var keep_dir := Vector3.ZERO
-		var joint_cut: bool = nm != root and (absf(n.dot(jw - eye)) <= half_t + vm if plane else _seg_dist(jw, ca, cb) <= cr + vm)
+		var jq := jw - eye
+		var in_sweep := jq.length() <= reach + vm and jq.dot(fwd) >= jq.length() * cos_arc - vm
+		var joint_cut: bool = nm != root and ((absf(n.dot(jq)) <= half_t + vm and in_sweep) if plane else _seg_dist(jw, ca, cb) <= cr + vm)
 		var box_v := (chi.x - clo.x + 7) * (chi.y - clo.y + 7) * (chi.z - clo.z + 7)
 		if not joint_cut and box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi):
 			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
@@ -830,6 +852,8 @@ func _remove(opt: Dictionary) -> Dictionary:
 				ref = sk * skeleton.get_bone_global_pose(model.bone_parent[b]).origin
 			if plane:
 				keep_side = signf(n.dot(ref - eye))
+				if keep_side == 0.0:
+					keep_side = 1.0      # the parent's joint right on the blade: keep one side, not both
 			else:
 				keep_dir = ref - jw
 		# (the joint in the cut: the cubes nearest it may be cut ones, and if none left is as near, it all comes off;
@@ -845,6 +869,16 @@ func _remove(opt: Dictionary) -> Dictionary:
 			if keep_side != 0.0 and signf(d0 + dx * kx0 + dy * ky0 + dz * kz0) != keep_side:
 				continue
 			if keep_dir != Vector3.ZERO and (base + ex * kx0 + ey * ky0 + ez * kz0 - jw).dot(keep_dir) <= 0.0:
+				continue
+			if nm == root and not q2.is_empty():
+				# the body itself keeps one side only: the one its nearest cube left is on (a chop down the middle
+				# takes the other half off)
+				var kb: int = q2[0]
+				var db := Vector3(kb % s.x, (kb / s.x) % s.y, kb / (s.x * s.y)).distance_to(jp)
+				if Vector3(kx0, ky0, kz0).distance_to(jp) < db:
+					st[kb] = 0
+					q2[0] = k
+					st[k] = 4
 				continue
 			st[k] = 4
 			q2.append(k)
@@ -919,21 +953,22 @@ func _remove(opt: Dictionary) -> Dictionary:
 		res.parts.append(nm)
 		if nm == "torso":
 			body_cut += ncut
-		if noff > 0 and noff < MIN_PIECE:
-			# a few cubes left floating at the cut's edge: they fly off with the rest, no piece
-			for j in off_cells.size():
-				var v2 := off_cells[j]
-				if v2 != 0:
-					var k4 := v2 - 1
-					res.bits.append({"pos": base + ex * (j % s.x) + ey * ((j / s.x) % s.y) + ez * (j / (s.x * s.y)),
-						"col": Color8((k4 >> 16) & 255, (k4 >> 8) & 255, k4 & 255)})
-			noff = 0
 		if noff > 0:
-			if noff * 4 > noff + nkept:
-				p["severed"] = true     # a real chunk of it, not a sliver off the skin
+			# each lump that came off is a piece of its own; a few cubes left floating at the cut's edge just fly
+			# off with the rest
 			var mo := mesh_origin(nm)
-			res.pieces.append({"part": nm, "grid": {"size": s, "cells": off_cells}, "origin": mo, "xform": att,
-				"box_at": ((Vector3(olo) + Vector3(ohi) + Vector3.ONE) * 0.5 + mo) * vm, "box": (Vector3(ohi - olo) + Vector3.ONE) * vm, "count": noff})
+			for comp in _lumps(off_cells, s, olo, ohi):
+				var cc: PackedInt32Array = comp.cells
+				if int(comp.n) < MIN_PIECE:
+					for j in comp.idx:
+						var k4 := cc[j] - 1
+						res.bits.append({"pos": base + ex * (j % s.x) + ey * ((j / s.x) % s.y) + ez * (j / (s.x * s.y)),
+							"col": Color8((k4 >> 16) & 255, (k4 >> 8) & 255, k4 & 255)})
+					continue
+				var clo2: Vector3i = comp.lo
+				var chi2: Vector3i = comp.hi
+				res.pieces.append({"part": nm, "grid": {"size": s, "cells": cc}, "origin": mo, "xform": att,
+					"box_at": ((Vector3(clo2) + Vector3(chi2) + Vector3.ONE) * 0.5 + mo) * vm, "box": (Vector3(chi2 - clo2) + Vector3.ONE) * vm, "count": int(comp.n)})
 		p.left = nkept
 		if nkept == 0:
 			p.gone = true
@@ -1049,6 +1084,50 @@ static func _may_split(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i
 			return true
 	return false
 
+# the cubes that came off a part (cells: a full-size grid of them, inside lo..hi) split into lumps that touch (face to
+# face): [{cells: a full-size grid of that lump, idx: its indices, n, lo, hi}]
+static func _lumps(cells: PackedInt32Array, s: Vector3i, lo: Vector3i, hi: Vector3i) -> Array:
+	var out := []
+	var seen := PackedByteArray()
+	seen.resize(cells.size())
+	var sx := s.x
+	var sxy := s.x * s.y
+	for z in range(lo.z, hi.z + 1):
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				var i0 := x + sx * (y + s.y * z)
+				if cells[i0] == 0 or seen[i0] == 1:
+					continue
+				var idx := PackedInt32Array([i0])
+				seen[i0] = 1
+				var h := 0
+				var l2 := Vector3i(x, y, z)
+				var h2 := Vector3i(x, y, z)
+				while h < idx.size():
+					var k: int = idx[h]
+					h += 1
+					var kx := k % sx
+					var ky := (k / sx) % s.y
+					var kz := k / sxy
+					l2 = Vector3i(mini(l2.x, kx), mini(l2.y, ky), mini(l2.z, kz))
+					h2 = Vector3i(maxi(h2.x, kx), maxi(h2.y, ky), maxi(h2.z, kz))
+					for d in 6:
+						var nx := kx + (1 if d == 0 else (-1 if d == 1 else 0))
+						var ny := ky + (1 if d == 2 else (-1 if d == 3 else 0))
+						var nz := kz + (1 if d == 4 else (-1 if d == 5 else 0))
+						if nx < 0 or ny < 0 or nz < 0 or nx >= sx or ny >= s.y or nz >= s.z:
+							continue
+						var j := nx + sx * (ny + s.y * nz)
+						if cells[j] != 0 and seen[j] == 0:
+							seen[j] = 1
+							idx.append(j)
+				var g := PackedInt32Array()
+				g.resize(cells.size())
+				for j in idx:
+					g[j] = cells[j]
+				out.append({"cells": g, "idx": idx, "n": idx.size(), "lo": l2, "hi": h2})
+	return out
+
 # a part cut the quick way: are any of its cubes still there among the ones (before the cut) nearest pt, a child's joint?
 static func _joint_kept(cells: PackedInt32Array, cut: PackedByteArray, s: Vector3i, pt: Vector3) -> bool:
 	var st := PackedByteArray()
@@ -1062,6 +1141,11 @@ static func _joint_kept(cells: PackedInt32Array, cut: PackedByteArray, s: Vector
 				elif cut[row + x] == 2:
 					st[row + x] = 2
 	var near := _near_cells(st, s, pt, 1.5)
+	if near.is_empty():
+		# nothing near (the joint well outside this grid): the whole grid
+		for i in cells.size():
+			st[i] = 1 if cells[i] != 0 else (2 if cut[i] == 2 else 0)
+		near = _near_cells(st, s, pt, 1.5)
 	if near.is_empty():
 		return true
 	for i in near:
