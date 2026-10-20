@@ -11,8 +11,10 @@ below, screenshots `integration/voxel_shots/sprite_maker_*.png`)
 
 ## The PC voxel arena test (20 Oct, PLAN.md "PC only, voxel destruction")
 
-Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`claude/godot-voxel`): one exe, no install
-(Windows SmartScreen: More info, Run anyway). Built from `scripts/voxel/arena/voxel_arena.tscn` with the desktop
+Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`claude/godot-voxel`): the exe and its .pck, no
+install (Windows SmartScreen: More info, Run anyway). The game data is NOT embedded in the exe: Chrome flagged the
+embedded build as a virus (a known false positive with embedded PCKs), so the exe is now Godot 4.4.1's own Windows
+template byte for byte (SHA-256 b493c1d5...200f9a4b) and the game is in SmashedVoxelArena.pck beside it. Built from `scripts/voxel/arena/voxel_arena.tscn` with the desktop
 renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel Arena" (custom feature
 `voxel_arena`: `project.godot` picks that scene and Forward+ for it; the main game and the web build are unchanged).
 
