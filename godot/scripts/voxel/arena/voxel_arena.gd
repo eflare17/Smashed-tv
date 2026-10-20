@@ -1,8 +1,8 @@
 class_name VoxelArena
 extends Node3D
-## The PC voxel arena test (PLAN.md, 20 Oct: "PC only, voxel destruction"). One arena, waves of block enemies (grunt,
-## swarmer, brute, batter) coming at you, and every shot makes a hole exactly where it hits: the cubes there are
-## knocked out (flying, bouncing, settling), the meat and bone inside show, a limb shot mostly away comes off, a head
+## The PC voxel arena test (PLAN.md, 20 Oct: "PC only, voxel destruction"). One arena, block enemies (grunt,
+## swarmer, brute, batter) coming at you one at a time (F3 / F5 send in more), and every shot makes a hole exactly
+## where it hits: the cubes there are knocked out (flying, bouncing, settling), the meat and bone inside show, a limb shot mostly away comes off, a head
 ## or chest shot through drops them. Only the hit body parts are meshed again, on worker threads, a few a frame.
 ## The top left shows what it costs (frame rate, frame time, draw calls, triangles, cubes flying, meshing jobs).
 ## Owned by the voxel session. Desktop renderer (Forward+); the Windows build boots straight into this scene.
@@ -52,6 +52,7 @@ var _opts := {}
 var _t := 0.0
 var _stat_t := 0.0
 var _frames := PackedFloat32Array()
+var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
 var _prof := {}                 # section -> microseconds this second (--stats)
 
@@ -81,6 +82,7 @@ func _ready() -> void:
 	_tracers.material_override = tm
 	_tracers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tracers)
+	_warm_up()
 	if _opts.has("enemies"):
 		wave = 1
 		spawn(int(_opts.enemies))
@@ -241,9 +243,10 @@ func _hud() -> void:
 
 # ---------------------------------------------------------------- enemies
 
+## One enemy at a time (the owner, 20 Oct): the next walks in a moment after the last one drops.
 func _next_wave() -> void:
 	wave += 1
-	spawn(8 + wave * 4)
+	spawn(1)
 
 ## n more enemies round the arena's edge.
 func spawn(n: int) -> void:
@@ -257,6 +260,14 @@ func spawn(n: int) -> void:
 		b.speed = randf_range(1.8, 3.2) * (1.4 if key == "swarmer" else (0.75 if key == "brute" else 1.0))
 		b.died.connect(_on_died)
 		bodies.append(b)
+
+# every kind made once while loading (their flesh and meshes cached), so the first of each doesn't stall the game
+func _warm_up() -> void:
+	for key in HEIGHT:
+		var b := VoxelBody.new()
+		add_child(b)
+		b.setup(key, _cube_m(key), chunk, _mat)
+		b.queue_free()
 
 func _on_died(_b: VoxelBody) -> void:
 	kills += 1
@@ -273,7 +284,7 @@ func _respawn_all() -> void:
 	debris = VoxelDebris.new()
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
-	spawn(maxi(n, 12))
+	spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
 
@@ -294,6 +305,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				sun.shadow_enabled = not sun.shadow_enabled
 			KEY_F2:
 				chunk = 2 if chunk == 1 else 1
+				_warm_up()
 				_respawn_all()
 			KEY_F3:
 				spawn(10)
@@ -393,7 +405,10 @@ func _process(dt: float) -> void:
 			bodies.remove_at(i)
 	var t3 := Time.get_ticks_usec()
 	if not bodies.any(func(x): return x.alive):
-		_next_wave()
+		_next_t += dt
+		if _next_t >= 1.5:
+			_next_t = 0.0
+			_next_wave()
 	var t4 := Time.get_ticks_usec()
 	_mesh_jobs()
 	var t5 := Time.get_ticks_usec()
@@ -560,7 +575,7 @@ func _hud_text() -> void:
 			alive += 1
 		tris += b.triangles()
 	var fps := Engine.get_frames_per_second()
-	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nwave %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s" % [
+	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s" % [
 		fps, 1000.0 / maxf(1.0, fps), _code_ms + debris.last_ms,
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		_k(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)), _k(tris),

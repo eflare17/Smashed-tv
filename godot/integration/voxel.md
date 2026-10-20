@@ -16,7 +16,7 @@ Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`cla
 renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel Arena" (custom feature
 `voxel_arena`: `project.godot` picks that scene and Forward+ for it; the main game and the web build are unchanged).
 
-- Waves of block enemies (grunt, swarmer, brute, batter, about 1.7-2.2 m tall, 2.3 cm cubes = one sprite pixel a
+- Block enemies one at a time (the owner, 20 Oct; F3 / F5 send in more; grunt, swarmer, brute, batter, about 1.7-2.2 m tall, 2.3 cm cubes = one sprite pixel a
   cube; F2 switches to two pixels a cube) come at you. Blaster (left click, 10 a second, holes about 4 cubes wide)
   and shotgun (right click, 9 pellets).
 - **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
