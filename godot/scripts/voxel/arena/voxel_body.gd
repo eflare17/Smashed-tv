@@ -110,6 +110,7 @@ var hp := 100.0
 var brain_start := 0
 var brain_lost := 0
 const BRAIN_KILL := 0.25
+const REF_VM := 0.023                 # the cube size health per cube is reckoned at (a grunt, one sprite pixel a cube)
 const MIN_PIECE := 12                 # fewer cubes than this cut loose fly off as bits, not a piece
 const BODY_TOUGH := 10.0              # body shots take this many times more cubes than before to kill
 const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "thigh": 3}
@@ -665,6 +666,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 	var root: String = names[0]
 	var stat := {}            # part -> PackedByteArray: 0 empty, 1 kept, 2 cut, 3 came off (this cut)
 	var whole := {}           # part -> true: off whole (its joint went with its parent's piece)
+	var quick := {}           # part -> [cut marks, its cells after]: cut the quick way (nothing came off it)
 	var body_cut := 0
 	var brain_hit := 0
 	for nm in names:
@@ -687,6 +689,11 @@ func _remove(opt: Dictionary) -> Dictionary:
 			var par: String = by_bone[pb]
 			if whole.has(par):
 				whole[nm] = true
+			elif quick.has(par):
+				var qp: Dictionary = parts[par]
+				var jq: Vector3 = model.bone_pivot[b] * model.voxel_m / vm - Vector3(qp.origin) - Vector3(0.5, 0.5, 0.5)
+				if not _joint_kept(quick[par][1], quick[par][0], qp.grid.size, jq):
+					whole[nm] = true
 			elif stat.has(par):
 				var pp: Dictionary = parts[par]
 				var jt: Vector3 = model.bone_pivot[b] * model.voxel_m / vm - Vector3(pp.origin) - Vector3(0.5, 0.5, 0.5)
@@ -724,9 +731,15 @@ func _remove(opt: Dictionary) -> Dictionary:
 		# st while cutting: 2 cut, 4 still joined (reached from the joint), 0 anything else
 		var st := PackedByteArray()
 		var ncut := 0
+		var clo := Vector3i(s)                # the cut cells' box (in cells)
+		var chi := Vector3i(-1, -1, -1)
 		if not plane:
 			st.resize(cells.size())
-			ncut = _mark_capsule(st, cells, s, base, Basis(ex, ey, ez), ca, cb, cr)
+			var box := {}
+			ncut = _mark_capsule(st, cells, s, base, Basis(ex, ey, ez), ca, cb, cr, box)
+			if ncut > 0:
+				clo = box.lo
+				chi = box.hi
 		else:
 			# the cut: distance from the plane is linear in the cell, so step it
 			d0 = n.dot(base - eye)
@@ -764,19 +777,53 @@ func _remove(opt: Dictionary) -> Dictionary:
 						if ql <= reach and q.dot(fwd) >= ql * cos_arc:
 							st[row + x] = 2
 							ncut += 1
+							clo = Vector3i(mini(clo.x, x), mini(clo.y, y), mini(clo.z, z))
+							chi = Vector3i(maxi(chi.x, x), maxi(chi.y, y), maxi(chi.z, z))
 		if ncut == 0:
 			continue
 		p.grid = {"size": s, "cells": cells.duplicate()}
 		cells = p.grid.cells
 		# what stays is what's still joined to the joint (the root part's: the hips, where the legs hang); a joint
-		# in the cut itself keeps the side toward its parent (the head cut at the neck comes off whole)
+		# in the cut itself keeps the side toward its parent (the head cut at the neck comes off whole). The root
+		# part (the body itself) never comes off whole: it keeps what's joined to its nearest cubes left.
 		var jb := b if nm != root else 0
 		var sk := skeleton.global_transform
 		var jw: Vector3 = sk * skeleton.get_bone_global_pose(jb).origin
 		var jp: Vector3 = model.bone_pivot[jb] * model.voxel_m / vm - o - Vector3(0.5, 0.5, 0.5)
 		var keep_side := 0.0
 		var keep_dir := Vector3.ZERO
-		var joint_cut := absf(n.dot(jw - eye)) <= half_t + vm if plane else _seg_dist(jw, ca, cb) <= cr + vm
+		var joint_cut: bool = nm != root and (absf(n.dot(jw - eye)) <= half_t + vm if plane else _seg_dist(jw, ca, cb) <= cr + vm)
+		var box_v := (chi.x - clo.x + 7) * (chi.y - clo.y + 7) * (chi.z - clo.z + 7)
+		if not joint_cut and box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi):
+			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
+			# whole: just take the cut cubes out, no fill over the whole part
+			for z in range(clo.z, chi.z + 1):
+				for y in range(clo.y, chi.y + 1):
+					var row2 := s.x * (y + s.y * z)
+					for x in range(clo.x, chi.x + 1):
+						var i2 := row2 + x
+						if st[i2] != 2:
+							continue
+						var v3 := cells[i2]
+						if (i2 % every) == 0:
+							var k5 := v3 - 1
+							res.bits.append({"pos": base + ex * x + ey * y + ez * z, "col": Color8((k5 >> 16) & 255, (k5 >> 8) & 255, k5 & 255)})
+						if _brain_ints.has(v3):
+							brain_hit += 1
+						cells[i2] = 0
+			quick[nm] = [st, cells]
+			res.cut += ncut
+			res.parts.append(nm)
+			if nm == "torso":
+				body_cut += ncut
+			p.left = int(p.left) - ncut
+			if int(p.left) <= 0:
+				p.left = 0
+				p.gone = true
+				(p.mesh as MeshInstance3D).visible = false
+			else:
+				p.dirty = true
+			continue
 		if joint_cut:
 			var ref := jw + Vector3.DOWN
 			if nm != root and model.bone_parent[b] >= 0:
@@ -785,7 +832,9 @@ func _remove(opt: Dictionary) -> Dictionary:
 				keep_side = signf(n.dot(ref - eye))
 			else:
 				keep_dir = ref - jw
-		var seed := _near_filled(cells, s, jp, 4.0 if joint_cut else 1.5)
+		# (the joint in the cut: the cubes nearest it may be cut ones, and if none left is as near, it all comes off;
+		# else the nearest ones left)
+		var seed := _near_filled(cells, s, jp, 4.0 if joint_cut else 1.5, PackedByteArray() if joint_cut else st)
 		var q2 := PackedInt32Array()
 		for k in seed:
 			if st[k] != 0:
@@ -900,7 +949,8 @@ func _remove(opt: Dictionary) -> Dictionary:
 		if plane and body_cut > 6:
 			hp -= 34.0
 		elif not plane:
-			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08))
+			# (a cube's worth by its size: twice the cube, eight times the health)
+			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08)) * pow(vm / REF_VM, 3.0)
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
 		if (hp <= 0.0 or brain_dead or res.head_off) and not immortal:
 			res.killed = true
@@ -910,7 +960,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 
 # marks (st = 2) the filled cells whose middles are within r metres of the segment a-b; base, bs: a cell's middle in
 # the world is base + bs * cell. Returns how many.
-static func _mark_capsule(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, base: Vector3, bs: Basis, a: Vector3, b: Vector3, r: float) -> int:
+static func _mark_capsule(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, base: Vector3, bs: Basis, a: Vector3, b: Vector3, r: float, box: Dictionary) -> int:
 	var inv := bs.inverse()
 	var ac := inv * (a - base)
 	var bc := inv * (b - base)
@@ -925,6 +975,8 @@ static func _mark_capsule(st: PackedByteArray, cells: PackedInt32Array, s: Vecto
 	var z1 := mini(s.z - 1, floori(hi.z))
 	if x0 > x1 or y0 > y1 or z0 > z1:
 		return 0
+	box["lo"] = Vector3i(x0, y0, z0)
+	box["hi"] = Vector3i(x1, y1, z1)
 	var ab := bc - ac
 	var ab2 := maxf(ab.length_squared(), 0.000001)
 	var r2 := rc * rc
@@ -942,13 +994,89 @@ static func _mark_capsule(st: PackedByteArray, cells: PackedInt32Array, s: Vecto
 					n += 1
 	return n
 
+# could the cut cells (st = 2, all inside lo..hi) have split the part? No if the cubes left touching the cut all join
+# up with each other within 3 cells of it: any path between two cubes left that went through the cut can then go round.
+static func _may_split(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, lo: Vector3i, hi: Vector3i) -> bool:
+	var x0 := maxi(0, lo.x - 3)
+	var y0 := maxi(0, lo.y - 3)
+	var z0 := maxi(0, lo.z - 3)
+	var x1 := mini(s.x - 1, hi.x + 3)
+	var y1 := mini(s.y - 1, hi.y + 3)
+	var z1 := mini(s.z - 1, hi.z + 3)
+	var sx := s.x
+	var sxy := s.x * s.y
+	var edge := PackedInt32Array()
+	for z in range(z0, z1 + 1):
+		for y in range(y0, y1 + 1):
+			var row := sx * (y + s.y * z)
+			for x in range(x0, x1 + 1):
+				var i := row + x
+				if cells[i] == 0 or st[i] == 2:
+					continue
+				if (x > 0 and st[i - 1] == 2) or (x < sx - 1 and st[i + 1] == 2) or (y > 0 and st[i - sx] == 2) \
+						or (y < s.y - 1 and st[i + sx] == 2) or (z > 0 and st[i - sxy] == 2) or (z < s.z - 1 and st[i + sxy] == 2):
+					edge.append(i)
+	if edge.is_empty():
+		return true
+	var bw := x1 - x0 + 1
+	var bh := y1 - y0 + 1
+	var seen := PackedByteArray()
+	seen.resize(bw * bh * (z1 - z0 + 1))
+	var q := PackedInt32Array([edge[0]])
+	seen[(edge[0] % sx - x0) + bw * ((edge[0] / sx) % s.y - y0 + bh * (edge[0] / sxy - z0))] = 1
+	var h := 0
+	while h < q.size():
+		var k: int = q[h]
+		h += 1
+		var kx := k % sx
+		var ky := (k / sx) % s.y
+		var kz := k / sxy
+		for d in 6:
+			var nx := kx + (1 if d == 0 else (-1 if d == 1 else 0))
+			var ny := ky + (1 if d == 2 else (-1 if d == 3 else 0))
+			var nz := kz + (1 if d == 4 else (-1 if d == 5 else 0))
+			if nx < x0 or nx > x1 or ny < y0 or ny > y1 or nz < z0 or nz > z1:
+				continue
+			var j := nx + sx * (ny + s.y * nz)
+			if cells[j] == 0 or st[j] == 2:
+				continue
+			var lj := (nx - x0) + bw * (ny - y0 + bh * (nz - z0))
+			if seen[lj] == 0:
+				seen[lj] = 1
+				q.append(j)
+	for e in edge:
+		if seen[(e % sx - x0) + bw * ((e / sx) % s.y - y0 + bh * (e / sxy - z0))] == 0:
+			return true
+	return false
+
+# a part cut the quick way: are any of its cubes still there among the ones (before the cut) nearest pt, a child's joint?
+static func _joint_kept(cells: PackedInt32Array, cut: PackedByteArray, s: Vector3i, pt: Vector3) -> bool:
+	var st := PackedByteArray()
+	st.resize(cells.size())
+	for z in range(clampi(floori(pt.z) - 6, 0, s.z - 1), clampi(ceili(pt.z) + 6, 0, s.z - 1) + 1):
+		for y in range(clampi(floori(pt.y) - 6, 0, s.y - 1), clampi(ceili(pt.y) + 6, 0, s.y - 1) + 1):
+			var row := s.x * (y + s.y * z)
+			for x in range(clampi(floori(pt.x) - 6, 0, s.x - 1), clampi(ceili(pt.x) + 6, 0, s.x - 1) + 1):
+				if cells[row + x] != 0:
+					st[row + x] = 1
+				elif cut[row + x] == 2:
+					st[row + x] = 2
+	var near := _near_cells(st, s, pt, 1.5)
+	if near.is_empty():
+		return true
+	for i in near:
+		if st[i] == 1:
+			return true
+	return false
+
 static func _seg_dist(p: Vector3, a: Vector3, b: Vector3) -> float:
 	var ab := b - a
 	var tt := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.000001), 0.0, 1.0)
 	return p.distance_to(a + ab * tt)
 
-# the filled cells nearest pt (in cells), and any within slack cells further than the nearest
-static func _near_filled(cells: PackedInt32Array, s: Vector3i, pt: Vector3, slack: float) -> PackedInt32Array:
+# the filled cells nearest pt (in cells; with a cut mask, only ones not cut, cut[i] != 2), and any within slack cells
+# further than the nearest
+static func _near_filled(cells: PackedInt32Array, s: Vector3i, pt: Vector3, slack: float, cut: PackedByteArray) -> PackedInt32Array:
 	var st := PackedByteArray()
 	st.resize(cells.size())
 	var x0 := clampi(floori(pt.x) - 8, 0, s.x - 1)
@@ -957,12 +1085,12 @@ static func _near_filled(cells: PackedInt32Array, s: Vector3i, pt: Vector3, slac
 		for y in range(clampi(floori(pt.y) - 8, 0, s.y - 1), clampi(ceili(pt.y) + 8, 0, s.y - 1) + 1):
 			var row := s.x * (y + s.y * z)
 			for x in range(x0, x1 + 1):
-				if cells[row + x] != 0:
+				if cells[row + x] != 0 and (cut.is_empty() or cut[row + x] != 2):
 					st[row + x] = 1
 	var out := _near_cells(st, s, pt, slack)
 	if out.is_empty():
 		for i in cells.size():
-			st[i] = 1 if cells[i] != 0 else 0
+			st[i] = 1 if cells[i] != 0 and (cut.is_empty() or cut[i] != 2) else 0
 		out = _near_cells(st, s, pt, slack)
 	return out
 

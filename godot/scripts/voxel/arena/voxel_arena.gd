@@ -458,7 +458,7 @@ func _swordtest(dt: float) -> void:
 		_st_i += 1
 		_st_t = 0.8
 
-# --meleetest=<weapon id> --shots=dir [--topdown] [--immortal]: a grunt standing in front, frozen; the weapon out;
+# --meleetest=<weapon id> --shots=dir [--topdown] [--immortal] [--headaim]: a grunt standing in front, frozen; the weapon out;
 # left click pressed at 1 s, held, let go at 1.8 s; a fresh grunt at 3 s; right click pressed at 3.4 s, held, let go
 # at 4.4 s; frames saved round each (melee_<id>_<L|R>_<k>.png), what each did printed (MELEE ...), then quit at 6.6 s
 const MT_SHOTS := [0.03, 0.12, 0.3, 0.6, 0.95, 1.6, 2.2]
@@ -498,7 +498,8 @@ func _meleetest(dt: float) -> void:
 		return
 	# look at the grunt's chest (top-down: the mouse on him)
 	var b := _mt_body
-	var target := b.global_position + Vector3(0, 1.1, 0)
+	# (--headaim: the right click goes at the head)
+	var target := b.global_position + Vector3(0, 1.7 if (_opts.has("headaim") and _mt_t > 3.2) else 1.1, 0)
 	if top_down:
 		get_viewport().warp_mouse(cam.unproject_position(target))
 	else:
@@ -744,8 +745,9 @@ func _camera(dt: float) -> void:
 		avatar.odo += avatar.speed * dt
 		avatar.attack = maxf(0.0, avatar.attack - dt * 2.5)    # a sword swing's arms, back down
 		avatar.animate(dt, avatar.speed > 0.2)
-		cam.global_position = pp + Vector3(0, 13.0, 6.0)
-		cam.look_at(pp + Vector3(0, 0.8, 0), Vector3.UP)
+		var shake := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * 0.06 * _kick    # a blow shakes it here too
+		cam.global_position = pp + Vector3(0, 13.0, 6.0) + shake
+		cam.look_at(pp + Vector3(0, 0.8, 0) + shake, Vector3.UP)
 		cross.visible = false
 	else:
 		cam.global_position = pp + Vector3(0, 1.65, 0)

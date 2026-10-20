@@ -18,6 +18,9 @@ static var _stop_n := 0
 
 func setup(arena_: Node3D, cam: Camera3D) -> void:
 	arena = arena_
+	# what a weapon puts in the world (rings, a thrown spear) moves every frame, not on physics ticks: no
+	# interpolation, or it lags behind and slides during a hit-stop
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	view = Node3D.new()
 	cam.add_child(view)
 	view.visible = false

@@ -51,6 +51,31 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   (kills). A joint inside the cut keeps the side toward its parent, so a neck cut takes the whole head. A slash
   through the body takes a third of its health; cut through the middle, the top half comes off. A hit freezes the
   game for 70 ms (hit-stop). A cut costs 6-15 ms here (worker threads mesh the cut-off ends).
+- **Bat** (slot 4, `voxel_melee_bat.gd`): blunt, never cuts. Left click a quick level swing: the nearest one in the
+  arc takes a dent (the cubes fly), loses some health and is knocked flying (`VoxelBody.launch`: tumbling backward,
+  lands, lies a moment, gets up; dead ones fly too). Hold right click to wind up a home run (0.95 s to full; it glows
+  and shakes), let go: harder, further, a longer hit-stop; a full charge hits everyone in the arc and a full-charge
+  hit on the head knocks it clean off (top-down: put the mouse on the top of the head).
+- **Sledgehammer** (slot 5, `voxel_melee_hammer.gd`): crushing. Left click an overhead smash where you look: a round
+  crater (`VoxelBody.carve`, a ball 0.17 m) in whatever it meets: a chest caved in, the top of a head (kills), an arm or
+  leg knocked off where it lands; on the floor it throws the lying cubes back up. Right click a ground slam: a
+  shockwave rings out 4.5 m and throws everyone it reaches up and away (nearer, harder) and down; lying cubes jump.
+- **Chainsaw** (slot 6, `voxel_melee_chainsaw.gd`): grinding. Hold left: the bar goes out and about ten times a second
+  grinds a thin kerf (a short `carve` capsule) out of every body it touches, so sweeping the mouse drags the cut
+  through and saws off an arm, a leg, the head or the top half; in flesh the bar drags behind the mouse; the one being
+  sawn is held, twitching; chips and blood spray. Right click lunges (every 1.5 s): thrown forward grinding, into the
+  first one, then rips up out of them through the head.
+- **Spear** (slot 7, `voxel_melee_spear.gd`): piercing. Left click a thrust: the tip's line (to 3.2 m) bores a thin
+  tunnel through every body on it, two or three skewered at once; through the brain it kills, through a joint the limb
+  comes off. Right click throws it (28 m/s): it bores through up to three bodies and sticks in the wall or floor where
+  it lands; your hands are empty till right click again (or walking up to it) calls it back, boring through anyone in
+  the way. With an enemy right up close the spear slides back through your grip.
+- Each melee weapon's moves were built and then reviewed by a second pass that tried to break them (switching mid-move,
+  the target freed mid-swing, F2, no bodies, dead bodies, holding forever, top-down with the mouse off the floor). Shared
+  body fixes from that: a cut through the hips no longer takes the whole top half off (the root part never comes off
+  whole); a cut next to a joint keeps the cubes still there; carve's health per cube scales with the cube's size (F2);
+  a cut that can't have split a part skips the fill over the whole part (a chainsaw bite into the chest about 5 ms
+  instead of 7-20); tiny bits left floating at a cut's edge fly off as cubes, not pieces.
 - **Vacuum gun** (slot 8, or E; `voxel_vacuum.gd`), sucking like Astroneer's terrain tool (the owner, 20
   Oct): a see-through brush sphere sits where you point (the floor, a wall, or 6.5 m out), right click + the wheel
   sizes it (0.35-1.6 m). Hold click: the cubes inside it (lying or flying) come loose at 1500 a second, nearest the middle
@@ -64,7 +89,9 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
 - Measured here (no GPU in the cloud, so only the CPU side counts): the arena's own code is about 1-3 ms a frame with
   20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
   hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
-- Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts and vacuum (100/100); `-- --swordtest=dir`
+- Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts, vacuum, weapon slots, carve/launch and each melee weapon's own checks
+  (181/181); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
+  standing grunt, saving frames; `-- --weaponshots=dir` takes every slot out, first person then top-down; `-- --swordtest=dir`
   slashes a standing grunt (an arm, the neck, the knees) then vacuums, saving frames; `-- --walkcheck=dir --legless`
   shows the worm crawl. The arena's own self-test:
   `godot --path godot res://scripts/voxel/arena/voxel_arena.tscn -- --auto --secs=30 --stats` (or the built exe with
