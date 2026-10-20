@@ -70,6 +70,8 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   comes off. Right click throws it (28 m/s): it bores through up to three bodies and sticks in the wall or floor where
   it lands; your hands are empty till right click again (or walking up to it) calls it back, boring through anyone in
   the way. With an enemy right up close the spear slides back through your grip.
+- Screenshots (software-rendered): `voxel_shots/melee_bat_flying.png`, `melee_hammer_crater.png`, `melee_hammer_slam.png`,
+  `melee_chainsaw_lunge.png`, `melee_spear_thrust.png`.
 - Each melee weapon's moves were built and then reviewed by a second pass that tried to break them (switching mid-move,
   the target freed mid-swing, F2, no bodies, dead bodies, holding forever, top-down with the mouse off the floor). Shared
   body fixes from that: a cut through the hips no longer takes the whole top half off (the root part never comes off
