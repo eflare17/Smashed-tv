@@ -70,6 +70,11 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   comes off. Right click throws it (28 m/s): it bores through up to three bodies and sticks in the wall or floor where
   it lands; your hands are empty till right click again (or walking up to it) calls it back, boring through anyone in
   the way. With an enemy right up close the spear slides back through your grip.
+- **Bodies can always be cut up** (the owner, 20 Oct): corpses stay (no longer gone after 12 s; past 40 lying about the
+  oldest go). A cut-off piece that comes to rest (or is just rocking on the floor, after 1.5 s) is made a body again, a
+  dead VoxelBody "fragment" with only its parts, each posed where it lay and never animated, so every weapon and gun
+  goes on cutting it (a hand off the arm lying there, the lying top half in two); knocked flying (the bat, a slam) a
+  fragment is a rigid piece again, and lies down a body again. The vacuum takes corpses and fragments too.
 - Screenshots (software-rendered): `voxel_shots/melee_bat_flying.png`, `melee_hammer_crater.png`, `melee_hammer_slam.png`,
   `melee_chainsaw_lunge.png`, `melee_spear_thrust.png`.
 - A last review of the shared code (cuts, weapon input, runtime) found 24 problems, all reproduced, fixed and checked
@@ -98,7 +103,7 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
   hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
 - Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts, vacuum, weapon slots, carve/launch and each melee weapon's own checks
-  (187/187); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
+  (193/193); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
   standing grunt, saving frames; `-- --weaponshots=dir` takes every slot out, first person then top-down; `-- --swordtest=dir`
   slashes a standing grunt (an arm, the neck, the knees) then vacuums, saving frames; `-- --walkcheck=dir --legless`
   shows the worm crawl. The arena's own self-test:
