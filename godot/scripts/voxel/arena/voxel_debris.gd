@@ -102,25 +102,37 @@ func pop(centre: Vector3, r: float, up: float = 4.0, cap: int = 1500) -> int:
 	var rc := ceili(r)
 	var cx := floori(centre.x)
 	var cz := floori(centre.z)
+	# the floor cells nearest the middle first (the nearest cubes go up), stopping at cap: no need to find them all
+	var order := []
 	for dz in range(-rc, rc + 1):
 		for dx in range(-rc, rc + 1):
-			var k := (cx + dx + 1024) * 4096 + (cz + dz + 1024)
-			if not _cells.has(k):
-				continue
-			for i in (_cells[k] as PackedInt32Array):
-				var off := Vector2(_lp[i].x - centre.x, _lp[i].z - centre.z)
-				if off.length() <= r:
-					near.append(i)
-					if near.size() >= cap:
-						break                    # enough (no need to find them all first)
-			if near.size() >= cap:
-				break
-		if near.size() >= cap:
+			var mid := Vector2(cx + dx + 0.5 - centre.x, cz + dz + 0.5 - centre.z)
+			order.append(Vector2(mid.length_squared(), (cx + dx + 1024) * 4096 + (cz + dz + 1024)))
+	order.sort()
+	# (once there are enough, the cells as near as that one, within a cell's width, still count: then the nearest of
+	# them all, so it's a round patch, not one cell's worth)
+	var enough_at := INF
+	for o in order:
+		if sqrt(o.x) > enough_at + 1.42:
 			break
+		var k := int(o.y)
+		if not _cells.has(k):
+			continue
+		for i in (_cells[k] as PackedInt32Array):
+			var off := Vector2(_lp[i].x - centre.x, _lp[i].z - centre.z)
+			var dl := off.length()
+			if dl <= r:
+				near.append(Vector2(dl, i))
+		if near.size() >= cap and enough_at == INF:
+			enough_at = sqrt(o.x)
 	near.sort()
-	near.reverse()                       # taken from the end down, so the slots moved in are ones already seen
+	var take_i := []
+	for j in mini(cap, near.size()):
+		take_i.append(int(near[j].y))
+	take_i.sort()
+	take_i.reverse()                     # taken from the end down, so the slots moved in are ones already seen
 	var n := 0
-	for i in near:
+	for i in take_i:
 		var p := _lp[i]
 		var c := _lc[i]
 		var off2 := Vector3(p.x - centre.x, 0, p.z - centre.z)
@@ -300,7 +312,10 @@ func _pick() -> void:
 			order.append(Vector2(mid.length_squared(), (cx + dx + 1024) * 4096 + (cz + dz + 1024)))
 	order.sort()
 	var want := int(_budget) * 3
+	var enough_at := INF
 	for o in order:
+		if sqrt(o.x) > enough_at + 1.42:
+			break
 		var k := int(o.y)
 		if not _cells.has(k):
 			continue
@@ -308,8 +323,8 @@ func _pick() -> void:
 			var d2 := _lp[i].distance_squared_to(brush)
 			if d2 <= r2:
 				near.append(Vector2(d2, i))
-		if near.size() >= want:
-			break
+		if near.size() >= want and enough_at == INF:
+			enough_at = sqrt(o.x)
 	if near.is_empty():
 		return
 	near.sort()

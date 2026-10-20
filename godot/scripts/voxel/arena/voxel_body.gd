@@ -115,6 +115,7 @@ var brain_start := 0
 var brain_lost := 0
 const BRAIN_KILL := 0.25
 const REF_VM := 0.023                 # the cube size health per cube is reckoned at (a grunt, one sprite pixel a cube)
+const LUMP_MAX := 2500                # a piece this big or smaller is split into its separate lumps (bigger: one, it's slow)
 const MIN_PIECE := 12                 # fewer cubes than this cut loose fly off as bits, not a piece
 const BODY_TOUGH := 10.0              # body shots take this many times more cubes than before to kill
 const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "thigh": 3}
@@ -252,15 +253,69 @@ static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary
 
 # a part's grid keeping only its biggest lump of touching cubes (a few drawn pixels stand loose of the rest: they'd
 # fall off at the first cut anywhere on the part)
+## (Lumps that touch the rest only at an edge or a corner, or up to two cubes away, are joined on first, the cubes between
+## filled in, so they stay: they look attached.)
 static func _largest_lump(cells: PackedInt32Array, s: Vector3i) -> PackedInt32Array:
-	var lumps := _lumps(cells, s, Vector3i.ZERO, s - Vector3i.ONE)
-	if lumps.size() <= 1:
-		return cells
-	var best: Dictionary = lumps[0]
-	for l in lumps:
-		if int(l.n) > int(best.n):
-			best = l
-	return best.cells
+	cells = cells.duplicate()
+	for _pass in 3:
+		var lumps := _lumps(cells, s, Vector3i.ZERO, s - Vector3i.ONE)
+		if lumps.size() <= 1:
+			return cells
+		var best: Dictionary = lumps[0]
+		for l in lumps:
+			if int(l.n) > int(best.n):
+				best = l
+		var main := PackedByteArray()
+		main.resize(cells.size())
+		for j in (best.idx as PackedInt32Array):
+			main[j] = 1
+		var joined := false
+		for l in lumps:
+			if (l.idx as PackedInt32Array)[0] == (best.idx as PackedInt32Array)[0]:
+				continue
+			for j in (l.idx as PackedInt32Array):
+				if _bridge(cells, main, s, j):
+					joined = true
+					break
+		if not joined:
+			return best.cells
+	var last := _lumps(cells, s, Vector3i.ZERO, s - Vector3i.ONE)
+	var keep: Dictionary = last[0]
+	for l in last:
+		if int(l.n) > int(keep.n):
+			keep = l
+	return keep.cells
+
+# cell j (of a loose lump) next to the main lump (touching it at an edge or a corner, or up to two cubes away): fill the
+# cells between with its colour so they touch face to face; true if it did
+static func _bridge(cells: PackedInt32Array, main: PackedByteArray, s: Vector3i, j: int) -> bool:
+	var x := j % s.x
+	var y := (j / s.x) % s.y
+	var z := j / (s.x * s.y)
+	for reach in [1, 2, 3]:
+		for dz in range(-reach, reach + 1):
+			for dy in range(-reach, reach + 1):
+				for dx in range(-reach, reach + 1):
+					var nx: int = x + dx
+					var ny: int = y + dy
+					var nz: int = z + dz
+					if maxi(absi(dx), maxi(absi(dy), absi(dz))) != reach or absi(dx) + absi(dy) + absi(dz) < 2:
+						continue
+					if nx < 0 or ny < 0 or nz < 0 or nx >= s.x or ny >= s.y or nz >= s.z or main[nx + s.x * (ny + s.y * nz)] == 0:
+						continue
+					# a cube at a time toward it, along x, then y, then z, filling the empty ones on the way
+					var c := Vector3i(x, y, z)
+					var to := Vector3i(nx, ny, nz)
+					for ax in 3:
+						while c[ax] != to[ax]:
+							c[ax] += signi(to[ax] - c[ax])
+							var k := c.x + s.x * (c.y + s.y * c.z)
+							if c == to:
+								break
+							if cells[k] == 0:
+								cells[k] = cells[j]
+					return true
+	return false
 
 static func _filled(g: Dictionary, x: int, y: int, z: int) -> bool:
 	var s: Vector3i = g.size
@@ -702,11 +757,8 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var m := att * bind
 		var o := Vector3(p.origin)
 		# off whole if the nearest part up the chain lost the cubes this one hangs from
-		var pb := model.bone_parent[b]
-		while pb >= 0 and not by_bone.has(pb):
-			pb = model.bone_parent[pb]
-		if pb >= 0:
-			var par: String = by_bone[pb]
+		var par := _parent_part(nm, by_bone, root)
+		if par != "":
 			if whole.has(par):
 				whole[nm] = true
 			elif quick.has(par):
@@ -853,7 +905,16 @@ func _remove(opt: Dictionary) -> Dictionary:
 			if plane:
 				keep_side = signf(n.dot(ref - eye))
 				if keep_side == 0.0:
-					keep_side = 1.0      # the parent's joint right on the blade: keep one side, not both
+					# the parent's joint right on the blade: the side its nearest cube left is on (not both)
+					var par2 := _parent_part(nm, by_bone, root)
+					if par2 != "":
+						var pp2: Dictionary = parts[par2]
+						var jt2: Vector3 = model.bone_pivot[b] * model.voxel_m / vm - Vector3(pp2.origin) - Vector3(0.5, 0.5, 0.5)
+						var ki := _nearest_filled_cell(pp2.grid.cells, pp2.grid.size, jt2)
+						if ki >= 0:
+							keep_side = signf(n.dot(_cell_world(par2, ki) - eye))
+					if keep_side == 0.0:
+						keep_side = 1.0
 			else:
 				keep_dir = ref - jw
 		# (the joint in the cut: the cubes nearest it may be cut ones, and if none left is as near, it all comes off;
@@ -957,7 +1018,9 @@ func _remove(opt: Dictionary) -> Dictionary:
 			# each lump that came off is a piece of its own; a few cubes left floating at the cut's edge just fly
 			# off with the rest
 			var mo := mesh_origin(nm)
-			for comp in _lumps(off_cells, s, olo, ohi):
+			var lumps := _lumps(off_cells, s, olo, ohi) if noff <= LUMP_MAX else \
+				[{"cells": off_cells, "idx": PackedInt32Array(), "n": noff, "lo": olo, "hi": ohi}]
+			for comp in lumps:
 				var cc: PackedInt32Array = comp.cells
 				if int(comp.n) < MIN_PIECE:
 					for j in comp.idx:
@@ -1083,6 +1146,42 @@ static func _may_split(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i
 		if seen[(e % sx - x0) + bw * ((e / sx) % s.y - y0 + bh * (e / sxy - z0))] == 0:
 			return true
 	return false
+
+# the part a part hangs from: up the bones to the first one with a part; the legs (whose hips have none) hang from the
+# body itself; "" for the root
+func _parent_part(nm: String, by_bone: Dictionary, root: String) -> String:
+	var pb := model.bone_parent[int(parts[nm].bone)]
+	while pb >= 0 and not by_bone.has(pb):
+		pb = model.bone_parent[pb]
+	if pb >= 0:
+		return by_bone[pb]
+	return root if nm != root else ""
+
+# where cell i of part nm's grid is in the world now
+func _cell_world(nm: String, i: int) -> Vector3:
+	var p: Dictionary = parts[nm]
+	var b: int = p.bone
+	var s: Vector3i = p.grid.size
+	var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+	return m * ((Vector3(i % s.x, (i / s.x) % s.y, i / (s.x * s.y)) + Vector3(p.origin) + Vector3(0.5, 0.5, 0.5)) * vm)
+
+# the filled cell nearest pt (in cells), -1 if none
+static func _nearest_filled_cell(cells: PackedInt32Array, s: Vector3i, pt: Vector3) -> int:
+	for r in [6, 1000]:
+		var best := -1
+		var bd := INF
+		for z in range(clampi(floori(pt.z) - r, 0, s.z - 1), clampi(ceili(pt.z) + r, 0, s.z - 1) + 1):
+			for y in range(clampi(floori(pt.y) - r, 0, s.y - 1), clampi(ceili(pt.y) + r, 0, s.y - 1) + 1):
+				var row := s.x * (y + s.y * z)
+				for x in range(clampi(floori(pt.x) - r, 0, s.x - 1), clampi(ceili(pt.x) + r, 0, s.x - 1) + 1):
+					if cells[row + x] != 0:
+						var d := Vector3(x, y, z).distance_squared_to(pt)
+						if d < bd:
+							bd = d
+							best = row + x
+		if best >= 0:
+			return best
+	return -1
 
 # the cubes that came off a part (cells: a full-size grid of them, inside lo..hi) split into lumps that touch (face to
 # face): [{cells: a full-size grid of that lump, idx: its indices, n, lo, hi}]

@@ -132,6 +132,8 @@ func _ready() -> void:
 	bar = VoxelWeaponBar.new()
 	_hud_layer.add_child(bar)
 	bar.setup(loadout, self)
+	for id in ["blaster", "shotgun"]:
+		_hand_meshes[id] = _gun_mesh(id, avatar.model.voxel_m)     # top-down's guns, ready before the first switch
 	_warm_up()
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
@@ -928,7 +930,6 @@ func _weapons_step(dt: float) -> void:
 	for id in melee:
 		melee[id].step(dt)
 	var cur := loadout.id()
-	vacuum.step(dt, cur == "vacuum", _sucking)
 	_recoil = maxf(0.0, _recoil - dt * 6.0)
 	_aim_k = move_toward(_aim_k, 1.0 if _aiming else 0.0, dt * 6.0)
 	cam.fov = lerpf(80.0, 50.0, _aim_k)
@@ -938,6 +939,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
+	vacuum.step(dt, shown == "vacuum", _sucking and cur == "vacuum")
 	for id in _guns:
 		var gv: Node3D = _guns[id]
 		gv.visible = id == shown and not top_down
