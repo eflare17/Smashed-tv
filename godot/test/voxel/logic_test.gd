@@ -20,6 +20,7 @@ func _ready() -> void:
 	_model()
 	_goth()
 	_poses()
+	_holes()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
 	get_tree().quit(1 if failed > 0 else 0)
@@ -118,6 +119,44 @@ func _goth() -> void:
 		h = maxf(h, v.y)
 	check(h > 1.7 and h < 2.2, "Gothica is as tall as her picture (%.2f)" % h)
 	check(VoxelModel.model_for_sheet("goth") == "goth", "the goth sheet shows her blocks")
+
+# the PC arena's shooting: a ray into a grunt finds a cube exactly, a hit knocks a round hole there
+func _holes() -> void:
+	var mat := StandardMaterial3D.new()
+	var b := VoxelBody.new()
+	add_child(b)
+	b.setup("grunt", 0.023, 1, mat)
+	b.animate(0.0, false)
+	var from := Vector3(0, 1.2, 3.0)
+	var h := b.trace(from, Vector3(0, 0, -1), 10.0)
+	check(not h.is_empty(), "a shot at a grunt's chest hits him")
+	if h.is_empty():
+		b.queue_free()
+		return
+	check(String(h.part) in ["torso", "arm_l", "arm_r", "hand_l", "hand_r", "pelvis"], "it lands on his body (%s)" % h.part)
+	var part: Dictionary = b.parts[h.part]
+	var before: int = part.left
+	var res := b.damage(h, 1.9)
+	check((res.bits as Array).size() > 5 and int(part.left) < before, "a hole: %d cubes out" % (res.bits as Array).size())
+	check(b.dirty_parts().has(h.part) or bool(part.dirty), "only the hit part is meshed again")
+	var h2 := b.trace(from, Vector3(0, 0, -1), 10.0)
+	check(not h2.is_empty() and float(h2.dist) > float(h.dist), "the next shot goes deeper into the hole")
+	var flesh := false
+	var cells: PackedInt32Array = part.grid.cells
+	for c in cells:
+		if c != 0:
+			var k := c - 1
+			if ((k >> 16) & 255) > 90 and ((k >> 8) & 255) < 50 and (k & 255) < 60:
+				flesh = true
+				break
+	check(flesh, "there's flesh inside")
+	for i in 30:
+		var hh := b.trace(from, Vector3(0, 0, -1), 10.0)
+		if hh.is_empty() or not b.alive:
+			break
+		b.damage(hh, 1.9)
+	check(not b.alive, "enough shots kill him")
+	b.queue_free()
 
 func _poses() -> void:
 	var idle := VoxelAnim.pose({"t": 1.0})

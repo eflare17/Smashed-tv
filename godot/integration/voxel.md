@@ -9,6 +9,34 @@ Jared: ready for review (screenshots in `integration/voxel_shots/`, see "Screens
 Sprite maker blocks: done (18 Oct, branch `claude/sprite-maker-blocks`; see "Block characters from the sprite maker"
 below, screenshots `integration/voxel_shots/sprite_maker_*.png`)
 
+## The PC voxel arena test (20 Oct, PLAN.md "PC only, voxel destruction")
+
+Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`claude/godot-voxel`): one exe, no install
+(Windows SmartScreen: More info, Run anyway). Built from `scripts/voxel/arena/voxel_arena.tscn` with the desktop
+renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel Arena" (custom feature
+`voxel_arena`: `project.godot` picks that scene and Forward+ for it; the main game and the web build are unchanged).
+
+- Waves of block enemies (grunt, swarmer, brute, batter, about 1.7-2.2 m tall, 2.3 cm cubes = one sprite pixel a
+  cube; F2 switches to two pixels a cube) come at you. Blaster (left click, 10 a second, holes about 4 cubes wide)
+  and shotgun (right click, 9 pellets).
+- **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
+  that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
+  MultiMesh of up to 8000 cubes in one draw call, bouncing and settling, gone after 4-7 s); inside is flesh, bone
+  down the limbs and a skull round the head. A limb hit 1-3 times comes off (with what hangs from it); health goes by
+  cubes knocked out and where (the head counts most), and a leg off drops them. The dead topple and lie 12 s.
+- Each body part is its own mesh on its bone (BoneAttachment3D, no skinning), so a hit re-meshes only that part, on a
+  worker thread (WorkerThreadPool, 12 at a time); fresh enemies share ready-made meshes until they're shot.
+- V: top-down (Juicy Jared in blocks in the middle, aim with the mouse); first person otherwise. F1 shadows, F3 +10
+  enemies, F4 freeze, F5 a wave of 40. Top left: fps, ms a frame, the arena's own code time, draw calls,
+  triangles, cubes flying, meshing jobs.
+- Measured here (no GPU in the cloud, so only the CPU side counts): the arena's own code is about 1-3 ms a frame with
+  20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
+  hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
+- Tests: `test/voxel/logic_test.tscn` checks the tracing and holes (80/80); the arena's own self-test:
+  `godot --path godot res://scripts/voxel/arena/voxel_arena.tscn -- --auto --secs=30 --stats` (or the built exe with
+  `-- --auto --secs=30 --shot=out.png`). Screenshots: `voxel_shots/arena_fp1.png`, `arena_fp2.png`, `arena_td2.png`
+  (software-rendered, so the fps there means nothing).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

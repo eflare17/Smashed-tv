@@ -13,6 +13,7 @@ config_version=5
 
 config/name="Smashed TV"
 run/main_scene="res://scenes/main.tscn"
+run/main_scene.voxel_arena="res://scripts/voxel/arena/voxel_arena.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 
 [autoload]
@@ -182,4 +183,5 @@ common/physics_interpolation=true
 textures/canvas_textures/default_texture_filter=0
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.voxel_arena="forward_plus"
 limits/opengl/max_lights_per_object=16
