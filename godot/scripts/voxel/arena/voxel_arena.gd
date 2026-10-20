@@ -7,12 +7,13 @@ extends Node3D
 ## The top left shows what it costs (frame rate, frame time, draw calls, triangles, cubes flying, meshing jobs).
 ## Owned by the voxel session. Desktop renderer (Forward+); the Windows build boots straight into this scene.
 ##
-## Keys: WASD move, mouse look, left click blaster (holds), right click shotgun, Shift run, Space jump, V top-down /
-## first person, F1 shadows, F2 cube size (1 or 2 sprite pixels a cube), F3 ten more enemies, F4 freeze them,
-## F5 a big wave (40), Esc frees the mouse (click to grab it again).
+## Keys: WASD move, mouse look, 1-5 the weapon groups (melee, guns, special, explosives, the vacuum; the key again for
+## the next one in it), the wheel, Q the last weapon, both mouse buttons the weapon's own two moves, R reload,
+## Shift run, Space jump, V top-down / first person, F1 shadows, F2 cube size (1 or 2 sprite pixels a cube), F3 ten
+## more enemies, F4 freeze them, F5 a big wave (40), Esc frees the mouse (click to grab it again).
 ##
-## Testing (after -- on the command line): --auto (it aims at the nearest enemy and fires by itself, alternating
-## blaster and shotgun), --enemies=N, --shot=path.png and --secs=S (save a screenshot after S seconds and quit),
+## Testing (after -- on the command line): --auto (it aims at the nearest enemy and fires by itself, single shots
+## and blasts), --enemies=N, --shot=path.png and --secs=S (save a screenshot after S seconds and quit),
 ## --topdown, --chunk=2, --stats (print the frame numbers every second).
 
 const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batter", "batter"]
@@ -58,23 +59,28 @@ var _code_ms := 0.0            # the arena's own code a frame (smoothed)
 var _prof := {}                 # section -> microseconds this second (--stats)
 ## The melee weapons (the owner, 20 Oct: five, each doing something different): weapon id -> script; one whose
 ## file isn't there is left out of the slots.
+## Every weapon with a script (VoxelMelee: melee, guns, the special ones): weapon id -> script; one whose file isn't
+## there is left out of the slots.
 const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res://scripts/voxel/arena/voxel_melee_bat.gd",
 	"hammer": "res://scripts/voxel/arena/voxel_melee_hammer.gd", "chainsaw": "res://scripts/voxel/arena/voxel_melee_chainsaw.gd",
-	"spear": "res://scripts/voxel/arena/voxel_melee_spear.gd"}
-var loadout := VoxelLoadout.new()   # the weapon slots: 1-8, the wheel, Q the last one
+	"spear": "res://scripts/voxel/arena/voxel_melee_spear.gd",
+	"pistol": "res://scripts/voxel/arena/voxel_gun_pistol.gd", "shotgun": "res://scripts/voxel/arena/voxel_gun_shotgun.gd",
+	"laser": "res://scripts/voxel/arena/voxel_weapon_laser.gd", "flamethrower": "res://scripts/voxel/arena/voxel_weapon_flamethrower.gd",
+	"freezeray": "res://scripts/voxel/arena/voxel_weapon_freezeray.gd", "harpoon": "res://scripts/voxel/arena/voxel_weapon_harpoon.gd",
+	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd"}
+var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
+var sound: VoxelSound           # every sound (VoxelSound)
+var flames: VoxelFlames         # fire, as little glowing cubes
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
 var pieces: VoxelPieces         # the bits melee weapons take off, lying about
 var vacuum: VoxelVacuum
 var bar: VoxelWeaponBar
 var _sucking := false
-var _guns := {}                 # "blaster" / "shotgun" -> its first-person view (a block gun on the camera)
 var _held := {}                 # mouse button -> true: down since a press the melee weapon out was told of
 var _ignore := {}               # mouse button -> true: down since before the last switch (ignored till let go)
 var _clicked := {}              # mouse button -> true: pressed since the last frame (a click quicker than a frame)
-var _hand_meshes := {}          # top-down: the guns' meshes for Jared's hand, built once
-var _recoil := 0.0              # the gun in hand kicking back (1 just fired)
-var _aiming := false            # blaster right click
+var _aiming := false            # a gun aimed in (the pistol's right click): the view closes in
 var _aim_k := 0.0               # 0 at the hip .. 1 aimed (the view closes in)
 var _hand_id := "-"             # top-down: what Jared's hand holds now
 var _hands := []                # top-down: the BoneAttachment3Ds holding it
@@ -111,10 +117,19 @@ func _ready() -> void:
 	_tracers.material_override = tm
 	_tracers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tracers)
+	sound = VoxelSound.new()
+	add_child(sound)
+	flames = VoxelFlames.new()
+	add_child(flames)
+	flames.setup(_cube_m("grunt"))
+	VoxelBody.on_shatter = func(b: VoxelBody, bits: Array, dir: Vector3) -> void:
+		knocked += bits.size()
+		debris.burst(bits, dir.normalized() if dir.length() > 0.01 else Vector3.UP, 3.0)
+		sound.play("shatter", b.global_position)
 	pieces = VoxelPieces.new()
 	add_child(pieces)
 	pieces.setup(self)
-	var have := ["blaster", "shotgun"]
+	var have := []
 	for id in MELEE:
 		if ResourceLoader.exists(MELEE[id]):
 			var w: VoxelMelee = load(MELEE[id]).new()
@@ -128,13 +143,13 @@ func _ready() -> void:
 	vacuum.setup(self, cam)
 	have.append("vacuum")
 	loadout.keep_only(have)
-	_guns["blaster"] = _gun_view("blaster", 0.0055, Vector3(0.2, -0.2, -0.42))
-	_guns["shotgun"] = _gun_view("shotgun", 0.0046, Vector3(0.2, -0.24, -0.36))
+	if loadout.index_of("pistol") >= 0:
+		loadout.select(loadout.index_of("pistol"))       # the pistol out first
+		loadout.switch_t = 0.0
+		melee.pistol.on_select()
 	bar = VoxelWeaponBar.new()
 	_hud_layer.add_child(bar)
 	bar.setup(loadout, self)
-	for id in ["blaster", "shotgun"]:
-		_hand_meshes[id] = _gun_mesh(id, avatar.model.voxel_m)     # top-down's guns, ready before the first switch
 	_warm_up()
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
@@ -286,7 +301,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "1-8 or wheel: weapons (bar above)   Q last weapon   F quick sword slash   E vacuum   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   E vacuum   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -388,9 +403,12 @@ func _unhandled_input(e: InputEvent) -> void:
 				_sword_key(false)
 			KEY_C:
 				_sword_key(true)
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9:
-				var i: int = e.physical_keycode - KEY_1
-				_switch(func(): loadout.select(i))
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+				var g: int = e.physical_keycode - KEY_1 + 1
+				_switch(func(): loadout.select_group(g))
+			KEY_R:
+				if melee.has(loadout.id()):
+					melee[loadout.id()].reload_key()
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
 			KEY_E:
@@ -659,11 +677,16 @@ func _physics_process(dt: float) -> void:
 		var mv := Vector3.ZERO
 		var stop := 4.5 if _opts.has("auto") else 1.2
 		b.react_step(dt)
-		if not frozen and d > stop and b.stagger <= 0.0 and not b.floored():
+		var ice := b.frozen()                       # frozen solid: a statue till it thaws or shatters
+		var panic := b.panic_t > 0.0 and not ice    # on fire: running about, flailing, not fighting
+		var can := not frozen and not ice and b.stagger <= 0.0 and not b.floored()
+		if can and panic:
+			mv = b.panic_dir * b.speed * 1.4 * b.move_factor()
+		elif can and d > stop:
 			mv = to / d * b.speed * b.move_factor()
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
-			if j == i or not bodies[j].alive:
+			if ice or j == i or not bodies[j].alive:
 				continue
 			var away := b.position - bodies[j].position
 			away.y = 0
@@ -673,16 +696,58 @@ func _physics_process(dt: float) -> void:
 		b.position += mv * dt
 		b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
-		if d > 0.01 and not b.floored():
+		if panic and can:
+			b.yaw = lerp_angle(b.yaw, atan2(b.panic_dir.x, b.panic_dir.z), 1.0 - exp(-dt * 6.0))
+		elif d > 0.01 and can:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
-		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen and b.stagger <= 0.0 and not b.floored()) else 0.0
+		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and can and not panic) else 0.0
+	_bowl()
 	for b in to_fly:
 		if b.cubes_left() == 0:
 			bodies.erase(b)
 			b.queue_free()
 		else:
 			pieces.from_fragment(b)
+
+# a body flying fast (batted, blasted, thrown) knocks over whoever it hits
+func _bowl() -> void:
+	for b in bodies:
+		if not b.airborne or b.fragment or b.position.y > 1.6 or b.air_v.length_squared() < 9.0:
+			continue
+		for o in bodies:
+			if o == b or o.airborne or o.fragment or not o.alive:
+				continue
+			var dd := o.position - b.position
+			dd.y = 0.0
+			if dd.length_squared() < 0.64:
+				var v := b.air_v
+				o.launch(Vector3(v.x, 0.0, v.z) * 0.6 + Vector3.UP * 2.5, 5.0)
+				o.hurt(6.0)
+				b.air_v = Vector3(v.x * 0.6, v.y, v.z * 0.6)
+				sound.play("thwack", o.position + Vector3.UP, -4.0)
+
+# fire and ice: the fire spreading and eating (flames, ash falling, burnt-off bits dropping), the thaw
+func _status_step(dt: float) -> void:
+	var any_burning := false
+	for b: VoxelBody in bodies.duplicate():
+		if not is_instance_valid(b) or not b.has_status():
+			continue
+		var st: Dictionary = b.status_step(dt)
+		if b.burning():
+			any_burning = true
+		for p in st.flames:
+			flames.emit(p, 2, Vector3.ZERO, 2.6, 0.55)
+		var r: Dictionary = st.removed
+		if not r.is_empty():
+			knocked += (r.bits as Array).size()
+			debris.burst(r.bits, Vector3.UP, 0.6)
+			if not (r.pieces as Array).is_empty():
+				pieces.spawn(b, r.pieces, Vector3.UP * 0.4, Vector3.ZERO)
+	if any_burning:
+		sound.loop("burning", "burn_loop", null, -8.0)
+	elif sound.playing("burning"):
+		sound.stop("burning")
 
 func _process(dt: float) -> void:
 	_t += dt
@@ -721,6 +786,7 @@ func _process(dt: float) -> void:
 	_camera(dt)
 	var t1 := Time.get_ticks_usec()
 	_shoot(dt)
+	_status_step(dt)
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
 		var moving := b.alive and not frozen
@@ -857,28 +923,8 @@ func _shoot(dt: float) -> void:
 		return
 	if not loadout.usable():
 		return
-	match id:
-		"blaster":
-			# right click: aimed in (tighter, the view closes in)
-			_aiming = rmb and not top_down
-			if lmb and loadout.ready_to("blaster"):
-				loadout.cool("blaster", 0.1)
-				fire(a[0], a[1], 1, 0.2 if _aiming else 0.6, 1.9)
-				_recoil = 1.0
-		"shotgun":
-			if lmb and loadout.ready_to("shotgun"):
-				loadout.cool("shotgun", 0.9)
-				fire(a[0], a[1], 9, 4.5, 1.4)
-				_recoil = 1.0
-			elif rmb and loadout.ready_to("shotgun"):
-				# both barrels: twice the pellets, a wider spread, a big kick, a longer reload
-				loadout.cool("shotgun", 1.7)
-				fire(a[0], a[1], 18, 6.5, 1.5)
-				_recoil = 1.6
-				_kick = 2.0
-		"vacuum":
-			if not _opts.has("swordtest"):
-				_sucking = lmb
+	if id == "vacuum" and not _opts.has("swordtest"):
+		_sucking = lmb
 
 # F (or a mouse side button): a sword slash the way the mouse was moving, whatever is out; C: a chop (top-down: a
 # low sweep at the legs)
@@ -907,24 +953,20 @@ func _switch(change: Callable) -> void:
 			_ignore[btn] = true
 	if melee.has(now):
 		melee[now].on_select()
+	sound.play("switch", Vector3.INF, -6.0)
 
-# a block gun (the game's own .vox) for the first-person view: barrel forward, at the given spot by the camera
-func _gun_view(name: String, scale: float, at: Vector3) -> Node3D:
-	var root := Node3D.new()
-	root.position = at
-	root.set_meta("base", at)
-	var mi := MeshInstance3D.new()
-	mi.mesh = _gun_mesh(name, scale)
-	mi.material_override = _mat
-	mi.rotation = Vector3(0, PI, 0)            # the .vox barrel is +z; the camera looks down -z
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(mi)
-	root.visible = false
-	cam.add_child(root)
-	return root
-
-# a gun's mesh at scale metres a voxel (built here, not through VoxelModel.weapon_arrays, whose cache keeps one scale)
+# a gun's mesh at scale metres a voxel (built here, not through VoxelModel.weapon_arrays, whose cache keeps one scale;
+# kept, as reading and meshing a .vox takes ~20 ms)
+static var _gun_meshes := {}
 static func _gun_mesh(name: String, scale: float) -> ArrayMesh:
+	var ck := "%s|%.5f" % [name, scale]
+	if _gun_meshes.has(ck):
+		return _gun_meshes[ck]
+	var am := _gun_mesh_build(name, scale)
+	_gun_meshes[ck] = am
+	return am
+
+static func _gun_mesh_build(name: String, scale: float) -> ArrayMesh:
 	var meta: Dictionary = VoxelModel.weapon_meta()
 	if not meta.has(name):
 		return ArrayMesh.new()
@@ -952,8 +994,8 @@ func _weapons_step(dt: float) -> void:
 	for id in melee:
 		melee[id].step(dt)
 	var cur := loadout.id()
-	_recoil = maxf(0.0, _recoil - dt * 6.0)
-	_aim_k = move_toward(_aim_k, 1.0 if _aiming else 0.0, dt * 6.0)
+	avatar.recoil = maxf(0.0, avatar.recoil - dt * 6.0)
+	_aim_k = move_toward(_aim_k, 1.0 if _aiming and not top_down else 0.0, dt * 6.0)
 	cam.fov = lerpf(80.0, 50.0, _aim_k)
 	# a switch: the first half the old one goes down, the second half the new one comes up
 	var k := 1.0 - loadout.switch_frac()
@@ -962,21 +1004,12 @@ func _weapons_step(dt: float) -> void:
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
 	vacuum.step(dt, shown == "vacuum", _sucking and cur == "vacuum")
-	for id in _guns:
-		var gv: Node3D = _guns[id]
-		gv.visible = id == shown and not top_down
-		if gv.visible:
-			var base: Vector3 = gv.get_meta("base")
-			var aimed := Vector3(0.0, -0.12, -0.34)
-			gv.position = base.lerp(aimed, _aim_k) + Vector3(0, drop, 0.06 * _recoil)
-			gv.rotation = Vector3(0.12 * _recoil, 0, 0)
 	for id in melee:
 		var w: VoxelMelee = melee[id]
 		w.view.visible = not top_down and (id == shown or w.busy())
 		w.view.position = Vector3(0, drop if id == shown else 0.0, 0)
 	vacuum.view.visible = shown == "vacuum" and not top_down
 	vacuum.view.position = Vector3(0.24, -0.23 + (drop if shown == "vacuum" else 0.0), -0.5)
-	avatar.recoil = _recoil
 	if top_down and _hand_id != cur:
 		_hold_in_hand(cur)
 
@@ -990,20 +1023,13 @@ func _hold_in_hand(id: String) -> void:
 	var m := md.voxel_m
 	var g: Array = md.rig.get("grip_r", [-34.5, 56.0, 0.0])
 	var down := Basis(Vector3.RIGHT, PI / 2.0)    # the weapon's +z (out of the fist) along the arm
-	var poses := {"blaster": "blaster", "shotgun": "shotgun", "vacuum": "spud"}
-	avatar.weapon = poses.get(id, melee[id].hand_pose() if melee.has(id) else "")
-	for side in (["_r", "_l"] if id == "blaster" else ["_r"]):
+	avatar.weapon = melee[id].hand_pose() if melee.has(id) else ("spud" if id == "vacuum" else "")
+	for side in ["_r"]:
 		var b := md.bone("hand" + side)
 		if b < 0:
 			continue
 		var node: Node3D = null
-		if id == "blaster" or id == "shotgun":
-			node = MeshInstance3D.new()
-			if not _hand_meshes.has(id):
-				_hand_meshes[id] = _gun_mesh(id, m)        # (built once: a .vox read and meshed takes ~20 ms)
-			(node as MeshInstance3D).mesh = _hand_meshes[id]
-			(node as MeshInstance3D).material_override = _mat
-		elif id == "vacuum":
+		if id == "vacuum":
 			node = Node3D.new()
 			var vm := vacuum._model()
 			vm.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, 0.12))
@@ -1021,11 +1047,16 @@ func _hold_in_hand(id: String) -> void:
 		att.add_child(node)
 		_hands.append(att)
 
-## One trigger pull: pellets rays spread degrees apart, each knocking a hole r cubes round where it lands.
-func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float) -> void:
-	_flash.global_position = from + dir * 0.6
+## One trigger pull: pellets rays spread degrees apart, each knocking a hole r cubes round where it lands. opts:
+## muzzle (world: where the flash and tracer start), falloff (metres at which the hole is half as big). Returns the
+## hits: [{body, dist, part, point, res}].
+func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, opts: Dictionary = {}) -> Array:
+	var muzzle: Vector3 = opts.get("muzzle", from + dir * 0.5 + Vector3(0, -0.12, 0))
+	var falloff: float = opts.get("falloff", 0.0)
+	_flash.global_position = muzzle
 	_flash_t = 0.05
-	_kick = 1.0
+	_kick = maxf(_kick, 1.0)
+	var hits := []
 	for i in pellets:
 		var d := dir
 		if spread > 0.0:
@@ -1050,15 +1081,25 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float) ->
 		if not wh.is_empty():
 			end = wh.position
 			best_b = null
-		_tracer_list.append({"a": from + d * 0.5 + Vector3(0, -0.12, 0), "b": end, "t": 0.06})
+			# sparks off the wall or floor
+			flames.emit(end, 3, (wh.normal as Vector3) * 2.0, 0.8, 0.18)
+			sound.play("hit_world", end, -4.0)
+		_tracer_list.append({"a": muzzle, "b": end, "t": 0.06})
 		if best_b:
-			var res := best_b.damage(best, r)
-			best_b.hit_react(d, (res.bits as Array).size(), String(best.part))
+			var rr := r
+			if falloff > 0.0:
+				rr = maxf(0.9, r * pow(0.5, float(best.dist) / falloff))
+			var res := best_b.damage(best, rr)
+			if not res.get("shattered", false):
+				best_b.hit_react(d, (res.bits as Array).size(), String(best.part))
 			knocked += (res.bits as Array).size()
 			var bits: Array = res.bits
 			if bits.size() > 40:
 				bits = bits.slice(0, 40) + (bits.slice(40) as Array).filter(func(_x): return randf() < 0.35)
-			debris.burst(bits, d, 4.0 if res.limb == "" else 2.5)
+			debris.burst(bits, d, 4.0 if String(res.get("limb", "")) == "" else 2.5)
+			sound.play("shatter" if res.get("shattered", false) else "hit_flesh", best.point, -3.0)
+			hits.append({"body": best_b, "dist": best.dist, "part": best.part, "point": best.point, "res": res})
+	return hits
 
 # ---------------------------------------------------------------- meshing on worker threads
 

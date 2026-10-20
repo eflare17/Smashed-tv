@@ -49,6 +49,9 @@ var recoil := 0.0
 
 ## Sent flying at v (m/s, world), turning over backward at spin radians a second.
 func launch(v: Vector3, spin: float = 6.0) -> void:
+	if frozen():
+		_shatter_now(v)
+		return
 	if not airborne:
 		tumble = 0.0             # hit again in the air: it keeps turning over from where it was
 	airborne = true
@@ -396,6 +399,10 @@ func legs_lost() -> int:
 
 ## How fast they can go now (1 whole, slower limping, slowest crawling).
 func move_factor() -> float:
+	var cold := 1.0 - 0.75 * clampf(frost, 0.0, 1.0)     # frosting over: slower and slower
+	return _legs_factor() * cold
+
+func _legs_factor() -> float:
 	var lost := legs_lost()
 	if lost == 2:
 		# a worm moves in pulses: the tail (the body's root) slides up fast as it bunches, and nearly stops as the
@@ -415,13 +422,19 @@ func cycle_m() -> float:
 
 func animate(dt: float, moving: bool) -> void:
 	t += dt
-	if fragment:
-		return                       # posed once where it lay
+	if fragment or frozen():
+		return                       # posed once where it lay / frozen solid as it stood
 	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
 	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
 	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": weapon, "recoil": recoil})
 	var rot: Dictionary = p.rot
-	if attack > 0.0:
+	if panic_t > 0.0 and alive:
+		# on fire: arms flung up and flailing, running about
+		var fl := sin(t * 19.0)
+		rot["arm_r"] = Quaternion.from_euler(Vector3(-2.6 + 0.6 * fl, 0, -0.5))
+		rot["arm_l"] = Quaternion.from_euler(Vector3(-2.6 - 0.6 * fl, 0, 0.5))
+		rot["head"] = Quaternion.from_euler(Vector3(-0.3, 0.4 * fl, 0))
+	elif attack > 0.0:
 		var k := sin(clampf(attack, 0.0, 1.0) * PI)
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-1.5 * k, 0.2, -0.1))
 		rot["arm_l"] = Quaternion.from_euler(Vector3(-1.2 * k, -0.2, 0.1))
@@ -605,6 +618,8 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 ## Knocks out the cubes within r cubes of the hit (a round hole); returns the ones knocked out as
 ## [{pos: world, col: Color}] (for the flying bits) and whether that killed it or blew a limb off.
 func damage(hit: Dictionary, r: float) -> Dictionary:
+	if frozen():
+		return _shatter_res()
 	var n: String = hit.part
 	var p: Dictionary = parts[n]
 	p.grid = {"size": p.grid.size, "cells": (p.grid.cells as PackedInt32Array).duplicate()}
@@ -696,6 +711,337 @@ func _blow(n: String) -> Array:
 		p.dirty = false
 		(p.mesh as MeshInstance3D).visible = false
 	return out
+
+# ---------------------------------------------------------------- fire and ice
+
+## Fire (the flamethrower): cubes set alight burn; each chars black after BURN_CHAR seconds and crumbles to ash after
+## BURN_ASH (taken out: what that leaves hanging falls off), catching the cubes beside it as it goes (BURN_SPREAD a
+## second each), never more than BURN_MAX at once. Alive and burning, they lose BURN_HURT a second and panic, running
+## about with their arms flailing. Ice (the freeze ray): frost builds up (chill), slowing them; at 1 they're frozen
+## solid for FREEZE_T seconds (blue-white, still as statues), and then any hit at all shatters them into ice cubes.
+## status_step(dt) runs it all (the arena calls it every frame for a body with has_status()).
+const BURN_CHAR := 0.8
+const BURN_ASH := 2.4
+const BURN_SPREAD := 0.6
+const BURN_MAX := 900
+const BURN_HURT := 7.0
+const BURN_TICK := 0.125         # seconds between fire steps
+const CHAR := Color8(34, 26, 22)
+const ICE := Color8(176, 222, 255)
+const FREEZE_T := 8.0
+const FROST_FADE := 0.12        # frost a second lost when it isn't being kept up
+## The arena's: what to do with the ice cubes when something shatters without a weapon there to throw them (a launch,
+## a burn): func(body, bits).
+static var on_shatter: Callable
+var _burn := {}                 # part -> {cell index: seconds burning}
+var _burn_n := 0
+var _burn_tick := 0.0
+var _orig := {}                 # part -> its cells' colours before fire or ice changed them (for the thaw)
+var frost := 0.0
+var frozen_t := 0.0
+var panic_t := 0.0
+var panic_dir := Vector3.FORWARD
+var _panic_turn := 0.0
+
+func burning() -> bool:
+	return _burn_n > 0
+
+func frozen() -> bool:
+	return frozen_t > 0.0
+
+func has_status() -> bool:
+	return _burn_n > 0 or frost > 0.0 or frozen_t > 0.0 or panic_t > 0.0
+
+## Sets it alight within r metres of at (world). Returns how many cubes caught.
+func ignite(at: Vector3, r: float) -> int:
+	if frozen():
+		return 0
+	var n := 0
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		if p.gone or _burn_n >= BURN_MAX:
+			continue
+		var b: int = p.bone
+		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+		var base := m * ((Vector3(p.origin) + Vector3(0.5, 0.5, 0.5)) * vm)
+		var st := PackedByteArray()
+		var cells: PackedInt32Array = p.grid.cells
+		st.resize(cells.size())
+		var box := {}
+		if _mark_capsule(st, cells, p.grid.size, base, Basis(m.basis.x * vm, m.basis.y * vm, m.basis.z * vm), at, at, r, box) == 0:
+			continue
+		var bd: Dictionary = _burn.get(nm, {})
+		var lo: Vector3i = box.lo
+		var hi: Vector3i = box.hi
+		var s: Vector3i = p.grid.size
+		for z in range(lo.z, hi.z + 1):
+			for y in range(lo.y, hi.y + 1):
+				for x in range(lo.x, hi.x + 1):
+					var i := x + s.x * (y + s.y * z)
+					if st[i] == 2 and not bd.has(i) and _burn_n < BURN_MAX:
+						bd[i] = 0.0
+						_burn_n += 1
+						n += 1
+		_burn[nm] = bd
+	if n > 0 and alive:
+		panic_t = maxf(panic_t, 1.0)
+	return n
+
+## Frost building up (amount: a share of frozen solid). True if that froze them solid.
+func chill(amount: float) -> bool:
+	if frozen():
+		return false
+	frost = minf(1.0, frost + amount)
+	if _burn_n > 0:
+		_burn.clear()                # the cold puts the fire out
+		_burn_n = 0
+	if frost >= 1.0:
+		_freeze()
+		return true
+	return false
+
+func _freeze() -> void:
+	frozen_t = FREEZE_T
+	frost = 1.0
+	panic_t = 0.0
+	knock = Vector3.ZERO
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var cells: PackedInt32Array = (p.grid.cells as PackedInt32Array).duplicate()
+		if not _orig.has(nm):
+			_orig[nm] = cells.duplicate()
+		for i in cells.size():
+			var v := cells[i]
+			if v != 0:
+				var k := v - 1
+				var c := Color8((k >> 16) & 255, (k >> 8) & 255, k & 255).lerp(ICE, 0.7)
+				c = c.lightened(0.08 * float((i * 7) % 3))
+				cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
+		p.grid = {"size": p.grid.size, "cells": cells}
+		p.dirty = true
+
+# thawed: the colours back on the cubes still there
+func _thaw() -> void:
+	frozen_t = 0.0
+	frost = 0.0
+	for nm in _orig:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var cells: PackedInt32Array = (p.grid.cells as PackedInt32Array).duplicate()
+		var was: PackedInt32Array = _orig[nm]
+		for i in cells.size():
+			if cells[i] != 0 and was[i] != 0:
+				cells[i] = was[i]
+		p.grid = {"size": p.grid.size, "cells": cells}
+		p.dirty = true
+	_orig.clear()
+
+## Shattered (frozen, then hit): every cube flies off as ice; returns what a cut would ({bits, cut, parts, pieces: [],
+## killed, head_off, shattered: true}). Not frozen: nothing ({}).
+func shatter() -> Dictionary:
+	if not frozen():
+		return {}
+	return _shatter_res()
+
+func _shatter_res() -> Dictionary:
+	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false, "shattered": true}
+	if immortal:
+		_thaw()                      # (can't die: the ice just breaks off)
+		return res
+	var total := cubes_left()
+	var every := maxi(1, total / 2500)
+	var j := 0
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var b: int = p.bone
+		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+		var s: Vector3i = p.grid.size
+		var cells: PackedInt32Array = p.grid.cells
+		var o: Vector3 = p.origin
+		var i := 0
+		for z in s.z:
+			for y in s.y:
+				for x in s.x:
+					var v := cells[i]
+					if v != 0:
+						if j % every == 0:
+							var k := v - 1
+							res.bits.append({"pos": m * ((Vector3(x, y, z) + o + Vector3(0.5, 0.5, 0.5)) * vm), "col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
+						j += 1
+					i += 1
+		var empty := PackedInt32Array()
+		empty.resize(cells.size())
+		p.grid = {"size": s, "cells": empty}
+		p.left = 0
+		p.gone = true
+		p.dirty = false
+		(p.mesh as MeshInstance3D).visible = false
+		res.parts.append(nm)
+	res.cut = total
+	frozen_t = 0.0
+	frost = 0.0
+	_orig.clear()
+	if alive:
+		alive = false
+		res.killed = true
+		res.head_off = true
+		died.emit(self)
+	return res
+
+# shattered by something with no cut to hand the cubes back through (a launch, a blow's health): the arena throws them
+func _shatter_now(dir: Vector3) -> bool:
+	var res := _shatter_res()
+	if on_shatter.is_valid() and not (res.bits as Array).is_empty():
+		on_shatter.call(self, res.bits, dir)
+	return bool(res.killed)
+
+## Every frame for a body with has_status(): the fire spreading and eating, the frost fading, the thaw, the panic.
+## Returns {flames: [world points burning, for VoxelFlames], removed: a cut result of the cubes burnt to ash (or {})}.
+func status_step(dt: float) -> Dictionary:
+	var out := {"flames": [], "removed": {}}
+	if frozen():
+		frozen_t -= dt
+		if frozen_t <= 0.0:
+			_thaw()
+		return out
+	if frost > 0.0:
+		frost = maxf(0.0, frost - FROST_FADE * dt)
+	if panic_t > 0.0:
+		panic_t = maxf(0.0, panic_t - dt)
+		_panic_turn -= dt
+		if _panic_turn <= 0.0:
+			_panic_turn = randf_range(0.35, 0.8)
+			var a := randf() * TAU
+			panic_dir = Vector3(cos(a), 0, sin(a))
+	if _burn_n == 0:
+		return out
+	_burn_tick += dt
+	if _burn_tick < BURN_TICK:
+		return out
+	var step := _burn_tick
+	_burn_tick = 0.0
+	var ash := {}
+	var flames := []
+	var catch := []                   # [part, index] catching this step
+	for nm in _burn.keys():
+		var p: Dictionary = parts[nm]
+		var bd: Dictionary = _burn[nm]
+		if p.gone:
+			_burn_n -= bd.size()
+			_burn.erase(nm)
+			continue
+		var s: Vector3i = p.grid.size
+		var cells: PackedInt32Array = p.grid.cells
+		var recol := false
+		var gone := PackedInt32Array()
+		var b: int = p.bone
+		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+		var o: Vector3 = p.origin
+		for i in bd.keys():
+			if cells[i] == 0:
+				bd.erase(i)
+				_burn_n -= 1
+				continue
+			var t0: float = bd[i]
+			var t1 := t0 + step
+			bd[i] = t1
+			if t0 < BURN_CHAR and t1 >= BURN_CHAR:
+				if not recol:
+					cells = cells.duplicate()
+					if not _orig.has(nm):
+						_orig[nm] = cells.duplicate()
+					recol = true
+				cells[i] = ((CHAR.r8 << 16) | (CHAR.g8 << 8) | CHAR.b8) + 1
+			if t1 >= BURN_ASH:
+				gone.append(i)
+				bd.erase(i)
+				_burn_n -= 1
+				continue
+			# catching the cubes beside it
+			if randf() < BURN_SPREAD * step * 6.0:
+				var nb: int = [1, -1, s.x, -s.x, s.x * s.y, -s.x * s.y][randi() % 6]
+				catch.append([nm, i + nb])
+			if flames.size() < 14 and randf() < 0.25:
+				flames.append(m * ((Vector3(i % s.x, (i / s.x) % s.y, i / (s.x * s.y)) + o + Vector3(0.5, 0.5, 0.5)) * vm))
+		if recol:
+			p.grid = {"size": s, "cells": cells}
+			p.dirty = true
+		if not gone.is_empty():
+			ash[nm] = gone
+		if bd.is_empty():
+			_burn.erase(nm)
+	for c in catch:
+		if _burn_n >= BURN_MAX:
+			break
+		var p2: Dictionary = parts[c[0]]
+		var cells2: PackedInt32Array = p2.grid.cells
+		var i2: int = c[1]
+		if i2 < 0 or i2 >= cells2.size() or cells2[i2] == 0:
+			continue
+		var bd2: Dictionary = _burn.get(c[0], {})
+		if not bd2.has(i2):
+			bd2[i2] = 0.0
+			_burn[c[0]] = bd2
+			_burn_n += 1
+	out.flames = flames
+	if alive:
+		panic_t = maxf(panic_t, 0.6)
+		hurt(BURN_HURT * step)
+	if not ash.is_empty():
+		var r := _remove({"plane": false, "mask": ash, "bits_every": 3})
+		for bt in r.bits:
+			bt.col = (bt.col as Color).lerp(CHAR, 0.6)      # ash
+		out.removed = r
+	return out
+
+## A part and everything hanging from it taken off whole (a harpoon's yank): {pieces (VoxelPieces.spawn's list),
+## parts, killed}. Nothing if it's gone already.
+func sever(part: String) -> Dictionary:
+	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
+	if not parts.has(part) or parts[part].gone:
+		return res
+	if frozen():
+		return _shatter_res()
+	var b0: int = parts[part].bone
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var bb: int = p.bone
+		var hangs := bb == b0
+		var pb := model.bone_parent[bb]
+		while not hangs and pb >= 0:
+			hangs = pb == b0
+			pb = model.bone_parent[pb]
+		if not hangs:
+			continue
+		var cells: PackedInt32Array = p.grid.cells
+		var s: Vector3i = p.grid.size
+		var att := skeleton.global_transform * skeleton.get_bone_global_pose(bb)
+		var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
+		var bbx := mesh.get_aabb() if mesh else AABB()
+		res.pieces.append({"part": nm, "grid": {"size": s, "cells": cells}, "origin": mesh_origin(nm), "xform": att,
+			"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bbx.get_center(), "box": bbx.size, "count": int(p.left)})
+		var empty := PackedInt32Array()
+		empty.resize(cells.size())
+		p.grid = {"size": s, "cells": empty}
+		p.left = 0
+		p.gone = true
+		p.dirty = false
+		(p.mesh as MeshInstance3D).visible = false
+		res.parts.append(nm)
+		if nm == "head":
+			res.head_off = true
+	if alive and res.head_off and not immortal:
+		res.killed = true
+		alive = false
+		died.emit(self)
+	return res
 
 # ---------------------------------------------------------------- lying pieces made bodies again
 
@@ -832,6 +1178,8 @@ func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_eve
 
 ## Health off the body (a blunt blow, a burn); true if that killed it.
 func hurt(amount: float) -> bool:
+	if frozen():
+		return _shatter_now(Vector3.UP)
 	if not alive:
 		return false
 	hp -= amount
@@ -854,7 +1202,11 @@ func _remove(opt: Dictionary) -> Dictionary:
 	var cb: Vector3 = opt.get("b", Vector3.ZERO)
 	var cr: float = opt.get("r", 0.0)
 	var every: int = opt.get("bits_every", 2)
+	var mask: Dictionary = opt.get("mask", {})          # part -> cell indices to take (fire's ash): no shape
+	var masked := not mask.is_empty()
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
+	if frozen():
+		return _shatter_res()
 	var by_bone := {}
 	for nm in parts:
 		by_bone[int(parts[nm].bone)] = nm
@@ -927,7 +1279,18 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var ncut := 0
 		var clo := Vector3i(s)                # the cut cells' box (in cells)
 		var chi := Vector3i(-1, -1, -1)
-		if not plane:
+		if masked:
+			if not mask.has(nm):
+				continue
+			st.resize(cells.size())
+			for i in (mask[nm] as PackedInt32Array):
+				if i >= 0 and i < cells.size() and cells[i] != 0 and st[i] != 2:
+					st[i] = 2
+					ncut += 1
+					var mc := Vector3i(i % s.x, (i / s.x) % s.y, i / (s.x * s.y))
+					clo = Vector3i(mini(clo.x, mc.x), mini(clo.y, mc.y), mini(clo.z, mc.z))
+					chi = Vector3i(maxi(chi.x, mc.x), maxi(chi.y, mc.y), maxi(chi.z, mc.z))
+		elif not plane:
 			st.resize(cells.size())
 			var box := {}
 			ncut = _mark_capsule(st, cells, s, base, Basis(ex, ey, ez), ca, cb, cr, box)
@@ -988,7 +1351,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var keep_dir := Vector3.ZERO
 		var jq := jw - eye
 		var in_sweep := jq.length() <= reach + vm and jq.dot(fwd) >= jq.length() * cos_arc - vm
-		var joint_cut: bool = nm != root and ((absf(n.dot(jq)) <= half_t + vm and in_sweep) if plane else _seg_dist(jw, ca, cb) <= cr + vm)
+		var joint_cut: bool = nm != root and not masked and ((absf(n.dot(jq)) <= half_t + vm and in_sweep) if plane else _seg_dist(jw, ca, cb) <= cr + vm)
 		var box_v := (chi.x - clo.x + 7) * (chi.y - clo.y + 7) * (chi.z - clo.z + 7)
 		if not joint_cut and box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi):
 			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
@@ -1168,7 +1531,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 		# quarter of the brain) kills
 		if plane and body_cut > 6:
 			hp -= 34.0
-		elif not plane:
+		elif not plane and not masked:
 			# (a cube's worth by its size: twice the cube, eight times the health)
 			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08)) * pow(vm / REF_VM, 3.0)
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL

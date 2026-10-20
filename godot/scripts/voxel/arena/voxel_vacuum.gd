@@ -74,6 +74,7 @@ func step(dt: float, out: bool, sucking: bool) -> void:
 	if not out:
 		_sphere.visible = false
 		debris.brush = Vector3.INF
+		arena.sound.stop("vacuum")
 		return
 	var aimv := _aim()
 	var nozzle: Vector3 = aimv[0]
@@ -86,7 +87,9 @@ func step(dt: float, out: bool, sucking: bool) -> void:
 		(_glow.material_override as StandardMaterial3D).emission_energy_multiplier = 4.0 if sucking else 1.2
 	if not sucking:
 		debris.brush = Vector3.INF
+		arena.sound.stop("vacuum")
 		return
+	arena.sound.loop("vacuum", "vacuum_loop", null, -6.0)
 	debris.nozzle = nozzle
 	debris.brush = at
 	debris.brush_r = brush_r

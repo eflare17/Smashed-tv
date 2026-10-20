@@ -27,6 +27,7 @@ func _ready() -> void:
 	_carve()
 	_fixes()
 	_fragments()
+	_fire_ice()
 	_melee_checks()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
@@ -193,20 +194,30 @@ func _vacuum() -> void:
 
 func _loadout() -> void:
 	var l := VoxelLoadout.new()
-	check(l.slots.size() == 8 and l.id() == "blaster", "eight weapon slots, the blaster out first")
-	check(l.select(2) and l.id() == "sword" and not l.usable(), "3 takes out the sword; it comes up for a moment first")
+	check(l.slots.size() == 14 and l.id() == "sword", "fourteen weapons in five groups, the sword first")
+	check(l.select_group(2) and l.id() == "pistol" and not l.usable(), "2 takes out the guns' first, the pistol; it comes up for a moment first")
 	l.step(VoxelLoadout.SWITCH_T + 0.01)
 	check(l.usable(), "then it's up")
+	check(l.select_group(2) and l.id() == "shotgun", "2 again: the next gun")
+	l.select_group(1)
+	check(l.id() == "sword" and l.group() == 1, "1: melee")
+	l.select_group(2)
+	check(l.id() == "shotgun", "back to the guns: the one last used there (%s)" % l.id())
+	l.select_group(2)
+	l.select_group(2)
+	check(l.id() == "pistol", "the key goes round the group (%s)" % l.id())
 	l.swap_last()
-	check(l.id() == "blaster", "Q: back to the last one")
+	check(l.id() == "laser", "Q: back to the last one (%s)" % l.id())
+	l.select(0)
 	l.cycle(-1)
 	check(l.id() == "vacuum", "the wheel goes round the end (%s)" % l.id())
-	check(not l.select(7) and not l.select(99), "the one out, or no such slot: nothing happens")
+	check(not l.select(13) and not l.select(99) and not l.select_group(9), "the one out, or no such slot or group: nothing happens")
 	l.cool("shotgun", 1.0)
 	l.step(0.5)
-	check(not l.ready_to("shotgun") and absf(l.cooling("shotgun") - 0.5) < 0.01 and l.ready_to("blaster"), "cooldowns kept per weapon")
-	l.keep_only(["blaster", "sword", "vacuum"])
-	check(l.slots.size() == 3 and l.index_of("vacuum") == 2, "only the weapons there are")
+	check(not l.ready_to("shotgun") and absf(l.cooling("shotgun") - 0.5) < 0.01 and l.ready_to("pistol"), "cooldowns kept per weapon")
+	l.keep_only(["pistol", "sword", "vacuum"])
+	check(l.slots.size() == 3 and l.index_of("vacuum") == 2 and l.id() == "sword", "only the weapons there are, in group order")
+	check(l.select_group(4) == false and l.select_group(5) and l.id() == "vacuum", "a group with none of them: nothing")
 
 func _carve() -> void:
 	var b := _grunt()
@@ -229,6 +240,46 @@ func _carve() -> void:
 		b2.react_step(1.0 / 60.0)
 	check(not b2.floored(), "then back up")
 	b2.queue_free()
+
+# fire and ice (the flamethrower's and the freeze ray's): burning spreads and eats cubes to ash, they panic; frost
+# slows, then freezes them solid; a frozen body shatters at a blow; left alone it thaws
+func _fire_ice() -> void:
+	var b := _grunt()
+	var n0 := b.cubes_left()
+	var caught := b.ignite(Vector3(0, 1.1, 0.2), 0.15)
+	check(caught > 20 and b.burning() and b.panic_t > 0.0, "set alight: %d cubes caught, panicking" % caught)
+	var gone := 0
+	var most := 0
+	for i in 240:
+		var st: Dictionary = b.status_step(1.0 / 60.0)
+		most = maxi(most, b._burn_n)
+		if not (st.removed as Dictionary).is_empty():
+			gone += int(st.removed.cut)
+	check(most > caught and gone > 0 and b.cubes_left() < n0, "it spreads (%d burning at most) and burns to ash (%d gone)" % [most, gone])
+	b.chill(0.5)
+	check(not b.burning(), "the cold puts the fire out")
+	b.queue_free()
+	var c := _grunt()
+	var f0 := c.move_factor()
+	c.chill(0.5)
+	check(c.move_factor() < f0 * 0.75 and not c.frozen(), "frost slows them (%.2f of the speed)" % (c.move_factor() / f0))
+	check(c.chill(0.6) and c.frozen(), "more: frozen solid")
+	check(c.ignite(Vector3(0, 1.1, 0.2), 0.2) == 0, "frozen: it won't burn")
+	var r := c.damage({"part": "chest", "point": c.global_position + Vector3(0, 1.1, 0.2), "dist": 2.0}, 1.5)
+	check(r.get("shattered", false) and not c.alive and c.cubes_left() == 0, "a shot: it shatters, every cube flying (%d)" % (r.get("bits", []) as Array).size())
+	c.queue_free()
+	var d := _grunt()
+	d.chill(1.0)
+	for i in int(VoxelBody.FREEZE_T * 60.0) + 5:
+		d.status_step(1.0 / 60.0)
+	check(not d.frozen() and d.alive and d.frost == 0.0, "left alone: it thaws")
+	var e := _grunt()
+	var sv := e.sever("arm_l")
+	check(e.parts.arm_l.gone and e.parts.hand_l.gone and (sv.pieces as Array).size() >= 2 and e.alive, "an arm yanked off whole (%d pieces)" % (sv.pieces as Array).size())
+	var sh := e.sever("head")
+	check(sh.head_off and not e.alive, "the head yanked off: dead")
+	d.queue_free()
+	e.queue_free()
 
 # the review's finds, kept fixed
 func _fixes() -> void:

@@ -194,6 +194,7 @@ func thrust() -> void:
 	_t = 0.0
 	_struck = false
 	_cd = THRUST_CD
+	sfx("spear_thrust")
 	_slide_drawn = _slide
 	if top_down():
 		arena.avatar.attack = 0.5
@@ -216,6 +217,7 @@ func throw() -> void:
 	if _mode != "hand" or _t >= 0.0 or _cock >= 0.0 or _cd > 0.0:
 		return
 	_cock = 0.0
+	sfx("spear_throw")
 	if top_down():
 		arena.avatar.attack = 0.5
 
@@ -606,6 +608,7 @@ func _stick() -> void:
 	_proj.global_transform = Transform3D(_stuck_b, _fly.p)
 	last.stuck = _fly.stuck
 	last.flown_m = snappedf(float(_fly.dist), 0.1)
+	sfx("spear_stick", _fly.p)
 	# the cubes lying where it went in jump
 	arena.debris.pop(_fly.p, 0.6, 2.5, 80)
 

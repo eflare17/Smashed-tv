@@ -220,6 +220,8 @@ func _begin_charge() -> void:
 
 ## Starts a swing from the pose it's in: the quick one (left), or a home run at power (0.3 .. 1).
 func _start_swing(hr: bool, power: float) -> void:
+	if arena:
+		sfx("swoosh_bat", Vector3.INF, 0.0, 1.1 - 0.2 * power)
 	_mode = SWING
 	_t = 0.0
 	_struck = false
@@ -349,6 +351,7 @@ func _strike() -> void:
 
 # one body takes the blow (blow's), then the cubes knocked out and any head fly; what it did is added to last
 func _land(b: VoxelBody, h: Dictionary, v: Vector3, side: Vector3, force: float, full: bool) -> void:
+	sfx("home_run" if full else "thwack", h.get("point", b.global_position), 3.0 if full else 0.0)
 	var r := blow(b, h, v, SPIN + 3.0 * (force - 1.0), force, full)
 	var res: Dictionary = r.res
 	last.parts.append(String(h.part))

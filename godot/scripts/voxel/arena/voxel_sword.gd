@@ -143,6 +143,7 @@ func swing(from: Vector3, fwd: Vector3, side: Vector3, apex: Vector3, side_cam: 
 	_t = 0.0
 	_cut_done = false
 	_cd = COOLDOWN
+	sfx("swoosh_sword")
 
 func step(dt: float) -> void:
 	_cd = maxf(0.0, _cd - dt)
@@ -185,6 +186,7 @@ func _cut() -> void:
 	res_all["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	last = res_all
 	if hit:
+		sfx("slice", _eye + _fwd * 1.5)
 		hit_stop()
 
 # ---------------------------------------------------------------- the look

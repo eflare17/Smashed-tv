@@ -36,6 +36,13 @@ var brush_r := 0.8                    # its radius, metres
 var _budget := 0.0                    # cubes the brush may still pull loose this frame
 var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0}
 var bound := INF                      # metres from the middle (x and z) the walls stop flying cubes at
+## A black hole (the gravity gun): flying cubes within well_r of well are pulled in (no falling near it), lying ones
+## lift off toward it (a few hundred a frame), and at well_eat they're crushed to nothing. INF: none.
+var well := Vector3.INF
+var well_r := 3.5
+var well_pull := 22.0
+var well_eat := 0.3
+var eaten := 0
 
 func setup(cube_m: float) -> void:
 	# moved every frame, not on physics ticks: no interpolation (it would lag and warn)
@@ -181,6 +188,8 @@ func _process(dt: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	_budget = minf(_budget + RATE * dt, float(PICK_FRAME)) if brush != Vector3.INF else 0.0
 	_pick()
+	if well != Vector3.INF:
+		pop(Vector3(well.x, 0.0, well.z), well_r, 1.5, 150)
 	var i := 0
 	while i < _n:
 		_life[i] += dt
@@ -211,6 +220,25 @@ func _process(dt: float) -> void:
 				_vel[i] = v
 				_pos[i] = p
 				multimesh.set_instance_transform(i, Transform3D((_rot[i] as Basis).scaled(Vector3.ONE * clampf((d - 0.25) / 1.2, 0.12, 1.0)), p))
+				if _need[i] == 1:
+					multimesh.set_instance_color(i, _col[i])
+					_need[i] = 0
+				i += 1
+				continue
+		if well != Vector3.INF:
+			var wv := well - p
+			var wd := wv.length()
+			if wd < well_eat:
+				eaten += 1
+				_drop(i)
+				continue
+			if wd < well_r:
+				# pulled in, faster the nearer, spiralling a little
+				v = v * exp(-dt * 1.5) + (wv / wd * (1.0 + 2.5 * (1.0 - wd / well_r)) + wv.cross(Vector3.UP).normalized() * 0.4) * well_pull * dt
+				p += v * dt
+				_vel[i] = v
+				_pos[i] = p
+				multimesh.set_instance_transform(i, Transform3D((_rot[i] as Basis).scaled(Vector3.ONE * clampf(wd / well_r * 2.0, 0.3, 1.0)), p))
 				if _need[i] == 1:
 					multimesh.set_instance_color(i, _col[i])
 					_need[i] = 0

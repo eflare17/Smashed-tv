@@ -8,8 +8,10 @@ extends Node3D
 ## checks() the logic test runs. Helpers here give the eye, the look, the swing's direction off the mouse, the bodies
 ## in reach, flying bits, pieces and the hit-stop. Owned by the voxel session.
 ##
-## Subclasses: voxel_sword.gd (slices), voxel_melee_bat.gd, voxel_melee_hammer.gd, voxel_melee_chainsaw.gd,
-## voxel_melee_spear.gd (VoxelArena.MELEE lists them; a missing file is just left out).
+## Every weapon with a script of its own is one of these (the guns and the special ones too, not only melee):
+## voxel_sword.gd (slices), voxel_melee_bat.gd, voxel_melee_hammer.gd, voxel_melee_chainsaw.gd, voxel_melee_spear.gd,
+## voxel_gun_pistol.gd, voxel_gun_shotgun.gd and the rest (VoxelArena.MELEE lists them; a missing file is left out).
+## Sounds go through sfx()/sfx_loop() (VoxelSound: assets/voxel/sound/*.wav).
 
 var arena: Node3D               # VoxelArena (untyped: the two scripts know each other)
 var view: Node3D                # the first-person view: a child of the camera; the arena shows/hides it
@@ -63,6 +65,14 @@ func busy() -> bool:
 ## How much of its cooldown is left, 1 to 0 (the weapon bar's slot edge).
 func cooling() -> float:
 	return 0.0
+
+## A few characters on its slot in the weapon bar (a gun's rounds: "8/12"); "" for none.
+func bar_text() -> String:
+	return ""
+
+## The R key with it out (a gun reloads; the grenade launcher sets off its sticky bombs).
+func reload_key() -> void:
+	pass
 
 ## Top-down: the weapon in Jared's right hand, in its own space (the grip at the origin, along +z away from the hand,
 ## its top toward +y), metres. Null: nothing shown.
@@ -140,6 +150,21 @@ func spray(res: Dictionary, dir: Vector3, power: float = 2.2) -> void:
 func fling(b: VoxelBody, res: Dictionary, vel: Vector3, spin: Vector3) -> void:
 	if not (res.pieces as Array).is_empty():
 		arena.pieces.spawn(b, res.pieces, vel, spin)
+
+## A sound: at a place in the world, or (Vector3.INF) flat, as your own weapon; db louder or quieter.
+func sfx(name: String, at: Vector3 = Vector3.INF, db: float = 0.0, pitch: float = 1.0) -> void:
+	if arena and arena.sound:
+		arena.sound.play(name, at, db, pitch)
+
+## A sound that keeps going (an engine, a beam) under this weapon's key + tag till sfx_stop(tag); call again every
+## frame to change db and pitch.
+func sfx_loop(tag: String, name: String, db: float = 0.0, pitch: float = 1.0) -> void:
+	if arena and arena.sound:
+		arena.sound.loop(str(get_instance_id()) + tag, name, null, db, pitch)
+
+func sfx_stop(tag: String) -> void:
+	if arena and arena.sound:
+		arena.sound.stop(str(get_instance_id()) + tag)
 
 ## The game all but stops for a blink as a blow lands (secs of real time, at scale speed). Blows landing together:
 ## the deepest stop and the latest end win.

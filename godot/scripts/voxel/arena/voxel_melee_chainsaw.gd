@@ -106,6 +106,8 @@ var _sawn := {}                 # body -> seconds since the saw last bit it (hel
 var _stop_ms := 0               # the last hit-stop (real ms; a constant grind mustn't stutter the game)
 var _move_t := 0.0              # seconds into this move (game time)
 
+var _snd := false               # out: the engine is heard
+
 func _build() -> void:
 	_m_bar = mat(BAR_COL, 0.5, 0.35)
 	_m_bar_hand = mat(BAR_HAND_COL, 0.2, 0.45)
@@ -242,8 +244,11 @@ func release(button: int) -> void:
 func on_select() -> void:
 	_cut_k = 0.0
 	_rev = 0.0
+	_snd = true
 
 func on_deselect() -> void:
+	_snd = false
+	sfx_stop("engine")
 	_cutting = false
 	if _lunge_t >= 0.0 and _lunge_t < WIND_T + LUNGE_T:
 		arena.dash(Vector3.ZERO, 0.0)
@@ -298,6 +303,10 @@ func step(dt: float) -> void:
 	_rev = move_toward(_rev, 1.0 if active else 0.0, dt * (5.0 if active else 2.0))
 	_bite_k = maxf(0.0, _bite_k - dt * 5.0)
 	_in_t = maxf(0.0, _in_t - dt)
+	if _snd:
+		# the engine: idling, revving, grinding in flesh
+		var eng := "chainsaw_cut_loop" if _in_t > 0.0 else ("chainsaw_rev_loop" if _rev > 0.3 else "chainsaw_idle_loop")
+		sfx_loop("engine", eng, -7.0 + 4.0 * _rev, 0.9 + 0.25 * _rev)
 	_kickback = maxf(0.0, _kickback - dt * 9.0)
 	_gore = maxf(0.0, _gore - dt * 0.015)
 	_chain += dt * CHAIN_V * _rev * _rev
