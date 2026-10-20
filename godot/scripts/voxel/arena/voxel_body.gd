@@ -24,6 +24,35 @@ var yaw := 0.0
 var speed := 0.0
 var odo := 0.0                        # metres walked
 var attack := 0.0
+## Hit reaction (the owner, 20 Oct): seconds left staggering (no pushing forward), the shove (m/s, world), and how
+## hard the last hit was (0..1, for the flinch).
+var stagger := 0.0
+var knock := Vector3.ZERO
+var flinch := 0.0
+var flinch_head := false
+var push_through := 0.0               # seconds after a stagger when hits only nudge (so held fire can't pin them)
+
+## A shot landed: shoved back along dir by how many cubes it knocked out, staggering a moment.
+func hit_react(dir: Vector3, cubes: int, part: String) -> void:
+	var heavy := 0.5 if key == "brute" else 1.0
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	var through := push_through > 0.0 and stagger <= 0.0
+	knock += flat * clampf(0.3 + cubes * 0.02, 0.3, 1.2) * heavy * (0.25 if through else 1.0)
+	if knock.length() > 3.0:
+		knock = knock.normalized() * 3.0
+	flinch = minf(1.0, flinch + (0.2 if through else 0.5) + cubes * 0.01)
+	flinch_head = part == "head"
+	if not through and stagger <= 0.0:
+		stagger = 0.3 + 0.15 * heavy
+		push_through = stagger + 0.6
+
+## Each physics step: the shove slides them back and fades; the stagger runs out.
+func react_step(dt: float) -> void:
+	position += knock * dt
+	knock *= exp(-dt * 6.0)
+	stagger = maxf(0.0, stagger - dt)
+	push_through = maxf(0.0, push_through - dt)
+	flinch = maxf(0.0, flinch - dt * 2.8)
 var t := 0.0
 var dead_t := 0.0
 var height := 1.8
@@ -270,6 +299,15 @@ func animate(dt: float, moving: bool) -> void:
 		rot["arm_l"] = Quaternion.from_euler(Vector3(0.45 * sin(ph), 0, 0.12))
 		rot["forearm_r"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
 		rot["forearm_l"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
+	if flinch > 0.0 and alive:
+		# knocked back: the chest and head thrown back, arms flung up, a stumbling step
+		var f := smoothstep(0.0, 1.0, flinch)
+		rot["chest"] = (rot.get("chest", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.45 * f, 0, 0))
+		rot["head"] = Quaternion.from_euler(Vector3((-0.9 if flinch_head else -0.35) * f, 0, 0))
+		rot["arm_r"] = (rot.get("arm_r", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.7 * f, 0, -0.4 * f))
+		rot["arm_l"] = (rot.get("arm_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.7 * f, 0, 0.4 * f))
+		rot["thigh_l"] = (rot.get("thigh_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(0.35 * f, 0, 0))
+		rot["shin_l"] = (rot.get("shin_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(0.3 * f, 0, 0))
 	var turn := Quaternion.IDENTITY
 	var lift := Vector3(p.pos) * model.voxel_m
 	var lost := legs_lost()

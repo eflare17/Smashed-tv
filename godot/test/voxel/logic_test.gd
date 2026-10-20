@@ -139,6 +139,14 @@ func _holes() -> void:
 	var res := b.damage(h, 1.9)
 	check((res.bits as Array).size() > 5 and int(part.left) < before, "a hole: %d cubes out" % (res.bits as Array).size())
 	check(b.dirty_parts().has(h.part) or bool(part.dirty), "only the hit part is meshed again")
+	var z0 := b.position.z
+	b.hit_react(Vector3(0, 0, -1), (res.bits as Array).size(), String(h.part))
+	check(b.stagger > 0.2, "a hit staggers him (no pushing forward)")
+	for i in 12:
+		b.react_step(1.0 / 60.0)
+	check(b.position.z < z0 - 0.05, "and shoves him back along the shot (%.2f m)" % (z0 - b.position.z))
+	b.position = Vector3.ZERO
+	b.knock = Vector3.ZERO
 	var h2 := b.trace(from, Vector3(0, 0, -1), 10.0)
 	check(not h2.is_empty() and float(h2.dist) > float(h.dist), "the next shot goes deeper into the hole")
 	var flesh := false

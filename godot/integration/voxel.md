@@ -27,7 +27,9 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   down the limbs and a skull round the head. A limb hit 1-3 times comes off (with what hangs from it) without killing (the
   owner, 20 Oct): one leg off and they limp, both and they crawl on their arms; the chest and hips take health, ten
   times slower than at first (a grunt survives 30 chest shots); the head kills once a quarter of the brain (pink cubes
-  inside the skull) is knocked out (a grunt took 39 blaster shots spread over his face). F6: can't die at all. Walking: the step is scaled to each kind's leg length so the feet
+  inside the skull) is knocked out (a grunt took 39 blaster shots spread over his face). F6: can't die at all. Every hit staggers them (no pushing forward
+  for about a third of a second, a shove back along the shot by how many cubes it took, the chest and head thrown
+  back); after a stagger they push through for 0.6 s (hits only nudge), so held fire slows them but can't pin them. Walking: the step is scaled to each kind's leg length so the feet
   keep up with the ground (they skated before), arms swing against the legs. The dead topple and lie 12 s.
 - Each body part is its own mesh on its bone (BoneAttachment3D, no skinning), so a hit re-meshes only that part, on a
   worker thread (WorkerThreadPool, 12 at a time); fresh enemies share ready-made meshes until they're shot.

@@ -384,7 +384,8 @@ func _physics_process(dt: float) -> void:
 		var d := to.length()
 		var mv := Vector3.ZERO
 		var stop := 4.5 if _opts.has("auto") else 1.2
-		if not frozen and d > stop:
+		b.react_step(dt)
+		if not frozen and d > stop and b.stagger <= 0.0:
 			mv = to / d * b.speed * b.move_factor()
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
@@ -401,7 +402,7 @@ func _physics_process(dt: float) -> void:
 		if d > 0.01:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
-		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen) else 0.0
+		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen and b.stagger <= 0.0) else 0.0
 
 func _process(dt: float) -> void:
 	_t += dt
@@ -418,6 +419,11 @@ func _process(dt: float) -> void:
 			print("ARENA ms a frame: ", ps, " debris ", "%.1f" % (debris.prof_us / 1000.0 / maxf(1.0, Engine.get_frames_per_second())))
 			debris.prof_us = 0
 			_prof.clear()
+	if _opts.has("burst"):
+		var k := int(floor((_t - float(_opts.get("burst_at", "3")) ) / 0.1))
+		if k >= 0 and k < 12 and not _opts.has("bk%d" % k):
+			_opts["bk%d" % k] = "1"
+			_burst_save(k)
 	if _opts.has("secs") and _t >= float(_opts.secs):
 		_finish()
 		return
@@ -556,6 +562,7 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float) ->
 		_tracer_list.append({"a": from + d * 0.5 + Vector3(0, -0.12, 0), "b": end, "t": 0.06})
 		if best_b:
 			var res := best_b.damage(best, r)
+			best_b.hit_react(d, (res.bits as Array).size(), String(best.part))
 			knocked += (res.bits as Array).size()
 			var bits: Array = res.bits
 			if bits.size() > 40:
@@ -650,6 +657,10 @@ func _auto() -> void:
 	if _sg_cd <= 0.0:
 		_sg_cd = 1.5
 		fire(pp, dir, 9, 4.5, 1.4)
+
+func _burst_save(k: int) -> void:
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png("%s/burst_%d.png" % [String(_opts.burst), k])
 
 func _finish() -> void:
 	for j in _jobs:
