@@ -19,6 +19,7 @@ const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batte
 const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9}
 const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
+const MAX_DEAD := 40            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
 var bodies: Array[VoxelBody] = []
@@ -638,9 +639,16 @@ func _physics_process(dt: float) -> void:
 	player.move_and_slide()
 	# the enemies come at you
 	var pp := player.global_position
+	var to_fly: Array[VoxelBody] = []
 	for i in bodies.size():
 		var b := bodies[i]
 		if not b.alive:
+			if b.fragment and b.airborne:
+				to_fly.append(b)          # a lying piece knocked flying: a piece again
+				continue
+			if b.fragment and b.cubes_left() == 0:
+				to_fly.append(b)
+				continue
 			if b.airborne or b.knock.length_squared() > 0.0001:
 				b.react_step(dt)          # knocked flying dead: still flies, lands, slides
 				b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
@@ -669,6 +677,12 @@ func _physics_process(dt: float) -> void:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
 		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen and b.stagger <= 0.0 and not b.floored()) else 0.0
+	for b in to_fly:
+		if b.cubes_left() == 0:
+			bodies.erase(b)
+			b.queue_free()
+		else:
+			pieces.from_fragment(b)
 
 func _process(dt: float) -> void:
 	_t += dt
@@ -715,12 +729,20 @@ func _process(dt: float) -> void:
 			if b.dead_t > 0.7 and not b.airborne and b.since_air > 0.5 and b.knock.length_squared() <= 0.0001:
 				continue          # lying still
 		b.animate(dt, moving and b.attack <= 0.0)
-	# the dead lie a while, then go
-	for i in range(bodies.size() - 1, -1, -1):
-		var b := bodies[i]
-		if not b.alive and b.dead_t > 12.0:
+	# the dead stay, to be cut up as long as you like; past MAX_DEAD the oldest go
+	var dead := 0
+	for b in bodies:
+		if not b.alive:
+			dead += 1
+	var i0 := 0
+	while dead > MAX_DEAD and i0 < bodies.size():
+		var b := bodies[i0]
+		if not b.alive:
 			b.queue_free()
-			bodies.remove_at(i)
+			bodies.remove_at(i0)
+			dead -= 1
+		else:
+			i0 += 1
 	var t3 := Time.get_ticks_usec()
 	if not bodies.any(func(x): return x.alive):
 		_next_t += dt

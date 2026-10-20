@@ -26,6 +26,7 @@ func _ready() -> void:
 	_loadout()
 	_carve()
 	_fixes()
+	_fragments()
 	_melee_checks()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
@@ -275,6 +276,37 @@ func _fixes() -> void:
 		d._process(1.0 / 60.0)
 	check(d.lying() == 1 and absf(d._lp[0].x) <= 2.0, "flying cubes stay inside the walls (x %.2f)" % d._lp[0].x)
 	d.queue_free()
+
+# a piece cut off, come to rest, made a body again: it can be cut up like one
+func _fragments() -> void:
+	var b := _grunt()
+	var r := b.slice(Vector3(0, 1.0, 3.0), Vector3.UP, Vector3(0, 0, -1), 4.0, -1.0, b.vm * 0.9)
+	var grids := {}
+	var xforms := {}
+	for e in r.pieces:
+		grids[String(e.part)] = {"cells": e.grid.cells, "mesh": null}
+		xforms[String(e.part)] = e.xform
+	var f := VoxelBody.new()
+	add_child(f)
+	f.setup("grunt", 0.023, 1, StandardMaterial3D.new())
+	f.make_fragment(grids, xforms)
+	check(f.fragment and not f.alive and f.parts.head.left > 0 and f.parts.thigh_l.gone, "the top half lying is a body of its own (%d cubes, no legs)" % f.cubes_left())
+	var hb: Vector3 = f.skeleton.global_transform * f.skeleton.get_bone_global_pose(f.model.bone("head")).origin
+	var hd: Vector3 = b.skeleton.global_transform * b.skeleton.get_bone_global_pose(b.model.bone("head")).origin
+	check(hb.distance_to(hd) < 0.01, "posed where the piece was (head %.3f m off)" % hb.distance_to(hd))
+	var h := f.trace(Vector3(0, 1.6, 2.0), Vector3(0, 0, -1), 5.0)
+	check(String(h.get("part", "")) == "head", "a shot at it hits its head (%s)" % h.get("part", "-"))
+	var c := f.carve(Vector3(0, 1.6, 0.2), Vector3(0, 1.6, 0.2), 0.12)
+	check(int(c.cut) > 50, "and it can be cut up (%d cubes)" % c.cut)
+	f.animate(0.5, true)
+	check(f.skeleton.global_transform * f.skeleton.get_bone_global_pose(f.model.bone("head")).origin == hb, "it stays posed (never animated)")
+	var back := f.as_pieces()
+	var n := 0
+	for e in back:
+		n += int(e.count)
+	check(not back.is_empty() and n == f.cubes_left(), "knocked flying it's pieces again (%d parts, every cube)" % back.size())
+	b.queue_free()
+	f.queue_free()
 
 # each melee weapon's own checks (VoxelMelee.checks)
 func _melee_checks() -> void:

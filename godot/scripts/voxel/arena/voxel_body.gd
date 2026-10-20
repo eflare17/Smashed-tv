@@ -106,6 +106,10 @@ func react_step(dt: float) -> void:
 	flinch = maxf(0.0, flinch - dt * 2.8)
 var t := 0.0
 var dead_t := 0.0
+## A piece that came to rest, made a body again so it can be cut up like one (VoxelPieces): only the parts it had,
+## each posed where the piece lay; never animated. Knocked flying, it's a piece again.
+var fragment := false
+var chunk_n := 1                      # sprite pixels a cube (setup's chunk)
 var height := 1.8
 var radius := 0.5
 ## Health: shots take it by where they land (the head most) and how many cubes they knock out.
@@ -132,6 +136,7 @@ func setup(key_: String, cube_m: float, chunk: int, mat: Material) -> void:
 	model = VoxelModel.get_model(key)
 	_mat = mat
 	vm = cube_m
+	chunk_n = chunk
 	var grids := _flesh_grids(model, key, chunk)
 	# the rig's pivots are in the model's own voxels (one a sprite pixel): a pixel is cube_m / chunk metres
 	model.voxel_m = cube_m / float(chunk)
@@ -410,6 +415,8 @@ func cycle_m() -> float:
 
 func animate(dt: float, moving: bool) -> void:
 	t += dt
+	if fragment:
+		return                       # posed once where it lay
 	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
 	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
 	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": weapon, "recoil": recoil})
@@ -688,6 +695,121 @@ func _blow(n: String) -> Array:
 		p.gone = true
 		p.dirty = false
 		(p.mesh as MeshInstance3D).visible = false
+	return out
+
+# ---------------------------------------------------------------- lying pieces made bodies again
+
+## Becomes a fragment: dead, only the parts in grids ({part: {cells, mesh (or null)}}) kept, each part's mesh placed at
+## xforms[part] (world: where its BoneAttachment would be), the rest gone.
+func make_fragment(grids: Dictionary, xforms: Dictionary) -> void:
+	fragment = true
+	alive = false
+	dead_t = 99.0
+	brain_start = 0
+	var skel_inv := skeleton.global_transform.affine_inverse()
+	for n in parts:
+		var p: Dictionary = parts[n]
+		var mi: MeshInstance3D = p.mesh
+		p.job = -1
+		if not grids.has(n):
+			var empty := PackedInt32Array()
+			empty.resize((p.grid.cells as PackedInt32Array).size())
+			p.grid = {"size": p.grid.size, "cells": empty}
+			p.left = 0
+			p.gone = true
+			p.dirty = false
+			mi.visible = false
+			continue
+		var g: Dictionary = grids[n]
+		var cells: PackedInt32Array = g.cells
+		var left := 0
+		for v in cells:
+			if v != 0:
+				left += 1
+		p.grid = {"size": p.grid.size, "cells": cells}
+		p.left = left
+		p.gone = left == 0
+		mi.visible = left > 0
+		if g.get("mesh") != null:
+			mi.mesh = g.mesh
+			p.dirty = false
+		else:
+			p.dirty = left > 0
+	# each part's bone set so its mesh lands where the piece's did (parents first: the bones are in that order)
+	for i in model.bone_names.size():
+		var n2: String = ""
+		for n in parts:
+			if int(parts[n].bone) == i:
+				n2 = n
+		if n2 != "" and xforms.has(n2):
+			skeleton.set_bone_global_pose(i, skel_inv * (xforms[n2] as Transform3D))
+
+## Cubes still on it.
+func cubes_left() -> int:
+	var n := 0
+	for k in parts:
+		if not parts[k].gone:
+			n += int(parts[k].left)
+	return n
+
+## Its cubes where they are now: [{pos, col}]; with most > 0 only about that many, spread through it, the rest counted
+## into counts (cell value -> how many). (The vacuum taking a body.)
+func cubes(most: int = 0, counts: Dictionary = {}) -> Array:
+	var bits := []
+	var every := maxi(1, ceili(float(cubes_left()) / float(most))) if most > 0 else 1
+	var seen := 0
+	for n in parts:
+		var p: Dictionary = parts[n]
+		if p.gone:
+			continue
+		var b: int = p.bone
+		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
+		var s: Vector3i = p.grid.size
+		var cells: PackedInt32Array = p.grid.cells
+		var o: Vector3 = p.origin
+		var j := 0
+		for z in s.z:
+			for y in s.y:
+				for x in s.x:
+					var v := cells[j]
+					if v != 0:
+						if seen % every == 0:
+							var k := v - 1
+							bits.append({"pos": m * ((Vector3(x, y, z) + o + Vector3(0.5, 0.5, 0.5)) * vm),
+								"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
+						else:
+							counts[v] = int(counts.get(v, 0)) + 1
+						seen += 1
+					j += 1
+	return bits
+
+## What it's made of as pieces (VoxelPieces.spawn's list): each part left, where it is now.
+func as_pieces() -> Array:
+	var out := []
+	for n in parts:
+		var p: Dictionary = parts[n]
+		if p.gone or int(p.left) <= 0:
+			continue
+		var b: int = p.bone
+		var att := skeleton.global_transform * skeleton.get_bone_global_pose(b)
+		var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
+		var lo := Vector3i(p.grid.size)
+		var hi := Vector3i(-1, -1, -1)
+		var s: Vector3i = p.grid.size
+		var cells: PackedInt32Array = p.grid.cells
+		var j := 0
+		for z in s.z:
+			for y in s.y:
+				for x in s.x:
+					if cells[j] != 0:
+						lo = Vector3i(mini(lo.x, x), mini(lo.y, y), mini(lo.z, z))
+						hi = Vector3i(maxi(hi.x, x), maxi(hi.y, y), maxi(hi.z, z))
+					j += 1
+		var mo := mesh_origin(n)
+		out.append({"part": n, "grid": {"size": s, "cells": cells}, "origin": mo, "xform": att,
+			"mesh": mesh if not p.dirty and int(p.job) < 0 else null,
+			"box_at": ((Vector3(lo) + Vector3(hi) + Vector3.ONE) * 0.5 + mo) * vm, "box": (Vector3(hi - lo) + Vector3.ONE) * vm,
+			"count": int(p.left)})
 	return out
 
 # ---------------------------------------------------------------- the sword
