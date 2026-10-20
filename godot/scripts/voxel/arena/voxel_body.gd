@@ -10,6 +10,8 @@ signal died(body: VoxelBody)
 
 const FLESH := [Color8(150, 22, 28), Color8(120, 14, 20), Color8(176, 40, 44), Color8(98, 10, 16)]
 const BONE := Color8(226, 220, 204)
+const BRAIN := [Color8(218, 150, 162), Color8(196, 124, 140), Color8(232, 172, 180)]
+static var _brain_ints := {}          # the brain colours as cell values (to count brain knocked out)
 const LIMBS := ["arm", "forearm", "thigh", "shin"]
 
 var model: VoxelModel
@@ -28,6 +30,11 @@ var height := 1.8
 var radius := 0.5
 ## Health: shots take it by where they land (the head most) and how many cubes they knock out.
 var hp := 100.0
+## The brain: how many cubes of it there were, and how many are gone. A quarter gone kills (the owner, 20 Oct).
+var brain_start := 0
+var brain_lost := 0
+const BRAIN_KILL := 0.25
+const BODY_TOUGH := 10.0              # body shots take this many times more cubes than before to kill
 const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "thigh": 3}
 const PART_WEIGHT := {"head": 3.2, "torso": 1.2, "pelvis": 1.0}
 ## Can't die (VoxelArena's F6): shoot them to pieces.
@@ -66,6 +73,10 @@ func setup(key_: String, cube_m: float, chunk: int, mat: Material) -> void:
 			"pivot": model.bone_pivot[b] * model.voxel_m, "start": int(shared[n].get_meta("count")),
 			"left": int(shared[n].get_meta("count")), "gone": false, "dirty": false, "job": -1, "hits": 0}
 		top = maxf(top, (o.y + (g.size as Vector3i).y) * cube_m)
+		if n == "head":
+			for c in (g.cells as PackedInt32Array):
+				if _brain_ints.has(c):
+					brain_start += 1
 	height = top
 
 ## The pivot-relative origin (in cubes) a part is meshed from.
@@ -126,7 +137,14 @@ static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary
 		for l in LIMBS:
 			if String(n).begins_with(l):
 				limb = true
-		# each row's middle (for the bone)
+		# the head: a skull two cubes in, the brain inside it (or, in a head too small for both, all brain)
+		var head_deep := 0
+		if n == "head":
+			for z in s.z:
+				for y in s.y:
+					for x in s.x:
+						if cells[x + s.x * (y + s.y * z)] != 0:
+							head_deep = maxi(head_deep, _depth(g, x, y, z))
 		for z in s.z:
 			for y in s.y:
 				for x in s.x:
@@ -136,11 +154,18 @@ static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary
 					var c: Color = FLESH[rng.randi() % FLESH.size()]
 					if limb and _near_axis(g, x, y, z, 1.3):
 						c = BONE
-					elif n == "head" and _depth(g, x, y, z) == 2:
-						c = BONE                                  # the skull
+					elif n == "head":
+						var dp := _depth(g, x, y, z)
+						if head_deep >= 3 and dp == 2:
+							c = BONE                              # the skull
+						else:
+							c = BRAIN[rng.randi() % BRAIN.size()]
 					cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
 		out[n] = {"size": s, "cells": cells}
 	_flesh_cache[ck] = out
+	if _brain_ints.is_empty():
+		for c in BRAIN:
+			_brain_ints[((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1] = true
 	return out
 
 static func _filled(g: Dictionary, x: int, y: int, z: int) -> bool:
@@ -408,6 +433,8 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 					continue
 				cells[i] = 0
 				p.left = int(p.left) - 1
+				if _brain_ints.has(v):
+					brain_lost += 1
 				var k := v - 1
 				out.append({"pos": m * ((Vector3(x, y, z) + Vector3(p.origin) + Vector3(0.5, 0.5, 0.5)) * vm),
 					"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
@@ -420,9 +447,12 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 		res.limb = n
 		res.bits.append_array(_blow(n))
 	if alive:
-		# only the head, chest and hips hurt: limbs come off without killing (the owner, 20 Oct)
-		hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0))
-		if hp <= 0.0 and not immortal:
+		# limbs come off without killing; the chest and hips take ten times the cubes they used to; the head kills
+		# only once a quarter of the brain is gone (the owner, 20 Oct)
+		if base != "head":
+			hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0)) / BODY_TOUGH
+		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
+		if (hp <= 0.0 or brain_dead) and not immortal:
 			res.killed = true
 			alive = false
 			died.emit(self)

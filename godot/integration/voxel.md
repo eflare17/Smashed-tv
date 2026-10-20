@@ -23,8 +23,9 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
   MultiMesh of up to 8000 cubes in one draw call, bouncing and settling, gone after 4-7 s); inside is flesh, bone
   down the limbs and a skull round the head. A limb hit 1-3 times comes off (with what hangs from it) without killing (the
-  owner, 20 Oct): one leg off and they limp, both and they crawl on their arms; only head, chest and hip hits take
-  health (the head most). F6: can't die at all. Walking: the step is scaled to each kind's leg length so the feet
+  owner, 20 Oct): one leg off and they limp, both and they crawl on their arms; the chest and hips take health, ten
+  times slower than at first (a grunt survives 30 chest shots); the head kills once a quarter of the brain (pink cubes
+  inside the skull) is knocked out (a grunt took 39 blaster shots spread over his face). F6: can't die at all. Walking: the step is scaled to each kind's leg length so the feet
   keep up with the ground (they skated before), arms swing against the legs. The dead topple and lie 12 s.
 - Each body part is its own mesh on its bone (BoneAttachment3D, no skinning), so a hit re-meshes only that part, on a
   worker thread (WorkerThreadPool, 12 at a time); fresh enemies share ready-made meshes until they're shot.

@@ -155,7 +155,23 @@ func _holes() -> void:
 		if hh.is_empty() or not b.alive:
 			break
 		b.damage(hh, 1.9)
-	check(not b.alive, "enough shots kill him")
+	check(b.alive, "thirty chest shots don't kill him (ten times tougher)")
+	check(b.brain_start > 50, "he has a brain (%d cubes)" % b.brain_start)
+	# shots into the head: dead only once a quarter of the brain is gone
+	var shots := 0
+	for i in 200:
+		if not b.alive:
+			break
+		# spread over the face, a few cubes apart, like a player's shots
+		var off := Vector3(((i % 5) - 2) * 0.035, b.height * 0.86 + (((i / 5) % 5) - 2) * 0.035, 3.0)
+		var hh := b.trace(off, Vector3(0, 0, -1), 10.0)
+		if hh.is_empty():
+			continue
+		b.damage(hh, 1.9)
+		shots += 1
+	print("voxel logic: a grunt took %d blaster shots to the head (%d of %d brain cubes)" % [shots, b.brain_lost, b.brain_start])
+	check(not b.alive, "head shots kill him (%d shots)" % shots)
+	check(float(b.brain_lost) >= float(b.brain_start) * 0.25, "a quarter of the brain gone when he dies (%d of %d)" % [b.brain_lost, b.brain_start])
 	b.queue_free()
 
 func _poses() -> void:
