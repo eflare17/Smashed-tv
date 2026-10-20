@@ -1013,7 +1013,7 @@ func _weapons_step(dt: float) -> void:
 	if top_down and _hand_id != cur:
 		_hold_in_hand(cur)
 
-# top-down: the weapon out in Jared's hand (two blasters, one a hand, as in the game) and the arms to hold it with
+# top-down: the weapon out in Jared's right hand (its hand_mesh) and the arms to hold it with
 func _hold_in_hand(id: String) -> void:
 	_hand_id = id
 	for h in _hands:
