@@ -37,6 +37,8 @@ var _budget := 0.0                    # cubes the brush may still pull loose thi
 var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0}
 
 func setup(cube_m: float) -> void:
+	# moved every frame, not on physics ticks: no interpolation (it would lag and warn)
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var bm := BoxMesh.new()
 	bm.size = Vector3.ONE * cube_m
 	var mat := StandardMaterial3D.new()

@@ -20,6 +20,7 @@ var _glow: MeshInstance3D       # the nozzle's light, brighter while sucking
 
 func setup(arena_: Node3D, cam: Camera3D) -> void:
 	arena = arena_
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF    # the brush and beam move every frame
 	view = _model()
 	cam.add_child(view)
 	_sphere = MeshInstance3D.new()
