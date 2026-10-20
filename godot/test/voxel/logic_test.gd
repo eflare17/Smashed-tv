@@ -273,6 +273,52 @@ func _fire_ice() -> void:
 	for i in int(VoxelBody.FREEZE_T * 60.0) + 5:
 		d.status_step(1.0 / 60.0)
 	check(not d.frozen() and d.alive and d.frost == 0.0, "left alone: it thaws")
+	# the review's finds: char stays through a freeze and thaw; an ice statue landing breaks; ash that leaves the
+	# cube nearest the hips on its own doesn't take the whole body off
+	var g := _grunt()
+	g.ignite(Vector3(0, 1.1, 0.2), 0.12)
+	for i in 70:
+		g.status_step(1.0 / 60.0)
+	var charred := _count_col(g, VoxelBody.CHAR)
+	g.chill(1.0)
+	for i in int(VoxelBody.FREEZE_T * 60.0) + 5:
+		g.status_step(1.0 / 60.0)
+	check(charred > 20 and not g.frozen() and _count_col(g, VoxelBody.CHAR) == charred, "charred cubes stay charred through a freeze and thaw (%d)" % charred)
+	g.queue_free()
+	var h := _grunt()
+	h.launch(Vector3(0, 3.5, 0), 4.0)
+	for i in 10:
+		h.react_step(1.0 / 60.0)
+	h.chill(1.0)
+	for i in 120:
+		h.react_step(1.0 / 60.0)
+	check(h.cubes_left() == 0 and not h.alive, "frozen in the air: it shatters as it lands")
+	h.queue_free()
+	var k := _grunt()
+	var root: String = "torso"
+	for nm in k.parts:
+		if int(k.parts[nm].bone) < int(k.parts[root].bone):
+			root = nm
+	var tp: Dictionary = k.parts[root]
+	var ts: Vector3i = tp.grid.size
+	var tc: PackedInt32Array = tp.grid.cells
+	var jp: Vector3 = k.model.bone_pivot[int(tp.bone)] * k.model.voxel_m / k.vm - Vector3(tp.origin) - Vector3(0.5, 0.5, 0.5)
+	var best := -1
+	var bd := INF
+	for i in tc.size():
+		if tc[i] != 0:
+			var dd := Vector3(i % ts.x, (i / ts.x) % ts.y, i / (ts.x * ts.y)).distance_to(jp)
+			if dd < bd:
+				bd = dd
+				best = i
+	var ring := PackedInt32Array()
+	for nb in [1, -1, ts.x, -ts.x, ts.x * ts.y, -ts.x * ts.y]:
+		if best + nb >= 0 and best + nb < tc.size() and tc[best + nb] != 0:
+			ring.append(best + nb)
+	var left0: int = tp.left
+	var rr := k._remove({"plane": false, "mask": {root: ring}, "bits_every": 3})
+	check(int(k.parts[root].left) > left0 * 0.9 and not k.parts.head.gone and k.alive, "ash round the cube nearest the hips: the body keeps itself, not the crumb (%d of %d left, %d pieces)" % [int(k.parts[root].left), left0, (rr.pieces as Array).size()])
+	k.queue_free()
 	var e := _grunt()
 	var sv := e.sever("arm_l")
 	check(e.parts.arm_l.gone and e.parts.hand_l.gone and (sv.pieces as Array).size() >= 2 and e.alive, "an arm yanked off whole (%d pieces)" % (sv.pieces as Array).size())
@@ -280,6 +326,13 @@ func _fire_ice() -> void:
 	check(sh.head_off and not e.alive, "the head yanked off: dead")
 	d.queue_free()
 	e.queue_free()
+
+func _count_col(b: VoxelBody, col: Color) -> int:
+	var v := ((col.r8 << 16) | (col.g8 << 8) | col.b8) + 1
+	var n := 0
+	for nm in b.parts:
+		n += (b.parts[nm].grid.cells as PackedInt32Array).count(v)
+	return n
 
 # the review's finds, kept fixed
 func _fixes() -> void:

@@ -189,7 +189,10 @@ func _process(dt: float) -> void:
 	_budget = minf(_budget + RATE * dt, float(PICK_FRAME)) if brush != Vector3.INF else 0.0
 	_pick()
 	if well != Vector3.INF:
-		pop(Vector3(well.x, 0.0, well.z), well_r, 1.5, 150)
+		# (only the lying cubes it can reach: a ring further off in 3D would hop up and fall back for ever)
+		var reach := sqrt(maxf(0.0, well_r * well_r - (well.y - _floor) * (well.y - _floor)))
+		if reach > 0.05:
+			pop(Vector3(well.x, 0.0, well.z), reach, 1.5, 150)
 	var i := 0
 	while i < _n:
 		_life[i] += dt
@@ -234,7 +237,7 @@ func _process(dt: float) -> void:
 				continue
 			if wd < well_r:
 				# pulled in, faster the nearer, spiralling a little
-				v = v * exp(-dt * 1.5) + (wv / wd * (1.0 + 2.5 * (1.0 - wd / well_r)) + wv.cross(Vector3.UP).normalized() * 0.4) * well_pull * dt
+				v = v * exp(-dt * 1.5) + (wv / wd * (1.0 + 2.5 * (1.0 - wd / well_r)) + wv.cross(Vector3.UP).normalized() * 0.4 * wd / well_r) * well_pull * dt     # (the swirl dies away near the middle, or they'd orbit it)
 				p += v * dt
 				_vel[i] = v
 				_pos[i] = p

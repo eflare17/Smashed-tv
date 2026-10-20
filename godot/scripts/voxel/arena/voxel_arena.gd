@@ -713,7 +713,7 @@ func _physics_process(dt: float) -> void:
 # a body flying fast (batted, blasted, thrown) knocks over whoever it hits
 func _bowl() -> void:
 	for b in bodies:
-		if not b.airborne or b.fragment or b.position.y > 1.6 or b.air_v.length_squared() < 9.0:
+		if not b.airborne or b.fragment or b.position.y > 1.6 or b.air_v.length_squared() < 9.0 or b.cubes_left() == 0:
 			continue
 		for o in bodies:
 			if o == b or o.airborne or o.fragment or not o.alive:
@@ -778,20 +778,21 @@ func _process(dt: float) -> void:
 		return
 	if _opts.has("swordtest"):
 		_swordtest(dt)
-	if _opts.has("meleetest"):
-		_meleetest(dt)
 	if _opts.has("weaponshots"):
 		_weaponshots()
 	var t0 := Time.get_ticks_usec()
 	_camera(dt)
 	var t1 := Time.get_ticks_usec()
 	_shoot(dt)
+	if _opts.has("meleetest"):
+		_meleetest(dt)           # (after _shoot, which clears _aiming each frame)
 	_status_step(dt)
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
 		var moving := b.alive and not frozen
 		if not b.alive:
-			b.dead_t += dt
+			if not b.frozen():
+				b.dead_t += dt        # (frozen mid-fall, a statue: it falls the rest of the way once it thaws)
 			if b.dead_t > 0.7 and not b.airborne and b.since_air > 0.5 and b.knock.length_squared() <= 0.0001:
 				continue          # lying still
 		b.animate(dt, moving and b.attack <= 0.0)
@@ -1076,6 +1077,7 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 		# the world (walls, pillars, floor) stops it first?
 		var q := PhysicsRayQueryParameters3D.create(from, from + d * reach)
 		q.exclude = [player.get_rid()]
+		q.collision_mask = 1            # walls, pillars, floor: not the pieces flying about (layer 2)
 		var wh := get_world_3d().direct_space_state.intersect_ray(q)
 		var end := from + d * reach
 		if not wh.is_empty():
@@ -1198,6 +1200,7 @@ func _burst_save(k: int) -> void:
 
 # closing the window: no meshing job left running on a worker thread
 func _exit_tree() -> void:
+	VoxelBody.on_shatter = Callable()      # (a lambda on this arena: left behind once it's freed, it corrupts the heap)
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)
 	_jobs.clear()

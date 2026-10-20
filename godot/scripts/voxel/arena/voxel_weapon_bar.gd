@@ -56,7 +56,8 @@ func _draw() -> void:
 		return
 	var cur: Dictionary = loadout.slot()
 	var hint := "%s      Left: %s      Right: %s" % [cur.name, cur.left, cur.right]
-	_text(Vector2(0, 16), hint, 15, Color(1, 1, 1, 0.92), size.x, HORIZONTAL_ALIGNMENT_CENTER)
+	var hw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x       # (centred, not cut to the bar)
+	_text(Vector2((size.x - hw) / 2.0, 16), hint, 15, Color(1, 1, 1, 0.92), -1, HORIZONTAL_ALIGNMENT_LEFT)
 	var x := 0.0
 	var top := size.y - SLOT_H - HEAD_H
 	for gr in _groups():
@@ -65,7 +66,7 @@ func _draw() -> void:
 		var gw := _group_w(gr)
 		var here := loadout.group() == g
 		_text(Vector2(x, top + 12), "%d  %s" % [g, VoxelLoadout.GROUPS.get(g, "")], 12,
-			Color(1, 0.9, 0.4) if here else Color(1, 1, 1, 0.55), gw, HORIZONTAL_ALIGNMENT_LEFT)
+			Color(1, 0.9, 0.4) if here else Color(1, 1, 1, 0.55), -1, HORIZONTAL_ALIGNMENT_LEFT)
 		for j in mine.size():
 			var i: int = mine[j]
 			var s: Dictionary = loadout.slots[i]

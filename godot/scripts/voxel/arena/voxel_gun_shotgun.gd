@@ -104,7 +104,7 @@ func step(dt: float) -> void:
 	if _pump_t > 0.0:
 		var before := _pump_t
 		_pump_t += dt
-		if before < _pump_total * 0.3 and _pump_t >= _pump_total * 0.3:
+		if before < _pump_total * 0.3 and _pump_t >= _pump_total * 0.3 and is_out():
 			sfx("shotgun_pump")
 			eject()
 		if _pump_t >= _pump_total:
@@ -117,7 +117,8 @@ func step(dt: float) -> void:
 		if _shell_t >= SHELL_T:
 			_shell_t = 0.0
 			clip += 1
-			sfx("shell_in")
+			if is_out():
+				sfx("shell_in")
 		reload_t = 0.0 if clip >= clip_max else SHELL_T * (clip_max - clip) - _shell_t + dt
 	super.step(dt)
 

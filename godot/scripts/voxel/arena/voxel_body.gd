@@ -90,6 +90,8 @@ func react_step(dt: float) -> void:
 			# down: a slide along the floor, then lying there a while
 			position.y = 0.0
 			airborne = false
+			if frozen():
+				_shatter_now(air_v)      # an ice statue hitting the floor breaks (it's posed as it froze: it can't lie there)
 			knock = Vector3(air_v.x, 0.0, air_v.z) * 0.35
 			down_t = DOWN_T
 			stagger = 0.0
@@ -735,7 +737,10 @@ const FROST_FADE := 0.12        # frost a second lost when it isn't being kept u
 static var on_shatter: Callable
 var _burn := {}                 # part -> {cell index: seconds burning}
 var _burn_n := 0
-var _burn_tick := 0.0
+var _burn_tick := randf() * BURN_TICK     # (bodies set alight together still step on different frames)
+const ASH_EVERY := 0.5          # seconds between taking the ash out (its connectivity cut fills the whole part)
+var _ash := {}                  # part -> {cell index: true}: burnt to ash, waiting to be taken out
+var _ash_t := randf() * ASH_EVERY
 var _orig := {}                 # part -> its cells' colours before fire or ice changed them (for the thaw)
 var frost := 0.0
 var frozen_t := 0.0
@@ -793,8 +798,9 @@ func chill(amount: float) -> bool:
 		return false
 	frost = minf(1.0, frost + amount)
 	if _burn_n > 0:
-		_burn.clear()                # the cold puts the fire out
+		_burn.clear()                # the cold puts the fire out (the ash not yet fallen stays, charred)
 		_burn_n = 0
+		_ash.clear()
 	if frost >= 1.0:
 		_freeze()
 		return true
@@ -953,10 +959,8 @@ func status_step(dt: float) -> Dictionary:
 			if t0 < BURN_CHAR and t1 >= BURN_CHAR:
 				if not recol:
 					cells = cells.duplicate()
-					if not _orig.has(nm):
-						_orig[nm] = cells.duplicate()
 					recol = true
-				cells[i] = ((CHAR.r8 << 16) | (CHAR.g8 << 8) | CHAR.b8) + 1
+				cells[i] = ((CHAR.r8 << 16) | (CHAR.g8 << 8) | CHAR.b8) + 1     # (for good: the thaw keeps it)
 			if t1 >= BURN_ASH:
 				gone.append(i)
 				bd.erase(i)
@@ -964,15 +968,22 @@ func status_step(dt: float) -> Dictionary:
 				continue
 			# catching the cubes beside it
 			if randf() < BURN_SPREAD * step * 6.0:
-				var nb: int = [1, -1, s.x, -s.x, s.x * s.y, -s.x * s.y][randi() % 6]
-				catch.append([nm, i + nb])
+				var dr := randi() % 6
+				var cx: int = i % s.x
+				var cy: int = (i / s.x) % s.y
+				var cz: int = i / (s.x * s.y)
+				if [cx < s.x - 1, cx > 0, cy < s.y - 1, cy > 0, cz < s.z - 1, cz > 0][dr]:     # (not round the grid's edge)
+					catch.append([nm, i + [1, -1, s.x, -s.x, s.x * s.y, -s.x * s.y][dr]])
 			if flames.size() < 14 and randf() < 0.25:
 				flames.append(m * ((Vector3(i % s.x, (i / s.x) % s.y, i / (s.x * s.y)) + o + Vector3(0.5, 0.5, 0.5)) * vm))
 		if recol:
 			p.grid = {"size": s, "cells": cells}
 			p.dirty = true
 		if not gone.is_empty():
-			ash[nm] = gone
+			var pend: Dictionary = _ash.get(nm, {})
+			for gi in gone:
+				pend[gi] = true
+			_ash[nm] = pend
 		if bd.is_empty():
 			_burn.erase(nm)
 	for c in catch:
@@ -981,7 +992,7 @@ func status_step(dt: float) -> Dictionary:
 		var p2: Dictionary = parts[c[0]]
 		var cells2: PackedInt32Array = p2.grid.cells
 		var i2: int = c[1]
-		if i2 < 0 or i2 >= cells2.size() or cells2[i2] == 0:
+		if i2 < 0 or i2 >= cells2.size() or cells2[i2] == 0 or (_ash.has(c[0]) and (_ash[c[0]] as Dictionary).has(i2)):
 			continue
 		var bd2: Dictionary = _burn.get(c[0], {})
 		if not bd2.has(i2):
@@ -992,7 +1003,12 @@ func status_step(dt: float) -> Dictionary:
 	if alive:
 		panic_t = maxf(panic_t, 0.6)
 		hurt(BURN_HURT * step)
-	if not ash.is_empty():
+	_ash_t += step
+	if not _ash.is_empty() and (_ash_t >= ASH_EVERY or _burn_n == 0):
+		_ash_t = 0.0
+		for nm2 in _ash:
+			ash[nm2] = PackedInt32Array((_ash[nm2] as Dictionary).keys())
+		_ash.clear()
 		var r := _remove({"plane": false, "mask": ash, "bits_every": 3})
 		for bt in r.bits:
 			bt.col = (bt.col as Color).lerp(CHAR, 0.6)      # ash
@@ -1188,6 +1204,36 @@ func hurt(amount: float) -> bool:
 		died.emit(self)
 		return true
 	return false
+
+# a 6-neighbour fill from q over the uncut cubes (st 0), marking them mark
+static func _flood(q: PackedInt32Array, st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, mark: int) -> void:
+	var sx := s.x
+	var sxy := s.x * s.y
+	var nall := cells.size()
+	var h := 0
+	while h < q.size():
+		var k: int = q[h]
+		h += 1
+		var kx := k % sx
+		var ky := (k / sx) % s.y
+		if kx > 0 and st[k - 1] == 0 and cells[k - 1] != 0:
+			st[k - 1] = mark
+			q.append(k - 1)
+		if kx < sx - 1 and st[k + 1] == 0 and cells[k + 1] != 0:
+			st[k + 1] = mark
+			q.append(k + 1)
+		if ky > 0 and st[k - sx] == 0 and cells[k - sx] != 0:
+			st[k - sx] = mark
+			q.append(k - sx)
+		if ky < s.y - 1 and st[k + sx] == 0 and cells[k + sx] != 0:
+			st[k + sx] = mark
+			q.append(k + sx)
+		if k - sxy >= 0 and st[k - sxy] == 0 and cells[k - sxy] != 0:
+			st[k - sxy] = mark
+			q.append(k - sxy)
+		if k + sxy < nall and st[k + sxy] == 0 and cells[k + sxy] != 0:
+			st[k + sxy] = mark
+			q.append(k + sxy)
 
 # slice and carve: the cubes a blade's plane or a capsule takes, then what's left hanging off, part by part
 func _remove(opt: Dictionary) -> Dictionary:
@@ -1461,6 +1507,29 @@ func _remove(opt: Dictionary) -> Dictionary:
 			if k2 < nall and st[k2] == 0 and cells[k2] != 0:
 				st[k2] = 4
 				q2.append(k2)
+		if masked and nm == root and q2.size() * 10 < int(p.left) - ncut:
+			# fire's scattered ash can leave the cube nearest the hips a crumb on its own: the body keeps its biggest
+			# lump instead (the crumb comes off), not the crumb with everything else falling off
+			var big := q2
+			var swapped := false
+			for k0 in nall:
+				if cells[k0] == 0 or st[k0] != 0:
+					continue
+				var lump := PackedInt32Array([k0])
+				st[k0] = 5
+				_flood(lump, st, cells, s, 5)
+				if lump.size() > big.size():
+					big = lump
+					swapped = true
+			if swapped:
+				for k0 in q2:
+					st[k0] = 5
+				for k0 in big:
+					st[k0] = 4
+				q2 = big
+			for k0 in nall:
+				if st[k0] == 5:
+					st[k0] = 0
 		# st after: 1 kept, 2 cut, 3 came off, 0 empty
 		var off_cells := PackedInt32Array()
 		off_cells.resize(cells.size())

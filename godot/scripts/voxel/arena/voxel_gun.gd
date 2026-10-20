@@ -175,6 +175,10 @@ func step(dt: float) -> void:
 	_pose()
 	_shells_step(dt)
 
+## The one out (a holstered gun goes on reloading and pumping, unheard and unseen).
+func is_out() -> bool:
+	return arena.loadout.id() == _my_id()
+
 func _my_id() -> String:
 	for id in arena.melee:
 		if arena.melee[id] == self:

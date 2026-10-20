@@ -11,7 +11,7 @@ const HOLE_AIMED := 2.5
 const SPREAD := 0.7             # degrees, from the hip ...
 const SPREAD_AIMED := 0.12      # ... aimed in
 const BLOOM := 0.45             # degrees more per shot, fading at BLOOM_FADE a second
-const BLOOM_FADE := 3.0
+const BLOOM_FADE := 1.5          # (held, one every SHOT_T: +0.2 degrees a shot; taps 0.3 s apart land true)
 
 var _bloom := 0.0
 var _mag: MeshInstance3D        # the magazine (drops out on a reload)
@@ -77,7 +77,7 @@ func _reload_began() -> void:
 func _reloading(from: float, to: float) -> void:
 	var k0 := 1.0 - from / reload_total
 	var k1 := 1.0 - to / reload_total
-	if k0 < 0.7 and k1 >= 0.7:
+	if k0 < 0.7 and k1 >= 0.7 and is_out():
 		sfx("mag_in")
 	# the magazine: drops out, gone, a fresh one pushed up in
 	var m := 0.0
