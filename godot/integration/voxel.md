@@ -72,6 +72,12 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   the way. With an enemy right up close the spear slides back through your grip.
 - Screenshots (software-rendered): `voxel_shots/melee_bat_flying.png`, `melee_hammer_crater.png`, `melee_hammer_slam.png`,
   `melee_chainsaw_lunge.png`, `melee_spear_thrust.png`.
+- A last review of the shared code (cuts, weapon input, runtime) found 24 problems, all reproduced, fixed and checked
+  again with the same probes: among them a crash at quit after F2 with meshing still running, Esc while holding a melee
+  button leaving it held, the click that grabs the mouse also firing, a nick at the front of a knee taking the leg off,
+  a chop down the middle keeping both halves, cubes coming to rest outside the walls, pieces knocked over the walls
+  falling forever. The quick cut path and the full one give the same result over 2880 random cuts. Not fixed: shaving
+  the side of a brute's chest at the shoulder can take that arm off.
 - Each melee weapon's moves were built and then reviewed by a second pass that tried to break them (switching mid-move,
   the target freed mid-swing, F2, no bodies, dead bodies, holding forever, top-down with the mouse off the floor). Shared
   body fixes from that: a cut through the hips no longer takes the whole top half off (the root part never comes off
@@ -92,7 +98,7 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
   hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
 - Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts, vacuum, weapon slots, carve/launch and each melee weapon's own checks
-  (181/181); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
+  (187/187); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
   standing grunt, saving frames; `-- --weaponshots=dir` takes every slot out, first person then top-down; `-- --swordtest=dir`
   slashes a standing grunt (an arm, the neck, the knees) then vacuums, saving frames; `-- --walkcheck=dir --legless`
   shows the worm crawl. The arena's own self-test:
