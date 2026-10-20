@@ -32,6 +32,34 @@ var knock := Vector3.ZERO
 var flinch := 0.0
 var flinch_head := false
 var push_through := 0.0               # seconds after a stagger when hits only nudge (so held fire can't pin them)
+## Knocked flying (a bat, a hammer's slam): in the air at air_v, turning over backward at tumble_v (radians a
+## second); landed, they lie down_t seconds, then take UP_T getting up. Dead ones fly too and just lie there.
+var airborne := false
+var air_v := Vector3.ZERO
+var tumble := 0.0
+var tumble_v := 0.0
+var down_t := 0.0
+var up_t := 0.0
+const UP_T := 0.6
+const DOWN_T := 1.3
+## Top-down Jared: the weapon held (a VoxelAnim weapon pose: "", "blaster", "shotgun", "spud" ...) and its kick.
+var weapon := ""
+var recoil := 0.0
+
+## Sent flying at v (m/s, world), turning over backward at spin radians a second.
+func launch(v: Vector3, spin: float = 6.0) -> void:
+	airborne = true
+	air_v = v
+	tumble = 0.0
+	tumble_v = spin
+	knock = Vector3.ZERO
+	down_t = 0.0
+	up_t = 0.0
+	position.y = maxf(position.y, 0.02)
+
+## In the air, lying where they landed, or getting up: not walking, not swinging.
+func floored() -> bool:
+	return airborne or down_t > 0.0 or up_t > 0.0
 
 ## A shot landed: shoved back along dir by how many cubes it knocked out, staggering a moment.
 func hit_react(dir: Vector3, cubes: int, part: String) -> void:
@@ -47,8 +75,26 @@ func hit_react(dir: Vector3, cubes: int, part: String) -> void:
 		stagger = 0.3 + 0.15 * heavy
 		push_through = stagger + 0.6
 
-## Each physics step: the shove slides them back and fades; the stagger runs out.
+## Each physics step: the shove slides them back and fades; the stagger runs out; in the air they fly and fall.
 func react_step(dt: float) -> void:
+	if airborne:
+		position += air_v * dt
+		air_v.y -= 9.8 * dt
+		tumble += tumble_v * dt
+		if position.y <= 0.0 and air_v.y < 0.0:
+			# down: a slide along the floor, then lying there a while
+			position.y = 0.0
+			airborne = false
+			knock = Vector3(air_v.x, 0.0, air_v.z) * 0.35
+			down_t = DOWN_T
+			stagger = 0.0
+	elif down_t > 0.0:
+		down_t -= dt
+		if down_t <= 0.0:
+			down_t = 0.0
+			up_t = UP_T
+	elif up_t > 0.0:
+		up_t = maxf(0.0, up_t - dt)
 	position += knock * dt
 	knock *= exp(-dt * 6.0)
 	stagger = maxf(0.0, stagger - dt)
@@ -64,6 +110,7 @@ var hp := 100.0
 var brain_start := 0
 var brain_lost := 0
 const BRAIN_KILL := 0.25
+const MIN_PIECE := 12                 # fewer cubes than this cut loose fly off as bits, not a piece
 const BODY_TOUGH := 10.0              # body shots take this many times more cubes than before to kill
 const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "thigh": 3}
 const PART_WEIGHT := {"head": 3.2, "torso": 1.2, "pelvis": 1.0}
@@ -293,13 +340,13 @@ func animate(dt: float, moving: bool) -> void:
 	t += dt
 	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
 	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
-	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": ""})
+	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": weapon, "recoil": recoil})
 	var rot: Dictionary = p.rot
 	if attack > 0.0:
 		var k := sin(clampf(attack, 0.0, 1.0) * PI)
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-1.5 * k, 0.2, -0.1))
 		rot["arm_l"] = Quaternion.from_euler(Vector3(-1.2 * k, -0.2, 0.1))
-	elif moving:
+	elif moving and weapon == "":
 		# arms swinging against the legs, elbows a little bent (no reaching forward)
 		var ph := anim_odo / VoxelAnim.CYCLE * TAU
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-0.45 * sin(ph), 0, -0.12))
@@ -341,12 +388,29 @@ func animate(dt: float, moving: bool) -> void:
 		var side := 1.0 if (parts.has("thigh_l") and parts["thigh_l"].gone) or (parts.has("shin_l") and parts["shin_l"].gone) else -1.0
 		turn = Quaternion.from_euler(Vector3(0.15, 0, -0.12 * side))
 		lift.y += absf(sin(odo / 0.5 * PI)) * 0.06
-	if not alive:
+	if airborne:
+		# turning over backward about the middle, arms and legs flung out
+		pivot = Vector3(0, height * 0.5, 0)
+		turn = Quaternion.from_euler(Vector3(-tumble, 0, 0))
+		lift = Vector3.ZERO
+		rot = {"arm_r": Quaternion.from_euler(Vector3(-2.6, 0, -0.6)), "arm_l": Quaternion.from_euler(Vector3(-2.6, 0, 0.6)),
+			"thigh_l": Quaternion.from_euler(Vector3(-0.7, 0, 0.2)), "thigh_r": Quaternion.from_euler(Vector3(-0.4, 0, -0.2)),
+			"shin_l": Quaternion.from_euler(Vector3(0.9, 0, 0)), "shin_r": Quaternion.from_euler(Vector3(0.5, 0, 0)),
+			"head": Quaternion.from_euler(Vector3(-0.5, 0, 0))}
+	elif not alive:
 		# toppled backward about the feet, over half a second
 		var k2 := smoothstep(0.0, 0.55, dead_t)
 		turn = Quaternion.from_euler(Vector3(-PI / 2.0 * k2, 0, 0))
 		lift = Vector3(0, 0.12 * k2, 0)
 		rot = {}
+	elif down_t > 0.0 or up_t > 0.0:
+		# flat on their back where they landed, then pushing back up
+		var k3 := 1.0 if down_t > 0.0 else smoothstep(0.0, 1.0, up_t / UP_T)
+		pivot = Vector3.ZERO
+		turn = Quaternion.from_euler(Vector3(-PI / 2.0 * k3, 0, 0))
+		lift = Vector3(0, 0.12 * k3, 0)
+		rot = {"arm_r": Quaternion.from_euler(Vector3(-0.4 * k3, 0, -0.9 * k3)), "arm_l": Quaternion.from_euler(Vector3(-0.4 * k3, 0, 0.9 * k3)),
+			"head": Quaternion.from_euler(Vector3(-0.3 * k3, 0, 0))}
 	for i in model.bone_names.size():
 		if model.bone_parent[i] >= 0:
 			skeleton.set_bone_pose_rotation(i, rot.get(model.bone_names[i], Quaternion.IDENTITY))
@@ -559,6 +623,39 @@ func _blow(n: String) -> Array:
 ## pieces: [{part, grid, origin, xform}] (the part's cells that came off, its mesh origin and its mesh's world
 ## transform now), killed: bool, head_off: bool}.
 func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float, half_t: float) -> Dictionary:
+	return _remove({"plane": true, "eye": eye, "n": n, "fwd": fwd, "reach": reach, "cos_arc": cos_arc, "half_t": half_t})
+
+## A blow that scoops out every cube within r metres of the segment a-b (a == b: a ball, a crater; long: a tunnel, a
+## chainsaw's kerf); whatever is left no longer joined to its joint comes off, as with slice. hp_per_cube: the health
+## each body (torso) cube taken costs; bits_every: one flying bit for every this many cubes taken. Returns what slice
+## does.
+func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_every: int = 2) -> Dictionary:
+	return _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
+
+## Health off the body (a blunt blow, a burn); true if that killed it.
+func hurt(amount: float) -> bool:
+	if not alive:
+		return false
+	hp -= amount
+	if hp <= 0.0 and not immortal:
+		alive = false
+		died.emit(self)
+		return true
+	return false
+
+# slice and carve: the cubes a blade's plane or a capsule takes, then what's left hanging off, part by part
+func _remove(opt: Dictionary) -> Dictionary:
+	var plane: bool = opt.plane
+	var eye: Vector3 = opt.get("eye", Vector3.ZERO)
+	var n: Vector3 = opt.get("n", Vector3.UP)
+	var fwd: Vector3 = opt.get("fwd", Vector3.FORWARD)
+	var reach: float = opt.get("reach", 0.0)
+	var cos_arc: float = opt.get("cos_arc", 0.0)
+	var half_t: float = opt.get("half_t", 0.0)
+	var ca: Vector3 = opt.get("a", Vector3.ZERO)
+	var cb: Vector3 = opt.get("b", Vector3.ZERO)
+	var cr: float = opt.get("r", 0.0)
+	var every: int = opt.get("bits_every", 2)
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
 	var by_bone := {}
 	for nm in parts:
@@ -616,29 +713,37 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 			(p.mesh as MeshInstance3D).visible = false
 			res.parts.append(nm)
 			continue
-		# the cut: distance from the plane is linear in the cell, so step it
 		var base := m * ((o + Vector3(0.5, 0.5, 0.5)) * vm)
 		var ex := m.basis.x * vm
 		var ey := m.basis.y * vm
 		var ez := m.basis.z * vm
-		var d0 := n.dot(base - eye)
-		var dx := n.dot(ex)
-		var dy := n.dot(ey)
-		var dz := n.dot(ez)
-		# quick out: the grid's corners all one side of the blade
-		var lo := INF
-		var hi := -INF
-		for c in 8:
-			var dc := d0 + dx * float((c & 1) * (s.x - 1)) + dy * float(((c >> 1) & 1) * (s.y - 1)) + dz * float(((c >> 2) & 1) * (s.z - 1))
-			lo = minf(lo, dc)
-			hi = maxf(hi, dc)
-		if lo > half_t or hi < -half_t:
-			continue
+		var d0 := 0.0
+		var dx := 0.0
+		var dy := 0.0
+		var dz := 0.0
 		# st while cutting: 2 cut, 4 still joined (reached from the joint), 0 anything else
 		var st := PackedByteArray()
-		st.resize(cells.size())
 		var ncut := 0
-		for z in s.z:
+		if not plane:
+			st.resize(cells.size())
+			ncut = _mark_capsule(st, cells, s, base, Basis(ex, ey, ez), ca, cb, cr)
+		else:
+			# the cut: distance from the plane is linear in the cell, so step it
+			d0 = n.dot(base - eye)
+			dx = n.dot(ex)
+			dy = n.dot(ey)
+			dz = n.dot(ez)
+			# quick out: the grid's corners all one side of the blade
+			var lo := INF
+			var hi := -INF
+			for c in 8:
+				var dc := d0 + dx * float((c & 1) * (s.x - 1)) + dy * float(((c >> 1) & 1) * (s.y - 1)) + dz * float(((c >> 2) & 1) * (s.z - 1))
+				lo = minf(lo, dc)
+				hi = maxf(hi, dc)
+			if lo > half_t or hi < -half_t:
+				continue
+			st.resize(cells.size())
+		for z in (s.z if plane else 0):
 			for y in s.y:
 				# only the stretch of the row the blade passes through
 				var dyz := d0 + dy * y + dz * z
@@ -670,17 +775,27 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 		var jw: Vector3 = sk * skeleton.get_bone_global_pose(jb).origin
 		var jp: Vector3 = model.bone_pivot[jb] * model.voxel_m / vm - o - Vector3(0.5, 0.5, 0.5)
 		var keep_side := 0.0
-		if absf(n.dot(jw - eye)) <= half_t + vm:
+		var keep_dir := Vector3.ZERO
+		var joint_cut := absf(n.dot(jw - eye)) <= half_t + vm if plane else _seg_dist(jw, ca, cb) <= cr + vm
+		if joint_cut:
 			var ref := jw + Vector3.DOWN
 			if nm != root and model.bone_parent[b] >= 0:
 				ref = sk * skeleton.get_bone_global_pose(model.bone_parent[b]).origin
-			keep_side = signf(n.dot(ref - eye))
-		var seed := _near_filled(cells, s, jp, 1.5 if keep_side == 0.0 else 4.0)
+			if plane:
+				keep_side = signf(n.dot(ref - eye))
+			else:
+				keep_dir = ref - jw
+		var seed := _near_filled(cells, s, jp, 4.0 if joint_cut else 1.5)
 		var q2 := PackedInt32Array()
 		for k in seed:
 			if st[k] != 0:
 				continue
-			if keep_side != 0.0 and signf(d0 + dx * (k % s.x) + dy * ((k / s.x) % s.y) + dz * (k / (s.x * s.y))) != keep_side:
+			var kx0 := k % s.x
+			var ky0 := (k / s.x) % s.y
+			var kz0 := k / (s.x * s.y)
+			if keep_side != 0.0 and signf(d0 + dx * kx0 + dy * ky0 + dz * kz0) != keep_side:
+				continue
+			if keep_dir != Vector3.ZERO and (base + ex * kx0 + ey * ky0 + ez * kz0 - jw).dot(keep_dir) <= 0.0:
 				continue
 			st[k] = 4
 			q2.append(k)
@@ -734,7 +849,7 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 						if sv == 4:
 							st[i] = 1
 						elif sv == 2:
-							if (i & 1) == 0:
+							if (i % every) == 0:
 								var k3 := v - 1
 								res.bits.append({"pos": base + ex * x + ey * y + ez * z, "col": Color8((k3 >> 16) & 255, (k3 >> 8) & 255, k3 & 255)})
 							if _brain_ints.has(v):
@@ -755,6 +870,15 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 		res.parts.append(nm)
 		if nm == "torso":
 			body_cut += ncut
+		if noff > 0 and noff < MIN_PIECE:
+			# a few cubes left floating at the cut's edge: they fly off with the rest, no piece
+			for j in off_cells.size():
+				var v2 := off_cells[j]
+				if v2 != 0:
+					var k4 := v2 - 1
+					res.bits.append({"pos": base + ex * (j % s.x) + ey * ((j / s.x) % s.y) + ez * (j / (s.x * s.y)),
+						"col": Color8((k4 >> 16) & 255, (k4 >> 8) & 255, k4 & 255)})
+			noff = 0
 		if noff > 0:
 			if noff * 4 > noff + nkept:
 				p["severed"] = true     # a real chunk of it, not a sliver off the skin
@@ -771,15 +895,57 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 			p.dirty = true
 	brain_lost += brain_hit
 	if alive and not res.parts.is_empty():
-		# a slash through the body takes a third of its health; the head off (or a quarter of the brain) kills
-		if body_cut > 6:
+		# a slash through the body takes a third of its health, a carve by the cubes it took; the head off (or a
+		# quarter of the brain) kills
+		if plane and body_cut > 6:
 			hp -= 34.0
+		elif not plane:
+			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08))
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
 		if (hp <= 0.0 or brain_dead or res.head_off) and not immortal:
 			res.killed = true
 			alive = false
 			died.emit(self)
 	return res
+
+# marks (st = 2) the filled cells whose middles are within r metres of the segment a-b; base, bs: a cell's middle in
+# the world is base + bs * cell. Returns how many.
+static func _mark_capsule(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, base: Vector3, bs: Basis, a: Vector3, b: Vector3, r: float) -> int:
+	var inv := bs.inverse()
+	var ac := inv * (a - base)
+	var bc := inv * (b - base)
+	var rc := r / bs.x.length()
+	var lo := ac.min(bc) - Vector3.ONE * rc
+	var hi := ac.max(bc) + Vector3.ONE * rc
+	var x0 := maxi(0, ceili(lo.x))
+	var y0 := maxi(0, ceili(lo.y))
+	var z0 := maxi(0, ceili(lo.z))
+	var x1 := mini(s.x - 1, floori(hi.x))
+	var y1 := mini(s.y - 1, floori(hi.y))
+	var z1 := mini(s.z - 1, floori(hi.z))
+	if x0 > x1 or y0 > y1 or z0 > z1:
+		return 0
+	var ab := bc - ac
+	var ab2 := maxf(ab.length_squared(), 0.000001)
+	var r2 := rc * rc
+	var n := 0
+	for z in range(z0, z1 + 1):
+		for y in range(y0, y1 + 1):
+			var row := s.x * (y + s.y * z)
+			for x in range(x0, x1 + 1):
+				if cells[row + x] == 0:
+					continue
+				var pc := Vector3(x, y, z)
+				var tt := clampf((pc - ac).dot(ab) / ab2, 0.0, 1.0)
+				if (pc - (ac + ab * tt)).length_squared() <= r2:
+					st[row + x] = 2
+					n += 1
+	return n
+
+static func _seg_dist(p: Vector3, a: Vector3, b: Vector3) -> float:
+	var ab := b - a
+	var tt := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.000001), 0.0, 1.0)
+	return p.distance_to(a + ab * tt)
 
 # the filled cells nearest pt (in cells), and any within slack cells further than the nearest
 static func _near_filled(cells: PackedInt32Array, s: Vector3i, pt: Vector3, slack: float) -> PackedInt32Array:

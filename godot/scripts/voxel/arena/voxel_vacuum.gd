@@ -89,7 +89,7 @@ func step(dt: float, out: bool, sucking: bool) -> void:
 	debris.nozzle = nozzle
 	debris.brush = at
 	debris.brush_r = brush_r
-	arena.sword.vacuum(at, brush_r)
+	arena.pieces.vacuum(at, brush_r)
 	arena._kick = maxf(arena._kick, 0.1 + randf() * 0.08)
 	_draw_beam(nozzle, at)
 

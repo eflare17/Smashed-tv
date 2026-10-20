@@ -23,6 +23,9 @@ func _ready() -> void:
 	_holes()
 	_sword()
 	_vacuum()
+	_loadout()
+	_carve()
+	_melee_checks()
 	await _in_game()
 	print("voxel logic: %d passed, %d failed" % [passed, failed])
 	get_tree().quit(1 if failed > 0 else 0)
@@ -185,6 +188,56 @@ func _vacuum() -> void:
 		d._process(1.0 / 60.0)
 	check(d.lying() + got == 230, "let go, the ones in the air fall back (%d lying)" % d.lying())
 	d.queue_free()
+
+func _loadout() -> void:
+	var l := VoxelLoadout.new()
+	check(l.slots.size() == 8 and l.id() == "blaster", "eight weapon slots, the blaster out first")
+	check(l.select(2) and l.id() == "sword" and not l.usable(), "3 takes out the sword; it comes up for a moment first")
+	l.step(VoxelLoadout.SWITCH_T + 0.01)
+	check(l.usable(), "then it's up")
+	l.swap_last()
+	check(l.id() == "blaster", "Q: back to the last one")
+	l.cycle(-1)
+	check(l.id() == "vacuum", "the wheel goes round the end (%s)" % l.id())
+	check(not l.select(7) and not l.select(99), "the one out, or no such slot: nothing happens")
+	l.cool("shotgun", 1.0)
+	l.step(0.5)
+	check(not l.ready_to("shotgun") and absf(l.cooling("shotgun") - 0.5) < 0.01 and l.ready_to("blaster"), "cooldowns kept per weapon")
+	l.keep_only(["blaster", "sword", "vacuum"])
+	check(l.slots.size() == 3 and l.index_of("vacuum") == 2, "only the weapons there are")
+
+func _carve() -> void:
+	var b := _grunt()
+	var hp0 := b.hp
+	# a ball in the chest: a crater, no pieces, health off
+	var r := b.carve(Vector3(0, 1.0, 0.25), Vector3(0, 1.0, 0.25), 0.18)
+	check(int(r.cut) > 100 and (r.pieces as Array).is_empty() and b.hp < hp0, "a ball carved from the chest: a crater (%d cubes), health off" % r.cut)
+	# a tunnel through the shin: the foot and the shin below come off
+	var r2 := b.carve(Vector3(-0.25, 0.25, 1.0), Vector3(-0.25, 0.25, -1.0), 0.09)
+	check((r2.pieces as Array).size() >= 1 and b.parts.foot_r.gone, "a tunnel right through the shin: what's below comes off (%d pieces)" % (r2.pieces as Array).size())
+	b.queue_free()
+	var b2 := _grunt()
+	b2.launch(Vector3(0, 4.0, -3.0), 6.0)
+	check(b2.airborne and b2.floored(), "launched: in the air")
+	for i in 120:
+		b2.react_step(1.0 / 60.0)
+		b2.animate(1.0 / 60.0, false)
+	check(not b2.airborne and b2.down_t > 0.0 and absf(b2.position.y) < 0.001 and b2.position.z < -1.0, "landed back down the way it flew, lying there (%.2f m)" % b2.position.z)
+	for i in 180:
+		b2.react_step(1.0 / 60.0)
+	check(not b2.floored(), "then back up")
+	b2.queue_free()
+
+# each melee weapon's own checks (VoxelMelee.checks)
+func _melee_checks() -> void:
+	for id in VoxelArena.MELEE:
+		var path: String = VoxelArena.MELEE[id]
+		if not ResourceLoader.exists(path):
+			continue
+		var scr: Script = load(path)
+		var out: Array = scr.checks(self)
+		for c in out:
+			check(bool(c[0]), "%s: %s" % [id, c[1]])
 
 func _holes() -> void:
 	var mat := StandardMaterial3D.new()

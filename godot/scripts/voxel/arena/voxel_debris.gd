@@ -92,6 +92,37 @@ func burst(bits: Array, dir: Vector3, power: float = 3.5) -> void:
 		var v := dir * power * randf_range(0.4, 1.2) + Vector3(randf_range(-1, 1), randf_range(0.5, 2.5), randf_range(-1, 1)) * power * 0.35
 		_add(b.pos, v, b.col, 0)
 
+## The cubes lying within r metres (level) of centre thrown back up into the air (a hammer's ground slam): up m/s
+## upward, out from the middle, more the nearer; at most cap of them. Returns how many.
+func pop(centre: Vector3, r: float, up: float = 4.0, cap: int = 1500) -> int:
+	var near := []
+	var rc := ceili(r)
+	var cx := floori(centre.x)
+	var cz := floori(centre.z)
+	for dz in range(-rc, rc + 1):
+		for dx in range(-rc, rc + 1):
+			var k := (cx + dx + 1024) * 4096 + (cz + dz + 1024)
+			if not _cells.has(k):
+				continue
+			for i in (_cells[k] as PackedInt32Array):
+				var off := Vector2(_lp[i].x - centre.x, _lp[i].z - centre.z)
+				if off.length() <= r:
+					near.append(i)
+	near.sort()
+	near.reverse()
+	var n := 0
+	for i in near:
+		if n >= cap:
+			break
+		var p := _lp[i]
+		var c := _lc[i]
+		var off2 := Vector3(p.x - centre.x, 0, p.z - centre.z)
+		var k2 := 1.0 - clampf(off2.length() / maxf(r, 0.01), 0.0, 1.0)
+		_unlay(i)
+		_add(p, Vector3.UP * up * (0.4 + 0.8 * k2) * randf_range(0.7, 1.2) + off2.normalized() * up * 0.3 * k2, c, 0)
+		n += 1
+	return n
+
 ## Cubes straight into the vacuum (a cut-off piece it pulled apart).
 func suck(bits: Array) -> void:
 	for b in bits:

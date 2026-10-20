@@ -55,10 +55,29 @@ var _frames := PackedFloat32Array()
 var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
 var _prof := {}                 # section -> microseconds this second (--stats)
-var sword: VoxelSword
-var vacuum_out := false         # E: the vacuum gun instead of the guns (hold click: sucks up the cubes lying about)
+## The melee weapons (the owner, 20 Oct: five, each doing something different): weapon id -> script; one whose
+## file isn't there is left out of the slots.
+const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res://scripts/voxel/arena/voxel_melee_bat.gd",
+	"hammer": "res://scripts/voxel/arena/voxel_melee_hammer.gd", "chainsaw": "res://scripts/voxel/arena/voxel_melee_chainsaw.gd",
+	"spear": "res://scripts/voxel/arena/voxel_melee_spear.gd"}
+var loadout := VoxelLoadout.new()   # the weapon slots: 1-8, the wheel, Q the last one
+var melee := {}                 # weapon id -> its VoxelMelee
+var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
+var pieces: VoxelPieces         # the bits melee weapons take off, lying about
 var vacuum: VoxelVacuum
+var bar: VoxelWeaponBar
 var _sucking := false
+var _guns := {}                 # "blaster" / "shotgun" -> its first-person view (a block gun on the camera)
+var _held := {}                 # mouse button -> true: down since a press the melee weapon out was told of
+var _ignore := {}               # mouse button -> true: down since before the last switch (ignored till let go)
+var _recoil := 0.0              # the gun in hand kicking back (1 just fired)
+var _aiming := false            # blaster right click
+var _aim_k := 0.0               # 0 at the hip .. 1 aimed (the view closes in)
+var _hand_id := "-"             # top-down: what Jared's hand holds now
+var _hands := []                # top-down: the BoneAttachment3Ds holding it
+var _hud_layer: CanvasLayer
+var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
+var _dash_t := 0.0
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
 var _flip := 1.0                # still mouse: slashes go back and forth
 
@@ -88,17 +107,38 @@ func _ready() -> void:
 	_tracers.material_override = tm
 	_tracers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tracers)
-	sword = VoxelSword.new()
-	add_child(sword)
-	sword.setup(self, cam)
+	pieces = VoxelPieces.new()
+	add_child(pieces)
+	pieces.setup(self)
+	var have := ["blaster", "shotgun"]
+	for id in MELEE:
+		if ResourceLoader.exists(MELEE[id]):
+			var w: VoxelMelee = load(MELEE[id]).new()
+			add_child(w)
+			w.setup(self, cam)
+			melee[id] = w
+			have.append(id)
+	sword = melee.get("sword")
 	vacuum = VoxelVacuum.new()
 	add_child(vacuum)
 	vacuum.setup(self, cam)
+	have.append("vacuum")
+	loadout.keep_only(have)
+	_guns["blaster"] = _gun_view("blaster", 0.0055, Vector3(0.2, -0.2, -0.42))
+	_guns["shotgun"] = _gun_view("shotgun", 0.0046, Vector3(0.2, -0.24, -0.36))
+	bar = VoxelWeaponBar.new()
+	_hud_layer.add_child(bar)
+	bar.setup(loadout, self)
 	_warm_up()
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
 	elif _opts.has("swordtest"):
 		_swordtest_setup()
+	elif _opts.has("meleetest"):
+		_meleetest_setup()
+	elif _opts.has("weaponshots"):
+		frozen = true
+		spawn(1)
 	elif _opts.has("enemies"):
 		wave = 1
 		spawn(int(_opts.enemies))
@@ -232,6 +272,7 @@ func _player() -> void:
 func _hud() -> void:
 	var cl := CanvasLayer.new()
 	add_child(cl)
+	_hud_layer = cl
 	hud = Label.new()
 	hud.position = Vector2(12, 10)
 	hud.add_theme_font_size_override("font_size", 16)
@@ -239,7 +280,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "WASD move   mouse look   left click blaster   right click shotgun   F sword slash (the way you move the mouse; or a mouse side button)   C chop down / low sweep   E vacuum (hold click, wheel: brush size)   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "1-8 or wheel: weapons (bar above)   Q last weapon   F quick sword slash   E vacuum   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -308,14 +349,18 @@ func _respawn_all() -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		look_yaw -= e.relative.x * 0.0025
-		look_pitch = clampf(look_pitch - e.relative.y * 0.0025, -1.4, 1.4)
+		var sens := 0.0025 * cam.fov / 80.0           # slower when aimed in
+		look_yaw -= e.relative.x * sens
+		look_pitch = clampf(look_pitch - e.relative.y * sens, -1.4, 1.4)
 		_mouse_v += e.relative
 	elif e is InputEventMouseMotion:
 		_mouse_v += e.relative
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		if vacuum_out:
-			vacuum.wheel(e.button_index == MOUSE_BUTTON_WHEEL_UP)
+		var up: bool = e.button_index == MOUSE_BUTTON_WHEEL_UP
+		if loadout.id() == "vacuum" and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			vacuum.wheel(up)                          # vacuum: right click held + wheel sizes the brush
+		else:
+			_switch(func(): loadout.cycle(-1 if up else 1))
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2] and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
 		_sword_key(false)
 	elif e is InputEventMouseButton and e.pressed and not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -327,8 +372,14 @@ func _unhandled_input(e: InputEvent) -> void:
 				_sword_key(false)
 			KEY_C:
 				_sword_key(true)
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9:
+				var i: int = e.physical_keycode - KEY_1
+				_switch(func(): loadout.select(i))
+			KEY_Q:
+				_switch(func(): loadout.swap_last())
 			KEY_E:
-				vacuum_out = not vacuum_out
+				var vi := loadout.index_of("vacuum")
+				_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_V:
@@ -373,7 +424,9 @@ func _swordtest(dt: float) -> void:
 	_st_t += dt
 	if _st_i >= SWORD_CUTS.size():
 		# then the vacuum, looking down at the mess, for two seconds
-		vacuum_out = true
+		if loadout.id() != "vacuum":
+			loadout.select(loadout.index_of("vacuum"))
+			loadout.switch_t = 0.0
 		look_pitch = -0.75
 		_sucking = _st_t > 1.0
 		for k in 3:
@@ -382,7 +435,7 @@ func _swordtest(dt: float) -> void:
 				_opts[tag] = "1"
 				_shot_png("%s/vacuum_%d.png" % [String(_opts.swordtest), k])
 		if _st_t > 3.1:
-			print("SWORD vacuum: got %s, lying %d, pieces %d" % [str(debris.got), debris.lying(), sword.pieces()])
+			print("SWORD vacuum: got %s, lying %d, pieces %d" % [str(debris.got), debris.lying(), pieces.count()])
 			_finish()
 		return
 	var c: Array = SWORD_CUTS[_st_i]
@@ -393,7 +446,7 @@ func _swordtest(dt: float) -> void:
 	look_pitch = atan2(to.y, Vector2(to.x, to.z).length())
 	if _st_t > 1.0 and sword.ready_to_swing() and not _opts.has("sc%d" % _st_i):
 		_opts["sc%d" % _st_i] = "1"
-		slash(c[1])
+		sword.slash(c[1])
 	for k in 6:
 		var at: float = 1.0 + [0.02, 0.06, 0.15, 0.3, 0.6, 1.2][k]
 		var tag := "sf%d_%d" % [_st_i, k]
@@ -404,6 +457,102 @@ func _swordtest(dt: float) -> void:
 		print("SWORD cut %d at %.2f m: %s; legs lost %d, alive %s" % [_st_i, c[0], str(sword.last), b.legs_lost(), str(b.alive)])
 		_st_i += 1
 		_st_t = 0.8
+
+# --meleetest=<weapon id> --shots=dir [--topdown] [--immortal]: a grunt standing in front, frozen; the weapon out;
+# left click pressed at 1 s, held, let go at 1.8 s; a fresh grunt at 3 s; right click pressed at 3.4 s, held, let go
+# at 4.4 s; frames saved round each (melee_<id>_<L|R>_<k>.png), what each did printed (MELEE ...), then quit at 6.6 s
+const MT_SHOTS := [0.03, 0.12, 0.3, 0.6, 0.95, 1.6, 2.2]
+var _mt_t := 0.0
+var _mt_body: VoxelBody
+func _meleetest_setup() -> void:
+	VoxelBody.immortal = _opts.has("immortal")
+	frozen = true
+	player.position = Vector3(0.25, 0, 6.0)
+	look_yaw = 0.0
+	_mt_body = _mt_grunt()
+	var i := loadout.index_of(String(_opts.meleetest))
+	if i < 0:
+		print("MELEE no such weapon: ", _opts.meleetest)
+	else:
+		_switch(func(): loadout.select(i))
+		loadout.switch_t = 0.0
+
+func _mt_grunt() -> VoxelBody:
+	var b := VoxelBody.new()
+	add_child(b)
+	b.setup("grunt", _cube_m("grunt"), chunk, _mat)
+	b.position = Vector3(0, 0, 4.6)
+	b.yaw = 0.0
+	b.died.connect(_on_died)
+	bodies.append(b)
+	return b
+
+func _meleetest(dt: float) -> void:
+	_mt_t += dt
+	var id := String(_opts.meleetest)
+	var w: VoxelMelee = melee.get(id)
+	if w == null:
+		if _mt_t > 0.5:
+			print("MELEE no such weapon: ", id)
+			_finish()
+		return
+	# look at the grunt's chest (top-down: the mouse on him)
+	var b := _mt_body
+	var target := b.global_position + Vector3(0, 1.1, 0)
+	if top_down:
+		get_viewport().warp_mouse(cam.unproject_position(target))
+	else:
+		var to := target - cam.global_position
+		look_yaw = atan2(-to.x, -to.z)
+		look_pitch = atan2(to.y, Vector2(to.x, to.z).length())
+	for ph in [["L", MOUSE_BUTTON_LEFT, 1.0, 1.8], ["R", MOUSE_BUTTON_RIGHT, 3.4, 4.4]]:
+		var t0: float = ph[2]
+		var t1: float = ph[3]
+		var tag: String = ph[0]
+		if _mt_t >= t0 and not _opts.has("mp" + tag):
+			_opts["mp" + tag] = "1"
+			w.press(ph[1])
+		elif _mt_t > t0 and _mt_t < t1:
+			w.hold(ph[1], dt)
+		elif _mt_t >= t1 and not _opts.has("mr" + tag):
+			_opts["mr" + tag] = "1"
+			w.release(ph[1])
+		for k in MT_SHOTS.size():
+			var st := "ms%s%d" % [tag, k]
+			if _mt_t >= t0 + float(MT_SHOTS[k]) and not _opts.has(st) and _opts.has("shots"):
+				_opts[st] = "1"
+				_shot_png("%s/melee_%s_%s_%d.png" % [String(_opts.shots), id, tag, k])
+	if _mt_t >= 3.2 and not _opts.has("mpr1"):
+		_opts["mpr1"] = "1"
+		print("MELEE %s left: %s | grunt alive %s, legs lost %d, floored %s, at %s, hp %.0f, pieces %d, cubes %d" % [id, str(w.last), str(b.alive), b.legs_lost(), str(b.floored()), str(b.position.snapped(Vector3.ONE * 0.01)), b.hp, pieces.count(), knocked])
+		_mt_body = _mt_grunt()
+	if _mt_t >= 6.5 and not _opts.has("mpr2"):
+		_opts["mpr2"] = "1"
+		var b2 := _mt_body
+		print("MELEE %s right: %s | grunt alive %s, legs lost %d, floored %s, at %s, hp %.0f, pieces %d, cubes %d" % [id, str(w.last), str(b2.alive), b2.legs_lost(), str(b2.floored()), str(b2.position.snapped(Vector3.ONE * 0.01)), b2.hp, pieces.count(), knocked])
+	if _mt_t >= 6.6:
+		_finish()
+
+# --weaponshots=dir: every slot taken out in turn, first person then top-down, a frame of each (weapons_<fp|td>_<n>.png)
+func _weaponshots() -> void:
+	var n := loadout.slots.size()
+	var k := int(floor((_t - 1.0) / 0.7))
+	if k < 0:
+		return
+	if k >= 2 * n:
+		_finish()
+		return
+	if k == n and not top_down:
+		top_down = true
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_viewport().warp_mouse(get_viewport().get_visible_rect().size * Vector2(0.62, 0.35))
+	var i := k % n
+	if loadout.current != i:
+		_switch(func(): loadout.select(i))
+	var tag := "ws%d" % k
+	if _t >= 1.0 + k * 0.7 + 0.55 and not _opts.has(tag):
+		_opts[tag] = "1"
+		_shot_png("%s/weapons_%s_%d.png" % [String(_opts.weaponshots), "td" if top_down else "fp", i + 1])
 
 func _shot_png(path: String) -> void:
 	await RenderingServer.frame_post_draw
@@ -461,6 +610,10 @@ func _physics_process(dt: float) -> void:
 		dir = dir.normalized()
 	player.velocity.x = dir.x * sp
 	player.velocity.z = dir.z * sp
+	if _dash_t > 0.0:
+		_dash_t -= dt
+		player.velocity.x = _dash_v.x
+		player.velocity.z = _dash_v.z
 	if player.is_on_floor():
 		if Input.is_physical_key_pressed(KEY_SPACE):
 			player.velocity.y = 5.0
@@ -472,13 +625,17 @@ func _physics_process(dt: float) -> void:
 	for i in bodies.size():
 		var b := bodies[i]
 		if not b.alive:
+			if b.airborne or b.knock.length_squared() > 0.0001:
+				b.react_step(dt)          # knocked flying dead: still flies, lands, slides
+				b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
+				b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
 			continue
 		var to := Vector3(pp.x - b.position.x, 0, pp.z - b.position.z)
 		var d := to.length()
 		var mv := Vector3.ZERO
 		var stop := 4.5 if _opts.has("auto") else 1.2
 		b.react_step(dt)
-		if not frozen and d > stop and b.stagger <= 0.0:
+		if not frozen and d > stop and b.stagger <= 0.0 and not b.floored():
 			mv = to / d * b.speed * b.move_factor()
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
@@ -492,10 +649,10 @@ func _physics_process(dt: float) -> void:
 		b.position += mv * dt
 		b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
-		if d > 0.01:
+		if d > 0.01 and not b.floored():
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
-		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen and b.stagger <= 0.0) else 0.0
+		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen and b.stagger <= 0.0 and not b.floored()) else 0.0
 
 func _process(dt: float) -> void:
 	_t += dt
@@ -526,6 +683,10 @@ func _process(dt: float) -> void:
 		return
 	if _opts.has("swordtest"):
 		_swordtest(dt)
+	if _opts.has("meleetest"):
+		_meleetest(dt)
+	if _opts.has("weaponshots"):
+		_weaponshots()
 	var t0 := Time.get_ticks_usec()
 	_camera(dt)
 	var t1 := Time.get_ticks_usec()
@@ -535,7 +696,7 @@ func _process(dt: float) -> void:
 		var moving := b.alive and not frozen
 		if not b.alive:
 			b.dead_t += dt
-			if b.dead_t > 0.7:
+			if b.dead_t > 0.7 and not b.airborne:
 				continue          # lying still
 		b.animate(dt, moving and b.attack <= 0.0)
 	# the dead lie a while, then go
@@ -561,9 +722,7 @@ func _process(dt: float) -> void:
 	_code_ms = lerpf(_code_ms, (t5 - t0) / 1000.0, 0.1)
 	_draw_tracers(dt)
 	_mouse_v *= exp(-dt * 14.0)
-	sword.view.visible = sword.busy() and not top_down
-	sword.step(dt)
-	vacuum.step(dt, vacuum_out, _sucking)
+	_weapons_step(dt)
 	_flash_t = maxf(0.0, _flash_t - dt)
 	_flash.light_energy = 4.0 * _flash_t / 0.05 if _flash_t > 0.0 else 0.0
 	_hud_t += dt
@@ -613,63 +772,197 @@ func _aim() -> Array:
 	return [cam.global_position, -cam.global_transform.basis.z]
 
 func _shoot(dt: float) -> void:
+	loadout.step(dt)
 	if not _opts.has("swordtest"):
 		_sucking = false
+	_aiming = false
 	_fire_cd = maxf(0.0, _fire_cd - dt)
 	_sg_cd = maxf(0.0, _sg_cd - dt)
 	if _opts.has("auto"):
 		_auto()
 		return
+	for btn in _ignore.keys():
+		if not Input.is_mouse_button_pressed(btn):
+			_ignore.erase(btn)
 	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not top_down:
 		return
 	var a := _aim()
 	if a.is_empty():
 		return
-	if vacuum_out:
-		if not _opts.has("swordtest"):
-			_sucking = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var id := loadout.id()
+	var lmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _ignore.has(MOUSE_BUTTON_LEFT)
+	var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not _ignore.has(MOUSE_BUTTON_RIGHT)
+	if melee.has(id):
+		# a melee weapon: told of each press, each frame held, each let-go
+		var w: VoxelMelee = melee[id]
+		for btn in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			var down := lmb if btn == MOUSE_BUTTON_LEFT else rmb
+			var was: bool = _held.get(btn, false)
+			if down and not was and loadout.usable():
+				_held[btn] = true
+				w.press(btn)
+			elif down and was:
+				w.hold(btn, dt)
+			elif not down and was:
+				_held[btn] = false
+				w.release(btn)
 		return
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _fire_cd <= 0.0:
-		_fire_cd = 1.0 / 10.0
-		fire(a[0], a[1], 1, 0.6, 1.9)
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and _sg_cd <= 0.0:
-		_sg_cd = 0.9
-		fire(a[0], a[1], 9, 4.5, 1.4)
+	if not loadout.usable():
+		return
+	match id:
+		"blaster":
+			# right click: aimed in (tighter, the view closes in)
+			_aiming = rmb and not top_down
+			if lmb and loadout.ready_to("blaster"):
+				loadout.cool("blaster", 0.1)
+				fire(a[0], a[1], 1, 0.2 if _aiming else 0.6, 1.9)
+				_recoil = 1.0
+		"shotgun":
+			if lmb and loadout.ready_to("shotgun"):
+				loadout.cool("shotgun", 0.9)
+				fire(a[0], a[1], 9, 4.5, 1.4)
+				_recoil = 1.0
+			elif rmb and loadout.ready_to("shotgun"):
+				# both barrels: twice the pellets, a wider spread, a big kick, a longer reload
+				loadout.cool("shotgun", 1.7)
+				fire(a[0], a[1], 18, 6.5, 1.5)
+				_recoil = 1.6
+				_kick = 2.0
+		"vacuum":
+			if not _opts.has("swordtest"):
+				_sucking = lmb
 
-# the sword, with the guns still in hand: F (or a mouse side button) slashes the way the mouse was moving (still:
-# back and forth); C chops down (first person) or sweeps low at the legs (top-down)
+# F (or a mouse side button): a sword slash the way the mouse was moving, whatever is out; C: a chop (top-down: a
+# low sweep at the legs)
 func _sword_key(low: bool) -> void:
-	if not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _opts.has("swordtest")):
+	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED):
 		return
-	var sv := Vector2(_flip, 0.0)
-	if low:
-		sv = Vector2(0.0, 1.0)
-	elif _mouse_v.length() > 30.0:
-		sv = _mouse_v.normalized()
-	else:
-		_flip = -_flip
-	slash(sv, low)
+	sword.quick(low)
 
-## One slash, sv the way it goes on screen (x right, y down); low: top-down's leg sweep.
-func slash(sv: Vector2, low: bool = false) -> void:
-	if top_down:
-		var pp := player.global_position
-		var at := _mouse_floor()
-		var f := Vector3(-sin(look_yaw), 0, -cos(look_yaw))
-		if at != Vector3.INF:
-			f = Vector3(at.x - pp.x, 0, at.z - pp.z).normalized()
-		var eye := pp + Vector3(0, 0.45 if low else 1.15, 0)
-		var right := f.cross(Vector3.UP).normalized()
-		var tilt := 0.0 if low else 0.3 * signf(sv.x if absf(sv.x) > 0.01 else 1.0)
-		var side := (right * signf(sv.x if absf(sv.x) > 0.01 else 1.0) * cos(tilt) + Vector3.DOWN * sin(absf(tilt))).normalized()
-		avatar.attack = 0.5
-		sword.swing(eye, f, side, eye, Vector3(1, 0, 0))
+# a weapon switch (change: what moves the loadout): the melee weapon put away lets go of its buttons, buttons still
+# down count for nothing till they're let go
+func _switch(change: Callable) -> void:
+	var before := loadout.id()
+	change.call()
+	var now := loadout.id()
+	if now == before:
 		return
-	var bs := cam.global_transform.basis
-	var side_cam := Vector3(sv.x, -sv.y, 0.0).normalized()
-	var side := (bs * side_cam).normalized()
-	var apex := cam.global_position + bs * Vector3(0.05, -0.28, -0.1)
-	sword.swing(cam.global_position, -bs.z, side, apex, side_cam)
+	if melee.has(before):
+		for btn in _held:
+			if _held[btn]:
+				melee[before].release(btn)
+		melee[before].on_deselect()
+	_held.clear()
+	for btn in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+		if Input.is_mouse_button_pressed(btn):
+			_ignore[btn] = true
+	if melee.has(now):
+		melee[now].on_select()
+
+# a block gun (the game's own .vox) for the first-person view: barrel forward, at the given spot by the camera
+func _gun_view(name: String, scale: float, at: Vector3) -> Node3D:
+	var root := Node3D.new()
+	root.position = at
+	root.set_meta("base", at)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _gun_mesh(name, scale)
+	mi.material_override = _mat
+	mi.rotation = Vector3(0, PI, 0)            # the .vox barrel is +z; the camera looks down -z
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	root.visible = false
+	cam.add_child(root)
+	return root
+
+# a gun's mesh at scale metres a voxel (built here, not through VoxelModel.weapon_arrays, whose cache keeps one scale)
+static func _gun_mesh(name: String, scale: float) -> ArrayMesh:
+	var meta: Dictionary = VoxelModel.weapon_meta()
+	if not meta.has(name):
+		return ArrayMesh.new()
+	var v := VoxFile.load_file(VoxelModel.DIR + "weapons/" + String(meta[name].file))
+	if v == null:
+		return ArrayMesh.new()
+	var o: Array = meta[name].origin
+	return VoxelBody.array_mesh(VoxMesher.mesh(v.model_grid(), Vector3(o[0], o[1], o[2]), scale))
+
+## The player thrown along at vel (m/s, level) for secs, whatever the keys say (a lunge).
+func dash(vel: Vector3, secs: float) -> void:
+	_dash_v = Vector3(vel.x, 0.0, vel.z)
+	_dash_t = secs
+
+## How much of a weapon's cooldown is left (the weapon bar), 1 to 0.
+func slot_cooling(id: String) -> float:
+	if melee.has(id):
+		return melee[id].cooling()
+	return loadout.cooling(id)
+
+# every frame: the weapons' own steps, the view of the one out (going down / coming up on a switch, kicking when it
+# fires, closing in when aimed), and what Jared holds top-down
+func _weapons_step(dt: float) -> void:
+	pieces.step(dt)
+	for id in melee:
+		melee[id].step(dt)
+	var cur := loadout.id()
+	vacuum.step(dt, cur == "vacuum", _sucking)
+	_recoil = maxf(0.0, _recoil - dt * 6.0)
+	_aim_k = move_toward(_aim_k, 1.0 if _aiming else 0.0, dt * 6.0)
+	cam.fov = lerpf(80.0, 50.0, _aim_k)
+	var drop := -0.35 * loadout.switch_frac()
+	for id in _guns:
+		var gv: Node3D = _guns[id]
+		gv.visible = id == cur and not top_down
+		if gv.visible:
+			var base: Vector3 = gv.get_meta("base")
+			var aimed := Vector3(0.0, -0.12, -0.34)
+			gv.position = base.lerp(aimed, _aim_k) + Vector3(0, drop, 0.06 * _recoil)
+			gv.rotation = Vector3(0.12 * _recoil, 0, 0)
+	for id in melee:
+		var w: VoxelMelee = melee[id]
+		w.view.visible = not top_down and (id == cur or w.busy())
+		w.view.position = Vector3(0, drop if id == cur else 0.0, 0)
+	vacuum.view.position = Vector3(0.24, -0.23 + (drop if cur == "vacuum" else 0.0), -0.5)
+	avatar.recoil = _recoil
+	if top_down and _hand_id != cur:
+		_hold_in_hand(cur)
+
+# top-down: the weapon out in Jared's hand (two blasters, one a hand, as in the game) and the arms to hold it with
+func _hold_in_hand(id: String) -> void:
+	_hand_id = id
+	for h in _hands:
+		h.queue_free()
+	_hands.clear()
+	var md: VoxelModel = avatar.model
+	var m := md.voxel_m
+	var g: Array = md.rig.get("grip_r", [-34.5, 56.0, 0.0])
+	var down := Basis(Vector3.RIGHT, PI / 2.0)    # the weapon's +z (out of the fist) along the arm
+	var poses := {"blaster": "blaster", "shotgun": "shotgun", "vacuum": "spud"}
+	avatar.weapon = poses.get(id, melee[id].hand_pose() if melee.has(id) else "")
+	for side in (["_r", "_l"] if id == "blaster" else ["_r"]):
+		var b := md.bone("hand" + side)
+		if b < 0:
+			continue
+		var node: Node3D = null
+		if id == "blaster" or id == "shotgun":
+			node = MeshInstance3D.new()
+			(node as MeshInstance3D).mesh = _gun_mesh(id, m)
+			(node as MeshInstance3D).material_override = _mat
+		elif id == "vacuum":
+			node = Node3D.new()
+			var vm := vacuum._model()
+			vm.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, 0.12))
+			vm.visible = true
+			node.add_child(vm)
+		elif melee.has(id):
+			node = melee[id].hand_mesh()
+		if node == null:
+			continue
+		var att := BoneAttachment3D.new()
+		att.bone_idx = b
+		avatar.skeleton.add_child(att)
+		var grip := Vector3(g[0] * (1.0 if side == "_r" else -1.0), g[1], -2.0)
+		node.transform = Transform3D(down, (grip - md.bone_pivot[b]) * m)
+		att.add_child(node)
+		_hands.append(att)
 
 ## One trigger pull: pellets rays spread degrees apart, each knocking a hole r cubes round where it lands.
 func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float) -> void:
@@ -770,7 +1063,7 @@ func _hud_text() -> void:
 		wave, alive, bodies.size() - alive, kills, knocked, debris.count(), _jobs.size(), _jobs_done,
 		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
 		RenderingServer.get_current_rendering_method(),
-		"VACUUM (brush %.1f m)" % vacuum.brush_r if vacuum_out else "GUNS + SWORD (F)", _k(debris.lying()), sword.pieces(),
+		("%d %s" % [loadout.current + 1, loadout.slot().name]) + ("  (brush %.1f m)" % vacuum.brush_r if loadout.id() == "vacuum" else ""), _k(debris.lying()), pieces.count(),
 		debris.got.blocks, debris.got.meat, debris.got.bone, debris.got.brain]
 
 static func _k(n: int) -> String:
@@ -812,7 +1105,7 @@ func _exit_tree() -> void:
 	_jobs.clear()
 
 func _finish() -> void:
-	sword.finish_jobs()
+	pieces.finish_jobs()
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)
 	_jobs.clear()

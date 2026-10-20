@@ -1,10 +1,12 @@
 class_name VoxelSword
-extends Node3D
+extends VoxelMelee
 ## The sword (the owner, 20 Oct): a slash is a flat sweep of the blade, the plane through your eye along where you
 ## look and the way you swing. Every cube the blade passes through is cut out (VoxelBody.slice), and whatever that
 ## leaves hanging comes off whole: an arm, half a forearm, a leg at the knee, the top of a head, the head. The bits
 ## that come off are real pieces (rigid bodies with their own meshes) that tumble, bounce and lie on the floor.
-## A hit freezes the game for a blink (hit-stop) so the cut lands heavy. Owned by the voxel session.
+## A hit freezes the game for a blink (hit-stop) so the cut lands heavy. Left click slashes the way the mouse moves,
+## right click chops down (top-down: a low sweep at the legs); F slashes with any weapon out (quick()). Owned by the
+## voxel session.
 
 const REACH := 2.6              # metres from the eye the blade reaches
 const COS_ARC := 0.17           # the sweep: 80 degrees each side of where you look
@@ -12,12 +14,8 @@ const SWING_T := 0.2            # seconds a swing takes
 const CUT_AT := 0.06            # seconds in when the blade passes through
 const BACK_T := 0.18            # seconds back to rest after
 const COOLDOWN := 0.38
-const MAX_PIECES := 30
-const PIECE_LIFE := 600.0       # they lie there a good while (the vacuum takes them)
 const ARC := 1.35               # radians the blade sweeps each side
 
-var arena: Node3D
-var view: Node3D                # the blade in hand (first person), on the camera
 var _blade: Node3D
 var _trail: MeshInstance3D
 var _t := -1.0                  # seconds into the swing (-1: at rest)
@@ -29,15 +27,8 @@ var _apex := Vector3.ZERO       # where the swoosh fans out from (the hand, not 
 var _side_cam := Vector3.RIGHT  # the swing's direction in the camera's own space (for the blade in hand)
 var _cut_done := false
 var _cd := 0.0
-var _pieces := []               # [{rb: RigidBody3D, t: float, cells: [{grid, origin, local}], vm}]
-var _mesh_jobs := []            # [{id, out: {arrays}, mi: WeakRef}]
-var _stop_n := 0
-var last := {}                  # the last cut, for the self-test: {cut, parts, pieces, killed}
 
-func setup(arena_: Node3D, cam: Camera3D) -> void:
-	arena = arena_
-	view = Node3D.new()
-	cam.add_child(view)
+func _build() -> void:
 	_blade = Node3D.new()
 	view.add_child(_blade)
 	var steel := StandardMaterial3D.new()
@@ -57,7 +48,6 @@ func setup(arena_: Node3D, cam: Camera3D) -> void:
 	_part(Vector3(0.2, 0.03, 0.04), Vector3(0, 0.11, 0), gold)
 	_part(Vector3(0.035, 0.17, 0.035), Vector3(0, 0.01, 0), grip)
 	_part(Vector3(0.055, 0.045, 0.055), Vector3(0, -0.09, 0), gold)
-	view.visible = false
 	_trail = MeshInstance3D.new()
 	_trail.mesh = ImmediateMesh.new()
 	var tm := StandardMaterial3D.new()
@@ -72,12 +62,12 @@ func setup(arena_: Node3D, cam: Camera3D) -> void:
 	add_child(_trail)
 	_rest_pose()
 
-func _part(size: Vector3, at: Vector3, mat: Material) -> void:
+func _part(size: Vector3, at: Vector3, m: Material) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	mi.material_override = mat
+	mi.material_override = m
 	mi.position = at
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_blade.add_child(mi)
@@ -85,17 +75,66 @@ func _part(size: Vector3, at: Vector3, mat: Material) -> void:
 func ready_to_swing() -> bool:
 	return _cd <= 0.0
 
-## Mid-swing or on the way back (the blade shows only then: the guns stay in hand otherwise).
+## Mid-swing or on the way back (with another weapon out the blade shows only then).
 func busy() -> bool:
 	return _t >= 0.0
+
+func cooling() -> float:
+	return clampf(_cd / COOLDOWN, 0.0, 1.0)
+
+func press(button: int) -> void:
+	if button == MOUSE_BUTTON_LEFT:
+		slash(swing_dir())
+	elif button == MOUSE_BUTTON_RIGHT:
+		slash(Vector2(0, 1), true)
+
+## F: a slash with whatever weapon is out.
+func quick(low: bool = false) -> void:
+	slash(Vector2(0, 1) if low else swing_dir(), low)
+
+## One slash, sv the way it goes on screen (x right, y down); low: right click (first person: straight down;
+## top-down: a level sweep at the legs).
+func slash(sv: Vector2, low: bool = false) -> void:
+	if not ready_to_swing():
+		return
+	if top_down():
+		var pp: Vector3 = arena.player.global_position
+		var f := look()
+		var e := pp + Vector3(0, 0.45 if low else 1.15, 0)
+		var right := f.cross(Vector3.UP).normalized()
+		var sx := signf(sv.x) if absf(sv.x) > 0.01 else 1.0
+		var tilt := 0.0 if low else 0.3 * sx
+		var side := (right * sx * cos(tilt) + Vector3.DOWN * sin(absf(tilt))).normalized()
+		arena.avatar.attack = 0.5
+		swing(e, f, side, e, Vector3(1, 0, 0))
+		return
+	var bs: Basis = arena.cam.global_transform.basis
+	var side_cam := Vector3(sv.x, -sv.y, 0.0).normalized()
+	var side2 := (bs * side_cam).normalized()
+	var apex: Vector3 = arena.cam.global_position + bs * Vector3(0.05, -0.28, -0.1)
+	swing(arena.cam.global_position, -bs.z, side2, apex, side_cam)
+
+func hand_mesh() -> Node3D:
+	var root := Node3D.new()
+	box(root, Vector3(0.012, 0.05, 0.95), Vector3(0, 0, 0.6), mat(Color(0.78, 0.8, 0.85), 0.9, 0.22))
+	box(root, Vector3(0.04, 0.2, 0.03), Vector3(0, 0, 0.11), mat(Color(0.55, 0.42, 0.15), 0.7, 0.4))
+	box(root, Vector3(0.035, 0.035, 0.17), Vector3(0, 0, 0.01), mat(Color(0.22, 0.12, 0.07)))
+	return root
+
+func draw_icon(ci: CanvasItem, r: Rect2, col: Color) -> void:
+	var u := r.size / Vector2(10, 5)
+	for b in [[Rect2(0.4, 2.15, 1.6, 0.7), Color(0.55, 0.32, 0.18)], [Rect2(2.0, 1.2, 0.5, 2.6), Color(0.9, 0.75, 0.3)],
+			[Rect2(2.5, 2.0, 6.6, 1.0), Color(1, 1, 1)], [Rect2(9.1, 2.2, 0.6, 0.6), Color(1, 1, 1)]]:
+		var c: Color = b[1]
+		ci.draw_rect(Rect2(r.position + (b[0] as Rect2).position * u, (b[0] as Rect2).size * u), Color(c.r, c.g, c.b, col.a))
 
 func swinging() -> bool:
 	return _t >= 0.0 and _t < SWING_T
 
-## Starts a slash: from eye along fwd, the blade travelling side (both world, at right angles); apex is where the
+## Starts a slash: from (the eye) along fwd, the blade travelling side (both world, at right angles); apex is where the
 ## swoosh is drawn from; side_cam is side in the camera's own space (the blade in hand follows it).
-func swing(eye: Vector3, fwd: Vector3, side: Vector3, apex: Vector3, side_cam: Vector3) -> void:
-	_eye = eye
+func swing(from: Vector3, fwd: Vector3, side: Vector3, apex: Vector3, side_cam: Vector3) -> void:
+	_eye = from
 	_fwd = fwd.normalized()
 	_side = (side - _fwd * side.dot(_fwd)).normalized()
 	_n = _fwd.cross(_side).normalized()
@@ -114,58 +153,8 @@ func step(dt: float) -> void:
 			_cut()
 		if _t >= SWING_T + BACK_T:
 			_t = -1.0
-	_poll_meshes()
 	_pose_blade()
 	_draw_trail()
-	for i in range(_pieces.size() - 1, -1, -1):
-		var pc: Dictionary = _pieces[i]
-		pc.t += dt
-		var rb: RigidBody3D = pc.rb
-		if pc.t > PIECE_LIFE:
-			var k := clampf(1.0 - (pc.t - PIECE_LIFE) / 0.5, 0.0, 1.0)
-			for c in rb.get_children():
-				if c is MeshInstance3D:
-					(c as MeshInstance3D).scale = Vector3.ONE * maxf(0.01, k)
-			if k <= 0.0:
-				rb.queue_free()
-				_pieces.remove_at(i)
-
-## The vacuum gun's brush (a sphere at brush, r metres): pieces inside it come apart into their cubes, which go up the
-## beam.
-func vacuum(brush: Vector3, r: float) -> void:
-	for i in range(_pieces.size() - 1, -1, -1):
-		var pc: Dictionary = _pieces[i]
-		var rb: RigidBody3D = pc.rb
-		if pc.t < 0.4 or rb.global_position.distance_to(brush) > r + 0.3:
-			continue
-		var bits := []
-		var vm: float = pc.vm
-		for e in pc.cells:
-			var g: Dictionary = e.grid
-			var s: Vector3i = g.size
-			var cells: PackedInt32Array = g.cells
-			var xf: Transform3D = rb.global_transform * (e.local as Transform3D)
-			var o: Vector3 = e.origin
-			var j := 0
-			for z in s.z:
-				for y in s.y:
-					for x in s.x:
-						var v := cells[j]
-						if v != 0:
-							var k := v - 1
-							bits.append({"pos": xf * ((Vector3(x, y, z) + o + Vector3(0.5, 0.5, 0.5)) * vm),
-								"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
-						j += 1
-		# a few hundred fly in; the rest count straight away
-		bits.shuffle()
-		arena.debris.suck(bits.slice(0, 400))
-		for bt in bits.slice(400):
-			arena.debris.take(bt.col)
-		rb.queue_free()
-		_pieces.remove_at(i)
-
-func pieces() -> int:
-	return _pieces.size()
 
 # ---------------------------------------------------------------- the cut
 
@@ -187,98 +176,16 @@ func _cut() -> void:
 		res_all.parts.append_array(r.parts)
 		res_all.pieces += (r.pieces as Array).size()
 		res_all.killed = res_all.killed or bool(r.killed)
-		arena.knocked += int(r.cut)
-		arena.debris.burst(r.bits, _side, 2.2)
-		if not (r.pieces as Array).is_empty():
-			_piece(b, r.pieces)
+		spray(r, _side, 2.2)
+		# flung the way the blade went, a little up, spinning in the swing
+		fling(b, r, _side * randf_range(1.6, 2.8) + Vector3.UP * randf_range(1.0, 2.2),
+			_n * randf_range(4.0, 8.0) + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)))
 		if b.alive and not (r.parts as Array).is_empty():
 			b.hit_react(_side, 30, String(r.parts[0]))
 	res_all["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	last = res_all
 	if hit:
-		arena._kick = 0.5
-		_hit_stop()
-
-# everything one cut took off one body: one rigid body, a mesh for each part's share (a whole part keeps the mesh
-# it had; a part's cut-off end is meshed on a worker thread and shows a frame or two later), a box round each
-func _piece(b: VoxelBody, list: Array) -> void:
-	var vm: float = b.vm
-	var centre := Vector3.ZERO
-	var count := 0
-	for e in list:
-		if int(e.count) <= 0:
-			continue
-		centre += (e.xform as Transform3D) * (e.box_at as Vector3) * int(e.count)
-		count += int(e.count)
-	if count == 0:
-		return
-	centre /= float(count)
-	var rb := RigidBody3D.new()
-	rb.collision_layer = 2
-	rb.collision_mask = 1
-	rb.mass = clampf(count * 0.002, 0.3, 30.0)
-	rb.continuous_cd = true
-	arena.add_child(rb)
-	rb.global_transform = Transform3D(Basis.IDENTITY, centre)
-	var inv := rb.global_transform.affine_inverse()
-	var keep := []
-	for e in list:
-		if int(e.count) <= 0:
-			continue
-		var local := inv * (e.xform as Transform3D)
-		keep.append({"grid": e.grid, "origin": e.origin, "local": local})
-		var mi := MeshInstance3D.new()
-		mi.material_override = arena._mat
-		mi.transform = local
-		rb.add_child(mi)
-		if e.has("mesh") and e.mesh != null:
-			mi.mesh = e.mesh
-		else:
-			var g: Dictionary = e.grid
-			var o: Vector3 = e.origin
-			var out := {}
-			var id := WorkerThreadPool.add_task(func(): out["arrays"] = VoxMesher.mesh(g, o, vm))
-			_mesh_jobs.append({"id": id, "out": out, "mi": weakref(mi)})
-		var cs := CollisionShape3D.new()
-		var bx := BoxShape3D.new()
-		bx.size = (e.box as Vector3).max(Vector3.ONE * vm * 2.0)
-		cs.shape = bx
-		cs.transform = local * Transform3D(Basis.IDENTITY, e.box_at)
-		rb.add_child(cs)
-	# flung the way the blade went, a little up, spinning in the swing
-	rb.linear_velocity = _side * randf_range(1.6, 2.8) + Vector3.UP * randf_range(1.0, 2.2) + b.knock * 0.5
-	rb.angular_velocity = _n * randf_range(4.0, 8.0) + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
-	_pieces.append({"rb": rb, "t": 0.0, "cells": keep, "vm": vm})
-	while _pieces.size() > MAX_PIECES:
-		(_pieces[0].rb as RigidBody3D).queue_free()
-		_pieces.remove_at(0)
-
-# pieces' meshes made on worker threads: swapped in when done
-func _poll_meshes() -> void:
-	for i in range(_mesh_jobs.size() - 1, -1, -1):
-		var j: Dictionary = _mesh_jobs[i]
-		if not WorkerThreadPool.is_task_completed(j.id):
-			continue
-		WorkerThreadPool.wait_for_task_completion(j.id)
-		var mi = (j.mi as WeakRef).get_ref()
-		if mi and is_instance_valid(mi) and j.out.has("arrays") and not (j.out.arrays.verts as PackedVector3Array).is_empty():
-			(mi as MeshInstance3D).mesh = VoxelBody.array_mesh(j.out.arrays)
-		_mesh_jobs.remove_at(i)
-
-## Waits for any piece still being meshed (before quitting).
-func finish_jobs() -> void:
-	for j in _mesh_jobs:
-		WorkerThreadPool.wait_for_task_completion(j.id)
-	_mesh_jobs.clear()
-
-# the game all but stops for a blink as the blade bites
-func _hit_stop() -> void:
-	_stop_n += 1
-	var me := _stop_n
-	Engine.time_scale = 0.05
-	await get_tree().create_timer(0.07, true, false, true).timeout
-	if me == _stop_n:
-		Engine.time_scale = 1.0
+		hit_stop()
 
 # ---------------------------------------------------------------- the look
 
@@ -334,7 +241,3 @@ func _draw_trail() -> void:
 		im.surface_set_color(Color(c.r, c.g, c.b, c.a * 0.3))
 		im.surface_add_vertex(_apex + dir * (REACH * 0.85))
 	im.surface_end()
-
-func _exit_tree() -> void:
-	finish_jobs()
-	Engine.time_scale = 1.0
