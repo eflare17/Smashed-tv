@@ -20,7 +20,7 @@ var parts := {}                       # name -> {grid, origin: Vector3 (in cubes
 var alive := true
 var yaw := 0.0
 var speed := 0.0
-var odo := 0.0
+var odo := 0.0                        # metres walked
 var attack := 0.0
 var t := 0.0
 var dead_t := 0.0
@@ -30,6 +30,8 @@ var radius := 0.5
 var hp := 100.0
 const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "thigh": 3}
 const PART_WEIGHT := {"head": 3.2, "torso": 1.2, "pelvis": 1.0}
+## Can't die (VoxelArena's F6): shoot them to pieces.
+static var immortal := false
 var _mat: Material
 
 static var _flesh_cache := {}         # "key|chunk" -> {part: grid with flesh inside}
@@ -202,19 +204,68 @@ func triangles() -> int:
 
 # ---------------------------------------------------------------- moving
 
+## Legs lost (0, 1 or 2): one off and they limp, both and they crawl on their arms.
+func legs_lost() -> int:
+	var n := 0
+	for side in ["_l", "_r"]:
+		for leg in ["thigh", "shin"]:
+			if parts.has(leg + side) and parts[leg + side].gone:
+				n += 1
+				break
+	return n
+
+## How fast they can go now (1 whole, slower limping, slowest crawling).
+func move_factor() -> float:
+	return [1.0, 0.45, 0.3][legs_lost()]
+
+## Metres a whole walk cycle (two steps) covers, from the leg's length, so the feet keep up with the ground (a grunt's
+## short legs take quick steps; VoxelAnim's cycle is Jared's sprites').
+func cycle_m() -> float:
+	var hip := model.bone("thigh_l")
+	var ank := model.bone("foot_l")
+	var leg := 0.9
+	if hip >= 0 and ank >= 0:
+		leg = (model.bone_pivot[hip].y - model.bone_pivot[ank].y) * model.voxel_m + 0.06
+	return maxf(0.3, leg * 2.3)
+
 func animate(dt: float, moving: bool) -> void:
 	t += dt
-	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": speed / GameData.UNIT, "odo": odo, "weapon": ""})
+	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
+	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
+	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": ""})
 	var rot: Dictionary = p.rot
 	if attack > 0.0:
 		var k := sin(clampf(attack, 0.0, 1.0) * PI)
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-1.5 * k, 0.2, -0.1))
 		rot["arm_l"] = Quaternion.from_euler(Vector3(-1.2 * k, -0.2, 0.1))
 	elif moving:
-		rot["arm_r"] = (rot.get("arm_r", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.5, 0, 0))
-		rot["arm_l"] = (rot.get("arm_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.5, 0, 0))
+		# arms swinging against the legs, elbows a little bent (no reaching forward)
+		var ph := anim_odo / VoxelAnim.CYCLE * TAU
+		rot["arm_r"] = Quaternion.from_euler(Vector3(-0.45 * sin(ph), 0, -0.12))
+		rot["arm_l"] = Quaternion.from_euler(Vector3(0.45 * sin(ph), 0, 0.12))
+		rot["forearm_r"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
+		rot["forearm_l"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
 	var turn := Quaternion.IDENTITY
 	var lift := Vector3(p.pos) * model.voxel_m
+	var lost := legs_lost()
+	var pivot := Vector3.ZERO
+	if alive and lost == 2:
+		# no legs: face down on the floor, pulling along on the arms in turn
+		var hip_y: float = model.bone_pivot[maxi(0, model.bone("hips"))].y * model.voxel_m
+		pivot = Vector3(0, hip_y, 0)
+		turn = Quaternion.from_euler(Vector3(PI / 2.0 * 0.92, 0, 0))
+		lift = Vector3(0, -hip_y + 0.16, 0)
+		var a := odo / 0.5 * TAU
+		rot = {"head": Quaternion.from_euler(Vector3(-1.1, 0, 0)),
+			"arm_r": Quaternion.from_euler(Vector3(-2.4 + 0.7 * sin(a), 0, -0.25)),
+			"arm_l": Quaternion.from_euler(Vector3(-2.4 + 0.7 * sin(a + PI), 0, 0.25)),
+			"forearm_r": Quaternion.from_euler(Vector3(-0.6 * maxf(0.0, cos(a)), 0, 0)),
+			"forearm_l": Quaternion.from_euler(Vector3(-0.6 * maxf(0.0, cos(a + PI)), 0, 0))}
+	elif alive and lost == 1:
+		# one leg: a hop and a lean onto the one left
+		var side := 1.0 if (parts.has("thigh_l") and parts["thigh_l"].gone) or (parts.has("shin_l") and parts["shin_l"].gone) else -1.0
+		turn = Quaternion.from_euler(Vector3(0.15, 0, -0.12 * side))
+		lift.y += absf(sin(odo / 0.5 * PI)) * 0.06
 	if not alive:
 		# toppled backward about the feet, over half a second
 		var k2 := smoothstep(0.0, 0.55, dead_t)
@@ -227,7 +278,7 @@ func animate(dt: float, moving: bool) -> void:
 	var r := maxi(0, model.bone("hips"))
 	var face := Quaternion(Vector3.UP, yaw)
 	var ph := model.bone_pivot[r] * model.voxel_m
-	skeleton.set_bone_pose_position(r, face * (turn * ph + lift))
+	skeleton.set_bone_pose_position(r, face * (pivot + turn * (ph - pivot) + lift))
 	skeleton.set_bone_pose_rotation(r, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
 
 # ---------------------------------------------------------------- shots
@@ -369,13 +420,9 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 		res.limb = n
 		res.bits.append_array(_blow(n))
 	if alive:
-		hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.5))
-		var legs_gone := false
-		for side in ["_l", "_r"]:
-			for leg in ["thigh", "shin"]:
-				if parts.has(leg + side) and parts[leg + side].gone:
-					legs_gone = true
-		if hp <= 0.0 or legs_gone:
+		# only the head, chest and hips hurt: limbs come off without killing (the owner, 20 Oct)
+		hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0))
+		if hp <= 0.0 and not immortal:
 			res.killed = true
 			alive = false
 			died.emit(self)

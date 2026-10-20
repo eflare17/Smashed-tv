@@ -83,7 +83,9 @@ func _ready() -> void:
 	_tracers.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_tracers)
 	_warm_up()
-	if _opts.has("enemies"):
+	if _opts.has("walkcheck"):
+		_walkcheck_setup()
+	elif _opts.has("enemies"):
 		wave = 1
 		spawn(int(_opts.enemies))
 	else:
@@ -223,7 +225,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "WASD move   mouse look   left click blaster   right click shotgun   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   Esc mouse"
+	help.text = "WASD move   mouse look   left click blaster   right click shotgun   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -313,10 +315,44 @@ func _unhandled_input(e: InputEvent) -> void:
 				frozen = not frozen
 			KEY_F5:
 				spawn(40)
+			KEY_F6:
+				VoxelBody.immortal = not VoxelBody.immortal
 
 # ---------------------------------------------------------------- each frame
 
+# --walkcheck=dir: the four kinds side by side, walking on the spot side-on to the camera, a frame saved every
+# tenth of a second (walk_0.png ...), then quit
+func _walkcheck_setup() -> void:
+	var i := 0
+	for key in ["grunt", "swarmer", "brute", "batter"]:
+		var b := VoxelBody.new()
+		add_child(b)
+		b.setup(key, _cube_m(key), chunk, _mat)
+		b.position = Vector3(-2.4 + i * 1.6, 0, 0)
+		b.yaw = PI / 2.0
+		b.speed = 2.6 if key != "brute" else 1.9
+		bodies.append(b)
+		i += 1
+	frozen = true
+	player.position = Vector3(0, 0, 5.0)
+	look_yaw = 0.0
+	look_pitch = -0.12
+
+func _walkcheck(dt: float) -> void:
+	for b in bodies:
+		b.odo += b.speed * dt
+		b.animate(dt, true)
+	var k := int(floor((_t - 1.0) / 0.1))
+	if k >= 0 and k < 10 and not _opts.has("wk%d" % k):
+		_opts["wk%d" % k] = "1"
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/walk_%d.png" % [String(_opts.walkcheck), k])
+	if k >= 10:
+		get_tree().quit()
+
 func _physics_process(dt: float) -> void:
+	if _opts.has("walkcheck"):
+		return
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
@@ -349,7 +385,7 @@ func _physics_process(dt: float) -> void:
 		var mv := Vector3.ZERO
 		var stop := 4.5 if _opts.has("auto") else 1.2
 		if not frozen and d > stop:
-			mv = to / d * b.speed
+			mv = to / d * b.speed * b.move_factor()
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
 			if j == i or not bodies[j].alive:
@@ -364,7 +400,7 @@ func _physics_process(dt: float) -> void:
 		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
 		if d > 0.01:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
-		b.odo += mv.length() * dt / GameData.UNIT
+		b.odo += mv.length() * dt
 		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and not frozen) else 0.0
 
 func _process(dt: float) -> void:
@@ -384,6 +420,10 @@ func _process(dt: float) -> void:
 			_prof.clear()
 	if _opts.has("secs") and _t >= float(_opts.secs):
 		_finish()
+		return
+	if _opts.has("walkcheck"):
+		_camera(dt)
+		_walkcheck(dt)
 		return
 	var t0 := Time.get_ticks_usec()
 	_camera(dt)
@@ -437,7 +477,7 @@ func _camera(dt: float) -> void:
 			var to := aim - pp
 			avatar.yaw = atan2(to.x, to.z)
 		avatar.speed = Vector2(player.velocity.x, player.velocity.z).length()
-		avatar.odo += avatar.speed * dt / GameData.UNIT
+		avatar.odo += avatar.speed * dt
 		avatar.animate(dt, avatar.speed > 0.2)
 		cam.global_position = pp + Vector3(0, 13.0, 6.0)
 		cam.look_at(pp + Vector3(0, 0.8, 0), Vector3.UP)
@@ -580,7 +620,7 @@ func _hud_text() -> void:
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		_k(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)), _k(tris),
 		wave, alive, bodies.size() - alive, kills, knocked, debris.count(), _jobs.size(), _jobs_done,
-		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", "on" if sun.shadow_enabled else "off",
+		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
 		RenderingServer.get_current_rendering_method()]
 
 static func _k(n: int) -> String:
