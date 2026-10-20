@@ -331,6 +331,10 @@ func _walkcheck_setup() -> void:
 		b.position = Vector3(-2.4 + i * 1.6, 0, 0)
 		b.yaw = PI / 2.0
 		b.speed = 2.6 if key != "brute" else 1.9
+		if _opts.has("legless"):     # --legless: both legs off, to see the worm crawl
+			b._blow("thigh_l")
+			b._blow("thigh_r")
+			b.speed *= b.move_factor()
 		bodies.append(b)
 		i += 1
 	frozen = true

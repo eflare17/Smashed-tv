@@ -23,6 +23,7 @@ var alive := true
 var yaw := 0.0
 var speed := 0.0
 var odo := 0.0                        # metres walked
+const CRAWL_M := 0.4                  # metres one worm wave (bunch + reach) covers with no legs
 var attack := 0.0
 ## Hit reaction (the owner, 20 Oct): seconds left staggering (no pushing forward), the shove (m/s, world), and how
 ## hard the last hit was (0..1, for the flinch).
@@ -270,7 +271,12 @@ func legs_lost() -> int:
 
 ## How fast they can go now (1 whole, slower limping, slowest crawling).
 func move_factor() -> float:
-	return [1.0, 0.45, 0.3][legs_lost()]
+	var lost := legs_lost()
+	if lost == 2:
+		# a worm moves in pulses: the tail (the body's root) slides up fast as it bunches, and nearly stops as the
+		# head reaches out ahead of it
+		return 0.3 * (1.0 + 0.85 * sin(odo / CRAWL_M * TAU))
+	return [1.0, 0.45][lost]
 
 ## Metres a whole walk cycle (two steps) covers, from the leg's length, so the feet keep up with the ground (a grunt's
 ## short legs take quick steps; VoxelAnim's cycle is Jared's sprites').
@@ -313,17 +319,22 @@ func animate(dt: float, moving: bool) -> void:
 	var lost := legs_lost()
 	var pivot := Vector3.ZERO
 	if alive and lost == 2:
-		# no legs: face down on the floor, pulling along on the arms in turn
+		# no legs: a worm on the floor. Each wave the middle humps up and the tail draws in (bunch), then the head
+		# and arms stretch out forward and the hump flattens (reach); the body wiggles side to side as it goes.
 		var hip_y: float = model.bone_pivot[maxi(0, model.bone("hips"))].y * model.voxel_m
+		var w := odo / CRAWL_M * TAU
+		var h := 0.5 - 0.5 * cos(w)        # 0 stretched flat .. 1 bunched up
+		var sw := sin(w)                   # > 0 bunching, < 0 reaching
 		pivot = Vector3(0, hip_y, 0)
-		turn = Quaternion.from_euler(Vector3(PI / 2.0 * 0.92, 0, 0))
-		lift = Vector3(0, -hip_y + 0.16, 0)
-		var a := odo / 0.5 * TAU
-		rot = {"head": Quaternion.from_euler(Vector3(-1.1, 0, 0)),
-			"arm_r": Quaternion.from_euler(Vector3(-2.4 + 0.7 * sin(a), 0, -0.25)),
-			"arm_l": Quaternion.from_euler(Vector3(-2.4 + 0.7 * sin(a + PI), 0, 0.25)),
-			"forearm_r": Quaternion.from_euler(Vector3(-0.6 * maxf(0.0, cos(a)), 0, 0)),
-			"forearm_l": Quaternion.from_euler(Vector3(-0.6 * maxf(0.0, cos(a + PI)), 0, 0))}
+		turn = Quaternion.from_euler(Vector3(PI / 2.0 * 0.95 - 0.95 * h, 0, 0))
+		lift = Vector3(0, -hip_y + 0.12 - 0.05 * h, 0)
+		rot = {"hips": Quaternion.from_euler(Vector3(0, 0, 0.25 * sw)),
+			"chest": Quaternion.from_euler(Vector3(1.5 * h, 0, -0.4 * sw)),
+			"head": Quaternion.from_euler(Vector3(-1.0 - 0.35 * h, 0, 0.3 * sw)),
+			"arm_r": Quaternion.from_euler(Vector3(-2.7 + 0.9 * h, 0, -0.3 - 0.15 * sw)),
+			"arm_l": Quaternion.from_euler(Vector3(-2.7 + 0.9 * h, 0, 0.3 - 0.15 * sw)),
+			"forearm_r": Quaternion.from_euler(Vector3(-1.1 * h, 0, 0)),
+			"forearm_l": Quaternion.from_euler(Vector3(-1.1 * h, 0, 0))}
 	elif alive and lost == 1:
 		# one leg: a hop and a lean onto the one left
 		var side := 1.0 if (parts.has("thigh_l") and parts["thigh_l"].gone) or (parts.has("shin_l") and parts["shin_l"].gone) else -1.0
