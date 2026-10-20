@@ -56,12 +56,10 @@ var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
 var _prof := {}                 # section -> microseconds this second (--stats)
 var sword: VoxelSword
-var sword_out := false          # Q: the sword in hand instead of the guns
-var vacuum_out := false         # E: the vacuum gun (hold click: sucks up the cubes lying about)
-var _vac_view: Node3D
+var vacuum_out := false         # E: the vacuum gun instead of the guns (hold click: sucks up the cubes lying about)
+var vacuum: VoxelVacuum
+var _sucking := false
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
-var _lmb_was := false
-var _rmb_was := false
 var _flip := 1.0                # still mouse: slashes go back and forth
 
 func _ready() -> void:
@@ -93,8 +91,9 @@ func _ready() -> void:
 	sword = VoxelSword.new()
 	add_child(sword)
 	sword.setup(self, cam)
-	_vac_view = _vacuum_model()
-	cam.add_child(_vac_view)
+	vacuum = VoxelVacuum.new()
+	add_child(vacuum)
+	vacuum.setup(self, cam)
 	_warm_up()
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
@@ -240,7 +239,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "WASD move   mouse look   left click blaster   right click shotgun   Q sword (click: slash the way you move the mouse, right click: chop / low sweep)   E vacuum (hold click: suck up cubes)   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "WASD move   mouse look   left click blaster   right click shotgun   F sword slash (the way you move the mouse; or a mouse side button)   C chop down / low sweep   E vacuum (hold click, wheel: brush size)   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -314,17 +313,22 @@ func _unhandled_input(e: InputEvent) -> void:
 		_mouse_v += e.relative
 	elif e is InputEventMouseMotion:
 		_mouse_v += e.relative
+	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		if vacuum_out:
+			vacuum.wheel(e.button_index == MOUSE_BUTTON_WHEEL_UP)
+	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2] and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
+		_sword_key(false)
 	elif e is InputEventMouseButton and e.pressed and not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		# first person grabs the mouse on a click; top-down keeps it free (aiming follows the pointer)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
-			KEY_Q:
-				sword_out = not sword_out
-				vacuum_out = false
+			KEY_F:
+				_sword_key(false)
+			KEY_C:
+				_sword_key(true)
 			KEY_E:
 				vacuum_out = not vacuum_out
-				sword_out = false
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_V:
@@ -362,7 +366,6 @@ func _swordtest_setup() -> void:
 	bodies.append(b)
 	frozen = true
 	VoxelBody.immortal = _opts.has("immortal")
-	sword_out = true
 	player.position = Vector3(0.25, 0, 6.0)
 	look_yaw = 0.0
 
@@ -370,14 +373,12 @@ func _swordtest(dt: float) -> void:
 	_st_t += dt
 	if _st_i >= SWORD_CUTS.size():
 		# then the vacuum, looking down at the mess, for two seconds
-		sword_out = false
 		vacuum_out = true
 		look_pitch = -0.75
-		if _st_t > 1.0:
-			_suck(dt)
+		_sucking = _st_t > 1.0
 		for k in 3:
 			var tag := "vf%d" % k
-			if _st_t >= [0.95, 1.6, 3.0][k] and not _opts.has(tag):
+			if _st_t >= [0.95, 1.35, 2.2][k] and not _opts.has(tag):
 				_opts[tag] = "1"
 				_shot_png("%s/vacuum_%d.png" % [String(_opts.swordtest), k])
 		if _st_t > 3.1:
@@ -560,9 +561,9 @@ func _process(dt: float) -> void:
 	_code_ms = lerpf(_code_ms, (t5 - t0) / 1000.0, 0.1)
 	_draw_tracers(dt)
 	_mouse_v *= exp(-dt * 14.0)
-	sword.view.visible = sword_out and not top_down
-	_vac_view.visible = vacuum_out and not top_down
+	sword.view.visible = sword.busy() and not top_down
 	sword.step(dt)
+	vacuum.step(dt, vacuum_out, _sucking)
 	_flash_t = maxf(0.0, _flash_t - dt)
 	_flash.light_energy = 4.0 * _flash_t / 0.05 if _flash_t > 0.0 else 0.0
 	_hud_t += dt
@@ -612,7 +613,8 @@ func _aim() -> Array:
 	return [cam.global_position, -cam.global_transform.basis.z]
 
 func _shoot(dt: float) -> void:
-	debris.target = Vector3.INF
+	if not _opts.has("swordtest"):
+		_sucking = false
 	_fire_cd = maxf(0.0, _fire_cd - dt)
 	_sg_cd = maxf(0.0, _sg_cd - dt)
 	if _opts.has("auto"):
@@ -623,12 +625,9 @@ func _shoot(dt: float) -> void:
 	var a := _aim()
 	if a.is_empty():
 		return
-	if sword_out:
-		_sword_input()
-		return
 	if vacuum_out:
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-			_suck(dt)
+		if not _opts.has("swordtest"):
+			_sucking = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		return
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and _fire_cd <= 0.0:
 		_fire_cd = 1.0 / 10.0
@@ -637,77 +636,19 @@ func _shoot(dt: float) -> void:
 		_sg_cd = 0.9
 		fire(a[0], a[1], 9, 4.5, 1.4)
 
-# the sword: a click slashes the way the mouse was moving (still: back and forth); right click chops down (first
-# person) or sweeps low at the legs (top-down)
-func _sword_input() -> void:
-	var lmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
-	var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	var l_now := lmb and not _lmb_was
-	var r_now := rmb and not _rmb_was
-	_lmb_was = lmb
-	_rmb_was = rmb
-	if not (l_now or r_now) or not sword.ready_to_swing():
+# the sword, with the guns still in hand: F (or a mouse side button) slashes the way the mouse was moving (still:
+# back and forth); C chops down (first person) or sweeps low at the legs (top-down)
+func _sword_key(low: bool) -> void:
+	if not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not _opts.has("swordtest")):
 		return
 	var sv := Vector2(_flip, 0.0)
-	if r_now:
+	if low:
 		sv = Vector2(0.0, 1.0)
 	elif _mouse_v.length() > 30.0:
 		sv = _mouse_v.normalized()
 	else:
 		_flip = -_flip
-	slash(sv, r_now)
-
-# the vacuum: the cone in front of the nozzle pulls in the cubes lying about (and pieces, pulled apart)
-func _suck(_dt: float) -> void:
-	var nozzle: Vector3
-	var dir: Vector3
-	if top_down:
-		var pp := player.global_position + Vector3(0, 1.0, 0)
-		var mp := get_viewport().get_mouse_position()
-		var o := cam.project_ray_origin(mp)
-		var d := cam.project_ray_normal(mp)
-		var at := o + d * (-o.y / d.y) if d.y < -0.0001 else pp + Vector3(0, -1, -1)
-		dir = (at - pp).normalized()
-		nozzle = pp + dir * 0.4
-	else:
-		var bs := cam.global_transform.basis
-		nozzle = cam.global_position + bs * Vector3(0.18, -0.25, -0.65)
-		dir = -bs.z
-	debris.target = nozzle
-	debris.aim = dir
-	sword.vacuum(nozzle, dir)
-	_kick = maxf(_kick, 0.15 + randf() * 0.1)
-
-func _vacuum_model() -> Node3D:
-	var root := Node3D.new()
-	var body := StandardMaterial3D.new()
-	body.albedo_color = Color(0.2, 0.45, 0.3)
-	body.metallic = 0.4
-	body.roughness = 0.5
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.08, 0.08, 0.1)
-	dark.roughness = 0.6
-	var glow := StandardMaterial3D.new()
-	glow.albedo_color = Color(0.4, 1.0, 0.6)
-	glow.emission_enabled = true
-	glow.emission = Color(0.3, 1.0, 0.5)
-	glow.emission_energy_multiplier = 1.5
-	for b in [[Vector3(0.12, 0.13, 0.42), Vector3(0, 0, 0), body], [Vector3(0.2, 0.2, 0.08), Vector3(0, 0, -0.25), dark],
-			[Vector3(0.14, 0.14, 0.02), Vector3(0, 0, -0.295), glow], [Vector3(0.09, 0.2, 0.16), Vector3(0, 0.15, 0.06), body],
-			[Vector3(0.05, 0.14, 0.06), Vector3(0, -0.12, 0.1), dark], [Vector3(0.06, 0.06, 0.2), Vector3(0, 0.15, 0.06), glow]]:
-		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = b[0]
-		mi.mesh = bm
-		mi.position = b[1]
-		mi.material_override = b[2]
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(mi)
-	root.position = Vector3(0.24, -0.23, -0.5)
-	root.rotation = Vector3(0.05, 0.08, 0)
-	root.scale = Vector3.ONE * 0.5
-	root.visible = false
-	return root
+	slash(sv, low)
 
 ## One slash, sv the way it goes on screen (x right, y down); low: top-down's leg sweep.
 func slash(sv: Vector2, low: bool = false) -> void:
@@ -829,7 +770,7 @@ func _hud_text() -> void:
 		wave, alive, bodies.size() - alive, kills, knocked, debris.count(), _jobs.size(), _jobs_done,
 		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
 		RenderingServer.get_current_rendering_method(),
-		"SWORD" if sword_out else ("VACUUM" if vacuum_out else "GUNS"), _k(debris.lying()), sword.pieces(),
+		"VACUUM (brush %.1f m)" % vacuum.brush_r if vacuum_out else "GUNS + SWORD (F)", _k(debris.lying()), sword.pieces(),
 		debris.got.blocks, debris.got.meat, debris.got.bone, debris.got.brain]
 
 static func _k(n: int) -> String:

@@ -3,15 +3,14 @@ extends MultiMeshInstance3D
 ## The cubes a shot or a cut knocks out: thousands of little cubes in one draw call (a MultiMesh with a colour
 ## each), flung out, falling and bouncing. Once one comes to rest it stays where it lies (the owner, 20 Oct): it moves
 ## to a second MultiMesh that never changes unless a cube is picked up, so a floor covered in them costs nothing a
-## frame. The vacuum gun sucks them up (the owner, 20 Oct): the ones in a cone in front of its nozzle lift off, fly in
-## and count up as resources (blocks, meat, bone, brain); let go and the ones in the air fall again. Owned by the
-## voxel session.
+## frame. The vacuum gun sucks them up like Astroneer's (the owner, 20 Oct): the ones inside its brush (a sphere where
+## it points) come loose at a steady rate, swirl up the beam into the nozzle and count up as resources (blocks, meat,
+## bone, brain); let go and the ones in the air fall again. Owned by the voxel session.
 
 const MAX := 8000               # flying at once
 const MAX_LIE := 150000         # lying on the floor (the oldest go when it's full)
-const SUCK_RANGE := 7.0         # metres the vacuum reaches
-const SUCK_COS := 0.9           # its cone (about 25 degrees round where it points)
-const PICK_FRAME := 500         # lifted a frame at most (no spikes)
+const RATE := 1500.0            # cubes a second the brush pulls loose
+const PICK_FRAME := 200         # lifted a frame at most (no spikes)
 
 var _pos := PackedVector3Array()
 var _vel := PackedVector3Array()
@@ -31,8 +30,10 @@ var _lc := PackedColorArray()
 var _ln := 0
 var _cells := {}                      # 1 m floor cell -> PackedInt32Array of lying cubes there
 var _kind := {}                       # colour (rgba32) -> resource name
-var target := Vector3.INF             # the vacuum's nozzle (where sucked-up cubes fly), INF: not sucking
-var aim := Vector3.FORWARD            # the way the vacuum points
+var nozzle := Vector3.ZERO            # where sucked-up cubes go in
+var brush := Vector3.INF              # the brush's centre, INF: not sucking
+var brush_r := 0.8                    # its radius, metres
+var _budget := 0.0                    # cubes the brush may still pull loose this frame
 var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0}
 
 func setup(cube_m: float) -> void:
@@ -128,6 +129,7 @@ func _process(dt: float) -> void:
 	if multimesh == null:
 		return
 	var t0 := Time.get_ticks_usec()
+	_budget = minf(_budget + RATE * dt, float(PICK_FRAME)) if brush != Vector3.INF else 0.0
 	_pick()
 	var i := 0
 	while i < _n:
@@ -135,33 +137,40 @@ func _process(dt: float) -> void:
 		var v := _vel[i]
 		var p := _pos[i]
 		if _home[i] == 1:
-			if target == Vector3.INF:
+			if brush == Vector3.INF:
 				_home[i] = 0
 			else:
-				# up a moment, then pulled in faster and faster
-				var to := target - p
-				var d := to.length()
+				# up the beam: steered at a point on it a little nearer the nozzle, swirling round it, faster and
+				# faster, shrinking as it goes in
+				var ab := brush - nozzle
+				var al := maxf(0.01, ab.length())
+				var ax := ab / al
+				var tt := clampf((p - nozzle).dot(ax) / al, 0.0, 1.0)
+				var d := p.distance_to(nozzle)
 				if d < 0.3:
 					take(_col[i])
 					_drop(i)
 					continue
-				v = v.lerp(to / d * minf(16.0, 3.0 + _life[i] * 30.0), minf(1.0, dt * 10.0))
+				var u := ax.cross(Vector3.UP if absf(ax.y) < 0.95 else Vector3.RIGHT).normalized()
+				var w := ax.cross(u)
+				var ph := _life[i] * 9.0 + float(i % 17) * 0.37
+				var goal := nozzle + ab * maxf(0.0, tt - 0.2) + (u * cos(ph) + w * sin(ph)) * (0.03 + 0.16 * tt)
+				var sp := minf(14.0, 3.0 + _life[i] * 18.0)
+				v = v.lerp((goal - p).normalized() * sp, minf(1.0, dt * 9.0))
 				p += v * dt
 				_vel[i] = v
 				_pos[i] = p
-				multimesh.set_instance_transform(i, Transform3D((_rot[i] as Basis).scaled(Vector3.ONE * clampf(d / 0.6, 0.3, 1.0)), p))
+				multimesh.set_instance_transform(i, Transform3D((_rot[i] as Basis).scaled(Vector3.ONE * clampf((d - 0.25) / 1.2, 0.12, 1.0)), p))
 				if _need[i] == 1:
 					multimesh.set_instance_color(i, _col[i])
 					_need[i] = 0
 				i += 1
 				continue
-		if target != Vector3.INF:
-			# in the air in front of the vacuum: caught
-			var tv := p - target
-			var tl := tv.length()
-			if tl <= SUCK_RANGE and tv.dot(aim) >= tl * SUCK_COS:
-				_home[i] = 1
-				_life[i] = 0.0
+		if brush != Vector3.INF and _budget >= 1.0 and p.distance_to(brush) <= brush_r:
+			# in the air inside the brush: caught
+			_home[i] = 1
+			_life[i] = 0.0
+			_budget -= 1.0
 		v.y -= 9.8 * dt
 		p += v * dt
 		var rest := false
@@ -229,34 +238,37 @@ func _unlay(i: int) -> void:
 	_ln = last
 	_lie.multimesh.visible_instance_count = _ln
 
-# the ones in the vacuum's cone lift off and fly into it
+# the ones inside the brush come loose (nearest the middle first), as many as the rate allows
 func _pick() -> void:
-	if target == Vector3.INF or _ln == 0:
+	if brush == Vector3.INF or _ln == 0 or _budget < 1.0:
 		return
 	var near := []
-	var cx := floori(target.x)
-	var cz := floori(target.z)
-	var rc := ceili(SUCK_RANGE)
+	var cx := floori(brush.x)
+	var cz := floori(brush.z)
+	var rc := ceili(brush_r)
+	var r2 := brush_r * brush_r
 	for dz in range(-rc, rc + 1):
 		for dx in range(-rc, rc + 1):
 			var k := (cx + dx + 1024) * 4096 + (cz + dz + 1024)
 			if not _cells.has(k):
 				continue
 			for i in (_cells[k] as PackedInt32Array):
-				var to := _lp[i] - target
-				var d := to.length()
-				if d <= 1.0 or (d <= SUCK_RANGE and to.dot(aim) >= d * SUCK_COS):
-					near.append(i)
-			if near.size() >= PICK_FRAME:
-				break
-		if near.size() >= PICK_FRAME:
-			break
+				var d2 := _lp[i].distance_squared_to(brush)
+				if d2 <= r2:
+					near.append(Vector2(d2, i))
 	if near.is_empty():
 		return
 	near.sort()
-	near.reverse()
-	for i in near:
+	var n := mini(near.size(), int(_budget))
+	_budget -= n
+	var take_i := []
+	for j in n:
+		take_i.append(int(near[j].y))
+	take_i.sort()
+	take_i.reverse()
+	for i in take_i:
 		var p := _lp[i]
 		var c := _lc[i]
 		_unlay(i)
-		_add(p, Vector3(randf_range(-0.3, 0.3), randf_range(0.8, 1.6), randf_range(-0.3, 0.3)), c, 1)
+		# a little hop up toward the middle of the brush first
+		_add(p, (brush - p) * 2.0 + Vector3(randf_range(-0.3, 0.3), randf_range(0.8, 1.5), randf_range(-0.3, 0.3)), c, 1)

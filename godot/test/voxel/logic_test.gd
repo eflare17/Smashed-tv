@@ -163,20 +163,27 @@ func _vacuum() -> void:
 	var bits := []
 	for i in 200:
 		bits.append({"pos": Vector3(randf_range(-0.2, 0.2), 1.0, randf_range(-0.2, 0.2)), "col": VoxelBody.BONE if i < 50 else Color8(20, 140, 40)})
+	for i in 30:
+		bits.append({"pos": Vector3(6.0, 0.3, 0.0), "col": Color8(20, 140, 40)})
 	d.burst(bits, Vector3(0, 0, 1), 1.0)
 	for i in 600:
 		d._process(1.0 / 60.0)
-	check(d.lying() == 200 and d.count() == 0, "knocked-out cubes come to rest and stay (%d lying, %d flying)" % [d.lying(), d.count()])
-	d.target = Vector3(0, 1.0, -2.5)
-	d.aim = Vector3(0, -0.4, 1).normalized()
+	check(d.lying() == 230 and d.count() == 0, "knocked-out cubes come to rest and stay (%d lying, %d flying)" % [d.lying(), d.count()])
+	# the brush over the pile; the 30 cubes 6 m off are outside it
+	d.nozzle = Vector3(0, 1.0, -2.5)
+	d.brush = Vector3(0, 0, 0.4)
+	d.brush_r = 1.4
+	d._process(1.0 / 60.0)
+	check(d.count() > 0 and d.count() <= 60, "the brush pulls them loose at a steady rate (%d the first frame)" % d.count())
 	for i in 240:
 		d._process(1.0 / 60.0)
 	var got: int = d.got.blocks + d.got.bone
-	check(got > 150 and d.got.bone > 30, "the vacuum sucks them up as resources (%d: %d bone, %d blocks)" % [got, d.got.bone, d.got.blocks])
-	d.target = Vector3.INF
+	check(got > 150 and d.got.bone > 30, "they go up the beam as resources (%d: %d bone, %d blocks)" % [got, d.got.bone, d.got.blocks])
+	check(d.lying() >= 30, "only the ones inside the brush (%d still lying)" % d.lying())
+	d.brush = Vector3.INF
 	for i in 600:
 		d._process(1.0 / 60.0)
-	check(d.lying() + got == 200, "let go, the ones in the air fall back (%d lying)" % d.lying())
+	check(d.lying() + got == 230, "let go, the ones in the air fall back (%d lying)" % d.lying())
 	d.queue_free()
 
 func _holes() -> void:

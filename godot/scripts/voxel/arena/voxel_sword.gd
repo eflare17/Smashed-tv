@@ -85,6 +85,10 @@ func _part(size: Vector3, at: Vector3, mat: Material) -> void:
 func ready_to_swing() -> bool:
 	return _cd <= 0.0
 
+## Mid-swing or on the way back (the blade shows only then: the guns stay in hand otherwise).
+func busy() -> bool:
+	return _t >= 0.0
+
 func swinging() -> bool:
 	return _t >= 0.0 and _t < SWING_T
 
@@ -126,14 +130,13 @@ func step(dt: float) -> void:
 				rb.queue_free()
 				_pieces.remove_at(i)
 
-## The vacuum gun at nozzle pointing aim: pieces close in front of it come apart into their cubes, which fly in.
-func vacuum(nozzle: Vector3, aim: Vector3) -> void:
+## The vacuum gun's brush (a sphere at brush, r metres): pieces inside it come apart into their cubes, which go up the
+## beam.
+func vacuum(brush: Vector3, r: float) -> void:
 	for i in range(_pieces.size() - 1, -1, -1):
 		var pc: Dictionary = _pieces[i]
 		var rb: RigidBody3D = pc.rb
-		var to := rb.global_position - nozzle
-		var d := to.length()
-		if pc.t < 0.4 or d > 4.0 or (d > 1.0 and to.dot(aim) < d * 0.85):
+		if pc.t < 0.4 or rb.global_position.distance_to(brush) > r + 0.3:
 			continue
 		var bits := []
 		var vm: float = pc.vm
