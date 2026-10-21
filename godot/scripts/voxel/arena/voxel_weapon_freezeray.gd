@@ -2,20 +2,21 @@ class_name VoxelWeaponFreezeray
 extends VoxelMelee
 ## The freeze ray (the owner, 20 Oct: six new weapons, each doing something different): freeze them solid, then shatter
 ## them. A white and pale-blue sci-fi gun held at the hip: a glowing cyan tank on top, a coil round the barrel, a dish
-## of frosty fins at the front. Hold left for the freeze beam: a flickering cyan-white beam from the dish to whatever you
-## point at, a double helix of beads twisting round it, frost drifting off it and puffing where it lands, a cold light
-## there, the tank glowing hard and the coil spinning. The body it's on frosts over (slower and slower, frost clinging round the spot) and after
-## about three quarters of a second of steady beam (a bigger one longer, by its height) it freezes solid: an ice statue
-## that stands still for 8 s and then thaws; the beam on one already frozen keeps it frozen. On the floor or a wall it
-## leaves frost lying. The beam runs on a charge, 6 s of it, that fills back up once you let go (a glowing strip down
-## the gun's side and the weapon bar show it); run it dry and it vents and must fill a quarter back before it fires again. Right click fires an ice shard (one
-## every 0.55 s; held, again and again; a new one grows in the dish meanwhile): a long pale-blue crystal flying at 40 m/s
-## with a faint trail. Into a frozen body it SHATTERS it: the whole statue bursts into ice cubes along the shard's line
-## and out, with a big kick and a hit-stop, and the shard flies on through for the next. Into one not frozen it knocks a
-## small hole, chills it a third of the way to frozen and shoves it, and sticks in a moment before it melts. Into the
-## world it breaks into ice bits with a tink. Any other weapon's blow shatters a frozen body too (VoxelBody does that).
-## Top-down the beam and the shards go level from Jared's chest toward the mouse. The core (what the beam or a shard
-## hits, a beam's chill, a shard's strike, the charge) is static so the logic test can run it. Owned by the voxel session.
+## of frosty fins at the front. Hold left for the freeze beam: a flickering cyan-white beam from the dish to whatever
+## you point at, a double helix of beads twisting round it, frost drifting off it and puffing where it lands, a cold
+## light there, the tank glowing hard and the coil spinning. The body it's on frosts over (slower and slower, frost
+## clinging round the spot) and after about three quarters of a second of steady beam (a bigger one longer, by its
+## height) it freezes solid: an ice statue that stands still for 8 s and then thaws; the beam on one already frozen
+## keeps it frozen. On the floor or a wall it leaves frost lying. The beam runs on a charge, 6 s of it, that fills back
+## up once you let go (a glowing strip down the gun's side and the weapon bar show it); run it dry and it vents and must
+## fill a quarter back before it fires again. Right click fires an ice shard (one every 0.55 s; held, again and again; a
+## new one grows in the dish meanwhile): a long pale-blue crystal flying at 40 m/s with a faint trail. Into a frozen
+## body it SHATTERS it: the whole statue bursts into ice cubes along the shard's line and out, with a big kick and a
+## hit-stop, and the shard flies on through for the next. Into one not frozen it knocks a small hole, chills it a third
+## of the way to frozen and shoves it, and sticks in a moment before it melts. Into the world it breaks into ice bits
+## with a tink. Any other weapon's blow shatters a frozen body too (VoxelBody does that). Top-down the beam and the
+## shards go level from Jared's chest toward the mouse. The core (what the beam or a shard hits, a beam's chill, a
+## shard's strike, the charge) is static so the logic test can run it. Owned by the voxel session.
 
 const RANGE := 16.0             # metres the beam reaches
 const FREEZE_S := 0.75          # seconds of steady beam that freeze a grunt solid (taller ones longer, by height squared)
@@ -75,7 +76,6 @@ var _hit_light: OmniLight3D
 var _muz_light: OmniLight3D
 var _out := false               # the weapon out (not put away)
 var _held_l := false
-var _held_r := false
 var _beam_on := false
 var _beam_k := 0.0              # the beam's strength shown, 0..1 (eases in and out)
 var _beam_len := 0.0            # metres the beam reaches now (shooting out to what it hits)
@@ -109,7 +109,7 @@ var _pd := PackedFloat32Array()  # drag
 var _pc := PackedColorArray()
 var _pr: Array[Basis] = []
 var _pn := 0
-var _fx_us := 0
+var _fx_us := 0                 # the frost particles' time this press (for last)
 var _fx_frames := 0
 
 func _build() -> void:
@@ -340,7 +340,6 @@ func on_select() -> void:
 func on_deselect() -> void:
 	_out = false
 	_held_l = false
-	_held_r = false
 	if _beam_on:
 		_stop_beam()
 
@@ -359,12 +358,13 @@ func press(button: int) -> void:
 		_trace_us = 0
 		_trace_n = 0
 		_froze_n = 0
+		_fx_us = 0
+		_fx_frames = 0
 		_beam_t = 0.0
 		last = {"move": "beam", "secs": 0.0, "energy": 0, "on": "", "frost": 0.0, "frozen": 0, "trace_ms": 0.0, "max_ms": 0.0, "fx_ms": 0.0}
 		if _locked:
 			sfx("dry_fire")
 	elif button == MOUSE_BUTTON_RIGHT:
-		_held_r = true
 		fire_shard()
 
 func hold(button: int, _dt: float) -> void:
@@ -374,8 +374,6 @@ func hold(button: int, _dt: float) -> void:
 func release(button: int) -> void:
 	if button == MOUSE_BUTTON_LEFT:
 		_held_l = false
-	elif button == MOUSE_BUTTON_RIGHT:
-		_held_r = false
 
 # ---------------------------------------------------------------- the core (static, for the checks)
 
@@ -857,6 +855,7 @@ func _shard_hit(s: Dictionary, h: Dictionary) -> bool:
 		if bits.is_empty():
 			# (can't die: the ice only broke off) a chip of it, and the shard's done
 			_shard_break(at, -dir, dir, 26)
+			sfx("freezeray_tink", at)
 			_shard_off(s)
 			return false
 		_shatter_burst(b, bits, dir)

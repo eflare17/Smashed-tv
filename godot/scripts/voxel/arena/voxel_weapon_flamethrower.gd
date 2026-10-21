@@ -15,18 +15,20 @@ extends VoxelMelee
 ## flames. It bursts on the floor (or on the first body it hits, setting it alight, then drops at its feet) into a
 ## patch of fire 1.8 m across that burns about 6 s, crackling, catching the feet and shins of everyone standing or
 ## lying in it, then dies down to a scorch mark. Four patches burn at most (the oldest goes out). Top-down it's in
-## Jared's right hand at the hip and sprays level toward the mouse. The core (the stream's line, what it reaches, what
-## it sets alight or thaws, the patch's catching, the lob, the fuel) is static so the logic test can run it. Owned by
-## the voxel session.
+## Jared's right hand at the hip and sprays toward the mouse, the stream coming down on the floor at the end of its
+## reach (so what lies there burns too). The core (the stream's line, what it reaches, what it sets alight or thaws,
+## the patch's catching, the lob, the fuel) is static so the logic test can run it. Owned by the voxel session.
 
 const REACH := 6.0              # metres the stream reaches
 const STREAM_V := 11.0          # m/s the burning fuel leaves the nozzle
 const DROOP := 2.6              # m/s/s it droops
 const AIM_AT := 4.5             # metres out along the look the stream crosses the crosshair (aimed up a little for the droop)
+const TD_DIP := 0.68            # top-down: metres below the nozzle it crosses AIM_AT out (it's on the floor by REACH)
 const SPREAD := 0.04            # radians the fuel strays from the stream's line at most
 const DROPS := 45.0             # blobs of fuel a second, each lighting flames along its way
 const MAX_DROPS := 120
-const FLAMES := 34.0            # flames a second each blob lights (seen end on, more just glare white)
+const FLAMES := 55.0            # flames a second each blob lights along its way (the splash where it lands is kept thin:
+                                # seen close up, piled-up flames glare white)
 const ARC_N := 3                # straight pieces the stream's drooping line is traced in
 const TICK := 0.1               # seconds between the stream's hit tests at most ...
 const BUDGET := 0.08            # ... and fewer if they cost more than this share of the time
@@ -99,6 +101,8 @@ var _lob_t := -1.0              # seconds into the gun's lob kick (-1: none)
 var _t := 0.0
 var _frames := 0                # frames sprayed this move (the cost per frame) ...
 var _secs := 0.0                # ... and seconds
+var _sl := {}                   # what the spray did (last, while it's the latest move) ...
+var _bl := {}                   # ... and the latest fire bomb (its blob and patch keep counting into it)
 var _globs := []                # fire bombs in the air: {node, light, p, v, t, off: "" or what it ran off ("body", "wall")}
 var _patches := []              # patches of fire: {node, mm, light, at, t, tick, acc, smoke, key, phase, rad, out}
 var _patch_n := 0
@@ -296,9 +300,10 @@ func press(button: int) -> void:
 		sfx("flamethrower_start")
 		if not top_down():
 			arena._kick = maxf(float(arena._kick), 0.4)
-		last = {"move": "spray", "secs": 0.0, "ticks": 0, "hits": 0, "bodies": 0, "caught": 0, "thawed": 0, "end_d": REACH,
+		_sl = {"move": "spray", "secs": 0.0, "ticks": 0, "hits": 0, "bodies": 0, "caught": 0, "thawed": 0, "end_d": REACH,
 			"fuel": 0.0, "ran_dry": false, "tick_ms": 0.0, "max_tick_ms": 0.0, "frame_ms": 0.0, "max_frame_ms": 0.0,
 			"flames": 0, "drops": 0}
+		last = _sl
 	elif button == MOUSE_BUTTON_RIGHT:
 		bomb()
 
@@ -354,11 +359,13 @@ func bomb() -> void:
 		arena.avatar.recoil = 1.0
 	else:
 		arena._kick = maxf(float(arena._kick), 0.8)
-	last = {"move": "bomb", "flight": snappedf(secs, 0.01), "to": to.snapped(Vector3.ONE * 0.01), "hit_body": false, "landed": "",
+	_bl = {"move": "bomb", "flight": snappedf(secs, 0.01), "to": to.snapped(Vector3.ONE * 0.01), "hit_body": false, "landed": "",
 		"caught": 0, "patch_ignites": 0, "patch_caught": 0, "patch_ms": 0.0, "fuel": snappedf(_fuel, 0.01)}
+	last = _bl
 
 # where a fire bomb is lobbed to: the first body along where you aim (its upright middle), else the wall or floor
-# there; no further than BOMB_RANGE. Top-down: along the mouse's line from the camera.
+# there; no further than BOMB_RANGE (the floor that far out if it's aimed further or at the sky). Top-down: along the
+# mouse's line from the camera.
 func _bomb_target() -> Vector3:
 	var from := eye()
 	var dir := look()
@@ -371,6 +378,7 @@ func _bomb_target() -> Vector3:
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	var to: Vector3 = wh.position if not wh.is_empty() else from + dir * 60.0
 	var best := from.distance_to(to)
+	var sky := wh.is_empty()
 	for b in arena.bodies:
 		var p: Vector3 = b.global_position
 		var up: float = b.height * 0.9 if (b.alive and not b.floored()) else 0.35
@@ -378,15 +386,16 @@ func _bomb_target() -> Vector3:
 		if cp[0].distance_to(cp[1]) < 0.3 and from.distance_to(cp[0]) < best:
 			best = from.distance_to(cp[0])
 			to = cp[1]
+			sky = false
 	var pp: Vector3 = arena.player.global_position
 	var flat := Vector3(to.x - pp.x, 0.0, to.z - pp.z)
-	if flat.length() > BOMB_RANGE:
-		to = pp + flat.normalized() * BOMB_RANGE
+	if sky or flat.length() > BOMB_RANGE:
+		to = pp + flat.normalized() * BOMB_RANGE      # (aimed at the sky: as far as it goes, onto the floor)
 	return to
 
 # a sputter: the weak puffs of SPUTTER from the i-th on, and the sound
 func _cough(i: int) -> void:
-	_sputter = float(SPUTTER[i]) - 0.02
+	_sputter = float(SPUTTER[i])
 	_sp_i = i
 	sfx("flamethrower_empty", Vector3.INF, 3.0 if i == 0 else -2.0)
 
@@ -411,13 +420,14 @@ func step(dt: float) -> void:
 	else:
 		_idle += dt
 		_fuel = refuel(_fuel, dt, false, _idle)
-	var s := _stream()
+	var s := _stream() if (_firing or _sputter >= 0.0) else []
 	if _firing:
 		_spray(dt, s)
 	if _sputter >= 0.0:
 		_sputter_step(dt, s)
 	if not _firing:
 		_light.light_energy = move_toward(_light.light_energy, 0.0, dt * 20.0)
+	_light.visible = _light.light_energy > 0.0
 	_steam_t -= dt
 	if _steam_t > 0.0 and _out:
 		sfx_loop("steam", "flamethrower_steam_loop", -6.0)
@@ -428,26 +438,34 @@ func step(dt: float) -> void:
 	_patches_step(dt)
 	_puffs_step(dt)
 	_look()
-	if _firing and String(last.get("move", "")) == "spray":
+	if _firing:
 		_frames += 1
 		var ms := (Time.get_ticks_usec() - t0) / 1000.0
-		last.frame_ms = snappedf((float(last.frame_ms) * (_frames - 1) + ms) / _frames, 0.01)
-		last.max_frame_ms = snappedf(maxf(float(last.max_frame_ms), ms), 0.01)
-		last.flames = maxi(int(last.flames), int(arena.flames.count()))
-		last.drops = maxi(int(last.drops), _dn)
-		last.fuel = snappedf(_fuel, 0.01)
+		_sl.frame_ms = snappedf((float(_sl.frame_ms) * (_frames - 1) + ms) / _frames, 0.01)
+		_sl.max_frame_ms = snappedf(maxf(float(_sl.max_frame_ms), ms), 0.01)
+		_sl.flames = maxi(int(_sl.flames), int(arena.flames.count()))
+		_sl.drops = maxi(int(_sl.drops), _dn)
+		_sl.fuel = snappedf(_fuel, 0.01)
 
 # where the stream starts and which way it goes: [the nozzle's mouth (world), its direction (unit)]. First person from
-# the view's nozzle through the crosshair AIM_AT out; top-down from the nozzle in Jared's hand, level toward the mouse.
+# the view's nozzle through the crosshair AIM_AT out; top-down from the nozzle in Jared's hand toward the mouse, dipping
+# so it comes down on the floor at the end of its reach. A nozzle poked into a wall (it sticks out a metre) starts at
+# the wall's face instead, so nothing goes through.
 func _stream() -> Array:
 	var f := look()
+	var o: Vector3 = (_vm.tip as Node3D).global_position
 	if top_down():
-		var o: Vector3 = arena.player.global_position + Vector3(0, 0.95, 0) + f * 0.7
+		o = arena.player.global_position + Vector3(0, 0.95, 0) + f * 0.7
 		if is_instance_valid(_hand) and _hand.is_visible_in_tree():
 			o = (_hm.tip as Node3D).global_position
-		return [o, aim_dir(o, o, f)]
-	var o2: Vector3 = (_vm.tip as Node3D).global_position
-	return [o2, aim_dir(o2, eye(), f)]
+	var q := PhysicsRayQueryParameters3D.create(eye(), o)
+	q.exclude = [arena.player.get_rid()]
+	var wh := get_world_3d().direct_space_state.intersect_ray(q)
+	if not wh.is_empty():
+		o = (wh.position as Vector3) + (eye() - o).normalized() * 0.05
+	if top_down():
+		return [o, aim_dir(o, o + Vector3.DOWN * TD_DIP, f)]
+	return [o, aim_dir(o, eye(), f)]
 
 # spraying: fuel out, the roar, the light, the gun shaking, a hit test every so often
 func _spray(dt: float, s: Array) -> void:
@@ -461,7 +479,7 @@ func _spray(dt: float, s: Array) -> void:
 	else:
 		arena._kick = maxf(float(arena._kick), randf_range(0.04, 0.12))
 	_secs += dt
-	last.secs = snappedf(_secs, 0.01)
+	_sl.secs = snappedf(_secs, 0.01)
 	_tick -= dt
 	if _tick <= 0.0:
 		_hit_test(o, d)
@@ -472,7 +490,7 @@ func _run_dry() -> void:
 	_firing = false              # (held on, it stays out till the next press)
 	sfx_stop("roar")
 	_cough(0)
-	last.ran_dry = true
+	_sl.ran_dry = true
 
 func _sputter_step(dt: float, s: Array) -> void:
 	_sputter += dt
@@ -498,7 +516,7 @@ func _hit_test(o: Vector3, d: Vector3) -> void:
 	var lines := []                 # per ray: [its points, how far it gets before a wall or the floor]
 	for dir in cone(d, RAYS, CONE, randf() * TAU):
 		var pts := arc(o, dir, REACH, ARC_N)
-		lines.append([pts, _wall_d(space, pts, eye() if lines.is_empty() and not top_down() else Vector3.INF)])
+		lines.append([pts, _wall_d(space, pts)])
 	var cands := []
 	for b in bodies_near(o, REACH + 1.0):
 		if near_line(b, lines[0][0], SLACK):
@@ -534,34 +552,28 @@ func _hit_test(o: Vector3, d: Vector3) -> void:
 			var h: Dictionary = hs[j]
 			var p: Vector3 = h.point
 			var r := scorch(b, p, IGNITE_R, THAW * _tick_dt / mini(hs.size(), SPOTS))
-			last.caught = int(last.caught) + int(r.caught)
-			last.hits = int(last.hits) + 1
+			_sl.caught = int(_sl.caught) + int(r.caught)
+			_sl.hits = int(_sl.hits) + 1
 			if bool(r.thawed):
 				thawed = true
 				_puff(p, (h.normal as Vector3) * 0.5 + Vector3.UP * 0.8, STEAM, 0.08, 0.9)
 			else:
 				arena.flames.emit(p, 3, (h.normal as Vector3) * 1.2 + Vector3.UP * 0.8, 5.0, 0.45)
-		last.bodies = int(last.bodies) + 1
+		_sl.bodies = int(_sl.bodies) + 1
 	if thawed:
-		last.thawed = int(last.thawed) + 1
+		_sl.thawed = int(_sl.thawed) + 1
 		_steam_t = 0.3
-	last.ticks = int(last.ticks) + 1
-	last.end_d = snappedf(_end_d, 0.01)
+	_sl.ticks = int(_sl.ticks) + 1
+	_sl.end_d = snappedf(_end_d, 0.01)
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0
-	last.tick_ms = snappedf((float(last.tick_ms) * (int(last.ticks) - 1) + ms) / int(last.ticks), 0.01)
-	last.max_tick_ms = snappedf(maxf(float(last.max_tick_ms), ms), 0.01)
+	_sl.tick_ms = snappedf((float(_sl.tick_ms) * (int(_sl.ticks) - 1) + ms) / int(_sl.ticks), 0.01)
+	_sl.max_tick_ms = snappedf(maxf(float(_sl.max_tick_ms), ms), 0.01)
 	_tick_dt = maxf(TICK, ms / 1000.0 / BUDGET)
 	_tick = _tick_dt
 
-# how far along the stream's line pts it gets before a wall, a pillar or the floor; eye: first person, the line from
-# it to the nozzle is checked too (a nozzle pushed into a wall sprays nothing past it); INF: not
-func _wall_d(space: PhysicsDirectSpaceState3D, pts: PackedVector3Array, from: Vector3) -> float:
+# how far along the stream's line pts it gets before a wall, a pillar or the floor
+func _wall_d(space: PhysicsDirectSpaceState3D, pts: PackedVector3Array) -> float:
 	var ex: Array[RID] = [arena.player.get_rid()]
-	if from != Vector3.INF:
-		var q0 := PhysicsRayQueryParameters3D.create(from, pts[0])
-		q0.exclude = ex
-		if not space.intersect_ray(q0).is_empty():
-			return 0.0
 	var gone := 0.0
 	for i in pts.size() - 1:
 		var q := PhysicsRayQueryParameters3D.create(pts[i], pts[i + 1])
@@ -608,12 +620,12 @@ func _drops_step(dt: float, s: Array) -> void:
 		var s1 := _ds[i] + v.length() * dt
 		var k := clampf(s1 / REACH, 0.0, 1.0)
 		if s1 >= minf(REACH, _end_d + _dj[i]) or p1.y < 0.03:
-			# splashed: the fire spreads out over what it hit and up it (more of it the sooner it hit: it hadn't
+			# splashed: the fire spreads out over what it hit and up it (a little more the sooner it hit: it hadn't
 			# burnt on the way), now and then smoke
 			var vn := v.normalized()
-			for j in 2 + int(3.0 * (1.0 - k)):
+			for j in 1 + int(1.5 * (1.0 - k) + randf()):
 				var out := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
-				out = (out - vn * out.dot(vn)).normalized() * randf_range(0.8, 2.4)
+				out = (out - vn * out.dot(vn)).normalized() * randf_range(1.2, 3.0)
 				fl.emit(p1, 1, out - vn * 0.4 + Vector3.UP * randf_range(0.4, 1.6), randf_range(4.5, 7.0) * big, 0.5)
 			if randf() < 0.1:
 				_puff(p1 + Vector3.UP * 0.15, Vector3(randf_range(-0.3, 0.3), randf_range(0.6, 1.1), randf_range(-0.3, 0.3)), SMOKE, 0.1, 1.4)
@@ -686,8 +698,7 @@ func _globs_step(dt: float) -> void:
 				if not top_down() and eye().distance_to(hp) < 4.0:
 					hit_stop(0.035, 0.3)
 				_note("caught", int(r.caught))
-				if last.has("hit_body"):
-					last.hit_body = true
+				_bl.hit_body = true
 				g.off = "body"
 				p1 = hp + (h.normal as Vector3) * 0.1
 				v = Vector3(v.x * 0.08, minf(v.y, 0.0) * 0.3, v.z * 0.08)
@@ -733,9 +744,8 @@ func _land(at: Vector3, off: String) -> void:
 	arena.debris.pop(at, PATCH_R, 1.8, 300)
 	if not top_down() and eye().distance_to(at) < 5.0:
 		arena._kick = maxf(float(arena._kick), 0.45)
-	if last.has("landed"):
-		last.landed = {"": "floor", "body": "at its feet", "wall": "at the wall's foot"}[off]
-		last.patch_at = at.snapped(Vector3.ONE * 0.01)
+	_bl.landed = {"": "floor", "body": "at its feet", "wall": "at the wall's foot"}[off]
+	_bl.patch_at = at.snapped(Vector3.ONE * 0.01)
 
 # fire thrown out from where a blob burst (n: the face it hit; k: how much): spread out over the face and up, only a
 # little straight off it (a burst on someone's chest doesn't throw fire in your face)
@@ -862,15 +872,14 @@ func _catch(at: Vector3) -> void:
 		_note("patch_caught", int(r.caught))
 		if bool(r.thawed):
 			_puff(p, Vector3.UP * 0.9, STEAM, 0.08, 0.9)
-	if n > 0 and last.has("patch_ms"):
+	if n > 0:
 		var ms := (Time.get_ticks_usec() - t0) / 1000.0
-		var k := maxi(1, int(last.patch_ignites))
-		last.patch_ms = snappedf((float(last.patch_ms) * (k - n) + ms) / k, 0.01)
+		var k := maxi(1, int(_bl.patch_ignites))
+		_bl.patch_ms = snappedf((float(_bl.patch_ms) * (k - n) + ms) / k, 0.01)
 
-# adds to a number in last if this move counts it
+# adds to one of the latest fire bomb's numbers (what it and its patch did)
 func _note(key: String, add: int) -> void:
-	if last.has(key):
-		last[key] = int(last[key]) + add
+	_bl[key] = int(_bl.get(key, 0)) + add
 
 # ---------------------------------------------------------------- smoke and steam
 
@@ -1061,9 +1070,10 @@ static func legs_point(b: VoxelBody, pick: int) -> Vector3:
 static func joint(b: VoxelBody, n: String) -> Vector3:
 	return b.skeleton.global_transform * b.skeleton.get_bone_global_pose(int(b.parts[n].bone)).origin
 
-## Whether p (low on a body) is in the patch of fire at at.
+## Whether p (low on a body) is in the patch of fire at at (around it, at its height: not below a patch on a pillar).
 static func in_patch(p: Vector3, at: Vector3) -> bool:
-	return p != Vector3.INF and Vector2(p.x - at.x, p.z - at.z).length() <= PATCH_R + 0.1 and p.y - at.y < 0.7
+	var up := p.y - at.y
+	return p != Vector3.INF and Vector2(p.x - at.x, p.z - at.z).length() <= PATCH_R + 0.1 and up > -0.3 and up < 0.7
 
 ## How hard a patch t seconds old burns: a whoomph at first, then steady, dying down over its last PATCH_FADE, 0 out.
 static func blaze(t: float) -> float:
@@ -1117,6 +1127,10 @@ static func checks(host: Node) -> Array:
 	var ig_ms := (Time.get_ticks_usec() - t0) / 1000.0
 	out.append([int(r.caught) > 10 and b.burning() and b.panic_t > 0.0 and not bool(r.thawed),
 		"set alight where it lands: %d cubes catch (%.2f ms), he burns and panics" % [r.caught, ig_ms]])
+	# more fire on him, burning already, catches more (before it spreads: a body burns BURN_MAX cubes at most)
+	var hh := hit_along(b, arc(Vector3(0, 1.62, 2.0), Vector3.FORWARD))
+	var r2 := scorch(b, hh.get("point", Vector3(0, 1.62, 0.1)), IGNITE_R, 0.0)
+	out.append([b.burning() and int(r2.caught) > 0, "on fire already, a new spot (his face) catches more (%d)" % r2.caught])
 	# it spreads by itself: in 3 s it has hurt him and burnt cubes to ash
 	var hp0 := b.hp
 	var left0 := b.cubes_left()
@@ -1126,10 +1140,6 @@ static func checks(host: Node) -> Array:
 		flames += (st.flames as Array).size()
 	out.append([b.hp < hp0 - 15.0 and b.cubes_left() < left0 and flames > 20,
 		"it spreads by itself: %.0f health and %d cubes burnt away in 3 s" % [hp0 - b.hp, left0 - b.cubes_left()]])
-	# more fire on him, burning already, catches more
-	var hh := hit_along(b, arc(Vector3(0, 1.62, 2.0), Vector3.FORWARD))
-	var r2 := scorch(b, hh.get("point", Vector3(0, 1.62, 0.1)), IGNITE_R, 0.0)
-	out.append([b.burning() and int(r2.caught) > 0, "on fire already, a new spot (his face) catches more (%d)" % r2.caught])
 	b.queue_free()
 	# out of reach: 8 m off, it doesn't get there; the line droops, the cone's ring is CONE out
 	var b2 := _grunt(host, m)
@@ -1141,6 +1151,12 @@ static func checks(host: Node) -> Array:
 		ring = ring and absf(Vector3.FORWARD.angle_to(dirs[i]) - CONE) < 0.001
 	out.append([hit_along(b2, far).is_empty() and -a0[a0.size() - 1].y > 0.25 and -a0[a0.size() - 1].y < 0.6 and ring,
 		"8 m off the stream doesn't reach him; it droops %.2f m by 6 m; %d rays in its cone" % [-a0[a0.size() - 1].y, dirs.size()]])
+	# top-down, from the hip: waist high close in, on the floor by the end of its reach
+	var hip := Vector3(0, 1.05, 0)
+	var td := arc(hip, aim_dir(hip, hip + Vector3.DOWN * TD_DIP, Vector3.FORWARD))
+	var mid := arc(hip, aim_dir(hip, hip + Vector3.DOWN * TD_DIP, Vector3.FORWARD), 1.5, 1)
+	out.append([td[td.size() - 1].y < 0.15 and td[td.size() - 1].y > -0.3 and mid[1].y > 0.6,
+		"top-down the stream is %.2f m up 1.5 m out and %.2f m by its end (on the floor)" % [mid[1].y, td[td.size() - 1].y]])
 	# frozen: nothing catches, the ice melts instead; kept on him a moment he thaws, then burns
 	b2.chill(1.0)
 	var hf := hit_along(b2, pts)
@@ -1165,8 +1181,9 @@ static func checks(host: Node) -> Array:
 	t0 = Time.get_ticks_usec()
 	var rp := scorch(b3, l0, PATCH_IGNITE_R, 0.0)
 	var pa_ms := (Time.get_ticks_usec() - t0) / 1000.0
-	out.append([low and int(rp.caught) > 0 and in_patch(l0, Vector3(0.6, 0, 0.3)) and not in_patch(l0, Vector3(2.0, 0, 0)),
-		"a patch of fire catches his shins (at %.2f m, %d cubes, %.2f ms), not from 2 m off" % [l0.y, rp.caught, pa_ms]])
+	out.append([low and int(rp.caught) > 0 and in_patch(l0, Vector3(0.6, 0, 0.3)) and not in_patch(l0, Vector3(2.0, 0, 0))
+		and not in_patch(l0, Vector3(0.6, 3.5, 0.3)),
+		"a patch of fire catches his shins (at %.2f m, %d cubes, %.2f ms), not from 2 m off or up on a pillar" % [l0.y, rp.caught, pa_ms]])
 	b3.queue_free()
 	# it blazes up, burns, dies down, goes out
 	out.append([blaze(0.0) > 1.2 and absf(blaze(2.0) - 1.0) < 0.001 and blaze(PATCH_T - 0.5) < 0.5 and blaze(PATCH_T) == 0.0,

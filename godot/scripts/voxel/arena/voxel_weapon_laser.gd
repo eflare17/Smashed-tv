@@ -26,8 +26,9 @@ const CUT_DEPTH := 0.7          # metres past where the beam goes in that it cut
 const CUT_PRE := 0.04           # ... and before it (the surface is never quite where the trace said)
 const CUT_POST := 0.03          # ... and past where it comes out
 const CUT_TICK := 1.0 / 15.0    # seconds between cuts: the beam's lines since the last one lined up to be cut ...
-const CUT_SHARE := 0.25         # ... one a frame at most, spaced so cutting takes about this share of the time
-const MAX_PENDING := 32         # lines waiting at most (more: an even spread of them, the newest kept)
+const CUT_SHARE := 0.25         # ... one a frame at most, spaced so cutting takes about this share of the time ...
+const SHARE_MAX := 0.6          # ... more with lines waiting (a fast drag: one body crossed is 40-60), up to this
+const MAX_PENDING := 96         # lines waiting at most (more: an even spread of them, the newest kept)
 const SPACING := 0.035          # metres apart neighbouring cut lines may be at either end (2.2 cm lines: no gaps)
 const FILL_MAX := 4             # lines filled in between two frames' beams at most
 const NECK_D := 0.05            # a cut line this near the head's joint is through the middle of the neck
@@ -37,7 +38,8 @@ const HOT_BITS := 3             # ... and this many a cut at most
 const HEAT_HURT := 10.0         # health a second the beam burns off whoever it's in
 const DWELL_GROW := 0.03        # held still in a body: metres a second the hole is bored wider ...
 const DWELL_MAX := 0.035        # ... up to this round the beam
-const TRACE_MAX := 4            # bodies traced a frame at most to find the first one the beam meets
+const TRACE_MAX := 16           # bodies traced a frame at most to find the first one the beam meets (a miss is cheap: a
+                                # crowd beside the beam mustn't hide the one in it)
 const HEAT_BEAM := 0.2          # heat a second the beam adds (five seconds overheats it)
 const HEAT_CHARGE := 0.12
 const HEAT_BLAST := 0.45
@@ -50,17 +52,19 @@ const CHARGE_T := 0.6           # seconds the overcharge takes to fill
 const BLAST_MAX := 1.5          # seconds the fat beam lasts at most
 const BLAST_R := 0.09           # the fat tunnel's radius, metres
 const BLAST_HALF := 0.75        # metres either side of where the fat beam passes a standing body's middle it bores
-const BLAST_TICK := 0.1         # seconds between fat tunnels
+const BLAST_TICK := 0.1         # seconds between fat tunnels ...
+const BLAST_SHARE := 0.4        # ... or more: one a frame at most, spaced so boring takes about this share of the time
 const BLAST_HP := 0.08
-const BLAST_BODIES := 6         # bodies one fat tunnel goes through at most (one bored a frame)
+const BLAST_BODIES := 6         # bodies one fat tunnel goes through at most
 const BLAST_BITS := 50
 const BLAST_BITS_HOT := 0.45    # the share of them glowing hot (the rest blown out as they were)
 const MAX_PUFFS := 320          # smoke and steam puffs at once
-# poses in camera space (x right, y up, -z forward): where the grip is
-const REST := Vector3(0.21, -0.3, -0.43)
-const FIRE_AT := Vector3(0.19, -0.28, -0.46)
-const CHARGE_AT := Vector3(0.15, -0.26, -0.41)
-const VENT_AT := Vector3(0.24, -0.33, -0.38)
+# poses in camera space (x right, y up, -z forward): where the grip is (high enough that the power cell and the heat
+# strip show above the weapon bar)
+const REST := Vector3(0.23, -0.225, -0.42)
+const FIRE_AT := Vector3(0.21, -0.205, -0.45)
+const CHARGE_AT := Vector3(0.17, -0.185, -0.4)
+const VENT_AT := Vector3(0.26, -0.255, -0.37)
 const AIM_D := 6.0              # at rest it points at the crosshair this far out
 const ROLL := 0.18              # radians it's canted over (its inner side and top toward you)
 const VIEW_SCALE := 0.9
@@ -106,7 +110,8 @@ var _charging := false
 var _charge := 0.0              # seconds charged
 var _blast_t := -1.0            # seconds into the fat beam (-1: none)
 var _btick := 0.0
-var _queue := []                # fat beam: [body, a, z, dir] still to bore, one a frame
+var _queue := []                # fat beam: [body, a, z, dir] still to bore, one a frame at most ...
+var _bwait := 0.0               # ... seconds till the next may be
 var _blasted := {}              # bodies the fat beam has been in (a hit-stop the first time)
 var _heat := 0.0                # 0 cold .. 1 overheated
 var _vent_t := 0.0              # seconds of venting left
@@ -139,6 +144,7 @@ var _trace_ms := 0.0
 
 func _build() -> void:
 	_tool = Node3D.new()
+	_tool.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF    # (posed every frame, under the camera)
 	view.add_child(_tool)
 	var inner := Node3D.new()
 	inner.rotation = Vector3(0, PI, 0)          # the model's emitter (+z) down the view (-z)
@@ -171,13 +177,13 @@ func _build() -> void:
 	_spot_light = OmniLight3D.new()
 	_spot_light.light_color = Color(1.0, 0.35, 0.15)
 	_spot_light.omni_range = 1.6
-	_spot_light.light_energy = 0.0
+	_spot_light.visible = false
 	_spot_light.top_level = true
 	add_child(_spot_light)
 	_lens_light = OmniLight3D.new()
 	_lens_light.light_color = Color(1.0, 0.2, 0.1)
 	_lens_light.omni_range = 1.2
-	_lens_light.light_energy = 0.0
+	_lens_light.visible = false
 	_lens_light.top_level = true
 	add_child(_lens_light)
 	# smoke and steam: one draw call
@@ -325,6 +331,7 @@ static func _aim_xf(grip: Vector3, at: Vector3, roll: float = ROLL) -> Transform
 
 func hand_mesh() -> Node3D:
 	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_hand = Node3D.new()            # shaken (the arena sets root's own transform)
 	root.add_child(_hand)
 	var inner := Node3D.new()
@@ -408,8 +415,8 @@ func on_deselect() -> void:
 	for tag in ["beam", "sizzle", "blast"]:
 		sfx_stop(tag)
 	_beam.visible = false
-	_spot_light.light_energy = 0.0
-	_lens_light.light_energy = 0.0
+	_spot_light.visible = false
+	_lens_light.visible = false
 
 # a new move: fresh numbers in last
 func _begin(move: String) -> void:
@@ -591,14 +598,15 @@ func _cut_tick() -> void:
 		_pending = spread
 	_tick = maxf(0.0, _tick + CUT_TICK)
 
-# the oldest line waiting cut; the next waits so cutting takes CUT_SHARE of the time
+# the oldest line waiting cut; the next waits so cutting takes CUT_SHARE of the time (more while many wait, so a
+# fast drag comes apart soon after the beam has passed)
 func _cut_next() -> void:
 	var t0 := Time.get_ticks_usec()
 	var ln: Array = _pending.pop_front()
 	if is_instance_valid(ln[0]):
 		_cut_one(ln[0], ln[1], ln[2])
 	var ms := (Time.get_ticks_usec() - t0) / 1000.0
-	_cut_wait = ms / 1000.0 / CUT_SHARE
+	_cut_wait = ms / 1000.0 / minf(SHARE_MAX, CUT_SHARE + 0.01 * _pending.size())
 	last.per_s = snappedf(int(last.lines) / maxf(0.1, _move_t), 0.1)
 
 func _cut_one(b: VoxelBody, a: Vector3, z: Vector3) -> void:
@@ -680,6 +688,7 @@ func _cut_fx(b: VoxelBody, res: Dictionary, dir: Vector3, fat: bool) -> void:
 func _start_blast() -> void:
 	_blast_t = 0.0
 	_btick = 0.0
+	_bwait = 0.0
 	_queue.clear()
 	_blasted.clear()
 	_kickback = 1.0
@@ -695,7 +704,7 @@ func _end_blast() -> void:
 	sfx("laser_fizzle", Vector3.INF, -8.0, 0.6)
 
 # a frame of the fat beam: to the wall through everything; a tunnel through each body in line every BLAST_TICK (one
-# body bored a frame)
+# body bored a frame at most, on a budget: a crowd in line is bored less often)
 func _blast_frame(dt: float) -> void:
 	var from := eye()
 	var dir := look()
@@ -716,7 +725,8 @@ func _blast_frame(dt: float) -> void:
 			var b: VoxelBody = cand[i][1]
 			var span := blast_span(b, float(cand[i][0]), float(wall[0]))
 			_queue.append([b, from + dir * span.x, from + dir * span.y, dir])
-	if not _queue.is_empty():
+	_bwait -= dt
+	if not _queue.is_empty() and _bwait <= 0.0:
 		var q: Array = _queue.pop_front()
 		if is_instance_valid(q[0]):
 			var t0 := Time.get_ticks_usec()
@@ -729,10 +739,10 @@ func _blast_frame(dt: float) -> void:
 			for rr in [res, res2]:
 				if int(rr.get("cut", 0)) > 0 or not (rr.get("pieces", []) as Array).is_empty():
 					_cut_fx(q[0], rr, q[3], true)
+			_bwait = (Time.get_ticks_usec() - t0) / 1000000.0 / BLAST_SHARE
 	# the scorch on the wall, the shake, the recoil
 	arena.flames.emit(_end + _end_n * 0.02, 3, _end_n * 2.2, 1.6, 0.3)
-	if not top_down():
-		arena._kick = maxf(float(arena._kick), randf_range(0.5, 0.9))
+	arena._kick = maxf(float(arena._kick), randf_range(0.3, 0.5) if top_down() else randf_range(0.5, 0.9))
 	_kickback = maxf(_kickback, randf_range(0.25, 0.45))
 	arena.avatar.recoil = maxf(float(arena.avatar.recoil), 0.6)
 
@@ -758,10 +768,11 @@ func _draw(dt: float) -> void:
 	var charge_k := clampf(_charge / CHARGE_T, 0.0, 1.0) if _charging else (1.0 if fat else 0.0)
 	_lens_light.global_position = lens
 	_lens_light.light_energy = 3.5 * charge_k * charge_k + (0.5 if _on else 0.0) + (1.5 if fat else 0.0)
+	_lens_light.visible = _lens_light.light_energy > 0.0       # (lights out of the scene when off: none to cluster)
 	_lens_light.omni_range = 2.5 if top_down() else 1.2         # (top-down: a red glow on the floor round Jared)
 	if not (_on or fat):
 		_beam.visible = false
-		_spot_light.light_energy = 0.0
+		_spot_light.visible = false
 		return
 	_beam.visible = true
 	# 4 mm across (top-down, as thick as it needs to be to show from up there); the spot bigger the further off
@@ -789,6 +800,7 @@ func _draw(dt: float) -> void:
 	_spot.scale = Vector3.ONE * spot * randf_range(0.75, 1.2)
 	_spot_light.global_position = _end + _end_n * 0.1
 	_spot_light.light_energy = (4.0 if fat else 1.4) * flick
+	_spot_light.visible = true
 	if fat:
 		return
 	# sparks off the spot (more in a body), smoke drifting up off it
@@ -1199,6 +1211,15 @@ static func checks(host: Node) -> Array:
 		"a beam off to the side or over his head isn't near him"])
 	b.queue_free()
 	b_behind.queue_free()
+	# a crowd standing just beside the beam doesn't hide the one in it further on
+	var crowd := []
+	for i in 5:
+		crowd.append(_grunt(host, m, Vector3(0.76 if i % 2 == 0 else -0.76, 0, -1.0 - i * 1.2)))
+	var b_far := _grunt(host, m, Vector3(0, 0, -7.0))
+	var h3 := first_hit(crowd + [b_far], from + Vector3(0, 0.1, 0), back, 20.0)
+	out.append([not h3.is_empty() and h3.body == b_far, "a crowd beside the beam doesn't hide the one in it"])
+	for c in crowd + [b_far]:
+		c.queue_free()
 	# dragged across the right shin: the foot comes off
 	var b2 := _grunt(host, m)
 	var s1 := _sweep(b2, Vector3(-0.45, 0.27, 2.0), Vector3(-0.02, 0.27, 2.0), back, 22, FILL_MAX)

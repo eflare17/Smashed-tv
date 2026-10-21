@@ -4,20 +4,21 @@ extends VoxelMelee
 ## pneumatic speargun held at the shoulder: a teak stock and pistol grip, a long dark barrel with a rail on top and an
 ## orange muzzle, a barbed steel harpoon lying in the rail with its point out past the muzzle, and a reel of steel line
 ## on its side (a red crank knob on it) that spins as the line pays out and as it's wound back in. Either button fires
-## the harpoon: it flies at 45 m/s where you look (a little gravity; top-down level from Jared's chest toward the
-## mouse), traced every frame into the bodies and the world, trailing its line from the muzzle (sagging a little as it
-## pays out, taut and straight while it pulls). Left click drags them to you: the harpoon sticks in the first body it
-## hits, where it hits (a small hole punched, a few cubes out), riding on that part, and the reel winds them in at 7 m/s
-## (feet dragging, a light one lifted a little off them; a brute slower) till they're 1.4 m in front of you. There the
-## barbs tear out and they're left staggering for a second, right where you can hit them. Corpses and lying pieces are
-## dragged in too. In a wall or the floor it sticks a moment, quivering, then reels back. Click again while it's out to
-## let go. Right click yanks a limb off: the harpoon goes in the same way, the line snaps taut for a quarter of a second
-## and jerks the body toward you, then the arm, forearm, hand, thigh, shin, foot or head it's in comes off whole with
-## everything below it (VoxelBody.sever; the head kills), cubes spraying from the torn joint, and comes flying at you on
-## the line till it drops at your feet. In the torso it tears a chunk out instead and the body stumbles toward you.
-## Right click while one is being dragged in yanks off whatever the harpoon is in. The harpoon can fire again 0.8 s
-## after it's back on the rail. If the body is freed mid-pull the harpoon just comes back; if the part it's in is cut
-## off by something else, it stays in that piece and pulls it in. Owned by the voxel session.
+## the harpoon: it flies at 45 m/s where you look (a little gravity; top-down from Jared's chest at the body under the
+## mouse, so a head, the legs or one lying on the floor can be picked, else level toward it), traced every frame into
+## the bodies and the world, trailing its line from the muzzle (sagging a little as it pays out, taut and straight while
+## it pulls). Left click drags them to you: the harpoon sticks in the first body it hits, where it hits (a small hole
+## punched, a few cubes out), riding on that part, and the reel winds them in at 7 m/s (feet dragging, a light one
+## lifted a little off them; a brute slower) till they're 1.4 m in front of you. There the barbs tear out and they're
+## left staggering for a second, right where you can hit them. Corpses and lying pieces are dragged in too. In a wall or
+## the floor it sticks a moment, quivering, then reels back. Click again while it's out to let go. Right click yanks a
+## limb off: the harpoon goes in the same way, the line snaps taut for a quarter of a second and jerks the body toward
+## you, then the arm, forearm, hand, thigh, shin, foot or head it's in comes off whole with everything below it
+## (VoxelBody.sever; the head kills), cubes spraying from the torn joint, and comes flying at you on the line till it
+## drops at your feet. In the torso it tears a chunk out instead and the body stumbles toward you. Right click while one
+## is being dragged in yanks off whatever the harpoon is in. The harpoon can fire again 0.8 s after it's back on the
+## rail. If the body is freed mid-pull the harpoon just comes back; if the part it's in is cut off by something else, it
+## stays in that piece and pulls it in. Owned by the voxel session.
 
 const SPEED := 45.0             # m/s the harpoon flies
 const GRAV := 2.0               # m/s/s pulling it down (first person; top-down it flies level)
@@ -250,19 +251,33 @@ func press(button: int) -> void:
 	if _mode == "ready":
 		if _cd <= 0.0:
 			fire(button == MOUSE_BUTTON_RIGHT)
+		else:
+			sfx("dry_fire", Vector3.INF, -8.0, 0.8)     # the air not pumped up yet
 		return
 	if _tug >= 0.0 or _mode == "reel":
 		return
 	if button == MOUSE_BUTTON_RIGHT and _mode == "body":
 		_start_tug()            # one being dragged in: yank off whatever it's in
-	else:
-		let_go()
+		return
+	# the barbs pulled out of what it's in
+	if _mode == "body" or _mode == "piece":
+		sfx("harpoon_rip", _p, -12.0, 1.6)
+	elif _mode == "world":
+		sfx("harpoon_clank", _p, -10.0, 1.3)
+	let_go()
 
 ## Fires the harpoon where you look (yank: the right click's, tearing off what it goes into).
 func fire(yank_it: bool) -> void:
 	var a: Array = arena._aim()
 	var e: Vector3 = eye() if a.is_empty() else a[0]
 	var f: Vector3 = look() if a.is_empty() else a[1]
+	if top_down():
+		# aimed at what's under the mouse (a head, the legs, one lying on the floor), not only level
+		var c: Camera3D = arena.cam
+		var mp := get_viewport().get_mouse_position()
+		var at := pick(arena.bodies, c.project_ray_origin(mp), c.project_ray_normal(mp))
+		if at != Vector3.INF and Vector2(at.x - e.x, at.z - e.z).length() > 0.6:
+			f = (at - e).normalized()
 	# its path is the aim's line; it's drawn leaving from where it lay in the rail, closing onto the path
 	var mz := _rail_tip()
 	var start := e + f * clampf((mz - e).dot(f), 0.2, 1.4)
@@ -292,6 +307,20 @@ func fire(yank_it: bool) -> void:
 		_vis = Vector3.ZERO
 		_hit(h)
 	_place_proj()
+
+## The point on the first body along the ray from o along d (static, for the checks): where it goes in, a little
+## deeper; INF if none. Top-down, the camera's ray through the mouse picks what the harpoon is aimed at.
+static func pick(bodies: Array, o: Vector3, d: Vector3) -> Vector3:
+	var best := 60.0
+	var at := Vector3.INF
+	for b in bodies:
+		if not is_instance_valid(b):
+			continue
+		var h: Dictionary = b.trace(o, d, best)
+		if not h.is_empty() and float(h.dist) < best:
+			best = float(h.dist)
+			at = (h.point as Vector3) + d * 0.05
+	return at
 
 ## Lets go of whatever the harpoon is in (or stops its flight): it's reeled back empty.
 func let_go() -> void:
@@ -495,6 +524,7 @@ func _hit_body(b: VoxelBody, h: Dictionary, dir: Vector3) -> void:
 	arena._kick = maxf(float(arena._kick), 0.45)
 	if bool(res.get("shattered", false)):
 		spray(res, dir, 3.0)    # frozen: the statue bursts
+		sfx("shatter", h.point)
 		let_go()
 		return
 	spray(res, -dir, 1.4)       # the cubes out of the hole, back toward you
@@ -578,7 +608,12 @@ func _body_step(dt: float) -> bool:
 	if _tug >= 0.0:
 		return _tug_step(dt)
 	var before := _body.position
-	var done := drag(_body, arena.player.global_position, DRAG_V * float(HEFT.get(_body.key, 1.0)), DRAG_TO, dt)
+	var to: Vector3 = arena.player.global_position
+	if not _body.alive and not _body.fragment and _body.parts.has("torso") and not bool(_body.parts.torso.gone):
+		# a corpse lies out from its feet: its middle is what's brought up in front of you, so it never ends up under you
+		var mid := joint(_body, "torso")
+		to -= Vector3(mid.x - _body.position.x, 0.0, mid.z - _body.position.z)
+	var done := drag(_body, to, DRAG_V * float(HEFT.get(_body.key, 1.0)), DRAG_TO, dt)
 	_dragged += Vector2(_body.position.x - before.x, _body.position.z - before.z).length()
 	last.dragged_m = snappedf(_dragged, 0.1)
 	_dragging = _dragged > 0.0 and not done
@@ -600,9 +635,11 @@ func _arrived() -> void:
 	var t0 := Time.get_ticks_usec()
 	var res := b.carve(_p, _p, 0.03, 0.05, 1)
 	_note_ms(t0)
+	last.cut = int(last.cut) + int(res.cut)
+	last.killed = bool(last.killed) or bool(res.killed)
 	spray(res, to.normalized(), 1.8)
 	_fling_res(b, res, to.normalized() * 2.0, 4.0)
-	sfx("harpoon_rip", _p, -8.0, 1.3)
+	sfx("shatter" if bool(res.get("shattered", false)) else "harpoon_rip", _p, -8.0, 1.3)
 	arena._kick = maxf(float(arena._kick), 0.3)
 	let_go()
 
@@ -693,6 +730,7 @@ func _tear() -> void:
 	_kick = 1.2
 	if bool(res.get("shattered", false)):
 		spray(res, to_me, 3.0)
+		sfx("shatter", _p)
 		let_go()
 		return
 	spray(res, to_me, 2.6)
@@ -940,7 +978,8 @@ static func _fly_till(st: Dictionary, bodies: Array, n: int) -> Array:
 ## A grunt at the origin facing +z (chest at about y 1.0, head 1.43-1.8): fired at from 6 m it hits the chest and
 ## sticks (a small hole), the point riding on the part as the body moves; dragged in from 6 m (and a corpse); the
 ## nearer of two in a row is the one hit; yanking a forearm, an arm, a thigh, a shin, a hand, the head off; a chest
-## chunk; a frozen one shattering; the floor; the line running out; the part cut off and the body freed.
+## chunk; a frozen one shattering; the floor; the line running out; a corpse picked top-down; the part cut off and the
+## body freed.
 static func checks(host: Node) -> Array:
 	var out := []
 	var imm := VoxelBody.immortal
@@ -1056,6 +1095,23 @@ static func checks(host: Node) -> Array:
 	h = fl[0]
 	out.append([String(h.get("kind", "")) == "end" and absf(float(sr.dist) - RANGE) < SPEED / 60.0 + 0.01,
 		"the line runs out at %.1f m" % float(sr.dist)])
+	# top-down: a corpse lying on the floor, picked by a ray from the camera up behind, the harpoon flown down into it
+	# from Jared's chest
+	var bc := _grunt(host, Vector3(44, 0, 0))
+	made.append(bc)
+	bc.hurt(500.0)
+	bc.dead_t = 1.0
+	bc.animate(0.0, false)
+	var tc := joint(bc, "torso")
+	var chest := Vector3(44, 1.2, 4.0)
+	var cam_at := chest + Vector3(0, 12.0, 6.0)
+	var pk := pick([bc], cam_at, (tc - cam_at).normalized())
+	var hit_c := false
+	if pk != Vector3.INF:
+		fl = _fly_till(launch_state(chest, (pk - chest).normalized() * SPEED, 0.0), [bc], 60)
+		h = fl[0]
+		hit_c = String(h.get("kind", "")) == "body" and h.body == bc
+	out.append([pk != Vector3.INF and pk.y < 0.5 and hit_c, "top-down: a corpse lying under the mouse is picked (y %.2f) and harpooned" % pk.y])
 	# the part it's in cut off, or the body freed: it lets go
 	var bx := _grunt(host, Vector3(40, 0, 0))
 	var before := ride(bx, "forearm_l", Vector3.ZERO, Vector3.FORWARD)

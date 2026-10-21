@@ -42,12 +42,14 @@ def build():
     quiver = twang(410, 0.5, 0.3, 0.03) * (0.6 + 0.4 * np.sin(2 * np.pi * 38 * t(0.5)))
     save("harpoon_clank", mix(click(0.025, 3500, 0.005) * 1.2, ring * 0.5, quiver * 0.35,
                               band(noise(0.08), 1500, 7000) * env(int(0.08 * SR), 0.0005, 0.03, 6) * 0.6), peak=0.75)
-    # reeling in: a pawl ratcheting over the gear (28 clicks a second, a whole number in the loop) over a whir
-    secs = 1.0
+    # reeling in: a pawl ratcheting over the gear (28 clicks a second) over a whir, all of it repeating every second;
+    # made 0.05 s longer, as save() cross-fades the first 0.05 s into the end, so the clicks keep time over the loop
+    secs = 1.05
     rat = np.zeros(int(secs * SR))
-    for i in range(28):
-        c = click(0.012, 2600 + 300 * (i % 3), 0.0025) * (0.75 + 0.25 * (i % 2))
-        k = int(i * secs * SR / 28)
+    for i in range(30):
+        j = i % 28
+        c = click(0.012, 2600 + 300 * (j % 3), 0.0025) * (0.75 + 0.25 * (j % 2))
+        k = int(i * SR / 28)
         rat[k:k + len(c)] += c[:len(rat) - k]
     x = t(secs)
     whir = tone(150, secs, "saw") * 0.18 + tone(300, secs) * 0.1 + band(noise(secs), 900, 3000) * 0.25 * (1 + 0.3 * np.sin(2 * np.pi * 14 * x))
