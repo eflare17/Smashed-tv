@@ -194,6 +194,37 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
 - Not done yet: lag compensation (the guest's shots land where the host has the enemies, 0.1 s on); the harpoon's
   and gravity gun's held pieces only roughly follow on the guest; resources the guest vacuums up aren't counted.
 
+### Backpack and chests (21 Oct, the owner's Stage 2: "a proper inventory", "storage chests/cabinets")
+
+- The vacuum no longer just counts: every cube it takes goes into the **backpack** (`VoxelInventory`, 24 slots) as an
+  item by its colour (`voxel_items.gd`: rubble, meat, bone, brain, charred bits; stacks of 9999, since one grunt is
+  ~28,000 cubes). Full: the vacuum stops and says so. Later stages add their items to `VoxelItems.ITEMS`.
+- **Chests and a cabinet** (`voxel_storage.gd`) against the north wall: two wooden chests (18 slots, a lid on hinges)
+  and a steel cabinet (27 slots, two doors). Solid: players bump into them, enemies walk round them (they're in
+  `VoxelArena.blocks`, beside the pillars). Look at one within reach: "E  open Chest"; E opens it (the lid swings up
+  while either player has it open), the inventory screen showing it above the backpack. Elsewhere E is still the
+  vacuum.
+- **The screen** (`voxel_inventory_ui.gd`): Tab or I the backpack alone; left click pick up / put down / swap, right
+  click half / one, shift+click straight across, a click outside the panels drops what's in your hand on the floor as
+  its cubes (the vacuum takes them back), Tab / E / Esc close it, walking away from the chest closes it. No weapons
+  while it's open.
+- **Saved** (`voxel_storages.gd`): the backpack and the chests to `user://voxel_arena_save.json` (on Windows
+  `%APPDATA%\Godot\app_userdata\Smashed TV\`) a moment after a change and at quit; loaded at start. The self-tests
+  don't save (`--nosave`; `--save=path` for another file).
+- **Co-op**: the host's chests are the real ones. A guest's moves go to the host as requests (take this, put this
+  there) and come back as a "give" of what ends up in their hand or backpack, so nothing is made twice when both are
+  at one chest; every change to a chest goes to the guest whole. A guest's own chests are kept as they were while in
+  someone else's game. The corpses and pieces a guest vacuums are given to the guest by the host (Stage 1 left that
+  out), each player's vacuum clears the same lying cubes in the other's game (brush messages, 10 a second), and a stack
+  dropped falls in both games the same way (a shared seed).
+- The ENet guest now tries again with a fresh socket every 3 s until the host answers (status "try N"): pressing F8
+  before your mate has pressed Shift+F7 just waits.
+- Tests: `test/voxel/inventory_test.gd` (29 checks alone; with `--host` / `--join` 3 + 9 co-op checks);
+  `test/voxel/inventory_shots.gd` (screenshots under a display: `voxel_shots/inv_wall.png`, `inv_chest_open.png`,
+  `inv_cabinet_open.png`, `inv_backpack.png`). The two-copy tests now give up on linking by real time (with
+  `--fixed-fps` the games run several times faster than real time, so a game-time limit could end the host before the
+  guest came).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

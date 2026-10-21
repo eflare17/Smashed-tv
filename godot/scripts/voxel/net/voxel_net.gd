@@ -864,6 +864,7 @@ func _message(m: Array) -> void:
 		"H":
 			if role == "host":
 				_send_world()
+				arena.stash.send_all()
 		"W":
 			_world(m[1], m[2])
 			arena.wave = int(m[3])
@@ -893,7 +894,9 @@ func _message(m: Array) -> void:
 				b2.hp = float(m[4])
 		"V":
 			if role == "host":
-				arena.pieces.vacuum(m[1], float(m[2]))
+				arena.pieces.vacuum(m[1], float(m[2]), true)
+		"S":
+			arena.stash.on_net(m.slice(1))
 		"X":
 			if role == "host":
 				arena.spawn(clampi(int(m[1]), 1, 40))
@@ -912,6 +915,11 @@ func send_hitstop(pid: int, secs: float, scale: float) -> void:
 func request_more(n: int) -> void:
 	if role == "guest" and linked:
 		_send(["X", n])
+
+## The chests' and backpacks' messages (VoxelStorages), either way, reliable.
+func send_storage(m: Array) -> void:
+	if linked:
+		_send(["S"] + m)
 
 ## A guest's vacuum on pieces and corpses: the host's vacuum takes them.
 func send_vac(brush: Vector3, r: float) -> void:

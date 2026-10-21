@@ -29,12 +29,13 @@ var _lp := PackedVector3Array()
 var _lc := PackedColorArray()
 var _ln := 0
 var _cells := {}                      # 1 m floor cell -> PackedInt32Array of lying cubes there
-var _kind := {}                       # colour (rgba32) -> resource name
 var nozzle := Vector3.ZERO            # where sucked-up cubes go in
 var brush := Vector3.INF              # the brush's centre, INF: not sucking
 var brush_r := 0.8                    # its radius, metres
 var _budget := 0.0                    # cubes the brush may still pull loose this frame
-var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0}
+var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0, "charred": 0}    # everything ever sucked up (the HUD)
+## Each cube sucked up, as an item for the backpack: func(item id, n) -> how many didn't fit (VoxelItems.of_colour).
+var on_take: Callable
 var bound := INF                      # metres from the middle (x and z) the walls stop flying cubes at
 ## A black hole (the gravity gun): flying cubes within well_r of well are pulled in (no falling near it), lying ones
 ## lift off toward it (a few hundred a frame), and at well_eat they're crushed to nothing. INF: none.
@@ -70,11 +71,6 @@ func setup(cube_m: float) -> void:
 	add_child(_lie)
 	_lp.resize(MAX_LIE)
 	_lc.resize(MAX_LIE)
-	for c in VoxelBody.FLESH:
-		_kind[(c as Color).to_rgba32()] = "meat"
-	for c in VoxelBody.BRAIN:
-		_kind[(c as Color).to_rgba32()] = "brain"
-	_kind[VoxelBody.BONE.to_rgba32()] = "bone"
 
 static func _mm(bm: Mesh, n: int) -> MultiMesh:
 	var mm := MultiMesh.new()
@@ -91,10 +87,50 @@ func count() -> int:
 func lying() -> int:
 	return _ln
 
-## Counts a cube picked up, by its colour.
+## A cube picked up (by its colour: what item it is), into the backpack.
 func take(col: Color, n: int = 1) -> void:
-	var k: String = _kind.get(col.to_rgba32(), "blocks")
-	got[k] = int(got[k]) + n
+	var k := VoxelItems.of_colour(col)
+	got[k] = int(got.get(k, 0)) + n
+	if on_take.is_valid():
+		on_take.call(k, n)
+
+## The lying cubes within r metres of centre gone, up to cap, nearest first, counted for nobody (the other player's
+## vacuum took them in their game). Returns how many.
+func clear_near(centre: Vector3, r: float, cap: int) -> int:
+	if _ln == 0 or cap <= 0:
+		return 0
+	var near := []
+	var rc := ceili(r)
+	var cx := floori(centre.x)
+	var cz := floori(centre.z)
+	var r2 := r * r
+	for dz in range(-rc, rc + 1):
+		for dx in range(-rc, rc + 1):
+			var k := (cx + dx + 1024) * 4096 + (cz + dz + 1024)
+			if not _cells.has(k):
+				continue
+			for i in (_cells[k] as PackedInt32Array):
+				var d2 := _lp[i].distance_squared_to(centre)
+				if d2 <= r2:
+					near.append(Vector2(d2, i))
+	near.sort()
+	var take_i := []
+	for j in mini(cap, near.size()):
+		take_i.append(int(near[j].y))
+	take_i.sort()
+	take_i.reverse()
+	for i in take_i:
+		_unlay(i)
+	return take_i.size()
+
+## n cubes of a colour thrown out from at along dir (a stack dropped from the backpack); they land and lie there.
+## The same seed throws them the same way (co-op: they land in the same places in both games).
+func throw(at: Vector3, dir: Vector3, col: Color, n: int, seed: int = 0) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed if seed != 0 else randi()
+	for j in n:
+		var v := dir * rng.randf_range(1.5, 3.5) + Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(0.5, 2.0), rng.randf_range(-0.8, 0.8))
+		_add(at + Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1)), v, col, 0)
 
 ## Flings cubes out from where they were: bits = [{pos, col}], out along dir (the shot), with some spread.
 func burst(bits: Array, dir: Vector3, power: float = 3.5) -> void:

@@ -6,12 +6,18 @@ extends NetTransport
 ## Owned by the voxel session.
 
 const PORT := 24643
+const RETRY := 3.0              # seconds a guest's try waits for an answer before starting again (a fresh socket)
 
 var port := PORT
 var _enet: ENetConnection
 var _peer: ENetPacketPeer
 var _role := ""
 var _open := false
+var _addr := ""
+var _port := PORT
+var _tries := 0
+var _try_t := 0.0
+var _clock := 0.0
 
 func kind() -> String:
 	return "Direct"
@@ -37,11 +43,24 @@ func join(code: String) -> void:
 		addr = hp[0]
 		if hp.size() > 1 and hp[1].is_valid_int():
 			p = int(hp[1])
+	_addr = addr
+	_port = p
+	_tries = 0
+	_try()
+	opened.emit(code)
+
+# one go at reaching the host, on a fresh socket (tried again every RETRY seconds till it answers: F8 pressed before
+# the host was up just waits)
+func _try() -> void:
+	if _enet:
+		_enet.destroy()
+	_peer = null
+	_tries += 1
+	_try_t = 0.0
 	_enet = ENetConnection.new()
 	_enet.create_host(1, 2)
-	_peer = _enet.connect_to_host(addr, p, 2)
-	status.emit("connecting to %s:%d…" % [addr, p], "")
-	opened.emit(code)
+	_peer = _enet.connect_to_host(_addr, _port, 2)
+	status.emit("connecting to %s:%d…%s" % [_addr, _port, "" if _tries == 1 else " (try %d)" % _tries], "")
 
 func is_open() -> bool:
 	return _open
@@ -57,6 +76,13 @@ func send_fast(data: PackedByteArray) -> void:
 func poll() -> void:
 	if _enet == null:
 		return
+	var now := Time.get_ticks_msec() / 1000.0
+	var dt := clampf(now - _clock, 0.0, 0.5) if _clock > 0.0 else 0.0
+	_clock = now
+	if _role == "guest" and not _open:
+		_try_t += dt
+		if _try_t > RETRY:
+			_try()
 	while true:
 		var ev := _enet.service()
 		var type: int = ev[0]

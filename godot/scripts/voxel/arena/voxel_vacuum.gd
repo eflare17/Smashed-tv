@@ -85,11 +85,15 @@ func step(dt: float, out: bool, sucking: bool) -> void:
 	_smat.set_shader_parameter("strength", 0.9 if sucking else 0.3)
 	if _glow:
 		(_glow.material_override as StandardMaterial3D).emission_energy_multiplier = 4.0 if sucking else 1.2
+	if sucking and arena.backpack_full():
+		sucking = false               # (nowhere to put it: the HUD says so)
+		arena.say("Backpack full: empty it into a chest (E at one)", 1.0)
 	if not sucking:
 		debris.brush = Vector3.INF
 		arena.sound.stop("vacuum")
 		return
 	arena.sound.loop("vacuum", "vacuum_loop", null, -6.0)
+	arena.stash.vac_brush(at, brush_r)     # (co-op: the same lying cubes go in the other game)
 	debris.nozzle = nozzle
 	debris.brush = at
 	debris.brush_r = brush_r

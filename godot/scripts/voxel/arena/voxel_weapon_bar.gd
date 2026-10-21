@@ -79,8 +79,7 @@ func _draw() -> void:
 			_icon(String(s.id), Rect2(r.position + Vector2(5, 5), r.size - Vector2(10, 16)), Color(1, 1, 1, 0.95 if sel else 0.55))
 			var label := ""
 			if s.id == "vacuum" and arena:
-				var got: Dictionary = arena.debris.got
-				label = str(int(got.blocks) + int(got.meat) + int(got.bone) + int(got.brain))
+				label = str(arena.inv.total())          # (what's in the backpack)
 			elif arena and arena.melee.has(s.id):
 				label = arena.melee[s.id].bar_text()
 			if label != "":

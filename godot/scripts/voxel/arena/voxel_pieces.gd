@@ -181,8 +181,10 @@ func from_fragment(b: VoxelBody) -> void:
 	b.queue_free()
 
 ## The vacuum gun's brush (a sphere at brush, r metres): pieces, fragments and corpses inside it come apart into their
-## cubes, which go up the beam.
-func vacuum(brush: Vector3, r: float) -> void:
+## cubes, which go up the beam. for_other: the other player's vacuum (the host's game, for a guest): what was in them
+## is given to them (VoxelStorages.give_other), none of it flies here.
+func vacuum(brush: Vector3, r: float, for_other := false) -> void:
+	var theirs := {}                     # item id -> how many (for_other)
 	if puppet:
 		if arena.net:
 			arena.net.send_vac(brush, r)      # (a guest's: the host's vacuum takes them, for this player)
@@ -202,10 +204,12 @@ func vacuum(brush: Vector3, r: float) -> void:
 		if not near:
 			continue
 		var counts := {}
-		arena.debris.suck(b.cubes(400, counts))
-		for v in counts:
-			var k := int(v) - 1
-			arena.debris.take(Color8((k >> 16) & 255, (k >> 8) & 255, k & 255), int(counts[v]))
+		var bits: Array = b.cubes(400, counts)
+		if for_other:
+			_count_into(theirs, bits, counts)
+		else:
+			arena.debris.suck(bits)
+			_take(counts)
 		arena.bodies.erase(b)
 		b.queue_free()
 	for i in range(_pieces.size() - 1, -1, -1):
@@ -218,12 +222,31 @@ func vacuum(brush: Vector3, r: float) -> void:
 		# a few hundred fly in; the rest count straight away, a colour at a time
 		var counts := {}
 		var bits := cubes_of(pc, 400, counts)
-		arena.debris.suck(bits)
-		for v in counts:
-			var k := int(v) - 1
-			arena.debris.take(Color8((k >> 16) & 255, (k >> 8) & 255, k & 255), int(counts[v]))
+		if for_other:
+			_count_into(theirs, bits, counts)
+		else:
+			arena.debris.suck(bits)
+			_take(counts)
 		rb.queue_free()
 		_pieces.remove_at(i)
+	if for_other and not theirs.is_empty():
+		arena.stash.give_other(theirs)
+
+# cubes counted by cell value (a colour + 1) into the backpack, a colour at a time
+func _take(counts: Dictionary) -> void:
+	for v in counts:
+		var k := int(v) - 1
+		arena.debris.take(Color8((k >> 16) & 255, (k >> 8) & 255, k & 255), int(counts[v]))
+
+# a guest's share: the cubes that would have flown plus the ones counted, as items
+static func _count_into(out: Dictionary, bits: Array, counts: Dictionary) -> void:
+	for bt in bits:
+		var id := VoxelItems.of_colour(bt.col)
+		out[id] = int(out.get(id, 0)) + 1
+	for v in counts:
+		var k := int(v) - 1
+		var id2 := VoxelItems.of_colour(Color8((k >> 16) & 255, (k >> 8) & 255, k & 255))
+		out[id2] = int(out.get(id2, 0)) + int(counts[v])
 
 ## A piece's cubes where they are now: [{pos, col}]; with most > 0 only about that many, spread through it, the rest
 ## counted into counts (cell value -> how many).

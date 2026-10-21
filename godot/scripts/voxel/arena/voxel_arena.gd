@@ -7,7 +7,8 @@ extends Node3D
 ## The top left shows what it costs (frame rate, frame time, draw calls, triangles, cubes flying, meshing jobs).
 ## Owned by the voxel session. Desktop renderer (Forward+); the Windows build boots straight into this scene.
 ##
-## Keys: WASD move, mouse look, 1-5 the weapon groups (melee, guns, special, explosives, the vacuum; the key again for
+## Keys: Tab (or I) the backpack, E at a chest or cabinet opens it (elsewhere: the vacuum and back), WASD move, mouse
+## look, 1-5 the weapon groups (melee, guns, special, explosives, the vacuum; the key again for
 ## the next one in it), the wheel, Q the last weapon, both mouse buttons the weapon's own two moves, R reload,
 ## Shift run, Space jump, V top-down / first person, F1 shadows, F2 cube size (1 or 2 sprite pixels a cube), F3 ten
 ## more enemies, F4 freeze them, F5 a big wave (40), Esc frees the mouse (click to grab it again).
@@ -97,6 +98,18 @@ var _hp_label: Label
 var _vignette: ColorRect
 var _down_label: Label
 var net = null                  # VoxelNet when playing with someone (null alone)
+## The backpack, the chests and the screen to move things between them (the owner, 21 Oct, Stage 2: "a proper
+## inventory" in place of the vacuum's counts, and storage chests/cabinets).
+var inv := VoxelInventory.new(24)
+var stash: VoxelStorages
+var inv_ui: VoxelInventoryUI
+static var blocks := []         # walkers kept out of these too, like the pillars: [centre, half x, half z] (the chests)
+var _near_st: VoxelStorage      # the chest the player is at (E opens it)
+var _use_label: Label
+var _say_label: Label
+var _say_t := 0.0
+var lost := 0                   # cubes sucked up with the backpack full (gone)
+var hold_suck := false          # (tests: the vacuum's click held down)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
@@ -156,6 +169,17 @@ func _ready() -> void:
 	pieces = VoxelPieces.new()
 	add_child(pieces)
 	pieces.setup(self)
+	debris.on_take = _on_take
+	stash = VoxelStorages.new()
+	add_child(stash)
+	stash.setup(self)
+	blocks = stash.blocks()
+	# saved between games (not the self-tests'; --save=path elsewhere, --nosave never)
+	var testing := false
+	for t in ["auto", "meleetest", "weaponshots", "swordtest", "walkcheck", "nosave", "secs"]:
+		testing = testing or _opts.has(t)
+	stash.save_path = String(_opts.get("save", "")) if _opts.has("save") else ("" if testing else VoxelStorages.SAVE_PATH)
+	stash.load_save()
 	var have := []
 	me = VoxelShooter.local_for(self)
 	for id in MELEE:
@@ -179,6 +203,9 @@ func _ready() -> void:
 	bar = VoxelWeaponBar.new()
 	_hud_layer.add_child(bar)
 	bar.setup(loadout, self)
+	inv_ui = VoxelInventoryUI.new()
+	_hud_layer.add_child(inv_ui)
+	inv_ui.setup(self, inv)
 	_warm_up()
 	net = VoxelNet.new()
 	add_child(net)
@@ -346,7 +373,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   E vacuum   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "Tab backpack   E open a chest (or the vacuum)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -400,6 +427,28 @@ func _hud() -> void:
 	_down_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_down_label.add_theme_constant_override("outline_size", 7)
 	cl.add_child(_down_label)
+	# "E  open Chest" in the middle when at one; a message line under it (the backpack full)
+	_use_label = Label.new()
+	_use_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_use_label.offset_top = 30
+	_use_label.offset_left = -250
+	_use_label.offset_right = 250
+	_use_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_use_label.add_theme_font_size_override("font_size", 20)
+	_use_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_use_label.add_theme_constant_override("outline_size", 6)
+	cl.add_child(_use_label)
+	_say_label = Label.new()
+	_say_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_say_label.offset_top = 70
+	_say_label.offset_left = -400
+	_say_label.offset_right = 400
+	_say_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_say_label.add_theme_font_size_override("font_size", 18)
+	_say_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_say_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_say_label.add_theme_constant_override("outline_size", 6)
+	cl.add_child(_say_label)
 
 # ---------------------------------------------------------------- enemies
 
@@ -487,6 +536,116 @@ func _health_step(dt: float) -> void:
 			_down_label.text = "your mate is DOWN — stand by them to get them up"
 		else:
 			_down_label.text = ""
+
+# ---------------------------------------------------------------- the backpack and the chests
+
+## The inventory screen: the backpack, with a chest or cabinet above it (null: the backpack alone).
+func open_inventory(st: VoxelStorage) -> void:
+	_let_go()
+	if not top_down:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	inv_ui.open(st)
+	if st:
+		st.open_here = true
+		stash.open_changed(st)
+	else:
+		sound.play("bag_open", Vector3.INF, -6.0)
+
+func close_inventory() -> void:
+	var st := inv_ui.storage
+	inv_ui.close()
+	if st:
+		st.open_here = false
+		stash.open_changed(st)
+	if not top_down and not _opts.has("auto"):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+# which chest the player is at (E opens it), and the screen shut if they walk off from the open one
+func _storage_step(dt: float) -> void:
+	_say_t = maxf(0.0, _say_t - dt)
+	_say_label.text = _say_text if _say_t > 0.0 else ""
+	if inv_ui.is_open():
+		_use_label.text = ""
+		var st := inv_ui.storage
+		if st and st.front().distance_to(player.global_position) > 2.6:
+			close_inventory()
+		return
+	if top_down:
+		var pp := player.global_position + Vector3(0, 1.0, 0)
+		var at := _mouse_floor()
+		var dir := (Vector3(at.x, pp.y, at.z) - pp).normalized() if at != Vector3.INF else -cam.global_transform.basis.z
+		_near_st = stash.pick(pp, dir, 1.4)
+	else:
+		_near_st = stash.pick(cam.global_position, -cam.global_transform.basis.z)
+	_use_label.text = ("E  open %s" % _near_st.title) if (_near_st and down_t <= 0.0) else ""
+	if down_t > 0.0:
+		_near_st = null
+
+var _say_text := ""
+## A line in the middle of the screen for a moment.
+func say(text: String, secs := 2.0) -> void:
+	_say_text = text
+	_say_t = secs
+
+## Nothing more of what the vacuum takes would fit.
+func backpack_full() -> bool:
+	for id in ["meat", "bone", "brain", "blocks", "charred"]:
+		if inv.room_for(id) > 0:
+			return false
+	return true
+
+# a cube the vacuum took, into the backpack
+func _on_take(id: String, n: int) -> void:
+	var left := inv.add(id, n)
+	if left > 0:
+		lost += left
+		say("Backpack full: empty it into a chest (E at one)", 1.5)
+
+## A stack given to this player (co-op: by the host, for a chest move or the corpses their vacuum took): into the
+## hand (where "cursor") or the backpack; what doesn't fit back in the open chest, or on the floor.
+func receive(stack: Dictionary, where: String) -> void:
+	var left := stack
+	if where == "cursor":
+		left = inv_ui.receive_to_cursor(stack)
+	if left.is_empty():
+		return
+	var n := inv.add(left.id, int(left.n))
+	if n > 0:
+		if inv_ui.storage:
+			stash.add(inv_ui.storage, {"id": left.id, "n": n})
+		else:
+			drop_stack({"id": left.id, "n": n})
+
+## A stack thrown on the floor in front of the player, as its cubes (the vacuum takes them back).
+func drop_stack(stack: Dictionary) -> void:
+	if stack.is_empty() or int(stack.n) <= 0:
+		return
+	var at: Vector3
+	var dir: Vector3
+	if top_down:
+		var pp := player.global_position + Vector3(0, 1.0, 0)
+		var m := _mouse_floor()
+		dir = (Vector3(m.x, pp.y, m.z) - pp).normalized() if m != Vector3.INF else Vector3.FORWARD
+		at = pp + dir * 0.5
+	else:
+		dir = -cam.global_transform.basis.z
+		dir = Vector3(dir.x, 0.0, dir.z).normalized()
+		at = cam.global_position + dir * 0.6 + Vector3.DOWN * 0.4
+	var seed := randi() | 1
+	drop_cubes(at, dir, String(stack.id), int(stack.n), seed)
+	stash.dropped(at, dir, String(stack.id), int(stack.n), seed)
+	sound.play("cubes_fall", at, -4.0)
+
+func drop_cubes(at: Vector3, dir: Vector3, id: String, n: int, seed: int = 0) -> void:
+	debris.throw(at, dir, VoxelItems.colour(id), n, seed)
+
+func _backpack_line() -> String:
+	var parts := []
+	for id in VoxelItems.ITEMS:
+		var c := inv.count(id)
+		if c > 0:
+			parts.append("%d %s" % [c, VoxelItems.name_of(id).to_lower()])
+	return ", ".join(parts) if not parts.is_empty() else "empty"
 
 # F3 / F5: n more enemies (a co-op guest asks the host)
 func _more(n: int) -> void:
@@ -577,6 +736,7 @@ func _respawn_all() -> void:
 	debris.setup(_cube_m("grunt"))
 	debris.bound = ARENA - 0.5 - _cube_m("grunt")
 	debris.got = got
+	debris.on_take = _on_take
 	spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
@@ -608,7 +768,14 @@ func _unhandled_input(e: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		_ignore[e.button_index] = true
 	elif e is InputEventKey and e.pressed and not e.echo:
+		if inv_ui.is_open():
+			# the inventory screen open: these close it, the rest do nothing
+			if e.physical_keycode in [KEY_TAB, KEY_I, KEY_E, KEY_ESCAPE]:
+				close_inventory()
+			return
 		match e.physical_keycode:
+			KEY_TAB, KEY_I:
+				open_inventory(null)
 			KEY_F:
 				_sword_key(false)
 			KEY_C:
@@ -623,8 +790,11 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
 			KEY_E:
-				var vi := loadout.index_of("vacuum")
-				_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
+				if _near_st:
+					open_inventory(_near_st)
+				else:
+					var vi := loadout.index_of("vacuum")
+					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				if _prompt:
@@ -954,7 +1124,7 @@ func _physics_process(dt: float) -> void:
 			var push := out - b.position
 			var side := Vector3(-push.z, 0.0, push.x).normalized()
 			var c: Vector3 = PILLARS[0]
-			for pc: Vector3 in PILLARS:
+			for pc: Vector3 in PILLARS + blocks.map(func(bk): return bk[0]):
 				if Vector2(pc.x - out.x, pc.z - out.z).length() < Vector2(c.x - out.x, c.z - out.z).length():
 					c = pc
 			var toward := side.dot(to.normalized())
@@ -1031,15 +1201,21 @@ static func out_of_pillars(p: Vector3, r: float) -> Vector3:
 	if p.y > 3.5:
 		return p
 	for c: Vector3 in PILLARS:
-		var dx := p.x - c.x
-		var dz := p.z - c.z
-		var h := PILLAR_HALF + r
-		if absf(dx) < h and absf(dz) < h:
-			# out the nearest face
-			if h - absf(dx) < h - absf(dz):
-				p.x = c.x + h * (1.0 if dx >= 0.0 else -1.0)
-			else:
-				p.z = c.z + h * (1.0 if dz >= 0.0 else -1.0)
+		p = _out_of_box(p, c, PILLAR_HALF + r, PILLAR_HALF + r)
+	if p.y < 1.9:
+		for bk in blocks:
+			p = _out_of_box(p, bk[0], float(bk[1]) + r, float(bk[2]) + r)
+	return p
+
+# p out of a level box round c (half sizes hx, hz) by its nearest face
+static func _out_of_box(p: Vector3, c: Vector3, hx: float, hz: float) -> Vector3:
+	var dx := p.x - c.x
+	var dz := p.z - c.z
+	if absf(dx) < hx and absf(dz) < hz:
+		if hx - absf(dx) < hz - absf(dz):
+			p.x = c.x + hx * (1.0 if dx >= 0.0 else -1.0)
+		else:
+			p.z = c.z + hz * (1.0 if dz >= 0.0 else -1.0)
 	return p
 
 func _process(dt: float) -> void:
@@ -1124,6 +1300,7 @@ func _process(dt: float) -> void:
 	_mouse_v *= exp(-dt * 14.0)
 	_weapons_step(dt)
 	_health_step(dt)
+	_storage_step(dt)
 	for b in bodies:
 		if not guest and not b.fragment and (b.airborne or b.stagger > 0.0 or not b.alive):
 			b.position = out_of_pillars(b.position, 0.3)     # (flying, dragged, held, pulled after the weapons moved them)
@@ -1186,8 +1363,12 @@ func _shoot(dt: float) -> void:
 		_let_go()                   # (down: no weapons; buttons held are let go)
 		return
 	if not _opts.has("swordtest"):
-		_sucking = false
+		_sucking = hold_suck
 	_aiming = false
+	if inv_ui.is_open():
+		_let_go()                   # (the inventory screen: the mouse is for that)
+		_clicked.clear()
+		return
 	_fire_cd = maxf(0.0, _fire_cd - dt)
 	_sg_cd = maxf(0.0, _sg_cd - dt)
 	if _opts.has("auto"):
@@ -1234,7 +1415,7 @@ func _shoot(dt: float) -> void:
 	if not loadout.usable():
 		return
 	if id == "vacuum" and not _opts.has("swordtest"):
-		_sucking = lmb
+		_sucking = lmb or hold_suck
 
 # F (or a mouse side button): a sword slash the way the mouse was moving, whatever is out; C: a chop (top-down: a
 # low sweep at the legs)
@@ -1469,7 +1650,7 @@ func _hud_text() -> void:
 			alive += 1
 		tris += b.triangles()
 	var fps := Engine.get_frames_per_second()
-	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s\n%s   cubes lying %s   pieces %d   sucked up: %d blocks  %d meat  %d bone  %d brain" % [
+	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s\n%s   cubes lying %s   pieces %d   backpack: %s   (Tab)" % [
 		fps, 1000.0 / maxf(1.0, fps), _code_ms + debris.last_ms,
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		_k(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)), _k(tris),
@@ -1477,7 +1658,7 @@ func _hud_text() -> void:
 		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
 		RenderingServer.get_current_rendering_method(),
 		("%d %s" % [loadout.current + 1, loadout.slot().name]) + ("  (brush %.1f m)" % vacuum.brush_r if loadout.id() == "vacuum" else ""), _k(debris.lying()), pieces.count(),
-		debris.got.blocks, debris.got.meat, debris.got.bone, debris.got.brain]
+		_backpack_line()]
 
 static func _k(n: int) -> String:
 	return "%.1fk" % (n / 1000.0) if n >= 1000 else str(n)

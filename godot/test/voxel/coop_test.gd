@@ -43,7 +43,7 @@ func _process(dt: float) -> bool:
 		_play(dt)                    # (--early: the host fights alone first; the guest joins mid-fight)
 		return false
 	if not _ready_to_play() and started < 0.0:
-		if t > 40.0:
+		if Time.get_ticks_msec() > 60000:          # (real time: --fixed-fps runs faster than that)
 			print("COOP %s FAIL: never linked (%s)" % [role, arena.net.status_text])
 			return true
 		return false

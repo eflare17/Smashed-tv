@@ -109,7 +109,7 @@ func _coop() -> bool:
 	if step > 0 and not n.linked:
 		step = 9                         # (the other one finished and went)
 	elif not n.linked or (role == "guest" and not n._got_world):
-		if t > 40.0:
+		if Time.get_ticks_msec() > 60000:          # (real time: --fixed-fps runs faster than that)
 			print("HEALTH FAIL never linked")
 			print("HEALTH done %d passed, %d failed" % [passed, failed + 1])
 			return true
