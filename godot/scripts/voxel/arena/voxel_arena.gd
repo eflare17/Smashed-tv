@@ -20,6 +20,8 @@ const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batte
 const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9}
 const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
+const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
+const PILLAR_HALF := 0.6        # half a pillar's width (they're 3.5 m tall)
 const MAX_DEAD := 40            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
@@ -244,8 +246,8 @@ void fragment() {
 	pil.emission_enabled = true
 	pil.emission = Color(0.5, 0.1, 0.6)
 	pil.emission_energy_multiplier = 0.15
-	for p in [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]:
-		_box(p + Vector3(0, 1.75, 0), Vector3(1.2, 3.5, 1.2), pil)
+	for p in PILLARS:
+		_box(p + Vector3(0, 1.75, 0), Vector3(PILLAR_HALF * 2.0, 3.5, PILLAR_HALF * 2.0), pil)
 
 func _box(at: Vector3, size: Vector3, mat: Material) -> void:
 	var sb := StaticBody3D.new()
@@ -705,6 +707,21 @@ func _physics_process(dt: float) -> void:
 		b.position += mv * dt
 		b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
+		var out := out_of_pillars(b.position, 0.35)
+		if out != b.position and mv.length_squared() > 0.01:
+			# against a pillar: slide along its face, round toward the player
+			var push := out - b.position
+			var side := Vector3(-push.z, 0.0, push.x).normalized()
+			var c: Vector3 = PILLARS[0]
+			for pc: Vector3 in PILLARS:
+				if Vector2(pc.x - out.x, pc.z - out.z).length() < Vector2(c.x - out.x, c.z - out.z).length():
+					c = pc
+			var toward := side.dot(to.normalized())
+			# round toward the player; straight behind it, the way it's already off the pillar's middle
+			if toward < -0.3 or (absf(toward) <= 0.3 and side.dot(out - c) < 0.0):
+				side = -side
+			out += side * b.speed * b.move_factor() * dt
+		b.position = out
 		if panic and can:
 			b.yaw = lerp_angle(b.yaw, atan2(b.panic_dir.x, b.panic_dir.z), 1.0 - exp(-dt * 6.0))
 		elif d > 0.01 and can:
@@ -760,6 +777,23 @@ func _status_step(dt: float) -> void:
 		sound.loop("burning", "burn_loop", null, -8.0)
 	elif sound.playing("burning"):
 		sound.stop("burning")
+
+## p pushed out of any pillar it's within r metres of (level; above the pillars' tops nothing): walking, flying, dragged,
+## held, pulled bodies don't go through them.
+static func out_of_pillars(p: Vector3, r: float) -> Vector3:
+	if p.y > 3.5:
+		return p
+	for c: Vector3 in PILLARS:
+		var dx := p.x - c.x
+		var dz := p.z - c.z
+		var h := PILLAR_HALF + r
+		if absf(dx) < h and absf(dz) < h:
+			# out the nearest face
+			if h - absf(dx) < h - absf(dz):
+				p.x = c.x + h * (1.0 if dx >= 0.0 else -1.0)
+			else:
+				p.z = c.z + h * (1.0 if dz >= 0.0 else -1.0)
+	return p
 
 func _process(dt: float) -> void:
 	_t += dt
@@ -840,6 +874,9 @@ func _process(dt: float) -> void:
 	_draw_tracers(dt)
 	_mouse_v *= exp(-dt * 14.0)
 	_weapons_step(dt)
+	for b in bodies:
+		if not b.fragment and (b.airborne or b.stagger > 0.0 or not b.alive):
+			b.position = out_of_pillars(b.position, 0.3)     # (flying, dragged, held, pulled after the weapons moved them)
 	_flash_t = maxf(0.0, _flash_t - dt)
 	_flash.light_energy = 4.0 * _flash_t / 0.05 if _flash_t > 0.0 else 0.0
 	_hud_t += dt
