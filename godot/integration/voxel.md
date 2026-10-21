@@ -453,6 +453,34 @@ to blown-off bones, dangling limbs tear off from strain, shooting the skin finis
 - Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`); the
   co-op body check still finds no body different.
 
+### Settings and the benchmark (22 Oct, the owner's Stage 9: "PC first, as physics/graphics heavy as possible, but
+scalable settings, plus a recommended-settings test based on the player's hardware")
+
+- `scripts/voxel/arena/voxel_settings.gd` (`VoxelSettings`: the settings, the presets, saving, putting them into
+  effect) and `voxel_settings_menu.gd` (`VoxelSettingsMenu`: the screen and the benchmark). A **SETTINGS (F10)** button
+  under ONLINE (O); the co-op line moved down under both.
+- **Presets** LOW / MEDIUM / HIGH (the game as it was) / ULTRA; any row changed makes it CUSTOM (changed back, the
+  preset again). The rows: render scale (50-100%; FSR 1 upscaling below 100% on Forward+, the Windows build), MSAA
+  (off/2x/4x/8x), TAA, shadows (off / hard 2048 / soft 4096), ambient occlusion, SSIL, glow, SDFGI, volumetric fog
+  (TAA, SDFGI and fog are Forward+ only), the bedroom mirror; the gore's weight: the cube size (1 or 2 sprite pixels a
+  cube, an eighth of the cubes; like F2, not mid co-op), cubes lying about (40k-300k), cubes flying at once (3k-12k),
+  cut-off pieces (12-45), corpses kept (12-60); and your own (not in the presets): frame cap, vsync, full screen, field
+  of view (60-110°), mouse speed, volume. Low: 67% scale, no shadows / AO / glow / mirror, chunky cubes, small caps.
+  Ultra: 4x MSAA, TAA, SSIL, SDFGI, fog, 300k lying, 12k flying, 45 pieces, 60 corpses.
+- Everything takes effect at once and is saved in `user://voxel_settings.cfg`. The first run guesses a preset from the
+  graphics card's name (`VoxelSettings.guess()`: RTX 30 80/90, 40, 50 or RX 79xx Ultra; other RTX / RX 6000-7000 High;
+  integrated graphics Low; anything else Medium). The screen shows the PC: processor, threads, memory, graphics card.
+- **RUN BENCHMARK** (alone only: greyed out in co-op): from Ultra down, each preset gets the same fight to draw (24
+  enemies kept topped up, shot at with a gun and a shotgun, set alight now and then, you facing them, god mode), no
+  frame cap and no vsync: 1.5 s to settle, 4 s measured. The first preset whose slowest 5% of frames are inside
+  16.7 ms (holds 60 fps) is recommended (nothing does: Low); lower ones aren't tried. The table shows each one's
+  average and slowest-5% fps; APPLY RECOMMENDED puts it on. After, your settings, the enemies you had, where you
+  stood and god mode are put back. Esc stops it part way (nothing changes).
+- A test's game (any test option, or the arena not the main scene) is left as it was (High, never saved); `--settings`
+  loads the file anyway, `--preset=low|medium|high|ultra` picks one.
+- Tests: `test/voxel/settings_test.gd` (25 checks), `test/voxel/settings_shots.gd` (`voxel_shots/settings_*.png`,
+  `preset_low.png`, `preset_ultra.png`).
+
 ### The online menu (22 Oct, the owner: "can you make it easier to join? I like the set up in the last game")
 
 - `scripts/voxel/net/voxel_net_menu.gd`, the main game's PLAY ONLINE panel (`NetMenu`) rebuilt for the voxel game:

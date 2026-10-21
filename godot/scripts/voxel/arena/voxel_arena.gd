@@ -23,7 +23,7 @@ const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
 const PILLAR_HALF := 0.6        # half a pillar's width (they're 3.5 m tall)
-const MAX_DEAD := 40
+static var MAX_DEAD := 40       # (the settings set it: VoxelSettings)
 ## The player's health (the owner, 21 Oct: "add health"): enemies' swings, blasts, fire take it; it comes back slowly
 ## after a while unhurt; at nothing you're down (no moving, no weapons) till you get up again, or (co-op) your mate
 ## stands by you a moment and gets you up.
@@ -38,6 +38,10 @@ const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0}
 const BURN_TOUCH := 6.0         # health a second brushing against one on fire            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
+var world_env: Environment
+var base_fov := 80.0            # (the settings: the view's width, the mouse's speed)
+var mouse_sens := 1.0
+var settings_menu: VoxelSettingsMenu
 var bodies: Array[VoxelBody] = []
 var debris: VoxelDebris
 var player: CharacterBody3D
@@ -165,6 +169,13 @@ func _ready() -> void:
 	_mat.vertex_color_is_srgb = true
 	_mat.roughness = 0.95
 	_world()
+	var testing := false
+	for t in ["auto", "meleetest", "weaponshots", "swordtest", "walkcheck", "nosave", "secs"]:
+		testing = testing or _opts.has(t)
+	# the settings (the saved ones only in the real game, the arena the main scene; --settings anyway, --preset=name)
+	settings_menu = VoxelSettingsMenu.new()
+	add_child(settings_menu)
+	settings_menu.setup(self, (get_tree().current_scene == self and not testing) or _opts.has("settings"))
 	_player()
 	_hud()
 	debris = VoxelDebris.new()
@@ -200,9 +211,6 @@ func _ready() -> void:
 	stash.setup(self)
 	blocks = stash.blocks()
 	# saved between games (not the self-tests'; --save=path elsewhere, --nosave never)
-	var testing := false
-	for t in ["auto", "meleetest", "weaponshots", "swordtest", "walkcheck", "nosave", "secs"]:
-		testing = testing or _opts.has(t)
 	stash.save_path = String(_opts.get("save", "")) if _opts.has("save") else ("" if testing else VoxelStorages.SAVE_PATH)
 	stash.load_save()
 	var have := []
@@ -302,6 +310,7 @@ func _world() -> void:
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+	world_env = env
 	sun = DirectionalLight3D.new()
 	sun.rotation = Vector3(deg_to_rad(-52), deg_to_rad(-35), 0)
 	sun.light_energy = 1.0
@@ -1001,7 +1010,7 @@ func _net_hud() -> void:
 	if _net_label == null:
 		_net_label = Label.new()
 		_net_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)         # (under the ONLINE button, clear of the stats)
-		_net_label.position = Vector2(-652, 46)
+		_net_label.position = Vector2(-652, 86)
 		_net_label.custom_minimum_size = Vector2(640, 0)
 		_net_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_net_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1041,12 +1050,14 @@ func _on_died(b: VoxelBody) -> void:
 	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:
 		cash += int(VoxelFarm.KILL_CASH[b.key])     # (each player's game pays its own player for every kill)
 
-func _respawn_all() -> void:
+func _respawn_all(count := -1) -> void:
 	var n := 0
 	for b in bodies:
 		if b.alive:
 			n += 1
 		b.queue_free()
+	if count >= 0:
+		n = count
 	bodies.clear()
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)     # (a task never waited on crashes the game at quit)
@@ -1065,13 +1076,13 @@ func _respawn_all() -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(e: InputEvent) -> void:
-	if net_menu and net_menu.is_open():
-		return                  # (the online menu has the keys and the mouse)
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()):
+		return                  # (the online menu, the settings have the keys and the mouse)
 	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] \
 			and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
 		_clicked[e.button_index] = true                  # (a click quicker than a frame still counts)
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var sens := 0.0025 * cam.fov / 80.0           # slower when aimed in
+		var sens := 0.0025 * cam.fov / 80.0 * mouse_sens        # slower when aimed in
 		look_yaw -= e.relative.x * sens
 		look_pitch = clampf(look_pitch - e.relative.y * sens, -1.4, 1.4)
 		_mouse_v += e.relative
@@ -1411,7 +1422,7 @@ func _physics_process(dt: float) -> void:
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
-	if net_menu and net_menu.is_open():
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()):
 		iv = Vector2.ZERO           # (typing a room code isn't walking)
 	var sp := 7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5
 	var dir := Vector3.ZERO
@@ -1801,7 +1812,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or games.seated > 0 or games.held >= 0:
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or games.seated > 0 or games.held >= 0:
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -1926,7 +1937,7 @@ func _weapons_step(dt: float) -> void:
 	var cur := loadout.id()
 	avatar.recoil = maxf(0.0, avatar.recoil - dt * 6.0)
 	_aim_k = move_toward(_aim_k, 1.0 if _aiming and not top_down else 0.0, dt * 6.0)
-	cam.fov = lerpf(80.0, 50.0, _aim_k)
+	cam.fov = lerpf(base_fov, 50.0, _aim_k)
 	if games.seated > 0:
 		cam.fov = 50.0              # (on the couch: the TV fills more of the view)
 	# a switch: the first half the old one goes down, the second half the new one comes up

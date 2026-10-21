@@ -1,0 +1,170 @@
+class_name VoxelSettings
+extends RefCounted
+## The game's settings (the owner, Stage 9: "PC first, as physics/graphics heavy as possible, but scalable settings, plus
+## a recommended-settings test based on the player's hardware"). Presets Low, Medium, High (as it's been), Ultra; any
+## one changed by hand makes it Custom. The picture: render scale (FSR upscaling below 100% on Forward+), MSAA, TAA,
+## shadows (off / hard 2048 / soft 4096), SSAO, SSIL, glow, SDFGI global illumination, volumetric fog, the bedroom's
+## mirror. The gore's weight: the cube size (1 sprite pixel a cube, or 2: an eighth of the cubes), how many knocked-out
+## cubes lie about and fly at once, cut-off pieces, corpses kept. Yours alone (not in the presets): field of view, mouse
+## speed, volume, full screen, frame cap, vsync. Saved in user://voxel_settings.cfg. The first time the game runs it
+## guesses a preset from the graphics card (guess()); the benchmark (VoxelSettingsMenu) measures one. Owned by the voxel
+## session.
+
+const FILE := "user://voxel_settings.cfg"
+const ORDER := ["low", "medium", "high", "ultra"]
+const PRESETS := {
+	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
+		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12},
+	"medium": {"scale": 0.85, "msaa": 0, "taa": false, "shadows": 1, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
+		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25},
+	"high": {"scale": 1.0, "msaa": 2, "taa": false, "shadows": 2, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
+		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40},
+	"ultra": {"scale": 1.0, "msaa": 4, "taa": true, "shadows": 2, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
+		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60},
+}
+const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true}
+## (what each setting can be, for the menu: [label, values, value labels])
+const CHOICES := {
+	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0], ["50%", "67%", "77%", "85%", "100%"]],
+	"msaa": ["Anti-aliasing (MSAA)", [0, 2, 4, 8], ["Off", "2x", "4x", "8x"]],
+	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
+	"shadows": ["Shadows", [0, 1, 2], ["Off", "Hard (2048)", "Soft (4096)"]],
+	"ssao": ["Ambient occlusion", [false, true], ["Off", "On"]],
+	"ssil": ["Indirect light (SSIL)", [false, true], ["Off", "On"]],
+	"glow": ["Glow", [false, true], ["Off", "On"]],
+	"sdfgi": ["Global illumination (SDFGI)", [false, true], ["Off", "On"]],
+	"fog": ["Volumetric fog", [false, true], ["Off", "On"]],
+	"mirror": ["Bedroom mirror", [false, true], ["Off", "On"]],
+	"chunk": ["Cube size (gore detail)", [1, 2], ["Fine (1 pixel)", "Chunky (2 pixels)"]],
+	"lying": ["Cubes lying about", [40000, 80000, 150000, 300000], ["40k", "80k", "150k", "300k"]],
+	"flying": ["Cubes flying at once", [3000, 5000, 8000, 12000], ["3k", "5k", "8k", "12k"]],
+	"pieces": ["Cut-off pieces", [12, 20, 30, 45], ["12", "20", "30", "45"]],
+	"corpses": ["Corpses kept", [12, 25, 40, 60], ["12", "25", "40", "60"]],
+	"fps": ["Frame cap", [0, 60, 120, 144, 240], ["None", "60", "120", "144", "240"]],
+	"vsync": ["VSync", [false, true], ["Off", "On"]],
+	"fullscreen": ["Full screen", [false, true], ["Off", "On"]],
+}
+
+var file := FILE                # ("": never saved, the tests' games)
+var v := {}                     # every setting now
+var preset := "high"            # or "custom"
+var first_run := false
+var bench := {}                 # the last benchmark: {preset: [average fps, 1% low fps]}, "pick", "hw"
+
+func _init() -> void:
+	v = PRESETS.high.duplicate()
+	v.merge(PERSONAL)
+
+func set_preset(name: String) -> void:
+	if not PRESETS.has(name):
+		return
+	for k in PRESETS[name]:
+		v[k] = PRESETS[name][k]
+	preset = name
+
+## A setting changed by hand: Custom, unless it happens to match a preset.
+func set_value(key: String, value) -> void:
+	v[key] = value
+	preset = which_preset()
+
+func which_preset() -> String:
+	for name in ORDER:
+		var same := true
+		for k in PRESETS[name]:
+			if v.get(k) != PRESETS[name][k]:
+				same = false
+				break
+		if same:
+			return name
+	return "custom"
+
+func load_file() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(file) != OK:
+		first_run = true
+		set_preset(guess())
+		return
+	for k in v:
+		v[k] = cf.get_value("settings", k, v[k])
+	preset = which_preset()
+	bench = cf.get_value("bench", "last", {})
+
+func save_file() -> void:
+	if file == "":
+		return
+	var cf := ConfigFile.new()
+	for k in v:
+		cf.set_value("settings", k, v[k])
+	if not bench.is_empty():
+		cf.set_value("bench", "last", bench)
+	cf.save(file)
+
+## A preset guessed from the graphics card's name (the first run, before any benchmark).
+static func guess() -> String:
+	var gpu := RenderingServer.get_video_adapter_name().to_lower()
+	if gpu == "" or gpu.contains("llvmpipe") or gpu.contains("software") or gpu.contains("swiftshader"):
+		return "low"
+	for hi in ["rtx 40", "rtx 50", "rx 79", "rx 9070", "rtx 3090", "rtx 3080"]:
+		if gpu.contains(hi):
+			return "ultra"
+	for mid in ["rtx", "rx 6", "rx 7", "arc a7", "arc b5"]:
+		if gpu.contains(mid):
+			return "high"
+	for lo in ["intel", "uhd", "iris", "vega", "radeon(tm) graphics", "780m", "680m"]:
+		if gpu.contains(lo):
+			return "low"
+	return "medium"
+
+## The PC, in a line: the processor, its threads, the memory, the graphics card.
+static func hardware() -> String:
+	var mem: Dictionary = OS.get_memory_info()
+	var gb := float(mem.get("physical", 0)) / 1073741824.0
+	return "%s (%d threads), %.0f GB, %s" % [OS.get_processor_name(), OS.get_processor_count(), gb, RenderingServer.get_video_adapter_name()]
+
+## Everything put into effect. The cube size and the cubes' caps start the arena over (its enemies and loose cubes)
+## when they change (not mid co-op, where the host's world decides the cube size).
+func apply(arena: Node3D) -> void:
+	var vp := arena.get_viewport()
+	var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
+	vp.scaling_3d_scale = float(v.scale)
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if (forward and float(v.scale) < 0.99) else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(int(v.msaa), Viewport.MSAA_DISABLED)
+	vp.use_taa = bool(v.taa) and forward
+	var sh := int(v.shadows)
+	arena.sun.shadow_enabled = sh > 0
+	if sh > 0:
+		RenderingServer.directional_shadow_atlas_set_size(4096 if sh == 2 else 2048, true)
+		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM if sh == 2 else RenderingServer.SHADOW_QUALITY_HARD)
+	var env: Environment = arena.world_env
+	if env:
+		env.ssao_enabled = bool(v.ssao)
+		env.ssil_enabled = bool(v.ssil)
+		env.glow_enabled = bool(v.glow)
+		env.sdfgi_enabled = bool(v.sdfgi) and forward
+		env.volumetric_fog_enabled = bool(v.fog) and forward
+		env.volumetric_fog_density = 0.008
+		env.volumetric_fog_albedo = Color(0.75, 0.7, 0.8)
+	VoxelMirror.enabled = bool(v.mirror)
+	VoxelPieces.MAX_PIECES = int(v.pieces)
+	VoxelArena.MAX_DEAD = int(v.corpses)
+	var restart := false
+	if VoxelDebris.max_lie != int(v.lying) or VoxelDebris.max_fly != int(v.flying):
+		VoxelDebris.max_lie = int(v.lying)
+		VoxelDebris.max_fly = int(v.flying)
+		restart = true
+	if arena.chunk != int(v.chunk) and not arena._opts.has("chunk") and not (arena.net and arena.net.linked):
+		arena.chunk = int(v.chunk)
+		if arena.debris:            # (at the start: nothing made yet, it's all made at this size)
+			arena._warm_up()
+			restart = true
+	if restart and arena.debris:
+		arena._respawn_all()
+	arena.base_fov = float(v.fov)
+	arena.mouse_sens = float(v.sens)
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.0001, float(v.volume))))
+	Engine.max_fps = int(v.fps)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if bool(v.vsync) else DisplayServer.VSYNC_DISABLED)
+	if DisplayServer.get_name() != "headless":
+		var fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		if bool(v.fullscreen) != fs:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if bool(v.fullscreen) else DisplayServer.WINDOW_MODE_WINDOWED)

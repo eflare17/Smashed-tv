@@ -323,6 +323,8 @@ func close() -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey) or not e.pressed or e.echo:
 		return
+	if arena.settings_menu and arena.settings_menu.is_open():
+		return                      # (the settings screen has the keys)
 	if _open and e.physical_keycode == KEY_ESCAPE:
 		close()
 		get_viewport().set_input_as_handled()

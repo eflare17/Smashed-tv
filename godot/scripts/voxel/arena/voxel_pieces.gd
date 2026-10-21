@@ -8,7 +8,7 @@ extends Node3D
 ## flying, a fragment is a piece again. The vacuum's brush pulls pieces, fragments and corpses apart into cubes. Owned
 ## by the voxel session; every melee weapon spawns through the arena's one VoxelPieces.
 
-const MAX_PIECES := 30
+static var MAX_PIECES := 30      # (the settings set it: VoxelSettings)
 const PIECE_LIFE := 600.0       # they lie there a good while (the vacuum takes them)
 const REST_V := 0.12            # m/s (and radians a second) under which a piece counts as lying still ...
 const REST_T := 0.35            # ... for this long: then it's made a body to cut up

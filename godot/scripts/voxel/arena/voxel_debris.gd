@@ -7,8 +7,12 @@ extends MultiMeshInstance3D
 ## it points) come loose at a steady rate, swirl up the beam into the nozzle and count up as resources (blocks, meat,
 ## bone, brain); let go and the ones in the air fall again. Owned by the voxel session.
 
-const MAX := 8000               # flying at once
-const MAX_LIE := 150000         # lying on the floor (the oldest go when it's full)
+## How many at most (the settings, VoxelSettings: set before setup): flying at once; lying on the floor (the oldest go
+## when it's full).
+static var max_fly := 8000
+static var max_lie := 150000
+var MAX := 8000                 # (this one's, from max_fly at setup)
+var MAX_LIE := 150000
 const RATE := 1500.0            # cubes a second the brush pulls loose
 const PICK_FRAME := 200         # lifted a frame at most (no spikes)
 
@@ -48,6 +52,8 @@ var eaten := 0
 var _ash := VoxelBody.ASH.to_rgba32()     # (ash cubes crumble away where they land: VoxelBody's burnt through)
 
 func setup(cube_m: float) -> void:
+	MAX = max_fly
+	MAX_LIE = max_lie
 	# moved every frame, not on physics ticks: no interpolation (it would lag and warn)
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var bm := BoxMesh.new()

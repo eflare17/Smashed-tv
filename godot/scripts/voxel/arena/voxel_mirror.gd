@@ -11,6 +11,8 @@ const LAYER_SELF := 2           # render layer (bit index + 1) the player's own 
 const RES := 360                # the reflection's height in pixels (the width follows the glass)
 const NEAR_ENOUGH := 9.0        # metres: further off, it isn't rendered
 
+## (the settings: off, the glass just shows a dim reflection-less sheen and nothing renders a second view)
+static var enabled := true
 var arena: Node3D
 var centre := Vector3.ZERO
 var normal := Vector3.BACK      # out of the glass, into the room
@@ -77,7 +79,7 @@ func _process(_dt: float) -> void:
 	var main: Camera3D = arena.cam
 	var eye := main.global_position
 	var off := (eye - centre).dot(normal)
-	var near: bool = off > 0.05 and eye.distance_to(centre) < NEAR_ENOUGH and not arena.top_down
+	var near: bool = off > 0.05 and eye.distance_to(centre) < NEAR_ENOUGH and not arena.top_down and enabled
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if near else SubViewport.UPDATE_DISABLED
 	if not near:
 		return
