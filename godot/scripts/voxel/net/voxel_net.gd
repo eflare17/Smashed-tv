@@ -873,6 +873,7 @@ func _message(m: Array) -> void:
 				arena.stash.send_all()
 				arena.yard.send_all()
 				arena.yard.farm.send_all()
+				arena.yard.chickens.send_all()
 		"W":
 			_world(m[1], m[2])
 			arena.wave = int(m[3])
@@ -909,6 +910,8 @@ func _message(m: Array) -> void:
 			arena.yard.on_net(m.slice(1))
 		"K":
 			arena.yard.farm.on_net(m.slice(1))
+		"B":
+			arena.yard.chickens.on_net(m.slice(1))
 		"X":
 			if role == "host":
 				arena.spawn(clampi(int(m[1]), 1, 40))
@@ -932,6 +935,11 @@ func request_more(n: int) -> void:
 func send_farm(m: Array) -> void:
 	if linked:
 		_send(["K"] + m)        # (K: "F" is the fingerprints' fix)
+
+## The chickens' (VoxelChickens), either way, reliable.
+func send_chickens(m: Array) -> void:
+	if linked:
+		_send(["B"] + m)
 
 ## The yard's digs, fills and chunks (VoxelYard), either way, reliable.
 func send_yard(m: Array) -> void:

@@ -19,11 +19,12 @@ const ITEMS := {
 }
 
 static var _by_col := {}
-static var EXTRA := {}          # the farm's (seeds, buds, castings: VoxelFarm.items), made the first time asked
+static var EXTRA := {}          # the farm's and the chickens' (VoxelFarm.items, VoxelChickens.items), made the first time asked
 
 static func _extra() -> Dictionary:
 	if EXTRA.is_empty():
 		EXTRA = VoxelFarm.items()
+		EXTRA.merge(VoxelChickens.items())
 	return EXTRA
 
 static func _info(id: String) -> Dictionary:
@@ -38,11 +39,15 @@ static func of_colour(col: Color) -> String:
 			_by_col[(c as Color).to_rgba32()] = "brain"
 		_by_col[VoxelBody.BONE.to_rgba32()] = "bone"
 		_by_col[VoxelBody.CHAR.to_rgba32()] = "charred"
+		var ex := _extra()
+		for id in ex:
+			for c in ex[id].get("cubes", []):
+				_by_col[(c as Color).to_rgba32()] = id
 	return _by_col.get(col.to_rgba32(), "blocks")
 
 ## Made of cubes (what the vacuum takes): dropped, it falls as its cubes. The rest (a padlock) can't be dropped.
 static func is_cubes(id: String) -> bool:
-	return id in ["blocks", "meat", "bone", "brain", "charred"]
+	return id in ["blocks", "meat", "bone", "brain", "charred"] or _info(id).has("cubes")
 
 static func has(id: String) -> bool:
 	return ITEMS.has(id) or _extra().has(id)

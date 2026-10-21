@@ -39,7 +39,9 @@ const WORM_EAT := 2.0
 const CAST_EVERY := 300.0
 const WORM_MAX := 60
 const WORM_BREED := 0.004       # new worms a second per worm while there's food
-const SCRAP := {"meat": 1.0, "brain": 1.0, "charred": 0.5}   # what a cube of each is worth to them (burnt: less)
+const SCRAP := {"meat": 1.0, "brain": 1.0, "charred": 0.5, "poo": 1.5}   # what a cube of each is worth to them (burnt: less; manure: more)
+## Chicken poo (Stage 6) feeds a plant too, weaker than castings: this many of its cubes a feed.
+const POO_FEED := 20
 const FEED_MOST := 3000         # scraps put in at a time
 const SYNC_T := 2.0
 ## The arena sends its enemies one at a time (each one a "wave" there); the HTML game's waves are crowds, so here a
@@ -229,14 +231,24 @@ func water(key: int) -> bool:
 	_changed(key)
 	return true
 
-## A feed of worm castings for the plant at key (out of this player's backpack). False: none, or fed twice already.
+## What feeds a plant, out of this player's backpack: castings (one), else chicken poo (POO_FEED of it). "": neither.
+func feed_with() -> String:
+	if arena.inv.count("castings") >= 1:
+		return "castings"
+	if arena.inv.count("poo") >= POO_FEED:
+		return "poo"
+	return ""
+
+## A feed (worm castings, or chicken poo) for the plant at key (out of this player's backpack). False: none, or fed
+## twice already.
 func fertilise(key: int) -> bool:
 	var b = plants.get(key)
-	if b == null or float(b.g) >= 1.0 or int(b.fed) >= FED_MAX or arena.inv.count("castings") < 1:
+	var w := feed_with()
+	if b == null or float(b.g) >= 1.0 or int(b.fed) >= FED_MAX or w == "":
 		return false
-	arena.inv.remove("castings", 1)
+	arena.inv.remove(w, 1 if w == "castings" else POO_FEED)
 	if _is_guest():
-		_msg(["fert", key])
+		_msg(["fert", key, w])
 		return true
 	b.fed = int(b.fed) + 1
 	_changed(key)
@@ -301,9 +313,17 @@ func buy(s: int) -> bool:
 	arena.stash._dirty = true
 	return true
 
-## E at the buyer's crate: every bud this player has, sold. Returns the cash.
-func sell() -> int:
+## What the buyer gives for everything this player has to sell (buds, eggs).
+func sell_value() -> int:
 	var v := 0.0
+	for s in STRAINS.size():
+		v += arena.inv.count(bud_id(s)) * float(STRAINS[s].price) / float(STRAINS[s].buds)
+	v += arena.inv.count("egg") * VoxelChickens.EGG_PRICE
+	return int(round(v))
+
+## E at the buyer's crate: every bud and egg this player has, sold. Returns the cash.
+func sell() -> int:
+	var v := float(arena.inv.remove("egg", arena.inv.count("egg")) * VoxelChickens.EGG_PRICE)
 	for s in STRAINS.size():
 		var n: int = arena.inv.count(bud_id(s))
 		if n > 0:
@@ -401,7 +421,8 @@ func on_net(m: Array) -> void:
 					bf.fed = int(bf.fed) + 1
 					_changed(int(m[1]))
 				else:
-					_msg(["give", {"id": "castings", "n": 1}])
+					var back := "poo" if m.size() > 2 and String(m[2]) == "poo" else "castings"
+					_msg(["give", {"id": back, "n": 1 if back == "castings" else POO_FEED}])
 		"wcast":
 			if host and int(worms.cast) > 0:
 				_msg(["give", {"id": "castings", "n": int(worms.cast)}])

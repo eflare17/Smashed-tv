@@ -133,6 +133,15 @@ func throw(at: Vector3, dir: Vector3, col: Color, n: int, seed: int = 0) -> void
 		var v := dir * rng.randf_range(1.5, 3.5) + Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(0.5, 2.0), rng.randf_range(-0.8, 0.8))
 		_add(at + Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1)), v, col, 0)
 
+## n cubes dropped in a little heap at at, their colours taken in turn from cols (a hen's poo); the same seed drops
+## them the same way.
+func plop(at: Vector3, cols: Array, n: int, seed: int = 0) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed if seed != 0 else randi()
+	for j in n:
+		var v := Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(0.1, 0.5), rng.randf_range(-0.15, 0.15))
+		_add(at + Vector3(rng.randf_range(-0.04, 0.04), rng.randf_range(0.0, 0.05), rng.randf_range(-0.04, 0.04)), v, cols[j % cols.size()], 0)
+
 ## Flings cubes out from where they were: bits = [{pos, col}], out along dir (the shot), with some spread.
 func burst(bits: Array, dir: Vector3, power: float = 3.5) -> void:
 	for b in bits:

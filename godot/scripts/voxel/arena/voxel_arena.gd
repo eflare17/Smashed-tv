@@ -125,6 +125,7 @@ var _near_bench := false
 var cash := 0                   # this player's money (Stage 5: kills pay, as in the HTML game; seeds cost, buds sell)
 var _near_plant := -1           # the farm's spot looked at (a plant or tilled ground)
 var _near_prop := ""            # the farm's prop looked at (the seed bins, the buyer, the tank, the worm farm)
+var _near_hen := ""             # the chickens' thing looked at (the gate, the feeder, a nest box, a hen: VoxelChickens.pick)
 var _near_bed := 0
 var _near_ward := false
 var _self_t := 0.0
@@ -635,10 +636,8 @@ func _prop_line(p: String) -> String:
 			var st: Dictionary = VoxelFarm.STRAINS[s]
 			return ("E  buy a %s seed: $%d  (you've $%d)" if cash >= int(st.seed) else "%s seed: $%d (you've $%d: kills pay)") % [st.name, int(st.seed), cash]
 		"buyer":
-			var v := 0.0
-			for s in VoxelFarm.STRAINS.size():
-				v += inv.count(VoxelFarm.bud_id(s)) * float(VoxelFarm.STRAINS[s].price) / float(VoxelFarm.STRAINS[s].buds)
-			return ("E  sell your buds: $%d" % int(round(v))) if v > 0.0 else "Buyer: brings cash for buds"
+			var v := farm.sell_value()
+			return ("E  sell your buds and eggs: $%d" % v) if v > 0 else "Buyer: brings cash for buds and eggs"
 		"tank":
 			var can = melee.get("can")
 			return "E  fill the watering can" + (" (%d of %d)" % [int(ceil(can.water)), int(VoxelFarm.CAN)] if can else "")
@@ -648,7 +647,7 @@ func _prop_line(p: String) -> String:
 			if int(w.cast) > 0:
 				return line + "     E  take %d castings" % int(w.cast)
 			var have: int = inv.count("worm")
-			var scraps: int = inv.count("meat") + inv.count("brain") + inv.count("charred")
+			var scraps: int = inv.count("meat") + inv.count("brain") + inv.count("charred") + inv.count("poo")
 			if have > 0 or scraps > 0:
 				return line + "     E  put in %d worms, %d scraps" % [have, mini(scraps, VoxelFarm.FEED_MOST)]
 			return line + ("  (dig for worms; feed them meat)" if int(w.n) == 0 else "  (making castings)")
@@ -690,8 +689,9 @@ func _spot_line(key: int) -> String:
 	if float(b.g) >= 1.0:
 		return "E  harvest: " + farm.hint(key)
 	var t := farm.hint(key)
-	if inv.count("castings") > 0 and int(b.fed) < VoxelFarm.FED_MAX:
-		t += "     E  feed it castings"
+	var w := farm.feed_with()
+	if w != "" and int(b.fed) < VoxelFarm.FED_MAX:
+		t += "     E  feed it " + ("castings" if w == "castings" else "chicken poo (%d)" % VoxelFarm.POO_FEED)
 	return t
 
 func _farm_spot(key: int) -> void:
@@ -712,12 +712,13 @@ func _farm_spot(key: int) -> void:
 
 ## Off the arena, where the enemies never go (the bedroom, the yard).
 static func safe(p: Vector3) -> bool:
-	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p)
+	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p) or VoxelChickens.in_pen(p)
 
 # the cubes' rooms off the arena (they stay in them): the bedroom, the yard
 static func _rooms() -> Array:
 	return [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0),
-		Rect2(VoxelYard.X0 + 0.1, VoxelYard.Z0, VoxelYard.X1 - VoxelYard.X0 - 0.1, VoxelYard.Z1 - VoxelYard.Z0)]
+		Rect2(VoxelYard.X0 + 0.1, VoxelYard.Z0, VoxelYard.X1 - VoxelYard.X0 - 0.1, VoxelYard.Z1 - VoxelYard.Z0),
+		Rect2(VoxelChickens.X0, VoxelChickens.Z0, VoxelChickens.X1 - VoxelChickens.X0, VoxelChickens.Z1 - VoxelChickens.Z0)]
 
 ## The next shovel the tool bench makes (null: the golden one's made).
 func next_upgrade():
@@ -837,6 +838,7 @@ func _storage_step(dt: float) -> void:
 	_near_bench = false
 	_near_prop = ""
 	_near_plant = -1
+	_near_hen = ""
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -847,7 +849,10 @@ func _storage_step(dt: float) -> void:
 		_near_bed = int(bh[0]) if _near_st == null else 0
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
 		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
-		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(player.global_position):
+		var pp2 := player.global_position
+		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and (VoxelYard.in_yard(pp2) or VoxelChickens.in_pen(pp2)):
+			_near_hen = String(yard.chickens.pick(eye, fwd)[0])
+		if _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
 			_near_prop = yard.farm.prop_at(eye, fwd)
 			if _near_prop == "":
 				var ph: Array = yard.farm.plant_hit(eye, fwd)
@@ -866,6 +871,8 @@ func _storage_step(dt: float) -> void:
 		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
 	elif _near_bench:
 		t = bench_line()
+	elif _near_hen != "":
+		t = yard.chickens.line(_near_hen)
 	elif _near_prop != "":
 		t = _prop_line(_near_prop)
 	elif _near_plant >= 0:
@@ -1106,6 +1113,12 @@ func _unhandled_input(e: InputEvent) -> void:
 					net.local_input("reload")
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
+			KEY_H:
+				if yard.chickens.eat_egg():
+					sound.play("item_pick", Vector3.INF, -4.0, 0.7)
+					say("Ate an egg: +%d health (%d left)" % [int(VoxelChickens.EGG_HP), inv.count("egg")], 2.0)
+				elif inv.count("egg") > 0:
+					say("Not hurt: save the eggs (or sell them at the buyer)", 1.5)
 			KEY_E:
 				if _near_st and _near_st.locked:
 					open_lock(_near_st, true)        # (locked: dial it open first, then the chest opens)
@@ -1117,6 +1130,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					house.ward_open = not house.ward_open
 				elif _near_bench:
 					bench_make()
+				elif _near_hen != "":
+					yard.chickens.use(_near_hen)
 				elif _near_prop != "":
 					_farm_prop(_near_prop)
 				elif _near_plant >= 0:

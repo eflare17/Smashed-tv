@@ -29,6 +29,7 @@ const UPGRADES := [
 var arena: Node3D
 var ground: VoxelTerrain
 var farm: VoxelFarm
+var chickens: VoxelChickens
 var _sum_t := 0.0
 var _own = null                 # guest: their own yard's dug chunks while in someone else's (null: not a guest)
 var _was_role := ""
@@ -47,6 +48,9 @@ func setup(arena_: Node3D) -> void:
 	farm = VoxelFarm.new()
 	add_child(farm)
 	farm.setup(arena, self)
+	chickens = VoxelChickens.new()
+	add_child(chickens)
+	chickens.setup(arena, self)
 
 # ---------------------------------------------------------------- digging (the tools call these)
 
@@ -193,11 +197,18 @@ func _surround() -> void:
 	# a timber fence round the east and south (the bedroom's wall and the arena's are the other sides)
 	var wood := _mat(Color8(150, 112, 70), 0.85)
 	var post := _mat(Color8(110, 80, 50), 0.85)
-	_solid(Vector3(0.1, 1.8, Z1 - Z0), Vector3(X1 + 0.05, 0.9, (Z0 + Z1) * 0.5), wood)
+	# (the east one with the chicken run's gate in it: VoxelChickens)
+	var g0 := VoxelChickens.GATE_Z0
+	var g1 := VoxelChickens.GATE_Z1
+	_solid(Vector3(0.1, 1.8, g0 - Z0), Vector3(X1 + 0.05, 0.9, (Z0 + g0) * 0.5), wood)
+	_solid(Vector3(0.1, 1.8, Z1 - g1), Vector3(X1 + 0.05, 0.9, (g1 + Z1) * 0.5), wood)
 	_solid(Vector3(X1 - X0 + 0.2, 1.8, 0.1), Vector3((X0 + X1) * 0.5, 0.9, Z1 + 0.05), wood)
 	_solid(Vector3(0.1, 1.8, Z1 - Z0), Vector3(X0 - 0.05, 0.9, (Z0 + Z1) * 0.5), wood, self, false)   # (behind the bedroom's wall)
 	var z := Z0
 	while z <= Z1:
+		if z > g0 - 0.2 and z < g1 + 0.2:
+			z += 2.0
+			continue
 		var pm := MeshInstance3D.new()
 		var bm := BoxMesh.new()
 		bm.size = Vector3(0.14, 1.95, 0.14)
@@ -206,6 +217,8 @@ func _surround() -> void:
 		pm.position = Vector3(X1 + 0.05, 0.975, z)
 		add_child(pm)
 		z += 2.0
+	for gz in [g0 - 0.07, g1 + 0.07]:
+		_solid(Vector3(0.16, 2.0, 0.14), Vector3(X1 + 0.05, 1.0, gz), post)
 	var x := X0
 	while x <= X1:
 		var pm2 := MeshInstance3D.new()

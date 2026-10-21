@@ -319,6 +319,40 @@ watering can", "rebuild the fertilising system from scratch", "worm farms")
 - Tests: `test/voxel/farm_test.gd` (25 checks alone; with `--host` / `--join` 3 + 4 co-op checks),
   `test/voxel/farm_shots.gd` (`voxel_shots/farm_*.png`). The logic test's loadout checks updated (18 weapons).
 
+### Chickens (21 Oct, the owner's Stage 6: "feed chickens; collect chicken poo as fertiliser (optionally via the
+worm farm); collect eggs, eggs can hatch into more chickens, more feeding = faster breeding; walk-in chicken coop with
+a nesting area; chickens can be let out to roam the yard; max chicken cap tied to the coop, upgrading raises it")
+
+- **The run** (`voxel_chickens.gd`): wired in east of the back yard (x 22.65..31.6, z 22.5..40), through a timber gate
+  in the yard's east fence (E opens / shuts it; it swings into the run). Safe like the yard (`VoxelArena.safe`), a room
+  of its own for the cubes (`_rooms`). **The walk-in coop** in its south-east corner: plank walls, an iron roof (off
+  from above when you're inside, top-down), a lamp; nest boxes on a shelf along the east wall, perches, a tube feeder
+  and a waterer, GRAIN sacks by the door (E: 10 for $5), a COOP sign by the door (how many chickens; E upgrades).
+- **The hens** (`voxel_chicken.gd`): little cube chickens (white, brown, black; chicks small and yellow), the head,
+  wings and legs moving apart: they walk, peck, look about, flap, sit. They wander the run and the coop (round the
+  coop's corner, in and out of its door), go in to eat when they're under 60% fed and the feeder has feed, go up into
+  a nest box to lay when they've built up an egg (fed full every 120 s, half fed every 240 s, under a quarter never),
+  flap off from anyone running at them, and poo (a little heap of brown and white cubes the vacuum takes as **chicken
+  poo**). Gate open, they roam the yard too (through the gate, and back to eat and lay); gate shut, nobody's let
+  through.
+- **Feeding**: E at the feeder puts in your grain (a feed each) and worms (3 each), up to 60; a feed fills a hen half.
+  **Eggs**: a nest box holds 3; E collects them; sold at the buyer's crate ($4) or eaten (H, +20 health, when hurt).
+  Left in the nest they **hatch** in 150 s at speed 1, the speed 0.5 + the hens' average fill (more feeding, faster
+  breeding: up to 3x), while there's room under the coop's cap; a chick grows into a hen in 4 minutes.
+- **The coop's levels** (`LEVELS`): 4 chickens and 2 nest boxes; $100 + 150 stone: 8 and 4; $300 + 400 stone: 16 and
+  6. Two hens to start.
+- **Poo as fertiliser**: 20 chicken poo feeds a plant (`VoxelFarm.POO_FEED`; castings first if you've both); in the
+  worm farm a poo cube is worth 1.5 scraps. Items: egg, grain, chicken poo (`VoxelChickens.items`, through
+  `VoxelItems`; poo is cubes, by colour, like meat and bone).
+- **Co-op**: the chickens are the host's: a guest's gate, feeding, egg collecting and upgrading go to the host as
+  requests (network message "B"), the eggs come back as gives; where the hens are goes to the guest 10 times a second
+  (smoothed), everything else every 2 s and a moment after any change; poo heaps fall the same in both games (a
+  seed); the hens' sounds play in both. Grain, eggs and cash are each player's own. Saved with the rest.
+- Sounds (`assets/voxel/tools/sfx_chickens.py`): clucks, the egg song, chick peeps, wing flaps, the gate creaking,
+  grain pouring, an egg picked up.
+- Tests: `test/voxel/chickens_test.gd` (41 checks alone; with `--host` / `--join` 4 + 7 co-op checks),
+  `test/voxel/chickens_shots.gd` (`voxel_shots/chickens_*.png`).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,
