@@ -64,6 +64,11 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   hard, else after 2.2 s); right click a sticky bomb that sticks to a wall, the floor or a body part (riding on it); R
   sets them all off one after another (with none out, R reloads the drum of six). The blast tears craters on the side
   facing it, limbs off at point blank, throws them, sets the near ones alight, shatters frozen ones.
+- Screenshots of the new weapons (software-rendered): `voxel_shots/weapon_flamethrower.png`, `weapon_freezeray_statue.png`,
+  `weapon_freezeray_shatter.png`, `weapon_laser_cut_in_half.png`, `weapon_harpoon_head.png`, `weapon_gravity_black_hole.png`,
+  `weapon_grenade_blast.png`, `weapon_hammer_side_swing.png`, `weapon_shotgun_both_barrels.png`. Each new weapon was built by
+  one pass and then reviewed by a second that tried to break it (switching mid-move, targets freed, frozen or dead,
+  top-down, cost); a review of the shared fire, ice and gun code found and fixed 16 more problems.
 - **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
   that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
   MultiMesh of up to 8000 cubes in one draw call, bouncing; once at rest they stay, in a second MultiMesh of up to
