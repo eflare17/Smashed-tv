@@ -546,6 +546,8 @@ func _meleetest(dt: float) -> void:
 		var tag: String = ph[0]
 		if _mt_t >= t0 and not _opts.has("mp" + tag):
 			_opts["mp" + tag] = "1"
+			if _opts.has("swing"):        # --swing=left|right: the mouse moving that way as it's pressed
+				_mouse_v = Vector2(-600.0 if String(_opts.swing) == "left" else 600.0, 0.0)
 			w.press(ph[1])
 		elif _mt_t > t0 and _mt_t < t1:
 			w.hold(ph[1], dt)
@@ -557,6 +559,13 @@ func _meleetest(dt: float) -> void:
 			if _mt_t >= t0 + float(MT_SHOTS[k]) and not _opts.has(st) and _opts.has("shots"):
 				_opts[st] = "1"
 				_shot_png("%s/melee_%s_%s_%d.png" % [String(_opts.shots), id, tag, k])
+	if _mt_t >= 2.2 and _opts.has("again") and not _opts.has("mag"):
+		_opts["mag"] = "1"            # --again: a second left click (the gravity gun's throw)
+		w.press(MOUSE_BUTTON_LEFT)
+		w.release(MOUSE_BUTTON_LEFT)
+	if _mt_t >= 4.7 and _opts.has("rkey") and not _opts.has("mrk"):
+		_opts["mrk"] = "1"            # --rkey: R (sticky bombs set off, a reload, the laser's vent)
+		w.reload_key()
 	if _mt_t >= 3.2 and not _opts.has("mpr1"):
 		_opts["mpr1"] = "1"
 		print("MELEE %s left: %s | grunt alive %s, legs lost %d, floored %s, at %s, hp %.0f, pieces %d, cubes %d" % [id, str(w.last), str(b.alive), b.legs_lost(), str(b.floored()), str(b.position.snapped(Vector3.ONE * 0.01)), b.hp, pieces.count(), knocked])
@@ -730,10 +739,13 @@ func _bowl() -> void:
 # fire and ice: the fire spreading and eating (flames, ash falling, burnt-off bits dropping), the thaw
 func _status_step(dt: float) -> void:
 	var any_burning := false
+	var ash_ok := true                # one body's ash taken out a frame
 	for b: VoxelBody in bodies.duplicate():
 		if not is_instance_valid(b) or not b.has_status():
 			continue
-		var st: Dictionary = b.status_step(dt)
+		var st: Dictionary = b.status_step(dt, ash_ok)
+		if not (st.removed as Dictionary).is_empty():
+			ash_ok = false
 		if b.burning():
 			any_burning = true
 		for p in st.flames:

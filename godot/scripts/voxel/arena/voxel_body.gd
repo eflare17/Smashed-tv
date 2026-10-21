@@ -564,6 +564,7 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 	# into the box
 	var t0 := 0.0
 	var t1 := max_t
+	var n0 := Vector3i.ZERO           # the box face it came in through
 	for a in 3:
 		if absf(d[a]) < 0.000001:
 			if o[a] < lo[a] or o[a] > hi[a]:
@@ -575,7 +576,10 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 				var tmp := ta
 				ta = tb
 				tb = tmp
-			t0 = maxf(t0, ta)
+			if ta > t0:
+				t0 = ta
+				n0 = Vector3i.ZERO
+				n0[a] = -1 if d[a] > 0 else 1
 			t1 = minf(t1, tb)
 			if t0 > t1:
 				return {}
@@ -592,7 +596,7 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 			var nb := float(cell[a] + (1 if d[a] > 0 else 0))
 			tmax[a] = t0 + (nb - p[a]) / d[a]
 			tdelta[a] = absf(1.0 / d[a])
-	var n := Vector3i.ZERO
+	var n := n0
 	# the face entered first: the box face, or the last step
 	var tcur := t0
 	for _i in (s.x + s.y + s.z) * 2:
@@ -908,7 +912,8 @@ func _shatter_now(dir: Vector3) -> bool:
 
 ## Every frame for a body with has_status(): the fire spreading and eating, the frost fading, the thaw, the panic.
 ## Returns {flames: [world points burning, for VoxelFlames], removed: a cut result of the cubes burnt to ash (or {})}.
-func status_step(dt: float) -> Dictionary:
+## ash_ok false holds the ash back a frame (taking it out costs a fill over the part: the arena lets one body a frame).
+func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 	var out := {"flames": [], "removed": {}}
 	if frozen():
 		frozen_t -= dt
@@ -1004,7 +1009,8 @@ func status_step(dt: float) -> Dictionary:
 		panic_t = maxf(panic_t, 0.6)
 		hurt(BURN_HURT * step)
 	_ash_t += step
-	if not _ash.is_empty() and (_ash_t >= ASH_EVERY or _burn_n == 0):
+	# (ash_ok false: not this frame, another body took its ash out; the last of a fire always goes)
+	if not _ash.is_empty() and (_ash_t >= ASH_EVERY or _burn_n == 0) and (ash_ok or _burn_n == 0):
 		_ash_t = 0.0
 		for nm2 in _ash:
 			ash[nm2] = PackedInt32Array((_ash[nm2] as Dictionary).keys())

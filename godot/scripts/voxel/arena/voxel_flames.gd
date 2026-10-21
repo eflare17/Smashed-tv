@@ -76,7 +76,7 @@ func _process(dt: float) -> void:
 		v *= exp(-dt * 1.5)
 		_vel[i] = v
 		_pos[i] += v * dt + Vector3(sin(_life[i] * 23.0 + i), 0, cos(_life[i] * 19.0 + i)) * 0.15 * dt
-		var col := Color(1.0, 0.95, 0.6).lerp(Color(1.0, 0.45, 0.08), clampf((1.0 - k) * 1.6, 0.0, 1.0))
+		var col := Color(1.0, 0.85, 0.45).lerp(Color(1.0, 0.45, 0.08), clampf((1.0 - k) * 1.6, 0.0, 1.0))
 		col = col.lerp(Color(0.5, 0.08, 0.02), clampf((0.45 - k) * 2.2, 0.0, 1.0))
 		col.a = clampf(k * 1.4, 0.0, 1.0)
 		var s := _cube * _size[i] * (0.4 + 0.6 * k)

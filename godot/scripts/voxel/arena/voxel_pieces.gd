@@ -86,10 +86,10 @@ func step(dt: float) -> void:
 	for i in range(_pieces.size() - 1, -1, -1):
 		var pc: Dictionary = _pieces[i]
 		pc.t += dt
-		var rb: RigidBody3D = pc.rb
-		if not is_instance_valid(rb):
+		if not is_instance_valid(pc.rb):      # (freed by something else: a typed assignment of it would fail)
 			_pieces.remove_at(i)
 			continue
+		var rb: RigidBody3D = pc.rb
 		if rb.global_position.y < -3.0:
 			# knocked over the walls: nothing out there to land on
 			rb.queue_free()
@@ -179,6 +179,8 @@ func vacuum(brush: Vector3, r: float) -> void:
 		b.queue_free()
 	for i in range(_pieces.size() - 1, -1, -1):
 		var pc: Dictionary = _pieces[i]
+		if not is_instance_valid(pc.rb):
+			continue
 		var rb: RigidBody3D = pc.rb
 		if pc.t < 0.4 or rb.global_position.distance_to(brush) > r + 0.3:
 			continue
