@@ -861,6 +861,9 @@ func _got(d: PackedByteArray) -> void:
 		81:
 			if role == "guest":
 				_read_pieces(d)
+		84:
+			if role == "guest":
+				arena.games.on_tv_frame(d.slice(1))     # (the host's TV picture, a JPEG)
 		82:
 			var msg = bytes_to_var(d.slice(1))
 			if typeof(msg) == TYPE_ARRAY:
@@ -876,6 +879,7 @@ func _message(m: Array) -> void:
 				arena.yard.farm.send_all()
 				arena.yard.chickens.send_all()
 				arena.yard.shredder.send_all()
+				arena.games.send_all()
 		"W":
 			_world(m[1], m[2])
 			arena.wave = int(m[3])
@@ -916,6 +920,8 @@ func _message(m: Array) -> void:
 			arena.yard.chickens.on_net(m.slice(1))
 		"M":
 			arena.yard.shredder.on_net(m.slice(1))
+		"R":
+			arena.games.on_net(m.slice(1))
 		"X":
 			if role == "host":
 				arena.spawn(clampi(int(m[1]), 1, 40))
@@ -939,6 +945,18 @@ func request_more(n: int) -> void:
 func send_farm(m: Array) -> void:
 	if linked:
 		_send(["K"] + m)        # (K: "F" is the fingerprints' fix)
+
+## The games room's (VoxelGamesRoom), either way, reliable.
+func send_games(m: Array) -> void:
+	if linked:
+		_send(["R"] + m)
+
+## The host's TV picture (a JPEG) to the guest, unreliable (a lost one is replaced by the next).
+func send_tv(jpg: PackedByteArray) -> void:
+	if linked and role == "host":
+		var d := PackedByteArray([84])    # T
+		d.append_array(jpg)
+		_send_fast(d)
 
 ## The shredder's (VoxelShredder), either way, reliable.
 func send_shredder(m: Array) -> void:

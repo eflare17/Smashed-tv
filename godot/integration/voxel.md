@@ -390,6 +390,46 @@ bone; ash is lost; charred pieces give lower-value fertiliser")
   `test/voxel/shredder_shots.gd` (`voxel_shots/shredder_*.png`); the logic test's fire checks and the flamethrower's
   self-test changed for the new burning (a lick of flame chars, the flame held on makes ash, bone stays, it dies down).
 
+### The retro games room (22 Oct, the owner's Stage 7: "couch + TV area with all the consoles on the wall; pick a
+system and it pops up on the table; physically pull game cases off a shelf, open them and play; built-in emulator for
+Mega Drive games, Smash TV etc.")
+
+- **The emulator** (`addons/voxel_retro/`): a small libretro frontend as a GDExtension (`RetroCore`, C++ in `src/`,
+  built with godot-cpp 4.4 for Linux and Windows x86_64: `src/build.sh`) that loads a libretro core, loads a game,
+  runs it a frame at a time, and hands back the picture (an RGB8 Image from 0RGB1555 / RGB565 / XRGB8888) and the
+  sound (stereo frames), takes the buttons (and the bitmask form), and saves / loads states. The cores are built from
+  source here too (the libretro buildbot is blocked from this container): **Genesis Plus GX** (Mega Drive, Master
+  System, Game Gear) and **Snes9x** (Super Nintendo), both free for non-commercial use only. The Windows DLLs need
+  nothing but KERNEL32 and msvcrt; the export puts the plugin and the cores next to the exe (`[dependencies]` in the
+  `.gdextension`). **No games are included**: players add their own. Our own **test cartridge**
+  (`assets/voxel/retro/test_cart.s`, 68000 assembly, built with binutils' m68k assembler: a drifting checkerboard the
+  d-pad scrolls, B / C flash it red and beep) is on the shelf so the TV has something to play.
+- **The TV** (`voxel_retro_tv.gd`): the game runs at the console's own frame rate (catching up at most three frames a
+  frame), its picture on the screen through a CRT shader (a little curve, scanlines, a vignette), its sound out of
+  the TV (an AudioStreamGenerator at the core's sample rate, 3D), the room lit by the picture's average colour. On the
+  couch, the keyboard and any pad are player 1's controller (arrows / WASD the d-pad; J K L, U I O the face buttons as
+  A B C / X Y Z on a Mega Drive pad, Y B A / L X R on a Super Nintendo's; Enter start; Tab mode / select). Ejected, it
+  saves a state (`user://retro_saves/`) and the same game carries on from it next time.
+- **The room** (`voxel_games_room.gd`): west of the bedroom (x -14.2..-5.2, z 22.5..30.2), its own door in the arena's
+  south wall (a neon frame, GAMES ROOM over it); a 90s arcade carpet (made in code), purple walls, posters, a lamp; a
+  big rear-projection TV against the back wall, a coffee table with two pads, a couch with two seats facing it; the
+  four consoles on wall shelves (E: down onto the table, flying, the other back up); a bookcase of cases (spines out,
+  the game's colour and name; up to 60 a shelf, the eye-level shelf first). E at a case: into your hands, its lid
+  swinging open on the cartridge; E at the table: in (the right console comes down by itself), the TV on; E at the
+  couch: sit (the view on the TV, narrower); E: up; E at the console while on: eject. The **library**: the test
+  cartridge, then every game file in `user://games` and (in a build) the `games` folder beside the exe, by extension
+  (.md .bin .gen .smd, .sfc .smc, .sms .sg, .gg), a .zip's first game taken out into a cache, names tidied ("Super
+  Smash TV (USA)" -> "Super Smash TV"). E at the ADD GAMES plaque opens the system's file picker (Windows) and copies
+  them in. A safe room (`VoxelArena.safe`, the cubes' rooms). `--retrotest` (the exported game's own check): the test
+  cartridge put in and played 2 s, what came out printed, quits.
+- **Co-op**: the room is the host's. The host's TV picture goes to the guest 15 times a second (192 x 134 JPEG,
+  unreliable, binary message 84); the console on the table and what's on go as network message "R"; a guest on the
+  couch is player 2 (their buttons to the host's console when they change). The guest can't put games in (the files
+  are the host's); a guest's own console is switched off while they're in someone's game.
+- Tests: `test/voxel/games_test.gd` (26 checks alone; with `--host` / `--join` 2 + 3), `test/voxel/games_shots.gd`
+  (`voxel_shots/games_*.png`); the Windows build checked under Wine (`SmashedVoxelArena.exe --headless -- --retrotest`:
+  the plugin loads, Genesis Plus GX plays the test cartridge, 179 frames, 320 x 224).
+
 ### The online menu (22 Oct, the owner: "can you make it easier to join? I like the set up in the last game")
 
 - `scripts/voxel/net/voxel_net_menu.gd`, the main game's PLAY ONLINE panel (`NetMenu`) rebuilt for the voxel game:

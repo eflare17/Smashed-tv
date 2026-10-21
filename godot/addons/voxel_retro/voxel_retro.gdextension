@@ -1,0 +1,16 @@
+[configuration]
+
+entry_symbol = "voxel_retro_init"
+compatibility_minimum = 4.1
+
+[libraries]
+
+linux.debug.x86_64 = "bin/libvoxel_retro.linux.x86_64.so"
+linux.release.x86_64 = "bin/libvoxel_retro.linux.x86_64.so"
+windows.debug.x86_64 = "bin/voxel_retro.windows.x86_64.dll"
+windows.release.x86_64 = "bin/voxel_retro.windows.x86_64.dll"
+
+[dependencies]
+
+linux.x86_64 = {"bin/cores/genesis_plus_gx_libretro.so": "", "bin/cores/snes9x_libretro.so": ""}
+windows.x86_64 = {"bin/cores/genesis_plus_gx_libretro.dll": "", "bin/cores/snes9x_libretro.dll": ""}

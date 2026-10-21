@@ -118,6 +118,8 @@ var lock_view: VoxelLockView
 var lock_then_chest := false    # the padlock was opened to get into the chest: once it springs open, the chest opens
 var _unlock_t := 0.0
 var lying := 0                  # the bed (1, 2) lain on, 0 standing
+var games: VoxelGamesRoom       # the retro games room (Stage 7)
+var _near_game := ""            # what's looked at in there (VoxelGamesRoom.pick)
 ## The back yard (Stage 4): ground to dig with the shovel and the pick, the tool bench.
 var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
@@ -342,8 +344,8 @@ void fragment() {
 	for i in range(1, 4):
 		var a := i * PI / 2.0
 		_box(Vector3(sin(a) * ARENA, 2.0, cos(a) * ARENA), Vector3(ARENA * 2.0 if i % 2 == 0 else 1.0, 4.0, 1.0 if i % 2 == 0 else ARENA * 2.0), wall_mat)
-	# the south wall: the bedroom's doorway (Stage 3) and the back door to the yard (Stage 4) in it
-	var gaps := [[VoxelBedroom.DOOR_X0, VoxelBedroom.DOOR_X1], [VoxelYard.DOOR_X0, VoxelYard.DOOR_X1]]
+	# the south wall: the games room's doorway (Stage 7), the bedroom's (Stage 3) and the back door to the yard (Stage 4)
+	var gaps := [[VoxelGamesRoom.DOOR_X0, VoxelGamesRoom.DOOR_X1], [VoxelBedroom.DOOR_X0, VoxelBedroom.DOOR_X1], [VoxelYard.DOOR_X0, VoxelYard.DOOR_X1]]
 	var from := -ARENA - 0.5
 	for g in gaps:
 		_box(Vector3((from + float(g[0])) * 0.5, 2.0, ARENA), Vector3(float(g[0]) - from, 4.0, 1.0), wall_mat)
@@ -356,6 +358,9 @@ void fragment() {
 	yard = VoxelYard.new()
 	add_child(yard)
 	yard.setup(self)
+	games = VoxelGamesRoom.new()
+	add_child(games)
+	games.setup(self)
 	var pil := StandardMaterial3D.new()
 	pil.albedo_color = Color(0.3, 0.12, 0.35)
 	pil.emission_enabled = true
@@ -733,13 +738,14 @@ func _keep_dead(b: VoxelBody) -> void:
 
 ## Off the arena, where the enemies never go (the bedroom, the yard).
 static func safe(p: Vector3) -> bool:
-	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p) or VoxelChickens.in_pen(p)
+	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p) or VoxelChickens.in_pen(p) or VoxelGamesRoom.in_room(p)
 
 # the cubes' rooms off the arena (they stay in them): the bedroom, the yard
 static func _rooms() -> Array:
 	return [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0),
 		Rect2(VoxelYard.X0 + 0.1, VoxelYard.Z0, VoxelYard.X1 - VoxelYard.X0 - 0.1, VoxelYard.Z1 - VoxelYard.Z0),
-		Rect2(VoxelChickens.X0, VoxelChickens.Z0, VoxelChickens.X1 - VoxelChickens.X0, VoxelChickens.Z1 - VoxelChickens.Z0)]
+		Rect2(VoxelChickens.X0, VoxelChickens.Z0, VoxelChickens.X1 - VoxelChickens.X0, VoxelChickens.Z1 - VoxelChickens.Z0),
+		Rect2(VoxelGamesRoom.X0, VoxelGamesRoom.Z0, VoxelGamesRoom.X1 - VoxelGamesRoom.X0, VoxelGamesRoom.Z1 - VoxelGamesRoom.Z0)]
 
 ## The next shovel the tool bench makes (null: the golden one's made).
 func next_upgrade():
@@ -843,6 +849,9 @@ func _storage_step(dt: float) -> void:
 	if lying > 0:
 		_use_label.text = "E, WASD or Space: get up"
 		return
+	if games.seated > 0:
+		_use_label.text = games.seated_line()
+		return
 	if inv_ui.is_open():
 		_use_label.text = ""
 		var st := inv_ui.storage
@@ -861,6 +870,7 @@ func _storage_step(dt: float) -> void:
 	_near_plant = -1
 	_near_hen = ""
 	_near_shred = ""
+	_near_game = ""
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -872,6 +882,8 @@ func _storage_step(dt: float) -> void:
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
 		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
 		var pp2 := player.global_position
+		if VoxelGamesRoom.in_room(pp2) and _near_st == null and _near_bed == 0:
+			_near_game = String(games.pick(eye, fwd)[0])
 		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and (VoxelYard.in_yard(pp2) or VoxelChickens.in_pen(pp2)):
 			_near_hen = String(yard.chickens.pick(eye, fwd)[0])
 		if _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
@@ -895,6 +907,8 @@ func _storage_step(dt: float) -> void:
 		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
 	elif _near_bench:
 		t = bench_line()
+	elif _near_game != "":
+		t = games.line(_near_game)
 	elif _near_hen != "":
 		t = yard.chickens.line(_near_hen)
 	elif _near_shred != "":
@@ -1096,6 +1110,10 @@ func _unhandled_input(e: InputEvent) -> void:
 				if e.physical_keycode == KEY_ESCAPE:
 					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			return
+		if games.seated > 0:
+			if e.physical_keycode in [KEY_E, KEY_ESCAPE]:
+				games.get_up()          # (the rest of the keys are the console's controller)
+			return
 		match e.physical_keycode:
 			KEY_TAB, KEY_I:
 				open_inventory(null)
@@ -1137,6 +1155,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					house.ward_open = not house.ward_open
 				elif _near_bench:
 					bench_make()
+				elif _near_game != "":
+					games.use(_near_game)
 				elif _near_hen != "":
 					yard.chickens.use(_near_hen)
 				elif _near_shred != "":
@@ -1409,6 +1429,9 @@ func _physics_process(dt: float) -> void:
 		player.velocity = Vector3.ZERO
 		player.global_position = house.lie_spot(lying)
 		dir = Vector3.ZERO
+	if games.seated > 0:
+		player.velocity = Vector3.ZERO
+		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
 	player.velocity.z = dir.z * sp
 	if _dash_t > 0.0:
@@ -1420,7 +1443,7 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	if lying <= 0:
+	if lying <= 0 and games.seated == 0:
 		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
@@ -1689,6 +1712,10 @@ func _camera(dt: float) -> void:
 		cam.global_position = house.lie_eye(lying)
 		cam.rotation = Vector3(look_pitch, look_yaw, 0.0)
 		cross.visible = false
+	elif games.seated > 0:
+		cam.global_position = Vector3(pp.x, 1.12, pp.z + 0.05)       # (sat on the couch)
+		cam.rotation = Vector3(look_pitch, look_yaw, 0.0)
+		cross.visible = false
 	else:
 		var low := minf(1.0, (down_t if down_t > 0.0 else 0.0) * 4.0)     # down: on the floor, the view tipped over
 		cam.global_position = pp + Vector3(0, lerpf(1.65, 0.35, low), 0)
@@ -1752,7 +1779,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()):
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or games.seated > 0 or games.held >= 0:
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -1878,13 +1905,15 @@ func _weapons_step(dt: float) -> void:
 	avatar.recoil = maxf(0.0, avatar.recoil - dt * 6.0)
 	_aim_k = move_toward(_aim_k, 1.0 if _aiming and not top_down else 0.0, dt * 6.0)
 	cam.fov = lerpf(80.0, 50.0, _aim_k)
+	if games.seated > 0:
+		cam.fov = 50.0              # (on the couch: the TV fills more of the view)
 	# a switch: the first half the old one goes down, the second half the new one comes up
 	var k := 1.0 - loadout.switch_frac()
 	var shown := cur
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open()      # (in bed, dialling a padlock: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0     # (in bed, dialling a padlock, on the couch, a game case in your hands: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]
