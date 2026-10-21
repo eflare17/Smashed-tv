@@ -19,12 +19,13 @@ const ITEMS := {
 }
 
 static var _by_col := {}
-static var EXTRA := {}          # the farm's and the chickens' (VoxelFarm.items, VoxelChickens.items), made the first time asked
+static var EXTRA := {}          # the farm's, the chickens', the shredder's (their items()), made the first time asked
 
 static func _extra() -> Dictionary:
 	if EXTRA.is_empty():
 		EXTRA = VoxelFarm.items()
 		EXTRA.merge(VoxelChickens.items())
+		EXTRA.merge(VoxelShredder.items())
 	return EXTRA
 
 static func _info(id: String) -> Dictionary:

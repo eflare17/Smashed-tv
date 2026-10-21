@@ -241,7 +241,8 @@ func _carve() -> void:
 	check(not b2.floored(), "then back up")
 	b2.queue_free()
 
-# fire and ice (the flamethrower's and the freeze ray's): burning spreads and eats cubes to ash, they panic; frost
+# fire and ice (the flamethrower's and the freeze ray's): burning spreads and chars, the flame held on eats cubes to
+# ash (not bone), they panic; frost
 # slows, then freezes them solid; a frozen body shatters at a blow; left alone it thaws
 func _fire_ice() -> void:
 	var b := _grunt()
@@ -250,12 +251,29 @@ func _fire_ice() -> void:
 	check(caught > 20 and b.burning() and b.panic_t > 0.0, "set alight: %d cubes caught, panicking" % caught)
 	var gone := 0
 	var most := 0
-	for i in 240:
+	var bone0 := _count_col(b, VoxelBody.BONE)
+	for i in 150:
 		var st: Dictionary = b.status_step(1.0 / 60.0)
 		most = maxi(most, b._burn_n)
 		if not (st.removed as Dictionary).is_empty():
 			gone += int(st.removed.cut)
-	check(most > caught and gone > 0 and b.cubes_left() < n0, "it spreads (%d burning at most) and burns to ash (%d gone)" % [most, gone])
+	check(most > caught and gone == 0 and _count_col(b, VoxelBody.CHAR) > 0, "it spreads (%d burning at most) and chars black; a lick of flame takes nothing to ash" % most)
+	# the flame kept on it (a tick of fire every 0.1 s on the first cube along a line): ash, down to the bone
+	for i in 600:
+		if i % 6 == 0:
+			var h := b.trace(Vector3(0, 1.1, 1.0), Vector3(0, 0, -1), 2.0)
+			if not h.is_empty():
+				b.ignite(h.point, 0.085)
+		var st2: Dictionary = b.status_step(1.0 / 60.0)
+		if not (st2.removed as Dictionary).is_empty():
+			gone += int(st2.removed.cut)
+	check(gone > 0 and b.cubes_left() < n0 and _count_col(b, VoxelBody.BONE) == bone0, "the flame held on: charred cubes crumble to ash (%d gone), the bone doesn't burn (%d)" % [gone, bone0])
+	var ashes := 0
+	for i in 600:
+		var st3: Dictionary = b.status_step(1.0 / 60.0)
+		if not (st3.removed as Dictionary).is_empty():
+			ashes += 1
+	check(not b.burning(), "taken off it, the fire dies down")
 	b.chill(0.5)
 	check(not b.burning(), "the cold puts the fire out")
 	b.queue_free()

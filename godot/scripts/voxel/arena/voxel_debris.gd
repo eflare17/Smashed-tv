@@ -45,6 +45,7 @@ var well_r := 3.5
 var well_pull := 22.0
 var well_eat := 0.3
 var eaten := 0
+var _ash := VoxelBody.ASH.to_rgba32()     # (ash cubes crumble away where they land: VoxelBody's burnt through)
 
 func setup(cube_m: float) -> void:
 	# moved every frame, not on physics ticks: no interpolation (it would lag and warn)
@@ -90,6 +91,8 @@ func lying() -> int:
 
 ## A cube picked up (by its colour: what item it is), into the backpack.
 func take(col: Color, n: int = 1) -> void:
+	if col.to_rgba32() == _ash:
+		return                          # (ash: lost)
 	var k := VoxelItems.of_colour(col)
 	got[k] = int(got.get(k, 0)) + n
 	if on_take.is_valid():
@@ -328,8 +331,9 @@ func _process(dt: float) -> void:
 			if absf(v.y) < 0.3:
 				rest = true
 		if rest or _life[i] > 10.0:
-			# at rest: it stays there, on the floor that doesn't change
-			_lay(Vector3(p.x, _floor, p.z), _rot[i], _col[i])
+			# at rest: it stays there, on the floor that doesn't change (ash crumbles to nothing)
+			if _col[i].to_rgba32() != _ash:
+				_lay(Vector3(p.x, _floor, p.z), _rot[i], _col[i])
 			_drop(i)
 			continue
 		_vel[i] = v

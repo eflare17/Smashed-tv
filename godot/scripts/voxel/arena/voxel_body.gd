@@ -723,19 +723,29 @@ func _blow(n: String) -> Array:
 
 # ---------------------------------------------------------------- fire and ice
 
-## Fire (the flamethrower): cubes set alight burn; each chars black after BURN_CHAR seconds and crumbles to ash after
-## BURN_ASH (taken out: what that leaves hanging falls off), catching the cubes beside it as it goes (BURN_SPREAD a
-## second each), never more than BURN_MAX at once. Alive and burning, they lose BURN_HURT a second and panic, running
-## about with their arms flailing. Ice (the freeze ray): frost builds up (chill), slowing them; at 1 they're frozen
+## Fire (the flamethrower): cubes set alight burn; each chars black after BURN_CHAR seconds, and crumbles to ash after
+## BURN_ASH if the flame is still on it (fed by an ignite in the last FED_FOR seconds: Stage 6.5, "skin chars black
+## first, then sustained flame crumbles charred voxels to ash, exposing bone"; not fed, it goes out, charred), taken
+## out (what that leaves hanging falls off; the ash is lost), catching the cubes beside it as it goes (BURN_SPREAD a
+## second each, far less away from the flame), never more than BURN_MAX at once. Bone doesn't burn. Alive and
+## burning, they lose BURN_HURT a second and panic, running about with their arms flailing. Ice (the freeze ray): frost builds up (chill), slowing them; at 1 they're frozen
 ## solid for FREEZE_T seconds (blue-white, still as statues), and then any hit at all shatters them into ice cubes.
 ## status_step(dt) runs it all (the arena calls it every frame for a body with has_status()).
 const BURN_CHAR := 0.8
-const BURN_ASH := 2.4
+const FED_FOR := 0.4             # seconds since the flame was last on a cube that still count as sustained
+const FLAME_MORE := 300          # the flame's own cubes catch past BURN_MAX (the spreading can't crowd them out)
+const SPREAD_OFF := 0.12         # a cube the flame isn't on spreads this much as fast (the fire dies down without it)
+const BURN_ASH := 1.6
 const BURN_SPREAD := 0.6
 const BURN_MAX := 900
 const BURN_HURT := 7.0
 const BURN_TICK := 0.125         # seconds between fire steps
 const CHAR := Color8(34, 26, 22)
+## Burnt through: the ash falls off and is lost (VoxelDebris lets it crumble away; the vacuum gets nothing from it).
+## Bone doesn't burn (Stage 6.5: "sustained flame crumbles charred voxels to ash, exposing bone").
+const ASH := Color8(92, 88, 84)
+const BONE_V := ((226 << 16) | (220 << 8) | 204) + 1     # (a bone cube's cell value: BONE's colour + 1)
+const CHAR_V := ((34 << 16) | (26 << 8) | 22) + 1         # (a charred one's)
 const ICE := Color8(176, 222, 255)
 const FREEZE_T := 8.0
 const FROST_FADE := 0.12        # frost a second lost when it isn't being kept up
@@ -744,6 +754,8 @@ const FROST_FADE := 0.12        # frost a second lost when it isn't being kept u
 static var on_shatter: Callable
 var _burn := {}                 # part -> {cell index: seconds burning}
 var _burn_n := 0
+var _fed := {}                  # part -> {cell index: the fire clock when the flame was last on it}
+var _fire_clock := 0.0
 var _burn_tick := randf() * BURN_TICK     # (bodies set alight together still step on different frames)
 const ASH_EVERY := 0.5          # seconds between taking the ash out (its connectivity cut fills the whole part)
 var _ash := {}                  # part -> {cell index: true}: burnt to ash, waiting to be taken out
@@ -785,6 +797,7 @@ func ignite(at: Vector3, r: float) -> int:
 		if _mark_capsule(st, cells, p.grid.size, base, Basis(m.basis.x * vm, m.basis.y * vm, m.basis.z * vm), at, at, r, box) == 0:
 			continue
 		var bd: Dictionary = _burn.get(nm, {})
+		var fd: Dictionary = _fed.get(nm, {})
 		var lo: Vector3i = box.lo
 		var hi: Vector3i = box.hi
 		var s: Vector3i = p.grid.size
@@ -792,11 +805,17 @@ func ignite(at: Vector3, r: float) -> int:
 			for y in range(lo.y, hi.y + 1):
 				for x in range(lo.x, hi.x + 1):
 					var i := x + s.x * (y + s.y * z)
-					if st[i] == 2 and not bd.has(i) and _burn_n < BURN_MAX:
-						bd[i] = 0.0
+					if st[i] != 2 or cells[i] == BONE_V:
+						continue
+					if bd.has(i):
+						fd[i] = _fire_clock          # (alight already: the flame kept on it)
+					elif _burn_n < BURN_MAX + FLAME_MORE:
+						bd[i] = BURN_CHAR if cells[i] == CHAR_V else 0.0     # (charred already: on its way to ash)
+						fd[i] = _fire_clock
 						_burn_n += 1
 						n += 1
 		_burn[nm] = bd
+		_fed[nm] = fd
 	if n > 0 and alive:
 		panic_t = maxf(panic_t, 1.0)
 	return n
@@ -808,6 +827,7 @@ func _chill_x(amount: float) -> bool:
 	frost = minf(1.0, frost + amount)
 	if _burn_n > 0:
 		_burn.clear()                # the cold puts the fire out (the ash not yet fallen stays, charred)
+		_fed.clear()
 		_burn_n = 0
 		_ash.clear()
 	if frost >= 1.0:
@@ -993,6 +1013,7 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		return out
 	var step := _burn_tick
 	_burn_tick = 0.0
+	_fire_clock += step
 	var ash := {}
 	var flames := []
 	var catch := []                   # [part, index] catching this step
@@ -1003,7 +1024,9 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		if p.gone:
 			_burn_n -= bd.size()
 			_burn.erase(nm)
+			_fed.erase(nm)
 			continue
+		var fd: Dictionary = _fed.get(nm, {})
 		var s: Vector3i = p.grid.size
 		var cells: PackedInt32Array = p.grid.cells
 		var recol := false
@@ -1012,13 +1035,15 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
 		var o: Vector3 = p.origin
 		for i in bd.keys():
-			if cells[i] == 0:
+			if cells[i] == 0 or cells[i] == BONE_V:
 				bd.erase(i)
+				fd.erase(i)
 				_burn_n -= 1
 				continue
 			var t0: float = bd[i]
 			var t1 := t0 + step
 			bd[i] = t1
+			var fed_now := _fire_clock - float(fd.get(i, -INF)) <= FED_FOR
 			if t0 < BURN_CHAR and t1 >= BURN_CHAR:
 				if not recol:
 					cells = cells.duplicate()
@@ -1029,12 +1054,14 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 					ch.append(i)
 					charred[nm] = ch          # (a packed array out of a dictionary is a copy: put it back)
 			if t1 >= BURN_ASH:
-				gone.append(i)
-				bd.erase(i)
+				if fed_now:
+					gone.append(i)            # (the flame still on it: ash)
+				bd.erase(i)                   # (else it goes out, charred)
+				fd.erase(i)
 				_burn_n -= 1
 				continue
 			# catching the cubes beside it
-			if randf() < BURN_SPREAD * step * 6.0:
+			if randf() < BURN_SPREAD * step * (6.0 if fed_now else 6.0 * SPREAD_OFF):
 				var dr := randi() % 6
 				var cx: int = i % s.x
 				var cy: int = (i / s.x) % s.y
@@ -1059,7 +1086,8 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		var p2: Dictionary = parts[c[0]]
 		var cells2: PackedInt32Array = p2.grid.cells
 		var i2: int = c[1]
-		if i2 < 0 or i2 >= cells2.size() or cells2[i2] == 0 or (_ash.has(c[0]) and (_ash[c[0]] as Dictionary).has(i2)):
+		# (bone doesn't burn; charred, it's had its fire: only the flame itself takes it to ash)
+		if i2 < 0 or i2 >= cells2.size() or cells2[i2] == 0 or cells2[i2] == BONE_V or cells2[i2] == CHAR_V or (_ash.has(c[0]) and (_ash[c[0]] as Dictionary).has(i2)):
 			continue
 		var bd2: Dictionary = _burn.get(c[0], {})
 		if not bd2.has(i2):
@@ -1088,7 +1116,7 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 			charred = {}
 		var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": quick})
 		for bt in r.bits:
-			bt.col = (bt.col as Color).lerp(CHAR, 0.6)      # ash
+			bt.col = ASH                                  # (crumbles away: lost)
 		out.removed = r
 	if not charred.is_empty():
 		net_rec.call(self, "burn", [charred, {}, false], [])
@@ -2089,7 +2117,7 @@ func _net_burn(charred: Dictionary, ash: Dictionary, quick: bool) -> Dictionary:
 		return {}
 	var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": quick})
 	for bt in r.bits:
-		bt.col = (bt.col as Color).lerp(CHAR, 0.6)
+		bt.col = ASH
 	return r
 
 ## A number that's the same in both games while the body's cubes are (the co-op check).

@@ -66,7 +66,7 @@ const POO_CUBES := 12
 const FEEDER_MAX := 60          # feed in the feeder
 const EAT := 0.5                # a feed fills a hen this much
 ## What goes in the feeder (a feed each), out of the backpack.
-const FEEDS := {"grain": 1, "worm": 3}
+const FEEDS := {"grain": 1, "worm": 3, "blood_bone": VoxelShredder.BAG_FEEDS}
 const GRAIN_BUY := 10           # grain a buy ...
 const GRAIN_COST := 5           # ... for this
 const EGG_PRICE := 4            # at the buyer's crate

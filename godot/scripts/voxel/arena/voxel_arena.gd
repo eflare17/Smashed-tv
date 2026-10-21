@@ -126,6 +126,7 @@ var cash := 0                   # this player's money (Stage 5: kills pay, as in
 var _near_plant := -1           # the farm's spot looked at (a plant or tilled ground)
 var _near_prop := ""            # the farm's prop looked at (the seed bins, the buyer, the tank, the worm farm)
 var _near_hen := ""             # the chickens' thing looked at (the gate, the feeder, a nest box, a hen: VoxelChickens.pick)
+var _near_shred := ""           # the shredder's looked at (the machine, the bags, its sign: VoxelShredder.pick)
 var _near_bed := 0
 var _near_ward := false
 var _self_t := 0.0
@@ -647,7 +648,7 @@ func _prop_line(p: String) -> String:
 			if int(w.cast) > 0:
 				return line + "     E  take %d castings" % int(w.cast)
 			var have: int = inv.count("worm")
-			var scraps: int = inv.count("meat") + inv.count("brain") + inv.count("charred") + inv.count("poo")
+			var scraps: int = inv.count("meat") + inv.count("brain") + inv.count("charred") + inv.count("poo") + inv.count("blood_bone")
 			if have > 0 or scraps > 0:
 				return line + "     E  put in %d worms, %d scraps" % [have, mini(scraps, VoxelFarm.FEED_MOST)]
 			return line + ("  (dig for worms; feed them meat)" if int(w.n) == 0 else "  (making castings)")
@@ -691,7 +692,7 @@ func _spot_line(key: int) -> String:
 	var t := farm.hint(key)
 	var w := farm.feed_with()
 	if w != "" and int(b.fed) < VoxelFarm.FED_MAX:
-		t += "     E  feed it " + ("castings" if w == "castings" else "chicken poo (%d)" % VoxelFarm.POO_FEED)
+		t += "     E  feed it " + {"castings": "castings", "blood_bone": "blood and bone"}.get(w, "chicken poo (%d)" % VoxelFarm.POO_FEED)
 	return t
 
 func _farm_spot(key: int) -> void:
@@ -709,6 +710,22 @@ func _farm_spot(key: int) -> void:
 	elif farm.fertilise(key):
 		sound.play("dig_dirt", Vector3.INF, -10.0, 0.8)
 		say("Fed: it'll grow faster and give a bud more", 2.0)
+
+# a dead body flying (or carried by the gravity gun): kept in the arena, but it can go out through the back door into
+# the yard (Stage 6.5: corpses to the woodchipper), where the yard's fences keep it
+func _keep_dead(b: VoxelBody) -> void:
+	var p := b.position
+	var dx0 := VoxelYard.DOOR_X0 + 0.25
+	var dx1 := VoxelYard.DOOR_X1 - 0.25
+	if p.z > ARENA + 0.7:
+		p.x = clampf(p.x, VoxelYard.X0 + 0.5, VoxelYard.X1 - 0.5)
+		p.z = minf(p.z, VoxelYard.Z1 - 0.5)
+	elif p.z > ARENA - 1.0 and p.x > dx0 - 0.3 and p.x < dx1 + 0.3:
+		p.x = clampf(p.x, dx0, dx1)                # (in the doorway)
+	else:
+		p.x = clampf(p.x, -ARENA + 1.0, ARENA - 1.0)
+		p.z = clampf(p.z, -ARENA + 1.0, ARENA - 1.0)
+	b.position = p
 
 ## Off the arena, where the enemies never go (the bedroom, the yard).
 static func safe(p: Vector3) -> bool:
@@ -839,6 +856,7 @@ func _storage_step(dt: float) -> void:
 	_near_prop = ""
 	_near_plant = -1
 	_near_hen = ""
+	_near_shred = ""
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -853,6 +871,8 @@ func _storage_step(dt: float) -> void:
 		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and (VoxelYard.in_yard(pp2) or VoxelChickens.in_pen(pp2)):
 			_near_hen = String(yard.chickens.pick(eye, fwd)[0])
 		if _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
+			_near_shred = String(yard.shredder.pick(eye, fwd)[0])
+		if _near_shred == "" and _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
 			_near_prop = yard.farm.prop_at(eye, fwd)
 			if _near_prop == "":
 				var ph: Array = yard.farm.plant_hit(eye, fwd)
@@ -873,6 +893,8 @@ func _storage_step(dt: float) -> void:
 		t = bench_line()
 	elif _near_hen != "":
 		t = yard.chickens.line(_near_hen)
+	elif _near_shred != "":
+		t = yard.shredder.line(_near_shred)
 	elif _near_prop != "":
 		t = _prop_line(_near_prop)
 	elif _near_plant >= 0:
@@ -1132,6 +1154,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					bench_make()
 				elif _near_hen != "":
 					yard.chickens.use(_near_hen)
+				elif _near_shred != "":
+					yard.shredder.use(_near_shred)
 				elif _near_prop != "":
 					_farm_prop(_near_prop)
 				elif _near_plant >= 0:
@@ -1433,8 +1457,7 @@ func _physics_process(dt: float) -> void:
 				continue
 			if b.airborne or b.knock.length_squared() > 0.0001:
 				b.react_step(dt)          # knocked flying dead: still flies, lands, slides
-				b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
-				b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
+				_keep_dead(b)
 			continue
 		var pp: Vector3 = targets[0]
 		var ti := 0

@@ -353,6 +353,43 @@ a nesting area; chickens can be let out to roam the yard; max chicken cap tied t
 - Tests: `test/voxel/chickens_test.gd` (41 checks alone; with `--host` / `--join` 4 + 7 co-op checks),
   `test/voxel/chickens_shots.gd` (`voxel_shots/chickens_*.png`).
 
+### The shredder, blood and bone, burning (21 Oct, the owner's Stage 6.5: "gore pieces become a resource: shred them
+into bags of blood and bone fertiliser for crops, the worm farm and chickens; shredder: throw limbs in the top, it
+grinds with blood spray, bags drop out the bottom; upgrade tiers: hand-crank mincer -> bigger shredder -> industrial
+woodchipper; flamethrower burning: skin chars black first, then sustained flame crumbles charred voxels to ash, exposing
+bone; ash is lost; charred pieces give lower-value fertiliser")
+
+- **The shredder** (`voxel_shredder.gd`) against the back yard's south fence. What comes to its mouth is taken in: a
+  piece flying or dropped in (the gravity gun carries them out of the arena through the back door; a dead body carried
+  or thrown can now go out the door into the yard too, `VoxelArena._keep_dead`), a lying limb or corpse put in, or E:
+  the gore in your backpack (meat, brain, bone, charred bits, up to 20000). It grinds at its tier's rate with the
+  machine shaking, its drums or crank turning, blood spraying (grey for burnt stuff), crunches for bone; every 4000
+  points a **bag of blood and bone** drops out onto a pile (E takes them). Points a cube: meat and brain 1, bone 2,
+  charred 0.35, rubble (clothes, gear) 0.1: a grunt is about 6 bags, a burnt one far fewer. A blood stain spreads
+  round it the more it's ground.
+- **Tiers** (its sign upgrades it): the **hand-crank mincer** (a cast-iron mincer on a stand; 300 cubes a second;
+  takes up to 2000 cubes: a hand, a foot, a forearm), the **electric shredder** ($200 + 300 stone; 1500 a second; up
+  to 8000: a head, a leg), the **industrial woodchipper** ($600 + 60 gold; a trailer chipper, its big feed chute and
+  the spray out of its discharge; 8000 a second; anything, a whole corpse). Too big: it sits in the top and says so.
+- **Blood and bone**: a bag feeds a plant like castings (E; castings first, then blood and bone, then chicken poo), is
+  150 scraps' worth in the worm farm, or 12 feeds in the chickens' feeder.
+- **Burning** (`VoxelBody`): a cube alight chars black after 0.8 s; at 1.6 s it crumbles to ash only if the flame is
+  still on it (an ignite in the last 0.4 s: the flamethrower's stream re-lights where it lands every 0.1 s, a fire
+  patch every 0.2 s), else it goes out, charred. Fire spreads to fresh cubes beside burning ones (fast round the flame,
+  slowly away from it, so it dies down when the flame moves off), never to charred cubes or bone: held on, the flame
+  digs into the flesh and stops at the bone. **The ash is lost**: its cubes (a grey of their own, `VoxelBody.ASH`)
+  crumble away where they land and the vacuum gets nothing from them. Charred cubes vacuumed are "charred bits"
+  (half in the worm farm, a third in the shredder).
+- **Co-op**: the shredder is the host's: the host's game takes in what comes to its mouth (the pieces and corpses
+  going are told to the guest as before); a guest's backpack gore, bag taking and upgrading go to the host as requests
+  (network message "M"), the bags come back as gives; its state goes to the guest every 2 s and on every change. The
+  burning is decided in the host's game and its char and ash go to the guest as before. Saved with the rest.
+- Sounds (`assets/voxel/tools/sfx_shredder.py`): the mincer's squelch and creak, the shredder's motor and teeth, the
+  woodchipper's diesel and drum, bone crunches, a bag dropping, a motor winding up.
+- Tests: `test/voxel/shredder_test.gd` (27 checks alone; with `--host` / `--join` 4 + 5 co-op checks),
+  `test/voxel/shredder_shots.gd` (`voxel_shots/shredder_*.png`); the logic test's fire checks and the flamethrower's
+  self-test changed for the new burning (a lick of flame chars, the flame held on makes ash, bone stays, it dies down).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

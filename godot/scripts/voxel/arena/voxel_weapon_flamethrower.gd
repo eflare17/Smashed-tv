@@ -7,7 +7,8 @@ extends VoxelMelee
 ## they get and splashing over whatever they meet. About ten times a second a small cone of rays follows the stream
 ## (VoxelBody.trace on the bodies near it, a world ray for walls, pillars and the floor), and every body it reaches,
 ## alive, dead or a lying piece, is set alight where it lands (VoxelBody.ignite). The body does the rest by itself:
-## the fire spreads over it, chars the cubes black and burns them to ash, and the living panic and run about flailing.
+## the fire spreads over it charring the cubes black, where the stream stays on it they crumble to ash (the ash is
+## lost; the bone doesn't burn: Stage 6.5), and the living panic and run about flailing.
 ## More fire on one already burning just adds more. A frozen one is thawed instead (the ice steams off, a few seconds
 ## of its freeze melted each second), then it burns. The tank holds 8 s of spray and refills at a third of that rate
 ## once you stop; the weapon bar shows the fuel. Run it dry and it coughs out a few weak puffs and stops. Right click
@@ -1133,15 +1134,22 @@ static func checks(host: Node) -> Array:
 	var hh := hit_along(b, arc(Vector3(0, 1.62, 2.0), Vector3.FORWARD))
 	var r2 := scorch(b, hh.get("point", Vector3(0, 1.62, 0.1)), IGNITE_R, 0.0)
 	out.append([b.burning() and int(r2.caught) > 0, "on fire already, a new spot (his face) catches more (%d)" % r2.caught])
-	# it spreads by itself: in 3 s it has hurt him and burnt cubes to ash
+	# it spreads by itself: in 3 s it has hurt him and charred him black, but a lick of flame burns nothing away
 	var hp0 := b.hp
 	var left0 := b.cubes_left()
 	var flames := 0
 	for i in 26:
 		var st: Dictionary = b.status_step(0.125)
 		flames += (st.flames as Array).size()
-	out.append([b.hp < hp0 - 15.0 and b.cubes_left() < left0 and flames > 20,
-		"it spreads by itself: %.0f health and %d cubes burnt away in 3 s" % [hp0 - b.hp, left0 - b.cubes_left()]])
+	out.append([b.hp < hp0 - 15.0 and b.cubes_left() == left0 and flames > 20,
+		"it spreads by itself: %.0f health in 3 s, charred, nothing burnt away" % (hp0 - b.hp)])
+	# the flame kept on him (a tick every 0.1 s, where the stream lands now): charred cubes crumble to ash
+	for i in 40:
+		var hk := hit_along(b, pts)
+		if not hk.is_empty():
+			scorch(b, hk.point, IGNITE_R, 0.0)
+		b.status_step(0.1)
+	out.append([b.cubes_left() < left0, "the flame kept on him: %d cubes burnt to ash in 4 s" % (left0 - b.cubes_left())])
 	b.queue_free()
 	# out of reach: 8 m off, it doesn't get there; the line droops, the cone's ring is CONE out
 	var b2 := _grunt(host, m)

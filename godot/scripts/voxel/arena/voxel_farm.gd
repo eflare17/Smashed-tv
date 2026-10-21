@@ -39,7 +39,7 @@ const WORM_EAT := 2.0
 const CAST_EVERY := 300.0
 const WORM_MAX := 60
 const WORM_BREED := 0.004       # new worms a second per worm while there's food
-const SCRAP := {"meat": 1.0, "brain": 1.0, "charred": 0.5, "poo": 1.5}   # what a cube of each is worth to them (burnt: less; manure: more)
+const SCRAP := {"meat": 1.0, "brain": 1.0, "charred": 0.5, "poo": 1.5, "blood_bone": VoxelShredder.BAG_SCRAPS}   # what one of each is worth to them (burnt: less; manure: more; a bag of blood and bone: lots)
 ## Chicken poo (Stage 6) feeds a plant too, weaker than castings: this many of its cubes a feed.
 const POO_FEED := 20
 const FEED_MOST := 3000         # scraps put in at a time
@@ -231,10 +231,13 @@ func water(key: int) -> bool:
 	_changed(key)
 	return true
 
-## What feeds a plant, out of this player's backpack: castings (one), else chicken poo (POO_FEED of it). "": neither.
+## What feeds a plant, out of this player's backpack: castings (one), a bag of blood and bone, else chicken poo
+## (POO_FEED of it). "": none.
 func feed_with() -> String:
 	if arena.inv.count("castings") >= 1:
 		return "castings"
+	if arena.inv.count("blood_bone") >= 1:
+		return "blood_bone"
 	if arena.inv.count("poo") >= POO_FEED:
 		return "poo"
 	return ""
@@ -246,7 +249,7 @@ func fertilise(key: int) -> bool:
 	var w := feed_with()
 	if b == null or float(b.g) >= 1.0 or int(b.fed) >= FED_MAX or w == "":
 		return false
-	arena.inv.remove(w, 1 if w == "castings" else POO_FEED)
+	arena.inv.remove(w, POO_FEED if w == "poo" else 1)
 	if _is_guest():
 		_msg(["fert", key, w])
 		return true
@@ -421,8 +424,8 @@ func on_net(m: Array) -> void:
 					bf.fed = int(bf.fed) + 1
 					_changed(int(m[1]))
 				else:
-					var back := "poo" if m.size() > 2 and String(m[2]) == "poo" else "castings"
-					_msg(["give", {"id": back, "n": 1 if back == "castings" else POO_FEED}])
+					var back := String(m[2]) if m.size() > 2 and String(m[2]) in ["poo", "blood_bone"] else "castings"
+					_msg(["give", {"id": back, "n": POO_FEED if back == "poo" else 1}])
 		"wcast":
 			if host and int(worms.cast) > 0:
 				_msg(["give", {"id": "castings", "n": int(worms.cast)}])
