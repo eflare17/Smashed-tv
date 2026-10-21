@@ -64,6 +64,10 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   hard, else after 2.2 s); right click a sticky bomb that sticks to a wall, the floor or a body part (riding on it); R
   sets them all off one after another (with none out, R reloads the drum of six). The blast tears craters on the side
   facing it, limbs off at point blank, throws them, sets the near ones alight, shatters frozen ones.
+- After the weapons (21 Oct): big craters cost half as much (a cut that leaves everything joined takes only its cubes
+  out; 480 random cuts give the same results as before); burning bodies take their ash out cheaply (ten burning: 3-5 ms
+  a frame, not 20-35); the laser cuts through a group swept across (lines queued per body); nothing goes through the
+  pillars (walking enemies slide round them toward you; flying, dragged, held or pulled bodies are pushed out).
 - Screenshots of the new weapons (software-rendered): `voxel_shots/weapon_flamethrower.png`, `weapon_freezeray_statue.png`,
   `weapon_freezeray_shatter.png`, `weapon_laser_cut_in_half.png`, `weapon_harpoon_head.png`, `weapon_gravity_black_hole.png`,
   `weapon_grenade_blast.png`, `weapon_hammer_side_swing.png`, `weapon_shotgun_both_barrels.png`. Each new weapon was built by
