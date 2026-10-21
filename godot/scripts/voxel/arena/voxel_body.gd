@@ -745,7 +745,7 @@ var _burn_tick := randf() * BURN_TICK     # (bodies set alight together still st
 const ASH_EVERY := 0.5          # seconds between taking the ash out (its connectivity cut fills the whole part)
 var _ash := {}                  # part -> {cell index: true}: burnt to ash, waiting to be taken out
 var _ash_t := randf() * ASH_EVERY
-const ASH_FILL := 4
+const ASH_FILL := 8              # (every 4 s a body: what burnt through drops off)
 var _ash_n := randi() % ASH_FILL
 var _orig := {}                 # part -> its cells' colours before fire or ice changed them (for the thaw)
 var frost := 0.0
@@ -1249,8 +1249,23 @@ static func _flood(q: PackedInt32Array, st: PackedByteArray, cells: PackedInt32A
 # the cut cubes (st 2, in the box clo..chi) taken out of part p, nothing else coming off: their bits into res (every
 # every-th), res.cut and p.left counted; returns how many were brain
 func _take_cut(p: Dictionary, st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, clo: Vector3i, chi: Vector3i,
-		base: Vector3, ex: Vector3, ey: Vector3, ez: Vector3, every: int, res: Dictionary, ncut: int) -> int:
+		base: Vector3, ex: Vector3, ey: Vector3, ez: Vector3, every: int, res: Dictionary, ncut: int,
+		idx := PackedInt32Array()) -> int:
 	var brain := 0
+	if not idx.is_empty():
+		# the cells to take are known (fire's ash, scattered over the part): just those, not the box round them
+		for i2 in idx:
+			if i2 < 0 or i2 >= cells.size() or st[i2] != 2 or cells[i2] == 0:
+				continue
+			var v4 := cells[i2]
+			if (i2 % every) == 0:
+				var k6 := v4 - 1
+				res.bits.append({"pos": base + ex * (i2 % s.x) + ey * ((i2 / s.x) % s.y) + ez * (i2 / (s.x * s.y)),
+					"col": Color8((k6 >> 16) & 255, (k6 >> 8) & 255, k6 & 255)})
+			if _brain_ints.has(v4):
+				brain += 1
+			cells[i2] = 0
+		clo = chi + Vector3i.ONE                # (the box loop below does nothing)
 	for z in range(clo.z, chi.z + 1):
 		for y in range(clo.y, chi.y + 1):
 			var row2 := s.x * (y + s.y * z)
@@ -1443,7 +1458,8 @@ func _remove(opt: Dictionary) -> Dictionary:
 		if not joint_cut and (quick_only or (box_v < cells.size() and not _may_split(st, cells, s, clo, chi))):
 			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
 			# whole: just take the cut cubes out, no fill over the whole part
-			brain_hit += _take_cut(p, st, cells, s, clo, chi, base, ex, ey, ez, every, res, ncut)
+			brain_hit += _take_cut(p, st, cells, s, clo, chi, base, ex, ey, ez, every, res, ncut,
+				mask[nm] if masked else PackedInt32Array())
 			quick[nm] = [st, cells]
 			res.parts.append(nm)
 			if nm == "torso":
