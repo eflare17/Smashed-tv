@@ -448,7 +448,7 @@ static func side_hit(list: Array, from: Vector3, fwd: Vector3, right: Vector3, s
 			continue
 		var at := rad_to_deg(atan2(to.dot(s), to.dot(f))) * side
 		var half := rad_to_deg(atan2(0.6, maxf(d, 0.3))) + SIDE_STEP
-		near.append([b, at - half, at + half])
+		near.append([b, at - half, at + half, _bounds(b)])
 	if near.is_empty():
 		return []
 	var a := a0
@@ -463,6 +463,9 @@ static func side_hit(list: Array, from: Vector3, fwd: Vector3, right: Vector3, s
 			for e in near:
 				if a < float(e[1]) or a > float(e[2]):
 					continue
+				var box: AABB = e[3]
+				if not box.has_point(from) and box.intersects_segment(from, from + dir * best_d) == null:
+					continue          # (passing over one lying on the floor, say)
 				var b: VoxelBody = e[0]
 				var h := b.trace(from, dir, best_d)
 				if not h.is_empty() and float(h.dist) <= best_d:
@@ -476,6 +479,16 @@ static func side_hit(list: Array, from: Vector3, fwd: Vector3, right: Vector3, s
 				return best
 		a += SIDE_STEP
 	return []
+
+# a box round what's left of b (its joints, padded out to the cubes past them), to pass by the rays that miss it
+static func _bounds(b: VoxelBody) -> AABB:
+	var box := AABB(b.global_position, Vector3.ZERO)
+	var sk := b.skeleton.global_transform
+	for n in b.parts:
+		var p: Dictionary = b.parts[n]
+		if not bool(p.gone):
+			box = box.expand(sk * b.skeleton.get_bone_global_pose(int(p.bone)).origin)
+	return box.grow(0.25 * b.height)
 
 ## Who stands by the struck one (first) to take the swing too: the nearest other body the head, going on along travel
 ## from point, meets within SIDE_NEXT of it, or one met aiming from `from` at its middle there. [body, hit] or [].
@@ -1069,6 +1082,15 @@ static func _side_checks(host: Node, m: Material) -> Array:
 	b5.queue_free()
 	b6.queue_free()
 	b7.queue_free()
+	# one crawling at your feet (no legs) is swept over, and cheaply: the rays that miss his box aren't traced
+	var b9 := _grunt(host, m, Vector3(0, 0, 0.4))
+	b9._blow("thigh_l")
+	b9._blow("thigh_r")
+	b9.animate(0.0, false)
+	var t9 := Time.get_ticks_usec()
+	var low := side_hit([b9], from, Vector3(0, 0, -1), Vector3(1, 0, 0), 1)
+	out.append([low.is_empty(), "side swing: passes over one crawling at your feet (the whole arc %.2f ms)" % ((Time.get_ticks_usec() - t9) / 1000.0)])
+	b9.queue_free()
 	# frozen solid, he shatters
 	var b8 := _grunt(host, m)
 	b8.chill(2.0)

@@ -70,6 +70,7 @@ var _proj := []                 # grenades and sticky bombs out: [{kind, p, v, t
 var _chain := []                # R: the sticky bombs still to go off, oldest first
 var _chain_t := 0.0
 var _digs := []                 # craters still to dig (blast's jobs), with what each blast did: [[job, info]]
+var _spent_ms := 0.0            # this frame's blasts so far (the craters queued get what's left of DIG_MS)
 var _shots := 0                 # rounds fired (the drum's turn)
 var _drum: Node3D
 var _drum_ang := 0.0            # the drum's turn now (radians), easing toward _shots' sixths
@@ -310,9 +311,6 @@ func hand_mesh() -> Node3D:
 	mi.material_override = arena._mat
 	return mi
 
-func hand_pose() -> String:
-	return "spud"
-
 func bar_text() -> String:
 	var n := sticky_count()
 	return "%d/%d" % [clip, clip_max] + (" •%d" % n if n > 0 else "")
@@ -351,7 +349,16 @@ func _fire(kind: String) -> void:
 	if a.is_empty():
 		return
 	var from: Vector3 = a[2]
-	var dir := _toward(a[0], a[1], from)
+	var ad: Vector3 = a[1]
+	if ad.length() < 0.5:
+		ad = look()                             # (top-down, the mouse right on Jared)
+	# standing against a wall, the muzzle's through it: it leaves from this side
+	var q := PhysicsRayQueryParameters3D.create(a[0], from, 1)
+	q.exclude = [arena.player.get_rid()]
+	var wh := get_world_3d().direct_space_state.intersect_ray(q)
+	if not wh.is_empty():
+		from = (wh.position as Vector3) + ((a[0] as Vector3) - from).normalized() * 0.08
+	var dir := _toward(a[0], ad, from)
 	var sticky := kind == "sticky"
 	var v := dir * (STICKY_SPEED if sticky else SPEED) + Vector3.UP * (STICKY_SPEED * STICKY_LOFT if sticky else SPEED * LOFT)
 	_spawn(kind, from, v)
@@ -430,9 +437,6 @@ func _reloading(from: float, to: float) -> void:
 		_drum_spin += TAU
 		if is_out():
 			sfx("grenades_close")
-
-func _reload_done() -> void:
-	clip = clip_max
 
 func _reload_pose() -> Array:
 	if reload_t <= 0.0:
@@ -573,8 +577,8 @@ static func fly(st: Dictionary, dt: float, bodies: Array, space: PhysicsDirectSp
 	v = (v - vn) * SLIDE - vn * (BOUNCE if hit_b == null else 0.3)
 	at += n * (GREN_R if hit_b != null else 0.002)
 	st.bounces = int(st.bounces) + 1
-	if on == "floor" and absf(v.y) < 1.2:
-		st.mode = "roll"
+	if on == "floor" and absf(v.y) < 1.2 and at.y < floor_y + 0.1:
+		st.mode = "roll"                    # (on a pillar's top it goes on hopping, and falls off its edge)
 	if st.mode == "roll":
 		v.y = 0.0
 		at.y = floor_y
@@ -738,8 +742,8 @@ func _event(st: Dictionary, ev: Dictionary) -> void:
 		"bounce":
 			if float(ev.speed) > 1.0:
 				sfx("grenades_bounce", ev.at, clampf(-14.0 + float(ev.speed) * 1.5, -14.0, 0.0), randf_range(0.9, 1.1))
-			if ev.on == "body" and is_instance_valid(ev.body):
-				(ev.body as VoxelBody).hit_react(st.v, 6, String(ev.part))
+				if ev.on == "body" and is_instance_valid(ev.body):
+					(ev.body as VoxelBody).hit_react(st.v, 6, String(ev.part))
 		"impact":
 			_detonate(st, "impact")
 		"stick":
@@ -808,7 +812,8 @@ static func aim_points(b: VoxelBody, p: Vector3) -> Array:
 
 ## A blast at p (static, for the checks). Every body with a side within BLAST_R (alive, dead or a lying piece) is
 ## traced from p toward its middle: where the trace meets it a crater is due (CRATER_MIN..MAX by nearness; a job:
-## the point kept in the part's bone space, dug at once for one at point blank or a lying piece, else by dig()
+## the point kept in the part's bone space, dug at once for one at point blank or a lying piece (while DIG_MS lasts:
+## it's about to be made a rigid piece again), else by dig()
 ## later); at point blank the limbs with a joint near enough are torn off whole (sever); near ones catch fire; each is
 ## hurt by how near, and thrown away and up. A wall or pillar between (space; null: none) shelters it: COVER of the
 ## blast, no crater. push: which way a direct hit throws them (a grenade's flight, into a sticky bomb's surface), or
@@ -863,7 +868,7 @@ static func blast(bodies: Array, p: Vector3, space: PhysicsDirectSpaceState3D = 
 			var bx := bone_xform(b, String(h.part)).affine_inverse()
 			var job := {"body": b, "part": String(h.part), "r": lerpf(CRATER_MIN, CRATER_MAX, k * k), "from": p, "k": k,
 				"at": bx * (h.point as Vector3), "dir": (bx.basis * dir).normalized()}
-			if (d < TEAR_D and not dug_now) or b.fragment:
+			if (d < TEAR_D and not dug_now) or (b.fragment and (Time.get_ticks_usec() - t0) / 1000.0 < DIG_MS):
 				dug_now = dug_now or not b.fragment
 				hit.res = dig(job)
 				if bool(hit.res.get("shattered", false)):
@@ -958,7 +963,7 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 			info["killed"] = int(info.killed) + 1
 	for job in bl.jobs:
 		_digs.append([job, info])
-	_dig_step(DIG_MS - float(bl.ms), false)
+	_spent_ms += float(bl.ms)
 	# the pieces lying about tossed, the cubes lying about thrown up
 	var pushed := 0
 	for pc in lying:
@@ -993,10 +998,9 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 func _crater_fx(b: VoxelBody, res: Dictionary, p: Vector3, k: float, info: Dictionary) -> void:
 	var bits: Array = res.bits
 	arena.knocked += bits.size()
-	var power := 3.0 + 6.0 * k
-	for bit in bits:
-		var out: Vector3 = (bit.pos as Vector3) - p
-		arena.debris.burst([bit], (out.normalized() + Vector3.UP * 0.25).normalized(), power)
+	var c: Vector3 = res.get("centre", b.global_position + Vector3(0, 0.9, 0) if is_instance_valid(b) else p + Vector3.UP)
+	var away := (c - p).normalized() if c.distance_to(p) > 0.01 else Vector3.UP
+	arena.debris.burst(bits, (away + Vector3.UP * 0.25).normalized(), 3.0 + 6.0 * k)
 	info["cut"] = int(info.cut) + int(res.cut)
 	info["carve_ms"] = snappedf(float(info.carve_ms) + float(res.get("ms", 0.0)), 0.1)
 	if bool(res.get("shattered", false)):
@@ -1004,8 +1008,6 @@ func _crater_fx(b: VoxelBody, res: Dictionary, p: Vector3, k: float, info: Dicti
 		return
 	if is_instance_valid(b) and not (res.pieces as Array).is_empty():
 		info["pieces"] = int(info.pieces) + (res.pieces as Array).size()
-		var c: Vector3 = res.get("centre", p)
-		var away := (c - p).normalized() if c.distance_to(p) > 0.01 else Vector3.UP
 		fling(b, res, away * (4.0 + 8.0 * k) + Vector3.UP * (2.0 + 3.0 * k) + b.air_v * 0.5,
 			Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * (6.0 + 10.0 * k))
 
@@ -1028,18 +1030,20 @@ func _torn_fx(b: VoxelBody, sr: Dictionary, p: Vector3, k: float, thrown: Vector
 # the craters further off, dug while there's budget_ms left this frame (one at least, if one_anyway)
 func _dig_step(budget_ms: float, one_anyway: bool) -> void:
 	var t0 := Time.get_ticks_usec()
-	if budget_ms <= 0.0 and not one_anyway:
-		return
+	var guess := 0.0                    # the next one costs about what the last did: not begun if that runs over
+	var first := one_anyway
 	while not _digs.is_empty():
+		if not first and (Time.get_ticks_usec() - t0) / 1000.0 + guess > budget_ms:
+			break
+		first = false
 		var e: Array = _digs.pop_front()
 		var job: Dictionary = e[0]
 		var info: Dictionary = e[1]
 		var res := dig(job)
 		if not res.is_empty():
+			guess = float(res.ms)
 			_crater_fx(job.body, res, job.from, float(job.k), info)
 			info["queued"] = maxi(0, int(info.queued) - 1)
-		if (Time.get_ticks_usec() - t0) / 1000.0 > budget_ms:
-			break
 
 # the fireball (flame cubes out and up), the flash, the shock ball, smoke rolling up, the scorch on the floor
 func _boom_fx(p: Vector3) -> void:
@@ -1168,7 +1172,8 @@ func step(dt: float) -> void:
 			sfx("grenades_drum", Vector3.INF, -4.0)
 	_proj_step(dt)
 	_chain_step(dt)
-	_dig_step(DIG_MS, true)
+	_dig_step(DIG_MS - _spent_ms, _spent_ms <= 0.0)
+	_spent_ms = 0.0
 	_fx_step(dt)
 	if clip == 0 and reload_t <= 0.0 and _cd <= 0.0:
 		start_reload()
