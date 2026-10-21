@@ -11,8 +11,8 @@ below, screenshots `integration/voxel_shots/sprite_maker_*.png`)
 
 ## The PC voxel arena test (20 Oct, PLAN.md "PC only, voxel destruction")
 
-Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`claude/godot-voxel`): the exe and its .pck, no
-install (Windows SmartScreen: More info, Run anyway). The game data is NOT embedded in the exe: Chrome flagged the
+Download (Windows): `downloads/SmashedVoxelArena-win64.zip` on this branch (`claude/godot-voxel`): the exe, its .pck and
+the WebRTC DLL (co-op), no install (Windows SmartScreen: More info, Run anyway). The game data is NOT embedded in the exe: Chrome flagged the
 embedded build as a virus (a known false positive with embedded PCKs), so the exe is now Godot 4.4.1's own Windows
 template byte for byte (SHA-256 b493c1d5...200f9a4b) and the game is in SmashedVoxelArena.pck beside it. Built from `scripts/voxel/arena/voxel_arena.tscn` with the desktop
 renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel Arena" (custom feature
@@ -155,6 +155,44 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   `godot --path godot res://scripts/voxel/arena/voxel_arena.tscn -- --auto --secs=30 --stats` (or the built exe with
   `-- --auto --secs=30 --shot=out.png`). Screenshots: `voxel_shots/arena_fp1.png`, `arena_fp2.png`, `arena_td2.png`
   (software-rendered, so the fps there means nothing).
+
+### Co-op and health (21 Oct, the owner's Stage 1: "online with my mate", 2 players)
+
+- Keys: F7 hosts (a 4-letter room code at the top), F8 joins (type the code; anything with a "." or ":" is an address
+  for the direct link), Shift+F7 hosts directly on UDP 24643, F9 leaves. Command line: `-- --host=CODE` /
+  `--join=CODE`, `--via=rtc|enet`, `--server=ws://...` (the PeerJS server), `--local` (no STUN/TURN), `--netdebug`,
+  and for tests `--lag=ms --loss=%` (a bad line: every message held back, the fast ones partly lost).
+- Transports (`scripts/voxel/net/`, both the main game's `NetTransport` calls plus `send_fast`): `VoxelRtcTransport`,
+  native WebRTC (`addons/webrtc`, godotengine/webrtc-native 1.1.0, Windows and Linux x86_64 only; the export puts the
+  DLL beside the exe) introduced through the PeerJS server (its WebSocket protocol spoken directly; peer ids
+  "smashedvx-" + code), the HTML game's STUN servers and metered.ca TURN relay; channels "rel" (reliable, long
+  messages in 15000-byte pieces) and "fast" (unreliable). `VoxelEnetTransport`: ENet, channel 0 reliable, 1
+  unsequenced. GodotSteam later is a third transport with the same calls. The main game's `scripts/net/` is untouched.
+- `VoxelNet` (`voxel_net.gd`): the host is the authority. It runs the enemies and both players' weapons; the guest's
+  weapons on the host are driven by the guest's input events (press/release/reload/quick/switch) and its player state
+  at 30 Hz, through a `VoxelShooter` (each weapon asks its shooter for camera, player, aim, mouse ray; `voxel_shooter.gd`).
+  Voxel data is not streamed: every body change on the host (cut, carve, burn, char, ash, freeze, thaw, shatter,
+  sever) is sent as a hit event with the body's pose at that moment, and the guest replays the same call on the same
+  pose, so its cubes come out the same (checked: 20/20 bodies identical). The guest's bodies are locked against
+  changes of their own (`VoxelBody.net_locked`). Every 2 s the two compare body fingerprints; a body that differs is
+  put right by sending its grid (zstd). Snapshots of the bodies' poses at 20 Hz, shown 0.1 s behind; cut-off pieces
+  appear from spawn events and follow the host's at 15 Hz. Joining mid-fight gets the whole world in one message.
+  About 1.5-2 MB a minute with both players going through all 14 weapons.
+- Digging later: chunk changes go the same way (an event per dig, the chunk's fingerprint checked, the chunk sent
+  whole only if it differs), so terrain never has to stream.
+- Health (`voxel_arena.gd`): 100; enemies' swings (grunt 6, swarmer 4, brute 12, batter 8 as the swing lands),
+  touching a burning one, grenades and fire (your own too) hurt; back at 4 a second after 5 s unhurt. At 0 you're
+  down (no moving, the view low and grey): 4 s alone; in co-op your mate standing within 1.6 m for 2.5 s gets you up
+  at half health, or 15 s on your own; with both down the enemies stop swinging. HUD: the bar above the weapon bar, a
+  red flash when hurt. `--godmode` (and the self-tests) can't be hurt.
+- Tests: `test/voxel/coop_test.gd` (two copies, host first: both players through every weapon at once, then the
+  fingerprints compared; `--early` lets the host fight alone first so the guest joins mid-fight),
+  `test/voxel/health_test.gd` (solo 7 checks; with `--host`/`--join` 3 co-op checks), `test/voxel/net_link_test.gd`
+  (the link alone), `test/voxel/peer_server.js` (a local PeerJS server for the WebRTC runs). Results: 0 bodies
+  different over ENet, over WebRTC, with 120 ms lag and 10% loss and a mid-fight join, and from the exported build
+  hosting; health 7/7 and 3/3; logic 337/337.
+- Not done yet: lag compensation (the guest's shots land where the host has the enemies, 0.1 s on); the harpoon's
+  and gravity gun's held pieces only roughly follow on the guest; resources the guest vacuums up aren't counted.
 
 # Block (voxel) characters: integration note
 

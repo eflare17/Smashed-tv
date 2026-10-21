@@ -55,6 +55,9 @@ var _snaps := {}                # guest: nid -> [[time, state], ...] (the last f
 var _pq := {}                   # guest: piece nid -> [[time, pos, rot], ...]
 var _got_world := false
 var debug := false              # (tests: what was done to a body found different)
+var lag := 0.0                  # (tests: seconds every message from the other game is held back ...)
+var loss := 0.0                 # (... and the share of the fast ones lost, like a bad line)
+var _late := []                 # [[time due, bytes], ...]
 var stats := {"sent": 0, "recv": 0, "events": 0, "fixes": 0, "checks": 0, "mismatch": 0}
 
 func setup(arena_: Node3D) -> void:
@@ -284,6 +287,21 @@ func _process(dt: float) -> void:
 	if tr == null:
 		return
 	tr.poll()
+	if not _late.is_empty():
+		# (tests: what's due of the held-back messages; the reliable ones stay in order)
+		var now := Time.get_ticks_msec() / 1000.0
+		var keep := []
+		var rel_blocked := false
+		for e in _late:
+			var due := float(e[0]) <= now
+			var rel: bool = (e[1] as PackedByteArray)[0] == 82
+			if due and not (rel and rel_blocked):
+				_got(e[1])
+			else:
+				keep.append(e)
+				if rel:
+					rel_blocked = true
+		_late = keep
 	if not linked or other == null:
 		return
 	_clock += dt
@@ -817,6 +835,14 @@ func _send_fast(d: PackedByteArray) -> void:
 func _on_received(d: PackedByteArray) -> void:
 	if d.is_empty():
 		return
+	if lag > 0.0 or loss > 0.0:
+		if d[0] != 82 and randf() < loss:
+			return
+		_late.append([Time.get_ticks_msec() / 1000.0 + lag * randf_range(0.85, 1.15) if d[0] != 82 else Time.get_ticks_msec() / 1000.0 + lag, d])
+		return
+	_got(d)
+
+func _got(d: PackedByteArray) -> void:
 	stats.recv += d.size()
 	match d[0]:
 		80:

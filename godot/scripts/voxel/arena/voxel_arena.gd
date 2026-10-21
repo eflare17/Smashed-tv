@@ -204,6 +204,8 @@ func _ready() -> void:
 	godmode = _opts.has("godmode") or _opts.has("auto") or _opts.has("meleetest") or _opts.has("weaponshots") or _opts.has("swordtest")
 	if _opts.has("host") or _opts.has("join"):
 		net.debug = _opts.has("netdebug")
+		net.lag = float(_opts.get("lag", "0")) / 1000.0       # (--lag=ms, --loss=% : a bad line, for the tests)
+		net.loss = float(_opts.get("loss", "0")) / 100.0
 		var via := String(_opts.get("via", "rtc"))
 		if _opts.has("host"):
 			net.host(String(_opts.host), via, String(_opts.get("server", "")), _opts.has("local"))

@@ -16,9 +16,12 @@ var started := -1.0
 var role := ""
 var done_at := -1.0
 var dur := 2.6                  # seconds each weapon is used
+var early := false
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a == "--early":
+			early = true
 		if a.begins_with("--dur="):
 			dur = maxf(2.6, float(a.trim_prefix("--dur=")))       # (seconds a weapon: longer to watch it)
 		if a.begins_with("--host"):
@@ -36,6 +39,9 @@ func _process(dt: float) -> bool:
 	t += dt
 	if arena.net == null:
 		return false
+	if role == "host" and early and started < 0.0 and not arena.net.linked:
+		_play(dt)                    # (--early: the host fights alone first; the guest joins mid-fight)
+		return false
 	if not _ready_to_play() and started < 0.0:
 		if t > 40.0:
 			print("COOP %s FAIL: never linked (%s)" % [role, arena.net.status_text])
@@ -44,6 +50,9 @@ func _process(dt: float) -> bool:
 	if started < 0.0:
 		started = t
 		print("COOP %s linked after %.1f s: %d bodies" % [role, t, arena.bodies.size()])
+		ids.clear()
+		k = -1
+		wt = 0.0
 		for s in arena.loadout.slots:
 			if String(s.id) != "vacuum":
 				ids.append(String(s.id))
@@ -71,6 +80,12 @@ func _process(dt: float) -> bool:
 	return false
 
 func _play(dt: float) -> void:
+	if ids.is_empty():
+		for s in arena.loadout.slots:
+			if String(s.id) != "vacuum":
+				ids.append(String(s.id))
+	if k >= ids.size():
+		k = -1                       # (fighting alone before the guest came: round again)
 	var id: String = ids[k] if k >= 0 else ""
 	if k < 0 or wt > dur:
 		if k >= 0 and arena.melee.has(id):
