@@ -157,6 +157,10 @@ func _ready() -> void:
 	_hud_layer.add_child(bar)
 	bar.setup(loadout, self)
 	_warm_up()
+	net = VoxelNet.new()
+	add_child(net)
+	net.setup(self)
+	net.changed.connect(_net_hud)
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
 	elif _opts.has("swordtest"):
@@ -172,6 +176,15 @@ func _ready() -> void:
 	else:
 		_next_wave()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (top_down or _opts.has("auto")) else Input.MOUSE_MODE_CAPTURED
+	# --host=CODE / --join=CODE (co-op straight away; --via=enet for an address, --server=ws://... a PeerJS server,
+	# --local no STUN/TURN)
+	if _opts.has("host") or _opts.has("join"):
+		net.debug = _opts.has("netdebug")
+		var via := String(_opts.get("via", "rtc"))
+		if _opts.has("host"):
+			net.host(String(_opts.host), via, String(_opts.get("server", "")), _opts.has("local"))
+		else:
+			net.join(String(_opts.join), via, String(_opts.get("server", "")), _opts.has("local"))
 	print("VoxelArena: ready (renderer ", RenderingServer.get_current_rendering_method(), ")")
 
 func _cube_m(key: String) -> float:
@@ -332,6 +345,54 @@ func _next_wave() -> void:
 	wave += 1
 	spawn(1)
 
+# F3 / F5: n more enemies (a co-op guest asks the host)
+func _more(n: int) -> void:
+	if net.role == "guest" and net.linked:
+		net.request_more(n)
+	else:
+		spawn(n)
+
+# F8: a line to type the room code (or an address) into; Enter joins, Esc doesn't
+var _prompt: LineEdit
+func _join_prompt() -> void:
+	if _prompt:
+		return
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_prompt = LineEdit.new()
+	_prompt.placeholder_text = "room code (or an address for a direct game) — Enter"
+	_prompt.custom_minimum_size = Vector2(420, 40)
+	_prompt.set_anchors_preset(Control.PRESET_CENTER)
+	_prompt.position = Vector2(-210, -20)
+	_hud_layer.add_child(_prompt)
+	_prompt.grab_focus()
+	_prompt.text_submitted.connect(func(t: String):
+		var c := t.strip_edges()
+		if c != "":
+			net.join(c.to_upper() if not (c.contains(".") or c.contains(":")) else c, "enet" if (c.contains(".") or c.contains(":")) else "rtc")
+		_prompt.queue_free()
+		_prompt = null
+		if not top_down:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+
+# the co-op line at the top: the room code, how it's going
+var _net_label: Label
+func _net_hud() -> void:
+	if _net_label == null:
+		_net_label = Label.new()
+		_net_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_net_label.position = Vector2(-300, 8)
+		_net_label.custom_minimum_size = Vector2(600, 0)
+		_net_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_net_label.add_theme_font_size_override("font_size", 18)
+		_net_label.add_theme_color_override("font_outline_color", Color.BLACK)
+		_net_label.add_theme_constant_override("outline_size", 6)
+		_hud_layer.add_child(_net_label)
+	if net.role == "":
+		_net_label.text = ""
+		return
+	var head := ("CO-OP  room %s" % net.code) if net.role == "host" else "CO-OP  joined %s" % net.code
+	_net_label.text = "%s — %s   (F9 leave)" % [head, net.status_text]
+
 ## n more enemies round the arena's edge.
 func spawn(n: int) -> void:
 	for i in n:
@@ -415,6 +476,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_R:
 				if melee.has(loadout.id()):
 					melee[loadout.id()].reload_key()
+					net.local_input("reload")
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
 			KEY_E:
@@ -422,23 +484,41 @@ func _unhandled_input(e: InputEvent) -> void:
 				_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				if _prompt:
+					_prompt.queue_free()
+					_prompt = null
 			KEY_V:
 				top_down = not top_down
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if top_down else Input.MOUSE_MODE_CAPTURED
 			KEY_F1:
 				sun.shadow_enabled = not sun.shadow_enabled
 			KEY_F2:
-				chunk = 2 if chunk == 1 else 1
-				_warm_up()
-				_respawn_all()
+				if not net.linked:            # (the cube size is the host's world: not mid co-op)
+					chunk = 2 if chunk == 1 else 1
+					_warm_up()
+					_respawn_all()
 			KEY_F3:
-				spawn(10)
+				_more(10)
 			KEY_F4:
-				frozen = not frozen
+				if net.role != "guest":
+					frozen = not frozen
 			KEY_F5:
-				spawn(40)
+				_more(40)
 			KEY_F6:
-				VoxelBody.immortal = not VoxelBody.immortal
+				if net.role != "guest":
+					VoxelBody.immortal = not VoxelBody.immortal
+			KEY_F7:
+				# co-op: host a room (a code to give your mate; Shift: on a port, for a LAN or a forwarded port)
+				if net.role == "":
+					var c := ""
+					for i in 4:
+						c += "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[randi() % 32]
+					net.host(c, "enet" if e.shift_pressed else "rtc")
+			KEY_F8:
+				if net.role == "":
+					_join_prompt()
+			KEY_F9:
+				net.leave()
 
 # ---------------------------------------------------------------- each frame
 
@@ -670,8 +750,10 @@ func _physics_process(dt: float) -> void:
 	else:
 		player.velocity.y -= 14.0 * dt
 	player.move_and_slide()
-	# the enemies come at you
-	var pp := player.global_position
+	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
+	if net.role == "guest" and net.linked:
+		return
+	var targets: Array = net.targets()
 	var to_fly: Array[VoxelBody] = []
 	for i in bodies.size():
 		var b := bodies[i]
@@ -687,6 +769,10 @@ func _physics_process(dt: float) -> void:
 				b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 				b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
 			continue
+		var pp: Vector3 = targets[0]
+		for tp: Vector3 in targets:
+			if tp.distance_squared_to(b.position) < pp.distance_squared_to(b.position):
+				pp = tp
 		var to := Vector3(pp.x - b.position.x, 0, pp.z - b.position.z)
 		var d := to.length()
 		var mv := Vector3.ZERO
@@ -836,7 +922,9 @@ func _process(dt: float) -> void:
 	_shoot(dt)
 	if _opts.has("meleetest"):
 		_meleetest(dt)           # (after _shoot, which clears _aiming each frame)
-	_status_step(dt)
+	var guest: bool = net.role == "guest" and net.linked     # (a guest's world is the host's: no fire, culling, waves)
+	if not guest:
+		_status_step(dt)
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
 		var moving := b.alive and not frozen
@@ -852,7 +940,7 @@ func _process(dt: float) -> void:
 		if not b.alive:
 			dead += 1
 	var i0 := 0
-	while dead > MAX_DEAD and i0 < bodies.size():
+	while dead > MAX_DEAD and i0 < bodies.size() and not guest:
 		var b := bodies[i0]
 		if not b.alive:
 			b.queue_free()
@@ -861,7 +949,7 @@ func _process(dt: float) -> void:
 		else:
 			i0 += 1
 	var t3 := Time.get_ticks_usec()
-	if not bodies.any(func(x): return x.alive):
+	if not guest and not bodies.any(func(x): return x.alive):
 		_next_t += dt
 		if _next_t >= 1.5:
 			_next_t = 0.0
@@ -879,7 +967,7 @@ func _process(dt: float) -> void:
 	_mouse_v *= exp(-dt * 14.0)
 	_weapons_step(dt)
 	for b in bodies:
-		if not b.fragment and (b.airborne or b.stagger > 0.0 or not b.alive):
+		if not guest and not b.fragment and (b.airborne or b.stagger > 0.0 or not b.alive):
 			b.position = out_of_pillars(b.position, 0.3)     # (flying, dragged, held, pulled after the weapons moved them)
 	_flash_t = maxf(0.0, _flash_t - dt)
 	_flash.light_energy = 4.0 * _flash_t / 0.05 if _flash_t > 0.0 else 0.0
@@ -962,14 +1050,17 @@ func _shoot(dt: float) -> void:
 			if down and not was and loadout.usable() and not free:
 				_held[btn] = true
 				w.press(btn)
+				net.local_input("press", btn)
 				if not still:
 					_held[btn] = false
 					w.release(btn)
+					net.local_input("release", btn)
 			elif down and was:
 				w.hold(btn, dt)
 			elif not down and was:
 				_held[btn] = false
 				w.release(btn)
+				net.local_input("release", btn)
 		return
 	if free:
 		return
@@ -987,6 +1078,7 @@ func _sword_key(low: bool) -> void:
 	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED):
 		return
 	sword.quick(low)
+	net.local_input("quick", low)
 
 # a weapon switch (change: what moves the loadout): the melee weapon put away lets go of its buttons, buttons still
 # down count for nothing till they're let go
@@ -996,6 +1088,7 @@ func _switch(change: Callable) -> void:
 	var now := loadout.id()
 	if now == before:
 		return
+	net.local_input("switch", now)     # (before any press with it: the other game's copy switches first)
 	if melee.has(before):
 		for btn in _held:
 			if _held[btn]:
@@ -1133,6 +1226,7 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 		var q := PhysicsRayQueryParameters3D.create(from, from + d * reach)
 		q.exclude = [player.get_rid()]
 		q.collision_mask = 1            # walls, pillars, floor: not the pieces flying about (layer 2)
+		q.exclude = me.exclude()        # (and neither player)
 		var wh := get_world_3d().direct_space_state.intersect_ray(q)
 		var end := from + d * reach
 		if not wh.is_empty():

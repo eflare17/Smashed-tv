@@ -14,6 +14,12 @@ const REST_V := 0.12            # m/s (and radians a second) under which a piece
 const REST_T := 0.35            # ... for this long: then it's made a body to cut up
 
 var arena: Node3D
+## Co-op: the host's is told every piece made, func(body, list, vel, spin, rb), and every piece that came to rest as a
+## fragment body, func(rb, fragment); a guest's pieces are copies the host's positions move (puppet: no physics of
+## their own, they never settle or go by themselves).
+var net_rec: Callable
+var net_rec_frag: Callable
+var puppet := false
 var _pieces := []               # [{rb, t, still, cells: [{part, grid, origin, local, mi}], vm, key, chunk}]
 var _mesh_jobs := []            # [{id, out: {arrays}, mi: WeakRef}]
 
@@ -26,7 +32,23 @@ func count() -> int:
 ## Everything one hit took off body b (a slice / carve result's pieces) as one rigid body, flung at vel and spinning
 ## at spin (radians a second, world axis * speed). Returns the rigid body (null if there was nothing).
 func spawn(b: VoxelBody, list: Array, vel: Vector3, spin: Vector3) -> RigidBody3D:
-	var vm: float = b.vm
+	if puppet and not VoxelBody._net_replay:
+		return null                # (a guest's: the host's pieces come as copies, spawn_copy)
+	var rb := _make(b.vm, b.key, b.chunk_n, b.knock, list, vel, spin)
+	if rb and net_rec.is_valid():
+		net_rec.call(b, list, vel + b.knock * 0.5, spin, rb)
+	return rb
+
+## A guest's copy of one of the host's pieces: the same cubes, moved by the host's positions (no physics).
+func spawn_copy(key: String, chunk: int, vm: float, list: Array, xform: Transform3D) -> RigidBody3D:
+	var rb := _make(vm, key, chunk, Vector3.ZERO, list, Vector3.ZERO, Vector3.ZERO)
+	if rb:
+		rb.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		rb.freeze = true
+		rb.global_transform = xform
+	return rb
+
+func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel: Vector3, spin: Vector3) -> RigidBody3D:
 	var centre := Vector3.ZERO
 	var count_c := 0
 	for e in list:
@@ -69,9 +91,9 @@ func spawn(b: VoxelBody, list: Array, vel: Vector3, spin: Vector3) -> RigidBody3
 		cs.shape = bx
 		cs.transform = local * Transform3D(Basis.IDENTITY, e.box_at)
 		rb.add_child(cs)
-	rb.linear_velocity = vel + b.knock * 0.5
+	rb.linear_velocity = vel + knock * 0.5
 	rb.angular_velocity = spin
-	_pieces.append({"rb": rb, "t": 0.0, "still": 0.0, "cells": keep, "vm": vm, "key": b.key, "chunk": b.chunk_n})
+	_pieces.append({"rb": rb, "t": 0.0, "still": 0.0, "cells": keep, "vm": vm, "key": key, "chunk": chunk})
 	while _pieces.size() > MAX_PIECES:
 		(_pieces[0].rb as RigidBody3D).queue_free()
 		_pieces.remove_at(0)
@@ -83,6 +105,9 @@ func list() -> Array:
 
 func step(dt: float) -> void:
 	_poll_meshes()
+	if puppet:
+		_pieces = _pieces.filter(func(pc): return is_instance_valid(pc.rb))
+		return
 	for i in range(_pieces.size() - 1, -1, -1):
 		var pc: Dictionary = _pieces[i]
 		pc.t += dt
@@ -143,6 +168,8 @@ func _settle(i: int) -> void:
 	f.global_position = Vector3(rb.global_position.x, 0.0, rb.global_position.z)
 	f.make_fragment(grids, xforms)
 	arena.bodies.append(f)
+	if net_rec_frag.is_valid():
+		net_rec_frag.call(rb, f, grids, xforms)
 	rb.queue_free()
 
 ## A fragment knocked flying (b.airborne, the bat, a slam): a piece again, flying off at its air speed.
@@ -156,6 +183,10 @@ func from_fragment(b: VoxelBody) -> void:
 ## The vacuum gun's brush (a sphere at brush, r metres): pieces, fragments and corpses inside it come apart into their
 ## cubes, which go up the beam.
 func vacuum(brush: Vector3, r: float) -> void:
+	if puppet:
+		if arena.net:
+			arena.net.send_vac(brush, r)      # (a guest's: the host's vacuum takes them, for this player)
+		return
 	for b in arena.bodies.duplicate():
 		if b.alive or not is_instance_valid(b):
 			continue

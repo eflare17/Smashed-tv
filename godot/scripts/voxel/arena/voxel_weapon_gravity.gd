@@ -1278,7 +1278,7 @@ func _crush_one(b: VoxelBody) -> void:
 			sfx("shatter", _hp)
 		elif int(res.cut) > 0:
 			sfx("crunch", _hp, -9.0, randf_range(0.7, 1.0))
-	if is_instance_valid(b) and (res.is_empty() or b.cubes_left() == 0):
+	if is_instance_valid(b) and (res.is_empty() or b.cubes_left() == 0) and not VoxelBody.net_locked:   # (a guest's: the host's goes)
 		if res.is_empty():
 			spray({"bits": b.cubes(60)}, Vector3.UP, 0.4)       # (only stubs left, nothing to bite: swallowed whole)
 		arena.bodies.erase(b)

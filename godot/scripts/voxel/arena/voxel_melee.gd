@@ -159,6 +159,8 @@ func fling(b: VoxelBody, res: Dictionary, vel: Vector3, spin: Vector3) -> void:
 
 ## A sound: at a place in the world, or (Vector3.INF) flat, as your own weapon; db louder or quieter.
 func sfx(name: String, at: Vector3 = Vector3.INF, db: float = 0.0, pitch: float = 1.0) -> void:
+	if at == Vector3.INF and not shooter.local:
+		at = shooter.player.global_position + Vector3.UP       # (the other player's weapon: heard where they are)
 	if arena and arena.sound:
 		arena.sound.play(name, at, db, pitch)
 
@@ -166,7 +168,7 @@ func sfx(name: String, at: Vector3 = Vector3.INF, db: float = 0.0, pitch: float 
 ## frame to change db and pitch.
 func sfx_loop(tag: String, name: String, db: float = 0.0, pitch: float = 1.0) -> void:
 	if arena and arena.sound:
-		arena.sound.loop(str(get_instance_id()) + tag, name, null, db, pitch)
+		arena.sound.loop(str(get_instance_id()) + tag, name, null if shooter.local else shooter.player, db, pitch)
 
 func sfx_stop(tag: String) -> void:
 	if arena and arena.sound:
@@ -176,7 +178,10 @@ func sfx_stop(tag: String) -> void:
 ## the deepest stop and the latest end win.
 func hit_stop(secs: float = 0.07, scale: float = 0.05) -> void:
 	if not shooter.local:
-		return                  # (the other player's blow doesn't freeze this game)
+		# (the other player's blow doesn't freeze this game: theirs, if this is the host's copy of their weapon)
+		if arena.net and arena.net.linked:
+			arena.net.send_hitstop(shooter.pid, secs, scale)
+		return
 	_stop_n += 1
 	var me := _stop_n
 	var now := Time.get_ticks_msec()

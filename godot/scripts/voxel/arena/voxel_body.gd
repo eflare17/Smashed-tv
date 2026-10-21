@@ -49,6 +49,8 @@ var recoil := 0.0
 
 ## Sent flying at v (m/s, world), turning over backward at spin radians a second.
 func launch(v: Vector3, spin: float = 6.0) -> void:
+	if _net_block():
+		return                   # (a guest: the host's snapshots move them)
 	if frozen():
 		_shatter_now(v)
 		return
@@ -68,6 +70,8 @@ func floored() -> bool:
 
 ## A shot landed: shoved back along dir by how many cubes it knocked out, staggering a moment.
 func hit_react(dir: Vector3, cubes: int, part: String) -> void:
+	if _net_block():
+		return
 	var heavy := 0.5 if key == "brute" else 1.0
 	var flat := Vector3(dir.x, 0, dir.z).normalized()
 	var through := push_through > 0.0 and stagger <= 0.0
@@ -621,9 +625,8 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 			n = Vector3i(0, 0, -step.z)
 	return {}
 
-## Knocks out the cubes within r cubes of the hit (a round hole); returns the ones knocked out as
-## [{pos: world, col: Color}] (for the flying bits) and whether that killed it or blew a limb off.
-func damage(hit: Dictionary, r: float) -> Dictionary:
+# damage()'s hole itself (damage() tells the co-op host about it first)
+func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 	if frozen():
 		return _shatter_res()
 	var n: String = hit.part
@@ -765,8 +768,8 @@ func has_status() -> bool:
 
 ## Sets it alight within r metres of at (world). Returns how many cubes caught.
 func ignite(at: Vector3, r: float) -> int:
-	if frozen():
-		return 0
+	if frozen() or _net_block():
+		return 0                 # (a guest: fire burns in the host's game, its char and ash come as events)
 	var n := 0
 	for nm in parts:
 		var p: Dictionary = parts[nm]
@@ -798,8 +801,8 @@ func ignite(at: Vector3, r: float) -> int:
 		panic_t = maxf(panic_t, 1.0)
 	return n
 
-## Frost building up (amount: a share of frozen solid). True if that froze them solid.
-func chill(amount: float) -> bool:
+# chill() itself
+func _chill_x(amount: float) -> bool:
 	if frozen():
 		return false
 	frost = minf(1.0, frost + amount)
@@ -836,6 +839,8 @@ func _freeze() -> void:
 
 # thawed: the colours back on the cubes still there
 func _thaw() -> void:
+	_net_in("thaw", [])
+	_net_depth -= 1
 	frozen_t = 0.0
 	frost = 0.0
 	for nm in _orig:
@@ -856,7 +861,12 @@ func _thaw() -> void:
 func shatter() -> Dictionary:
 	if not frozen():
 		return {}
-	return _shatter_res()
+	if _net_block():
+		return _no_cut()           # (a guest: the host's shatter comes as an event)
+	_net_in("shatter", [Vector3.ZERO])
+	var res := _shatter_res()
+	_net_depth -= 1
+	return res
 
 func _shatter_res() -> Dictionary:
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false, "shattered": true}
@@ -907,10 +917,55 @@ func _shatter_res() -> Dictionary:
 
 # shattered by something with no cut to hand the cubes back through (a launch, a blow's health): the arena throws them
 func _shatter_now(dir: Vector3) -> bool:
+	_net_in("shatter", [dir])
 	var res := _shatter_res()
+	_net_depth -= 1
 	if on_shatter.is_valid() and not (res.bits as Array).is_empty():
 		on_shatter.call(self, res.bits, dir)
 	return bool(res.killed)
+
+## Knocks out the cubes within r cubes of the hit (a round hole); returns the ones knocked out as
+## [{pos: world, col: Color}] (for the flying bits) and whether that killed it or blew a limb off.
+func damage(hit: Dictionary, r: float) -> Dictionary:
+	if _net_block():
+		return _no_cut()
+	_net_in("damage", [hit, r])
+	var res := _damage_x(hit, r)
+	_net_depth -= 1
+	return res
+
+## A part and everything hanging from it taken off whole (a harpoon's yank): {pieces (VoxelPieces.spawn's list),
+## parts, killed}. Nothing if it's gone already.
+func sever(part: String) -> Dictionary:
+	if _net_block():
+		return _no_cut()
+	_net_in("sever", [part])
+	var res := _sever_x(part)
+	_net_depth -= 1
+	return res
+
+## Frost building up (amount: a share of frozen solid). True if that froze them solid.
+func chill(amount: float) -> bool:
+	if _net_block():
+		return false
+	# (told only when it freezes them: a guest's frost comes from the snapshots, near enough for the look but not
+	# for deciding)
+	_net_depth += 1
+	var froze := _chill_x(amount)
+	_net_depth -= 1
+	if froze:
+		_net_in("freeze", [])
+		_net_depth -= 1
+	return froze
+
+## Health off the body (a blunt blow, a burn); true if that killed it.
+func hurt(amount: float) -> bool:
+	if _net_block():
+		return false
+	_net_in("hurt", [amount])
+	var res := _hurt_x(amount)
+	_net_depth -= 1
+	return res
 
 ## Every frame for a body with has_status(): the fire spreading and eating, the frost fading, the thaw, the panic.
 ## Returns {flames: [world points burning, for VoxelFlames], removed: a cut result of the cubes burnt to ash (or {})}.
@@ -941,6 +996,7 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 	var ash := {}
 	var flames := []
 	var catch := []                   # [part, index] catching this step
+	var charred := {}                 # part -> the cubes charred this step (told to a co-op guest)
 	for nm in _burn.keys():
 		var p: Dictionary = parts[nm]
 		var bd: Dictionary = _burn[nm]
@@ -968,6 +1024,10 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 					cells = cells.duplicate()
 					recol = true
 				cells[i] = ((CHAR.r8 << 16) | (CHAR.g8 << 8) | CHAR.b8) + 1     # (for good: the thaw keeps it)
+				if net_rec.is_valid():
+					var ch: PackedInt32Array = charred.get(nm, PackedInt32Array())
+					ch.append(i)
+					charred[nm] = ch          # (a packed array out of a dictionary is a copy: put it back)
 			if t1 >= BURN_ASH:
 				gone.append(i)
 				bd.erase(i)
@@ -1009,7 +1069,9 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 	out.flames = flames
 	if alive:
 		panic_t = maxf(panic_t, 0.6)
+		_net_depth += 1                # (the burn's health goes to a guest in the snapshots, not as events)
 		hurt(BURN_HURT * step)
+		_net_depth -= 1
 	_ash_t += step
 	# (ash_ok false: not this frame, another body took its ash out; the last of a fire always goes)
 	if not _ash.is_empty() and (_ash_t >= ASH_EVERY or _burn_n == 0) and (ash_ok or _burn_n == 0):
@@ -1020,15 +1082,20 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		# the fill over the whole part (what's burnt through drops off) only every ASH_FILL-th time and at the end:
 		# it costs 10-25 ms; in between the ash cubes just go
 		_ash_n += 1
-		var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": _ash_n % ASH_FILL != 0 and _burn_n > 0})
+		var quick := _ash_n % ASH_FILL != 0 and _burn_n > 0
+		if net_rec.is_valid():
+			net_rec.call(self, "burn", [charred, ash, quick], [])
+			charred = {}
+		var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": quick})
 		for bt in r.bits:
 			bt.col = (bt.col as Color).lerp(CHAR, 0.6)      # ash
 		out.removed = r
+	if not charred.is_empty():
+		net_rec.call(self, "burn", [charred, {}, false], [])
 	return out
 
-## A part and everything hanging from it taken off whole (a harpoon's yank): {pieces (VoxelPieces.spawn's list),
-## parts, killed}. Nothing if it's gone already.
-func sever(part: String) -> Dictionary:
+# sever() itself
+func _sever_x(part: String) -> Dictionary:
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
 	if not parts.has(part) or parts[part].gone:
 		return res
@@ -1194,17 +1261,27 @@ func as_pieces() -> Array:
 ## pieces: [{part, grid, origin, xform}] (the part's cells that came off, its mesh origin and its mesh's world
 ## transform now), killed: bool, head_off: bool}.
 func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float, half_t: float) -> Dictionary:
-	return _remove({"plane": true, "eye": eye, "n": n, "fwd": fwd, "reach": reach, "cos_arc": cos_arc, "half_t": half_t})
+	if _net_block():
+		return _no_cut()
+	_net_in("slice", [eye, n, fwd, reach, cos_arc, half_t])
+	var res := _remove({"plane": true, "eye": eye, "n": n, "fwd": fwd, "reach": reach, "cos_arc": cos_arc, "half_t": half_t})
+	_net_depth -= 1
+	return res
 
 ## A blow that scoops out every cube within r metres of the segment a-b (a == b: a ball, a crater; long: a tunnel, a
 ## chainsaw's kerf); whatever is left no longer joined to its joint comes off, as with slice. hp_per_cube: the health
 ## each body (torso) cube taken costs; bits_every: one flying bit for every this many cubes taken. Returns what slice
 ## does.
 func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_every: int = 2) -> Dictionary:
-	return _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
+	if _net_block():
+		return _no_cut()
+	_net_in("carve", [a, b, r, hp_per_cube, bits_every])
+	var res := _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
+	_net_depth -= 1
+	return res
 
-## Health off the body (a blunt blow, a burn); true if that killed it.
-func hurt(amount: float) -> bool:
+# hurt() itself
+func _hurt_x(amount: float) -> bool:
 	if frozen():
 		return _shatter_now(Vector3.UP)
 	if not alive:
@@ -1911,3 +1988,139 @@ static func _near_cells(st: PackedByteArray, s: Vector3i, pt: Vector3, slack: fl
 		if not out.is_empty():
 			return out
 	return out
+
+# ---------------------------------------------------------------- co-op (VoxelNet)
+## A guest's game: bodies change only by the host's events (every cut, hole, freeze... made here is blocked: the
+## guest's own weapons run for the look and sound, the host's copy of them does the cutting).
+static var net_locked := false
+## The host's: told every change to a body, func(body, what, args, pose), so the guest can make the same one.
+static var net_rec: Callable
+static var _net_replay := false        # making one of the host's changes (allowed while locked; not told again)
+var net_id := 0                        # the body's number in both games (0: not shared yet)
+var _net_depth := 0
+
+func _net_block() -> bool:
+	return net_locked and not _net_replay
+
+func _no_cut() -> Dictionary:
+	return {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
+
+# a change starting: the host tells the guest (the outermost only: a carve's own hurt isn't told again); each
+# _net_in is matched by a _net_depth -= 1 when it's done
+func _net_in(what: String, args: Array) -> void:
+	if _net_depth == 0 and not _net_replay and net_rec.is_valid():
+		net_rec.call(self, what, args, pose())
+	_net_depth += 1
+
+## The pose cuts are made against: the skeleton's place and every bone's own position and turn.
+func pose() -> Array:
+	var bones := PackedFloat32Array()
+	var n := skeleton.get_bone_count()
+	bones.resize(n * 7)
+	for i in n:
+		var pp := skeleton.get_bone_pose_position(i)
+		var q := skeleton.get_bone_pose_rotation(i)
+		bones[i * 7] = pp.x
+		bones[i * 7 + 1] = pp.y
+		bones[i * 7 + 2] = pp.z
+		bones[i * 7 + 3] = q.x
+		bones[i * 7 + 4] = q.y
+		bones[i * 7 + 5] = q.z
+		bones[i * 7 + 6] = q.w
+	return [skeleton.global_transform, bones]
+
+func _set_pose(p: Array) -> void:
+	skeleton.global_transform = p[0]
+	var bones: PackedFloat32Array = p[1]
+	for i in mini(skeleton.get_bone_count(), bones.size() / 7):
+		skeleton.set_bone_pose_position(i, Vector3(bones[i * 7], bones[i * 7 + 1], bones[i * 7 + 2]))
+		skeleton.set_bone_pose_rotation(i, Quaternion(bones[i * 7 + 3], bones[i * 7 + 4], bones[i * 7 + 5], bones[i * 7 + 6]))
+
+## The guest making one of the host's changes, in the pose the host made it in; returns what the change returned.
+func net_apply(what: String, args: Array, p: Array) -> Dictionary:
+	_net_replay = true
+	var was := pose()
+	var was_local := skeleton.transform
+	if not p.is_empty():
+		_set_pose(p)
+	var res := {}
+	match what:
+		"carve":
+			res = carve(args[0], args[1], args[2], args[3], args[4])
+		"slice":
+			res = slice(args[0], args[1], args[2], args[3], args[4], args[5])
+		"damage":
+			res = damage(args[0], args[1])
+		"sever":
+			res = sever(args[0])
+		"freeze":
+			if not frozen():
+				_freeze()
+		"hurt":
+			hurt(args[0])
+		"shatter":
+			if frozen():
+				res = _shatter_res()
+		"thaw":
+			if frozen():
+				_thaw()
+		"burn":
+			res = _net_burn(args[0], args[1], args[2])
+	_set_pose(was)
+	skeleton.transform = was_local
+	_net_replay = false
+	return res
+
+# fire on the host: the cubes charred this step (part -> indices) and the ash taken out (part -> indices, or {}),
+# made the same here
+func _net_burn(charred: Dictionary, ash: Dictionary, quick: bool) -> Dictionary:
+	var cv := ((CHAR.r8 << 16) | (CHAR.g8 << 8) | CHAR.b8) + 1
+	for nm in charred:
+		if not parts.has(nm) or parts[nm].gone:
+			continue
+		var p: Dictionary = parts[nm]
+		var cells: PackedInt32Array = (p.grid.cells as PackedInt32Array).duplicate()
+		for i in (charred[nm] as PackedInt32Array):
+			if i >= 0 and i < cells.size() and cells[i] != 0:
+				cells[i] = cv
+		p.grid = {"size": p.grid.size, "cells": cells}
+		p.dirty = true
+	if ash.is_empty():
+		return {}
+	var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": quick})
+	for bt in r.bits:
+		bt.col = (bt.col as Color).lerp(CHAR, 0.6)
+	return r
+
+## A number that's the same in both games while the body's cubes are (the co-op check).
+func fingerprint() -> int:
+	var h := 17
+	var names := parts.keys()
+	names.sort()
+	for nm in names:
+		var p: Dictionary = parts[nm]
+		h = hash([h, nm, p.gone, hash(p.grid.cells)])
+	return h
+
+## The body's cubes, to send whole (joining, or putting a guest's right): part -> [size, compressed cells, gone, left].
+func grids_out() -> Dictionary:
+	var out := {}
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		var raw := (p.grid.cells as PackedInt32Array).to_byte_array()
+		out[nm] = [p.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), p.gone, int(p.left)]
+	return out
+
+## Takes grids_out()'s cubes as its own.
+func grids_in(d: Dictionary) -> void:
+	for nm in d:
+		if not parts.has(nm):
+			continue
+		var e: Array = d[nm]
+		var p: Dictionary = parts[nm]
+		var cells := (e[1] as PackedByteArray).decompress(int(e[2]), FileAccess.COMPRESSION_ZSTD).to_int32_array()
+		p.grid = {"size": e[0], "cells": cells}
+		p.gone = bool(e[3])
+		p.left = int(e[4])
+		p.dirty = not p.gone
+		(p.mesh as MeshInstance3D).visible = not p.gone
