@@ -11,6 +11,11 @@ const ITEMS := {
 	"brain": {"name": "Brain", "col": Color8(218, 150, 162), "stack": 9999, "desc": "Pink and squishy. Worth the most."},
 	"charred": {"name": "Charred bits", "col": Color8(34, 26, 22), "stack": 9999, "desc": "Burnt black by the flamethrower. Worth less."},
 	"padlock": {"name": "Padlock", "col": Color8(201, 160, 64), "stack": 4, "desc": "A spin-dial padlock. L at a chest hangs it on."},
+	"dirt": {"name": "Dirt", "col": Color8(116, 80, 48), "stack": 9999, "desc": "Dug out of the yard. The shovel's right click puts it back."},
+	"clay": {"name": "Clay", "col": Color8(168, 102, 62), "stack": 9999, "desc": "Sticky orange clay from the yard."},
+	"stone": {"name": "Stone", "col": Color8(128, 126, 122), "stack": 9999, "desc": "Broken out with the pick. The tool bench wants it."},
+	"gold": {"name": "Gold nugget", "col": Color8(236, 190, 56), "stack": 999, "desc": "From the gold ore deep down. For a silly golden shovel."},
+	"worm": {"name": "Worm", "col": Color8(214, 120, 128), "stack": 99, "desc": "Wriggly. Found digging the dirt; for a worm farm one day."},
 }
 
 static var _by_col := {}

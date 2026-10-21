@@ -258,6 +258,37 @@ physical spin-dial combination padlock on each chest (no typed password)")
   `test/voxel/bedroom_shots.gd` (screenshots under a display: `voxel_shots/bed_doorway.png`, `bed_room.png`,
   `bed_beds.png`, `bed_mirror.png`, `bed_padlock.png`, `bed_lying.png`, `bed_topdown.png`).
 
+### Digging in the yard (21 Oct, the owner's Stage 4: "voxel digging with small chunky blocks", "shovel + pick",
+"rusty -> good -> silly golden shovel", "worms"; built separately from the other session's `scripts/dig/`, which is
+untouched, as the owner chose)
+
+- **The yard** (`voxel_yard.gd`): a back door in the arena's south wall (x 12 to 13.45) into a fenced garden east of
+  the bedroom, 17 x 17.5 m. Safe like the bedroom (the enemies don't come in or go for you there).
+- **The ground** (`voxel_terrain.gd`): 16 x 16 m and 3 m deep in 12.5 cm blocks (128 x 24 x 128, one byte each).
+  Block size tuned: 6.25 cm made too many faces to mesh fast in GDScript, 25 cm looked like Minecraft. Layers: grass,
+  dirt (to ~0.75 m) with clay pockets and stones in it, stone (to ~1.75 m), hard rock with rare seams of gold ore,
+  bedrock; a ring round the edge that never digs, so a hole never opens onto nothing. The same every game (fixed
+  seed). Each visible face is drawn in its block's colour, a shade off its neighbours and darker deeper down; meshed
+  in 2 x 2 m columns on worker threads, with a matching collision mesh (you can walk in holes and fall into deep ones).
+  Measured: making it 0.25 s and meshing 0.7 s at load (on workers), a dig 0.2-1.3 ms on the main thread, the chunks it
+  touched re-meshed off the main thread (about 10-40 ms each, there a frame or two later).
+- **The tools** (`voxel_tool.gd`, key 6): the shovel digs a scoop (dirt, grass, clay; not stone) and right click puts a
+  scoop of dirt back from the backpack. Rusty (to start): small scoops, slow, one in four slips. Good: bigger,
+  quicker. Golden: huge, very quick, through stone too. The pick breaks anything but bedrock (stones, stone, rock, gold
+  ore). Too hard: a clang ("the pick breaks stone"). What comes up goes in the backpack: dirt, clay, stone, gold
+  nuggets; now and then a worm wriggles out of the dirt (`voxel_worm.gd`), into the backpack too. Dust puffs and their
+  own sounds (`assets/voxel/tools/sfx_tools.py`).
+- **The tool bench** by the back door: E makes the next shovel. Good: 150 stone + 500 bone. Golden: 80 gold nuggets +
+  500 brain (out of the backpack). The shovel's tier is saved.
+- **Co-op**: a dig or fill is the same call in both games, so only the call goes (either way); each player keeps what
+  their own digging brings up. The host sends each chunk's fingerprint every 3 s; a chunk that differs is sent whole.
+  A guest joining gets every chunk dug so far. A guest's own yard is kept while they're away. The dug chunks are saved
+  with the backpack and chests.
+- Tests: `test/voxel/dig_test.gd` (19 checks alone; with `--host` / `--join` 1 + 3 co-op checks, and both games print
+  the ground's fingerprint: they agree), `test/voxel/dig_shots.gd` (screenshots under a display: `voxel_shots/dig_*.png`).
+  The logic test's loadout checks updated for the sixth group; the co-op health test now waits for the hit by real
+  time.
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

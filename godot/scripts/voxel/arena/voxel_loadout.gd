@@ -1,7 +1,7 @@
 class_name VoxelLoadout
 extends RefCounted
 ## The arena's weapons (the owner, 20 Oct): in groups on the number keys, as in Half-Life (1 melee, 2 guns, 3 special,
-## 4 explosives, 5 the vacuum): a key takes out the one last used in its group, again steps to the next in it. Each
+## 4 explosives, 5 the vacuum, 6 the digging tools): a key takes out the one last used in its group, again steps to the next in it. Each
 ## uses both mouse buttons; the wheel cycles through them all, Q swaps back to the last one. A switch takes a moment (the old one goes down, the new one comes
 ## up) and nothing fires till it's up. Cooldowns are kept per weapon, so the weapon bar can show them. No nodes: the
 ## arena reads it, the logic test drives it. Owned by the voxel session.
@@ -23,8 +23,10 @@ const ALL := [
 	{"id": "gravity", "group": 3, "name": "Gravity gun", "left": "grab a body or bit, click again: launch it", "right": "black hole: pulls everything in and crushes it (holding: drop it)"},
 	{"id": "grenades", "group": 4, "name": "Grenade launcher", "left": "bouncing grenade", "right": "sticky bomb (R: set them off)"},
 	{"id": "vacuum", "group": 5, "name": "Vacuum", "left": "suck up (hold)", "right": "hold + wheel: brush size"},
+	{"id": "shovel", "group": 6, "name": "Shovel", "left": "dig a scoop (dirt, clay)", "right": "fill: a scoop of dirt back in"},
+	{"id": "pick", "group": 6, "name": "Pick", "left": "break stone, rock, gold ore", "right": ""},
 ]
-const GROUPS := {1: "Melee", 2: "Guns", 3: "Special", 4: "Explosives", 5: "Vacuum"}
+const GROUPS := {1: "Melee", 2: "Guns", 3: "Special", 4: "Explosives", 5: "Vacuum", 6: "Tools"}
 const SWITCH_T := 0.25          # seconds a switch takes
 
 var slots: Array = ALL.duplicate()

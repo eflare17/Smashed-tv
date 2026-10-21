@@ -82,7 +82,8 @@ const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res
 	"pistol": "res://scripts/voxel/arena/voxel_gun_pistol.gd", "shotgun": "res://scripts/voxel/arena/voxel_gun_shotgun.gd",
 	"laser": "res://scripts/voxel/arena/voxel_weapon_laser.gd", "flamethrower": "res://scripts/voxel/arena/voxel_weapon_flamethrower.gd",
 	"freezeray": "res://scripts/voxel/arena/voxel_weapon_freezeray.gd", "harpoon": "res://scripts/voxel/arena/voxel_weapon_harpoon.gd",
-	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd"}
+	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd",
+	"shovel": "res://scripts/voxel/arena/voxel_tool.gd", "pick": "res://scripts/voxel/arena/voxel_tool.gd"}
 var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
 var sound: VoxelSound           # every sound (VoxelSound)
 var me: VoxelShooter            # the local player, as the weapons see whoever holds them
@@ -115,6 +116,10 @@ var lock_view: VoxelLockView
 var lock_then_chest := false    # the padlock was opened to get into the chest: once it springs open, the chest opens
 var _unlock_t := 0.0
 var lying := 0                  # the bed (1, 2) lain on, 0 standing
+## The back yard (Stage 4): ground to dig with the shovel and the pick, the tool bench.
+var yard: VoxelYard
+var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
+var _near_bench := false
 var _near_bed := 0
 var _near_ward := false
 var _self_t := 0.0
@@ -156,7 +161,7 @@ func _ready() -> void:
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
 	debris.bound = ARENA - 0.5 - _cube_m("grunt")     # the walls' inner faces: cubes bounce off them
-	debris.rooms = [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0)]
+	debris.rooms = _rooms()
 	_tracers = MeshInstance3D.new()
 	_tracers.mesh = ImmediateMesh.new()
 	var tm := StandardMaterial3D.new()
@@ -200,6 +205,7 @@ func _ready() -> void:
 			melee[id] = w
 			have.append(id)
 	sword = melee.get("sword")
+	set_shovel_tier(shovel_tier)          # (the save's, loaded before the tools were made)
 	vacuum = VoxelVacuum.new()
 	add_child(vacuum)
 	vacuum.setup(self, cam)
@@ -325,15 +331,20 @@ void fragment() {
 	for i in range(1, 4):
 		var a := i * PI / 2.0
 		_box(Vector3(sin(a) * ARENA, 2.0, cos(a) * ARENA), Vector3(ARENA * 2.0 if i % 2 == 0 else 1.0, 4.0, 1.0 if i % 2 == 0 else ARENA * 2.0), wall_mat)
-	# the south wall: the bedroom's doorway in it (Stage 3)
-	var dx0 := VoxelBedroom.DOOR_X0
-	var dx1 := VoxelBedroom.DOOR_X1
-	_box(Vector3((-ARENA - 0.5 + dx0) * 0.5, 2.0, ARENA), Vector3(dx0 + ARENA + 0.5, 4.0, 1.0), wall_mat)
-	_box(Vector3((dx1 + ARENA + 0.5) * 0.5, 2.0, ARENA), Vector3(ARENA + 0.5 - dx1, 4.0, 1.0), wall_mat)
-	_box(Vector3((dx0 + dx1) * 0.5, (VoxelBedroom.DOOR_H + 4.0) * 0.5, ARENA), Vector3(dx1 - dx0, 4.0 - VoxelBedroom.DOOR_H, 1.0), wall_mat)
+	# the south wall: the bedroom's doorway (Stage 3) and the back door to the yard (Stage 4) in it
+	var gaps := [[VoxelBedroom.DOOR_X0, VoxelBedroom.DOOR_X1], [VoxelYard.DOOR_X0, VoxelYard.DOOR_X1]]
+	var from := -ARENA - 0.5
+	for g in gaps:
+		_box(Vector3((from + float(g[0])) * 0.5, 2.0, ARENA), Vector3(float(g[0]) - from, 4.0, 1.0), wall_mat)
+		_box(Vector3((float(g[0]) + float(g[1])) * 0.5, (VoxelBedroom.DOOR_H + 4.0) * 0.5, ARENA), Vector3(float(g[1]) - float(g[0]), 4.0 - VoxelBedroom.DOOR_H, 1.0), wall_mat)
+		from = float(g[1])
+	_box(Vector3((from + ARENA + 0.5) * 0.5, 2.0, ARENA), Vector3(ARENA + 0.5 - from, 4.0, 1.0), wall_mat)
 	house = VoxelBedroom.new()
 	add_child(house)
 	house.setup(self)
+	yard = VoxelYard.new()
+	add_child(yard)
+	yard.setup(self)
 	var pil := StandardMaterial3D.new()
 	pil.albedo_color = Color(0.3, 0.12, 0.35)
 	pil.emission_enabled = true
@@ -396,7 +407,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "Tab backpack   E open a chest (or the vacuum)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -589,6 +600,57 @@ func on_lock_changed(st: VoxelStorage) -> void:
 	if inv_ui.is_open() and inv_ui.storage == st and st.locked:
 		close_inventory()
 
+## Off the arena, where the enemies never go (the bedroom, the yard).
+static func safe(p: Vector3) -> bool:
+	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p)
+
+# the cubes' rooms off the arena (they stay in them): the bedroom, the yard
+static func _rooms() -> Array:
+	return [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0),
+		Rect2(VoxelYard.X0 + 0.1, VoxelYard.Z0, VoxelYard.X1 - VoxelYard.X0 - 0.1, VoxelYard.Z1 - VoxelYard.Z0)]
+
+## The next shovel the tool bench makes (null: the golden one's made).
+func next_upgrade():
+	for u in VoxelYard.UPGRADES:
+		if int(u.tier) == shovel_tier + 1:
+			return u
+	return null
+
+## What the tool bench says: the next shovel, what it takes, what you've got.
+func bench_line() -> String:
+	var u = next_upgrade()
+	if u == null:
+		return "Tool bench: your shovel's as golden as it gets"
+	var need := []
+	var ok := true
+	for id in u.cost:
+		var have: int = inv.count(id)
+		need.append("%d %s (%d)" % [int(u.cost[id]), VoxelItems.name_of(id).to_lower(), have])
+		ok = ok and have >= int(u.cost[id])
+	return ("E  make a %s: " % u.name if ok else "Tool bench: a %s needs " % u.name) + ", ".join(need)
+
+## E at the tool bench: the next shovel made if you've got what it takes (out of the backpack).
+func bench_make() -> bool:
+	var u = next_upgrade()
+	if u == null:
+		return false
+	for id in u.cost:
+		if inv.count(id) < int(u.cost[id]):
+			say("Not enough: " + bench_line().trim_prefix("Tool bench: "), 2.5)
+			return false
+	for id in u.cost:
+		inv.remove(id, int(u.cost[id]))
+	set_shovel_tier(int(u.tier))
+	sound.play("gold_find" if int(u.tier) == 2 else "hammer_hit", Vector3.INF, -6.0)
+	say("Made: a %s (%s)" % [u.name, u.desc], 3.0)
+	return true
+
+func set_shovel_tier(t: int) -> void:
+	shovel_tier = clampi(t, 0, 2)
+	if melee.has("shovel"):
+		melee["shovel"].set_tier(shovel_tier)
+	stash._dirty = true
+
 ## Lying down on bed i: on the mattress, the eye on the pillow looking along the bed; health back three times as fast.
 func lie_down(i: int) -> void:
 	_let_go()
@@ -661,6 +723,7 @@ func _storage_step(dt: float) -> void:
 		_near_st = stash.pick(pp, dir, 1.4)
 	_near_bed = 0
 	_near_ward = false
+	_near_bench = false
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -670,6 +733,7 @@ func _storage_step(dt: float) -> void:
 		_near_st = sh[0] if float(sh[1]) <= float(bh[1]) else null
 		_near_bed = int(bh[0]) if _near_st == null else 0
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
+		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
 	var t := ""
 	if _near_st:
 		if _near_st.locked:
@@ -680,6 +744,8 @@ func _storage_step(dt: float) -> void:
 		t = "E  lie down" + ("  (your bed)" if _near_bed == stash.my_pid() else "")
 	elif _near_ward:
 		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
+	elif _near_bench:
+		t = bench_line()
 	_use_label.text = t if down_t <= 0.0 else ""
 	if down_t > 0.0:
 		_near_st = null
@@ -839,7 +905,7 @@ func _respawn_all() -> void:
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
 	debris.bound = ARENA - 0.5 - _cube_m("grunt")
-	debris.rooms = [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0)]
+	debris.rooms = _rooms()
 	debris.got = got
 	debris.on_take = _on_take
 	spawn(maxi(n, 1))
@@ -905,7 +971,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				_sword_key(false)
 			KEY_C:
 				_sword_key(true)
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6:
 				var g: int = e.physical_keycode - KEY_1 + 1
 				_switch(func(): loadout.select_group(g))
 			KEY_R:
@@ -923,6 +989,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					lie_down(_near_bed)
 				elif _near_ward:
 					house.ward_open = not house.ward_open
+				elif _near_bench:
+					bench_make()
 				else:
 					var vi := loadout.index_of("vacuum")
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))

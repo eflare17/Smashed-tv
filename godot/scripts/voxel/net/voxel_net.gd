@@ -126,9 +126,9 @@ func shooters() -> Array:
 ## Where the players stand who are up (the enemies go for the nearest): [this player's (or a placeholder if down),
 ## the other's]; empty if everyone is down. Index 0 is always this player, 1 the other.
 func targets() -> Array:
-	# (in the bedroom counts as out of reach: the enemies don't go for anyone in there)
-	var me_up: bool = arena.down_t <= 0.0 and not VoxelBedroom.in_house(arena.player.global_position)
-	var them_up := linked and is_instance_valid(_o_body) and not other_down and not VoxelBedroom.in_house(_o_body.global_position)
+	# (in the bedroom or the yard counts as out of reach: the enemies don't go for anyone in there)
+	var me_up: bool = arena.down_t <= 0.0 and not VoxelArena.safe(arena.player.global_position)
+	var them_up := linked and is_instance_valid(_o_body) and not other_down and not VoxelArena.safe(_o_body.global_position)
 	if not me_up and not them_up:
 		return []
 	var out := [arena.player.global_position if me_up else Vector3(1e6, 0, 1e6)]
@@ -871,6 +871,7 @@ func _message(m: Array) -> void:
 			if role == "host":
 				_send_world()
 				arena.stash.send_all()
+				arena.yard.send_all()
 		"W":
 			_world(m[1], m[2])
 			arena.wave = int(m[3])
@@ -903,6 +904,8 @@ func _message(m: Array) -> void:
 				arena.pieces.vacuum(m[1], float(m[2]), true)
 		"S":
 			arena.stash.on_net(m.slice(1))
+		"Y":
+			arena.yard.on_net(m.slice(1))
 		"X":
 			if role == "host":
 				arena.spawn(clampi(int(m[1]), 1, 40))
@@ -921,6 +924,11 @@ func send_hitstop(pid: int, secs: float, scale: float) -> void:
 func request_more(n: int) -> void:
 	if role == "guest" and linked:
 		_send(["X", n])
+
+## The yard's digs, fills and chunks (VoxelYard), either way, reliable.
+func send_yard(m: Array) -> void:
+	if linked:
+		_send(["Y"] + m)
 
 ## The chests' and backpacks' messages (VoxelStorages), either way, reliable.
 func send_storage(m: Array) -> void:

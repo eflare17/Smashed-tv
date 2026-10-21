@@ -405,7 +405,9 @@ func save() -> void:
 	if save_path == "":
 		return
 	var d := {"v": 1, "inv": arena.inv.to_data(), "storage": _own_chests if _own_chests != null else to_data(),
-		"locks": _own_locks if _own_locks != null else locks_data(true)}
+		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier}}
+	if arena.yard:
+		d["yard"] = arena.yard.save_data()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
@@ -420,4 +422,8 @@ func load_save() -> void:
 		arena.inv.from_data(d.inv)
 	_set_all(d.get("storage"))
 	_set_locks(d.get("locks"))
+	if typeof(d.get("tools")) == TYPE_DICTIONARY:
+		arena.set_shovel_tier(int(d.tools.get("shovel", 0)))
+	if arena.yard and d.has("yard"):
+		arena.yard.load_data(d.yard)
 	_dirty = false

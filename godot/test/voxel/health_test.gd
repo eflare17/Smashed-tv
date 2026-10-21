@@ -13,6 +13,8 @@ var passed := 0
 var failed := 0
 var role := ""
 var hp0 := 0.0
+var v_hurt_start := false
+var mark_ms := 0
 
 var _once := {}
 func check(ok: bool, what: String) -> void:
@@ -131,12 +133,16 @@ func _coop() -> bool:
 			if role == "host":
 				if t - mark > 1.0 and arena.bodies.is_empty():
 					_grunt_at(Vector3(6, 0, 4.8))
-				if t - mark > 6.0:
-					arena.player.global_position = Vector3(5.6, 0, 6.6)      # walk over to the guest
-				if t - mark > 14.0:
-					step = 9
+				if n.other_down:
+					arena.player.global_position = Vector3(5.6, 0, 6.6)      # walk over to the guest, down
+				if not n.linked or t - mark > 600.0:
+					step = 9          # (till the guest's done and gone)
 			else:
-				if t - mark > 5.0 and step == 1:
+				# (the host's grunt comes and swings: waited for, by real time; the two games' clocks don't keep step)
+				if step == 1 and not v_hurt_start:
+					v_hurt_start = true
+					mark_ms = Time.get_ticks_msec()
+				if step == 1 and (arena.player_hp < hp0 - 5.0 or Time.get_ticks_msec() - mark_ms > 20000):
 					check(arena.player_hp < hp0 - 5.0, "co-op: the host's grunt hurts the guest (%d -> %d)" % [hp0, arena.player_hp])
 					arena.hurt_player(500.0)
 					check(arena.down_t > 0.0, "co-op: guest down")
