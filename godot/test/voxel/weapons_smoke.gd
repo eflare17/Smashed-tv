@@ -1,6 +1,6 @@
 extends SceneTree
 ## Every weapon in the arena in turn on a crowd (left held, a second left click, right held, R), then the frame times
-## each one cost and any script error: ~/godot/godot --headless --fixed-fps 60 --path godot -s res://test/voxel/weapons_smoke.gd -- --enemies=10
+## each one cost and any script error: ~/godot/godot --headless --fixed-fps 60 --path godot -s res://test/voxel/weapons_smoke.gd -- --enemies=10 --godmode
 ## Prints "SMOKE <weapon> avg .. worst .." for each and "SMOKE done". Owned by the voxel session.
 
 var arena: Node

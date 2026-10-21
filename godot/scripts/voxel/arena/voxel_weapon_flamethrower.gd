@@ -831,6 +831,7 @@ func _patches_step(dt: float) -> void:
 			if float(pt.tick) <= 0.0:
 				pt.tick = PATCH_TICK
 				_catch(at)
+				arena.hurt_players_near(at + Vector3.UP * 0.3, PATCH_R + 0.5, 3.0 * k)     # (standing in it burns you)
 		elif not bool(pt.out):
 			pt.out = true
 			arena.sound.stop(String(pt.key))

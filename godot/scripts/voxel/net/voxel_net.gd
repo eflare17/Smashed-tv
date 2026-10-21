@@ -39,7 +39,8 @@ var _o_prev := Vector3.ZERO
 var _o_eye := Transform3D()
 var _o_hand := ""
 var _o_hands: Array = []
-var _o_hp := 100.0
+var other_hp := 100.0           # the other player's health ...
+var other_down := false         # ... and down
 var _next_nid := 1
 var _bodies := {}               # nid -> VoxelBody
 var _pieces := {}               # nid -> RigidBody3D
@@ -118,12 +119,22 @@ func _exit_tree() -> void:
 func shooters() -> Array:
 	return [arena.me, other] if other else [arena.me]
 
-## Where the players stand (the enemies go for the nearest).
+## Where the players stand who are up (the enemies go for the nearest): [this player's (or a placeholder if down),
+## the other's]; empty if everyone is down. Index 0 is always this player, 1 the other.
 func targets() -> Array:
-	var out := [arena.player.global_position]
-	if linked and is_instance_valid(_o_body):
+	var me_up: bool = arena.down_t <= 0.0
+	var them_up := linked and is_instance_valid(_o_body) and not other_down
+	if not me_up and not them_up:
+		return []
+	var out := [arena.player.global_position if me_up else Vector3(1e6, 0, 1e6)]
+	if them_up:
 		out.append(_o_body.global_position)
 	return out
+
+## The other player hurt (the host's enemies, blasts and fire): their game takes it.
+func hurt_other(amount: float) -> void:
+	if role == "host" and linked and amount > 0.0:
+		_out.append(["ph", amount])
 
 func _on_connected() -> void:
 	linked = true
@@ -301,6 +312,7 @@ func _other_frame(dt: float) -> void:
 	other_avatar.speed = spd
 	other_avatar.odo += spd * dt
 	other_avatar.attack = maxf(0.0, other_avatar.attack - dt * 2.5)
+	other_avatar.down_t = 1.0 if other_down else 0.0      # (down: lying on the floor)
 	other_avatar.recoil = maxf(0.0, other_avatar.recoil - dt * 6.0)
 	other_avatar.animate(dt, spd > 0.2)
 	other_avatar.visible = true
@@ -345,7 +357,8 @@ func _player_state() -> PackedByteArray:
 		for v in [ray[0].x, ray[0].y, ray[0].z, ray[1].x, ray[1].y, ray[1].z]:
 			b.put_float(v)
 	b.put_float(arena.look_yaw)
-	b.put_float(float(arena.get("player_hp")) if arena.get("player_hp") != null else 100.0)
+	b.put_float(arena.player_hp)
+	b.put_u8(1 if arena.down_t > 0.0 else 0)
 	return b.data_array
 
 func _read_player(d: PackedByteArray) -> void:
@@ -366,7 +379,8 @@ func _read_player(d: PackedByteArray) -> void:
 	other._floor = Vector3(b.get_float(), b.get_float(), b.get_float()) if b.get_u8() == 1 else Vector3.INF
 	other._ray = [Vector3(b.get_float(), b.get_float(), b.get_float()), Vector3(b.get_float(), b.get_float(), b.get_float())] if b.get_u8() == 1 else []
 	other.look_yaw = b.get_float()
-	_o_hp = b.get_float()
+	other_hp = b.get_float()
+	other_down = b.get_u8() == 1
 
 # ---------------------------------------------------------------- the host
 
@@ -755,6 +769,8 @@ func _events(list: Array) -> void:
 				_pq.erase(int(ev[1]))
 			"hs":
 				_hit_stop(float(ev[2]), float(ev[3]))
+			"ph":
+				arena.hurt_player(float(ev[1]))
 			"ds":
 				arena.dash(ev[2], float(ev[3]))
 

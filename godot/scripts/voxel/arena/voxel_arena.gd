@@ -22,7 +22,19 @@ const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
 const PILLAR_HALF := 0.6        # half a pillar's width (they're 3.5 m tall)
-const MAX_DEAD := 40            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
+const MAX_DEAD := 40
+## The player's health (the owner, 21 Oct: "add health"): enemies' swings, blasts, fire take it; it comes back slowly
+## after a while unhurt; at nothing you're down (no moving, no weapons) till you get up again, or (co-op) your mate
+## stands by you a moment and gets you up.
+const HP_MAX := 100.0
+const REGEN_WAIT := 5.0         # seconds unhurt before health comes back ...
+const REGEN := 4.0              # ... this much a second
+const DOWN_SOLO := 4.0          # seconds down before getting up alone ...
+const DOWN_COOP := 15.0         # ... and in co-op (your mate can get you up first)
+const REVIVE_R := 1.6           # metres your mate stands within ...
+const REVIVE_T := 2.5           # ... for this long to get you up
+const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0}
+const BURN_TOUCH := 6.0         # health a second brushing against one on fire            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
 var bodies: Array[VoxelBody] = []
@@ -73,6 +85,17 @@ const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res
 var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
 var sound: VoxelSound           # every sound (VoxelSound)
 var me: VoxelShooter            # the local player, as the weapons see whoever holds them
+var player_hp := HP_MAX
+var down_t := 0.0               # seconds left down (0: up)
+var godmode := false            # (--godmode: the player can't be hurt)
+var _since_hurt := 99.0
+var _revive := 0.0
+var _hurt_fx := 0.0
+var _hp_bar: ColorRect
+var _hp_back: ColorRect
+var _hp_label: Label
+var _vignette: ColorRect
+var _down_label: Label
 var net = null                  # VoxelNet when playing with someone (null alone)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var melee := {}                 # weapon id -> its VoxelMelee
@@ -178,6 +201,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (top_down or _opts.has("auto")) else Input.MOUSE_MODE_CAPTURED
 	# --host=CODE / --join=CODE (co-op straight away; --via=enet for an address, --server=ws://... a PeerJS server,
 	# --local no STUN/TURN)
+	godmode = _opts.has("godmode") or _opts.has("auto") or _opts.has("meleetest") or _opts.has("weaponshots") or _opts.has("swordtest")
 	if _opts.has("host") or _opts.has("join"):
 		net.debug = _opts.has("netdebug")
 		var via := String(_opts.get("via", "rtc"))
@@ -337,6 +361,43 @@ func _hud() -> void:
 	cross.offset_left = -8
 	cross.offset_top = -20
 	cl.add_child(cross)
+	# health: a red flash round the edge when hurt, a bar bottom left, a line in the middle when down
+	_vignette = ColorRect.new()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vm := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = "shader_type canvas_item; uniform float k = 0.0; uniform float grey = 0.0; void fragment() { vec2 d = UV - 0.5; float e = smoothstep(0.25, 0.75, length(d) * 1.3); COLOR = vec4(mix(vec3(0.7, 0.0, 0.0), vec3(0.08), grey), clamp(e * k + grey * 0.45, 0.0, 0.9)); }"
+	vm.shader = sh
+	_vignette.material = vm
+	cl.add_child(_vignette)
+	_hp_back = ColorRect.new()
+	_hp_back.color = Color(0, 0, 0, 0.55)
+	_hp_back.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_hp_back.position = Vector2(16, -160)          # (above the weapon bar)
+	_hp_back.size = Vector2(220, 18)
+	cl.add_child(_hp_back)
+	_hp_bar = ColorRect.new()
+	_hp_bar.color = Color(0.85, 0.12, 0.12)
+	_hp_bar.position = Vector2(2, 2)
+	_hp_bar.size = Vector2(216, 14)
+	_hp_back.add_child(_hp_bar)
+	_hp_label = Label.new()
+	_hp_label.position = Vector2(226, -3)
+	_hp_label.add_theme_font_size_override("font_size", 16)
+	_hp_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_hp_label.add_theme_constant_override("outline_size", 5)
+	_hp_back.add_child(_hp_label)
+	_down_label = Label.new()
+	_down_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_down_label.offset_top = 40
+	_down_label.offset_left = -300
+	_down_label.offset_right = 300
+	_down_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_down_label.add_theme_font_size_override("font_size", 28)
+	_down_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_down_label.add_theme_constant_override("outline_size", 7)
+	cl.add_child(_down_label)
 
 # ---------------------------------------------------------------- enemies
 
@@ -344,6 +405,86 @@ func _hud() -> void:
 func _next_wave() -> void:
 	wave += 1
 	spawn(1)
+
+# ---------------------------------------------------------------- the player's health
+
+## The player hurt (an enemy's swing, a blast, fire); nothing while down, or with --godmode.
+func hurt_player(amount: float) -> void:
+	if godmode or down_t > 0.0 or amount <= 0.0:
+		return
+	player_hp -= amount
+	_since_hurt = 0.0
+	_hurt_fx = minf(1.0, _hurt_fx + 0.25 + amount / 25.0)
+	_kick = maxf(_kick, minf(1.2, 0.3 + amount / 30.0))
+	if amount >= 2.0:
+		sound.play("hit_flesh", Vector3.INF, -4.0, 0.8)
+	if player_hp <= 0.0:
+		player_hp = 0.0
+		down_t = DOWN_COOP if net.linked else DOWN_SOLO
+		_revive = 0.0
+		_let_go()
+		sound.play("crunch", Vector3.INF, 0.0, 0.7)
+
+# who an enemy is at: 0 this player, 1 the other (co-op: their game takes it)
+func _hurt_target(i: int, amount: float) -> void:
+	if i == 0 and down_t <= 0.0:
+		hurt_player(amount)
+	elif i == 1:
+		net.hurt_other(amount)
+
+## A blast or a fire's heat round p: every player within r metres hurt, by how near (the host's or alone; a guest's
+## copies of weapons don't).
+func hurt_players_near(p: Vector3, r: float, amount: float) -> void:
+	if net.role == "guest" and net.linked:
+		return
+	var mine := player.global_position + Vector3(0, 0.9, 0)
+	if mine.distance_to(p) < r:
+		hurt_player(amount * (1.0 - mine.distance_to(p) / r))
+	if net.linked and net.other:
+		var theirs: Vector3 = net.other.player.global_position + Vector3(0, 0.9, 0)
+		if theirs.distance_to(p) < r:
+			net.hurt_other(amount * (1.0 - theirs.distance_to(p) / r))
+
+# the weapon out lets go of whatever's held (going down)
+func _let_go() -> void:
+	var id := loadout.id()
+	if melee.has(id):
+		for btn in _held:
+			if _held[btn]:
+				melee[id].release(btn)
+				net.local_input("release", btn)
+	_held.clear()
+
+# regeneration, the red flash fading, down: the count, your mate getting you up, getting up
+func _health_step(dt: float) -> void:
+	_since_hurt += dt
+	_hurt_fx = maxf(0.0, _hurt_fx - dt * 1.5)
+	if down_t > 0.0:
+		down_t -= dt
+		var near: bool = net.linked and net.other and not net.other_down and net.other.player.global_position.distance_to(player.global_position) < REVIVE_R
+		_revive = _revive + dt if near else maxf(0.0, _revive - dt)
+		if _revive >= REVIVE_T or down_t <= 0.0:
+			player_hp = HP_MAX * (0.5 if _revive >= REVIVE_T else 1.0)
+			down_t = 0.0
+			_revive = 0.0
+			_since_hurt = 0.0
+			sound.play("switch", Vector3.INF, -2.0, 0.7)
+	elif _since_hurt > REGEN_WAIT and player_hp < HP_MAX:
+		player_hp = minf(HP_MAX, player_hp + REGEN * dt)
+	if _hp_bar:
+		_hp_bar.size.x = 216.0 * player_hp / HP_MAX
+		var mate := ""
+		if net.linked and net.other:
+			mate = "     mate %d%s" % [int(net.other_hp), " DOWN" if net.other_down else ""]
+		_hp_label.text = "%d%s" % [int(ceil(player_hp)), mate]
+		(_vignette.material as ShaderMaterial).set_shader_parameter("k", _hurt_fx)
+		(_vignette.material as ShaderMaterial).set_shader_parameter("grey", 1.0 if down_t > 0.0 else 0.0)
+		if down_t > 0.0:
+			_down_label.text = ("DOWN — up in %d   (your mate can get you up: %d%%)" % [ceili(down_t), int(_revive / REVIVE_T * 100.0)]) if net.linked else "DOWN — up in %d" % ceili(down_t)
+		elif net.linked and net.other_down:
+			_down_label.text = "your mate is DOWN — stand by them to get them up"
+		else:
+			_down_label.text = ""
 
 # F3 / F5: n more enemies (a co-op guest asks the host)
 func _more(n: int) -> void:
@@ -738,6 +879,8 @@ func _physics_process(dt: float) -> void:
 		dir = r * iv.x - f * iv.y
 	if dir.length() > 1.0:
 		dir = dir.normalized()
+	if down_t > 0.0:
+		dir = Vector3.ZERO          # (down: no moving)
 	player.velocity.x = dir.x * sp
 	player.velocity.z = dir.z * sp
 	if _dash_t > 0.0:
@@ -754,6 +897,9 @@ func _physics_process(dt: float) -> void:
 	if net.role == "guest" and net.linked:
 		return
 	var targets: Array = net.targets()
+	var everyone_down := targets.is_empty()
+	if everyone_down:
+		targets = [player.global_position]
 	var to_fly: Array[VoxelBody] = []
 	for i in bodies.size():
 		var b := bodies[i]
@@ -770,9 +916,12 @@ func _physics_process(dt: float) -> void:
 				b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
 			continue
 		var pp: Vector3 = targets[0]
-		for tp: Vector3 in targets:
+		var ti := 0
+		for j2 in targets.size():
+			var tp: Vector3 = targets[j2]
 			if tp.distance_squared_to(b.position) < pp.distance_squared_to(b.position):
 				pp = tp
+				ti = j2
 		var to := Vector3(pp.x - b.position.x, 0, pp.z - b.position.z)
 		var d := to.length()
 		var mv := Vector3.ZERO
@@ -817,7 +966,13 @@ func _physics_process(dt: float) -> void:
 		elif d > 0.01 and can:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
-		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and can and not panic) else 0.0
+		var a0 := b.attack
+		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and can and not panic and not everyone_down) else 0.0
+		# the swing landing on whoever it's at (in reach still); one on fire brushing past burns
+		if a0 < 0.55 and b.attack >= 0.55 and d <= stop + 0.5 and not _opts.has("auto"):
+			_hurt_target(ti, float(SWING_HURT.get(b.key, 8.0)))
+		if b.burning() and d < 0.9 and not everyone_down:
+			_hurt_target(ti, BURN_TOUCH * dt)
 	_bowl()
 	for b in to_fly:
 		if b.cubes_left() == 0:
@@ -966,6 +1121,7 @@ func _process(dt: float) -> void:
 	_draw_tracers(dt)
 	_mouse_v *= exp(-dt * 14.0)
 	_weapons_step(dt)
+	_health_step(dt)
 	for b in bodies:
 		if not guest and not b.fragment and (b.airborne or b.stagger > 0.0 or not b.alive):
 			b.position = out_of_pillars(b.position, 0.3)     # (flying, dragged, held, pulled after the weapons moved them)
@@ -995,8 +1151,9 @@ func _camera(dt: float) -> void:
 		cam.look_at(pp + Vector3(0, 0.8, 0) + shake, Vector3.UP)
 		cross.visible = false
 	else:
-		cam.global_position = pp + Vector3(0, 1.65, 0)
-		cam.rotation = Vector3(look_pitch + _kick * 0.04, look_yaw, 0)
+		var low := minf(1.0, (down_t if down_t > 0.0 else 0.0) * 4.0)     # down: on the floor, the view tipped over
+		cam.global_position = pp + Vector3(0, lerpf(1.65, 0.35, low), 0)
+		cam.rotation = Vector3(look_pitch + _kick * 0.04, look_yaw, lerpf(0.0, 1.1, low))
 		cross.visible = true
 
 func _mouse_floor() -> Vector3:
@@ -1021,6 +1178,11 @@ func _aim() -> Array:
 func _shoot(dt: float) -> void:
 	loadout.step(dt)
 	me.weapon = loadout.id()
+	if down_t > 0.0:
+		_sucking = false
+		_aiming = false
+		_let_go()                   # (down: no weapons; buttons held are let go)
+		return
 	if not _opts.has("swordtest"):
 		_sucking = false
 	_aiming = false
