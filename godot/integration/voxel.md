@@ -390,6 +390,22 @@ bone; ash is lost; charred pieces give lower-value fertiliser")
   `test/voxel/shredder_shots.gd` (`voxel_shots/shredder_*.png`); the logic test's fire checks and the flamethrower's
   self-test changed for the new burning (a lick of flame chars, the flame held on makes ash, bone stays, it dies down).
 
+### The online menu (22 Oct, the owner: "can you make it easier to join? I like the set up in the last game")
+
+- `scripts/voxel/net/voxel_net_menu.gd`, the main game's PLAY ONLINE panel (`NetMenu`) rebuilt for the voxel game:
+  an ONLINE (O) button top right (it shows the state: waiting, host / guest and the room); the panel has the status
+  line, HOST A GAME (a new 4-letter room, shown big, **copied to the clipboard**: paste it to your mate), the code box
+  with JOIN and PASTE (opening the menu **fills the box** from a code you've copied, even inside a message like "join
+  me, code K7QD", or else with the last room you joined, kept in `user://voxel_online.cfg`), the on-screen letters,
+  LEAVE GAME, CLOSE, and SAME HOUSE? HOST DIRECT (ENet on the port; your home-network address shown and copied; the
+  other types it in the code box). While the host waits the room code shows big on screen. A room code that's taken
+  gets a new one by itself (three goes). The game behind takes no keys, clicks or walking while it's open. F7 still
+  hosts (and copies the code), Shift+F7 hosts direct, F8 opens the menu; the co-op line moved top right under the
+  button. `--server` / `--local` apply to the menu's rooms too (tests).
+- Tests: `test/voxel/net_menu_test.gd` (9 checks alone; `--as-host` / `--as-guest` 3 + 3, done with the menu's buttons:
+  HOST DIRECT and the address typed in, or `--room=CODE` with a local PeerJS server, HOST A GAME and the code typed in:
+  both link), `test/voxel/net_menu_shots.gd` (`voxel_shots/online_*.png`).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

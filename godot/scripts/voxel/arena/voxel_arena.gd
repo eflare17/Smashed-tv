@@ -146,6 +146,7 @@ var _aim_k := 0.0               # 0 at the hip .. 1 aimed (the view closes in)
 var _hand_id := "-"             # top-down: what Jared's hand holds now
 var _hands := []                # top-down: the BoneAttachment3Ds holding it
 var _hud_layer: CanvasLayer
+var net_menu: VoxelNetMenu      # the online menu (O)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
 var _dash_t := 0.0
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
@@ -238,6 +239,9 @@ func _ready() -> void:
 	add_child(net)
 	net.setup(self)
 	net.changed.connect(_net_hud)
+	net_menu = VoxelNetMenu.new()
+	add_child(net_menu)
+	net_menu.setup(self)
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
 	elif _opts.has("swordtest"):
@@ -977,37 +981,16 @@ func _more(n: int) -> void:
 	else:
 		spawn(n)
 
-# F8: a line to type the room code (or an address) into; Enter joins, Esc doesn't
-var _prompt: LineEdit
-func _join_prompt() -> void:
-	if _prompt:
-		return
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_prompt = LineEdit.new()
-	_prompt.placeholder_text = "room code (or an address for a direct game) — Enter"
-	_prompt.custom_minimum_size = Vector2(420, 40)
-	_prompt.set_anchors_preset(Control.PRESET_CENTER)
-	_prompt.position = Vector2(-210, -20)
-	_hud_layer.add_child(_prompt)
-	_prompt.grab_focus()
-	_prompt.text_submitted.connect(func(t: String):
-		var c := t.strip_edges()
-		if c != "":
-			net.join(c.to_upper() if not (c.contains(".") or c.contains(":")) else c, "enet" if (c.contains(".") or c.contains(":")) else "rtc")
-		_prompt.queue_free()
-		_prompt = null
-		if not top_down:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
-
 # the co-op line at the top: the room code, how it's going
 var _net_label: Label
 func _net_hud() -> void:
 	if _net_label == null:
 		_net_label = Label.new()
-		_net_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
-		_net_label.position = Vector2(-300, 8)
-		_net_label.custom_minimum_size = Vector2(600, 0)
-		_net_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_net_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)         # (under the ONLINE button, clear of the stats)
+		_net_label.position = Vector2(-652, 46)
+		_net_label.custom_minimum_size = Vector2(640, 0)
+		_net_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_net_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_net_label.add_theme_font_size_override("font_size", 18)
 		_net_label.add_theme_color_override("font_outline_color", Color.BLACK)
 		_net_label.add_theme_constant_override("outline_size", 6)
@@ -1016,7 +999,7 @@ func _net_hud() -> void:
 		_net_label.text = ""
 		return
 	var head := ("CO-OP  room %s" % net.code) if net.role == "host" else "CO-OP  joined %s" % net.code
-	_net_label.text = "%s — %s   (F9 leave)" % [head, net.status_text]
+	_net_label.text = "%s — %s" % [head, net.status_text]
 
 ## n more enemies round the arena's edge.
 func spawn(n: int) -> void:
@@ -1068,6 +1051,8 @@ func _respawn_all() -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(e: InputEvent) -> void:
+	if net_menu and net_menu.is_open():
+		return                  # (the online menu has the keys and the mouse)
 	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] \
 			and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
 		_clicked[e.button_index] = true                  # (a click quicker than a frame still counts)
@@ -1165,9 +1150,6 @@ func _unhandled_input(e: InputEvent) -> void:
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-				if _prompt:
-					_prompt.queue_free()
-					_prompt = null
 			KEY_V:
 				top_down = not top_down
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if top_down else Input.MOUSE_MODE_CAPTURED
@@ -1189,15 +1171,15 @@ func _unhandled_input(e: InputEvent) -> void:
 				if net.role != "guest":
 					VoxelBody.immortal = not VoxelBody.immortal
 			KEY_F7:
-				# co-op: host a room (a code to give your mate; Shift: on a port, for a LAN or a forwarded port)
+				# co-op: host a room (a code to give your mate, copied; Shift: on a port, for a LAN or a forwarded port)
 				if net.role == "":
-					var c := ""
-					for i in 4:
-						c += "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[randi() % 32]
-					net.host(c, "enet" if e.shift_pressed else "rtc")
+					if e.shift_pressed:
+						net_menu._on_direct()
+					else:
+						net_menu.host()
+					say("Hosting: the room code's copied, paste it to your mate (O: the online menu)", 3.0)
 			KEY_F8:
-				if net.role == "":
-					_join_prompt()
+				net_menu.open()
 			KEY_F9:
 				net.leave()
 
@@ -1409,6 +1391,8 @@ func _physics_process(dt: float) -> void:
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
+	if net_menu and net_menu.is_open():
+		iv = Vector2.ZERO           # (typing a room code isn't walking)
 	var sp := 7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5
 	var dir := Vector3.ZERO
 	if top_down:
@@ -1768,7 +1752,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0:
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()):
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return

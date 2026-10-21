@@ -27,6 +27,7 @@ var tr: NetTransport
 var role := ""                  # "host", "guest" or "" (alone)
 var linked := false
 var status_text := ""
+var status_kind := ""           # "live", "bad" or "" (the menu colours the status by it)
 var code := ""
 var other: VoxelShooter         # the other player, as the weapons see them
 var other_avatar: VoxelBody
@@ -95,7 +96,7 @@ func _start(via: String, server: String, local_only: bool) -> void:
 			r.server = server
 		r.local_only = local_only
 		tr = r
-	tr.status.connect(func(text, _kind): status_text = text; changed.emit())
+	tr.status.connect(func(text, kind): status_text = text; status_kind = String(kind); changed.emit())
 	tr.connected.connect(_on_connected)
 	tr.disconnected.connect(_on_disconnected)
 	tr.received.connect(_on_received)
