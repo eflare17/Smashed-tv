@@ -745,6 +745,8 @@ var _burn_tick := randf() * BURN_TICK     # (bodies set alight together still st
 const ASH_EVERY := 0.5          # seconds between taking the ash out (its connectivity cut fills the whole part)
 var _ash := {}                  # part -> {cell index: true}: burnt to ash, waiting to be taken out
 var _ash_t := randf() * ASH_EVERY
+const ASH_FILL := 4
+var _ash_n := randi() % ASH_FILL
 var _orig := {}                 # part -> its cells' colours before fire or ice changed them (for the thaw)
 var frost := 0.0
 var frozen_t := 0.0
@@ -1015,7 +1017,10 @@ func status_step(dt: float, ash_ok: bool = true) -> Dictionary:
 		for nm2 in _ash:
 			ash[nm2] = PackedInt32Array((_ash[nm2] as Dictionary).keys())
 		_ash.clear()
-		var r := _remove({"plane": false, "mask": ash, "bits_every": 3})
+		# the fill over the whole part (what's burnt through drops off) only every ASH_FILL-th time and at the end:
+		# it costs 10-25 ms; in between the ash cubes just go
+		_ash_n += 1
+		var r := _remove({"plane": false, "mask": ash, "bits_every": 3, "quick": _ash_n % ASH_FILL != 0 and _burn_n > 0})
 		for bt in r.bits:
 			bt.col = (bt.col as Color).lerp(CHAR, 0.6)      # ash
 		out.removed = r
@@ -1256,6 +1261,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 	var every: int = opt.get("bits_every", 2)
 	var mask: Dictionary = opt.get("mask", {})          # part -> cell indices to take (fire's ash): no shape
 	var masked := not mask.is_empty()
+	var quick_only: bool = opt.get("quick", false)        # just take the cubes out, no fill (fire's ash, mostly)
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
 	if frozen():
 		return _shatter_res()
@@ -1405,7 +1411,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var in_sweep := jq.length() <= reach + vm and jq.dot(fwd) >= jq.length() * cos_arc - vm
 		var joint_cut: bool = nm != root and not masked and ((absf(n.dot(jq)) <= half_t + vm and in_sweep) if plane else _seg_dist(jw, ca, cb) <= cr + vm)
 		var box_v := (chi.x - clo.x + 7) * (chi.y - clo.y + 7) * (chi.z - clo.z + 7)
-		if not joint_cut and box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi):
+		if not joint_cut and (quick_only or (box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi))):
 			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
 			# whole: just take the cut cubes out, no fill over the whole part
 			for z in range(clo.z, chi.z + 1):
