@@ -1574,6 +1574,27 @@ func _status_step(dt: float) -> void:
 	elif sound.playing("burning"):
 		sound.stop("burning")
 
+# a limb hanging by its skin strained through (VoxelBody.tear_due, Stage 8): torn off, with a spray of blood and a rip
+func _tear_step() -> void:
+	for b: VoxelBody in bodies.duplicate():
+		if not is_instance_valid(b) or b._dangle.is_empty():
+			continue
+		var nm := b.tear_due()
+		if nm == "":
+			continue
+		var at: Vector3 = b.skeleton.global_transform * b.skeleton.get_bone_global_pose(int(b.parts[nm].bone)).origin
+		var d: Dictionary = b._dangle[nm]
+		var swing: Vector3 = ((d.tip as Vector3) - (d.prev as Vector3)) * 60.0
+		var r: Dictionary = b.sever(nm)
+		if not (r.pieces as Array).is_empty():
+			pieces.spawn(b, r.pieces, swing.limit_length(3.0) + Vector3(0, 0.5, 0), Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3)))
+		var bits := []
+		for i in 18:
+			bits.append({"pos": at + Vector3(randf_range(-0.03, 0.03), randf_range(-0.03, 0.03), randf_range(-0.03, 0.03)), "col": VoxelBody.FLESH[i % VoxelBody.FLESH.size()]})
+		debris.burst(bits, Vector3.DOWN, 1.2)
+		knocked += bits.size()
+		sound.play("flesh_tear", at, -2.0)
+
 ## p pushed out of any pillar it's within r metres of (level; above the pillars' tops nothing): walking, flying, dragged,
 ## held, pulled bodies don't go through them.
 static func out_of_pillars(p: Vector3, r: float) -> Vector3:
@@ -1637,6 +1658,7 @@ func _process(dt: float) -> void:
 	var guest: bool = net.role == "guest" and net.linked     # (a guest's world is the host's: no fire, culling, waves)
 	if not guest:
 		_status_step(dt)
+		_tear_step()
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
 		var moving := b.alive and not frozen

@@ -398,8 +398,8 @@ func legs_lost() -> int:
 	for side in ["_l", "_r"]:
 		for leg in ["thigh", "shin", "foot"]:
 			# gone (a leg cut through has what's below taken off whole, so that counts)
-			if parts.has(leg + side) and parts[leg + side].gone:
-				n += 1
+			if parts.has(leg + side) and (parts[leg + side].gone or loose.has(leg + side)):
+				n += 1                   # (a leg hanging by its skin is no leg to stand on: Stage 8)
 				break
 	return n
 
@@ -485,7 +485,7 @@ func animate(dt: float, moving: bool) -> void:
 		# one leg: a hop and a lean onto the one left
 		var side := -1.0
 		for leg in ["thigh_l", "shin_l", "foot_l"]:
-			if parts.has(leg) and parts[leg].gone:
+			if parts.has(leg) and (parts[leg].gone or loose.has(leg)):
 				side = 1.0
 		turn = Quaternion.from_euler(Vector3(0.15, 0, -0.12 * side))
 		lift.y += absf(sin(odo / 0.5 * PI)) * 0.06
@@ -521,6 +521,7 @@ func animate(dt: float, moving: bool) -> void:
 	var ph := model.bone_pivot[r] * model.voxel_m
 	skeleton.set_bone_pose_position(r, face * (pivot + turn * (ph - pivot) + lift))
 	skeleton.set_bone_pose_rotation(r, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
+	_dangle_pose(dt)
 
 # ---------------------------------------------------------------- shots
 
@@ -1163,6 +1164,7 @@ func _sever_x(part: String) -> Dictionary:
 		res.killed = true
 		alive = false
 		died.emit(self)
+	_update_loose()
 	return res
 
 # ---------------------------------------------------------------- lying pieces made bodies again
@@ -1414,6 +1416,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 	var res := {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
 	if frozen():
 		return _shatter_res()
+	var was_hanging := _dangle.keys()
 	var by_bone := {}
 	for nm in parts:
 		by_bone[int(parts[nm].bone)] = nm
@@ -1758,6 +1761,10 @@ func _remove(opt: Dictionary) -> Dictionary:
 			res.killed = true
 			alive = false
 			died.emit(self)
+	if not res.parts.is_empty():
+		_update_loose()
+		if not masked:
+			_jerk(was_hanging, res.parts)
 	return res
 
 # marks (st = 2) the filled cells whose middles are within r metres of the segment a-b; base, bs: a cell's middle in
@@ -2152,3 +2159,287 @@ func grids_in(d: Dictionary) -> void:
 		p.left = int(e[4])
 		p.dirty = not p.gone
 		(p.mesh as MeshInstance3D).visible = not p.gone
+	_update_loose()
+
+# ---------------------------------------------------------------- bones hold the body together (Stage 8)
+
+## The owner (21 Oct): "bones hold the body together, skin/meat stays attached to blown-off bones, dangling limbs tear
+## off from strain, shooting the skin finishes it". A limb is held on by its bone: while the bone runs whole through a
+## joint (the parent's bone, from where it's held, reaching the joint; the limb's own bone there) it's held as it was.
+## Shot or cut through the bone but still joined by flesh, it hangs: loose, swinging from the strip that's left (a
+## pendulum from the joint, lagging as the body moves, flopping when it's hit), with everything below it. A dangling leg
+## is no leg to stand on. Hanging there it strains (its weight, every jerk and every hit, more the thinner the strip);
+## strained through, it tears off (tear_due: the host's arena takes it off as a sever, so a co-op guest gets it like
+## any cut). A shot that hits a dangling limb finishes it. What comes off keeps its meat on its bones (the pieces are
+## the whole parts). Hands and feet have no bone of their own: they hang if the bone above them doesn't reach them.
+const JOINT_R := 3.5             # cells round a joint the bone's looked for
+const STRIP_R := 3.0             # cells round a joint counted as the strip a dangling limb hangs by
+const TEAR_K := 0.25             # how fast a strip strains through (its load in thousands of cubes / ten of its cubes, a second)
+const HIT_STRAIN := 0.35         # a hit on the body jerks a dangling limb this much (a thin strip's worth)
+var loose := {}                  # part -> true: hanging by flesh (its bone, or the bone above it, broken at the joint)
+var _dangle := {}                # the top of each hanging chain -> {tip, prev, len, strain, rest: Vector3 (bone space)}
+static var _bone0 := {}          # "key|chunk" -> part -> {top: bone cells by its own joint, joints: {child: reached}}
+
+static func _near_count(cells: PackedInt32Array, s: Vector3i, pt: Vector3, r: float, want: int, mask: PackedByteArray = PackedByteArray()) -> int:
+	var n := 0
+	var lo := Vector3i(maxi(0, floori(pt.x - r)), maxi(0, floori(pt.y - r)), maxi(0, floori(pt.z - r)))
+	var hi := Vector3i(mini(s.x - 1, ceili(pt.x + r)), mini(s.y - 1, ceili(pt.y + r)), mini(s.z - 1, ceili(pt.z + r)))
+	for z in range(lo.z, hi.z + 1):
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				var i := x + s.x * (y + s.y * z)
+				if (want == 0 and cells[i] != 0) or (want != 0 and cells[i] == want):
+					if (mask.is_empty() or mask[i] == 1) and Vector3(x, y, z).distance_to(pt) <= r:
+						n += 1
+	return n
+
+# this part's bone cells joined to the ones by its own joint (1 in the mask), from where it's held
+static func _bone_reach(cells: PackedInt32Array, s: Vector3i, top: Vector3) -> PackedByteArray:
+	var mask := PackedByteArray()
+	mask.resize(cells.size())
+	var q := PackedInt32Array()
+	var lo := Vector3i(maxi(0, floori(top.x - JOINT_R)), maxi(0, floori(top.y - JOINT_R)), maxi(0, floori(top.z - JOINT_R)))
+	var hi := Vector3i(mini(s.x - 1, ceili(top.x + JOINT_R)), mini(s.y - 1, ceili(top.y + JOINT_R)), mini(s.z - 1, ceili(top.z + JOINT_R)))
+	for z in range(lo.z, hi.z + 1):
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				var i := x + s.x * (y + s.y * z)
+				if cells[i] == BONE_V and Vector3(x, y, z).distance_to(top) <= JOINT_R:
+					mask[i] = 1
+					q.append(i)
+	var h := 0
+	var sxy := s.x * s.y
+	while h < q.size():
+		var k := q[h]
+		h += 1
+		var kx := k % s.x
+		var ky := (k / s.x) % s.y
+		for d in [[kx > 0, -1], [kx < s.x - 1, 1], [ky > 0, -s.x], [ky < s.y - 1, s.x], [k >= sxy, -sxy], [k + sxy < cells.size(), sxy]]:
+			if d[0]:
+				var k2: int = k + int(d[1])
+				if mask[k2] == 0 and cells[k2] == BONE_V:
+					mask[k2] = 1
+					q.append(k2)
+	return mask
+
+# where bone b's joint is in part p's grid (cells)
+func _joint_in(p: Dictionary, b: int) -> Vector3:
+	return model.bone_pivot[b] * model.voxel_m / vm - Vector3(p.origin) - Vector3(0.5, 0.5, 0.5)
+
+# the bones as they are on a whole body of this kind (where a joint has no bone to hold it, none is asked for)
+func _baseline() -> Dictionary:
+	var ck := "%s|%d" % [key, chunk_n]
+	if _bone0.has(ck):
+		return _bone0[ck]
+	var grids := _flesh_grids(model, key, chunk_n)
+	var by_bone := {}
+	for nm in parts:
+		by_bone[int(parts[nm].bone)] = nm
+	var names := parts.keys()
+	names.sort_custom(func(a, b): return int(parts[a].bone) < int(parts[b].bone))
+	var out := {}
+	for nm in names:
+		var p: Dictionary = parts[nm]
+		var g: Dictionary = grids[nm]
+		var top := _joint_in(p, int(p.bone))
+		var limb := false
+		for l in LIMBS:
+			limb = limb or String(nm).begins_with(l)
+		# (only the limbs hold by their bones: the head's skull isn't what holds it on)
+		var top_n := _near_count(g.cells, g.size, top, JOINT_R, BONE_V) if limb else 0
+		# (and how much of its bone is joined to its joint when whole: some models' bones have gaps)
+		var reach0 := _bone_reach(g.cells, g.size, top).count(1) if top_n > 0 else 0
+		out[nm] = {"top": top_n, "reach": reach0, "joints": {}}
+	for nm in names:
+		var p: Dictionary = parts[nm]
+		var par := _parent_part(nm, by_bone, names[0])
+		if par == "" or int(out[par].top) == 0:
+			continue
+		var pg: Dictionary = grids[par]
+		var reach := _bone_reach(pg.cells, pg.size, _joint_in(parts[par], int(parts[par].bone)))
+		out[par].joints[nm] = _near_count(pg.cells, pg.size, _joint_in(parts[par], int(p.bone)), JOINT_R, BONE_V, reach)
+	_bone0[ck] = out
+	return out
+
+## Which parts hang loose now (after any cut): the bone through each joint looked at, from the body down.
+func _update_loose() -> void:
+	if parts.is_empty() or model == null:
+		return
+	var base := _baseline()
+	var by_bone := {}
+	for nm in parts:
+		by_bone[int(parts[nm].bone)] = nm
+	var names := parts.keys()
+	names.sort_custom(func(a, b): return int(parts[a].bone) < int(parts[b].bone))
+	var held := {}               # part -> its bone held from the body (its reach mask), or true (no bone of its own)
+	loose.clear()
+	for nm in names:
+		var p: Dictionary = parts[nm]
+		if p.gone:
+			continue
+		var par := _parent_part(nm, by_bone, names[0])
+		var ok := true
+		if par != "" and not fragment:
+			ok = held.has(par)
+			var need: int = int(base[par].joints.get(nm, 0)) if base.has(par) else 0
+			if ok and need > 0 and held[par] is PackedByteArray:
+				var pp: Dictionary = parts[par]
+				ok = _near_count(pp.grid.cells, pp.grid.size, _joint_in(pp, int(p.bone)), JOINT_R, BONE_V, held[par]) > 0
+			var top0: int = int(base[nm].top) if base.has(nm) else 0
+			if ok and top0 > 0:
+				ok = _near_count(p.grid.cells, p.grid.size, _joint_in(p, int(p.bone)), JOINT_R, BONE_V) >= maxi(1, top0 / 3)
+		var top0b: int = int(base[nm].top) if base.has(nm) else 0
+		var reach := PackedByteArray()
+		if ok and top0b > 0:
+			reach = _bone_reach(p.grid.cells, p.grid.size, _joint_in(p, int(p.bone)))
+			# broken in its upper half (less than half the bone joined to where it's held when whole still is): it hangs
+			# from its joint (the parts swing whole, so it pivots there; broken lower down, what's below it hangs)
+			var reach0 := int(base[nm].get("reach", 0))
+			if reach0 > 1 and reach.count(1) * 2 < reach0:
+				ok = false
+		if not ok:
+			loose[nm] = true
+			continue
+		held[nm] = reach if top0b > 0 else true
+	# a chain newly hanging starts swinging from where it was; one no longer hanging (off, or the body made whole) stops
+	for nm in _dangle.keys():
+		if not loose.has(nm) or (parts[nm].gone):
+			_dangle.erase(nm)
+	for nm in loose:
+		var par2 := _parent_part(nm, by_bone, names[0])
+		if par2 != "" and loose.has(par2):
+			continue                 # (not the top of its chain)
+		if not _dangle.has(nm):
+			_dangle[nm] = _new_dangle(nm)
+
+# a hanging chain's swing: its tip where the limb points now, its length, how it points at rest (bone space)
+func _new_dangle(nm: String) -> Dictionary:
+	var b := int(parts[nm].bone)
+	var rest := Vector3.ZERO
+	for i in model.bone_names.size():
+		if model.bone_parent[i] == b:
+			rest = (model.bone_pivot[i] - model.bone_pivot[b]) * model.voxel_m
+			break
+	if rest.length() < 0.01:
+		# (no bone below it: a hand, a foot) toward the middle of its cubes
+		var p: Dictionary = parts[nm]
+		var s: Vector3i = p.grid.size
+		rest = ((Vector3(p.origin) + Vector3(s) * 0.5) - (p.pivot as Vector3) / vm) * vm
+	if rest.length() < 0.01:
+		rest = Vector3(0, -0.2, 0)
+	var g := skeleton.global_transform * skeleton.get_bone_global_pose(b)
+	var tip := g * rest
+	return {"tip": tip, "prev": tip, "len": rest.length(), "rest": rest, "strain": 0.0, "a": 0.0, "odo": odo}
+
+## The cubes of the chain hanging from part nm (it and everything below it), and the strip it hangs by.
+func _chain_cubes(nm: String) -> int:
+	var b0 := int(parts[nm].bone)
+	var n := 0
+	for k in parts:
+		var bb := int(parts[k].bone)
+		var hangs := bb == b0
+		var pb := model.bone_parent[bb]
+		while not hangs and pb >= 0:
+			hangs = pb == b0
+			pb = model.bone_parent[pb]
+		if hangs and not parts[k].gone:
+			n += int(parts[k].left)
+	return n
+
+func strip_cubes(nm: String) -> int:
+	var p: Dictionary = parts[nm]
+	return _near_count(p.grid.cells, p.grid.size, _joint_in(p, int(p.bone)), STRIP_R, 0)
+
+# (animate's end) each hanging chain swung: its tip falls and lags behind the joint as the body moves, the bone turned
+# to point at it, what's below it limp; its strain built up
+func _dangle_pose(dt: float) -> void:
+	if _dangle.is_empty():
+		return
+	var sk := skeleton.global_transform
+	for nm in _dangle:
+		var d: Dictionary = _dangle[nm]
+		var b := int(parts[nm].bone)
+		var par := model.bone_parent[b]
+		var pg := sk * (skeleton.get_bone_global_pose(par) if par >= 0 else Transform3D())
+		var joint := sk * skeleton.get_bone_global_pose(b).origin
+		var tip: Vector3 = d.tip
+		var prev: Vector3 = d.prev
+		var vel := (tip - prev) * 0.985
+		var nt := tip + vel + Vector3(0, -9.8, 0) * dt * dt
+		var len_m: float = d.len
+		var off := nt - joint
+		nt = joint + (off.normalized() if off.length() > 0.0001 else Vector3.DOWN) * len_m
+		var floor_y := global_position.y + 0.04
+		var on_floor := nt.y < floor_y
+		if on_floor:
+			nt.y = floor_y
+		var acc := ((nt - tip) - (tip - prev)).length() / maxf(dt * dt, 0.0001)
+		d.a = lerpf(float(d.a), acc, 0.3)
+		d.prev = tip
+		d.tip = nt
+		# the bone turned to point at the tip (from how it would point unturned)
+		var pb := pg.basis.orthonormalized()
+		var want := (nt - joint).normalized()
+		var now := (pb * (d.rest as Vector3)).normalized()
+		if want.length() > 0.5 and now.length() > 0.5 and absf(now.dot(want)) < 0.9999:
+			var q := Quaternion(now, want)
+			var local := (pb.inverse() * Basis(q) * pb).get_rotation_quaternion()
+			skeleton.set_bone_pose_rotation(b, local)
+		else:
+			skeleton.set_bone_pose_rotation(b, Quaternion.IDENTITY)
+		# limp below it
+		for i in model.bone_names.size():
+			var pb2 := model.bone_parent[i]
+			var below := false
+			while pb2 >= 0:
+				if pb2 == b:
+					below = true
+					break
+				pb2 = model.bone_parent[pb2]
+			if below:
+				skeleton.set_bone_pose_rotation(i, Quaternion.from_euler(Vector3(0.15 * sin(t * 3.0 + i), 0, 0)))
+		# the strain: its weight, and every jerk, on the strip it hangs by (none lying on the floor)
+		var walk := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)      # (walking jolts it about)
+		d.odo = odo
+		if not on_floor:
+			var strip := maxi(1, strip_cubes(nm))
+			var load := float(_chain_cubes(nm)) / 1000.0 * (1.0 + minf(float(d.a), 60.0) / 9.8) * (1.0 + 0.5 * walk)
+			d.strain = float(d.strain) + dt * TEAR_K * load * 10.0 / float(strip)
+
+## (the host's arena, every frame) the top of a hanging chain strained through, to tear off ("" none).
+func tear_due() -> String:
+	if _net_block():
+		return ""
+	for nm in _dangle:
+		if float(_dangle[nm].strain) >= 1.0 and not parts[nm].gone:
+			return nm
+	return ""
+
+## How strained a part's chain is (0 .. 1 tears; -1 not hanging) (tests, the HUD).
+func strain_of(nm: String) -> float:
+	return float(_dangle[nm].strain) if _dangle.has(nm) else -1.0
+
+# a cut (hit) on the body: every chain that was hanging already jerks (a thin strip's worth of strain), and one the cut
+# took cubes from (the limb, or the strip) is finished
+func _jerk(was: Array, hit_parts: Array) -> void:
+	for nm in was:
+		if not _dangle.has(nm):
+			continue
+		var d: Dictionary = _dangle[nm]
+		var strip := maxi(1, strip_cubes(nm))
+		d.strain = float(d.strain) + HIT_STRAIN * 10.0 / float(strip)
+		for hp_ in hit_parts:
+			if hp_ == nm or _hangs_from(String(hp_), nm):
+				d.strain = 1.0
+		d.prev = (d.tip as Vector3) + Vector3(0.03, 0.02, -0.03)      # (and a kick to its swing)
+
+func _hangs_from(part: String, top: String) -> bool:
+	if not parts.has(part) or not parts.has(top):
+		return false
+	var b0 := int(parts[top].bone)
+	var pb := model.bone_parent[int(parts[part].bone)]
+	while pb >= 0:
+		if pb == b0:
+			return true
+		pb = model.bone_parent[pb]
+	return false

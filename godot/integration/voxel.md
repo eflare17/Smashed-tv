@@ -430,6 +430,29 @@ Mega Drive games, Smash TV etc.")
   (`voxel_shots/games_*.png`); the Windows build checked under Wine (`SmashedVoxelArena.exe --headless -- --retrotest`:
   the plugin loads, Genesis Plus GX plays the test cartridge, 179 frames, 320 x 224).
 
+### Bones hold the body together (22 Oct, the owner's Stage 8: "bones hold the body together, skin/meat stays attached
+to blown-off bones, dangling limbs tear off from strain, shooting the skin finishes it")
+
+- **Held by the bone** (`VoxelBody`, its end section): after every cut the joints are looked at from the body down. A
+  limb (upper arm, forearm, thigh, shin) is held while its own bone is there by its joint and the bone of the part above
+  it, from where that's held, still reaches the joint (a flood through the bone cubes); hands and feet (no bone of their
+  own) are held while the bone above reaches them. Compared with the same kind whole (`_baseline`: some models' bones
+  have gaps, a batter's shin): a joint with no bone when whole asks for none. A limb broken in its upper half (under half
+  of its whole bone still joined to its joint) hangs from that joint; broken lower down, what's below it hangs.
+- **Dangling**: a part shot or cut through the bone but still joined by flesh is **loose**: it and everything below it
+  swing from the joint as a pendulum (a Verlet tip, gravity, lagging as the body moves, kicked by hits, resting on the
+  floor on a corpse), the bone turned to point at it, what's below limp. A dangling leg counts as a lost leg (the limp,
+  the crawl). Bone doesn't burn, so fire never loosens a limb.
+- **Strain**: a hanging chain strains from its weight (its cubes), every jerk (the swing's acceleration), walking, and
+  every hit on the body, divided by the strip it hangs by (its cubes round the joint): a thin strip tears in a few
+  seconds, a thick flap holds a while (`TEAR_K`, `HIT_STRAIN`). Strained through, the host's arena tears it off
+  (`_tear_step`: a sever, so a co-op guest gets it like any cut), a spray of blood, a wet rip (`flesh_tear_*`). A cut
+  that takes cubes from a hanging limb or its strip **finishes it** at once. What comes off keeps its meat on its bone.
+- Co-op: the loose parts follow from the cubes (the same in both games); the swing is each game's own, and the cuts
+  are made against the host's pose (sent with them) as before; the tear is the host's sever.
+- Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`); the
+  co-op body check still finds no body different.
+
 ### The online menu (22 Oct, the owner: "can you make it easier to join? I like the set up in the last game")
 
 - `scripts/voxel/net/voxel_net_menu.gd`, the main game's PLAY ONLINE panel (`NetMenu`) rebuilt for the voxel game:

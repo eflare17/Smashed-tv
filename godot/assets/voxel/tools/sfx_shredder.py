@@ -4,7 +4,7 @@ import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); 
 writes godot/assets/voxel/sound/: mince_loop (the hand-crank mincer: a wet squelching grind and the crank's creak),
 shred_loop (the electric shredder: a motor's whine and teeth chewing), chip_loop (the woodchipper: a diesel thrumming
 and the drum chipping hard), crunch_0..2 (bone going in), bag_drop (a full bag thumping down), machine_start (a motor
-winding up). The loops are cut so their ends meet. Owned by the voxel session."""
+winding up); and (Stage 8) flesh_tear_0..1, a dangling limb's strip ripping through: a wet tearing crackle. The loops are cut so their ends meet. Owned by the voxel session."""
 
 
 def chew(secs, rate, lo, hi, sharp=0.02):
@@ -47,5 +47,15 @@ def build_shredder():
     save("machine_start", band(wind, 60, 1500) * env(n, 0.3, 1.0, 1.0), peak=0.6)
 
 
+def build_tear():
+    for v in range(2):
+        secs = 0.5
+        n = int(secs * SR)
+        rip = chew(secs, 60 + 20 * v, 400, 3500, 0.006) * np.linspace(1.0, 0.2, n)
+        wet = band(noise(secs), 150, 900) * env(n, 0.005, 0.3, 3) * (0.6 + 0.4 * np.sin(2 * np.pi * 23 * t(secs)))
+        save("flesh_tear_%d" % v, mix(rip * 1.0, wet * 0.8, click(0.03, 1200 + 300 * v, 0.004) * 1.2), peak=0.8)
+
+
 if __name__ == "__main__":
     build_shredder()
+    build_tear()
