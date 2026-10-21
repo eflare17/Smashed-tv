@@ -307,7 +307,7 @@ static func _radial(g: Gradient) -> GradientTexture2D:
 
 func hand_mesh() -> Node3D:
 	var mi := MeshInstance3D.new()
-	mi.mesh = launcher_mesh(arena.avatar.model.voxel_m * 0.55)
+	mi.mesh = launcher_mesh(shooter.avatar.model.voxel_m * 0.55)
 	mi.material_override = arena._mat
 	return mi
 
@@ -354,7 +354,7 @@ func _fire(kind: String) -> void:
 		ad = look()                             # (top-down, the mouse right on Jared)
 	# standing against a wall, the muzzle's through it: it leaves from this side
 	var q := PhysicsRayQueryParameters3D.create(a[0], from, 1)
-	q.exclude = [arena.player.get_rid()]
+	q.exclude = shooter.exclude()
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	if not wh.is_empty():
 		from = (wh.position as Vector3) + ((a[0] as Vector3) - from).normalized() * 0.08
@@ -379,7 +379,7 @@ func _toward(from: Vector3, dir: Vector3, muzzle: Vector3) -> Vector3:
 		if not h.is_empty():
 			reach = float(h.dist)
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1)
-	q.exclude = [arena.player.get_rid()]
+	q.exclude = shooter.exclude()
 	var wh: Dictionary = get_world_3d().direct_space_state.intersect_ray(q)
 	var to: Vector3 = wh.position if not wh.is_empty() else from + dir * reach
 	var d := to - muzzle
@@ -682,7 +682,7 @@ static func sticky_model(parent: Node3D) -> Dictionary:
 
 func _proj_step(dt: float) -> void:
 	var space := get_world_3d().direct_space_state
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var big := 2.2 if top_down() else 1.0          # seen from up top they're drawn bigger
 	for st in _proj.duplicate():
 		if st.mode == "gone":
@@ -934,7 +934,7 @@ static func dig(job: Dictionary) -> Dictionary:
 func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 	var t0 := Time.get_ticks_usec()
 	var lying: Array = arena.pieces.list().duplicate()     # (the pieces about before this blast's own fly off)
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var push := Vector3.ZERO
 	if st.get("kind", "") == "grenade" and how == "impact":
 		push = (st.v as Vector3).normalized()
@@ -988,7 +988,7 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 	_boom_fx(p)
 	sfx("grenades_boom", p, 3.0, randf_range(0.92, 1.05))
 	var kd := eye().distance_to(p)
-	arena._kick = maxf(float(arena._kick), 2.0 * clampf(1.0 - kd / 16.0, 0.15, 1.0))
+	shooter.kick = maxf(float(shooter.kick), 2.0 * clampf(1.0 - kd / 16.0, 0.15, 1.0))
 	if kmax > 0.15:
 		hit_stop(0.04 + 0.05 * kmax, 0.07)
 	info["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)

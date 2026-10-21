@@ -197,7 +197,7 @@ func thrust() -> void:
 	sfx("spear_thrust")
 	_slide_drawn = _slide
 	if top_down():
-		arena.avatar.attack = 0.5
+		shooter.avatar.attack = 0.5
 	else:
 		# the view's spear is levelled at the first body on the line (or 3 m out)
 		var e := eye()
@@ -219,7 +219,7 @@ func throw() -> void:
 	_cock = 0.0
 	sfx("spear_throw")
 	if top_down():
-		arena.avatar.attack = 0.5
+		shooter.avatar.attack = 0.5
 
 ## Calls the thrown spear back: it flies to your hand over RECALL_T, boring through anyone in the way.
 func recall() -> void:
@@ -305,7 +305,7 @@ func _strike() -> void:
 		_streaks.append({"a": e + f * 0.5, "b": c, "t": 0.0, "dur": 0.12})
 	if not hits.is_empty():
 		hit_stop(0.04 + 0.02 * mini(hits.size(), 3) + (0.03 if int(info.killed) > 0 else 0.0), 0.06)
-		arena._kick = maxf(float(arena._kick), 0.5 + 0.25 * hits.size())
+		shooter.kick = maxf(float(shooter.kick), 0.5 + 0.25 * hits.size())
 
 ## The thrust (static, for the checks): the line a-c bored through every body on it (run_through each), nearest
 ## first. Returns [[body, result], ...] for the ones it went into.
@@ -554,7 +554,7 @@ func _let_go() -> void:
 	_proj_m.scale = Vector3.ONE if top_down() else Vector3(0.67, 0.67, 1.0)     # first person: as thin as in hand
 	_proj.global_transform = Transform3D(dir_basis(f), start + vis)
 	_proj.visible = _seen()
-	arena._kick = maxf(float(arena._kick), 0.3)
+	shooter.kick = maxf(float(shooter.kick), 0.3)
 	# what's between the eye and the hand's reach is bored at once
 	var t0 := Time.get_ticks_usec()
 	var ev := bore(_fly, p0, start, arena.bodies, THROW_R, THROW_HURT, THROUGH)
@@ -582,11 +582,11 @@ func _bored(ev: Array, dir: Vector3, us: int) -> void:
 	for e in ev:
 		killed = killed or bool(e[1].killed)
 	hit_stop(0.035 + (0.03 if killed else 0.0), 0.1)
-	arena._kick = maxf(float(arena._kick), 0.45)
+	shooter.kick = maxf(float(shooter.kick), 0.45)
 
 func _fly_step(dt: float) -> void:
 	var t0 := Time.get_ticks_usec()
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var ev := fly(_fly, dt, arena.bodies, arena.get_world_3d().direct_space_state, ex)
 	if not ev.is_empty():
 		_bored(ev, _fly.dir, Time.get_ticks_usec() - t0)
@@ -618,7 +618,7 @@ func _stuck_step(dt: float) -> void:
 	var ang := 0.1 * sin(_stuck_t * 42.0) * exp(-_stuck_t * 5.0)
 	_proj.global_transform = Transform3D(_stuck_b * Basis(Vector3.RIGHT, ang), _fly.p)
 	var mid: Vector3 = (_fly.p as Vector3) + _stuck_b.z * 0.8
-	var pp: Vector3 = arena.player.global_position
+	var pp: Vector3 = shooter.player.global_position
 	if _stuck_t > 0.3 and Vector2(mid.x - pp.x, mid.z - pp.z).length() < PICKUP_R and absf(mid.y - pp.y - 0.9) < 1.6:
 		recall()
 
@@ -645,9 +645,9 @@ func _back_step(dt: float) -> void:
 func _hand_xform() -> Transform3D:
 	if top_down():
 		var f := look()
-		var av: VoxelBody = arena.avatar
+		var av: VoxelBody = shooter.avatar
 		var hb := av.model.bone("hand_r")
-		var grip: Vector3 = arena.player.global_position + Vector3(0, 1.1, 0)
+		var grip: Vector3 = shooter.player.global_position + Vector3(0, 1.1, 0)
 		if hb >= 0:
 			grip = av.skeleton.global_transform * av.skeleton.get_bone_global_pose(hb).origin
 		return Transform3D(dir_basis(f), grip - f * TIP_Z)
@@ -661,7 +661,7 @@ func _caught() -> void:
 	_cd = 0.1
 	if _out_now:
 		_catch = CATCH_T
-		arena._kick = maxf(float(arena._kick), 0.35)
+		shooter.kick = maxf(float(shooter.kick), 0.35)
 
 ## -z along d (the spear's nose along its flight), up kept up.
 static func dir_basis(d: Vector3) -> Basis:
@@ -824,7 +824,7 @@ func _draw_fx() -> void:
 		for i in range(1, n):
 			segs.append([_path[i - 1], _path[i], 0.35 * float(i - 1) / n, 0.35 * float(i) / n, 0.022])
 	var verts := []
-	var cp: Vector3 = arena.cam.global_position
+	var cp: Vector3 = shooter.cam.global_position
 	for s in segs:
 		var a: Vector3 = s[0]
 		var b: Vector3 = s[1]

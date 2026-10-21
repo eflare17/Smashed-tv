@@ -122,11 +122,11 @@ func _reload_began() -> void:
 	pass
 
 func on_deselect() -> void:
-	arena._aiming = false
+	shooter.aiming = false
 
 ## Where a shot comes from and goes: [from (the eye, or Jared's chest), dir, muzzle (world)]; [] if nowhere to aim.
 func aim() -> Array:
-	var a: Array = arena._aim()
+	var a: Array = shooter.aim()
 	if a.is_empty():
 		return []
 	var mz: Vector3 = a[0] + (a[1] as Vector3) * 0.5
@@ -139,15 +139,15 @@ func shot_fx(muzzle: Vector3, k: float = 1.0, shells: int = 1) -> void:
 	_flash_t = 0.05
 	_light.global_position = muzzle
 	_kick = minf(1.6, _kick + k)
-	arena._kick = maxf(float(arena._kick), 0.6 * k)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 0.6 * k)
+	shooter.avatar.recoil = 1.0
 	for i in shells:
 		eject()
 
 ## A spent shell thrown out of the ejection port (the gun's right side), up and back.
 func eject() -> void:
 	var fr := frame()
-	var from: Vector3 = (_model.global_transform * (_muzzle * 0.35)) if not top_down() else arena.player.global_position + Vector3(0, 1.1, 0)
+	var from: Vector3 = (_model.global_transform * (_muzzle * 0.35)) if not top_down() else shooter.player.global_position + Vector3(0, 1.1, 0)
 	var i := _s_next
 	_s_next = (_s_next + 1) % MAX_SHELLS
 	_sn = mini(_sn + 1, MAX_SHELLS)
@@ -170,20 +170,14 @@ func step(dt: float) -> void:
 		_reloading(before, reload_t)
 		if reload_t <= 0.0:
 			_reload_done()
-	var aiming: bool = bool(arena._aiming) and arena.loadout.id() == _my_id()
+	var aiming: bool = shooter.aiming and shooter.weapon == weapon_id
 	_aim_k = move_toward(_aim_k, 1.0 if aiming else 0.0, dt * 6.0)
 	_pose()
 	_shells_step(dt)
 
 ## The one out (a holstered gun goes on reloading and pumping, unheard and unseen).
 func is_out() -> bool:
-	return arena.loadout.id() == _my_id()
-
-func _my_id() -> String:
-	for id in arena.melee:
-		if arena.melee[id] == self:
-			return id
-	return ""
+	return shooter.weapon == weapon_id
 
 ## For a subclass: the reload going on (from: seconds left before this frame, to: after), and done.
 func _reloading(_from: float, _to: float) -> void:
@@ -240,7 +234,7 @@ func _shells_step(dt: float) -> void:
 
 func hand_mesh() -> Node3D:
 	var mi := MeshInstance3D.new()
-	mi.mesh = VoxelArena._gun_mesh(vox, arena.avatar.model.voxel_m)
+	mi.mesh = VoxelArena._gun_mesh(vox, shooter.avatar.model.voxel_m)
 	mi.material_override = arena._mat
 	return mi
 

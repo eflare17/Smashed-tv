@@ -14,13 +14,19 @@ extends Node3D
 ## Sounds go through sfx()/sfx_loop() (VoxelSound: assets/voxel/sound/*.wav).
 
 var arena: Node3D               # VoxelArena (untyped: the two scripts know each other)
+var shooter: VoxelShooter       # who holds it: their eye, look, body, avatar, aim (the local player or the other one)
+var weapon_id := ""             # its weapon id (VoxelArena.MELEE's key)
 var view: Node3D                # the first-person view: a child of the camera; the arena shows/hides it
 var last := {}                  # what the last hit did (the self-tests print it)
+var _flip := 1.0
 static var _stop_n := 0
 static var _stop_end_ms := 0
 
-func setup(arena_: Node3D, cam: Camera3D) -> void:
+func setup(arena_: Node3D, shooter_: VoxelShooter, weapon_id_: String = "") -> void:
 	arena = arena_
+	shooter = shooter_
+	weapon_id = weapon_id_
+	var cam: Camera3D = shooter.cam
 	# what a weapon puts in the world (rings, a thrown spear) moves every frame, not on physics ticks: no
 	# interpolation, or it lags behind and slides during a hit-stop
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -94,40 +100,40 @@ static func checks(_host: Node) -> Array:
 # ---------------------------------------------------------------- helpers
 
 func top_down() -> bool:
-	return bool(arena.top_down)
+	return shooter.top_down
 
 ## Where the weapon's reach is measured from: the eye (first person) or Jared's chest (top-down).
 func eye() -> Vector3:
 	if top_down():
-		return arena.player.global_position + Vector3(0, 1.15, 0)
-	return arena.cam.global_position
+		return shooter.player.global_position + Vector3(0, 1.15, 0)
+	return shooter.cam.global_position
 
 ## Where it points: the view's middle (first person) or level toward the mouse (top-down).
 func look() -> Vector3:
 	if top_down():
-		var pp: Vector3 = arena.player.global_position
-		var at: Vector3 = arena._mouse_floor()
+		var pp: Vector3 = shooter.player.global_position
+		var at: Vector3 = shooter.mouse_floor()
 		if at != Vector3.INF:
 			var f := Vector3(at.x - pp.x, 0, at.z - pp.z)
 			if f.length() > 0.01:
 				return f.normalized()
-		return Vector3(-sin(arena.look_yaw), 0, -cos(arena.look_yaw))
-	return -arena.cam.global_transform.basis.z
+		return Vector3(-sin(shooter.look_yaw), 0, -cos(shooter.look_yaw))
+	return -shooter.cam.global_transform.basis.z
 
 ## The camera's basis (first person) or one facing look() level (top-down): x right, y up, -z forward.
 func frame() -> Basis:
 	if top_down():
 		var f := look()
 		return Basis(f.cross(Vector3.UP).normalized(), Vector3.UP, -f)
-	return arena.cam.global_transform.basis
+	return shooter.cam.global_transform.basis
 
 ## Which way the mouse has been moving lately, on screen (x right, y down), unit; a still mouse goes back and forth.
 func swing_dir() -> Vector2:
-	var mv: Vector2 = arena._mouse_v
+	var mv: Vector2 = shooter.mouse_v
 	if mv.length() > 30.0:
 		return mv.normalized()
-	arena._flip = -float(arena._flip)
-	return Vector2(float(arena._flip), 0.0)
+	_flip = -_flip
+	return Vector2(_flip, 0.0)
 
 ## The bodies whose middle is within r metres (level) of p, nearest first.
 func bodies_near(p: Vector3, r: float, alive_only: bool = false) -> Array:
@@ -169,6 +175,8 @@ func sfx_stop(tag: String) -> void:
 ## The game all but stops for a blink as a blow lands (secs of real time, at scale speed). Blows landing together:
 ## the deepest stop and the latest end win.
 func hit_stop(secs: float = 0.07, scale: float = 0.05) -> void:
+	if not shooter.local:
+		return                  # (the other player's blow doesn't freeze this game)
 	_stop_n += 1
 	var me := _stop_n
 	var now := Time.get_ticks_msec()
@@ -178,7 +186,7 @@ func hit_stop(secs: float = 0.07, scale: float = 0.05) -> void:
 		end = maxi(end, _stop_end_ms)
 	_stop_end_ms = end
 	Engine.time_scale = scale
-	arena._kick = maxf(float(arena._kick), 0.5)
+	shooter.kick = maxf(float(shooter.kick), 0.5)
 	await get_tree().create_timer(maxf(0.001, (end - now) / 1000.0), true, false, true).timeout
 	if me == _stop_n:
 		Engine.time_scale = 1.0

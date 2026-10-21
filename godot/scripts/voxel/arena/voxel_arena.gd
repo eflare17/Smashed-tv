@@ -72,6 +72,8 @@ const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res
 	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd"}
 var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
 var sound: VoxelSound           # every sound (VoxelSound)
+var me: VoxelShooter            # the local player, as the weapons see whoever holds them
+var net = null                  # VoxelNet when playing with someone (null alone)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
@@ -132,11 +134,12 @@ func _ready() -> void:
 	add_child(pieces)
 	pieces.setup(self)
 	var have := []
+	me = VoxelShooter.local_for(self)
 	for id in MELEE:
 		if ResourceLoader.exists(MELEE[id]):
 			var w: VoxelMelee = load(MELEE[id]).new()
 			add_child(w)
-			w.setup(self, cam)
+			w.setup(self, me, id)
 			melee[id] = w
 			have.append(id)
 	sword = melee.get("sword")
@@ -148,6 +151,7 @@ func _ready() -> void:
 	if loadout.index_of("pistol") >= 0:
 		loadout.select(loadout.index_of("pistol"))       # the pistol out first
 		loadout.switch_t = 0.0
+		me.weapon = "pistol"
 		melee.pistol.on_select()
 	bar = VoxelWeaponBar.new()
 	_hud_layer.add_child(bar)
@@ -928,6 +932,7 @@ func _aim() -> Array:
 
 func _shoot(dt: float) -> void:
 	loadout.step(dt)
+	me.weapon = loadout.id()
 	if not _opts.has("swordtest"):
 		_sucking = false
 	_aiming = false
@@ -1040,6 +1045,7 @@ func slot_cooling(id: String) -> float:
 # every frame: the weapons' own steps, the view of the one out (going down / coming up on a switch, kicking when it
 # fires, closing in when aimed), and what Jared holds top-down
 func _weapons_step(dt: float) -> void:
+	me.weapon = loadout.id()
 	pieces.step(dt)
 	for id in melee:
 		melee[id].step(dt)

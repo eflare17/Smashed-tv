@@ -38,7 +38,7 @@ const SLAM_OUT := 3.0           # the throw: away * SLAM_OUT / (d + 0.5) + up * 
 const SLAM_LIFT := 3.5
 const SLAM_HURT := 6.0
 # the side swing
-const SIDE_MIN := 40.0          # the mouse's recent motion (arena._mouse_v) at least this long, and mostly across
+const SIDE_MIN := 40.0          # the mouse's recent motion (shooter.mouse_v) at least this long, and mostly across
 const SIDE_REACH := 2.4         # metres from the eye (top-down: the chest) it reaches
 const SIDE_ARC := 75.0          # degrees either side of where you look it sweeps (150 in all)
 const SIDE_STEP := 5.0          # degrees between its rays
@@ -190,7 +190,7 @@ func press(button: int) -> void:
 	if _t >= 0.0:
 		return
 	if button == MOUSE_BUTTON_LEFT and _cd_left <= 0.0:
-		var mv: Vector2 = arena._mouse_v
+		var mv: Vector2 = shooter.mouse_v
 		var sw := pick_swing(mv, top_down(), look(), frame().x)
 		if sw != 0:
 			_side = sw
@@ -291,7 +291,7 @@ func _drop_step(dt: float) -> void:
 	var up_t := SMASH_UP if smash else SLAM_UP
 	var hit_t := SMASH_HIT if smash else SLAM_HIT
 	if top_down() and _t < up_t:
-		arena.avatar.attack = 0.5          # arms up while it's raised; they come down with it
+		shooter.avatar.attack = 0.5          # arms up while it's raised; they come down with it
 	if _t >= up_t and _t - dt < up_t:
 		sfx("swoosh_heavy", Vector3.INF, 0.0, 0.9 if smash else 0.8)
 		if smash and not _hit_done:
@@ -371,7 +371,7 @@ func _smash_now() -> void:
 		var popped: int = arena.debris.pop(fp, 1.1, 3.2, 500)
 		sfx("hammer_thud", fp, 3.0)
 		_ring(fp + Vector3(0, 0.03, 0), Vector3.UP, 1.2, 0.25, true)
-		arena._kick = maxf(float(arena._kick), 1.3)
+		shooter.kick = maxf(float(shooter.kick), 1.3)
 		hit_stop(0.06, 0.05)
 		last = {"move": "smash", "hit": "floor", "popped": popped, "ms": snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)}
 		return
@@ -400,7 +400,7 @@ func _smash_now() -> void:
 		fling(b, res, away * randf_range(2.8, 4.0) + dir * 2.0 + Vector3.UP * randf_range(1.5, 2.8),
 			Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 9.0)
 	_ring(h.point, -dir, 0.5, 0.16, false)
-	arena._kick = 2.0
+	shooter.kick = 2.0
 	hit_stop(0.09, 0.03)
 	last = {"move": "smash", "hit": String(h.part), "cut": res.cut, "parts": res.parts, "pieces": (res.pieces as Array).size(),
 		"killed": res.killed, "head_off": res.head_off, "hp": snappedf(hp0, 1.0), "hp_now": snappedf(b.hp, 1.0),
@@ -565,7 +565,7 @@ static func side_blow(b: VoxelBody, hit: Dictionary, push: Vector3) -> Dictionar
 # the head sweeping across: each frame the rays it has passed since the last, till one meets a body or the arc's done
 func _side_step(dt: float) -> void:
 	if top_down():
-		arena.avatar.attack = 0.5          # arms out with it the whole swing
+		shooter.avatar.attack = 0.5          # arms out with it the whole swing
 	if _t >= SIDE_WIND and _t - dt < SIDE_WIND:
 		sfx("swoosh_heavy", Vector3.INF, 1.5, 1.05)
 	if _hit_done or _t < SIDE_WIND:
@@ -603,7 +603,7 @@ func _side_land(b: VoxelBody, h: Dictionary, push: Vector3, first: bool) -> void
 		var nb := next_to(arena.bodies, b, p, h.travel, eye())
 		if not nb.is_empty():
 			_queue.append([nb[0], nb[1], push * 0.85])
-		arena._kick = 1.8
+		shooter.kick = 1.8
 		hit_stop(0.08, 0.04)
 		last = {"move": "side", "side": "right" if _side > 0 else "left", "hit": String(h.part), "cut": res.cut,
 			"parts": res.parts, "pieces": (res.pieces as Array).size(), "killed": res.killed, "head_off": res.head_off,
@@ -653,7 +653,7 @@ static func slam_body(b: VoxelBody, centre: Vector3, radius: float = SLAM_R) -> 
 
 func _slam_now() -> void:
 	var t0 := Time.get_ticks_usec()
-	var pp: Vector3 = arena.player.global_position
+	var pp: Vector3 = shooter.player.global_position
 	var c := Vector3(pp.x, 0.0, pp.z)
 	sfx("slam", Vector3.INF, 2.0)
 	var popped: int = arena.debris.pop(c, SLAM_R, 4.5, 2000)
@@ -677,7 +677,7 @@ func _slam_now() -> void:
 	_wave = {"c": c, "t": 0.0, "done": {}, "n": 0, "ms": 0.0}
 	_ring(c + Vector3(0, 0.03, 0), Vector3.UP, SLAM_R, RING_T, true)
 	_ring(c + Vector3(0, 0.03, 0), Vector3.UP, SLAM_R * 0.6, RING_T * 1.4, false)
-	arena._kick = 2.0
+	shooter.kick = 2.0
 	hit_stop(0.1, 0.04)
 	last = {"move": "slam", "launched": 0, "popped": popped, "pieces_pushed": pushed,
 		"ms": snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1), "wave_ms": 0.0}
@@ -781,11 +781,11 @@ func _pose_hand() -> void:
 	var th := _side_angles(_t, TD_TH0).x * _side
 	var root := _hand.get_parent() as Node3D
 	var att := root.get_parent() as BoneAttachment3D
-	var sk: Skeleton3D = arena.avatar.skeleton
+	var sk: Skeleton3D = shooter.avatar.skeleton
 	if att == null or sk == null:
 		return
 	# the whole of him turns (his hips are the root: the arena poses them each frame, so this is for this frame)
-	var hb := maxi(0, int(arena.avatar.model.bone("hips")))
+	var hb := maxi(0, int(shooter.avatar.model.bone("hips")))
 	var twist := Quaternion(Vector3.UP, -deg_to_rad(th) * TWIST * w)
 	sk.set_bone_pose_rotation(hb, twist * sk.get_bone_pose_rotation(hb))
 	sk.set_bone_pose_position(hb, twist * sk.get_bone_pose_position(hb))

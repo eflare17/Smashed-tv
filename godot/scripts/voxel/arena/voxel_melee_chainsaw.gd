@@ -251,7 +251,7 @@ func on_deselect() -> void:
 	sfx_stop("engine")
 	_cutting = false
 	if _lunge_t >= 0.0 and _lunge_t < WIND_T + LUNGE_T:
-		arena.dash(Vector3.ZERO, 0.0)
+		shooter.dash(Vector3.ZERO, 0.0)
 	_lunge_t = -1.0
 	_cut_k = 0.0
 	_rev = 0.0
@@ -324,10 +324,10 @@ func step(dt: float) -> void:
 					_dir = turn(want, _dir, MAX_LAG)
 			else:
 				_dir = want
-		if top_down() and arena.avatar:
-			arena.avatar.attack = 0.5           # both arms out in front
+		if top_down() and shooter.avatar:
+			shooter.avatar.attack = 0.5           # both arms out in front
 		if not top_down():
-			arena._kick = maxf(float(arena._kick), randf_range(0.04, 0.16) + 0.35 * _bite_k)
+			shooter.kick = maxf(float(shooter.kick), randf_range(0.04, 0.16) + 0.35 * _bite_k)
 	if not _queue.is_empty():
 		# the rest of the last bite's bodies, one a frame
 		var q: Array = _queue.pop_front()
@@ -357,17 +357,17 @@ func _lunge_step(dt: float) -> void:
 	var t2 := t1 + RIP_T
 	if was < t0 and _lunge_t >= t0:
 		# off: thrown forward
-		arena.dash(_lunge_dir * LUNGE_V, LUNGE_T)
-		arena._kick = maxf(float(arena._kick), 0.8)
+		shooter.dash(_lunge_dir * LUNGE_V, LUNGE_T)
+		shooter.kick = maxf(float(shooter.kick), 0.8)
 		_tick = 0.0
 	if _lunge_t >= t0 and _lunge_t < t1:
 		# up against someone still standing in front: the saw's buried, you stop there
 		if not _lunge_held:
-			var pp: Vector3 = arena.player.global_position
+			var pp: Vector3 = shooter.player.global_position
 			for b in bodies_near(pp, LUNGE_STOP, true):
 				if not b.floored() and (b.global_position - pp).dot(_lunge_dir) > 0.0:
 					_lunge_held = true
-					arena.dash(Vector3.ZERO, t1 - _lunge_t)
+					shooter.dash(Vector3.ZERO, t1 - _lunge_t)
 					break
 	if was < t1 and _lunge_t >= t1:
 		_rip_ang = rip_angle(look())
@@ -502,11 +502,11 @@ func _hit(b: VoxelBody, res: Dictionary, fr: Basis, ripped: bool = false) -> voi
 		else:
 			hit_stop(0.04, 0.25)
 	if not top_down():
-		arena._kick = maxf(float(arena._kick), 2.0 if ripped else (1.4 if big else 0.6))
+		shooter.kick = maxf(float(shooter.kick), 2.0 if ripped else (1.4 if big else 0.6))
 	# the lunge: in someone, it drags you on into them
 	if _lunge_t >= WIND_T and _lunge_t < WIND_T + LUNGE_T and not _lunge_bit and b.alive and not _lunge_held:
 		_lunge_bit = true
-		arena.dash(_lunge_dir * LUNGE_BITE_V, WIND_T + LUNGE_T - _lunge_t)
+		shooter.dash(_lunge_dir * LUNGE_BITE_V, WIND_T + LUNGE_T - _lunge_t)
 
 # whoever the saw's in is held there twitching (no walking on, no swinging) till a moment after it stops
 func _hold_sawn(dt: float) -> void:
@@ -553,7 +553,7 @@ func _look(dt: float) -> void:
 		_vdir = _vdir.slerp(_dir, 1.0 - exp(-dt * 22.0)).normalized()
 	else:
 		_vdir = _dir
-	var local: Vector3 = (arena.cam.global_transform.basis.inverse() * _vdir).normalized()
+	var local: Vector3 = (shooter.cam.global_transform.basis.inverse() * _vdir).normalized()
 	var drop := Vector3(0, -DROP, 0)
 	var xf := _aim_xf(REST_GRIP, REST_AT, ROLL)
 	if _cut_k > 0.0:

@@ -98,21 +98,21 @@ func slash(sv: Vector2, low: bool = false) -> void:
 	if not ready_to_swing():
 		return
 	if top_down():
-		var pp: Vector3 = arena.player.global_position
+		var pp: Vector3 = shooter.player.global_position
 		var f := look()
 		var e := pp + Vector3(0, 0.45 if low else 1.15, 0)
 		var right := f.cross(Vector3.UP).normalized()
 		var sx := signf(sv.x) if absf(sv.x) > 0.01 else 1.0
 		var tilt := 0.0 if low else 0.3 * sx
 		var side := (right * sx * cos(tilt) + Vector3.DOWN * sin(absf(tilt))).normalized()
-		arena.avatar.attack = 0.5
+		shooter.avatar.attack = 0.5
 		swing(e, f, side, e, Vector3(1, 0, 0))
 		return
-	var bs: Basis = arena.cam.global_transform.basis
+	var bs: Basis = shooter.cam.global_transform.basis
 	var side_cam := Vector3(sv.x, -sv.y, 0.0).normalized()
 	var side2 := (bs * side_cam).normalized()
-	var apex: Vector3 = arena.cam.global_position + bs * Vector3(0.05, -0.28, -0.1)
-	swing(arena.cam.global_position, -bs.z, side2, apex, side_cam)
+	var apex: Vector3 = shooter.cam.global_position + bs * Vector3(0.05, -0.28, -0.1)
+	swing(shooter.cam.global_position, -bs.z, side2, apex, side_cam)
 
 func hand_mesh() -> Node3D:
 	var root := Node3D.new()

@@ -299,7 +299,7 @@ func press(button: int) -> void:
 		_secs = 0.0
 		sfx("flamethrower_start")
 		if not top_down():
-			arena._kick = maxf(float(arena._kick), 0.4)
+			shooter.kick = maxf(float(shooter.kick), 0.4)
 		_sl = {"move": "spray", "secs": 0.0, "ticks": 0, "hits": 0, "bodies": 0, "caught": 0, "thawed": 0, "end_d": REACH,
 			"fuel": 0.0, "ran_dry": false, "tick_ms": 0.0, "max_tick_ms": 0.0, "frame_ms": 0.0, "max_frame_ms": 0.0,
 			"flames": 0, "drops": 0}
@@ -356,9 +356,9 @@ func bomb() -> void:
 	arena.flames.emit(o, 10, v.normalized() * 2.0, 4.0, 0.3)
 	_puff(o, v.normalized() * 0.5 + Vector3.UP * 0.5, SMOKE, 0.08, 1.0)
 	if top_down():
-		arena.avatar.recoil = 1.0
+		shooter.avatar.recoil = 1.0
 	else:
-		arena._kick = maxf(float(arena._kick), 0.8)
+		shooter.kick = maxf(float(shooter.kick), 0.8)
 	_bl = {"move": "bomb", "flight": snappedf(secs, 0.01), "to": to.snapped(Vector3.ONE * 0.01), "hit_body": false, "landed": "",
 		"caught": 0, "patch_ignites": 0, "patch_caught": 0, "patch_ms": 0.0, "fuel": snappedf(_fuel, 0.01)}
 	last = _bl
@@ -370,11 +370,12 @@ func _bomb_target() -> Vector3:
 	var from := eye()
 	var dir := look()
 	if top_down():
-		var mp: Vector2 = get_viewport().get_mouse_position()
-		from = arena.cam.project_ray_origin(mp)
-		dir = arena.cam.project_ray_normal(mp)
+		var mr: Array = shooter.mouse_ray()
+		if not mr.is_empty():
+			from = mr[0]
+			dir = mr[1]
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 60.0)
-	q.exclude = [arena.player.get_rid()]
+	q.exclude = shooter.exclude()
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	var to: Vector3 = wh.position if not wh.is_empty() else from + dir * 60.0
 	var best := from.distance_to(to)
@@ -387,7 +388,7 @@ func _bomb_target() -> Vector3:
 			best = from.distance_to(cp[0])
 			to = cp[1]
 			sky = false
-	var pp: Vector3 = arena.player.global_position
+	var pp: Vector3 = shooter.player.global_position
 	var flat := Vector3(to.x - pp.x, 0.0, to.z - pp.z)
 	if sky or flat.length() > BOMB_RANGE:
 		to = pp + flat.normalized() * BOMB_RANGE      # (aimed at the sky: as far as it goes, onto the floor)
@@ -455,11 +456,11 @@ func _stream() -> Array:
 	var f := look()
 	var o: Vector3 = (_vm.tip as Node3D).global_position
 	if top_down():
-		o = arena.player.global_position + Vector3(0, 0.95, 0) + f * 0.7
+		o = shooter.player.global_position + Vector3(0, 0.95, 0) + f * 0.7
 		if is_instance_valid(_hand) and _hand.is_visible_in_tree():
 			o = (_hm.tip as Node3D).global_position
 	var q := PhysicsRayQueryParameters3D.create(eye(), o)
-	q.exclude = [arena.player.get_rid()]
+	q.exclude = shooter.exclude()
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	if not wh.is_empty():
 		o = (wh.position as Vector3) + (eye() - o).normalized() * 0.05
@@ -475,9 +476,9 @@ func _spray(dt: float, s: Array) -> void:
 	_light.global_position = o + d * minf(1.4, _end_d * 0.5) + Vector3.UP * 0.15
 	_light.light_energy = _fire_k * randf_range(0.9, 1.6)
 	if top_down():
-		arena.avatar.recoil = maxf(float(arena.avatar.recoil), randf_range(0.1, 0.3))
+		shooter.avatar.recoil = maxf(float(shooter.avatar.recoil), randf_range(0.1, 0.3))
 	else:
-		arena._kick = maxf(float(arena._kick), randf_range(0.04, 0.12))
+		shooter.kick = maxf(float(shooter.kick), randf_range(0.04, 0.12))
 	_secs += dt
 	_sl.secs = snappedf(_secs, 0.01)
 	_tick -= dt
@@ -503,7 +504,7 @@ func _sputter_step(dt: float, s: Array) -> void:
 		_puff(o + d * 0.1, d * 0.6 + Vector3.UP * 0.5, SMOKE, 0.06 + 0.03 * k, 1.1)
 		_jolt = maxf(_jolt, 0.5 * k)
 		if not top_down():
-			arena._kick = maxf(float(arena._kick), 0.25 * k)
+			shooter.kick = maxf(float(shooter.kick), 0.25 * k)
 		_sp_i += 1
 	if _sp_i >= SPUTTER.size():
 		_sputter = -1.0
@@ -573,7 +574,7 @@ func _hit_test(o: Vector3, d: Vector3) -> void:
 
 # how far along the stream's line pts it gets before a wall, a pillar or the floor
 func _wall_d(space: PhysicsDirectSpaceState3D, pts: PackedVector3Array) -> float:
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var gone := 0.0
 	for i in pts.size() - 1:
 		var q := PhysicsRayQueryParameters3D.create(pts[i], pts[i + 1])
@@ -675,7 +676,7 @@ func _globs_step(dt: float) -> void:
 	if _globs.is_empty():
 		return
 	var space := get_world_3d().direct_space_state
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var big := 1.4 if top_down() else 1.0
 	for g in _globs.duplicate():
 		var node: Node3D = g.node
@@ -743,7 +744,7 @@ func _land(at: Vector3, off: String) -> void:
 	sfx("flamethrower_splash", at)
 	arena.debris.pop(at, PATCH_R, 1.8, 300)
 	if not top_down() and eye().distance_to(at) < 5.0:
-		arena._kick = maxf(float(arena._kick), 0.45)
+		shooter.kick = maxf(float(shooter.kick), 0.45)
 	_bl.landed = {"": "floor", "body": "at its feet", "wall": "at the wall's foot"}[off]
 	_bl.patch_at = at.snapped(Vector3.ONE * 0.01)
 

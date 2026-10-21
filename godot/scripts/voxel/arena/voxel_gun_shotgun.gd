@@ -71,7 +71,7 @@ func press(button: int) -> void:
 	_cd = _pump_total
 	_cd_total = _pump_total
 	if top_down():
-		arena.avatar.attack = 0.2
+		shooter.avatar.attack = 0.2
 
 # the pellets, then what a close blast does to whoever took it
 func _blast(a: Array, pellets: int, spread: float, both: bool) -> void:

@@ -559,11 +559,11 @@ func _beam_frame(dt: float) -> void:
 	if _tick <= 0.0:
 		_cut_tick()
 	if not top_down():
-		arena._kick = maxf(float(arena._kick), randf_range(0.0, 0.05) + (0.06 if is_instance_valid(_hit_b) else 0.0))
+		shooter.kick = maxf(float(shooter.kick), randf_range(0.0, 0.05) + (0.06 if is_instance_valid(_hit_b) else 0.0))
 
 # the world along the beam: [distance, point, normal] (walls, pillars, the floor; RANGE if nothing)
 func _wall(from: Vector3, dir: Vector3) -> Array:
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * RANGE, 1, [arena.player.get_rid()])
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * RANGE, 1, shooter.exclude())
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	if wh.is_empty():
 		return [RANGE, from + dir * RANGE, -dir]
@@ -688,7 +688,7 @@ func _cut_fx(b: VoxelBody, res: Dictionary, dir: Vector3, fat: bool) -> void:
 		_stop_ms = now
 		hit_stop(0.09 if bool(res.killed) else 0.05, 0.08 if bool(res.killed) else 0.2)
 	if not top_down():
-		arena._kick = maxf(float(arena._kick), 0.7 if big else 0.15)
+		shooter.kick = maxf(float(shooter.kick), 0.7 if big else 0.15)
 
 # ---------------------------------------------------------------- the overcharge
 
@@ -701,8 +701,8 @@ func _start_blast() -> void:
 	_kickback = 1.0
 	last.fired = true
 	sfx("laser_blast")
-	arena._kick = maxf(float(arena._kick), 1.8)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 1.8)
+	shooter.avatar.recoil = 1.0
 
 func _end_blast() -> void:
 	_blast_t = -1.0
@@ -749,9 +749,9 @@ func _blast_frame(dt: float) -> void:
 			_bwait = (Time.get_ticks_usec() - t0) / 1000000.0 / BLAST_SHARE
 	# the scorch on the wall, the shake, the recoil
 	arena.flames.emit(_end + _end_n * 0.02, 3, _end_n * 2.2, 1.6, 0.3)
-	arena._kick = maxf(float(arena._kick), randf_range(0.3, 0.5) if top_down() else randf_range(0.5, 0.9))
+	shooter.kick = maxf(float(shooter.kick), randf_range(0.3, 0.5) if top_down() else randf_range(0.5, 0.9))
 	_kickback = maxf(_kickback, randf_range(0.25, 0.45))
-	arena.avatar.recoil = maxf(float(arena.avatar.recoil), 0.6)
+	shooter.avatar.recoil = maxf(float(shooter.avatar.recoil), 0.6)
 
 # ---------------------------------------------------------------- the look
 
@@ -783,7 +783,7 @@ func _draw(dt: float) -> void:
 		return
 	_beam.visible = true
 	# 4 mm across (top-down, as thick as it needs to be to show from up there); the spot bigger the further off
-	var cam_d: float = arena.cam.global_position.distance_to(_end)
+	var cam_d: float = shooter.cam.global_position.distance_to(_end)
 	var w := maxf(0.004, cam_d * 0.0035) if top_down() else 0.004
 	var flick := randf_range(0.85, 1.15)
 	var fwd := (_end - lens).normalized()
@@ -939,7 +939,7 @@ func _look(dt: float) -> void:
 	# where it points: the crosshair far off at rest, the beam's end while it fires (in the view's own space)
 	var at := Vector3(0, 0, -AIM_D)
 	if kf > 0.0:
-		var e_local: Vector3 = arena.cam.global_transform.affine_inverse() * _end - view.position
+		var e_local: Vector3 = shooter.cam.global_transform.affine_inverse() * _end - view.position
 		if e_local.z < -0.6:
 			at = at.lerp(e_local, kf)
 	at = at.lerp(grip + Vector3(-0.35, 0.8, -0.55), kv)                   # turned up and in to vent

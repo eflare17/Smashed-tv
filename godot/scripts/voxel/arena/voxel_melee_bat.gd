@@ -192,7 +192,7 @@ func release(button: int) -> void:
 	_want_charge = false
 	if _mode != CHARGE:
 		return
-	if String(arena.loadout.id()) != "bat":
+	if shooter.weapon != "bat":
 		# put away wound up: no swing
 		_mode = IDLE
 		_charge = 0.0
@@ -253,7 +253,7 @@ func _start_swing(hr: bool, power: float) -> void:
 	_cd_max = _cd
 	_buffer = 0.0
 	if arena != null and top_down():
-		arena.avatar.attack = 0.5
+		shooter.avatar.attack = 0.5
 
 func step(dt: float) -> void:
 	_clock += dt
@@ -311,9 +311,9 @@ func _strike() -> void:
 	var t0 := Time.get_ticks_usec()
 	var from := eye()
 	if top_down():
-		var pp: Vector3 = arena.player.global_position
-		var mp := get_viewport().get_mouse_position()
-		from.y = pp.y + swing_height(arena.bodies, arena.cam.project_ray_origin(mp), arena.cam.project_ray_normal(mp), pp)
+		var pp: Vector3 = shooter.player.global_position
+		var mr: Array = shooter.mouse_ray()
+		from.y = pp.y + swing_height(arena.bodies, mr[0], mr[1], pp) if not mr.is_empty() else from.y
 	var bs := frame()
 	var fwd := look()
 	var side := bs.x
@@ -338,10 +338,10 @@ func _strike() -> void:
 	var p01 := clampf((_power - 0.3) / 0.7, 0.0, 1.0) if _hr else 0.0
 	if _hr:
 		hit_stop(0.14 if bool(last.head_off) else lerpf(0.07, 0.12, p01), 0.02 if _full else 0.05)
-		arena._kick = maxf(float(arena._kick), 0.8 + 1.2 * p01)
+		shooter.kick = maxf(float(shooter.kick), 0.8 + 1.2 * p01)
 	else:
 		hit_stop(0.06, 0.05)
-		arena._kick = maxf(float(arena._kick), 0.7)
+		shooter.kick = maxf(float(shooter.kick), 0.7)
 	_flash.global_position = (list[0][1] as Dictionary).point
 	_flash_size = 0.3 + 0.35 * p01
 	_flash_t = 0.0
@@ -654,7 +654,7 @@ func _flash_step(dt: float) -> void:
 		return
 	# the ring's axis toward the camera, growing and fading
 	var at := _flash.global_position
-	var cam_at: Vector3 = arena.cam.global_position
+	var cam_at: Vector3 = shooter.cam.global_position
 	var ax := (cam_at - at).normalized()
 	var x := ax.cross(Vector3.UP)
 	if x.length_squared() < 0.01:

@@ -37,11 +37,11 @@ func hold(button: int, _dt: float) -> void:
 	if button == MOUSE_BUTTON_LEFT:
 		_try_fire()
 	elif button == MOUSE_BUTTON_RIGHT and not top_down():
-		arena._aiming = true
+		shooter.aiming = true
 
 func release(button: int) -> void:
 	if button == MOUSE_BUTTON_RIGHT:
-		arena._aiming = false
+		shooter.aiming = false
 
 func _try_fire() -> void:
 	if _cd > 0.0:

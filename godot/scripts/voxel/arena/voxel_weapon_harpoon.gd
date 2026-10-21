@@ -268,14 +268,14 @@ func press(button: int) -> void:
 
 ## Fires the harpoon where you look (yank: the right click's, tearing off what it goes into).
 func fire(yank_it: bool) -> void:
-	var a: Array = arena._aim()
+	var a: Array = shooter.aim()
 	var e: Vector3 = eye() if a.is_empty() else a[0]
 	var f: Vector3 = look() if a.is_empty() else a[1]
 	if top_down():
 		# aimed at what's under the mouse (a head, the legs, one lying on the floor), not only level
-		var c: Camera3D = arena.cam
-		var mp := get_viewport().get_mouse_position()
-		var at := pick(arena.bodies, c.project_ray_origin(mp), c.project_ray_normal(mp))
+		var c: Camera3D = shooter.cam
+		var mr: Array = shooter.mouse_ray()
+		var at := pick(arena.bodies, mr[0], mr[1]) if not mr.is_empty() else Vector3.INF
 		if at != Vector3.INF and Vector2(at.x - e.x, at.z - e.z).length() > 0.6:
 			f = (at - e).normalized()
 	# its path is the aim's line; it's drawn leaving from where it lay in the rail, closing onto the path
@@ -293,13 +293,13 @@ func fire(yank_it: bool) -> void:
 	last = {"move": "yank" if yank_it else "drag", "hit": "", "flown_m": 0.0, "cut": 0, "dragged_m": 0.0, "severed": [],
 		"pieces": 0, "killed": false, "ms": 0.0}
 	_kick = 1.0
-	arena._kick = maxf(float(arena._kick), 0.35)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 0.35)
+	shooter.avatar.recoil = 1.0
 	sfx("harpoon_fire")
 	# anyone between the aim's start and the muzzle is hit at once
 	var t0 := Time.get_ticks_usec()
 	var near := launch_state(e + f * 0.15, start - (e + f * 0.15), 0.0)
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var h := fly(near, 1.0, arena.bodies, arena.get_world_3d().direct_space_state, ex)
 	_st = launch_state(start, f * SPEED, 0.0 if top_down() else GRAV)
 	_note_ms(t0)
@@ -437,7 +437,7 @@ static func _near(b: VoxelBody, a: Vector3, c: Vector3) -> bool:
 
 func _fly_step(dt: float) -> void:
 	var t0 := Time.get_ticks_usec()
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var h := fly(_st, dt, arena.bodies, arena.get_world_3d().direct_space_state, ex)
 	_note_ms(t0)
 	_p = _st.p
@@ -521,7 +521,7 @@ func _hit_body(b: VoxelBody, h: Dictionary, dir: Vector3) -> void:
 	_dir = dir
 	sfx("harpoon_hit", h.point)
 	hit_stop(0.05, 0.08)
-	arena._kick = maxf(float(arena._kick), 0.45)
+	shooter.kick = maxf(float(shooter.kick), 0.45)
 	if bool(res.get("shattered", false)):
 		spray(res, dir, 3.0)    # frozen: the statue bursts
 		sfx("shatter", h.point)
@@ -560,7 +560,7 @@ func _hit_world(at: Vector3, dir: Vector3) -> void:
 	last.hit = "world"
 	sfx("harpoon_clank", at)
 	arena.debris.pop(at, 0.5, 2.0, 40)
-	arena._kick = maxf(float(arena._kick), 0.2)
+	shooter.kick = maxf(float(shooter.kick), 0.2)
 
 # a carve's pieces flung off at vel, spinning about spin radians a second (the rigid body, or null)
 func _fling_res(b: VoxelBody, res: Dictionary, vel: Vector3, spin: float) -> RigidBody3D:
@@ -608,7 +608,7 @@ func _body_step(dt: float) -> bool:
 	if _tug >= 0.0:
 		return _tug_step(dt)
 	var before := _body.position
-	var to: Vector3 = arena.player.global_position
+	var to: Vector3 = shooter.player.global_position
 	if not _body.alive and not _body.fragment and _body.parts.has("torso") and not bool(_body.parts.torso.gone):
 		# a corpse lies out from its feet: its middle is what's brought up in front of you, so it never ends up under you
 		var mid := joint(_body, "torso")
@@ -628,7 +628,7 @@ func _body_step(dt: float) -> bool:
 # dragged all the way: the barbs tear out (a few cubes) and it's left staggering in front of you
 func _arrived() -> void:
 	var b := _body
-	var to: Vector3 = arena.player.global_position + Vector3(0, 1.1, 0) - _p
+	var to: Vector3 = shooter.player.global_position + Vector3(0, 1.1, 0) - _p
 	if b.alive:
 		b.stagger = maxf(b.stagger, LET_GO)
 		b.flinch = 1.0
@@ -640,7 +640,7 @@ func _arrived() -> void:
 	spray(res, to.normalized(), 1.8)
 	_fling_res(b, res, to.normalized() * 2.0, 4.0)
 	sfx("shatter" if bool(res.get("shattered", false)) else "harpoon_rip", _p, -8.0, 1.3)
-	arena._kick = maxf(float(arena._kick), 0.3)
+	shooter.kick = maxf(float(shooter.kick), 0.3)
 	let_go()
 
 func _start_tug() -> void:
@@ -651,14 +651,14 @@ func _start_tug() -> void:
 	last.move = "yank"
 	sfx("harpoon_taut")
 	if top_down():
-		arena.avatar.attack = 0.45      # Jared hauls back on it
+		shooter.avatar.attack = 0.45      # Jared hauls back on it
 
 # the tug: the line taut, the body jerked toward you; then the tear
 func _tug_step(dt: float) -> bool:
 	_tug += dt
 	var b := _body
 	var k := _ease(_tug / TUG_T)
-	var to: Vector3 = arena.player.global_position - b.position
+	var to: Vector3 = shooter.player.global_position - b.position
 	to.y = 0.0
 	if to.length() > CLOSE:
 		b.position += to.normalized() * minf(TUG_JERK * (k - _tug_k), to.length() - CLOSE)
@@ -714,7 +714,7 @@ static func yank(b: VoxelBody, part: String, at: Vector3) -> Dictionary:
 func _tear() -> void:
 	_tug = -1.0
 	var b := _body
-	var me: Vector3 = arena.player.global_position + Vector3(0, 1.1, 0)
+	var me: Vector3 = shooter.player.global_position + Vector3(0, 1.1, 0)
 	var to_me := (me - _p).normalized()
 	var flat := Vector3(to_me.x, 0.0, to_me.z).normalized()
 	var t0 := Time.get_ticks_usec()
@@ -726,7 +726,7 @@ func _tear() -> void:
 		last.severed = (res.parts as Array).duplicate()
 	sfx("harpoon_rip", res.joint)
 	hit_stop(0.09, 0.05)
-	arena._kick = maxf(float(arena._kick), 1.0)
+	shooter.kick = maxf(float(shooter.kick), 1.0)
 	_kick = 1.2
 	if bool(res.get("shattered", false)):
 		spray(res, to_me, 3.0)
@@ -784,7 +784,7 @@ func _piece_step(dt: float) -> bool:
 	var xf := _rb.global_transform
 	_p = xf * _local
 	_dir = (xf.basis * _ldir).normalized()
-	var to: Vector3 = arena.player.global_position + Vector3(0, 1.1, 0) - _rb.global_position
+	var to: Vector3 = shooter.player.global_position + Vector3(0, 1.1, 0) - _rb.global_position
 	if Vector2(to.x, to.z).length() < CATCH or _t > 1.4:
 		_rb.linear_velocity *= 0.3
 		let_go()
@@ -909,7 +909,7 @@ func _draw_cable() -> void:
 	var across := (b - a).cross(Vector3.UP)
 	across = across.normalized() if across.length() > 0.001 else Vector3.RIGHT
 	var wob := _twang * minf(0.05, ln * 0.02) * sin(_clock * 75.0)
-	var cp: Vector3 = arena.cam.global_position
+	var cp: Vector3 = shooter.cam.global_position
 	var n := 20
 	var pts := PackedVector3Array()
 	for i in n + 1:

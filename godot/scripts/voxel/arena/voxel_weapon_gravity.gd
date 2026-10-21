@@ -477,7 +477,7 @@ func grab() -> void:
 	sfx("gravity_grab")
 	_recoil_t = 0.3
 	_punch = maxf(_punch, 0.4)
-	arena._kick = maxf(float(arena._kick), 0.3)
+	shooter.kick = maxf(float(shooter.kick), 0.3)
 	var m := _mouth_world()
 	for i in 10:
 		_spark(m, (_held_mid() - m).normalized() * randf_range(3.0, 7.0) + _rand_v(1.5), ORANGE.lerp(Color.WHITE, randf()), 0.25, 0.012)
@@ -510,10 +510,10 @@ func launch() -> void:
 	_punch = 1.0
 	_prong_k = 1.5
 	_recoil_t = 1.0
-	arena._kick = maxf(float(arena._kick), 0.9)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 0.9)
+	shooter.avatar.recoil = 1.0
 	if top_down():
-		arena.avatar.attack = 0.4
+		shooter.avatar.attack = 0.4
 	hit_stop(0.03, 0.25)
 	for i in 30:
 		_spark(m, f * randf_range(4.0, 12.0) + _rand_v(3.0), ORANGE.lerp(Color(1, 1, 0.8), randf()), randf_range(0.2, 0.4), randf_range(0.01, 0.022))
@@ -563,7 +563,7 @@ func fire_hole() -> void:
 		# out of the mouth, toward the crosshair's point where it would open (6.3 m out, or nearer if it's in the way)
 		var reach := HOLE_V * HOLE_FLY
 		var q := PhysicsRayQueryParameters3D.create(e, e + f * reach, 1)
-		var ex: Array[RID] = [arena.player.get_rid()]
+		var ex: Array[RID] = shooter.exclude()
 		q.exclude = ex
 		var wh: Dictionary = arena.get_world_3d().direct_space_state.intersect_ray(q)
 		if not wh.is_empty():
@@ -581,8 +581,8 @@ func fire_hole() -> void:
 	_purple = 1.0
 	_punch = 0.8
 	_recoil_t = 0.7
-	arena._kick = maxf(float(arena._kick), 0.6)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 0.6)
+	shooter.avatar.recoil = 1.0
 	_hstat = {"move": "hole", "state": "fly", "pulled": 0, "crushes": 0, "cut": 0, "pieces_eaten": 0, "cubes_eaten": 0,
 		"killed": 0, "gone": 0, "flung": 0, "crush_ms": 0.0, "crush_max_ms": 0.0, "frame_max_ms": 0.0, "frame_avg_ms": 0.0}
 	_hframes = 0
@@ -597,12 +597,13 @@ func _pick_now() -> Dictionary:
 	var from := eye()
 	var dir := look()
 	if top_down():
-		var mp: Vector2 = get_viewport().get_mouse_position()
-		from = arena.cam.project_ray_origin(mp)
-		dir = arena.cam.project_ray_normal(mp)
+		var mr: Array = shooter.mouse_ray()
+		if not mr.is_empty():
+			from = mr[0]
+			dir = mr[1]
 	var reach := REACH if not top_down() else 40.0
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1)
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	q.exclude = ex
 	var wh: Dictionary = arena.get_world_3d().direct_space_state.intersect_ray(q)
 	if not wh.is_empty():
@@ -610,7 +611,7 @@ func _pick_now() -> Dictionary:
 	var h := pick(arena.bodies, arena.pieces.list(), from, dir, reach)
 	if not h.is_empty() and top_down():
 		var at: Vector3 = (h.rb as Node3D).global_position if h.kind == "piece" else middle(h.body)
-		var pp: Vector3 = arena.player.global_position
+		var pp: Vector3 = shooter.player.global_position
 		var lvl := Vector2(at.x - pp.x, at.z - pp.z).length()
 		if lvl > REACH:
 			return {}
@@ -1040,7 +1041,7 @@ func _ram(b: VoxelBody, rb: RigidBody3D, p: Vector3, v: Vector3) -> void:
 	sfx("crunch", res.at, 0.0)
 	sfx("thwack", res.at, 2.0)
 	hit_stop(0.05, 0.08)
-	arena._kick = maxf(float(arena._kick), 0.5)
+	shooter.kick = maxf(float(shooter.kick), 0.5)
 	last["rams"] = int(last.get("rams", 0)) + 1
 	last["ram_cut"] = int(res.cut)
 	last["ram_killed"] = bool(res.killed)
@@ -1051,7 +1052,7 @@ func _ram(b: VoxelBody, rb: RigidBody3D, p: Vector3, v: Vector3) -> void:
 func _hole_step(dt: float) -> void:
 	match _hs:
 		"fly":
-			var ex: Array[RID] = [arena.player.get_rid()]
+			var ex: Array[RID] = shooter.exclude()
 			var p0: Vector3 = _hst.p
 			if hole_fly(_hst, dt, arena.bodies, arena.get_world_3d().direct_space_state, ex):
 				_open()
@@ -1085,7 +1086,7 @@ func _open() -> void:
 	_well_d = null
 	_well_on()
 	sfx("gravity_hole_open", _hp, 3.0)
-	arena._kick = maxf(float(arena._kick), 0.4)
+	shooter.kick = maxf(float(shooter.kick), 0.4)
 	_hstat.state = "open"
 	_hstat["at"] = _hp.snapped(Vector3.ONE * 0.01)
 
@@ -1134,7 +1135,7 @@ func _burst() -> void:
 		var u := _rand_v(1.0).normalized()
 		_spark(c + u * 0.2, u * randf_range(5.0, 14.0), PURPLE.lerp(Color.WHITE, randf() * 0.8), randf_range(0.3, 0.6), randf_range(0.02, 0.05))
 	var near_k := clampf(1.0 - eye().distance_to(c) / 12.0, 0.0, 1.0)
-	arena._kick = maxf(float(arena._kick), 0.6 + 1.2 * near_k)
+	shooter.kick = maxf(float(shooter.kick), 0.6 + 1.2 * near_k)
 	hit_stop(0.05, 0.12)
 	_hstat.state = "burst"
 	_hstat.flung = flung
@@ -1322,9 +1323,9 @@ func _hole_look(dt: float) -> void:
 		# the view wobbles near it
 		var near_k := clampf(1.0 - eye().distance_to(_hp) / 9.0, 0.0, 1.0) * s
 		if near_k > 0.0:
-			arena._kick = maxf(float(arena._kick), near_k * (0.25 + 0.2 * sin(_clock * 23.0)))
+			shooter.kick = maxf(float(shooter.kick), near_k * (0.25 + 0.2 * sin(_clock * 23.0)))
 			if not top_down():
-				arena.cam.rotation.z += near_k * 0.025 * sin(_clock * 6.3)
+				shooter.cam.rotation.z += near_k * 0.025 * sin(_clock * 6.3)
 	elif _hs == "fly":
 		_hole_light.global_position = _hst.p
 		_hole_light.light_energy = 1.2
@@ -1466,7 +1467,7 @@ func _draw_beam() -> void:
 	var l := ab.length()
 	if l < 0.05:
 		return
-	var cp: Vector3 = arena.cam.global_position
+	var cp: Vector3 = shooter.cam.global_position
 	var u := ab.cross(cp - a).normalized()
 	var w := ab.cross(u).normalized()
 	var verts := []

@@ -524,7 +524,7 @@ func _beam_step(dt: float) -> void:
 	_fire_k = move_toward(_fire_k, 1.0 if _beam_on else 0.0, dt / 0.15)
 	_frosted = clampf(_frosted + dt * (0.35 if _beam_on else -0.12), 0.0, 1.0)
 	var on_body := false
-	var a: Array = arena._aim() if _beam_k > 0.0 else []
+	var a: Array = shooter.aim() if _beam_k > 0.0 else []
 	if a.is_empty():
 		_beam_hide()
 	else:
@@ -542,7 +542,7 @@ func _beam_step(dt: float) -> void:
 		sfx_stop("crackle")
 		_snd_crackle = false
 	if _beam_on and top_down():
-		arena.avatar.recoil = maxf(float(arena.avatar.recoil), randf_range(0.1, 0.25))     # the gun buzzing in his hands
+		shooter.avatar.recoil = maxf(float(shooter.avatar.recoil), randf_range(0.1, 0.25))     # the gun buzzing in his hands
 	if _held_l and _beam_last():
 		last.secs = snappedf(_beam_t, 0.01)
 		last.energy = roundi(100.0 * _energy / ENERGY)
@@ -574,7 +574,7 @@ func _beam_draw(from: Vector3, dir: Vector3, dt: float) -> bool:
 	var dist := _beam_len           # (let go: it fades where it was)
 	if _beam_on:
 		var t0 := Time.get_ticks_usec()
-		var ex: Array[RID] = [arena.player.get_rid()]
+		var ex: Array[RID] = shooter.exclude()
 		hit = beam_target(arena.bodies, from, dir, RANGE, arena.get_world_3d().direct_space_state, ex)
 		var us := Time.get_ticks_usec() - t0
 		_trace_us += us
@@ -695,7 +695,7 @@ func _froze(b: VoxelBody) -> void:
 		var o := Vector3(p.x - b.global_position.x, 0.0, p.z - b.global_position.z)
 		_emit(p, (o.normalized() * randf_range(0.3, 0.9) + Vector3.UP * randf_range(0.0, 0.5)) * td, randf_range(0.012, 0.028) * td,
 			randf_range(0.5, 1.0), _frost_col(), 0.3, 2.5)
-	arena._kick = maxf(float(arena._kick), 0.4)
+	shooter.kick = maxf(float(shooter.kick), 0.4)
 	hit_stop(0.05, 0.25)
 
 # where the beam and shards leave from: the dish (first person; top-down the dish in Jared's hand, or his chest)
@@ -710,7 +710,7 @@ func _vent_world() -> Vector3:
 	if top_down():
 		if is_instance_valid(_hand_emit) and _hand_emit.is_inside_tree():
 			return _hand_emit.global_position
-		return arena.player.global_position + Vector3(0, 1.1, 0)
+		return shooter.player.global_position + Vector3(0, 1.1, 0)
 	return _gun_m.global_transform * VENT
 
 # ---------------------------------------------------------------- the shards
@@ -719,7 +719,7 @@ func _vent_world() -> Vector3:
 func fire_shard() -> void:
 	if _cd > 0.0 or not _out:
 		return
-	var a: Array = arena._aim()
+	var a: Array = shooter.aim()
 	if a.is_empty():
 		return
 	_cd = SHARD_CD
@@ -743,8 +743,8 @@ func fire_shard() -> void:
 	(s.node as Node3D).global_transform = Transform3D(dir_basis(f), start + vis)
 	(s.node as Node3D).visible = true
 	_kick = 1.0
-	arena._kick = maxf(float(arena._kick), 0.45)
-	arena.avatar.recoil = 1.0
+	shooter.kick = maxf(float(shooter.kick), 0.45)
+	shooter.avatar.recoil = 1.0
 	sfx("freezeray_shard")
 	if last.is_empty() or String(last.get("move", "")) != "shard":
 		last = {"move": "shard", "shots": 0, "shattered": 0, "cubes": 0, "holes": 0, "cut": 0, "frost": 0.0, "froze": 0, "world": 0, "ms": 0.0, "max_ms": 0.0}
@@ -755,7 +755,7 @@ func fire_shard() -> void:
 			randf_range(0.2, 0.4), _frost_col(), 0.0, 5.0)
 	# what's between the eye and where it's drawn leaving is hit at once
 	var pre := shard_state(from + f * 0.15, f * maxf(0.01, start.distance_to(from + f * 0.15)), 0.0)
-	var ex: Array[RID] = [arena.player.get_rid()]
+	var ex: Array[RID] = shooter.exclude()
 	var h := shard_fly(pre, 1.0, arena.bodies, arena.get_world_3d().direct_space_state, ex)
 	if not h.is_empty():
 		s.st.p = h.point
@@ -787,7 +787,7 @@ func _shard_step(s: Dictionary, dt: float) -> void:
 		"fly":
 			var st: Dictionary = s.st
 			var p0: Vector3 = st.p
-			var ex: Array[RID] = [arena.player.get_rid()]
+			var ex: Array[RID] = shooter.exclude()
 			var h := shard_fly(st, dt, arena.bodies, arena.get_world_3d().direct_space_state, ex)
 			if not h.is_empty() and not _shard_hit(s, h):
 				return
@@ -885,7 +885,7 @@ func _shard_hit(s: Dictionary, h: Dictionary) -> bool:
 	last.holes = int(last.get("holes", 0)) + 1
 	last.cut = int(last.get("cut", 0)) + int(res.cut)
 	last.frost = snappedf(1.0 if b.frozen() else b.frost, 0.01)
-	arena._kick = maxf(float(arena._kick), 0.35)
+	shooter.kick = maxf(float(shooter.kick), 0.35)
 	hit_stop(0.03, 0.15)
 	var part := String(h.part)
 	if not b.parts.has(part) or bool(b.parts[part].gone):
@@ -926,7 +926,7 @@ func _shatter_burst(b: VoxelBody, bits: Array, dir: Vector3) -> void:
 		_emit(p, (dir * randf_range(0.5, 2.5) + _rand_dir() * 1.2) * td, randf_range(0.014, 0.034) * td, randf_range(0.5, 1.2), _frost_col(), 0.6, 2.2)
 	sfx("shatter", c, 4.0)
 	sfx("freezeray_tink", c, 2.0, 0.8)
-	arena._kick = maxf(float(arena._kick), 1.5)
+	shooter.kick = maxf(float(shooter.kick), 1.5)
 	hit_stop(0.11, 0.04)
 
 # a shard broken: ice bits bouncing off, a puff of frost
