@@ -60,7 +60,7 @@ func _stand_at(st: VoxelStorage) -> void:
 	arena.player.velocity = Vector3.ZERO
 	arena.player.reset_physics_interpolation()
 	arena.look_yaw = 0.0
-	arena.look_pitch = -0.35
+	arena.look_pitch = -0.7
 	arena._camera(0.0)
 
 func _all(id: String) -> int:

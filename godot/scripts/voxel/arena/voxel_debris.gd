@@ -37,6 +37,7 @@ var got := {"blocks": 0, "meat": 0, "bone": 0, "brain": 0, "charred": 0}    # ev
 ## Each cube sucked up, as an item for the backpack: func(item id, n) -> how many didn't fit (VoxelItems.of_colour).
 var on_take: Callable
 var bound := INF                      # metres from the middle (x and z) the walls stop flying cubes at
+var rooms := []                       # Rect2s (x, z) off the arena with walls of their own: cubes in one stay in it
 ## A black hole (the gravity gun): flying cubes within well_r of well are pulled in (no falling near it), lying ones
 ## lift off toward it (a few hundred a frame), and at well_eat they're crushed to nothing. INF: none.
 var well := Vector3.INF
@@ -290,13 +291,25 @@ func _process(dt: float) -> void:
 			_budget -= 1.0
 		v.y -= 9.8 * dt
 		p += v * dt
-		# the walls: a bounce back in (cubes lying outside could never be got at)
-		if absf(p.x) > bound:
-			p.x = signf(p.x) * bound
-			v.x = -v.x * 0.3
-		if absf(p.z) > bound:
-			p.z = signf(p.z) * bound
-			v.z = -v.z * 0.3
+		# the walls: a bounce back in (cubes lying outside could never be got at); a room off the arena (the bedroom)
+		# keeps its own in by its own walls
+		var room := _room_of(_pos[i]) if not rooms.is_empty() else -1      # (where it was: in a room, it stays in)
+		if room >= 0:
+			var rr: Rect2 = rooms[room]
+			var m := 0.03
+			if p.x < rr.position.x + m or p.x > rr.end.x - m:
+				p.x = clampf(p.x, rr.position.x + m, rr.end.x - m)
+				v.x = -v.x * 0.3
+			if p.z < rr.position.y + m or p.z > rr.end.y - m:
+				p.z = clampf(p.z, rr.position.y + m, rr.end.y - m)
+				v.z = -v.z * 0.3
+		else:
+			if absf(p.x) > bound:
+				p.x = signf(p.x) * bound
+				v.x = -v.x * 0.3
+			if absf(p.z) > bound:
+				p.z = signf(p.z) * bound
+				v.z = -v.z * 0.3
 		var rest := false
 		if p.y < _floor:
 			p.y = _floor
@@ -322,6 +335,13 @@ func _process(dt: float) -> void:
 	last_ms = lerpf(last_ms, (Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 
 # ---------------------------------------------------------------- lying on the floor
+
+func _room_of(p: Vector3) -> int:
+	for i in rooms.size():
+		var r: Rect2 = rooms[i]
+		if p.x >= r.position.x and p.x <= r.end.x and p.z >= r.position.y and p.z <= r.end.y:
+			return i
+	return -1
 
 static func _cell(p: Vector3) -> int:
 	return (floori(p.x) + 1024) * 4096 + (floori(p.z) + 1024)

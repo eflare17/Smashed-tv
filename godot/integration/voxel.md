@@ -225,6 +225,39 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   `--fixed-fps` the games run several times faster than real time, so a game-time limit could end the host before the
   guest came).
 
+### The bedroom (21 Oct, the owner's Stage 3: "two beds, a chest at the end of each bed (one per player)", "a
+physical spin-dial combination padlock on each chest (no typed password)")
+
+- Through a door in the arena's south wall (behind where you start), `voxel_bedroom.gd`: the HTML game's bedroom
+  rebuilt at its own size (its units at 2.25 cm a unit: 9.9 x 7.7 m), its floor picture (planks, rug, dumbbell, books;
+  its painted bed covered over: `assets/voxel/art/bedroom_floor.png`), the door top left, the wardrobe (E opens its
+  doors: the gang's clothes inside) and the full-length mirror against the back wall, papered walls, a ceiling light
+  with shadows, a lamp on the nightstand. Two beds against the arena wall: P1 (blue, the host's, as in the HTML game)
+  and P2 (green, the guest's). The door swings open as anyone comes near it.
+- **Safe room**: enemies can't come in (the arena keeps them out) and don't go for anyone in here (`VoxelNet.targets`).
+- **Beds**: look at one, E lies you down (the eye on the pillow, the weapon put away, health back at three times the
+  rate); E, WASD or Space gets you up beside it. In co-op your mate sees you lying in it.
+- **Chests**: one at the foot of each bed (`bed_chest_1` / `bed_chest_2` in `VoxelStorages`), named for whoever's
+  looking: "Your chest", "Mate's chest" (alone, P2's is the "Spare chest"). Each starts with a padlock hanging open on
+  its hasp.
+- **Padlocks** (`voxel_padlock.gd`, `voxel_lock_view.gd`): a real 3D spin-dial lock, four number wheels and a steel
+  shackle. L at a chest holds its padlock up close; the mouse wheel over a wheel (or a click on its top or bottom)
+  turns it a digit with a click. Open, click the shackle to shut it: locked with the code the wheels show (shown a
+  moment; the wheels are then spun to hide it). Locked, E at the chest brings the padlock up: turn the wheels to the
+  code and it springs open, then the chest opens. R takes an open padlock off into your backpack ("Padlock" item); L
+  at a chest without one hangs it on. A locked chest gives nothing and takes nothing (the host checks). The padlocks
+  are saved with the chests. Co-op: the host's game alone keeps the codes; a guest's lock is sent to the host, every
+  turn of a locked padlock's wheels is tried by the host, and the guest's game only hears locked or open.
+- **Mirror** (`voxel_mirror.gd`): a real reflection: a second camera at your eye's reflection behind the glass with an
+  off-axis frustum cut to the glass (its near plane on the glass), drawn on it flipped; in first person you see
+  yourself (your Jared, on a render layer only the mirror's camera sees). It only renders when you're near it, facing
+  it.
+- Also: chests are now picked by what your look's ray hits first (a chest, a bed, the wardrobe), not by roughly
+  facing it; cubes dropped in the bedroom stay in it (`VoxelDebris.rooms`); the padlock can't be dropped as cubes.
+- Tests: `test/voxel/bedroom_test.gd` (34 checks alone; with `--host` / `--join` 7 + 5 co-op checks),
+  `test/voxel/bedroom_shots.gd` (screenshots under a display: `voxel_shots/bed_doorway.png`, `bed_room.png`,
+  `bed_beds.png`, `bed_mirror.png`, `bed_padlock.png`, `bed_lying.png`, `bed_topdown.png`).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

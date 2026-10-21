@@ -4,7 +4,10 @@ extends StaticBody3D
 ## round it, enemies too), built of chunky wooden planks with iron bands (the chest, a lid on hinges at the back) or
 ## of painted steel (the cabinet, two doors on side hinges). Walk up and press E to open it: the lid swings up (the
 ## doors open) while either player has it open, and the inventory screen shows its slots beside your backpack. Its
-## insides are a VoxelInventory; VoxelStorages keeps them (saved, and the host's in co-op). Owned by the voxel session.
+## insides are a VoxelInventory; VoxelStorages keeps them (saved, and the host's in co-op). A chest at the end of a bed
+## belongs to a player (belongs 1: the host's / your own alone, 2: the guest's) and can carry a spin-dial padlock
+## (Stage 3) hanging on its hasp: locked, it can't be opened till the padlock is dialled to its code. Owned by the voxel
+## session.
 
 const KINDS := {
 	"chest": {"name": "Chest", "slots": 18, "cols": 9, "size": Vector3(1.0, 0.74, 0.62)},
@@ -22,6 +25,12 @@ var sid := ""
 var kind := "chest"
 var title := ""
 var inv: VoxelInventory
+var belongs := 0                # 0 anyone's, 1 the host's bed chest (yours alone), 2 the guest's
+var has_lock := false           # a padlock hangs on it ...
+var locked := false             # ... shut
+var combo := ""                 # its code (the host's game only: a guest's never knows it)
+var dial_code := "0000"         # where this player left its wheels
+var _lock: VoxelPadlock         # the little one hanging on the hasp
 var open_here := false          # this player has it open ...
 var open_there := false         # ... the other player has (co-op)
 var _k := 0.0                   # 0 shut .. 1 open
@@ -45,6 +54,22 @@ func setup(sid_: String, kind_: String, sound: VoxelSound) -> void:
 		_build_chest(size)
 	else:
 		_build_cabinet(size)
+	# the padlock's place: hanging from the hasp at the front
+	_lock = VoxelPadlock.new()
+	_lock.digit_labels = false
+	add_child(_lock)
+	_lock.position = Vector3(0, size.y * 0.72 - 0.045, size.z * 0.5 + 0.024) if kind == "chest" else Vector3(0, size.y * 0.5, size.z * 0.5 + 0.06)
+	_lock.visible = false
+
+## The padlock on it or not, shut or open (the little one on the hasp shows it).
+func set_lock(has: bool, shut: bool) -> void:
+	has_lock = has
+	locked = has and shut
+	if not has:
+		combo = ""
+	if _lock:
+		_lock.visible = has_lock
+		_lock.open = has_lock and not locked
 
 func cols() -> int:
 	return int(KINDS[kind].cols)
@@ -59,8 +84,20 @@ func front() -> Vector3:
 	var s: Vector3 = KINDS[kind].size
 	return global_transform * Vector3(0, 0, s.z * 0.5 + 0.1)
 
-## How well a look from eye along dir picks this one: > 0 within reach and in view (bigger: nearer the middle of the
-## view), 0 otherwise.
+## How far along a look from eye along dir it is (INF: not within reach): the look's ray against its box (a little
+## bigger, so its edges count).
+func hit_dist(eye: Vector3, dir: Vector3, reach: float) -> float:
+	var s: Vector3 = KINDS[kind].size
+	var inv := global_transform.affine_inverse()
+	var box := AABB(Vector3(-s.x * 0.5 - 0.06, 0, -s.z * 0.5 - 0.06), Vector3(s.x + 0.12, s.y + 0.06, s.z + 0.12))
+	var hit = box.intersects_ray(inv * eye, inv.basis * dir)
+	if hit == null:
+		return INF
+	var d: float = (global_transform * (hit as Vector3)).distance_to(eye)
+	return d if d <= reach else INF
+
+## How well a look from eye along dir picks this one (top-down, where the look is the way to the mouse): > 0 within
+## reach and roughly that way (bigger: nearer the middle of the view), 0 otherwise.
 func pick_score(eye: Vector3, dir: Vector3, reach: float) -> float:
 	var s: Vector3 = KINDS[kind].size
 	var mid := global_transform * Vector3(0, s.y * 0.5, 0)
@@ -74,7 +111,7 @@ func pick_score(eye: Vector3, dir: Vector3, reach: float) -> float:
 	return d / (1.0 + maxf(flat, 0.0))
 
 func _process(dt: float) -> void:
-	var want := 1.0 if (open_here or open_there) else 0.0
+	var want := 1.0 if ((open_here or open_there) and not locked) else 0.0
 	if want == _k:
 		return
 	var was := _k

@@ -5,7 +5,9 @@ like sfx.py's:
 writes godot/assets/voxel/sound/: chest_open_0..1 (a wooden lid creaking up on old hinges), chest_close (the lid
 dropping shut, a hollow wooden knock), cabinet_open (a steel door unlatched and swung, a tinny rattle), cabinet_close
 (the door slammed into its latch), item_pick and item_put (a soft cloth-and-cube tick taking a stack up and setting it
-down), bag_open (a zip and a rustle). Owned by the voxel session."""
+down), bag_open (a zip and a rustle); the padlocks' (voxel_lock_view.gd): dial_click (a number wheel's detent),
+lock_open (the shackle springing up), lock_shut (snapped shut), lock_rattle (tugging a locked one). Owned by the voxel
+session."""
 
 
 def creak(secs, f0, f1, wob):
@@ -39,6 +41,17 @@ def build_storage():
     n = int(0.35 * SR)
     zipper = band(noise(0.35), 2500, 7000) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * np.linspace(60, 140, n) * t(0.35)))) * env(n, 0.01, 0.3, 2)
     save("bag_open", mix(zipper * 0.8, at(lowpass(noise(0.3), 1800) * env(int(0.3 * SR), 0.02, 0.15, 3) * 0.5, 0.15)), peak=0.5)
+    # padlocks: small hard metal
+    save("dial_click", mix(click(0.025, 4200, 0.003), at(click(0.02, 2600, 0.003) * 0.4, 0.004)), peak=0.5)
+    spring = metal([2300, 3900, 6100], 0.35, 0.18) * 0.4
+    save("lock_open", mix(click(0.03, 3000, 0.004) * 1.2, at(spring, 0.006), at(click(0.03, 1800, 0.006) * 0.6, 0.05)), peak=0.7)
+    save("lock_shut", mix(click(0.04, 2400, 0.006) * 1.3, at(metal([1700, 3300, 5200], 0.3, 0.12) * 0.5, 0.003)), peak=0.75)
+    rattle = np.zeros(int(0.35 * SR))
+    for k in range(5):
+        c = click(0.03, 1500 + 400 * (k % 2), 0.005) * (1.0 - k * 0.15)
+        o = int((0.02 + k * 0.06) * SR)
+        rattle[o:o + len(c)] += c
+    save("lock_rattle", rattle, peak=0.6)
 
 
 if __name__ == "__main__":

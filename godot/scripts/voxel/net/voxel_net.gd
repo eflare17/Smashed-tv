@@ -41,6 +41,7 @@ var _o_hand := ""
 var _o_hands: Array = []
 var other_hp := 100.0           # the other player's health ...
 var other_down := false         # ... and down
+var other_lying := 0            # ... and the bed they lie on (0: none)
 var _next_nid := 1
 var _bodies := {}               # nid -> VoxelBody
 var _pieces := {}               # nid -> RigidBody3D
@@ -125,8 +126,9 @@ func shooters() -> Array:
 ## Where the players stand who are up (the enemies go for the nearest): [this player's (or a placeholder if down),
 ## the other's]; empty if everyone is down. Index 0 is always this player, 1 the other.
 func targets() -> Array:
-	var me_up: bool = arena.down_t <= 0.0
-	var them_up := linked and is_instance_valid(_o_body) and not other_down
+	# (in the bedroom counts as out of reach: the enemies don't go for anyone in there)
+	var me_up: bool = arena.down_t <= 0.0 and not VoxelBedroom.in_house(arena.player.global_position)
+	var them_up := linked and is_instance_valid(_o_body) and not other_down and not VoxelBedroom.in_house(_o_body.global_position)
 	if not me_up and not them_up:
 		return []
 	var out := [arena.player.global_position if me_up else Vector3(1e6, 0, 1e6)]
@@ -330,7 +332,9 @@ func _other_frame(dt: float) -> void:
 	other_avatar.speed = spd
 	other_avatar.odo += spd * dt
 	other_avatar.attack = maxf(0.0, other_avatar.attack - dt * 2.5)
-	other_avatar.down_t = 1.0 if other_down else 0.0      # (down: lying on the floor)
+	other_avatar.down_t = 1.0 if (other_down or other_lying > 0) else 0.0      # (down: lying on the floor; or in bed)
+	if other_lying > 0:
+		other_avatar.yaw = 0.0
 	other_avatar.recoil = maxf(0.0, other_avatar.recoil - dt * 6.0)
 	other_avatar.animate(dt, spd > 0.2)
 	other_avatar.visible = true
@@ -377,6 +381,7 @@ func _player_state() -> PackedByteArray:
 	b.put_float(arena.look_yaw)
 	b.put_float(arena.player_hp)
 	b.put_u8(1 if arena.down_t > 0.0 else 0)
+	b.put_u8(arena.lying)
 	return b.data_array
 
 func _read_player(d: PackedByteArray) -> void:
@@ -399,6 +404,7 @@ func _read_player(d: PackedByteArray) -> void:
 	other.look_yaw = b.get_float()
 	other_hp = b.get_float()
 	other_down = b.get_u8() == 1
+	other_lying = b.get_u8() if b.get_available_bytes() > 0 else 0
 
 # ---------------------------------------------------------------- the host
 

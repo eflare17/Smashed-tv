@@ -119,6 +119,9 @@ func _gui_input(e: InputEvent) -> void:
 func click(k: int, i: int, button: int, shift := false) -> void:
 	var right := button == MOUSE_BUTTON_RIGHT
 	if k < 0:
+		if not cursor.is_empty() and not VoxelItems.is_cubes(cursor.id):
+			arena.say("Can't drop a %s: put it in a slot" % VoxelItems.name_of(cursor.id).to_lower(), 2.0)
+			return
 		if not cursor.is_empty():
 			var n := 1 if right else int(cursor.n)
 			arena.drop_stack({"id": cursor.id, "n": n})

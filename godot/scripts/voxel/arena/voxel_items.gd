@@ -10,6 +10,7 @@ const ITEMS := {
 	"bone": {"name": "Bone", "col": Color8(226, 220, 204), "stack": 9999, "desc": "Bone cubes. Blood and bone, later."},
 	"brain": {"name": "Brain", "col": Color8(218, 150, 162), "stack": 9999, "desc": "Pink and squishy. Worth the most."},
 	"charred": {"name": "Charred bits", "col": Color8(34, 26, 22), "stack": 9999, "desc": "Burnt black by the flamethrower. Worth less."},
+	"padlock": {"name": "Padlock", "col": Color8(201, 160, 64), "stack": 4, "desc": "A spin-dial padlock. L at a chest hangs it on."},
 }
 
 static var _by_col := {}
@@ -24,6 +25,10 @@ static func of_colour(col: Color) -> String:
 		_by_col[VoxelBody.BONE.to_rgba32()] = "bone"
 		_by_col[VoxelBody.CHAR.to_rgba32()] = "charred"
 	return _by_col.get(col.to_rgba32(), "blocks")
+
+## Made of cubes (what the vacuum takes): dropped, it falls as its cubes. The rest (a padlock) can't be dropped.
+static func is_cubes(id: String) -> bool:
+	return id in ["blocks", "meat", "bone", "brain", "charred"]
 
 static func has(id: String) -> bool:
 	return ITEMS.has(id)

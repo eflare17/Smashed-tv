@@ -7,8 +7,8 @@ extends Node3D
 ## The top left shows what it costs (frame rate, frame time, draw calls, triangles, cubes flying, meshing jobs).
 ## Owned by the voxel session. Desktop renderer (Forward+); the Windows build boots straight into this scene.
 ##
-## Keys: Tab (or I) the backpack, E at a chest or cabinet opens it (elsewhere: the vacuum and back), WASD move, mouse
-## look, 1-5 the weapon groups (melee, guns, special, explosives, the vacuum; the key again for
+## Keys: Tab (or I) the backpack, E at a chest or cabinet opens it (elsewhere: the vacuum and back), L at a chest its
+## padlock, E at a bed lies down on it, WASD move, mouse look, 1-5 the weapon groups (melee, guns, special, explosives, the vacuum; the key again for
 ## the next one in it), the wheel, Q the last weapon, both mouse buttons the weapon's own two moves, R reload,
 ## Shift run, Space jump, V top-down / first person, F1 shadows, F2 cube size (1 or 2 sprite pixels a cube), F3 ten
 ## more enemies, F4 freeze them, F5 a big wave (40), Esc frees the mouse (click to grab it again).
@@ -109,6 +109,15 @@ var _use_label: Label
 var _say_label: Label
 var _say_t := 0.0
 var lost := 0                   # cubes sucked up with the backpack full (gone)
+## The bedroom through the south wall (Stage 3): its beds, the chests at their feet with their padlocks.
+var house: VoxelBedroom
+var lock_view: VoxelLockView
+var lock_then_chest := false    # the padlock was opened to get into the chest: once it springs open, the chest opens
+var _unlock_t := 0.0
+var lying := 0                  # the bed (1, 2) lain on, 0 standing
+var _near_bed := 0
+var _near_ward := false
+var _self_t := 0.0
 var hold_suck := false          # (tests: the vacuum's click held down)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var melee := {}                 # weapon id -> its VoxelMelee
@@ -147,6 +156,7 @@ func _ready() -> void:
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
 	debris.bound = ARENA - 0.5 - _cube_m("grunt")     # the walls' inner faces: cubes bounce off them
+	debris.rooms = [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0)]
 	_tracers = MeshInstance3D.new()
 	_tracers.mesh = ImmediateMesh.new()
 	var tm := StandardMaterial3D.new()
@@ -206,6 +216,10 @@ func _ready() -> void:
 	inv_ui = VoxelInventoryUI.new()
 	_hud_layer.add_child(inv_ui)
 	inv_ui.setup(self, inv)
+	lock_view = VoxelLockView.new()
+	_hud_layer.add_child(lock_view)
+	lock_view.setup(self)
+	cam.cull_mask &= ~(1 << (VoxelMirror.LAYER_SELF - 1))      # (your own Jared in first person: the mirror's only)
 	_warm_up()
 	net = VoxelNet.new()
 	add_child(net)
@@ -308,9 +322,18 @@ void fragment() {
 	var wall_mat := StandardMaterial3D.new()
 	wall_mat.albedo_color = Color(0.16, 0.17, 0.22)
 	wall_mat.roughness = 0.9
-	for i in 4:
+	for i in range(1, 4):
 		var a := i * PI / 2.0
 		_box(Vector3(sin(a) * ARENA, 2.0, cos(a) * ARENA), Vector3(ARENA * 2.0 if i % 2 == 0 else 1.0, 4.0, 1.0 if i % 2 == 0 else ARENA * 2.0), wall_mat)
+	# the south wall: the bedroom's doorway in it (Stage 3)
+	var dx0 := VoxelBedroom.DOOR_X0
+	var dx1 := VoxelBedroom.DOOR_X1
+	_box(Vector3((-ARENA - 0.5 + dx0) * 0.5, 2.0, ARENA), Vector3(dx0 + ARENA + 0.5, 4.0, 1.0), wall_mat)
+	_box(Vector3((dx1 + ARENA + 0.5) * 0.5, 2.0, ARENA), Vector3(ARENA + 0.5 - dx1, 4.0, 1.0), wall_mat)
+	_box(Vector3((dx0 + dx1) * 0.5, (VoxelBedroom.DOOR_H + 4.0) * 0.5, ARENA), Vector3(dx1 - dx0, 4.0 - VoxelBedroom.DOOR_H, 1.0), wall_mat)
+	house = VoxelBedroom.new()
+	add_child(house)
+	house.setup(self)
 	var pil := StandardMaterial3D.new()
 	pil.albedo_color = Color(0.3, 0.12, 0.35)
 	pil.emission_enabled = true
@@ -520,6 +543,8 @@ func _health_step(dt: float) -> void:
 			_revive = 0.0
 			_since_hurt = 0.0
 			sound.play("switch", Vector3.INF, -2.0, 0.7)
+	elif lying > 0 and player_hp < HP_MAX:
+		player_hp = minf(HP_MAX, player_hp + REGEN * 3.0 * dt)      # (resting in bed)
 	elif _since_hurt > REGEN_WAIT and player_hp < HP_MAX:
 		player_hp = minf(HP_MAX, player_hp + REGEN * dt)
 	if _hp_bar:
@@ -536,6 +561,51 @@ func _health_step(dt: float) -> void:
 			_down_label.text = "your mate is DOWN — stand by them to get them up"
 		else:
 			_down_label.text = ""
+
+# ---------------------------------------------------------------- the bedroom: padlocks, beds
+
+## A chest's padlock up close to dial (then_chest: opened by E at a locked chest, the chest opens once it springs).
+func open_lock(st: VoxelStorage, then_chest: bool) -> void:
+	_let_go()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	lock_then_chest = then_chest
+	_unlock_t = 0.0
+	lock_view.open(st)
+
+func close_lock() -> void:
+	lock_view.close()
+	lock_then_chest = false
+	if not top_down and not _opts.has("auto"):
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func arena_lock_on(st: VoxelStorage) -> bool:
+	return stash.lock_on(st)
+
+## A chest's padlock changed (here or by the host): the padlock being dialled follows; a chest locked while open
+## shuts.
+func on_lock_changed(st: VoxelStorage) -> void:
+	if lock_view.is_open() and lock_view.storage == st:
+		lock_view.refresh()
+	if inv_ui.is_open() and inv_ui.storage == st and st.locked:
+		close_inventory()
+
+## Lying down on bed i: on the mattress, the eye on the pillow looking along the bed; health back three times as fast.
+func lie_down(i: int) -> void:
+	_let_go()
+	lying = i
+	look_yaw = PI
+	look_pitch = 0.25
+	player.global_position = house.lie_spot(i)
+	player.reset_physics_interpolation()
+	sound.play("chest_close", house.lie_spot(i), -10.0, 0.5)
+
+func get_up() -> void:
+	var i := lying
+	lying = 0
+	player.global_position = house.up_spot(i)
+	player.reset_physics_interpolation()
+	look_pitch = 0.0
+	look_yaw = PI * 0.5
 
 # ---------------------------------------------------------------- the backpack and the chests
 
@@ -564,6 +634,20 @@ func close_inventory() -> void:
 func _storage_step(dt: float) -> void:
 	_say_t = maxf(0.0, _say_t - dt)
 	_say_label.text = _say_text if _say_t > 0.0 else ""
+	if lock_view.is_open():
+		_use_label.text = ""
+		var lst := lock_view.storage
+		if lst and lst.front().distance_to(player.global_position) > 2.6:
+			close_lock()
+		elif lst and lock_then_chest and not lst.locked:
+			_unlock_t += dt
+			if _unlock_t > 0.7:
+				close_lock()
+				open_inventory(lst)       # (dialled open: into the chest)
+		return
+	if lying > 0:
+		_use_label.text = "E, WASD or Space: get up"
+		return
 	if inv_ui.is_open():
 		_use_label.text = ""
 		var st := inv_ui.storage
@@ -575,11 +659,31 @@ func _storage_step(dt: float) -> void:
 		var at := _mouse_floor()
 		var dir := (Vector3(at.x, pp.y, at.z) - pp).normalized() if at != Vector3.INF else -cam.global_transform.basis.z
 		_near_st = stash.pick(pp, dir, 1.4)
-	else:
-		_near_st = stash.pick(cam.global_position, -cam.global_transform.basis.z)
-	_use_label.text = ("E  open %s" % _near_st.title) if (_near_st and down_t <= 0.0) else ""
+	_near_bed = 0
+	_near_ward = false
+	if not top_down:
+		# whatever the look lands on first: a chest, a bed, the wardrobe
+		var eye := cam.global_position
+		var fwd := -cam.global_transform.basis.z
+		var sh: Array = stash.pick_ray(eye, fwd)
+		var bh: Array = house.bed_hit(eye, fwd)
+		_near_st = sh[0] if float(sh[1]) <= float(bh[1]) else null
+		_near_bed = int(bh[0]) if _near_st == null else 0
+		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
+	var t := ""
+	if _near_st:
+		if _near_st.locked:
+			t = "E  unlock %s (padlock)" % _near_st.title
+		else:
+			t = "E  open %s" % _near_st.title + ("     L  padlock" if _near_st.has_lock else ("     L  hang a padlock" if inv.count("padlock") > 0 else ""))
+	elif _near_bed > 0:
+		t = "E  lie down" + ("  (your bed)" if _near_bed == stash.my_pid() else "")
+	elif _near_ward:
+		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
+	_use_label.text = t if down_t <= 0.0 else ""
 	if down_t > 0.0:
 		_near_st = null
+		_near_bed = 0
 
 var _say_text := ""
 ## A line in the middle of the screen for a moment.
@@ -735,6 +839,7 @@ func _respawn_all() -> void:
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
 	debris.bound = ARENA - 0.5 - _cube_m("grunt")
+	debris.rooms = [Rect2(VoxelBedroom.X0, VoxelBedroom.Z0, VoxelBedroom.X1 - VoxelBedroom.X0, VoxelBedroom.Z1 - VoxelBedroom.Z0)]
 	debris.got = got
 	debris.on_take = _on_take
 	spawn(maxi(n, 1))
@@ -773,9 +878,29 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode in [KEY_TAB, KEY_I, KEY_E, KEY_ESCAPE]:
 				close_inventory()
 			return
+		if lock_view.is_open():
+			if e.physical_keycode in [KEY_E, KEY_L, KEY_ESCAPE]:
+				close_lock()
+			elif e.physical_keycode == KEY_R:
+				lock_view.take_off()
+			return
+		if lying > 0:
+			if e.physical_keycode in [KEY_E, KEY_SPACE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_ESCAPE]:
+				get_up()
+				if e.physical_keycode == KEY_ESCAPE:
+					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			return
 		match e.physical_keycode:
 			KEY_TAB, KEY_I:
 				open_inventory(null)
+			KEY_L:
+				if _near_st and _near_st.has_lock:
+					open_lock(_near_st, false)
+				elif _near_st:
+					if arena_lock_on(_near_st):
+						say("Padlock hung on the %s: L to set its code" % _near_st.title.to_lower(), 2.5)
+					else:
+						say("No padlock in your backpack (take one off a bed chest: L there, then R)", 2.5)
 			KEY_F:
 				_sword_key(false)
 			KEY_C:
@@ -790,8 +915,14 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
 			KEY_E:
-				if _near_st:
+				if _near_st and _near_st.locked:
+					open_lock(_near_st, true)        # (locked: dial it open first, then the chest opens)
+				elif _near_st:
 					open_inventory(_near_st)
+				elif _near_bed > 0:
+					lie_down(_near_bed)
+				elif _near_ward:
+					house.ward_open = not house.ward_open
 				else:
 					var vi := loadout.index_of("vacuum")
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
@@ -1053,6 +1184,10 @@ func _physics_process(dt: float) -> void:
 		dir = dir.normalized()
 	if down_t > 0.0:
 		dir = Vector3.ZERO          # (down: no moving)
+	if lying > 0:
+		player.velocity = Vector3.ZERO
+		player.global_position = house.lie_spot(lying)
+		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
 	player.velocity.z = dir.z * sp
 	if _dash_t > 0.0:
@@ -1064,7 +1199,8 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	player.move_and_slide()
+	if lying <= 0:
+		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
 		return
@@ -1329,11 +1465,42 @@ func _camera(dt: float) -> void:
 		cam.global_position = pp + Vector3(0, 13.0, 6.0) + shake
 		cam.look_at(pp + Vector3(0, 0.8, 0) + shake, Vector3.UP)
 		cross.visible = false
+	elif lying > 0:
+		cam.global_position = house.lie_eye(lying)
+		cam.rotation = Vector3(look_pitch, look_yaw, 0.0)
+		cross.visible = false
 	else:
 		var low := minf(1.0, (down_t if down_t > 0.0 else 0.0) * 4.0)     # down: on the floor, the view tipped over
 		cam.global_position = pp + Vector3(0, lerpf(1.65, 0.35, low), 0)
 		cam.rotation = Vector3(look_pitch + _kick * 0.04, look_yaw, lerpf(0.0, 1.1, low))
 		cross.visible = true
+	_self_in_mirror(dt, pp)
+
+# first person in the bedroom: your own Jared stands (or lies) where you are, on the layer only the mirror's camera sees
+func _self_in_mirror(dt: float, pp: Vector3) -> void:
+	if top_down:
+		_set_layers(avatar, 1 | (1 << (VoxelMirror.LAYER_SELF - 1)))
+		return
+	var show := VoxelBedroom.in_house(pp)
+	avatar.visible = show
+	if not show:
+		return
+	_self_t -= dt
+	if _self_t <= 0.0:
+		_self_t = 0.5
+		_set_layers(avatar, 1 << (VoxelMirror.LAYER_SELF - 1))
+	avatar.global_position = house.lie_spot(lying) if lying > 0 else pp
+	avatar.yaw = 0.0 if lying > 0 else atan2(-sin(look_yaw), -cos(look_yaw))
+	avatar.down_t = 1.0 if lying > 0 else 0.0
+	avatar.speed = 0.0 if lying > 0 else Vector2(player.velocity.x, player.velocity.z).length()
+	avatar.odo += avatar.speed * dt
+	avatar.animate(dt, avatar.speed > 0.2)
+
+static func _set_layers(n: Node, mask: int) -> void:
+	if n is VisualInstance3D:
+		(n as VisualInstance3D).layers = mask
+	for c in n.get_children():
+		_set_layers(c, mask)
 
 func _mouse_floor() -> Vector3:
 	var mp := get_viewport().get_mouse_position()
@@ -1365,8 +1532,8 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open():
-		_let_go()                   # (the inventory screen: the mouse is for that)
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0:
+		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
 	_fire_cd = maxf(0.0, _fire_cd - dt)
@@ -1497,12 +1664,13 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	vacuum.step(dt, shown == "vacuum", _sucking and cur == "vacuum")
+	var away := lying > 0 or lock_view.is_open()      # (in bed, dialling a padlock: the weapon put away)
+	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]
-		w.view.visible = not top_down and (id == shown or w.busy())
+		w.view.visible = not top_down and not away and (id == shown or w.busy())
 		w.view.position = Vector3(0, drop if id == shown else 0.0, 0)
-	vacuum.view.visible = shown == "vacuum" and not top_down
+	vacuum.view.visible = shown == "vacuum" and not top_down and not away
 	vacuum.view.position = Vector3(0.24, -0.23 + (drop if shown == "vacuum" else 0.0), -0.5)
 	if top_down and _hand_id != cur:
 		_hold_in_hand(cur)
