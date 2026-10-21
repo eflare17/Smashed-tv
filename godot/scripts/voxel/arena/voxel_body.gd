@@ -1246,6 +1246,35 @@ static func _flood(q: PackedInt32Array, st: PackedByteArray, cells: PackedInt32A
 			st[k + sxy] = mark
 			q.append(k + sxy)
 
+# the cut cubes (st 2, in the box clo..chi) taken out of part p, nothing else coming off: their bits into res (every
+# every-th), res.cut and p.left counted; returns how many were brain
+func _take_cut(p: Dictionary, st: PackedByteArray, cells: PackedInt32Array, s: Vector3i, clo: Vector3i, chi: Vector3i,
+		base: Vector3, ex: Vector3, ey: Vector3, ez: Vector3, every: int, res: Dictionary, ncut: int) -> int:
+	var brain := 0
+	for z in range(clo.z, chi.z + 1):
+		for y in range(clo.y, chi.y + 1):
+			var row2 := s.x * (y + s.y * z)
+			for x in range(clo.x, chi.x + 1):
+				var i2 := row2 + x
+				if st[i2] != 2:
+					continue
+				var v3 := cells[i2]
+				if (i2 % every) == 0:
+					var k5 := v3 - 1
+					res.bits.append({"pos": base + ex * x + ey * y + ez * z, "col": Color8((k5 >> 16) & 255, (k5 >> 8) & 255, k5 & 255)})
+				if _brain_ints.has(v3):
+					brain += 1
+				cells[i2] = 0
+	res.cut += ncut
+	p.left = int(p.left) - ncut
+	if int(p.left) <= 0:
+		p.left = 0
+		p.gone = true
+		(p.mesh as MeshInstance3D).visible = false
+	else:
+		p.dirty = true
+	return brain
+
 # slice and carve: the cubes a blade's plane or a capsule takes, then what's left hanging off, part by part
 func _remove(opt: Dictionary) -> Dictionary:
 	var plane: bool = opt.plane
@@ -1411,35 +1440,14 @@ func _remove(opt: Dictionary) -> Dictionary:
 		var in_sweep := jq.length() <= reach + vm and jq.dot(fwd) >= jq.length() * cos_arc - vm
 		var joint_cut: bool = nm != root and not masked and ((absf(n.dot(jq)) <= half_t + vm and in_sweep) if plane else _seg_dist(jw, ca, cb) <= cr + vm)
 		var box_v := (chi.x - clo.x + 7) * (chi.y - clo.y + 7) * (chi.z - clo.z + 7)
-		if not joint_cut and (quick_only or (box_v * 5 < cells.size() * 2 and not _may_split(st, cells, s, clo, chi))):
+		if not joint_cut and (quick_only or (box_v < cells.size() and not _may_split(st, cells, s, clo, chi))):
 			# the cut can't have split the part (the cubes round it all still join up close by) and the joint is
 			# whole: just take the cut cubes out, no fill over the whole part
-			for z in range(clo.z, chi.z + 1):
-				for y in range(clo.y, chi.y + 1):
-					var row2 := s.x * (y + s.y * z)
-					for x in range(clo.x, chi.x + 1):
-						var i2 := row2 + x
-						if st[i2] != 2:
-							continue
-						var v3 := cells[i2]
-						if (i2 % every) == 0:
-							var k5 := v3 - 1
-							res.bits.append({"pos": base + ex * x + ey * y + ez * z, "col": Color8((k5 >> 16) & 255, (k5 >> 8) & 255, k5 & 255)})
-						if _brain_ints.has(v3):
-							brain_hit += 1
-						cells[i2] = 0
+			brain_hit += _take_cut(p, st, cells, s, clo, chi, base, ex, ey, ez, every, res, ncut)
 			quick[nm] = [st, cells]
-			res.cut += ncut
 			res.parts.append(nm)
 			if nm == "torso":
 				body_cut += ncut
-			p.left = int(p.left) - ncut
-			if int(p.left) <= 0:
-				p.left = 0
-				p.gone = true
-				(p.mesh as MeshInstance3D).visible = false
-			else:
-				p.dirty = true
 			continue
 		if joint_cut:
 			var ref := jw + Vector3.DOWN
@@ -1542,6 +1550,15 @@ func _remove(opt: Dictionary) -> Dictionary:
 			for k0 in nall:
 				if st[k0] == 5:
 					st[k0] = 0
+		if q2.size() == int(p.left) - ncut:
+			# everything left is still joined (a crater, a tunnel): just take the cut cubes out, not a pass over
+			# every cube of the part to sort what came off
+			brain_hit += _take_cut(p, st, cells, s, clo, chi, base, ex, ey, ez, every, res, ncut)
+			quick[nm] = [st, cells]
+			res.parts.append(nm)
+			if nm == "torso":
+				body_cut += ncut
+			continue
 		# st after: 1 kept, 2 cut, 3 came off, 0 empty
 		var off_cells := PackedInt32Array()
 		off_cells.resize(cells.size())
@@ -1695,19 +1712,26 @@ static func _may_split(st: PackedByteArray, cells: PackedInt32Array, s: Vector3i
 		var kx := k % sx
 		var ky := (k / sx) % s.y
 		var kz := k / sxy
-		for d in 6:
-			var nx := kx + (1 if d == 0 else (-1 if d == 1 else 0))
-			var ny := ky + (1 if d == 2 else (-1 if d == 3 else 0))
-			var nz := kz + (1 if d == 4 else (-1 if d == 5 else 0))
-			if nx < x0 or nx > x1 or ny < y0 or ny > y1 or nz < z0 or nz > z1:
-				continue
-			var j := nx + sx * (ny + s.y * nz)
-			if cells[j] == 0 or st[j] == 2:
-				continue
-			var lj := (nx - x0) + bw * (ny - y0 + bh * (nz - z0))
-			if seen[lj] == 0:
-				seen[lj] = 1
-				q.append(j)
+		var lk := (kx - x0) + bw * (ky - y0 + bh * (kz - z0))
+		# (the six neighbours spelt out: a loop with arithmetic per step costs twice as much)
+		if kx > x0 and seen[lk - 1] == 0 and cells[k - 1] != 0 and st[k - 1] != 2:
+			seen[lk - 1] = 1
+			q.append(k - 1)
+		if kx < x1 and seen[lk + 1] == 0 and cells[k + 1] != 0 and st[k + 1] != 2:
+			seen[lk + 1] = 1
+			q.append(k + 1)
+		if ky > y0 and seen[lk - bw] == 0 and cells[k - sx] != 0 and st[k - sx] != 2:
+			seen[lk - bw] = 1
+			q.append(k - sx)
+		if ky < y1 and seen[lk + bw] == 0 and cells[k + sx] != 0 and st[k + sx] != 2:
+			seen[lk + bw] = 1
+			q.append(k + sx)
+		if kz > z0 and seen[lk - bw * bh] == 0 and cells[k - sxy] != 0 and st[k - sxy] != 2:
+			seen[lk - bw * bh] = 1
+			q.append(k - sxy)
+		if kz < z1 and seen[lk + bw * bh] == 0 and cells[k + sxy] != 0 and st[k + sxy] != 2:
+			seen[lk + bw * bh] = 1
+			q.append(k + sxy)
 	for e in edge:
 		if seen[(e % sx - x0) + bw * ((e / sx) % s.y - y0 + bh * (e / sxy - z0))] == 0:
 			return true
