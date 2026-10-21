@@ -28,7 +28,7 @@ const CUT_POST := 0.03          # ... and past where it comes out
 const CUT_TICK := 1.0 / 15.0    # seconds between cuts: the beam's lines since the last one lined up to be cut ...
 const CUT_SHARE := 0.25         # ... one a frame at most, spaced so cutting takes about this share of the time ...
 const SHARE_MAX := 0.6          # ... more with lines waiting (a fast drag: one body crossed is 40-60), up to this
-const MAX_PENDING := 96         # lines waiting at most (more: an even spread of them, the newest kept)
+const MAX_PENDING := 96         # lines waiting at most for each body in them (more: an even spread, the newest kept)
 const SPACING := 0.035          # metres apart neighbouring cut lines may be at either end (2.2 cm lines: no gaps)
 const FILL_MAX := 4             # lines filled in between two frames' beams at most
 const NECK_D := 0.05            # a cut line this near the head's joint is through the middle of the neck
@@ -473,6 +473,9 @@ func step(dt: float) -> void:
 	_cut_wait -= dt
 	if not _pending.is_empty() and _cut_wait <= 0.0:
 		_cut_next()
+		# (a long queue, a sweep across a group: a second one this frame if the first was cheap)
+		if _pending.size() > 48 and _cut_wait <= dt * 0.5:
+			_cut_next()
 	_sounds()
 	_draw(dt)
 	_puffs_step(dt)
@@ -590,11 +593,15 @@ func _cut_tick() -> void:
 	elif not keep.is_empty():
 		_dwell = 0.0
 	_pending.append_array(keep)
-	if _pending.size() > MAX_PENDING:
+	var in_q := {}
+	for ln in _pending:
+		in_q[ln[0]] = true
+	var cap := MAX_PENDING * clampi(in_q.size(), 1, 4)       # (a sweep across a group: each body its own lines)
+	if _pending.size() > cap:
 		# falling behind (a very fast drag through a lot): an even spread of them, the newest kept
 		var spread := []
-		for i in MAX_PENDING:
-			spread.append(_pending[int(round(float(i + 1) * _pending.size() / MAX_PENDING)) - 1])
+		for i in cap:
+			spread.append(_pending[int(round(float(i + 1) * _pending.size() / cap)) - 1])
 		_pending = spread
 	_tick = maxf(0.0, _tick + CUT_TICK)
 
