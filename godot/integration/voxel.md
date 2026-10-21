@@ -289,6 +289,36 @@ untouched, as the owner chose)
   The logic test's loadout checks updated for the sixth group; the co-op health test now waits for the hit by real
   time.
 
+### Farming (21 Oct, the owner's Stage 5: "bring the weed growing mechanics across", "hoe dirt into rows, plant seeds,
+watering can", "rebuild the fertilising system from scratch", "worm farms")
+
+- **The HTML game's weed growing** (b332, `FARM.md`), its numbers (`VoxelFarm.STRAINS`): six strains; Northern Lights
+  ($10) and Sour Diesel ($30) seeds at the seed crate; a plant grows in real time (NL 4 min ... White Widow 15),
+  watered at full speed for 3 minutes, dry at half, droops and wants water, dry 2 minutes it wilts and loses a bud;
+  seedling, young, fan leaves, ready with buds; E harvests; the buyer's crate pays a plant's price for all its buds. A
+  wave cleared jumps everything ahead (NL 2 waves ... WW 6), where a wave here is 8 of the arena's one-at-a-time
+  enemies (`WAVE_ENEMIES`: the HTML game's waves are crowds). **Cash** (new to the voxel game): kills pay as in the
+  HTML game (grunt and swarmer $1, batter $3, brute $5), each player's own, shown over the health bar, saved.
+- **The plants** (`voxel_plant.gd`): the HTML game's own plant art (`assets/voxel/art/weed_sheet.png`, taken out of
+  `Smashed.html`'s WEED_SHEET) built in cubes, two pictures crossed; dry ones squashed and yellowed, wilted browned (as
+  its weedArt), a drop over them; the black outline left out (in cubes it was specks); sway in the breeze.
+- **The hoe** (6): a row of three planting spots (0.75 m apart, `VoxelFarm.SPOT`) the way you face turned to tilled
+  soil (a terrain block of its own, furrowed), where it's grass or dirt. Plant on it with E (the seed you bought last,
+  or any). Dig a plant's ground away and it's gone.
+- **The watering can** (6): hold left to pour (a stream of water); the plants where it lands are watered; 8 plants a
+  can; E at the water tank fills it.
+- **Fertiliser, from scratch**: worm castings from the worm farm. E at a growing plant feeds it: once 35% faster and a
+  bud more, twice 70% and two more. **The worm farm**: E puts in your worms (found digging) and up to 3000 scraps
+  (meat, brain; charred bits count half); the worms eat 2 a second each, make a casting every 300, and breed while
+  fed (up to 60); E takes the castings. (Stage 6's chicken poo and 6.5's blood and bone go into the same feeding.)
+- **Co-op**: the farm is the host's, like the chests: a guest's planting, watering, feeding, harvesting and worm-farm
+  turns go to the host as requests and come back as gives (buds, castings, a seed back); the plants' state goes to the
+  guest every 2 s and on every change; the hoe's tilling is a terrain call like a dig. Seeds, buds, cash and the can
+  are each player's own. Saved with the rest. (Found on the way: network message "F" was already the fingerprints'
+  fix request; the farm's is "K".)
+- Tests: `test/voxel/farm_test.gd` (25 checks alone; with `--host` / `--join` 3 + 4 co-op checks),
+  `test/voxel/farm_shots.gd` (`voxel_shots/farm_*.png`). The logic test's loadout checks updated (18 weapons).
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

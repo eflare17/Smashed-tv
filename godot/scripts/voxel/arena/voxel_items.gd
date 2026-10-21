@@ -19,6 +19,15 @@ const ITEMS := {
 }
 
 static var _by_col := {}
+static var EXTRA := {}          # the farm's (seeds, buds, castings: VoxelFarm.items), made the first time asked
+
+static func _extra() -> Dictionary:
+	if EXTRA.is_empty():
+		EXTRA = VoxelFarm.items()
+	return EXTRA
+
+static func _info(id: String) -> Dictionary:
+	return ITEMS[id] if ITEMS.has(id) else _extra().get(id, {})
 
 ## The item a vacuumed cube of this colour is.
 static func of_colour(col: Color) -> String:
@@ -36,16 +45,16 @@ static func is_cubes(id: String) -> bool:
 	return id in ["blocks", "meat", "bone", "brain", "charred"]
 
 static func has(id: String) -> bool:
-	return ITEMS.has(id)
+	return ITEMS.has(id) or _extra().has(id)
 
 static func name_of(id: String) -> String:
-	return String(ITEMS[id].name) if ITEMS.has(id) else id
+	return String(_info(id).get("name", id))
 
 static func colour(id: String) -> Color:
-	return ITEMS[id].col if ITEMS.has(id) else Color.MAGENTA
+	return _info(id).get("col", Color.MAGENTA)
 
 static func stack_max(id: String) -> int:
-	return int(ITEMS[id].stack) if ITEMS.has(id) else 1
+	return int(_info(id).get("stack", 1))
 
 static func desc(id: String) -> String:
-	return String(ITEMS[id].desc) if ITEMS.has(id) else ""
+	return String(_info(id).get("desc", ""))

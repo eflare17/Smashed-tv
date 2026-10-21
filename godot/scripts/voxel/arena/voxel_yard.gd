@@ -28,6 +28,7 @@ const UPGRADES := [
 
 var arena: Node3D
 var ground: VoxelTerrain
+var farm: VoxelFarm
 var _sum_t := 0.0
 var _own = null                 # guest: their own yard's dug chunks while in someone else's (null: not a guest)
 var _was_role := ""
@@ -43,6 +44,9 @@ func setup(arena_: Node3D) -> void:
 	ground.setup(DIG_ORIGIN)
 	_surround()
 	_bench()
+	farm = VoxelFarm.new()
+	add_child(farm)
+	farm.setup(arena, self)
 
 # ---------------------------------------------------------------- digging (the tools call these)
 
@@ -59,6 +63,13 @@ func fill(c: Vector3, r: float, n: int) -> int:
 		_msg(["fill", c, r, k])
 	return k
 
+## This player's hoe: the planting spots in keys tilled (Stage 5), told to the other game.
+func till(keys: Array) -> int:
+	var n := ground.till(keys, int(VoxelFarm.SPOT / VoxelTerrain.CELL))
+	if n > 0:
+		_msg(["till", keys])
+	return n
+
 func _msg(m: Array) -> void:
 	if arena.net and arena.net.linked:
 		arena.net.send_yard(m)
@@ -70,6 +81,8 @@ func on_net(m: Array) -> void:
 			ground.dig(m[1], float(m[2]), int(m[3]))
 		"fill":
 			ground.fill(m[1], float(m[2]), int(m[3]))
+		"till":
+			ground.till(m[1], int(VoxelFarm.SPOT / VoxelTerrain.CELL))
 		"all":
 			if not host:
 				if _own == null:

@@ -27,12 +27,13 @@ const ROCK := 5
 const GOLD := 6
 const BEDROCK := 7
 const EDGE := 8                 # the ring round the edge: looks like dirt, never digs
-const HARD := [0, 1, 1, 2, 3, 4, 4, 99, 99]
+const TILLED := 9               # hoed soil (Stage 5): plants grow in it
+const HARD := [0, 1, 1, 2, 3, 4, 4, 99, 99, 1]
 const COL := [Color(0, 0, 0), Color8(64, 112, 42), Color8(116, 80, 48), Color8(168, 102, 62), Color8(128, 126, 122),
-	Color8(84, 82, 86), Color8(226, 182, 52), Color8(40, 38, 42), Color8(116, 80, 48)]
+	Color8(84, 82, 86), Color8(226, 182, 52), Color8(40, 38, 42), Color8(116, 80, 48), Color8(74, 48, 30)]
 const SIDE_GRASS := Color8(104, 74, 44)   # a grass block's sides: dirt with the turf on top
 ## The item a block dug out becomes (VoxelItems).
-const ITEM := ["", "dirt", "dirt", "clay", "stone", "stone", "gold", "", ""]
+const ITEM := ["", "dirt", "dirt", "clay", "stone", "stone", "gold", "", "", "dirt"]
 const MAX_JOBS := 6
 
 var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
@@ -186,6 +187,31 @@ func fill(c: Vector3, r: float, n: int) -> int:
 		_touch(s.x, s.z)
 		k += 1
 	return k
+
+## The hoe (Stage 5): each planting spot in keys (VoxelFarm's: 4 x 4 blocks, keyed x * 1000 + z by spot) gets its
+## middle 2 x 2 blocks on top turned to tilled soil, where they're grass or dirt (a row of little mounds, grass between).
+## Returns how many blocks it turned.
+func till(keys: Array, spot_cells: int) -> int:
+	var n := 0
+	for key in keys:
+		var sx := int(key) / 1000 * spot_cells
+		var sz := int(key) % 1000 * spot_cells
+		for dz in [spot_cells / 2 - 1, spot_cells / 2]:
+			for dx in [spot_cells / 2 - 1, spot_cells / 2]:
+				var x: int = sx + dx
+				var z: int = sz + dz
+				if x < 1 or z < 1 or x >= NX - 1 or z >= NZ - 1:
+					continue
+				for y in range(NY - 1, 1, -1):
+					var m := cells[idx(x, y, z)]
+					if m == AIR:
+						continue
+					if m == GRASS or m == DIRT:
+						cells[idx(x, y, z)] = TILLED
+						_touch(x, z)
+						n += 1
+					break
+	return n
 
 ## Whether there's a worm in block (x, y, z) (dug out of dirt: about one block in three hundred).
 static func worm_in(x: int, y: int, z: int) -> bool:
@@ -392,6 +418,8 @@ func _mesh_job(b: PackedByteArray, wx0: int, wz0: int, out: Dictionary) -> void:
 						col = SIDE_GRASS
 					elif m == EDGE and d == 2 and y == NY - 1:
 						col = COL[GRASS]          # (the edge ring's top: turf like the rest)
+					elif m == TILLED and d == 2 and ((gx + gz) & 1) == 0:
+						col = col.darkened(0.18)  # (furrowed: every other block darker)
 					var k: float = vary * deep * _SHADE[d]
 					col = Color(col.r * k, col.g * k, col.b * k)
 					var p := o + Vector3(gx, y, gz) * CELL

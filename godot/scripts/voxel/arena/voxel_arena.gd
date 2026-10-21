@@ -83,7 +83,8 @@ const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res
 	"laser": "res://scripts/voxel/arena/voxel_weapon_laser.gd", "flamethrower": "res://scripts/voxel/arena/voxel_weapon_flamethrower.gd",
 	"freezeray": "res://scripts/voxel/arena/voxel_weapon_freezeray.gd", "harpoon": "res://scripts/voxel/arena/voxel_weapon_harpoon.gd",
 	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd",
-	"shovel": "res://scripts/voxel/arena/voxel_tool.gd", "pick": "res://scripts/voxel/arena/voxel_tool.gd"}
+	"shovel": "res://scripts/voxel/arena/voxel_tool.gd", "pick": "res://scripts/voxel/arena/voxel_tool.gd",
+	"hoe": "res://scripts/voxel/arena/voxel_tool.gd", "can": "res://scripts/voxel/arena/voxel_tool.gd"}
 var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
 var sound: VoxelSound           # every sound (VoxelSound)
 var me: VoxelShooter            # the local player, as the weapons see whoever holds them
@@ -108,6 +109,7 @@ static var blocks := []         # walkers kept out of these too, like the pillar
 var _near_st: VoxelStorage      # the chest the player is at (E opens it)
 var _use_label: Label
 var _say_label: Label
+var _cash_label: Label
 var _say_t := 0.0
 var lost := 0                   # cubes sucked up with the backpack full (gone)
 ## The bedroom through the south wall (Stage 3): its beds, the chests at their feet with their padlocks.
@@ -120,6 +122,9 @@ var lying := 0                  # the bed (1, 2) lain on, 0 standing
 var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
 var _near_bench := false
+var cash := 0                   # this player's money (Stage 5: kills pay, as in the HTML game; seeds cost, buds sell)
+var _near_plant := -1           # the farm's spot looked at (a plant or tilled ground)
+var _near_prop := ""            # the farm's prop looked at (the seed bins, the buyer, the tank, the worm farm)
 var _near_bed := 0
 var _near_ward := false
 var _self_t := 0.0
@@ -483,11 +488,21 @@ func _hud() -> void:
 	_say_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_say_label.add_theme_constant_override("outline_size", 6)
 	cl.add_child(_say_label)
+	_cash_label = Label.new()
+	_cash_label.position = Vector2(16, -186)
+	_cash_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_cash_label.add_theme_font_size_override("font_size", 18)
+	_cash_label.add_theme_color_override("font_color", Color(0.96, 0.82, 0.48))
+	_cash_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_cash_label.add_theme_constant_override("outline_size", 5)
+	cl.add_child(_cash_label)
 
 # ---------------------------------------------------------------- enemies
 
 ## One enemy at a time (the owner, 20 Oct): the next walks in a moment after the last one drops.
 func _next_wave() -> void:
+	if wave > 0 and yard and wave % VoxelFarm.WAVE_ENEMIES == 0:
+		yard.farm.on_wave()          # (a wave's worth cleared: the crops jump ahead)
 	wave += 1
 	spawn(1)
 
@@ -600,6 +615,101 @@ func on_lock_changed(st: VoxelStorage) -> void:
 	if inv_ui.is_open() and inv_ui.storage == st and st.locked:
 		close_inventory()
 
+# ---------------------------------------------------------------- the farm (Stage 5)
+
+# the tilled planting spot a look lands on within reach (-1: none)
+func _tilled_at(eye: Vector3, fwd: Vector3) -> int:
+	var q := PhysicsRayQueryParameters3D.create(eye, eye + fwd * 2.6)
+	q.exclude = me.exclude()
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or not yard.ground.contains(hit.position):
+		return -1
+	var k: int = yard.farm.spot_of(hit.position)
+	return k if k >= 0 and yard.farm.spot_top(k) != Vector3.INF else -1
+
+func _prop_line(p: String) -> String:
+	var farm: VoxelFarm = yard.farm
+	match p:
+		"crate0", "crate1":
+			var s := 0 if p == "crate0" else 1
+			var st: Dictionary = VoxelFarm.STRAINS[s]
+			return ("E  buy a %s seed: $%d  (you've $%d)" if cash >= int(st.seed) else "%s seed: $%d (you've $%d: kills pay)") % [st.name, int(st.seed), cash]
+		"buyer":
+			var v := 0.0
+			for s in VoxelFarm.STRAINS.size():
+				v += inv.count(VoxelFarm.bud_id(s)) * float(VoxelFarm.STRAINS[s].price) / float(VoxelFarm.STRAINS[s].buds)
+			return ("E  sell your buds: $%d" % int(round(v))) if v > 0.0 else "Buyer: brings cash for buds"
+		"tank":
+			var can = melee.get("can")
+			return "E  fill the watering can" + (" (%d of %d)" % [int(ceil(can.water)), int(VoxelFarm.CAN)] if can else "")
+		"wormery":
+			var w: Dictionary = farm.worms
+			var line := "Worm farm: %d worms, %d scraps" % [int(w.n), int(float(w.food))]
+			if int(w.cast) > 0:
+				return line + "     E  take %d castings" % int(w.cast)
+			var have: int = inv.count("worm")
+			var scraps: int = inv.count("meat") + inv.count("brain") + inv.count("charred")
+			if have > 0 or scraps > 0:
+				return line + "     E  put in %d worms, %d scraps" % [have, mini(scraps, VoxelFarm.FEED_MOST)]
+			return line + ("  (dig for worms; feed them meat)" if int(w.n) == 0 else "  (making castings)")
+	return ""
+
+func _farm_prop(p: String) -> void:
+	var farm: VoxelFarm = yard.farm
+	match p:
+		"crate0", "crate1":
+			var s := 0 if p == "crate0" else 1
+			if farm.buy(s):
+				sound.play("item_pick", Vector3.INF, -4.0)
+				say("+1 %s seed ($%d left)" % [VoxelFarm.STRAINS[s].name, cash], 1.5)
+			else:
+				say("Not enough cash: $%d (kills pay: a grunt $1, a batter $3, a brute $5)" % cash, 2.0)
+		"buyer":
+			var c := farm.sell()
+			if c > 0:
+				sound.play("gold_find", Vector3.INF, -6.0)
+				say("Sold: +$%d ($%d)" % [c, cash], 2.0)
+		"tank":
+			if melee.has("can"):
+				melee["can"].fill()
+				sound.play("vacuum_pop", Vector3.INF, -8.0, 0.6)
+				say("The can's full: hold left with it (6) to water", 2.0)
+		"wormery":
+			var r := farm.service_wormery()
+			if r == "castings":
+				say("Worm castings: E at a growing plant feeds it (%d in your backpack)" % inv.count("castings"), 2.5)
+			elif r == "fed":
+				say("In they go: the worms make castings out of scraps", 2.0)
+
+func _spot_line(key: int) -> String:
+	var farm: VoxelFarm = yard.farm
+	var b = farm.plants.get(key)
+	if b == null:
+		var s := farm.seed_pick()
+		return ("E  plant a %s seed" % VoxelFarm.STRAINS[s].name) if s >= 0 else "Hoed ground: buy seeds at the crate to plant"
+	if float(b.g) >= 1.0:
+		return "E  harvest: " + farm.hint(key)
+	var t := farm.hint(key)
+	if inv.count("castings") > 0 and int(b.fed) < VoxelFarm.FED_MAX:
+		t += "     E  feed it castings"
+	return t
+
+func _farm_spot(key: int) -> void:
+	var farm: VoxelFarm = yard.farm
+	var b = farm.plants.get(key)
+	if b == null:
+		var s := farm.seed_pick()
+		if s >= 0 and farm.plant(key, s):
+			sound.play("dig_dirt", Vector3.INF, -10.0, 1.4)
+			say("Planted: %s. Water it (the can, 6)" % VoxelFarm.STRAINS[s].name, 2.0)
+	elif float(b.g) >= 1.0:
+		var n := farm.harvest(key)
+		sound.play("item_pick", Vector3.INF, -2.0)
+		say("+%d %s buds" % [n, VoxelFarm.STRAINS[int(b.s)].short], 1.5)
+	elif farm.fertilise(key):
+		sound.play("dig_dirt", Vector3.INF, -10.0, 0.8)
+		say("Fed: it'll grow faster and give a bud more", 2.0)
+
 ## Off the arena, where the enemies never go (the bedroom, the yard).
 static func safe(p: Vector3) -> bool:
 	return VoxelBedroom.in_house(p) or VoxelYard.in_yard(p)
@@ -696,6 +806,7 @@ func close_inventory() -> void:
 func _storage_step(dt: float) -> void:
 	_say_t = maxf(0.0, _say_t - dt)
 	_say_label.text = _say_text if _say_t > 0.0 else ""
+	_cash_label.text = "$%d" % cash
 	if lock_view.is_open():
 		_use_label.text = ""
 		var lst := lock_view.storage
@@ -724,6 +835,8 @@ func _storage_step(dt: float) -> void:
 	_near_bed = 0
 	_near_ward = false
 	_near_bench = false
+	_near_prop = ""
+	_near_plant = -1
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -734,6 +847,13 @@ func _storage_step(dt: float) -> void:
 		_near_bed = int(bh[0]) if _near_st == null else 0
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
 		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
+		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(player.global_position):
+			_near_prop = yard.farm.prop_at(eye, fwd)
+			if _near_prop == "":
+				var ph: Array = yard.farm.plant_hit(eye, fwd)
+				_near_plant = int(ph[0])
+				if _near_plant < 0:
+					_near_plant = _tilled_at(eye, fwd)
 	var t := ""
 	if _near_st:
 		if _near_st.locked:
@@ -746,6 +866,10 @@ func _storage_step(dt: float) -> void:
 		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
 	elif _near_bench:
 		t = bench_line()
+	elif _near_prop != "":
+		t = _prop_line(_near_prop)
+	elif _near_plant >= 0:
+		t = _spot_line(_near_plant)
 	_use_label.text = t if down_t <= 0.0 else ""
 	if down_t > 0.0:
 		_near_st = null
@@ -886,8 +1010,10 @@ func _warm_up() -> void:
 		b.setup(key, _cube_m(key), chunk, _mat)
 		b.queue_free()
 
-func _on_died(_b: VoxelBody) -> void:
+func _on_died(b: VoxelBody) -> void:
 	kills += 1
+	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:
+		cash += int(VoxelFarm.KILL_CASH[b.key])     # (each player's game pays its own player for every kill)
 
 func _respawn_all() -> void:
 	var n := 0
@@ -991,6 +1117,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					house.ward_open = not house.ward_open
 				elif _near_bench:
 					bench_make()
+				elif _near_prop != "":
+					_farm_prop(_near_prop)
+				elif _near_plant >= 0:
+					_farm_spot(_near_plant)
 				else:
 					var vi := loadout.index_of("vacuum")
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))

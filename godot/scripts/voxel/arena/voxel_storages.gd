@@ -405,9 +405,11 @@ func save() -> void:
 	if save_path == "":
 		return
 	var d := {"v": 1, "inv": arena.inv.to_data(), "storage": _own_chests if _own_chests != null else to_data(),
-		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier}}
+		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier},
+		"cash": arena.cash}
 	if arena.yard:
 		d["yard"] = arena.yard.save_data()
+		d["farm"] = arena.yard.farm.save_data()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
@@ -426,4 +428,7 @@ func load_save() -> void:
 		arena.set_shovel_tier(int(d.tools.get("shovel", 0)))
 	if arena.yard and d.has("yard"):
 		arena.yard.load_data(d.yard)
+	if arena.yard and d.has("farm"):
+		arena.yard.farm.from_data(d.farm)
+	arena.cash = maxi(0, int(d.get("cash", 0)))
 	_dirty = false

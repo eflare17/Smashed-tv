@@ -10,7 +10,10 @@ extends VoxelMelee
 ## - the pick, left click: a small bite out of anything but bedrock: stones, stone, the hard rock, gold ore.
 ## What comes up goes in your backpack (dirt, clay, stone, gold nuggets); now and then a worm wriggles out of the dirt
 ## (yours too). A swing where nothing gives: a clang ("too hard: the pick"). Only the game whose player swung digs
-## (VoxelYard tells the other game); the other player's tool in your game just swings. Owned by the voxel session.
+## (VoxelYard tells the other game); the other player's tool in your game just swings.
+## Stage 5 adds two more: the hoe (left click: a row of three planting spots turned to tilled soil along the way you
+## face, where it's grass or dirt) and the watering can (hold left: pour; it waters the plants where the water lands,
+## eight plants a can; fill it at the water tank with E). Owned by the voxel session.
 
 const REACH := 3.0              # metres from the eye (top-down: the chest) it reaches
 const IMPACT := 0.16            # seconds into the swing it bites
@@ -18,6 +21,10 @@ const SWING_T := 0.5
 ## The shovel by tier: [scoop radius (m), the hardest it digs, seconds between scoops, name].
 const SHOVEL := [[0.2, 2, 0.7, "Rusty shovel"], [0.32, 2, 0.4, "Good shovel"], [0.5, 3, 0.22, "Golden shovel"]]
 const PICK := [0.21, 4, 0.55, "Pick"]
+const HOE := [0.0, 1, 0.45, "Hoe"]
+const CAN_STATS := [0.0, 0, 0.0, "Watering can"]
+const POUR_RATE := 1.0          # can-fulls (of eight) a second... a plant takes one eighth
+const POUR_REACH := 0.45        # metres round where the water lands that it waters
 const BLADE := [Color8(142, 76, 40), Color8(176, 180, 188), Color8(242, 198, 64)]
 
 var tier := 0                   # the shovel's (the local player's: arena.shovel_tier)
@@ -28,12 +35,23 @@ var _bit := false               # the swing has bitten
 var _pivot: Node3D
 var _blade_mat: StandardMaterial3D
 var _hand_node: Node3D
+var water := VoxelFarm.CAN      # the can's (plants' worth)
+var _pouring := false
+var _pour_t := 0.0
+var _stream: CPUParticles3D
 
 func is_shovel() -> bool:
 	return weapon_id == "shovel"
 
 func stats() -> Array:
-	return SHOVEL[clampi(tier, 0, 2)] if is_shovel() else PICK
+	match weapon_id:
+		"shovel":
+			return SHOVEL[clampi(tier, 0, 2)]
+		"hoe":
+			return HOE
+		"can":
+			return CAN_STATS
+	return PICK
 
 func _build() -> void:
 	_pivot = Node3D.new()
@@ -64,6 +82,9 @@ func _paint(m: StandardMaterial3D) -> void:
 
 # the tool, its grip at parent's origin, its shaft along -z (forward), its working end at the far end
 func _model(parent: Node3D, s: float) -> void:
+	if weapon_id == "can":
+		_can_model(parent, s)
+		return
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color8(150, 104, 58)
 	wood.roughness = 0.8
@@ -116,6 +137,16 @@ func _model(parent: Node3D, s: float) -> void:
 				sp.material_override = rust
 				sp.position = Vector3((-0.07 + 0.045 * k) * s, 0.002 * s, (0.04 - 0.035 * (k % 3)) * s)
 				blade.add_child(sp)
+	elif weapon_id == "hoe":
+		# a flat blade across the far end, turned down
+		var blade2 := MeshInstance3D.new()
+		var hb := BoxMesh.new()
+		hb.size = Vector3(0.17, 0.11, 0.012) * s
+		blade2.mesh = hb
+		blade2.material_override = _blade_mat
+		blade2.position = Vector3(0, -0.05 * s, -0.74 * s)
+		blade2.rotation.x = -0.25
+		parent.add_child(blade2)
 	else:
 		# the pick's head across the far end: a point each way
 		var head := MeshInstance3D.new()
@@ -135,8 +166,82 @@ func _model(parent: Node3D, s: float) -> void:
 			tip.rotation.x = e * 0.4
 			parent.add_child(tip)
 
+# the can: a green steel body, a long spout forward, a handle over the top (its spout's end where the water comes out)
+func _can_model(parent: Node3D, s: float) -> void:
+	var green := StandardMaterial3D.new()
+	green.albedo_color = Color8(70, 130, 90)
+	green.metallic = 0.5
+	green.roughness = 0.45
+	var body := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.07 * s
+	cm.bottom_radius = 0.08 * s
+	cm.height = 0.2 * s
+	cm.radial_segments = 16
+	body.mesh = cm
+	body.material_override = green
+	body.position = Vector3(0, -0.05 * s, -0.12 * s)
+	parent.add_child(body)
+	var spout := MeshInstance3D.new()
+	var sm := CylinderMesh.new()
+	sm.top_radius = 0.012 * s
+	sm.bottom_radius = 0.018 * s
+	sm.height = 0.3 * s
+	spout.mesh = sm
+	spout.material_override = green
+	spout.rotation.x = -PI * 0.5 + 0.5
+	spout.position = Vector3(0, 0.0, -0.32 * s)
+	parent.add_child(spout)
+	var rose := MeshInstance3D.new()
+	var rm := CylinderMesh.new()
+	rm.top_radius = 0.03 * s
+	rm.bottom_radius = 0.022 * s
+	rm.height = 0.03 * s
+	rose.mesh = rm
+	rose.material_override = green
+	rose.rotation.x = -PI * 0.5 + 0.5
+	rose.position = Vector3(0, 0.06 * s, -0.45 * s)
+	parent.add_child(rose)
+	var handle := MeshInstance3D.new()
+	var hm := BoxMesh.new()
+	hm.size = Vector3(0.02, 0.02, 0.16) * s
+	handle.mesh = hm
+	handle.material_override = green
+	handle.position = Vector3(0, 0.08 * s, -0.1 * s)
+	parent.add_child(handle)
+	if parent == _pivot:
+		_stream = CPUParticles3D.new()
+		_stream.amount = 60
+		_stream.lifetime = 0.6
+		_stream.emitting = false
+		_stream.direction = Vector3(0, -0.4, -1)
+		_stream.spread = 8.0
+		_stream.initial_velocity_min = 2.0
+		_stream.initial_velocity_max = 2.6
+		_stream.gravity = Vector3(0, -9.8, 0)
+		_stream.local_coords = false
+		var dm := SphereMesh.new()
+		dm.radius = 0.008
+		dm.height = 0.016
+		var wm := StandardMaterial3D.new()
+		wm.albedo_color = Color(0.55, 0.78, 1.0, 0.8)
+		wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		dm.material = wm
+		_stream.mesh = dm
+		_stream.position = Vector3(0, 0.06 * s, -0.47 * s)
+		parent.add_child(_stream)
+
+## The can filled (E at the water tank).
+func fill() -> void:
+	water = VoxelFarm.CAN
+
 # the view's pose k into a swing (0 at rest): the shovel thrusts in and scoops up; the pick swings up then down
 func _pose(k: float) -> void:
+	if weapon_id == "can":
+		var tip := 1.0 if _pouring else 0.0
+		_pivot.position = Vector3(0.24, -0.26, -0.42)
+		_pivot.rotation = _pivot.rotation.lerp(Vector3(-0.1 - 0.6 * tip, 0.2, 0.1), 0.2)
+		return
 	if is_shovel():
 		var push := sin(clampf(k / 0.4, 0.0, 1.0) * PI * 0.5) * (1.0 - clampf((k - 0.5) / 0.5, 0.0, 1.0))
 		var scoop := sin(clampf((k - 0.3) / 0.5, 0.0, 1.0) * PI)
@@ -149,6 +254,10 @@ func _pose(k: float) -> void:
 		_pivot.rotation = Vector3(-0.2 + 1.0 * up - 0.9 * down, 0.1, 0.05)
 
 func press(button: int) -> void:
+	if weapon_id == "can":
+		if button == MOUSE_BUTTON_LEFT:
+			_pouring = true
+		return
 	if _cd > 0.0 or _t >= 0.0:
 		return
 	if button == MOUSE_BUTTON_RIGHT and not is_shovel():
@@ -159,8 +268,19 @@ func press(button: int) -> void:
 	_cd = float(stats()[2])
 	sfx("swoosh_heavy", Vector3.INF if shooter == arena.me else shooter.player.global_position, -10.0, 1.3)
 
+func release(button: int) -> void:
+	if weapon_id == "can" and button == MOUSE_BUTTON_LEFT:
+		_pouring = false
+
+func on_deselect() -> void:
+	_pouring = false
+
 func step(dt: float) -> void:
 	_cd = maxf(0.0, _cd - dt)
+	if weapon_id == "can":
+		_pour(dt)
+		_pose(0.0)
+		return
 	if _t < 0.0:
 		_pose(0.0)
 		return
@@ -177,7 +297,37 @@ func cooling() -> float:
 	return _cd / float(stats()[2]) if _cd > 0.0 else 0.0
 
 func bar_text() -> String:
+	if weapon_id == "can":
+		return "%d/%d" % [int(ceil(water)), int(VoxelFarm.CAN)]
 	return ["rusty", "good", "gold"][tier] if is_shovel() else ""
+
+# holding left with the can: water out of the spout while there's some; the plants where it lands watered
+func _pour(dt: float) -> void:
+	var on := _pouring and water > 0.0 and (shooter.weapon == "can")
+	if _stream:
+		_stream.emitting = on and not top_down()
+	if not on:
+		if _pouring and water <= 0.0 and shooter == arena.me:
+			arena.say("The can's empty: fill it at the water tank (E there)", 1.5)
+		return
+	if shooter != arena.me:
+		return
+	water = maxf(0.0, water - dt * POUR_RATE)
+	_pour_t += dt
+	if _pour_t < 0.15:
+		return
+	_pour_t = 0.0
+	sfx("vacuum_pop", Vector3.INF, -18.0, 2.2)
+	var a := _aim_ground()
+	if a.is_empty():
+		return
+	var farm: VoxelFarm = arena.yard.farm
+	var p: Vector3 = a[0]
+	for key in farm.plants.keys():
+		var at := farm.spot_top(key)
+		if at != Vector3.INF and Vector2(at.x - p.x, at.z - p.z).length() <= POUR_REACH:
+			if farm.water(key):
+				arena.say("Watered: %s" % farm.hint(key), 1.5)
 
 # where the look meets the ground within reach: [point, normal] or []
 func _aim_ground() -> Array:
@@ -215,6 +365,9 @@ func _bite() -> void:
 	var st := stats()
 	var r: float = st[0]
 	var yard = arena.yard
+	if weapon_id == "hoe":
+		_hoe(p)
+		return
 	if _filling:
 		var have: int = arena.inv.count("dirt")
 		if have <= 0:
@@ -264,6 +417,23 @@ func _bite() -> void:
 		sfx("worm_find", p, -2.0)
 		arena.say("A worm! (%d in your backpack)" % arena.inv.count("worm") if worms == 1 else "%d worms! (%d in your backpack)" % [worms, arena.inv.count("worm")], 2.0)
 
+# the hoe lands at p: the spot there and the next two the way you face, tilled
+func _hoe(p: Vector3) -> void:
+	var farm: VoxelFarm = arena.yard.farm
+	var k := farm.spot_of(p)
+	if k < 0:
+		return
+	var f := look()
+	var stepk := (1000 if f.x > 0.0 else -1000) if absf(f.x) > absf(f.z) else (1 if f.z > 0.0 else -1)
+	var keys := [k, k + stepk, k + stepk * 2]
+	var n: int = arena.yard.till(keys)
+	if n == 0:
+		sfx("dig_scrape", p, -4.0, 1.2)
+		arena.say("The hoe only turns grass or dirt", 1.5)
+		return
+	sfx("dig_dirt", p, -6.0, 1.3)
+	_dust(p, VoxelTerrain.COL[VoxelTerrain.TILLED])
+
 # a puff of bits flying up from the dig
 func _dust(p: Vector3, col: Color) -> void:
 	var ps := CPUParticles3D.new()
@@ -309,7 +479,12 @@ func hand_pose() -> String:
 func draw_icon(ci: CanvasItem, r: Rect2, col: Color) -> void:
 	var y := r.position.y + r.size.y * 0.5
 	ci.draw_rect(Rect2(r.position.x + r.size.x * 0.05, y - 2, r.size.x * 0.62, 4), Color(0.6, 0.42, 0.24, col.a))
-	if is_shovel():
+	if weapon_id == "can":
+		ci.draw_rect(Rect2(r.position.x + r.size.x * 0.2, r.position.y + r.size.y * 0.3, r.size.x * 0.4, r.size.y * 0.5), Color(0.3, 0.55, 0.38, col.a))
+		ci.draw_rect(Rect2(r.position.x + r.size.x * 0.58, r.position.y + r.size.y * 0.3, r.size.x * 0.3, 3), Color(0.3, 0.55, 0.38, col.a))
+	elif weapon_id == "hoe":
+		ci.draw_rect(Rect2(r.position.x + r.size.x * 0.66, y - r.size.y * 0.3, r.size.x * 0.06, r.size.y * 0.5), Color(0.6, 0.6, 0.64, col.a))
+	elif is_shovel():
 		var bc: Color = BLADE[tier]
 		ci.draw_rect(Rect2(r.position.x + r.size.x * 0.66, y - r.size.y * 0.22, r.size.x * 0.28, r.size.y * 0.44), Color(bc.r, bc.g, bc.b, col.a))
 	else:
