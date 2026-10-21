@@ -20,17 +20,50 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
 
 - Block enemies one at a time (the owner, 20 Oct; F3 / F5 send in more; grunt, swarmer, brute, batter, about 1.7-2.2 m tall, 2.3 cm cubes = one sprite pixel a
   cube; F2 switches to two pixels a cube) come at you.
-- **Weapons on the number keys** (the owner, 20 Oct; `voxel_loadout.gd`, `voxel_weapon_bar.gd`): 1 blaster, 2 shotgun,
-  3 sword, 4 bat, 5 sledgehammer, 6 chainsaw, 7 spear, 8 vacuum (a melee weapon whose script isn't there is left out);
-  the wheel cycles, Q goes back to the last one, E to the vacuum and back. Each uses both mouse buttons: blaster fire
-  (10 a second, holes about 4 cubes wide) / aim in (zoom, tighter, slower look); shotgun fire (9 pellets) / both
-  barrels (18, wider, longer reload); sword slash / chop; vacuum suck / right click held + wheel sizes the brush. A
-  switch takes 0.25 s (the old one goes down, the new comes up; buttons held through it count for nothing till let go).
-  The weapon bar along the bottom: each slot's number, a drawing, its name (the vacuum's with the cubes taken), the
-  one out lit and taller, a cooldown filling its edge, and what the two buttons do above. In first person the game's
-  own block blaster and shotgun are in your hands (kick when fired, closing in when aimed); top-down Jared holds the one
-  out (two blasters, one a hand, as in the game). Melee weapons share `voxel_melee.gd` (press / hold / release, a view,
-  a hand mesh, a drawing, checks) and `voxel_pieces.gd` (the bits cut off, as rigid bodies).
+- **Weapons in groups on 1-5, as in Half-Life** (the owner, 20 Oct; `voxel_loadout.gd`, `voxel_weapon_bar.gd`):
+  1 melee (sword, bat, sledgehammer, chainsaw, spear), 2 guns (pistol, shotgun, laser cutter), 3 special
+  (flamethrower, freeze ray, harpoon gun, gravity gun), 4 explosives (grenade launcher), 5 the vacuum. A key takes out
+  the one last used in its group; again steps to the next in it. The wheel cycles all of them, Q goes back to the last
+  one, R reloads (or the weapon's own R move), E the vacuum and back. Every weapon uses both mouse buttons. A switch
+  takes 0.25 s. The weapon bar along the bottom draws the groups under their keys, a drawing of each weapon, its rounds
+  or fuel or heat, a cooldown filling its edge, and the one out's name and both buttons' moves above. Every weapon is a
+  script on `voxel_melee.gd` (press / hold / release / step, a first-person view, a hand mesh for top-down, a drawing,
+  sounds, headless checks); a weapon whose file isn't there is left out.
+- **Sound** (`voxel_sound.gd`): every weapon has its sounds, made from noise and tones by
+  `assets/voxel/tools/sfx.py` and one `sfx_<weapon>.py` each (rerun with `python3 -I`; they write
+  `assets/voxel/sound/*.wav`); the pistol uses the game's own shots.
+- **Pistol and shotgun, reworked** (the owner: "the pistol and shotgun need some work"; `voxel_gun.gd` and its two):
+  the game's block guns with a clip (12) or a tube (6), R or firing empty reloads (the pistol's magazine drops out and a
+  fresh one goes in; the shotgun loads shell by shell, a shot stops it), a muzzle flash and light, tracers from the
+  muzzle, spent shells thrown out of the side that lie where they land. Pistol: held fire sprays wider (bloom), tapped
+  shots land true; right click aims in. Shotgun: 9 pellets and a pump, holes smaller further off; up close it knocks
+  them off their feet; right click is both barrels (18 pellets), and at point blank it blows a chunk out of them and
+  throws them across the room.
+- **Fire and ice** (`voxel_body.gd`, `voxel_flames.gd`): set alight, a body burns by itself, the fire spreading cube to
+  cube, charring them black and burning them to ash (the burnt-off bits drop), hurting; a burning enemy panics and runs
+  about flailing, not fighting. Frost slows them, then freezes them solid: an ice statue for 8 s that then thaws; the
+  cold puts fire out. A frozen body shatters into ice cubes at any blow (a shot, a swing, being knocked flying, landing).
+  An enemy knocked flying fast bowls over whoever it hits.
+- **Flamethrower** (slot 3, `voxel_weapon_flamethrower.gd`): hold left for a 6 m stream of fire that sets alight
+  everything it reaches (alive, dead or lying), a frozen one thawed first; a tank of 8 s that refills. Right click lobs
+  a fire bomb: a patch of fire on the floor for 6 s that catches everyone standing or lying in it.
+- **Freeze ray** (slot 3, `voxel_weapon_freezeray.gd`): hold left for a twisting cyan beam that freezes them solid in
+  about 0.75 s. Right click fires an ice shard: into a statue it shatters it (and flies on to the next), into anyone
+  else a small hole and more frost.
+- **Laser cutter** (slot 2, `voxel_weapon_laser.gd`): hold left for a thin red beam that cuts right through along its
+  line, so dragging it across them cuts a clean plane: limbs, heads, bodies in half; cauterised (few bits, glowing);
+  5 s overheats it (R vents). Hold right to overcharge, then a fat beam through every body in line to the wall.
+- **Harpoon gun** (slot 3, `voxel_weapon_harpoon.gd`): left click harpoons the first body and reels it in to stand
+  staggering in front of you (corpses too); right click harpoons a limb or the head and yanks it off whole, flying back
+  at you on the line. Top-down it aims at the body under the mouse.
+- **Gravity gun** (slot 3, `voxel_weapon_gravity.gd`): left click grabs a piece, a corpse or a live enemy (flailing)
+  and holds it in front of you; click again to throw it (a thrown body bowls the others over); right click drops it.
+  Right click with nothing held fires a black hole: for 4.5 s it drags in every body near, lifting and spinning them,
+  crushes the nearest bit by bit, swallows the pieces and the flying cubes, then bursts.
+- **Grenade launcher** (slot 4, `voxel_weapon_grenades.gd`): left click a bouncing grenade (off at once on a body hit
+  hard, else after 2.2 s); right click a sticky bomb that sticks to a wall, the floor or a body part (riding on it); R
+  sets them all off one after another (with none out, R reloads the drum of six). The blast tears craters on the side
+  facing it, limbs off at point blank, throws them, sets the near ones alight, shatters frozen ones.
 - **A hole exactly where each shot lands**: the shot is traced into the body part's voxel grid (the ray turned into
   that bone's rest space, stepped cell by cell), the cubes in a ball round the hit are knocked out and fly (a
   MultiMesh of up to 8000 cubes in one draw call, bouncing; once at rest they stay, in a second MultiMesh of up to
@@ -42,7 +75,7 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   for about a third of a second, a shove back along the shot by how many cubes it took, the chest and head thrown
   back); after a stagger they push through for 0.6 s (hits only nudge), so held fire slows them but can't pin them. Walking: the step is scaled to each kind's leg length so the feet
   keep up with the ground (they skated before), arms swing against the legs. The dead topple and lie 12 s.
-- **Sword** (the owner 20 Oct; `voxel_sword.gd`; slot 3: left click slashes the way the mouse was moving, still mouse
+- **Sword** (the owner 20 Oct; `voxel_sword.gd`; slot 1: left click slashes the way the mouse was moving, still mouse
   back and forth, right click chops down, top-down a low sweep at the legs); F (or a mouse side button) slashes with
   any weapon out, C chops (the blade shows only while it swings). The slash is the plane through your eye along
   where you look and the swing; every cube within a cube of it, inside 2.6 m and the 160-degree sweep, is cut out
@@ -51,21 +84,24 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   (kills). A joint inside the cut keeps the side toward its parent, so a neck cut takes the whole head. A slash
   through the body takes a third of its health; cut through the middle, the top half comes off. A hit freezes the
   game for 70 ms (hit-stop). A cut costs 6-15 ms here (worker threads mesh the cut-off ends).
-- **Bat** (slot 4, `voxel_melee_bat.gd`): blunt, never cuts. Left click a quick level swing: the nearest one in the
+- **Bat** (slot 1, `voxel_melee_bat.gd`): blunt, never cuts. Left click a quick level swing: the nearest one in the
   arc takes a dent (the cubes fly), loses some health and is knocked flying (`VoxelBody.launch`: tumbling backward,
   lands, lies a moment, gets up; dead ones fly too). Hold right click to wind up a home run (0.95 s to full; it glows
   and shakes), let go: harder, further, a longer hit-stop; a full charge hits everyone in the arc and a full-charge
   hit on the head knocks it clean off (top-down: put the mouse on the top of the head).
-- **Sledgehammer** (slot 5, `voxel_melee_hammer.gd`): crushing. Left click an overhead smash where you look: a round
+- **Sledgehammer** (slot 1, `voxel_melee_hammer.gd`): crushing. Left click with the mouse moving sideways swings it
+  that way (the owner: "can you make it so the sledge hammer can swing left and right"): a level sweep across the front
+  that craters the first body it meets and throws it sideways across the room, bowling over whoever it lands on.
+  Left click with the mouse still (or moving up or down) is an overhead smash where you look: a round
   crater (`VoxelBody.carve`, a ball 0.17 m) in whatever it meets: a chest caved in, the top of a head (kills), an arm or
   leg knocked off where it lands; on the floor it throws the lying cubes back up. Right click a ground slam: a
   shockwave rings out 4.5 m and throws everyone it reaches up and away (nearer, harder) and down; lying cubes jump.
-- **Chainsaw** (slot 6, `voxel_melee_chainsaw.gd`): grinding. Hold left: the bar goes out and about ten times a second
+- **Chainsaw** (slot 1, `voxel_melee_chainsaw.gd`): grinding. Hold left: the bar goes out and about ten times a second
   grinds a thin kerf (a short `carve` capsule) out of every body it touches, so sweeping the mouse drags the cut
   through and saws off an arm, a leg, the head or the top half; in flesh the bar drags behind the mouse; the one being
   sawn is held, twitching; chips and blood spray. Right click lunges (every 1.5 s): thrown forward grinding, into the
   first one, then rips up out of them through the head.
-- **Spear** (slot 7, `voxel_melee_spear.gd`): piercing. Left click a thrust: the tip's line (to 3.2 m) bores a thin
+- **Spear** (slot 1, `voxel_melee_spear.gd`): piercing. Left click a thrust: the tip's line (to 3.2 m) bores a thin
   tunnel through every body on it, two or three skewered at once; through the brain it kills, through a joint the limb
   comes off. Right click throws it (28 m/s): it bores through up to three bodies and sticks in the wall or floor where
   it lands; your hands are empty till right click again (or walking up to it) calls it back, boring through anyone in
@@ -89,7 +125,7 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   whole); a cut next to a joint keeps the cubes still there; carve's health per cube scales with the cube's size (F2);
   a cut that can't have split a part skips the fill over the whole part (a chainsaw bite into the chest about 5 ms
   instead of 7-20); tiny bits left floating at a cut's edge fly off as cubes, not pieces.
-- **Vacuum gun** (slot 8, or E; `voxel_vacuum.gd`), sucking like Astroneer's terrain tool (the owner, 20
+- **Vacuum gun** (slot 5, or E; `voxel_vacuum.gd`), sucking like Astroneer's terrain tool (the owner, 20
   Oct): a see-through brush sphere sits where you point (the floor, a wall, or 6.5 m out), right click + the wheel
   sizes it (0.35-1.6 m). Hold click: the cubes inside it (lying or flying) come loose at 1500 a second, nearest the middle
   first, and swirl up a twisting beam into the nozzle, counted as resources by colour (blocks, meat, bone, brain; the
@@ -103,7 +139,7 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   20-50 enemies and ~1000 cubes flying; the worst frame (a new wave appearing) about 20 ms. The GPU side (a few
   hundred draw calls, 0.5-2 million triangles with shadows) is for the owner's RTX 4090 to judge.
 - Tests: `test/voxel/logic_test.tscn` checks the tracing, holes, sword cuts, vacuum, weapon slots, carve/launch and each melee weapon's own checks
-  (193/193); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim]` runs a weapon's left then right click on a
+  (336); `-- --meleetest=<id> --shots=dir [--topdown] [--headaim] [--swing=left|right] [--again] [--rkey]` runs a weapon's left then right click on a
   standing grunt, saving frames; `-- --weaponshots=dir` takes every slot out, first person then top-down; `-- --swordtest=dir`
   slashes a standing grunt (an arm, the neck, the knees) then vacuums, saving frames; `-- --walkcheck=dir --legless`
   shows the worm crawl. The arena's own self-test:
