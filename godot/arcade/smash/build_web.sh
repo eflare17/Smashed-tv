@@ -12,8 +12,10 @@ OUT="$REPO/smash-play"
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 mkdir -p "$W/arcade/smash"
-for f in smash.gd smash.tscn smash_gibs.gd smash_horde.gd smash_hud.gd smash_input.gd smash_shots.gd smash_vox.gd; do
-	cp "$HERE/$f" "$W/arcade/smash/"
+# the game's scripts and scene (not the bench, the launcher or this)
+for f in "$HERE"/smash*.gd "$HERE"/smash.tscn; do
+	case "$(basename "$f")" in smash_bench.gd) continue ;; esac
+	cp "$f" "$W/arcade/smash/"
 done
 cat > "$W/project.godot" <<'P'
 config_version=5

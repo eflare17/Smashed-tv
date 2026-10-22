@@ -16,10 +16,25 @@ const GUN := Color(0.25, 0.25, 0.28)
 const BOOT := Color(0.12, 0.1, 0.1)
 const EYE := Color(0.1, 0.05, 0.05)
 const BLOOD := Color(0.6, 0.03, 0.03)
+const BRUTE_VEST := Color(0.75, 0.12, 0.1)
+const BRUTE_PANTS := Color(0.32, 0.32, 0.36)
+const MOHAWK := Color(1.0, 0.3, 0.75)
+const CLUB := Color(0.45, 0.28, 0.12)
+const HOST_SUIT := Color(0.16, 0.16, 0.4)
+const HOST_HAIR := Color(0.1, 0.07, 0.05)
+const HOST_SHINE := Color(0.45, 0.4, 0.35)
+const WHITE := Color(1, 1, 1)
+const BOWTIE := Color(0.9, 0.1, 0.1)
+const MOUTH := Color(0.3, 0.02, 0.05)
+const BILL := Color(0.35, 0.75, 0.3)
+const BILL_DARK := Color(0.15, 0.45, 0.15)
+const SCORCH := Color(0.07, 0.06, 0.05)
 
 ## Gib colours (chunks pick from these).
 const GRUNT_GIBS := [GRUNT_SHIRT, GRUNT_SHIRT, SKIN, GRUNT_PANTS, BLOOD, BLOOD, GRUNT_CAP]
+const BRUTE_GIBS := [BRUTE_VEST, BRUTE_VEST, SKIN, BRUTE_PANTS, BLOOD, BLOOD, MOHAWK]
 const PLAYER_GIBS := [PLAYER_SUIT, PLAYER_SUIT, PLAYER_DARK, SKIN, HAIR, BLOOD, BLOOD]
+const FIRE_GIBS := [Color(1.0, 0.85, 0.2), Color(1.0, 0.5, 0.1), Color(0.9, 0.25, 0.05), Color(0.25, 0.22, 0.2)]
 
 const _DIRS := [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
 const _SHADE := [0.9, 0.62, 1.0, 0.5, 0.82, 0.72]
@@ -64,11 +79,71 @@ static func _player_boxes(frame: int) -> Array:
 		[2, 10, 3, 2, 10, 3, EYE], [4, 10, 3, 4, 10, 3, EYE],
 	]
 
+## The brute: a wide grunt with a club and a mohawk (drawn 1.35x, so his voxels are chunkier too).
+static func _brute_boxes(frame: int) -> Array:
+	var a := 1 if frame == 0 else 0
+	var b := 1 - a
+	return [
+		[1, 0, 1 + a, 3, 3, 2 + a, BRUTE_PANTS], [5, 0, 1 + b, 7, 3, 2 + b, BRUTE_PANTS],
+		[1, 0, 1 + a, 3, 0, 2 + a, BOOT], [5, 0, 1 + b, 7, 0, 2 + b, BOOT],
+		[1, 4, 0, 7, 8, 4, BRUTE_VEST], [1, 4, 0, 7, 4, 4, BOOT],
+		[0, 7, 1, 0, 8, 3 + a, SKIN], [8, 7, 1, 8, 8, 3 + b, SKIN],
+		[0, 8, 3 + a, 0, 8, 6 + a, CLUB], [0, 7, 6 + a, 0, 9, 7 + a, CLUB],
+		[3, 9, 1, 5, 11, 3, SKIN],
+		[4, 12, 0, 4, 12, 3, MOHAWK], [4, 11, 0, 4, 11, 0, MOHAWK],
+		[3, 10, 3, 3, 10, 3, EYE], [5, 10, 3, 5, 10, 3, EYE],
+	]
+
+## The TV host, head and shoulders, facing the camera (+Z), waving a dollar bill. Frame 1 has his mouth open.
+static func _host_boxes(frame: int) -> Array:
+	var talk := frame == 1
+	var bill_y := 1 if talk else 0
+	var boxes := [
+		[0, 0, 0, 12, 4, 4, HOST_SUIT],
+		[5, 1, 4, 7, 4, 4, WHITE], [5, 4, 4, 7, 4, 4, BOWTIE],
+		[3, 5, 0, 9, 12, 4, SKIN],
+		[2, 8, 2, 2, 9, 3, SKIN], [10, 8, 2, 10, 9, 3, SKIN],
+		[3, 12, 0, 9, 13, 4, HOST_HAIR], [3, 6, 0, 9, 12, 0, HOST_HAIR],
+		[3, 10, 0, 3, 12, 2, HOST_HAIR], [9, 10, 0, 9, 12, 2, HOST_HAIR],
+		[4, 13, 4, 7, 13, 5, HOST_HAIR], [5, 13, 2, 6, 13, 3, HOST_SHINE],
+		[4, 10, 4, 4, 10, 4, WHITE], [5, 10, 4, 5, 10, 4, EYE],
+		[7, 10, 4, 7, 10, 4, EYE], [8, 10, 4, 8, 10, 4, WHITE],
+		[4, 11, 4, 5, 11, 4, HOST_HAIR], [7, 11, 4, 8, 11, 4, HOST_HAIR],
+		[6, 9, 5, 6, 9, 5, SKIN],
+		# raised arm (no fingers: a fist) with the bill above it
+		[11, 4, 1, 12, 8, 3, HOST_SUIT], [11, 9, 1, 12, 10, 3, SKIN],
+		[10, 11 + bill_y, 3, 13, 13 + bill_y, 3, BILL], [11, 12 + bill_y, 3, 12, 12 + bill_y, 3, BILL_DARK],
+	]
+	if talk:
+		boxes.append_array([[4, 6, 4, 8, 7, 4, MOUTH], [4, 7, 4, 8, 7, 4, WHITE], [3, 7, 4, 3, 7, 4, MOUTH], [9, 7, 4, 9, 7, 4, MOUTH]])
+	else:
+		boxes.append_array([[4, 7, 4, 8, 7, 4, WHITE], [3, 8, 4, 3, 8, 4, MOUTH], [9, 8, 4, 9, 8, 4, MOUTH]])
+	return boxes
+
 static func grunt_mesh(frame: int) -> ArrayMesh:
 	return from_boxes(_grunt_boxes(frame), Vector3(3.5, 0, 2))
 
 static func player_mesh(frame: int) -> ArrayMesh:
 	return from_boxes(_player_boxes(frame), Vector3(3.5, 0, 2))
+
+static func brute_mesh(frame: int) -> ArrayMesh:
+	return from_boxes(_brute_boxes(frame), Vector3(4.5, 0, 2.5))
+
+static func host_mesh(frame: int) -> ArrayMesh:
+	return from_boxes(_host_boxes(frame), Vector3(6.5, 0, 2))
+
+## A rocket pointing +Z, centred on the origin.
+static func rocket_mesh() -> ArrayMesh:
+	return from_boxes([
+		[0, 0, 0, 1, 1, 3, Color(0.9, 0.2, 0.15)], [0, 0, 4, 1, 1, 4, Color(0.8, 0.8, 0.8)],
+		[0, 0, -1, 1, 1, -1, Color(1.0, 0.8, 0.2)],
+	], Vector3(1, 1, 2))
+
+## Pickup crate: white (the slot's material tints it), banded so it reads as a box.
+static func crate_mesh() -> ArrayMesh:
+	return from_boxes([
+		[0, 0, 0, 5, 5, 5, WHITE], [0, 2, 0, 5, 3, 5, Color(0.55, 0.55, 0.55)],
+	], Vector3(3, 0, 3))
 
 ## Voxel boxes -> one mesh of the outside faces. `center` (in voxels) lands on the origin.
 static func from_boxes(boxes: Array, center: Vector3) -> ArrayMesh:
@@ -92,36 +167,44 @@ static func box_mesh(size: Vector3, color: Color) -> ArrayMesh:
 	m.box(-size * 0.5, size, color)
 	return m.commit()
 
-## The arena: checkered floor, walls with a door gap in the middle of each side, and a short corridor behind
-## every door that the grunts walk in through. `half` is half the inside width.
-static func arena_mesh(half: float, door_half: float, corridor: float) -> ArrayMesh:
+## The arena is three kinds of mesh so each room can re-tint them through their materials (nothing rebuilt):
+## the checkered floor plus the corridor floors (greys), the walls (white), and one door frame per door.
+## `half` is half the inside width; door k is turned k quarter-turns from north (0 N, 1 E, 2 S, 3 W).
+static func floor_mesh(half: float, door_half: float, corridor: float) -> ArrayMesh:
 	var m := _Arrays.new()
 	var tile := 2.0
 	var n := int(half * 2 / tile)
 	for i in n:
 		for j in n:
-			var c := Color(0.25, 0.23, 0.22) if (i + j) % 2 == 0 else Color(0.31, 0.29, 0.27)
+			var c := Color(0.8, 0.8, 0.8) if (i + j) % 2 == 0 else WHITE
 			m.box(Vector3(-half + i * tile, -0.2, -half + j * tile), Vector3(tile, 0.2, tile), c)
-	var wall := Color(0.55, 0.22, 0.6)
-	var post := Color(1.0, 0.6, 0.1)
+	for k in 4:
+		_turned_box(m, Vector3(-door_half, -0.2, -half - 1.0 - corridor), Vector3(door_half, 0, -half), k, Color(0.45, 0.45, 0.5))
+	return m.commit()
+
+static func walls_mesh(half: float, door_half: float, corridor: float) -> ArrayMesh:
+	var m := _Arrays.new()
 	var t := 1.0
 	var h := 1.2
 	for k in 4:
-		# laid out for the north side, then turned to the other three
-		var boxes := [
-			[Vector3(-half - t, 0, -half - t), Vector3(-door_half, h, -half), wall],
-			[Vector3(door_half, 0, -half - t), Vector3(half + t, h, -half), wall],
-			[Vector3(-door_half - 0.4, 0, -half - t), Vector3(-door_half, h + 0.4, -half), post],
-			[Vector3(door_half, 0, -half - t), Vector3(door_half + 0.4, h + 0.4, -half), post],
-			[Vector3(-door_half - t, 0, -half - t - corridor), Vector3(-door_half, h, -half - t), wall],
-			[Vector3(door_half, 0, -half - t - corridor), Vector3(door_half + t, h, -half - t), wall],
-			[Vector3(-door_half, -0.2, -half - t - corridor), Vector3(door_half, 0, -half), Color(0.12, 0.12, 0.16)],
-		]
-		for bx in boxes:
-			var a := _turn(bx[0], k)
-			var b := _turn(bx[1], k)
-			m.box(a.min(b), (a - b).abs(), bx[2])
+		_turned_box(m, Vector3(-half - t, 0, -half - t), Vector3(-door_half - 0.4, h, -half), k, WHITE)
+		_turned_box(m, Vector3(door_half + 0.4, 0, -half - t), Vector3(half + t, h, -half), k, WHITE)
+		_turned_box(m, Vector3(-door_half - t, 0, -half - t - corridor), Vector3(-door_half, h, -half - t), k, WHITE)
+		_turned_box(m, Vector3(door_half, 0, -half - t - corridor), Vector3(door_half + t, h, -half - t), k, WHITE)
 	return m.commit()
+
+static func door_mesh(half: float, door_half: float, k: int) -> ArrayMesh:
+	var m := _Arrays.new()
+	var t := 1.0
+	var h := 1.6
+	_turned_box(m, Vector3(-door_half - 0.4, 0, -half - t), Vector3(-door_half, h, -half), k, WHITE)
+	_turned_box(m, Vector3(door_half, 0, -half - t), Vector3(door_half + 0.4, h, -half), k, WHITE)
+	return m.commit()
+
+static func _turned_box(m: _Arrays, a: Vector3, b: Vector3, k: int, color: Color) -> void:
+	a = _turn(a, k)
+	b = _turn(b, k)
+	m.box(a.min(b), (a - b).abs(), color)
 
 static func _turn(p: Vector3, k: int) -> Vector3:
 	for i in k:
@@ -148,7 +231,20 @@ static func splat_texture() -> ImageTexture:
 					break
 	return ImageTexture.create_from_image(img)
 
-## Unshaded vertex-colour material shared by the voxel meshes.
+## Explosion flash picture: a chunky ragged disc, brighter in the middle.
+static func boom_texture() -> ImageTexture:
+	var s := 16
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	for y in s:
+		for x in s:
+			var d := Vector2(x + 0.5 - s * 0.5, y + 0.5 - s * 0.5).length() / (s * 0.5)
+			var edge := 0.85 + rng.randf() * 0.15
+			img.set_pixel(x, y, Color(1, 1, 1, 0) if d > edge else Color(1, 1, 1, 1.0 if d < 0.5 else 0.7))
+	return ImageTexture.create_from_image(img)
+
+## Unshaded vertex-colour material shared by the voxel meshes. Its albedo colour tints them (rooms, flashes).
 static func flat_material() -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

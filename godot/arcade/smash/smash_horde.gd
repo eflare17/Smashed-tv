@@ -4,7 +4,7 @@ extends Node3D
 ## one per walk frame, filled straight from a float buffer each frame. A uniform grid (rebuilt each frame with a
 ## counting sort) finds neighbours for the crowd push-apart and for bullet hits.
 
-const Vox := preload("smash_vox.gd")
+const SmashVox := preload("smash_vox.gd")
 
 const MAX := 4096
 const RADIUS := 0.33
@@ -52,7 +52,7 @@ var _buf_a := PackedFloat32Array()
 var _buf_b := PackedFloat32Array()
 
 func _init() -> void:
-	name = "Horde"
+	name = "SmashHorde"
 	pos.resize(MAX)
 	facing.resize(MAX)
 	veer.resize(MAX)
@@ -69,11 +69,11 @@ func _init() -> void:
 	for i in MAX:
 		_buf_a[i * 12 + 5] = 1.0
 		_buf_b[i * 12 + 5] = 1.0
-	var mat := Vox.flat_material()
+	var mat := SmashVox.flat_material()
 	for f in 2:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = Vox.grunt_mesh(f)
+		mm.mesh = SmashVox.grunt_mesh(f)
 		mm.mesh.surface_set_material(0, mat)
 		mm.instance_count = MAX
 		mm.visible_instance_count = 0
@@ -214,6 +214,34 @@ func hit_test(p: Vector2, r: float) -> int:
 			if j < count and dead[j] == 0 and (pos[j] - p).length_squared() < rr:
 				return j
 	return -1
+
+## Pushes every grunt out of the circle at `c` (a brute's body). `r` + RADIUS must stay under 2 * CELL.
+func push_out(c: Vector2, r: float) -> void:
+	var rr := r + RADIUS
+	var cx := clampi(int((c.x + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
+	var cz := clampi(int((c.y + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
+	for gz in range(cz - 2, cz + 3):
+		var row := gz * GRID_W + cx
+		for k in range(_cell_start[row - 2], _cell_start[row + 3]):
+			var j := _cell_items[k]
+			if j >= count:
+				continue
+			var d := pos[j] - c
+			var l2 := d.length_squared()
+			if l2 < rr * rr and l2 > 0.000001:
+				pos[j] = c + d * (rr / sqrt(l2))
+
+## Kills the grunts touching the circle at `p` (the shield). `r` + RADIUS must stay under 2 * CELL.
+func kill_near(p: Vector2, r: float) -> void:
+	var rr := (r + RADIUS) * (r + RADIUS)
+	var cx := clampi(int((p.x + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
+	var cz := clampi(int((p.y + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
+	for gz in range(cz - 2, cz + 3):
+		var row := gz * GRID_W + cx
+		for k in range(_cell_start[row - 2], _cell_start[row + 3]):
+			var j := _cell_items[k]
+			if j < count and (pos[j] - p).length_squared() < rr:
+				kill(j, (pos[j] - p).normalized())
 
 func kill(i: int, from_dir: Vector2) -> void:
 	if dead[i] != 0:
