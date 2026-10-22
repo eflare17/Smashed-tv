@@ -52,8 +52,11 @@ func open(st: VoxelStorage = null) -> void:
 func close() -> void:
 	if not cursor.is_empty():
 		var left := inv.add(cursor.id, int(cursor.n))     # (what's in your hand goes back in the backpack ...)
+		if left > 0 and storage and not storage.locked:
+			var back: Dictionary = arena.stash.add(storage, {"id": cursor.id, "n": left})    # (... or the chest open ...)
+			left = int(back.get("n", 0)) if not back.is_empty() else 0
 		if left > 0:
-			arena.drop_stack({"id": cursor.id, "n": left})  # (... or on the floor if it's full)
+			arena.keep_or_drop({"id": cursor.id, "n": left})  # (... or the floor, cubes; anything else waits for room)
 		cursor = {}
 	_unhook()
 	storage = null

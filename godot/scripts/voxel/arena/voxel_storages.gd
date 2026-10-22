@@ -152,7 +152,13 @@ func _process(dt: float) -> void:
 		_vb = Vector3.INF
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		# quitting: a stack held on the inventory screen put back first (not lost), and everything saved (the plants'
+		# growth and the worms' work don't mark it changed as they go)
+		if arena.inv_ui and is_instance_valid(arena.inv_ui) and arena.inv_ui.is_open():
+			arena.inv_ui.close()
+		save()
+	elif what == NOTIFICATION_EXIT_TREE:
 		if _dirty:
 			save()
 
@@ -406,7 +412,7 @@ func save() -> void:
 		return
 	var d := {"v": 1, "inv": arena.inv.to_data(), "storage": _own_chests if _own_chests != null else to_data(),
 		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier},
-		"cash": arena.cash}
+		"cash": arena.cash, "waiting": arena.waiting}
 	if arena.yard:
 		d["yard"] = arena.yard.save_data()
 		d["farm"] = arena.yard.farm.save_data()
@@ -437,4 +443,9 @@ func load_save() -> void:
 	if arena.yard and d.has("shredder"):
 		arena.yard.shredder.from_data(d.shredder)
 	arena.cash = maxi(0, int(d.get("cash", 0)))
+	arena.waiting = []
+	if typeof(d.get("waiting")) == TYPE_ARRAY:
+		for w in d.waiting:
+			if typeof(w) == TYPE_DICTIONARY and VoxelItems.has(String(w.get("id", ""))) and int(w.get("n", 0)) > 0:
+				arena.waiting.append({"id": String(w.id), "n": int(w.n)})
 	_dirty = false

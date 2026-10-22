@@ -232,9 +232,10 @@ func suck(bits: Array) -> void:
 func _add(p: Vector3, v: Vector3, col: Color, home: int) -> void:
 	var i := _n
 	if _n >= MAX:
-		i = randi() % MAX            # full: reuse a random one (laid down where it is first)
+		i = randi() % MAX            # full: reuse a random one (laid down on the floor below it first; ash crumbles)
 		if _home[i] == 0:
-			_lay(_pos[i], _rot[i], _col[i])
+			if _col[i].to_rgba32() != _ash:
+				_lay(Vector3(_pos[i].x, _floor, _pos[i].z), _rot[i], _col[i])
 		else:
 			take(_col[i])
 	else:

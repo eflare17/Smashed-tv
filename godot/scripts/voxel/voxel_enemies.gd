@@ -39,6 +39,8 @@ func _process(_dt: float) -> void:
 	if on and sim and ev and ev.visible and ev.is_visible_in_tree():
 		var pool: Array = ev.get("_pool")
 		for e in sim.enemies:
+			if e.t == ZombieSim.T:
+				continue             # (a zombie is a 3D model of its own: EnemyView gives it no picture, so neither here)
 			if e.spawn > 0.0:
 				continue
 			var key: String = sim.e_key[e.t]

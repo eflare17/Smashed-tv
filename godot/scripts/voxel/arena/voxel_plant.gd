@@ -84,7 +84,12 @@ func _process(dt: float) -> void:
 		_drop.position.y = _top(strain, stage, look) + 0.12 + sin(_t * 4.0) * 0.02
 
 ## How tall the picture's plant stands (metres above its foot).
+static var _tops := {}               # s, stage, look -> the height (worked out once: it scans the sheet)
+
 static func _top(s: int, st: int, lk: int) -> float:
+	var k := s * 100 + st * 10 + lk
+	if _tops.has(k):
+		return _tops[k]
 	_load()
 	var top := int(FOOT.y)
 	for y in int(FOOT.y):
@@ -97,7 +102,8 @@ static func _top(s: int, st: int, lk: int) -> float:
 			top = y
 			break
 	var squash: float = [1.0, 54.0 / 60.0, 47.0 / 60.0][lk]
-	return (FOOT.y - top) * VOX * squash
+	_tops[k] = (FOOT.y - top) * VOX * squash
+	return _tops[k]
 
 static func _load() -> void:
 	if _img == null:

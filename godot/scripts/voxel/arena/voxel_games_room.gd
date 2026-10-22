@@ -99,6 +99,8 @@ func setup(arena_: Node3D) -> void:
 
 ## The library looked through again: our test cartridge, then every game file (or .zip of one) in the games folders.
 func scan() -> void:
+	var held_path: String = library[held].path if held >= 0 and held < library.size() else ""
+	var in_path: String = library[inserted].path if inserted >= 0 and inserted < library.size() else ""
 	library.clear()
 	var dir := ProjectSettings.globalize_path(GAMES)
 	DirAccess.make_dir_recursive_absolute(dir.path_join(".unzipped"))
@@ -128,7 +130,16 @@ func scan() -> void:
 				continue
 			seen[fn.get_basename().to_lower()] = true
 			library.append({"path": p, "name": pretty(fn.get_basename()), "sys": sys})
+	# (the indices are the library's: found again by their files)
+	held = -1 if held_path == "" else _index_of(held_path)
+	inserted = -1 if in_path == "" else _index_of(in_path)
 	_build_cases()
+
+func _index_of(path: String) -> int:
+	for i in library.size():
+		if String(library[i].path) == path:
+			return i
+	return -1
 
 # the first game file in a .zip, taken out (once) into the cache; "" if there isn't one
 static func _unzip(zip_path: String, cache: String) -> String:

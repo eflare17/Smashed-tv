@@ -128,6 +128,8 @@ var _near_game := ""            # what's looked at in there (VoxelGamesRoom.pick
 var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
 var _near_bench := false
+var waiting: Array = []         # items with no room in the backpack (not cubes: they can't go on the floor): [{id, n}],
+								# saved, put in as soon as there's room
 var cash := 0                   # this player's money (Stage 5: kills pay, as in the HTML game; seeds cost, buds sell)
 var _near_plant := -1           # the farm's spot looked at (a plant or tilled ground)
 var _near_prop := ""            # the farm's prop looked at (the seed bins, the buyer, the tank, the worm farm)
@@ -237,6 +239,7 @@ func _ready() -> void:
 	bar = VoxelWeaponBar.new()
 	_hud_layer.add_child(bar)
 	bar.setup(loadout, self)
+	inv.changed.connect(_take_waiting)          # (room made: what's waiting goes in)
 	inv_ui = VoxelInventoryUI.new()
 	_hud_layer.add_child(inv_ui)
 	inv_ui.setup(self, inv)
@@ -964,10 +967,44 @@ func receive(stack: Dictionary, where: String) -> void:
 		return
 	var n := inv.add(left.id, int(left.n))
 	if n > 0:
-		if inv_ui.storage:
-			stash.add(inv_ui.storage, {"id": left.id, "n": n})
-		else:
-			drop_stack({"id": left.id, "n": n})
+		if inv_ui.storage and not inv_ui.storage.locked:
+			var back: Dictionary = stash.add(inv_ui.storage, {"id": left.id, "n": n})
+			n = int(back.get("n", 0)) if not back.is_empty() else 0
+		if n > 0:
+			keep_or_drop({"id": left.id, "n": n})
+
+## A stack with no room anywhere: cubes thrown on the floor (the vacuum takes them back); anything else waits, saved,
+## and goes in the backpack as soon as there's room (it can't be cubes on the floor: they'd come back as rubble).
+func keep_or_drop(stack: Dictionary) -> void:
+	if stack.is_empty() or int(stack.n) <= 0:
+		return
+	if VoxelItems.is_cubes(String(stack.id)):
+		drop_stack(stack)
+		return
+	for w in waiting:
+		if w.id == stack.id:
+			w.n = int(w.n) + int(stack.n)
+			stack = {}
+			break
+	if not stack.is_empty():
+		waiting.append({"id": String(stack.id), "n": int(stack.n)})
+	stash._dirty = true
+	say("Backpack full: the rest waits till there's room (make some and it goes in)", 2.5)
+
+# (the backpack changed: what's waiting goes in, as much as fits)
+func _take_waiting() -> void:
+	if waiting.is_empty():
+		return
+	for w in waiting.duplicate():
+		var room := inv.room_for(String(w.id))
+		if room <= 0:
+			continue
+		var n := mini(room, int(w.n))
+		w.n = int(w.n) - n
+		if int(w.n) <= 0:
+			waiting.erase(w)
+		inv.add(String(w.id), n)            # (changes the backpack: this runs again, finds nothing more to do)
+		say("%d %s from waiting into the backpack" % [n, VoxelItems.name_of(String(w.id)).to_lower()], 2.0)
 
 ## A stack thrown on the floor in front of the player, as its cubes (the vacuum takes them back).
 func drop_stack(stack: Dictionary) -> void:
@@ -1052,6 +1089,8 @@ func _on_died(b: VoxelBody) -> void:
 	kills += 1
 	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:
 		cash += int(VoxelFarm.KILL_CASH[b.key])     # (each player's game pays its own player for every kill)
+		stash._dirty = true
+		stash._save_t = 0.0
 
 func _respawn_all(count := -1) -> void:
 	var n := 0
@@ -1153,13 +1192,17 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_Q:
 				_switch(func(): loadout.swap_last())
 			KEY_H:
-				if yard.chickens.eat_egg():
+				if down_t > 0.0:
+					pass                     # (down: nothing till you're up)
+				elif yard.chickens.eat_egg():
 					sound.play("item_pick", Vector3.INF, -4.0, 0.7)
 					say("Ate an egg: +%d health (%d left)" % [int(VoxelChickens.EGG_HP), inv.count("egg")], 2.0)
 				elif inv.count("egg") > 0:
 					say("Not hurt: save the eggs (or sell them at the buyer)", 1.5)
 			KEY_E:
-				if _near_st and _near_st.locked:
+				if down_t > 0.0:
+					pass                     # (down: nothing till you're up)
+				elif _near_st and _near_st.locked:
 					open_lock(_near_st, true)        # (locked: dial it open first, then the chest opens)
 				elif _near_st:
 					open_inventory(_near_st)
@@ -1194,6 +1237,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					chunk = 2 if chunk == 1 else 1
 					_warm_up()
 					_respawn_all()
+					settings_menu.s.set_value("chunk", chunk)      # (the settings know: a later change doesn't put it back)
+					settings_menu.s.save_file()
 			KEY_F3:
 				_more(10)
 			KEY_F4:
@@ -1870,7 +1915,7 @@ func _shoot(dt: float) -> void:
 # F (or a mouse side button): a sword slash the way the mouse was moving, whatever is out; C: a chop (top-down: a
 # low sweep at the legs)
 func _sword_key(low: bool) -> void:
-	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED):
+	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED) or down_t > 0.0:
 		return
 	sword.quick(low)
 	net.local_input("quick", [low, _mouse_v])

@@ -133,6 +133,88 @@ func _stage_b() -> void:
 	check(same, "the host's lying cubes laid the same on a guest who's just come (%d)" % deb._ln)
 	deb.queue_free()
 
+# Stage C: the backpack, saving, keys while down, loose cubes, the games shelf, plants
+func _stage_c() -> void:
+	# a full backpack: gold waits (not thrown as rubble), goes in when there's room
+	var inv: VoxelInventory = arena.inv
+	var saved := inv.to_data()
+	for i in inv.slots.size():
+		inv.slots[i] = {"id": "blocks", "n": VoxelItems.stack_max("blocks")}
+	var lay0: int = arena.debris._ln + arena.debris._n
+	arena.receive({"id": "gold", "n": 3}, "inv")
+	var thrown: int = arena.debris._ln + arena.debris._n - lay0
+	check(inv.count("gold") == 0 and arena.waiting.size() == 1 and int(arena.waiting[0].n) == 3 and thrown == 0,
+		"a full backpack: 3 gold wait (not thrown on the floor to come back as rubble)")
+	inv.take_at(0, -1)
+	check(inv.count("gold") == 3 and arena.waiting.is_empty(), "room made: the waiting gold goes in the backpack")
+	inv.from_data(saved)
+	# kill cash marks the save to be written
+	arena.stash._dirty = false
+	var kb := _body("grunt", Vector3(0, 0, -10))
+	arena._on_died(kb)
+	check(arena.stash._dirty, "kill cash: the save's marked to be written (it was lost on quitting)")
+	# F2 tells the settings, so a later change doesn't put the cube size back
+	var c0: int = arena.chunk
+	var e := InputEventKey.new()
+	e.physical_keycode = KEY_F2
+	e.keycode = KEY_F2
+	e.pressed = true
+	arena._unhandled_input(e)
+	var kept: bool = int(arena.settings_menu.s.v.chunk) == arena.chunk and arena.chunk != c0
+	arena.settings_menu.s.apply(arena)
+	kept = kept and arena.chunk != c0
+	arena._unhandled_input(e)            # (back as it was)
+	check(kept, "F2's cube size is kept by the settings (applying them doesn't put it back)")
+	# down: no quick sword slash
+	arena.down_t = 2.0
+	var ready0: bool = arena.sword.ready_to_swing()
+	arena._sword_key(false)
+	var still: bool = arena.sword.ready_to_swing()
+	arena.down_t = 0.0
+	check(ready0 and still, "down: F / C / a side button don't swing the sword")
+	# a flying cube pushed out by the cap lands on the floor
+	var f0 := VoxelDebris.max_fly
+	VoxelDebris.max_fly = 4
+	var deb := VoxelDebris.new()
+	arena.add_child(deb)
+	deb.setup(arena._cube_m("grunt"))
+	VoxelDebris.max_fly = f0
+	var bits := []
+	for i in 8:
+		bits.append({"pos": Vector3(i * 0.1, 2.0, 0), "col": VoxelBody.FLESH[0]})
+	deb.burst(bits, Vector3.UP, 0.1)
+	var floating := 0
+	for i in deb._ln:
+		if deb._lp[i].y > 0.2:
+			floating += 1
+	check(deb._ln > 0 and floating == 0, "the flying cap full: the cubes pushed out land on the floor (%d laid, %d in the air)" % [deb._ln, floating])
+	deb.queue_free()
+	# a plant's height worked out once
+	VoxelPlant._tops.clear()
+	var h1 := VoxelPlant._top(0, 0, 0)
+	var h2 := VoxelPlant._top(0, 0, 0)
+	check(VoxelPlant._tops.size() == 1 and is_equal_approx(h1, h2), "a plant's height is worked out once, not every frame")
+	# the games shelf looked through again: the case in your hands is still the same game
+	var gr: Node = arena.games
+	var dir := ProjectSettings.globalize_path(VoxelGamesRoom.GAMES)
+	var b_path := dir.path_join("zz_sweep_b.md")
+	var a_path := dir.path_join("aa_sweep_a.md")
+	var fb := FileAccess.open(b_path, FileAccess.WRITE)
+	fb.store_buffer(FileAccess.get_file_as_bytes(VoxelGamesRoom.BUILTIN))
+	fb = null
+	gr.scan()
+	gr.held = gr._index_of(b_path)
+	var fa := FileAccess.open(a_path, FileAccess.WRITE)
+	fa.store_buffer(FileAccess.get_file_as_bytes(VoxelGamesRoom.BUILTIN))
+	fa = null
+	gr.scan()
+	var same_game: bool = gr.held >= 0 and String(gr.library[gr.held].path) == b_path
+	gr.held = -1
+	DirAccess.remove_absolute(a_path)
+	DirAccess.remove_absolute(b_path)
+	gr.scan()
+	check(same_game, "a game added to the shelf: the case in your hands is still the same game")
+
 func _process(dt: float) -> bool:
 	t += dt
 	if t < 1.0:
@@ -265,6 +347,7 @@ func _process(dt: float) -> bool:
 			step = 10
 		10:
 			_stage_b()
+			_stage_c()
 			step = 99
 		99:
 			print("SWEEP done %d passed, %d failed" % [passed, failed])
