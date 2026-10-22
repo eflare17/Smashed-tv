@@ -141,6 +141,9 @@ func hit_test(p: Vector2, r: float) -> int:
 			return i
 	return -1
 
+func bullet_hit(i: int, dir: Vector2) -> void:
+	damage(i, 1, dir)
+
 ## Takes `amount` HP off brute `i`, knocking him back along `dir`. True if that killed him.
 func damage(i: int, amount: int, dir: Vector2) -> bool:
 	if hp[i] <= 0:

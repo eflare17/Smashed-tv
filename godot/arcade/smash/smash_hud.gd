@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## Smash arcade HUD: room / wave, power-up timers, score and lives along the top, a centre banner, a crosshair in
-## first person, the debug overlay, the red hurt flash and the black fade between rooms, the attract screens
+## first person, the debug overlay, the boss's health bar, the screen flash (red when hurt, white for the smart
+## bomb) and the black fade between rooms, the prize summary at game over, the attract screens
 ## (title, high-score table, controls), the initials entry, and the TV host. Every Control is made once here; the
 ## scene root only sets text and visibility. It lives in the scene's own viewport (so on a cabinet it draws on
 ## the cabinet screen), and nothing in it takes mouse input.
@@ -27,6 +28,10 @@ var _help: Label
 var _table: Control
 var _rows: Array = []
 var _name: Label
+var _summary: Label
+var _boss_box: Control
+var _boss_name: Label
+var _boss_fill: ColorRect
 
 var _banner_t := 0.0
 var _flash_a := 0.0
@@ -62,6 +67,31 @@ func _init() -> void:
 	_help = _label(root, 30, Control.PRESET_CENTER, HORIZONTAL_ALIGNMENT_CENTER)
 	_help.text = HELP
 	_name = _label(root, 44, Control.PRESET_CENTER, HORIZONTAL_ALIGNMENT_CENTER)
+	_summary = _label(root, 32, Control.PRESET_CENTER, HORIZONTAL_ALIGNMENT_CENTER)
+	_summary.visible = false
+
+	# boss bar under the score: name, then a 420 px bar
+	_boss_box = Control.new()
+	_boss_box.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_boss_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_box.position.y = 48
+	root.add_child(_boss_box)
+	_boss_name = _cell(_boss_box, "", 22, HORIZONTAL_ALIGNMENT_CENTER)
+	_boss_name.position = Vector2(-210, 0)
+	_boss_name.size = Vector2(420, 30)
+	var back := ColorRect.new()
+	back.color = Color(0.1, 0.05, 0.1, 0.85)
+	back.position = Vector2(-212, 32)
+	back.size = Vector2(424, 18)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_box.add_child(back)
+	_boss_fill = ColorRect.new()
+	_boss_fill.color = Color(0.95, 0.15, 0.2)
+	_boss_fill.position = Vector2(-210, 34)
+	_boss_fill.size = Vector2(420, 14)
+	_boss_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_boss_box.add_child(_boss_fill)
+	_boss_box.visible = false
 
 	# high-score table: heading + 10 rows of rank / name / score / room, built once
 	var center := CenterContainer.new()
@@ -161,7 +191,28 @@ func hide_banner() -> void:
 
 ## The red flash when you get hit (fades by itself).
 func hurt() -> void:
-	_flash_a = 0.55
+	flash(Color(1, 0, 0), 0.55)
+
+## A full-screen flash of `color` starting at alpha `a` (fades by itself).
+func flash(color: Color, a: float) -> void:
+	_flash.color = Color(color, a)
+	_flash_a = a
+
+## The boss bar: `frac` of his health left. hide_boss() takes it away.
+func show_boss(boss_name: String, frac: float) -> void:
+	_boss_box.visible = true
+	_boss_name.text = boss_name
+	_boss_fill.size.x = 420.0 * clampf(frac, 0.0, 1.0)
+
+func hide_boss() -> void:
+	_boss_box.visible = false
+
+func show_summary(text: String) -> void:
+	_summary.text = text
+	_summary.visible = true
+
+func hide_summary() -> void:
+	_summary.visible = false
 
 ## 0 = clear, 1 = black.
 func set_fade(a: float) -> void:

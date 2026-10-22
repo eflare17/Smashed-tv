@@ -132,9 +132,9 @@ func _process(delta: float) -> void:
 				hide_now()
 				return
 	var x := size.x - SHOW - 16.0
-	_pic.position = Vector2(x, lerpf(-SHOW, 40.0, drop))
+	_pic.position = Vector2(x, lerpf(-SHOW, 64.0, drop))
 	var talking := _phase == 2 and _t < _talk - 0.4
 	_model.mesh = _frames[int(_t * 9.0) % 2 if talking else 0]
 	_model.position.y = absf(sin(_t * 9.0)) * 0.03 if talking else 0.0
 	_bubble.visible = _phase == 2
-	_bubble.position = Vector2(x - _bubble.size.x + 24.0, 60.0)
+	_bubble.position = Vector2(x - _bubble.size.x + 24.0, 84.0)

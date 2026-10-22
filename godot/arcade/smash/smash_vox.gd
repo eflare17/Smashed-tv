@@ -29,10 +29,29 @@ const MOUTH := Color(0.3, 0.02, 0.05)
 const BILL := Color(0.35, 0.75, 0.3)
 const BILL_DARK := Color(0.15, 0.45, 0.15)
 const SCORCH := Color(0.07, 0.06, 0.05)
+const SNIPER_SUIT := Color(0.2, 0.22, 0.26)
+const HELMET := Color(0.38, 0.4, 0.44)
+const VISOR := Color(1.0, 0.15, 0.1)
+const MINE_SHELL := Color(0.32, 0.32, 0.36)
+const BARREL := Color(0.55, 0.32, 0.12)
+const HOOP := Color(0.25, 0.22, 0.2)
+const HAZARD := Color(0.95, 0.25, 0.08)
+const BOSS_VEST := Color(0.38, 0.12, 0.55)
+const BOSS_HAIR := Color(1.0, 0.8, 0.1)
+const SPIKE := Color(0.7, 0.72, 0.75)
+const GOLD := Color(1.0, 0.75, 0.15)
+const GOLD_LIGHT := Color(1.0, 0.9, 0.5)
+const SILVER := Color(0.78, 0.8, 0.84)
+const DARK := Color(0.12, 0.12, 0.14)
+const CAR_RED := Color(0.9, 0.12, 0.1)
+const GLASS := Color(0.55, 0.85, 1.0)
 
 ## Gib colours (chunks pick from these).
 const GRUNT_GIBS := [GRUNT_SHIRT, GRUNT_SHIRT, SKIN, GRUNT_PANTS, BLOOD, BLOOD, GRUNT_CAP]
 const BRUTE_GIBS := [BRUTE_VEST, BRUTE_VEST, SKIN, BRUTE_PANTS, BLOOD, BLOOD, MOHAWK]
+const SNIPER_GIBS := [SNIPER_SUIT, SNIPER_SUIT, HELMET, SKIN, BLOOD, BLOOD, GUN]
+const MINE_GIBS := [MINE_SHELL, MINE_SHELL, DARK, Color(1.0, 0.85, 0.2), Color(1.0, 0.5, 0.1)]
+const BOSS_GIBS := [BOSS_VEST, BOSS_VEST, SKIN, BRUTE_PANTS, BLOOD, BLOOD, BOSS_HAIR, SPIKE]
 const PLAYER_GIBS := [PLAYER_SUIT, PLAYER_SUIT, PLAYER_DARK, SKIN, HAIR, BLOOD, BLOOD]
 const FIRE_GIBS := [Color(1.0, 0.85, 0.2), Color(1.0, 0.5, 0.1), Color(0.9, 0.25, 0.05), Color(0.25, 0.22, 0.2)]
 
@@ -80,19 +99,42 @@ static func _player_boxes(frame: int) -> Array:
 	]
 
 ## The brute: a wide grunt with a club and a mohawk (drawn 1.35x, so his voxels are chunkier too).
-static func _brute_boxes(frame: int) -> Array:
+static func _brute_boxes(frame: int, vest := BRUTE_VEST, hair := MOHAWK) -> Array:
 	var a := 1 if frame == 0 else 0
 	var b := 1 - a
 	return [
 		[1, 0, 1 + a, 3, 3, 2 + a, BRUTE_PANTS], [5, 0, 1 + b, 7, 3, 2 + b, BRUTE_PANTS],
 		[1, 0, 1 + a, 3, 0, 2 + a, BOOT], [5, 0, 1 + b, 7, 0, 2 + b, BOOT],
-		[1, 4, 0, 7, 8, 4, BRUTE_VEST], [1, 4, 0, 7, 4, 4, BOOT],
+		[1, 4, 0, 7, 8, 4, vest], [1, 4, 0, 7, 4, 4, BOOT],
 		[0, 7, 1, 0, 8, 3 + a, SKIN], [8, 7, 1, 8, 8, 3 + b, SKIN],
 		[0, 8, 3 + a, 0, 8, 6 + a, CLUB], [0, 7, 6 + a, 0, 9, 7 + a, CLUB],
 		[3, 9, 1, 5, 11, 3, SKIN],
-		[4, 12, 0, 4, 12, 3, MOHAWK], [4, 11, 0, 4, 11, 0, MOHAWK],
+		[4, 12, 0, 4, 12, 3, hair], [4, 11, 0, 4, 11, 0, hair],
 		[3, 10, 3, 3, 10, 3, EYE], [5, 10, 3, 5, 10, 3, EYE],
 	]
+
+## The sniper: stands in a doorway with a long rifle and a red visor.
+static func _sniper_boxes(frame: int) -> Array:
+	var a := 1 if frame == 0 else 0
+	var b := 1 - a
+	return [
+		[1, 0, 1 + a, 2, 3, 2 + a, SNIPER_SUIT], [4, 0, 1 + b, 5, 3, 2 + b, SNIPER_SUIT],
+		[1, 0, 1 + a, 2, 0, 2 + a, BOOT], [4, 0, 1 + b, 5, 0, 2 + b, BOOT],
+		[1, 4, 0, 5, 7, 3, SNIPER_SUIT], [1, 4, 0, 5, 4, 3, BOOT],
+		[0, 6, 1, 0, 7, 4, SNIPER_SUIT], [6, 6, 1, 6, 7, 4, SNIPER_SUIT],
+		[0, 7, 4, 0, 7, 9, GUN], [0, 8, 5, 0, 8, 6, GUN],
+		[2, 8, 0, 4, 10, 3, SKIN], [2, 10, 0, 4, 10, 3, HELMET], [2, 8, 0, 4, 9, 0, HELMET],
+		[2, 9, 3, 4, 9, 3, VISOR],
+	]
+
+## The boss: a brute in purple with gold hair and spiked shoulders (drawn about 3x).
+static func _boss_boxes(frame: int) -> Array:
+	var boxes := _brute_boxes(frame, BOSS_VEST, BOSS_HAIR)
+	boxes.append_array([
+		[0, 9, 1, 2, 9, 3, SPIKE], [6, 9, 1, 8, 9, 3, SPIKE], [0, 10, 2, 0, 10, 2, SPIKE], [8, 10, 2, 8, 10, 2, SPIKE],
+		[3, 12, 1, 5, 12, 1, BOSS_HAIR],
+	])
+	return boxes
 
 ## The TV host, head and shoulders, facing the camera (+Z), waving a dollar bill. Frame 1 has his mouth open.
 static func _host_boxes(frame: int) -> Array:
@@ -128,6 +170,47 @@ static func player_mesh(frame: int) -> ArrayMesh:
 
 static func brute_mesh(frame: int) -> ArrayMesh:
 	return from_boxes(_brute_boxes(frame), Vector3(4.5, 0, 2.5))
+
+static func sniper_mesh(frame: int) -> ArrayMesh:
+	return from_boxes(_sniper_boxes(frame), Vector3(3.5, 0, 2))
+
+static func boss_mesh(frame: int) -> ArrayMesh:
+	return from_boxes(_boss_boxes(frame), Vector3(4.5, 0, 2.5))
+
+## A floating mine, centred on the origin: a spiked ball with a light on top (white, so it takes the tint).
+static func mine_mesh() -> ArrayMesh:
+	return from_boxes([
+		[1, 1, 0, 4, 4, 5, MINE_SHELL], [0, 1, 1, 5, 4, 4, MINE_SHELL], [1, 0, 1, 4, 5, 4, MINE_SHELL],
+		[2, 2, -1, 3, 3, -1, SPIKE], [2, 2, 6, 3, 3, 6, SPIKE], [-1, 2, 2, -1, 3, 3, SPIKE], [6, 2, 2, 6, 3, 3, SPIKE],
+		[2, 5, 2, 3, 5, 3, WHITE], [2, -1, 2, 3, -1, 3, SPIKE],
+	], Vector3(2.5, 2.5, 2.5))
+
+## A barrel lying across its direction of travel (its length along X), centred on the origin.
+static func barrel_mesh() -> ArrayMesh:
+	return from_boxes([
+		[0, 1, 0, 7, 4, 5, BARREL], [0, 0, 1, 7, 5, 4, BARREL],
+		[1, 1, 0, 1, 4, 5, HOOP], [1, 0, 1, 1, 5, 4, HOOP], [6, 1, 0, 6, 4, 5, HOOP], [6, 0, 1, 6, 5, 4, HOOP],
+		[0, 1, 1, 0, 4, 4, HAZARD], [7, 1, 1, 7, 4, 4, HAZARD],
+	], Vector3(4, 2.5, 2.5))
+
+## Prizes, in SmashPrizes order: cash, gold bar, toaster, VCR, car.
+static func prize_mesh(kind: int) -> ArrayMesh:
+	match kind:
+		0:
+			return from_boxes([[0, 0, 0, 5, 1, 3, BILL], [2, 0, 0, 3, 1, 3, WHITE]], Vector3(3, 0, 2))
+		1:
+			return from_boxes([[0, 0, 0, 5, 1, 2, GOLD], [1, 2, 0, 4, 2, 2, GOLD_LIGHT]], Vector3(3, 0, 1.5))
+		2:
+			return from_boxes([[0, 0, 0, 5, 4, 3, SILVER], [1, 4, 1, 1, 4, 2, DARK], [4, 4, 1, 4, 4, 2, DARK],
+					[6, 2, 1, 6, 2, 1, DARK]], Vector3(3, 0, 2))
+		3:
+			return from_boxes([[0, 0, 0, 8, 1, 5, DARK], [2, 1, 5, 5, 1, 5, Color(0.4, 0.4, 0.42)],
+					[6, 1, 5, 7, 1, 5, Color(0.2, 1.0, 0.4)]], Vector3(4.5, 0, 3))
+	return from_boxes([
+		[0, 1, 0, 11, 2, 5, CAR_RED], [3, 3, 1, 8, 3, 4, GLASS], [3, 4, 1, 8, 4, 4, CAR_RED],
+		[1, 0, 0, 2, 1, 0, BOOT], [9, 0, 0, 10, 1, 0, BOOT], [1, 0, 5, 2, 1, 5, BOOT], [9, 0, 5, 10, 1, 5, BOOT],
+		[11, 2, 1, 11, 2, 1, Color(1, 1, 0.6)], [11, 2, 4, 11, 2, 4, Color(1, 1, 0.6)],
+	], Vector3(6, 0, 3))
 
 static func host_mesh(frame: int) -> ArrayMesh:
 	return from_boxes(_host_boxes(frame), Vector3(6.5, 0, 2))

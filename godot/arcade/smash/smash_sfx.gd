@@ -39,6 +39,15 @@ func _init() -> void:
 	_sounds["gameover"] = _notes([392, 330, 262, 196], 0.26, 0.3, "square")
 	_sounds["blip"] = _wav(_tone(0.05, 900, 900, 0.2, "square"))
 	_sounds["coin"] = _notes([988, 1318], 0.12, 0.28, "square")
+	_sounds["bomb"] = _mix([_noise(1.4, 0.05, 0.7), _tone(1.2, 70, 25, 0.55, "sine"), _noise(0.4, 0.8, 0.25)])
+	_sounds["roar"] = _mix([_tone(0.9, 110, 55, 0.5, "saw"), _tone(0.9, 82, 41, 0.4, "square"), _noise(0.9, 0.15, 0.35)])
+	_sounds["charge"] = _mix([_tone(0.5, 120, 480, 0.35, "saw"), _noise(0.5, 0.3, 0.2)])
+	_sounds["sniper"] = _mix([_tone(0.12, 1500, 700, 0.18, "square"), _noise(0.06, 0.7, 0.12)])
+	_sounds["mine"] = _wav(_tone(0.06, 1700, 1700, 0.18, "square"))
+	_sounds["throw"] = _mix([_noise(0.25, 0.2, 0.3), _tone(0.2, 300, 150, 0.15, "square")])
+	_sounds["cash"] = _notes([1318, 1760], 0.06, 0.2, "square")
+	_sounds["prize"] = _notes([784, 988, 1175, 1568], 0.08, 0.25, "square")
+	_sounds["car"] = _notes([523, 659, 784, 659, 784, 1046], 0.13, 0.28, "square")
 
 func _player() -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()

@@ -1,8 +1,9 @@
 extends Node3D
 ## Smash arcade: the player's shots. Bullets and rockets share one pool (packed arrays, swap-remove) and are drawn
 ## by a MultiMesh each. Both fly flat at gun height and stop at the walls (or the end of a corridor). A bullet
-## hits the first brute or grunt it touches; a rocket explodes on anything, and its blast (radius damage, gibs,
-## sound) is done by the scene root from `booms`.
+## hits the first target it touches (boss, brutes, snipers, mines, barrels, then grunts: anything with `count`,
+## hit_test() and bullet_hit()); a rocket explodes on anything, and its blast (radius damage, gibs, sound) is done
+## by the scene root from `booms`.
 
 const SmashVox := preload("smash_vox.gd")
 
@@ -65,7 +66,8 @@ func fire(p: Vector2, d: Vector2, k := BULLET) -> void:
 	kind[count] = k
 	count += 1
 
-func step(delta: float, horde, brutes) -> void:
+## `targets` are tested in order before the grunts (which use their grid).
+func step(delta: float, targets: Array, horde) -> void:
 	var outer := half + 1.0 + corridor
 	var i := 0
 	while i < count:
@@ -82,14 +84,17 @@ func step(delta: float, horde, brutes) -> void:
 			if k == ROCKET:
 				booms.append(Vector2(clampf(p.x, -half, half), clampf(p.y, -half, half)))
 		else:
-			var b: int = brutes.hit_test(p, RADIUS) if brutes.count > 0 else -1
-			if b >= 0:
-				gone = true
-				if k == ROCKET:
-					booms.append(p)
-				else:
-					brutes.damage(b, 1, dir[i])
-			else:
+			for t in targets:
+				if t.count > 0:
+					var j: int = t.hit_test(p, RADIUS)
+					if j >= 0:
+						gone = true
+						if k == ROCKET:
+							booms.append(p)
+						else:
+							t.bullet_hit(j, dir[i])
+						break
+			if not gone:
 				var j: int = horde.hit_test(p, RADIUS)
 				if j >= 0:
 					gone = true

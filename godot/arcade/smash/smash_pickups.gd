@@ -11,8 +11,12 @@ const SPREAD := 0
 const ROCKETS := 1
 const SHIELD := 2
 const SPEED := 3
-const NAMES := ["SPREAD", "ROCKETS", "SHIELD", "SPEED"]
-const COLORS := [Color(1.0, 0.85, 0.2), Color(1.0, 0.35, 0.25), Color(0.35, 0.9, 1.0), Color(0.45, 1.0, 0.45)]
+const BOMB := 4
+const NAMES := ["SPREAD", "ROCKETS", "SHIELD", "SPEED", "BOMB"]
+const COLORS := [Color(1.0, 0.85, 0.2), Color(1.0, 0.35, 0.25), Color(0.35, 0.9, 1.0), Color(0.45, 1.0, 0.45),
+		Color(1.0, 0.55, 0.1)]
+## Drop chances per type (relative).
+const WEIGHTS := [30, 24, 18, 16, 12]
 
 var active := PackedByteArray()
 var type := PackedByteArray()

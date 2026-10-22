@@ -215,14 +215,15 @@ func hit_test(p: Vector2, r: float) -> int:
 				return j
 	return -1
 
-## Pushes every grunt out of the circle at `c` (a brute's body). `r` + RADIUS must stay under 2 * CELL.
+## Pushes every grunt out of the circle at `c` (a brute's or the boss's body).
 func push_out(c: Vector2, r: float) -> void:
 	var rr := r + RADIUS
-	var cx := clampi(int((c.x + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
-	var cz := clampi(int((c.y + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
-	for gz in range(cz - 2, cz + 3):
+	var span := ceili(rr * INV_CELL)
+	var cx := clampi(int((c.x + GRID_HALF) * INV_CELL), span, GRID_W - 1 - span)
+	var cz := clampi(int((c.y + GRID_HALF) * INV_CELL), span, GRID_W - 1 - span)
+	for gz in range(cz - span, cz + span + 1):
 		var row := gz * GRID_W + cx
-		for k in range(_cell_start[row - 2], _cell_start[row + 3]):
+		for k in range(_cell_start[row - span], _cell_start[row + span + 1]):
 			var j := _cell_items[k]
 			if j >= count:
 				continue
@@ -231,17 +232,23 @@ func push_out(c: Vector2, r: float) -> void:
 			if l2 < rr * rr and l2 > 0.000001:
 				pos[j] = c + d * (rr / sqrt(l2))
 
-## Kills the grunts touching the circle at `p` (the shield). `r` + RADIUS must stay under 2 * CELL.
+## Kills the grunts touching the circle at `p` (the shield, the boss's charge).
 func kill_near(p: Vector2, r: float) -> void:
-	var rr := (r + RADIUS) * (r + RADIUS)
-	var cx := clampi(int((p.x + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
-	var cz := clampi(int((p.y + GRID_HALF) * INV_CELL), 2, GRID_W - 3)
-	for gz in range(cz - 2, cz + 3):
+	var rr := r + RADIUS
+	var span := ceili(rr * INV_CELL)
+	var cx := clampi(int((p.x + GRID_HALF) * INV_CELL), span, GRID_W - 1 - span)
+	var cz := clampi(int((p.y + GRID_HALF) * INV_CELL), span, GRID_W - 1 - span)
+	for gz in range(cz - span, cz + span + 1):
 		var row := gz * GRID_W + cx
-		for k in range(_cell_start[row - 2], _cell_start[row + 3]):
+		for k in range(_cell_start[row - span], _cell_start[row + span + 1]):
 			var j := _cell_items[k]
-			if j < count and (pos[j] - p).length_squared() < rr:
+			if j < count and (pos[j] - p).length_squared() < rr * rr:
 				kill(j, (pos[j] - p).normalized())
+
+## Kills every grunt (the smart bomb), each blown away from `p`.
+func kill_all(p: Vector2) -> void:
+	for i in count:
+		kill(i, (pos[i] - p).normalized())
 
 func kill(i: int, from_dir: Vector2) -> void:
 	if dead[i] != 0:
