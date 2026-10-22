@@ -4,7 +4,7 @@ extends SceneTree
 ## dangle_close: close up on a grunt's forearm hanging by the skin of its elbow (the stretched strip, the blood dripping),
 ##   shoved so it swings; dangle_walk: a grunt with a hanging forearm walking at you, the arm flopping; dangle_knee: a
 ##   shin hanging from a knee shot through, the grunt limping at you; dangle_tear: strained through, the forearm tearing
-##   off. Plus dangle_hanging (one close frame, big). Owned by the voxel session.
+##   off. Plus dangle_hanging (one close frame, big) and dangle_bone (front on: the broken bone in the gap). Owned by the voxel session.
 
 var arena: Node
 var t := 0.0
@@ -151,6 +151,20 @@ func _process(dt: float) -> bool:
 		4:
 			if t > 32.5:
 				_shot("dangle_hanging")
+				step = 41
+		41:
+			if t > 32.8:
+				# front on, low: the broken bone in the gap
+				var el: Vector3 = g.skeleton.global_transform * g.skeleton.get_bone_rest(int(g.parts.forearm_l.bone)).origin
+				el = g.skeleton.global_transform * g.skeleton.get_bone_global_pose(g.model.bone_parent[int(g.parts.forearm_l.bone)]) * g.skeleton.get_bone_rest(int(g.parts.forearm_l.bone)).origin
+				_look(el + Vector3(0.1, -0.12, 0.55), el + Vector3(0, -0.04, 0))
+				step = 42
+		42:
+			if t > 33.3:
+				_shot("dangle_bone")
+				step = 43
+		43:
+			if t > 33.6:
 				step = 5
 		5:
 			if t > 33.0:

@@ -451,12 +451,13 @@ to blown-off bones, dangling limbs tear off from strain, shooting the skin finis
 - **Easier to see, floppier** (22 Oct, the owner: "make it more visible and floppier"): the swing keeps more of
   itself each frame (`SWING_KEEP` 0.996: it swings a long while), walking sways it side to side in step, a hit flings
   it 6-11 cm and it swings back; the hand or foot below flops against the swing. A hanging limb **sags** from its joint
-  (`SAG` 4.5 cm, bouncing like a spring with the swing) and the gap is bridged by a block of **raw red flesh** as thick
-  as the limb, thinning as the strip is shot away; **blood drips** off it (faster as it nears tearing). All looks only
+  (`SAG` 6 cm, bouncing like a spring with the swing); across the gap, the **broken bone** (a jagged white end, shaft
+  and splinter, sticking out of each side: down out of the arm above, up out of the hanging part) and a strip of **raw
+  red flesh** off to the side the skin is left on (`_strip_side`), thinning as the strip is shot away; **blood drips** off it (faster as it nears tearing). All looks only
   (no cubes, nothing to vacuum); the cuts land where the limb is drawn.
 - Co-op: the loose parts follow from the cubes (the same in both games); the swing is each game's own, and the cuts
   are made against the host's pose (sent with them) as before; the tear is the host's sever.
-- Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`: `dangle_hanging` close up; four-frame sheets
+- Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`: `dangle_hanging` close up, `dangle_bone` front on (the broken bone); four-frame sheets
   `dangle_close` (shoved, swinging), `dangle_walk` (walking at you, the forearm flopping), `dangle_knee` (the shin
   hanging, limping), `dangle_tear` (strained through, torn off)); the
   co-op body check still finds no body different.
