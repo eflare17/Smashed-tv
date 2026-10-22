@@ -53,6 +53,10 @@ const ACT_CHARGE := 2           # ... running
 const ACT_DAZE := 3             # ... dazed after (longer if it ran into a pillar)
 const ACT_AIM := 4              # the thrower's arm back
 const ACT_THROW := 5            # ... and over
+const ACT_SLAM_UP := 6          # the boss's fists up ...
+const ACT_SLAM := 7             # ... and down on the floor
+const ACT_ROAR := 8             # ... calling more in
+var tough := 1.0                # how much more it takes (the boss: VoxelKinds.make_boss): health, hits to take a limb off, brain
 var act := 0
 var act_p := 0.0
 var act_t := 0.0
@@ -68,7 +72,7 @@ var act_k: float:
 
 ## Big and heavy: shoves, blasts and throws move it less.
 func heavy() -> bool:
-	return key == "brute" or key == "shielder"
+	return key == "brute" or key == "shielder" or key == "boss"
 
 const SHIELD_BROKEN := 0.4      # a shield with less of it left than this is no shield
 ## The shield brute's shield still up (enough of it left, on him, not hanging off).
@@ -82,6 +86,9 @@ func launch(v: Vector3, spin: float = 6.0) -> void:
 	if frozen():
 		_shatter_now(v)
 		return
+	if key == "boss":
+		v *= 0.3                 # (the boss hardly leaves the floor)
+		spin *= 0.3
 	if not airborne:
 		tumble = 0.0             # hit again in the air: it keeps turning over from where it was
 	airborne = true
@@ -101,6 +108,8 @@ func hit_react(dir: Vector3, cubes: int, part: String) -> void:
 	if _net_block():
 		return
 	var heavy := 0.5 if heavy() else 1.0
+	if key == "boss":
+		heavy = 0.15
 	if part == "shield":
 		heavy = 0.2               # (the shield takes it: a shove, hardly a flinch)
 	var flat := Vector3(dir.x, 0, dir.z).normalized()
@@ -595,6 +604,35 @@ func _act_pose(rot: Dictionary) -> void:
 			rot["forearm_r"] = Quaternion.from_euler(Vector3(-1.2 * c2, 0, 0))
 			rot["chest"] = Quaternion.from_euler(Vector3(-0.2 * c2, 0.35 * c2, 0))
 			rot["arm_l"] = Quaternion.from_euler(Vector3(-0.8 * c2, 0, 0.2))
+		ACT_SLAM_UP:
+			var u := smoothstep(0.0, 1.0, k)
+			rot["arm_r"] = Quaternion.from_euler(Vector3(-2.9 * u, 0, -0.2 * u))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(-2.9 * u, 0, 0.2 * u))
+			rot["forearm_r"] = Quaternion.from_euler(Vector3(-0.6 * u, 0, 0))
+			rot["forearm_l"] = Quaternion.from_euler(Vector3(-0.6 * u, 0, 0))
+			rot["chest"] = Quaternion.from_euler(Vector3(-0.3 * u, 0, 0))
+			rot["head"] = Quaternion.from_euler(Vector3(-0.3 * u, 0, 0))
+		ACT_SLAM:
+			var dn := smoothstep(0.0, 0.5, k)
+			rot["arm_r"] = Quaternion.from_euler(Vector3(-2.9 + 2.3 * dn, 0, -0.2))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(-2.9 + 2.3 * dn, 0, 0.2))
+			rot["forearm_r"] = Quaternion.from_euler(Vector3(-0.6 + 0.4 * dn, 0, 0))
+			rot["forearm_l"] = Quaternion.from_euler(Vector3(-0.6 + 0.4 * dn, 0, 0))
+			rot["chest"] = Quaternion.from_euler(Vector3(-0.3 + 0.9 * dn, 0, 0))
+			rot["head"] = Quaternion.from_euler(Vector3(-0.3 + 0.2 * dn, 0, 0))
+			rot["thigh_l"] = Quaternion.from_euler(Vector3(-0.4 * dn, 0, 0))
+			rot["shin_l"] = Quaternion.from_euler(Vector3(0.6 * dn, 0, 0))
+			rot["thigh_r"] = Quaternion.from_euler(Vector3(-0.4 * dn, 0, 0))
+			rot["shin_r"] = Quaternion.from_euler(Vector3(0.6 * dn, 0, 0))
+		ACT_ROAR:
+			var o := smoothstep(0.0, 0.3, k) * (1.0 - smoothstep(0.8, 1.0, k))
+			var sh := sin(t * 40.0) * 0.05 * o
+			rot["arm_r"] = Quaternion.from_euler(Vector3(-0.4 * o, 0, -1.3 * o + sh))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(-0.4 * o, 0, 1.3 * o - sh))
+			rot["forearm_r"] = Quaternion.from_euler(Vector3(-1.2 * o, 0, 0))
+			rot["forearm_l"] = Quaternion.from_euler(Vector3(-1.2 * o, 0, 0))
+			rot["chest"] = Quaternion.from_euler(Vector3(-0.35 * o, 0, 0))
+			rot["head"] = Quaternion.from_euler(Vector3(-0.7 * o, sh, 0))
 		ACT_THROW:
 			var c3 := smoothstep(0.0, 1.0, k)
 			rot["arm_r"] = Quaternion.from_euler(Vector3(-2.7 + 2.4 * c3, 0, -0.25))
@@ -747,7 +785,7 @@ func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 	var res := {"bits": out, "killed": false, "limb": ""}
 	# a limb hit enough times comes off (and what hangs from it)
 	var base := n.trim_suffix("_l").trim_suffix("_r")
-	if PART_HITS.has(base) and int(p.hits) >= int(PART_HITS[base]) and not p.gone:
+	if PART_HITS.has(base) and int(p.hits) >= int(ceilf(float(PART_HITS[base]) * tough)) and not p.gone:
 		res.limb = n
 		res.bits.append_array(_blow(n))
 	if bone_hit or res.limb != "" or (not out.is_empty() and not was_hanging.is_empty()):
@@ -761,7 +799,7 @@ func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 		# only once a quarter of the brain is gone (the owner, 20 Oct)
 		if base != "head":
 			hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0)) / BODY_TOUGH
-		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
+		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * minf(0.85, BRAIN_KILL * tough)
 		if (hp <= 0.0 or brain_dead) and _can_die():
 			res.killed = true
 			alive = false
@@ -1862,7 +1900,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 		elif not plane and not masked:
 			# (a cube's worth by its size: twice the cube, eight times the health)
 			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08)) * pow(vm / REF_VM, 3.0)
-		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
+		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * minf(0.85, BRAIN_KILL * tough)
 		if (hp <= 0.0 or brain_dead or res.head_off) and _can_die():
 			res.killed = true
 			alive = false

@@ -541,6 +541,32 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
   charge, hit and daze, the pillar, the thrower's glob, the arm off); `test/voxel/kinds_shots.gd`
   (`voxel_shots/kinds_lineup.png`, `kinds_moves.png`, `kinds_shield.png`).
 
+### Waves and the boss (Stage 12 of the overnight plan, 22 Oct: "escalating waves plus a big voxel boss every few
+waves, carvable piece by piece")
+
+- `scripts/voxel/arena/voxel_waves.gd` (`VoxelWaves`, the arena's `waves`). **The waves** replace one-at-a-time in
+  the real game: wave w is `plan(w)` (1 + 1.8w enemies, up to 34: 2, 4, 6, 8 ...), the kinds joining as it goes
+  (grunts and swarmers; batters from 2; brutes and chargers from 3; throwers from 4; shield brutes from 6), walking
+  in one every 0.45 s, never more than 24 up at once (`LIVE_CAP`), each wave's 2.5% quicker (to 20 waves); all down,
+  a 3 s rest and the next, "WAVE n" big in the middle of the screen. The crops still jump every 8 enemies cleared.
+  **F12** switches back to one at a time (the owner's of 20 Oct) and back; a test's game (any test option, or
+  --host/--join from the command line) keeps one at a time unless `--waves`; `--wave=N` starts at wave N.
+- **THE BUTCHER** every fifth wave, first in (a third of a wave behind him): `VoxelModel.VARIANTS.boss`, the brute
+  recoloured red, 4.4 m tall (twice the size: his cubes are twice as big, as many of them). `VoxelBody.tough`
+  (3 the first time, one more each time he comes back): his health 200 x tough, a limb takes tough x the hits to
+  come off, his brain tough x as much gone (to 85%); knocks move him 0.15 as far, throws 0.3. His bar at the top.
+  His moves (`VoxelKinds._boss`): walks at you (stops 2.6 m off); within 3.4 m both fists up (`ACT_SLAM_UP`, 1.1 s:
+  get away) and down (`ACT_SLAM`): everyone within 4.8 m hurt up to 28 by how near and thrown away, the enemies
+  near him knocked over, the cubes lying about thrown up, the view kicked; every 14 s he roars (`ACT_ROAR`) and two
+  swarmers come running at his sides. Under half health: 1.45x faster, slams and roars sooner. Down: "THE BUTCHER IS
+  DOWN", $40.
+- Co-op: the host's waves; event "wv" shows the guest the wave's number and gives its bar the boss's full health,
+  "sl" the slam's dust and kick (looks only).
+- Tests: `test/voxel/waves_test.gd -- --waves` (17 checks: the plans grow, kinds join, the rest, the boss's size and
+  toughness, bar, slam, roar, limb hits, his pay, F12); `test/voxel/boss_shots.gd -- --waves`
+  (`voxel_shots/boss_wave.png`, `boss_slam.png`, `boss_carved.png`); co-op with `coop_test.gd -- --host=X --waves
+  --wave=5` (0 bodies different).
+
 ### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
 
 - A multi-agent sweep read the whole voxel game (about 31,000 lines): one finder per area plus co-op, saving,

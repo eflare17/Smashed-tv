@@ -31,6 +31,20 @@ const GLOB_R := 1.1
 const GLOB_G := 9.8
 const SHIELD_SPEED := 0.6       # (of a brute's)
 const ANGRY := 1.5              # a shielder with his shield gone: this much faster
+## THE BUTCHER (Stage 12, VoxelWaves' boss): a crimson brute twice the size, tough x his health, limbs, brain
+## (VoxelBody.tough). Walks at you; near (SLAM_RANGE) he raises both fists (SLAM_UP s: get away) and brings them down:
+## everyone within SLAM_R m hurt up to SLAM_HURT by how near and thrown away, the cubes lying about thrown up. Every
+## ROAR_EVERY s he roars (ROAR s) and two swarmers come running. Under half his health: angrier (ANGRY_BOSS faster,
+## slams and roars sooner). Knocks and throws hardly move him.
+const BOSS_HP := 200.0          # his health at tough 1 (VoxelWaves.boss_tough: 3 the first time)
+const SLAM_RANGE := 3.4
+const SLAM_UP := 1.1
+const SLAM_DOWN := 0.4
+const SLAM_R := 4.8
+const SLAM_HURT := 28.0
+const ROAR_EVERY := 14.0
+const ROAR := 1.1
+const ANGRY_BOSS := 1.45
 
 var arena: Node3D
 var globs: Array = []           # [{mi: MeshInstance3D, p, v, t, real: bool (the host's / alone: it hurts)}]
@@ -54,6 +68,8 @@ static func speed_for(key: String, base: float) -> float:
 	match key:
 		"charger":
 			return base * 1.3
+		"boss":
+			return 1.15
 		"shielder":
 			return base * 0.75 * SHIELD_SPEED
 	return base
@@ -73,7 +89,112 @@ func step(b: VoxelBody, pp: Vector3, ti: int, to: Vector3, d: float, mv: Vector3
 		"shielder":
 			if not b.has_shield():
 				return mv * ANGRY
+		"boss":
+			return _boss(b, pp, to, d, mv, can, dt)
 	return mv
+
+## A body made THE BUTCHER: tough (VoxelWaves.boss_tough), his health to match, his first roar a while off.
+func make_boss(b: VoxelBody, tough: float) -> void:
+	b.tough = tough
+	b.hp = BOSS_HP * tough
+	b.set_meta("hp_max", b.hp)
+	b.set_meta("roar_t", ROAR_EVERY * 0.6)
+
+func _boss(b: VoxelBody, pp: Vector3, to: Vector3, d: float, mv: Vector3, can: bool, dt: float) -> Vector3:
+	var angry := b.hp < float(b.get_meta("hp_max", BOSS_HP * b.tough)) * 0.5
+	if not can:
+		if b.act != 0 and b.act != VoxelBody.ACT_SLAM:
+			_stop(b, 1.0)
+		return mv
+	match b.act:
+		VoxelBody.ACT_SLAM_UP:
+			b.act_t -= dt
+			b.act_p = 1.0 - b.act_t / SLAM_UP
+			if b.act_t <= 0.0:
+				b.act = VoxelBody.ACT_SLAM
+				b.act_t = SLAM_DOWN
+				b.act_p = 0.0
+				b.set_meta("slammed", false)
+			return Vector3.ZERO
+		VoxelBody.ACT_SLAM:
+			b.act_t -= dt
+			b.act_p = 1.0 - b.act_t / SLAM_DOWN
+			if b.act_p >= 0.45 and not bool(b.get_meta("slammed", false)):
+				b.set_meta("slammed", true)
+				slam(b)
+			if b.act_t <= 0.0:
+				_stop(b, 1.6 if angry else 2.6)
+			return Vector3.ZERO
+		VoxelBody.ACT_ROAR:
+			b.act_t -= dt
+			b.act_p = 1.0 - b.act_t / ROAR
+			if b.act_p >= 0.5 and not bool(b.get_meta("called", false)):
+				b.set_meta("called", true)
+				for sg: float in [-1.0, 1.0]:
+					var side: Vector3 = Vector3(cos(b.yaw), 0, -sin(b.yaw)) * 2.2 * sg
+					var at := VoxelArena.out_of_pillars(b.position + side, 0.4)
+					at.x = clampf(at.x, -VoxelArena.ARENA + 1.5, VoxelArena.ARENA - 1.5)
+					at.z = clampf(at.z, -VoxelArena.ARENA + 1.5, VoxelArena.ARENA - 1.5)
+					arena.spawn_kind("swarmer", at)
+			if b.act_t <= 0.0:
+				_stop(b, 0.8)
+			return Vector3.ZERO
+	var roar_t := float(b.get_meta("roar_t", ROAR_EVERY)) - dt
+	b.set_meta("roar_t", roar_t)
+	if b.act_cool <= 0.0 and roar_t <= 0.0:
+		b.set_meta("roar_t", ROAR_EVERY * (0.7 if angry else 1.0))
+		b.set_meta("called", false)
+		b.act = VoxelBody.ACT_ROAR
+		b.act_t = ROAR
+		b.act_p = 0.0
+		arena.sound.play("flesh_tear", b.position + Vector3.UP * 3.0, 4.0, 0.4)
+		return Vector3.ZERO
+	if b.act_cool <= 0.0 and d < SLAM_RANGE:
+		b.act = VoxelBody.ACT_SLAM_UP
+		b.act_t = SLAM_UP * (0.8 if angry else 1.0)
+		b.act_p = 0.0
+		arena.sound.play("swoosh_heavy", b.position + Vector3.UP * 3.0, 0.0, 0.5)
+		return Vector3.ZERO
+	return mv * (ANGRY_BOSS if angry else 1.0)
+
+## The fists coming down in front of him: whoever's near hurt and thrown, the floor's cubes thrown up (the host's).
+func slam(b: VoxelBody) -> void:
+	var fwd := Vector3(sin(b.yaw), 0, cos(b.yaw))
+	var p := b.position + fwd * 1.3
+	p.y = 0.0
+	slam_fx(p)
+	if arena.net and arena.net.linked and arena.net.role == "host":
+		arena.net.send_slam(p)
+	var targets: Array = arena.net.targets()
+	for j in targets.size():
+		var tp: Vector3 = targets[j]
+		var off := Vector3(tp.x - p.x, 0, tp.z - p.z)
+		var dd := off.length()
+		if dd < SLAM_R:
+			var k := 1.0 - dd / SLAM_R
+			arena._hurt_target(j, SLAM_HURT * (0.35 + 0.65 * k))
+			arena.shove_target(j, (off / maxf(dd, 0.01)) * (4.0 + 7.0 * k), 0.3)
+	# the other enemies close by staggered (not him)
+	for o in arena.bodies:
+		if o != b and o.alive and not o.fragment and o.position.distance_to(p) < SLAM_R * 0.6:
+			o.launch((o.position - p).normalized() * 3.0 + Vector3.UP * 3.0, 4.0)
+
+## What the slam looks and sounds like (both games): the cubes lying about thrown up, a ring of dust, a boom, the
+## view kicked by how near.
+func slam_fx(p: Vector3) -> void:
+	arena.debris.pop(p, SLAM_R * 0.8, 4.5, 1500)
+	var bits := []
+	for k in 40:
+		var a := randf() * TAU
+		var r := randf_range(0.2, 1.4)
+		var c := Color(0.32, 0.3, 0.34).lerp(Color(0.5, 0.48, 0.5), randf())
+		bits.append({"pos": p + Vector3(cos(a) * r, 0.05, sin(a) * r), "col": c})
+	arena.debris.burst(bits, Vector3.UP, 3.0)
+	arena.sound.play("grenades_boom", p, 0.0, 0.6)
+	arena.sound.play("slam", p, 2.0, 0.7)
+	var me_d: float = arena.player.global_position.distance_to(p)
+	if arena.me:
+		arena.me.kick = maxf(float(arena.me.kick), 2.5 * clampf(1.0 - me_d / 18.0, 0.1, 1.0))
 
 func _stop(b: VoxelBody, cool: float) -> void:
 	b.act = 0

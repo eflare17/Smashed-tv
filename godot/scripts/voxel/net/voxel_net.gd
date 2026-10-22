@@ -840,6 +840,11 @@ func _events(list: Array) -> void:
 				arena.dash(ev[2], float(ev[3]))
 			"gl":
 				arena.kinds.launch(ev[1], ev[2], false)
+			"wv":
+				arena.wave = int(ev[1])
+				arena.waves.banner(int(ev[1]), float(ev[2]))
+			"sl":
+				arena.kinds.slam_fx(ev[1])
 
 func _hit_stop(secs: float, scale: float) -> void:
 	for id in arena.melee:
@@ -979,6 +984,16 @@ func _message(m: Array) -> void:
 func send_dash(pid: int, vel: Vector3, secs: float) -> void:
 	if role == "host" and linked:
 		_out.append(["ds", pid, vel, secs])
+
+## A new wave (VoxelWaves) in the host's game: the guest's shows its number (and the boss's bar its full health).
+func send_wave(w: int, boss_max: float) -> void:
+	if role == "host" and linked:
+		_out.append(["wv", w, boss_max])
+
+## The boss's fists on the floor (VoxelKinds) in the host's game: the guest's shakes too (looks only).
+func send_slam(p: Vector3) -> void:
+	if role == "host" and linked:
+		_out.append(["sl", p])
 
 ## A thrower's glob (VoxelKinds), thrown in the host's game: the guest's game throws a copy (looks only).
 func send_glob(from: Vector3, v: Vector3) -> void:

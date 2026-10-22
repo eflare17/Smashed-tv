@@ -1,7 +1,8 @@
 class_name VoxelArena
 extends Node3D
 ## The PC voxel arena test (PLAN.md, 20 Oct: "PC only, voxel destruction"). One arena, block enemies (grunt,
-## swarmer, brute, batter) coming at you one at a time (F3 / F5 send in more), and every shot makes a hole exactly
+## swarmer, brute, batter, and Stage 11's charger, thrower, shield brute) coming at you in waves with a boss every fifth
+## (VoxelWaves; F12: one at a time; F3 / F5 send in more), and every shot makes a hole exactly
 ## where it hits: the cubes there are knocked out (flying, bouncing, settling), the meat and bone inside show, a limb shot mostly away comes off, a head
 ## or chest shot through drops them. Only the hit body parts are meshed again, on worker threads, a few a frame.
 ## The top left shows what it costs (frame rate, frame time, draw calls, triangles, cubes flying, meshing jobs).
@@ -18,7 +19,7 @@ extends Node3D
 ## --topdown, --chunk=2, --stats (print the frame numbers every second).
 
 const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batter", "batter", "charger", "thrower", "shielder"]
-const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9, "charger": 1.75, "thrower": 1.85, "shielder": 2.2}
+const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9, "charger": 1.75, "thrower": 1.85, "shielder": 2.2, "boss": 4.4}
 const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
@@ -34,7 +35,7 @@ const DOWN_SOLO := 4.0          # seconds down before getting up alone ...
 const DOWN_COOP := 15.0         # ... and in co-op (your mate can get you up first)
 const REVIVE_R := 1.6           # metres your mate stands within ...
 const REVIVE_T := 2.5           # ... for this long to get you up
-const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0, "charger": 5.0, "thrower": 5.0, "shielder": 12.0}
+const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0, "charger": 5.0, "thrower": 5.0, "shielder": 12.0, "boss": 20.0}
 const BURN_TOUCH := 6.0         # health a second brushing against one on fire            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
@@ -141,6 +142,7 @@ var _self_t := 0.0
 var hold_suck := false          # (tests: the vacuum's click held down)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var kinds: VoxelKinds           # the charger's, thrower's and shielder's own moves, the thrown globs (Stage 11)
+var waves: VoxelWaves           # the escalating waves and the boss (Stage 12)
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
 var pieces: VoxelPieces         # the bits melee weapons take off, lying about
@@ -204,6 +206,9 @@ func _ready() -> void:
 	kinds = VoxelKinds.new()
 	kinds.arena = self
 	add_child(kinds)
+	waves = VoxelWaves.new()
+	add_child(waves)
+	waves.setup(self)
 	VoxelBody.on_shatter = func(b: VoxelBody, bits: Array, dir: Vector3) -> void:
 		knocked += bits.size()
 		debris.burst(bits, dir.normalized() if dir.length() > 0.01 else Vector3.UP, 3.0)
@@ -272,7 +277,17 @@ func _ready() -> void:
 		wave = 1
 		spawn(int(_opts.enemies))
 	else:
-		_next_wave()
+		# (the waves in the real game, or --waves; a test's game: one at a time, as before)
+		waves.on = _opts.has("waves") or not (testing or _opts.has("host") or _opts.has("join"))
+		if waves.on:
+			if _opts.has("wave"):
+				wave = maxi(0, int(_opts.wave) - 1)     # (--wave=N: start at wave N)
+				waves.bosses = (wave + 1) / VoxelWaves.BOSS_EVERY - (1 if (wave + 1) % VoxelWaves.BOSS_EVERY == 0 else 0)
+			waves.begin_wave()
+		else:
+			_next_wave()
+	if _opts.has("enemies"):
+		waves.on = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (top_down or _opts.has("auto")) else Input.MOUSE_MODE_CAPTURED
 	# --host=CODE / --join=CODE (co-op straight away; --via=enet for an address, --server=ws://... a PeerJS server,
 	# --local no STUN/TURN)
@@ -439,7 +454,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   Esc mouse"
+	help.text = "Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   F12 waves/one at a time   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -1071,15 +1086,21 @@ func _net_hud() -> void:
 ## n more enemies round the arena's edge.
 func spawn(n: int) -> void:
 	for i in n:
-		var key: String = KEYS[randi() % KEYS.size()]
-		var b := VoxelBody.new()
-		add_child(b)
-		b.setup(key, _cube_m(key), chunk, _mat)
-		var a := randf() * TAU
-		b.position = Vector3(cos(a), 0.0, sin(a)) * (ARENA - 2.0) * randf_range(0.7, 1.0)
-		b.speed = VoxelKinds.speed_for(key, randf_range(1.1, 1.9) * (1.4 if key in ["swarmer", "charger"] else (0.75 if key == "brute" else 1.0)))
-		b.died.connect(_on_died)
-		bodies.append(b)
+		spawn_kind(KEYS[randi() % KEYS.size()])
+
+## One enemy of a kind round the arena's edge (at: there instead); a little quicker each wave, in the waves.
+func spawn_kind(key: String, at: Vector3 = Vector3.INF) -> VoxelBody:
+	var b := VoxelBody.new()
+	add_child(b)
+	b.setup(key, _cube_m(key), chunk, _mat)
+	var a := randf() * TAU
+	b.position = Vector3(cos(a), 0.0, sin(a)) * (ARENA - 2.0) * randf_range(0.7, 1.0) if at == Vector3.INF else at
+	b.speed = VoxelKinds.speed_for(key, randf_range(1.1, 1.9) * (1.4 if key in ["swarmer", "charger"] else (0.75 if key == "brute" else 1.0)))
+	if waves and waves.on:
+		b.speed *= 1.0 + 0.025 * minf(float(wave), 20.0)
+	b.died.connect(_on_died)
+	bodies.append(b)
+	return b
 
 # every kind made once while loading (their flesh and meshes cached), so the first of each doesn't stall the game
 func _warm_up() -> void:
@@ -1093,6 +1114,8 @@ func _on_died(b: VoxelBody) -> void:
 	if settings_menu and not settings_menu._bench.is_empty():
 		return                      # (the benchmark's fight: no kill counted, no cash)
 	kills += 1
+	if b and b.key == "boss" and waves:
+		waves.banner_text("%s IS DOWN" % VoxelWaves.BOSS_NAME, Color("#7fd89a"))
 	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:
 		cash += int(VoxelFarm.KILL_CASH[b.key])     # (each player's game pays its own player for every kill)
 		stash._dirty = true
@@ -1268,6 +1291,11 @@ func _unhandled_input(e: InputEvent) -> void:
 				net_menu.open()
 			KEY_F9:
 				net.leave()
+			KEY_F12:
+				# the waves, or one at a time (the host's or alone)
+				if net.role != "guest":
+					waves.on = not waves.on
+					say("Waves: on (wave %d next)" % (wave + 1) if waves.on else "Waves off: one enemy at a time", 2.5)
 
 # ---------------------------------------------------------------- each frame
 
@@ -1542,7 +1570,7 @@ func _physics_process(dt: float) -> void:
 		var to := Vector3(pp.x - b.position.x, 0, pp.z - b.position.z)
 		var d := to.length()
 		var mv := Vector3.ZERO
-		var stop := 4.5 if _opts.has("auto") else 1.2
+		var stop := 4.5 if _opts.has("auto") else (2.6 if b.key == "boss" else 1.2)
 		b.react_step(dt)
 		var ice := b.frozen()                       # frozen solid: a statue till it thaws or shatters
 		var panic := b.panic_t > 0.0 and not ice    # on fire: running about, flailing, not fighting
@@ -1756,7 +1784,8 @@ func _process(dt: float) -> void:
 		bodies.remove_at(old)
 		dead -= 1
 	var t3 := Time.get_ticks_usec()
-	if not guest and not bodies.any(func(x): return x.alive):
+	waves.step(dt, not guest)
+	if not guest and not waves.on and not bodies.any(func(x): return x.alive):
 		_next_t += dt
 		if _next_t >= 1.5:
 			_next_t = 0.0
