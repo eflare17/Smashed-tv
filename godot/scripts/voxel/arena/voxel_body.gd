@@ -2178,6 +2178,11 @@ const TEAR_K := 0.25             # how fast a strip strains through (its load in
 const HIT_STRAIN := 0.35         # a hit on the body jerks a dangling limb this much (a thin strip's worth)
 var loose := {}                  # part -> true: hanging by flesh (its bone, or the bone above it, broken at the joint)
 var _dangle := {}                # the top of each hanging chain -> {tip, prev, len, strain, rest: Vector3 (bone space)}
+var _dangle_fx := {}             # (looks only) the top of each hanging chain -> {skin: the stretched strip, drip: blood}
+const SAG := 0.045               # metres a hanging limb sags from its joint, the skin it hangs by stretched over the gap
+const SWING_KEEP := 0.996        # how much of its swing a hanging limb keeps each frame (floppy: it swings a long while)
+static var _skin_mat: StandardMaterial3D
+static var _drip_mat: StandardMaterial3D
 static var _bone0 := {}          # "key|chunk" -> part -> {top: bone cells by its own joint, joints: {child: reached}}
 
 static func _near_count(cells: PackedInt32Array, s: Vector3i, pt: Vector3, r: float, want: int, mask: PackedByteArray = PackedByteArray()) -> int:
@@ -2329,7 +2334,22 @@ func _new_dangle(nm: String) -> Dictionary:
 		rest = Vector3(0, -0.2, 0)
 	var g := skeleton.global_transform * skeleton.get_bone_global_pose(b)
 	var tip := g * rest
-	return {"tip": tip, "prev": tip, "len": rest.length(), "rest": rest, "strain": 0.0, "a": 0.0, "odo": odo}
+	# (it drops as it goes: a start to its swing, out and down)
+	var kick := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized() * 0.05
+	# how thick the limb is just under its joint (the flesh stretched across the gap is most of that, thinning as it tears)
+	var p2: Dictionary = parts[nm]
+	var s2: Vector3i = p2.grid.size
+	var j2 := _joint_in(p2, int(p2.bone))
+	var area := 0
+	for dy in [1, 2, 3]:
+		var y := clampi(roundi(j2.y) - dy, 0, s2.y - 1)
+		for z in s2.z:
+			for x in s2.x:
+				if p2.grid.cells[x + s2.x * (y + s2.y * z)] != 0:
+					area += 1
+	var radius := clampf(sqrt(float(area) / 3.0 / PI) * vm, 0.015, 0.1)
+	return {"tip": tip, "prev": tip - kick, "len": rest.length(), "rest": rest, "strain": 0.0, "a": 0.0, "odo": odo,
+		"sag": 0.0, "sag_v": 0.0, "limp": {}, "r": radius, "strip0": maxi(1, strip_cubes(nm))}
 
 ## The cubes of the chain hanging from part nm (it and everything below it), and the strip it hangs by.
 func _chain_cubes(nm: String) -> int:
@@ -2353,6 +2373,8 @@ func strip_cubes(nm: String) -> int:
 # (animate's end) each hanging chain swung: its tip falls and lags behind the joint as the body moves, the bone turned
 # to point at it, what's below it limp; its strain built up
 func _dangle_pose(dt: float) -> void:
+	if _dangle_fx.size() > _dangle.size() or (not _dangle_fx.is_empty() and _dangle.is_empty()):
+		_dangle_fx_clear()
 	if _dangle.is_empty():
 		return
 	var sk := skeleton.global_transform
@@ -2361,10 +2383,16 @@ func _dangle_pose(dt: float) -> void:
 		var b := int(parts[nm].bone)
 		var par := model.bone_parent[b]
 		var pg := sk * (skeleton.get_bone_global_pose(par) if par >= 0 else Transform3D())
-		var joint := sk * skeleton.get_bone_global_pose(b).origin
+		var rest_o := skeleton.get_bone_rest(b).origin
+		var joint := pg * rest_o                 # (where the joint is, not where the limb's sagged to)
 		var tip: Vector3 = d.tip
 		var prev: Vector3 = d.prev
-		var vel := (tip - prev) * 0.985
+		var vel := (tip - prev) * SWING_KEEP
+		# walking (or shoved along) sways it side to side, in step
+		var walk0 := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)
+		if walk0 > 0.05 and alive:
+			var side := pg.basis.x.normalized()
+			vel += side * sin(odo * 5.5) * walk0 * 0.0016 + Vector3(0, 0.0006 * walk0 * absf(sin(odo * 5.5)), 0)
 		var nt := tip + vel + Vector3(0, -9.8, 0) * dt * dt
 		var len_m: float = d.len
 		var off := nt - joint
@@ -2375,8 +2403,13 @@ func _dangle_pose(dt: float) -> void:
 			nt.y = floor_y
 		var acc := ((nt - tip) - (tip - prev)).length() / maxf(dt * dt, 0.0001)
 		d.a = lerpf(float(d.a), acc, 0.3)
+		var swing_v := (nt - tip) / maxf(dt, 0.0001)        # (how fast the end's going: the hand's flop, the sag's bounce)
 		d.prev = tip
 		d.tip = nt
+		# the sag: a spring, bouncing with the swing (the skin stretching and giving)
+		var sag_to := SAG + 0.012 * minf(float(d.a) / 9.8, 3.0)
+		d.sag_v = (float(d.sag_v) + (sag_to - float(d.sag)) * 180.0 * dt) * maxf(0.0, 1.0 - 9.0 * dt)
+		d.sag = clampf(float(d.sag) + float(d.sag_v) * dt, 0.0, SAG * 2.5)
 		# the bone turned to point at the tip (from how it would point unturned)
 		var pb := pg.basis.orthonormalized()
 		var want := (nt - joint).normalized()
@@ -2387,7 +2420,12 @@ func _dangle_pose(dt: float) -> void:
 			skeleton.set_bone_pose_rotation(b, local)
 		else:
 			skeleton.set_bone_pose_rotation(b, Quaternion.IDENTITY)
-		# limp below it
+		# sagged down from the joint (along the way it hangs), the stretched skin across the gap
+		skeleton.set_bone_pose_position(b, rest_o + pb.inverse() * (want * float(d.sag)))
+		_dangle_look(nm, d, joint, joint + want * float(d.sag), dt)
+		# limp below it: flopping the other way to the swing, a little behind it
+		var lv := pb.inverse() * swing_v
+		var limp: Dictionary = d.limp
 		for i in model.bone_names.size():
 			var pb2 := model.bone_parent[i]
 			var below := false
@@ -2397,7 +2435,11 @@ func _dangle_pose(dt: float) -> void:
 					break
 				pb2 = model.bone_parent[pb2]
 			if below:
-				skeleton.set_bone_pose_rotation(i, Quaternion.from_euler(Vector3(0.15 * sin(t * 3.0 + i), 0, 0)))
+				var fl: Vector2 = limp.get(i, Vector2.ZERO)
+				var aim := Vector2(clampf(lv.z * 2.2, -1.1, 1.1), clampf(-lv.x * 2.2, -1.1, 1.1))
+				fl = fl.lerp(aim, minf(1.0, dt * 7.0))
+				limp[i] = fl
+				skeleton.set_bone_pose_rotation(i, Quaternion.from_euler(Vector3(fl.x + 0.12 * sin(t * 3.0 + i), 0, fl.y)))
 		# the strain: its weight, and every jerk, on the strip it hangs by (none lying on the floor)
 		var walk := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)      # (walking jolts it about)
 		d.odo = odo
@@ -2405,6 +2447,78 @@ func _dangle_pose(dt: float) -> void:
 			var strip := maxi(1, strip_cubes(nm))
 			var load := float(_chain_cubes(nm)) / 1000.0 * (1.0 + minf(float(d.a), 60.0) / 9.8) * (1.0 + 0.5 * walk)
 			d.strain = float(d.strain) + dt * TEAR_K * load * 10.0 / float(strip)
+
+# (looks only) the skin stretched from the joint to where the limb sagged to, and blood dripping off it, faster as it
+# tears; gone with the swing
+func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, dt: float) -> void:
+	if _skin_mat == null:
+		_skin_mat = StandardMaterial3D.new()
+		_skin_mat.albedo_color = Color(0.62, 0.09, 0.1)
+		_skin_mat.roughness = 0.35               # (wet)
+		_skin_mat.metallic_specular = 0.7
+		_drip_mat = StandardMaterial3D.new()
+		_drip_mat.albedo_color = Color(0.45, 0.02, 0.03)
+		_drip_mat.roughness = 0.2
+	var fx: Dictionary = _dangle_fx.get(nm, {})
+	if fx.is_empty():
+		var skin := MeshInstance3D.new()
+		var bm := BoxMesh.new()                  # (square: blocks like the rest of them)
+		bm.size = Vector3.ONE
+		skin.mesh = bm
+		skin.material_override = _skin_mat
+		skin.top_level = true
+		add_child(skin)
+		var drip := CPUParticles3D.new()
+		var dm := BoxMesh.new()
+		dm.size = Vector3.ONE * 0.012
+		drip.mesh = dm
+		drip.material_override = _drip_mat
+		drip.amount = 20
+		drip.lifetime = 0.9
+		drip.gravity = Vector3(0, -9.8, 0)
+		drip.direction = Vector3.DOWN
+		drip.spread = 25.0
+		drip.initial_velocity_min = 0.1
+		drip.initial_velocity_max = 0.5
+		drip.scale_amount_min = 0.5
+		drip.scale_amount_max = 1.3
+		drip.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		drip.emission_sphere_radius = 0.02
+		drip.top_level = true
+		add_child(drip)
+		fx = {"skin": skin, "drip": drip}
+		_dangle_fx[nm] = fx
+	var skin2: MeshInstance3D = fx.skin
+	var strip := strip_cubes(nm)
+	var w := 2.0 * float(d.get("r", 0.04)) * clampf(float(strip) / float(d.get("strip0", strip)), 0.3, 1.0) * 0.85
+	var seg := to - from
+	var lenm := maxf(seg.length(), 0.004) + 0.03         # (into the flesh at both ends)
+	var y := seg.normalized() if seg.length() > 0.0005 else Vector3.DOWN
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	skin2.global_transform = Transform3D(Basis(x * w, y * lenm, z * w), (from + to) * 0.5)
+	var drip2: CPUParticles3D = fx.drip
+	drip2.global_position = to
+	var st := float(d.strain)
+	var n := 20 if st < 0.4 else (30 if st < 0.75 else 44)       # (more as it tears)
+	if drip2.amount != n:
+		drip2.amount = n
+	drip2.emitting = true
+
+# a chain no longer hanging: its looks gone, its sag put back
+func _dangle_fx_clear() -> void:
+	for nm in _dangle_fx.keys():
+		if _dangle.has(nm):
+			continue
+		var fx: Dictionary = _dangle_fx[nm]
+		(fx.skin as Node).queue_free()
+		var drip: CPUParticles3D = fx.drip
+		drip.emitting = false
+		get_tree().create_timer(1.0).timeout.connect(drip.queue_free)
+		_dangle_fx.erase(nm)
+		if parts.has(nm):
+			var b := int(parts[nm].bone)
+			skeleton.set_bone_pose_position(b, skeleton.get_bone_rest(b).origin)
 
 ## (the host's arena, every frame) the top of a hanging chain strained through, to tear off ("" none).
 func tear_due() -> String:
@@ -2431,7 +2545,9 @@ func _jerk(was: Array, hit_parts: Array) -> void:
 		for hp_ in hit_parts:
 			if hp_ == nm or _hangs_from(String(hp_), nm):
 				d.strain = 1.0
-		d.prev = (d.tip as Vector3) + Vector3(0.03, 0.02, -0.03)      # (and a kick to its swing)
+		# (and a kick to its swing: it flies about, then swings back)
+		d.prev = (d.tip as Vector3) - Vector3(randf_range(-1, 1), randf_range(0.2, 0.6), randf_range(-1, 1)).normalized() * randf_range(0.06, 0.11)
+		d.sag_v = float(d.get("sag_v", 0.0)) + 0.6
 
 func _hangs_from(part: String, top: String) -> bool:
 	if not parts.has(part) or not parts.has(top):

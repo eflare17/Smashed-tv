@@ -448,9 +448,17 @@ to blown-off bones, dangling limbs tear off from strain, shooting the skin finis
   seconds, a thick flap holds a while (`TEAR_K`, `HIT_STRAIN`). Strained through, the host's arena tears it off
   (`_tear_step`: a sever, so a co-op guest gets it like any cut), a spray of blood, a wet rip (`flesh_tear_*`). A cut
   that takes cubes from a hanging limb or its strip **finishes it** at once. What comes off keeps its meat on its bone.
+- **Easier to see, floppier** (22 Oct, the owner: "make it more visible and floppier"): the swing keeps more of
+  itself each frame (`SWING_KEEP` 0.996: it swings a long while), walking sways it side to side in step, a hit flings
+  it 6-11 cm and it swings back; the hand or foot below flops against the swing. A hanging limb **sags** from its joint
+  (`SAG` 4.5 cm, bouncing like a spring with the swing) and the gap is bridged by a block of **raw red flesh** as thick
+  as the limb, thinning as the strip is shot away; **blood drips** off it (faster as it nears tearing). All looks only
+  (no cubes, nothing to vacuum); the cuts land where the limb is drawn.
 - Co-op: the loose parts follow from the cubes (the same in both games); the swing is each game's own, and the cuts
   are made against the host's pose (sent with them) as before; the tear is the host's sever.
-- Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`); the
+- Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`: `dangle_hanging` close up; four-frame sheets
+  `dangle_close` (shoved, swinging), `dangle_walk` (walking at you, the forearm flopping), `dangle_knee` (the shin
+  hanging, limping), `dangle_tear` (strained through, torn off)); the
   co-op body check still finds no body different.
 
 ### Settings and the benchmark (22 Oct, the owner's Stage 9: "PC first, as physics/graphics heavy as possible, but
