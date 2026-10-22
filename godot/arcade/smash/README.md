@@ -6,6 +6,9 @@ bodies, and nothing outside this folder is changed.
 
 ## Run it
 
+- Browser (nothing to install): https://eflare17.github.io/Smashed-tv/smash-play/ — `smash-play/` in the repo's
+  top folder, reusing the main game's web engine from `godot-play/`. After changing the game, rebuild it with
+  `bash godot/arcade/smash/build_web.sh` and commit `smash-play/`.
 - Windows: double-click **`Play Smash.bat`** in the repo's top folder. It finds Godot 4.4 (the `GODOT`
   environment variable, the PATH, or the Desktop / Downloads / Documents / Program Files folders), or offers to
   download Godot 4.4.1 once into `%LOCALAPPDATA%\SmashedTV`, then runs this scene (`play_smash.ps1`).
