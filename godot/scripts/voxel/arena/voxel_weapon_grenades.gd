@@ -908,7 +908,7 @@ static func blast(bodies: Array, p: Vector3, space: PhysicsDirectSpaceState3D = 
 			away = (away + pf.normalized() * 1.5).normalized()       # hit square: on along the shot
 		if away.length() < 0.5:
 			away = Vector3(dir.x, 0.0, dir.z).normalized() if Vector2(dir.x, dir.z).length() > 0.05 else Vector3.FORWARD
-		var v := (away * OUT * (0.3 + k) + Vector3.UP * LIFT * (0.45 + 0.7 * k)) * (0.6 if b.key == "brute" else 1.0)
+		var v := (away * OUT * (0.3 + k) + Vector3.UP * LIFT * (0.45 + 0.7 * k)) * (0.6 if b.heavy() else 1.0)
 		b.launch(v, 3.0 + 9.0 * k)
 		hit.v = v
 		hit.away = away

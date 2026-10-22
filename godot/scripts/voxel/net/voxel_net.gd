@@ -545,7 +545,7 @@ func _snapshot() -> PackedByteArray:
 		b.put_u32(bb.net_id)
 		var p: Vector3 = bb.position
 		for v in [p.x, p.y, p.z, bb.yaw, bb.odo, bb.attack, bb.stagger, bb.flinch, bb.down_t, bb.up_t, bb.tumble, bb.dead_t,
-				bb.since_air, bb.hp, bb.frost, bb.panic_t, bb.speed]:
+				bb.since_air, bb.hp, bb.frost, bb.panic_t, bb.speed, bb.act_k]:
 			b.put_float(v)
 		var flags := (1 if bb.alive else 0) | (2 if bb.airborne else 0) | (4 if bb.frozen() else 0) | (8 if bb.burning() else 0) | (16 if bb.flinch_head else 0) | (32 if VoxelBody.immortal else 0)   # (32: the host's F6, can't die)
 		b.put_u8(flags)
@@ -651,7 +651,7 @@ func _guest_frame(_dt: float) -> void:
 		var sc: Dictionary = c[1]
 		b.position = (sa.pos as Vector3).lerp(sc.pos, k)
 		b.yaw = lerp_angle(float(sa.yaw), float(sc.yaw), k)
-		for f in ["odo", "attack", "stagger", "flinch", "down_t", "up_t", "tumble", "dead_t", "since_air", "frost", "panic_t", "speed"]:
+		for f in ["odo", "attack", "stagger", "flinch", "down_t", "up_t", "tumble", "dead_t", "since_air", "frost", "panic_t", "speed", "act_k"]:
 			b.set(f, lerpf(float(sa[f]), float(sc[f]), k) if f in ["odo", "tumble"] else float(sc[f]))
 		b.hp = float(sc.hp)
 		b.airborne = bool(sc.air)
@@ -691,7 +691,7 @@ func _read_snapshot(d: PackedByteArray) -> void:
 		var nid := b.get_u32()
 		var s := {}
 		s.pos = Vector3(b.get_float(), b.get_float(), b.get_float())
-		for f in ["yaw", "odo", "attack", "stagger", "flinch", "down_t", "up_t", "tumble", "dead_t", "since_air", "hp", "frost", "panic_t", "speed"]:
+		for f in ["yaw", "odo", "attack", "stagger", "flinch", "down_t", "up_t", "tumble", "dead_t", "since_air", "hp", "frost", "panic_t", "speed", "act_k"]:
 			s[f] = b.get_float()
 		var flags := b.get_u8()
 		s.alive = flags & 1 != 0
@@ -838,6 +838,8 @@ func _events(list: Array) -> void:
 				arena.hurt_player(float(ev[1]))
 			"ds":
 				arena.dash(ev[2], float(ev[3]))
+			"gl":
+				arena.kinds.launch(ev[1], ev[2], false)
 
 func _hit_stop(secs: float, scale: float) -> void:
 	for id in arena.melee:
@@ -977,6 +979,11 @@ func _message(m: Array) -> void:
 func send_dash(pid: int, vel: Vector3, secs: float) -> void:
 	if role == "host" and linked:
 		_out.append(["ds", pid, vel, secs])
+
+## A thrower's glob (VoxelKinds), thrown in the host's game: the guest's game throws a copy (looks only).
+func send_glob(from: Vector3, v: Vector3) -> void:
+	if role == "host" and linked:
+		_out.append(["gl", from, v])
 
 ## The other player's blow froze their game a blink (the host's copy of their weapon struck).
 func send_hitstop(pid: int, secs: float, scale: float) -> void:

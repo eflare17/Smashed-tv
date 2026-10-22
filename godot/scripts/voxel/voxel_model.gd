@@ -9,6 +9,16 @@ extends RefCounted
 ## the same look. Units: metres, the feet's centre at the origin, +z forward, +y up, +x the character's left.
 
 const DIR := "res://assets/voxel/"
+## Kinds made from another's model (Stage 11, the arena's enemy variety): its parts recoloured toward tint (mix of the
+## way), and the shield brute's shield added: a steel plate on a bone of its own below the left forearm (laid flat at
+## rest, held up in front of it when the forearm points forward: VoxelBody pins it so).
+const VARIANTS := {
+	"charger": {"base": "swarmer", "tint": Color(1.0, 0.32, 0.25), "mix": 0.55},
+	"thrower": {"base": "grunt", "tint": Color(0.45, 0.95, 0.3), "mix": 0.5},
+	"shielder": {"base": "brute", "tint": Color(0.45, 0.6, 1.0), "mix": 0.45, "shield": true},
+}
+const SHIELD_ORIGIN := Vector3i(-4, 19, -22)     # (model voxels, at rest: x across, y its thickness, z its height)
+const SHIELD_SIZE := Vector3i(30, 2, 38)
 
 static var _models := {}
 static var _weapons := {}          # name -> {grid, origin: Vector3, arrays: {lod: Dictionary}}
@@ -39,7 +49,8 @@ static var _has := {}
 
 static func has_model(ch: String) -> bool:
 	if not _has.has(ch):
-		_has[ch] = FileAccess.file_exists(DIR + ch + "/rig.json")
+		var dir := String(VARIANTS[ch].base) if VARIANTS.has(ch) else ch
+		_has[ch] = FileAccess.file_exists(DIR + dir + "/rig.json")
 	return _has[ch]
 
 static func get_model(ch: String) -> VoxelModel:
@@ -53,9 +64,16 @@ static func get_model(ch: String) -> VoxelModel:
 	_models[ch] = m
 	return m
 
+var _dir := ""                     # the folder its files are in (a variant's: its base's)
+var _tint := {}                    # a variant's {tint, mix}, or {}
+
 func _load(ch: String) -> bool:
 	char_name = ch
-	var f := FileAccess.open(DIR + ch + "/rig.json", FileAccess.READ)
+	_dir = ch
+	if VARIANTS.has(ch):
+		_dir = String(VARIANTS[ch].base)
+		_tint = VARIANTS[ch]
+	var f := FileAccess.open(DIR + _dir + "/rig.json", FileAccess.READ)
 	if f == null:
 		return false
 	var j = JSON.parse_string(f.get_as_text())
@@ -79,7 +97,51 @@ func _load(ch: String) -> bool:
 		parts[String(p.name)] = {"bone": int(bone_index.get(String(p.bone), 0)), "origin": Vector3i(int(o[0]), int(o[1]), int(o[2])),
 			"file": String(p.file), "group": String(p.get("group", "")), "style": String(p.get("style", "")),
 			"optional": bool(p.get("optional", false)), "grid": null, "arrays": {}}
+	if bool(_tint.get("shield", false)) and bone_index.has("forearm_l"):
+		bone_index["shield"] = bone_names.size()
+		bone_names.append("shield")
+		var hl: Vector3 = bone_pivot[bone("hand_l")] if bone("hand_l") >= 0 else Vector3(23, 21, 0)
+		bone_pivot.append(Vector3(hl.x, SHIELD_ORIGIN.y + SHIELD_SIZE.y, 0.0))
+		bone_parent.append(bone("forearm_l"))
+		parts["shield"] = {"bone": bone("shield"), "origin": SHIELD_ORIGIN, "file": "", "group": "", "style": "",
+			"optional": false, "grid": shield_grid(), "arrays": {}}
 	return true
+
+## The shield brute's shield: a steel plate, a dark rim with rivets, a red cross on its face (the face: y 0, the
+## side away from him once it's held up).
+static func shield_grid() -> Dictionary:
+	var s := SHIELD_SIZE
+	var cells := PackedInt32Array()
+	cells.resize(s.x * s.y * s.z)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var cx := (s.x - 1) / 2.0
+	var cz := (s.z - 1) / 2.0
+	for z in s.z:
+		for y in s.y:
+			for x in s.x:
+				# the corners cut off
+				var ex := minf(x, s.x - 1 - x)
+				var ez := minf(z, s.z - 1 - z)
+				if ex + ez < 3:
+					continue
+				var c := Color8(118, 128, 142)
+				var rim := ex < 2 or ez < 2
+				if rim:
+					c = Color8(66, 70, 80)
+					if y == 0 and int(ex) == 0 and int(ez) % 5 == 2 or y == 0 and int(ez) == 0 and int(ex) % 5 == 2:
+						c = Color8(196, 200, 208)          # rivets
+				elif y == 0:
+					var u := (x - cx) / cx
+					var w := (z - cz) / cz
+					if absf(absf(u) - absf(w)) < 0.12 and absf(u) < 0.8:
+						c = Color8(150, 26, 30)            # the cross
+					elif absf(u) < 0.14 and absf(w) < 0.14:
+						c = Color8(196, 200, 208)          # the boss in the middle
+				var v := rng.randf_range(-6, 6)
+				c = Color8(clampi(c.r8 + int(v), 0, 255), clampi(c.g8 + int(v), 0, 255), clampi(c.b8 + int(v), 0, 255))
+				cells[x + s.x * (y + s.y * z)] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
+	return {"size": s, "cells": cells}
 
 func bone(name: String) -> int:
 	return int(bone_index.get(name, -1))
@@ -88,9 +150,26 @@ func bone(name: String) -> int:
 func grid(part: String) -> Dictionary:
 	var p: Dictionary = parts[part]
 	if p.grid == null:
-		var v := VoxFile.load_file(DIR + char_name + "/" + String(p.file))
+		var v := VoxFile.load_file(DIR + (_dir if _dir != "" else char_name) + "/" + String(p.file))
 		p.grid = v.model_grid() if v else {"size": Vector3i.ZERO, "cells": PackedInt32Array()}
+		if not _tint.is_empty():
+			p.grid = _tinted(p.grid, _tint.tint, float(_tint.mix))
 	return p.grid
+
+# a grid's colours turned toward tint (keeping how light each is)
+static func _tinted(g: Dictionary, tint: Color, mix: float) -> Dictionary:
+	var cells: PackedInt32Array = (g.cells as PackedInt32Array).duplicate()
+	for i in cells.size():
+		var v := cells[i]
+		if v == 0:
+			continue
+		var k := v - 1
+		var c := Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)
+		var l := c.get_luminance()
+		var t := Color(clampf(tint.r * l * 1.8, 0, 1), clampf(tint.g * l * 1.8, 0, 1), clampf(tint.b * l * 1.8, 0, 1))
+		c = c.lerp(t, mix)
+		cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
+	return {"size": g.size, "cells": cells}
 
 ## Replaces a part's voxels (the shirt print repaints the torso's front); its meshes are made again.
 func set_grid(part: String, g: Dictionary) -> void:

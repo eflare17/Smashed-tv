@@ -338,7 +338,7 @@ static func smash_body(b: VoxelBody, point: Vector3, dir: Vector3) -> Dictionary
 		b.hit_react(flat, 60, part)
 		b.stagger = maxf(b.stagger, 0.55)
 		b.flinch = 1.0
-	b.knock = flat * SHOVE * (0.55 if b.key == "brute" else 1.0)     # the dead slide back too
+	b.knock = flat * SHOVE * (0.55 if b.heavy() else 1.0)     # the dead slide back too
 	return res
 
 # what's in front to smash: [body, hit] or [] (top-down a lower ray too, for anything short or lying)
@@ -559,7 +559,7 @@ static func side_blow(b: VoxelBody, hit: Dictionary, push: Vector3) -> Dictionar
 	res["carve_ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	if b.alive and b.hurt(SIDE_HURT):
 		res.killed = true
-	b.launch(push * (0.6 if b.key == "brute" else 1.0), SIDE_SPIN)
+	b.launch(push * (0.6 if b.heavy() else 1.0), SIDE_SPIN)
 	return res
 
 # the head sweeping across: each frame the rays it has passed since the last, till one meets a body or the arc's done
@@ -646,7 +646,7 @@ static func slam_body(b: VoxelBody, centre: Vector3, radius: float = SLAM_R) -> 
 		return Vector3.ZERO
 	var away := off / d if d > 0.01 else Vector3(0, 0, -1)
 	var near := 1.0 - d / radius
-	var v := (away * SLAM_OUT / (d + 0.5) + Vector3.UP * SLAM_LIFT * (0.8 + 0.3 * near)) * (0.6 if b.key == "brute" else 1.0)
+	var v := (away * SLAM_OUT / (d + 0.5) + Vector3.UP * SLAM_LIFT * (0.8 + 0.3 * near)) * (0.6 if b.heavy() else 1.0)
 	b.launch(v, 3.0 + 4.0 * near)
 	b.hurt(SLAM_HURT)
 	return v

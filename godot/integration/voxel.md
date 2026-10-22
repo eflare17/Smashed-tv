@@ -511,6 +511,36 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
   limbs, cubes popped up, pieces tossed), so the flying and lying cubes and pieces fill up toward each preset's caps:
   it measures the gore at full load, not only the drawing.
 
+### Enemy variety (Stage 11 of the overnight plan, 22 Oct: "a fast charger, a ranged thrower and a tanky shield brute")
+
+- `scripts/voxel/arena/voxel_kinds.gd` (`VoxelKinds`, the arena's `kinds`): each kind's own move, run on the host (or
+  alone) from the enemies' loop (`kinds.step`: the walk it wants this frame), and the thrown globs (both games).
+- **Models**: `VoxelModel.VARIANTS`: an old model's files recoloured toward a tint (`_tinted`, keeping how light each
+  cube is): the charger from the swarmer (red), the thrower from the grunt (green), the shield brute from the brute
+  (blue steel). The shield brute gets a **shield**: a 30x2x38 steel plate (`shield_grid()`: a dark rim, rivets, a red
+  cross, a boss) as a part on a bone of its own (`shield`, under `forearm_l`), laid flat at rest; `VoxelBody.animate`
+  pins the left arm so the forearm points ahead and the shield stands up in front. It's an ordinary part: shots,
+  blades, fire and blasts take its cubes (no flesh inside, no health lost: `PART_WEIGHT` has none for it), holes go
+  through, bits cut loose fall off as pieces, the arm cut off takes it along, it's synced like any part.
+- **Charger**: from 3-10 m it crouches 0.6 s (`ACT_WINDUP`), runs headlong 11 m/s up to 0.9 s (`ACT_CHARGE`; it
+  doesn't turn), whoever it runs into takes 15 and is thrown 9 m/s (`shove_target`: the other player through "ds"),
+  then dazed 1 s (`ACT_DAZE`; a pillar or the wall: stopped dead, 8 hurt, 2.2 s). 2.5-4 s before the next. No
+  charge on a lost leg; knocked over, set alight or frozen mid-move, it's off. Speed 1.3x a grunt's.
+- **Thrower**: keeps 6-11 m off (in from further, back when you're near, sidestepping between); every 2.4-3.6 s
+  draws its right arm back 0.7 s (`ACT_AIM`) and lobs a glob (an arc timed by the distance) at your chest: 10 where
+  it lands (1.1 m round, less further out), a green splash of cubes either way. The arm off or hanging
+  (`can_throw`): it comes in to hit you like a grunt.
+- **Shield brute**: 0.6x a brute's speed; the shield takes the shots from the front (`fire`: a clang and sparks for
+  a shield hit, a shove not a stagger: `hit_react`); under 40% of it left (`SHIELD_BROKEN`), or hanging, or off with
+  the arm: 1.5x faster. Hammers, grenades and the harpoon treat him as heavy (`VoxelBody.heavy()`).
+- In the mix (`VoxelArena.KEYS`, one each in eleven), paid for kills (charger $2, thrower $2, shield brute $6),
+  their swings hurt like their base kind's. F4 freezes them mid-move.
+- Co-op: the move is the host's; the guest gets it in the snapshots (`act_k`: the move and how far through, one
+  float) and poses it; a thrown glob is sent as event "gl" and the guest throws a copy that only looks.
+- Tests: `test/voxel/kinds_test.gd` (17 checks: the models, the shield taking shots and shot away, the charger's
+  charge, hit and daze, the pillar, the thrower's glob, the arm off); `test/voxel/kinds_shots.gd`
+  (`voxel_shots/kinds_lineup.png`, `kinds_moves.png`, `kinds_shield.png`).
+
 ### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
 
 - A multi-agent sweep read the whole voxel game (about 31,000 lines): one finder per area plus co-op, saving,

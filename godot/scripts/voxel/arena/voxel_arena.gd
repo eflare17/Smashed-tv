@@ -17,8 +17,8 @@ extends Node3D
 ## and blasts), --enemies=N, --shot=path.png and --secs=S (save a screenshot after S seconds and quit),
 ## --topdown, --chunk=2, --stats (print the frame numbers every second).
 
-const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batter", "batter"]
-const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9}
+const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batter", "batter", "charger", "thrower", "shielder"]
+const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9, "charger": 1.75, "thrower": 1.85, "shielder": 2.2}
 const MAX_JOBS := 12            # meshing jobs running at once
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
@@ -34,7 +34,7 @@ const DOWN_SOLO := 4.0          # seconds down before getting up alone ...
 const DOWN_COOP := 15.0         # ... and in co-op (your mate can get you up first)
 const REVIVE_R := 1.6           # metres your mate stands within ...
 const REVIVE_T := 2.5           # ... for this long to get you up
-const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0}
+const SWING_HURT := {"grunt": 6.0, "swarmer": 4.0, "brute": 12.0, "batter": 8.0, "charger": 5.0, "thrower": 5.0, "shielder": 12.0}
 const BURN_TOUCH := 6.0         # health a second brushing against one on fire            # corpses and lying pieces kept (the oldest go past this; the vacuum takes them too)
 
 var chunk := 1                  # sprite pixels a cube
@@ -140,6 +140,7 @@ var _near_ward := false
 var _self_t := 0.0
 var hold_suck := false          # (tests: the vacuum's click held down)
 var flames: VoxelFlames         # fire, as little glowing cubes
+var kinds: VoxelKinds           # the charger's, thrower's and shielder's own moves, the thrown globs (Stage 11)
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
 var pieces: VoxelPieces         # the bits melee weapons take off, lying about
@@ -200,6 +201,9 @@ func _ready() -> void:
 	flames = VoxelFlames.new()
 	add_child(flames)
 	flames.setup(_cube_m("grunt"))
+	kinds = VoxelKinds.new()
+	kinds.arena = self
+	add_child(kinds)
 	VoxelBody.on_shatter = func(b: VoxelBody, bits: Array, dir: Vector3) -> void:
 		knocked += bits.size()
 		debris.burst(bits, dir.normalized() if dir.length() > 0.01 else Vector3.UP, 3.0)
@@ -1073,7 +1077,7 @@ func spawn(n: int) -> void:
 		b.setup(key, _cube_m(key), chunk, _mat)
 		var a := randf() * TAU
 		b.position = Vector3(cos(a), 0.0, sin(a)) * (ARENA - 2.0) * randf_range(0.7, 1.0)
-		b.speed = randf_range(1.1, 1.9) * (1.4 if key == "swarmer" else (0.75 if key == "brute" else 1.0))
+		b.speed = VoxelKinds.speed_for(key, randf_range(1.1, 1.9) * (1.4 if key in ["swarmer", "charger"] else (0.75 if key == "brute" else 1.0)))
 		b.died.connect(_on_died)
 		bodies.append(b)
 
@@ -1103,6 +1107,7 @@ func _respawn_all(count := -1) -> void:
 	if count >= 0:
 		n = count
 	bodies.clear()
+	kinds.clear()
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)     # (a task never waited on crashes the game at quit)
 	_jobs.clear()
@@ -1546,6 +1551,7 @@ func _physics_process(dt: float) -> void:
 			mv = b.panic_dir * b.speed * 1.4 * b.move_factor()
 		elif can and d > stop:
 			mv = to / d * b.speed * b.move_factor()
+		mv = kinds.step(b, pp, ti, to, d, mv, can and not panic and not everyone_down, dt)     # (the charger's, thrower's, shielder's own)
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
 			if ice or j == i or not bodies[j].alive:
@@ -1575,11 +1581,11 @@ func _physics_process(dt: float) -> void:
 		b.position = out
 		if panic and can:
 			b.yaw = lerp_angle(b.yaw, atan2(b.panic_dir.x, b.panic_dir.z), 1.0 - exp(-dt * 6.0))
-		elif d > 0.01 and can:
+		elif d > 0.01 and can and b.act != VoxelBody.ACT_CHARGE:
 			b.yaw = lerp_angle(b.yaw, atan2(to.x, to.z), 1.0 - exp(-dt * 8.0))
 		b.odo += mv.length() * dt
 		var a0 := b.attack
-		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and can and not panic and not everyone_down) else 0.0
+		b.attack = fmod(b.attack + dt * 1.6, 1.0) if (d <= stop + 0.2 and can and not panic and not everyone_down and b.act == 0) else 0.0
 		# the swing landing on whoever it's at (in reach still); one on fire brushing past burns
 		if a0 < 0.55 and b.attack >= 0.55 and d <= stop + 0.5 and not _opts.has("auto"):
 			_hurt_target(ti, float(SWING_HURT.get(b.key, 8.0)))
@@ -1718,6 +1724,7 @@ func _process(dt: float) -> void:
 	if _opts.has("meleetest"):
 		_meleetest(dt)           # (after _shoot, which clears _aiming each frame)
 	var guest: bool = net.role == "guest" and net.linked     # (a guest's world is the host's: no fire, culling, waves)
+	kinds.step_globs(dt)
 	if not guest:
 		_status_step(dt)
 		_tear_step()
@@ -1973,6 +1980,13 @@ static func _gun_mesh_build(name: String, scale: float) -> ArrayMesh:
 	return VoxelBody.array_mesh(VoxMesher.mesh(v.model_grid(), Vector3(o[0], o[1], o[2]), scale))
 
 ## The player thrown along at vel (m/s, level) for secs, whatever the keys say (a lunge).
+## Player i (0 this one, 1 the other: the host's) thrown along vel for secs (a charger ran into them).
+func shove_target(i: int, vel: Vector3, secs: float) -> void:
+	if i == 0:
+		dash(vel, secs)
+	elif i == 1:
+		net.send_dash(1, vel, secs)
+
 func dash(vel: Vector3, secs: float) -> void:
 	_dash_v = Vector3(vel.x, 0.0, vel.z)
 	_dash_t = secs
@@ -2099,7 +2113,11 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			if bits.size() > 40:
 				bits = bits.slice(0, 40) + (bits.slice(40) as Array).filter(func(_x): return randf() < 0.35)
 			debris.burst(bits, d, 4.0 if String(res.get("limb", "")) == "" else 2.5)
-			sound.play("shatter" if res.get("shattered", false) else "hit_flesh", best.point, -3.0)
+			if String(best.part) == "shield":
+				flames.emit(best.point, 4, -d * 2.5, 0.8, 0.16)        # (steel: sparks and a clang)
+				sound.play("harpoon_clank", best.point, -4.0, randf_range(0.9, 1.2))
+			else:
+				sound.play("shatter" if res.get("shattered", false) else "hit_flesh", best.point, -3.0)
 			hits.append({"body": best_b, "dist": best.dist, "part": best.part, "point": best.point, "res": res})
 	return hits
 

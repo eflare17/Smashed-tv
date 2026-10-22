@@ -33,7 +33,7 @@ const CAN := 8.0                # a full can waters eight plants
 const SPOT := 0.75              # metres between plants (the planting grid: 6 blocks)
 const FED_SPEED := 0.35         # a feed of castings: this much faster ...
 const FED_MAX := 2              # ... at most twice a crop, a bud more each time
-const KILL_CASH := {"grunt": 1, "swarmer": 1, "brute": 5, "batter": 3}
+const KILL_CASH := {"grunt": 1, "swarmer": 1, "brute": 5, "batter": 3, "charger": 2, "thrower": 2, "shielder": 6}
 ## The worm farm: worms eat scraps (cubes a second each), a casting for every CAST_EVERY cubes eaten; fed, they breed.
 const WORM_EAT := 2.0
 const CAST_EVERY := 300.0

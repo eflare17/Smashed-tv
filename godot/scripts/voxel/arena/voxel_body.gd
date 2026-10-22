@@ -46,6 +46,34 @@ const DOWN_T := 1.3
 ## Top-down Jared: the weapon held (a VoxelAnim weapon pose: "", "blaster", "shotgun", "spud" ...) and its kick.
 var weapon := ""
 var recoil := 0.0
+## What a kind of its own is doing (Stage 11, VoxelKinds): act ACT_* (0 nothing of its own), act_p how far through it
+## (0..1), act_t its seconds left, act_cool seconds till it can again, act_dir which way (a charge's).
+const ACT_WINDUP := 1           # the charger crouching to run
+const ACT_CHARGE := 2           # ... running
+const ACT_DAZE := 3             # ... dazed after (longer if it ran into a pillar)
+const ACT_AIM := 4              # the thrower's arm back
+const ACT_THROW := 5            # ... and over
+var act := 0
+var act_p := 0.0
+var act_t := 0.0
+var act_cool := 0.0
+var act_dir := Vector3.ZERO
+## (both in one number for the guest's snapshots)
+var act_k: float:
+	get:
+		return float(act) + clampf(act_p, 0.0, 0.999)
+	set(v):
+		act = int(v)
+		act_p = v - float(act)
+
+## Big and heavy: shoves, blasts and throws move it less.
+func heavy() -> bool:
+	return key == "brute" or key == "shielder"
+
+const SHIELD_BROKEN := 0.4      # a shield with less of it left than this is no shield
+## The shield brute's shield still up (enough of it left, on him, not hanging off).
+func has_shield() -> bool:
+	return parts.has("shield") and not parts.shield.gone and float(parts.shield.left) > float(parts.shield.start) * SHIELD_BROKEN and not loose.has("shield")
 
 ## Sent flying at v (m/s, world), turning over backward at spin radians a second.
 func launch(v: Vector3, spin: float = 6.0) -> void:
@@ -72,7 +100,9 @@ func floored() -> bool:
 func hit_react(dir: Vector3, cubes: int, part: String) -> void:
 	if _net_block():
 		return
-	var heavy := 0.5 if key == "brute" else 1.0
+	var heavy := 0.5 if heavy() else 1.0
+	if part == "shield":
+		heavy = 0.2               # (the shield takes it: a shove, hardly a flinch)
 	var flat := Vector3(dir.x, 0, dir.z).normalized()
 	var through := push_through > 0.0 and stagger <= 0.0
 	knock += flat * clampf(0.3 + cubes * 0.02, 0.3, 1.2) * heavy * (0.25 if through else 1.0)
@@ -230,6 +260,9 @@ static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary
 			g = VoxMesher.downsample(g)
 		var s: Vector3i = g.size
 		var cells: PackedInt32Array = (g.cells as PackedInt32Array).duplicate()
+		if n == "shield":
+			out[n] = {"size": s, "cells": _largest_lump(cells, s)}     # (steel all through: no flesh in it)
+			continue
 		var limb := false
 		for l in LIMBS:
 			if String(n).begins_with(l):
@@ -441,6 +474,8 @@ func animate(dt: float, moving: bool) -> void:
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-2.6 + 0.6 * fl, 0, -0.5))
 		rot["arm_l"] = Quaternion.from_euler(Vector3(-2.6 - 0.6 * fl, 0, 0.5))
 		rot["head"] = Quaternion.from_euler(Vector3(-0.3, 0.4 * fl, 0))
+	elif act > 0 and alive:
+		_act_pose(rot)
 	elif attack > 0.0:
 		var k := sin(clampf(attack, 0.0, 1.0) * PI)
 		rot["arm_r"] = Quaternion.from_euler(Vector3(-1.5 * k, 0.2, -0.1))
@@ -514,6 +549,10 @@ func animate(dt: float, moving: bool) -> void:
 		lift = Vector3(0, 0.12 * k3, 0)
 		rot = {"arm_r": Quaternion.from_euler(Vector3(-0.4 * k3, 0, -0.9 * k3)), "arm_l": Quaternion.from_euler(Vector3(-0.4 * k3, 0, 0.9 * k3)),
 			"head": Quaternion.from_euler(Vector3(-0.3 * k3, 0, 0))}
+	if parts.has("shield") and not parts.shield.gone:
+		# the shield held up in front: the upper arm a little forward, the forearm pointing ahead (whatever else he does)
+		rot["arm_l"] = Quaternion.from_euler(Vector3(-0.2, 0, 0.05))
+		rot["forearm_l"] = Quaternion.from_euler(Vector3(-1.37, 0, 0))
 	for i in model.bone_names.size():
 		if model.bone_parent[i] >= 0:
 			skeleton.set_bone_pose_rotation(i, rot.get(model.bone_names[i], Quaternion.IDENTITY))
@@ -524,6 +563,43 @@ func animate(dt: float, moving: bool) -> void:
 	skeleton.set_bone_pose_rotation(r, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
 	_seams_step()
 	_dangle_pose(dt)
+
+# the kinds' own moves (VoxelKinds): crouched to run, running headlong, dazed, an arm back to throw and over
+func _act_pose(rot: Dictionary) -> void:
+	var k := clampf(act_p, 0.0, 1.0)
+	match act:
+		ACT_WINDUP:
+			var c := smoothstep(0.0, 1.0, k)
+			rot["chest"] = Quaternion.from_euler(Vector3(0.55 * c, 0, 0))
+			rot["head"] = Quaternion.from_euler(Vector3(-0.45 * c, 0, 0))
+			rot["arm_r"] = Quaternion.from_euler(Vector3(0.9 * c, 0, -0.3 * c))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(0.9 * c, 0, 0.3 * c))
+			rot["thigh_l"] = Quaternion.from_euler(Vector3(-0.5 * c, 0, 0))
+			rot["shin_l"] = Quaternion.from_euler(Vector3(0.8 * c, 0, 0))
+			rot["thigh_r"] = Quaternion.from_euler(Vector3(0.3 * c, 0, 0))
+			rot["shin_r"] = Quaternion.from_euler(Vector3(0.5 * c, 0, 0))
+		ACT_CHARGE:
+			rot["chest"] = Quaternion.from_euler(Vector3(0.6, 0, 0))
+			rot["head"] = Quaternion.from_euler(Vector3(-0.5, 0, 0))
+			rot["arm_r"] = Quaternion.from_euler(Vector3(1.1, 0, -0.35))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(1.1, 0, 0.35))
+		ACT_DAZE:
+			var w := sin(t * 7.0)
+			rot["head"] = Quaternion.from_euler(Vector3(0.3, 0.3 * w, 0.35 * w))
+			rot["chest"] = Quaternion.from_euler(Vector3(0.15, 0, 0.12 * w))
+			rot["arm_r"] = Quaternion.from_euler(Vector3(0.2, 0, -0.5 - 0.2 * w))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(0.2, 0, 0.5 - 0.2 * w))
+		ACT_AIM:
+			var c2 := smoothstep(0.0, 1.0, k)
+			rot["arm_r"] = Quaternion.from_euler(Vector3(-2.7 * c2, 0, -0.25 * c2))
+			rot["forearm_r"] = Quaternion.from_euler(Vector3(-1.2 * c2, 0, 0))
+			rot["chest"] = Quaternion.from_euler(Vector3(-0.2 * c2, 0.35 * c2, 0))
+			rot["arm_l"] = Quaternion.from_euler(Vector3(-0.8 * c2, 0, 0.2))
+		ACT_THROW:
+			var c3 := smoothstep(0.0, 1.0, k)
+			rot["arm_r"] = Quaternion.from_euler(Vector3(-2.7 + 2.4 * c3, 0, -0.25))
+			rot["forearm_r"] = Quaternion.from_euler(Vector3(-1.2 + 1.0 * c3, 0, 0))
+			rot["chest"] = Quaternion.from_euler(Vector3(0.35 * c3, 0.35 - 0.7 * c3, 0))
 
 # ---------------------------------------------------------------- shots
 
