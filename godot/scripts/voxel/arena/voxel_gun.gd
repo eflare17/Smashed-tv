@@ -16,6 +16,7 @@ var shell_size := Vector3(0.011, 0.011, 0.028)
 var shell_col := Color(0.86, 0.66, 0.25)
 var clip := 12
 var clip_max := 12
+var _base_clip := 0             # the clip before the weapon bench's CLIPS (0: not known yet)
 var reload_t := 0.0             # seconds left of a reload (0: none)
 var reload_total := 1.0
 var _cd := 0.0                  # seconds till it can fire again
@@ -35,6 +36,14 @@ var _sb: Array[Basis] = []
 var _s_rest := PackedByteArray()
 var _sn := 0
 var _s_next := 0
+
+## CLIPS from the weapon bench: the clip (tube, drum) that much bigger, and full.
+func apply_upgrades() -> void:
+	if _base_clip == 0:
+		_base_clip = clip_max
+	var k := shooter.upg_k("clip") if shooter else 1.0
+	clip_max = maxi(1, roundi(_base_clip * k))
+	clip = clip_max
 
 func _build() -> void:
 	_model = Node3D.new()

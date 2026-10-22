@@ -365,6 +365,10 @@ func cooling() -> float:
 func bar_text() -> String:
 	return "%d%%" % roundi(_heat * 100.0)
 
+# FUEL from the weapon bench: the heat builds that much slower
+func _fuel_k() -> float:
+	return shooter.upg_k("fuel") if shooter else 1.0
+
 ## R: vents the heat now (a second, down to cold), if it's warm and not firing.
 func reload_key() -> void:
 	if _heat > 0.2 and _vent_t <= 0.0 and not _on and not _charging and _blast_t < 0.0:
@@ -441,20 +445,20 @@ func step(dt: float) -> void:
 	if _charging:
 		busy_now = true
 		_charge += dt
-		_heat = heat_step(_heat, dt, HEAT_CHARGE)
+		_heat = heat_step(_heat, dt / _fuel_k(), HEAT_CHARGE)
 		if _charge >= CHARGE_T:
 			_charging = false
 			_start_blast()
 	if _blast_t >= 0.0:
 		busy_now = true
 		_blast_t += dt
-		_heat = heat_step(_heat, dt, HEAT_BLAST)
+		_heat = heat_step(_heat, dt / _fuel_k(), HEAT_BLAST)
 		if _blast_t >= BLAST_MAX:
 			_end_blast()
 	_set_on(_firing and _vent_t <= 0.0 and not _charging and _blast_t < 0.0)
 	if _on:
 		busy_now = true
-		_heat = heat_step(_heat, dt, HEAT_BEAM)
+		_heat = heat_step(_heat, dt / _fuel_k(), HEAT_BEAM)
 	if _heat >= 1.0 and _vent_t <= 0.0:
 		_vent(false)
 	if busy_now:

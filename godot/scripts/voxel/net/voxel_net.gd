@@ -158,6 +158,7 @@ func _on_connected() -> void:
 	_make_other()
 	for id in arena.melee:
 		arena.melee[id].reset_state()       # (this player's weapons as fresh as the other game's new copies of them)
+	send_upgrades(arena.me.upg)             # (and the other game's copies sized and hitting as these)
 	if role == "guest":
 		_own_immortal = VoxelBody.immortal          # (the host's F6 from here on: its snapshots carry it)
 		VoxelBody.net_locked = true
@@ -235,9 +236,11 @@ func _o_switch(id: String) -> void:
 	var old: VoxelMelee = _o_weapons.get(other.weapon)
 	other.weapon = id                  # (before the old one lets go: a bat put away wound up doesn't swing)
 	if old:
+		_as_other(true)
 		for btn in _o_held.keys():
 			old.release(btn)
 		old.on_deselect()
+		_as_other(false)
 	_o_held.clear()
 	var nw: VoxelMelee = _o_weapons.get(id)
 	if nw:
@@ -282,6 +285,11 @@ func local_input(kind: String, arg = null) -> void:
 func _apply_input(kind: String, arg) -> void:
 	if other == null:
 		return
+	_as_other(true)
+	_apply_input_x(kind, arg)
+	_as_other(false)
+
+func _apply_input_x(kind: String, arg) -> void:
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
 	match kind:
 		"press":
@@ -376,12 +384,14 @@ func _other_frame(dt: float, rdt: float) -> void:
 		_o_hold(other.weapon)
 	# their weapons: held buttons, then every weapon's step
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
+	_as_other(true)
 	if w:
 		for btn in _o_held:
 			w.hold(btn, rdt)
 	for id in _o_weapons:
 		_o_weapons[id].step(rdt)
 		_o_weapons[id].view.visible = false
+	_as_other(false)
 
 func _player_state() -> PackedByteArray:
 	var b := StreamPeerBuffer.new()
@@ -979,11 +989,26 @@ func _message(m: Array) -> void:
 		"X":
 			if role == "host":
 				arena.spawn(clampi(int(m[1]), 1, 40))
+		"U":
+			if other:
+				other.upg = VoxelUpgrades.clean(m[1])
+				for id in _o_weapons:
+					_o_weapons[id].apply_upgrades()
 
 ## The other player's lunge (the host's copy of their chainsaw): their game throws them.
 func send_dash(pid: int, vel: Vector3, secs: float) -> void:
 	if role == "host" and linked:
 		_out.append(["ds", pid, vel, secs])
+
+## This player's weapon bench levels (VoxelUpgrades), either way, reliable: the other game's copies of this player's
+## weapons sized and hitting as these do.
+func send_upgrades(d: Dictionary) -> void:
+	if linked:
+		_send(["U", d])
+
+# the other player's weapons running (their copies here): their DAMAGE on what they hit, then this player's back
+func _as_other(on: bool) -> void:
+	VoxelBody.hit_k = other.upg_k("damage") if (on and other) else (arena.me.upg_k("damage") if arena.me else 1.0)
 
 ## A new wave (VoxelWaves) in the host's game: the guest's shows its number (and the boss's bar its full health).
 func send_wave(w: int, boss_max: float) -> void:

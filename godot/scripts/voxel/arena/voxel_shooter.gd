@@ -14,6 +14,7 @@ var cam: Camera3D               # the eye: where it is and which way it faces
 var player: CharacterBody3D     # where they stand (feet)
 var avatar: VoxelBody           # their Jared (top-down here; the other player's always)
 var weapon := ""                # the weapon id they have out
+var upg := {"damage": 0, "clip": 0, "fuel": 0}    # their weapon bench levels (VoxelUpgrades; the other's: told by their game)
 var _top_down := false
 var _mouse_v := Vector2.ZERO
 var _aiming := false
@@ -78,6 +79,10 @@ var look_yaw: float:
 		_look_yaw = v
 
 ## Where their mouse is on the floor top-down (1.2 m up), INF if off it.
+## A weapon bench track's multiplier for them (VoxelUpgrades: "damage", "clip", "fuel").
+func upg_k(track: String) -> float:
+	return VoxelUpgrades.k(track, int(upg.get(track, 0)))
+
 func mouse_floor() -> Vector3:
 	if local:
 		return arena._mouse_floor()

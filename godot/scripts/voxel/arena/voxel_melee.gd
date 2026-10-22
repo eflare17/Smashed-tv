@@ -58,6 +58,10 @@ func step(_dt: float) -> void:
 	pass
 
 ## Taken out / put away.
+## The holder's weapon bench levels changed (or the weapon was just made): clips and tanks resized (VoxelUpgrades).
+func apply_upgrades() -> void:
+	pass
+
 func on_select() -> void:
 	pass
 

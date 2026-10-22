@@ -509,7 +509,7 @@ func _beam_step(dt: float) -> void:
 	if _beam_on:
 		_idle = 0.0
 		_beam_t += dt
-		_energy = charge(_energy, true, 0.0, dt)
+		_energy = charge(_energy, true, 0.0, dt / (shooter.upg_k("fuel") if shooter else 1.0))     # (FUEL: lasts longer)
 		if _energy <= 0.0:
 			_locked = true
 			_vent = 1.0

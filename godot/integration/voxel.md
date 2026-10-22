@@ -567,6 +567,29 @@ waves, carvable piece by piece")
   (`voxel_shots/boss_wave.png`, `boss_slam.png`, `boss_carved.png`); co-op with `coop_test.gd -- --host=X --waves
   --wave=5` (0 bodies different).
 
+### The weapon bench (Stage 13 of the overnight plan, 22 Oct: "kill and harvest money buys weapon upgrades (damage,
+clips, fuel) at a lobby bench")
+
+- `scripts/voxel/arena/voxel_upgrades.gd` (`VoxelUpgrades`, the arena's `upgrades`): a steel **WEAPON BENCH** in the
+  back yard against the south wall, west of the buyer's crate (the voxel game has no lobby; the bedroom and the games
+  room stay as the HTML game has them, so it went to the yard, by the tool bench). Three racks (DAMAGE, CLIPS, FUEL),
+  each with what it upgrades hung over it and a tag (its level in dots, the next price); looking at one shows its
+  line, E buys its next level (`arena.upgrade_buy`) with this player's cash.
+- **DAMAGE** x1.2 / x1.4 / x1.65 ($25 / $60 / $120): `VoxelBody.hit_k`, the DAMAGE of whoever's weapons are running,
+  scales every hole, cut and blow as it's made (`damage` r, `carve` r and health a cube, `slice` thickness, `hurt`
+  amount), before it's recorded for the guest (who makes it as told). It's this player's all the time except while
+  the host runs the other player's weapon copies (`VoxelNet._as_other`: their inputs, held buttons, steps, a switch).
+- **CLIPS** x1.5 / x2 / x2.5 ($20 / $50 / $100): `VoxelGun.apply_upgrades` (the pistol's 12, the shotgun's 6, the
+  launcher's 6, filled on purchase).
+- **FUEL** x1.5 / x2 / x2.5 ($20 / $50 / $100): the flamethrower's tank drains (and a fire bomb costs) that much
+  slower, the laser's heat builds that much slower, the freeze ray's charge lasts that much longer.
+- Each player's own (`VoxelShooter.upg`, `upg_k(track)`), saved with the backpack ("tools": {"upg"}); in co-op each
+  game sends its player's levels when they link and on every purchase (net "U"), so the host's copies of the
+  guest's weapons are sized and hit as theirs.
+- Tests: `test/voxel/upgrades_test.gd` (14 checks alone: the bench, the racks, no cash no sale, CLIPS, DAMAGE's bigger
+  hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
+  DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
+
 ### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
 
 - A multi-agent sweep read the whole voxel game (about 31,000 lines): one finder per area plus co-op, saving,

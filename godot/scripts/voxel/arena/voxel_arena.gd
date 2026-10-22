@@ -128,6 +128,9 @@ var _near_game := ""            # what's looked at in there (VoxelGamesRoom.pick
 ## The back yard (Stage 4): ground to dig with the shovel and the pick, the tool bench.
 var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
+var upgrades: VoxelUpgrades     # the weapon bench in the yard (Stage 13)
+var _upg := {}                  # this player's levels as saved (put on me once it's made)
+var _near_upg := ""             # the weapon bench's rack looked at ("" none)
 var _near_bench := false
 var waiting: Array = []         # items with no room in the backpack (not cubes: they can't go on the floor): [{id, n}],
 								# saved, put in as soon as there's room
@@ -235,6 +238,10 @@ func _ready() -> void:
 			have.append(id)
 	sword = melee.get("sword")
 	set_shovel_tier(shovel_tier)          # (the save's, loaded before the tools were made)
+	upgrades = VoxelUpgrades.new()
+	add_child(upgrades)
+	upgrades.setup(self)
+	set_upgrades(_upg)                    # (the save's too)
 	vacuum = VoxelVacuum.new()
 	add_child(vacuum)
 	vacuum.setup(self, cam)
@@ -817,6 +824,38 @@ func bench_make() -> bool:
 	say("Made: a %s (%s)" % [u.name, u.desc], 3.0)
 	return true
 
+## This player's weapon bench levels (a save's, a purchase): on me, every weapon resized, the bench's tags, the other
+## game told.
+func set_upgrades(d) -> void:
+	_upg = VoxelUpgrades.clean(d)
+	if me == null:
+		return
+	me.upg = _upg.duplicate()
+	VoxelBody.hit_k = me.upg_k("damage")
+	for id in melee:
+		melee[id].apply_upgrades()
+	if upgrades:
+		upgrades.refresh()
+	if net:
+		net.send_upgrades(me.upg)
+
+## E at a weapon bench rack: its next level bought, if the cash is there.
+func upgrade_buy(track: String) -> bool:
+	var lv := int(me.upg.get(track, 0))
+	var c := VoxelUpgrades.cost(track, lv)
+	if c < 0 or cash < c:
+		say("Not enough cash: $%d needed" % c if c >= 0 else "That's as good as it gets", 2.0)
+		return false
+	cash -= c
+	var d: Dictionary = me.upg.duplicate()
+	d[track] = lv + 1
+	set_upgrades(d)
+	stash._dirty = true
+	stash._save_t = 0.0
+	sound.play("mag_in", upgrades.global_position + Vector3.UP, 0.0, 0.9)
+	say("%s level %d: bought" % [VoxelUpgrades.INFO[track].name, lv + 1], 2.0)
+	return true
+
 func set_shovel_tier(t: int) -> void:
 	shovel_tier = clampi(t, 0, 2)
 	if melee.has("shovel"):
@@ -900,6 +939,7 @@ func _storage_step(dt: float) -> void:
 	_near_bed = 0
 	_near_ward = false
 	_near_bench = false
+	_near_upg = ""
 	_near_prop = ""
 	_near_plant = -1
 	_near_hen = ""
@@ -915,6 +955,7 @@ func _storage_step(dt: float) -> void:
 		_near_bed = int(bh[0]) if _near_st == null else 0
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
 		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
+		_near_upg = upgrades.pick(eye, fwd) if (upgrades and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench) else ""
 		var pp2 := player.global_position
 		if VoxelGamesRoom.in_room(pp2) and _near_st == null and _near_bed == 0:
 			_near_game = String(games.pick(eye, fwd)[0])
@@ -941,6 +982,8 @@ func _storage_step(dt: float) -> void:
 		t = "E  %s the wardrobe" % ("close" if house.ward_open else "open")
 	elif _near_bench:
 		t = bench_line()
+	elif _near_upg != "":
+		t = upgrades.line(_near_upg, me.upg, cash)
 	elif _near_game != "":
 		t = games.line(_near_game)
 	elif _near_hen != "":
@@ -1242,6 +1285,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					house.ward_open = not house.ward_open
 				elif _near_bench:
 					bench_make()
+				elif _near_upg != "":
+					upgrade_buy(_near_upg)
 				elif _near_game != "":
 					games.use(_near_game)
 				elif _near_hen != "":

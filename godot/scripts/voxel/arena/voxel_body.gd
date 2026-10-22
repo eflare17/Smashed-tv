@@ -174,6 +174,9 @@ const PART_HITS := {"hand": 1, "forearm": 2, "shin": 2, "foot": 2, "arm": 3, "th
 const PART_WEIGHT := {"head": 3.2, "torso": 1.2, "pelvis": 1.0}
 ## Can't die (VoxelArena's F6): shoot them to pieces.
 static var immortal := false
+## The weapon bench's DAMAGE for whoever's weapons are running (VoxelUpgrades): their holes, cuts and blows scaled as
+## they're made (before they're told to the guest, who makes them as told). 1 outside a player's weapons.
+static var hit_k := 1.0
 var _mat: Material
 
 static var _flesh_cache := {}         # "key|chunk" -> {part: grid with flesh inside}
@@ -1083,6 +1086,8 @@ func _shatter_now(dir: Vector3) -> bool:
 func damage(hit: Dictionary, r: float) -> Dictionary:
 	if _net_block():
 		return _no_cut()
+	if _net_depth == 0 and not _net_replay:
+		r *= hit_k
 	_net_in("damage", [hit, r])
 	var res := _damage_x(hit, r)
 	_net_depth -= 1
@@ -1116,6 +1121,8 @@ func chill(amount: float) -> bool:
 func hurt(amount: float) -> bool:
 	if _net_block():
 		return false
+	if _net_depth == 0 and not _net_replay:
+		amount *= hit_k
 	_net_in("hurt", [amount])
 	var res := _hurt_x(amount)
 	_net_depth -= 1
@@ -1430,6 +1437,8 @@ func as_pieces() -> Array:
 func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float, half_t: float) -> Dictionary:
 	if _net_block():
 		return _no_cut()
+	if _net_depth == 0 and not _net_replay:
+		half_t *= hit_k
 	_net_in("slice", [eye, n, fwd, reach, cos_arc, half_t])
 	var res := _remove({"plane": true, "eye": eye, "n": n, "fwd": fwd, "reach": reach, "cos_arc": cos_arc, "half_t": half_t})
 	_net_depth -= 1
@@ -1442,6 +1451,9 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_every: int = 2) -> Dictionary:
 	if _net_block():
 		return _no_cut()
+	if _net_depth == 0 and not _net_replay:
+		r *= hit_k
+		hp_per_cube *= hit_k
 	_net_in("carve", [a, b, r, hp_per_cube, bits_every])
 	var res := _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
 	_net_depth -= 1

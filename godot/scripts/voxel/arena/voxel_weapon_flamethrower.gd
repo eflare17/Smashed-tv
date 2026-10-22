@@ -348,7 +348,7 @@ func bomb() -> void:
 	var flat := Vector2(to.x - o.x, to.z - o.z).length()
 	var secs := clampf(0.25 + flat * 0.065, 0.3, 1.3)
 	var v := lob(o, to, BOMB_G, secs)
-	_fuel -= BOMB_FUEL
+	_fuel -= BOMB_FUEL / (shooter.upg_k("fuel") if shooter else 1.0)
 	_idle = 0.0
 	_bomb_cd = BOMB_CD
 	_lob_t = 0.0
@@ -415,7 +415,7 @@ func step(dt: float) -> void:
 		if _lob_t >= LOB_T:
 			_lob_t = -1.0
 	if _firing:
-		_fuel = refuel(_fuel, dt, true, 0.0)
+		_fuel = refuel(_fuel, dt / (shooter.upg_k("fuel") if shooter else 1.0), true, 0.0)     # (FUEL: a bigger tank)
 		_idle = 0.0
 		if _fuel <= 0.0:
 			_run_dry()

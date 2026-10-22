@@ -417,7 +417,7 @@ func save() -> void:
 	if save_path == "":
 		return
 	var d := {"v": 1, "inv": arena.inv.to_data(), "storage": _own_chests if _own_chests != null else to_data(),
-		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier},
+		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier, "upg": arena.me.upg if arena.me else arena._upg},
 		"cash": arena.cash, "waiting": arena.waiting}
 	if arena.yard:
 		d["yard"] = arena.yard.save_data()
@@ -440,6 +440,7 @@ func load_save() -> void:
 	_set_locks(d.get("locks"))
 	if typeof(d.get("tools")) == TYPE_DICTIONARY:
 		arena.set_shovel_tier(int(d.tools.get("shovel", 0)))
+		arena.set_upgrades(d.tools.get("upg", {}))
 	if arena.yard and d.has("yard"):
 		arena.yard.load_data(d.yard)
 	if arena.yard and d.has("farm"):
