@@ -1296,3 +1296,7 @@ static func checks(host: Node) -> Array:
 	out.append([blast_heat > 0.6 and blast_heat < 1.0, "a full overcharge heats it to %d%% (warm, it overheats)" % roundi(blast_heat * 100.0)])
 	VoxelBody.immortal = was
 	return out
+
+func reset_state() -> void:
+	_heat = 0.0
+	_vent_t = 0.0

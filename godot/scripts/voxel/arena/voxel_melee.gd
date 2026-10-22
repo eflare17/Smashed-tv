@@ -61,6 +61,10 @@ func step(_dt: float) -> void:
 func on_select() -> void:
 	pass
 
+## (co-op) Fuel, heat, charge, rounds back as a fresh weapon's: at link-up both games' copies start the same.
+func reset_state() -> void:
+	pass
+
 func on_deselect() -> void:
 	pass
 
@@ -178,8 +182,9 @@ func sfx_stop(tag: String) -> void:
 ## the deepest stop and the latest end win.
 func hit_stop(secs: float = 0.07, scale: float = 0.05) -> void:
 	if not shooter.local:
-		# (the other player's blow doesn't freeze this game: theirs, if this is the host's copy of their weapon)
-		if arena.net and arena.net.linked:
+		# (the other player's blow doesn't freeze this game: theirs, if this is the host's copy of their weapon; not
+		# a bat's or a hammer's, whose every blow their own swing finds and freezes for at once, or it stops twice)
+		if arena.net and arena.net.linked and weapon_id not in ["bat", "hammer"]:
 			arena.net.send_hitstop(shooter.pid, secs, scale)
 		return
 	_stop_n += 1

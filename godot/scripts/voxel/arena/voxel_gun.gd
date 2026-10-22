@@ -240,3 +240,8 @@ func hand_mesh() -> Node3D:
 
 func hand_pose() -> String:
 	return "spud"
+
+func reset_state() -> void:
+	clip = clip_max
+	reload_t = 0.0
+	_cd = 0.0

@@ -88,9 +88,12 @@ func _ensure(sheet: String) -> bool:
 	var mn := VoxelModel.model_for_sheet(sheet)
 	if mn == "":
 		return false
-	if mn != model_name:
+	# the mirror's and the wardrobe's look is Juicy Jared's own (Tornado Tyson shares his blocks, not his look)
+	var looks := CharFrames.base_char(sheet) == "juicy"
+	var m := _tyson_model() if mn == "jared" and not looks else VoxelModel.get_model(mn)
+	if mn != model_name or m != model:
 		model_name = mn
-		model = VoxelModel.get_model(mn)
+		model = m
 		if skeleton:
 			skeleton.queue_free()
 			skeleton = null
@@ -111,16 +114,33 @@ func _ensure(sheet: String) -> bool:
 		mesh_inst.skeleton = NodePath("..")
 		mesh_inst.skin = model.make_skin()
 	var pal := CharFrames.palette(CharFrames.base_char(sheet))
-	var rev := VoxelLook.rev if mn == "jared" else 0
-	if mn == "jared":
-		style = VoxelLook.style_key()
+	var rev := VoxelLook.rev if looks else 0
+	style = VoxelLook.style_key() if looks else "classic"
 	var key := "%s|%d|%s|%s|%s|%d" % [mn, lod, style, weapon, str(pal), rev]
 	if key != _key:
 		_key = key
-		if mn == "jared":
+		if looks:
 			VoxelLook.apply_print(model)
 		mesh_inst.mesh = model.build_mesh(key, style, lod, VoxelWeapons.attachments(model, weapon, lod), pal)
 	return true
+
+static var _tyson: VoxelModel = null
+
+# Tornado Tyson's blocks: Jared's (the same parts and their meshing, shared) but his own torso, never printed, and
+# his own meshes (so building him never touches Jared's print or clears Jared's meshes)
+static func _tyson_model() -> VoxelModel:
+	if _tyson == null:
+		var shared := VoxelModel.get_model("jared")
+		if shared == null:
+			return null
+		var m := VoxelModel.new()
+		if not m._load("jared"):
+			return null
+		for n in m.parts:
+			if n != "torso":
+				m.parts[n] = shared.parts[n]
+		_tyson = m
+	return _tyson
 
 ## Frames drawn (for tests).
 var frames := 0

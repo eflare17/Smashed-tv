@@ -156,6 +156,8 @@ func hurt_other(amount: float) -> void:
 func _on_connected() -> void:
 	linked = true
 	_make_other()
+	for id in arena.melee:
+		arena.melee[id].reset_state()       # (this player's weapons as fresh as the other game's new copies of them)
 	if role == "guest":
 		_own_immortal = VoxelBody.immortal          # (the host's F6 from here on: its snapshots carry it)
 		VoxelBody.net_locked = true
@@ -171,6 +173,9 @@ func _on_disconnected() -> void:
 		# alone again: this game's own bodies from here on
 		VoxelBody.net_locked = false
 		VoxelBody.immortal = _own_immortal
+		for pc in arena.pieces._pieces:
+			if is_instance_valid(pc.rb):
+				(pc.rb as RigidBody3D).freeze = false     # (the host's copies: they fall and settle here now, not hang where they were)
 		arena.pieces.puppet = false
 		_got_world = false
 	changed.emit()
@@ -228,12 +233,12 @@ func _o_switch(id: String) -> void:
 	if other == null or id == other.weapon:
 		return
 	var old: VoxelMelee = _o_weapons.get(other.weapon)
+	other.weapon = id                  # (before the old one lets go: a bat put away wound up doesn't swing)
 	if old:
 		for btn in _o_held.keys():
 			old.release(btn)
 		old.on_deselect()
 	_o_held.clear()
-	other.weapon = id
 	var nw: VoxelMelee = _o_weapons.get(id)
 	if nw:
 		nw.on_select()
@@ -332,9 +337,10 @@ func _process(dt: float) -> void:
 		return
 	# (real time: a hit-stop slows this game's delta, not the line between the two games, nor the other's weapons)
 	var now_us := Time.get_ticks_usec()
-	var rdt := dt if _last_us == 0 else minf(float(now_us - _last_us) / 1000000.0, 0.25)
+	var real := dt if _last_us == 0 else float(now_us - _last_us) / 1000000.0
+	var rdt := minf(real, 0.25)
 	_last_us = now_us
-	_clock += rdt
+	_clock += real          # (all of it: a long frame here doesn't put this clock behind the other's)
 	if role == "host":
 		_host_frame(dt)
 	else:
@@ -599,9 +605,10 @@ func _send_world() -> void:
 	_out.clear()
 	var pieces := []
 	for pnid in _pieces:
-		var rb: RigidBody3D = _pieces[pnid]
-		if not is_instance_valid(rb):
-			continue
+		var rv = _pieces[pnid]
+		if not is_instance_valid(rv):
+			continue                # (one settled while no one was here: only the host's frames clear them)
+		var rb: RigidBody3D = rv
 		var pc := {}
 		for e in arena.pieces._pieces:
 			if e.rb == rb:
@@ -673,9 +680,12 @@ func _read_snapshot(d: PackedByteArray) -> void:
 	b.data_array = d
 	b.get_u8()
 	var t := b.get_float()
-	# the host's clock ahead of ours by however much (the first snapshot sets it)
+	# the host's clock ahead of ours by however much (the first snapshot sets it; each after nudges it: set while the
+	# line was slow, or a long frame since, it would leave the enemies outside the last few snapshots, stepping)
 	if _clock < t - 1.0 or _clock > t + 1.0:
 		_clock = t
+	else:
+		_clock += (t - _clock) * 0.05
 	var n := b.get_u16()
 	for i in n:
 		var nid := b.get_u32()
@@ -925,6 +935,11 @@ func _message(m: Array) -> void:
 				_check(m[1])
 		"F":
 			if role == "host":
+				if not _out.is_empty():
+					# (this frame's events first: the fixes already have them, and replayed after they'd be done twice)
+					stats.events += _out.size()
+					_send(["E", _out])
+					_out = []
 				for nid in m[1]:
 					var bv = _bodies.get(int(nid))
 					if is_instance_valid(bv):

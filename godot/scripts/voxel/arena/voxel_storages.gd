@@ -35,6 +35,7 @@ var _send := {}                 # host: storage id -> true (changed: to send)
 var _own_chests = null          # guest: their own chests' data while the host's are shown (null: not a guest)
 var _own_locks = null           # ... and their padlocks
 var _vb_t := 0.0
+var _vb_s := 0.0                # seconds it sucked since the last brush message (the other game clears as much as that)
 var _vb := Vector3.INF
 var _vb_r := 0.0
 var _was_role := ""
@@ -146,9 +147,13 @@ func _process(dt: float) -> void:
 		if _save_t >= SAVE_WAIT:
 			save()
 	_vb_t += dt
-	if _vb != Vector3.INF and _vb_t >= 1.0 / VB_HZ and arena.net and arena.net.linked:
-		_msg(["vb", _vb, _vb_r, _vb_t])
+	if not (arena.net and arena.net.linked):
+		_vb = Vector3.INF            # (alone: nothing to tell, nor a stale brush on linking)
+		_vb_s = 0.0
+	elif _vb != Vector3.INF and _vb_t >= 1.0 / VB_HZ:
+		_msg(["vb", _vb, _vb_r, _vb_s])
 		_vb_t = 0.0
+		_vb_s = 0.0
 		_vb = Vector3.INF
 
 func _notification(what: int) -> void:
@@ -211,6 +216,7 @@ func give_other(counts: Dictionary) -> void:
 func vac_brush(at: Vector3, r: float) -> void:
 	_vb = at
 	_vb_r = r
+	_vb_s += get_process_delta_time()
 
 ## A stack dropped on the floor here: the other game drops the same cubes, thrown the same way (seed).
 func dropped(at: Vector3, dir: Vector3, id: String, n: int, seed: int) -> void:

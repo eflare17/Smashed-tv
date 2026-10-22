@@ -502,6 +502,24 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
 - Tests: `test/voxel/settings_test.gd` (25 checks), `test/voxel/settings_shots.gd` (`voxel_shots/settings_*.png`,
   `preset_low.png`, `preset_ultra.png`).
 
+### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
+
+- A multi-agent sweep read the whole voxel game (about 31,000 lines): one finder per area plus co-op, saving,
+  object-lifetime and long-session checks, each area read twice. 164 suspects, 127 after merging duplicates, each checked by
+  skeptics told to refute it (every medium or high one by two): **109 confirmed** (6 high, 23 medium, 80 low), 18 thrown out.
+  All 109 fixed, in four commits: A (the bodies), B (co-op and weapons), C (the backpack, saving, the arena), D (the 60 low
+  ones, fixed in parallel by six agents on separate files, each fix independently reviewed).
+- What changed that a player might notice: a full backpack never turns items into rubble (non-cube items **wait**, saved,
+  and go in when there's room); kill cash is saved; F2's cube size sticks; a downed player can't attack; co-op deaths are the
+  host's call and the host's F6 reaches the guest; the guest's view no longer jerks on hit-stops; hanging limbs swing the same
+  at any frame rate (fixed 240 Hz steps); pistol and shotgun holes make limbs hang; the gravity gun carries corpses out the
+  back door to the yard; a joining guest gets the host's lying cubes; the spear stays in step in co-op; benchmark kills
+  don't pay; the room-code box takes IPv6 and host names; Tornado Tyson looks right in blocks.
+- Tests: `test/voxel/sweep_test.gd` (30 checks) and `sweep_arena_test.gd`, `sweep_net_test.gd`, `sweep_weapons_test.gd`,
+  `sweep_yard_test.gd`, `sweep_games_test.gd`, `sweep_misc_test.gd` (123 more); `weapons_smoke.gd` (every weapon on a crowd,
+  frame times). The shredder and health co-op tests were made robust (a race in the shredder one was also a real glitch: a
+  guest could take a bag the host hadn't made yet).
+
 ### The online menu (22 Oct, the owner: "can you make it easier to join? I like the set up in the last game")
 
 - `scripts/voxel/net/voxel_net_menu.gd`, the main game's PLAY ONLINE panel (`NetMenu`) rebuilt for the voxel game:

@@ -215,6 +215,29 @@ func _stage_c() -> void:
 	gr.scan()
 	check(same_game, "a game added to the shelf: the case in your hands is still the same game")
 
+# Stage D: the fixes across the groups' files: a bat put away wound up, the weapons fresh at link-up
+func _stage_d() -> void:
+	var bat: VoxelMelee = arena.melee.get("bat")
+	if bat:
+		arena._switch(func(): arena.loadout.select(arena.loadout.index_of("bat")))
+		arena.me.weapon = "bat"
+		bat.press(MOUSE_BUTTON_RIGHT)
+		for k in 40:
+			bat.hold(MOUSE_BUTTON_RIGHT, 1.0 / 60.0)
+			bat.step(1.0 / 60.0)
+		var wound: bool = bat._mode == bat.CHARGE
+		arena._held[MOUSE_BUTTON_RIGHT] = true
+		arena._switch(func(): arena.loadout.select(arena.loadout.index_of("pistol")))
+		check(wound and bat._mode != bat.SWING, "the bat put away wound up for a home run: no swing")
+	var ft: VoxelMelee = arena.melee.get("flamethrower")
+	var gun: VoxelMelee = arena.melee.get("pistol")
+	if ft and gun:
+		ft._fuel = 0.2
+		gun.clip = 1
+		for id in arena.melee:
+			arena.melee[id].reset_state()
+		check(is_equal_approx(ft._fuel, 1.0) and gun.clip == gun.clip_max, "link-up: the weapons as fresh as the other game's new copies of them")
+
 func _process(dt: float) -> bool:
 	t += dt
 	if t < 1.0:
@@ -348,6 +371,7 @@ func _process(dt: float) -> bool:
 		10:
 			_stage_b()
 			_stage_c()
+			_stage_d()
 			step = 99
 		99:
 			print("SWEEP done %d passed, %d failed" % [passed, failed])

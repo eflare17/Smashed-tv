@@ -611,7 +611,8 @@ func _bored(ev: Array, dir: Vector3, us: int) -> void:
 	var killed := false
 	for e in ev:
 		killed = killed or bool(e[1].killed)
-	hit_stop(0.035 + (0.03 if killed else 0.0), 0.1)
+	if shooter.local:
+		hit_stop(0.035 + (0.03 if killed else 0.0), 0.1)    # (the other player's copy: their own flight froze them already)
 	shooter.kick = maxf(float(shooter.kick), 0.45)
 
 func _fly_step(dt: float) -> void:

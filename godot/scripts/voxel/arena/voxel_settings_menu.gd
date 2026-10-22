@@ -66,6 +66,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	_btn.offset_bottom = 80
 	_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_btn.pressed.connect(toggle)
+	_btn.button_down.connect(func(): arena._ignore[MOUSE_BUTTON_LEFT] = true)     # (top-down: the click on it doesn't fire too)
 	root.add_child(_btn)
 
 	_bench_lbl = Label.new()
@@ -281,6 +282,8 @@ func open() -> void:
 		return
 	if arena.net_menu and arena.net_menu.is_open():
 		arena.net_menu.close()
+	if arena.games.seated > 0:
+		arena.games.get_up()        # (on the couch the keys are the console's: up, so the menu's keys don't play the game)
 	_open = true
 	_panel.visible = true
 	arena._let_go()
@@ -297,8 +300,8 @@ func close() -> void:
 	var fo := get_viewport().gui_get_focus_owner()
 	if fo:
 		fo.release_focus()
-	if not arena.top_down and not arena._opts.has("auto"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not arena.top_down and not arena._opts.has("auto") and not arena.inv_ui.is_open() and not arena.lock_view.is_open():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # (the backpack or a padlock still up underneath: the mouse stays theirs)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey) or not e.pressed or e.echo:
@@ -319,6 +322,13 @@ func _unhandled_input(e: InputEvent) -> void:
 func bench_start() -> void:
 	if not _bench.is_empty() or (arena.net and arena.net.role != ""):
 		return
+	if arena.down_t > 0.0:
+		_result.text = "Not while you're down: get up first."      # (the count would run out mid-run, the HP put back at 0)
+		return
+	if arena.lying > 0:
+		arena.get_up()              # (from bed or the couch: up first, or the run measures the bedroom wall)
+	if arena.games.seated > 0:
+		arena.games.get_up()
 	var alive := 0
 	for b in arena.bodies:
 		if b.alive:
@@ -348,7 +358,7 @@ func _next_preset() -> void:
 	s.v.vsync = false
 	s.apply(arena)
 	arena._respawn_all(BENCH_ENEMIES)
-	arena.player.global_position = Vector3(0, arena.player.global_position.y, 9)
+	arena.player.global_position = Vector3(0, 0.05, 9)     # (on the arena's floor, wherever you were: a pit in the yard too)
 	arena.player.velocity = Vector3.ZERO
 	_bench.phase = "warm"
 	_bench.t0 = Time.get_ticks_msec()

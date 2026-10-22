@@ -102,7 +102,7 @@ func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel:
 	rb.linear_velocity = vel + knock * 0.5
 	rb.angular_velocity = spin
 	_pieces.append({"rb": rb, "t": 0.0, "still": 0.0, "cells": keep, "vm": vm, "key": key, "chunk": chunk})
-	while _pieces.size() > MAX_PIECES:
+	while not puppet and _pieces.size() > MAX_PIECES:     # (a guest's copies go when the host's do: its cap, not ours)
 		(_pieces[0].rb as RigidBody3D).queue_free()
 		_pieces.remove_at(0)
 	return rb

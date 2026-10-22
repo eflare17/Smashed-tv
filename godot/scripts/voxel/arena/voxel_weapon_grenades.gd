@@ -515,10 +515,12 @@ static func fly(st: Dictionary, dt: float, bodies: Array, space: PhysicsDirectSp
 	var on := ""
 	var hit_b: VoxelBody = null
 	var hit_part := ""
+	var level := false              # (on the floor itself, not on a chest's or a pillar's top)
 	if p1.y < floor_y and dir.y < 0.0:
 		best = maxf(0.0, (p0.y - floor_y) / -dir.y)
 		at = p0 + dir * best
 		on = "floor"
+		level = true
 	if space != null:
 		var q := PhysicsRayQueryParameters3D.create(p0, p1 + dir * (0.0 if sticky else GREN_R), 1)
 		q.exclude = exclude
@@ -530,6 +532,7 @@ static func fly(st: Dictionary, dt: float, bodies: Array, space: PhysicsDirectSp
 				n = wh.normal
 				at = (wh.position as Vector3) + n * (0.0 if sticky else GREN_R)
 				on = "floor" if n.y > 0.7 else "wall"
+				level = false
 	if mode != "fall":
 		for b in bodies:
 			if not is_instance_valid(b):
@@ -550,7 +553,7 @@ static func fly(st: Dictionary, dt: float, bodies: Array, space: PhysicsDirectSp
 	if mode == "fall":
 		# a sticky bomb dropped off a part: down on the floor, flat
 		st.mode = "rest"
-		st.p = Vector3(at.x, 0.0, at.z) if on == "floor" else at
+		st.p = Vector3(at.x, 0.0, at.z) if on == "floor" and level else at
 		st.v = Vector3.ZERO
 		st.n = Vector3.UP if on == "floor" else n
 		st.rot = up_basis(st.n)

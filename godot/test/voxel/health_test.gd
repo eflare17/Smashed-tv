@@ -121,6 +121,7 @@ func _coop() -> bool:
 			# the host's grunt next to the guest, the host far off
 			if role == "host":
 				_clear()
+				arena.godmode = true             # (the host stands by its grunt to get the guest up: it mustn't go down itself)
 				arena.player.global_position = Vector3(-8, 0, 0)
 				mark = t
 				step = 1

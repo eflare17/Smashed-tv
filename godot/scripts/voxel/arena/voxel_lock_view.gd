@@ -37,7 +37,7 @@ func open(st: VoxelStorage) -> void:
 	model.position = Vector3(0, -0.004, -DIST)
 	model.set_code(st.dial_code)
 	model.open = not st.locked
-	model._k = 1.0 if model.open else 0.0
+	model._k = 0.99 if model.open else 0.0      # (just short of open: its first frame stands the shackle up and aside)
 	_lamp = OmniLight3D.new()
 	_lamp.light_color = Color(1.0, 0.95, 0.85)
 	_lamp.light_energy = 0.6

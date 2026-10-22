@@ -5,15 +5,17 @@ extends Node3D
 ## Drive games, Smash TV etc."), west of the bedroom through its own door in the arena's south wall.
 ##
 ## A big rear-projection TV against the back wall (VoxelRetroTV plays the games on it), a coffee table in front of it,
-## a couch facing it (two seats: player 1 left, player 2 right), the consoles on shelves on the west wall (Mega Drive,
-## Super Nintendo, Master System, Game Gear), a bookcase of game cases on the east wall, a retro carpet, posters, a lamp.
-## E at a console on the wall: it comes down onto the table (the one there goes back up). E at a case: it comes off the
-## shelf into your hands and opens (the cartridge inside). E at the console on the table with a case in your hands: in
-## it goes and the TV comes on (the right console comes down by itself if it's another one's game). E on the couch: sit
-## down, and your keys or pad are the controller; E or Esc gets you up. E at the console while it plays: eject (where
-## you were is saved; next time it carries on). No games come with it but our own test cartridge: E at the ADD GAMES
-## plaque picks game files from your PC (or a .zip of one), or drop them in the games folder (next to the game's exe,
-## or the game's data folder). A safe room like the bedroom.
+## a couch facing it (two seats; in co-op the host is player 1, the guest player 2), the consoles on shelves on the
+## west wall (Mega Drive, Super Nintendo, Master System, Game Gear), a bookcase of game cases on the east wall (300 at
+## most), a retro carpet, posters, a lamp. E at a console on the wall: it comes down onto the table (the one there goes
+## back up). E at a case: it comes off the shelf into your hands and opens (the cartridge inside; out of the room it
+## goes back on the shelf). E at the console on the table with a case in your hands: in it goes and the TV comes on
+## (the right console comes down by itself if it's another one's game). E on the couch: sit down, and your keys or pad
+## are the controller; E or Esc gets you up. E at the console while it plays: eject (where you were is saved; next
+## time it carries on; left running with nobody in the room a minute, it ejects itself). No games come with it but
+## our own test cartridge: E at the ADD GAMES plaque picks game files from your PC (or a .zip of one), or drop them in
+## the games folder (next to the game's exe, or the game's data folder; E at the plaque again looks). A safe room like
+## the bedroom.
 ##
 ## Co-op: the room and its console are the host's. Their TV's picture goes to the guest fifteen times a second (a small
 ## JPEG, unreliable); a guest on the couch is player 2 (their buttons go to the host's console); the guest can't put
@@ -66,6 +68,9 @@ var _tv_t := 0.0
 var _pad_sent := -1
 var _remote_name := ""          # (a guest) what's on the host's TV
 var _was_role := ""
+const AWAY := 60.0              # (a game left running this long with nobody in the room: ejected, saved)
+var _away_t := 0.0
+var _left_out := 0              # (games past a full bookcase: not on the shelf)
 
 static func in_room(p: Vector3) -> bool:
 	return p.z > 21.6 and p.x > X0 - 0.3 and p.x < X1 + 0.05 and p.z < Z1 + 0.3
@@ -102,6 +107,7 @@ func scan() -> void:
 	var held_path: String = library[held].path if held >= 0 and held < library.size() else ""
 	var in_path: String = library[inserted].path if inserted >= 0 and inserted < library.size() else ""
 	library.clear()
+	_left_out = 0
 	var dir := ProjectSettings.globalize_path(GAMES)
 	DirAccess.make_dir_recursive_absolute(dir.path_join(".unzipped"))
 	var builtin := dir.path_join(".builtin_test_cart.md")
@@ -119,6 +125,8 @@ func scan() -> void:
 		var files := da.get_files()
 		files.sort()
 		for fn in files:
+			if fn.begins_with("."):
+				continue                # (hidden: our own copy of the test cartridge, which Windows lists)
 			var p := String(d).path_join(fn)
 			var ext := fn.get_extension().to_lower()
 			if ext == "zip":
@@ -126,9 +134,13 @@ func scan() -> void:
 				if p == "":
 					continue
 			var sys := VoxelRetroTV.system_of(p)
-			if sys == "" or seen.has(fn.get_basename().to_lower()):
+			var key := sys + "/" + fn.get_basename().to_lower()      # (the same game twice, not two systems' of one name)
+			if sys == "" or seen.has(key):
 				continue
-			seen[fn.get_basename().to_lower()] = true
+			seen[key] = true
+			if library.size() >= CASE_ROWS * PER_ROW and p != held_path and p != in_path:
+				_left_out += 1          # (the bookcase is full; the one in your hands or the console stays)
+				continue
 			library.append({"path": p, "name": pretty(fn.get_basename()), "sys": sys})
 	# (the indices are the library's: found again by their files)
 	held = -1 if held_path == "" else _index_of(held_path)
@@ -141,7 +153,8 @@ func _index_of(path: String) -> int:
 			return i
 	return -1
 
-# the first game file in a .zip, taken out (once) into the cache; "" if there isn't one
+# the first game file in a .zip, taken out into the cache (again if it came out empty or the zip's newer); "" if there
+# isn't one or it can't be taken out
 static func _unzip(zip_path: String, cache: String) -> String:
 	var z := ZIPReader.new()
 	if z.open(zip_path) != OK:
@@ -149,10 +162,17 @@ static func _unzip(zip_path: String, cache: String) -> String:
 	for f in z.get_files():
 		if VoxelRetroTV.system_of(f) != "":
 			var out := cache.path_join(zip_path.get_file().get_basename() + "." + f.get_extension().to_lower())
-			if not FileAccess.file_exists(out):
+			var old := FileAccess.open(out, FileAccess.READ)
+			var keep := old != null and old.get_length() > 0 and FileAccess.get_modified_time(out) >= FileAccess.get_modified_time(zip_path)
+			old = null
+			if not keep:
+				var data := z.read_file(f)
+				if data.is_empty():
+					z.close()
+					return ""           # (packed a way that can't be read here, LZMA or BZIP2: nothing written)
 				var fa := FileAccess.open(out, FileAccess.WRITE)
 				if fa:
-					fa.store_buffer(z.read_file(f))
+					fa.store_buffer(data)
 			z.close()
 			return out
 	z.close()
@@ -176,13 +196,22 @@ func add_games() -> void:
 			DisplayServer.FILE_DIALOG_MODE_OPEN_FILES,
 			PackedStringArray(["*.md, *.bin, *.gen, *.smd, *.sfc, *.smc, *.sms, *.gg, *.zip ; Games"]), _on_files)
 	else:
+		# (no file picker: E here again looks in the folder, and what's been put in since comes onto the shelf)
+		var before := library.size()
+		scan()
+		var full := "" if _left_out == 0 else " (the shelf's full: %d left off)" % _left_out
+		if library.size() > before:
+			var k := library.size() - before
+			arena.say("%d game%s added: on the shelf%s" % [k, "" if k == 1 else "s", full], 3.0)
+			return
 		OS.shell_open(dir)
-		arena.say("Put your game files in %s, then E here again" % dir, 4.0)
+		arena.say("Put your game files in %s, then E here again%s" % [dir, full], 4.0)
 
 func _on_files(status: bool, paths: PackedStringArray, _filter: int) -> void:
 	if not arena.top_down:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not status or paths.is_empty():
+		scan()                          # (none picked: any put in the folder by hand still come onto the shelf)
 		return
 	var n := 0
 	for p in paths:
@@ -190,7 +219,8 @@ func _on_files(status: bool, paths: PackedStringArray, _filter: int) -> void:
 		if DirAccess.copy_absolute(p, to) == OK:
 			n += 1
 	scan()
-	arena.say("%d game%s added: on the shelf" % [n, "" if n == 1 else "s"], 3.0)
+	var full := "" if _left_out == 0 else " (the shelf's full: %d left off)" % _left_out
+	arena.say("%d game%s added: on the shelf%s" % [n, "" if n == 1 else "s", full], 3.0)
 
 # ---------------------------------------------------------------- what a player does
 
@@ -248,7 +278,7 @@ func line(tag: String) -> String:
 		var g2: Dictionary = library[i]
 		return "E  take %s  (%s)" % [g2.name, VoxelRetroTV.SYSTEMS[g2.sys].name]
 	if tag.begins_with("couch:"):
-		return ("E  sit down and play" + (" (player 2)" if tag == "couch:2" and arena.net.linked else "")) if tv.playing() else "E  sit down"
+		return ("E  sit down and play" + (" (you're player 1, your mate player 2)" if _is_host() else "")) if tv.playing() else "E  sit down"
 	if tag == "add":
 		return "E  add games: Mega Drive (.md .bin .gen), Super Nintendo (.sfc .smc), Master System (.sms), Game Gear (.gg), or a .zip"
 	if tag == "tv":
@@ -488,7 +518,19 @@ func _process(dt: float) -> void:
 		var lid: Node3D = _held_node.get_node_or_null("Lid")
 		if lid:
 			lid.rotation.y = -ease(_held_k, -2.0) * 2.4
-	ceiling.visible = not (arena.top_down and in_room(arena.player.global_position))
+	var here := in_room(arena.player.global_position)
+	if held >= 0 and (not here or arena.top_down):
+		put_back()                      # (out of the room, or looking down from above: it can't go back by hand there)
+	# (a game left running with nobody in here a while: ejected, where you were saved)
+	var mate = arena.net.other_avatar if _is_host() else null
+	if tv.playing() and not here and not (is_instance_valid(mate) and in_room(mate.global_position)):
+		_away_t += dt
+		if _away_t >= AWAY:
+			_away_t = 0.0
+			eject()
+	else:
+		_away_t = 0.0
+	ceiling.visible = not (arena.top_down and here)
 
 # ---------------------------------------------------------------- building it
 

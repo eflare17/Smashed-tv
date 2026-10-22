@@ -97,7 +97,7 @@ var _own = null
 var _was_role := ""
 var _gate_node: Node3D
 var _gate_a := 0.0
-var _nest_nodes := []           # per nest box: [its node, [egg meshes]]
+var _nest_nodes := []           # per nest box: [its node, [egg meshes], its shelf's collision]
 var _sign: Label3D
 var _roof: Node3D
 var _feed_mesh: MeshInstance3D
@@ -480,6 +480,9 @@ func _players() -> Array:
 
 # a little pile of poo where a hen was (the same cubes in both games: the seed)
 func _poo(at: Vector3, seed: int) -> void:
+	# (not in the gateway's sliver between the yard's cubes and the run's: they'd land in the arena's corner)
+	if at.x > VoxelYard.X1 - 0.08 and at.x < X0 + 0.08:
+		at.x = (VoxelYard.X1 - 0.08) if at.x < GATE_X else (X0 + 0.08)
 	arena.debris.plop(at + Vector3(0, 0.1, 0), POO, POO_CUBES, seed)
 	_msg(["poo", at, seed])
 
@@ -845,7 +848,7 @@ func _show(dt: float) -> void:
 			v.build(int(h.c), chick)
 			v.position = Vector3(float(h.x), float(h.y), float(h.z))
 			_views[id] = v
-		elif v.chick != chick:
+		elif v.chick != chick or v.coat != int(h.c):      # (the same id can be another bird: the host's, then ours again)
 			v.build(int(h.c), chick)
 		var to := Vector3(float(h.x), float(h.y), float(h.z))
 		if _is_guest():
@@ -869,6 +872,7 @@ func _show(dt: float) -> void:
 	for k in _nest_nodes.size():
 		var nn: Array = _nest_nodes[k]
 		(nn[0] as Node3D).visible = k < nest_count()
+		(nn[2] as CollisionShape3D).disabled = k >= nest_count()       # (a hidden one's shelf isn't there to bump into)
 		var eggs: Array = nests[k]
 		for i in NEST_EGGS:
 			var e: MeshInstance3D = nn[1][i]
@@ -1073,7 +1077,7 @@ func _coop() -> void:
 		var nn := Node3D.new()
 		nn.position = Vector3(NEST_X, 0, nz)
 		add_child(nn)
-		_box(Vector3(0.6, 0.05, 0.62), Vector3(0, NEST_Y - 0.06, 0), batten, nn, true)
+		var shelf := _box(Vector3(0.6, 0.05, 0.62), Vector3(0, NEST_Y - 0.06, 0), batten, nn, true)
 		_box(Vector3(0.6, 0.05, 0.62), Vector3(0, NEST_Y + 0.42, 0), plank, nn, false)
 		for s in [-0.31, 0.31]:
 			_box(Vector3(0.6, 0.47, 0.03), Vector3(0, NEST_Y + 0.18, s), plank, nn, false)
@@ -1090,7 +1094,7 @@ func _coop() -> void:
 			e.rotation.x = PI * 0.5
 			nn.add_child(e)
 			eggs.append(e)
-		_nest_nodes.append([nn, eggs])
+		_nest_nodes.append([nn, eggs, shelf.get_child(shelf.get_child_count() - 1)])
 	# the perches: a ladder of rails up the west wall's far end
 	for i in 3:
 		var py := 0.4 + i * 0.35

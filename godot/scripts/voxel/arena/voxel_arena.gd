@@ -1086,6 +1086,8 @@ func _warm_up() -> void:
 		b.queue_free()
 
 func _on_died(b: VoxelBody) -> void:
+	if settings_menu and not settings_menu._bench.is_empty():
+		return                      # (the benchmark's fight: no kill counted, no cash)
 	kills += 1
 	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:
 		cash += int(VoxelFarm.KILL_CASH[b.key])     # (each player's game pays its own player for every kill)
@@ -1679,7 +1681,8 @@ static func _out_of_box(p: Vector3, c: Vector3, hx: float, hz: float) -> Vector3
 
 func _process(dt: float) -> void:
 	_t += dt
-	_frames.append(dt)
+	if _opts.has("secs") or _opts.has("swordtest") or _opts.has("meleetest") or _opts.has("weaponshots"):
+		_frames.append(dt)          # (only the test runs' summary reads them, _finish: not kept for a whole game)
 	if _opts.has("stats"):
 		_stat_t += dt
 		if _stat_t >= 1.0:
@@ -1718,6 +1721,8 @@ func _process(dt: float) -> void:
 	if not guest:
 		_status_step(dt)
 		_tear_step()
+	elif sound.playing("burning"):
+		sound.stop("burning")       # (joined while something here burned: the host's fire isn't run here)
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
 		var moving := b.alive and not frozen
@@ -1727,20 +1732,22 @@ func _process(dt: float) -> void:
 			if b.dead_t > 0.7 and not b.airborne and b.since_air > 0.5 and b.knock.length_squared() <= 0.0001:
 				continue          # lying still
 		b.animate(dt, moving and b.attack <= 0.0)
-	# the dead stay, to be cut up as long as you like; past MAX_DEAD the oldest go
+	# the dead stay, to be cut up as long as you like; past MAX_DEAD the oldest go (by when they died: bodies is in
+	# the order they came, and one that came early can die late)
 	var dead := 0
 	for b in bodies:
 		if not b.alive:
 			dead += 1
-	var i0 := 0
-	while dead > MAX_DEAD and i0 < bodies.size() and not guest:
-		var b := bodies[i0]
-		if not b.alive:
-			b.queue_free()
-			bodies.remove_at(i0)
-			dead -= 1
-		else:
-			i0 += 1
+			if not b.has_meta("dead_at"):
+				b.set_meta("dead_at", _t)
+	while dead > MAX_DEAD and not guest:
+		var old := -1
+		for i in bodies.size():
+			if not bodies[i].alive and (old < 0 or float(bodies[i].get_meta("dead_at")) < float(bodies[old].get_meta("dead_at"))):
+				old = i
+		bodies[old].queue_free()
+		bodies.remove_at(old)
+		dead -= 1
 	var t3 := Time.get_ticks_usec()
 	if not guest and not bodies.any(func(x): return x.alive):
 		_next_t += dt
@@ -1929,6 +1936,7 @@ func _switch(change: Callable) -> void:
 	if now == before:
 		return
 	net.local_input("switch", now)     # (before any press with it: the other game's copy switches first)
+	me.weapon = now                    # (before the old one lets go: a bat put away wound up doesn't swing)
 	if melee.has(before):
 		for btn in _held:
 			if _held[btn]:
@@ -2047,7 +2055,7 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 	var falloff: float = opts.get("falloff", 0.0)
 	_flash.global_position = muzzle
 	_flash_t = 0.05
-	_kick = maxf(_kick, 1.0)
+	# (no kick here: the gun's shot_fx kicks the view, only the local player's: the other's copies fire through here too)
 	var hits := []
 	for i in pellets:
 		var d := dir

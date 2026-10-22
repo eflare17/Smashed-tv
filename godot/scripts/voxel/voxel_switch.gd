@@ -106,6 +106,12 @@ func set_mode(m: String, save := true) -> void:
 		save_mode()
 	_label()
 	_scan()
+	if mode == "pixel":
+		# Gothica in someone's arms: hidden again (the blocks showed her; the lobby's carry picture draws her now)
+		var ll := LobbyLife.current
+		var gl: GothLife = ll.things.get("goth_life") as GothLife if ll else null
+		if gl and gl.carrier != null and gl.thrown == "" and is_instance_valid(gl.goth):
+			gl.goth.visible = false
 	print("VoxelSwitch: characters ", mode)
 
 func toggle() -> void:

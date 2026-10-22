@@ -329,7 +329,8 @@ func _coop() -> bool:
 					check(false, "co-op: the guest's gore never came")
 					step = 2
 			2:
-				if sh.bags == 0 and sh.queued() == 0 and v0.has("had"):
+				# (a bag made and taken between two frames of this test counts: the ground total shows it was made)
+				if sh.bags == 0 and sh.queued() == 0 and (v0.has("had") or sh.ground >= 4000):
 					check(arena.inv.count("blood_bone") == 0, "co-op: the guest took the bag (not the host)")
 					mark = t
 					step = 3

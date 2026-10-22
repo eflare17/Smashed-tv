@@ -1159,3 +1159,9 @@ static func checks(host: Node) -> Array:
 		"a charge is %.1f s of beam, back full %.1f s after letting go" % [frames * dt, idle]])
 	VoxelBody.immortal = was
 	return out
+
+func reset_state() -> void:
+	_energy = ENERGY
+	_locked = false
+	_vent = 0.0
+	_cd = 0.0

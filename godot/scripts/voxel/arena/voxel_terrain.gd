@@ -28,12 +28,13 @@ const GOLD := 6
 const BEDROCK := 7
 const EDGE := 8                 # the ring round the edge: looks like dirt, never digs
 const TILLED := 9               # hoed soil (Stage 5): plants grow in it
-const HARD := [0, 1, 1, 2, 3, 4, 4, 99, 99, 1]
+const FILL := 10                # dirt put back in a hole: digs and looks like dirt (turf on top at the top), no worms in it
+const HARD := [0, 1, 1, 2, 3, 4, 4, 99, 99, 1, 1]
 const COL := [Color(0, 0, 0), Color8(64, 112, 42), Color8(116, 80, 48), Color8(168, 102, 62), Color8(128, 126, 122),
-	Color8(84, 82, 86), Color8(226, 182, 52), Color8(40, 38, 42), Color8(116, 80, 48), Color8(74, 48, 30)]
+	Color8(84, 82, 86), Color8(226, 182, 52), Color8(40, 38, 42), Color8(116, 80, 48), Color8(74, 48, 30), Color8(116, 80, 48)]
 const SIDE_GRASS := Color8(104, 74, 44)   # a grass block's sides: dirt with the turf on top
 ## The item a block dug out becomes (VoxelItems).
-const ITEM := ["", "dirt", "dirt", "clay", "stone", "stone", "gold", "", "", "dirt"]
+const ITEM := ["", "dirt", "dirt", "clay", "stone", "stone", "gold", "", "", "dirt", "dirt"]
 const MAX_JOBS := 6
 
 var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
@@ -143,9 +144,9 @@ func generate() -> void:
 # ---------------------------------------------------------------- digging
 
 ## Every block within r metres of c no harder than hardest taken out. Returns {item id: how many} for what came out,
-## and "_cells": the blocks taken ([Vector3i, ...], for worms and the dust).
+## "_cells": the blocks taken ([Vector3i, ...], for the dust) and "_worms": those of them a worm was in.
 func dig(c: Vector3, r: float, hardest: int) -> Dictionary:
-	var out := {"_cells": []}
+	var out := {"_cells": [], "_worms": []}
 	var lo := cell_of(c - Vector3.ONE * r)
 	var hi := cell_of(c + Vector3.ONE * r)
 	var r2 := r * r
@@ -163,6 +164,8 @@ func dig(c: Vector3, r: float, hardest: int) -> Dictionary:
 				if it != "":
 					out[it] = int(out.get(it, 0)) + 1
 				(out._cells as Array).append(Vector3i(x, y, z))
+				if (m == GRASS or m == DIRT) and worm_in(x, y, z):
+					(out._worms as Array).append(Vector3i(x, y, z))      # (dirt as made only: not stone, not dirt put back)
 				_touch(x, z)
 	return out
 
@@ -183,7 +186,7 @@ func fill(c: Vector3, r: float, n: int) -> int:
 	for s: Vector3i in spots:
 		if k >= n:
 			break
-		cells[idx(s.x, s.y, s.z)] = GRASS if s.y == NY - 1 else DIRT
+		cells[idx(s.x, s.y, s.z)] = FILL
 		_touch(s.x, s.z)
 		k += 1
 	return k
@@ -206,14 +209,14 @@ func till(keys: Array, spot_cells: int) -> int:
 					var m := cells[idx(x, y, z)]
 					if m == AIR:
 						continue
-					if m == GRASS or m == DIRT:
+					if m == GRASS or m == DIRT or m == FILL:
 						cells[idx(x, y, z)] = TILLED
 						_touch(x, z)
 						n += 1
 					break
 	return n
 
-## Whether there's a worm in block (x, y, z) (dug out of dirt: about one block in three hundred).
+## Whether there's a worm in block (x, y, z) (dug out of dirt as made: about one block in three hundred).
 static func worm_in(x: int, y: int, z: int) -> bool:
 	var h := (x * 73856093) ^ (y * 19349663) ^ (z * 83492791)
 	return posmod(h, 331) == 0
@@ -400,7 +403,8 @@ func _mesh_job(b: PackedByteArray, wx0: int, wz0: int, out: Dictionary) -> void:
 				var hsh := ((gx * 92837111) ^ (y * 689287499) ^ (gz * 283923481)) & 0xFFFF
 				var vary := 0.9 + 0.2 * float(hsh % 101) / 100.0
 				var deep := lerpf(0.72, 1.0, float(y) / float(NY - 1))
-				var base: Color = COL[m]
+				var look := GRASS if m == FILL and y == NY - 1 else m     # (filled back to the top: turf again)
+				var base: Color = COL[look]
 				for d in 6:
 					var dv: Vector3i = _DIRS[d]
 					var ny := y + dv.y
@@ -414,7 +418,7 @@ func _mesh_job(b: PackedByteArray, wx0: int, wz0: int, out: Dictionary) -> void:
 					if nm != AIR:
 						continue
 					var col := base
-					if m == GRASS and d != 2:
+					if look == GRASS and d != 2:
 						col = SIDE_GRASS
 					elif m == EDGE and d == 2 and y == NY - 1:
 						col = COL[GRASS]          # (the edge ring's top: turf like the rest)

@@ -569,18 +569,31 @@ func fire_hole() -> void:
 	var e := eye()
 	var f := look()
 	var start := e + f * 0.6
+	var space := arena.get_world_3d().direct_space_state
+	var ex: Array[RID] = shooter.exclude()
+	var reach := HOLE_V * HOLE_FLY
+	var to := e + f * reach
 	if not top_down():
 		# out of the mouth, toward the crosshair's point where it would open (6.3 m out, or nearer if it's in the way)
-		var reach := HOLE_V * HOLE_FLY
-		var q := PhysicsRayQueryParameters3D.create(e, e + f * reach, 1)
-		var ex: Array[RID] = shooter.exclude()
+		var q := PhysicsRayQueryParameters3D.create(e, to, 1)
 		q.exclude = ex
-		var wh: Dictionary = arena.get_world_3d().direct_space_state.intersect_ray(q)
+		var wh: Dictionary = space.intersect_ray(q)
 		if not wh.is_empty():
 			reach = e.distance_to(wh.position)
-		var to := e + f * reach
+		to = e + f * reach
 		start = _mouth_world()
-		f = (to - start).normalized()
+	# (a wall or a pillar close in front: from this side of it, not inside it, where its flight's ray would miss it)
+	var q2 := PhysicsRayQueryParameters3D.create(e, start, 1)
+	q2.exclude = ex
+	var wh2: Dictionary = space.intersect_ray(q2)
+	if not wh2.is_empty():
+		start = e + (start - e).normalized() * maxf(0.0, e.distance_to(wh2.position) - HOLE_BALL - 0.05)
+	if not top_down():
+		if (to - start).dot(f) > 0.1:
+			f = (to - start).normalized()
+		else:
+			# (the wall nearer than the mouth: along the crosshair's line, not back over your shoulder)
+			start = e + f * clampf(reach - HOLE_BALL, 0.05, 0.6)
 	_hst = {"p": start, "v": f * HOLE_V, "t": 0.0, "from": start}
 	_hs = "fly"
 	_hp = start
@@ -1168,23 +1181,30 @@ func _burst() -> void:
 	_hstat.state = "burst"
 	_hstat.flung = flung
 
-# the debris well set at the hole (again on new debris: F2 makes it afresh), its settings kept to put back
+# the debris well set at the hole (again on new debris: F2 makes it afresh; or let go by the other player's hole), its
+# settings kept to put back
 func _well_on() -> void:
 	var d = arena.debris
-	if d == _well_d:
-		return
+	if d == _well_d and d.well != Vector3.INF:
+		return          # (ours; or the other player's hole, opened since: theirs till it's let go)
+	if d != _well_d:
+		_eaten0 = d.eaten
 	_well_d = d
-	_well_was = [d.well_r, d.well_pull, d.well_eat]
+	if d.well == Vector3.INF:
+		_well_was = [d.well_r, d.well_pull, d.well_eat]
 	d.well = _hp
 	d.well_r = WELL_R
-	_eaten0 = d.eaten
 
-# the well let go, its settings as they were
+# the well let go, its settings as they were (only if it's this hole's: not the other player's, still open)
 func _reset_well() -> void:
+	var was = _well_d
 	_well_d = null
 	if arena == null or not is_instance_valid(arena) or not is_instance_valid(arena.debris):
 		return
 	var d = arena.debris
+	if d != was or d.well != _hp:
+		_well_was = []
+		return
 	d.well = Vector3.INF
 	if _well_was.size() == 3:
 		d.well_r = _well_was[0]
@@ -1528,6 +1548,13 @@ func _draw_beam() -> void:
 	im.surface_end()
 
 func _exit_tree() -> void:
+	# (freed with its hole open, e.g. the other player's copy as they leave: what it was pulling falls again)
+	if arena != null and is_instance_valid(arena) and not _pull_pos.is_empty():
+		for bb in arena.bodies:
+			if is_instance_valid(bb) and _pull_pos.has(bb.get_instance_id()):
+				bb.air_v = Vector3.ZERO
+	_pull_pos.clear()
+	_release_pieces()
 	_reset_well()
 	super._exit_tree()
 
@@ -1720,3 +1747,6 @@ static func checks(host: Node) -> Array:
 		(x as Node).queue_free()
 	VoxelBody.immortal = imm
 	return out
+
+func reset_state() -> void:
+	_hole_cd = 0.0

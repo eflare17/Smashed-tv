@@ -38,7 +38,15 @@ func join(code: String) -> void:
 	_role = "guest"
 	var addr := "127.0.0.1"
 	var p := port
-	if code.is_valid_ip_address() or code.contains(".") or code.contains(":"):
+	if code.count(":") > 1 and code.is_valid_ip_address():
+		addr = code                  # (a bare IPv6 address: the usual port; its last group isn't a port)
+	elif code.begins_with("[") and code.contains("]"):
+		# ("[v6 address]:port")
+		addr = code.substr(1, code.find("]") - 1)
+		var tail := code.substr(code.find("]") + 1)
+		if tail.begins_with(":") and tail.substr(1).is_valid_int():
+			p = int(tail.substr(1))
+	elif code.contains(".") or code.contains(":"):
 		var hp := code.rsplit(":", true, 1)
 		addr = hp[0]
 		if hp.size() > 1 and hp[1].is_valid_int():
@@ -71,7 +79,8 @@ func send(data: PackedByteArray) -> void:
 
 func send_fast(data: PackedByteArray) -> void:
 	if _open and _peer:
-		_peer.send(1, data, ENetPacketPeer.FLAG_UNSEQUENCED)
+		# (a long one, the TV's picture, in unreliable pieces too: else ENet sends it reliably, queued in front of the events)
+		_peer.send(1, data, ENetPacketPeer.FLAG_UNSEQUENCED | ENetPacketPeer.FLAG_UNRELIABLE_FRAGMENT)
 
 func poll() -> void:
 	if _enet == null:

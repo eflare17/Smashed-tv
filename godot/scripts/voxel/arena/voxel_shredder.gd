@@ -63,6 +63,7 @@ var _sign: Label3D
 var _sign_post: Node3D
 var _falling := []              # [mesh, t] bags dropping out
 var _grinding := false
+var _acc := 0.0                 # (the cubes it's due to grind: the frames' fractions add up)
 var _crunch_t := 0.0
 var _shake := 0.0
 
@@ -123,16 +124,21 @@ func _grind(dt: float) -> void:
 	var n := queued()
 	_grinding = n > 0
 	if n == 0:
+		_acc = 0.0
 		return
-	var budget: float = float(TIERS[tier].rate) * dt
+	_acc += float(TIERS[tier].rate) * dt
+	var budget := int(_acc)
+	if budget <= 0:
+		return
 	var burnt := 0
 	var bone := 0
 	for id in queue.keys():
-		if budget <= 0.0:
+		if budget <= 0:
 			break
-		var k := mini(int(queue[id]), maxi(1, int(budget)))
+		var k := mini(int(queue[id]), budget)
 		queue[id] = int(queue[id]) - k
 		budget -= k
+		_acc -= k
 		points += k * float(VALUE.get(id, 0.0))
 		ground += k
 		if id == "charred":
@@ -147,12 +153,15 @@ func _grind(dt: float) -> void:
 		if _crunch_t <= 0.0:
 			_crunch_t = randf_range(0.12, 0.35)
 			arena.sound.play("crunch", global_position + Vector3(0, 1.0, 0), -8.0)
-	while points >= BAG_POINTS:
+	# (a co-op guest's grinding is for the look: its bags are the host's, from the host, or one could be taken
+	# before the host had made it)
+	while points >= BAG_POINTS and not _is_guest():
 		points -= BAG_POINTS
 		bags += 1
 		_bag_out()
 		_changed()
 	if queued() == 0:
+		_acc = 0.0
 		_changed()
 
 # (the host's, or alone) what's at its mouth taken in
@@ -472,7 +481,6 @@ func _show(dt: float) -> void:
 	elif arena.sound.playing("shredder"):
 		arena.sound.stop("shredder")
 	_spray.emitting = on
-	_spray.amount = int(t.spray)
 	_shake = move_toward(_shake, 1.0 if on else 0.0, dt * 4.0)
 	var root: Node3D = _models[tier]
 	root.position = Vector3(randf_range(-1, 1), randf_range(0, 1), randf_range(-1, 1)) * 0.008 * _shake * (1.0 + tier)
@@ -515,6 +523,7 @@ func _show_tier() -> void:
 		for c in r.find_children("*", "CollisionShape3D", true, false):
 			(c as CollisionShape3D).disabled = i != tier
 	var t: Dictionary = TIERS[tier]
+	_spray.amount = int(t.spray)          # (here, not every frame: setting it restarts the whole spray)
 	_spray.position = [Vector3(0, 1.3, 0), Vector3(0, 1.55, 0), Vector3(1.0, 2.2, 0.3)][tier]
 	_spray.direction = [Vector3(0, 1, 0), Vector3(0, 1, 0), Vector3(0.6, 1, 0.3)][tier]
 	_spray.initial_velocity_min = [1.2, 2.0, 4.0][tier]

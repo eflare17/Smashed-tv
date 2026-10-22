@@ -100,8 +100,8 @@ func save_file() -> void:
 	cf.save(file)
 
 ## A preset guessed from the graphics card's name (the first run, before any benchmark).
-static func guess() -> String:
-	var gpu := RenderingServer.get_video_adapter_name().to_lower()
+static func guess(card := RenderingServer.get_video_adapter_name()) -> String:
+	var gpu := card.to_lower().replace("(tm)", "").replace("(r)", "")     # ("Intel(R) Arc(TM) A770": "intel arc a770")
 	if gpu == "" or gpu.contains("llvmpipe") or gpu.contains("software") or gpu.contains("swiftshader"):
 		return "low"
 	for hi in ["rtx 40", "rtx 50", "rx 79", "rx 9070", "rtx 3090", "rtx 3080"]:
@@ -110,7 +110,7 @@ static func guess() -> String:
 	for mid in ["rtx", "rx 6", "rx 7", "arc a7", "arc b5"]:
 		if gpu.contains(mid):
 			return "high"
-	for lo in ["intel", "uhd", "iris", "vega", "radeon(tm) graphics", "780m", "680m"]:
+	for lo in ["intel", "uhd", "iris", "vega", "radeon graphics", "780m", "680m"]:
 		if gpu.contains(lo):
 			return "low"
 	return "medium"
@@ -132,6 +132,9 @@ func apply(arena: Node3D) -> void:
 	vp.use_taa = bool(v.taa) and forward
 	var sh := int(v.shadows)
 	arena.sun.shadow_enabled = sh > 0
+	if arena.house:                 # (the bedroom's ceiling light, its own child, too: Off is off in there as well)
+		for l in arena.house.find_children("*", "OmniLight3D", false, false):
+			l.shadow_enabled = sh > 0
 	if sh > 0:
 		RenderingServer.directional_shadow_atlas_set_size(4096 if sh == 2 else 2048, true)
 		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM if sh == 2 else RenderingServer.SHADOW_QUALITY_HARD)

@@ -750,8 +750,10 @@ func _tear() -> void:
 
 # the harpoon now in rigid piece rb (where it is now)
 func _into(rb: RigidBody3D) -> void:
+	_drop_body()            # (one it was dragging in: back on the floor)
 	_mode = "piece"
 	_t = 0.0
+	_tug = -1.0             # (a tug cut short: the clicks work again)
 	_rb = rb
 	_body = null
 	var inv := rb.global_transform.affine_inverse()
@@ -1124,3 +1126,6 @@ static func checks(host: Node) -> Array:
 		(x as Node).queue_free()
 	VoxelBody.immortal = imm
 	return out
+
+func reset_state() -> void:
+	_cd = 0.0

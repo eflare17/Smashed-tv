@@ -23,7 +23,6 @@ const SHOVEL := [[0.2, 2, 0.7, "Rusty shovel"], [0.32, 2, 0.4, "Good shovel"], [
 const PICK := [0.21, 4, 0.55, "Pick"]
 const HOE := [0.0, 1, 0.45, "Hoe"]
 const CAN_STATS := [0.0, 0, 0.0, "Watering can"]
-const POUR_RATE := 1.0          # can-fulls (of eight) a second... a plant takes one eighth
 const POUR_REACH := 0.45        # metres round where the water lands that it waters
 const BLADE := [Color8(142, 76, 40), Color8(176, 180, 188), Color8(242, 198, 64)]
 
@@ -312,7 +311,6 @@ func _pour(dt: float) -> void:
 		return
 	if shooter != arena.me:
 		return
-	water = maxf(0.0, water - dt * POUR_RATE)
 	_pour_t += dt
 	if _pour_t < 0.15:
 		return
@@ -327,7 +325,10 @@ func _pour(dt: float) -> void:
 		var at := farm.spot_top(key)
 		if at != Vector3.INF and Vector2(at.x - p.x, at.z - p.z).length() <= POUR_REACH:
 			if farm.water(key):
+				water = maxf(0.0, water - 1.0)        # (a plant takes one: eight a can)
 				arena.say("Watered: %s" % farm.hint(key), 1.5)
+				if water <= 0.0:
+					break
 
 # where the look meets the ground within reach: [point, normal] or []
 func _aim_ground() -> Array:
@@ -393,7 +394,7 @@ func _bite() -> void:
 	sfx("dig_stone" if stone * 2 > cells.size() else "dig_dirt", p, -2.0, randf_range(0.9, 1.1))
 	var most := VoxelTerrain.DIRT
 	for id in got:
-		if id != "_cells":
+		if id != "_cells" and id != "_worms":
 			arena.receive({"id": id, "n": int(got[id])}, "inv")
 	if int(got.get("gold", 0)) > 0:
 		sfx("gold_find", p, 0.0)
@@ -406,12 +407,11 @@ func _bite() -> void:
 	_dust(p, VoxelTerrain.COL[most])
 	# worms in the dirt dug out
 	var worms := 0
-	for c: Vector3i in cells:
-		if VoxelTerrain.worm_in(c.x, c.y, c.z):
-			worms += 1
-			var w := VoxelWorm.new()
-			arena.add_child(w)
-			w.start(yard.ground.centre_of(c.x, c.y, c.z) + Vector3.UP * 0.05, arena.player)
+	for c: Vector3i in got.get("_worms", []):
+		worms += 1
+		var w := VoxelWorm.new()
+		arena.add_child(w)
+		w.start(yard.ground.centre_of(c.x, c.y, c.z) + Vector3.UP * 0.05, arena.player)
 	if worms > 0:
 		arena.receive({"id": "worm", "n": worms}, "inv")
 		sfx("worm_find", p, -2.0)

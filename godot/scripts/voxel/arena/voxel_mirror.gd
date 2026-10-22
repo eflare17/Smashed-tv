@@ -10,6 +10,7 @@ extends Node3D
 const LAYER_SELF := 2           # render layer (bit index + 1) the player's own Jared is on in first person
 const RES := 360                # the reflection's height in pixels (the width follows the glass)
 const NEAR_ENOUGH := 9.0        # metres: further off, it isn't rendered
+const SHEEN := Color(0.3, 0.33, 0.37)   # the glass while it isn't rendering (no frozen last reflection)
 
 ## (the settings: off, the glass just shows a dim reflection-less sheen and nothing renders a second view)
 static var enabled := true
@@ -21,6 +22,7 @@ var height := 1.8
 var _vp: SubViewport
 var _cam: Camera3D
 var _glass: MeshInstance3D
+var _gm: StandardMaterial3D
 var _right := Vector3.RIGHT     # the glass's right as you face it
 
 func setup(arena_: Node3D, centre_: Vector3, normal_: Vector3, w: float, h: float) -> void:
@@ -57,12 +59,12 @@ func setup(arena_: Node3D, centre_: Vector3, normal_: Vector3, w: float, h: floa
 	var qm := QuadMesh.new()
 	qm.size = Vector2(w, h)
 	_glass.mesh = qm
-	var gm := StandardMaterial3D.new()
-	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	gm.albedo_texture = _vp.get_texture()
-	gm.uv1_scale = Vector3(-1, 1, 1)           # (a reflection: left and right swapped)
-	gm.uv1_offset = Vector3(1, 0, 0)
-	_glass.material_override = gm
+	_gm = StandardMaterial3D.new()
+	_gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_gm.albedo_color = SHEEN                    # (the reflection goes on while it renders)
+	_gm.uv1_scale = Vector3(-1, 1, 1)           # (a reflection: left and right swapped)
+	_gm.uv1_offset = Vector3(1, 0, 0)
+	_glass.material_override = _gm
 	add_child(_glass)
 	_glass.global_transform = Transform3D(basis, centre + normal * 0.001)
 	_glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -79,8 +81,12 @@ func _process(_dt: float) -> void:
 	var main: Camera3D = arena.cam
 	var eye := main.global_position
 	var off := (eye - centre).dot(normal)
-	var near: bool = off > 0.05 and eye.distance_to(centre) < NEAR_ENOUGH and not arena.top_down and enabled
+	# (only from in the bedroom or its doorway: not through the walls, from the games room, the yard or the arena)
+	var near: bool = off > 0.05 and eye.distance_to(centre) < NEAR_ENOUGH and VoxelBedroom.in_house(eye) and not arena.top_down and enabled
 	_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if near else SubViewport.UPDATE_DISABLED
+	if near != (_gm.albedo_texture != null):
+		_gm.albedo_texture = _vp.get_texture() if near else null
+		_gm.albedo_color = Color.WHITE if near else SHEEN
 	if not near:
 		return
 	# the eye reflected in the glass's plane; the camera there looks out through the glass (its -z along the normal)
@@ -91,3 +97,4 @@ func _process(_dt: float) -> void:
 	var ox := to.dot(-_right)
 	var oy := to.dot(Vector3.UP)
 	_cam.set_frustum(height, Vector2(ox, oy), maxf(0.02, off), 60.0)
+

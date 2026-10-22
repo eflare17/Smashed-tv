@@ -60,6 +60,7 @@ func setup(arena_: Node3D) -> void:
 	_btn.offset_bottom = 42
 	_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_btn.pressed.connect(toggle)
+	_btn.button_down.connect(func(): arena._ignore[MOUSE_BUTTON_LEFT] = true)     # (top-down: the click on it doesn't fire too)
 	root.add_child(_btn)
 
 	_wait = Label.new()
@@ -188,8 +189,21 @@ func _button(parent: Control, text: String, cb: Callable) -> Button:
 ## A room code in some text (a pasted message), or "" (an address counts too, for a direct game).
 static func code_in(t: String) -> String:
 	var s := t.strip_edges()
-	if s.contains(".") or s.contains(":"):
-		return s.split(" ")[0] if s.split(" ").size() > 0 else s
+	# (an address, as a whole word: four numbers with dots, an IPv6 one (bare, or "[v6]:port"), or a name with a dot or
+	# a port; not just any '.' or ':', as in "Code: K7QD", "meet at 10:30" or a message ending in a full stop)
+	var v4 := RegEx.create_from_string("^\\d{1,3}(\\.\\d{1,3}){3}(:\\d+)?$")
+	var v6 := RegEx.create_from_string("^\\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\\](:\\d+)?$")
+	var host := RegEx.create_from_string("^[A-Za-z][A-Za-z0-9-]*((\\.[A-Za-z0-9-]+)*\\.[A-Za-z][A-Za-z0-9-]+(:\\d+)?|(\\.[A-Za-z0-9-]+)*:\\d+)$")
+	for m in RegEx.create_from_string("\\S+").search_all(s):
+		var a := m.get_string().lstrip("(\"'").rstrip(".,!?;)\"'")
+		# (a bare IPv6 one: Godot passes "10:30" too, so a "::" or all eight groups)
+		var bare6 := a.count(":") > 1 and a.is_valid_ip_address() and (a.contains("::") or a.count(":") == 7)
+		if v4.search(a) or v6.search(a) or host.search(a) or bare6:
+			return a
+	# (four numbers with dots inside a word, as in "ip:192.168.1.20")
+	var addr := RegEx.create_from_string("\\b\\d{1,3}(\\.\\d{1,3}){3}(:\\d+)?\\b").search(s)
+	if addr:
+		return addr.get_string()
 	# (in a message like "join me, code K7QD": the last word made only of the codes' letters)
 	s = s.to_upper()
 	var rx := RegEx.create_from_string("\\b[A-HJ-NP-Z2-9]{4,8}\\b")
@@ -289,8 +303,10 @@ func toggle() -> void:
 		open()
 
 func open() -> void:
-	if _open:
-		return
+	if _open or (arena.settings_menu and arena.settings_menu.is_open()):
+		return                      # (the settings screen, or its benchmark, has the mouse: no co-op started mid-run)
+	if arena.games.seated > 0:
+		arena.games.get_up()        # (on the couch the keys are the console's: up, so typing a code doesn't play the game)
 	_open = true
 	_panel.visible = true
 	arena._let_go()
@@ -318,8 +334,8 @@ func close() -> void:
 	var fo := get_viewport().gui_get_focus_owner()
 	if fo:
 		fo.release_focus()
-	if not arena.top_down and not arena._opts.has("auto"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if not arena.top_down and not arena._opts.has("auto") and not arena.inv_ui.is_open() and not arena.lock_view.is_open():
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # (the backpack or a padlock still up underneath: the mouse stays theirs)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey) or not e.pressed or e.echo:

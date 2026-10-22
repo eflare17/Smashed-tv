@@ -161,6 +161,7 @@ func poll() -> void:
 
 func _lost() -> void:
 	_open = false
+	_wait = -INF            # (a guest's: it was connected, so "room not found" never comes after)
 	_drop_pc()
 	status.emit("player 2 left" if _role == "host" else "lost the connection", "bad")
 	disconnected.emit()

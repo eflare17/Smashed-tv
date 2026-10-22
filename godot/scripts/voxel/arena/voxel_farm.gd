@@ -436,7 +436,7 @@ func on_net(m: Array) -> void:
 				var add := clampi(int(m[1]), 0, WORM_MAX)
 				var keep := mini(add, WORM_MAX - int(worms.n))
 				worms.n = int(worms.n) + keep
-				worms.food = float(worms.food) + clampf(float(m[2]), 0.0, FEED_MOST)
+				worms.food = float(worms.food) + clampf(float(m[2]), 0.0, FEED_MOST * VoxelShredder.BAG_SCRAPS)     # (the most a take carries: all bags)
 				if add > keep:
 					_msg(["give", {"id": "worm", "n": add - keep}])
 				_changed(-1)

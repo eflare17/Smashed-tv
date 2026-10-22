@@ -375,7 +375,7 @@ func _bomb_target() -> Vector3:
 		if not mr.is_empty():
 			from = mr[0]
 			dir = mr[1]
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 60.0)
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 60.0, 1)
 	q.exclude = shooter.exclude()
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	var to: Vector3 = wh.position if not wh.is_empty() else from + dir * 60.0
@@ -460,7 +460,7 @@ func _stream() -> Array:
 		o = shooter.player.global_position + Vector3(0, 0.95, 0) + f * 0.7
 		if is_instance_valid(_hand) and _hand.is_visible_in_tree():
 			o = (_hm.tip as Node3D).global_position
-	var q := PhysicsRayQueryParameters3D.create(eye(), o)
+	var q := PhysicsRayQueryParameters3D.create(eye(), o, 1)
 	q.exclude = shooter.exclude()
 	var wh := get_world_3d().direct_space_state.intersect_ray(q)
 	if not wh.is_empty():
@@ -578,7 +578,7 @@ func _wall_d(space: PhysicsDirectSpaceState3D, pts: PackedVector3Array) -> float
 	var ex: Array[RID] = shooter.exclude()
 	var gone := 0.0
 	for i in pts.size() - 1:
-		var q := PhysicsRayQueryParameters3D.create(pts[i], pts[i + 1])
+		var q := PhysicsRayQueryParameters3D.create(pts[i], pts[i + 1], 1)
 		q.exclude = ex
 		var wh := space.intersect_ray(q)
 		if not wh.is_empty():
@@ -705,7 +705,7 @@ func _globs_step(dt: float) -> void:
 				p1 = hp + (h.normal as Vector3) * 0.1
 				v = Vector3(v.x * 0.08, minf(v.y, 0.0) * 0.3, v.z * 0.08)
 				break
-		var q := PhysicsRayQueryParameters3D.create(p0, p1)
+		var q := PhysicsRayQueryParameters3D.create(p0, p1, 1)
 		q.exclude = ex
 		var wh := space.intersect_ray(q)
 		if not wh.is_empty():
@@ -1243,3 +1243,7 @@ static func checks(host: Node) -> Array:
 		bb.queue_free()
 	VoxelBody.immortal = was
 	return out
+
+func reset_state() -> void:
+	_fuel = 1.0
+	_heat = 0.0

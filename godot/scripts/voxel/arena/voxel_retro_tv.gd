@@ -4,8 +4,8 @@ extends Node3D
 ## a game runs in a libretro core through the voxel_retro GDExtension (RetroCore: Genesis Plus GX for the Mega Drive,
 ## Master System and Game Gear; Snes9x for the Super Nintendo), at the console's own frame rate, its picture on the TV's
 ## screen (a CRT look: scanlines, a glow) and its sound coming out of the TV. Sitting on the couch, your keys and pad
-## are its controller (player 1, or player 2 on the right-hand seat). Stopped (ejected, or you leave the room with
-## it running a while), it saves where you were and carries on from there next time. Owned by the voxel session.
+## are its controller (player 1; in co-op the guest's are player 2's, whichever seat). Stopped (ejected, or you leave the
+## room with it running a while), it saves where you were and carries on from there next time. Owned by the voxel session.
 
 ## The systems: the core that plays them, the extensions their game files have.
 const SYSTEMS := {
@@ -173,6 +173,7 @@ func stop() -> void:
 	_playback = null
 	_mat.set_shader_parameter("on", 0.0)
 	_glow.light_energy = 0.0
+	last_frame = null               # (or the glow lights up again in its colour)
 	player_port = -1
 
 func reset() -> void:
@@ -226,7 +227,7 @@ func _glow_light(dt: float) -> void:
 	if _glow_t <= 0.0 and last_frame:
 		_glow_t = 0.25
 		var small := last_frame.duplicate() as Image
-		small.resize(1, 1, Image.INTERPOLATE_BILINEAR)
+		small.resize(1, 1, Image.INTERPOLATE_LANCZOS)       # (all of it: bilinear only looks at the middle few pixels)
 		var c := small.get_pixel(0, 0)
 		_glow.light_color = c.lerp(Color.WHITE, 0.2)
 		_glow.light_energy = 0.4 + c.get_luminance() * 1.2
@@ -263,4 +264,10 @@ func my_buttons() -> int:
 		for jb in PAD:
 			if Input.is_joy_button_pressed(dev, jb):
 				bits |= 1 << int(PAD[jb])
+		var lx := Input.get_joy_axis(dev, JOY_AXIS_LEFT_X)      # (the left stick the d-pad, as on player 1's)
+		var ly := Input.get_joy_axis(dev, JOY_AXIS_LEFT_Y)
+		if lx < -0.5: bits |= 1 << LEFT
+		if lx > 0.5: bits |= 1 << RIGHT
+		if ly < -0.5: bits |= 1 << UP
+		if ly > 0.5: bits |= 1 << DOWN
 	return bits

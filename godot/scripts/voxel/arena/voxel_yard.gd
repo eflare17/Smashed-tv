@@ -34,6 +34,9 @@ var shredder: VoxelShredder
 var _sum_t := 0.0
 var _own = null                 # guest: their own yard's dug chunks while in someone else's (null: not a guest)
 var _was_role := ""
+var _op := 0                    # this player's own digs, fills and tills so far ...
+var _op_at := {}                # ... chunk -> the last of them that changed it
+var _asked := {}                # (a guest's) chunk -> _op when it asked the host for it
 
 ## In the yard (or its doorway): the enemies keep out and don't go for anyone here.
 static func in_yard(p: Vector3) -> bool:
@@ -62,6 +65,8 @@ func setup(arena_: Node3D) -> void:
 func dig(c: Vector3, r: float, hardest: int) -> Dictionary:
 	var got := ground.dig(c, r, hardest)
 	_msg(["dig", c, r, hardest])
+	if not (got._cells as Array).is_empty():
+		_mine(ground.cell_of(c - Vector3.ONE * r), ground.cell_of(c + Vector3.ONE * r))
 	return got
 
 ## This player's fill: up to n dirt blocks back in (n from their backpack). Returns how many went in.
@@ -69,14 +74,28 @@ func fill(c: Vector3, r: float, n: int) -> int:
 	var k := ground.fill(c, r, n)
 	if k > 0:
 		_msg(["fill", c, r, k])
+		_mine(ground.cell_of(c - Vector3.ONE * r), ground.cell_of(c + Vector3.ONE * r))
 	return k
 
 ## This player's hoe: the planting spots in keys tilled (Stage 5), told to the other game.
 func till(keys: Array) -> int:
-	var n := ground.till(keys, int(VoxelFarm.SPOT / VoxelTerrain.CELL))
+	var sc := int(VoxelFarm.SPOT / VoxelTerrain.CELL)
+	var n := ground.till(keys, sc)
 	if n > 0:
 		_msg(["till", keys])
+		for key in keys:
+			var at := Vector3i(int(key) / 1000 * sc, 0, int(key) % 1000 * sc)
+			_mine(at, at + Vector3i(sc - 1, 0, sc - 1))
 	return n
+
+# this player's own change over these blocks: the chunks they're in changed here (a guest: the host's copy of one, sent
+# before the host had this, is older than ours)
+func _mine(lo: Vector3i, hi: Vector3i) -> void:
+	_op += 1
+	var cs := VoxelTerrain.CS
+	for cz in range(clampi(lo.z, 0, VoxelTerrain.NZ - 1) / cs, clampi(hi.z, 0, VoxelTerrain.NZ - 1) / cs + 1):
+		for cx in range(clampi(lo.x, 0, VoxelTerrain.NX - 1) / cs, clampi(hi.x, 0, VoxelTerrain.NX - 1) / cs + 1):
+			_op_at[cz * (VoxelTerrain.NX / cs) + cx] = _op
 
 func _msg(m: Array) -> void:
 	if arena.net and arena.net.linked:
@@ -104,6 +123,8 @@ func on_net(m: Array) -> void:
 					if ground.chunk_hash(c) != theirs[c]:
 						want.append(c)
 				if not want.is_empty():
+					for c in want:
+						_asked[c] = _op
 					_msg(["want", want])
 		"want":
 			if host:
@@ -112,6 +133,10 @@ func on_net(m: Array) -> void:
 					_msg(["chunk", int(c), b.compress(FileAccess.COMPRESSION_ZSTD)])
 		"chunk":
 			if not host:
+				# (ours changed since we asked: the host's is from before that reached it, so not put over ours; the next
+				# fingerprints check it again)
+				if int(_op_at.get(int(m[1]), -1)) > int(_asked.get(int(m[1]), -1)):
+					return
 				var raw: PackedByteArray = m[2]
 				ground.set_chunk_bytes(int(m[1]), raw.decompress(VoxelTerrain.CS * VoxelTerrain.NY * VoxelTerrain.CS, FileAccess.COMPRESSION_ZSTD))
 
@@ -121,9 +146,7 @@ func _process(dt: float) -> void:
 		if _was_role == "guest" and _own != null:
 			ground.load_chunks(_own)          # (back from someone else's: our own yard again)
 			_own = null
-		if role == "host":
-			_msg(["all", ground.changed_chunks()])
-		_was_role = role
+		_was_role = role                      # (a guest coming gets it all from send_all, on their hello)
 	if role == "host":
 		_sum_t += dt
 		if _sum_t >= SUM_T:
