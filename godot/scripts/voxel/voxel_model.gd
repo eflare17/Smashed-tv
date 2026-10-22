@@ -10,7 +10,7 @@ extends RefCounted
 
 const DIR := "res://assets/voxel/"
 ## Kinds made from another's model (Stage 11, the arena's enemy variety): its parts recoloured toward tint (mix of the
-## way), and the shield brute's shield added: a steel plate on a bone of its own below the left forearm (laid flat at
+## way), and the shield brute's shield added: a steel plate on a bone of its own under the left hand (laid flat at
 ## rest, held up in front of it when the forearm points forward: VoxelBody pins it so).
 const VARIANTS := {
 	"charger": {"base": "swarmer", "tint": Color(1.0, 0.32, 0.25), "mix": 0.55},
@@ -103,7 +103,7 @@ func _load(ch: String) -> bool:
 		bone_names.append("shield")
 		var hl: Vector3 = bone_pivot[bone("hand_l")] if bone("hand_l") >= 0 else Vector3(23, 21, 0)
 		bone_pivot.append(Vector3(hl.x, SHIELD_ORIGIN.y + SHIELD_SIZE.y, 0.0))
-		bone_parent.append(bone("forearm_l"))
+		bone_parent.append(bone("hand_l") if bone("hand_l") >= 0 else bone("forearm_l"))     # (held in the hand: the hand off, it goes too)
 		parts["shield"] = {"bone": bone("shield"), "origin": SHIELD_ORIGIN, "file": "", "group": "", "style": "",
 			"optional": false, "grid": shield_grid(), "arrays": {}}
 	return true

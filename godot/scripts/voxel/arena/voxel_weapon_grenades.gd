@@ -992,6 +992,8 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 	_boom_fx(p)
 	sfx("grenades_boom", p, 3.0, randf_range(0.92, 1.05))
 	var kd := eye().distance_to(p)
+	if how == "bench":
+		return                      # (the settings' benchmark: no kick, no hit-stop to skew its frame times)
 	shooter.kick = maxf(float(shooter.kick), 2.0 * clampf(1.0 - kd / 16.0, 0.15, 1.0))
 	if kmax > 0.15:
 		hit_stop(0.04 + 0.05 * kmax, 0.07)

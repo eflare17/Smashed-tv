@@ -518,7 +518,7 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
 - **Models**: `VoxelModel.VARIANTS`: an old model's files recoloured toward a tint (`_tinted`, keeping how light each
   cube is): the charger from the swarmer (red), the thrower from the grunt (green), the shield brute from the brute
   (blue steel). The shield brute gets a **shield**: a 30x2x38 steel plate (`shield_grid()`: a dark rim, rivets, a red
-  cross, a boss) as a part on a bone of its own (`shield`, under `forearm_l`), laid flat at rest; `VoxelBody.animate`
+  cross, a boss) as a part on a bone of its own (`shield`, under `hand_l`), laid flat at rest; `VoxelBody.animate`
   pins the left arm so the forearm points ahead and the shield stands up in front. It's an ordinary part: shots,
   blades, fire and blasts take its cubes (no flesh inside, no health lost: `PART_WEIGHT` has none for it), holes go
   through, bits cut loose fall off as pieces, the arm cut off takes it along, it's synced like any part.
@@ -537,7 +537,7 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
   their swings hurt like their base kind's. F4 freezes them mid-move.
 - Co-op: the move is the host's; the guest gets it in the snapshots (`act_k`: the move and how far through, one
   float) and poses it; a thrown glob is sent as event "gl" and the guest throws a copy that only looks.
-- Tests: `test/voxel/kinds_test.gd` (17 checks: the models, the shield taking shots and shot away, the charger's
+- Tests: `test/voxel/kinds_test.gd` (19 checks: the models, the shield taking shots and shot away, the charger's
   charge, hit and daze, the pillar, the thrower's glob, the arm off); `test/voxel/kinds_shots.gd`
   (`voxel_shots/kinds_lineup.png`, `kinds_moves.png`, `kinds_shield.png`).
 
@@ -562,7 +562,7 @@ waves, carvable piece by piece")
   DOWN", $40.
 - Co-op: the host's waves; event "wv" shows the guest the wave's number and gives its bar the boss's full health,
   "sl" the slam's dust and kick (looks only).
-- Tests: `test/voxel/waves_test.gd -- --waves` (17 checks: the plans grow, kinds join, the rest, the boss's size and
+- Tests: `test/voxel/waves_test.gd -- --waves` (19 checks: the plans grow, kinds join, the rest, the boss's size and
   toughness, bar, slam, roar, limb hits, his pay, F12); `test/voxel/boss_shots.gd -- --waves`
   (`voxel_shots/boss_wave.png`, `boss_slam.png`, `boss_carved.png`); co-op with `coop_test.gd -- --host=X --waves
   --wave=5` (0 bodies different).
@@ -589,6 +589,31 @@ clips, fuel) at a lobby bench")
 - Tests: `test/voxel/upgrades_test.gd` (14 checks alone: the bench, the racks, no cash no sale, CLIPS, DAMAGE's bigger
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
+
+### The overnight work's bug sweep (Stage 14, 22 Oct)
+
+Three reviewers read Stages 10-13 (settings and the bench; the kinds; the waves and the boss); every finding was
+checked against the code before it was fixed (`kinds_test` 19 checks, `waves_test` 19 now):
+- DAMAGE scaled a hole's radius, so the cubes (and health) went up by its cube (x4.5 at x1.65): the radius now goes
+  up by the cube root (the cubes by the level's number), a carve's health a cube not at all.
+- The weapon bench and the tool bench could be used through the arena's south wall: only from the yard now.
+- Health off a body that no weapon did (bowled over, a charger into a pillar) took the local player's DAMAGE:
+  `arena._plain_hurt`.
+- Any purchase refilled the clips: only a CLIPS one does. The fire bomb asked for the unscaled fuel.
+- The benchmark: its grenades froze time a blink (hit-stop: lighter frames, a rosier result) and kicked the view;
+  its fight took the player's DAMAGE; the waves kept walking in during it; its extra pieces outlived it. All fixed;
+  after it, the same kinds come back (the boss too), not a random lot.
+- F2 (or anything that starts the fight over) swapped the boss for a random enemy: the same kinds come back
+  (`living_kinds`, `_respawn_all(count, kinds)`).
+- The guest's copy of the boss didn't know he's tough (his limbs came off three times sooner there, then popped
+  back): his toughness and full health are in the body's birth; a guest joining mid-boss gets his bar's full health
+  in the welcome.
+- A frozen boss shattered whole at the next knock: tough ones frost over (slower) but never freeze solid.
+- The test set-ups (--weaponshots, --meleetest ...) got waves; F12 off and on jumped the wave number (one at a time
+  counts each enemy): the waves pick up where they were, the old wave's leftovers dropped.
+- The shield's bone was under the forearm but held at the fingertips: the hand off left it floating, still
+  blocking. It's under the hand now. Steel doesn't burn. The guest's copy of a glob splats on the guest too. A
+  dazed charger set alight runs about. The boss goes round pillars at his own size; his angry wind-up poses right.
 
 ### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
 

@@ -135,6 +135,16 @@ func _process(dt: float) -> bool:
 					if b.key == "swarmer":
 						sw += 1
 				check(sw >= 2, "his roar: two swarmers come running")
+				# the cube size changed (F2) mid-boss: the same kinds back, the boss too
+				arena._respawn_all()
+				boss = null
+				for b in arena.bodies:
+					if b.key == "boss" and b.alive:
+						boss = b
+				check(boss != null and is_equal_approx(boss.tough, 3.0) and _alive() >= 3, "the fight started over (F2): the boss back as tough, his swarmers too")
+				if boss == null:
+					step = 99
+					return false
 				# his limbs: three times the hits
 				arena.frozen = true
 				var fa: Dictionary = boss.parts.forearm_r
@@ -160,6 +170,10 @@ func _process(dt: float) -> bool:
 				ev.physical_keycode = KEY_F12
 				arena._unhandled_input(ev)
 				check(not w.on, "F12: one at a time again")
+				var at: int = arena.wave
+				arena.wave += 7          # (one at a time counts each enemy)
+				arena._unhandled_input(ev)
+				check(w.on and arena.wave == at, "F12 again: the waves from where they were (wave %d)" % arena.wave)
 				step = 99
 		99:
 			print("WAVES done %d passed, %d failed" % [passed, failed])

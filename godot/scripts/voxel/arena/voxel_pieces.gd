@@ -107,6 +107,12 @@ func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel:
 		_pieces.remove_at(0)
 	return rb
 
+## The oldest pieces gone past MAX_PIECES (the cap lowered: the settings).
+func trim() -> void:
+	while _pieces.size() > MAX_PIECES:
+		(_pieces[0].rb as RigidBody3D).queue_free()
+		_pieces.remove_at(0)
+
 ## Every piece, newest last: [{rb, t, cells, vm}] (a weapon may push them about).
 func list() -> Array:
 	return _pieces

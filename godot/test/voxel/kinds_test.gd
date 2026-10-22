@@ -69,8 +69,8 @@ func _process(dt: float) -> bool:
 					"%s: a model of its own (from the %s's)" % [k, VoxelModel.VARIANTS[k].base])
 			check(_cell_col(VoxelModel.get_model("charger"), "torso") != _cell_col(VoxelModel.get_model("swarmer"), "torso"), "the charger recoloured")
 			var sm := VoxelModel.get_model("shielder")
-			check(sm.parts.has("shield") and sm.bone("shield") >= 0 and sm.bone_parent[sm.bone("shield")] == sm.bone("forearm_l"),
-				"the shield brute: a shield part on a bone of its own under the left forearm")
+			check(sm.parts.has("shield") and sm.bone("shield") >= 0 and sm.bone_parent[sm.bone("shield")] == sm.bone("hand_l"),
+				"the shield brute: a shield part on a bone of its own under the left hand")
 			_clear()
 			_put_player(Vector3(0, 0, 6))
 			b = _body("shielder", Vector3(0, 0, 0))
@@ -103,6 +103,11 @@ func _process(dt: float) -> bool:
 			var mv: Vector3 = arena.kinds.step(b, Vector3(0, 0, 6), 0, Vector3(0, 0, 6), 6.0, Vector3(0, 0, 1), true, 0.016)
 			check(not b.has_shield() and mv.length() > 1.2, "the shield shot away (%d shots): he's angrier (%.1fx)" % [tries, mv.length()])
 			arena.frozen = false
+			var s2 := _body("shielder", Vector3(3, 0, 0))
+			s2.animate(0.016, false)
+			check(s2.ignite(s2.global_position + Vector3(0, 1.3, 0.9), 0.3) == 0 or not s2._burn.has("shield"), "the steel shield doesn't burn")
+			s2.sever("hand_l")
+			check(s2.parts.shield.gone and not s2.has_shield(), "his hand off: the shield goes with it")
 			_clear()
 			_put_player(Vector3(0, 0, 6))
 			b = _body("charger", Vector3(0, 0, -1))

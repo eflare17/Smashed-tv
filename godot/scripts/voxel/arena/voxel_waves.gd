@@ -147,7 +147,7 @@ func step(dt: float, run: bool) -> void:
 			boss = b
 	_show_bar(boss != null)
 	if boss:
-		var mx := maxf(boss_max, maxf(1.0, boss.hp))
+		var mx := maxf(float(boss.get_meta("hp_max", boss_max)), maxf(1.0, boss.hp))
 		_bar_fill.size.x = 596.0 * clampf(boss.hp / mx, 0.0, 1.0)
 	if not run or not on:
 		return
@@ -170,6 +170,18 @@ func step(dt: float, run: bool) -> void:
 			_rest = 0.0
 			begin_wave()
 	else:
+		_rest = 0.0
+
+## F12: the waves off (one at a time, the old way: its own count of enemies, the wave's left to walk in dropped) or on
+## again (from the wave they were at).
+var _wave_at := 0
+func toggle() -> void:
+	on = not on
+	if not on:
+		_wave_at = int(arena.wave)
+		queue.clear()
+	else:
+		arena.wave = maxi(_wave_at, 0)
 		_rest = 0.0
 
 func _show_bar(v: bool) -> void:

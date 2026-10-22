@@ -109,7 +109,7 @@ func _boss(b: VoxelBody, pp: Vector3, to: Vector3, d: float, mv: Vector3, can: b
 	match b.act:
 		VoxelBody.ACT_SLAM_UP:
 			b.act_t -= dt
-			b.act_p = 1.0 - b.act_t / SLAM_UP
+			b.act_p = 1.0 - b.act_t / float(b.get_meta("act_d", SLAM_UP))
 			if b.act_t <= 0.0:
 				b.act = VoxelBody.ACT_SLAM
 				b.act_t = SLAM_DOWN
@@ -152,6 +152,7 @@ func _boss(b: VoxelBody, pp: Vector3, to: Vector3, d: float, mv: Vector3, can: b
 	if b.act_cool <= 0.0 and d < SLAM_RANGE:
 		b.act = VoxelBody.ACT_SLAM_UP
 		b.act_t = SLAM_UP * (0.8 if angry else 1.0)
+		b.set_meta("act_d", b.act_t)
 		b.act_p = 0.0
 		arena.sound.play("swoosh_heavy", b.position + Vector3.UP * 3.0, 0.0, 0.5)
 		return Vector3.ZERO
@@ -203,7 +204,7 @@ func _stop(b: VoxelBody, cool: float) -> void:
 	b.act_cool = cool
 
 func _charger(b: VoxelBody, pp: Vector3, ti: int, to: Vector3, d: float, mv: Vector3, can: bool, dt: float) -> Vector3:
-	if not can and b.act != VoxelBody.ACT_DAZE:
+	if not can and (b.act != VoxelBody.ACT_DAZE or b.panic_t > 0.0):
 		if b.act != 0:
 			_stop(b, 1.5)         # (knocked over, set alight, frozen mid-run: it's off)
 		return mv
@@ -239,7 +240,7 @@ func _charger(b: VoxelBody, pp: Vector3, ti: int, to: Vector3, d: float, mv: Vec
 				b.act_p = 0.0
 				b.flinch = 1.0
 				b.flinch_head = true
-				b.hurt(8.0)
+				arena._plain_hurt(b, 8.0)
 				arena.sound.play("slam", b.position + Vector3.UP, -2.0)
 				return Vector3.ZERO
 			if d < 0.95:
@@ -350,8 +351,8 @@ func step_globs(dt: float) -> void:
 		mi.rotation += Vector3(7.0, 5.0, 3.0) * dt
 		var p: Vector3 = g.p
 		var hit := p.y <= 0.05 or float(g.t) > 4.0 or VoxelArena.out_of_pillars(p, 0.05) != p
-		# (a player it flies into: splat there)
-		if not hit and bool(g.real):
+		# (a player it flies into: splat there; the guest's copy too, where the host's hit them)
+		if not hit:
 			for tp in arena.net.targets():
 				if (tp as Vector3 + Vector3.UP * 0.9).distance_to(p) < 0.55:
 					hit = true

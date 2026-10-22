@@ -37,13 +37,14 @@ var _s_rest := PackedByteArray()
 var _sn := 0
 var _s_next := 0
 
-## CLIPS from the weapon bench: the clip (tube, drum) that much bigger, and full.
+## CLIPS from the weapon bench: the clip (tube, drum) that much bigger, and full (when it changed).
 func apply_upgrades() -> void:
 	if _base_clip == 0:
 		_base_clip = clip_max
 	var k := shooter.upg_k("clip") if shooter else 1.0
+	var was := clip_max
 	clip_max = maxi(1, roundi(_base_clip * k))
-	clip = clip_max
+	clip = clip_max if clip_max != was else mini(clip, clip_max)     # (refilled only when it changed size)
 
 func _build() -> void:
 	_model = Node3D.new()

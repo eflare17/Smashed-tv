@@ -337,7 +337,7 @@ func bench_start() -> void:
 		if b.alive:
 			alive += 1
 	_bench = {"order": VoxelSettings.ORDER.duplicate(), "i": -1, "results": {}, "saved": s.v.duplicate(),
-		"saved_preset": s.preset, "alive": alive, "godmode": arena.godmode, "frozen": arena.frozen,
+		"saved_preset": s.preset, "alive": alive, "kinds": arena.living_kinds(), "godmode": arena.godmode, "frozen": arena.frozen,
 		"at": arena.player.global_position, "yaw": arena.look_yaw, "pitch": arena.look_pitch,
 		"top": arena.top_down, "hp": arena.player_hp}
 	_bench.order.reverse()
@@ -390,7 +390,8 @@ func _bench_done() -> void:
 	s.v = (_bench.saved as Dictionary).duplicate()
 	s.preset = s.which_preset()
 	s.apply(arena)
-	arena._respawn_all(maxi(1, int(_bench.alive)))
+	arena.pieces.trim()             # (Extreme's 90 pieces down to the cap put back)
+	arena._respawn_all(-1 if not (_bench.kinds as Array).is_empty() else 1, _bench.kinds)
 	arena.godmode = _bench.godmode
 	arena.frozen = _bench.frozen
 	arena.top_down = _bench.top
@@ -454,9 +455,14 @@ func _process(_dt: float) -> void:
 		else:
 			_next_preset()
 
+func _fight(dt: float) -> void:
+	VoxelBody.hit_k = 1.0           # (the same fight for everyone: the weapon bench's DAMAGE kept out)
+	_fight_x(dt)
+	VoxelBody.hit_k = arena.me.upg_k("damage")
+
 # the fight to draw: the enemies kept at 24, the nearest shot at (a gun and a shotgun), now and then one set alight, and
 # a grenade at the nearest one's feet every BENCH_BLAST seconds (the craters, torn limbs and cubes thrown up: the gore)
-func _fight(dt: float) -> void:
+func _fight_x(dt: float) -> void:
 	var alive := 0
 	var best: VoxelBody = null
 	var bd := INF

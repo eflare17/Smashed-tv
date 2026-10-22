@@ -271,6 +271,7 @@ func _ready() -> void:
 	net_menu = VoxelNetMenu.new()
 	add_child(net_menu)
 	net_menu.setup(self)
+	waves.on = false                # (the test set-ups below: one at a time; the real game's chosen at the end)
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
 	elif _opts.has("swordtest"):
@@ -954,8 +955,9 @@ func _storage_step(dt: float) -> void:
 		_near_st = sh[0] if float(sh[1]) <= float(bh[1]) else null
 		_near_bed = int(bh[0]) if _near_st == null else 0
 		_near_ward = _near_st == null and _near_bed == 0 and house.wardrobe_at(eye, fwd)
-		_near_bench = _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
-		_near_upg = upgrades.pick(eye, fwd) if (upgrades and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench) else ""
+		var in_yard := VoxelYard.in_yard(player.global_position)     # (the benches stand against the arena's wall: not through it)
+		_near_bench = in_yard and _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
+		_near_upg = upgrades.pick(eye, fwd) if (in_yard and upgrades and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench) else ""
 		var pp2 := player.global_position
 		if VoxelGamesRoom.in_room(pp2) and _near_st == null and _near_bed == 0:
 			_near_game = String(games.pick(eye, fwd)[0])
@@ -1164,8 +1166,18 @@ func _on_died(b: VoxelBody) -> void:
 		stash._dirty = true
 		stash._save_t = 0.0
 
-func _respawn_all(count := -1) -> void:
+## The living's kinds and toughness, [[key, tough], ...] (to bring the same back: _respawn_all).
+func living_kinds() -> Array:
+	var out := []
+	for b in bodies:
+		if b.alive and not b.fragment:
+			out.append([b.key, b.tough])
+	return out
+
+func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 	var n := 0
+	if count < 0 and kinds_back.is_empty():
+		kinds_back = living_kinds()       # (the same kinds back, the boss too, not a random lot)
 	for b in bodies:
 		if b.alive:
 			n += 1
@@ -1186,7 +1198,13 @@ func _respawn_all(count := -1) -> void:
 	debris.rooms = _rooms()
 	debris.got = got
 	debris.on_take = _on_take
-	spawn(maxi(n, 1))
+	if not kinds_back.is_empty():
+		for kt in kinds_back:
+			var nb := spawn_kind(String(kt[0]))
+			if String(kt[0]) == "boss":
+				kinds.make_boss(nb, float(kt[1]))
+	else:
+		spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
 
@@ -1339,7 +1357,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_F12:
 				# the waves, or one at a time (the host's or alone)
 				if net.role != "guest":
-					waves.on = not waves.on
+					waves.toggle()
 					say("Waves: on (wave %d next)" % (wave + 1) if waves.on else "Waves off: one enemy at a time", 2.5)
 
 # ---------------------------------------------------------------- each frame
@@ -1637,7 +1655,7 @@ func _physics_process(dt: float) -> void:
 		b.position += mv * dt
 		b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
-		var out := out_of_pillars(b.position, 0.35)
+		var out := out_of_pillars(b.position, 0.7 if b.key == "boss" else 0.35)
 		if out != b.position and mv.length_squared() > 0.01:
 			# against a pillar: slide along its face, round toward the player
 			var push := out - b.position
@@ -1685,9 +1703,16 @@ func _bowl() -> void:
 			if dd.length_squared() < 0.64:
 				var v := b.air_v
 				o.launch(Vector3(v.x, 0.0, v.z) * 0.6 + Vector3.UP * 2.5, 5.0)
-				o.hurt(6.0)
+				_plain_hurt(o, 6.0)
 				b.air_v = Vector3(v.x * 0.6, v.y, v.z * 0.6)
 				sound.play("thwack", o.position + Vector3.UP, -4.0)
+
+## Health off b that no player's weapon did (bowled over, run into a pillar): the weapon bench's DAMAGE kept out of it.
+func _plain_hurt(b: VoxelBody, amount: float) -> void:
+	var k := VoxelBody.hit_k
+	VoxelBody.hit_k = 1.0
+	b.hurt(amount)
+	VoxelBody.hit_k = k
 
 # fire and ice: the fire spreading and eating (flames, ash falling, burnt-off bits dropping), the thaw
 func _status_step(dt: float) -> void:
@@ -1829,7 +1854,7 @@ func _process(dt: float) -> void:
 		bodies.remove_at(old)
 		dead -= 1
 	var t3 := Time.get_ticks_usec()
-	waves.step(dt, not guest)
+	waves.step(dt, not guest and settings_menu._bench.is_empty())     # (not mid-benchmark: its fight isn't a wave)
 	if not guest and not waves.on and not bodies.any(func(x): return x.alive):
 		_next_t += dt
 		if _next_t >= 1.5:

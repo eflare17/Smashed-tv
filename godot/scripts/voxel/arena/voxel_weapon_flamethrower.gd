@@ -338,7 +338,7 @@ func on_deselect() -> void:
 func bomb() -> void:
 	if _bomb_cd > 0.0:
 		return
-	if _fuel < BOMB_FUEL:
+	if _fuel < BOMB_FUEL / (shooter.upg_k("fuel") if shooter else 1.0):
 		_bomb_cd = 0.4
 		_cough(3)
 		return

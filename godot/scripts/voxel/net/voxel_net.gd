@@ -508,7 +508,7 @@ func _birth(b: VoxelBody, whole: bool) -> Array:
 		for i in b.skeleton.get_bone_count():
 			xf.append(b.skeleton.get_bone_global_pose(i))
 	return ["b", b.net_id, b.key, b.chunk_n, b.vm, b.global_position, b.yaw, b.speed, b.fragment, frag, xf, b.alive, b.hp,
-		b.skeleton.global_transform]
+		b.skeleton.global_transform, b.tough, float(b.get_meta("hp_max", 0.0))]
 
 func _rec_body(b: VoxelBody, what: String, args: Array, p: Array) -> void:
 	if not linked or b == other_avatar or not arena.bodies.has(b):
@@ -631,7 +631,7 @@ func _send_world() -> void:
 			entries.append([String(c.part), c.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), c.origin,
 				rb.global_transform * (c.local as Transform3D), Vector3.ZERO, Vector3.ONE * 0.1, 1])
 		pieces.append([pnid, String(pc.key), int(pc.chunk), float(pc.vm), entries, rb.global_transform])
-	_send(["W", bodies, pieces, int(arena.wave), arena.debris.lying_out()])
+	_send(["W", bodies, pieces, int(arena.wave), arena.debris.lying_out(), arena.waves.boss_max])
 
 # ---------------------------------------------------------------- the guest
 
@@ -788,6 +788,10 @@ func _born_here(e: Array) -> void:
 		b.grids_in(e[9])
 	b.alive = bool(e[11])
 	b.hp = float(e[12])
+	if e.size() > 15:
+		b.tough = float(e[14])                # (the boss's: a limb takes as many hits here as there)
+		if float(e[15]) > 0.0:
+			b.set_meta("hp_max", float(e[15]))
 	if not b.alive and not b.fragment:
 		b.dead_t = 99.0
 	b.died.connect(arena._on_died)
@@ -942,6 +946,8 @@ func _message(m: Array) -> void:
 			arena.wave = int(m[3])
 			if m.size() > 4:
 				arena.debris.lying_in(m[4])          # (the host's floor: the same lying cubes in both games)
+			if m.size() > 5:
+				arena.waves.boss_max = float(m[5])   # (joined mid-boss: his bar right)
 		"E":
 			if _got_world:
 				_events(m[1])

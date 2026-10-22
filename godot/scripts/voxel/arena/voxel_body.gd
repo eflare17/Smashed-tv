@@ -175,7 +175,9 @@ const PART_WEIGHT := {"head": 3.2, "torso": 1.2, "pelvis": 1.0}
 ## Can't die (VoxelArena's F6): shoot them to pieces.
 static var immortal := false
 ## The weapon bench's DAMAGE for whoever's weapons are running (VoxelUpgrades): their holes, cuts and blows scaled as
-## they're made (before they're told to the guest, who makes them as told). 1 outside a player's weapons.
+## they're made (before they're told to the guest, who makes them as told): a hole's or a scoop's radius by its cube
+## root (the cubes it takes, and the health with them, go up by hit_k), a slice's thickness and a blow's health by it.
+## 1 outside a player's weapons.
 static var hit_k := 1.0
 var _mat: Material
 
@@ -915,8 +917,8 @@ func ignite(at: Vector3, r: float) -> int:
 	var n := 0
 	for nm in parts:
 		var p: Dictionary = parts[nm]
-		if p.gone:
-			continue
+		if p.gone or nm == "shield":
+			continue                 # (steel doesn't burn)
 		var b: int = p.bone
 		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
 		var base := m * ((Vector3(p.origin) + Vector3(0.5, 0.5, 0.5)) * vm)
@@ -954,7 +956,7 @@ func ignite(at: Vector3, r: float) -> int:
 func _chill_x(amount: float) -> bool:
 	if frozen():
 		return false
-	frost = minf(1.0, frost + amount)
+	frost = minf(1.0 if tough <= 1.0 else 0.9, frost + amount)     # (a tough one, the boss: never solid)
 	if _burn_n > 0:
 		_burn.clear()                # the cold puts the fire out (the ash not yet fallen stays, charred)
 		_fed.clear()
@@ -1087,7 +1089,7 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 	if _net_block():
 		return _no_cut()
 	if _net_depth == 0 and not _net_replay:
-		r *= hit_k
+		r *= pow(hit_k, 1.0 / 3.0)
 	_net_in("damage", [hit, r])
 	var res := _damage_x(hit, r)
 	_net_depth -= 1
@@ -1452,8 +1454,7 @@ func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_eve
 	if _net_block():
 		return _no_cut()
 	if _net_depth == 0 and not _net_replay:
-		r *= hit_k
-		hp_per_cube *= hit_k
+		r *= pow(hit_k, 1.0 / 3.0)
 	_net_in("carve", [a, b, r, hp_per_cube, bits_every])
 	var res := _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
 	_net_depth -= 1
