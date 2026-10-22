@@ -461,7 +461,12 @@ to blown-off bones, dangling limbs tear off from strain, shooting the skin finis
   the **bone sticking out jagged and white** where the bone is (on a limb with none left there, where it would be; it
   glows a touch so it shows in the limb's shade). Both sides of a hanging limb's gap, the stump left on the body, and
   the end of the piece that comes off (VoxelPieces; a co-op guest's copy too). Little cubes on the part's bone, so they
-  move with it; looks only (nothing to hit or vacuum). The earlier box bone stubs are gone.
+  move with it; looks only (nothing to hit or vacuum). The earlier box bone stubs are gone. A **stump's** bone sticks
+  out twice as far (a splintered point, longest in the middle; the neck shows its spine); a torn-off piece's end 1.3x.
+  Pieces that settle into lying bodies keep their torn end (built when they settle and after every cut, since lying
+  bodies aren't animated).
+- Tests: `test/voxel/stump_shots.gd` (`voxel_shots/stump_*.png`: the elbow, knee and neck stumps, the torn-off forearm
+  and the head lying on the floor, from their torn ends).
 - Co-op: the loose parts follow from the cubes (the same in both games); the swing is each game's own, and the cuts
   are made against the host's pose (sent with them) as before; the tear is the host's sever.
 - Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`: `dangle_hanging` close up, `dangle_bone` front on (the broken bone); four-frame sheets

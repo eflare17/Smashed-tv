@@ -429,6 +429,7 @@ func cycle_m() -> float:
 func animate(dt: float, moving: bool) -> void:
 	t += dt
 	if fragment or frozen():
+		_seams_step()                # (its torn ends kept, or made: a piece lying about)
 		return                       # posed once where it lay / frozen solid as it stood
 	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
 	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
@@ -1167,6 +1168,7 @@ func _sever_x(part: String) -> Dictionary:
 		alive = false
 		died.emit(self)
 	_update_loose()
+	_seams_step()
 	return res
 
 # ---------------------------------------------------------------- lying pieces made bodies again
@@ -1215,6 +1217,7 @@ func make_fragment(grids: Dictionary, xforms: Dictionary) -> void:
 				n2 = n
 		if n2 != "" and xforms.has(n2):
 			skeleton.set_bone_global_pose(i, skel_inv * (xforms[n2] as Transform3D))
+	_seams_step()                    # (its torn end, lying there)
 
 ## Cubes still on it.
 func cubes_left() -> int:
@@ -1771,6 +1774,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 			died.emit(self)
 	if not res.parts.is_empty():
 		_update_loose()
+		_seams_step()
 		if not masked:
 			_jerk(was_hanging, res.parts)
 	return res
@@ -2168,6 +2172,7 @@ func grids_in(d: Dictionary) -> void:
 		p.dirty = not p.gone
 		(p.mesh as MeshInstance3D).visible = not p.gone
 	_update_loose()
+	_seams_step()
 
 # ---------------------------------------------------------------- bones hold the body together (Stage 8)
 
@@ -2594,7 +2599,12 @@ func _seams_step() -> void:
 	for nm in parts:
 		var p: Dictionary = parts[nm]
 		var par: String = _seam_par[nm]
-		if par == "" or parts[par].gone:
+		if par == "":
+			continue
+		if parts[par].gone:
+			if not p.gone:
+				want["%s@%s" % [nm, nm]] = [nm, nm]           # (a piece lying about, made a body again: its torn end)
+				sig += "%s@%s:%d;" % [nm, nm, int(p.left)]
 			continue
 		var hanging_top := loose.has(nm) and not loose.has(par)
 		if p.gone or hanging_top:
@@ -2614,7 +2624,10 @@ func _seams_step() -> void:
 		var at: String = want[k][1]
 		var p2: Dictionary = parts[on]
 		var j := _joint_in(p2, int(parts[at].bone))
-		var cols := seam_cols(p2.grid.cells, p2.grid.size, j, on == at, _is_limb(on) or _is_limb(at), hash(String(name) + k))
+		# (a stump's bone sticks out well past the meat; the neck has its spine)
+		var stump := on != at and bool(parts[at].gone)
+		var cols := seam_cols(p2.grid.cells, p2.grid.size, j, on == at, _is_limb(on) or _is_limb(at) or at == "head", hash(String(name) + k),
+			2.0 if stump else (1.3 if on == at and not loose.has(on) else 1.0))
 		if cols.is_empty():
 			continue
 		var mmi := seam_mesh(cols, mesh_origin(on), vm)
@@ -2629,8 +2642,9 @@ func _is_limb(nm: String) -> bool:
 
 ## A torn edge's columns, from a part's cubes (cells, size) round the joint j (in cells): own_end true, the part's own
 ## joint (the edge faces away from its cubes); false, a child's joint on the part above (faces away from its cubes too).
+## bone_k: how far the bone sticks out (a stump's, twice as far).
 ## Each [face cell (Vector3), axis, +1/-1 out, length (cubes), colour, bone?].
-static func seam_cols(cells: PackedInt32Array, s: Vector3i, j: Vector3, _own_end: bool, limb: bool, seed_: int) -> Array:
+static func seam_cols(cells: PackedInt32Array, s: Vector3i, j: Vector3, _own_end: bool, limb: bool, seed_: int, bone_k := 1.0) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_
 	# which way is out: from the middle of the cubes round the joint to the joint
@@ -2721,6 +2735,7 @@ static func seam_cols(cells: PackedInt32Array, s: Vector3i, j: Vector3, _own_end
 		var bd2 := Vector2(cell[ua], cell[va]).distance_to(bone_c)
 		if has_bone and (bd2 <= bone_r or (bool(f[2]) and bd2 <= bone_r + 1.5)):
 			len = rng.randf_range(1.8, 3.2) if rng.randf() < 0.8 else rng.randf_range(1.0, 1.6)   # (bone: jagged, sticking out past the rest)
+			len *= bone_k * (1.0 - 0.4 * clampf(bd2 / (bone_r + 1.5), 0.0, 1.0))           # (longest in the middle: a splintered point)
 			col = Color8(244, 239, 226).darkened(rng.randf_range(0.0, 0.08))
 			is_bone = true
 		elif rho < 0.72:

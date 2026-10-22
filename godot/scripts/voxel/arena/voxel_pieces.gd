@@ -88,7 +88,7 @@ func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel:
 		# a part that came off at its joint (not cut through): a torn end there, not a flat face
 		if bool(e.get("seam", false)):
 			var cols := VoxelBody.seam_cols(e.grid.cells, e.grid.size, -(e.origin as Vector3) - Vector3(0.5, 0.5, 0.5), true,
-				bool(e.get("limb", false)), randi())
+				bool(e.get("limb", false)) or String(e.get("part", "")) == "head", randi(), 1.3)
 			if not cols.is_empty():
 				var sm := VoxelBody.seam_mesh(cols, e.origin, vm)
 				sm.transform = local
