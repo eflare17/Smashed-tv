@@ -632,6 +632,8 @@ static func _dda(g: Dictionary, o: Vector3, d: Vector3, max_t: float) -> Diction
 func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 	if frozen():
 		return _shatter_res()
+	var was_hanging := _dangle.keys()
+	var bone_hit := false
 	var n: String = hit.part
 	var p: Dictionary = parts[n]
 	p.grid = {"size": p.grid.size, "cells": (p.grid.cells as PackedInt32Array).duplicate()}
@@ -659,6 +661,8 @@ func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 				p.left = int(p.left) - 1
 				if _brain_ints.has(v):
 					brain_lost += 1
+				if v == BONE_V:
+					bone_hit = true
 				var k := v - 1
 				out.append({"pos": m * ((Vector3(x, y, z) + Vector3(p.origin) + Vector3(0.5, 0.5, 0.5)) * vm),
 					"col": Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)})
@@ -670,13 +674,19 @@ func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 	if PART_HITS.has(base) and int(p.hits) >= int(PART_HITS[base]) and not p.gone:
 		res.limb = n
 		res.bits.append_array(_blow(n))
+	if bone_hit or res.limb != "" or (not out.is_empty() and not was_hanging.is_empty()):
+		# a hole through the bone makes the limb hang; one in a hanging limb (or its strip) finishes it
+		_update_loose()
+		_jerk(was_hanging, [n])
+	if not out.is_empty():
+		_seams_step()
 	if alive:
 		# limbs come off without killing; the chest and hips take ten times the cubes they used to; the head kills
 		# only once a quarter of the brain is gone (the owner, 20 Oct)
 		if base != "head":
 			hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0)) / BODY_TOUGH
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
-		if (hp <= 0.0 or brain_dead) and not immortal:
+		if (hp <= 0.0 or brain_dead) and _can_die():
 			res.killed = true
 			alive = false
 			died.emit(self)
@@ -788,7 +798,7 @@ func ignite(at: Vector3, r: float) -> int:
 	var n := 0
 	for nm in parts:
 		var p: Dictionary = parts[nm]
-		if p.gone or _burn_n >= BURN_MAX:
+		if p.gone:
 			continue
 		var b: int = p.bone
 		var m := skeleton.global_transform * skeleton.get_bone_global_pose(b) * Transform3D(Basis.IDENTITY, -model.bone_pivot[b] * model.voxel_m)
@@ -852,7 +862,7 @@ func _freeze() -> void:
 			_orig[nm] = cells.duplicate()
 		for i in cells.size():
 			var v := cells[i]
-			if v != 0:
+			if v != 0 and v != BONE_V:
 				var k := v - 1
 				var c := Color8((k >> 16) & 255, (k >> 8) & 255, k & 255).lerp(ICE, 0.7)
 				c = c.lightened(0.08 * float((i * 7) % 3))
@@ -878,6 +888,8 @@ func _thaw() -> void:
 		p.grid = {"size": p.grid.size, "cells": cells}
 		p.dirty = true
 	_orig.clear()
+	_update_loose()
+	_seams_step()
 
 ## Shattered (frozen, then hit): every cube flies off as ice; returns what a cut would ({bits, cut, parts, pieces: [],
 ## killed, head_off, shattered: true}). Not frozen: nothing ({}).
@@ -931,7 +943,12 @@ func _shatter_res() -> Dictionary:
 	frozen_t = 0.0
 	frost = 0.0
 	_orig.clear()
-	if alive:
+	# (nothing left to hang or to tear: its looks go now, a corpse lying still isn't animated again)
+	loose.clear()
+	_dangle.clear()
+	_dangle_fx_clear()
+	_seams_step()
+	if alive and not net_locked:
 		alive = false
 		res.killed = true
 		res.head_off = true
@@ -1163,7 +1180,7 @@ func _sever_x(part: String) -> Dictionary:
 		res.parts.append(nm)
 		if nm == "head":
 			res.head_off = true
-	if alive and res.head_off and not immortal:
+	if alive and res.head_off and _can_die():
 		res.killed = true
 		alive = false
 		died.emit(self)
@@ -1209,6 +1226,7 @@ func make_fragment(grids: Dictionary, xforms: Dictionary) -> void:
 			p.dirty = false
 		else:
 			p.dirty = left > 0
+			mi.mesh = null           # (not the whole part's mesh: nothing till its own is made)
 	# each part's bone set so its mesh lands where the piece's did (parents first: the bones are in that order)
 	for i in model.bone_names.size():
 		var n2: String = ""
@@ -1322,7 +1340,7 @@ func _hurt_x(amount: float) -> bool:
 	if not alive:
 		return false
 	hp -= amount
-	if hp <= 0.0 and not immortal:
+	if hp <= 0.0 and _can_die():
 		alive = false
 		died.emit(self)
 		return true
@@ -1479,8 +1497,9 @@ func _remove(opt: Dictionary) -> Dictionary:
 				"seam": not par_whole, "limb": _is_limb(nm)})
 			if nm == "head":
 				res.head_off = true
-			p.grid = {"size": s, "cells": PackedInt32Array()}
-			(p.grid.cells as PackedInt32Array).resize(cells.size())
+			var empty := PackedInt32Array()
+			empty.resize(cells.size())
+			p.grid = {"size": s, "cells": empty}
 			p.left = 0
 			p.gone = true
 			p.dirty = false
@@ -1768,7 +1787,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 			# (a cube's worth by its size: twice the cube, eight times the health)
 			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08)) * pow(vm / REF_VM, 3.0)
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * BRAIN_KILL
-		if (hp <= 0.0 or brain_dead or res.head_off) and not immortal:
+		if (hp <= 0.0 or brain_dead or res.head_off) and _can_die():
 			res.killed = true
 			alive = false
 			died.emit(self)
@@ -2049,6 +2068,11 @@ var _net_depth := 0
 func _net_block() -> bool:
 	return net_locked and not _net_replay
 
+# whether a cut, hole, burn or blow here may kill: not while they can't die (F6), and never in a co-op guest's game,
+# where the host decides (its snapshot says when one's dead: a replay against the guest's own health could disagree)
+func _can_die() -> bool:
+	return not immortal and not net_locked
+
 func _no_cut() -> Dictionary:
 	return {"bits": [], "cut": 0, "parts": [], "pieces": [], "killed": false, "head_off": false}
 
@@ -2155,7 +2179,14 @@ func grids_out() -> Dictionary:
 	for nm in parts:
 		var p: Dictionary = parts[nm]
 		var raw := (p.grid.cells as PackedInt32Array).to_byte_array()
-		out[nm] = [p.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), p.gone, int(p.left)]
+		out[nm] = [p.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), p.gone, int(p.left), int(p.get("hits", 0))]
+	if frozen():
+		# (frozen: how long for, and the colours under the ice, so the thaw and the shatter go the same way there)
+		var orig := {}
+		for nm in _orig:
+			var r2 := (_orig[nm] as PackedInt32Array).to_byte_array()
+			orig[nm] = [r2.compress(FileAccess.COMPRESSION_ZSTD), r2.size()]
+		out["~ice"] = [frozen_t, orig]
 	return out
 
 ## Takes grids_out()'s cubes as its own.
@@ -2165,12 +2196,31 @@ func grids_in(d: Dictionary) -> void:
 			continue
 		var e: Array = d[nm]
 		var p: Dictionary = parts[nm]
-		var cells := (e[1] as PackedByteArray).decompress(int(e[2]), FileAccess.COMPRESSION_ZSTD).to_int32_array()
+		var cells := PackedInt32Array()
+		if int(e[2]) > 0:
+			cells = (e[1] as PackedByteArray).decompress(int(e[2]), FileAccess.COMPRESSION_ZSTD).to_int32_array()
+		else:
+			var sz: Vector3i = e[0]
+			cells.resize(sz.x * sz.y * sz.z)
 		p.grid = {"size": e[0], "cells": cells}
 		p.gone = bool(e[3])
 		p.left = int(e[4])
+		if e.size() > 5:
+			p.hits = int(e[5])
 		p.dirty = not p.gone
 		(p.mesh as MeshInstance3D).visible = not p.gone
+	if d.has("~ice"):
+		var ice: Array = d["~ice"]
+		frozen_t = float(ice[0])
+		frost = 1.0
+		_orig.clear()
+		for nm in ice[1]:
+			var o2: Array = ice[1][nm]
+			_orig[nm] = (o2[0] as PackedByteArray).decompress(int(o2[1]), FileAccess.COMPRESSION_ZSTD).to_int32_array()
+	elif frozen():
+		frozen_t = 0.0
+		frost = 0.0
+		_orig.clear()
 	_update_loose()
 	_seams_step()
 
@@ -2187,13 +2237,14 @@ func grids_in(d: Dictionary) -> void:
 ## the whole parts). Hands and feet have no bone of their own: they hang if the bone above them doesn't reach them.
 const JOINT_R := 3.5             # cells round a joint the bone's looked for
 const STRIP_R := 3.0             # cells round a joint counted as the strip a dangling limb hangs by
-const TEAR_K := 0.25             # how fast a strip strains through (its load in thousands of cubes / ten of its cubes, a second)
+const TEAR_K := 0.2              # how fast a strip strains through (its load in thousands of cubes / ten of its cubes, a second)
 const HIT_STRAIN := 0.35         # a hit on the body jerks a dangling limb this much (a thin strip's worth)
 var loose := {}                  # part -> true: hanging by flesh (its bone, or the bone above it, broken at the joint)
 var _dangle := {}                # the top of each hanging chain -> {tip, prev, len, strain, rest: Vector3 (bone space)}
 var _dangle_fx := {}             # (looks only) the top of each hanging chain -> {skin: the stretched strip, drip: blood}
 const SAG := 0.07                # metres a hanging limb sags from its joint, the skin it hangs by stretched over the gap
-const SWING_KEEP := 0.996        # how much of its swing a hanging limb keeps each frame (floppy: it swings a long while)
+const SWING_KEEP := 0.996        # how much of its swing a hanging limb keeps each 60th of a second (floppy: a long while)
+const SWING_HZ := 240.0          # the swing's steps a second (fixed: the same at any frame rate)
 static var _skin_mat: StandardMaterial3D
 static var _drip_mat: StandardMaterial3D
 static var _bone0 := {}          # "key|chunk" -> part -> {top: bone cells by its own joint, joints: {child: reached}}
@@ -2308,7 +2359,7 @@ func _update_loose() -> void:
 				ok = _near_count(p.grid.cells, p.grid.size, _joint_in(p, int(p.bone)), JOINT_R, BONE_V) >= maxi(1, top0 / 3)
 		var top0b: int = int(base[nm].top) if base.has(nm) else 0
 		var reach := PackedByteArray()
-		if ok and top0b > 0:
+		if ok and top0b > 0 and not fragment:
 			reach = _bone_reach(p.grid.cells, p.grid.size, _joint_in(p, int(p.bone)))
 			# broken in its upper half (less than half the bone joined to where it's held when whole still is): it hangs
 			# from its joint (the parts swing whole, so it pivots there; broken lower down, what's below it hangs)
@@ -2320,8 +2371,12 @@ func _update_loose() -> void:
 			continue
 		held[nm] = reach if top0b > 0 else true
 	# a chain newly hanging starts swinging from where it was; one no longer hanging (off, or the body made whole) stops
+	# (one that's no longer the top of its chain, its parent broken too, hands its strain on to the new top)
+	var strained := {}
 	for nm in _dangle.keys():
-		if not loose.has(nm) or (parts[nm].gone):
+		if not loose.has(nm) or parts[nm].gone or loose.has(_parent_part(nm, by_bone, names[0])):
+			if loose.has(nm) and not parts[nm].gone:
+				strained[nm] = float(_dangle[nm].strain)
 			_dangle.erase(nm)
 	for nm in loose:
 		var par2 := _parent_part(nm, by_bone, names[0])
@@ -2329,6 +2384,9 @@ func _update_loose() -> void:
 			continue                 # (not the top of its chain)
 		if not _dangle.has(nm):
 			_dangle[nm] = _new_dangle(nm)
+			for k in strained:
+				if _hangs_from(k, nm):
+					_dangle[nm].strain = maxf(float(_dangle[nm].strain), float(strained[k]))
 
 # a hanging chain's swing: its tip where the limb points now, its length, how it points at rest (bone space)
 func _new_dangle(nm: String) -> Dictionary:
@@ -2398,27 +2456,50 @@ func _dangle_pose(dt: float) -> void:
 		var pg := sk * (skeleton.get_bone_global_pose(par) if par >= 0 else Transform3D())
 		var rest_o := skeleton.get_bone_rest(b).origin
 		var joint := pg * rest_o                 # (where the joint is, not where the limb's sagged to)
-		var tip: Vector3 = d.tip
-		var prev: Vector3 = d.prev
-		var vel := (tip - prev) * SWING_KEEP
-		# walking (or shoved along) sways it side to side, in step
-		var walk0 := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)
-		if walk0 > 0.05 and alive:
-			var side := pg.basis.x.normalized()
-			vel += side * sin(odo * 5.5) * walk0 * 0.0016 + Vector3(0, 0.0006 * walk0 * absf(sin(odo * 5.5)), 0)
-		var nt := tip + vel + Vector3(0, -9.8, 0) * dt * dt
+		# the swing, stepped SWING_HZ times a second whatever the frame rate (the same swing, and the same strain, at 30
+		# or 240 frames a second); the joint moves smoothly from where it was last frame to where it is now
+		var walk_now := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)
+		d.odo = odo
+		d.walk = lerpf(float(d.get("walk", 0.0)), walk_now, 1.0 - exp(-dt * 12.0))   # (walking's counted 120 times a second)
+		var walk: float = d.walk
+		var side := pg.basis.x.normalized()
+		var h := 1.0 / SWING_HZ
+		var j0: Vector3 = d.get("jp", joint)
+		d.jp = joint
+		d.acc_t = minf(float(d.get("acc_t", 0.0)) + dt, h * 16.0)
+		var n_steps := int(float(d.acc_t) / h)
+		d.acc_t = float(d.acc_t) - n_steps * h
 		var len_m: float = d.len
-		var off := nt - joint
-		nt = joint + (off.normalized() if off.length() > 0.0001 else Vector3.DOWN) * len_m
 		var floor_y := global_position.y + 0.04
-		var on_floor := nt.y < floor_y
-		if on_floor:
-			nt.y = floor_y
-		var acc := ((nt - tip) - (tip - prev)).length() / maxf(dt * dt, 0.0001)
-		d.a = lerpf(float(d.a), acc, 0.3)
-		var swing_v := (nt - tip) / maxf(dt, 0.0001)        # (how fast the end's going: the hand's flop, the sag's bounce)
-		d.prev = tip
-		d.tip = nt
+		var on_floor := false
+		var swing_v: Vector3 = d.get("sv", Vector3.ZERO)        # (how fast the end's going: the hand's flop, the sag's bounce)
+		var strip := maxi(1, strip_cubes(nm))                   # (counted once a frame: the strain and the skin's width)
+		var load0 := float(_chain_cubes(nm)) / 1000.0 * (1.0 + 0.5 * walk)
+		var nt: Vector3 = d.tip
+		for k in n_steps:
+			var jk := j0.lerp(joint, float(k + 1) / float(n_steps))
+			var tip: Vector3 = d.tip
+			var prev: Vector3 = d.prev
+			var force := Vector3(0, -9.8, 0)
+			if walk > 0.05 and alive:
+				# walking (or shoved along) sways it side to side, in step
+				force += side * sin(odo * 5.5) * walk * 5.76 + Vector3(0, 2.16 * walk * absf(sin(odo * 5.5)), 0)
+			nt = tip + (tip - prev) * pow(SWING_KEEP, h * 60.0) + force * h * h
+			var off := nt - jk
+			nt = jk + (off.normalized() if off.length() > 0.0001 else Vector3.DOWN) * len_m
+			on_floor = nt.y < floor_y
+			if on_floor:
+				nt.y = floor_y
+			var v_new := (nt - tip) / h
+			# how hard it's jerked about (its speed's change, smoothed a little)
+			d.a = lerpf(float(d.a), (v_new - swing_v).length() / h, 1.0 - exp(-h * 21.4))
+			swing_v = v_new
+			d.prev = tip
+			d.tip = nt
+			# the strain: its weight, every jerk and walking's jolts, on the strip it hangs by (none lying on the floor)
+			if not on_floor:
+				d.strain = float(d.strain) + h * TEAR_K * load0 * (1.0 + minf(float(d.a), 60.0) / 9.8) * 10.0 / float(strip)
+		d.sv = swing_v
 		# the sag: a spring, bouncing with the swing (the skin stretching and giving)
 		var sag_to := SAG + 0.012 * minf(float(d.a) / 9.8, 3.0)
 		d.sag_v = (float(d.sag_v) + (sag_to - float(d.sag)) * 180.0 * dt) * maxf(0.0, 1.0 - 9.0 * dt)
@@ -2435,7 +2516,7 @@ func _dangle_pose(dt: float) -> void:
 			skeleton.set_bone_pose_rotation(b, Quaternion.IDENTITY)
 		# sagged down from the joint (along the way it hangs), the stretched skin across the gap
 		skeleton.set_bone_pose_position(b, rest_o + pb.inverse() * (want * float(d.sag)))
-		_dangle_look(nm, d, joint, joint + want * float(d.sag))
+		_dangle_look(nm, d, joint, joint + want * float(d.sag), strip)
 		# limp below it: flopping the other way to the swing, a little behind it
 		var lv := pb.inverse() * swing_v
 		var limp: Dictionary = d.limp
@@ -2453,17 +2534,10 @@ func _dangle_pose(dt: float) -> void:
 				fl = fl.lerp(aim, minf(1.0, dt * 7.0))
 				limp[i] = fl
 				skeleton.set_bone_pose_rotation(i, Quaternion.from_euler(Vector3(fl.x + 0.12 * sin(t * 3.0 + i), 0, fl.y)))
-		# the strain: its weight, and every jerk, on the strip it hangs by (none lying on the floor)
-		var walk := clampf((odo - float(d.odo)) / maxf(dt, 0.0001), 0.0, 3.0)      # (walking jolts it about)
-		d.odo = odo
-		if not on_floor:
-			var strip := maxi(1, strip_cubes(nm))
-			var load := float(_chain_cubes(nm)) / 1000.0 * (1.0 + minf(float(d.a), 60.0) / 9.8) * (1.0 + 0.5 * walk)
-			d.strain = float(d.strain) + dt * TEAR_K * load * 10.0 / float(strip)
 
 # (looks only) the skin stretched from the joint to where the limb sagged to, and blood dripping off it, faster as it
 # tears; gone with the swing
-func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3) -> void:
+func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, strip: int) -> void:
 	if _skin_mat == null:
 		_skin_mat = StandardMaterial3D.new()
 		_skin_mat.albedo_color = Color(0.62, 0.09, 0.1)
@@ -2502,7 +2576,6 @@ func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3) -> void
 		fx = {"skin": skin, "drip": drip}
 		_dangle_fx[nm] = fx
 	var skin2: MeshInstance3D = fx.skin
-	var strip := strip_cubes(nm)
 	var r: float = float(d.get("r", 0.04))
 	var w := 2.0 * r * clampf(float(strip) / float(d.get("strip0", strip)), 0.3, 1.0) * 0.22
 	var seg := to - from
@@ -2579,12 +2652,7 @@ static var _seam_bone_mat: StandardMaterial3D
 func _seams_step() -> void:
 	if parts.is_empty() or model == null:
 		return
-	if _seam_par.is_empty():
-		var by_bone := {}
-		for k in parts:
-			by_bone[int(parts[k].bone)] = k
-		for k in parts:
-			_seam_par[k] = by_bone.get(model.bone_parent[int(parts[k].bone)], "")
+	_seam_parent("")                 # (the parents known)
 	# (the usual case, a whole body: nothing to look at)
 	var any := loose.size() > 0 or not _seams.is_empty()
 	if not any:
@@ -2633,6 +2701,16 @@ func _seams_step() -> void:
 		var mmi := seam_mesh(cols, mesh_origin(on), vm)
 		(p2.mesh as Node).get_parent().add_child(mmi)
 		_seams[k] = mmi
+
+# the part above this one ("" none)
+func _seam_parent(nm: String) -> String:
+	if _seam_par.is_empty():
+		var by_bone := {}
+		for k in parts:
+			by_bone[int(parts[k].bone)] = k
+		for k in parts:
+			_seam_par[k] = by_bone.get(model.bone_parent[int(parts[k].bone)], "")
+	return String(_seam_par.get(nm, ""))
 
 func _is_limb(nm: String) -> bool:
 	for l in LIMBS:
@@ -2797,8 +2875,8 @@ static func seam_mesh(cols: Array, origin: Vector3, vm_: float) -> Node3D:
 
 ## (the host's arena, every frame) the top of a hanging chain strained through, to tear off ("" none).
 func tear_due() -> String:
-	if _net_block():
-		return ""
+	if _net_block() or frozen():
+		return ""                    # (frozen: the tear waits for the thaw; a sever now would shatter the statue)
 	for nm in _dangle:
 		if float(_dangle[nm].strain) >= 1.0 and not parts[nm].gone:
 			return nm
@@ -2811,9 +2889,18 @@ func strain_of(nm: String) -> float:
 # a cut (hit) on the body: every chain that was hanging already jerks (a thin strip's worth of strain), and one the cut
 # took cubes from (the limb, or the strip) is finished
 func _jerk(was: Array, hit_parts: Array) -> void:
-	for nm in was:
-		if not _dangle.has(nm):
+	var done := {}
+	for nm0 in was:
+		# (the chain it was the top of may hang from higher up now: the jerk goes to the top)
+		var nm: String = nm0
+		while not _dangle.has(nm) and loose.has(nm):
+			var up := _seam_parent(nm)
+			if up == "":
+				break
+			nm = up
+		if not _dangle.has(nm) or done.has(nm):
 			continue
+		done[nm] = true
 		var d: Dictionary = _dangle[nm]
 		var strip := maxi(1, strip_cubes(nm))
 		d.strain = float(d.strain) + HIT_STRAIN * 10.0 / float(strip)
@@ -2821,7 +2908,9 @@ func _jerk(was: Array, hit_parts: Array) -> void:
 			if hp_ == nm or _hangs_from(String(hp_), nm):
 				d.strain = 1.0
 		# (and a kick to its swing: it flies about, then swings back)
-		d.prev = (d.tip as Vector3) - Vector3(randf_range(-1, 1), randf_range(0.2, 0.6), randf_range(-1, 1)).normalized() * randf_range(0.06, 0.11)
+		# (a speed: so far in a 60th of a second, put into the swing's own steps)
+		var kick_k := 60.0 / SWING_HZ
+		d.prev = (d.tip as Vector3) - Vector3(randf_range(-1, 1), randf_range(0.2, 0.6), randf_range(-1, 1)).normalized() * randf_range(0.06, 0.11) * kick_k
 		d.sag_v = float(d.get("sag_v", 0.0)) + 0.6
 
 func _hangs_from(part: String, top: String) -> bool:

@@ -56,6 +56,7 @@ var _clock := 0.0
 var _snaps := {}                # guest: nid -> [[time, state], ...] (the last few)
 var _pq := {}                   # guest: piece nid -> [[time, pos, rot], ...]
 var _got_world := false
+var _own_immortal := false      # guest: its own F6 before linking (the host's rules while linked)
 var debug := false              # (tests: what was done to a body found different)
 var lag := 0.0                  # (tests: seconds every message from the other game is held back ...)
 var loss := 0.0                 # (... and the share of the fast ones lost, like a bad line)
@@ -146,6 +147,7 @@ func _on_connected() -> void:
 	linked = true
 	_make_other()
 	if role == "guest":
+		_own_immortal = VoxelBody.immortal          # (the host's F6 from here on: its snapshots carry it)
 		VoxelBody.net_locked = true
 		arena.pieces.puppet = true
 		arena.player.global_position += Vector3(2.0, 0.0, 0.0)     # (beside the host, not inside them)
@@ -158,6 +160,7 @@ func _on_disconnected() -> void:
 	if role == "guest":
 		# alone again: this game's own bodies from here on
 		VoxelBody.net_locked = false
+		VoxelBody.immortal = _own_immortal
 		arena.pieces.puppet = false
 		_got_world = false
 	changed.emit()
@@ -514,7 +517,7 @@ func _snapshot() -> PackedByteArray:
 		for v in [p.x, p.y, p.z, bb.yaw, bb.odo, bb.attack, bb.stagger, bb.flinch, bb.down_t, bb.up_t, bb.tumble, bb.dead_t,
 				bb.since_air, bb.hp, bb.frost, bb.panic_t, bb.speed]:
 			b.put_float(v)
-		var flags := (1 if bb.alive else 0) | (2 if bb.airborne else 0) | (4 if bb.frozen() else 0) | (8 if bb.burning() else 0) | (16 if bb.flinch_head else 0)
+		var flags := (1 if bb.alive else 0) | (2 if bb.airborne else 0) | (4 if bb.frozen() else 0) | (8 if bb.burning() else 0) | (16 if bb.flinch_head else 0) | (32 if VoxelBody.immortal else 0)   # (32: the host's F6, can't die)
 		b.put_u8(flags)
 		if bb.burning():
 			var pts := _flame_points(bb)
@@ -662,6 +665,7 @@ func _read_snapshot(d: PackedByteArray) -> void:
 		s.frozen = flags & 4 != 0
 		s.burn = flags & 8 != 0
 		s.fh = flags & 16 != 0
+		VoxelBody.immortal = flags & 32 != 0     # (the host's F6)
 		s.fl = []
 		if s.burn:
 			for j in b.get_u8():
@@ -723,6 +727,8 @@ func _born_here(e: Array) -> void:
 		var grids := {}
 		var d: Dictionary = e[9]
 		for nm in d:
+			if String(nm).begins_with("~"):
+				continue             # (not a part: the frost)
 			var g: Array = d[nm]
 			if not bool(g[3]):
 				grids[nm] = {"cells": (g[1] as PackedByteArray).decompress(int(g[2]), FileAccess.COMPRESSION_ZSTD).to_int32_array(), "mesh": null}
