@@ -590,6 +590,26 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### The trailer (22 Oct, the owner: "cheery, happy music, feeding the chickens and digging and catching worms, then
+cutting to the fight ... one step of the peaceful stuff, then back to gory")
+
+- `tools/trailer/` (not part of the game): `make_music.py` writes the music (ours: a ukulele-and-glockenspiel tune
+  made in numpy, 120 bpm, I-V-vi-IV; claps and a shaker in from bar 5, a kick in the busy part; a tape stop and a
+  record scratch at 44 s, silence for THE BUTCHER, a sting for the title at 48.5 s, a soft tag for the last shot);
+  `trailer.gd` plays the shot list in the real game in time with it (29 shots, bars of 2 s: the yard, a shotgun to a
+  grunt, hens, a sword through a neck, digging up a worm, the harpoon tearing an arm off, watering crops as they
+  grow, the chainsaw through a brute, chicks; the loop with words: "Grow your own..." the shredder, "...with 100%
+  organic fertiliser" the crops shooting up, "Upgrade." the weapon bench, "Repeat." a DAMAGE 3 shotgun; then the
+  swaps faster: grenades, the couch and the TV, the flamethrower, the bedroom, a frozen one smashed, hens by the
+  coop, the laser through a neck, the crops, a home run, eggs, a charger, a crowd; the scratch, "WAVE 5 THE BUTCHER"
+  walking in, his fists up and down, black; SMASHED TV "Grow. Dig. Feed the chickens. Kill everything."; a hen
+  pecking by a head on the grass, "Co-op for two · PC"). Letterboxed, the HUD hidden; the farm from cameras of its
+  own, the fights first person, the weapons pressed as a player would (a head or a limb taken off by hand only if
+  the swing missed). `render.sh out.mp4` does it all: the music, Godot's movie maker (Forward+, Ultra, 30 fps,
+  every frame however long it takes: about 22 minutes on a CPU), the game's own sound mixed under the music, H.264.
+  `-- --only=NAME --stills=dir` plays one shot and saves four stills of it, to change one without the rest.
+- The result: `downloads/SmashedVoxelArena-trailer.mp4` (57.5 s, 1280x720).
+
 ### The overnight work's bug sweep (Stage 14, 22 Oct)
 
 Three reviewers read Stages 10-13 (settings and the bench; the kinds; the waves and the boss); every finding was
