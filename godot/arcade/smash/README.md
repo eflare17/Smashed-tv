@@ -6,6 +6,9 @@ bodies, and nothing outside this folder is changed.
 
 ## Run it
 
+- Windows: double-click **`Play Smash.bat`** in the repo's top folder. It finds Godot 4.4 (the `GODOT`
+  environment variable, the PATH, or the Desktop / Downloads / Documents / Program Files folders), or offers to
+  download Godot 4.4.1 once into `%LOCALAPPDATA%\SmashedTV`, then runs this scene (`play_smash.ps1`).
 - Editor: open `res://arcade/smash/smash.tscn` and press **F6** (Run Current Scene).
 - Command line: `godot --path godot res://arcade/smash/smash.tscn`
 
