@@ -20,6 +20,15 @@ on the main session's say-so: `scripts/ui/touch_controls.gd`, `scripts/camera/ca
   (HUD, not ours). The vending machine (lobby session, (235,154)) sits next to the Bricks cabinet: E there picks the vend (nearer), so in
   first person the arcade test's "E says PLAY" now fails after the merge (label 'STOP'); consider a priority or a smaller `vendRadius`.
 
+## Smash's cabinet (added later, from the Smash session)
+
+A third cabinet, **Smash** (the arena shooter in `res://arcade/smash/`), stands on the top wall right of Bricks
+(x 305). It's its own `Interactable` (`arcade/smash/smash_cabinet.gd`) with its own picture, solid, live screen
+(the game's attract demo) and full-window overlay, because the game is 3D and runs in its own SubViewport rather
+than in ArcadeOverlay. The only change here: `arcade.gd` makes it at the end of `_ready()` (`smash_cab`) and
+includes it in `is_open()` / `close_all()`. Nothing in `game_data.json` or the World changed. Its test:
+`res://arcade/smash/smash_cabinet_test.tscn` (13 checks, real main game); this note's arcade test still passes.
+
 ## Handoff
 
 **State: done and pushed** (`claude/godot-arcade`, last commit "Arcade: input actions (added in code), integration

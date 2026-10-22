@@ -12,6 +12,9 @@ extends Node
 ##   Arcade.is_open()      something of ours has the screen (a game, the Mega Drive menu or the emulator)
 ##   Arcade.close_all()    shut it (a run starting closes it, like the HTML game's drawArcade / mdClose)
 ##   Arcade.instance()     the Arcade node (its overlay, md bridge and the friend hooks below)
+##
+## Smash (res://arcade/smash/, the arena shooter) has its own cabinet right of the Bricks one (smash_cab): its
+## game runs in its own viewport, so it brings its own overlay; is_open() and close_all() include it.
 
 const GAMES := {"snake": preload("res://scripts/arcade/snake.gd"), "bricks": preload("res://scripts/arcade/bricks.gd"),
 	"miner": preload("res://scripts/arcade/sand_miner.gd")}
@@ -23,6 +26,8 @@ var overlay: ArcadeOverlay
 var md: ArcadeMd
 var sfx: ArcadeSfx
 var cabinets: Array[ArcadeCabinet] = []
+## Smash's cabinet (arcade/smash/smash_cabinet.gd), or null.
+var smash_cab: Node = null
 ## High scores by game id (the HTML game's ARC.hi; kept in localStorage "smashedArcadeHi" on the web, so the
 ## HTML game's and this one's are the same list on the same site; user://arcade_hi.json elsewhere).
 var hi: Dictionary = {}
@@ -42,13 +47,15 @@ static func instance() -> Arcade:
 
 static func is_open() -> bool:
 	var a := instance()
-	return a != null and (a.overlay.is_open() or a.md.is_open())
+	return a != null and (a.overlay.is_open() or a.md.is_open() or (a.smash_cab != null and a.smash_cab.is_open()))
 
 static func close_all() -> void:
 	var a := instance()
 	if a:
 		a.md.close()
 		a.overlay.close()
+		if a.smash_cab:
+			a.smash_cab.close()
 
 ## A fresh game by id ("snake", "bricks", "miner").
 static func make_game(id: String) -> ArcadeGame:
@@ -128,6 +135,11 @@ func _ready() -> void:
 			var prop = world.props.get("cab_" + String(c.game))
 			if prop:
 				cab.add_screen(prop)
+	var smash_script = load("res://arcade/smash/smash_cabinet.gd")
+	if smash_script:
+		smash_cab = smash_script.new()
+		smash_cab.arcade = self
+		add_child(smash_cab)
 
 ## The player who's playing (the main game's), or the first in group "player".
 func player() -> Node:

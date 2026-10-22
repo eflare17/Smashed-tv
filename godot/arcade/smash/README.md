@@ -145,10 +145,27 @@ The aim was for it to get properly hard around rooms 6-8 for a person, which is 
 (it sees everything at once and never panics). Rooms 1-5 are an easing-in; from room 6 the waves get bigger and
 faster more steeply. Play it and say if it's too hard or too easy: it's a few numbers to change.
 
-## Putting it on a cabinet (later)
+## On its cabinet in the main game
 
-The cabinet would instance (link to) `smash.tscn`, not copy it: the game stays in this folder, editable as now,
-every change shows up on the cabinet, and it still runs on its own for testing.
+It's in the lounge, on the top wall right of the SNES cabinet (x 305). Walk up to it: E (or the round button, or
+the pad's A) says **PLAY**. Its little screen shows the attract demo playing. PLAY fills the window with the game
+(you stand still and the main HUD goes, like the other cabinets); **Esc**, E or the pad's B / View walks away and
+it goes back to its demo.
+
+`smash_cabinet.gd` does all of it, made by the main game's Arcade (`scripts/arcade/arcade.gd`, the only file
+outside this folder that knows about Smash: it makes the cabinet and counts it in `Arcade.is_open()` /
+`close_all()`). The cabinet links to `smash.tscn` (it isn't a copy), so the game stays editable here and every change
+shows up on the cabinet; it still runs on its own too. Details:
+- the cabinet is a picture drawn in code in the same layout as the other cabinets, with the World's prop shader
+  (stands up in first person, lies flat from above) and lit by the LookPass like them (screen and marquee glow at
+  night), plus a solid so you can't walk through it;
+- the game runs in its own SubViewport (its own 3D world); the demo only runs while you're within 420 units;
+- while it's open it takes all the input (the main game sees none) and pushes it into the game's viewport.
+
+Test: `godot --headless --path godot --fixed-fps 60 res://arcade/smash/smash_cabinet_test.tscn` (runs the real main
+game: 13 checks; `-- --shots=<dir>` with a display saves pictures).
+
+## Notes for a cabinet (how it's done)
 
 - Instance `smash.tscn` inside a `SubViewport`. The root sets `own_world_3d = true` on that SubViewport so the
   arena doesn't appear in the main game's 3D world. Its cameras and HUD draw only in that viewport.
