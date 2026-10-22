@@ -521,6 +521,7 @@ func animate(dt: float, moving: bool) -> void:
 	var ph := model.bone_pivot[r] * model.voxel_m
 	skeleton.set_bone_pose_position(r, face * (pivot + turn * (ph - pivot) + lift))
 	skeleton.set_bone_pose_rotation(r, face * turn * (rot.get("hips", Quaternion.IDENTITY) as Quaternion))
+	_seams_step()
 	_dangle_pose(dt)
 
 # ---------------------------------------------------------------- shots
@@ -1149,7 +1150,8 @@ func _sever_x(part: String) -> Dictionary:
 		var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
 		var bbx := mesh.get_aabb() if mesh else AABB()
 		res.pieces.append({"part": nm, "grid": {"size": s, "cells": cells}, "origin": mesh_origin(nm), "xform": att,
-			"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bbx.get_center(), "box": bbx.size, "count": int(p.left)})
+			"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bbx.get_center(), "box": bbx.size, "count": int(p.left),
+			"seam": nm == part, "limb": _is_limb(nm)})
 		var empty := PackedInt32Array()
 		empty.resize(cells.size())
 		p.grid = {"size": s, "cells": empty}
@@ -1464,8 +1466,14 @@ func _remove(opt: Dictionary) -> Dictionary:
 		if whole.has(nm):
 			var mesh: Mesh = (p.mesh as MeshInstance3D).mesh
 			var bb := mesh.get_aabb() if mesh else AABB()
+			var par_whole := false
+			var ppb := model.bone_parent[int(p.bone)]
+			for k5 in whole:
+				if int(parts[k5].bone) == ppb:
+					par_whole = true
 			res.pieces.append({"part": nm, "grid": {"size": s, "cells": cells}, "origin": mesh_origin(nm), "xform": att,
-				"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bb.get_center(), "box": bb.size, "count": int(p.left)})
+				"mesh": mesh if not p.dirty and int(p.job) < 0 else null, "box_at": bb.get_center(), "box": bb.size, "count": int(p.left),
+				"seam": not par_whole, "limb": _is_limb(nm)})
 			if nm == "head":
 				res.head_off = true
 			p.grid = {"size": s, "cells": PackedInt32Array()}
@@ -2179,11 +2187,10 @@ const HIT_STRAIN := 0.35         # a hit on the body jerks a dangling limb this 
 var loose := {}                  # part -> true: hanging by flesh (its bone, or the bone above it, broken at the joint)
 var _dangle := {}                # the top of each hanging chain -> {tip, prev, len, strain, rest: Vector3 (bone space)}
 var _dangle_fx := {}             # (looks only) the top of each hanging chain -> {skin: the stretched strip, drip: blood}
-const SAG := 0.06                # metres a hanging limb sags from its joint, the skin it hangs by stretched over the gap
+const SAG := 0.07                # metres a hanging limb sags from its joint, the skin it hangs by stretched over the gap
 const SWING_KEEP := 0.996        # how much of its swing a hanging limb keeps each frame (floppy: it swings a long while)
 static var _skin_mat: StandardMaterial3D
 static var _drip_mat: StandardMaterial3D
-static var _bone_mat: StandardMaterial3D
 static var _bone0 := {}          # "key|chunk" -> part -> {top: bone cells by its own joint, joints: {child: reached}}
 
 static func _near_count(cells: PackedInt32Array, s: Vector3i, pt: Vector3, r: float, want: int, mask: PackedByteArray = PackedByteArray()) -> int:
@@ -2423,8 +2430,7 @@ func _dangle_pose(dt: float) -> void:
 			skeleton.set_bone_pose_rotation(b, Quaternion.IDENTITY)
 		# sagged down from the joint (along the way it hangs), the stretched skin across the gap
 		skeleton.set_bone_pose_position(b, rest_o + pb.inverse() * (want * float(d.sag)))
-		var up_axis := (joint - pg.origin).normalized() if (joint - pg.origin).length() > 0.001 else -want
-		_dangle_look(nm, d, joint, joint + want * float(d.sag), up_axis)
+		_dangle_look(nm, d, joint, joint + want * float(d.sag))
 		# limp below it: flopping the other way to the swing, a little behind it
 		var lv := pb.inverse() * swing_v
 		var limp: Dictionary = d.limp
@@ -2452,7 +2458,7 @@ func _dangle_pose(dt: float) -> void:
 
 # (looks only) the skin stretched from the joint to where the limb sagged to, and blood dripping off it, faster as it
 # tears; gone with the swing
-func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, up_axis: Vector3) -> void:
+func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3) -> void:
 	if _skin_mat == null:
 		_skin_mat = StandardMaterial3D.new()
 		_skin_mat.albedo_color = Color(0.62, 0.09, 0.1)
@@ -2461,9 +2467,6 @@ func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, up_axis
 		_drip_mat = StandardMaterial3D.new()
 		_drip_mat.albedo_color = Color(0.45, 0.02, 0.03)
 		_drip_mat.roughness = 0.2
-		_bone_mat = StandardMaterial3D.new()
-		_bone_mat.albedo_color = BONE
-		_bone_mat.roughness = 0.75
 	var fx: Dictionary = _dangle_fx.get(nm, {})
 	if fx.is_empty():
 		var skin := MeshInstance3D.new()
@@ -2491,23 +2494,12 @@ func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, up_axis
 		drip.emission_sphere_radius = 0.02
 		drip.top_level = true
 		add_child(drip)
-		# the broken bone: a jagged end sticking out of each side of the gap (a shaft and a splinter each)
-		var bones := []
-		for k in 4:
-			var bmi := MeshInstance3D.new()
-			var bb := BoxMesh.new()
-			bb.size = Vector3.ONE
-			bmi.mesh = bb
-			bmi.material_override = _bone_mat
-			bmi.top_level = true
-			add_child(bmi)
-			bones.append(bmi)
-		fx = {"skin": skin, "drip": drip, "bones": bones, "tilt": [randf_range(-1, 1), randf_range(-1, 1), randf_range(0.6, 1.0), randf_range(0.6, 1.0)]}
+		fx = {"skin": skin, "drip": drip}
 		_dangle_fx[nm] = fx
 	var skin2: MeshInstance3D = fx.skin
 	var strip := strip_cubes(nm)
 	var r: float = float(d.get("r", 0.04))
-	var w := 2.0 * r * clampf(float(strip) / float(d.get("strip0", strip)), 0.3, 1.0) * 0.42
+	var w := 2.0 * r * clampf(float(strip) / float(d.get("strip0", strip)), 0.3, 1.0) * 0.22
 	var seg := to - from
 	var lenm := maxf(seg.length(), 0.004) + 0.03         # (into the flesh at both ends)
 	var y := seg.normalized() if seg.length() > 0.0005 else Vector3.DOWN
@@ -2520,28 +2512,7 @@ func _dangle_look(nm: String, d: Dictionary, from: Vector3, to: Vector3, up_axis
 	side = side.normalized() if side.length() > 0.0001 else y.cross(Vector3.RIGHT).normalized()
 	var x := side
 	var z := x.cross(y)
-	skin2.global_transform = Transform3D(Basis(x * w * 0.7, y * lenm, z * w), (from + to) * 0.5 + side * (r * 0.9 - w * 0.35))
-	# the bone ends: out of the joint along the arm above, and up out of the hanging part, broken and jagged
-	var bone_w := clampf(r * 0.55, 0.02, 0.05)
-	var gap := maxf(seg.length(), 0.01)
-	var tilt: Array = fx.tilt
-	var ends := [[from, up_axis, 0.6, 0], [to, -y, 0.5, 1]]
-	for e in ends:
-		var at: Vector3 = e[0]
-		var ax: Vector3 = (e[1] as Vector3).normalized()
-		var k: int = e[3]
-		var bx := ax.cross(side).normalized() if absf(ax.dot(side)) < 0.99 else ax.cross(Vector3.FORWARD).normalized()
-		var bz := bx.cross(ax)
-		var shaft := gap * float(e[2]) + 0.018
-		var main: MeshInstance3D = fx.bones[k * 2]
-		main.global_transform = Transform3D(Basis(bx * bone_w, ax * shaft, bz * bone_w), at + ax * (shaft * 0.5 - 0.006))
-		# the splinter: thinner, longer, leaning off the shaft
-		var lean := (ax + bx * 0.35 * float(tilt[k]) - side * 0.2).normalized()
-		var sl := shaft * (1.0 + 0.5 * float(tilt[k + 2]))
-		var lx := lean.cross(bz).normalized()
-		var splinter: MeshInstance3D = fx.bones[k * 2 + 1]
-		splinter.global_transform = Transform3D(Basis(lx * bone_w * 0.45, lean * sl, lean.cross(lx) * bone_w * 0.45),
-			at + bx * bone_w * 0.3 * float(tilt[k]) + lean * (sl * 0.5 - 0.006))
+	skin2.global_transform = Transform3D(Basis(x * w * 0.7, y * lenm, z * w), (from + to) * 0.5 + side * (r * 1.05 - w * 0.5))
 	var drip2: CPUParticles3D = fx.drip
 	drip2.global_position = to
 	var st := float(d.strain)
@@ -2578,8 +2549,6 @@ func _dangle_fx_clear() -> void:
 			continue
 		var fx: Dictionary = _dangle_fx[nm]
 		(fx.skin as Node).queue_free()
-		for bmi in fx.bones:
-			(bmi as Node).queue_free()
 		var drip: CPUParticles3D = fx.drip
 		drip.emitting = false
 		get_tree().create_timer(1.0).timeout.connect(drip.queue_free)
@@ -2587,6 +2556,229 @@ func _dangle_fx_clear() -> void:
 		if parts.has(nm):
 			var b := int(parts[nm].bone)
 			skeleton.set_bone_pose_position(b, skeleton.get_bone_rest(b).origin)
+
+# ---------------------------------------------------------------- torn edges (looks only)
+
+## Where a limb's parted from its neighbour (hanging, or off), not a flat cut: from the cubes there, a torn edge.
+## Raw meat over the face, the bone sticking out jagged where the bone is (on a limb, at least one), the sleeve or skin
+## round the edge torn ragged; each column of it its own length. Made of little cubes, on the part's bone like the
+## part's own (so it moves with it); pieces that come off get one on their end too (VoxelPieces). Nothing to hit or take.
+var _seams := {}                 # "part@joint part" -> the MultiMeshInstance3D
+var _seam_sig := ""
+var _seam_par := {}              # part -> the part above it ("" none)
+static var _seam_mat: StandardMaterial3D
+static var _seam_bone_mat: StandardMaterial3D
+
+# every frame: the torn edges this body needs (a part whose neighbour's gone or hanging), made again when that, or
+# the cubes there, change
+func _seams_step() -> void:
+	if parts.is_empty() or model == null:
+		return
+	if _seam_par.is_empty():
+		var by_bone := {}
+		for k in parts:
+			by_bone[int(parts[k].bone)] = k
+		for k in parts:
+			_seam_par[k] = by_bone.get(model.bone_parent[int(parts[k].bone)], "")
+	# (the usual case, a whole body: nothing to look at)
+	var any := loose.size() > 0 or not _seams.is_empty()
+	if not any:
+		for nm in parts:
+			if parts[nm].gone:
+				any = true
+				break
+	if not any:
+		return
+	var want := {}
+	var sig := ""
+	for nm in parts:
+		var p: Dictionary = parts[nm]
+		var par: String = _seam_par[nm]
+		if par == "" or parts[par].gone:
+			continue
+		var hanging_top := loose.has(nm) and not loose.has(par)
+		if p.gone or hanging_top:
+			want["%s@%s" % [par, nm]] = [par, nm]             # (the stump: the part above, at this one's joint)
+			sig += "%s@%s:%d;" % [par, nm, int(parts[par].left)]
+		if hanging_top and not p.gone:
+			want["%s@%s" % [nm, nm]] = [nm, nm]               # (the hanging part's own end)
+			sig += "%s@%s:%d;" % [nm, nm, int(p.left)]
+	if sig == _seam_sig:
+		return
+	_seam_sig = sig
+	for k in _seams.keys():
+		(_seams[k] as Node).queue_free()
+	_seams.clear()
+	for k in want:
+		var on: String = want[k][0]
+		var at: String = want[k][1]
+		var p2: Dictionary = parts[on]
+		var j := _joint_in(p2, int(parts[at].bone))
+		var cols := seam_cols(p2.grid.cells, p2.grid.size, j, on == at, _is_limb(on) or _is_limb(at), hash(String(name) + k))
+		if cols.is_empty():
+			continue
+		var mmi := seam_mesh(cols, mesh_origin(on), vm)
+		(p2.mesh as Node).get_parent().add_child(mmi)
+		_seams[k] = mmi
+
+func _is_limb(nm: String) -> bool:
+	for l in LIMBS:
+		if nm.begins_with(l):
+			return true
+	return false
+
+## A torn edge's columns, from a part's cubes (cells, size) round the joint j (in cells): own_end true, the part's own
+## joint (the edge faces away from its cubes); false, a child's joint on the part above (faces away from its cubes too).
+## Each [face cell (Vector3), axis, +1/-1 out, length (cubes), colour, bone?].
+static func seam_cols(cells: PackedInt32Array, s: Vector3i, j: Vector3, _own_end: bool, limb: bool, seed_: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	# which way is out: from the middle of the cubes round the joint to the joint
+	var mid := Vector3.ZERO
+	var nmid := 0
+	var R := 8
+	var lo := Vector3i(maxi(0, floori(j.x) - R), maxi(0, floori(j.y) - R), maxi(0, floori(j.z) - R))
+	var hi := Vector3i(mini(s.x - 1, ceili(j.x) + R), mini(s.y - 1, ceili(j.y) + R), mini(s.z - 1, ceili(j.z) + R))
+	for z in range(lo.z, hi.z + 1):
+		for y in range(lo.y, hi.y + 1):
+			for x in range(lo.x, hi.x + 1):
+				if cells[x + s.x * (y + s.y * z)] != 0:
+					mid += Vector3(x, y, z)
+					nmid += 1
+	if nmid == 0:
+		return []
+	var out := j - mid / float(nmid)
+	var ax := 1
+	if absf(out.x) > absf(out[ax]):
+		ax = 0
+	if absf(out.z) > absf(out[ax]):
+		ax = 2
+	var sg := 1 if out[ax] >= 0.0 else -1
+	var ua := (ax + 1) % 3
+	var va := (ax + 2) % 3
+	var dims := [s.x, s.y, s.z]
+	var band := 4
+	var jk := roundi(j[ax])
+	var faces := []              # [cell, value, bone near]
+	var any_bone := false
+	for du in range(-R, R + 1):
+		for dv in range(-R, R + 1):
+			var c := Vector3i.ZERO
+			c[ua] = roundi(j[ua]) + du
+			c[va] = roundi(j[va]) + dv
+			if c[ua] < 0 or c[ua] >= int(dims[ua]) or c[va] < 0 or c[va] >= int(dims[va]):
+				continue
+			# the outermost cube of this column near the joint
+			var tt := jk + sg * band
+			while tt != jk - sg * (band + 1):
+				if tt >= 0 and tt < int(dims[ax]):
+					c[ax] = tt
+					var v := cells[c.x + s.x * (c.y + s.y * c.z)]
+					if v != 0:
+						var bone := false
+						for back in 3:
+							var c2 := c
+							c2[ax] = tt - sg * back
+							if c2[ax] >= 0 and c2[ax] < int(dims[ax]) and cells[c2.x + s.x * (c2.y + s.y * c2.z)] == BONE_V:
+								bone = true
+						any_bone = any_bone or bone
+						faces.append([Vector3(c), v, bone])
+						break
+				tt -= sg
+	if faces.is_empty():
+		return []
+	var centre := Vector2.ZERO
+	for f in faces:
+		centre += Vector2((f[0] as Vector3)[ua], (f[0] as Vector3)[va])
+	centre /= float(faces.size())
+	var far := 1.0
+	for f in faces:
+		far = maxf(far, Vector2((f[0] as Vector3)[ua], (f[0] as Vector3)[va]).distance_to(centre))
+	# the bone: round where the bone cubes are at the edge (on a limb with none left there, where it would be: by the
+	# joint), a good thick one, so it shows
+	var bone_c := Vector2.ZERO
+	var nb := 0
+	for f in faces:
+		if bool(f[2]):
+			bone_c += Vector2((f[0] as Vector3)[ua], (f[0] as Vector3)[va])
+			nb += 1
+	var has_bone := nb > 0 or limb
+	if nb > 0:
+		bone_c /= float(nb)
+	else:
+		bone_c = Vector2(j[ua], j[va])
+	var bone_r := 1.6 if limb else 1.1
+	var cols := []
+	for i in faces.size():
+		var f: Array = faces[i]
+		var cell: Vector3 = f[0]
+		var rho := Vector2(cell[ua], cell[va]).distance_to(centre) / far
+		var k := int(f[1]) - 1
+		var own := Color8((k >> 16) & 255, (k >> 8) & 255, k & 255)
+		var len := 0.0
+		var col := own
+		var is_bone := false
+		var bd2 := Vector2(cell[ua], cell[va]).distance_to(bone_c)
+		if has_bone and (bd2 <= bone_r or (bool(f[2]) and bd2 <= bone_r + 1.5)):
+			len = rng.randf_range(1.8, 3.2) if rng.randf() < 0.8 else rng.randf_range(1.0, 1.6)   # (bone: jagged, sticking out past the rest)
+			col = Color8(244, 239, 226).darkened(rng.randf_range(0.0, 0.08))
+			is_bone = true
+		elif rho < 0.72:
+			len = rng.randf_range(0.25, 0.9)                # (the meat)
+			col = (FLESH[rng.randi() % FLESH.size()] as Color).darkened(rng.randf_range(0.0, 0.2))
+		else:
+			len = [0.0, 0.0, 0.3, 0.5, 0.5, 0.8, 1.2][rng.randi() % 7]       # (the sleeve, the skin: torn ragged)
+			col = own if rng.randf() < 0.6 else (FLESH[rng.randi() % FLESH.size()] as Color)
+		if len > 0.0:
+			cols.append([cell, ax, sg, len, col, is_bone])
+	return cols
+
+## The columns as little cubes, placed like a part's own (origin: its mesh origin, in cubes; vm metres a cube): the meat
+## and the skin one mesh, the bone another (it glows a touch, so it shows in the shade of the limb).
+static func seam_mesh(cols: Array, origin: Vector3, vm_: float) -> Node3D:
+	if _seam_mat == null:
+		_seam_mat = StandardMaterial3D.new()
+		_seam_mat.vertex_color_use_as_albedo = true
+		_seam_mat.vertex_color_is_srgb = true
+		_seam_mat.roughness = 0.55
+		_seam_bone_mat = StandardMaterial3D.new()
+		_seam_bone_mat.vertex_color_use_as_albedo = true
+		_seam_bone_mat.vertex_color_is_srgb = true
+		_seam_bone_mat.roughness = 0.7
+		_seam_bone_mat.emission_enabled = true
+		_seam_bone_mat.emission = Color(0.3, 0.29, 0.26)
+	var node := Node3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3.ONE * vm_
+	for bone in [false, true]:
+		var mine := []
+		for c in cols:
+			if bool(c[5]) == bone:
+				mine.append(c)
+		if mine.is_empty():
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = box
+		mm.instance_count = mine.size()
+		for i in mine.size():
+			var c: Array = mine[i]
+			var cell: Vector3 = c[0]
+			var ax: int = c[1]
+			var sg: int = c[2]
+			var len: float = c[3]
+			var sc := Vector3.ONE
+			sc[ax] = len
+			var at := cell + Vector3(0.5, 0.5, 0.5)
+			at[ax] += float(sg) * (0.5 + len * 0.5 - 0.15)      # (out of the face, a little into it)
+			mm.set_instance_transform(i, Transform3D(Basis.from_scale(sc), (at + origin) * vm_))
+			mm.set_instance_color(i, c[4])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = _seam_bone_mat if bone else _seam_mat
+		node.add_child(mmi)
+	return node
 
 ## (the host's arena, every frame) the top of a hanging chain strained through, to tear off ("" none).
 func tear_due() -> String:

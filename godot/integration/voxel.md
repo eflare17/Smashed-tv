@@ -451,15 +451,22 @@ to blown-off bones, dangling limbs tear off from strain, shooting the skin finis
 - **Easier to see, floppier** (22 Oct, the owner: "make it more visible and floppier"): the swing keeps more of
   itself each frame (`SWING_KEEP` 0.996: it swings a long while), walking sways it side to side in step, a hit flings
   it 6-11 cm and it swings back; the hand or foot below flops against the swing. A hanging limb **sags** from its joint
-  (`SAG` 6 cm, bouncing like a spring with the swing); across the gap, the **broken bone** (a jagged white end, shaft
-  and splinter, sticking out of each side: down out of the arm above, up out of the hanging part) and a strip of **raw
-  red flesh** off to the side the skin is left on (`_strip_side`), thinning as the strip is shot away; **blood drips** off it (faster as it nears tearing). All looks only
+  (`SAG` 7 cm, bouncing like a spring with the swing), a thin strand of raw flesh across the gap on the side the skin
+  is left on (`_strip_side`), thinning as the strip is shot away; **blood drips** off it (faster as it nears tearing). All looks only
   (no cubes, nothing to vacuum); the cuts land where the limb is drawn.
+- **Torn edges, not flat cuts** (22 Oct, the owner: "I can't see the bone", "such a straight cut looks kinda bad"):
+  the parts are separate grids, so a limb hanging or off showed a flat face at its joint. Now (`_seams_step`,
+  `seam_cols`, `seam_mesh`) wherever a part's neighbour is gone or hanging, a torn edge is built from the cubes at that
+  face: each column of it its own length, raw meat over the middle, the sleeve or skin torn ragged round the edge, and
+  the **bone sticking out jagged and white** where the bone is (on a limb with none left there, where it would be; it
+  glows a touch so it shows in the limb's shade). Both sides of a hanging limb's gap, the stump left on the body, and
+  the end of the piece that comes off (VoxelPieces; a co-op guest's copy too). Little cubes on the part's bone, so they
+  move with it; looks only (nothing to hit or vacuum). The earlier box bone stubs are gone.
 - Co-op: the loose parts follow from the cubes (the same in both games); the swing is each game's own, and the cuts
   are made against the host's pose (sent with them) as before; the tear is the host's sever.
 - Tests: `test/voxel/dangle_test.gd` (12 checks), `test/voxel/dangle_shots.gd` (`voxel_shots/dangle_*.png`: `dangle_hanging` close up, `dangle_bone` front on (the broken bone); four-frame sheets
   `dangle_close` (shoved, swinging), `dangle_walk` (walking at you, the forearm flopping), `dangle_knee` (the shin
-  hanging, limping), `dangle_tear` (strained through, torn off)); the
+  hanging, shoved), `dangle_tear` (strained through, torn off)); the
   co-op body check still finds no body different.
 
 ### Settings and the benchmark (22 Oct, the owner's Stage 9: "PC first, as physics/graphics heavy as possible, but

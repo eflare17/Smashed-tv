@@ -486,7 +486,7 @@ func _rec_piece(src: VoxelBody, list: Array, vel: Vector3, spin: Vector3, rb: Ri
 			continue
 		var raw := (e.grid.cells as PackedInt32Array).to_byte_array()
 		entries.append([String(e.get("part", "")), e.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), e.origin, e.xform,
-			e.box_at, e.box, int(e.count)])
+			e.box_at, e.box, int(e.count), bool(e.get("seam", false)), bool(e.get("limb", false))])
 	_out.append(["p", pnid, src.key, src.chunk_n, src.vm, entries, rb.global_transform])
 
 func _rec_frag(rb: RigidBody3D, f: VoxelBody, _grids: Dictionary, _xforms: Dictionary) -> void:
@@ -749,7 +749,7 @@ func _piece_here(pnid: int, key: String, chunk: int, vm: float, entries: Array, 
 	for en in entries:
 		var cells := (en[2] as PackedByteArray).decompress(int(en[3]), FileAccess.COMPRESSION_ZSTD).to_int32_array()
 		list.append({"part": en[0], "grid": {"size": en[1], "cells": cells}, "origin": en[4], "xform": en[5], "box_at": en[6],
-			"box": en[7], "count": en[8]})
+			"box": en[7], "count": en[8], "seam": en.size() > 9 and bool(en[9]), "limb": en.size() > 10 and bool(en[10])})
 	var rb: RigidBody3D = arena.pieces.spawn_copy(key, chunk, vm, list, xf)
 	if rb:
 		_pieces[pnid] = rb

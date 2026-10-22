@@ -85,6 +85,14 @@ func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel:
 			var out := {}
 			var id := WorkerThreadPool.add_task(func(): out["arrays"] = VoxMesher.mesh(g, o, vm))
 			_mesh_jobs.append({"id": id, "out": out, "mi": weakref(mi)})
+		# a part that came off at its joint (not cut through): a torn end there, not a flat face
+		if bool(e.get("seam", false)):
+			var cols := VoxelBody.seam_cols(e.grid.cells, e.grid.size, -(e.origin as Vector3) - Vector3(0.5, 0.5, 0.5), true,
+				bool(e.get("limb", false)), randi())
+			if not cols.is_empty():
+				var sm := VoxelBody.seam_mesh(cols, e.origin, vm)
+				sm.transform = local
+				rb.add_child(sm)
 		var cs := CollisionShape3D.new()
 		var bx := BoxShape3D.new()
 		bx.size = (e.box as Vector3).max(Vector3.ONE * vm * 2.0)

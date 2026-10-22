@@ -3,7 +3,7 @@ extends SceneTree
 ## a second apart, left to right then down:
 ## dangle_close: close up on a grunt's forearm hanging by the skin of its elbow (the stretched strip, the blood dripping),
 ##   shoved so it swings; dangle_walk: a grunt with a hanging forearm walking at you, the arm flopping; dangle_knee: a
-##   shin hanging from a knee shot through, the grunt limping at you; dangle_tear: strained through, the forearm tearing
+##   shin hanging from a knee shot through, shoved so it swings; dangle_tear: strained through, the forearm tearing
 ##   off. Plus dangle_hanging (one close frame, big) and dangle_bone (front on: the broken bone in the gap). Owned by the voxel session.
 
 var arena: Node
@@ -187,17 +187,21 @@ func _process(dt: float) -> bool:
 				step = 7
 		7:
 			if t > 42.2:
-				# a knee shot through: the shin hanging, limping at you
+				# a knee shot through: the shin hanging (standing still, shoved so it swings)
 				_clear()
-				g = _body(Vector3(-0.3, 0, -5.0), 0.0)
+				arena.frozen = true
+				g = _body(Vector3(0, 0, -3.0), 0.0)
 				_tunnel(g, "shin_r", 0.025, 3)
 				_hold(g)
+				var knee: Vector3 = g.skeleton.global_transform * g.skeleton.get_bone_global_pose(int(g.parts.shin_r.bone)).origin
+				_look(knee + Vector3(-0.6, 0.3, 1.0), knee + Vector3(0, -0.14, 0))
 				t = 50.0
 				step = 8
 		8:
-			_look(Vector3(-1.5, 0.7, -1.4), g.global_position + Vector3(0, 0.45, 0))
-			arena.player.global_position = Vector3(0, 0, 0.5)
-			if t > 51.5:
+			if t > 50.6 and not g.has_meta("kicked"):
+				g.set_meta("kicked", true)
+				g.knock = Vector3(-2.0, 0, 0.6)
+			if t > 50.75:
 				_start_sheet("dangle_knee")
 				step = 9
 		9:
