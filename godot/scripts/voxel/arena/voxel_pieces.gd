@@ -182,6 +182,8 @@ func _settle(i: int) -> void:
 
 ## A fragment knocked flying (b.airborne, the bat, a slam): a piece again, flying off at its air speed.
 func from_fragment(b: VoxelBody) -> void:
+	if puppet and not VoxelBody._net_replay:
+		return                     # (a co-op guest's: the fragment is the host's; its events say what becomes of it)
 	var list := b.as_pieces()
 	arena.bodies.erase(b)
 	if not list.is_empty():

@@ -148,7 +148,9 @@ func apply(arena: Node3D) -> void:
 	VoxelPieces.MAX_PIECES = int(v.pieces)
 	VoxelArena.MAX_DEAD = int(v.corpses)
 	var restart := false
-	if VoxelDebris.max_lie != int(v.lying) or VoxelDebris.max_fly != int(v.flying):
+	var linked: bool = arena.net != null and arena.net.linked
+	# (the cubes' caps start the fight over: not mid co-op, where the host's world is shared; they wait for a solo apply)
+	if not linked and (VoxelDebris.max_lie != int(v.lying) or VoxelDebris.max_fly != int(v.flying)):
 		VoxelDebris.max_lie = int(v.lying)
 		VoxelDebris.max_fly = int(v.flying)
 		restart = true

@@ -307,7 +307,8 @@ func open() -> void:
 		else:
 			_note.text = ""
 	_refresh()
-	(_leave_b if net.role != "" else (_join_b if _code_in.text != "" else _host_b)).grab_focus()
+	if net.role == "":
+		(_join_b if _code_in.text != "" else _host_b).grab_focus()     # (in a game: nothing focused, Enter can't leave it)
 
 func close() -> void:
 	if not _open:
@@ -328,9 +329,15 @@ func _unhandled_input(e: InputEvent) -> void:
 	if _open and e.physical_keycode == KEY_ESCAPE:
 		close()
 		get_viewport().set_input_as_handled()
-	elif e.physical_keycode == KEY_O and not (_open and _code_in.has_focus()):
+	elif e.physical_keycode == KEY_O and not (_open and _code_in.has_focus()) and not _keys_elsewhere():
 		toggle()
 		get_viewport().set_input_as_handled()
+
+# the keys are a game's on the couch, or the backpack's or padlock's (O there is a button, not the menu)
+func _keys_elsewhere() -> bool:
+	if _open:
+		return false
+	return arena.games.seated > 0 or arena.inv_ui.is_open() or arena.lock_view.is_open()
 
 func _process(dt: float) -> void:
 	# a room code someone else is hosting: a new one, by itself (three goes)

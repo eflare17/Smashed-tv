@@ -104,6 +104,26 @@ func take(col: Color, n: int = 1) -> void:
 	if on_take.is_valid():
 		on_take.call(k, n)
 
+## The lying cubes, packed (co-op: the host's floor for a guest who's just come): [positions, n, colours, n].
+func lying_out() -> Array:
+	var p := _lp.slice(0, _ln).to_byte_array()
+	var c := _lc.slice(0, _ln).to_byte_array()
+	return [p.compress(FileAccess.COMPRESSION_ZSTD), p.size(), c.compress(FileAccess.COMPRESSION_ZSTD), c.size()]
+
+## Every lying cube gone, lying_out()'s laid in their place.
+func lying_in(d: Array) -> void:
+	_ln = 0
+	_cells.clear()
+	_lie.multimesh.visible_instance_count = 0
+	if int(d[1]) <= 0:
+		return
+	var pf := (d[0] as PackedByteArray).decompress(int(d[1]), FileAccess.COMPRESSION_ZSTD).to_float32_array()
+	var cf := (d[2] as PackedByteArray).decompress(int(d[3]), FileAccess.COMPRESSION_ZSTD).to_float32_array()
+	var n := mini(pf.size() / 3, cf.size() / 4)
+	for i in n:
+		_lay(Vector3(pf[i * 3], pf[i * 3 + 1], pf[i * 3 + 2]), Basis(Vector3.UP, float(i % 97) * 0.37),
+			Color(cf[i * 4], cf[i * 4 + 1], cf[i * 4 + 2], cf[i * 4 + 3]))
+
 ## The lying cubes within r metres of centre gone, up to cap, nearest first, counted for nobody (the other player's
 ## vacuum took them in their game). Returns how many.
 func clear_near(centre: Vector3, r: float, cap: int) -> int:

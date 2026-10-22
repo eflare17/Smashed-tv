@@ -125,6 +125,9 @@ var _clock := 0.0
 # holding
 var _held_b: VoxelBody          # a body held ...
 var _held_rb: RigidBody3D       # ... or a piece
+var _pend_t := 0.0              # (a co-op guest: a grab of a lying piece waiting for the host's piece of it ...)
+var _pend_at := Vector3.ZERO    # (... where it was ...)
+var _pend_before: Object = null # (... and the newest piece before it)
 var _hold_pos := Vector3.ZERO   # the held body's position as we set it (the arena's nudges don't count)
 var _hold_v := Vector3.ZERO     # its middle's velocity
 var _held_t := 0.0              # seconds it's been held
@@ -438,7 +441,7 @@ func press(button: int) -> void:
 			fire_hole()
 
 func _holding() -> bool:
-	return (_held_b != null and is_instance_valid(_held_b)) or (_held_rb != null and is_instance_valid(_held_rb))
+	return (_held_b != null and is_instance_valid(_held_b)) or (_held_rb != null and is_instance_valid(_held_rb)) or _pend_t > 0.0
 
 ## Left click, holding nothing: what's under the aim flies to the hold point and stays there.
 func grab() -> void:
@@ -452,6 +455,13 @@ func grab() -> void:
 		_held_rb = h.rb
 	else:
 		var b: VoxelBody = h.body
+		if b.fragment and VoxelBody.net_locked:
+			# (a co-op guest's: the host's copy makes it a piece; the gun takes that piece when it comes)
+			_pend_at = middle(b)
+			_pend_t = 0.8
+			var lst: Array = arena.pieces.list()
+			_pend_before = lst.back().rb if not lst.is_empty() else null
+			return
 		if b.fragment:
 			# a lying fragment: made a piece again (it was one), and that's what's held
 			_held_rb = _unfragment(b)
@@ -701,8 +711,11 @@ static func _keep(b: VoxelBody) -> void:
 static func _clamp(b: VoxelBody) -> void:
 	var p := b.position
 	p.y = maxf(p.y, b.height * 0.5 * (absf(cos(b.tumble)) - 1.0) + 0.03)
-	p.x = clampf(p.x, -21.0, 21.0)
-	p.z = clampf(p.z, -21.0, 21.0)
+	if b.alive:
+		p.x = clampf(p.x, -21.0, 21.0)
+		p.z = clampf(p.z, -21.0, 21.0)
+	else:
+		p = VoxelArena.dead_pos(p)          # (the dead can go out the back door to the yard: the shredder's there)
 	b.position = p
 
 ## One frame of a held body (static, for the checks): its middle pulled toward `to` by a damped spring (at most
@@ -901,6 +914,21 @@ func step(dt: float) -> void:
 	_purple = maxf(0.0, _purple - dt * 1.5)
 	_recoil_t *= exp(-dt * 8.0)
 	_recoil = lerpf(_recoil, _recoil_t, 1.0 - exp(-dt * 35.0))
+	if _pend_t > 0.0:
+		# (a co-op guest's grab of a lying piece: the host's piece, made from it, held when it comes)
+		_pend_t -= dt
+		var lst: Array = arena.pieces.list()
+		for i in range(lst.size() - 1, -1, -1):
+			var rb: RigidBody3D = lst[i].rb
+			if rb == _pend_before:
+				break
+			if is_instance_valid(rb) and rb.global_position.distance_to(_pend_at) < 1.5:
+				_held_rb = rb
+				_held_t = 0.0
+				_pend_t = 0.0
+				break
+		if _pend_t <= 0.0 and _held_rb == null:
+			_pend_t = 0.0
 	if _held_b != null and is_instance_valid(_held_b) and _held_b.cubes_left() == 0:
 		_held_b = null                  # (shattered or burnt away in its grip: nothing left to hold)
 	var holding := _holding()

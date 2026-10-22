@@ -104,7 +104,9 @@ func aim() -> Array:
 ## Thrown along vel for secs (a lunge); the other player's goes to their game.
 func dash(vel: Vector3, secs: float) -> void:
 	if local:
-		arena.dash(vel, secs)
+		# (a linked guest's own: the host's copy of the weapon sends it back, once)
+		if not (arena.net and arena.net.linked and arena.net.role == "guest"):
+			arena.dash(vel, secs)
 	else:
 		_dash = [vel, secs]
 		if arena.net:

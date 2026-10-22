@@ -182,10 +182,40 @@ func press(button: int) -> void:
 	if button == MOUSE_BUTTON_LEFT:
 		thrust()
 	elif button == MOUSE_BUTTON_RIGHT:
+		if _copy():
+			return                 # (the other player's copy: told what their spear did, not the button)
+		var did := ""
 		if _mode == "hand":
 			throw()
+			did = "throw" if _cock >= 0.0 else ""
 		elif _mode == "fly" or _mode == "stuck":
 			recall()
+			did = "recall"
+		if did != "":
+			_tell(did)
+
+# co-op: the other player's copy of this spear (it does what their spear did: throw, recall, picked up)
+func _copy() -> bool:
+	return not shooter.local and arena.net != null and arena.net.linked
+
+func _tell(did: String) -> void:
+	if shooter.local and arena.net and arena.net.linked:
+		arena.net.local_input("spear", did)
+
+## (co-op) What the other player's own spear did, done by this copy of it whatever this one thinks of it.
+func remote(did: String) -> void:
+	match did:
+		"throw":
+			if _mode != "hand":
+				_caught()
+			_t = -1.0
+			_cd = 0.0
+			throw()
+		"recall":
+			recall()
+		"caught":
+			if _mode != "hand":
+				_caught()
 
 ## A jab straight out where you look (the tunnel is bored as the tip gets there).
 func thrust() -> void:
@@ -619,8 +649,9 @@ func _stuck_step(dt: float) -> void:
 	_proj.global_transform = Transform3D(_stuck_b * Basis(Vector3.RIGHT, ang), _fly.p)
 	var mid: Vector3 = (_fly.p as Vector3) + _stuck_b.z * 0.8
 	var pp: Vector3 = shooter.player.global_position
-	if _stuck_t > 0.3 and Vector2(mid.x - pp.x, mid.z - pp.z).length() < PICKUP_R and absf(mid.y - pp.y - 0.9) < 1.6:
+	if _stuck_t > 0.3 and Vector2(mid.x - pp.x, mid.z - pp.z).length() < PICKUP_R and absf(mid.y - pp.y - 0.9) < 1.6 and not _copy():
 		recall()
+		_tell("recall")
 
 func _back_step(dt: float) -> void:
 	_back.t = float(_back.t) + dt
@@ -655,6 +686,8 @@ func _hand_xform() -> Transform3D:
 	return Transform3D(x.basis.orthonormalized(), x * Vector3(0, 0, TIP_Z + _slide))
 
 func _caught() -> void:
+	if _mode != "hand":
+		_tell("caught")
 	_mode = "hand"
 	_proj.visible = false
 	_path.clear()

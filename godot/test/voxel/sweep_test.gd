@@ -68,6 +68,71 @@ func _shoot_elbow(b: VoxelBody) -> void:
 		if b.loose.has("forearm_l"):
 			return
 
+# Stage B: co-op and weapons
+func _stage_b() -> void:
+	var net: VoxelNet = arena.net
+	# a settings change mid co-op doesn't start the fight over (the caps wait)
+	var b1 := _body("grunt", Vector3(-4, 0, -8))
+	var lie0 := VoxelDebris.max_lie
+	net.linked = true
+	var s := VoxelSettings.new()
+	s.file = ""
+	s.set_preset("ultra")
+	s.v.chunk = arena.chunk
+	s.apply(arena)
+	net.linked = false
+	check(is_instance_valid(b1) and not b1.is_queued_for_deletion() and VoxelDebris.max_lie == lie0,
+		"a preset picked mid co-op: the cubes' caps wait, the shared fight isn't started over")
+	# O while sitting at the console isn't the online menu
+	arena.games.seated = 1
+	var e := InputEventKey.new()
+	e.physical_keycode = KEY_O
+	e.pressed = true
+	arena.net_menu._unhandled_input(e)
+	var opened: bool = arena.net_menu.is_open()
+	arena.games.seated = 0
+	arena.net_menu.close()
+	check(not opened, "O on the couch is the game's button, not the online menu")
+	# a co-op guest never frees the host's lying piece
+	var f := _body("grunt", Vector3(4, 0, -8))
+	var xf := {}
+	for nm in f.parts:
+		xf[nm] = f.skeleton.global_transform * f.skeleton.get_bone_global_pose(int(f.parts[nm].bone))
+	f.make_fragment({"forearm_l": {"cells": f.parts.forearm_l.grid.cells, "mesh": null}}, xf)
+	arena.pieces.puppet = true
+	arena.pieces.from_fragment(f)
+	arena.pieces.puppet = false
+	check(is_instance_valid(f) and not f.is_queued_for_deletion() and arena.bodies.has(f), "a co-op guest's grab doesn't free the host's lying piece")
+	# a linked guest's own lunge isn't applied twice (the host's copy sends it back)
+	net.linked = true
+	net.role = "guest"
+	arena._dash_t = 0.0
+	arena.me.dash(Vector3(9, 0, 0), 0.3)
+	var dashed: float = arena._dash_t
+	net.linked = false
+	net.role = ""
+	check(dashed == 0.0, "a co-op guest's own chainsaw lunge waits for the host's (not applied twice)")
+	# the dead can be carried out the back door to the yard; the living stay in the arena
+	var yard_spot := Vector3((VoxelYard.X0 + VoxelYard.X1) * 0.5, 0.0, 30.0)
+	var d := _body("grunt", yard_spot)
+	d.alive = false
+	VoxelWeaponGravity._clamp(d)
+	var live := _body("grunt", yard_spot)
+	VoxelWeaponGravity._clamp(live)
+	check(d.position.distance_to(yard_spot) < 0.5 and absf(live.position.z) <= 21.0,
+		"the gravity gun: a corpse can be in the yard (for the shredder), a live one stays in the arena")
+	# the lying cubes go across to a guest who's just come
+	for i in 40:
+		arena.debris._lay(Vector3(2.0 + i * 0.03, 0.02, 2.0), Basis(), VoxelBody.FLESH[i % 4])
+	var deb := VoxelDebris.new()
+	arena.add_child(deb)
+	deb.setup(arena._cube_m("grunt"))
+	var out: Array = arena.debris.lying_out()
+	deb.lying_in(out)
+	var same: bool = deb._ln > 0 and deb._ln == arena.debris._ln and (deb._ln == 0 or (deb._lp[0].distance_to(arena.debris._lp[0]) < 0.001 and deb._lc[0].is_equal_approx(arena.debris._lc[0])))
+	check(same, "the host's lying cubes laid the same on a guest who's just come (%d)" % deb._ln)
+	deb.queue_free()
+
 func _process(dt: float) -> bool:
 	t += dt
 	if t < 1.0:
@@ -197,6 +262,9 @@ func _process(dt: float) -> bool:
 			var s2 := float(v0.fast._dangle.forearm_l.strain)
 			check(s1 > 0.0 and s2 > 0.0 and maxf(s1, s2) / minf(s1, s2) < 1.6,
 				"two seconds walking with a forearm hanging: the strain the same at 30 and 240 fps (%.3f, %.3f)" % [s1, s2])
+			step = 10
+		10:
+			_stage_b()
 			step = 99
 		99:
 			print("SWEEP done %d passed, %d failed" % [passed, failed])

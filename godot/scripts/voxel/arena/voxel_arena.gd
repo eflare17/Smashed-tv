@@ -732,7 +732,10 @@ func _farm_spot(key: int) -> void:
 # a dead body flying (or carried by the gravity gun): kept in the arena, but it can go out through the back door into
 # the yard (Stage 6.5: corpses to the woodchipper), where the yard's fences keep it
 func _keep_dead(b: VoxelBody) -> void:
-	var p := b.position
+	b.position = dead_pos(b.position)
+
+## Where a dead body may be: in the arena, through the back door, in the yard (the gravity gun carries one out).
+static func dead_pos(p: Vector3) -> Vector3:
 	var dx0 := VoxelYard.DOOR_X0 + 0.25
 	var dx1 := VoxelYard.DOOR_X1 - 0.25
 	if p.z > ARENA + 0.7:
@@ -743,7 +746,7 @@ func _keep_dead(b: VoxelBody) -> void:
 	else:
 		p.x = clampf(p.x, -ARENA + 1.0, ARENA - 1.0)
 		p.z = clampf(p.z, -ARENA + 1.0, ARENA - 1.0)
-	b.position = p
+	return p
 
 ## Off the arena, where the enemies never go (the bedroom, the yard).
 static func safe(p: Vector3) -> bool:
@@ -1842,7 +1845,7 @@ func _shoot(dt: float) -> void:
 			if down and not was and loadout.usable() and not free:
 				_held[btn] = true
 				w.press(btn)
-				net.local_input("press", btn)
+				net.local_input("press", [btn, _mouse_v])     # (the mouse's move too: a slash's way, a swing's side)
 				if not still:
 					_held[btn] = false
 					w.release(btn)
@@ -1870,7 +1873,7 @@ func _sword_key(low: bool) -> void:
 	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED):
 		return
 	sword.quick(low)
-	net.local_input("quick", low)
+	net.local_input("quick", [low, _mouse_v])
 
 # a weapon switch (change: what moves the loadout): the melee weapon put away lets go of its buttons, buttons still
 # down count for nothing till they're let go

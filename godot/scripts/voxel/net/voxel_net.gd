@@ -56,7 +56,8 @@ var _clock := 0.0
 var _snaps := {}                # guest: nid -> [[time, state], ...] (the last few)
 var _pq := {}                   # guest: piece nid -> [[time, pos, rot], ...]
 var _got_world := false
-var _own_immortal := false      # guest: its own F6 before linking (the host's rules while linked)
+var _own_immortal := false
+var _last_us := 0               # (real time: the clock and the other's weapons)      # guest: its own F6 before linking (the host's rules while linked)
 var debug := false              # (tests: what was done to a body found different)
 var lag := 0.0                  # (tests: seconds every message from the other game is held back ...)
 var loss := 0.0                 # (... and the share of the fast ones lost, like a bad line)
@@ -77,6 +78,10 @@ func host(code_: String, via: String = "rtc", server: String = "", local_only :=
 	VoxelBody.net_rec = _rec_body
 	arena.pieces.net_rec = _rec_piece
 	arena.pieces.net_rec_frag = _rec_frag
+	# (numbers past any a body already has: one that was a guest holds the old host's)
+	for b in arena.bodies:
+		if is_instance_valid(b):
+			_next_nid = maxi(_next_nid, b.net_id + 1)
 	for b in arena.bodies:
 		_ensure(b)
 	_out.clear()
@@ -111,6 +116,11 @@ func leave() -> void:
 		_on_disconnected()
 	role = ""
 	linked = false
+	_bodies.clear()
+	_born.clear()
+	_pieces.clear()
+	_snaps.clear()
+	_pq.clear()
 	VoxelBody.net_rec = Callable()
 	VoxelBody.net_locked = false
 	if arena and arena.pieces:
@@ -270,9 +280,12 @@ func _apply_input(kind: String, arg) -> void:
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
 	match kind:
 		"press":
+			var btn := int(arg[0]) if arg is Array else int(arg)
+			if arg is Array and arg.size() > 1:
+				other.mouse_v = arg[1]          # (the mouse's move when it was pressed: the slash's way, the swing's side)
 			if w:
-				_o_held[int(arg)] = true
-				w.press(int(arg))
+				_o_held[btn] = true
+				w.press(btn)
 		"release":
 			if w and _o_held.has(int(arg)):
 				_o_held.erase(int(arg))
@@ -282,10 +295,16 @@ func _apply_input(kind: String, arg) -> void:
 				w.reload_key()
 		"quick":
 			var sw: VoxelMelee = _o_weapons.get("sword")
+			if arg is Array and arg.size() > 1:
+				other.mouse_v = arg[1]
 			if sw and sw.has_method("quick") and sw.ready_to_swing():
-				sw.quick(bool(arg))
+				sw.quick(bool(arg[0]) if arg is Array else bool(arg))
 		"switch":
 			_o_switch(String(arg))
+		"spear":
+			var sp = _o_weapons.get("spear")
+			if sp and sp.has_method("remote"):
+				sp.remote(String(arg))
 
 # ---------------------------------------------------------------- every frame
 
@@ -309,19 +328,24 @@ func _process(dt: float) -> void:
 					rel_blocked = true
 		_late = keep
 	if not linked or other == null:
+		_last_us = 0
 		return
-	_clock += dt
+	# (real time: a hit-stop slows this game's delta, not the line between the two games, nor the other's weapons)
+	var now_us := Time.get_ticks_usec()
+	var rdt := dt if _last_us == 0 else minf(float(now_us - _last_us) / 1000000.0, 0.25)
+	_last_us = now_us
+	_clock += rdt
 	if role == "host":
 		_host_frame(dt)
 	else:
 		_guest_frame(dt)
-	_other_frame(dt)
+	_other_frame(dt, rdt)
 	_p_t += dt
 	if _p_t >= 1.0 / P_HZ:
 		_p_t = 0.0
 		_send_fast(_player_state())
 
-func _other_frame(dt: float) -> void:
+func _other_frame(dt: float, rdt: float) -> void:
 	# their place, smoothed between states
 	_o_body.global_position = _o_body.global_position.lerp(_o_target, 1.0 - exp(-dt * 18.0))
 	_o_cam.global_transform = Transform3D(_o_eye.basis, _o_eye.origin + (_o_body.global_position - _o_target))
@@ -348,9 +372,9 @@ func _other_frame(dt: float) -> void:
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
 	if w:
 		for btn in _o_held:
-			w.hold(btn, dt)
+			w.hold(btn, rdt)
 	for id in _o_weapons:
-		_o_weapons[id].step(dt)
+		_o_weapons[id].step(rdt)
 		_o_weapons[id].view.visible = false
 
 func _player_state() -> PackedByteArray:
@@ -590,7 +614,7 @@ func _send_world() -> void:
 			entries.append([String(c.part), c.grid.size, raw.compress(FileAccess.COMPRESSION_ZSTD), raw.size(), c.origin,
 				rb.global_transform * (c.local as Transform3D), Vector3.ZERO, Vector3.ONE * 0.1, 1])
 		pieces.append([pnid, String(pc.key), int(pc.chunk), float(pc.vm), entries, rb.global_transform])
-	_send(["W", bodies, pieces, int(arena.wave)])
+	_send(["W", bodies, pieces, int(arena.wave), arena.debris.lying_out()])
 
 # ---------------------------------------------------------------- the guest
 
@@ -889,6 +913,8 @@ func _message(m: Array) -> void:
 		"W":
 			_world(m[1], m[2])
 			arena.wave = int(m[3])
+			if m.size() > 4:
+				arena.debris.lying_in(m[4])          # (the host's floor: the same lying cubes in both games)
 		"E":
 			if _got_world:
 				_events(m[1])
