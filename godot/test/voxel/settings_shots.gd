@@ -65,5 +65,14 @@ func _process(dt: float) -> bool:
 		_shot("preset_ultra")
 		step = 10
 	elif step == 10 and t > 303.5:
+		m.s.set_preset("extreme")
+		m.s.apply(arena)
+		arena.spawn(6)
+		t = 400.0
+		step = 11
+	elif step == 11 and t > 403.0:
+		_shot("preset_extreme")
+		step = 12
+	elif step == 12 and t > 403.5:
 		return true
 	return false

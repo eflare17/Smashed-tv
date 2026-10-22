@@ -1,10 +1,11 @@
 class_name VoxelSettingsMenu
 extends CanvasLayer
 ## The settings screen (Stage 9): a SETTINGS (F10) button under ONLINE (O) opens it. Your PC in a line (the processor,
-## its threads, the memory, the graphics card); the presets LOW MEDIUM HIGH ULTRA; every setting on its own below them
+## its threads, the memory, the graphics card); the presets LOW MEDIUM HIGH ULTRA EXTREME; every setting on its own below them
 ## (changing one makes it Custom); field of view, mouse speed, volume. Everything takes effect straight away and is
-## saved. RUN BENCHMARK (on your own, not in co-op): each preset from Ultra down gets a fight to draw (24 enemies, shot
-## at and set on fire, as fast as the PC can go: no frame cap, no vsync), and the highest one that holds 60 frames a
+## saved. RUN BENCHMARK (on your own, not in co-op): each preset from Extreme down gets a fight to draw (24 enemies, shot
+## at, set on fire and blown up by a grenade every couple of seconds, so the cubes flying and lying about and the cut-off
+## pieces fill toward the preset's limits: the gore at full load; as fast as the PC can go: no frame cap, no vsync), and the highest one that holds 60 frames a
 ## second (19 frames in 20 inside 16.7 ms) is the one recommended; APPLY RECOMMENDED puts it on. The fight you were
 ## in is put back after. Esc stops the benchmark, or closes the screen. Owned by the voxel session.
 
@@ -12,7 +13,8 @@ const PINK := Color("#f7a8ff")
 const GOLD := Color("#f6d17a")
 const GOOD := Color("#7fd89a")
 const BAD := Color("#ff7a7a")
-const NAMES := {"low": "LOW", "medium": "MEDIUM", "high": "HIGH", "ultra": "ULTRA", "custom": "CUSTOM"}
+const NAMES := {"low": "LOW", "medium": "MEDIUM", "high": "HIGH", "ultra": "ULTRA", "extreme": "EXTREME", "custom": "CUSTOM"}
+const BENCH_BLAST := 2.0        # seconds between the benchmark's grenades
 const BENCH_ENEMIES := 24
 
 var arena: Node3D
@@ -21,6 +23,7 @@ var bench_warm := 1.5           # seconds settling in (shaders, meshes) before e
 var bench_measure := 4.0        # seconds measured
 var target_ms := 1000.0 / 60.0
 var recommended := ""
+var bench_booms := 0            # the benchmark's grenades gone off (all runs)
 var _btn: Button
 var _panel: PanelContainer
 var _hw: Label
@@ -367,6 +370,7 @@ func _next_preset() -> void:
 	_bench.fire_t = 0.0
 	_bench.sg_t = 0.0
 	_bench.burn_t = 0.0
+	_bench.boom_t = 0.5
 
 func bench_stop() -> void:
 	if _bench.is_empty():
@@ -381,7 +385,7 @@ func _bench_done() -> void:
 		recommended = "low"         # (nothing held 60: the lowest)
 		for name in VoxelSettings.ORDER:
 			if res.has(name) and float(res[name][1]) <= target_ms:
-				recommended = name      # (the highest that passed: ORDER runs low to ultra)
+				recommended = name      # (the highest that passed: ORDER runs low to extreme)
 	# the game as it was
 	s.v = (_bench.saved as Dictionary).duplicate()
 	s.preset = s.which_preset()
@@ -406,7 +410,7 @@ func _bench_done() -> void:
 func _bench_text(res: Dictionary, pick: String) -> String:
 	var lines := []
 	var order := VoxelSettings.ORDER.duplicate()
-	order.reverse()             # (as it ran: Ultra first)
+	order.reverse()             # (as it ran: Extreme first)
 	for name in order:
 		if res.has(name):
 			var r: Array = res[name]
@@ -450,7 +454,8 @@ func _process(_dt: float) -> void:
 		else:
 			_next_preset()
 
-# the fight to draw: the enemies kept at 24, the nearest shot at (a gun and a shotgun), now and then one set alight
+# the fight to draw: the enemies kept at 24, the nearest shot at (a gun and a shotgun), now and then one set alight, and
+# a grenade at the nearest one's feet every BENCH_BLAST seconds (the craters, torn limbs and cubes thrown up: the gore)
 func _fight(dt: float) -> void:
 	var alive := 0
 	var best: VoxelBody = null
@@ -487,3 +492,9 @@ func _fight(dt: float) -> void:
 		var h: Dictionary = best.trace(pp, dir, 30.0)
 		if not h.is_empty():
 			best.ignite(h.point, 0.085)
+	_bench.boom_t -= dt
+	if _bench.boom_t <= 0.0 and arena.melee.has("grenades"):
+		_bench.boom_t = BENCH_BLAST
+		var at := best.global_position + Vector3(randf_range(-0.4, 0.4), 0.3, randf_range(-0.4, 0.4))
+		arena.melee.grenades.explode(at, "bench")
+		bench_booms += 1

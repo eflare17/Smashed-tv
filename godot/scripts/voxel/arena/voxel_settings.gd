@@ -1,7 +1,9 @@
 class_name VoxelSettings
 extends RefCounted
 ## The game's settings (the owner, Stage 9: "PC first, as physics/graphics heavy as possible, but scalable settings, plus
-## a recommended-settings test based on the player's hardware"). Presets Low, Medium, High (as it's been), Ultra; any
+## a recommended-settings test based on the player's hardware"). Presets Low, Medium, High (as it's been), Ultra, and
+## Extreme (Stage 10, for the PCs that run Ultra at hundreds of frames a second: supersampled, 8192 shadows, every effect at
+## its best, reflections, twice the gore kept); any
 ## one changed by hand makes it Custom. The picture: render scale (FSR upscaling below 100% on Forward+), MSAA, TAA,
 ## shadows (off / hard 2048 / soft 4096), SSAO, SSIL, glow, SDFGI global illumination, volumetric fog, the bedroom's
 ## mirror. The gore's weight: the cube size (1 sprite pixel a cube, or 2: an eighth of the cubes), how many knocked-out
@@ -11,7 +13,7 @@ extends RefCounted
 ## session.
 
 const FILE := "user://voxel_settings.cfg"
-const ORDER := ["low", "medium", "high", "ultra"]
+const ORDER := ["low", "medium", "high", "ultra", "extreme"]
 const PRESETS := {
 	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
 		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12},
@@ -21,14 +23,19 @@ const PRESETS := {
 		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40},
 	"ultra": {"scale": 1.0, "msaa": 4, "taa": true, "shadows": 2, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
 		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60},
+	"extreme": {"scale": 1.5, "msaa": 8, "taa": true, "shadows": 3, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
+		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120},
 }
+## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
+const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true}
 ## (what each setting can be, for the menu: [label, values, value labels])
 const CHOICES := {
-	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0], ["50%", "67%", "77%", "85%", "100%"]],
+	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0, 1.25, 1.5], ["50%", "67%", "77%", "85%", "100%", "125% (supersampled)", "150% (supersampled)"]],
 	"msaa": ["Anti-aliasing (MSAA)", [0, 2, 4, 8], ["Off", "2x", "4x", "8x"]],
 	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
-	"shadows": ["Shadows", [0, 1, 2], ["Off", "Hard (2048)", "Soft (4096)"]],
+	"shadows": ["Shadows", [0, 1, 2, 3], ["Off", "Hard (2048)", "Soft (4096)", "Sharpest (8192)"]],
+	"fx": ["Effects quality", [0, 1], ["Normal", "Best (+ reflections)"]],
 	"ssao": ["Ambient occlusion", [false, true], ["Off", "On"]],
 	"ssil": ["Indirect light (SSIL)", [false, true], ["Off", "On"]],
 	"glow": ["Glow", [false, true], ["Off", "On"]],
@@ -36,10 +43,10 @@ const CHOICES := {
 	"fog": ["Volumetric fog", [false, true], ["Off", "On"]],
 	"mirror": ["Bedroom mirror", [false, true], ["Off", "On"]],
 	"chunk": ["Cube size (gore detail)", [1, 2], ["Fine (1 pixel)", "Chunky (2 pixels)"]],
-	"lying": ["Cubes lying about", [40000, 80000, 150000, 300000], ["40k", "80k", "150k", "300k"]],
-	"flying": ["Cubes flying at once", [3000, 5000, 8000, 12000], ["3k", "5k", "8k", "12k"]],
-	"pieces": ["Cut-off pieces", [12, 20, 30, 45], ["12", "20", "30", "45"]],
-	"corpses": ["Corpses kept", [12, 25, 40, 60], ["12", "25", "40", "60"]],
+	"lying": ["Cubes lying about", [40000, 80000, 150000, 300000, 600000], ["40k", "80k", "150k", "300k", "600k"]],
+	"flying": ["Cubes flying at once", [3000, 5000, 8000, 12000, 25000], ["3k", "5k", "8k", "12k", "25k"]],
+	"pieces": ["Cut-off pieces", [12, 20, 30, 45, 90], ["12", "20", "30", "45", "90"]],
+	"corpses": ["Corpses kept", [12, 25, 40, 60, 120], ["12", "25", "40", "60", "120"]],
 	"fps": ["Frame cap", [0, 60, 120, 144, 240], ["None", "60", "120", "144", "240"]],
 	"vsync": ["VSync", [false, true], ["Off", "On"]],
 	"fullscreen": ["Full screen", [false, true], ["Off", "On"]],
@@ -53,6 +60,7 @@ var bench := {}                 # the last benchmark: {preset: [average fps, 1% 
 
 func _init() -> void:
 	v = PRESETS.high.duplicate()
+	v.fx = 0
 	v.merge(PERSONAL)
 
 func set_preset(name: String) -> void:
@@ -60,6 +68,7 @@ func set_preset(name: String) -> void:
 		return
 	for k in PRESETS[name]:
 		v[k] = PRESETS[name][k]
+	v.fx = FX_PRESETS[name]
 	preset = name
 
 ## A setting changed by hand: Custom, unless it happens to match a preset.
@@ -74,7 +83,7 @@ func which_preset() -> String:
 			if v.get(k) != PRESETS[name][k]:
 				same = false
 				break
-		if same:
+		if same and int(v.get("fx", 0)) == FX_PRESETS[name]:
 			return name
 	return "custom"
 
@@ -136,8 +145,10 @@ func apply(arena: Node3D) -> void:
 		for l in arena.house.find_children("*", "OmniLight3D", false, false):
 			l.shadow_enabled = sh > 0
 	if sh > 0:
-		RenderingServer.directional_shadow_atlas_set_size(4096 if sh == 2 else 2048, true)
-		RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM if sh == 2 else RenderingServer.SHADOW_QUALITY_HARD)
+		RenderingServer.directional_shadow_atlas_set_size([2048, 2048, 4096, 8192][sh], true)
+		RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_HARD,
+			RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM, RenderingServer.SHADOW_QUALITY_SOFT_ULTRA][sh])
+	var hi := int(v.get("fx", 0)) == 1
 	var env: Environment = arena.world_env
 	if env:
 		env.ssao_enabled = bool(v.ssao)
@@ -145,8 +156,17 @@ func apply(arena: Node3D) -> void:
 		env.glow_enabled = bool(v.glow)
 		env.sdfgi_enabled = bool(v.sdfgi) and forward
 		env.volumetric_fog_enabled = bool(v.fog) and forward
-		env.volumetric_fog_density = 0.008
+		env.volumetric_fog_density = 0.012 if hi else 0.008
 		env.volumetric_fog_albedo = Color(0.75, 0.7, 0.8)
+		env.ssr_enabled = hi and forward          # (reflections: the floor's sheen shows the fight)
+		env.ssr_max_steps = 96
+		env.ssr_fade_in = 0.2
+		env.ssr_depth_tolerance = 0.3
+	RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_ULTRA if hi else RenderingServer.ENV_SSAO_QUALITY_MEDIUM, true, 0.5, 2, 50.0, 300.0)
+	RenderingServer.environment_set_ssil_quality(RenderingServer.ENV_SSIL_QUALITY_ULTRA if hi else RenderingServer.ENV_SSIL_QUALITY_MEDIUM, true, 0.5, 4, 50.0, 300.0)
+	RenderingServer.environment_set_sdfgi_ray_count(RenderingServer.ENV_SDFGI_RAY_COUNT_128 if hi
+		else int(ProjectSettings.get_setting("rendering/global_illumination/sdfgi/probe_ray_count", 1)))
+	RenderingServer.environment_set_volumetric_fog_volume_size(128 if hi else 64, 128 if hi else 64)
 	VoxelMirror.enabled = bool(v.mirror)
 	VoxelPieces.MAX_PIECES = int(v.pieces)
 	VoxelArena.MAX_DEAD = int(v.corpses)

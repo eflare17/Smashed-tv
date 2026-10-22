@@ -79,6 +79,15 @@ func _process(dt: float) -> bool:
 			var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
 			check(arena.world_env.sdfgi_enabled == forward and arena.world_env.volumetric_fog_enabled == forward and vp.use_taa == forward,
 				"Ultra's SDFGI, fog and TAA: on with Forward+ only (here: %s)" % RenderingServer.get_current_rendering_method())
+			check(not arena.world_env.ssr_enabled and int(s.v.fx) == 0, "Ultra: no reflections, effects at Normal")
+			s.set_preset("extreme")
+			s.apply(arena)
+			check(arena.debris.MAX_LIE == 600000 and arena.debris.MAX == 25000 and VoxelPieces.MAX_PIECES == 90 and VoxelArena.MAX_DEAD == 120
+				and vp.msaa_3d == Viewport.MSAA_8X and is_equal_approx(vp.scaling_3d_scale, 1.5) and int(s.v.fx) == 1 and s.which_preset() == "extreme",
+				"Extreme: 600k lying, 25k flying, 90 pieces, 120 corpses, 8x MSAA, drawn at 150%, effects at their best")
+			check(arena.world_env.ssr_enabled == forward, "Extreme's reflections: on with Forward+ only")
+			s.set_value("fx", 0)
+			check(s.preset == "custom", "Extreme with the effects turned down: Custom")
 			# saved and loaded
 			s.set_preset("medium")
 			s.set_value("fov", 95.0)
@@ -144,20 +153,20 @@ func _process(dt: float) -> bool:
 		4:
 			if m._bench.has("i") and m._bench.i == 0 and m._bench.get("phase") == "measure" and not v0.has("mid"):
 				v0.mid = true
-				check(arena.chunk == 1 and VoxelArena.MAX_DEAD == 60 and arena.godmode and _alive() >= VoxelSettingsMenu.BENCH_ENEMIES - 2,
-					"Ultra put on to be measured: 24 enemies (%d), god mode" % _alive())
+				check(arena.chunk == 1 and VoxelArena.MAX_DEAD == 120 and arena.godmode and _alive() >= VoxelSettingsMenu.BENCH_ENEMIES - 2,
+					"Extreme put on to be measured first: 24 enemies (%d), god mode" % _alive())
 			if m._bench.is_empty():
 				var res: Dictionary = m.s.bench.get("results", {})
-				check(m.recommended == "ultra" and res.size() == 1 and res.has("ultra"), "a fast PC: Ultra holds 60, recommended, nothing lower tried")
+				check(m.recommended == "extreme" and res.size() == 1 and res.has("extreme"), "a fast PC: Extreme holds 60, recommended, nothing lower tried")
 				check(m.s.v == v0.saved and arena.godmode == v0.god and _alive() == int(v0.alive) and arena.chunk == 1,
 					"after: the settings, the enemies (%d), god mode as they were" % _alive())
-				check(m._panel.visible and m._result.text.contains("Recommended for this PC: ULTRA") and not m._apply_b.disabled, "the results shown, APPLY RECOMMENDED ready")
+				check(m._panel.visible and m._result.text.contains("Recommended for this PC: EXTREME") and not m._apply_b.disabled, "the results shown, APPLY RECOMMENDED ready")
 				m.apply_recommended()
-				check(m.s.preset == "ultra" and VoxelArena.MAX_DEAD == 60, "APPLY RECOMMENDED: Ultra on")
+				check(m.s.preset == "extreme" and VoxelArena.MAX_DEAD == 120, "APPLY RECOMMENDED: Extreme on")
 				m.s.set_preset("high")
 				m.s.apply(arena)
 				m.close()
-				# an impossible target: nothing holds it, all four tried, Low recommended
+				# an impossible target: nothing holds it, all five tried, Low recommended
 				m.target_ms = 0.0001
 				m.bench_start()
 				mark = t
@@ -166,12 +175,13 @@ func _process(dt: float) -> bool:
 				check(false, "the benchmark never finished")
 				step = 99
 		5:
-			if m._bench.has("i") and int(m._bench.i) == 3 and not v0.has("low_on"):
+			if m._bench.has("i") and int(m._bench.i) == 4 and not v0.has("low_on"):
 				v0.low_on = true
 				check(arena.chunk == 2 and VoxelArena.MAX_DEAD == 12, "Low, tried last: chunky cubes")
 			if m._bench.is_empty():
 				var res: Dictionary = m.s.bench.get("results", {})
-				check(m.recommended == "low" and res.size() == 4, "a slow PC: all four tried (%d), Low recommended" % res.size())
+				check(m.recommended == "low" and res.size() == 5, "a slow PC: all five tried (%d), Low recommended" % res.size())
+				check(m.bench_booms > 0, "the benchmark's grenades went off (%d)" % m.bench_booms)
 				check(m.s.preset == "high" and arena.chunk == 1 and VoxelArena.MAX_DEAD == 40, "High back on after")
 				# stopped part way: nothing changes
 				m.close()
@@ -180,7 +190,7 @@ func _process(dt: float) -> bool:
 				mark = t
 				step = 6
 			elif t - mark > 30.0:
-				check(false, "the benchmark (all four) never finished")
+				check(false, "the benchmark (all five) never finished")
 				step = 99
 		6:
 			if t - mark > 0.5:

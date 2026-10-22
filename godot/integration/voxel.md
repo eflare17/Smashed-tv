@@ -498,9 +498,18 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
   average and slowest-5% fps; APPLY RECOMMENDED puts it on. After, your settings, the enemies you had, where you
   stood and god mode are put back. Esc stops it part way (nothing changes).
 - A test's game (any test option, or the arena not the main scene) is left as it was (High, never saved); `--settings`
-  loads the file anyway, `--preset=low|medium|high|ultra` picks one.
-- Tests: `test/voxel/settings_test.gd` (25 checks), `test/voxel/settings_shots.gd` (`voxel_shots/settings_*.png`,
-  `preset_low.png`, `preset_ultra.png`).
+  loads the file anyway, `--preset=low|medium|high|ultra|extreme` picks one.
+- Tests: `test/voxel/settings_test.gd` (30 checks), `test/voxel/settings_shots.gd` (`voxel_shots/settings_*.png`,
+  `preset_low.png`, `preset_ultra.png`, `preset_extreme.png`).
+- **EXTREME** (Stage 10 of the overnight plan, 22 Oct: the owner's PC ran Ultra at 287 fps average): above Ultra.
+  Supersampled (150% render scale: drawn bigger, shrunk to the screen), 8x MSAA + TAA, the sharpest shadows (8192
+  atlas, soft ultra filter), SSAO / SSIL / SDFGI / fog at their best and screen-space reflections (the new **Effects
+  quality** row: Normal / Best; Best is only in Extreme, any preset with it turned up by hand is Custom), denser fog;
+  twice Ultra's gore: 600k cubes lying, 25k flying, 90 pieces, 120 corpses. The rows got 125% / 150% render scale,
+  Sharpest (8192) shadows and the new caps. The benchmark now starts at Extreme, and its fight also sets off a
+  grenade at the nearest enemy's feet every 2 s (`BENCH_BLAST`; the grenade launcher's own `explode`: craters, torn
+  limbs, cubes popped up, pieces tossed), so the flying and lying cubes and pieces fill up toward each preset's caps:
+  it measures the gore at full load, not only the drawing.
 
 ### The whole-game bug sweep (22 Oct, the owner: "check over the whole game for bugs")
 
