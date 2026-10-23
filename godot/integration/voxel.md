@@ -773,6 +773,48 @@ down or falls onto one of the spinning wheels and gets flung around")
   a pause ending the chain, a real headshot, someone else's kill counting for nothing, going down ending the spree,
   Off, a recording picked up); `test/voxel/announcer_shots.gd` (a MONSTER KILL, a HEADSHOT).
 
+### The mine in pixels (23 Oct, the owner: "the graphics from my sandy digging game, rebuilt in Godot, every pixel destructible, really satisfying when drilling"; the ship, everything kept, chunky pixels, the launcher)
+
+The mine's ground (below) was 1 m tiles; it's now Sand Miner's (the cabinet game in Smashed.html) pixel world:
+- **`addons/mine_sim`** (a GDExtension, C++, built for Linux and Windows by `src/build.sh` against godot-cpp 4.4; the
+  export puts `mine_sim.windows.x86_64.dll` next to the exe): `MineSim`, a grid of cells (8 a metre: 400 x 1248 with
+  6 m of sky), each a material with its own shade, drilling damage and the back wall behind it. Sand and loose rubble
+  fall and pile (sinking through water); water flows and pools; lava oozes, turns to obsidian against water and
+  cools to basalt when it's sat open to the air ~30 s; thin crumbly bits of dirt and clay with nothing under them
+  crumble off; chips knocked out fly and land as rubble. Only 32 x 32 chunks where something's moving are simulated
+  (a step ~0.2 ms). It paints a window of itself as Sand Miner did (eight shades a material, dark outlines on edges,
+  a soft shadow inside them, grass on top, rims round ore and rock, sparkles in silver, gold, opal and diamonds, cracks
+  spreading as the drill works it, a darker back wall where it's dug; what glows into a second picture) into RGBA8.
+- `mine_tiles.gd`: the materials (Sand Miner's palettes: coal, silver, gold and diamond's shades are its own) and back
+  walls, handed to MineSim. New: sand (lenses that pour when undermined), water (pockets), obsidian.
+- `mine_ground.gd`: makes the world from its seed through MineSim's primitives (zones with wavy edges, ore veins as
+  rough blobs, boulders, gas, sand, water, little caves, the mushroom caves and the cathedral with a domed giant
+  mushroom, the sewers' brick tubes, the bunker's slabs and lockers, the rivals' tunnels, timber, crates and shortcut,
+  lava pockets, the worm's cavern, bedrock, the pads); draws the window round the camera each frame onto a quad at
+  z = 0 in the mine's 3D world (lit by the lamps and the caves' glow; the ship, critters and decor just in front);
+  saves the cells (zstd-packed) to their own file beside the backpack's save (`<save>_mine.bin`).
+- **The drill** (`mine_ship.gd`): push into the ground (or hold S) and the bit works a ship-sized box in front of it
+  cell by cell (each cell's damage rising with the drill's power over its hardness, faster at the near side and a
+  little uneven so the face breaks up); the ship works its way in as the face gives (about 3 m/s through dirt with
+  the first drill, 1 m/s through stone). It steps up small ledges, shoves through loose rubble and sand, floats and
+  drags in water.
+- **The feel**: crunches (five variants, pitched by the rock, played as it chews), sparks off hard rock (stone and
+  harder), dust puffs, chips flying, the screen shaking with the rock's hardness, the bit glowing hot in hard rock, the
+  ship rattling; ore drilled out pops as nuggets that fly to the ship (their chime climbing for a run of them); a
+  split-second freeze on a rare find or a blast; a thump when you break through into open space.
+- **The launcher** (Sand Miner's): the drill fills a hopper with the dirt, clay and sand it brings up (600 cells of
+  each); right click (held) or F shoots 14 cells' worth where the mouse points (the arc shown while aiming), Q picks:
+  dirt lands loose and piles, sand pours, clay sticks where it hits (wall off lava, build a ledge, block a tunnel).
+  Shots squash rats, gum up cop drones (down they go) and knock the rival pods back. Its range is a mechanic upgrade
+  (Slingshot 10 m/s, Spring gun 13, Air cannon 17, Rail launcher 22).
+- The critters find their way on a half-metre map made from the cells; rats walk the pixel floors; the worm eats round
+  tunnels through anything but bedrock (chunks flying) and its hoard is a heap of loose diamonds that tumbles out.
+- Tests: `test/voxel/mine_test.gd` (48 checks, `--seed=N`: the zones, ore deeper, drilling down 5 m in 3 s through
+  dirt, a gold vein into nuggets, a full hold, the dirt in the hopper, a Mk III boulder, gas, lava running into a
+  tunnel, sand falling and piling, water pooling, a little lava settling, the trip, the cops, the crew, rats, the worm
+  and its hoard, dynamite's nuggets, a clay shot sticking to a wall, saving and loading the cells, the tow, coming back
+  up); `mine_shots.gd`, `mine_clip.gd`.
+
 ### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
 
 - **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back

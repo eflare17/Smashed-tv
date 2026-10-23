@@ -37,7 +37,7 @@ func sit(x: float, depth: float) -> void:
 	if g.count(at + Vector2(0, -0.52), Vector2(0.45, 0.06), -1) < 6:
 		g.set_box(at + Vector2(0, -0.6), Vector2(0.5, 0.12), MineTiles.STONE)
 	m.ship.place(at)
-	m._cam_at = Vector3(clampf(x, 10.5, MineGround.W - 10.5), at.y + 0.6, 12.0)
+	m._cam_at = Vector3(clampf(x, 9.0, MineGround.W - 9.0), at.y + 0.6, 10.0)
 	m.cam_hold = false
 
 func next(s: int) -> void:
@@ -79,7 +79,7 @@ func _process(dt: float) -> bool:
 			if e > 1.5:
 				g = m.ground
 				m.ship.place(Vector2(13.5, MineShip.HALF + 0.01))
-				m._cam_at = Vector3(14.5, 2.4, 12.0)
+				m._cam_at = Vector3(14.5, 2.4, 10.0)
 				next(4)
 		4:
 			if e > 0.8:
@@ -115,7 +115,7 @@ func _process(dt: float) -> bool:
 					var c: Array = g.features.caves[1]
 					var f := g._floor_spot(float(c[0]), float(c[1]) - float(c[3]), float(c[1]) + float(c[3]) + 1.0)
 					m.ship.place(f + Vector2(0, MineShip.HALF + 0.02))
-					m._cam_at = Vector3(clampf(f.x, 10.5, MineGround.W - 10.5), f.y + 1.0, 12.0)
+					m._cam_at = Vector3(clampf(f.x, 9.0, MineGround.W - 9.0), f.y + 1.0, 10.0)
 					m.trip = 0.7
 					m.cave_t = 30.0
 					next(9)
@@ -138,7 +138,7 @@ func _process(dt: float) -> bool:
 					var spots: Array = g.features.rival
 					var sp: Vector2 = spots[spots.size() / 4]
 					m.ship.place(sp + Vector2(0, -0.6))
-					m._cam_at = Vector3(clampf(sp.x, 10.5, MineGround.W - 10.5), sp.y + 0.4, 12.0)
+					m._cam_at = Vector3(clampf(sp.x, 9.0, MineGround.W - 9.0), sp.y + 0.4, 10.0)
 					m.critters.on_enter()
 					for i in m.critters.pods.size():
 						m.critters.pods[i].p = spots[(spots.size() / 4 + 6 + i * 4) % spots.size()]
@@ -153,7 +153,7 @@ func _process(dt: float) -> bool:
 					g.set_box(lp + Vector2(4.0, 0), Vector2(3.0, 0.5), MineTiles.AIR)
 					g.set_box(lp + Vector2(4.0, -0.62), Vector2(3.0, 0.12), MineTiles.STONE)
 					m.ship.place(lp + Vector2(6.0, -0.08))
-					m._cam_at = Vector3(clampf(lp.x + 3.0, 10.5, MineGround.W - 10.5), lp.y + 0.8, 12.0)
+					m._cam_at = Vector3(clampf(lp.x + 3.0, 9.0, MineGround.W - 9.0), lp.y + 0.8, 10.0)
 					m.hull = 9999.0
 					next(12)
 		12:

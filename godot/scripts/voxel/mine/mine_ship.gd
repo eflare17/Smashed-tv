@@ -94,7 +94,7 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 		dir = Vector2(0, -1)
 	elif absf(ix) > 0.5:
 		var s := 1.0 if ix > 0.0 else -1.0
-		if ground.count(p + Vector2(s * (HALF + 0.07), 0.04), Vector2(0.06, HALF - 0.1), -1) > 0:
+		if ground.count(p + Vector2(s * (HALF + 0.07), 0.0), Vector2(0.06, HALF - 0.01), -1) > 0:
 			dir = Vector2(s, 0)
 	drilling = dir != Vector2.ZERO
 	drill_dir = dir if drilling else drill_dir

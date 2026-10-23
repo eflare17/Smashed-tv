@@ -25,6 +25,8 @@ const BUMP_HURT := 2.0
 const TRIP_UP := 1.0 / 10.0     # the trip coming on a second in a mushroom cave ...
 const TRIP_DOWN := 1.0 / 18.0   # ... and wearing off
 const SAVE_EVERY := 8.0
+const CAM_Z := 10.0             # the camera's distance (Sand Miner's chunky pixels: ~7 screen pixels a cell at 720p)
+const CAM_EDGE := 9.0           # (it stops short of the world's sides)
 const AMMO_ORDER := ["dirt", "clay", "sand"]
 const AMMO_MAT := {"dirt": MineTiles.DIRT, "clay": MineTiles.CLAY, "sand": MineTiles.SAND}
 const AMMO_NAME := {"dirt": "Dirt", "clay": "Clay (sticks)", "sand": "Sand"}
@@ -136,7 +138,7 @@ var _lava_t := 0.0
 var _sparks: Array = []
 var _was_lava := false
 var _boom_light: OmniLight3D
-var _cam_at := Vector3(25, 0, 12)
+var _cam_at := Vector3(25, 0, 10)
 var _soft_dirty := false
 var last_hurt := ""             # what hurt the ship last ("fall", "lava", "rats" ...)
 var _resume := Vector2.INF      # where the ship was left underground (a quit down there): back there next time
@@ -203,7 +205,7 @@ func _build() -> void:
 	cam = Camera3D.new()
 	cam.fov = 55.0
 	cam.current = true
-	cam.position = Vector3(25, 0, 12)
+	cam.position = Vector3(25, 0, CAM_Z)
 	world.add_child(cam)
 	env = Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -733,7 +735,7 @@ func _view(dt: float) -> void:
 	env.ambient_light_energy = lerpf(lerpf(0.24, 0.06, deep), 0.8, sky)
 	env.ambient_light_color = Color(0.7, 0.75, 0.85).lerp(Color(0.5, 0.45, 0.6), deep)
 	env.background_color = Color8(120, 170, 220).lerp(Color(0, 0, 0), 1.0 - sky)
-	var want := Vector3(clampf(ship.p.x, 10.5, MineGround.W - 10.5), ship.p.y + 0.6 + sky * 1.5, 12.0)
+	var want := Vector3(clampf(ship.p.x, CAM_EDGE, MineGround.W - CAM_EDGE), ship.p.y + 0.6 + sky * 1.5, CAM_Z)
 	if not cam_hold:
 		_cam_at = _cam_at.lerp(want, minf(1.0, dt * 6.0)) if _cam_at.distance_to(want) < 12.0 else want
 		_shake = maxf(0.0, _shake - dt * 1.8)
