@@ -89,10 +89,17 @@ static func _hairline(p: Vector3) -> float:
 	return back
 
 static func _hair_sdf(p: Vector3) -> float:
-	var outer := VoxelSculpt.smin(VoxelSculpt.ellipsoid(p, Vector3(0.5, 131.5, 2.8), Vector3(13.6, 14.8, 14.6)),
-		VoxelSculpt.ellipsoid(p, Vector3(0.0, 139.0, 7.5), Vector3(10.0, 5.0, 8.0)), 3.0)    # a little fuller over the front
-	var d := maxf(outer, _hairline(p) - p.y)
-	d = maxf(d, -_skin_sdf(p))                        # (on the head, not in it)
+	var skin := _skin_sdf(p)
+	# a layer on his head: short at the back and sides, thicker on top (most at the front, swept across to his right),
+	# the very top flattened off; never sticking out past his forehead
+	var top_k := smoothstep(134.0, 141.5, p.y)
+	var thick := 1.1 + top_k * (1.9 + 1.0 * smoothstep(-6.0, 12.0, p.z) + 0.8 * smoothstep(4.0, -8.0, p.x))
+	var hl := _hairline(p)
+	thick *= 0.3 + 0.7 * smoothstep(hl, hl + 3.5, p.y)          # (thin at its edge: grows out of the skin, no ledge)
+	var d := skin - thick
+	d = VoxelSculpt.smax(d, p.y - 145.6, 2.0)
+	d = maxf(d, _hairline(p) - p.y)
+	d = maxf(d, -skin)                               # (on the head, not in it)
 	# the parting: a groove on his left, from the front back over the top
 	if p.y > 137.0 and p.z > -6.0:
 		d = maxf(d, -(absf(p.x - 6.0) - 0.45))
@@ -100,11 +107,11 @@ static func _hair_sdf(p: Vector3) -> float:
 
 static func _hair_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var t := VoxelSculpt.lit(n, ao, 0.5)
-	# combed: lines running front to back on top (away from the parting at the sides)
-	var comb := VoxelSculpt.hash3(p.x * 1.0 + (p.y - 130.0) * 0.35, 0.0, 0.0)
-	var clump := VoxelSculpt.noise3(Vector3(p.x * 1.6, p.y * 0.8, p.z * 0.35), 2.5)
+	# combed: across to his right on top (away from the parting), back along the sides
+	var comb := VoxelSculpt.hash3(p.z * 1.0 + p.y * 0.3, 0.0, 0.0) if p.y > 136.5 else VoxelSculpt.hash3(p.y * 1.0 + p.x * 0.3, 7.0, 0.0)
+	var clump := VoxelSculpt.noise3(Vector3(p.x * 0.4, p.y * 0.8, p.z * 1.4), 2.5) if p.y > 136.5 else VoxelSculpt.noise3(Vector3(p.x * 1.4, p.y * 0.8, p.z * 0.4), 2.5)
 	var c := VoxelSculpt.ramp(HAIR, 0.1 + 0.55 * t + 0.15 * comb + 0.3 * (clump - 0.5))
-	if absf(p.x - 6.0) < 1.8 and p.y > 136.0:
+	if absf(p.x - 6.0) < 1.6 and p.y > 136.0:
 		c = c.darkened(0.25)                          # (the parting's shadow)
 	return c
 
