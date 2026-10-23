@@ -114,14 +114,14 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 	var target := ix * (DRIVE if grounded else FLY)
 	v.x = move_toward(v.x, target, (ACC_G if grounded else ACC_A) * dt)
 	if up:
-		v.y += THRUST * dt
+		v.y += THRUST * MineShop.LIFT_PUSH[lift_level] * dt
 		thrusting = true
 	# water: it floats and drags; loose rubble and sand drag it as it's shoved through
 	wet = clampf(float(ground.count(p, Vector2(HALF + 0.1, HALF + 0.1), -5)) / 50.0, 0.0, 1.0)
 	v.y -= GRAV * grav_k * (1.0 - 0.7 * wet) * dt
 	if wet > 0.0:
 		v *= 1.0 - minf(0.5, 2.5 * wet * dt)
-	v.y = clampf(v.y, -MAX_FALL * (0.5 + 0.5 * grav_k), MAX_UP)
+	v.y = clampf(v.y, -MAX_FALL * (0.5 + 0.5 * grav_k), max_up)
 	driving = grounded and absf(ix) > 0.1
 	var hx := _move_x(v.x * dt)
 	var falling := v.y < 0.0
@@ -230,6 +230,7 @@ static var _shader: Shader
 var cargo_full := 0.0           # (the mine sets it) how full the cargo bay is: the pod bulges with ore
 var hose_out := 0.0             # (the mine sets it) the hose run out of its back: unloading, sucking water up
 var lift_level := 0             # the lift's upgrade: 0 propeller, 1 big blades, 2 boosters, 3 mega booster
+var max_up := MAX_UP            # (its climbing speed: the lift's)
 var _upg := {}
 var _pivot: Node3D              # the whole ship's picture: turned to face, tipped nose-down to drill
 var _layers := {}               # name -> MeshInstance3D
@@ -290,6 +291,8 @@ func _pose(dt: float) -> void:
 	var lean := 0.0
 	if not grounded and _pitch < 0.1:
 		lean = -v.x * 0.035 + (0.12 * tsign if thrusting else 0.0)
+		if thrusting and lift_level == 0:
+			lean += sin(_rotor * 0.35) * 0.06     # (the starter propeller: a bit of a wobble)
 	_squash = 0.0 if snap else move_toward(_squash, 0.0, dt * 2.5)
 	_pivot.scale = Vector3(maxf(0.06, absf(_turn)) * tsign * (1.0 + _squash), 1.0 - _squash, 1.0)
 	_pivot.rotation.z = -_pitch * tsign + lean
@@ -346,7 +349,8 @@ func build(upg: Dictionary) -> void:
 	var ll := int(upg.get("lights", 0))
 	drill_level = dl
 	drill_power = MineShop.k("drill", dl)
-	lift_level = int(upg.get("lift", 0))
+	lift_level = clampi(int(upg.get("lift", 0)), 0, 3)
+	max_up = MineShop.k("lift", lift_level)
 	if _pivot == null:
 		_pivot = Node3D.new()
 		add_child(_pivot)

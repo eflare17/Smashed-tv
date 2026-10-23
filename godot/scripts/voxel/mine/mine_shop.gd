@@ -1,7 +1,7 @@
 class_name MineShop
 extends RefCounted
 ## The dig mode's money (the owner, 23 Oct): what the cargo sells for at the trader up top (each price wobbling a
-## little day to day, one thing in demand each day), the fuel's price a litre, the mechanic's five upgrades (four
+## little day to day, one thing in demand each day), the fuel's price a litre, the mechanic's upgrades (four
 ## levels each, each changing how the ship looks), the supplies (dynamite, repair kits, the emergency teleport home)
 ## and a fresh claim (new ground). The cash is the arena's own (arena.cash): one wallet. Owned by the voxel session.
 
@@ -37,8 +37,14 @@ const UPGRADES := {
 		"names": ["Torch", "Twin lamps", "Floodlights", "Stadium"]},
 	"launcher": {"name": "Launcher", "k": [10.0, 13.0, 17.0, 22.0], "cost": [150, 500, 1400], "unit": " m/s",
 		"names": ["Slingshot", "Spring gun", "Air cannon", "Rail launcher"]},
+	# (the owner, 24 Oct: "start off with propeller blades ... bigger blades, and then boosters and stronger boosters")
+	"lift": {"name": "Lift", "k": [5.0, 7.0, 9.5, 13.0], "cost": [180, 650, 1900], "unit": " m/s climb",
+		"names": ["Propeller", "Big blades", "Boosters", "Mega booster"]},
 }
-const UPGRADE_ORDER := ["drill", "tank", "cargo", "hull", "lights", "launcher"]
+const UPGRADE_ORDER := ["drill", "lift", "tank", "cargo", "hull", "lights", "launcher"]
+## The lift's push (x the ship's THRUST) and its thirst (x the thrusters' fuel), level by level
+const LIFT_PUSH := [0.78, 1.0, 1.35, 1.8]
+const LIFT_FUEL := [0.8, 1.0, 1.4, 1.8]
 
 ## The supplies: [id, name, cost, the most you can carry]
 const ITEMS := {

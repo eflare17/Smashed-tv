@@ -5,7 +5,8 @@ writes godot/assets/voxel/sound/: mine_drill (the drill's grinding whine, looped
 rock is), mine_engine (the ship's motor and thrusters, looped), mine_clink (ore into the hold), mine_hit (the hull
 taking a knock), mine_alarm (the low-fuel beeps), mine_register (the trader's till: ka-ching), mine_boom (dynamite, a
 gas pocket), mine_siren (the cops, looped), mine_rat (a squeak), mine_roar (the rock worm), mine_door (the roller door
-rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss), mine_crunch_0..4\n(the drill biting off rock, played as it chews). Owned by the voxel
+rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss), mine_crunch_0..4\n(the drill biting off rock, played as it chews), mine_prop and mine_booster (the lift, looped), mine_squirt and
+mine_clunk (unloading into the ore box), mine_suck and mine_spray (the water hose, looped), mine_steam (water on lava). Owned by the voxel
 session."""
 
 
@@ -86,6 +87,32 @@ def build():
         pops = mix(*[at(click(0.012, 1200 + 400 * ((v + k) % 3), 0.003) * rng.uniform(0.4, 1.0), rng.uniform(0.0, 0.09)) for k in range(4)])
         thud = lowpass(noise(0.16), 220) * env(n, 0.001, 0.04, 6) * 1.6
         save("mine_crunch_%d" % v, mix(grit, pops * 0.8, thud), peak=0.7)
+
+    # the propeller: whup-whup-whup, blade passes chopping a breathy roar (looped)
+    secs = 1.0
+    tt = t(secs)
+    chop = 0.35 + 0.65 * np.abs(np.sin(np.pi * 12 * tt)) ** 3
+    save("mine_prop", mix(lowpass(noise(secs), 500) * chop * 1.8, band(noise(secs), 300, 1500) * chop * 0.4,
+                          lowpass(tone(48, secs, "square"), 200) * 0.3), peak=0.55, loop=True)
+    # the boosters: a rocket's roar, crackling (looped)
+    crack = mix(*[at(click(0.01, rng.uniform(800, 2400), 0.002) * rng.uniform(0.2, 0.7), rng.uniform(0, 0.97), secs) for k in range(40)])
+    save("mine_booster", mix(lowpass(noise(secs), 700) * 2.0, band(noise(secs), 1000, 6000) * 0.5, crack * 0.6), peak=0.65, loop=True)
+    # the hose squirting ore: a pneumatic shoop
+    n = int(0.22 * SR)
+    shoop = band(noise(0.22), 500, 3000) * env(n, 0.01, 0.12, 3) + tone(np.linspace(500, 180, n), 0.22) * env(n, 0.005, 0.1, 4) * 0.4
+    save("mine_squirt", shoop, peak=0.6)
+    # a nugget landing in the box: a hollow steel clunk
+    n = int(0.3 * SR)
+    save("mine_clunk", mix(metal([210, 470, 760], 0.3, 0.12) * 0.8, lowpass(noise(0.3), 300) * env(n, 0.001, 0.05, 6) * 1.5), peak=0.75)
+    # the hose sucking water up: a gurgling slurp (looped)
+    gurg = band(noise(secs), 200, 1200) * (0.5 + 0.5 * np.abs(np.sin(2 * np.pi * 7 * tt + 2 * np.sin(2 * np.pi * 3 * tt))))
+    save("mine_suck", mix(gurg * 1.2, lowpass(noise(secs), 150) * 0.8), peak=0.55, loop=True)
+    # spraying water: a hiss of spray (looped)
+    save("mine_spray", mix(band(noise(secs), 2000, 9000) * 0.8, band(noise(secs), 400, 1500) * 0.3), peak=0.45, loop=True)
+    # water on lava: a big steam hiss going to stone
+    n = int(1.2 * SR)
+    steam = band(noise(1.2), 1200, 8000) * env(n, 0.005, 0.9, 2)
+    save("mine_steam", mix(steam, at(click(0.04, 400, 0.02), 0.0) * 0.8, lowpass(noise(1.2), 200) * env(n, 0.005, 0.3, 4)), peak=0.65)
 
 
 if __name__ == "__main__":

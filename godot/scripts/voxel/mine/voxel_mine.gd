@@ -107,7 +107,7 @@ var hud: MineHud
 var auto = null                 # (tests) a Dictionary of held keys {x, up, down} in place of the keyboard
 var cam_hold := false           # (tests, pictures) the camera left where it's put
 # what's kept (saved)
-var upg := {"drill": 0, "tank": 0, "cargo": 0, "hull": 0, "lights": 0, "launcher": 0}
+var upg := {"drill": 0, "tank": 0, "cargo": 0, "hull": 0, "lights": 0, "launcher": 0, "lift": 0}
 var fuel := 12.0
 var hull := 30.0
 var cargo := {}
@@ -455,6 +455,8 @@ func leave() -> void:
 	sound.play("mine_door", Vector3.INF, -2.0, 0.9)
 	sound.stop("mine_drill")
 	sound.stop("mine_engine")
+	sound.stop("mine_prop")
+	sound.stop("mine_booster")
 	sound.stop("mine_siren")
 	critters.stand_down()
 	arena.get_viewport().disable_3d = false
@@ -658,7 +660,7 @@ func _process(dt: float) -> void:
 	# fuel
 	var use := FUEL_IDLE
 	if ship.thrusting:
-		use += FUEL_THRUST
+		use += FUEL_THRUST * MineShop.LIFT_FUEL[clampi(int(upg.lift), 0, 3)]
 	if ship.drilling:
 		use += FUEL_DRILL
 	if ship.driving:
@@ -729,7 +731,17 @@ func _sounds(dt: float, was_drilling: bool) -> void:
 	if _going == -1:
 		return
 	var thrust := ship.thrusting
-	sound.loop("mine_engine", "mine_engine", null, -6.0 if thrust else (-12.0 if ship.driving else -17.0), 1.25 if thrust else (1.0 if ship.driving else 0.8))
+	sound.loop("mine_engine", "mine_engine", null, -10.0 if thrust else (-12.0 if ship.driving else -17.0), 1.1 if thrust else (1.0 if ship.driving else 0.8))
+	# the lift: the propeller's whup-whup (faster with the big blades), the boosters' roar (deeper for the mega)
+	var lv := clampi(int(upg.lift), 0, 3)
+	var lift_snd := "mine_prop" if lv < 2 else "mine_booster"
+	var other := "mine_booster" if lv < 2 else "mine_prop"
+	if sound.playing(other):
+		sound.stop(other)
+	if thrust:
+		sound.loop(lift_snd, lift_snd, null, -5.0 if lv < 2 else -3.0, [0.9, 1.25, 1.15, 0.85][lv])
+	elif sound.playing(lift_snd):
+		sound.stop(lift_snd)
 	if ship.drilling:
 		# the whine's pitch: lower and harsher the harder the rock (for the drill you've got)
 		var k := ship.hardness / maxf(0.5, ship.drill_power)
@@ -1364,7 +1376,7 @@ func _mechanic_menu() -> void:
 			rows.append(["%s: %s (the best there is)" % [u.name, u.names[lv]], false, func(): pass])
 		else:
 			var kv := MineShop.k(t, lv + 1)
-			var val := ("%.1f" % kv) if t == "drill" else str(int(kv))
+			var val := str(int(kv)) if is_equal_approx(kv, roundf(kv)) and t != "drill" else ("%.1f" % kv)
 			rows.append(["%s: %s -> %s (%s%s): $%d" % [u.name, u.names[lv], u.names[lv + 1], val, u.unit, c], arena.cash >= c, func(): buy_upgrade(t)])
 	hud.open_menu("MECHANIC", rows)
 

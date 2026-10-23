@@ -381,6 +381,21 @@ func _process(dt: float) -> bool:
 				check(d2.has("ship") and absf(float(d2.ship[1]) - m.ship.p.y) < 0.01, "where the ship was left underground is saved")
 				check(d2.has("upg") and d2.has("cargo") and d2.has("ammo"), "saved mid-drill: everything there, not an empty save")
 				check(not m._ground_dirty and m._ground_mem == g.save_bytes(), "and the ground dug just now went with it")
+				# the lift: the propeller climbs at 5 m/s; two upgrades on (boosters) it's 9.5
+				var climb := func() -> float:
+					m.ship.place(Vector2(14.0, 1.0))
+					for i in 60:
+						m.ship.step(1.0 / 60.0, 0.0, true, false, true)
+					return m.ship.v.y
+				var slow: float = climb.call()
+				arena.cash = maxi(arena.cash, 5000)
+				m.buy_upgrade("lift")
+				m.buy_upgrade("lift")
+				m.hud.close_menu()
+				var fast: float = climb.call()
+				check(absf(slow - 5.0) < 0.2 and absf(fast - 9.5) < 0.2 and m.ship.lift_level == 2 and int(m.upg.lift) == 2,
+					"the lift: propeller climbs %.1f m/s, boosters %.1f" % [slow, fast])
+				sit(20.0, 60.0)
 				m.leave()
 				next(20)
 		20:
