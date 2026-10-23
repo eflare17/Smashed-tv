@@ -8,6 +8,9 @@ extends Node3D
 ##   drying darker over a minute; on a wall or a pillar (shot through, or thrown) a splat stays there;
 ## - a hit near your eye in first person splashes your view: drops that run down and fade;
 ## - a drip into a pool, a spurt's pulse, a splat: little wet sounds.
+## Stage 2: whoever walks through a fresh pool leaves bloody footprints for a few steps (fainter each); a body crawling
+## on its arms leaves a smear behind it; blood runs down a body from each hole and stump (a decal growing down it); a
+## melee weapon gets bloodier with every hit (a coat over its view model, wet and shiny, drying dark) and drips.
 ## The settings' Gore (level): 0 Normal (holes drip a little, small pools, no spurts or screen), 1 Ultra, 2 Extreme
 ## (more of everything, for big PCs). Owned by the voxel session.
 
@@ -42,7 +45,19 @@ var _sdrops: Array = []         # screen drops: {p: Vector2, r, a, v}
 var _sound_t := 0.0
 var _t := 0.0
 var cost_us := 0                # (the last frame's time in here: the stress test)
-var stats := {"drops": 0, "pooled": 0, "splatted": 0, "screen": 0, "spurts": 0}
+var stats := {"drops": 0, "pooled": 0, "splatted": 0, "screen": 0, "spurts": 0, "prints": 0, "smears": 0, "runs": 0}
+
+const PRINTS := [60, 300, 700]  # per level: footprints and smears kept (each)
+const RUNS := [0, 24, 48]       # per level: runs down bodies kept
+const STEP := 0.55              # metres a step
+const WET_STEPS := 10           # steps a fresh pool leaves on your feet
+var _prints := {}               # rings (_ring): footprints, smears
+var _smears := {}
+var _walk := {}                 # who's walking (instance id) -> {p, d: since the last step, foot: -1/1, wet: steps left}
+var runs: Array = []            # {d: Decal, len, w, t, top, down, out (the part's space)}
+var _weapons: Array = []        # [{w: VoxelMelee, mat: ShaderMaterial, wet}]
+static var _run_tex: Texture2D
+static var _coat_shader: Shader
 
 func setup(arena_: Node3D) -> void:
 	arena = arena_
@@ -77,6 +92,22 @@ func setup(arena_: Node3D) -> void:
 	_screen.draw.connect(_draw_screen)
 	layer.add_child(_screen)
 	VoxelBody.on_wound = wound
+	var prt := StandardMaterial3D.new()
+	prt.vertex_color_use_as_albedo = true
+	prt.vertex_color_is_srgb = true
+	prt.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	prt.roughness = 0.35
+	var st := SurfaceTool.new()
+	var heel := BoxMesh.new()
+	heel.size = Vector3(0.09, 0.002, 0.095)
+	var sole := BoxMesh.new()
+	sole.size = Vector3(0.115, 0.002, 0.155)
+	st.append_from(heel, 0, Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.09)))
+	st.append_from(sole, 0, Transform3D(Basis.IDENTITY, Vector3(0.007, 0, -0.055)))
+	_prints = _ring(st.commit(), prt)
+	var smear := BoxMesh.new()
+	smear.size = Vector3(1.0, 0.002, 1.0)
+	_smears = _ring(smear, prt)
 
 func _mm(mesh: Mesh, mat: Material, colors: bool) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
@@ -95,12 +126,12 @@ func _cap(i: int) -> int:
 	return int(CAPS[clampi(level, 0, 2)][i])
 
 ## A body bled (VoxelBody.on_wound): where (world), how hard, which way out (world), "hole" or "stump", riding node.
-func wound(node: Node3D, at: Vector3, dir: Vector3, strength: float, kind: String) -> void:
+func wound(node: Node3D, at: Vector3, dir: Vector3, strength: float, kind: String, frame = null) -> void:
 	if not is_instance_valid(node):
 		return
 	if kind == "stump" and level == 0:
 		kind = "hole"
-	var inv := node.global_transform.affine_inverse()
+	var inv: Transform3D = (frame as Transform3D if frame != null else node.global_transform).affine_inverse()
 	var local := inv * at
 	var again := false
 	for w in wounds:
@@ -115,6 +146,7 @@ func wound(node: Node3D, at: Vector3, dir: Vector3, strength: float, kind: Strin
 			"next": 0.0})
 		while wounds.size() > _cap(3):
 			wounds.pop_front()
+		_run(node, at, dir, inv)
 	# the first gush, and a splash on your view if it was right in your face
 	var n := int(clampf(strength * (8.0 if kind == "stump" else 4.0), 2.0, 24.0) * (0.5 if level == 0 else 1.0) * (0.2 if again else 1.0))
 	for k in n:
@@ -192,6 +224,9 @@ func _process(dt: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	if _ring_level != level:
 		_rings()
+	_walkers_step()
+	_runs_step(dt)
+	_weapons_step(dt)
 	var dry := int(_t) != int(_t + dt)          # (pools and splats a shade darker once a second, all together)
 	_t += dt
 	if dry:
@@ -377,6 +412,12 @@ func _rings() -> void:
 	_pool_next = 0
 	_splat_next = 0
 	_grid.clear()
+	_ring_size(_prints, PRINTS[clampi(level, 0, 2)])
+	_ring_size(_smears, PRINTS[clampi(level, 0, 2)])
+	for r in runs:
+		if is_instance_valid(r.d):
+			r.d.queue_free()
+	runs.clear()
 	var none := Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO), Vector3(0, -50, 0))
 	for mm: MultiMesh in [_pools.multimesh, _splats.multimesh]:
 		mm.instance_count = pools.size() if mm == _pools.multimesh else splats.size()
@@ -442,3 +483,261 @@ func clear() -> void:
 	_drops.multimesh.instance_count = 0
 	_rings()
 	_sdrops.clear()
+
+# ---------------------------------------------------------------- rings: a MultiMesh of flat marks, the oldest reused
+
+func _ring(mesh: Mesh, mat: Material) -> Dictionary:
+	return {"mi": _mm(mesh, mat, true), "next": 0, "n": 0, "cap": 0}
+
+func _ring_size(r: Dictionary, cap: int) -> void:
+	r.cap = cap
+	r.next = 0
+	r.n = 0
+	var mm: MultiMesh = r.mi.multimesh
+	mm.instance_count = cap
+	var none := Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO), Vector3(0, -50, 0))
+	for k in cap:
+		mm.set_instance_transform(k, none)
+
+func _ring_put(r: Dictionary, xf: Transform3D, col: Color) -> void:
+	if int(r.cap) == 0:
+		return
+	var mm: MultiMesh = r.mi.multimesh
+	mm.set_instance_transform(r.next, xf)
+	mm.set_instance_color(r.next, col)
+	r.next = (int(r.next) + 1) % int(r.cap)
+	r.n = mini(int(r.n) + 1, int(r.cap))
+
+# ---------------------------------------------------------------- footprints, crawling smears
+
+# how fresh the pool under p is (1 just spilt .. 0.3 at 40 s; 0: no pool, or dry)
+func _wet_at(p: Vector3) -> float:
+	var c := Vector2i(floori(p.x / 0.6), floori(p.z / 0.6))
+	var best := 0.0
+	for dz in range(-1, 2):
+		for dx in range(-1, 2):
+			var near = _grid.get(c + Vector2i(dx, dz))
+			if near == null:
+				continue
+			for pl: Dictionary in near:
+				var age := _t - float(pl.b)
+				if age < 40.0 and Vector2(pl.p.x - p.x, pl.p.z - p.z).length() < float(pl.r) * 0.95 + 0.04:
+					best = maxf(best, clampf(1.0 - age / 40.0, 0.3, 1.0))
+	return best
+
+func _walkers_step() -> void:
+	if arena == null:
+		return
+	var who := []
+	if arena.player:
+		who.append(arena.player)
+	if arena.net and arena.net.other and is_instance_valid(arena.net.other.avatar):
+		who.append(arena.net.other.avatar)
+	for b in arena.bodies:
+		if is_instance_valid(b) and b.alive and not b.fragment and b.visible:
+			who.append(b)
+	var seen := {}
+	for n: Node3D in who:
+		var id := n.get_instance_id()
+		seen[id] = true
+		var p := n.global_position
+		var w = _walk.get(id)
+		if w == null:
+			_walk[id] = {"p": p, "d": 0.0, "foot": 1.0, "wet": 0}
+			continue
+		var mv := Vector2(p.x - w.p.x, p.z - w.p.z)
+		var dist := mv.length()
+		var floor_y := _floor_at(p) if p.z > 22.0 else 0.0
+		w.p = p
+		if dist > 2.0 or absf(p.y - floor_y) > 0.15:
+			continue                                     # (in the air, up on something, or put somewhere else)
+		var wet := _wet_at(p)
+		if wet > 0.0:
+			if int(w.wet) == 0 and n == arena.player and arena.sound and _sound_t <= 0.0:
+				_sound_t = 0.1
+				arena.sound.play("hit_flesh", p, -20.0, randf_range(1.7, 2.0))      # (a squelch: you've trodden in it)
+			w.wet = maxi(int(w.wet), int(WET_STEPS * wet) + 2)
+		if dist < 0.0005:
+			continue
+		w.d = float(w.d) + dist
+		var head := Vector3(mv.x, 0.0, mv.y).normalized()
+		var crawl := n is VoxelBody and (n as VoxelBody).legs_lost() >= 2
+		if crawl:
+			if float(w.d) >= 0.1:
+				w.d = 0.0
+				var bs := Basis.looking_at(head, Vector3.UP) * Basis.from_scale(Vector3(randf_range(0.2, 0.3), 1.0, 0.16))
+				_ring_put(_smears, Transform3D(bs, Vector3(p.x, floor_y + 0.0034, p.z)), Color(0.32, 0.01, 0.02, randf_range(0.6, 0.85)))
+				stats.smears += 1
+		elif float(w.d) >= STEP:
+			w.d = 0.0
+			w.foot = -float(w.foot)
+			if int(w.wet) > 0:
+				var k := float(w.wet) / float(WET_STEPS)
+				var side := Vector3(-head.z, 0.0, head.x) * 0.1 * float(w.foot)
+				var bs := Basis.looking_at(head, Vector3.UP).rotated(Vector3.UP, randf_range(-0.12, 0.12))
+				var at := Vector3(p.x, floor_y + 0.0038, p.z) + side
+				_ring_put(_prints, Transform3D(bs, at), Color(0.3, 0.012, 0.018, clampf(0.25 + k * 0.7, 0.3, 0.95)))
+				w.wet = int(w.wet) - 1
+				stats.prints += 1
+	if Engine.get_process_frames() % 120 == 0:
+		for id in _walk.keys():
+			if not seen.has(id):
+				_walk.erase(id)
+
+# ---------------------------------------------------------------- runs down bodies (decals)
+
+func _run(node: Node3D, at: Vector3, dir: Vector3, inv: Transform3D) -> void:
+	if RUNS[clampi(level, 0, 2)] == 0 or node is RigidBody3D:
+		return
+	var down := Vector3.DOWN - dir * Vector3.DOWN.dot(dir)
+	if down.length() < 0.25:
+		return                                           # (a hole facing straight up or down: nothing to run down)
+	down = down.normalized()
+	var d := Decal.new()
+	d.texture_albedo = _run_texture()
+	d.normal_fade = 0.3
+	d.upper_fade = 0.1
+	d.lower_fade = 0.1
+	d.distance_fade_enabled = true
+	d.distance_fade_begin = 20.0
+	d.distance_fade_length = 6.0
+	node.add_child(d)
+	var r := {"d": d, "len": randf_range(0.18, 0.4), "w": randf_range(0.09, 0.14), "t": 0.0, "top": inv * at,
+		"down": (inv.basis * down).normalized(), "out": (inv.basis * dir).normalized()}
+	runs.append(r)
+	stats.runs += 1
+	while runs.size() > RUNS[clampi(level, 0, 2)]:
+		var o: Dictionary = runs.pop_front()
+		if is_instance_valid(o.d):
+			o.d.queue_free()
+	_run_place(r, 0.02)
+
+func _run_place(r: Dictionary, l: float) -> void:
+	var out: Vector3 = r.out
+	var down: Vector3 = r.down
+	# Y out of the body (a decal projects along -Y), Z down it (the texture's top at the wound)
+	var b := Basis(out.cross(down).normalized(), out, down)
+	r.d.transform = Transform3D(b, (r.top as Vector3) + down * l * 0.5)
+	r.d.size = Vector3(float(r.w), 0.16, l)
+
+func _runs_step(dt: float) -> void:
+	for i in range(runs.size() - 1, -1, -1):
+		var r: Dictionary = runs[i]
+		if not is_instance_valid(r.d):
+			runs.remove_at(i)
+			continue
+		if float(r.t) >= 5.0:
+			continue
+		r.t = float(r.t) + dt
+		var k := clampf(float(r.t) / 5.0, 0.0, 1.0)
+		_run_place(r, maxf(0.02, float(r.len) * (1.0 - (1.0 - k) * (1.0 - k))))     # (fast at first, slowing)
+
+# the run's picture: a blot at the top, streaks down from it of different lengths, each ending in a fat drip
+static func _run_texture() -> Texture2D:
+	if _run_tex:
+		return _run_tex
+	var w := 64
+	var h := 256
+	var a := PackedFloat32Array()
+	a.resize(w * h)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 23
+	for y in 44:
+		for x in w:
+			var e := Vector2((x - 32.0) / 28.0, (y - 16.0) / 15.0).length() + sin(x * 0.7) * 0.06 + cos(y * 0.9) * 0.05
+			a[y * w + x] = clampf((1.0 - e) * 6.0, 0.0, 1.0)
+	for s in 6:
+		var cx := rng.randf_range(12.0, 52.0)
+		var sw := rng.randf_range(2.0, 5.0)
+		var ln := rng.randf_range(70.0, 248.0)
+		var ph := rng.randf() * TAU
+		for y in range(12, int(ln)):
+			var x0 := cx + sin(y * 0.04 + ph) * 2.0
+			var ww := sw * (1.0 - 0.3 * float(y) / ln)
+			for x in range(maxi(0, int(x0 - ww - 2)), mini(w, int(x0 + ww + 3))):
+				a[y * w + x] = maxf(a[y * w + x], clampf(ww - absf(x - x0) + 0.5, 0.0, 1.0))
+		var br := sw * 1.5
+		for y in range(maxi(0, int(ln - br - 2)), mini(h, int(ln + br + 2))):
+			for x in range(maxi(0, int(cx - br - 2)), mini(w, int(cx + br + 3))):
+				var x0 := cx + sin(y * 0.04 + ph) * 2.0
+				var d := Vector2(x - x0, y - ln).length()
+				a[y * w + x] = maxf(a[y * w + x], clampf(br - d + 0.5, 0.0, 1.0))
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var v := a[y * w + x]
+			img.set_pixel(x, y, Color(0.3 + 0.08 * v, 0.008, 0.016, v))
+	img.generate_mipmaps()
+	_run_tex = ImageTexture.create_from_image(img)
+	return _run_tex
+
+# ---------------------------------------------------------------- bloody weapons
+
+## A melee weapon hit something (VoxelMelee.spray): more blood on it.
+func weapon_hit(wpn: Node, cubes: int) -> void:
+	if level == 0 or wpn.shooter == null or not wpn.shooter.local or wpn.view == null:
+		return
+	wpn.blood_k = minf(1.0, float(wpn.blood_k) + 0.07 + cubes * 0.003)
+	var e: Dictionary = {}
+	for x in _weapons:
+		if x.w == wpn:
+			e = x
+	if e.is_empty():
+		var m := ShaderMaterial.new()
+		m.shader = _coat()
+		e = {"w": wpn, "mat": m, "wet": 1.0}
+		_weapons.append(e)
+	e.wet = 1.0
+	_coat_meshes(wpn.view, e.mat)                       # (every hit: a weapon's view may have new parts since)
+
+func _coat_meshes(n: Node, mat: Material) -> void:
+	for c in n.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).material_overlay == null:
+			(c as MeshInstance3D).material_overlay = mat
+		_coat_meshes(c, mat)
+
+func _weapons_step(dt: float) -> void:
+	for e in _weapons:
+		var wpn = e.w
+		if not is_instance_valid(wpn):
+			continue
+		e.wet = maxf(0.0, float(e.wet) - dt / 45.0)        # (dry in 45 s; the coat stays, dark)
+		var m: ShaderMaterial = e.mat
+		m.set_shader_parameter("amount", float(wpn.blood_k))
+		m.set_shader_parameter("wet", float(e.wet))
+		# a wet one drips (in front of you, off whatever part of it)
+		if wpn.view.visible and float(e.wet) > 0.25 and randf() < dt * 4.0 * float(e.wet) * float(wpn.blood_k):
+			var parts: Array = wpn.view.find_children("*", "MeshInstance3D", true, false)
+			if not parts.is_empty():
+				var mi: MeshInstance3D = parts[randi() % parts.size()]
+				_drop(mi.global_transform * mi.get_aabb().get_center(), _rand3(0.05))
+
+static func _coat() -> Shader:
+	if _coat_shader:
+		return _coat_shader
+	_coat_shader = Shader.new()
+	_coat_shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back;
+uniform float amount = 0.0;
+uniform float wet = 1.0;
+varying vec3 op;
+void vertex() { op = VERTEX; }
+float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float noise(vec3 x) {
+	vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+void fragment() {
+	vec3 p = op * 22.0;
+	float n = noise(p) * 0.65 + noise(p * 2.9 + 7.0) * 0.35;
+	float a = smoothstep(1.0 - amount * 0.55, 1.0 - amount * 0.55 + 0.05, n);
+	if (a < 0.02) { discard; }
+	ALBEDO = mix(vec3(0.07, 0.01, 0.008), vec3(0.17, 0.004, 0.008), wet);
+	ROUGHNESS = mix(0.75, 0.12, wet);
+	SPECULAR = 0.6;
+	ALPHA = a;
+}
+"""
+	return _coat_shader

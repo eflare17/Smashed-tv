@@ -179,8 +179,9 @@ static var immortal := false
 ## root (the cubes it takes, and the health with them, go up by hit_k), a slice's thickness and a blow's health by it.
 ## 1 outside a player's weapons.
 static var hit_k := 1.0
-## Ultra Gore (VoxelBlood.wound): told of every hole and stump a cut leaves, func(node, at, dir, strength, kind) (in both
-## games: the guest's replays of the host's cuts tell it too).
+## Ultra Gore (VoxelBlood.wound): told of every hole and stump a cut leaves, func(node, at, dir, strength, kind, frame)
+## (frame: where node is in the pose the cut was made in; its BoneAttachment can be a frame behind) (in both games: the
+## guest's replays of the host's cuts tell it too).
 static var on_wound: Callable
 var _mat: Material
 
@@ -1097,7 +1098,7 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 	var res := _damage_x(hit, r)
 	_net_depth -= 1
 	if _net_depth == 0:
-		_bleed(res, String(hit.get("part", "")))
+		_bleed(res, String(hit.get("part", "")), hit)
 	return res
 
 ## A part and everything hanging from it taken off whole (a harpoon's yank): {pieces (VoxelPieces.spawn's list),
@@ -1472,7 +1473,7 @@ func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_eve
 	return res
 
 # a cut's blood (Ultra Gore): the hole it left bleeds, each part that came off leaves a stump spurting
-func _bleed(res: Dictionary, hit_part := "") -> void:
+func _bleed(res: Dictionary, hit_part := "", hit := {}) -> void:
 	if not on_wound.is_valid() or res.is_empty() or bool(res.get("shattered", false)) or frozen():
 		return
 	var bits: Array = res.get("bits", [])
@@ -1484,8 +1485,13 @@ func _bleed(res: Dictionary, hit_part := "") -> void:
 		c /= float(k)
 		var pn := hit_part if (hit_part != "" and parts.has(hit_part) and not parts[hit_part].gone) else _nearest_part(c)
 		if pn != "":
-			var mid := global_position + Vector3.UP * height * 0.55
-			on_wound.call(parts[pn].mesh, c, (c - mid).normalized(), clampf(bits.size() / 25.0, 0.3, 3.0), "hole")
+			var out := c - Vector3(global_position.x, c.y, global_position.z)     # (out from its middle, level)
+			if hit.has("point") and hit.has("normal"):
+				c = hit.point                                                  # (a shot: where it went in, its face)
+				out = hit.normal
+			if out.length() < 0.02:
+				out = global_transform.basis.z
+			on_wound.call(parts[pn].mesh, c, out.normalized(), clampf(bits.size() / 25.0, 0.3, 3.0), "hole", _part_frame(pn))
 	var stumps := []
 	for pc in res.get("pieces", []):
 		if pc.has("part") and not stumps.has(pc.part):
@@ -1499,7 +1505,12 @@ func _bleed(res: Dictionary, hit_part := "") -> void:
 			continue
 		var j: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(int(parts[p].bone)).origin
 		var node: Node3D = parts[par].mesh
-		on_wound.call(node, j, (j - node.global_position).normalized(), 3.2 if p == "head" else 2.4, "stump")
+		var fr := _part_frame(par)
+		on_wound.call(node, j, (j - fr.origin).normalized(), 3.2 if p == "head" else 2.4, "stump", fr)
+
+# where a part's mesh is in the skeleton's pose now (its BoneAttachment3D only catches up when the skeleton next updates)
+func _part_frame(n: String) -> Transform3D:
+	return skeleton.global_transform * skeleton.get_bone_global_pose(int(parts[n].bone)) * (parts[n].mesh as Node3D).transform
 
 func _nearest_part(c: Vector3) -> String:
 	var best := ""

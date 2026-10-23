@@ -611,6 +611,15 @@ clips, fuel) at a lobby bench")
   splats and wounds kept). Low and Medium start on Normal, High and Ultra on Ultra, Extreme on Extreme. Cleared when
   the fight starts over.
 - `test/voxel/blood_shots.gd` (`voxel_shots/blood_stump.png`, `blood_pools.png`, `blood_wall.png`, `blood_screen.png`).
+- Stage 2: whoever walks through a pool less than 40 s old (you, your mate, the enemies) leaves bloody footprints for
+  about ten steps, left and right, fainter each (a squelch when you tread in it); an enemy with no legs dragging itself
+  on its arms leaves a smear behind it. Blood runs down a body from each hole and stump: a decal on that part, a blot
+  with streaks and drips, growing down it over 5 s (a shot's starts where it went in, on the face it hit). Melee
+  weapons get bloodier with every hit (a coat over the view model, up to half of it, wet and shiny, drying dark over 45 s)
+  and drip in front of you while wet. Footprints and smears are MultiMesh rings; runs are kept to 24 (Extreme 48; none
+  on Normal). `test/voxel/blood2_shots.gd` (`voxel_shots/blood_prints.png`, `blood_crawl.png`, `blood_runs.png`,
+  `blood_bat.png`).
+- Cost (a test box, slower than a gaming PC): 30 enemies shot to bits for 10 s on Extreme, about 1 ms a frame.
 
 ### The mirror, sharper (23 Oct, the owner: "the mirror ... looks blurry looking at Jared")
 

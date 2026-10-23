@@ -18,6 +18,7 @@ var shooter: VoxelShooter       # who holds it: their eye, look, body, avatar, a
 var weapon_id := ""             # its weapon id (VoxelArena.MELEE's key)
 var view: Node3D                # the first-person view: a child of the camera; the arena shows/hides it
 var last := {}                  # what the last hit did (the self-tests print it)
+var blood_k := 0.0              # Ultra Gore: how much blood is on it, 0..1 (VoxelBlood coats the view in it, drips it)
 var _flip := 1.0
 static var _stop_n := 0
 static var _stop_end_ms := 0
@@ -159,6 +160,8 @@ func bodies_near(p: Vector3, r: float, alive_only: bool = false) -> Array:
 func spray(res: Dictionary, dir: Vector3, power: float = 2.2) -> void:
 	arena.knocked += (res.bits as Array).size()
 	arena.debris.burst(res.bits, dir, power)
+	if arena.get("blood") and not (res.bits as Array).is_empty():
+		arena.blood.weapon_hit(self, (res.bits as Array).size())
 
 ## The pieces a slice / carve took off b, flung at vel, spinning at spin.
 func fling(b: VoxelBody, res: Dictionary, vel: Vector3, spin: Vector3) -> void:
