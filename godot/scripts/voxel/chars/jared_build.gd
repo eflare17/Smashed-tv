@@ -244,11 +244,13 @@ static func _boot(p: Vector3, n: Vector3, ao: float) -> Color:
 static func _torso_body(p: Vector3) -> float:
 	var d := VoxelSculpt.ellipsoid(p, Vector3(0.5, 81.0, 0.5), Vector3(21.0, 16.5, 19.0))           # the belly
 	d = VoxelSculpt.smin(d, VoxelSculpt.round_box(p, Vector3(0.5, 73.5, 0.0), Vector3(19.5, 7.0, 16.0), 6.0), 4.0)   # down to the hem
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 100.0, -2.0), Vector3(22.5, 13.5, 20.0)), 5.0)    # the chest: deep
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 103.0, -10.0), Vector3(21.5, 11.5, 12.0)), 4.0)   # the upper back
-	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5, 110.0, -4.5), Vector3(0.5, 113.0, -4.5), 8.5), 3.0)   # round the neck
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 100.0, 0.0), Vector3(22.5, 13.5, 18.0)), 5.0)     # the chest: deep
+	d = VoxelSculpt.smin(d, VoxelSculpt.round_box(p, Vector3(0.5, 101.0, -8.0), Vector3(19.5, 10.0, 8.5), 6.5), 4.0)   # the back: broad, flat
+	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5, 110.0, -3.0), Vector3(0.5, 113.0, -3.0), 8.5), 3.0)   # round the neck
+	# his pecs: one broad slab across his chest, flat-fronted with a shelf under it (two round ones read as a bust)
+	d = VoxelSculpt.smin(d, VoxelSculpt.round_box(p, Vector3(0.5, 101.5, 12.0), Vector3(17.0, 5.5, 4.5), 4.0), 3.0)
 	for sx in [-1.0, 1.0]:
-		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 10.0, 101.0, 12.5), Vector3(10.0, 7.0, 7.0)), 2.5)   # pecs
+		pass
 		d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 7.0, 111.0, -4.0), Vector3(0.5 + sx * 23.0, 109.0, -3.0), 7.0), 3.5)   # traps: to his chin
 		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 18.0, 91.0, -6.0), Vector3(6.5, 10.0, 8.0)), 3.0)   # lats
 		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 26.0, 108.5, -2.0), Vector3(8.5, 8.0, 10.0)), 4.0)   # the shoulder's top: the traps run into it
