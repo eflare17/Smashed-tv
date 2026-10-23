@@ -20,6 +20,8 @@ const PALETTES := [
 			Color(0.15, 0.1, 0.08), Color(0.32, 0.22, 0.2), Color(0.22, 0.14, 0.12), Color(0.4, 0.3, 0.18)],
 ]
 const NAMES := ["JUNGLE", "BADLANDS", "SWAMP", "VOLCANO"]
+## What a herd is made of.
+enum { HERD_GRAZER, HERD_RUNNER, HERD_CHARGER }
 
 var number := 1
 var seed_value := 0
@@ -27,7 +29,7 @@ var width := 2400
 var palette: Array
 ## Rect2s: each obstacle's box, standing on the ground (what dinosaurs bump into and stand on).
 var obstacles: Array[Rect2] = []
-## Where herds start: [x, how many].
+## Where herds start: [x, how many, which kind (HERD_*)].
 var herds: Array = []
 var exit_x := 0.0
 var stains: Sprite2D
@@ -56,10 +58,11 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 				var h := _rng.randi_range(8, 11)
 				obstacles.append(Rect2(x, ground_y - h, w, h))
 		else:
-			herds.append([x + _rng.randf_range(-40.0, 40.0), _rng.randi_range(1, 2 + mini(n, 2))])
+			var kind := herd_kind(_rng)
+			herds.append([x + _rng.randf_range(-40.0, 40.0), 1 if kind == HERD_CHARGER else _rng.randi_range(1, 2 + mini(n, 2)), kind])
 		x += _rng.randf_range(170.0, 380.0)
 	# always something to eat near the start
-	herds.push_front([300.0, 1])
+	herds.push_front([300.0, 2, HERD_RUNNER])
 
 ## Builds the nodes: sky, parallax hills and jungle, the ground, the obstacles, the stain layer, the exit sign.
 func build(view: Vector2, ground_y: float) -> void:
@@ -179,3 +182,8 @@ func _jungle(w: int, h: int, leaf: Color) -> Image:
 			if _rng.randf() < 0.7 - (h - y) * 0.06:
 				img.set_pixel(xx, y, leaf.darkened(0.1))
 	return img
+
+## A random kind of herd: small runners most often, then the big grazers, now and then a charger. PLACEHOLDER mix.
+func herd_kind(rng: RandomNumberGenerator) -> int:
+	var r := rng.randf()
+	return HERD_RUNNER if r < 0.45 else (HERD_GRAZER if r < 0.85 else HERD_CHARGER)

@@ -14,6 +14,8 @@ var parts: Array[PixelPart] = []
 var body: PixelPart
 var head: PixelPart
 var jaw: PixelPart
+## Wings (flyers), flapped by their owner.
+var wings: Array[PixelPart] = []
 ## [part, swing phase offset]
 var legs: Array = []
 var facing := 1.0
@@ -26,6 +28,8 @@ var height := 30.0
 var flash := 0.0
 ## Half its width for bumping into obstacles (before scaling).
 var half_w := 8.0
+## How high its origin sits above the ground when it stands (a flyer's origin is its body).
+var foot := 0.0
 ## Set by move(): the side it bumped into an obstacle this frame (-1 left, 1 right), else 0.
 var blocked := 0
 var _named := {}
@@ -44,6 +48,8 @@ func build(art: Dictionary) -> void:
 		parts.append(part)
 		if not _named.has(p.name):
 			_named[p.name] = part
+		if p.has("wing"):
+			wings.append(part)
 		if p.has("leg"):
 			legs.append([part, p.leg])
 		if p.has("tip"):
@@ -188,10 +194,10 @@ func move(delta: float) -> void:
 				position.x = o.end.x + hw
 				blocked = -1
 	position.y += vel.y * delta
-	var floor_y: float = game.GROUND_Y
+	var floor_y: float = game.GROUND_Y - foot
 	for o: Rect2 in game.obstacles:
 		if position.x + hw > o.position.x and position.x - hw < o.end.x and prev.y <= o.position.y + 1.0:
-			floor_y = minf(floor_y, o.position.y)
+			floor_y = minf(floor_y, o.position.y - foot)
 	on_ground = position.y >= floor_y
 	if on_ground:
 		position.y = floor_y

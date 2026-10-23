@@ -18,7 +18,7 @@ const RIM_COLOR := Color(0.45, 0.02, 0.04)
 const FLESH_COLOR := Color(0.78, 0.13, 0.13)
 const BONE_COLOR := Color(0.93, 0.89, 0.78)
 const ZONE_COLORS := [Color(0, 0, 0, 0), Color(1.0, 0.3, 0.3), Color(1.0, 0.8, 0.2), Color(0.3, 0.75, 1.0),
-		Color(0.7, 0.4, 1.0), Color(0.35, 1.0, 0.45)]
+		Color(0.7, 0.4, 1.0), Color(0.35, 1.0, 0.45), Color(1.0, 0.5, 0.9)]
 
 var w := 0
 var h := 0
@@ -64,6 +64,10 @@ func setup(image: Image, zones: PackedByteArray, pivot: Vector2, anchors: Packed
 	_tex = ImageTexture.create_from_image(_img)
 	texture = _tex
 	rebuild()
+
+## True while at least `frac` of this part is left.
+func zone_fraction_ok(frac: float) -> bool:
+	return pixels_left() >= pixels_total() * frac
 
 func pixels_left() -> int:
 	var n := 0

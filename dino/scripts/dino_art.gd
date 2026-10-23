@@ -12,7 +12,8 @@ const NECK := 2
 const BODY := 3
 const TAIL := 4
 const LEGS := 5
-const ZONE_NAMES := ["", "HEAD", "NECK", "BODY", "TAIL", "LEGS"]
+const WING := 6
+const ZONE_NAMES := ["", "HEAD", "NECK", "BODY", "TAIL", "LEGS", "WING"]
 
 ## Draws shapes into a zone map, then paints it: skin, a lighter belly, a light top edge, back stripes, outline.
 class Canvas:
@@ -141,6 +142,97 @@ static func prey() -> Dictionary:
 		parts.append({"name": "leg", "image": l.image, "zones": l.zones, "pivot": l.pivot,
 				"pos": Vector2(spec[1], -16), "anchors": l.anchors, "z": spec[2], "parent": "", "leg": spec[3]})
 	return {"parts": parts, "height": 44}
+
+## A small fast plant-eater on two legs: long tail, little head. PLACEHOLDER.
+static func runner() -> Dictionary:
+	var skin := Color(0.62, 0.5, 0.3)
+	var belly := Color(0.88, 0.8, 0.6)
+	var stripe := Color(0.4, 0.3, 0.16)
+	var c := Canvas.new(36, 18)
+	c.poly(PackedVector2Array([Vector2(13, 7), Vector2(0, 5), Vector2(0, 7), Vector2(13, 12)]), TAIL)
+	c.ellipse(17, 10, 7, 4.5, BODY)
+	c.poly(PackedVector2Array([Vector2(21, 8), Vector2(27, 3), Vector2(29, 5), Vector2(23, 12)]), NECK)
+	c.ellipse(30, 4, 3.5, 2.5, HEAD)
+	c.ellipse(33, 5, 2.5, 1.5, HEAD)
+	c.mark(30, 3, PUPIL)
+	var body := {"name": "body", "image": c.paint(skin, belly, stripe), "zones": c.zones, "pivot": Vector2(17, 12),
+			"pos": Vector2(0, -11), "anchors": _core(c, 17, 10, 3), "z": 0, "parent": ""}
+	var parts := [body]
+	var leg := _leg(5, 10, skin, false)
+	var far := _leg(5, 10, skin.darkened(0.3), false)
+	parts.append({"name": "leg", "image": far.image, "zones": far.zones, "pivot": far.pivot, "pos": Vector2(1, -11),
+			"anchors": far.anchors, "z": -1, "parent": "", "leg": PI})
+	parts.append({"name": "leg", "image": leg.image, "zones": leg.zones, "pivot": leg.pivot, "pos": Vector2(-1, -11),
+			"anchors": leg.anchors, "z": 1, "parent": "", "leg": 0.0})
+	return {"parts": parts, "height": 22}
+
+## A big horned plant-eater on four legs that fights back: a bony frill and two horns on a big low head.
+## PLACEHOLDER.
+static func charger() -> Dictionary:
+	var skin := Color(0.45, 0.5, 0.52)
+	var belly := Color(0.7, 0.68, 0.6)
+	var stripe := Color(0.3, 0.33, 0.36)
+	var c := Canvas.new(96, 40)
+	c.poly(PackedVector2Array([Vector2(24, 18), Vector2(2, 24), Vector2(0, 27), Vector2(24, 30)]), TAIL)
+	c.ellipse(44, 24, 22, 13, BODY)
+	c.poly(PackedVector2Array([Vector2(60, 16), Vector2(70, 14), Vector2(72, 30), Vector2(62, 32)]), NECK)
+	# the frill, the head, the beak, the horns
+	c.ellipse(72, 14, 7, 11, HEAD)
+	c.ellipse(80, 22, 9, 7, HEAD)
+	c.poly(PackedVector2Array([Vector2(86, 19), Vector2(93, 22), Vector2(87, 27)]), HEAD)
+	c.poly(PackedVector2Array([Vector2(78, 16), Vector2(92, 9), Vector2(80, 19)]), HEAD)
+	c.poly(PackedVector2Array([Vector2(86, 21), Vector2(90, 15), Vector2(88, 22)]), HEAD)
+	c.mark(81, 19, EYE)
+	c.mark(82, 19, PUPIL)
+	var img := c.paint(skin, belly, stripe)
+	# the frill's rim and the horns in bone
+	for y in c.h:
+		for x in c.w:
+			var i := y * c.w + x
+			if c.zones[i] == HEAD and ((x > 84 and y < 18) or (x >= 88 and y < 21)):
+				img.set_pixel(x, y, TOOTH.darkened(0.15))
+	var body := {"name": "body", "image": img, "zones": c.zones, "pivot": Vector2(44, 34),
+			"pos": Vector2(0, -15), "anchors": _core(c, 44, 24, 7), "z": 0, "parent": ""}
+	var parts := [body]
+	var leg := _leg(9, 15, skin, false)
+	var far := _leg(9, 15, skin.darkened(0.3), false)
+	for spec in [[far, -12, -1, 0.0], [far, 16, -1, PI], [leg, -16, 1, PI], [leg, 12, 1, 0.0]]:
+		var l: Dictionary = spec[0]
+		parts.append({"name": "leg", "image": l.image, "zones": l.zones, "pivot": l.pivot,
+				"pos": Vector2(spec[1], -16), "anchors": l.anchors, "z": spec[2], "parent": "", "leg": spec[3]})
+	return {"parts": parts, "height": 42}
+
+## A pterodactyl: a small body, a long beak and a crest, and two wings that flap (separate parts, WING zone).
+## Its origin is its body (it flies). PLACEHOLDER.
+static func flyer() -> Dictionary:
+	var skin := Color(0.55, 0.42, 0.45)
+	var belly := Color(0.82, 0.7, 0.66)
+	var stripe := Color(0.36, 0.24, 0.28)
+	var c := Canvas.new(44, 16)
+	c.poly(PackedVector2Array([Vector2(10, 8), Vector2(1, 7), Vector2(1, 9), Vector2(10, 10)]), TAIL)
+	c.ellipse(16, 9, 7, 4, BODY)
+	c.poly(PackedVector2Array([Vector2(20, 7), Vector2(26, 4), Vector2(28, 7), Vector2(22, 11)]), NECK)
+	c.ellipse(30, 5, 3.5, 3, HEAD)
+	c.poly(PackedVector2Array([Vector2(31, 4), Vector2(43, 7), Vector2(31, 7)]), HEAD)
+	c.poly(PackedVector2Array([Vector2(28, 3), Vector2(21, 0), Vector2(30, 2)]), HEAD)
+	c.mark(30, 4, EYE)
+	c.rect(14, 12, 15, 14, BODY)
+	c.rect(18, 12, 19, 14, BODY)
+	var body := {"name": "body", "image": c.paint(skin, belly, stripe), "zones": c.zones, "pivot": Vector2(16, 9),
+			"pos": Vector2.ZERO, "anchors": _core(c, 16, 9, 3), "z": 0, "parent": ""}
+	var parts := [body]
+	for spec in [[skin.darkened(0.35), -1], [skin, 1]]:
+		var wc := Canvas.new(34, 11)
+		wc.poly(PackedVector2Array([Vector2(0, 9), Vector2(4, 6), Vector2(30, 0), Vector2(33, 1), Vector2(12, 10)]), WING)
+		var wimg := wc.paint(spec[0], (spec[0] as Color).lightened(0.15), spec[0])
+		var anchors := PackedInt32Array()
+		for y in range(6, 11):
+			for x in range(0, 5):
+				if wc.solid(x, y):
+					anchors.append(y * wc.w + x)
+		parts.append({"name": "wing", "image": wimg, "zones": wc.zones, "pivot": Vector2(2, 8),
+				"pos": Vector2(-1, -2), "anchors": anchors, "z": spec[1], "parent": "", "wing": true})
+	return {"parts": parts, "height": 16}
 
 ## The hunter that comes after you: the player's shape in reds. PLACEHOLDER (which dinosaurs hunt you isn't decided).
 static func hunter() -> Dictionary:

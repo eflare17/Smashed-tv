@@ -23,6 +23,11 @@ const GROW := 0.1
 ## PLACEHOLDER numbers: XP and health for each thing, and XP to the next level.
 const XP_KILL_PREY := 10
 const XP_KILL_HUNTER := 25
+## Seconds in an area before the herds stop coming, and before the danger bar is full. PLACEHOLDER.
+const PREY_DRY := 45.0
+const DANGER_TIME := 120.0
+## Of the things sent after you, how many are pterodactyls rather than hunters.
+const FLYER_SHARE := 0.35
 const XP_EAT_BITE := 2
 const XP_EAT_ALL := 15
 const HEAL_EAT_BITE := 3.0
@@ -61,6 +66,9 @@ var _stop := 0.0
 var _shake := 0.0
 var _hunt_t := 0.0
 var _herd_t := 0.0
+## Seconds spent in this area (the danger clock), and which warning banners have shown.
+var area_t := 0.0
+var _warned := 0
 var _choices := 0
 var _over_t := 0.0
 var _overlay: Node2D
@@ -151,16 +159,39 @@ func enter_area(n: int) -> void:
 	player.vel = Vector2.ZERO
 	for h: Array in area.herds:
 		for k in h[1]:
-			spawn_prey(h[0] + k * 50.0)
+			_spawn_herd_kind(h[2], h[0] + k * 50.0)
+	area_t = 0.0
+	_warned = 0
 	_hunt_t = _hunt_gap() + 4.0
 	_herd_t = 6.0
 	hud.show_banner("AREA %d: %s" % [n, Area.NAMES[(n - 1) % Area.NAMES.size()]], 2.5)
 
-func spawn_prey(x: float) -> Prey:
-	return _add(Prey.new(), x)
+## Area.HERD_* -> a creature.
+func _spawn_herd_kind(kind: int, x: float) -> Prey:
+	match kind:
+		Area.HERD_RUNNER:
+			return spawn_prey(x, Prey.RUNNER)
+		Area.HERD_CHARGER:
+			return _add(Charger.new(), x)
+	return spawn_prey(x)
+
+func spawn_prey(x: float, kind := Prey.GRAZER) -> Prey:
+	var p := Prey.new()
+	p.kind = kind
+	return _add(p, x)
 
 func spawn_hunter(x: float) -> Hunter:
 	return _add(Hunter.new(), x) as Hunter
+
+## A pterodactyl, coming in from above the screen at `x`.
+func spawn_flyer(x: float) -> Flyer:
+	var f := _add(Flyer.new(), x) as Flyer
+	f.position.y = -20.0
+	return f
+
+## Hunters, flyers, and chargers while they're angry: the things that come for you.
+func is_attacker(c: Prey) -> bool:
+	return not c.dead and (c is Hunter or c is Flyer or (c is Charger and c.state != Prey.GRAZE))
 
 func _add(c: Prey, x: float) -> Prey:
 	c.game = self
@@ -182,27 +213,46 @@ func _offscreen_x() -> float:
 			return x
 	return world_w - 20.0
 
-## Seconds between hunters: shorter the higher your level and the further the area. PLACEHOLDER curve.
+## Seconds between hunters and pterodactyls: shorter the higher your level, the further the area, and the longer
+## you've stayed in this one. PLACEHOLDER curve.
 func _hunt_gap() -> float:
-	return maxf(3.0, 16.0 - level * 1.5 - (area_n - 1) * 2.0)
+	return maxf(1.8, 16.0 - level * 1.5 - (area_n - 1) * 2.0 - area_t * 0.1)
 
+## How many can be after you at once: more with level, area, and time spent here.
 func _hunt_cap() -> int:
-	return mini(1 + (level - 1) / 2 + (area_n - 1), 6)
+	return mini(1 + (level - 1) / 2 + (area_n - 1) + int(area_t / 30.0), 10)
+
+## 0..1: how long you've stayed in this area against DANGER_TIME (the danger bar).
+func danger() -> float:
+	return clampf(area_t / DANGER_TIME, 0.0, 1.0)
 
 func _spawners(delta: float) -> void:
+	area_t += delta
 	_hunt_t -= delta
 	if _hunt_t <= 0.0:
 		_hunt_t = _hunt_gap()
-		var live := creatures.filter(func(c): return c is Hunter and not c.dead).size()
+		var live := creatures.filter(func(c): return (c is Hunter or c is Flyer) and not c.dead).size()
 		if live < _hunt_cap():
-			spawn_hunter(_offscreen_x())
-	# keep something to eat around
+			if rng.randf() < FLYER_SHARE:
+				spawn_flyer(_offscreen_x())
+			else:
+				spawn_hunter(_offscreen_x())
+	# keep something to eat around, but only for a while: then the herds have moved on
 	_herd_t -= delta
-	if _herd_t <= 0.0:
+	if _herd_t <= 0.0 and area_t < PREY_DRY:
 		_herd_t = 5.0
-		var live := creatures.filter(func(c): return not (c is Hunter) and not c.dead).size()
+		var live := creatures.filter(func(c): return not is_attacker(c) and not (c is Hunter or c is Flyer) and not c.dead).size()
 		if live < 2 + area_n:
-			spawn_prey(_offscreen_x())
+			_spawn_herd_kind(area.herd_kind(rng), _offscreen_x())
+	if _warned == 0 and area_t >= PREY_DRY:
+		_warned = 1
+		hud.show_banner("THE HERDS HAVE MOVED ON", 2.5)
+	elif _warned == 1 and area_t >= DANGER_TIME * 0.5:
+		_warned = 2
+		hud.show_banner("PREDATORS ARE GATHERING. MOVE ON!", 3.0)
+
+func shake(amount: float) -> void:
+	_shake = minf(_shake + amount, 1.2)
 
 # --- input ------------------------------------------------------------------------------------------------
 
@@ -273,7 +323,7 @@ func _process(delta: float) -> void:
 		pu[2] -= delta
 		pu[1].y -= delta * 14.0
 	_popups = _popups.filter(func(pu): return pu[2] > 0.0)
-	hud.set_bars(player.hp / player.max_hp, float(xp) / xp_needed(), level)
+	hud.set_bars(player.hp / player.max_hp, float(xp) / xp_needed(), level, danger())
 	hud.stats.text = "KILLS %d   EATEN %d   SIZE x%.1f" % [kills, eaten, player.size]
 	hud.area_label.text = "AREA %d   RUN %d" % [area_n, run_seed]
 	_overlay.queue_redraw()
@@ -404,7 +454,7 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 		if pr.hurt(who.global_position) and not was_dead:
 			kills += 1
 			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2, Color(1, 0.4, 0.3)])
-			add_xp(XP_KILL_HUNTER if pr is Hunter else XP_KILL_PREY, pr.global_position + Vector2(0, -40))
+			add_xp(_kill_xp(pr), pr.global_position + Vector2(0, -40))
 			_trim_corpses()
 		elif not pr.dead and (not light or rng.randf() < 0.25):
 			sfx.play("cry", 0.1, -3.0 if not (pr is Hunter) else -8.0)
@@ -477,9 +527,9 @@ func broke_free(who: Player, prey: Prey) -> void:
 	prey.vel.x += who.facing * 80.0
 	_shake = minf(_shake + 0.4, 1.2)
 
-## A hunter's teeth reached you.
-func hunter_bit(h: Hunter) -> void:
-	if state != PLAY or not player.hurt(Hunter.DAMAGE, h.global_position):
+## Something's teeth, claws or horns reached you (a hunter, a pterodactyl, a charger): you lose `amount` health.
+func creature_hit(h: Prey, amount: float) -> void:
+	if state != PLAY or not player.hurt(amount, h.global_position):
 		return
 	hud.hurt()
 	sfx.play("crunch", 0.1, 2.0)
@@ -552,7 +602,8 @@ func prey_landed(p: Prey) -> void:
 	gore.pool(p.global_position.x, 26.0, 160)
 
 func _trim_corpses() -> void:
-	var dead := creatures.filter(func(c): return c.dead)
+	# the oldest bodies go (never one in your jaws)
+	var dead := creatures.filter(func(c): return c.dead and not c.held)
 	while dead.size() > MAX_CORPSES:
 		var old: Prey = dead.pop_front()
 		creatures.erase(old)
@@ -572,7 +623,7 @@ func _bot(delta: float) -> Array:
 	var target: Prey = null
 	for pass_n in 3:
 		for c in creatures:
-			var ok: bool = [c is Hunter and not c.dead, c.dead, not c.dead][pass_n]
+			var ok: bool = [is_attacker(c) and c.position.y > GROUND_Y - 70.0, c.dead, not c.dead and not (c is Flyer)][pass_n]
 			if ok and absf(c.position.x - me.x) < (140.0 if pass_n == 0 else 400.0) \
 					and (target == null or absf(c.position.x - me.x) < absf(target.position.x - me.x)):
 				target = c
@@ -637,7 +688,7 @@ func _draw_overlay() -> void:
 		var top := c.global_position + Vector2(-12, -c.height - 6)
 		var f := clampf((c.mass_fraction() - Prey.DIE_MASS) / (1.0 - Prey.DIE_MASS), 0.0, 1.0)
 		_overlay.draw_rect(Rect2(top, Vector2(24, 3)), Color(0, 0, 0, 0.7))
-		_overlay.draw_rect(Rect2(top + Vector2(1, 1), Vector2(22 * f, 1)), Color(1.0, 0.55, 0.1) if c is Hunter else Color(0.9, 0.15, 0.1))
+		_overlay.draw_rect(Rect2(top + Vector2(1, 1), Vector2(22 * f, 1)), Color(1.0, 0.55, 0.1) if is_attacker(c) else Color(0.9, 0.15, 0.1))
 	for pu in _popups:
 		var a := clampf(pu[2] * 2.0, 0.0, 1.0)
 		var col: Color = pu[3]
@@ -672,3 +723,13 @@ func _text(font: Font, text: String, at: Vector2, c: Color) -> void:
 	for o: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
 		_overlay.draw_string(font, p + o, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(0, 0, 0, c.a))
 	_overlay.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, c)
+
+## XP for killing `c`. PLACEHOLDER numbers.
+func _kill_xp(c: Prey) -> int:
+	if c is Charger:
+		return 30
+	if c is Hunter:
+		return XP_KILL_HUNTER
+	if c is Flyer:
+		return 20
+	return 6 if c.kind == Prey.RUNNER else XP_KILL_PREY

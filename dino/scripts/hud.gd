@@ -17,6 +17,7 @@ var banner: Label
 
 var _hp_fill: ColorRect
 var _xp_fill: ColorRect
+var _danger_fill: ColorRect
 var _level: Label
 var _flash: ColorRect
 var _flash_a := 0.0
@@ -32,7 +33,11 @@ func _init() -> void:
 	_level.label_settings.font_color = GOLD
 	_hp_fill = _bar(Vector2(36, 5), Color(0.85, 0.12, 0.1))
 	_xp_fill = _bar(Vector2(36, 11), Color(0.35, 0.75, 1.0))
-	stats = _label(8, Vector2(6, 16))
+	_danger_fill = _bar(Vector2(36, 17), Color(1.0, 0.5, 0.1))
+	var dl := _label(8, Vector2(100, 13))
+	dl.text = "DANGER"
+	dl.modulate = Color(1, 0.7, 0.5)
+	stats = _label(8, Vector2(6, 22))
 	area_label = _label(8, Vector2(W - 206, 3))
 	area_label.size = Vector2(200, 10)
 	area_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -164,9 +169,13 @@ func _build_over() -> void:
 	_over_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over.add_child(_over_text)
 
-func set_bars(hp: float, xp: float, level: int) -> void:
+## Fractions 0..1 for the bars. The danger bar pulses once it's past half.
+func set_bars(hp: float, xp: float, level: int, danger: float) -> void:
 	_hp_fill.size.x = 60.0 * clampf(hp, 0.0, 1.0)
 	_xp_fill.size.x = 60.0 * clampf(xp, 0.0, 1.0)
+	_danger_fill.size.x = 60.0 * clampf(danger, 0.0, 1.0)
+	var hot := danger > 0.5 and int(Time.get_ticks_msec() / 200) % 2 == 0
+	_danger_fill.color = Color(1.0, 0.15, 0.1) if hot else Color(1.0, 0.5, 0.1)
 	_level.text = "LV %d" % level
 
 func hurt() -> void:

@@ -168,8 +168,13 @@ func _run() -> void:
 	_check("a body can't break free", main.break_free_time(pl, big_target, 1.0) == INF)
 	var small: Hunter = main.spawn_hunter(1900.0)
 	await _frames(2)
-	_check("something your size can't break free", main.break_free_time(pl, small, 1.0) == INF,
+	_check("you start smaller than a hunter, so it breaks free", main.break_free_time(pl, small, 1.0) < 1.0,
 			"it's %.2fx you" % (_mass(small) / pl.mass()))
+	var size_was: float = pl.size
+	pl.size = 1.0
+	_check("grown to its size, it can't break free", main.break_free_time(pl, small, 1.0) == INF,
+			"it's %.2fx you" % (_mass(small) / pl.mass()))
+	pl.size = size_was
 	small.queue_free()
 	main.creatures.erase(small)
 
@@ -224,6 +229,80 @@ func _run() -> void:
 		main.player_bite(pl, pts2[rng.randi() % pts2.size()], pl.bite_radius)
 	_check("a hunter can be killed", h.dead)
 
+	# a pterodactyl circles, dives at you and rakes you
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	pl.position = Vector2(900.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	pl.invuln = 0.0
+	pl.hp = pl.max_hp
+	var fl: Flyer = main.spawn_flyer(960.0)
+	var dived := false
+	for f in 900:
+		await process_frame
+		pl.invuln = 0.0 if pl.hp == pl.max_hp else pl.invuln
+		if fl.state == Flyer.DIVE:
+			dived = true
+		if pl.hp < pl.max_hp:
+			break
+	_check("a pterodactyl dives at you", dived)
+	_check("its dive hurts", pl.hp < pl.max_hp, "%.0f" % pl.hp)
+	# bite a wing off and it crashes
+	for k in 30:
+		if fl.state == Flyer.GROUNDED or fl.dead:
+			break
+		var wpts: Array = _zone_points(fl, DinoArt.WING)
+		if wpts.is_empty():
+			break
+		main.player_bite(pl, wpts[0], pl.bite_radius)
+	for f in 400:
+		await process_frame
+		if main.state == main.CHOOSE:
+			main._pick(1)
+		if fl.on_ground and fl.position.y > main.GROUND_Y - 8.0:
+			break
+	_check("biting its wing away brings it down", fl.on_ground and fl.position.y > main.GROUND_Y - 8.0 and (fl.state == Flyer.GROUNDED or fl.dead),
+			"state %d, y %.0f" % [fl.state, fl.position.y])
+
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	# a charger ignores you until bitten, then charges
+	pl.hp = pl.max_hp
+	pl.invuln = 0.0
+	pl.position = Vector2(1300.0, main.GROUND_Y)
+	var ch: Charger = main._spawn_herd_kind(Area.HERD_CHARGER, 1400.0)
+	await _frames(30)
+	_check("a charger doesn't care about you at first", ch.state == Prey.GRAZE)
+	main.player_bite(pl, _zone_points(ch, DinoArt.TAIL)[5], pl.bite_radius)
+	_check("bitten, it gets angry", ch.state == Charger.ANGRY)
+	var charged := false
+	pl.position = Vector2(ch.position.x - 80.0, main.GROUND_Y)
+	for f in 600:
+		await process_frame
+		if ch.state == Charger.CHARGE:
+			charged = true
+		if pl.hp < pl.max_hp:
+			break
+	_check("it charges", charged)
+	_check("its horns hurt", pl.hp < pl.max_hp, "%.0f" % pl.hp)
+
+	# runners are small and quick
+	var rn: Prey = main.spawn_prey(1600.0, Prey.RUNNER)
+	await _frames(2)
+	_check("a runner is smaller and faster than a grazer", _mass(rn) < 600 and rn.run_speed > 68.0, "%d px" % _mass(rn))
+
+	# the danger clock: the longer you stay, the sooner and more things come, and the herds stop coming
+	var lvl0: int = main.level
+	main.area_t = 0.0
+	var g0: float = main._hunt_gap()
+	var c0: int = main._hunt_cap()
+	main.area_t = 90.0
+	_check("staying longer brings attackers sooner and more of them", main._hunt_gap() < g0 and main._hunt_cap() > c0,
+			"every %.1fs, %d at once -> every %.1fs, %d at once" % [g0, c0, main._hunt_gap(), main._hunt_cap()])
+	_check("the danger bar fills", main.danger() > 0.7, "%.2f" % main.danger())
+	main.area_t = 0.0
+	main.level = lvl0
+
 	# areas: the same run seed builds the same area, another seed a different one
 	var a1 := Area.new()
 	a1.generate(1, 777, main.GROUND_Y)
@@ -267,7 +346,7 @@ func _run() -> void:
 	pl.hp = 1.0
 	pl.invuln = 0.0
 	var h2: Hunter = main.spawn_hunter(pl.position.x + 30.0)
-	main.hunter_bit(h2)
+	main.creature_hit(h2, Hunter.DAMAGE)
 	_check("losing all your health ends the run", main.state == main.OVER)
 	main.start_run()
 	_check("a new run starts fresh", main.state == main.PLAY and main.level == 1 and main.area_n == 1)

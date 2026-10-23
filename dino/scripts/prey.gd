@@ -1,17 +1,29 @@
 class_name Prey
 extends Dino
-## The prey: wanders and grazes until you come close or bite it, then runs (it can't fight back yet). It bleeds
-## from its wounds, and dies when it has lost enough of itself or its head (placeholder rule: see PLAN.md).
-## Dead, it slumps to the ground and stays, still bitable.
+## Prey: wanders and grazes until you come close or bite it, then runs. It bleeds from its wounds, and dies when
+## it has lost enough of itself or its head (placeholder rule: see PLAN.md). Dead, it slumps to the ground and
+## stays, still bitable. `kind` (set before it's added) picks which: GRAZER, the big long-necked one, or RUNNER,
+## a small fast skittish one (little meat, but your size at the start). Hunter, Charger and Flyer build on this.
 
 enum { GRAZE, FLEE, DEAD }
+enum { GRAZER, RUNNER }
 
-const WANDER := 22.0
-const RUN := 68.0
-const SCARE := 70.0
 ## Placeholder death rule: under this much of its body left, or of its head.
 const DIE_MASS := 0.5
 const DIE_HEAD := 0.35
+
+var kind: int = GRAZER
+## PLACEHOLDER numbers per kind (set in _ready).
+var wander_speed := 22.0
+var run_speed := 68.0
+var scare_range := 70.0
+## How far the body drops when it dies (about its leg length).
+var slump_drop := 9.0
+## Seconds a scare runs for, then seconds it has to catch its breath before it can bolt again.
+var flee_time := 1.6
+var rest_time := 0.0
+var _rest := 0.0
+var _leg_y0: Array[float] = []
 
 var state: int = GRAZE
 var _t := 0.0
@@ -25,8 +37,18 @@ var held := false
 var _held_t := 0.0
 
 func _ready() -> void:
-	build(DinoArt.prey())
-	half_w = 16.0
+	if kind == RUNNER:
+		build(DinoArt.runner())
+		half_w = 6.0
+		wander_speed = 30.0
+		run_speed = 85.0
+		flee_time = 0.9
+		rest_time = 0.8
+		scare_range = 95.0
+		slump_drop = 6.0
+	else:
+		build(DinoArt.prey())
+		half_w = 16.0
 
 ## Held in your jaws: thrash in place and bleed. Returns true if it was (and the normal step is skipped).
 func held_step(delta: float, rng: RandomNumberGenerator) -> bool:
@@ -48,15 +70,16 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 	if held_step(delta, rng):
 		return
 	_t -= delta
-	var near := absf(threat.x - global_position.x) < SCARE and absf(threat.y - global_position.y) < 50.0
+	_rest -= delta
+	var near := absf(threat.x - global_position.x) < scare_range and absf(threat.y - global_position.y) < 50.0
 	match state:
 		GRAZE:
-			if near:
+			if near and _rest <= 0.0:
 				_scare()
 			elif _t <= 0.0:
 				_t = rng.randf_range(1.5, 3.5)
 				_dir = [-1.0, 0.0, 0.0, 1.0][rng.randi() % 4]
-			vel.x = move_toward(vel.x, _dir * WANDER, delta * 200.0)
+			vel.x = move_toward(vel.x, _dir * wander_speed, delta * 200.0)
 		FLEE:
 			_flee_t -= delta
 			# cornered against the edge of the world or an obstacle: turn and bolt past
@@ -65,12 +88,13 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 				_dir = -_dir
 				_flee_t = maxf(_flee_t, 1.2)
 			if _flee_t <= 0.0:
-				if near:
+				if near and rest_time <= 0.0:
 					_scare()
 				else:
 					state = GRAZE
+					_rest = rest_time
 					_dir = 0.0
-			vel.x = move_toward(vel.x, _dir * RUN, delta * 500.0)
+			vel.x = move_toward(vel.x, _dir * run_speed, delta * 500.0)
 		DEAD:
 			vel.x = move_toward(vel.x, 0.0, delta * 300.0)
 	if _dir != 0.0 and state != DEAD:
@@ -87,7 +111,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 
 func _scare() -> void:
 	state = FLEE
-	_flee_t = 1.6
+	_flee_t = flee_time
 	var away := signf(global_position.x - game.player.global_position.x)
 	_dir = away if away != 0.0 else 1.0
 
@@ -107,8 +131,10 @@ func die() -> void:
 	state = DEAD
 	dead = true
 	_leg_rest.clear()
+	_leg_y0.clear()
 	for l in legs:
 		_leg_rest.append((l[0] as PixelPart).rotation)
+		_leg_y0.append((l[0] as PixelPart).position.y)
 
 ## Folds the legs out and drops the body onto the ground.
 func _slump(delta: float) -> void:
@@ -119,10 +145,10 @@ func _slump(delta: float) -> void:
 		var part: PixelPart = legs[i][0]
 		var out := 1.35 if part.position.x > 0.0 else -1.35
 		part.rotation = lerpf(_leg_rest[i], out, k)
-	body.position.y = body.get_meta("y0") + k * 9.0
+	body.position.y = body.get_meta("y0") + k * slump_drop
 	for i in legs.size():
 		var part: PixelPart = legs[i][0]
-		part.position.y = -16.0 + k * 9.0
+		part.position.y = _leg_y0[i] + k * slump_drop
 	rig.rotation = k * 0.05 * facing
 	(rig.material as ShaderMaterial).set_shader_parameter("flash", 0.85 if flash > 0.0 else 0.0)
 	flash -= delta

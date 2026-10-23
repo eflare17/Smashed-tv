@@ -39,6 +39,8 @@ const SHAKE := [0.45, 0.9]
 const TEAR_EVERY := 0.07
 const TEAR := 0.6
 const MAX_SIZE := 2.0
+## You start small. PLACEHOLDER.
+const START_SIZE := 0.7
 const MOUTH_TIME := 0.35
 
 ## Seconds since the current bite started, -1 when not biting; which kind it is.
@@ -63,11 +65,12 @@ var _head_base := Vector2.ZERO
 var _rest_rot := 0.0
 ## The last snap: [the spot you aimed at (where it is now on the prey), where the teeth actually went] (tests).
 var snap_info: Array = []
-## How big you are (1 = as you start); eating whole prey grows you.
-var size := 1.0
+## How big you are (START_SIZE as you start, 1 = the size the art is drawn); eating whole bodies grows you.
+var size := START_SIZE
 
 func _ready() -> void:
 	build(DinoArt.player())
+	scale = Vector2(size, size)
 	_head_base = head.position
 	for part in parts:
 		part.carvable = false
@@ -215,10 +218,11 @@ func _snap() -> void:
 ## Clamped on: the body is locked to the spot (it moves with them), the head shakes, a tear every TEAR_EVERY,
 ## and at the end the rip; or they break free first.
 func _grab_step(delta: float) -> void:
-	var who: Prey = grab.who
-	if not is_instance_valid(who) or not game.creatures.has(who):
+	# (it may have been eaten up or tidied away under you)
+	if not is_instance_valid(grab.who) or not game.creatures.has(grab.who):
 		release()
 		return
+	var who: Prey = grab.who
 	grab.t += delta
 	var spot: Vector2 = who.rig.to_global(grab.local)
 	var jolt := sin(grab.t * 42.0)

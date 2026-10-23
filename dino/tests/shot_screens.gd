@@ -91,7 +91,7 @@ func _run() -> void:
 
 	pl.hp = 1.0
 	pl.invuln = 0.0
-	main.hunter_bit(main.spawn_hunter(pl.position.x + 30.0))
+	main.creature_hit(main.spawn_hunter(pl.position.x + 30.0), Hunter.DAMAGE)
 	for f in 20:
 		await process_frame
 	await _shot(out, "game_over")

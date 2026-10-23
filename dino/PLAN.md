@@ -125,6 +125,30 @@ All the numbers above are placeholders to tune by playing.
 - Placeholders: a 0.8 s full charge, a 0.45-0.9 s shake, rips 1.5-2.3x a quick bite, and the break-free rule
   (time = shake / (size ratio)^2).
 
+## Urgency, new dinosaurs, a smaller start (owner's asks, 25 Oct)
+
+- **Danger builds the longer you stay in an area** (Option 1 of three: the others were a threat creeping in from
+  behind, and hunger). A DANGER bar under your health and XP fills over 2 minutes. The longer you stay, the
+  sooner and the more attackers come (on top of your level): from one every 10 s to one every 2 s, and from 2 at
+  once to 5. **The herds stop coming after 45 s** ("THE HERDS HAVE MOVED ON"), and at a minute "PREDATORS ARE
+  GATHERING. MOVE ON!". A new area starts the clock again.
+- **You start smaller** (0.7 of the old size). Hunters are about twice you now, so they break free of a big bite
+  until you've eaten and grown.
+- **New dinosaurs (all PLACEHOLDERS: shapes, numbers and behaviour to be decided):**
+  - **Pterodactyl:** comes in from above, circles over you, hangs and screeches (flashing: the warning), then
+    dives with its beak and climbs away. A dive takes 10 health. Bite it when it comes low (the lunge leaps).
+    Bite a wing mostly away and it crashes and flops about on the ground. About a third of what's sent after
+    you are pterodactyls. Kill: 20 XP.
+  - **Small runner:** a little, quick, skittish plant-eater. It bolts in short bursts and has to catch its breath
+    between them (so you can catch it). Little meat, about your starting size. The most common herd. Kill: 6 XP.
+  - **Charger:** a big horned plant-eater that ignores you until you bite it. Then it turns, closes in, paws the
+    ground (flashing), and charges horns first: 18 health and a throw. A rock stops it dead. It calms down 8 s
+    after the last bite. Kill: 30 XP.
+- Herds are now a mix: runners most often, then grazers, now and then a lone charger. The first herd is always
+  two runners.
+- Tests: 41 checks, all passing. Also `tests/shot_creatures.gd`, which photographs the cast, a dive, a charge and
+  the danger warning.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

@@ -59,7 +59,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 		LUNGE:
 			if not _did_hit and player.covers(_teeth(), 3.0):
 				_did_hit = true
-				game.hunter_bit(self)
+				game.creature_hit(self, DAMAGE)
 			if _t <= 0.0:
 				vel.x *= 0.2
 				_go(RECOVER, RECOVER_TIME)
