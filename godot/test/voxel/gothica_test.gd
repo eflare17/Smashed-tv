@@ -46,7 +46,7 @@ func _process(dt: float) -> bool:
 			var a: Vector3i = plain.grid("torso").size
 			var b: Vector3i = her.grid("torso").size
 			check(g != null and g.body.key == "gothica", "she's in the house: %s at %s" % [g.body.key if g else "-", g.body.global_position if g else "-"])
-			check(b.z > a.z and b.x == a.x, "her torso sculpted out in front: %s (was %s)" % [b, a])
+			check(her.parts.has("torso") and her._tint.has("built") and b.z >= a.z, "her body sculpted (GothBuild): torso %s (her pictures' %s)" % [b, a])
 			check(VoxelGothica.in_house(g.body.global_position), "she starts in the house")
 			arena.player.global_position = Vector3(10, 0, 10)
 			g.idle_t = 0.0

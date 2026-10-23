@@ -51,7 +51,7 @@ func setup(body_: VoxelBody) -> void:
 	_head = body.model.bone("head")
 	_hips = body.model.bone("hips")
 	var piv: Vector3 = body.model.bone_pivot[_chest]
-	var b: Dictionary = VoxelModel.BUST
+	var b: Dictionary = GothBuild.BUST if body.model._tint.has("built") else VoxelModel.BUST   # (the sculpted Gothica's own)
 	var mid := 0.0                                         # (the torso's middle, model x)
 	for k in 2:
 		var sx := 1.0 if k == 0 else -1.0                 # (left: the model's +x)
@@ -324,8 +324,8 @@ void fragment() {
 	float dark = 1.0 - smoothstep(0.08, 0.2, lum);
 	// matt on the cubes' steps (a sheen there is stripes); satin where it's shaded smooth (the chest)
 	float sheen = dark * v_soft;
-	ROUGHNESS = mix(mix(0.8, 0.5, sheen), 0.6, skin);
-	SPECULAR = mix(mix(0.4, 0.6, sheen), 0.35, skin);
+	ROUGHNESS = mix(mix(0.85, 0.72, sheen), 0.6, skin);
+	SPECULAR = mix(mix(0.35, 0.42, sheen), 0.35, skin);
 }
 """
 	return _shader

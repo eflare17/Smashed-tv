@@ -17,8 +17,8 @@ const VARIANTS := {
 	"thrower": {"base": "grunt", "tint": Color(0.45, 0.95, 0.3), "mix": 0.5},
 	"shielder": {"base": "brute", "tint": Color(0.45, 0.6, 1.0), "mix": 0.45, "shield": true},
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
-	"gothica": {"base": "goth", "bust": true},      # (the voxel arena's Gothica: her pictures, her chest sculpted on for VoxelJiggle)
-	"gothica_new": {"base": "goth", "built": "goth"},   # (Gothica sculpted from scratch: GothBuild; a first try, not in the game)
+	"gothica": {"base": "goth", "built": "goth"},   # (the voxel arena's Gothica, sculpted: GothBuild, her face from her picture)
+	"gothica_old": {"base": "goth", "bust": true},  # (the one before: her pictures stretched, her chest sculpted on)
 	"jared_hd": {"base": "jared"},               # (the voxel arena's Jared: at full detail; VoxelReshape off, the owner: "put them back")
 	"jared_new": {"base": "jared", "built": "jared", "pivots": {"head": Vector3(0, 115, 1)},
 		"rest": {"arm_l": Vector3(0, 0, 0.07), "arm_r": Vector3(0, 0, -0.07), "forearm_l": Vector3(-0.4, 0, 0),

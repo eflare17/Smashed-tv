@@ -23,7 +23,7 @@ static func part(name: String) -> Dictionary:
 		"head":
 			return VoxelSculpt.fill(Vector3i(-11, 99, -12), Vector3i(12, 137, 15), _head_sdf, _head_paint)
 		"hair":
-			return VoxelSculpt.fill(Vector3i(-20, 80, -20), Vector3i(21, 149, 15), _hair_sdf, _hair_paint,
+			return VoxelSculpt.fill(Vector3i(-23, 80, -22), Vector3i(24, 149, 15), _hair_sdf, _hair_paint,
 				func(p: Vector3) -> float: return _skin_sdf(p))
 		"torso":
 			return VoxelSculpt.fill(Vector3i(-20, 77, -11), Vector3i(21, 109, 16), _torso_sdf, _torso_paint,
@@ -50,8 +50,6 @@ static func _near(limb: String) -> Callable:
 	match limb:
 		"arm":
 			return func(p: Vector3) -> float: return minf(_torso_body(p), _forearm_sdf(p))
-		"forearm":
-			return func(p: Vector3) -> float: return minf(_arm_sdf(p), _hand_sdf(p))
 		"thigh":
 			return func(p: Vector3) -> float: return minf(_skirt_sdf(p), _shin_sdf(p))
 		"shin":
@@ -122,7 +120,8 @@ static func _face_at(p: Vector3):
 
 static func _skin_sdf(p: Vector3) -> float:
 	var d := VoxelSculpt.ellipsoid(p, Vector3(0.5, 124.0, 0.5), Vector3(9.6, 11.0, 10.3))          # the skull
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 117.0, 2.6), Vector3(8.6, 7.4, 8.0)), 5.0)    # cheeks to chin: one smooth shape
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 119.0, 2.6), Vector3(8.8, 5.6, 8.0)), 4.0)    # cheekbones: wide
+	d = VoxelSculpt.smin(d, VoxelSculpt.cone_capsule(p, Vector3(0.5, 117.5, 3.0), Vector3(0.5, 111.6, 6.4), 6.8, 2.0), 3.5)   # her jaw narrowing to a pointed chin
 	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5, 101.0, 0.0), Vector3(0.5, 111.0, 0.5), 4.2), 2.0)   # the neck: slim
 	d = VoxelSculpt.smin(d, VoxelSculpt.cone_capsule(p, Vector3(0.5, 121.5, 10.4), Vector3(0.5, 117.6, 11.6), 0.9, 1.3), 0.8)   # the nose
 	return d
@@ -164,10 +163,18 @@ static func _make_locks() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1977
 	# round her head: from beside her face (a = 0.42 pi) to the middle of her back (a = pi), both sides
+	for layer in 2:
+		_ring(rng, layer)
+	_top_locks(rng)
+
+# a ring of locks round her head (layer 0 the outer, thinner and lit; layer 1 under it, set between them, darker:
+# the gaps between the outer locks show the dark ones under them)
+static func _ring(rng: RandomNumberGenerator, layer: int) -> void:
 	for side in [-1.0, 1.0]:
-		var n := 9
+		var n := 10 if layer == 0 else 9
 		for i in n:
-			var a := lerpf(0.42 * PI, PI, float(i) / float(n - 1)) + rng.randf_range(-0.05, 0.05)
+			var f := (float(i) + (0.5 if layer == 1 else 0.0)) / float(n - 1)
+			var a := lerpf(0.42 * PI, PI, minf(f, 1.0)) + rng.randf_range(-0.04, 0.04)
 			var dir := Vector3(side * sin(a), 0.0, cos(a))
 			var root := Vector3(0.5, 139.5, -1.0) + Vector3(side * sin(a) * 4.0, 0.0, cos(a) * 4.0)
 			var bottom := lerpf(97.0, 84.0, float(i) / float(n - 1)) + rng.randf_range(-2.0, 2.0)
@@ -178,12 +185,17 @@ static func _make_locks() -> void:
 				var t := float(k) / steps
 				var y := lerpf(139.5, bottom, t)
 				# out over the crown, then falling: furthest out at her ears, in a little toward the ends
-				var out := lerpf(4.0, 12.8, smoothstep(0.0, 0.32, t)) + 1.6 * sin(t * PI) - 1.2 * t
+				var out := lerpf(4.0, 14.2, smoothstep(0.0, 0.3, t)) + 2.6 * sin(t * PI) - 0.6 * t - 2.4 * layer   # (full: out past her shoulders)
 				var wave := 1.3 * sin(t * 7.5 + phase) * smoothstep(0.25, 0.5, t)
 				var q := Vector3(0.5, y, -1.0) + dir * (out + wave)
 				q += Vector3(dir.z, 0, -dir.x) * 0.9 * sin(t * 5.0 + phase) * smoothstep(0.3, 0.6, t)   # (and side to side)
 				pts.append(q)
-			_locks.append([pts, rng.randf_range(3.3, 4.0), rng.randf_range(1.9, 2.5), rng.randf_range(-0.12, 0.12)])
+			if layer == 0:
+				_locks.append([pts, rng.randf_range(3.0, 3.4), rng.randf_range(2.0, 2.4), rng.randf_range(-0.08, 0.14), phase])
+			else:
+				_locks.append([pts, 3.4, 2.4, -0.28, phase])
+
+static func _top_locks(rng: RandomNumberGenerator) -> void:
 	# over the top: from the parting down either side to her temples, framing her forehead
 	for side in [-1.0, 1.0]:
 		for i in 4:
@@ -194,20 +206,21 @@ static func _make_locks() -> void:
 				var ang := t2 * 1.45                      # (round the skull from the parting to the side)
 				var r := 9.6 + 0.6 * sin(t2 * PI)
 				pts2.append(Vector3(0.5 + side * (0.6 + r * sin(ang)), 130.5 + r * cos(ang), z0 - 0.5 * t2 * (z0 - 2.0)))
-			_locks.append([pts2, 3.0, 2.6, rng.randf_range(-0.1, 0.1)])
+			_locks.append([pts2, 2.7, 2.4, rng.randf_range(-0.06, 0.12), rng.randf() * TAU])
 	# the two locks falling in front of her shoulders
 	for side in [-1.0, 1.0]:
 		var pts3 := PackedVector3Array()
 		for k in 8:
 			var t3 := float(k) / 7.0
 			pts3.append(Vector3(0.5 + side * (10.8 + 3.2 * t3 + 0.9 * sin(t3 * 6.0)), lerpf(128.0, 96.0, t3), 1.8 + 2.2 * t3))
-		_locks.append([pts3, 3.0, 2.0, 0.08])
+		_locks.append([pts3, 2.8, 1.9, 0.1, 1.0])
 
 # distance to the nearest lock (and which)
-static func _lock_d(p: Vector3) -> Vector2:
+static func _lock_d(p: Vector3) -> Vector3:
 	_make_locks()
 	var best := INF
 	var which := -1
+	var at := 0.0
 	for li in _locks.size():
 		var L: Array = _locks[li]
 		var pts: PackedVector3Array = L[0]
@@ -223,12 +236,13 @@ static func _lock_d(p: Vector3) -> Vector2:
 			if d < best:
 				best = d
 				which = li
-	return Vector2(best, which)
+				at = (float(k) + 0.5) / m
+	return Vector3(best, which, at)
 
 static func _hair_sdf(p: Vector3) -> float:
 	var d := _lock_d(p).x
 	# a base over her skull under the locks (no gaps through to her scalp)
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 132.5, -1.5), Vector3(10.8, 10.6, 11.0)), 1.5)
+	d = minf(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 131.5, -1.5), Vector3(10.4, 10.2, 10.6)))
 	# her face clear: an arch over her forehead from the parting, nothing in front of her cheeks from the side
 	var ax := absf(p.x - 0.5)
 	var face_top := 134.0 - 6.5 * (ax / 8.8) * (ax / 8.8)
@@ -243,17 +257,23 @@ static func _hair_sdf(p: Vector3) -> float:
 
 static func _hair_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var ld := _lock_d(p)
-	var shade := 0.0
-	if ld.y >= 0:
-		shade = float(_locks[int(ld.y)][3])
-	var t := VoxelSculpt.lit(n, ao * 1.3, 0.42)
-	var strands := VoxelSculpt.noise3(Vector3(p.x * 1.8, p.y * 0.3, p.z * 1.8), 1.4)
-	var c := VoxelSculpt.ramp(HAIR, clampf(0.05 + 0.6 * t + shade + 0.25 * (strands - 0.5), 0.0, 1.0))
-	# the sheen: purple along the tops of the waves, where the light catches each lock
-	if t > 0.5 and strands > 0.4:
-		c = c.lerp(HAIR_LIT, 0.55 * smoothstep(0.5, 0.85, t))
-	if ld.x > -0.6 and ao > 0.35:
-		c = c.darkened(0.35)                          # (between locks)
+	var shade := -0.3
+	var crest := 0.0
+	if ld.y >= 0 and ld.x < 1.0:
+		var L: Array = _locks[int(ld.y)]
+		shade = float(L[3])
+		# where along its waves (the crest of each wave catches the light)
+		crest = sin(ld.z * 7.5 + float(L[4]))
+	var t := VoxelSculpt.lit(n, ao * 1.4, 0.42)
+	var strands := VoxelSculpt.noise3(Vector3(p.x * 2.4, p.y * 0.25, p.z * 2.4), 1.2)
+	var c := VoxelSculpt.ramp(HAIR, clampf(0.05 + 0.55 * t + shade + 0.18 * (strands - 0.5) + 0.12 * crest, 0.0, 1.0))
+	# the sheen: purple bands across each lock at its wave crests, on the lit side
+	# (streaks running down each lock on its lit side, longest over the crests of its waves)
+	var streak := VoxelSculpt.noise3(Vector3(p.x * 3.0, p.y * 0.18, p.z * 3.0), 1.0)
+	if shade > -0.2 and t > 0.45 and streak > 0.62 - 0.12 * crest:
+		c = c.lerp(HAIR_LIT, 0.55 * smoothstep(0.45, 0.75, t))
+	if ld.x > -0.6 and ao > 0.3:
+		c = c.darkened(0.4)                           # (between locks)
 	return c
 
 # ---------------------------------------------------------------- the torso (chest bone, pivot 0, 80, 0)
@@ -265,7 +285,7 @@ static func _torso_body(p: Vector3) -> float:
 		d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 4.0, 103.5, -1.0), Vector3(0.5 + sx * 13.5, 102.0, -1.0), 3.8), 2.5)   # shoulders
 		var b: Dictionary = BUST
 		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * float(b.x), float(b.y), float(b.z)),
-			Vector3(float(b.rx), float(b.ry_up), float(b.rz))), 2.0)                                # her bust
+			Vector3(float(b.rx), float(b.ry_up), float(b.rz))), 3.5)                                # her bust: blended into her
 	d = VoxelSculpt.smax(d, 78.5 - p.y, 1.0)
 	return d
 
@@ -303,8 +323,8 @@ static func _torso_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var cover := _top_at(p)
 	if cover <= 0.0:
 		return _skin(p, n, ao)
-	# the top: black, a soft sheen where the light catches it (on her bust most)
-	var c2 := VoxelSculpt.ramp(TOP, 0.12 + 0.55 * t)
+	# the top: soft black cotton, its folds and the light on it from the shading
+	var c2 := VoxelSculpt.ramp(TOP, 0.18 + 0.65 * t)
 	if cover < 0.9:
 		c2 = TOP[0]                                   # (its edge)
 	return c2
@@ -348,16 +368,16 @@ static func _skirt_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 # ---------------------------------------------------------------- arms (her left; the right mirrored): slim
 
 static func _arm_sdf(p: Vector3) -> float:
-	var d := VoxelSculpt.cone_capsule(p, Vector3(17.3, 100.5, -1.0), Vector3(18.4, 86.0, -1.0), 3.5, 2.9)
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(16.4, 101.0, -1.0), Vector3(4.4, 4.4, 4.4)), 2.0)   # the shoulder: round
+	var d := VoxelSculpt.cone_capsule(p, Vector3(16.8, 100.5, -1.0), Vector3(17.8, 86.0, -1.0), 4.1, 3.3)
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(15.8, 101.0, -1.0), Vector3(4.8, 4.6, 4.8)), 2.0)   # the shoulder: round
 	return d
 
 static func _arm_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	return _skin(p, n, ao)
 
 static func _forearm_sdf(p: Vector3) -> float:
-	var d := VoxelSculpt.cone_capsule(p, Vector3(18.4, 85.5, -1.0), Vector3(19.5, 75.0, -0.8), 2.9, 2.2)
-	return VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(18.7, 82.0, -0.6), Vector3(3.0, 3.6, 2.9)), 1.5)   # the forearm's curve
+	var d := VoxelSculpt.cone_capsule(p, Vector3(17.9, 85.5, -1.0), Vector3(19.2, 75.0, -0.8), 3.3, 2.4)
+	return VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(18.3, 82.0, -0.6), Vector3(3.4, 3.8, 3.2)), 1.5)   # the forearm's curve
 
 static func _forearm_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	return _skin(p, n, ao)
@@ -370,7 +390,7 @@ static func _hand_sdf(p: Vector3) -> float:
 
 static func _hand_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var c := _skin(p, n, ao)
-	if p.y < 70.2:
+	if p.y < 69.6 and n.y < -0.3:
 		c = c.lerp(Color8(30, 24, 40), 0.7)           # (dark nail polish at her fingertips)
 	return c
 
@@ -379,7 +399,7 @@ static func _hand_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 const BOOT_TOP := 32.5
 
 static func _thigh_sdf(p: Vector3) -> float:
-	var d := VoxelSculpt.cone_capsule(p, Vector3(5.5, 53.0, 0.0), Vector3(5.5, 32.0, 0.0), 5.6, 4.3)
+	var d := VoxelSculpt.cone_capsule(p, Vector3(5.5, 53.0, 0.0), Vector3(5.6, 32.0, 0.0), 6.6, 4.6)
 	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(5.5, 32.0, 1.6), Vector3(3.2, 2.5, 3.0)), 1.0)   # the knee
 	return d
 
@@ -387,8 +407,8 @@ static func _thigh_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	return _skin(p, n, ao)
 
 static func _shin_sdf(p: Vector3) -> float:
-	var d := VoxelSculpt.cone_capsule(p, Vector3(5.5, 31.5, 0.0), Vector3(5.5, 14.0, -0.5), 4.1, 3.2)
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(5.5, 24.0, -1.5), Vector3(3.8, 5.0, 3.6)), 1.5)   # the calf
+	var d := VoxelSculpt.cone_capsule(p, Vector3(5.6, 31.5, 0.0), Vector3(5.5, 14.0, -0.5), 4.5, 3.4)
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(5.5, 24.0, -1.5), Vector3(4.2, 5.2, 4.0)), 1.5)   # the calf
 	if p.y < BOOT_TOP:
 		d -= 1.9 if p.y > BOOT_TOP - 2.2 else 1.3     # (the boot, its cuff at the top)
 	return d
