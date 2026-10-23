@@ -129,6 +129,8 @@ var _near_game := ""            # what's looked at in there (VoxelGamesRoom.pick
 var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
 var upgrades: VoxelUpgrades     # the weapon bench in the yard (Stage 13)
+var slot: VoxelSlotMachine      # the slot machine against the north wall
+var _near_slot := false
 var _upg := {}                  # this player's levels as saved (put on me once it's made)
 var _near_upg := ""             # the weapon bench's rack looked at ("" none)
 var _near_bench := false
@@ -224,6 +226,10 @@ func _ready() -> void:
 	add_child(stash)
 	stash.setup(self)
 	blocks = stash.blocks()
+	slot = VoxelSlotMachine.new()
+	add_child(slot)
+	slot.setup(self)
+	blocks.append([VoxelSlotMachine.AT, 0.45, 0.42])     # (walkers go round it)
 	# saved between games (not the self-tests'; --save=path elsewhere, --nosave never)
 	stash.save_path = String(_opts.get("save", "")) if _opts.has("save") else ("" if testing else VoxelStorages.SAVE_PATH)
 	stash.load_save()
@@ -941,6 +947,7 @@ func _storage_step(dt: float) -> void:
 	_near_ward = false
 	_near_bench = false
 	_near_upg = ""
+	_near_slot = false
 	_near_prop = ""
 	_near_plant = -1
 	_near_hen = ""
@@ -959,6 +966,9 @@ func _storage_step(dt: float) -> void:
 		_near_bench = in_yard and _near_st == null and _near_bed == 0 and not _near_ward and yard.bench_at(eye, fwd)
 		_near_upg = upgrades.pick(eye, fwd) if (in_yard and upgrades and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench) else ""
 		var pp2 := player.global_position
+		_near_slot = slot != null and _near_st == null and _near_bed == 0 and not in_yard and slot.pick(eye, fwd)
+		if slot:
+			slot.near = pp2.distance_to(slot.global_position) < 3.0
 		if VoxelGamesRoom.in_room(pp2) and _near_st == null and _near_bed == 0:
 			_near_game = String(games.pick(eye, fwd)[0])
 		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and (VoxelYard.in_yard(pp2) or VoxelChickens.in_pen(pp2)):
@@ -986,6 +996,8 @@ func _storage_step(dt: float) -> void:
 		t = bench_line()
 	elif _near_upg != "":
 		t = upgrades.line(_near_upg, me.upg, cash)
+	elif _near_slot:
+		t = slot.line()
 	elif _near_game != "":
 		t = games.line(_near_game)
 	elif _near_hen != "":
@@ -1305,6 +1317,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					bench_make()
 				elif _near_upg != "":
 					upgrade_buy(_near_upg)
+				elif _near_slot:
+					slot.pull()
 				elif _near_game != "":
 					games.use(_near_game)
 				elif _near_hen != "":

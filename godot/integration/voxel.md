@@ -590,6 +590,34 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### The slot machine (23 Oct, the owner: "an old school one that you have to pull the lever and the dials spin";
+"a bit of a beat up looking machine, maybe some of the lights flicker"; "a spider in the machine that sometimes comes
+down or falls onto one of the spinning wheels and gets flung around")
+
+- `scripts/voxel/arena/voxel_slot_machine.gd` (`VoxelSlotMachine`, the arena's `slot`): against the north wall right of
+  the chests (7, -21.15), a 1950s one-armed bandit on its own stand, built in code from 2.5 cm cubes (no files): the red
+  faded to brick and chipped to grey at every edge, rust running down from the screws, a dent, four bullet holes and old
+  blood in its left side, flames up both sides, cream front, dull pitted chrome (one strip of trim bent out), a brass pay
+  table hanging crooked, the coin slot taped on, gum in the payout tray, a bare scuffed kick plate ("KICK HERE"), a foot
+  missing (it leans; cardboard under the corner), coins and cigarette butts on the floor. The marquee: a cracked arch,
+  "LUCKY SPUD" in gold (K and U dead, now and then flickering back), a crowned potato half its crown peeled off, twenty
+  bulbs round it (six dead, three gone, one loose and always flickering); now and then the lot dims, cuts out, buzzes
+  back. The bulbs chase (faster with someone stood at it), flash unevenly while it spins, all at once on a win, go dull
+  red and out on three skulls.
+- Three real drums (eight symbols each: cherries, bell, BAR, 7, spud, chicken, skull, THE BUTCHER; pixel art on a
+  faceted drum, a blurred copy while spinning fast), lit from inside (the right one dying, flickering), behind smudged
+  glass with a spiderweb crack, a faded orange win line, a WIN lamp with "BROKE" on a bit of tape.
+- E at its front pulls the bent chrome lever (a chipped red ball, taped): it swings down, the reels start, it springs
+  back wobbling (one in four sticks halfway, juddering, then clunks home). The outcome's picked at the pull; the reels
+  stop left to right with a click and a clank, each a turn and a half on and a little past and back; the third waits
+  longer when the first two match.
+- The spider lives in the top of the window: now and then it lets itself down on a thread over a reel, dangles, goes
+  back up; caught down there while they spin, or shaken down by a pull, it lands on a drum, rides round it, is flung off,
+  bounces about behind the glass, lies on its back a moment and climbs back up the side.
+- Next: what a pull costs and pays (the original's prizes), hitting it to stop the flickering, co-op.
+- `test/voxel/slot_shots.gd` (`voxel_shots/slot_front.png`, `slot_reels.png`, `slot_flung.png`, `slot_win.png`,
+  `slot_side.png`, `slot_lever.png`).
+
 ### The trailer (22 Oct, the owner: "cheery, happy music, feeding the chickens and digging and catching worms, then
 cutting to the fight ... one step of the peaceful stuff, then back to gory")
 
