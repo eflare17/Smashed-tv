@@ -16,15 +16,15 @@ const FILE := "user://voxel_settings.cfg"
 const ORDER := ["low", "medium", "high", "ultra", "extreme"]
 const PRESETS := {
 	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
-		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12},
+		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12, "gore": 0},
 	"medium": {"scale": 0.85, "msaa": 0, "taa": false, "shadows": 1, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25},
+		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25, "gore": 1},
 	"high": {"scale": 1.0, "msaa": 2, "taa": false, "shadows": 2, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40},
+		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40, "gore": 1},
 	"ultra": {"scale": 1.0, "msaa": 4, "taa": true, "shadows": 2, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60},
+		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60, "gore": 1},
 	"extreme": {"scale": 1.5, "msaa": 8, "taa": true, "shadows": 3, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120},
+		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120, "gore": 2},
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
@@ -36,6 +36,7 @@ const CHOICES := {
 	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
 	"shadows": ["Shadows", [0, 1, 2, 3], ["Off", "Hard (2048)", "Soft (4096)", "Sharpest (8192)"]],
 	"fx": ["Effects quality", [0, 1], ["Normal", "Best (+ reflections)"]],
+	"gore": ["Gore", [0, 1, 2], ["Normal", "Ultra (bleeding, pools)", "Extreme"]],
 	"ssao": ["Ambient occlusion", [false, true], ["Off", "On"]],
 	"ssil": ["Indirect light (SSIL)", [false, true], ["Off", "On"]],
 	"glow": ["Glow", [false, true], ["Off", "On"]],
@@ -168,6 +169,7 @@ func apply(arena: Node3D) -> void:
 		else int(ProjectSettings.get_setting("rendering/global_illumination/sdfgi/probe_ray_count", 1)))
 	RenderingServer.environment_set_volumetric_fog_volume_size(128 if hi else 64, 128 if hi else 64)
 	VoxelMirror.enabled = bool(v.mirror)
+	VoxelBlood.level = int(v.get("gore", 1))
 	var aa := int(v.msaa)                    # (the mirror as sharp as the rest: more pixels and its own MSAA at the higher levels)
 	VoxelMirror.max_res = {0: 720, 2: 1080, 4: 1440, 8: 2160}.get(aa, 1080)
 	VoxelMirror.msaa = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(aa, Viewport.MSAA_2X)

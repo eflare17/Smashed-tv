@@ -179,6 +179,9 @@ static var immortal := false
 ## root (the cubes it takes, and the health with them, go up by hit_k), a slice's thickness and a blow's health by it.
 ## 1 outside a player's weapons.
 static var hit_k := 1.0
+## Ultra Gore (VoxelBlood.wound): told of every hole and stump a cut leaves, func(node, at, dir, strength, kind) (in both
+## games: the guest's replays of the host's cuts tell it too).
+static var on_wound: Callable
 var _mat: Material
 
 static var _flesh_cache := {}         # "key|chunk" -> {part: grid with flesh inside}
@@ -1093,6 +1096,8 @@ func damage(hit: Dictionary, r: float) -> Dictionary:
 	_net_in("damage", [hit, r])
 	var res := _damage_x(hit, r)
 	_net_depth -= 1
+	if _net_depth == 0:
+		_bleed(res, String(hit.get("part", "")))
 	return res
 
 ## A part and everything hanging from it taken off whole (a harpoon's yank): {pieces (VoxelPieces.spawn's list),
@@ -1103,6 +1108,8 @@ func sever(part: String) -> Dictionary:
 	_net_in("sever", [part])
 	var res := _sever_x(part)
 	_net_depth -= 1
+	if _net_depth == 0:
+		_bleed(res)
 	return res
 
 ## Frost building up (amount: a share of frozen solid). True if that froze them solid.
@@ -1444,6 +1451,8 @@ func slice(eye: Vector3, n: Vector3, fwd: Vector3, reach: float, cos_arc: float,
 	_net_in("slice", [eye, n, fwd, reach, cos_arc, half_t])
 	var res := _remove({"plane": true, "eye": eye, "n": n, "fwd": fwd, "reach": reach, "cos_arc": cos_arc, "half_t": half_t})
 	_net_depth -= 1
+	if _net_depth == 0:
+		_bleed(res)
 	return res
 
 ## A blow that scoops out every cube within r metres of the segment a-b (a == b: a ball, a crater; long: a tunnel, a
@@ -1458,7 +1467,51 @@ func carve(a: Vector3, b: Vector3, r: float, hp_per_cube: float = 0.08, bits_eve
 	_net_in("carve", [a, b, r, hp_per_cube, bits_every])
 	var res := _remove({"plane": false, "a": a, "b": b, "r": r, "hp_per_cube": hp_per_cube, "bits_every": maxi(1, bits_every)})
 	_net_depth -= 1
+	if _net_depth == 0:
+		_bleed(res)
 	return res
+
+# a cut's blood (Ultra Gore): the hole it left bleeds, each part that came off leaves a stump spurting
+func _bleed(res: Dictionary, hit_part := "") -> void:
+	if not on_wound.is_valid() or res.is_empty() or bool(res.get("shattered", false)) or frozen():
+		return
+	var bits: Array = res.get("bits", [])
+	if not bits.is_empty():
+		var c := Vector3.ZERO
+		var k := mini(bits.size(), 24)
+		for i in k:
+			c += bits[i * bits.size() / k].pos
+		c /= float(k)
+		var pn := hit_part if (hit_part != "" and parts.has(hit_part) and not parts[hit_part].gone) else _nearest_part(c)
+		if pn != "":
+			var mid := global_position + Vector3.UP * height * 0.55
+			on_wound.call(parts[pn].mesh, c, (c - mid).normalized(), clampf(bits.size() / 25.0, 0.3, 3.0), "hole")
+	var stumps := []
+	for pc in res.get("pieces", []):
+		if pc.has("part") and not stumps.has(pc.part):
+			stumps.append(pc.part)
+	var limb := String(res.get("limb", ""))
+	if limb != "" and not stumps.has(limb):
+		stumps.append(limb)
+	for p in stumps:
+		var par := _seam_parent(p)
+		if par == "" or not parts.has(par) or parts[par].gone or not parts.has(p):
+			continue
+		var j: Vector3 = skeleton.global_transform * skeleton.get_bone_global_pose(int(parts[p].bone)).origin
+		var node: Node3D = parts[par].mesh
+		on_wound.call(node, j, (j - node.global_position).normalized(), 3.2 if p == "head" else 2.4, "stump")
+
+func _nearest_part(c: Vector3) -> String:
+	var best := ""
+	var bd := INF
+	for n in parts:
+		if parts[n].gone:
+			continue
+		var d := (parts[n].mesh as Node3D).global_position.distance_squared_to(c)
+		if d < bd:
+			bd = d
+			best = n
+	return best
 
 # hurt() itself
 func _hurt_x(amount: float) -> bool:

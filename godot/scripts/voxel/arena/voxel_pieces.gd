@@ -66,6 +66,8 @@ func _make(vm: float, key: String, chunk: int, knock: Vector3, list: Array, vel:
 	rb.continuous_cd = true
 	arena.add_child(rb)
 	rb.global_transform = Transform3D(Basis.IDENTITY, centre)
+	if arena.get("blood"):
+		arena.blood.piece(rb)                    # (Ultra Gore: it drips where it lies a while)
 	var inv := rb.global_transform.affine_inverse()
 	var keep := []
 	for e in list:
@@ -182,6 +184,10 @@ func _settle(i: int) -> void:
 	f.global_position = Vector3(rb.global_position.x, 0.0, rb.global_position.z)
 	f.make_fragment(grids, xforms)
 	arena.bodies.append(f)
+	if arena.get("blood"):
+		for n in grids:
+			arena.blood.rehome(rb, f.parts[n].mesh)   # (still dripping, now from the body it became)
+			break
 	if net_rec_frag.is_valid():
 		net_rec_frag.call(rb, f, grids, xforms)
 	rb.queue_free()

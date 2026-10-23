@@ -130,6 +130,7 @@ var yard: VoxelYard
 var shovel_tier := 0            # 0 rusty, 1 good, 2 golden (made at the tool bench; saved)
 var upgrades: VoxelUpgrades     # the weapon bench in the yard (Stage 13)
 var slot: VoxelSlotMachine      # the slot machine against the north wall
+var blood: VoxelBlood           # Ultra Gore: the bleeding, the pools, the splats
 var _near_slot := false
 var _upg := {}                  # this player's levels as saved (put on me once it's made)
 var _near_upg := ""             # the weapon bench's rack looked at ("" none)
@@ -221,6 +222,9 @@ func _ready() -> void:
 	pieces = VoxelPieces.new()
 	add_child(pieces)
 	pieces.setup(self)
+	blood = VoxelBlood.new()
+	add_child(blood)
+	blood.setup(self)
 	debris.on_take = _on_take
 	stash = VoxelStorages.new()
 	add_child(stash)
@@ -1198,6 +1202,7 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 		n = count
 	bodies.clear()
 	kinds.clear()
+	blood.clear()
 	for j in _jobs:
 		WorkerThreadPool.wait_for_task_completion(j.id)     # (a task never waited on crashes the game at quit)
 	_jobs.clear()
@@ -2221,6 +2226,8 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			var res := best_b.damage(best, rr)
 			if not res.get("shattered", false):
 				best_b.hit_react(d, (res.bits as Array).size(), String(best.part))
+				if String(best.part) != "shield" and not (res.bits as Array).is_empty():
+					blood.spray(best.point, d, (res.bits as Array).size())     # (out the far side)
 			knocked += (res.bits as Array).size()
 			var bits: Array = res.bits
 			if bits.size() > 40:

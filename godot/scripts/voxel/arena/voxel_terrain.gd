@@ -94,6 +94,16 @@ func contains(p: Vector3) -> bool:
 	var l := p - origin
 	return l.x >= 0.0 and l.z >= 0.0 and l.x < NX * CELL and l.z < NZ * CELL
 
+## The top of the ground under a world point (the highest block's top in its column; the bottom if dug to bedrock).
+func surface_y(p: Vector3) -> float:
+	var c := cell_of(p)
+	if c.x < 0 or c.x >= NX or c.z < 0 or c.z >= NZ:
+		return origin.y + NY * CELL
+	for y in range(NY - 1, -1, -1):
+		if cells[idx(c.x, y, c.z)] != AIR:
+			return origin.y + (y + 1) * CELL
+	return origin.y
+
 # ---------------------------------------------------------------- making the ground
 
 ## The ground as made (the same every game: a fixed seed).

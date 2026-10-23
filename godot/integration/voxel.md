@@ -590,6 +590,28 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### Ultra Gore (23 Oct, the owner: "ultra gore mode with dripping etc")
+
+- `scripts/voxel/arena/voxel_blood.gd` (`VoxelBlood`, the arena's `blood`): the blood after a hit. Every cut a body
+  takes (its public `damage`, `carve`, `slice`, `sever`) tells `VoxelBody.on_wound` about the hole it left (where the
+  cubes came out, on the part they came out of) and every part that came off (a stump at the joint, on the part it was
+  joined to). The guest's replays of the host's cuts go through the same calls, so each game bleeds its own and nothing
+  new goes over the network (the drops and pools needn't match).
+- Holes bleed for 9 s, dripping less and less. Stumps spurt like a heartbeat for 7 s: a quarter-second jet every beat
+  (an arc out of the stump, the head's strongest), weaker and slower each time, with a wet thump. A cut-off piece drips
+  from where it lies (and goes on once it's settled into a body of its own). A shot through a body sprays out the far
+  side along its way.
+- Drops are little dark red cubes that fall (stretched as they go fast). On the floor (the yard's dug ground too:
+  `VoxelTerrain.surface_y`) they make pools that grow as more lands in them, glossy and dark red, drying darker over a
+  minute; on the arena's walls and pillars they leave splats, longer the harder and more sideways they hit. All three
+  are MultiMeshes (one draw call each). Drips into pools and splats make small wet sounds.
+- A hit within 1.9 m in front of you in first person splashes your view: clumpy drops, mostly away from the middle,
+  that run down and fade over about 3 s.
+- Settings: Gore (Normal: holes drip, small pools, no spurts or screen splashes; Ultra; Extreme: more drops, pools,
+  splats and wounds kept). Low and Medium start on Normal, High and Ultra on Ultra, Extreme on Extreme. Cleared when
+  the fight starts over.
+- `test/voxel/blood_shots.gd` (`voxel_shots/blood_stump.png`, `blood_pools.png`, `blood_wall.png`, `blood_screen.png`).
+
 ### The mirror, sharper (23 Oct, the owner: "the mirror ... looks blurry looking at Jared")
 
 - `VoxelMirror` drew its reflection at 360 pixels high whatever: close up the glass covers most of the screen, so it was
