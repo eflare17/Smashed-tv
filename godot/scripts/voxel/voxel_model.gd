@@ -17,7 +17,8 @@ const VARIANTS := {
 	"thrower": {"base": "grunt", "tint": Color(0.45, 0.95, 0.3), "mix": 0.5},
 	"shielder": {"base": "brute", "tint": Color(0.45, 0.6, 1.0), "mix": 0.45, "shield": true},
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
-	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
+	"gothica": {"base": "goth", "bust": true, "reshape": true},   # (the voxel arena's Gothica: VoxelReshape, her chest for VoxelJiggle)
+	"jared_hd": {"base": "jared", "reshape": true},              # (the voxel arena's Jared: VoxelReshape)
 }
 ## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
 ## forward), how far apart the two are. VoxelJiggle reads these to know what moves.
@@ -26,6 +27,12 @@ const SHIELD_ORIGIN := Vector3i(-4, 19, -22)     # (model voxels, at rest: x acr
 const SHIELD_SIZE := Vector3i(30, 2, 38)
 
 static var _models := {}
+## The reshaped models' grids, made once ahead (tools/bake_reshape.gd: assets/voxel/baked/<char>.bin) so the game
+## doesn't spend seconds reshaping at the start; ignored if the code that makes them has changed since (where the
+## code can be read: the editor, the tests) or use_baked is off (the bake itself).
+const BAKED_DIR := "res://assets/voxel/baked/"
+static var use_baked := true
+static var _baked := {}
 static var _weapons := {}          # name -> {grid, origin: Vector3, arrays: {lod: Dictionary}}
 static var _weapon_meta := {}
 
@@ -157,11 +164,39 @@ func grid(part: String) -> Dictionary:
 	if p.grid == null:
 		var v := VoxFile.load_file(DIR + (_dir if _dir != "" else char_name) + "/" + String(p.file))
 		p.grid = v.model_grid() if v else {"size": Vector3i.ZERO, "cells": PackedInt32Array()}
+		var bk := _baked_parts()
+		if bk.has(part):
+			p.grid = bk[part].grid
+			p.origin = bk[part].origin
+			return p.grid
 		if _tint.has("tint"):
 			p.grid = _tinted(p.grid, _tint.tint, float(_tint.mix))
+		if bool(_tint.get("reshape", false)):
+			var r := VoxelReshape.part(_dir, part, p.grid, p.origin, String(p.group))
+			p.grid = r.grid
+			p.origin = r.origin
 		if part == "torso" and bool(_tint.get("bust", false)):
 			p.grid = _sculpt_bust(p.grid, Vector3(p.origin))
 	return p.grid
+
+func _baked_parts() -> Dictionary:
+	if not use_baked or not bool(_tint.get("reshape", false)):
+		return {}
+	if not _baked.has(char_name):
+		_baked[char_name] = {}
+		var f := FileAccess.open_compressed(BAKED_DIR + char_name + ".bin", FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+		if f:
+			var d = f.get_var()
+			if d is Dictionary and (String(d.get("version", "")) == source_version() or source_version() == ""):
+				_baked[char_name] = d.parts
+	return _baked[char_name]
+
+## What the reshaping code is (a hash of its source; "" where the source can't be read, an exported game).
+static func source_version() -> String:
+	var t := ""
+	for path in ["res://scripts/voxel/voxel_reshape.gd", "res://scripts/voxel/voxel_model.gd"]:
+		t += FileAccess.get_file_as_string(path)
+	return "" if t.length() < 1000 else str(hash(t))
 
 # the torso with two rounded shapes built out in front (BUST), filled solid, each cube coloured as the torso's front
 # was there (the top's black, the neckline's skin), the undersides and the middle between them a shade darker; the grid

@@ -84,9 +84,7 @@ func setup(body_: VoxelBody) -> void:
 	sk.set_shader_parameter("root_y", (80.0 - kp.y) * _vm)
 	sk.set_shader_parameter("len_y", 30.0 * _vm)
 	sk.set_shader_parameter("power", 1.4)
-	for n in body.parts:
-		var mi: MeshInstance3D = body.parts[n].mesh
-		mi.material_override = mats[n] if n in ["torso", "hair", "skirt"] else mats.rest
+	dress(body, mats.rest, {"torso": mats.torso, "hair": mats.hair, "skirt": mats.skirt})
 
 ## A jolt to the chest (its own frame, metres a second): a heel coming down, a landing, a bump.
 func kick(v: Vector3) -> void:
@@ -222,6 +220,20 @@ func _hang(st: Dictionary, xf: Transform3D, hz: float, zeta: float, reach: Vecto
 ## The shader all of her is drawn with: vertex colours lit (her top, skirt and boots satin-black with a sheen, skin
 ## softer); mode 1 bends the chest (each side by its own d, q, s), mode 2 swings a hanging part (h_d, more the further
 ## down, the skirt's hem rippling with wave).
+## A block character drawn with shader(): every part's material (one for her soft parts each, if given; the rest
+## shared) and its rounded shape for the smooth shading (VoxelReshape.shape).
+static func dress(b: VoxelBody, rest: ShaderMaterial = null, own: Dictionary = {}) -> void:
+	if rest == null:
+		rest = ShaderMaterial.new()
+		rest.shader = shader()
+	for n in b.parts:
+		var p: Dictionary = b.parts[n]
+		var mi: MeshInstance3D = p.mesh
+		mi.material_override = own.get(n, rest)
+		var sh := VoxelReshape.shape(p.grid, b.mesh_origin(n), Vector3.ZERO, b.vm)
+		mi.set_instance_shader_parameter("shape_c", sh[0])
+		mi.set_instance_shader_parameter("shape_r", sh[1])
+
 static func shader() -> Shader:
 	if _shader:
 		return _shader
@@ -235,7 +247,13 @@ uniform vec3 d_l; uniform vec3 d_r; uniform vec3 q_l; uniform vec3 q_r;
 uniform float s_l = 0.0; uniform float s_r = 0.0;
 uniform float root_y = 0.0; uniform float len_y = 1.0; uniform float power = 1.5;
 uniform vec3 h_d; uniform float wave = 0.0; uniform float phase = 0.0;
+// the part's rounded shape (VoxelReshape.shape, set on each part: dress()): its cubes lit as that shape, not as steps
+instance uniform vec3 shape_c;
+instance uniform vec3 shape_r;
+uniform float round_k = 0.62;
 varying float v_soft;
+varying vec3 v_pos;
+varying vec3 v_n;
 
 void bend(inout vec3 v, inout vec3 n, inout float soft, vec3 c, vec3 d, vec3 q, float s) {
 	vec3 rel = (v - c) / rad;
@@ -261,6 +279,8 @@ void vertex() {
 	vec3 v = VERTEX;
 	vec3 n = NORMAL;
 	float soft = 0.0;
+	v_pos = VERTEX;
+	v_n = NORMAL;
 	if (mode == 1) {
 		if (distance(v.xy, c_l.xy) < distance(v.xy, c_r.xy)) {
 			bend(v, n, soft, c_l, d_l, q_l, s_l);
@@ -279,6 +299,22 @@ void vertex() {
 }
 
 void fragment() {
+	if (shape_r.x > 0.0 && v_soft < 0.02) {
+		// an oval body, or a limb (much longer than it's wide): round along its length, its ends capped
+		vec3 q = v_pos - shape_c;
+		vec3 r = max(shape_r, vec3(0.005));
+		float w = min(r.x, r.z);
+		vec3 rn;
+		if (r.y > w * 1.7) {
+			float h = r.y - w;
+			q.y = sign(q.y) * max(0.0, abs(q.y) - h);
+			rn = normalize(vec3(q.x / (r.x * r.x), q.y / (w * w), q.z / (r.z * r.z)));
+		} else {
+			rn = normalize(q / (r * r));
+		}
+		vec3 nl = normalize(mix(normalize(v_n), rn, round_k));
+		NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(nl, 0.0)).xyz);
+	}
 	vec3 c = COLOR.rgb;
 	ALBEDO = mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, lessThan(c, vec3(0.04045)));
 	float lum = dot(c, vec3(0.3, 0.59, 0.11));

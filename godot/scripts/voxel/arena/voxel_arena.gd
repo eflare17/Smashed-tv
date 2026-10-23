@@ -463,7 +463,8 @@ func _player() -> void:
 	# Juicy Jared in blocks, seen in the top-down view
 	avatar = VoxelBody.new()
 	add_child(avatar)
-	avatar.setup("jared", 0.0125 * 2.0, 2, _mat)
+	avatar.setup("jared_hd", 0.0125, 1, _mat)        # (every pixel a cube, made solid from the side: VoxelReshape)
+	VoxelJiggle.dress(avatar)
 	avatar.visible = false
 
 func _hud() -> void:

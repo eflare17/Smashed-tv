@@ -590,6 +590,37 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### Jared and Gothica made solid (23 Oct, the owner: Gothica's side view "look bad"; Jared "a bit blurry, a little off")
+
+- Jared was built at half detail (every 2 x 2 x 2 of his picture's pixels averaged into one cube: his face and the
+  JUICY JARED print smudged). The arena's Jared (yours, and your mate's in co-op) is now the "jared_hd" model at full
+  detail (VoxelModel.VARIANTS), like Gothica.
+- `scripts/voxel/voxel_reshape.gd` (`VoxelReshape`), for models with "reshape" (jared_hd, gothica): the models were
+  made from flat front and back pictures, so from the side every part was a slab, each row of the picture stretched
+  through it (stripes), faces flat. Each part as it's loaded:
+  - despeckle(): thin bits sticking out taken off (plates one cube thick at Jared's shoulders);
+  - roundify(): each slice trimmed to a rounded oval (sizes smoothed over the slices either side, an even taper),
+    the front and back pictures put back on the new surface (no inside cubes showing); a head only at the back
+    (the face stays as drawn);
+  - unline(): thin dark lines across a limb (the picture's outlines between segments: rings in blocks) filled;
+  - recolour(): sides and tops coloured from the front's and back's rows (the light colours, smoothed over five
+    rows), blended front to back, faded in from a few cubes behind each picture; the outline at the very edge
+    filled; hair gets strands running down;
+  - hair_clear(): Gothica's long hair moved back off the side of her face (it ran forward past her face: a dark
+    band across her cheek from the side), tapering above her forehead;
+  - face(): a nose and chin built out (Jared: his moustache out too, ears);
+  - glasses(): Jared's glasses' arms run back to his ears;
+  - joints(): forearms, hands, shins and feet reach up into the part above (no gap at a bent elbow or knee).
+- Smooth shading: every part's rounded shape (VoxelReshape.shape) goes to the shader (VoxelJiggle.shader,
+  VoxelJiggle.dress), which lights each pixel partly as that shape (an oval body, or a limb rounded along its length
+  with capped ends) and partly as its cube's face: rounded light, the blocks still there.
+- Gothica's arms are held a little out from her sides.
+- Reshaping takes seconds in GDScript, so it's baked ahead: `tools/bake_reshape.gd` writes
+  `assets/voxel/baked/<model>.bin` (run before exporting; included in the Windows export). A bake is ignored if the
+  code has changed since (where the source can be read: the editor, the tests).
+- `test/voxel/turntable_shots.gd` (front, three-quarters, side, back, and both faces face on and side on; --old for
+  the models as they were): `voxel_shots/turntable_new.png`, `turntable_old.png`, `faces_new.png`, `faces_old.png`.
+
 ### Gothica (23 Oct, the owner: "get the character Gothica brought into the game ... her jiggle physics impressive,
 out of this world impressive")
 
