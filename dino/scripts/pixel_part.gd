@@ -257,6 +257,28 @@ func _island(comp: PackedInt32Array, out: Dictionary) -> Dictionary:
 	return {"image": img, "center": to_world(mid), "rotation": global_rotation, "scale": global_scale,
 			"zones": zones, "pixels": comp.size()}
 
+## The whole part comes off (what held it on was bitten away). Returns it as one island ({} if nothing's left).
+func detach() -> Dictionary:
+	var comp := PackedInt32Array()
+	for i in w * h:
+		if alive[i] == 1:
+			comp.append(i)
+	if comp.is_empty():
+		return {}
+	var out := {"removed": [], "islands": [], "zones": PackedInt32Array()}
+	out.zones.resize(DinoArt.ZONE_NAMES.size())
+	var isl := _island(comp, out)
+	rebuild()
+	return isl
+
+## True if any live pixel is within `r` pixels of `px` (what a child part hangs on).
+func holds(px: Vector2, r: int) -> bool:
+	for y in range(int(px.y) - r, int(px.y) + r + 1):
+		for x in range(int(px.x) - r, int(px.x) + r + 1):
+			if x >= 0 and y >= 0 and x < w and y < h and alive[y * w + x] == 1:
+				return true
+	return false
+
 ## A random wound pixel's world position, or null if it has none.
 func random_wound(rng: RandomNumberGenerator) -> Variant:
 	for tries in 4:

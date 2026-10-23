@@ -33,7 +33,10 @@ func _run() -> void:
 	await _frames(3)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1
-	var prey: Prey = main.prey[0]
+	# a quiet, flat test ground: no obstacles, no hunters turning up
+	main.obstacles.clear()
+	main.set("_hunt_t", 99999.0)
+	var prey: Prey = main.creatures[0]
 
 	# a bite takes pixels from exactly the zone aimed at
 	var tail: Array = _zone_points(prey, DinoArt.TAIL)
@@ -122,7 +125,7 @@ func _run() -> void:
 	var size0: float = pl.size
 	var eaten0: int = main.eaten
 	for k in 400:
-		if not is_instance_valid(p3) or not main.prey.has(p3):
+		if not is_instance_valid(p3) or not main.creatures.has(p3):
 			break
 		var left: Array = []
 		for z in [DinoArt.HEAD, DinoArt.NECK, DinoArt.BODY, DinoArt.TAIL, DinoArt.LEGS]:
@@ -130,8 +133,91 @@ func _run() -> void:
 		if left.is_empty():
 			break
 		main.player_bite(pl, left[rng.randi() % left.size()])
-	_check("eating a body completely removes it", not main.prey.has(p3))
+	_check("eating a body completely removes it", not main.creatures.has(p3))
 	_check("eating a whole one grows you", pl.size > size0 and main.eaten == eaten0 + 1, "size %.2f" % pl.size)
+
+	# levelling: enough XP offers the choice, picking one raises that stat (eating above may have levelled already)
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	var lv0: int = main.level
+	var r0: float = pl.bite_radius
+	main.add_xp(main.xp_needed(), pl.global_position)
+	_check("enough XP offers a level-up choice", main.state == main.CHOOSE and main.level == lv0 + 1)
+	main._pick(0)
+	_check("picking BITE SIZE makes bites bigger", pl.bite_radius > r0 and main.state == main.PLAY, "%.1f" % pl.bite_radius)
+	var gap1: float = main._hunt_gap()
+	main.level = 6
+	_check("higher levels bring hunters sooner", main._hunt_gap() < gap1 and main._hunt_cap() > 1,
+			"every %.1fs at level 2, %.1fs at level 6" % [gap1, main._hunt_gap()])
+	main.level = lv0 + 1
+
+	# a hunter walks up and bites you
+	pl.position = Vector2(500.0, main.GROUND_Y)
+	pl.invuln = 0.0
+	var hp0: float = pl.hp
+	var h: Hunter = main.spawn_hunter(580.0)
+	for f in 300:
+		await process_frame
+		if pl.hp < hp0:
+			break
+	_check("a hunter's bite takes health", pl.hp < hp0, "%.0f -> %.0f, state %d, hunter state %d at %.0f, you at %.0f" % [hp0, pl.hp, main.state, h.state, h.position.x, pl.position.x])
+	# and it can be bitten to death
+	for k in 60:
+		if h.dead:
+			break
+		var pts2: Array = _zone_points(h, DinoArt.BODY) + _zone_points(h, DinoArt.NECK)
+		if pts2.is_empty():
+			break
+		main.player_bite(pl, pts2[rng.randi() % pts2.size()])
+	_check("a hunter can be killed", h.dead)
+
+	# areas: the same run seed builds the same area, another seed a different one
+	var a1 := Area.new()
+	a1.generate(1, 777, main.GROUND_Y)
+	var a2 := Area.new()
+	a2.generate(1, 777, main.GROUND_Y)
+	var a3 := Area.new()
+	a3.generate(1, 778, main.GROUND_Y)
+	_check("same seed, same area", a1.width == a2.width and a1.obstacles == a2.obstacles and not a1.obstacles.is_empty(),
+			"%d obstacles" % a1.obstacles.size())
+	_check("another seed, another area", a1.width != a3.width or a1.obstacles != a3.obstacles)
+	for a in [a1, a2, a3]:
+		a.free()
+
+	# you can't walk through a rock, but you can jump onto it
+	var rock := Rect2(700.0, main.GROUND_Y - 16.0, 20.0, 16.0)
+	main.obstacles.append(rock)
+	pl.position = Vector2(670.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	for f in 60:
+		pl.step(1.0 / 60.0, 1.0, false, false, pl.global_position + Vector2(50, -10))
+	_check("a rock blocks the way", pl.position.x < rock.position.x, "x %.0f" % pl.position.x)
+	pl.step(1.0 / 60.0, 1.0, true, false, pl.global_position + Vector2(50, -10))
+	var stood := false
+	for f in 40:
+		pl.step(1.0 / 60.0, 0.4, false, false, pl.global_position + Vector2(50, -10))
+		if pl.on_ground and absf(pl.position.y - rock.position.y) < 0.5:
+			stood = true
+	_check("you can jump up onto it", stood)
+	main.obstacles.erase(rock)
+
+	# (killing the hunter may have levelled you up: pick, so the game runs on)
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	# the far end leads to the next area
+	pl.position = Vector2(main.area.exit_x + 1.0, main.GROUND_Y)
+	main.set("_stop", 0.0)
+	await _frames(2)
+	_check("the sign at the end leads to area 2", main.area_n == 2 and pl.position.x < 100.0, "area %d, x %.0f, exit %.0f, width %d, state %d, stop %.2f" % [main.area_n, pl.position.x, main.area.exit_x, main.world_w, main.state, main.get("_stop")])
+
+	# out of health: the run is over
+	pl.hp = 1.0
+	pl.invuln = 0.0
+	var h2: Hunter = main.spawn_hunter(pl.position.x + 30.0)
+	main.hunter_bit(h2)
+	_check("losing all your health ends the run", main.state == main.OVER)
+	main.start_run()
+	_check("a new run starts fresh", main.state == main.PLAY and main.level == 1 and main.area_n == 1)
 
 	# the whole game runs with the bot for a while without errors, and stays quick
 	main.demo = true

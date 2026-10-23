@@ -1,34 +1,54 @@
 extends Node2D
-## Dino, step 1: one bite that feels good. A side-on strip of ground, you (Player) and prey (Prey) that runs.
-## Aim with the mouse, click to bite: the chunk comes out of exactly that spot (PixelPart.carve), flies or lands in
-## your mouth, and pieces bitten clean through fall off (Gore). Everything is drawn in code at 480x270 and scaled
-## up in whole pixels.
+## Dino. A run: you roam a long procedurally generated area (Area), biting prey (Prey) and the hunters (Hunter)
+## that come for you. Aim with the mouse, click to bite: the chunk comes out of exactly that spot
+## (PixelPart.carve), flies or lands in your mouth, and pieces bitten clean through fall off (Gore). Kills and
+## eating give XP; each level you pick an upgrade (bite size, speed, attack speed). The higher your level, the more
+## hunters come, so the less time you get to eat. Eat a body down to nothing and you grow. The sign at the far end
+## leads to the next area (harder). Die and the run is over; the next run is a new map.
 ##
-## Each frame: input -> player (its snap calls player_bite) -> prey -> gore; hit-stop freezes all of that for a
-## few hundredths of a second after a bite lands, the camera shake keeps going.
-## Keys: A/D or arrows move, W / Space / Up jump, left mouse bite, F3 show the zones, R start over.
-## Command line (after --): --demo (a bot plays), --shots=<folder> (saves 12 screenshots, then quits; implies --demo),
-## --shot-every=<frames> (75 by default), --shot-from=<frame> (start later).
+## Each frame: input -> player (its snap calls player_bite) -> every creature -> the spawners -> gore; hit-stop
+## freezes all of that for a few hundredths of a second after a bite lands, the camera shake keeps going.
+## Keys: A/D or arrows move, W / Space / Up jump, left mouse bite, 1 / 2 / 3 pick a level-up, F3 show the zones,
+## R new run. Command line (after --): --demo (a bot plays), --seed=<n> (that run), --shots=<folder> (saves 12
+## screenshots, then quits; implies --demo), --shot-every=<frames> (75 by default), --shot-from=<frame>.
 
 const DinoArt := preload("dino_art.gd")
 
-const WORLD_W := 1280
 const VIEW := Vector2(480, 270)
 const GROUND_Y := 226.0
-const MAX_CORPSES := 3
-const RESPAWN := 2.5
-## A dead prey with less than this much of itself left counts as eaten; eating one grows you by GROW.
-## PLACEHOLDER numbers.
+const MAX_CORPSES := 4
+## A dead body with less than this much of itself left counts as eaten; eating one grows you by GROW.
 const FINISHED := 0.05
 const GROW := 0.1
+## PLACEHOLDER numbers: XP and health for each thing, and XP to the next level.
+const XP_KILL_PREY := 10
+const XP_KILL_HUNTER := 25
+const XP_EAT_BITE := 2
+const XP_EAT_ALL := 15
+const HEAL_EAT_BITE := 3.0
+const HEAL_EAT_ALL := 15.0
+## [name, what it does] for the three level-up choices, in order.
+const UPGRADES := [["BITE SIZE", "bigger chunks"], ["SPEED", "run faster"], ["ATTACK SPEED", "bite more often"]]
+
+enum { PLAY, CHOOSE, OVER }
 
 var player: Player
-var prey: Array[Prey] = []
+## Everything you can bite: prey and hunters, alive and dead.
+var creatures: Array[Prey] = []
 var gore: Gore
 var sfx: Sfx
 var cam: Camera2D
+var hud: Hud
+var area: Area
+var world_w := 2400
+var obstacles: Array[Rect2] = []
 var rng := RandomNumberGenerator.new()
 
+var state := PLAY
+var run_seed := 0
+var area_n := 1
+var level := 1
+var xp := 0
 var kills := 0
 var chunks := 0
 var eaten := 0
@@ -37,14 +57,15 @@ var demo := false
 
 var _stop := 0.0
 var _shake := 0.0
-var _respawn_t := -1.0
+var _hunt_t := 0.0
+var _herd_t := 0.0
+var _choices := 0
+var _over_t := 0.0
 var _overlay: Node2D
-var _hud: Label
-var _hint: Label
-var _popups: Array = []   # [text, world pos, seconds left]
+var _popups: Array = []   # [text, world pos, seconds left, colour]
 var _bot_t := 0.0
-var _bot_zone := 0
 var _bot_point := Vector2.ZERO
+var _fixed_seed := -1
 var _shots_dir := ""
 var _shot_every := 75
 var _shot_from := 0
@@ -55,6 +76,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a == "--demo":
 			demo = true
+		elif a.begins_with("--seed="):
+			_fixed_seed = int(a.substr(7))
 		elif a.begins_with("--shot-from="):
 			_shot_from = int(a.substr(12))
 		elif a.begins_with("--shot-every="):
@@ -63,14 +86,6 @@ func _ready() -> void:
 			_shots_dir = a.substr(8)
 			demo = true
 	_add_inputs()
-	_build_scenery()
-	var stains := Sprite2D.new()
-	stains.z_index = -5
-	add_child(stains)
-	gore = Gore.new()
-	gore.z_index = 5
-	add_child(gore)
-	gore.setup(GROUND_Y, WORLD_W, stains)
 	sfx = Sfx.new()
 	add_child(sfx)
 	_overlay = Node2D.new()
@@ -78,49 +93,120 @@ func _ready() -> void:
 	_overlay.draw.connect(_draw_overlay)
 	add_child(_overlay)
 	cam = Camera2D.new()
-	cam.limit_left = 0
-	cam.limit_right = WORLD_W
 	cam.limit_top = 0
 	cam.limit_bottom = int(VIEW.y)
 	add_child(cam)
-	_build_hud()
-	start()
-	if not demo:
-		Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	hud = Hud.new()
+	hud.picked.connect(_pick)
+	add_child(hud)
+	hud.hint.text = "A/D MOVE   W JUMP   CLICK BITE   F3 ZONES   R NEW RUN"
+	start_run()
 
-func start() -> void:
-	for p in prey:
-		p.queue_free()
-	prey.clear()
+# --- runs and areas ---------------------------------------------------------------------------------------
+
+func start_run() -> void:
+	run_seed = _fixed_seed if _fixed_seed >= 0 else rng.randi() % 100000
 	if player:
 		player.queue_free()
-	gore.clear()
+	player = Player.new()
+	player.game = self
+	add_child(player)
+	level = 1
+	xp = 0
 	kills = 0
 	chunks = 0
 	eaten = 0
+	_choices = 0
+	state = PLAY
+	hud.hide_over()
+	hud.hide_choice()
+	_mouse()
+	enter_area(1)
+
+func enter_area(n: int) -> void:
+	area_n = n
+	if area:
+		area.queue_free()
+	for c in creatures:
+		c.queue_free()
+	creatures.clear()
 	_popups.clear()
-	player = Player.new()
-	player.game = self
-	player.position = Vector2(140, GROUND_Y)
-	add_child(player)
-	spawn_prey(360.0)
-	_respawn_t = -1.0
+	area = Area.new()
+	area.generate(n, run_seed, GROUND_Y)
+	world_w = area.width
+	obstacles = area.obstacles
+	add_child(area)
+	move_child(area, 0)
+	area.build(VIEW, GROUND_Y)
+	gore = Gore.new()
+	gore.z_index = 5
+	area.add_child(gore)
+	gore.setup(GROUND_Y, world_w, area.stains)
+	cam.limit_left = 0
+	cam.limit_right = world_w
+	player.position = Vector2(40, GROUND_Y)
+	player.vel = Vector2.ZERO
+	for h: Array in area.herds:
+		for k in h[1]:
+			spawn_prey(h[0] + k * 50.0)
+	_hunt_t = _hunt_gap() + 4.0
+	_herd_t = 6.0
+	hud.show_banner("AREA %d: %s" % [n, Area.NAMES[(n - 1) % Area.NAMES.size()]], 2.5)
 
 func spawn_prey(x: float) -> Prey:
-	var p := Prey.new()
-	p.game = self
-	p.position = Vector2(x, GROUND_Y)
-	add_child(p)
-	p.set_facing(-1.0 if x > player.position.x else 1.0)
+	return _add(Prey.new(), x)
+
+func spawn_hunter(x: float) -> Hunter:
+	return _add(Hunter.new(), x) as Hunter
+
+func _add(c: Prey, x: float) -> Prey:
+	c.game = self
+	c.position = Vector2(clampf(x, 20.0, world_w - 20.0), GROUND_Y)
+	area.add_child(c)
+	c.set_facing(-1.0 if x > player.position.x else 1.0)
 	if show_zones:
-		p.set_show_zones(true)
-	prey.append(p)
-	return p
+		c.set_show_zones(true)
+	creatures.append(c)
+	return c
+
+## Off screen, on one side of you (inside the area): where newcomers walk in from.
+func _offscreen_x() -> float:
+	var sides := [-1.0, 1.0]
+	sides.shuffle()
+	for s: float in sides:
+		var x: float = cam.get_screen_center_position().x + s * (VIEW.x * 0.5 + 24.0)
+		if x > 20.0 and x < world_w - 20.0:
+			return x
+	return world_w - 20.0
+
+## Seconds between hunters: shorter the higher your level and the further the area. PLACEHOLDER curve.
+func _hunt_gap() -> float:
+	return maxf(3.0, 16.0 - level * 1.5 - (area_n - 1) * 2.0)
+
+func _hunt_cap() -> int:
+	return mini(1 + (level - 1) / 2 + (area_n - 1), 6)
+
+func _spawners(delta: float) -> void:
+	_hunt_t -= delta
+	if _hunt_t <= 0.0:
+		_hunt_t = _hunt_gap()
+		var live := creatures.filter(func(c): return c is Hunter and not c.dead).size()
+		if live < _hunt_cap():
+			spawn_hunter(_offscreen_x())
+	# keep something to eat around
+	_herd_t -= delta
+	if _herd_t <= 0.0:
+		_herd_t = 5.0
+		var live := creatures.filter(func(c): return not (c is Hunter) and not c.dead).size()
+		if live < 2 + area_n:
+			spawn_prey(_offscreen_x())
+
+# --- input ------------------------------------------------------------------------------------------------
 
 func _add_inputs() -> void:
 	var keys := {
 		"left": [KEY_A, KEY_LEFT], "right": [KEY_D, KEY_RIGHT], "jump": [KEY_W, KEY_SPACE, KEY_UP],
-		"zones": [KEY_F3], "restart": [KEY_R],
+		"zones": [KEY_F3], "restart": [KEY_R], "pick1": [KEY_1], "pick2": [KEY_2], "pick3": [KEY_3],
 	}
 	for action: String in keys:
 		if InputMap.has_action(action):
@@ -139,30 +225,49 @@ func _add_inputs() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("zones"):
 		show_zones = not show_zones
-		for p in prey:
-			p.set_show_zones(show_zones)
+		for c in creatures:
+			c.set_show_zones(show_zones)
 	elif event.is_action_pressed("restart"):
-		start()
+		start_run()
+	elif state == CHOOSE:
+		for i in 3:
+			if event.is_action_pressed("pick%d" % (i + 1)):
+				_pick(i)
+	elif state == OVER and _over_t <= 0.0 and event.is_action_pressed("bite"):
+		start_run()
+
+func _mouse() -> void:
+	if not demo:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if state != PLAY else Input.MOUSE_MODE_HIDDEN
 
 # --- frame -------------------------------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
 	_frame += 1
+	hud.tick(delta)
 	var sim := delta
 	if _stop > 0.0:
 		_stop -= delta
 		sim = 0.0
-	if sim > 0.0:
+	if state == PLAY and sim > 0.0:
 		_step(sim)
+	elif state == OVER:
+		_over_t -= delta
+		if demo and _over_t < -2.0:
+			start_run()
+	elif state == CHOOSE and demo:
+		_pick(rng.randi() % 3)
 	_shake *= exp(-9.0 * delta)
-	cam.position = Vector2(clampf(player.position.x, VIEW.x * 0.5, WORLD_W - VIEW.x * 0.5), VIEW.y * 0.5)
+	cam.position = Vector2(clampf(player.position.x, VIEW.x * 0.5, world_w - VIEW.x * 0.5), VIEW.y * 0.5)
 	cam.offset = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * _shake * 5.0
 	for pu in _popups:
 		pu[2] -= delta
 		pu[1].y -= delta * 14.0
 	_popups = _popups.filter(func(pu): return pu[2] > 0.0)
-	_hud.text = "KILLS %d    EATEN %d    SIZE x%.1f" % [kills, eaten, player.size]
+	hud.set_bars(player.hp / player.max_hp, float(xp) / xp_needed(), level)
+	hud.stats.text = "KILLS %d   EATEN %d   SIZE x%.1f" % [kills, eaten, player.size]
+	hud.area_label.text = "AREA %d   RUN %d" % [area_n, run_seed]
 	_overlay.queue_redraw()
 	if _shots_dir != "" and _frame > _shot_from and (_frame - _shot_from) % _shot_every == 0:
 		_save_shot()
@@ -183,29 +288,71 @@ func _step(delta: float) -> void:
 		jump = Input.is_action_just_pressed("jump")
 		bite = Input.is_action_just_pressed("bite")
 	player.step(delta, move_x, jump, bite, aim)
-	for p in prey:
-		p.step(delta, player.global_position, rng)
+	for c in creatures.duplicate():
+		c.step(delta, player.global_position, rng)
+	_spawners(delta)
 	gore.step(delta)
-	if _respawn_t >= 0.0:
-		_respawn_t -= delta
-		if _respawn_t < 0.0:
-			# in from the far side of the screen from you
-			var side := 1.0 if player.position.x < WORLD_W * 0.5 else -1.0
-			spawn_prey(clampf(player.position.x + side * 260.0, 20.0, WORLD_W - 20.0))
+	if player.position.x >= area.exit_x and state == PLAY:
+		enter_area(area_n + 1)
 
-## The live (or dead) prey with a pixel under `world`, top-most first, or null.
+# --- levels -----------------------------------------------------------------------------------------------
+
+func xp_needed() -> int:
+	return 30 + (level - 1) * 20
+
+func add_xp(n: int, at: Vector2) -> void:
+	xp += n
+	_popups.append(["+%d XP" % n, at + Vector2(0, -14), 0.9, Color(0.5, 0.85, 1.0)])
+	while xp >= xp_needed():
+		xp -= xp_needed()
+		level += 1
+		_choices += 1
+	if _choices > 0 and state == PLAY:
+		_offer()
+
+func _offer() -> void:
+	state = CHOOSE
+	var cards: Array = []
+	cards.append([UPGRADES[0][0], "%s\n%.1f -> %.1f" % [UPGRADES[0][1], player.bite_radius, player.bite_radius + 1.0]])
+	cards.append([UPGRADES[1][0], "%s\n%d -> %d" % [UPGRADES[1][1], player.walk_speed, player.walk_speed * 1.12]])
+	cards.append([UPGRADES[2][0], "%s\n%.2fs -> %.2fs" % [UPGRADES[2][1], player.bite_cooldown, player.bite_cooldown * 0.85]])
+	hud.show_choice(cards)
+	sfx.play("gulp", 0.0, 2.0)
+	_mouse()
+
+func _pick(i: int) -> void:
+	if state != CHOOSE:
+		return
+	match i:
+		0:
+			player.bite_radius += 1.0
+		1:
+			player.walk_speed *= 1.12
+		2:
+			player.bite_cooldown *= 0.85
+	_choices -= 1
+	hud.hide_choice()
+	state = PLAY
+	_popups.append(["LEVEL %d: %s" % [level - _choices, UPGRADES[i][0]], player.global_position + Vector2(0, -50), 1.6, Color(1, 0.85, 0.35)])
+	if _choices > 0:
+		_offer()
+	_mouse()
+
+# --- biting -----------------------------------------------------------------------------------------------
+
+## The live (or dead) creature with a pixel under `world`, top-most first, or null.
 func prey_at(world: Vector2) -> Prey:
-	for i in range(prey.size() - 1, -1, -1):
-		if prey[i].zone_at(world) != 0:
-			return prey[i]
+	for i in range(creatures.size() - 1, -1, -1):
+		if creatures[i].zone_at(world) != 0:
+			return creatures[i]
 	return null
 
-## The player's jaws snapped shut at `p`: carve every prey there, then the gore, sounds, shake and hit-stop.
+## The player's jaws snapped shut at `p`: carve everything there, then the gore, XP, sounds, shake and hit-stop.
 func player_bite(who: Player, p: Vector2) -> void:
 	var dir := Vector2(who.facing, 0.0)
 	var got: Array = []
 	var any := false
-	for pr: Prey in prey.duplicate():
+	for pr: Prey in creatures.duplicate():
 		if pr.global_position.distance_to(p) > 120.0:
 			continue
 		var zone := pr.zone_at(p)
@@ -227,16 +374,19 @@ func player_bite(who: Player, p: Vector2) -> void:
 			_shake = minf(_shake + 0.5, 1.2)
 		if zone == 0:
 			zone = _main_zone(r.zones)
-		_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7])
+		_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7, Color(1, 0.9, 0.5)])
 		var was_dead := pr.dead
+		if was_dead:
+			# eating: a little health and XP for every mouthful
+			who.heal(HEAL_EAT_BITE)
+			add_xp(XP_EAT_BITE, p)
 		if pr.hurt(who.global_position) and not was_dead:
 			kills += 1
-			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2])
-			if _respawn_t < 0.0:
-				_respawn_t = RESPAWN
+			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2, Color(1, 0.4, 0.3)])
+			add_xp(XP_KILL_HUNTER if pr is Hunter else XP_KILL_PREY, pr.global_position + Vector2(0, -40))
 			_trim_corpses()
 		elif not pr.dead:
-			sfx.play("cry", 0.1, -3.0)
+			sfx.play("cry", 0.1, -3.0 if not (pr is Hunter) else -8.0)
 		if pr.dead and pr.mass_fraction() < FINISHED:
 			got.append_array(_finish(who, pr))
 	# pieces lying about (or still flying) go down whole
@@ -245,7 +395,8 @@ func player_bite(who: Player, p: Vector2) -> void:
 		any = true
 		got.append_array(bits)
 		gore.blood(p, dir, 6, 80.0)
-		_popups.append(["GULP", p + Vector2(0, -6), 0.7])
+		who.heal(HEAL_EAT_BITE)
+		add_xp(XP_EAT_BITE, p)
 	if any:
 		sfx.play("crunch", 0.1)
 		sfx.play("tear", 0.1, -4.0)
@@ -255,7 +406,30 @@ func player_bite(who: Player, p: Vector2) -> void:
 	else:
 		sfx.play("snap", 0.1, -2.0)
 
-## A dead prey eaten down to scraps: the scraps go down in one gulp, the body is gone, and you grow.
+## A hunter's teeth reached you.
+func hunter_bit(h: Hunter) -> void:
+	if state != PLAY or not player.hurt(Hunter.DAMAGE, h.global_position):
+		return
+	hud.hurt()
+	sfx.play("crunch", 0.1, 2.0)
+	sfx.play("cry", 0.1, -2.0)
+	_shake = 1.0
+	_stop = 0.06
+	var at := player.global_position + Vector2(0, -16.0 * player.size)
+	gore.blood(at, Vector2(signf(player.position.x - h.position.x), -0.3), 18, 120.0)
+	if player.hp <= 0.0:
+		_game_over()
+
+func _game_over() -> void:
+	state = OVER
+	_over_t = 1.0
+	player.die_look()
+	sfx.play("thud", 0.0)
+	hud.show_over("LEVEL %d     AREA %d\nKILLS %d     EATEN %d     SIZE x%.1f\n\nRUN %d\n\n\nCLICK OR PRESS R FOR A NEW RUN" % [
+		level, area_n, kills, eaten, player.size, run_seed])
+	_mouse()
+
+## A dead body eaten down to scraps: the scraps go down in one gulp, the body is gone, and you grow.
 ## Returns the scraps' pixels (for the mouthful).
 func _finish(who: Player, pr: Prey) -> Array:
 	var scraps: Array = []
@@ -263,12 +437,14 @@ func _finish(who: Player, pr: Prey) -> Array:
 		for i in part.w * part.h:
 			if part.alive[i] == 1:
 				scraps.append([part.to_world(Vector2(i % part.w + 0.5, i / part.w + 0.5)), part.skin.get_pixel(i % part.w, i / part.w)])
-	prey.erase(pr)
+	creatures.erase(pr)
 	pr.queue_free()
 	eaten += 1
 	var was := who.size
 	who.grow(GROW)
-	_popups.append(["EATEN!" if who.size == was else "GROWING!", who.global_position + Vector2(0, -who.height * who.size - 10), 1.4])
+	who.heal(HEAL_EAT_ALL)
+	_popups.append(["EATEN!" if who.size == was else "GROWING!", who.global_position + Vector2(0, -who.height * who.size - 10), 1.4, Color(1, 0.9, 0.5)])
+	add_xp(XP_EAT_ALL, who.global_position + Vector2(0, -who.height * who.size))
 	sfx.play("gulp", 0.05, 3.0)
 	sfx.play("thud", 0.05, -6.0)
 	return scraps
@@ -305,44 +481,45 @@ func prey_landed(p: Prey) -> void:
 	gore.pool(p.global_position.x, 26.0, 160)
 
 func _trim_corpses() -> void:
-	var dead := prey.filter(func(p): return p.dead)
+	var dead := creatures.filter(func(c): return c.dead)
 	while dead.size() > MAX_CORPSES:
 		var old: Prey = dead.pop_front()
-		prey.erase(old)
+		creatures.erase(old)
 		old.queue_free()
 
 # --- the demo bot -----------------------------------------------------------------------------------------
 
-## Eats the nearest body first, else walks up to the nearest live prey; bites a chosen zone, a different one each
-## time. [move, jump, bite, aim]
+## Fights the nearest hunter, else eats the nearest body, else hunts the nearest prey, else heads for the exit;
+## bites a different spot each time, jumps what's in the way. [move, jump, bite, aim]
 func _bot(delta: float) -> Array:
 	_bot_t -= delta
+	var me := player.position
 	var target: Prey = null
-	for p in prey:
-		if p.dead and (target == null or absf(p.position.x - player.position.x) < absf(target.position.x - player.position.x)):
-			target = p
+	for pass_n in 3:
+		for c in creatures:
+			var ok: bool = [c is Hunter and not c.dead, c.dead, not c.dead][pass_n]
+			if ok and absf(c.position.x - me.x) < (140.0 if pass_n == 0 else 400.0) \
+					and (target == null or absf(c.position.x - me.x) < absf(target.position.x - me.x)):
+				target = c
+		if target:
+			break
+	var jump := player.blocked != 0
 	if target == null:
-		for p in prey:
-			if target == null or absf(p.position.x - player.position.x) < absf(target.position.x - player.position.x):
-				target = p
-	if target == null:
-		return [0.0, false, false, player.position + Vector2(40, -20)]
+		return [1.0, jump, false, me + Vector2(60, -20)]
 	if _bot_t <= 0.0 or target.zone_at(_bot_point) == 0:
-		_bot_t = 1.2
+		_bot_t = 1.0
 		var zones := [DinoArt.NECK, DinoArt.TAIL, DinoArt.LEGS, DinoArt.BODY, DinoArt.HEAD]
-		_bot_zone = zones[rng.randi() % zones.size()]
-		var pt: Variant = _zone_point(target, _bot_zone)
+		zones.shuffle()
+		var pt: Variant = null
 		for z in zones:
 			if pt == null:
 				pt = _zone_point(target, z)
 		_bot_point = pt if pt != null else target.global_position + Vector2(0, -20)
-	var neck := player.neck()
-	var d := _bot_point - neck
-	var move_x := 0.0
-	if player.predict_bite(_bot_point).distance_to(_bot_point) > 1.0 or absf(d.x) > player.reach * player.size:
-		move_x = signf(d.x)
-	var bite := player.predict_bite(_bot_point).distance_to(_bot_point) < 1.0 and player.cool <= 0.0 and player.bite_t < 0.0
-	return [move_x, false, bite, _bot_point]
+	var d := _bot_point - player.neck()
+	var in_range := player.predict_bite(_bot_point).distance_to(_bot_point) < 1.0
+	var move_x := 0.0 if in_range and absf(d.x) < player.reach * player.size else signf(d.x)
+	var bite := in_range and player.cool <= 0.0 and player.bite_t < 0.0
+	return [move_x, jump, bite, _bot_point]
 
 ## A random live pixel of `zone` on `p`, in the world, or null.
 func _zone_point(p: Prey, zone: int) -> Variant:
@@ -374,18 +551,19 @@ func _save_shot() -> void:
 
 func _draw_overlay() -> void:
 	var font := ThemeDB.fallback_font
-	# prey health: a little bar over each live one
-	for p in prey:
-		if p.dead:
+	# health: a little bar over each live creature (red for prey, orange for hunters)
+	for c in creatures:
+		if c.dead:
 			continue
-		var top := p.global_position + Vector2(-12, -p.height - 6)
-		var f := clampf((p.mass_fraction() - Prey.DIE_MASS) / (1.0 - Prey.DIE_MASS), 0.0, 1.0)
+		var top := c.global_position + Vector2(-12, -c.height - 6)
+		var f := clampf((c.mass_fraction() - Prey.DIE_MASS) / (1.0 - Prey.DIE_MASS), 0.0, 1.0)
 		_overlay.draw_rect(Rect2(top, Vector2(24, 3)), Color(0, 0, 0, 0.7))
-		_overlay.draw_rect(Rect2(top + Vector2(1, 1), Vector2(22 * f, 1)), Color(0.9, 0.15, 0.1))
+		_overlay.draw_rect(Rect2(top + Vector2(1, 1), Vector2(22 * f, 1)), Color(1.0, 0.55, 0.1) if c is Hunter else Color(0.9, 0.15, 0.1))
 	for pu in _popups:
 		var a := clampf(pu[2] * 2.0, 0.0, 1.0)
-		_text(font, pu[0], pu[1], Color(1, 0.9, 0.5, a))
-	if demo:
+		var col: Color = pu[3]
+		_text(font, pu[0], pu[1], Color(col, a))
+	if demo or state != PLAY:
 		return
 	# the aim: red on a bitable spot in range (reach plus the lunge), white in range, grey past it (with a dot where
 	# the bite would land instead)
@@ -410,118 +588,3 @@ func _text(font: Font, text: String, at: Vector2, c: Color) -> void:
 	for o: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
 		_overlay.draw_string(font, p + o, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(0, 0, 0, c.a))
 	_overlay.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, c)
-
-func _build_hud() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	var ls := LabelSettings.new()
-	ls.font_size = 8
-	ls.outline_size = 2
-	ls.outline_color = Color.BLACK
-	_hud = Label.new()
-	_hud.label_settings = ls
-	_hud.position = Vector2(6, 4)
-	layer.add_child(_hud)
-	_hint = Label.new()
-	_hint.label_settings = ls
-	_hint.text = "A/D MOVE   W JUMP   CLICK BITE   F3 ZONES   R RESTART"
-	_hint.position = Vector2(6, VIEW.y - 14)
-	_hint.modulate = Color(1, 1, 1, 0.7)
-	layer.add_child(_hint)
-
-## PLACEHOLDER scenery: a banded sky, far hills, nearer jungle, and the ground strip.
-func _build_scenery() -> void:
-	var sky := Image.create(1, int(VIEW.y), false, Image.FORMAT_RGBA8)
-	var top := Color(0.36, 0.55, 0.72)
-	var low := Color(0.93, 0.74, 0.5)
-	for y in int(VIEW.y):
-		var k := floorf(float(y) / VIEW.y * 9.0) / 8.0
-		sky.set_pixel(0, y, top.lerp(low, k))
-	var sky_layer := CanvasLayer.new()
-	sky_layer.layer = -10
-	add_child(sky_layer)
-	var sky_rect := TextureRect.new()
-	sky_rect.texture = ImageTexture.create_from_image(sky)
-	sky_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	sky_rect.size = VIEW
-	sky_layer.add_child(sky_rect)
-	_add_layer(_ridge(960, 120, 70.0, 0.012, Color(0.45, 0.47, 0.55), 3), 0.15, GROUND_Y - 120)
-	_add_layer(_ridge(960, 90, 40.0, 0.03, Color(0.24, 0.36, 0.28), 7), 0.4, GROUND_Y - 88)
-	_add_layer(_jungle(960, 70), 0.7, GROUND_Y - 66)
-	var ground := Image.create(WORLD_W, int(VIEW.y - GROUND_Y) + 4, false, Image.FORMAT_RGBA8)
-	var n := FastNoiseLite.new()
-	n.seed = 5
-	n.frequency = 0.08
-	for y in ground.get_height():
-		for x in WORLD_W:
-			var v := n.get_noise_2d(x, y * 2.0)
-			var c := Color(0.42, 0.3, 0.2).lerp(Color(0.33, 0.23, 0.15), clampf(v + 0.5, 0.0, 1.0))
-			if y < 3:
-				c = Color(0.36, 0.52, 0.22) if (y < 2 or (x * 7 + y) % 5 != 0) else c
-				if y == 0 and n.get_noise_1d(x * 3.0) > 0.2:
-					c = Color(0.45, 0.62, 0.27)
-			ground.set_pixel(x, y, c)
-	var g := Sprite2D.new()
-	g.texture = ImageTexture.create_from_image(ground)
-	g.centered = false
-	g.position = Vector2(0, GROUND_Y - 3)
-	g.z_index = -6
-	add_child(g)
-
-func _add_layer(img: Image, scroll: float, y: float) -> void:
-	var par := Parallax2D.new()
-	par.scroll_scale = Vector2(scroll, 1.0)
-	par.repeat_size = Vector2(img.get_width(), 0)
-	par.repeat_times = 3
-	par.z_index = -20
-	var s := Sprite2D.new()
-	s.texture = ImageTexture.create_from_image(img)
-	s.centered = false
-	s.position = Vector2(-img.get_width(), y)
-	par.add_child(s)
-	add_child(par)
-
-func _ridge(w: int, h: int, amp: float, freq: float, c: Color, sd: int) -> Image:
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	var n := FastNoiseLite.new()
-	n.seed = sd
-	n.frequency = freq
-	for x in w:
-		# wraps: blend the noise with itself one width along
-		var k := float(x) / w
-		var v := lerpf(n.get_noise_1d(x), n.get_noise_1d(x - w), k)
-		var top := int(h - amp * (0.55 + v * 0.8))
-		for y in range(clampi(top, 0, h), h):
-			img.set_pixel(x, y, c.lightened(0.08) if y == top else c)
-	return img
-
-func _jungle(w: int, h: int) -> Image:
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	var r := RandomNumberGenerator.new()
-	r.seed = 9
-	var trunk := Color(0.2, 0.2, 0.16)
-	var leaf := Color(0.16, 0.3, 0.18)
-	var x := 10
-	while x < w - 20:
-		var th := r.randi_range(30, 60)
-		for y in range(h - th, h):
-			img.set_pixel(x, y, trunk)
-			img.set_pixel(x + 1, y, trunk)
-		# palm fronds: lines drooping out from the top
-		for f in 6:
-			var a := -PI * 0.5 + (f - 2.5) * 0.55
-			var p := Vector2(x, h - th)
-			for s in 14:
-				p += Vector2(cos(a), sin(a) + s * 0.07)
-				var px := int(p.x)
-				var py := int(p.y)
-				if px >= 0 and px < w and py >= 0 and py < h:
-					img.set_pixel(px, py, leaf)
-					if py + 1 < h:
-						img.set_pixel(px, py + 1, leaf.darkened(0.2))
-		x += r.randi_range(40, 90)
-	for y in range(h - 10, h):
-		for xx in w:
-			if r.randf() < 0.7 - (h - y) * 0.06:
-				img.set_pixel(xx, y, leaf.darkened(0.1))
-	return img

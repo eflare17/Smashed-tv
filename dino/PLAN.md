@@ -16,6 +16,15 @@ A violent pixel dinosaur game. A separate Godot project (this `dino/` folder); t
 - **Art:** placeholder pixel dinosaurs drawn in code for now. Real art comes later, once the bite feels right
   (the owner generates it from a spec).
 
+## Decided with the owner (25 Oct): Option B, "The Territory"
+
+- **XP from kills and from eating.** Level up and choose: bite size, speed, or attack speed.
+- **The higher your level, the more you get attacked**, so you have less time to eat.
+- **A run is a long procedurally generated map** (different every run) that you roam freely. Nothing scrolls,
+  but the danger builds, so you keep moving. The far end leads to the next area (harder). Obstacles are on the way.
+- Considered and not picked: A (auto-scroll chase: frantic, runner-like) and C (separate stages with upgrades
+  between them). Middle ground kept in mind: B with a slow push from behind, if camping turns out to be a problem.
+
 ## Steps
 
 1. **One bite that feels good** (now). You (one dino) and one prey dino in an empty side-on area. The prey runs
@@ -72,6 +81,31 @@ Placeholders I had to pick (all easy to change, none decided):
   (you clicked its neck, you get its neck).
 - Placeholders: grow 10% per meal, max 2x, "eaten" under 5% left. Biting size doesn't grow with you (bite size
   is meant to be a level-up choice).
+
+## Option B, first version: built (25 Oct)
+
+- **Runs and areas:** each run gets a seed (shown top right; `-- --seed=<n>` replays one). Each area is generated
+  from it: its length (longer each area), rocks and logs along the way, herds, and a look that cycles through
+  jungle, badlands, swamp and volcano. A sign at the far end takes you to the next area, keeping your level, size
+  and health.
+- **Obstacles:** you can't walk through rocks or logs, but you can jump onto and over them. Prey turn back at them,
+  and hunters jump them.
+- **XP and levels:** kill prey +10, kill a hunter +25, each mouthful of a body +2, eating a whole body +15. The
+  next level needs 30, then 50, 70... Each level pauses for **LEVEL UP! CHOOSE ONE**: bite size (+1), speed
+  (+12%) or attack speed (15% quicker). Click a card or press 1 / 2 / 3.
+- **Health:** a red bar top left. Eating heals (+3 a mouthful, +15 for a whole body). At zero, **YOU WERE EATEN**:
+  the run's stats, then click or R for a new run on a new map.
+- **Hunters:** red meat-eaters that walk in from off screen, close in, wind up (jaw open, flashing), and lunge.
+  Their bite takes 14 health and knocks you back. Bite them like anything else: each bite staggers them, and
+  dead, they're food. **The higher your level (and the further the area), the sooner and more of them come**:
+  one every 14 s at level 1 in area 1, every 7 s at level 6, up to 6 at once.
+- **Parts fall off where they hang:** bite away the hip and the leg drops; bite through the top of the neck and
+  a hunter's head drops.
+- Tests: 26 checks, all passing (levels, hunters biting and dying, the same seed giving the same area, rocks
+  blocking and being jumped onto, the exit, game over and a new run). `tests/shot_screens.gd` photographs the
+  level-up, an area of each look and the end of a run.
+
+All the numbers above are placeholders to tune by playing.
 
 ## Questions for the morning
 

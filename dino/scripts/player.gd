@@ -3,13 +3,19 @@ extends Dino
 ## You: walk, jump, and bite where the mouse points. A bite is a short wind-up (jaw opens, a lunge toward the spot)
 ## then the snap: the scene root carves the prey at that spot (it remembers the spot on the prey's body, so a
 ## moving prey still gets bitten where you aimed). Out of reach, you snap at the closest point you can reach.
+## Hunters bite back: hurt() takes health, knocks you away and gives a moment of blinking safety.
 
-
-## The stats levelling up will raise (step 2). Placeholder numbers, set by feel.
+## The stats levelling up raises (main.gd's UPGRADES). Placeholder numbers, set by feel.
 var bite_radius := 4.5
 var bite_cooldown := 0.42
 var walk_speed := 75.0
 var reach := 42.0
+
+## Health. Hunters' bites take it; eating gives it back. PLACEHOLDER numbers.
+var max_hp := 100.0
+var hp := 100.0
+## Seconds you can't be hurt again after a hit (and blink).
+var invuln := 0.0
 
 const JUMP := 200.0
 const WIND := 0.09
@@ -59,6 +65,8 @@ func _ready() -> void:
 ## `move` -1..1, `jump` and `bite` this frame's presses, `aim_at` the mouse in the world.
 func step(delta: float, move_x: float, jump: bool, bite_pressed: bool, aim_at: Vector2) -> void:
 	aim = aim_at
+	invuln -= delta
+	rig.visible = invuln <= 0.0 or int(invuln * 14.0) % 2 == 0
 	cool -= delta
 	if bite_pressed and cool <= 0.0 and bite_t < 0.0:
 		_start_bite()
@@ -72,7 +80,7 @@ func step(delta: float, move_x: float, jump: bool, bite_pressed: bool, aim_at: V
 		vel.y = -JUMP
 		on_ground = false
 		game.sfx.play("jump", 0.1, -8.0)
-	move(delta, game.GROUND_Y, 12.0, game.WORLD_W - 12.0)
+	move(delta)
 	animate(delta, absf(vel.x) > 5.0, 12.0 * absf(vel.x) / walk_speed)
 	# the snap comes after this frame's move, so the neck is where it's drawn
 	if bite_t >= 0.0:
@@ -149,6 +157,39 @@ func _snap() -> void:
 	snap_info = [wanted, p]
 	_target_world = p
 	game.player_bite(self, p)
+
+## Bitten by a hunter at `from`: loses `amount` health (unless still blinking from the last hit), knocked away.
+## True if it hurt.
+func hurt(amount: float, from: Vector2) -> bool:
+	if invuln > 0.0 or hp <= 0.0:
+		return false
+	hp = maxf(0.0, hp - amount)
+	invuln = 0.6
+	flash = 0.08
+	var away := signf(global_position.x - from.x)
+	vel = Vector2((away if away != 0.0 else -facing) * 140.0, -90.0)
+	on_ground = false
+	bite_t = -1.0
+	return true
+
+## Out of health: slumped over on the ground.
+func die_look() -> void:
+	dead = true
+	rig.visible = true
+	rig.rotation = -facing * 0.35
+	rig.position.y = 5.0
+	for l in legs:
+		(l[0] as PixelPart).rotation = 1.2 if l[1] == 0.0 else -0.9
+	head.rotation = 0.5
+	jaw.rotation = 0.6
+
+## True if `p` is on (or within `margin` of) your body: a box from your feet to your back, nose to tail.
+func covers(p: Vector2, margin: float) -> bool:
+	var d := p - global_position
+	return absf(d.x) < 16.0 * size + margin and d.y > -30.0 * size - margin and d.y < margin
+
+func heal(amount: float) -> void:
+	hp = minf(max_hp, hp + amount)
 
 ## A little bigger (after finishing a meal), up to MAX_SIZE.
 func grow(amount: float) -> void:

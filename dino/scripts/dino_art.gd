@@ -142,12 +142,13 @@ static func prey() -> Dictionary:
 				"pos": Vector2(spec[1], -16), "anchors": l.anchors, "z": spec[2], "parent": "", "leg": spec[3]})
 	return {"parts": parts, "height": 44}
 
+## The hunter that comes after you: the player's shape in reds. PLACEHOLDER (which dinosaurs hunt you isn't decided).
+static func hunter() -> Dictionary:
+	return player(Color(0.56, 0.27, 0.2), Color(0.86, 0.66, 0.46), Color(0.26, 0.1, 0.08))
+
 ## The player: a raptor-ish shape on two legs with a head and jaw that move. PLACEHOLDER (which dinosaur you start
 ## as isn't decided).
-static func player() -> Dictionary:
-	var skin := PLAYER_SKIN
-	var belly := Color(0.78, 0.74, 0.52)
-	var stripe := Color(0.18, 0.26, 0.14)
+static func player(skin := PLAYER_SKIN, belly := Color(0.78, 0.74, 0.52), stripe := Color(0.18, 0.26, 0.14)) -> Dictionary:
 	var c := Canvas.new(52, 26)
 	c.poly(PackedVector2Array([Vector2(18, 9), Vector2(1, 5), Vector2(0, 8), Vector2(18, 18)]), TAIL)
 	c.ellipse(26, 14, 11, 7, BODY)
@@ -182,6 +183,51 @@ static func player() -> Dictionary:
 	parts.append({"name": "leg", "image": leg.image, "zones": leg.zones, "pivot": leg.pivot, "pos": Vector2(-1, -16),
 			"anchors": leg.anchors, "z": 1, "parent": "", "leg": 0.0})
 	return {"parts": parts, "height": 30}
+
+## PLACEHOLDER obstacles. A rock: a lumpy grey boulder, `w` x `h`.
+static func rock(w: int, h: int, rng: RandomNumberGenerator) -> Image:
+	var c := Canvas.new(w, h)
+	c.ellipse(w * 0.5, h * 0.62, w * 0.5, h * 0.62, BODY)
+	for k in 3:
+		c.ellipse(rng.randf_range(w * 0.25, w * 0.75), rng.randf_range(h * 0.3, h * 0.6), w * 0.28, h * 0.4, BODY)
+	c.rect(0, h - 2, w - 1, h - 1, BODY)
+	var grey := Color(0.5, 0.49, 0.47).darkened(rng.randf_range(0.0, 0.2))
+	var img := c.paint(grey, grey.darkened(0.15), grey.darkened(0.1))
+	for k in w * h / 14:
+		var x := rng.randi() % w
+		var y := rng.randi() % h
+		if img.get_pixel(x, y).a > 0.0:
+			img.set_pixel(x, y, img.get_pixel(x, y).darkened(0.12))
+	return img
+
+## A fallen log lying across the path, `w` long, `h` thick, with its cut ends showing rings.
+static func log_image(w: int, h: int) -> Image:
+	var c := Canvas.new(w, h)
+	c.rect(0, 0, w - 1, h - 1, BODY)
+	var bark := Color(0.4, 0.27, 0.16)
+	var img := c.paint(bark, bark.darkened(0.2), bark.darkened(0.25))
+	for y in range(1, h - 1):
+		for x in [1, w - 2]:
+			img.set_pixel(x, y, Color(0.78, 0.62, 0.4) if (y + x) % 3 != 0 else Color(0.6, 0.45, 0.28))
+	return img
+
+## The way on, at the far end of an area: a post with an arrow board.
+static func sign_image() -> Image:
+	var img := Image.create(24, 30, false, Image.FORMAT_RGBA8)
+	var wood := Color(0.55, 0.38, 0.22)
+	for y in range(8, 30):
+		img.set_pixel(10, y, wood.darkened(0.3))
+		img.set_pixel(11, y, wood)
+	for y in range(1, 10):
+		for x in range(0, 18 + mini(y, 10 - y)):
+			if x < 18 or x - 18 < mini(y, 10 - y):
+				img.set_pixel(x, y, wood.lightened(0.1) if y > 1 else wood.lightened(0.3))
+	for x in range(3, 15):
+		img.set_pixel(x, 5, Color(0.2, 0.1, 0.05))
+	for k in 3:
+		img.set_pixel(14 - k, 5 - k, Color(0.2, 0.1, 0.05))
+		img.set_pixel(14 - k, 5 + k, Color(0.2, 0.1, 0.05))
+	return img
 
 ## Solid pixels within `r` of (cx, cy): what holds a part together.
 static func _core(c: Canvas, cx: int, cy: int, r: int) -> PackedInt32Array:

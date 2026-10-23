@@ -24,6 +24,10 @@ var dead := false
 var height := 30.0
 ## Seconds of white hit-flash left.
 var flash := 0.0
+## Half its width for bumping into obstacles (before scaling).
+var half_w := 8.0
+## Set by move(): the side it bumped into an obstacle this frame (-1 left, 1 right), else 0.
+var blocked := 0
 var _named := {}
 
 func build(art: Dictionary) -> void:
@@ -44,6 +48,15 @@ func build(art: Dictionary) -> void:
 			legs.append([part, p.leg])
 		if p.has("tip"):
 			part.set_meta("tip", p.tip)
+		# where it hangs on its parent (the body for legs and the head, the head for the jaw), in the parent's pixels
+		if p.name != "body":
+			var host: Dictionary = {}
+			for q: Dictionary in art.parts:
+				if q.name == (p.parent if p.parent != "" else "body"):
+					host = q
+					break
+			var at: Vector2 = p.pos if p.parent != "" else p.pos - (host.pos as Vector2)
+			part.set_meta("attach", [host.name, (host.pivot as Vector2) + at])
 	body = _named.get("body")
 	head = _named.get("head")
 	jaw = _named.get("jaw")
@@ -104,6 +117,26 @@ func bite(world: Vector2, radius: float, rng: RandomNumberGenerator) -> Dictiona
 		out.islands.append_array(r.islands)
 		for z in r.zones.size():
 			out.zones[z] += r.zones[z]
+	# a part whose hold on its parent was bitten away comes off whole (a head off the neck, a leg off the hip)
+	for part in parts:
+		if not part.has_meta("attach") or part.pixels_left() == 0:
+			continue
+		var at: Array = part.get_meta("attach")
+		var host: PixelPart = _named[at[0]]
+		if not host.holds(at[1], 2) or host.pixels_left() == 0:
+			for p: PixelPart in [part] + _children(part):
+				var isl := p.detach()
+				if not isl.is_empty():
+					out.islands.append(isl)
+					for z in isl.zones.size():
+						out.zones[z] += isl.zones[z]
+	return out
+
+func _children(part: PixelPart) -> Array:
+	var out: Array = []
+	for c in part.get_children():
+		if c is PixelPart:
+			out.append(c)
 	return out
 
 func zone_fraction(z: int) -> float:
@@ -138,12 +171,28 @@ func set_show_zones(on: bool) -> void:
 		part.show_zones = on
 		part.rebuild()
 
-## Falls, lands, stays inside the world.
-func move(delta: float, ground: float, lo: float, hi: float) -> void:
+## Walks into obstacles (blocked: -1 / 1, the side it bumped, else 0), stands on their tops, falls, lands, stays
+## inside the world. Obstacles are the area's Rect2s (top-left, size), standing on the ground.
+func move(delta: float) -> void:
+	var prev := position
+	var hw := half_w * absf(scale.x)
 	vel.y += GRAVITY * delta
-	position += vel * delta
-	position.x = clampf(position.x, lo, hi)
-	on_ground = position.y >= ground
+	position.x = clampf(position.x + vel.x * delta, hw, game.world_w - hw)
+	blocked = 0
+	for o: Rect2 in game.obstacles:
+		if position.x + hw > o.position.x and position.x - hw < o.end.x and position.y > o.position.y + 1.0:
+			if prev.x <= o.get_center().x:
+				position.x = o.position.x - hw
+				blocked = 1
+			else:
+				position.x = o.end.x + hw
+				blocked = -1
+	position.y += vel.y * delta
+	var floor_y: float = game.GROUND_Y
+	for o: Rect2 in game.obstacles:
+		if position.x + hw > o.position.x and position.x - hw < o.end.x and prev.y <= o.position.y + 1.0:
+			floor_y = minf(floor_y, o.position.y)
+	on_ground = position.y >= floor_y
 	if on_ground:
-		position.y = ground
+		position.y = floor_y
 		vel.y = 0.0

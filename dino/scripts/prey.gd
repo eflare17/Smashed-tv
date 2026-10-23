@@ -13,7 +13,7 @@ const SCARE := 70.0
 const DIE_MASS := 0.5
 const DIE_HEAD := 0.35
 
-var state := GRAZE
+var state: int = GRAZE
 var _t := 0.0
 var _dir := 0.0
 var _flee_t := 0.0
@@ -23,6 +23,7 @@ var _leg_rest: Array[float] = []
 
 func _ready() -> void:
 	build(DinoArt.prey())
+	half_w = 16.0
 
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 	_t -= delta
@@ -37,8 +38,9 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			vel.x = move_toward(vel.x, _dir * WANDER, delta * 200.0)
 		FLEE:
 			_flee_t -= delta
-			# cornered against the edge of the world: turn and bolt past
-			if (global_position.x < 30.0 and _dir < 0.0) or (global_position.x > game.WORLD_W - 30.0 and _dir > 0.0):
+			# cornered against the edge of the world or an obstacle: turn and bolt past
+			if (global_position.x < 30.0 and _dir < 0.0) or (global_position.x > game.world_w - 30.0 and _dir > 0.0) \
+					or blocked * _dir > 0.0:
 				_dir = -_dir
 				_flee_t = maxf(_flee_t, 1.2)
 			if _flee_t <= 0.0:
@@ -52,7 +54,10 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			vel.x = move_toward(vel.x, 0.0, delta * 300.0)
 	if _dir != 0.0 and state != DEAD:
 		set_facing(_dir)
-	move(delta, game.GROUND_Y, 10.0, game.WORLD_W - 10.0)
+	move(delta)
+	# wandering into a rock: turn around
+	if state == GRAZE and blocked != 0:
+		_dir = -float(blocked)
 	if state == DEAD:
 		_slump(delta)
 	else:
