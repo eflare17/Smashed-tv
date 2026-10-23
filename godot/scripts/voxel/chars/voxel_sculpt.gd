@@ -78,7 +78,9 @@ static func noise3(p: Vector3, s: float) -> float:
 ## Fills the box lo..hi (model voxels, hi exclusive) with cubes where sdf(p) <= 0 (p: the cube's middle). Each surface
 ## cube is painted paint(p, n, ao) -> Color (n the surface's way out, ao 0 open .. 1 tucked in); inside cubes get
 ## the colour of the nearest painted surface (not seen; the gore shows flesh anyway). -> {grid, origin}
-static func fill(lo: Vector3i, hi: Vector3i, sdf: Callable, paint: Callable) -> Dictionary:
+## ctx (optional): the shapes of the parts it meets (a distance function), so its creases against them shade too (an
+## arm's inside darker where it meets his side), though they aren't its cubes.
+static func fill(lo: Vector3i, hi: Vector3i, sdf: Callable, paint: Callable, ctx := Callable()) -> Dictionary:
 	var s := hi - lo
 	var n := s.x * s.y * s.z
 	var dist := PackedFloat32Array()
@@ -116,6 +118,8 @@ static func fill(lo: Vector3i, hi: Vector3i, sdf: Callable, paint: Callable) -> 
 						for dx in range(-3, 4, 2):
 							tot += 1
 							if _d(dist, s, x + dx, y + dy, z + dz) <= 0.0:
+								solid += 1
+							elif ctx.is_valid() and float(ctx.call(p + Vector3(dx, dy, dz))) <= 0.0:
 								solid += 1
 				var ao := clampf((float(solid) / tot - 0.42) / 0.35, 0.0, 1.0)
 				var c: Color = paint.call(p, nrm, ao)

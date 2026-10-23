@@ -23,7 +23,8 @@ static func part(name: String) -> Dictionary:
 		"glasses":
 			return _big(Vector3i(-17, 119, -5), Vector3i(19, 132, 25), _glasses_sdf, _glasses_paint)
 		"torso":
-			return VoxelSculpt.fill(Vector3i(-33, 64, -25), Vector3i(34, 121, 23), _torso_sdf, _torso_paint)
+			return VoxelSculpt.fill(Vector3i(-36, 64, -25), Vector3i(37, 121, 23), _torso_sdf, _torso_paint,
+				func(p: Vector3) -> float: return _arm_sdf(Vector3(absf(p.x - 0.5) + 0.5, p.y, p.z)))
 		"pelvis":
 			return VoxelSculpt.fill(Vector3i(-27, 46, -21), Vector3i(28, 73, 21), _pelvis_sdf, _pelvis_paint)
 	for limb in LIMBS:
@@ -57,7 +58,7 @@ static func _big(lo: Vector3i, hi: Vector3i, sdf: Callable, paint: Callable) -> 
 
 ## His left side's limbs: [lo, hi] (model voxels); the right's are these mirrored.
 const LIMBS := {
-	"arm": [Vector3i(16, 76, -17), Vector3i(44, 120, 14)],
+	"arm": [Vector3i(14, 76, -17), Vector3i(44, 120, 14)],
 	"forearm": [Vector3i(22, 60, -12), Vector3i(45, 86, 10)],
 	"hand": [Vector3i(26, 48, -8), Vector3i(43, 66, 11)],
 	"thigh": [Vector3i(1, 26, -16), Vector3i(33, 61, 16)],
@@ -65,17 +66,32 @@ const LIMBS := {
 	"foot": [Vector3i(8, 0, -10), Vector3i(31, 16, 21)],
 }
 
+## The parts a limb meets (for its shading: VoxelSculpt.fill's ctx), on his left.
+static func _near(limb: String) -> Callable:
+	match limb:
+		"arm":
+			return func(p: Vector3) -> float: return minf(_torso_body(p), _forearm_sdf(p))
+		"forearm":
+			return func(p: Vector3) -> float: return minf(_arm_sdf(p), _hand_sdf(p))
+		"thigh":
+			return func(p: Vector3) -> float: return minf(_pelvis_sdf(p), _shin_sdf(p))
+		"shin":
+			return func(p: Vector3) -> float: return minf(_thigh_sdf(p), _foot_sdf(p))
+	return Callable()
+
 static func _limb(limb: String, right: bool) -> Dictionary:
 	var lo: Vector3i = LIMBS[limb][0]
 	var hi: Vector3i = LIMBS[limb][1]
 	var sdf := Callable(JaredBuild, "_" + limb + "_sdf")
 	var paint := Callable(JaredBuild, "_" + limb + "_paint")
+	var near := _near(limb)
 	if not right:
-		return VoxelSculpt.fill(lo, hi, sdf, paint)
+		return VoxelSculpt.fill(lo, hi, sdf, paint, near)
 	var m := func(p: Vector3) -> Vector3: return Vector3(-p.x, p.y, p.z)
 	return VoxelSculpt.fill(Vector3i(-hi.x, lo.y, lo.z), Vector3i(-lo.x, hi.y, hi.z),
 		func(p: Vector3) -> float: return sdf.call(m.call(p)),
-		func(p: Vector3, n: Vector3, ao: float) -> Color: return paint.call(m.call(p), Vector3(-n.x, n.y, n.z), ao))
+		func(p: Vector3, n: Vector3, ao: float) -> Color: return paint.call(m.call(p), Vector3(-n.x, n.y, n.z), ao),
+		(func(p: Vector3) -> float: return near.call(m.call(p))) if near.is_valid() else Callable())
 
 # ---------------------------------------------------------------- the head
 
@@ -235,6 +251,8 @@ static func _torso_body(p: Vector3) -> float:
 		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 10.0, 101.0, 12.5), Vector3(10.0, 7.0, 7.0)), 2.5)   # pecs
 		d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 7.0, 111.0, -4.0), Vector3(0.5 + sx * 23.0, 109.0, -3.0), 7.0), 3.5)   # traps: to his chin
 		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 18.0, 91.0, -6.0), Vector3(6.5, 10.0, 8.0)), 3.0)   # lats
+		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 26.0, 108.5, -2.0), Vector3(8.5, 8.0, 10.0)), 4.0)   # the shoulder's top: the traps run into it
+		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 21.0, 98.0, -2.5), Vector3(5.5, 9.0, 9.5)), 3.5)   # the armpit: his side meets the arm
 	d = VoxelSculpt.smax(d, 66.5 - p.y, 1.5)
 	return d
 
@@ -242,10 +260,8 @@ static func _torso_body(p: Vector3) -> float:
 static func _singlet_at(p: Vector3) -> float:
 	var x := absf(p.x - 0.5)
 	var top: float
-	if x > 19.5:
-		top = 97.0
-	elif x > 12.5:
-		top = 119.0
+	if x > 12.5:
+		top = lerpf(119.0, 96.0, smoothstep(14.5, 22.5, x))     # (the strap curving down into the armhole)
 	else:
 		var k := (x / 12.5) * (x / 12.5)
 		top = lerpf(99.0, 116.0, k) if p.z > -1.0 else lerpf(110.0, 117.0, k)
@@ -294,7 +310,7 @@ static func _torso_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var t := VoxelSculpt.lit(n, ao, 0.55)
 	# the trim: a darker band round the neck, the armholes and the straps' edges, and the hem
 	var x := absf(p.x - 0.5)
-	if cover < 1.3 or p.y < 68.0 or (p.y > 97.0 and (absf(x - 12.5) < 0.9 or absf(x - 19.5) < 0.9)):
+	if cover < 1.3 or p.y < 68.0 or (p.y > 97.0 and absf(x - 12.5) < 0.9):
 		return VoxelSculpt.ramp(SINGLET, 0.1 + 0.4 * t)
 	if p.z > 6.0 and n.z > 0.35 and _print_at(p.x, p.y):
 		return PRINT.lerp(Color8(160, 230, 140), 0.4 * (1.0 - t))
@@ -331,7 +347,8 @@ static func _pelvis_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 
 static func _arm_sdf(p: Vector3) -> float:
 	var d := VoxelSculpt.cone_capsule(p, Vector3(30.0, 106.0, -2.0), Vector3(32.5, 80.0, -2.0), 9.5, 7.5)
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(30.5, 107.0, -1.5), Vector3(11.0, 10.5, 11.5)), 3.0)   # the deltoid
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(29.5, 106.5, -1.5), Vector3(11.0, 11.0, 11.5)), 3.0)   # the deltoid
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(25.0, 109.0, -2.0), Vector3(6.0, 6.5, 8.5)), 3.0)   # onto the shoulder
 	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(31.5, 93.0, 2.5), Vector3(9.0, 11.5, 9.0)), 2.5)   # the biceps
 	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(32.5, 94.0, -6.0), Vector3(8.5, 12.0, 7.5)), 2.5)  # the triceps
 	return d

@@ -20,7 +20,7 @@ const VARIANTS := {
 	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
 	"jared_hd": {"base": "jared"},               # (the voxel arena's Jared: at full detail; VoxelReshape off, the owner: "put them back")
 	"jared_new": {"base": "jared", "built": "jared", "pivots": {"head": Vector3(0, 115, 1)},
-		"rest": {"arm_l": Vector3(0, 0, 0.17), "arm_r": Vector3(0, 0, -0.17), "forearm_l": Vector3(-0.4, 0, 0),
+		"rest": {"arm_l": Vector3(0, 0, 0.07), "arm_r": Vector3(0, 0, -0.07), "forearm_l": Vector3(-0.4, 0, 0),
 			"forearm_r": Vector3(-0.4, 0, 0)}},   # (Jared sculpted from scratch: VoxelSculpt, JaredBuild)
 }
 ## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
