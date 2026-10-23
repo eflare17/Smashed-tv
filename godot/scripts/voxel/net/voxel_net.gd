@@ -194,7 +194,6 @@ func _make_other() -> void:
 	other_avatar = VoxelBody.new()
 	arena.add_child(other_avatar)
 	other_avatar.setup("jared_hd", 0.0125, 1, arena._mat)
-	VoxelJiggle.dress(other_avatar)
 	other = VoxelShooter.new()
 	other.arena = arena
 	other.local = false

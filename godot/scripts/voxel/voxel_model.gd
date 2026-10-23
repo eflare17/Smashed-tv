@@ -17,8 +17,8 @@ const VARIANTS := {
 	"thrower": {"base": "grunt", "tint": Color(0.45, 0.95, 0.3), "mix": 0.5},
 	"shielder": {"base": "brute", "tint": Color(0.45, 0.6, 1.0), "mix": 0.45, "shield": true},
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
-	"gothica": {"base": "goth", "bust": true, "reshape": true},   # (the voxel arena's Gothica: VoxelReshape, her chest for VoxelJiggle)
-	"jared_hd": {"base": "jared", "reshape": true},              # (the voxel arena's Jared: VoxelReshape)
+	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
+	"jared_hd": {"base": "jared"},               # (the voxel arena's Jared: at full detail; VoxelReshape off, the owner: "put them back")
 }
 ## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
 ## forward), how far apart the two are. VoxelJiggle reads these to know what moves.

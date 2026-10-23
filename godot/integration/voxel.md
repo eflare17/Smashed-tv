@@ -592,6 +592,11 @@ clips, fuel) at a lobby bench")
 
 ### Jared and Gothica made solid (23 Oct, the owner: Gothica's side view "look bad"; Jared "a bit blurry, a little off")
 
+**Taken back out** (the owner, after the video: "Jared's looks bad and Gothica looks terrible ... put them back"):
+the models are the plain ones again ("jared_hd" is Jared at full detail with no reshaping; "gothica" keeps only her
+chest's sculpt for VoxelJiggle). VoxelReshape, the bake tool and the turntable tests stay for later. Next: both
+rebuilt from scratch in code as real 3D figures (Jared first), their pictures for colour and design.
+
 - Jared was built at half detail (every 2 x 2 x 2 of his picture's pixels averaged into one cube: his face and the
   JUICY JARED print smudged). The arena's Jared (yours, and your mate's in co-op) is now the "jared_hd" model at full
   detail (VoxelModel.VARIANTS), like Gothica.

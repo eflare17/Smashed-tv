@@ -84,7 +84,7 @@ func setup(body_: VoxelBody) -> void:
 	sk.set_shader_parameter("root_y", (80.0 - kp.y) * _vm)
 	sk.set_shader_parameter("len_y", 30.0 * _vm)
 	sk.set_shader_parameter("power", 1.4)
-	dress(body, mats.rest, {"torso": mats.torso, "hair": mats.hair, "skirt": mats.skirt})
+	dress(body, mats.rest, {"torso": mats.torso, "hair": mats.hair, "skirt": mats.skirt}, false)
 
 ## A jolt to the chest (its own frame, metres a second): a heel coming down, a landing, a bump.
 func kick(v: Vector3) -> void:
@@ -222,7 +222,7 @@ func _hang(st: Dictionary, xf: Transform3D, hz: float, zeta: float, reach: Vecto
 ## down, the skirt's hem rippling with wave).
 ## A block character drawn with shader(): every part's material (one for her soft parts each, if given; the rest
 ## shared) and its rounded shape for the smooth shading (VoxelReshape.shape).
-static func dress(b: VoxelBody, rest: ShaderMaterial = null, own: Dictionary = {}) -> void:
+static func dress(b: VoxelBody, rest: ShaderMaterial = null, own: Dictionary = {}, shapes := true) -> void:
 	if rest == null:
 		rest = ShaderMaterial.new()
 		rest.shader = shader()
@@ -230,6 +230,8 @@ static func dress(b: VoxelBody, rest: ShaderMaterial = null, own: Dictionary = {
 		var p: Dictionary = b.parts[n]
 		var mi: MeshInstance3D = p.mesh
 		mi.material_override = own.get(n, rest)
+		if not shapes:
+			continue
 		var sh := VoxelReshape.shape(p.grid, b.mesh_origin(n), Vector3.ZERO, b.vm)
 		mi.set_instance_shader_parameter("shape_c", sh[0])
 		mi.set_instance_shader_parameter("shape_r", sh[1])

@@ -315,11 +315,6 @@ func _pose(dt: float) -> void:
 		sk.set_bone_pose_rotation(hips, sk.get_bone_pose_rotation(hips) * Quaternion.from_euler(Vector3(0, 0.05 * shift, 0.05 * shift)))
 		sk.set_bone_pose_rotation(chest, sk.get_bone_pose_rotation(chest) * Quaternion.from_euler(Vector3(0.025 * sin(_t * 1.4), -0.03 * shift, -0.045 * shift)))
 		sk.set_bone_pose_rotation(head, sk.get_bone_pose_rotation(head) * Quaternion.from_euler(Vector3(0, 0.25 * sin(_t * 0.31), 0.04 * shift)))
-	# her arms held a little out from her sides (her shape shows from the side; nothing through her skirt)
-	for nm in ["arm_l", "arm_r"]:
-		var ab := md.bone(nm)
-		var sx2 := 1.0 if nm == "arm_l" else -1.0
-		sk.set_bone_pose_rotation(ab, sk.get_bone_pose_rotation(ab) * Quaternion.from_euler(Vector3(0, 0, sx2 * 0.14)))
 	if hop_t >= 0.0:
 		# arms flung up over her head with the hop, elbows bent, down again as she lands
 		var u := clampf(sin(clampf((hop_t - 0.05) / 0.75, 0.0, 1.0) * PI), 0.0, 1.0)
