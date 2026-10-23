@@ -21,7 +21,7 @@ static func part(name: String) -> Dictionary:
 		"hair_classic":
 			return _big(Vector3i(-17, 116, -16), Vector3i(20, 151, 22), _hair_sdf, _hair_paint)
 		"glasses":
-			return _big(Vector3i(-17, 119, -5), Vector3i(19, 132, 25), _glasses_sdf, _glasses_paint)
+			return _big(Vector3i(-17, 120, -5), Vector3i(19, 132, 25), _glasses_sdf, _glasses_paint)
 		"torso":
 			return VoxelSculpt.fill(Vector3i(-36, 64, -25), Vector3i(37, 121, 23), _torso_sdf, _torso_paint,
 				func(p: Vector3) -> float: return _arm_sdf(Vector3(absf(p.x - 0.5) + 0.5, p.y, p.z)))
@@ -130,9 +130,7 @@ static func _head_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 		var strand := VoxelSculpt.hash3(p.x * 0.9 + p.y * 0.4, p.z * 0.5, 0.0)
 		return VoxelSculpt.ramp(HAIR, 0.1 + 0.5 * t + 0.25 * strand)
 	var x := p.x - 0.5
-	# eyebrows above the shades: thick and dark
-	if p.y > 130.6 and p.y < 132.4 and absf(x) > 1.8 and absf(x) < 10.5 and n.z > 0.25:
-		return VoxelSculpt.ramp(HAIR, 0.2 + 0.45 * t + 0.15 * VoxelSculpt.hash3(p.x, p.y * 2.0, 0.0))
+	# (no eyebrows: in his pictures the shades sit right under his brow, forehead above)
 	# the mouth's line under the moustache, the lip a shade redder
 	if p.y > 114.4 and p.y < 115.3 and absf(x) < 5.0 and p.z > 14.0:
 		return SKIN[0]
@@ -147,10 +145,11 @@ static func _head_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 
 static func _hairline(p: Vector3) -> float:
 	var x := absf(p.x - 0.5)
-	# over the forehead (front), at the temples and sideburns (sides, in front of the ears), down the back
-	var front := 135.5 + 0.1 * x
+	# over the forehead: a slight dip in the middle, up at the temples (as in his front sprite); sideburns down in front
+	# of the ears; down to the nape at the back
+	var front := 134.0 + 2.4 * smoothstep(1.5, 7.5, x) - 1.2 * smoothstep(9.5, 12.5, x)
 	var side := 127.0 if x < 10.0 else lerpf(127.0, 119.5, clampf((x - 10.0) / 2.5, 0.0, 1.0))
-	var back := 118.5
+	var back := 117.5
 	if p.z > 9.0:
 		return front
 	if p.z > 3.5:
@@ -161,57 +160,70 @@ static func _hairline(p: Vector3) -> float:
 
 static func _hair_sdf(p: Vector3) -> float:
 	var skin := _skin_sdf(p)
-	# a layer on his head: short at the back and sides, thicker on top (most at the front, swept across to his right),
-	# the very top flattened off; never sticking out past his forehead
-	var top_k := smoothstep(134.0, 141.5, p.y)
-	var thick := 1.1 + top_k * (1.9 + 1.0 * smoothstep(-6.0, 12.0, p.z) + 0.8 * smoothstep(4.0, -8.0, p.x))
+	# swept back: short and close at the sides and nape, thick on top, fullest over the front where it lifts off his
+	# forehead and is combed back; the top rounded off (not a dome, not a flat cap)
+	var top_k := smoothstep(131.0, 140.0, p.y)
+	var front_k := smoothstep(-8.0, 10.0, p.z)
+	var thick := 0.9 + top_k * (2.3 + 0.9 * front_k)
 	var hl := _hairline(p)
-	thick *= 0.3 + 0.7 * smoothstep(hl, hl + 3.5, p.y)          # (thin at its edge: grows out of the skin, no ledge)
+	thick *= 0.3 + 0.7 * smoothstep(hl - 0.5, hl + 4.0, p.y)     # (thin at its edge: no brim over his forehead)
 	var d := skin - thick
-	d = VoxelSculpt.smax(d, p.y - 145.6, 2.0)
+	d = VoxelSculpt.smax(d, p.y - (146.0 + 0.6 * front_k), 3.5)     # (rounded off on top, a touch higher at the front)
 	d = maxf(d, _hairline(p) - p.y)
 	d = maxf(d, -skin)                               # (on the head, not in it)
 	return d
 
+const HAIR_LIT := Color8(116, 72, 68)
+
 static func _hair_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var t := VoxelSculpt.lit(n, ao, 0.5)
-	# combed: across to his right on top (away from the parting), back along the sides
-	var comb := VoxelSculpt.hash3(p.z * 1.0 + p.y * 0.3, 0.0, 0.0) if p.y > 136.5 else VoxelSculpt.hash3(p.y * 1.0 + p.x * 0.3, 7.0, 0.0)
-	var clump := VoxelSculpt.noise3(Vector3(p.x * 0.4, p.y * 0.8, p.z * 1.4), 2.5) if p.y > 136.5 else VoxelSculpt.noise3(Vector3(p.x * 1.4, p.y * 0.8, p.z * 0.4), 2.5)
-	var c := VoxelSculpt.ramp(HAIR, 0.1 + 0.55 * t + 0.15 * comb + 0.3 * (clump - 0.5))
-	if absf(p.x - 6.0) < 1.6 and p.y > 136.0:
-		c = c.darkened(0.25)                          # (the parting's shadow)
+	# locks combed back from the forehead (running front to back over the top, down and back at the sides): each lock
+	# lighter along its middle, darker in the gaps between
+	var along_top := Vector3(p.x * 1.5, p.y * 0.35, p.z * 0.2)
+	var along_side := Vector3(p.x * 0.2, p.y * 1.2 + p.z * 0.5, p.z * 0.2)
+	var lock := VoxelSculpt.noise3(along_top if p.y > 134.0 else along_side, 1.6)
+	var c := VoxelSculpt.ramp(HAIR, 0.08 + 0.55 * t + 0.4 * (lock - 0.5))
+	# the shine: a band of lighter strands across the top front, where the light catches the sweep
+	if p.y > 139.0 and p.z > 0.0 and n.y > 0.35 and lock > 0.55:
+		c = c.lerp(HAIR_LIT, 0.55 * smoothstep(0.55, 0.8, lock))
 	return c
 
-# ---------------------------------------------------------------- the shades: wrap-around, blue
+# ---------------------------------------------------------------- the shades: one wrap-around visor, blue
+
+const LENS2 := [Color8(3, 40, 105), Color8(6, 90, 178), Color8(8, 145, 226), Color8(4, 184, 243), Color8(120, 228, 255)]
+const SHADE_TOP := 129.9
+
+static func _shade_bottom(x: float) -> float:
+	var ax := absf(x)
+	var b := 122.9 - 0.009 * ax * ax               # (lower toward the sides)
+	if ax < 2.8:
+		b = maxf(b, 125.9 - ax * 0.9)              # (the notch over his nose)
+	return b
 
 static func _glasses_sdf(p: Vector3) -> float:
 	var x := p.x - 0.5
-	var bottom := 119.6 + 0.015 * x * x
-	if absf(x) < 2.0:
-		bottom = 123.8                                # (over the bridge of his nose)
-	var shell := absf(_skin_sdf(p) - 1.5) - 0.85       # a layer just off his face
-	var d := maxf(shell, maxf(bottom - p.y, p.y - 130.6))
-	d = maxf(d, 1.5 - p.z)                            # (front and sides, round to the temples)
+	var shell := absf(_skin_sdf(p) - 1.4) - 0.9        # a layer standing just off his face
+	var d := maxf(shell, maxf(_shade_bottom(x) - p.y, p.y - SHADE_TOP))
+	d = maxf(d, 1.0 - p.z)                            # (front and sides, round to the temples)
 	for sx in [-1.0, 1.0]:
-		d = minf(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 13.6, 127.4, 4.5), Vector3(0.5 + sx * 13.4, 127.2, -3.0), 0.75))   # arms
+		d = minf(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 13.8, 128.6, 3.5), Vector3(0.5 + sx * 13.5, 128.2, -3.0), 1.0))   # arms
 	return d
 
 static func _glasses_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var x := p.x - 0.5
-	var bottom := 119.6 + 0.015 * x * x
-	if absf(x) < 2.0:
-		bottom = 123.8
 	var t := VoxelSculpt.lit(n, ao, 0.5)
-	var rim := p.y > 129.8 or p.y < bottom + 0.7 or absf(x) < 0.9 or p.z < 4.5
-	if rim:
-		return VoxelSculpt.ramp(FRAME, 0.2 + 0.7 * t)
-	# the lens: darker at the top, a bright streak across
-	var k := clampf((p.y - bottom) / (129.8 - bottom), 0.0, 1.0)
-	var c := VoxelSculpt.ramp(LENS, 0.95 - 0.6 * k + 0.1 * t)
-	var streak := absf(fmod(x * 0.55 + p.y * 1.0 + 200.0, 9.0) - 4.5)
-	if streak < 0.8 and n.z > 0.3:
-		c = c.lerp(Color8(220, 248, 255), 0.6)
+	var bottom := _shade_bottom(x)
+	if p.y > SHADE_TOP - 1.2 or p.z < 3.0:
+		return VoxelSculpt.ramp(FRAME, 0.15 + 0.6 * t)      # (the frame along the top, the arms)
+	# the lens: deep blue at its lower edge and round the sides, bright cyan across its upper middle
+	var k := clampf((p.y - bottom) / (SHADE_TOP - 1.2 - bottom), 0.0, 1.0)
+	var side := clampf(absf(x) / 13.0, 0.0, 1.0)
+	var c := VoxelSculpt.ramp(LENS2, clampf(0.2 + 0.62 * k - 0.35 * side * side + 0.08 * t, 0.0, 0.8))
+	if p.y < bottom + 0.8:
+		c = c.darkened(0.25)                          # (its lower rim)
+	# one glint on each side, up and in
+	if absf(absf(x) - 5.5) < 1.2 and p.y > SHADE_TOP - 3.4 and p.y < SHADE_TOP - 2.0 and n.z > 0.4:
+		c = c.lerp(Color8(230, 250, 255), 0.75)
 	return c
 
 # ---------------------------------------------------------------- the body: shared paints
