@@ -107,6 +107,24 @@ Placeholders I had to pick (all easy to change, none decided):
 
 All the numbers above are placeholders to tune by playing.
 
+## Bite feel, round 2 (owner's asks, 25 Oct)
+
+- **No more stretchy neck:** the neck stays its length, and the whole body lunges (leaning into it), leaps for
+  high spots, or steps back for close ones, so the teeth still meet exactly on the spot (a test checks it,
+  under 1 px off).
+- **Quick bite (left click):** a fast snap and a small chunk, as before.
+- **Big bite (hold right click to charge, let go):** the jaw opens wider and you crouch as it charges (a ring
+  round the aim fills up, and shows the size of the rip). Then a heavier lunge. If it lands, the jaws **clamp
+  on (GOT IT!)** and you **shake**, tearing pixels out the whole time (blood and bits everywhere), then **RIP!** a
+  big chunk away (more charge, a longer shake and a bigger rip). You're stuck while you shake, so a hunter can
+  bite you, which knocks you off.
+- **Bigger things break free:** anything bigger than you (pixels left, against your size) breaks free partway
+  through the shake, the bigger the sooner (twice your size breaks free a quarter of the way). Your size or
+  smaller, or dead, can't. The starting prey is about twice your size, so grow before big-biting it.
+- Bite size (the upgrade) grows both bites.
+- Placeholders: a 0.8 s full charge, a 0.45-0.9 s shake, rips 1.5-2.3x a quick bite, and the break-free rule
+  (time = shake / (size ratio)^2).
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

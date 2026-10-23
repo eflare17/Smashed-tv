@@ -31,6 +31,50 @@ func _run() -> void:
 			break
 	await _shot(out, "hunter_windup")
 
+	# a quick bite at the snap, then a charged big bite mid-shake, on a prey standing still
+	for c in main.creatures.duplicate():
+		c.queue_free()
+	main.creatures.clear()
+	main.obstacles.clear()
+	var p: Prey = main.spawn_prey(300.0)
+	p.set_facing(-1.0)
+	pl.position = Vector2(255.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	pl.cool = 0.0
+	for f in 3:
+		await process_frame
+	# a state it has no behaviour for: it just stands there
+	p.state = 99
+	var neck_spot: Vector2 = p.rig.to_global(Vector2(25, -38))
+	pl.step(1.0 / 60.0, 0.0, false, true, neck_spot)
+	for f in 30:
+		await process_frame
+		if pl.bite_t >= pl.WIND[0]:
+			break
+	await _shot(out, "quick_bite")
+	for f in 30:
+		await process_frame
+	pl.cool = 0.0
+	pl.bite_t = -1.0
+	p.state = 99
+	p.vel = Vector2.ZERO
+	p.position.x = 300.0
+	pl.position.x = 250.0
+	await process_frame
+	main.demo = true
+	main.set("_bot_point", p.rig.to_global(Vector2(0, -24)))
+	main.set("_bot_charge", 1.0)
+	pl.step(1.0 / 60.0, 0.0, false, false, main.get("_bot_point"), true)
+	for f in 200:
+		await process_frame
+		if not pl.grab.is_empty() and pl.grab.t > 0.15:
+			break
+	await _shot(out, "big_bite_shake")
+	main.demo = false
+	for f in 60:
+		await process_frame
+	await _shot(out, "big_bite_after")
+
 	main.add_xp(main.xp_needed(), pl.global_position)
 	for f in 3:
 		await process_frame

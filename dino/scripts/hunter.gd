@@ -28,6 +28,8 @@ func _ready() -> void:
 	state = STALK
 
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
+	if held_step(delta, rng):
+		return
 	_t -= delta
 	var me := global_position
 	var player: Player = game.player

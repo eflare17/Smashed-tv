@@ -27,6 +27,12 @@ func _zone_points(p: Prey, zone: int) -> Array:
 				out.append(part.to_world(Vector2(i % part.w + 0.5, i / part.w + 0.5)))
 	return out
 
+func _mass(p: Prey) -> float:
+	var n := 0
+	for part in p.parts:
+		n += part.pixels_left()
+	return n
+
 func _run() -> void:
 	var main: Node = load("res://main.tscn").instantiate()
 	root.add_child(main)
@@ -112,13 +118,60 @@ func _run() -> void:
 		var miss := 999.0
 		for f in 12:
 			pl.step(1.0 / 60.0, 0.0, false, false, aim)
-			if pl.bite_t >= pl.WIND and pl.bite_t < pl.WIND + pl.HOLD:
+			if pl.bite_t >= pl.WIND[0] and pl.bite_t < pl.WIND[0] + pl.HOLD:
 				miss = pl.jaw_tip().distance_to(pl.target_point())
 				break
 		print("   %s: %.2f px" % [DinoArt.ZONE_NAMES[z], miss])
 		worst = maxf(worst, miss)
 		pl.bite_t = -1.0
 	_check("the teeth meet on the spot you clicked", worst < 1.5, "worst %.2f px off" % worst)
+
+	# the big bite: charge it, it clamps on, shakes (tearing), and rips; it takes far more than a quick bite
+	var quick_take := 0
+	var q: Prey = main.spawn_prey(1200.0)
+	q.die()
+	await _frames(2)
+	var m0: float = q.mass_fraction()
+	main.player_bite(pl, _zone_points(q, DinoArt.BODY)[40], pl.bite_radius)
+	quick_take = int((m0 - q.mass_fraction()) * 10000)
+	var big_target: Prey = main.spawn_prey(1500.0)
+	big_target.die()
+	pl.position = Vector2(1460.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	pl.cool = 0.0
+	pl.bite_t = -1.0
+	await _frames(2)
+	var spot: Vector2 = _zone_points(big_target, DinoArt.BODY)[60]
+	var mb: float = big_target.mass_fraction()
+	var grabbed := false
+	var ripped := false
+	pl.step(1.0 / 60.0, 0.0, false, false, spot, true)
+	for f in 50:
+		pl.step(1.0 / 60.0, 0.0, false, false, spot, true)
+	_check("holding right click charges", pl.charging and pl.charge > 0.99, "%.2f" % pl.charge)
+	for f in 200:
+		pl.step(1.0 / 60.0, 0.0, false, false, spot, false)
+		if not pl.grab.is_empty():
+			grabbed = true
+		elif grabbed:
+			ripped = true
+			break
+	var big_take := int((mb - big_target.mass_fraction()) * 10000)
+	_check("a big bite clamps on, shakes and lets go", grabbed and ripped)
+	_check("a big bite takes far more than a quick one", big_take > quick_take * 3, "%d vs %d" % [big_take, quick_take])
+
+	# a big live prey breaks free (you're smaller than it); a dead one can't
+	var big_live: Prey = main.spawn_prey(1800.0)
+	await _frames(2)
+	_check("something bigger than you breaks free early", main.break_free_time(pl, big_live, 1.0) < 0.6,
+			"after %.2f of the shake (it's %.1fx you)" % [main.break_free_time(pl, big_live, 1.0), _mass(big_live) / pl.mass()])
+	_check("a body can't break free", main.break_free_time(pl, big_target, 1.0) == INF)
+	var small: Hunter = main.spawn_hunter(1900.0)
+	await _frames(2)
+	_check("something your size can't break free", main.break_free_time(pl, small, 1.0) == INF,
+			"it's %.2fx you" % (_mass(small) / pl.mass()))
+	small.queue_free()
+	main.creatures.erase(small)
 
 	# a killed prey eaten down to scraps disappears and you grow
 	p3.die()
@@ -132,7 +185,7 @@ func _run() -> void:
 			left.append_array(_zone_points(p3, z))
 		if left.is_empty():
 			break
-		main.player_bite(pl, left[rng.randi() % left.size()])
+		main.player_bite(pl, left[rng.randi() % left.size()], pl.bite_radius)
 	_check("eating a body completely removes it", not main.creatures.has(p3))
 	_check("eating a whole one grows you", pl.size > size0 and main.eaten == eaten0 + 1, "size %.2f" % pl.size)
 
@@ -168,7 +221,7 @@ func _run() -> void:
 		var pts2: Array = _zone_points(h, DinoArt.BODY) + _zone_points(h, DinoArt.NECK)
 		if pts2.is_empty():
 			break
-		main.player_bite(pl, pts2[rng.randi() % pts2.size()])
+		main.player_bite(pl, pts2[rng.randi() % pts2.size()], pl.bite_radius)
 	_check("a hunter can be killed", h.dead)
 
 	# areas: the same run seed builds the same area, another seed a different one

@@ -20,12 +20,33 @@ var _flee_t := 0.0
 var _collapse := 0.0
 var _bleed := 0.0
 var _leg_rest: Array[float] = []
+## In your jaws (a big bite): it can't go anywhere, it just thrashes (or, dead, hangs there).
+var held := false
+var _held_t := 0.0
 
 func _ready() -> void:
 	build(DinoArt.prey())
 	half_w = 16.0
 
+## Held in your jaws: thrash in place and bleed. Returns true if it was (and the normal step is skipped).
+func held_step(delta: float, rng: RandomNumberGenerator) -> bool:
+	if not held:
+		if _held_t > 0.0:
+			_held_t = 0.0
+			if not dead:
+				rig.rotation = 0.0
+		return false
+	_held_t += delta
+	vel = Vector2.ZERO
+	if not dead:
+		rig.rotation = sin(_held_t * 37.0) * 0.12
+		animate(delta, true, 22.0)
+	_bleed_step(delta, rng)
+	return true
+
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
+	if held_step(delta, rng):
+		return
 	_t -= delta
 	var near := absf(threat.x - global_position.x) < SCARE and absf(threat.y - global_position.y) < 50.0
 	match state:

@@ -51,7 +51,7 @@ func _run() -> void:
 		main.set("_bot_point", aim)
 		pl.step(1.0 / 60.0, 0.0, false, true, aim)
 		main.demo = false
-		while pl.bite_t >= 0.0 and pl.bite_t < pl.WIND + 0.01:
+		while pl.bite_t >= 0.0 and pl.bite_t < pl.WIND[0] + 0.01:
 			await process_frame
 		await RenderingServer.frame_post_draw
 		var img := root.get_viewport().get_texture().get_image()
@@ -60,5 +60,5 @@ func _run() -> void:
 		var zoom := img.get_region(r)
 		zoom.resize(480, 272, Image.INTERPOLATE_NEAREST)
 		zoom.save_png("%s/bite_%s.png" % [out, DinoArt.ZONE_NAMES[z].to_lower()])
-		print("%s: prey moved %.1f px during the wind-up; teeth landed %.1f px from the spot on its body (neck to spot %.1f, reach %.1f)" % [DinoArt.ZONE_NAMES[z], pl.snap_info[0].distance_to(aim), pl.snap_info[1].distance_to(pl.snap_info[0]), pl.neck().distance_to(pl.snap_info[0]), pl.reach * pl.size])
+		print("%s: prey moved %.1f px during the wind-up; teeth landed %.1f px from the spot on its body (neck to spot %.1f, head %.1f)" % [DinoArt.ZONE_NAMES[z], pl.snap_info[0].distance_to(aim), pl.snap_info[1].distance_to(pl.snap_info[0]), pl.neck().distance_to(pl.snap_info[0]), pl.head_len()])
 	quit()

@@ -31,6 +31,8 @@ const HEAL_EAT_ALL := 15.0
 const UPGRADES := [["BITE SIZE", "bigger chunks"], ["SPEED", "run faster"], ["ATTACK SPEED", "bite more often"]]
 
 enum { PLAY, CHOOSE, OVER }
+## How heavy a bite lands (player_bite).
+enum { SNAP, GRAB, TEAR, RIP }
 
 var player: Player
 ## Everything you can bite: prey and hunters, alive and dead.
@@ -65,6 +67,7 @@ var _overlay: Node2D
 var _popups: Array = []   # [text, world pos, seconds left, colour]
 var _bot_t := 0.0
 var _bot_point := Vector2.ZERO
+var _bot_charge := 0.0
 var _fixed_seed := -1
 var _shots_dir := ""
 var _shot_every := 75
@@ -99,7 +102,7 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.picked.connect(_pick)
 	add_child(hud)
-	hud.hint.text = "A/D MOVE   W JUMP   CLICK BITE   F3 ZONES   R NEW RUN"
+	hud.hint.text = "A/D MOVE   W JUMP   LEFT CLICK BITE   HOLD RIGHT CLICK BIG BITE   R NEW RUN"
 	start_run()
 
 # --- runs and areas ---------------------------------------------------------------------------------------
@@ -221,6 +224,11 @@ func _add_inputs() -> void:
 		var mb := InputEventMouseButton.new()
 		mb.button_index = MOUSE_BUTTON_LEFT
 		InputMap.action_add_event("bite", mb)
+	if not InputMap.has_action("big"):
+		InputMap.add_action("big")
+		var rb := InputEventMouseButton.new()
+		rb.button_index = MOUSE_BUTTON_RIGHT
+		InputMap.action_add_event("big", rb)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("zones"):
@@ -276,6 +284,7 @@ func _step(delta: float) -> void:
 	var move_x := 0.0
 	var jump := false
 	var bite := false
+	var big := false
 	var aim := get_global_mouse_position()
 	if demo:
 		var b := _bot(delta)
@@ -283,11 +292,13 @@ func _step(delta: float) -> void:
 		jump = b[1]
 		bite = b[2]
 		aim = b[3]
+		big = b[4]
 	else:
 		move_x = Input.get_axis("left", "right")
 		jump = Input.is_action_just_pressed("jump")
 		bite = Input.is_action_just_pressed("bite")
-	player.step(delta, move_x, jump, bite, aim)
+		big = Input.is_action_pressed("big")
+	player.step(delta, move_x, jump, bite, aim, big)
 	for c in creatures.duplicate():
 		c.step(delta, player.global_position, rng)
 	_spawners(delta)
@@ -348,33 +359,43 @@ func prey_at(world: Vector2) -> Prey:
 	return null
 
 ## The player's jaws snapped shut at `p`: carve everything there, then the gore, XP, sounds, shake and hit-stop.
-func player_bite(who: Player, p: Vector2) -> void:
+## `radius` is the bite's size; `mode` how heavy it lands: SNAP (a quick bite), GRAB (the big bite clamping on),
+## TEAR (a little tear while shaking: no freeze, fewer words), RIP (the big rip at the end of a shake).
+## Returns the creature bitten (the first), or null.
+func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 	var dir := Vector2(who.facing, 0.0)
 	var got: Array = []
 	var any := false
+	var first: Prey = null
+	var light := mode == TEAR
 	for pr: Prey in creatures.duplicate():
-		if pr.global_position.distance_to(p) > 120.0:
+		if pr.global_position.distance_to(p) > 160.0:
 			continue
 		var zone := pr.zone_at(p)
-		var r := pr.bite(p, who.bite_radius, rng)
+		var r := pr.bite(p, radius, rng)
 		var off := 0
 		for isl: Dictionary in r.islands:
 			off += isl.pixels
 		if r.removed.is_empty() and off == 0:
 			continue
 		any = true
+		if first == null:
+			first = pr
 		chunks += 1
 		got.append_array(r.removed)
-		gore.spray(r.removed, dir, 0.35)
-		gore.blood(p, dir, 8 + r.removed.size() / 2, 110.0)
+		# tearing while you shake throws most of it about; a rip throws it hard
+		gore.spray(r.removed, Vector2(rng.randf_range(-1.0, 1.0), -0.5) if light else dir, 0.8 if light else 0.35)
+		gore.blood(p, dir, (4 + r.removed.size() / 3) if light else (8 + r.removed.size() / 2), 150.0 if mode == RIP else 110.0)
 		for isl: Dictionary in r.islands:
-			gore.piece(isl, Vector2(dir.x * rng.randf_range(40.0, 100.0), -rng.randf_range(70.0, 150.0)))
+			var fling := 1.6 if mode == RIP else 1.0
+			gore.piece(isl, Vector2(dir.x * rng.randf_range(40.0, 100.0), -rng.randf_range(70.0, 150.0)) * fling)
 			gore.blood(isl.center, Vector2.UP, 14, 90.0)
 			sfx.play("rip", 0.08)
 			_shake = minf(_shake + 0.5, 1.2)
 		if zone == 0:
 			zone = _main_zone(r.zones)
-		_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7, Color(1, 0.9, 0.5)])
+		if not light:
+			_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7, Color(1, 0.9, 0.5)])
 		var was_dead := pr.dead
 		if was_dead:
 			# eating: a little health and XP for every mouthful
@@ -385,26 +406,76 @@ func player_bite(who: Player, p: Vector2) -> void:
 			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2, Color(1, 0.4, 0.3)])
 			add_xp(XP_KILL_HUNTER if pr is Hunter else XP_KILL_PREY, pr.global_position + Vector2(0, -40))
 			_trim_corpses()
-		elif not pr.dead:
+		elif not pr.dead and (not light or rng.randf() < 0.25):
 			sfx.play("cry", 0.1, -3.0 if not (pr is Hunter) else -8.0)
 		if pr.dead and pr.mass_fraction() < FINISHED:
 			got.append_array(_finish(who, pr))
 	# pieces lying about (or still flying) go down whole
-	var bits := gore.eat_pieces(p, who.bite_radius + 1.0)
-	if not bits.is_empty():
-		any = true
-		got.append_array(bits)
-		gore.blood(p, dir, 6, 80.0)
-		who.heal(HEAL_EAT_BITE)
-		add_xp(XP_EAT_BITE, p)
-	if any:
-		sfx.play("crunch", 0.1)
-		sfx.play("tear", 0.1, -4.0)
-		_stop = 0.045 + minf(0.05, got.size() * 0.0008)
-		_shake = minf(_shake + 0.35, 1.2)
-		who.hold(_mouthful(who, got, p))
-	else:
-		sfx.play("snap", 0.1, -2.0)
+	if not light:
+		var bits := gore.eat_pieces(p, radius + 1.0)
+		if not bits.is_empty():
+			any = true
+			got.append_array(bits)
+			gore.blood(p, dir, 6, 80.0)
+			who.heal(HEAL_EAT_BITE)
+			add_xp(XP_EAT_BITE, p)
+	if not any:
+		if not light:
+			sfx.play("snap", 0.1, -2.0)
+		return null
+	match mode:
+		TEAR:
+			sfx.play("tear", 0.15, -6.0)
+			_shake = minf(_shake + 0.12, 0.6)
+		RIP:
+			sfx.play("crunch", 0.1, 3.0)
+			sfx.play("rip", 0.05, 2.0)
+			_stop = 0.11
+			_shake = 1.2
+			who.hold(_mouthful(who, got, p))
+		_:
+			sfx.play("crunch", 0.1)
+			sfx.play("tear", 0.1, -4.0)
+			_stop = (0.07 if mode == GRAB else 0.045) + minf(0.05, got.size() * 0.0008)
+			_shake = minf(_shake + (0.6 if mode == GRAB else 0.35), 1.2)
+			if mode == SNAP:
+				who.hold(_mouthful(who, got, p))
+	return first
+
+## The big bite landing at `p` with `charge` (0..1): a first bite as the jaws clamp on. Returns what you've got
+## hold of (alive or dead), or null (missed).
+func big_bite(who: Player, p: Vector2, charge: float) -> Prey:
+	var got := player_bite(who, p, who.bite_radius * (1.0 + charge * 0.4), GRAB)
+	if got:
+		_popups.append(["GOT IT!", p + Vector2(0, -16), 0.8, Color(1, 0.55, 0.3)])
+	return got
+
+## Seconds into a `length`-second shake before `prey` breaks free: never if it's dead or no bigger than you, the
+## bigger it is next to you the sooner. PLACEHOLDER rule.
+func break_free_time(who: Player, prey: Prey, length: float) -> float:
+	if prey.dead:
+		return INF
+	var mass := 0
+	for part in prey.parts:
+		mass += part.pixels_left()
+	var ratio := mass / who.mass()
+	return INF if ratio <= 1.0 else length / (ratio * ratio)
+
+func grab_tear(who: Player, prey: Prey, p: Vector2, radius: float) -> void:
+	player_bite(who, p, radius, TEAR)
+
+func grab_rip(who: Player, prey: Prey, p: Vector2, radius: float) -> void:
+	player_bite(who, p, radius, RIP)
+	if is_instance_valid(prey) and creatures.has(prey) and not prey.dead:
+		prey.vel.x += who.facing * 120.0
+	_popups.append(["RIP!", p + Vector2(0, -16), 0.9, Color(1, 0.3, 0.2)])
+
+func broke_free(who: Player, prey: Prey) -> void:
+	_popups.append(["BROKE FREE!", prey.global_position + Vector2(0, -prey.height - 14), 1.0, Color(1, 1, 1)])
+	sfx.play("cry", 0.05, 0.0)
+	sfx.play("thud", 0.1, -6.0)
+	prey.vel.x += who.facing * 80.0
+	_shake = minf(_shake + 0.4, 1.2)
 
 ## A hunter's teeth reached you.
 func hunter_bit(h: Hunter) -> void:
@@ -490,8 +561,12 @@ func _trim_corpses() -> void:
 # --- the demo bot -----------------------------------------------------------------------------------------
 
 ## Fights the nearest hunter, else eats the nearest body, else hunts the nearest prey, else heads for the exit;
-## bites a different spot each time, jumps what's in the way. [move, jump, bite, aim]
+## bites a different spot each time (now and then a charged big bite), jumps what's in the way.
+## [move, jump, bite, aim, big held]
 func _bot(delta: float) -> Array:
+	# a big bite: hold right click for a while, then let go
+	if player.charging:
+		return [0.0, false, false, _bot_point, player.charge < _bot_charge]
 	_bot_t -= delta
 	var me := player.position
 	var target: Prey = null
@@ -505,7 +580,7 @@ func _bot(delta: float) -> Array:
 			break
 	var jump := player.blocked != 0
 	if target == null:
-		return [1.0, jump, false, me + Vector2(60, -20)]
+		return [1.0, jump, false, me + Vector2(60, -20), false]
 	if _bot_t <= 0.0 or target.zone_at(_bot_point) == 0:
 		_bot_t = 1.0
 		var zones := [DinoArt.NECK, DinoArt.TAIL, DinoArt.LEGS, DinoArt.BODY, DinoArt.HEAD]
@@ -517,9 +592,13 @@ func _bot(delta: float) -> Array:
 		_bot_point = pt if pt != null else target.global_position + Vector2(0, -20)
 	var d := _bot_point - player.neck()
 	var in_range := player.predict_bite(_bot_point).distance_to(_bot_point) < 1.0
-	var move_x := 0.0 if in_range and absf(d.x) < player.reach * player.size else signf(d.x)
-	var bite := in_range and player.cool <= 0.0 and player.bite_t < 0.0
-	return [move_x, jump, bite, _bot_point]
+	var move_x := 0.0 if in_range and absf(d.x) < player.head_len() * 1.5 else signf(d.x)
+	var can_bite := in_range and player.cool <= 0.0 and player.bite_t < 0.0 and player.grab.is_empty()
+	var big := can_bite and rng.randf() < 0.3
+	if big:
+		_bot_charge = rng.randf_range(0.3, 1.0)
+	var bite := can_bite and not big
+	return [move_x, jump, bite, _bot_point, big]
 
 ## A random live pixel of `zone` on `p`, in the world, or null.
 func _zone_point(p: Prey, zone: int) -> Variant:
@@ -568,7 +647,7 @@ func _draw_overlay() -> void:
 	# the aim: red on a bitable spot in range (reach plus the lunge), white in range, grey past it (with a dot where
 	# the bite would land instead)
 	var m := get_global_mouse_position()
-	var reach := player.predict_bite(m)
+	var reach := player.predict_bite(m, Player.BIG if player.charging else Player.QUICK)
 	var in_reach := reach.distance_to(m) < 1.0
 	var target := prey_at(m)
 	var c := Color(0.6, 0.6, 0.6)
@@ -579,6 +658,11 @@ func _draw_overlay() -> void:
 		_overlay.draw_line(mp + s * 2.0, mp + s * 4.0, c)
 	if not in_reach:
 		_overlay.draw_rect(Rect2(reach.floor(), Vector2.ONE), Color(1, 1, 1, 0.6))
+	# charging a big bite: a ring the size of the rip, filling up as it charges
+	if player.charging:
+		var r := player.bite_radius * lerpf(Player.RIP[0], Player.RIP[1], player.charge) * player.size
+		_overlay.draw_arc(mp, r, 0.0, TAU, 24, Color(c, 0.35), 1.0)
+		_overlay.draw_arc(mp, r, -PI * 0.5, -PI * 0.5 + TAU * player.charge, 24, Color(1, 0.55, 0.2), 1.0)
 	if target:
 		_text(font, DinoArt.ZONE_NAMES[target.zone_at(m)], m + Vector2(0, -8), c)
 
