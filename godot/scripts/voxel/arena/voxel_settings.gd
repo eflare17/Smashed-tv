@@ -28,7 +28,8 @@ const PRESETS := {
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
-const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true}
+const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
+	"mine_sewers": true, "mine_cops": true, "mine_rivals": true}
 ## (what each setting can be, for the menu: [label, values, value labels])
 const CHOICES := {
 	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0, 1.25, 1.5], ["50%", "67%", "77%", "85%", "100%", "125% (supersampled)", "150% (supersampled)"]],
@@ -52,6 +53,9 @@ const CHOICES := {
 	"fps": ["Frame cap", [0, 60, 120, 144, 240], ["None", "60", "120", "144", "240"]],
 	"vsync": ["VSync", [false, true], ["Off", "On"]],
 	"fullscreen": ["Full screen", [false, true], ["Off", "On"]],
+	"mine_sewers": ["Mine: sewers and rats", [false, true], ["Off", "On"]],
+	"mine_cops": ["Mine: the cop bunker", [false, true], ["Off", "On"]],
+	"mine_rivals": ["Mine: rival dealers' tunnels", [false, true], ["Off", "On"]],
 }
 
 var file := FILE                # ("": never saved, the tests' games)
@@ -172,6 +176,7 @@ func apply(arena: Node3D) -> void:
 	VoxelMirror.enabled = bool(v.mirror)
 	VoxelBlood.level = int(v.get("gore", 1))
 	VoxelJiggle.level = int(v.get("jiggle", 3))
+	VoxelMine.hazards = {"sewers": bool(v.get("mine_sewers", true)), "cops": bool(v.get("mine_cops", true)), "rivals": bool(v.get("mine_rivals", true))}
 	var aa := int(v.msaa)                    # (the mirror as sharp as the rest: more pixels and its own MSAA at the higher levels)
 	VoxelMirror.max_res = {0: 720, 2: 1080, 4: 1440, 8: 2160}.get(aa, 1080)
 	VoxelMirror.msaa = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(aa, Viewport.MSAA_2X)

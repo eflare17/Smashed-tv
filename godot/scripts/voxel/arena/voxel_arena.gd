@@ -132,6 +132,8 @@ var upgrades: VoxelUpgrades     # the weapon bench in the yard (Stage 13)
 var slot: VoxelSlotMachine      # the slot machine against the north wall
 var gothica: VoxelGothica       # Gothica, in the house
 var _near_goth := false
+var mine: VoxelMine             # the dig mode down the roller door in the yard (scripts/voxel/mine)
+var _near_hatch := false
 var blood: VoxelBlood           # Ultra Gore: the bleeding, the pools, the splats
 var _near_slot := false
 var _upg := {}                  # this player's levels as saved (put on me once it's made)
@@ -415,6 +417,9 @@ void fragment() {
 	games = VoxelGamesRoom.new()
 	add_child(games)
 	games.setup(self)
+	mine = VoxelMine.new()
+	add_child(mine)
+	mine.setup(self)
 	var pil := StandardMaterial3D.new()
 	pil.albedo_color = Color(0.3, 0.12, 0.35)
 	pil.emission_enabled = true
@@ -941,6 +946,9 @@ func _storage_step(dt: float) -> void:
 	if games.seated > 0:
 		_use_label.text = games.seated_line()
 		return
+	if mine.active:
+		_use_label.text = ""
+		return
 	if inv_ui.is_open():
 		_use_label.text = ""
 		var st := inv_ui.storage
@@ -963,6 +971,7 @@ func _storage_step(dt: float) -> void:
 	_near_hen = ""
 	_near_shred = ""
 	_near_game = ""
+	_near_hatch = false
 	if not top_down:
 		# whatever the look lands on first: a chest, a bed, the wardrobe
 		var eye := cam.global_position
@@ -980,6 +989,7 @@ func _storage_step(dt: float) -> void:
 		_near_slot = slot != null and _near_st == null and _near_bed == 0 and not in_yard and not _near_goth and slot.pick(eye, fwd)
 		if slot:
 			slot.near = pp2.distance_to(slot.global_position) < 3.0
+		_near_hatch = in_yard and _near_st == null and _near_bed == 0 and not _near_bench and _near_upg == "" and mine.hatch.pick(eye, fwd)
 		if VoxelGamesRoom.in_room(pp2) and _near_st == null and _near_bed == 0:
 			_near_game = String(games.pick(eye, fwd)[0])
 		if _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and (VoxelYard.in_yard(pp2) or VoxelChickens.in_pen(pp2)):
@@ -1007,6 +1017,8 @@ func _storage_step(dt: float) -> void:
 		t = bench_line()
 	elif _near_upg != "":
 		t = upgrades.line(_near_upg, me.upg, cash)
+	elif _near_hatch:
+		t = "E  go down the mine"
 	elif _near_goth:
 		t = gothica.line()
 	elif _near_slot:
@@ -1237,6 +1249,8 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()):
 		return                  # (the online menu, the settings have the keys and the mouse)
+	if mine and mine.active:
+		return                  # (down the mine: VoxelMine has the keys)
 	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] \
 			and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
 		_clicked[e.button_index] = true                  # (a click quicker than a frame still counts)
@@ -1331,6 +1345,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					bench_make()
 				elif _near_upg != "":
 					upgrade_buy(_near_upg)
+				elif _near_hatch:
+					mine.enter()
 				elif _near_goth:
 					gothica.interact()
 				elif _near_slot:
@@ -1616,7 +1632,7 @@ func _physics_process(dt: float) -> void:
 		player.velocity = Vector3.ZERO
 		player.global_position = house.lie_spot(lying)
 		dir = Vector3.ZERO
-	if games.seated > 0:
+	if games.seated > 0 or mine.active:
 		player.velocity = Vector3.ZERO
 		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
@@ -1630,7 +1646,7 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	if lying <= 0 and games.seated == 0:
+	if lying <= 0 and games.seated == 0 and not mine.active:
 		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
@@ -2003,7 +2019,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or games.seated > 0 or games.held >= 0:
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or games.seated > 0 or games.held >= 0 or mine.active:
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -2145,7 +2161,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0     # (in bed, dialling a padlock, on the couch, a game case in your hands: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active     # (in bed, dialling a padlock, on the couch, a game case in your hands: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]

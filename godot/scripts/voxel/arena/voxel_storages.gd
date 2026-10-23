@@ -424,6 +424,8 @@ func save() -> void:
 		d["farm"] = arena.yard.farm.save_data()
 		d["chickens"] = arena.yard.chickens.save_data()
 		d["shredder"] = arena.yard.shredder.save_data()
+	if arena.get("mine"):
+		d["mine"] = arena.mine.save_data()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
@@ -450,6 +452,8 @@ func load_save() -> void:
 	if arena.yard and d.has("shredder"):
 		arena.yard.shredder.from_data(d.shredder)
 	arena.cash = maxi(0, int(d.get("cash", 0)))
+	if arena.get("mine") and d.has("mine"):
+		arena.mine.load_data(d.mine)
 	arena.waiting = []
 	if typeof(d.get("waiting")) == TYPE_ARRAY:
 		for w in d.waiting:

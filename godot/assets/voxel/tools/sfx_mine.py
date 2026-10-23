@@ -1,0 +1,84 @@
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from sfx import *
+"""The dig mode's sounds (scripts/voxel/mine), made from noise and tones like sfx.py's:
+    python3 -I godot/assets/voxel/tools/sfx_mine.py
+writes godot/assets/voxel/sound/: mine_drill (the drill's grinding whine, looped; the game pitches it by how hard the
+rock is), mine_engine (the ship's motor and thrusters, looped), mine_clink (ore into the hold), mine_hit (the hull
+taking a knock), mine_alarm (the low-fuel beeps), mine_register (the trader's till: ka-ching), mine_boom (dynamite, a
+gas pocket), mine_siren (the cops, looped), mine_rat (a squeak), mine_roar (the rock worm), mine_door (the roller door
+rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss). Owned by the voxel
+session."""
+
+
+def build():
+    # the drill: a whine with grinding under it, wobbling with the bit's teeth
+    secs = 1.0
+    tt = t(secs)
+    whine = tone(330 + 14 * np.sin(2 * np.pi * 9 * tt), secs, "saw") * 0.35 + tone(660 + 20 * np.sin(2 * np.pi * 9 * tt), secs) * 0.25
+    grind = band(noise(secs), 300, 3500) * (0.6 + 0.4 * np.abs(np.sin(2 * np.pi * 18 * tt)))
+    rumble = lowpass(noise(secs), 180) * 2.0
+    save("mine_drill", mix(band(whine, 200, 4000), grind * 0.9, rumble * 0.6), peak=0.7, loop=True)
+    # the engine: a low throb and a jet's hiss
+    thr = lowpass(tone(55, secs, "square"), 400) * (0.7 + 0.3 * np.sin(2 * np.pi * 14 * tt))
+    hiss = band(noise(secs), 600, 5000) * 0.35
+    save("mine_engine", mix(thr * 0.9, hiss, lowpass(noise(secs), 120) * 1.2), peak=0.6, loop=True)
+    # ore into the hold: a bright metallic clink and a little rattle
+    c = mix(metal([1850, 2730, 4100], 0.4, 0.18) * 0.8, at(click(0.02, 3000, 0.003), 0.05) * 0.6, at(click(0.02, 2400, 0.003), 0.09) * 0.4)
+    save("mine_clink", c, peak=0.75)
+    # a knock on the hull: a thud and a clang
+    n = int(0.45 * SR)
+    thud = lowpass(noise(0.45), 260) * env(n, 0.002, 0.12, 5) * 3.0
+    clang = metal([180, 410, 690, 1130], 0.45, 0.3) * 0.7
+    save("mine_hit", mix(thud, clang), peak=0.85)
+    # the low-fuel alarm: two beeps
+    b = tone(880, 0.12, "square") * env(int(0.12 * SR), 0.002, 0.2, 1)
+    save("mine_alarm", lowpass(mix(b, at(b, 0.2)), 3000), peak=0.5)
+    # the till: a drawer and a bell
+    drawer = band(noise(0.15), 400, 2500) * env(int(0.15 * SR), 0.005, 0.08, 4)
+    bell = metal([2093, 2637, 3136, 4186], 1.0, 0.7)
+    save("mine_register", mix(drawer * 0.7, at(bell, 0.08) * 0.8, at(click(0.03, 1500, 0.006), 0.0) * 0.5), peak=0.8)
+    # a blast: a crack, a boom, rubble falling after
+    n = int(1.6 * SR)
+    boom = lowpass(noise(1.6), np.linspace(1800, 120, n)) * env(n, 0.002, 0.9, 4) * 3.0
+    crack = band(noise(0.1), 800, 6000) * env(int(0.1 * SR), 0.0005, 0.05, 6)
+    rubble = band(noise(1.6), 300, 2500) * (env(n, 0.3, 1.2, 3)) * 0.35
+    save("mine_boom", mix(crack, boom, at(rubble, 0.1)), peak=0.95)
+    # the siren: wee-woo
+    secs = 1.6
+    tt = t(secs)
+    f = np.where((tt % 0.8) < 0.4, 960, 720)
+    siren = band(tone(lowpass(f.astype(float), 40), secs, "saw"), 300, 3000)
+    save("mine_siren", siren, peak=0.5, loop=True)
+    # a rat's squeak
+    n = int(0.18 * SR)
+    sq = tone(np.linspace(2600, 3600, n) + 300 * np.sin(np.linspace(0, 40, n)), 0.18) * env(n, 0.01, 0.12, 2)
+    save("mine_rat", sq, peak=0.5)
+    # the worm's roar: a deep growl and a grinding through rock
+    secs = 1.8
+    tt = t(secs)
+    n = int(secs * SR)
+    growl = lowpass(tone(48 + 10 * np.sin(2 * np.pi * 3 * tt), secs, "saw") * (0.6 + 0.4 * band(noise(secs), 10, 40) * 8), 500)
+    rasp = band(noise(secs), 120, 900) * 0.8
+    e = np.clip(tt / 0.25, 0, 1) * np.exp(-1.6 * np.maximum(tt - 0.6, 0))
+    save("mine_roar", mix(growl * 1.2, rasp) * e, peak=0.9)
+    # the roller door going up: a rattle of slats
+    secs = 1.1
+    tt = t(secs)
+    rattle = band(noise(secs), 500, 4000) * (0.5 + 0.5 * np.abs(np.sin(2 * np.pi * 22 * tt))) * np.clip(1 - tt / secs, 0, 1)
+    motor = lowpass(tone(90, secs, "saw"), 300) * 0.4
+    save("mine_door", mix(rattle, motor, at(metal([300, 520], 0.3, 0.2), secs - 0.25) * 0.6), peak=0.7)
+    # crumbling: dry grit falling
+    n = int(0.6 * SR)
+    save("mine_crumble", mix(band(noise(0.6), 400, 3000) * env(n, 0.01, 0.4, 3), lowpass(noise(0.6), 300) * env(n, 0.005, 0.2, 4) * 1.5), peak=0.6)
+    # the teleport: a rising shimmer
+    n = int(0.9 * SR)
+    zap = tone(np.linspace(300, 2400, n), 0.9) * (0.5 + 0.5 * np.sin(np.linspace(0, 120, n))) * env(n, 0.05, 0.8, 2)
+    save("mine_zap", mix(zap, band(noise(0.9), 2000, 8000) * env(n, 0.1, 0.6, 3) * 0.3), peak=0.6)
+    # lava: a hiss and pops
+    n = int(1.0 * SR)
+    hs = band(noise(1.0), 1500, 7000) * env(n, 0.02, 0.8, 2)
+    pops = mix(*[at(click(0.03, 900 + 200 * k, 0.01), 0.1 + k * 0.17) for k in range(5)])
+    save("mine_lava", mix(hs * 0.7, pops), peak=0.6)
+
+
+if __name__ == "__main__":
+    build()
