@@ -108,7 +108,8 @@ func _solo() -> bool:
 			b.died.connect(arena._on_died)
 			arena.bodies.append(b)
 			b.sever("head")
-			check(arena.cash == 5, "a brute killed: $5 (cash $%d)" % arena.cash)
+			var hs := VoxelAnnouncer.HEADSHOT_CASH if VoxelAnnouncer.level > 0 else 0     # (the head's off: the announcer's headshot bonus on top)
+			check(arena.cash == 5 + hs, "a brute killed: $5 (+$%d headshot; cash $%d)" % [hs, arena.cash])
 			arena.cash = 12
 			_look_at(VoxelFarm.CRATE + Vector3(-0.3, 0.4, 0))
 			mark = t

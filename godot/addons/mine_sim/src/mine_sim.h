@@ -44,11 +44,13 @@ public:
 		F_HOT = 2048,        // lava: burns into obsidian against water, cools to basalt
 		F_WET = 4096,        // water
 		F_GRASS = 8192,      // grass grows on its top at the surface
+		F_NOCHIP = 16384,    // never flies off as chips (gas: a chip of it would be a blast waiting)
 	};
 	static const int NM = 64;          // materials
 	static const int NB = 32;          // back walls
 	static const int CS = 32;          // a chunk's cells across and down
 	static const uint8_t LOOSE = 0x80; // (in a cell's var) loose: falls like sand, the ship pushes through it
+	static const uint8_t CHIP = 0x40;  // (in a cell's var) landed from a chip of something already dug: not counted again
 
 	MineSim();
 

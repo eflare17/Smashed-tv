@@ -50,7 +50,7 @@ const BG_WORM := 14
 const BG_CATHEDRAL := 15
 
 const F := {"solid": 1, "falls": 2, "liquid": 4, "dig": 8, "twinkle": 16, "rim": 32, "crumble": 64, "softedge": 128,
-	"toplit": 256, "anim": 512, "glow": 1024, "hot": 2048, "wet": 4096, "grass": 8192}
+	"toplit": 256, "anim": 512, "glow": 1024, "hot": 2048, "wet": 4096, "grass": 8192, "nochip": 16384}
 
 ## Each material: name, hardness (seconds a metre to drill with the first drill; < 0 never), the drill level it
 ## needs, what goes in the hold ("" nothing), cells a cargo item, its ways, its colour (the base of its shades) or
@@ -87,7 +87,7 @@ const INFO := {
 		"shades": [[110, 40, 120], [140, 50, 150], [170, 60, 170], [200, 80, 190], [220, 110, 210], [235, 140, 225], [245, 170, 235], [250, 210, 245]], "glow": [0.6, 0.2, 0.6]},
 	LAVA: {"name": "lava", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["liquid", "anim", "hot", "glow"],
 		"shades": [[150, 30, 10], [200, 50, 10], [240, 80, 10], [255, 110, 20], [255, 140, 30], [255, 170, 40], [255, 200, 60], [255, 230, 110]], "glow": [1.0, 0.45, 0.1]},
-	GAS: {"name": "gas pocket", "hard": 0.6, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "glow"], "col": [92, 120, 60], "glow": [0.12, 0.28, 0.04]},
+	GAS: {"name": "gas pocket", "hard": 0.6, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "glow", "nochip"], "col": [92, 120, 60], "glow": [0.12, 0.28, 0.04]},
 	BRICK: {"name": "old brick", "hard": 0.7, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"],
 		"shades": [[120, 64, 46], [132, 72, 50], [110, 58, 42], [126, 70, 52], [116, 62, 46], [138, 78, 56], [80, 48, 36], [64, 58, 52]]},
 	JUNK: {"name": "junk", "hard": 0.4, "need": 0, "cargo": "junk", "per": 8, "f": ["solid", "dig", "rim"],

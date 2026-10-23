@@ -113,7 +113,7 @@ void MineSim::set_loose(int x, int y, bool on) {
 }
 
 void MineSim::put(int x, int y, int m, bool loose) {
-	if (!in(x, y))
+	if (!in(x, y) || m < 0 || m >= NM)
 		return;
 	int i = idx(x, y);
 	mat[i] = (uint8_t)m;
@@ -141,6 +141,10 @@ void MineSim::wake(int x, int y) {
 	if (lx == CS - 1) on(cx + 1, cy);
 	if (ly == 0) on(cx, cy - 1);
 	if (ly == CS - 1) on(cx, cy + 1);
+	if (lx == 0 && ly == 0) on(cx - 1, cy - 1);
+	if (lx == CS - 1 && ly == 0) on(cx + 1, cy - 1);
+	if (lx == 0 && ly == CS - 1) on(cx - 1, cy + 1);
+	if (lx == CS - 1 && ly == CS - 1) on(cx + 1, cy + 1);
 }
 
 void MineSim::wake_all() {
@@ -336,6 +340,9 @@ bool MineSim::set_raw(const PackedByteArray &raw) {
 	std::memcpy(mat.data(), p, n);
 	std::memcpy(var.data(), p + n, n);
 	std::memcpy(back.data(), p + 2 * n, n);
+	for (int i = 0; i < n; i++)
+		if (mat[i] >= NM)
+			mat[i] = 0;     // (a damaged file: nothing past the table)
 	std::fill(dmg.begin(), dmg.end(), 0);
 	std::fill(stamp.begin(), stamp.end(), 0);
 	parts.clear();
@@ -346,10 +353,20 @@ bool MineSim::set_raw(const PackedByteArray &raw) {
 // ---------------------------------------------------------------- the simulation
 
 void MineSim::set_block(int x, int y, int bw_, int bh_) {
+	if (x == bx && y == by && bw_ == bw && bh_ == bh)
+		return;
+	// what was resting on it (or against it) wakes: it falls when the ship's gone from under it
+	auto wake_round = [&](int x0, int y0, int rw, int rh) {
+		for (int yy = y0 - 1; yy <= y0 + rh; yy++)
+			for (int xx = x0 - 1; xx <= x0 + rw; xx++)
+				wake(xx, yy);
+	};
+	wake_round(bx, by, bw, bh);
 	bx = x;
 	by = y;
 	bw = bw_;
 	bh = bh_;
+	wake_round(bx, by, bw, bh);
 }
 
 bool MineSim::empty_for_mover(int x, int y) const {
@@ -398,7 +415,12 @@ void MineSim::update_cell(int x, int y) {
 			}
 		}
 		bool moved = false;
-		if (!hot || rnd() < 0.35f) {
+		if (hot && rnd() >= 0.35f) {
+			// (lava's slow: not this time, but it's still somewhere to go, so it stays awake for the next)
+			if (empty_for_mover(x, y + 1) || empty_for_mover(x - 1, y + 1) || empty_for_mover(x + 1, y + 1) ||
+					empty_for_mover(x - 1, y) || empty_for_mover(x + 1, y))
+				wake(x, y);
+		} else {
 			if (empty_for_mover(x, y + 1)) {
 				mv(i, i + w);
 				return;
@@ -411,8 +433,9 @@ void MineSim::update_cell(int x, int y) {
 				mv(i, idx(x - d, y + 1));
 				return;
 			}
-			// sideways only when it's pushed (liquid on top, or behind it) or there's a drop to run into: pools
-			// settle instead of sloshing for ever
+			// sideways only when it's pushed (liquid on top, or behind it and running out to open ground, not into a
+			// gap with more liquid past it) or there's a drop to run into: pools settle instead of sloshing for ever
+			// (a gap in a still surface stays a gap, not a hole running back and forth)
 			bool above = y > 0 && mat[i - w] && (mats[mat[i - w]].flags & F_LIQUID);
 			int reach = hot ? 2 : 4;
 			for (int s = 0; s < 2 && !moved; s++) {
@@ -430,7 +453,8 @@ void MineSim::update_cell(int x, int y) {
 						break;
 					}
 				}
-				if (nxp != x && (above || behind || drop)) {
+				bool past = in(nxp + dir, y) && mat[idx(nxp + dir, y)] && (mats[mat[idx(nxp + dir, y)]].flags & F_LIQUID);
+				if (nxp != x && (above || drop || (behind && !past))) {
 					mv(i, idx(nxp, y));
 					moved = true;
 				}
@@ -465,9 +489,12 @@ void MineSim::update_cell(int x, int y) {
 			return;
 		}
 		uint8_t bm = mat[b];
-		if (bm && (mats[bm].flags & F_LIQUID) && !blocked_cell(x, y + 1) && rnd() < 0.6f) {
-			mv(i, b);
-			return;
+		if (bm && (mats[bm].flags & F_LIQUID) && !blocked_cell(x, y + 1)) {
+			if (rnd() < 0.6f) {
+				mv(i, b);
+				return;
+			}
+			wake(x, y);     // (sinking, just not this step)
 		}
 		if (empty_for_mover(x + d, y + 1)) {
 			mv(i, idx(x + d, y + 1));
@@ -543,7 +570,7 @@ void MineSim::step_parts() {
 					if (empty_for_mover(cx, cyy - up)) {
 						int i = idx(cx, cyy - up);
 						mat[i] = p.m;
-						var[i] = (uint8_t)((p.v & 7) | ((mats[p.m].flags & F_LIQUID) ? 0 : LOOSE));
+						var[i] = (uint8_t)((p.v & (7 | CHIP)) | ((mats[p.m].flags & F_LIQUID) ? 0 : LOOSE));
 						dmg[i] = 0;
 						wake(cx, cyy - up);
 						changed++;
@@ -625,15 +652,15 @@ Dictionary MineSim::dig(float cx, float cy, float hx, float hy, float rc, float 
 			if (!gone)
 				continue;
 			broke++;
-			if (loot) {
+			if (loot && !(var[i] & CHIP)) {
 				counts[m] = counts[m] + 1;
 				sx[m] = sx[m] + x;
 				sy[m] = sy[m] + y;
 			}
-			if (!(M.flags & (F_RIM | F_TWINKLE)) && rnd() < spr && parts.size() < 4000) {
+			if (!(M.flags & (F_RIM | F_TWINKLE | F_NOCHIP)) && rnd() < spr && parts.size() < 4000) {
 				float len = std::max(0.3f, std::sqrt(px * px + py * py));
 				parts.push_back({x + 0.5f, y + 0.5f, px / len * 0.5f - dx * (0.4f + rnd() * 0.5f) + (rnd() - 0.5f) * 0.9f,
-						-0.5f - rnd() * 0.9f + (dy > 0.5f ? -0.4f : 0.0f), m, (uint8_t)(var[i] & 7)});
+						-0.5f - rnd() * 0.9f + (dy > 0.5f ? -0.4f : 0.0f), m, (uint8_t)((var[i] & 7) | CHIP)});
 			}
 			mat[i] = 0;
 			var[i] = 0;
@@ -691,11 +718,12 @@ Dictionary MineSim::explode(float cx, float cy, float r, float spr) {
 			if (M.hard < 0.0f || (M.flags & F_LIQUID))
 				continue;
 			if (d <= r) {
-				counts[m] = counts[m] + 1;
-				if (!(M.flags & (F_RIM | F_TWINKLE)) && rnd() < spr && parts.size() < 4000) {
+				if (!(var[i] & CHIP))
+					counts[m] = counts[m] + 1;
+				if (!(M.flags & (F_RIM | F_TWINKLE | F_NOCHIP)) && rnd() < spr && parts.size() < 4000) {
 					float len = std::max(0.5f, std::sqrt(px * px + py * py));
 					float sp = 1.2f + rnd() * 1.6f;
-					parts.push_back({x + 0.5f, y + 0.5f, px / len * sp, py / len * sp - 0.8f, m, (uint8_t)(var[i] & 7)});
+					parts.push_back({x + 0.5f, y + 0.5f, px / len * sp, py / len * sp - 0.8f, m, (uint8_t)((var[i] & 7) | CHIP)});
 				}
 				mat[i] = 0;
 				var[i] = 0;
@@ -729,6 +757,8 @@ int MineSim::deposit(float cx, float cy, float r, int m, bool lo) {
 }
 
 void MineSim::spray(float x, float y, int m, int n, float vx, float vy, float spread) {
+	if (m <= 0 || m >= NM)
+		return;
 	for (int k = 0; k < n && parts.size() < 4000; k++)
 		parts.push_back({x, y, vx + (rnd() - 0.5f) * spread, vy + (rnd() - 0.5f) * spread, (uint8_t)m, (uint8_t)(hash2(k, (int)x) & 7)});
 }
@@ -766,10 +796,15 @@ int MineSim::count_rect(int x0, int y0, int rw, int rh, int what) const {
 	return n;
 }
 
-// Loose cells, sand and liquids inside the rect pushed out of it (up first, then to the sides; gone if there's
-// nowhere): the ship moving through rubble and water. -> how many
+// Loose cells, sand and liquids inside the rect pushed out of it (into where the ship just was first, then up through
+// open cells, then to the sides; gone only if there's nowhere): the ship moving through rubble and water. -> how many
 int MineSim::displace(int x0, int y0, int rw, int rh) {
 	int n = 0;
+	// where the ship was last step (the block, not yet moved) and isn't now: empty, it just came from there
+	int ox0 = bx, oy0 = by, ox1 = bx + bw, oy1 = by + bh;
+	if (ox1 < x0 - 2 || ox0 > x0 + rw + 2 || oy1 < y0 - 2 || oy0 > y0 + rh + 2)
+		ox1 = ox0;     // (it jumped there, a teleport or a tow: nowhere it just came from)
+	auto in_new = [&](int x, int y) { return x >= x0 && x < x0 + rw && y >= y0 && y < y0 + rh; };
 	for (int y = y0; y < y0 + rh; y++) {
 		for (int x = x0; x < x0 + rw; x++) {
 			if (!in(x, y))
@@ -783,9 +818,27 @@ int MineSim::displace(int x0, int y0, int rw, int rh) {
 				continue;
 			n++;
 			int to = -1;
-			for (int up = y0 - 1; up >= std::max(0, y0 - 10) && to < 0; up--)
-				if (in(x, up) && mat[idx(x, up)] == 0 && !blocked_cell(x, up))
+			// the nearest cell of the old rect that's empty and outside the new one
+			int best = 1 << 30;
+			for (int yy = oy0; yy < oy1; yy++)
+				for (int xx = ox0; xx < ox1; xx++) {
+					if (!in(xx, yy) || in_new(xx, yy) || mat[idx(xx, yy)])
+						continue;
+					int dd = (xx - x) * (xx - x) + (yy - y) * (yy - y);
+					if (dd < best) {
+						best = dd;
+						to = idx(xx, yy);
+					}
+				}
+			for (int up = y0 - 1; up >= std::max(0, y0 - 10) && to < 0; up--) {
+				if (!in(x, up))
+					break;
+				uint8_t um = mat[idx(x, up)];
+				if (um == 0 && !blocked_cell(x, up))
 					to = idx(x, up);
+				else if (um && !((var[idx(x, up)] & LOOSE) || (mats[um].flags & (F_FALLS | F_LIQUID))))
+					break;     // (rock over it: not through the ceiling)
+			}
 			for (int k = 1; k <= 4 && to < 0; k++) {
 				if (in(x0 - k, y) && mat[idx(x0 - k, y)] == 0)
 					to = idx(x0 - k, y);
@@ -854,6 +907,8 @@ Array MineSim::paint(int x0, int y0, int pw, int ph, int fn) {
 			uint32_t c = 0, g = 0xFF000000u;
 			if (wy < 0) {
 				c = 0;
+			} else if ((wx < 0 || wx >= w) && wy < sky) {
+				c = 0;     // (sky past the sides, up where there's no ground)
 			} else if (wx < 0 || wx >= w || wy >= h) {
 				c = mats[bedrock_m].col[hash2(wx, wy) & 7];
 			} else {

@@ -514,10 +514,15 @@ func save_data() -> Dictionary:
 	var d := {"v": 1, "upg": upg.duplicate(), "fuel": fuel, "hull": hull, "cargo": cargo.duplicate(), "items": items.duplicate(),
 		"worm_dead": worm_dead, "tips": tips_done.keys(), "stats": stats.duplicate()}
 	if _built and active and ship.p.y < -0.5:
-		d["ship"] = [ship.drill_to.x if ship.drilling else ship.p.x, ship.drill_to.y if ship.drilling else ship.p.y]     # (quit down there: back down there)
+		d["ship"] = [ship.p.x, ship.p.y]     # (quit down there: back down there)
 	elif _resume != Vector2.INF:
 		d["ship"] = [_resume.x, _resume.y]
 	d["ammo"] = ammo.duplicate()
+	if _built:
+		ground.changed += ground.sim.take_changed()
+	if _built and ground.changed > 0:
+		_ground_dirty = true     # (dug since the last tick: the ground goes with the cargo, or the ore's back to dig again)
+		ground.changed = 0
 	_write_ground()
 	return d
 
@@ -851,6 +856,7 @@ func _on_dug(res: Dictionary, dir: Vector2) -> void:
 	var broke := int(res.broke)
 	var hard := float(res.hard)
 	_touch = minf(30.0, _touch * 0.9 + float(res.touched))
+	var gas_at := Vector2.INF
 	for m in counts.size():
 		var n := counts[m]
 		if n <= 0:
@@ -858,9 +864,8 @@ func _on_dug(res: Dictionary, dir: Vector2) -> void:
 		var at := MineGround.world(Vector2i(int(sx[m] / n), int(sy[m] / n)))
 		match m:
 			MineTiles.GAS:
-				tip("gas")
-				explode(at, 2.2, false)
-				return
+				gas_at = at     # (after the rest's counted: what broke with it is still yours)
+				continue
 			MineTiles.FOOLS:
 				if _fools_t <= 0.0:
 					_fools_t = 2.5
@@ -872,6 +877,10 @@ func _on_dug(res: Dictionary, dir: Vector2) -> void:
 			if int(AMMO_MAT[a]) == m:
 				ammo[a] = mini(AMMO_MAX, int(ammo[a]) + n)
 		_ore(m, n, at)
+	if gas_at != Vector2.INF:
+		tip("gas")
+		explode(gas_at, 2.2, false)
+		return
 	if broke > 0:
 		_crunch += broke
 		if _crunch >= 6.0:
@@ -1032,7 +1041,7 @@ func explode(c: Vector2, rad: float, dynamite: bool) -> void:
 			_chain.append([0.18, MineGround.world(Vector2i(g[0], g[1]))])
 	var d := c.distance_to(ship.p)
 	if not dynamite and d < rad + 1.5:
-		hurt(28.0 * (1.0 - d / (rad + 1.5)), "gas")
+		hurt(20.0 * (1.0 - d / (rad + 1.5)), "gas")
 		ship.v += (ship.p - c).normalized() * 6.0
 	critters.blast(c, rad + 0.5)
 	worm.blast(c, rad)

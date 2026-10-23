@@ -66,7 +66,8 @@ func mush_floor(c: Array) -> Vector2:
 			var x: float = float(c[0]) + sgn * dx / 8.0
 			for dd in range(0, int((float(c[3]) * 2 + 1) * 8.0)):
 				var p := Vector2(x, -(float(c[1]) - float(c[3]) + dd / 8.0))
-				if g.bg_at(p) == MineTiles.BG_MUSH and g.mat_at(p) == MineTiles.AIR and g.solid_at(p + Vector2(0, -0.125)) \
+				if g.bg_at(p) == MineTiles.BG_MUSH and g.bg_at(p + Vector2(1.0, 0)) == MineTiles.BG_MUSH and g.bg_at(p - Vector2(1.0, 0)) == MineTiles.BG_MUSH \
+						and g.mat_at(p) == MineTiles.AIR and g.solid_at(p + Vector2(0, -0.125)) \
 						and g.count(p + Vector2(0, 0.45), Vector2(0.4, 0.4), -1) == 0:
 					return MineGround.world(MineGround.cell(p)) + Vector2(0, -0.0625)
 	return Vector2(float(c[0]), -float(c[1]))
@@ -198,6 +199,7 @@ func _process(dt: float) -> bool:
 				var at := sit(20.0, 66.0)
 				g.set_box(at + Vector2(3.0, 0), Vector2(2.5, 2.0), MineTiles.STONE)
 				g.set_box(at + Vector2(0.95, 0), Vector2(0.4, 0.4), MineTiles.GAS)
+				v.gas = at + Vector2(0.95, 0)
 				v.hull = m.hull
 				m.auto = {"x": 1.0}
 				next(8)
@@ -205,7 +207,8 @@ func _process(dt: float) -> bool:
 			if e > 2.5:
 				m.auto = {}
 				check(m.hull < float(v.hull) - 3.0, "the gas went off: hull %.0f -> %.0f" % [v.hull, m.hull])
-				check(g.count(m.ship.p + Vector2(2.0, 0), Vector2(0.5, 0.5), -6) > 20, "and blew the rock open round it")
+				var rock := g.count(v.gas + Vector2(0.6, 0.6), Vector2(0.5, 0.5), -1)     # (above the floor of the hole, where the rubble's settled)
+				check(rock < 30, "and blew the rock open round it (%d of 81 cells still rock)" % rock)
 				# lava: a tunnel off a pocket's side
 				# (the right edge of a pocket's lava, on its middle row)
 				var lp: Vector2 = g.features.lava[0]
@@ -371,8 +374,13 @@ func _process(dt: float) -> bool:
 			if e > 0.5:
 				check(m.fuel > 0.0, "out of fuel up top: towed too (not stuck)")
 				sit(20.0, 60.0)
+				g.set_box(m.ship.p + Vector2(0, -0.9), Vector2(0.4, 0.3), MineTiles.AIR)     # (just dug, not yet ticked)
+				m.ship.drilling = true
 				var d2: Dictionary = m.save_data()
+				m.ship.drilling = false
 				check(d2.has("ship") and absf(float(d2.ship[1]) - m.ship.p.y) < 0.01, "where the ship was left underground is saved")
+				check(d2.has("upg") and d2.has("cargo") and d2.has("ammo"), "saved mid-drill: everything there, not an empty save")
+				check(not m._ground_dirty and m._ground_mem == g.save_bytes(), "and the ground dug just now went with it")
 				m.leave()
 				next(20)
 		20:
