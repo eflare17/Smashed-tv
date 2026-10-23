@@ -21,9 +21,9 @@ const LIPS := [Color8(14, 11, 34), Color8(52, 40, 66), Color8(96, 87, 100)]
 static func part(name: String) -> Dictionary:
 	match name:
 		"head":
-			return VoxelSculpt.fill(Vector3i(-11, 100, -12), Vector3i(12, 140, 15), _head_sdf, _head_paint)
+			return VoxelSculpt.fill(Vector3i(-11, 99, -12), Vector3i(12, 137, 15), _head_sdf, _head_paint)
 		"hair":
-			return VoxelSculpt.fill(Vector3i(-19, 80, -19), Vector3i(20, 147, 15), _hair_sdf, _hair_paint,
+			return VoxelSculpt.fill(Vector3i(-20, 80, -20), Vector3i(21, 149, 15), _hair_sdf, _hair_paint,
 				func(p: Vector3) -> float: return _skin_sdf(p))
 		"torso":
 			return VoxelSculpt.fill(Vector3i(-20, 77, -11), Vector3i(21, 109, 16), _torso_sdf, _torso_paint,
@@ -78,100 +78,182 @@ static func _skin(p: Vector3, n: Vector3, ao: float) -> Color:
 	return Color(c.r * v, c.g * v, c.b * v)
 
 # ---------------------------------------------------------------- the head (pivot 1, 106, 1)
+# Her face is her own: the front of the head painted straight from her front picture (FACE_PIC), a pixel a cube, so
+# her eyes, liner, brows and lips are the artist's. The head's shape is sculpted to fit it (its eyes at the picture's
+# eyes, y 123.5; her lips at y 113; her chin at y 110.5), with only her nose standing out.
+
+const FACE_PIC := "res://assets/CHARS/goth/sprites/front_a.png"
+const FACE_COL := 31                # the picture's column at model x 0.5 (the middle of her face)
+const FACE_ROWS := [26, 50]         # the picture's rows her face is in (forehead .. chin)
+static var _face: Image
+static var _face_span := {}         # row -> [first, last] column of her face (skin to skin) in the picture
+
+static func _face_img() -> Image:
+	if _face == null:
+		var tex: Texture2D = load(FACE_PIC)
+		_face = tex.get_image()
+		if _face.is_compressed():
+			_face.decompress()
+		for row in range(int(FACE_ROWS[0]), int(FACE_ROWS[1]) + 1):
+			var first := -1
+			var last := -1
+			for col in range(FACE_COL - 12, FACE_COL + 12):
+				var c := _face.get_pixel(col, row)
+				if c.a > 0.5 and c.r > 0.6 and c.g > 0.42:
+					if first < 0:
+						first = col
+					last = col
+			if first >= 0:
+				_face_span[row] = [first, last]
+	return _face
+
+# her face's colour at a front cube (null: not her face)
+static func _face_at(p: Vector3):
+	var img := _face_img()
+	var row := floori(160.0 - p.y)
+	var col := floori(p.x - 0.5) + FACE_COL
+	if not _face_span.has(row):
+		return null
+	var sp: Array = _face_span[row]
+	if col < int(sp[0]) or col > int(sp[1]):
+		return null
+	var c := img.get_pixel(col, row)
+	return c if c.a > 0.5 else null
 
 static func _skin_sdf(p: Vector3) -> float:
-	var d := VoxelSculpt.ellipsoid(p, Vector3(0.5, 124.5, 0.5), Vector3(9.8, 11.0, 10.3))          # the skull
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 118.8, 3.5), Vector3(8.6, 6.0, 7.4)), 3.0)    # cheeks, jaw
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 113.4, 6.5), Vector3(3.6, 2.6, 3.4)), 2.0)    # the chin: small
-	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5, 102.0, 0.0), Vector3(0.5, 112.0, 0.5), 4.2), 2.0)   # the neck: slim
-	d = VoxelSculpt.smin(d, VoxelSculpt.cone_capsule(p, Vector3(0.5, 123.2, 10.4), Vector3(0.5, 118.8, 12.0), 0.9, 1.3), 0.8)   # the nose
-	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(-1.6, 116.0, 10.2), Vector3(2.6, 116.0, 10.2), 0.9), 0.8)   # lips
-	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(-1.2, 114.9, 10.0), Vector3(2.2, 114.9, 10.0), 1.0), 0.8)
-	for sx in [-1.0, 1.0]:
-		d = VoxelSculpt.smax(d, -VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 4.6, 124.6, 11.2), Vector3(3.0, 1.9, 1.6)), 0.8)   # eye sockets: a little in
+	var d := VoxelSculpt.ellipsoid(p, Vector3(0.5, 124.0, 0.5), Vector3(9.6, 11.0, 10.3))          # the skull
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 117.0, 2.6), Vector3(8.6, 7.4, 8.0)), 5.0)    # cheeks to chin: one smooth shape
+	d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5, 101.0, 0.0), Vector3(0.5, 111.0, 0.5), 4.2), 2.0)   # the neck: slim
+	d = VoxelSculpt.smin(d, VoxelSculpt.cone_capsule(p, Vector3(0.5, 121.5, 10.4), Vector3(0.5, 117.6, 11.6), 0.9, 1.3), 0.8)   # the nose
 	return d
 
 static func _head_sdf(p: Vector3) -> float:
 	var d := _skin_sdf(p)
-	if p.y > 106.0 and p.y < 109.6:
+	if p.y > 105.0 and p.y < 108.6:
 		d -= 0.8                                      # (the choker round her neck)
 	return d
 
 static func _head_paint(p: Vector3, n: Vector3, ao: float) -> Color:
 	var x := p.x - 0.5
-	if p.y > 106.0 and p.y < 109.6:
+	if p.y > 105.0 and p.y < 108.6:
 		# the choker: black, a row of silver studs across the front
-		if p.z > 1.5 and absf(p.y - 107.8) < 0.6 and fmod(absf(x) + 0.5, 2.2) < 0.9:
+		if p.z > 1.5 and absf(p.y - 106.8) < 0.6 and fmod(absf(x) + 0.5, 2.2) < 0.9:
 			return Color8(196, 196, 210)
 		return VoxelSculpt.ramp(TOP, 0.1 + 0.5 * VoxelSculpt.lit(n, ao, 0.5))
-	var front := n.z > 0.2 and p.z > 7.0
-	if front:
-		for sx: float in [-1.0, 1.0]:
-			var ex: float = x - sx * 4.6
-			var ey := p.y - 124.6
-			var u := clampf(absf(ex) / 3.3, 0.0, 1.0)
-			var e := Vector2(ex / 3.3, ey / (1.9 * (1.0 - 0.45 * u * u))).length()      # (almond: narrowing to its corners)
-			# her eyes: a light grey-blue iris, a dark pupil, heavy dark liner, smoky shadow above, a flick out
-			if e < 0.62:
-				return Color8(20, 16, 30) if Vector2(ex, ey).length() < 0.9 else Color8(150, 162, 192)
-			if e < 1.05:
-				return Color8(8, 5, 14)
-			if ey > 0.0 and ey < 2.8 and absf(ex) < 3.7 + ey * 0.3:
-				return Color8(52, 44, 64).lerp(SKIN[2], clampf(ey / 2.6, 0.0, 1.0) * 0.6)
-			if ey > -0.6 and ey < 1.4 and sx * ex > 2.9 and sx * ex < 5.0 and ey > (sx * ex - 2.9) * 0.5 - 0.6:
-				return Color8(8, 5, 14)                 # (the wing)
-			# brows: thin, arched, dark
-			var by := 129.2 + 0.6 * (1.0 - absf(ex) / 3.8)
-			if absf(p.y - by) < 0.55 and absf(ex) < 3.8:
-				return Color8(14, 11, 26)
-		# lips: closed, dark plum, the line between darker, a light catch on the lower one
-		var lx := absf(x - 0.5)
-		if p.y > 114.0 and p.y < 116.6 and lx < 2.4 - absf(p.y - 115.4) * 0.5 and p.z > 9.0:
-			if absf(p.y - 115.4) < 0.25:
-				return Color8(30, 20, 40)
-			if p.y < 114.9 and lx < 1.0:
-				return Color8(120, 96, 128)
-			return Color8(66, 44, 78) if p.y > 115.4 else Color8(86, 62, 98)
-	return _skin(p, n, ao)
+	var skin := _skin(p, n, ao)
+	if n.z > 0.12 and p.z > 3.0:
+		var f = _face_at(p)
+		if f != null:
+			# her picture's features (eyes, liner, brows, lips: its dark colours) as drawn, fading round the sides of
+			# her head; its skin tones only a touch (the head's own shading does that, smooth, not in blotches)
+			var k := smoothstep(0.05, 0.35, n.z)
+			var fc: Color = f
+			var skin_tone := fc.r > 0.5 and fc.r > fc.b + 0.12
+			return skin.lerp(fc, k * (0.2 if skin_tone else 1.0))
+	return skin
 
-# ---------------------------------------------------------------- her hair: big, wavy, to the middle of her back
+# ---------------------------------------------------------------- her hair: locks, wavy, to below her shoulder blades
+# Not one mass: thick locks, each its own wavy tube from her crown down (from a middle parting over the top, round
+# the sides behind her face, down her back), with a lighter purple sheen along the top of each wave and dark between.
+
+static var _locks: Array = []        # [[points: PackedVector3Array, r0, r1, shade]]
+
+static func _make_locks() -> void:
+	if not _locks.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1977
+	# round her head: from beside her face (a = 0.42 pi) to the middle of her back (a = pi), both sides
+	for side in [-1.0, 1.0]:
+		var n := 9
+		for i in n:
+			var a := lerpf(0.42 * PI, PI, float(i) / float(n - 1)) + rng.randf_range(-0.05, 0.05)
+			var dir := Vector3(side * sin(a), 0.0, cos(a))
+			var root := Vector3(0.5, 139.5, -1.0) + Vector3(side * sin(a) * 4.0, 0.0, cos(a) * 4.0)
+			var bottom := lerpf(97.0, 84.0, float(i) / float(n - 1)) + rng.randf_range(-2.0, 2.0)
+			var pts := PackedVector3Array()
+			var steps := 9
+			var phase := rng.randf() * TAU
+			for k in steps + 1:
+				var t := float(k) / steps
+				var y := lerpf(139.5, bottom, t)
+				# out over the crown, then falling: furthest out at her ears, in a little toward the ends
+				var out := lerpf(4.0, 12.8, smoothstep(0.0, 0.32, t)) + 1.6 * sin(t * PI) - 1.2 * t
+				var wave := 1.3 * sin(t * 7.5 + phase) * smoothstep(0.25, 0.5, t)
+				var q := Vector3(0.5, y, -1.0) + dir * (out + wave)
+				q += Vector3(dir.z, 0, -dir.x) * 0.9 * sin(t * 5.0 + phase) * smoothstep(0.3, 0.6, t)   # (and side to side)
+				pts.append(q)
+			_locks.append([pts, rng.randf_range(3.3, 4.0), rng.randf_range(1.9, 2.5), rng.randf_range(-0.12, 0.12)])
+	# over the top: from the parting down either side to her temples, framing her forehead
+	for side in [-1.0, 1.0]:
+		for i in 4:
+			var z0 := lerpf(7.0, -6.0, float(i) / 3.0)
+			var pts2 := PackedVector3Array()
+			for k in 7:
+				var t2 := float(k) / 6.0
+				var ang := t2 * 1.45                      # (round the skull from the parting to the side)
+				var r := 9.6 + 0.6 * sin(t2 * PI)
+				pts2.append(Vector3(0.5 + side * (0.6 + r * sin(ang)), 130.5 + r * cos(ang), z0 - 0.5 * t2 * (z0 - 2.0)))
+			_locks.append([pts2, 3.0, 2.6, rng.randf_range(-0.1, 0.1)])
+	# the two locks falling in front of her shoulders
+	for side in [-1.0, 1.0]:
+		var pts3 := PackedVector3Array()
+		for k in 8:
+			var t3 := float(k) / 7.0
+			pts3.append(Vector3(0.5 + side * (10.8 + 3.2 * t3 + 0.9 * sin(t3 * 6.0)), lerpf(128.0, 96.0, t3), 1.8 + 2.2 * t3))
+		_locks.append([pts3, 3.0, 2.0, 0.08])
+
+# distance to the nearest lock (and which)
+static func _lock_d(p: Vector3) -> Vector2:
+	_make_locks()
+	var best := INF
+	var which := -1
+	for li in _locks.size():
+		var L: Array = _locks[li]
+		var pts: PackedVector3Array = L[0]
+		var m := pts.size() - 1
+		for k in m:
+			var a := pts[k]
+			var b := pts[k + 1]
+			# (a quick skip when it's far off)
+			if absf(p.y - (a.y + b.y) * 0.5) > absf(a.y - b.y) * 0.5 + 6.0:
+				continue
+			var r := lerpf(float(L[1]), float(L[2]), (float(k) + 0.5) / m)
+			var d := VoxelSculpt.capsule(p, a, b, r)
+			if d < best:
+				best = d
+				which = li
+	return Vector2(best, which)
 
 static func _hair_sdf(p: Vector3) -> float:
-	# parted in the middle; volume over the crown; lengths falling behind her face and down her back to below her
-	# shoulder blades; a lock each side framing her face and falling over her shoulders in front
-	var d := VoxelSculpt.ellipsoid(p, Vector3(0.5, 132.5, -1.5), Vector3(12.4, 11.8, 12.6))       # the crown
-	for sx in [-1.0, 1.0]:
-		d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5 + sx * 11.8, 117.5, -4.0), Vector3(6.2, 17.0, 8.0)), 4.0)   # behind her face
-		d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 10.2, 129.0, 2.0), Vector3(0.5 + sx * 12.0, 110.0, 1.5), 2.8), 2.5)   # framing her face
-		d = VoxelSculpt.smin(d, VoxelSculpt.capsule(p, Vector3(0.5 + sx * 11.8, 110.0, 3.5), Vector3(0.5 + sx * 13.5, 98.0, 4.5), 3.0), 2.5)   # over her shoulders
-	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 110.0, -8.5), Vector3(15.0, 27.0, 8.0)), 5.0)    # down her back
-	# waves: the surface rising and falling in bands down the lengths
-	var low := smoothstep(132.0, 112.0, p.y)
-	d += low * (0.8 * sin(p.y * 0.55 + absf(p.x) * 0.3) + 0.4 * sin(p.x * 0.8 + p.z * 0.6))
-	# her face clear (the hair parts round it, a little lower over her forehead at the sides), outside her head
-	# (an arch: high at the parting, sweeping down either side of her forehead to her temples)
+	var d := _lock_d(p).x
+	# a base over her skull under the locks (no gaps through to her scalp)
+	d = VoxelSculpt.smin(d, VoxelSculpt.ellipsoid(p, Vector3(0.5, 132.5, -1.5), Vector3(10.8, 10.6, 11.0)), 1.5)
+	# her face clear: an arch over her forehead from the parting, nothing in front of her cheeks from the side
 	var ax := absf(p.x - 0.5)
-	var face_top := 133.0 - 7.5 * (ax / 8.5) * (ax / 8.5)
-	if p.y < face_top and ax < 8.4 + 0.08 * (face_top - p.y) * 0.0:
-		d = maxf(d, -VoxelSculpt.round_box(p, Vector3(0.5, 118.0, 13.0), Vector3(8.4, 14.0, 8.0), 1.5))
-	# nothing in front of her face from the side: below her hairline the hair stays behind her cheeks
-	var zlim := lerpf(2.5, 12.0, smoothstep(127.0, 136.0, p.y))
-	d = VoxelSculpt.smax(d, p.z - zlim, 1.5)
-	d = maxf(d, -(_skin_sdf(p) - 0.2))
+	var face_top := 134.0 - 6.5 * (ax / 8.8) * (ax / 8.8)
+	if p.y < face_top and ax < 8.8:
+		d = maxf(d, p.z - 3.5)                        # (in front of z 3.5 within her face's width: clear)
+	var zlim := lerpf(3.5, 13.0, smoothstep(127.0, 135.0, p.y))
+	if ax < 13.5:
+		d = VoxelSculpt.smax(d, p.z - zlim, 1.0)
+	d = maxf(d, -(_skin_sdf(p) - 0.3))
 	d = maxf(d, 82.0 - p.y)
 	return d
 
 static func _hair_paint(p: Vector3, n: Vector3, ao: float) -> Color:
-	var t := VoxelSculpt.lit(n, ao, 0.45)
-	# strands running down (and back from a parting in the middle on top), purple lights on the waves
-	var strands := VoxelSculpt.noise3(Vector3(p.x * 1.6, p.y * 0.25, p.z * 1.6), 1.6) if p.y < 136.0 \
-		else VoxelSculpt.noise3(Vector3(p.x * 0.4, p.y * 1.2, p.z * 1.6), 1.6)
-	var c := VoxelSculpt.ramp(HAIR, 0.08 + 0.55 * t + 0.35 * (strands - 0.5))
-	var wave := sin(p.y * 0.55 + p.x * 0.3)
-	if wave > 0.55 and n.y > -0.2 and strands > 0.45:
-		c = c.lerp(HAIR_LIT, 0.45 * smoothstep(0.55, 1.0, wave) * t)
-	if absf(p.x - 0.5) < 0.8 and p.y > 138.0 and p.z > -2.0:
-		c = HAIR[0]                                   # (the parting)
+	var ld := _lock_d(p)
+	var shade := 0.0
+	if ld.y >= 0:
+		shade = float(_locks[int(ld.y)][3])
+	var t := VoxelSculpt.lit(n, ao * 1.3, 0.42)
+	var strands := VoxelSculpt.noise3(Vector3(p.x * 1.8, p.y * 0.3, p.z * 1.8), 1.4)
+	var c := VoxelSculpt.ramp(HAIR, clampf(0.05 + 0.6 * t + shade + 0.25 * (strands - 0.5), 0.0, 1.0))
+	# the sheen: purple along the tops of the waves, where the light catches each lock
+	if t > 0.5 and strands > 0.4:
+		c = c.lerp(HAIR_LIT, 0.55 * smoothstep(0.5, 0.85, t))
+	if ld.x > -0.6 and ao > 0.35:
+		c = c.darkened(0.35)                          # (between locks)
 	return c
 
 # ---------------------------------------------------------------- the torso (chest bone, pivot 0, 80, 0)
