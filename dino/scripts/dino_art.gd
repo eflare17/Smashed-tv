@@ -96,6 +96,7 @@ const EYE := Color(0.95, 0.85, 0.2)
 const PUPIL := Color(0.05, 0.03, 0.02)
 const TOOTH := Color(0.96, 0.94, 0.86)
 const MOUTH := Color(0.25, 0.04, 0.05)
+const PLAYER_SKIN := Color(0.32, 0.5, 0.3)
 
 ## A leg: thigh, shin, foot pointing forward. Pivot (the hip) near the top. `len` is hip to sole.
 static func _leg(width: int, length: int, skin: Color, claw: bool) -> Dictionary:
@@ -144,7 +145,7 @@ static func prey() -> Dictionary:
 ## The player: a raptor-ish shape on two legs with a head and jaw that move. PLACEHOLDER (which dinosaur you start
 ## as isn't decided).
 static func player() -> Dictionary:
-	var skin := Color(0.32, 0.5, 0.3)
+	var skin := PLAYER_SKIN
 	var belly := Color(0.78, 0.74, 0.52)
 	var stripe := Color(0.18, 0.26, 0.14)
 	var c := Canvas.new(52, 26)
@@ -164,7 +165,7 @@ static func player() -> Dictionary:
 	for x in range(10, 25, 2):
 		hd.mark(x, 8, TOOTH)
 	var head := {"name": "head", "image": hd.paint(skin, skin, stripe), "zones": hd.zones, "pivot": Vector2(3, 7),
-			"pos": Vector2(43 - 26, 5 - 17), "anchors": _core(hd, 6, 6, 3), "z": 2, "parent": "body", "tip": Vector2(26, 8)}
+			"pos": Vector2(43 - 26, 5 - 17), "anchors": _core(hd, 6, 6, 3), "z": 2, "parent": "body", "tip": Vector2(25, 9)}
 
 	var jw := Canvas.new(20, 5)
 	jw.poly(PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 2), Vector2(0, 5)]), HEAD)

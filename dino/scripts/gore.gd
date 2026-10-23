@@ -101,6 +101,39 @@ func piece(island: Dictionary, v: Vector2) -> void:
 		_pieces[0][0].queue_free()
 		_pieces.remove_at(0)
 
+## Eats every piece the bite at `p` (radius `r`) touches, whole. Returns their pixels as [world pos, colour].
+func eat_pieces(p: Vector2, r: float) -> Array:
+	var out: Array = []
+	var k := 0
+	while k < _pieces.size():
+		var s: Sprite2D = _pieces[k][0]
+		var img: Image = s.texture.get_image()
+		var size := Vector2(img.get_size())
+		if s.position.distance_to(p) > size.length() * 0.5 * absf(s.scale.x) + r:
+			k += 1
+			continue
+		var c := s.to_local(p) + size * 0.5
+		var lr := r / absf(s.scale.x)
+		var hit := false
+		for y in img.get_height():
+			for x in img.get_width():
+				if img.get_pixel(x, y).a > 0.0 and Vector2(x + 0.5, y + 0.5).distance_to(c) < lr:
+					hit = true
+					break
+			if hit:
+				break
+		if not hit:
+			k += 1
+			continue
+		for y in img.get_height():
+			for x in img.get_width():
+				var col := img.get_pixel(x, y)
+				if col.a > 0.0:
+					out.append([s.to_global(Vector2(x + 0.5, y + 0.5) - size * 0.5), col])
+		s.queue_free()
+		_pieces.remove_at(k)
+	return out
+
 func step(delta: float) -> void:
 	var i := 0
 	while i < count:

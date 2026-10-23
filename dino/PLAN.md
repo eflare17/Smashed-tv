@@ -58,6 +58,21 @@ Placeholders I had to pick (all easy to change, none decided):
 - **Dinosaurs pass through each other** (no bumping into each other).
 - A KILLS / CHUNKS counter at the top, in place of XP for now.
 
+## Added after playing step 1 (owner's asks, 25 Oct)
+
+- **Eat it completely, then grow:** once a prey is dead, keep biting. When there's under 5% of it left, the rest
+  goes down in one gulp, the body is gone, and you **grow by 10%** (up to 2x; your reach and lunge grow with you).
+  Pieces lying about (a bitten-off leg, tail or head) go down whole in one bite too. The top shows
+  KILLS / EATEN / SIZE.
+- **The bite lands where you click:** the teeth now meet exactly on the spot (checked by a test, 0 px off on head,
+  neck, body, tail and legs). The neck visibly stretches out to it. The body lunges (or leaps, for a high spot, or
+  steps back, for one right under your nose) so more spots are in range. The aim marker now predicts exactly
+  where the bite will land: red or white means it lands right there, and grey means out of range (the dot shows
+  where it would land instead). If the prey moves during the tiny wind-up, the bite follows the spot on its body
+  (you clicked its neck, you get its neck).
+- Placeholders: grow 10% per meal, max 2x, "eaten" under 5% left. Biting size doesn't grow with you (bite size
+  is meant to be a level-up choice).
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

@@ -87,6 +87,52 @@ func _run() -> void:
 		hip += Vector2(0, 1)
 	_check("leg comes off at the hip", off)
 
+	# the teeth meet exactly where you clicked: real bites through the player, at spots all over a prey
+	var pl: Player = main.player
+	var p3: Prey = main.spawn_prey(900.0)
+	pl.position = Vector2(860.0, main.GROUND_Y)
+	await _frames(2)
+	var worst := 0.0
+	for z in [DinoArt.HEAD, DinoArt.NECK, DinoArt.BODY, DinoArt.TAIL, DinoArt.LEGS]:
+		p3.position.x = 900.0
+		p3.state = Prey.GRAZE
+		p3.vel = Vector2.ZERO
+		pl.position = Vector2(860.0, main.GROUND_Y)
+		pl.vel = Vector2.ZERO
+		pl.cool = 0.0
+		await _frames(2)
+		var pts: Array = _zone_points(p3, z)
+		if pts.is_empty():
+			continue
+		var aim: Vector2 = pts[pts.size() / 2]
+		pl.step(1.0 / 60.0, 0.0, false, true, aim)
+		var miss := 999.0
+		for f in 12:
+			pl.step(1.0 / 60.0, 0.0, false, false, aim)
+			if pl.bite_t >= pl.WIND and pl.bite_t < pl.WIND + pl.HOLD:
+				miss = pl.jaw_tip().distance_to(pl.target_point())
+				break
+		print("   %s: %.2f px" % [DinoArt.ZONE_NAMES[z], miss])
+		worst = maxf(worst, miss)
+		pl.bite_t = -1.0
+	_check("the teeth meet on the spot you clicked", worst < 1.5, "worst %.2f px off" % worst)
+
+	# a killed prey eaten down to scraps disappears and you grow
+	p3.die()
+	var size0: float = pl.size
+	var eaten0: int = main.eaten
+	for k in 400:
+		if not is_instance_valid(p3) or not main.prey.has(p3):
+			break
+		var left: Array = []
+		for z in [DinoArt.HEAD, DinoArt.NECK, DinoArt.BODY, DinoArt.TAIL, DinoArt.LEGS]:
+			left.append_array(_zone_points(p3, z))
+		if left.is_empty():
+			break
+		main.player_bite(pl, left[rng.randi() % left.size()])
+	_check("eating a body completely removes it", not main.prey.has(p3))
+	_check("eating a whole one grows you", pl.size > size0 and main.eaten == eaten0 + 1, "size %.2f" % pl.size)
+
 	# the whole game runs with the bot for a while without errors, and stays quick
 	main.demo = true
 	var t0 := Time.get_ticks_msec()

@@ -7,7 +7,8 @@ extends Node2D
 ## Each frame: input -> player (its snap calls player_bite) -> prey -> gore; hit-stop freezes all of that for a
 ## few hundredths of a second after a bite lands, the camera shake keeps going.
 ## Keys: A/D or arrows move, W / Space / Up jump, left mouse bite, F3 show the zones, R start over.
-## Command line (after --): --demo (a bot plays), --shots=<folder> (saves screenshots, then quits; implies --demo).
+## Command line (after --): --demo (a bot plays), --shots=<folder> (saves 12 screenshots, then quits; implies --demo),
+## --shot-every=<frames> (75 by default), --shot-from=<frame> (start later).
 
 const DinoArt := preload("dino_art.gd")
 
@@ -16,6 +17,10 @@ const VIEW := Vector2(480, 270)
 const GROUND_Y := 226.0
 const MAX_CORPSES := 3
 const RESPAWN := 2.5
+## A dead prey with less than this much of itself left counts as eaten; eating one grows you by GROW.
+## PLACEHOLDER numbers.
+const FINISHED := 0.05
+const GROW := 0.1
 
 var player: Player
 var prey: Array[Prey] = []
@@ -26,6 +31,7 @@ var rng := RandomNumberGenerator.new()
 
 var kills := 0
 var chunks := 0
+var eaten := 0
 var show_zones := false
 var demo := false
 
@@ -40,6 +46,8 @@ var _bot_t := 0.0
 var _bot_zone := 0
 var _bot_point := Vector2.ZERO
 var _shots_dir := ""
+var _shot_every := 75
+var _shot_from := 0
 var _frame := 0
 
 func _ready() -> void:
@@ -47,6 +55,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a == "--demo":
 			demo = true
+		elif a.begins_with("--shot-from="):
+			_shot_from = int(a.substr(12))
+		elif a.begins_with("--shot-every="):
+			_shot_every = int(a.substr(13))
 		elif a.begins_with("--shots="):
 			_shots_dir = a.substr(8)
 			demo = true
@@ -85,6 +97,7 @@ func start() -> void:
 	gore.clear()
 	kills = 0
 	chunks = 0
+	eaten = 0
 	_popups.clear()
 	player = Player.new()
 	player.game = self
@@ -149,9 +162,9 @@ func _process(delta: float) -> void:
 		pu[2] -= delta
 		pu[1].y -= delta * 14.0
 	_popups = _popups.filter(func(pu): return pu[2] > 0.0)
-	_hud.text = "KILLS %d    CHUNKS %d" % [kills, chunks]
+	_hud.text = "KILLS %d    EATEN %d    SIZE x%.1f" % [kills, eaten, player.size]
 	_overlay.queue_redraw()
-	if _shots_dir != "" and _frame % 75 == 0:
+	if _shots_dir != "" and _frame > _shot_from and (_frame - _shot_from) % _shot_every == 0:
 		_save_shot()
 
 func _step(delta: float) -> void:
@@ -224,6 +237,15 @@ func player_bite(who: Player, p: Vector2) -> void:
 			_trim_corpses()
 		elif not pr.dead:
 			sfx.play("cry", 0.1, -3.0)
+		if pr.dead and pr.mass_fraction() < FINISHED:
+			got.append_array(_finish(who, pr))
+	# pieces lying about (or still flying) go down whole
+	var bits := gore.eat_pieces(p, who.bite_radius + 1.0)
+	if not bits.is_empty():
+		any = true
+		got.append_array(bits)
+		gore.blood(p, dir, 6, 80.0)
+		_popups.append(["GULP", p + Vector2(0, -6), 0.7])
 	if any:
 		sfx.play("crunch", 0.1)
 		sfx.play("tear", 0.1, -4.0)
@@ -232,6 +254,24 @@ func player_bite(who: Player, p: Vector2) -> void:
 		who.hold(_mouthful(who, got, p))
 	else:
 		sfx.play("snap", 0.1, -2.0)
+
+## A dead prey eaten down to scraps: the scraps go down in one gulp, the body is gone, and you grow.
+## Returns the scraps' pixels (for the mouthful).
+func _finish(who: Player, pr: Prey) -> Array:
+	var scraps: Array = []
+	for part in pr.parts:
+		for i in part.w * part.h:
+			if part.alive[i] == 1:
+				scraps.append([part.to_world(Vector2(i % part.w + 0.5, i / part.w + 0.5)), part.skin.get_pixel(i % part.w, i / part.w)])
+	prey.erase(pr)
+	pr.queue_free()
+	eaten += 1
+	var was := who.size
+	who.grow(GROW)
+	_popups.append(["EATEN!" if who.size == was else "GROWING!", who.global_position + Vector2(0, -who.height * who.size - 10), 1.4])
+	sfx.play("gulp", 0.05, 3.0)
+	sfx.play("thud", 0.05, -6.0)
+	return scraps
 
 func _main_zone(zones: PackedInt32Array) -> int:
 	var best := 0
@@ -273,12 +313,13 @@ func _trim_corpses() -> void:
 
 # --- the demo bot -----------------------------------------------------------------------------------------
 
-## Walks up to the nearest prey and bites a chosen zone, a different one each time. [move, jump, bite, aim]
+## Eats the nearest body first, else walks up to the nearest live prey; bites a chosen zone, a different one each
+## time. [move, jump, bite, aim]
 func _bot(delta: float) -> Array:
 	_bot_t -= delta
 	var target: Prey = null
 	for p in prey:
-		if not p.dead and (target == null or absf(p.position.x - player.position.x) < absf(target.position.x - player.position.x)):
+		if p.dead and (target == null or absf(p.position.x - player.position.x) < absf(target.position.x - player.position.x)):
 			target = p
 	if target == null:
 		for p in prey:
@@ -291,13 +332,16 @@ func _bot(delta: float) -> Array:
 		var zones := [DinoArt.NECK, DinoArt.TAIL, DinoArt.LEGS, DinoArt.BODY, DinoArt.HEAD]
 		_bot_zone = zones[rng.randi() % zones.size()]
 		var pt: Variant = _zone_point(target, _bot_zone)
+		for z in zones:
+			if pt == null:
+				pt = _zone_point(target, z)
 		_bot_point = pt if pt != null else target.global_position + Vector2(0, -20)
 	var neck := player.neck()
 	var d := _bot_point - neck
 	var move_x := 0.0
-	if absf(d.x) > player.reach * 0.6:
+	if player.predict_bite(_bot_point).distance_to(_bot_point) > 1.0 or absf(d.x) > player.reach * player.size:
 		move_x = signf(d.x)
-	var bite := d.length() < player.reach * 0.95 and player.cool <= 0.0 and player.bite_t < 0.0
+	var bite := player.predict_bite(_bot_point).distance_to(_bot_point) < 1.0 and player.cool <= 0.0 and player.bite_t < 0.0
 	return [move_x, false, bite, _bot_point]
 
 ## A random live pixel of `zone` on `p`, in the world, or null.
@@ -314,7 +358,7 @@ func _zone_point(p: Prey, zone: int) -> Variant:
 func _save_shot() -> void:
 	await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute(_shots_dir)
-	var n := _frame / 75
+	var n := (_frame - _shot_from) / _shot_every
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("%s/shot_%02d.png" % [_shots_dir, n])
 	# and a close-up (3x) of the fight, to check the pixels
@@ -343,10 +387,11 @@ func _draw_overlay() -> void:
 		_text(font, pu[0], pu[1], Color(1, 0.9, 0.5, a))
 	if demo:
 		return
-	# the aim: red on a bitable spot in reach, white in reach, grey past reach (with a dot where you'd bite)
+	# the aim: red on a bitable spot in range (reach plus the lunge), white in range, grey past it (with a dot where
+	# the bite would land instead)
 	var m := get_global_mouse_position()
-	var reach := player.clamp_reach(m)
-	var in_reach := reach.distance_to(m) < 0.5
+	var reach := player.predict_bite(m)
+	var in_reach := reach.distance_to(m) < 1.0
 	var target := prey_at(m)
 	var c := Color(0.6, 0.6, 0.6)
 	if in_reach:
