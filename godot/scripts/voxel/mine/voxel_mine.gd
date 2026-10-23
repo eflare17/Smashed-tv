@@ -592,6 +592,11 @@ func load_data(d) -> void:
 
 func _process(dt: float) -> void:
 	if not active:
+		# (--mine on the command line: straight down the mine once the arena's up)
+		if arena._opts.has("mine") and not arena._opts.has("mine_done") and Engine.get_process_frames() > 30:
+			arena._opts["mine_done"] = "1"
+			enter()
+			print("MINE entered from the command line: ground %d x %d cells" % [MineGround.CW, MineGround.CH])
 		return
 	_finish_going(dt)
 	if not active:

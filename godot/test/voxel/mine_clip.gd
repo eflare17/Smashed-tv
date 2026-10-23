@@ -164,7 +164,7 @@ func _done(c: Dictionary) -> bool:
 		"down":
 			return -m.ship.p.y - MineShip.HALF >= float(c.depth) - 0.05 and not m.ship.drilling
 		"up":
-			return m.ship.p.y > 0.42 and m.ship.grounded and m.ship.p.y < 1.0
+			return m.ship.p.y > 0.55
 		"shoot":
 			return int(c.left) <= 0 and m._shots.is_empty() and cur_t > 0.8
 	return false
