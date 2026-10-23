@@ -19,6 +19,7 @@ const VARIANTS := {
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
 	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
 	"jared_hd": {"base": "jared"},               # (the voxel arena's Jared: at full detail; VoxelReshape off, the owner: "put them back")
+	"jared_new": {"base": "jared", "built": "jared"},   # (Jared sculpted from scratch: VoxelSculpt, JaredBuild; being built)
 }
 ## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
 ## forward), how far apart the two are. VoxelJiggle reads these to know what moves.
@@ -164,6 +165,12 @@ func grid(part: String) -> Dictionary:
 	if p.grid == null:
 		var v := VoxFile.load_file(DIR + (_dir if _dir != "" else char_name) + "/" + String(p.file))
 		p.grid = v.model_grid() if v else {"size": Vector3i.ZERO, "cells": PackedInt32Array()}
+		if _tint.has("built"):
+			var b := VoxelSculpt.part(String(_tint.built), part)
+			if not b.is_empty():
+				p.grid = b.grid
+				p.origin = b.origin
+				return p.grid
 		var bk := _baked_parts()
 		if bk.has(part):
 			p.grid = bk[part].grid
