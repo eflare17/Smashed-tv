@@ -160,11 +160,25 @@ func _process(dt: float) -> bool:
 			if e > 3.0:
 				m.auto = {}
 				check(not m.cargo.has("silver") and m.cargo_count() == m.cargo_cap(), "hold full: the silver's lost (%s)" % [m.cargo])
+				# up top by the ORE box: E, and the cargo's squirted in
 				m.cargo = {"gold": 3, "coal": 2}
-				var want := MineShop.value(m.cargo, m.day)
-				var c0: int = arena.cash
-				m.sell_all()
-				check(arena.cash == c0 + want and m.cargo.is_empty(), "sold at the trader: $%d -> $%d (+%d)" % [c0, arena.cash, want])
+				v.want = MineShop.value(m.cargo, m.day)
+				v.c0 = arena.cash
+				m.ship.place(Vector2(MineOreBox.X + 0.6, MineShip.HALF + 0.01))
+				next(50)
+		50:
+			if e > 0.4 and not v.has("used"):
+				v.used = true
+				check(m._near == "orebox", "by the ORE box with cargo: its prompt (%s)" % m._near)
+				m.use()
+			if e > 0.6 and not v.has("mid"):
+				v.mid = true
+				check(m.ore_box.unloading and m.ship.hose_out > 0.5, "the hose runs out and it starts squirting")
+			if e > 3.5:
+				var want := int(v.want)
+				var c0 := int(v.c0)
+				check(arena.cash == c0 + want and m.cargo.is_empty() and m.ore_box.counter == want and not m.ore_box.unloading,
+					"squirted into the ORE box: $%d -> $%d (+%d, the box's counter %d)" % [c0, arena.cash, want, m.ore_box.counter])
 				var p0 := MineShop.price("gold", 100)
 				var p1 := MineShop.price("gold", 101)
 				var p2 := MineShop.price("gold", 102)

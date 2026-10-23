@@ -37,7 +37,7 @@ const NUG_RARE := ["gold", "opal", "diamond", "hoard", "evidence", "stash", "shr
 
 const TIPS := {
 	"welcome": "Welcome to the mine! A/D drives (push into rock to drill through it), S drills down, W or Space flies you up. Fuel runs down all the time: keep an eye on it.",
-	"first_ore": "Ore goes in your cargo bay. Fly back up and sell it at the TRADER (E at a building).",
+	"first_ore": "Ore goes in your cargo bay. Fly back up and squirt it into the ORE box by the fuel station (E by it).",
 	"fuel_low": "Fuel's low! Get up to the FUEL station before it runs out, or the tow truck drags you up and you lose your cargo.",
 	"cargo_full": "Your cargo bay's full: what you dig now is lost. Go and sell, or get a bigger bay at the MECHANIC.",
 	"sold": "Spend it at the MECHANIC: a faster drill, a bigger tank, more cargo, a tougher hull, brighter lights.",
@@ -130,6 +130,8 @@ var _alarm_t := 0.0
 var _refuse_t := 0.0
 var _save_t := 0.0
 var _near := ""
+var ore_box: MineOreBox         # where the cargo's sold: squirted in up top
+var _water_hose := 0.0          # (the hose run out for water: sucking it up)
 var _chain: Array = []          # gas pockets about to go off: [time, Vector2]
 var _cave_lights: Array = []
 var _lava_lights: Array[OmniLight3D] = []
@@ -240,6 +242,9 @@ func _build() -> void:
 	world.add_child(worm)
 	worm.setup(self, ground)
 	_buildings()
+	ore_box = MineOreBox.new()
+	world.add_child(ore_box)
+	ore_box.setup(self)
 	for k in 6:
 		var l := OmniLight3D.new()
 		l.light_color = Color8(255, 120, 30)
@@ -452,6 +457,7 @@ func leave() -> void:
 		return
 	_going = -1
 	hud.close_menu()
+	ore_box.finish_now()
 	sound.play("mine_door", Vector3.INF, -2.0, 0.9)
 	sound.stop("mine_drill")
 	sound.stop("mine_engine")
@@ -794,17 +800,22 @@ func _view(dt: float) -> void:
 			(_sparks[i][0] as Node).queue_free()
 			_sparks.remove_at(i)
 
-## Parked by a building up top: its prompt.
+## Parked by a building up top (or over the ORE box, with cargo to squirt in): its prompt.
 func _buildings_near() -> void:
 	_near = ""
 	if ship.grounded and ship.p.y > 0.0 and ship.p.y < 1.0:
 		_near = MineGround.building_at(ship.p.x)
+	# (the box: when you're over it in the air, or parked between the buildings by it)
+	if ore_box and (_near == "" or ore_box.unloading) and MineOreBox.in_reach(ship.p) and (cargo_count() > 0 or ore_box.unloading):
+		_near = "orebox"
+	ship.hose_out = maxf(ore_box.hose if ore_box else 0.0, _water_hose)
 	var t := ""
 	match _near:
 		"lift": t = "E  ride the lift up to the yard"
 		"fuel": t = "E  FUEL station"
-		"trader": t = "E  TRADER: sell your cargo, buy supplies"
+		"trader": t = "E  TRADER: dynamite, repair kits, teleports"
 		"mechanic": t = "E  MECHANIC: upgrades and repairs"
+		"orebox": t = "Squirting it in..." if ore_box.unloading else "E  squirt your cargo into the ORE box"
 	hud.prompt(t)
 
 # ---------------------------------------------------------------- keys
@@ -855,6 +866,8 @@ func use() -> void:
 			_trader_menu()
 		"mechanic":
 			_mechanic_menu()
+		"orebox":
+			ore_box.start(cargo)
 
 # ---------------------------------------------------------------- what the drill brings up
 
@@ -1223,6 +1236,20 @@ func tip(id: String) -> void:
 	hud.tip(String(TIPS[id]))
 	_soft()
 
+## Paid without the till (a nugget into the ORE box: the box does its own clunk)
+func pay_quiet(n: int) -> void:
+	arena.cash += n
+	stats.earned = int(stats.earned) + n
+	_dirty()
+
+## The ORE box has everything that was squirted in: the till, the takings
+func unloaded(total: int) -> void:
+	hud.pop("+$%d" % total, Color8(120, 255, 120))
+	sound.play("mine_register", Vector3.INF, -3.0)
+	say("Into the ORE box: $%d" % total, 2.0)
+	tip("sold")
+	_soft()
+
 func pay(n: int) -> void:
 	arena.cash += n
 	stats.earned = int(stats.earned) + n
@@ -1304,8 +1331,7 @@ func buy_fuel(l: float) -> void:
 
 func _trader_menu() -> void:
 	var rows := []
-	var v := MineShop.value(cargo, day)
-	rows.append(["Sell everything: $%d" % v, cargo_count() > 0, func(): sell_all()])
+	rows.append(["Ore sells at the ORE box (by the fuel station): today's prices", true, null])
 	var hot := MineShop.hot(day)
 	var line := "Today:  "
 	var k := 0

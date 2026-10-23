@@ -211,6 +211,8 @@ func generate(s: int, fl: Dictionary) -> void:
 	sim.rect(0, CH - C, CW - 1, CH - 1, MineTiles.BEDROCK, -1, 0)
 	for b in BUILDINGS:
 		sim.rect(int(b[1]) * C, SKY, (int(b[2]) + 1) * C - 1, SKY + 3, MineTiles.PAD, 1, 0)
+	# (and under the ORE box)
+	sim.rect(int((MineOreBox.X - 1.0) * C), SKY, int((MineOreBox.X + 1.0) * C) - 1, SKY + 3, MineTiles.PAD, 1, 0)
 	sim.take_changed()
 	changed = 0
 
