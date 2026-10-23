@@ -590,6 +590,42 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### Gothica (23 Oct, the owner: "get the character Gothica brought into the game ... her jiggle physics impressive,
+out of this world impressive")
+
+- `scripts/voxel/arena/voxel_gothica.gd` (`VoxelGothica`, the arena's `gothica`): she lives in the bedroom and the games
+  room. She strolls between the places she likes (the mirror, the rug, the end of the beds, by the wardrobe; behind the
+  couch and either side of the TV) along a little network of paths that keeps her off the furniture, stands a while
+  at each (breathing, her weight shifting from foot to foot, looking round), and now and then goes through to the
+  other room along the arena's south wall. Walking, her hips sway and her chest turns against them.
+- E at her: a cheer hop (arms up), a line, and she follows you round the house, walking, or running when you're more
+  than 4.5 m ahead. She won't go out into the fight: she waits in the bedroom doorway. E again and she stays where
+  she is. Walk into her and she's bumped. Each game has its own Gothica (co-op: not sent).
+- Her body: a VoxelBody of the "gothica" model (VoxelModel.VARIANTS: the goth model with her chest sculpted round,
+  `_sculpt_bust`: two rounded shapes built out of the torso's front, coloured from what was there, the top's black and
+  the neckline's skin, shaded underneath and between).
+- `scripts/voxel/arena/voxel_jiggle.gd` (`VoxelJiggle`): her chest, hair and skirt are simulated, not animated. Each
+  frame it measures how the bone each hangs from really moved (that point's acceleration in the world, including the
+  body turning, and which way gravity pulls in the body's frame) and lets springs answer, sub-stepped at 480 Hz:
+  - each side of her chest: its own spring up and down, side to side and in and out, the softest up and down. Lightly
+    damped, so a jolt rings on for a second, with more damping on a big swing so it settles into a long gentle ring.
+    A quicker 8 Hz wobble rides on top. The two sides collide in the middle. The shape stretches as it's pulled down
+    and squashes as it's thrown up. What's drawn eases into a reach (no hard stop);
+  - running, landing, turning, stopping and being bumped all come out of the body's own movement; a walking heel
+    adds a small kick;
+  - the hair is a heavy, slow pendulum off the back of her head; the skirt is quicker, off her hips, with its hem
+    rippling as she goes.
+  The look: one shader for all of her bends the cubes in the vertex shader. Each shape's front moves most and its
+  base where it meets her chest doesn't move at all, so it bends like something soft rather than sliding as a block.
+  The chest is shaded as the smooth round shape it stands for (not its cubes' steps), turned as it bends, so the light
+  runs over it; her top is satin there, everything else matt (a sheen on voxel steps shows as stripes).
+- Settings: Jiggle (Off / Natural / Bouncy / Out of this world; every preset starts on Out of this world).
+  A run is about ±2 cm, a hop's landing near the full 3 cm. Standing still it settles to nothing in a few seconds.
+- `test/voxel/gothica_test.gd` (14: the sculpt, wandering, following into the games room, waiting in the doorway,
+  staying, a hop's bounce and settling, Jiggle Off), `test/voxel/gothica_shots.gd` (`voxel_shots/goth_front.png`,
+  `goth_three.png`, `goth_room.png`), `test/voxel/gothica_clip.gd` (a clip for the movie maker: hop, run, stop, turn,
+  run at the camera, hop, walk).
+
 ### Ultra Gore (23 Oct, the owner: "ultra gore mode with dripping etc")
 
 - `scripts/voxel/arena/voxel_blood.gd` (`VoxelBlood`, the arena's `blood`): the blood after a hit. Every cut a body

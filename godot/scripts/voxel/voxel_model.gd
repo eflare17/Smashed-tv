@@ -17,7 +17,11 @@ const VARIANTS := {
 	"thrower": {"base": "grunt", "tint": Color(0.45, 0.95, 0.3), "mix": 0.5},
 	"shielder": {"base": "brute", "tint": Color(0.45, 0.6, 1.0), "mix": 0.45, "shield": true},
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
+	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
 }
+## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
+## forward), how far apart the two are. VoxelJiggle reads these to know what moves.
+const BUST := {"x": 5.0, "y": 94.0, "z": 6.0, "rx": 5.4, "ry_up": 5.0, "ry_down": 4.8, "rz": 6.6, "slope": 0.3}
 const SHIELD_ORIGIN := Vector3i(-4, 19, -22)     # (model voxels, at rest: x across, y its thickness, z its height)
 const SHIELD_SIZE := Vector3i(30, 2, 38)
 
@@ -153,9 +157,74 @@ func grid(part: String) -> Dictionary:
 	if p.grid == null:
 		var v := VoxFile.load_file(DIR + (_dir if _dir != "" else char_name) + "/" + String(p.file))
 		p.grid = v.model_grid() if v else {"size": Vector3i.ZERO, "cells": PackedInt32Array()}
-		if not _tint.is_empty():
+		if _tint.has("tint"):
 			p.grid = _tinted(p.grid, _tint.tint, float(_tint.mix))
+		if part == "torso" and bool(_tint.get("bust", false)):
+			p.grid = _sculpt_bust(p.grid, Vector3(p.origin))
 	return p.grid
+
+# the torso with two rounded shapes built out in front (BUST), filled solid, each cube coloured as the torso's front
+# was there (the top's black, the neckline's skin), the undersides and the middle between them a shade darker; the grid
+# made deeper to hold them
+static func _sculpt_bust(g: Dictionary, origin: Vector3) -> Dictionary:
+	var s: Vector3i = g.size
+	var src: PackedInt32Array = g.cells
+	var mid_x := s.x * 0.5                              # (the torso's middle, grid x)
+	var cy := float(BUST.y) - origin.y
+	var cz := float(BUST.z) - origin.z
+	var grow := int(ceil(cz + float(BUST.rz) + 1.0)) - s.z + 1
+	var ns := Vector3i(s.x, s.y, s.z + maxi(0, grow))
+	var cells := PackedInt32Array()
+	cells.resize(ns.x * ns.y * ns.z)
+	for z in s.z:
+		for y in s.y:
+			for x in s.x:
+				cells[x + ns.x * (y + ns.y * z)] = src[x + s.x * (y + s.y * z)]
+	# the front's colour at each x, y (the cube furthest forward)
+	var front := {}
+	for y in s.y:
+		for x in s.x:
+			for z in range(s.z - 1, -1, -1):
+				var v := src[x + s.x * (y + s.y * z)]
+				if v != 0:
+					front[Vector2i(x, y)] = v
+					break
+	for side: float in [-1.0, 1.0]:
+		var cx: float = mid_x + side * float(BUST.x)
+		for z in ns.z:
+			for y in ns.y:
+				for x in ns.x:
+					var dx := (x + 0.5 - cx) / float(BUST.rx)
+					var up := y + 0.5 - cy
+					var dy := up / float(BUST.ry_up if up > 0.0 else BUST.ry_down)
+					var rz := float(BUST.rz) * (1.0 - float(BUST.slope) * clampf(dy, 0.0, 1.0))
+					var dz := (z + 0.5 - cz) / rz
+					var e := dx * dx + dy * dy + dz * dz
+					if e > 1.0:
+						continue
+					var i := x + ns.x * (y + ns.y * z)
+					if cells[i] != 0 and z < s.z:
+						continue                                # (the torso's own cubes kept)
+					var col = front.get(Vector2i(x, y))
+					if col == null:
+						for r in range(1, 4):                   # (past the torso's outline: the nearest front's)
+							for k in [Vector2i(x, y + r), Vector2i(x, y - r), Vector2i(x + r, y), Vector2i(x - r, y)]:
+								if col == null and front.has(k):
+									col = front[k]
+					if col == null:
+						continue
+					var c := Color8(((int(col) - 1) >> 16) & 255, ((int(col) - 1) >> 8) & 255, (int(col) - 1) & 255)
+					# the underside and the middle between them in shadow, the top a touch lighter
+					var shade := 1.0
+					if dy < -0.55 and e > 0.55:
+						shade -= 0.3 * clampf((-dy - 0.55) / 0.45, 0.0, 1.0)
+					if absf(x + 0.5 - mid_x) < 1.2:
+						shade -= 0.18
+					if dy > 0.4 and dz > 0.3:
+						shade += 0.12
+					c = Color(clampf(c.r * shade, 0, 1), clampf(c.g * shade, 0, 1), clampf(c.b * shade, 0, 1))
+					cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
+	return {"size": ns, "cells": cells}
 
 # a grid's colours turned toward tint (keeping how light each is)
 static func _tinted(g: Dictionary, tint: Color, mix: float) -> Dictionary:

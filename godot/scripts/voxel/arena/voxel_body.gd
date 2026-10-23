@@ -20,6 +20,7 @@ var vm := 0.025                       # metres a cube
 var skeleton: Skeleton3D
 var parts := {}                       # name -> {grid, origin: Vector3 (in cubes), bone: int, arrays, start: int, left: int, gone: bool, dirty: bool}
 var alive := true
+var anim_speed := -1.0          # the stride's swing as for this speed (VoxelAnim's units; < 0: full: a run): Gothica walks
 var yaw := 0.0
 var speed := 0.0
 var odo := 0.0                        # metres walked
@@ -484,7 +485,8 @@ func animate(dt: float, moving: bool) -> void:
 		return                       # posed once where it lay / frozen solid as it stood
 	# the stride at full swing for this speed; odo in the cycle VoxelAnim counts (91 units)
 	var anim_odo := odo / cycle_m() * VoxelAnim.CYCLE
-	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED, "odo": anim_odo, "weapon": weapon, "recoil": recoil})
+	var p := VoxelAnim.pose({"t": t, "moving": moving, "speed": VoxelAnim.MAX_SPEED if anim_speed < 0.0 else anim_speed, "odo": anim_odo,
+		"weapon": weapon, "recoil": recoil})
 	var rot: Dictionary = p.rot
 	if panic_t > 0.0 and alive:
 		# on fire: arms flung up and flailing, running about
