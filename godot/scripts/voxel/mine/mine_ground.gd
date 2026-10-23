@@ -5,13 +5,13 @@ extends Node3D
 ## the bottom (the zones' edges wavy), ores set in it (coal near the top .. diamonds at the bottom, rarer and richer
 ## the deeper), boulders that need a better drill, gas pockets, lava pockets, little caves, the mushroom caves and the
 ## mushroom cathedral with its giant mushroom, the worm's cavern at the bottom, and the trial hazards (the sewers, the
-## cop bunker, the rival dealers' tunnels) when they're switched on. Drawn in 16 x 16 tile chunks (only a changed
+## cop bunker, the rival dealers' tunnels) when they're switched on. Drawn in 8 x 8 tile chunks (only a changed
 ## chunk is drawn again): a tile's front face, and where it's dug, the back wall and the walls of the tunnel. Lava
 ## flows out into what's dug, and cools to basalt when it's sat still a while. Owned by the voxel session.
 
 const W := 50                   # tiles across (the outer two bedrock)
 const D := 150                  # tiles down (the bottom one bedrock)
-const CH := 16                  # a chunk's tiles across and down
+const CH := 8                   # a chunk's tiles across and down
 const MARGIN := 16              # bedrock drawn past the edges (so the view never shows the end of the world)
 const LAVA_T := 0.12            # seconds between lava's moves
 const LAVA_COOL := 30.0         # seconds lava sits still before it's basalt
@@ -61,6 +61,7 @@ var _lava_t := 0.0
 var _decor := {}                  # tile index (what it stands on) -> [Node3D]
 var _decor_root: Node3D
 var changed := 0                  # tiles changed since the last save (the mine saves when it's more than none)
+var keep_clear := Rect2i()        # (the tiles round the ship) lava doesn't cool to rock here
 
 func _ready() -> void:
 	var at: Array = MineTiles.build_atlas()
@@ -468,6 +469,9 @@ func _rivals(rng: RandomNumberGenerator) -> void:
 				tiles[idx(sx, sr)] = MineTiles.STASH
 	# their shortcut: a shaft up from the tunnel to just under the topsoil, its top capped with timber
 	var sx2 := rng.randi_range(30, W - 6)
+	var bk: Array = features.get("bunker", [])
+	if not bk.is_empty() and sx2 >= int(bk[0]) - 1 and sx2 <= int(bk[2]) + 1:
+		sx2 = int(bk[0]) - 2 if int(bk[0]) - 2 >= 3 else int(bk[2]) + 2      # (not down through the cops' bunker)
 	var top := 0
 	for c in cells:
 		if c.x == sx2:
@@ -558,9 +562,16 @@ func lava_step(dt: float) -> bool:
 		if r + 1 < D and tiles[idx(x, r + 1)] == MineTiles.AIR:
 			to = idx(x, r + 1)
 		else:
+			# sideways only when it's pushed (lava on top of it or under it, or behind it) or there's a drop to run into: a pocket
+			# drains out into a tunnel and the puddle settles; a lone blob doesn't slosh back and forth for ever
+			var above := (r > 0 and tiles[idx(x, r - 1)] == MineTiles.LAVA) or (r + 1 < D and tiles[idx(x, r + 1)] == MineTiles.LAVA)    # (on top of the pool: spills over)
 			var sides := [-1, 1] if randf() < 0.5 else [1, -1]
 			for s in sides:
-				if x + s > 0 and x + s < W - 1 and tiles[idx(x + s, r)] == MineTiles.AIR and randf() < 0.45:
+				if x + s <= 0 or x + s >= W - 1 or tiles[idx(x + s, r)] != MineTiles.AIR:
+					continue
+				var drop: bool = r + 1 < D and tiles[idx(x + s, r + 1)] == MineTiles.AIR
+				var behind: bool = x - s >= 0 and x - s < W and tiles[idx(x - s, r)] == MineTiles.LAVA
+				if (above or behind or drop) and randf() < 0.45:
 					to = idx(x + s, r)
 					break
 		if to >= 0:
@@ -572,13 +583,15 @@ func lava_step(dt: float) -> bool:
 			_mark(to % W, to / W)
 			changed += 1
 			moved = true
-			# what was sitting on it
-			var up := idx(x, r - 1) if r > 0 else -1
-			if up >= 0 and tiles[up] == MineTiles.LAVA:
-				_lava[up] = 0.0
+			# the lava round where it was can move now
+			for d in _SIDES:
+				var nx: int = x + d.x
+				var nr: int = r + d.y
+				if inside(nx, nr) and tiles[idx(nx, nr)] == MineTiles.LAVA:
+					_lava[idx(nx, nr)] = 0.0
 		else:
 			_lava[i] = float(_lava[i]) + step
-			if float(_lava[i]) > LAVA_COOL and _next_to_air(x, r):
+			if float(_lava[i]) > LAVA_COOL and _next_to_air(x, r) and not keep_clear.has_point(Vector2i(x, r)):
 				tiles[i] = MineTiles.BASALT
 				base[i] = MineTiles.BASALT
 				_lava.erase(i)
@@ -609,34 +622,36 @@ class Quads:
 	var col := PackedColorArray()
 	var ix := PackedInt32Array()
 
-	## A quad: corners a, b, c, d (going round), facing n; pictures base and over; colour (alpha: the glint's phase).
-	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: Vector3, p0: int, p1: int, k: Color, flip := 0, ks := PackedColorArray()) -> void:
+	## A quad: corners a, b, c, d (going round), facing n; pictures base and over (MineGround._uvc: each picture's
+	## corners, mirrored by flip); its corners' colours k0..k3 (alpha: the glint's phase).
+	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, n: Vector3, p0: int, p1: int, k0: Color, flip := 0,
+			k1 := Color(-1, 0, 0), k2 := Color(), k3 := Color()) -> void:
 		var s := v.size()
-		v.append_array([a, b, c, d])
-		nrm.append_array([n, n, n, n])
-		uv.append_array(_uvs(MineTiles.uv(p0), flip))
-		uv2.append_array(_uvs(MineTiles.uv(p1), flip))
-		if ks.size() == 4:
-			col.append_array(ks)
+		v.push_back(a)
+		v.push_back(b)
+		v.push_back(c)
+		v.push_back(d)
+		nrm.push_back(n)
+		nrm.push_back(n)
+		nrm.push_back(n)
+		nrm.push_back(n)
+		uv.append_array(MineGround._uvc[p0 * 4 + flip])
+		uv2.append_array(MineGround._uvc[p1 * 4 + flip])
+		col.push_back(k0)
+		if k1.r < 0.0:
+			col.push_back(k0)
+			col.push_back(k0)
+			col.push_back(k0)
 		else:
-			col.append_array([k, k, k, k])
-		ix.append_array([s, s + 2, s + 1, s, s + 3, s + 2])
-
-	## A picture's corners (bottom-left round to top-left), mirrored across (flip & 1) and up and down (flip & 2)
-	static func _uvs(r: Rect2, flip: int) -> Array:
-		var u0 := r.position.x
-		var u1 := r.end.x
-		var v0 := r.position.y
-		var v1 := r.end.y
-		if flip & 1:
-			var tu := u0
-			u0 = u1
-			u1 = tu
-		if flip & 2:
-			var tv := v0
-			v0 = v1
-			v1 = tv
-		return [Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0)]
+			col.push_back(k1)
+			col.push_back(k2)
+			col.push_back(k3)
+		ix.push_back(s)
+		ix.push_back(s + 2)
+		ix.push_back(s + 1)
+		ix.push_back(s)
+		ix.push_back(s + 3)
+		ix.push_back(s + 2)
 
 	func mesh(m: Material) -> ArrayMesh:
 		var am := ArrayMesh.new()
@@ -654,22 +669,78 @@ class Quads:
 		am.surface_set_material(0, m)
 		return am
 
+## Each picture's corners (bottom-left round to top-left) in the atlas, four ways: as it is, mirrored across, upside
+## down, both ([pic * 4 + flip]); each tile's picture and whether it's drawn over the rock ([tile])
+static var _uvc: Array[PackedVector2Array] = []
+static var _tpic := PackedInt32Array()
+static var _tover := PackedByteArray()
+static var _tflip := PackedByteArray()      # 0: never mirrored, 1: across only, 3: across and upside down
+
+static func _tables() -> void:
+	if not _uvc.is_empty():
+		return
+	for p in MineTiles.COLS * 6:
+		var r := MineTiles.uv(p)
+		for f in 4:
+			var u0 := r.position.x
+			var u1 := r.end.x
+			var v0 := r.position.y
+			var v1 := r.end.y
+			if f & 1:
+				var tu := u0
+				u0 = u1
+				u1 = tu
+			if f & 2:
+				var tv := v0
+				v0 = v1
+				v1 = tv
+			_uvc.append(PackedVector2Array([Vector2(u0, v1), Vector2(u1, v1), Vector2(u1, v0), Vector2(u0, v0)]))
+	_tpic.resize(64)
+	_tover.resize(64)
+	_tflip.resize(64)
+	for t in MineTiles.INFO:
+		_tpic[t] = int(MineTiles.INFO[t].pic)
+		_tover[t] = 1 if MineTiles.INFO[t].over else 0
+		var fl := 0
+		if t <= MineTiles.BEDROCK or (t >= MineTiles.HARD1 and t <= MineTiles.DIAMOND) or t == MineTiles.FOOLS or t == MineTiles.HOARD:
+			fl = 3
+		if t == MineTiles.CRYSTAL:
+			fl = 1
+		_tflip[t] = fl
+
 ## The pictures a solid tile's face shows: [base, over]
 func _pics(x: int, r: int) -> Vector2i:
 	var t := at(x, r)
-	var inf := MineTiles.info(t)
-	if inf.over:
-		return Vector2i(int(MineTiles.info(base_at(x, r)).pic), int(inf.pic))
-	return Vector2i(int(inf.pic), MineTiles.PIC_NONE)
+	if _tover[t]:
+		return Vector2i(_tpic[base_at(x, r)], _tpic[t])
+	return Vector2i(_tpic[t], MineTiles.PIC_NONE)
 
 static func _hash(x: int, r: int) -> float:
 	return float(absi((x * 73856093) ^ (r * 19349663)) % 1000) / 1000.0
 
+## Open (dug or cave) for the corner shading: inside the ground and air (above the ground counts as not)
+func _open(x: int, r: int) -> bool:
+	return r >= 0 and x >= 0 and x < W and r < D and tiles[x + r * W] == MineTiles.AIR
+
 func _build_chunk(c: Vector2i) -> void:
+	_tables()
 	var q := Quads.new()
-	for r in range(c.y * CH, mini(D, c.y * CH + CH)):
-		for x in range(c.x * CH, mini(W, c.x * CH + CH)):
-			_tile_quads(q, x, r)
+	var x0 := c.x * CH
+	var r0 := c.y * CH
+	var x1 := mini(W, x0 + CH)
+	var r1 := mini(D, r0 + CH)
+	# the front faces' corner shading, once a corner: darker the more of the four tiles round it are open (a soft
+	# shadow along the tunnels' edges)
+	var cw := x1 - x0 + 1
+	var ao := PackedFloat32Array()
+	ao.resize(cw * (r1 - r0 + 1))
+	for r in range(r0, r1 + 1):
+		for x in range(x0, x1 + 1):
+			var n := int(_open(x - 1, r - 1)) + int(_open(x, r - 1)) + int(_open(x - 1, r)) + int(_open(x, r))
+			ao[(x - x0) + (r - r0) * cw] = 1.0 - 0.22 * n
+	for r in range(r0, r1):
+		for x in range(x0, x1):
+			_tile_quads(q, x, r, ao, (x - x0) + (r - r0) * cw, cw)
 	var mi: MeshInstance3D = _chunks.get(c)
 	if mi == null:
 		mi = MeshInstance3D.new()
@@ -678,8 +749,10 @@ func _build_chunk(c: Vector2i) -> void:
 		_chunks[c] = mi
 	mi.mesh = q.mesh(mat)
 
-func _tile_quads(q: Quads, x: int, r: int) -> void:
-	var t := at(x, r)
+const _SIDES: Array[Vector2i] = [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]
+
+func _tile_quads(q: Quads, x: int, r: int, ao: PackedFloat32Array, ai: int, cw: int) -> void:
+	var t := tiles[x + r * W]
 	var x0 := float(x)
 	var x1 := x0 + 1.0
 	var y1 := float(-r)
@@ -687,58 +760,44 @@ func _tile_quads(q: Quads, x: int, r: int) -> void:
 	var h := _hash(x, r)
 	var shade := 1.0 - h * 0.1
 	if t != MineTiles.AIR:
-		var pp := _pics(x, r)
+		var p0: int
+		var p1: int
+		if _tover[t]:
+			p0 = _tpic[base[x + r * W]]
+			p1 = _tpic[t]
+		else:
+			p0 = _tpic[t]
+			p1 = MineTiles.PIC_NONE
 		# the rock's picture mirrored at random (so it doesn't look tiled), darker in the corners by what's dug
-		var fl := int(h * 997.0) % 4 if _flips(t, base_at(x, r)) else (int(h * 997.0) % 2 if t <= MineTiles.CRYSTAL else 0)
-		var ks := PackedColorArray([Color(shade * _ao(x, r + 1), shade * _ao(x, r + 1), shade * _ao(x, r + 1), h),
-			Color(shade * _ao(x + 1, r + 1), shade * _ao(x + 1, r + 1), shade * _ao(x + 1, r + 1), h),
-			Color(shade * _ao(x + 1, r), shade * _ao(x + 1, r), shade * _ao(x + 1, r), h),
-			Color(shade * _ao(x, r), shade * _ao(x, r), shade * _ao(x, r), h)])
+		var fl := (int(h * 997.0) % 4) & (_tflip[t] & (3 if _tflip[base[x + r * W]] == 3 else 1))
+		var a_bl := shade * ao[ai + cw]
+		var a_br := shade * ao[ai + cw + 1]
+		var a_tr := shade * ao[ai + 1]
+		var a_tl := shade * ao[ai]
 		q.quad(Vector3(x0, y0, 0.5), Vector3(x1, y0, 0.5), Vector3(x1, y1, 0.5), Vector3(x0, y1, 0.5), Vector3(0, 0, 1),
-			pp.x, pp.y, Color(shade, shade, shade, h), fl, ks)
-		if r == 0 and t != MineTiles.PAD:
+			p0, p1, Color(a_bl, a_bl, a_bl, h), fl, Color(a_br, a_br, a_br, h), Color(a_tr, a_tr, a_tr, h), Color(a_tl, a_tl, a_tl, h))
+		if r == 0:
 			q.quad(Vector3(x0, y1, 0.5), Vector3(x1, y1, 0.5), Vector3(x1, y1, -0.5), Vector3(x0, y1, -0.5), Vector3(0, 1, 0),
-				MineTiles.PIC_GRASS, MineTiles.PIC_NONE, Color(1, 1, 1, h))
-		elif r == 0:
-			q.quad(Vector3(x0, y1, 0.5), Vector3(x1, y1, 0.5), Vector3(x1, y1, -0.5), Vector3(x0, y1, -0.5), Vector3(0, 1, 0),
-				int(MineTiles.info(MineTiles.PAD).pic), MineTiles.PIC_NONE, Color(1, 1, 1, h))
+				MineTiles.PIC_GRASS if t != MineTiles.PAD else _tpic[MineTiles.PAD], MineTiles.PIC_NONE, Color(1, 1, 1, h))
 		if t == MineTiles.LAVA:
 			# lava's open faces glow too (its sides, into what's dug)
-			for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1)]:
-				if at(x + d.x, r + d.y) == MineTiles.AIR and r + d.y >= 0:
-					_side(q, x, r, d, pp, 0.95, h)
+			for d in _SIDES:
+				if d.y <= 0 and at(x + d.x, r + d.y) == MineTiles.AIR and r + d.y >= 0:
+					_side(q, x, r, d, Vector2i(p0, p1), 0.95, h)
 		return
 	# open: the back wall ...
-	var b := bg_at(x, r)
-	var bp: int = MineTiles.BG_PIC.get(b, int(MineTiles.info(base_at(x, r)).pic))
-	var bk := 0.24 if b == MineTiles.BG_EARTH else 0.7
-	bk *= shade
+	var b := bg[x + r * W]
+	var bp: int = MineTiles.BG_PIC.get(b, _tpic[base[x + r * W]])
+	var bk := (0.24 if b == MineTiles.BG_EARTH else 0.7) * shade
 	q.quad(Vector3(x0, y0, -0.5), Vector3(x1, y0, -0.5), Vector3(x1, y1, -0.5), Vector3(x0, y1, -0.5), Vector3(0, 0, 1),
 		bp, MineTiles.PIC_NONE, Color(bk, bk, bk, h))
 	# ... and the walls of the tunnel (the solid tiles round it, their faces into it)
-	for d in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+	for d in _SIDES:
 		if r + d.y < 0:
 			continue
 		var n := at(x + d.x, r + d.y)
 		if n != MineTiles.AIR and n != MineTiles.LAVA:
 			_side(q, x, r, d, _pics(x + d.x, r + d.y), 0.5 if d.y == 0 else (0.38 if d.y < 0 else 0.7), h)
-
-## Whether a tile's picture can be turned upside down as well as mirrored (plain rock and what's set in it, not
-## crystals growing up, bricks, lockers, timber)
-static func _flips(t: int, b: int) -> bool:
-	if t == MineTiles.CRYSTAL or b == MineTiles.CRYSTAL:
-		return false
-	return t <= MineTiles.BEDROCK or (t >= MineTiles.HARD1 and t <= MineTiles.DIAMOND) or t == MineTiles.FOOLS or t == MineTiles.HOARD
-
-## How lit a front face's corner is at grid point (x, r) (the top-left corner of tile (x, r)): darker the more of the
-## four tiles round it are dug (a soft shadow along the tunnels' edges)
-func _ao(x: int, r: int) -> float:
-	var n := 0
-	for o in [Vector2i(-1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(0, 0)]:
-		var rr: int = r + o.y
-		if rr >= 0 and at(x + o.x, rr) == MineTiles.AIR:
-			n += 1
-	return 1.0 - 0.22 * n
 
 ## The wall between open tile (x, r) and its neighbour the way d goes, facing into the open tile.
 func _side(q: Quads, x: int, r: int, d: Vector2i, pp: Vector2i, k: float, h: float) -> void:
@@ -758,6 +817,7 @@ func _side(q: Quads, x: int, r: int, d: Vector2i, pp: Vector2i, k: float, h: flo
 
 ## Bedrock past the edges and the bottom, grass on top of it past the edges (never changes).
 func _margin() -> void:
+	_tables()
 	var q := Quads.new()
 	var bp := int(MineTiles.info(MineTiles.BEDROCK).pic)
 	var dp := int(MineTiles.info(MineTiles.DIRT).pic)

@@ -22,6 +22,7 @@ const POD_RAM := 7.0            # hull a pod's ram takes
 const SMASH := 4.2              # the ship going this fast at a drone or a pod breaks it
 const FIELD_T := 0.35
 const FIELD_MAX := 48           # tiles: farther than this the chasers lose the trail
+const POD_BACK := 300.0         # seconds before a crew that's been rammed to bits is replaced
 
 var mine                        # VoxelMine
 var ground: MineGround
@@ -36,6 +37,7 @@ var _field_t := 0.0
 var _rat_t := 0.0
 var _flash := 0.0
 var _chew_said := 0.0
+var _pods_at := 0               # (msec) when the crew was last made up
 
 func setup(mine_, ground_: MineGround) -> void:
 	mine = mine_
@@ -50,6 +52,7 @@ func clear() -> void:
 		a.clear()
 	alarm = false
 	alarm_t = 0.0
+	_pods_at = 0
 	mine.sound.stop("mine_siren")
 
 ## Going down: the rats and the crew there (if they're switched on), topped up.
@@ -58,7 +61,9 @@ func on_enter() -> void:
 		while rats.size() < RAT_MAX:
 			if not _spawn_rat():
 				break
-	if VoxelMine.hazards.get("rivals", true) and ground.flags.get("rivals", true):
+	var since := (Time.get_ticks_msec() - _pods_at) / 1000.0
+	if VoxelMine.hazards.get("rivals", true) and ground.flags.get("rivals", true) and (pods.is_empty() and since > POD_BACK or _pods_at == 0):
+		_pods_at = maxi(1, Time.get_ticks_msec())
 		var tries := 0
 		while pods.size() < PODS and tries < 40:
 			tries += 1
@@ -120,11 +125,18 @@ func _next(p: Vector2) -> Vector2:
 
 func step(dt: float) -> void:
 	var ship: MineShip = mine.ship
+	# switched off in the settings mid-dive: gone now
+	if not rats.is_empty() and not VoxelMine.hazards.get("sewers", true):
+		_drop(rats)
+	if not pods.is_empty() and not VoxelMine.hazards.get("rivals", true):
+		_drop(pods)
+	if alarm and not VoxelMine.hazards.get("cops", true):
+		stand_down()
 	_flash += dt
 	_field_t -= dt
 	if _field_t <= 0.0 and (alarm or not pods.is_empty()):
 		_field_t = FIELD_T
-		_make_field(MineGround.tile_of(ship.p))
+		_make_field(MineGround.tile_of(ship.drill_from if ship.drilling else ship.p))     # (mid-drill: it's in rock)
 	_rats(dt, ship)
 	_cops(dt, ship)
 	_pods(dt, ship)
@@ -407,6 +419,15 @@ func _pods(dt: float, ship: MineShip) -> void:
 			mine.tip("rivals")
 		elif d.chase and (dist > 24 or ship.p.y > -0.3):
 			d.chase = false
+		# given up, off their own tunnels and out of sight: back home (not left roaming the mine)
+		if not d.chase and ground.bg_at(t.x, t.y) != MineTiles.BG_RIVAL and (d.p as Vector2).distance_to(ship.p) > 14.0:
+			var cells: Array = ground.features.get("rival", [])
+			for k in 8:
+				var c: Vector2i = cells[randi() % cells.size()] if not cells.is_empty() else t
+				if ground.at(c.x, c.y) == MineTiles.AIR and MineGround.centre(c.x, c.y).distance_to(ship.p) > 14.0:
+					d.p = MineGround.centre(c.x, c.y)
+					d.go = d.p
+					break
 		var to: Vector2 = d.go
 		var sp := POD_SPEED
 		if d.chase and d.cool <= 0.0:
@@ -419,7 +440,7 @@ func _pods(dt: float, ship: MineShip) -> void:
 			# patrolling: along the tunnel, turning at its ends
 			if (d.p as Vector2).distance_to(d.go) < 0.05:
 				var nt: Vector2i = t + d.dir
-				if MineTiles.solid(ground.at(nt.x, nt.y)) or randf() < 0.05:
+				if MineTiles.solid(ground.at(nt.x, nt.y)) or ground.bg_at(nt.x, nt.y) != MineTiles.BG_RIVAL or randf() < 0.05:
 					var opts := []
 					for o in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 						if not MineTiles.solid(ground.at(t.x + o.x, t.y + o.y)) and ground.bg_at(t.x + o.x, t.y + o.y) == MineTiles.BG_RIVAL:
@@ -427,7 +448,7 @@ func _pods(dt: float, ship: MineShip) -> void:
 					if not opts.is_empty():
 						d.dir = opts[randi() % opts.size()]
 					nt = t + d.dir
-				if not MineTiles.solid(ground.at(nt.x, nt.y)):
+				if not MineTiles.solid(ground.at(nt.x, nt.y)) and ground.bg_at(nt.x, nt.y) == MineTiles.BG_RIVAL:
 					d.go = MineGround.centre(nt.x, nt.y)
 			to = d.go
 		var step := to - (d.p as Vector2)

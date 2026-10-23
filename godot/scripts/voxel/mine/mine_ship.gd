@@ -50,6 +50,11 @@ var _drill_bit: Node3D
 var _flames: Array[MeshInstance3D] = []
 var lamp: OmniLight3D
 var spot: SpotLight3D
+var _chips: CPUParticles3D
+var _chip_mat: StandardMaterial3D
+## The colour of the bits a drill throws up, by the rock
+const CHIP := {MineTiles.DIRT: Color8(122, 84, 52), MineTiles.CLAY: Color8(168, 108, 70), MineTiles.STONE: Color8(124, 124, 128),
+	MineTiles.RED: Color8(140, 58, 44), MineTiles.BASALT: Color8(60, 58, 66), MineTiles.CRYSTAL: Color8(120, 100, 200)}
 
 func _ready() -> void:
 	lamp = OmniLight3D.new()
@@ -62,6 +67,26 @@ func _ready() -> void:
 	spot.spot_angle = 38.0
 	spot.light_energy = 2.2
 	add_child(spot)
+	# the bits the drill throws up
+	_chips = CPUParticles3D.new()
+	_chips.emitting = false
+	_chips.amount = 24
+	_chips.lifetime = 0.5
+	_chips.direction = Vector3(0, 1, 0)
+	_chips.spread = 70.0
+	_chips.initial_velocity_min = 1.5
+	_chips.initial_velocity_max = 3.5
+	_chips.gravity = Vector3(0, -12, 0)
+	_chips.scale_amount_min = 0.04
+	_chips.scale_amount_max = 0.09
+	var bm := BoxMesh.new()
+	bm.size = Vector3.ONE
+	_chip_mat = StandardMaterial3D.new()
+	_chip_mat.albedo_color = Color8(122, 84, 52)
+	bm.material = _chip_mat
+	_chips.mesh = bm
+	_chips.local_coords = false
+	add_child(_chips)
 
 # ---------------------------------------------------------------- moving
 
@@ -85,6 +110,7 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 		up = false
 		down = false
 		ix = 0.0
+	_unstick()
 	if absf(ix) > 0.1:
 		face = 1 if ix > 0.0 else -1
 	if grounded:
@@ -121,6 +147,19 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 		bumped.emit(hx, false)
 	_pose(dt)
 
+## Inside rock somehow (a tile turned solid round it): out to the nearest open tile.
+func _unstick() -> void:
+	var t := MineGround.tile_of(p)
+	if not ground.solid_at(t.x, t.y):
+		return
+	for rad in range(1, 4):
+		for o in [Vector2i(0, -rad), Vector2i(-rad, 0), Vector2i(rad, 0), Vector2i(0, rad)]:
+			var n: Vector2i = t + o
+			if not ground.solid_at(n.x, n.y):
+				p = Vector2(n.x + 0.5, -n.y - 1.0 + HALF + 0.002)
+				v = Vector2.ZERO
+				return
+
 func _try_drill(d: Vector2i) -> void:
 	var tx := floori(p.x) if d.y == 1 else floori(p.x + d.x * (HALF + 0.06))
 	var tr := floori(-(p.y - HALF) + 0.02) if d.y == 1 else floori(-p.y)
@@ -142,6 +181,8 @@ func _try_drill(d: Vector2i) -> void:
 	drill_k = 0.0
 	drill_secs = maxf(0.12, h / drill_power)
 	drill_from = p
+	var b := ground.base_at(tx, tr)
+	_chip_mat.albedo_color = CHIP.get(t if CHIP.has(t) else b, Color8(124, 124, 128))
 	if d.y == 1:
 		drill_to = Vector2(tx + 0.5, -tr - 1.0 + HALF + 0.002)
 	else:
@@ -152,6 +193,7 @@ func _try_drill(d: Vector2i) -> void:
 func _move(axis: int, d: float) -> float:
 	if absf(d) < 1e-7:
 		return 0.0
+	var lead := (p.x if axis == 0 else p.y) + (HALF if d > 0.0 else -HALF)     # the leading edge before the move
 	if axis == 0:
 		p.x += d
 	else:
@@ -165,6 +207,15 @@ func _move(axis: int, d: float) -> float:
 	for r in range(r0, r1 + 1):
 		for x in range(x0, x1 + 1):
 			if not ground.solid_at(x, r):
+				continue
+			# only a tile it's moving into (one it already overlapped, say a tile turned solid on its corner, isn't
+			# a wall to be thrown back through)
+			var near_edge: float
+			if axis == 0:
+				near_edge = float(x) if d > 0.0 else float(x + 1)
+			else:
+				near_edge = float(-r - 1) if d > 0.0 else float(-r)
+			if (d > 0.0 and near_edge < lead - 0.01) or (d < 0.0 and near_edge > lead + 0.01):
 				continue
 			hit = true
 			if axis == 0:
@@ -215,6 +266,10 @@ func _pose(dt: float) -> void:
 	_drill_bit.rotation.x = _spin
 	# a tilt with the speed in the air, a judder drilling
 	_model.rotation.z = (-v.x * 0.04 * face if not grounded else 0.0) + (sin(_spin * 1.7) * 0.03 if drilling else 0.0)
+	_chips.emitting = drilling
+	if drilling:
+		_chips.position = Vector3(0.45 * face, -0.1, 0.35) if drill_dir.y == 0 else Vector3(0, -0.45, 0.35)
+		_chips.direction = Vector3(-face * 0.6, 1, 0) if drill_dir.y == 0 else Vector3(0, 1, 0)
 	for f in _flames:
 		f.visible = thrusting
 		if thrusting:

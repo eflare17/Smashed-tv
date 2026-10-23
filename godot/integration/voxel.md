@@ -751,6 +751,87 @@ down or falls onto one of the spinning wheels and gets flung around")
 - `test/voxel/slot_shots.gd` (`voxel_shots/slot_front.png`, `slot_reels.png`, `slot_flung.png`, `slot_win.png`,
   `slot_side.png`, `slot_lever.png`).
 
+### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
+
+- **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back
+  door (`scripts/voxel/mine/mine_hatch.gd`, MINE sign over it). E at it: the door rolls up and the mine fades in.
+  Up at the LIFT (top left of the mine) E takes you back to the yard. While you're down there the arena carries on
+  (you're stood in the yard, where nothing comes for you); it isn't drawn (`disable_3d`), its keys and weapons are
+  off. Solo or in co-op (the mine is each player's own).
+- **Its own world:** `voxel_mine.gd` (`VoxelMine`, the arena's `mine`) draws a separate 3D world in a SubViewport on a
+  CanvasLayer over the screen, with its own light: daylight up top, darker the deeper you go, the screen's edges
+  fading dark with depth (a screen shader, which also does the mushroom trip and the red flash when you're hurt).
+- **Keys:** A/D drive (push into rock to drill through it), S drill down, W/Up/Space thrusters, E use a building,
+  1 dynamite, 2 repair kit, 3 teleport home; a building's menu: click a line or press its number, E/Esc closes.
+- **The ground** (`mine_ground.gd`, `mine_tiles.gd`): 50 x 150 tiles of 1 m (the outer columns and the bottom row
+  bedrock), side-on. Topsoil and clay, grey stone (from ~19 m), deep red rock (~50 m), black basalt (~86 m),
+  glowing crystal rock (~121 m), the zones' edges wavy; each deeper zone slower to drill. Made the same every time
+  from a seed (saved), drawn in 8 x 8 tile chunks (only a changed chunk is drawn again, ~0.5 ms), the pictures drawn
+  in code into one atlas (16 px a tile, mirrored at random so it doesn't look tiled), what's dug darker with a soft
+  shadow along the tunnels' edges, ores glinting in the dark.
+- **Ores:** coal (from 3 m), copper, silver, gold (from 52 m), opal, diamonds (from 100 m): each most common at its
+  own depth, in little veins, the deeper ones rarer and worth far more.
+- **The ship** (`mine_ship.gd`): drives on what's dug, drills left, right and down (Motherload style: it slides into
+  the tile as it's drilled; harder rock takes longer, the drill's level speeds it up), flies up on its thrusters,
+  falls, hurts landing hard (over ~9 m/s) or hitting a wall fast. Fuel burns all the time (more driving, much more
+  flying and drilling); out of fuel or wrecked, you're towed up top: the cargo's lost and there's a fee (40 + 10% of
+  your cash). Its look changes with every upgrade: the drill bit (steel, bronze, gold, glowing diamond, bigger each
+  time), the fuel tanks (a jerry can, then tanks along its side), the cargo crate on its back, the hull (yellow,
+  teal with a skirt, red with plates, gunmetal with gold trim), the lamps on its nose (and how far its light reaches).
+- **Up top:** FUEL (paid by the litre, the price changing day to day), TRADER (sell the hold: each price wobbles a
+  fifth either way each day, one thing in demand at half as much again; a cash pop-up and the till; supplies:
+  dynamite $120, repair kit $150, teleport home $260; a fresh claim, brand new ground, $400), MECHANIC (hull repairs,
+  and the five upgrades, four levels each: drill 1x/1.6x/2.4x/3.6x (each level also opens a boulder tier), fuel
+  tank 12/20/32/50 L, cargo 8/14/22/34, hull 30/50/80/125, lights 6/9/13/18 m), LIFT (back to the yard). The cash
+  is the arena's own (`arena.cash`): one wallet with the kills, the farm and everything else.
+- **HUD** (`mine_hud.gd`): fuel, hull, cargo, depth, cash, the supplies; a line in the middle for what happens, the
+  prompt at a building, tips on the first dives (each once ever: how to drill, selling, low fuel, a full hold,
+  boulders, lava, gas, the mushroom caves, the cops, the rivals, the worm), the worm's health bar, WANTED when the
+  cops are after you.
+- **Hazards:** boulders that need a better drill (granite Mk II, ironstone Mk III, obsidian Mk IV); gas pockets
+  (greenish patches) that go off when drilled (they blow the rock open round them, hurt, set off gas next to them);
+  lava pockets that glow, flow out into whatever you dig (falling, spreading), burn the hull, and cool to basalt after
+  sitting still 30 s (never round the ship); little natural caves.
+- **Mushroom caves** (five, 30..100 m): open caves with a purple back wall that glow through the dirt round them,
+  mushrooms on their floors, spore clumps to sell, fool's gold in their walls (looks like gold, crumbles to nothing).
+  In one you trip: the screen swims and shifts colour, the ship floats (gravity down to 40%), and the steering
+  drifts, more the longer you stay; it wears off slowly once you're out. **The mushroom cathedral** (~113 m): a huge
+  cave with a giant mushroom in it (each of its tiles sells as Giant mushroom), a stronger trip.
+- **Trial hazards** (each switched off or on in the settings, F10: Mine: sewers and rats / the cop bunker / rival
+  dealers' tunnels; off: their critters are gone at once, the tunnels themselves on the next fresh claim):
+  - the **sewers** (two brick tunnels a few metres down): junk in their walls (a bit of cash), rats that run along the
+    floors and chew the hull when they're on you (drive over them fast to squash them; more come out while you're
+    away);
+  - the **cop bunker** (~40..55 m): a concrete box (needs Mk II) with red and blue lights that show through its cracks
+    (weak spots of plain stone), evidence lockers inside (worth a lot). Get in (or drill its walls) and the alarm goes:
+    three drones come after you through your own tunnels (they find their way by a map of the open tiles from the
+    ship); one touches you and you're BUSTED: the cargo and a fifth of your cash taken, towed up. Ram one fast and it's
+    scrap; get up top or keep away for 50 s and they give up (the bunker rests a minute before it can go off again);
+  - the **rival dealers' tunnels** (~70..84 m): timber-propped tunnels with lanterns, their stash at the ends (sells),
+    a hidden shaft from just under the topsoil down to them (their shortcut), and their crew: three red pods that
+    patrol and come for you when you're near, ramming (7 hull). Ram them back harder (fly at them fast) and they
+    break up after three ($60 scrap), or run: they give up when you're far off.
+- **The rock worm** (`mine_worm.gd`, the bottom cavern): wakes when you come below ~126 m, burrows through anything
+  but bedrock (eating tunnels as it goes), wriggles at you and bites (14, harder when it's below half). Ram it fast,
+  drill into it, or dynamite it (32); dead, it pops segment by segment and its diamond hoard (14 hoard diamonds, $900
+  each on an ordinary day) spills out where it died. Once a ground (a fresh claim brings a new one).
+- **Supplies:** dynamite blows the rock round you open (ore in it scooped into the hold, the critters and the worm
+  in it hurt); a repair kit patches 40% of the hull; the teleport beams you up top with your cargo.
+- **Sounds** (`assets/voxel/tools/sfx_mine.py`): the drill's whine (pitched by how hard the rock is for your drill),
+  the engine and thrusters, ore clinking in, hull knocks, the low-fuel beeps, the till, blasts, the siren, rats,
+  the worm's roar, the roller door, crumbling, the teleport, lava's hiss.
+- **Saved** with the backpack (VoxelStorages, the "mine" key): upgrades, fuel, hull, cargo, supplies, the ground (its
+  seed and every tile as it is), the worm, the tips seen.
+- **Tests:** `test/voxel/mine_test.gd` (headless, 39 checks: the door, going down, the zones and ores, drilling down
+  and sideways, a full hold, fuel, selling and the price wobble, upgrades, a boulder needing Mk III, gas, lava
+  flowing, the trip, the bunker's alarm and being busted, the rival crew ramming, the rats, the worm and its hoard,
+  dynamite, saving and loading, the tow, coming back up; `--seed=N` for a particular ground);
+  `test/voxel/mine_shots.gd` (pictures: the door, the surface, a shaft, ore, a mushroom cave, the bunker, the rivals,
+  lava, the cathedral, the worm, the trader, the ship basic and fully upgraded); `test/voxel/mine_clip.gd` (a film
+  played by an autopilot).
+- Not in it (from the notes): co-op digging together, fighting on foot, the tunnel to St Kilda (needs the travel
+  map), Dope Wars trading.
+
 ### The trailer (22 Oct, the owner: "cheery, happy music, feeding the chickens and digging and catching worms, then
 cutting to the fight ... one step of the peaceful stuff, then back to gory")
 

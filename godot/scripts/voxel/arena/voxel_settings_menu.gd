@@ -325,6 +325,9 @@ func _unhandled_input(e: InputEvent) -> void:
 func bench_start() -> void:
 	if not _bench.is_empty() or (arena.net and arena.net.role != ""):
 		return
+	if arena.mine and arena.mine.active:
+		_result.text = "Not down the mine: come back up to the yard first."      # (the arena isn't drawn down there)
+		return
 	if arena.down_t > 0.0:
 		_result.text = "Not while you're down: get up first."      # (the count would run out mid-run, the HP put back at 0)
 		return

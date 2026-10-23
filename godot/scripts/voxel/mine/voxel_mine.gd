@@ -20,7 +20,7 @@ const FUEL_DRIVE := 0.09
 const FUEL_THRUST := 0.30
 const FUEL_DRILL := 0.24
 const LAVA_BURN := 16.0         # hull a second in lava
-const FALL_HURT := 4.5          # hull a m/s landing over the safe speed
+const FALL_HURT := 3.2          # hull a m/s landing over the safe speed
 const BUMP_HURT := 2.0
 const TRIP_UP := 1.0 / 10.0     # the trip coming on a second in a mushroom cave ...
 const TRIP_DOWN := 1.0 / 18.0   # ... and wearing off
@@ -130,6 +130,9 @@ var _sparks: Array = []
 var _was_lava := false
 var _boom_light: OmniLight3D
 var _cam_at := Vector3(25, 0, 12)
+var _soft_dirty := false
+var last_hurt := ""             # what hurt the ship last ("fall", "lava", "rats" ...)
+var _resume := Vector2.INF      # where the ship was left underground (a quit down there): back there next time
 
 func setup(arena_: Node3D) -> void:
 	arena = arena_
@@ -407,7 +410,8 @@ func enter() -> void:
 	fuel = minf(fuel, tank_max())
 	hull = minf(hull, hull_max())
 	ship.build(upg)
-	ship.place(_lift_spot())
+	ship.place(_resume if _resume != Vector2.INF else _lift_spot())
+	_resume = Vector2.INF
 	critters.on_enter()
 	stats.dives = int(stats.dives) + 1
 	trip = 0.0
@@ -469,13 +473,22 @@ func cargo_count() -> int:
 		n += int(cargo[id])
 	return n
 
+## Something worth saving now (money, upgrades): the backpack's save soon.
 func _dirty() -> void:
 	if arena.stash:
 		arena.stash._dirty = true
 
+## Something to save in a while (damage, a tile, cargo, a tip): with the next of the mine's own saves.
+func _soft() -> void:
+	_soft_dirty = true
+
 func save_data() -> Dictionary:
 	var d := {"v": 1, "upg": upg.duplicate(), "fuel": fuel, "hull": hull, "cargo": cargo.duplicate(), "items": items.duplicate(),
 		"worm_dead": worm_dead, "tips": tips_done.keys(), "stats": stats.duplicate()}
+	if _built and active and ship.p.y < -0.5:
+		d["ship"] = [ship.drill_to.x if ship.drilling else ship.p.x, ship.drill_to.y if ship.drilling else ship.p.y]     # (quit down there: back down there)
+	elif _resume != Vector2.INF:
+		d["ship"] = [_resume.x, _resume.y]
 	if _built:
 		d["ground"] = ground.save_data()
 	elif _save.has("ground"):
@@ -506,7 +519,12 @@ func load_data(d) -> void:
 	if typeof(d.get("stats")) == TYPE_DICTIONARY:
 		for k in stats:
 			stats[k] = int(d.stats.get(k, 0))
+	_resume = Vector2.INF
+	if typeof(d.get("ship")) == TYPE_ARRAY and (d.ship as Array).size() == 2:
+		_resume = Vector2(clampf(float(d.ship[0]), 1.5, MineGround.W - 1.5), clampf(float(d.ship[1]), -MineGround.D + 1.5, 0.0))
 	_save = d
+	if _built:
+		worm.spawn(worm_dead)
 	if _built and typeof(d.get("ground")) == TYPE_DICTIONARY and ground.load_data(d.ground):
 		critters.clear()
 		ground.build_all()
@@ -523,7 +541,10 @@ func _process(dt: float) -> void:
 	_finish_going(dt)
 	if not active:
 		return
-	var menu_up: bool = hud.menu_open() or (arena.settings_menu and arena.settings_menu.is_open()) or _going != 0
+	dt = minf(dt, 1.0 / 30.0)       # (a long frame, a window dragged: not through the floor)
+	if _going == 0 and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE     # (a menu closing grabs it for the arena: the mine's is clickable)
+	var menu_up: bool = hud.menu_open() or (arena.settings_menu and arena.settings_menu.is_open()) or (arena.net_menu and arena.net_menu.is_open()) or _going != 0
 	var ix := 0.0
 	var up := false
 	var down := false
@@ -568,9 +589,11 @@ func _process(dt: float) -> void:
 			_alarm_t = 2.0
 			sound.play("mine_alarm", Vector3.INF, -8.0)
 			tip("fuel_low")
-	if fuel <= 0.0 and ship.p.y < -0.5 and not ship.drilling:
-		tow("fuel")
+	if fuel <= 0.0 and not ship.drilling:
+		tow("fuel")                 # (anywhere, up top too: with none you can't move to the pumps)
 	# the ground: lava, gas going off one after another
+	var stl := MineGround.tile_of(ship.p)
+	ground.keep_clear = Rect2i(stl.x - 1, stl.y - 1, 3, 3)
 	ground.lava_step(dt)
 	var st := MineGround.tile_of(ship.p)
 	var in_lava := false
@@ -621,8 +644,9 @@ func _process(dt: float) -> void:
 	_save_t += dt
 	if _save_t > SAVE_EVERY:
 		_save_t = 0.0
-		if ground.changed > 0:
+		if ground.changed > 0 or _soft_dirty:
 			ground.changed = 0
+			_soft_dirty = false
 			_dirty()
 
 func _sounds(dt: float, was_drilling: bool) -> void:
@@ -699,7 +723,7 @@ func _buildings_near() -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if not active or _going != 0:
 		return
-	if arena.settings_menu and arena.settings_menu.is_open():
+	if (arena.settings_menu and arena.settings_menu.is_open()) or (arena.net_menu and arena.net_menu.is_open()):
 		return
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		return
@@ -768,7 +792,7 @@ func _take(c: String) -> void:
 	tip("first_ore")
 	if cargo_count() >= cargo_cap():
 		tip("cargo_full")
-	_dirty()
+	_soft()
 
 func _on_bump(speed: float, landing: bool) -> void:
 	if landing and speed > MineShip.FALL_SAFE:
@@ -787,9 +811,10 @@ func hurt(n: float, why: String) -> void:
 	if n <= 0.0 or _going != 0:
 		return
 	hull = maxf(0.0, hull - n)
+	last_hurt = why
 	hud.flash = 0.4
 	_hurt = minf(1.0, _hurt + n * 0.08)
-	_dirty()
+	_soft()
 
 ## Out of fuel or wrecked: hauled up to the lift, the cargo lost, a fee.
 func tow(why: String) -> void:
@@ -801,6 +826,7 @@ func tow(why: String) -> void:
 	critters.stand_down()
 	ship.place(_lift_spot())
 	trip = 0.0
+	_chain.clear()
 	if why == "fuel":
 		say("Out of fuel! The tow truck dragged you up. Cargo lost, $%d fee" % fee, 4.0)
 	else:
@@ -816,6 +842,8 @@ func busted() -> void:
 	cargo.clear()
 	critters.stand_down()
 	ship.place(_lift_spot())
+	trip = 0.0
+	_chain.clear()
 	say("BUSTED! The cops took your cargo and $%d, and towed you up" % fine, 4.5)
 	sound.play("mine_siren", Vector3.INF, -2.0)
 	_dirty()
@@ -842,7 +870,7 @@ func explode(c: Vector2, rad: float, dynamite: bool) -> void:
 				_take(cg)
 	var d := c.distance_to(ship.p)
 	if not dynamite and d < rad + 1.5:
-		hurt(32.0 * (1.0 - d / (rad + 1.5)), "gas")
+		hurt(28.0 * (1.0 - d / (rad + 1.5)), "gas")
 		ship.v += (ship.p - c).normalized() * 6.0
 	critters.blast(c, rad + 0.5)
 	worm.blast(c, rad)
@@ -851,7 +879,7 @@ func explode(c: Vector2, rad: float, dynamite: bool) -> void:
 	spark(c, Color8(255, 180, 80), 26)
 	_boom_light.position = Vector3(c.x, c.y, 1.2)
 	_boom_light.light_energy = 6.0
-	_dirty()
+	_soft()
 
 ## A burst of sparks at c.
 func spark(c: Vector2, col: Color, n := 14) -> void:
@@ -896,7 +924,7 @@ func tip(id: String) -> void:
 		return
 	tips_done[id] = true
 	hud.tip(String(TIPS[id]))
-	_dirty()
+	_soft()
 
 func pay(n: int) -> void:
 	arena.cash += n
@@ -1025,6 +1053,7 @@ func new_claim() -> void:
 	if not _spend(MineShop.CLAIM_COST):
 		return
 	critters.clear()
+	_chain.clear()
 	ground.generate(randi() % 1000000 + 1, _flags())
 	ground.build_all()
 	_feature_lights()

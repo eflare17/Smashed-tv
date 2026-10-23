@@ -17,6 +17,9 @@ var failed := 0
 var v := {}
 
 func _initialize() -> void:
+	for x in OS.get_cmdline_user_args():
+		if x.begins_with("--seed="):
+			seed(int(x.trim_prefix("--seed=")))
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
 
@@ -47,6 +50,9 @@ func count(t_: int, r0: int, r1: int) -> int:
 func next(s: int) -> void:
 	step = s
 	mark = t
+	if m and step >= 4 and step != 15:
+		m.fuel = m.tank_max()         # (each check on its own: not towed for running dry mid-test)
+		m.hull = maxf(m.hull, m.hull_max())
 
 func _process(dt: float) -> bool:
 	t += dt
@@ -177,39 +183,52 @@ func _process(dt: float) -> bool:
 				m.auto = {}
 				check(m.hull < float(v.hull) - 3.0, "the gas went off: hull %.0f -> %.0f" % [v.hull, m.hull])
 				check(g.at(22, 66) == MineTiles.AIR and g.at(22, 65) == MineTiles.AIR, "and blew the rock open round it")
-				# lava: open a pocket's side
-				var lp: Vector2i = g.features.lava[0]
-				var lx := lp.x
-				var lr := lp.y
-				while g.at(lx, lr) == MineTiles.LAVA:
-					lx += 1
+				# lava: a lava tile with rock to its right; dig a tunnel off it with a floor under it
+				var lx := -1
+				var lr := -1
+				for i in g.tiles.size():
+					var x := i % MineGround.W
+					var r := i / MineGround.W
+					if g.tiles[i] == MineTiles.LAVA and x < MineGround.W - 7 and MineTiles.solid(g.at(x + 1, r)) and g.at(x + 1, r) != MineTiles.LAVA:
+						lx = x + 1
+						lr = r
+						break
 				v.lava_x = lx
 				v.lava_r = lr
 				for k in 4:
 					g.set_tile(lx + k, lr, MineTiles.AIR)
+					if not MineTiles.solid(g.at(lx + k, lr + 1)) or g.at(lx + k, lr + 1) == MineTiles.LAVA:
+						g.set_tile(lx + k, lr + 1, MineTiles.STONE)
 				m.ship.place(Vector2(10.5, MineShip.HALF + 0.002))
 				next(9)
 		9:
+			var now := 0
+			for k in 4:
+				if g.at(int(v.lava_x) + k, int(v.lava_r)) == MineTiles.LAVA:
+					now += 1
+			v.lava_max = maxi(int(v.get("lava_max", 0)), now)
 			if e > 3.0:
-				var moved := 0
-				for k in 4:
-					if g.at(int(v.lava_x) + k, int(v.lava_r)) == MineTiles.LAVA or g.at(int(v.lava_x) + k, int(v.lava_r) + 1) == MineTiles.LAVA:
-						moved += 1
-				check(moved > 0, "lava flowed out into the dug tiles (%d)" % moved)
-				# the mushroom trip
+				var moved: int = v.lava_max
+				var row := ""
+				for k in range(-2, 6):
+					row += "%d,%d " % [g.at(int(v.lava_x) + k, int(v.lava_r)), g.at(int(v.lava_x) + k, int(v.lava_r) + 1)]
+				check(moved > 0, "lava flowed out into the dug tiles (%d) at %d,%d: %s; hull %.1f; %s" % [moved, v.lava_x, v.lava_r, row, m.hull, m.hud._say])
+				# the mushroom trip: an open tile in the first cave with floor under it
 				var c: Array = g.features.caves[0]
 				var cx := int(c[0])
 				var cr := int(c[1])
-				while g.at(cx, cr + 1) == MineTiles.AIR or g.at(cx, cr) != MineTiles.AIR:
-					cr += 1 if g.at(cx, cr) == MineTiles.AIR else -1
-					if cr > int(c[1]) + 6 or cr < int(c[1]) - 6:
-						break
+				for r in range(int(c[1]) - 4, int(c[1]) + 5):
+					for x in range(int(c[0]) - 6, int(c[0]) + 7):
+						if g.at(x, r) == MineTiles.AIR and g.bg_at(x, r) == MineTiles.BG_MUSH and MineTiles.solid(g.at(x, r + 1)):
+							cx = x
+							cr = r
 				sit(cx, cr)
 				m.trip = 0.0
 				next(10)
 		10:
 			if e > 4.0:
-				check(m.trip > 0.25 and m.ship.grav_k < 0.95, "tripping in the mushroom cave: %.2f, gravity x%.2f" % [m.trip, m.ship.grav_k])
+				var stt := MineGround.tile_of(m.ship.p)
+				check(m.trip > 0.25 and m.ship.grav_k < 0.95, "tripping in the mushroom cave: %.2f, gravity x%.2f (ship at %s, %s, bg %d, cave %s; %s)" % [m.trip, m.ship.grav_k, m.ship.p, stt, g.bg_at(stt.x, stt.y), g.features.caves[0], m.hud._say + " / " + m.last_hurt])
 				m.trip = 0.0
 				# the cop bunker
 				var b: Array = g.features.bunker
@@ -229,18 +248,24 @@ func _process(dt: float) -> bool:
 				var pd: Dictionary = m.critters.pods[0] if not m.critters.pods.is_empty() else {}
 				check(not pd.is_empty(), "the rival crew's pods: %d" % m.critters.pods.size())
 				if not pd.is_empty():
-					var pt := MineGround.tile_of(pd.p)
-					var sx := pt.x
-					# a tile beside it in the tunnel
-					for o in [2, -2, 1, -1, 3, -3]:
-						if g.at(pt.x + o, pt.y) == MineTiles.AIR:
-							sx = pt.x + o
+					# a stretch of the main tunnel: the ship at one end, the pod four along
+					for cc in g.features.rival:
+						var ok := true
+						for k in 5:
+							if g.at(cc.x + k, cc.y) != MineTiles.AIR or not MineTiles.solid(g.at(cc.x + k, cc.y + 1)):
+								ok = false
+						if ok:
+							sit(cc.x, cc.y)
+							pd.p = MineGround.centre(cc.x + 4, cc.y)
+							pd.chase = false
 							break
-					sit(sx, pt.y)
 				next(12)
 		12:
 			if e > 6.0:
-				check(m.hull < float(v.hull), "rammed by the rival crew: hull %.0f -> %.0f" % [v.hull, m.hull])
+				var pinfo := ""
+				for pd2 in m.critters.pods:
+					pinfo += "%s chase %s cool %.1f field %d; " % [pd2.p, pd2.chase, pd2.cool, int(m.critters._field.get(MineGround.tile_of(pd2.p), -1))]
+				check(m.hull < float(v.hull), "rammed by the rival crew: hull %.0f -> %.0f (ship %s; %s)" % [v.hull, m.hull, m.ship.p, pinfo])
 				# the sewer rats
 				m.hull = m.hull_max()
 				v.hull = m.hull
@@ -298,6 +323,31 @@ func _process(dt: float) -> bool:
 		15:
 			if e > 0.5:
 				check(m.cargo.is_empty() and m.ship.p.y > 0.0 and m.fuel > 0.0, "out of fuel: towed up, cargo lost")
+				# out of fuel up top, away from the pumps: not stuck there for ever
+				m.ship.place(Vector2(14.0, MineShip.HALF + 0.002))
+				m.fuel = 0.0
+				next(17)
+		17:
+			if e > 0.5:
+				check(m.fuel > 0.0, "out of fuel up top: towed too (not stuck with no way to move)")
+				# a lone bit of lava on a flat floor settles (doesn't slosh about for ever)
+				for x in range(18, 27):
+					g.set_tile(x, 50, MineTiles.AIR)
+					g.set_tile(x, 51, MineTiles.STONE)
+					g.set_tile(x, 49, MineTiles.STONE)
+				g.set_tile(17, 50, MineTiles.STONE)
+				g.set_tile(27, 50, MineTiles.STONE)
+				g.set_tile(22, 50, MineTiles.LAVA)
+				next(18)
+		18:
+			if g.at(22, 50) != MineTiles.LAVA:
+				v.lava_moved = true
+			if e > 3.0:
+				check(not v.has("lava_moved"), "a lone bit of lava stays put")
+				# quit down there: back down there next time
+				sit(20, 60)
+				var d2: Dictionary = m.save_data()
+				check(d2.has("ship") and absf(float(d2.ship[1]) - m.ship.p.y) < 0.01, "where the ship was left underground is saved")
 				m.leave()
 				next(16)
 		16:

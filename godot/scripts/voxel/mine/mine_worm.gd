@@ -279,7 +279,7 @@ func _hoard(at: Vector2) -> void:
 				var tt := ground.at(x, r)
 				if tt == MineTiles.BEDROCK or tt == MineTiles.PAD or tt == MineTiles.HOARD or tt == MineTiles.LAVA:
 					continue
-				if MineGround.centre(x, r).distance_to(mine.ship.p) < 1.2:
+				if MineGround.centre(x, r).distance_to(mine.ship.p) < 1.45:
 					continue
 				if randf() < 0.6:
 					ground.set_tile(x, r, MineTiles.HOARD)
