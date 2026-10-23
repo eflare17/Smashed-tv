@@ -171,7 +171,8 @@ func step(dt: float) -> void:
 			var gap := _seg_p[i] - ship.p
 			var near := gap.length() < 1.05
 			var into := ship.v.dot(gap.normalized()) > 3.5
-			var drill := ship.drilling and MineGround.centre(ship.drill_tile.x, ship.drill_tile.y).distance_to(_seg_p[i]) < 1.0
+			var tipp := ship.p + (Vector2(ship.drill_dir.x * 0.7, 0.0) if ship.drill_dir.y == 0.0 else Vector2(0.0, -0.7))
+			var drill := ship.drilling and tipp.distance_to(_seg_p[i]) < 0.9
 			if near and (into or drill):
 				hurt(10.0 if into else 6.0)
 				_hurt_cool = 0.35
@@ -189,15 +190,9 @@ func _steer(want: Vector2, dt: float, speed: float, turn: float) -> void:
 	if np.distance_to(head + dir * speed * dt) > 0.01:
 		dir = (np - head).normalized() if (np - head).length() > 0.001 else -dir
 	head = np
-	# burrowing: what's round its head is eaten away
-	var t := MineGround.tile_of(head)
-	for r in range(t.y - 1, t.y + 2):
-		for x in range(t.x - 1, t.x + 2):
-			var tt := ground.at(x, r)
-			if tt == MineTiles.AIR or tt == MineTiles.BEDROCK or tt == MineTiles.PAD or tt == MineTiles.LAVA or tt == MineTiles.HOARD:
-				continue
-			if MineGround.centre(x, r).distance_to(head) < 0.95:
-				ground.set_tile(x, r, MineTiles.AIR)
+	# burrowing: what's round its head is eaten away (chunks flying), but not bedrock
+	var hc := Vector2(head.x * MineGround.C, -head.y * MineGround.C + MineGround.SKY)
+	ground.sim.dig(hc.x, hc.y, 0.9 * MineGround.C, 0.9 * MineGround.C, 0.9 * MineGround.C, 999.0, 9, dt, 0.12, dir.x, -dir.y, false)
 	if _trail.is_empty() or _trail[0].distance_to(head) > GAP * 0.25:
 		_trail.push_front(head)
 		if _trail.size() > SEGS * 5:
@@ -221,7 +216,7 @@ func _place() -> void:
 		_seg_p[i] = _seg_p[i - 1] - dir * GAP * 0.5
 	for i in SEGS:
 		var s := _segs[i]
-		s.position = Vector3(_seg_p[i].x, _seg_p[i].y + sin(_t * 6.0 - i * 0.7) * 0.05, 0.0)
+		s.position = Vector3(_seg_p[i].x, _seg_p[i].y + sin(_t * 6.0 - i * 0.7) * 0.05, 0.4)
 		var ahead := _seg_p[i - 1] if i > 0 else head + dir
 		var f := ahead - _seg_p[i]
 		if f.length() > 0.001:
@@ -268,19 +263,10 @@ func _die_step(dt: float) -> void:
 		_hoard(head)
 		mine.on_worm_dead()
 
+## Its hoard: a heap of loose diamonds tumbling out where it died (clear of the ship)
 func _hoard(at: Vector2) -> void:
-	var t := MineGround.tile_of(at)
-	var n := 0
-	for rad in [1, 2, 3]:
-		for r in range(t.y - rad, t.y + rad + 1):
-			for x in range(t.x - rad, t.x + rad + 1):
-				if n >= 14:
-					return
-				var tt := ground.at(x, r)
-				if tt == MineTiles.BEDROCK or tt == MineTiles.PAD or tt == MineTiles.HOARD or tt == MineTiles.LAVA:
-					continue
-				if MineGround.centre(x, r).distance_to(mine.ship.p) < 1.45:
-					continue
-				if randf() < 0.6:
-					ground.set_tile(x, r, MineTiles.HOARD)
-					n += 1
+	var c := MineGround.cell(at)
+	var away: Vector2 = at + (at - mine.ship.p).normalized() * 0.6 if at.distance_to(mine.ship.p) < 1.6 else at
+	c = MineGround.cell(away)
+	ground.sim.deposit(c.x + 0.5, c.y + 0.5, 1.3 * MineGround.C, MineTiles.HOARD, true)
+	ground.sim.spray(c.x + 0.5, c.y + 0.5, MineTiles.HOARD, 40, 0.0, -1.0, 2.0)

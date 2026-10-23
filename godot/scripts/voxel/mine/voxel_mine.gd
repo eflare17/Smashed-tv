@@ -25,6 +25,13 @@ const BUMP_HURT := 2.0
 const TRIP_UP := 1.0 / 10.0     # the trip coming on a second in a mushroom cave ...
 const TRIP_DOWN := 1.0 / 18.0   # ... and wearing off
 const SAVE_EVERY := 8.0
+const AMMO_ORDER := ["dirt", "clay", "sand"]
+const AMMO_MAT := {"dirt": MineTiles.DIRT, "clay": MineTiles.CLAY, "sand": MineTiles.SAND}
+const AMMO_NAME := {"dirt": "Dirt", "clay": "Clay (sticks)", "sand": "Sand"}
+const AMMO_MAX := 600           # cells of each the hopper holds
+const SHOT_CELLS := 14          # cells a shot takes
+const SHOT_EVERY := 0.22
+const NUG_RARE := ["gold", "opal", "diamond", "hoard", "evidence", "stash", "shroom"]
 
 const TIPS := {
 	"welcome": "Welcome to the mine! A/D drives (push into rock to drill through it), S drills down, W or Space flies you up. Fuel runs down all the time: keep an eye on it.",
@@ -98,7 +105,7 @@ var hud: MineHud
 var auto = null                 # (tests) a Dictionary of held keys {x, up, down} in place of the keyboard
 var cam_hold := false           # (tests, pictures) the camera left where it's put
 # what's kept (saved)
-var upg := {"drill": 0, "tank": 0, "cargo": 0, "hull": 0, "lights": 0}
+var upg := {"drill": 0, "tank": 0, "cargo": 0, "hull": 0, "lights": 0, "launcher": 0}
 var fuel := 12.0
 var hull := 30.0
 var cargo := {}
@@ -133,6 +140,25 @@ var _cam_at := Vector3(25, 0, 12)
 var _soft_dirty := false
 var last_hurt := ""             # what hurt the ship last ("fall", "lava", "rats" ...)
 var _resume := Vector2.INF      # where the ship was left underground (a quit down there): back there next time
+# the launcher (Sand Miner's): dirt, clay and sand the drill brings up, shot where the mouse points
+var ammo := {"dirt": 0, "clay": 0, "sand": 0}
+var ammo_sel := "dirt"
+var aim := Vector2.ZERO         # the world point the mouse is on
+var aiming := false             # the mouse is over the mine (the HUD draws the shot's arc)
+var _shots: Array = []          # {n: MeshInstance3D, p, v, m (material)}
+var _launch_t := 0.0
+var _nuggets: Array = []        # {n: MeshInstance3D, p, v, id, age, rare}
+var _carry := {}                # material -> cells of it drilled towards the next nugget
+var _combo := 0                 # nuggets in a row (their chime climbs)
+var _combo_t := 0.0
+var _hitstop := 0.0             # a split second's freeze on a big find
+var _crunch := 0.0              # cells broken towards the next crunch
+var _spark_t := 0.0
+var _dust_t := 0.0
+var _fools_t := 0.0
+var _touch := 0.0               # how much the drill's been biting lately (a breakthrough when it stops dead)
+var _ground_mem := PackedByteArray()     # (no save file: the tests) the ground's bytes
+var _ground_dirty := false
 
 func setup(arena_: Node3D) -> void:
 	arena = arena_
@@ -203,7 +229,7 @@ func _build() -> void:
 	ship = MineShip.new()
 	ship.ground = ground
 	world.add_child(ship)
-	ship.drilled.connect(_on_drilled)
+	ship.dug.connect(_on_dug)
 	ship.bumped.connect(_on_bump)
 	critters = MineCritters.new()
 	world.add_child(critters)
@@ -227,10 +253,10 @@ func _build() -> void:
 	hud = MineHud.new()
 	_root.add_child(hud)
 	hud.setup(self)
-	if not _save.is_empty() and typeof(_save.get("ground")) == TYPE_DICTIONARY and ground.load_data(_save.ground):
-		pass
-	else:
+	var gb := _read_ground()
+	if gb.is_empty() or not ground.load_bytes(gb):
 		ground.generate(randi() % 1000000 + 1, _flags())
+		_ground_dirty = true
 	ground.build_all()
 	_feature_lights()
 	worm.spawn(worm_dead)
@@ -489,11 +515,34 @@ func save_data() -> Dictionary:
 		d["ship"] = [ship.drill_to.x if ship.drilling else ship.p.x, ship.drill_to.y if ship.drilling else ship.p.y]     # (quit down there: back down there)
 	elif _resume != Vector2.INF:
 		d["ship"] = [_resume.x, _resume.y]
-	if _built:
-		d["ground"] = ground.save_data()
-	elif _save.has("ground"):
-		d["ground"] = _save.ground
+	d["ammo"] = ammo.duplicate()
+	_write_ground()
 	return d
+
+## Where the ground's kept: beside the backpack's save (it's big: every cell), "" for none (the tests)
+func _ground_path() -> String:
+	var sp := String(arena.stash.save_path) if arena.stash else ""
+	return "" if sp == "" else sp.get_basename() + "_mine.bin"
+
+func _read_ground() -> PackedByteArray:
+	var path := _ground_path()
+	if path != "" and FileAccess.file_exists(path):
+		return FileAccess.get_file_as_bytes(path)
+	return _ground_mem
+
+## The ground written out, if it's changed since
+func _write_ground() -> void:
+	if not _built or not _ground_dirty:
+		return
+	_ground_dirty = false
+	var b := ground.save_bytes()
+	var path := _ground_path()
+	if path == "":
+		_ground_mem = b
+		return
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_buffer(b)
 
 func load_data(d) -> void:
 	if typeof(d) != TYPE_DICTIONARY:
@@ -501,6 +550,9 @@ func load_data(d) -> void:
 	if typeof(d.get("upg")) == TYPE_DICTIONARY:
 		for k in upg:
 			upg[k] = clampi(int(d.upg.get(k, 0)), 0, 3)
+	if typeof(d.get("ammo")) == TYPE_DICTIONARY:
+		for k in ammo:
+			ammo[k] = clampi(int(d.ammo.get(k, 0)), 0, AMMO_MAX)
 	fuel = clampf(float(d.get("fuel", tank_max())), 0.0, tank_max())
 	hull = clampf(float(d.get("hull", hull_max())), 1.0, hull_max())
 	cargo = {}
@@ -525,7 +577,8 @@ func load_data(d) -> void:
 	_save = d
 	if _built:
 		worm.spawn(worm_dead)
-	if _built and typeof(d.get("ground")) == TYPE_DICTIONARY and ground.load_data(d.ground):
+	var gb := _read_ground() if _built else PackedByteArray()
+	if _built and not gb.is_empty() and ground.load_bytes(gb):
 		critters.clear()
 		ground.build_all()
 		_feature_lights()
@@ -562,17 +615,34 @@ func _process(dt: float) -> void:
 	ix = clampf(ix + drift * dk * 0.9, -1.0, 1.0)
 	ship.grav_k = lerpf(1.0, 0.4, trip)
 	var was_drilling := ship.drilling
-	ship.step(dt, ix, up, down, fuel > 0.0)
-	if ship.refused != "" and _refuse_t <= 0.0:
+	# a big find: the world holds its breath a moment
+	var frozen := _hitstop > 0.0
+	_hitstop = maxf(0.0, _hitstop - dt)
+	if not frozen:
+		ground.keep_clear = MineGround.cells_of(ship.p, Vector2(MineShip.HALF, MineShip.HALF))
+		ship.step(dt, ix, up, down, fuel > 0.0)
+		ground.keep_clear = MineGround.cells_of(ship.p, Vector2(MineShip.HALF, MineShip.HALF))
+		ground.tick(dt)
+	if ship.refused > 0 and ship.broke == 0 and _refuse_t <= 0.0:
 		_refuse_t = 1.2
-		if ship.refused == "too_hard":
+		if ship.refused >= 100:
 			say("Nothing gets through that", 1.0)
 		else:
-			var lv := int(ship.refused.substr(4))
-			say("Too hard: needs the %s drill" % String(MineShop.UPGRADES.drill.names[lv]), 1.5)
+			say("Too hard: needs the %s drill" % String(MineShop.UPGRADES.drill.names[clampi(ship.refused, 0, 3)]), 1.5)
 			tip("hard")
 		sound.play("mine_hit", Vector3.INF, -10.0, 1.6)
 	_refuse_t -= dt
+	_fools_t -= dt
+	if not ship.drilling:
+		if _touch > 6.0 and ground.count(ship.p + Vector2(ship.drill_dir.x, -absf(ship.drill_dir.y)) * 0.9, Vector2(0.4, 0.4), -6) > 30:
+			# broke through into open space
+			sound.play("mine_boom", Vector3.INF, -8.0, 1.8)
+			sound.play("mine_hit", Vector3.INF, -2.0, 0.5)
+			shake(0.3)
+		_touch = 0.0
+	_launcher(dt, menu_up)
+	_step_nuggets(dt)
+	_step_shots(dt)
 	# fuel
 	var use := FUEL_IDLE
 	if ship.thrusting:
@@ -591,16 +661,8 @@ func _process(dt: float) -> void:
 			tip("fuel_low")
 	if fuel <= 0.0 and not ship.drilling:
 		tow("fuel")                 # (anywhere, up top too: with none you can't move to the pumps)
-	# the ground: lava, gas going off one after another
-	var stl := MineGround.tile_of(ship.p)
-	ground.keep_clear = Rect2i(stl.x - 1, stl.y - 1, 3, 3)
-	ground.lava_step(dt)
-	var st := MineGround.tile_of(ship.p)
-	var in_lava := false
-	for o in [Vector2(-0.3, -0.3), Vector2(0.3, -0.3), Vector2(-0.3, 0.3), Vector2(0.3, 0.3)]:
-		var tt := MineGround.tile_of(ship.p + o)
-		if ground.at(tt.x, tt.y) == MineTiles.LAVA:
-			in_lava = true
+	# the ground: lava burning, gas going off one after another
+	var in_lava := ground.count(ship.p, Vector2(MineShip.HALF + 0.12, MineShip.HALF + 0.12), -4) > 0
 	if in_lava:
 		hurt(LAVA_BURN * dt, "lava")
 		if not _was_lava:
@@ -615,7 +677,7 @@ func _process(dt: float) -> void:
 			_chain.remove_at(i)
 			explode(at, 2.2, false)
 	# the trip
-	var bgk := ground.bg_at(st.x, st.y)
+	var bgk := ground.bg_at(ship.p)
 	if bgk == MineTiles.BG_MUSH or bgk == MineTiles.BG_CATHEDRAL:
 		trip = minf(1.0, trip + TRIP_UP * (1.6 if bgk == MineTiles.BG_CATHEDRAL else 1.0) * dt)
 		cave_t += dt
@@ -627,7 +689,7 @@ func _process(dt: float) -> void:
 		tip("sewer")
 	if bgk == MineTiles.BG_RIVAL:
 		tip("rivals")
-	critters.check_bunker(st, false)
+	critters.check_bunker(ship.p, false)
 	critters.step(dt)
 	worm.step(dt)
 	# the wreck
@@ -645,6 +707,8 @@ func _process(dt: float) -> void:
 	if _save_t > SAVE_EVERY:
 		_save_t = 0.0
 		if ground.changed > 0 or _soft_dirty:
+			if ground.changed > 0:
+				_ground_dirty = true
 			ground.changed = 0
 			_soft_dirty = false
 			_dirty()
@@ -666,7 +730,7 @@ func _view(dt: float) -> void:
 	var sky := clampf(1.0 - depth / 9.0, 0.0, 1.0)
 	var deep := clampf(depth / float(MineGround.D), 0.0, 1.0)
 	sun.light_energy = 1.1 * sky
-	env.ambient_light_energy = lerpf(lerpf(0.17, 0.04, deep), 0.8, sky)
+	env.ambient_light_energy = lerpf(lerpf(0.24, 0.06, deep), 0.8, sky)
 	env.ambient_light_color = Color(0.7, 0.75, 0.85).lerp(Color(0.5, 0.45, 0.6), deep)
 	env.background_color = Color8(120, 170, 220).lerp(Color(0, 0, 0), 1.0 - sky)
 	var want := Vector3(clampf(ship.p.x, 10.5, MineGround.W - 10.5), ship.p.y + 0.6 + sky * 1.5, 12.0)
@@ -674,6 +738,7 @@ func _view(dt: float) -> void:
 		_cam_at = _cam_at.lerp(want, minf(1.0, dt * 6.0)) if _cam_at.distance_to(want) < 12.0 else want
 		_shake = maxf(0.0, _shake - dt * 1.8)
 		cam.position = _cam_at + Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * 0.25
+	ground.view(Vector2(cam.position.x, cam.position.y))
 	_hurt = maxf(0.0, _hurt - dt * 2.0)
 	screen_mat.set_shader_parameter("trip", trip)
 	screen_mat.set_shader_parameter("dark", lerpf(0.15, 0.85, clampf(depth / 60.0, 0.0, 1.0)))
@@ -682,7 +747,7 @@ func _view(dt: float) -> void:
 	_lava_t -= dt
 	if _lava_t <= 0.0:
 		_lava_t = 0.4
-		var near := ground.lava_near(ship.p, _lava_lights.size())
+		var near := _lava_near()
 		for i in _lava_lights.size():
 			var l := _lava_lights[i]
 			if i < near.size():
@@ -744,6 +809,12 @@ func _unhandled_input(e: InputEvent) -> void:
 			use_item("repair")
 		KEY_3:
 			use_item("teleport")
+		KEY_Q:
+			ammo_sel = AMMO_ORDER[(AMMO_ORDER.find(ammo_sel) + 1) % AMMO_ORDER.size()]
+			say("Launcher: %s (%d)" % [AMMO_NAME[ammo_sel], int(ammo[ammo_sel])], 1.2)
+		KEY_F:
+			_launch_t = 0.0
+			shoot()
 		KEY_ESCAPE:
 			if _near == "":
 				say("Up at the LIFT (top left) to leave the mine", 2.0)
@@ -763,31 +834,120 @@ func use() -> void:
 
 # ---------------------------------------------------------------- what the drill brings up
 
-func _on_drilled(x: int, r: int, t: int) -> void:
-	var c := String(MineTiles.info(t).cargo)
-	ground.set_tile(x, r, MineTiles.AIR)
-	match t:
-		MineTiles.GAS:
-			tip("gas")
-			explode(MineGround.centre(x, r), 2.2, false)
-			return
-		MineTiles.FOOLS:
-			say("Fool's gold! It crumbled to dust", 1.8)
-			sound.play("mine_crumble", Vector3.INF, -2.0)
-			return
-		MineTiles.CONCRETE, MineTiles.EVIDENCE:
-			critters.check_bunker(Vector2i(x, r), true)
-	if c != "":
-		_take(c)
+## What the drill broke this step: ore towards nuggets (they pop out and fly to the ship), dirt, clay and sand into
+## the launcher's hopper, gas going off, fool's gold crumbling, the bunker's walls setting off its alarm; and the
+## feel of it: the crunch, sparks off hard rock, dust, the shake.
+func _on_dug(res: Dictionary, dir: Vector2) -> void:
+	var counts: PackedInt32Array = res.counts
+	var sx: PackedFloat32Array = res.sx
+	var sy: PackedFloat32Array = res.sy
+	var broke := int(res.broke)
+	var hard := float(res.hard)
+	_touch = minf(30.0, _touch * 0.9 + float(res.touched))
+	for m in counts.size():
+		var n := counts[m]
+		if n <= 0:
+			continue
+		var at := MineGround.world(Vector2i(int(sx[m] / n), int(sy[m] / n)))
+		match m:
+			MineTiles.GAS:
+				tip("gas")
+				explode(at, 2.2, false)
+				return
+			MineTiles.FOOLS:
+				if _fools_t <= 0.0:
+					_fools_t = 2.5
+					say("Fool's gold! It crumbled to dust", 1.8)
+					sound.play("mine_crumble", Vector3.INF, -2.0)
+			MineTiles.CONCRETE, MineTiles.EVIDENCE:
+				critters.check_bunker(at, true)
+		for a in AMMO_ORDER:
+			if int(AMMO_MAT[a]) == m:
+				ammo[a] = mini(AMMO_MAX, int(ammo[a]) + n)
+		_ore(m, n, at)
+	if broke > 0:
+		_crunch += broke
+		if _crunch >= 6.0:
+			_crunch = 0.0
+			sound.play("mine_crunch", Vector3.INF, -6.0 + minf(4.0, broke * 0.3), clampf(1.35 - hard * 0.2, 0.6, 1.4), 0.15)
+		var tipp := ship.p + (Vector2(dir.x * (MineShip.HALF + 0.3), 0.0) if dir.y == 0.0 else Vector2(0.0, -MineShip.HALF - 0.3))
+		_spark_t -= get_process_delta_time()
+		if hard >= 0.9 and _spark_t <= 0.0:
+			_spark_t = 0.07
+			spark(tipp, Color(1.0, 0.75, 0.35).lerp(Color(1, 1, 1), ship.heat), 5 + int(hard * 2.0))
+		_dust_t -= get_process_delta_time()
+		if _dust_t <= 0.0:
+			_dust_t = 0.18
+			_dust(tipp)
+		shake(minf(0.22, 0.03 + hard * 0.05))
 
-func _take(c: String) -> void:
+## Drilled cells of material m (n of them, around at) towards nuggets of what it is
+func _ore(m: int, n: int, at: Vector2) -> void:
+	var inf := MineTiles.info(m)
+	var id := String(inf.cargo)
+	if id == "":
+		return
+	var per := maxi(1, int(inf.per))
+	_carry[m] = float(_carry.get(m, 0.0)) + n
+	var made := 0
+	while float(_carry[m]) >= per and made < 6:
+		_carry[m] = float(_carry[m]) - per
+		made += 1
+		_nugget(id, m, at)
+
+## A nugget popping out of the rock (it flies to the ship after a moment)
+func _nugget(id: String, m: int, at: Vector2) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.16, 0.16, 0.16)
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	var sh := MineTiles.shades(m)
+	mat.albedo_color = sh[6]
+	mat.emission_enabled = true
+	mat.emission = sh[7]
+	mat.emission_energy_multiplier = 1.2
+	mi.material_override = mat
+	mi.position = Vector3(at.x, at.y, 0.5)
+	world.add_child(mi)
+	var rare := id in NUG_RARE
+	_nuggets.append({"n": mi, "p": at, "v": Vector2(randf_range(-1.5, 1.5), randf_range(2.5, 4.5)), "id": id, "age": 0.0})
+	if rare:
+		_hitstop = maxf(_hitstop, 0.07)
+		shake(0.25)
+		sound.play("mine_clink", Vector3.INF, 0.0, 1.5)
+
+func _step_nuggets(dt: float) -> void:
+	_combo_t -= dt
+	if _combo_t <= 0.0:
+		_combo = 0
+	for i in range(_nuggets.size() - 1, -1, -1):
+		var g: Dictionary = _nuggets[i]
+		g.age += dt
+		var to: Vector2 = ship.p - g.p
+		if g.age > 0.3:
+			# pulled to the ship
+			g.v = (g.v as Vector2).lerp(to.normalized() * (6.0 + g.age * 6.0), minf(1.0, dt * 6.0))
+		else:
+			g.v.y -= 14.0 * dt
+		g.p += g.v * dt
+		(g.n as MeshInstance3D).position = Vector3(g.p.x, g.p.y, 0.5)
+		(g.n as MeshInstance3D).rotation += Vector3(dt * 5.0, dt * 7.0, 0)
+		if (g.age > 0.3 and to.length() < 0.45) or g.age > 4.0:
+			g.n.queue_free()
+			_nuggets.remove_at(i)
+			_combo += 1
+			_combo_t = 0.7
+			_take(String(g.id), mini(_combo, 10))
+
+func _take(c: String, combo := 1) -> void:
 	if cargo_count() >= cargo_cap():
 		say("Cargo full! The %s fell out" % String(MineShop.CARGO[c].name).to_lower(), 1.5)
 		sound.play("mine_crumble", Vector3.INF, -6.0, 1.3)
 		tip("cargo_full")
 		return
 	cargo[c] = int(cargo.get(c, 0)) + 1
-	sound.play("mine_clink", Vector3.INF, -3.0, 0.9 + MineShop.CARGO_ORDER.find(c) * 0.06)
+	sound.play("mine_clink", Vector3.INF, -3.0, 0.85 + combo * 0.07 + MineShop.CARGO_ORDER.find(c) * 0.03, 0.0)
 	hud.pop("+ " + String(MineShop.CARGO[c].name), Color8(255, 230, 140))
 	tip("first_ore")
 	if cargo_count() >= cargo_cap():
@@ -851,23 +1011,18 @@ func busted() -> void:
 ## A blast at c (dynamite, a gas pocket): the rock in reach gone (not bedrock, nor the pads), the ore in it scooped up
 ## if it was dynamite (and there's room), anyone in it hurt, gas in it going off next.
 func explode(c: Vector2, rad: float, dynamite: bool) -> void:
-	var t0 := MineGround.tile_of(c)
-	var ir := ceili(rad)
-	for r in range(t0.y - ir, t0.y + ir + 1):
-		for x in range(t0.x - ir, t0.x + ir + 1):
-			if MineGround.centre(x, r).distance_to(c) > rad:
-				continue
-			var t := ground.at(x, r)
-			if t == MineTiles.AIR or t == MineTiles.BEDROCK or t == MineTiles.PAD or t == MineTiles.LAVA or r < 0:
-				continue
-			if t == MineTiles.GAS:
-				_chain.append([0.18, MineGround.centre(x, r)])
-				ground.set_tile(x, r, MineTiles.AIR)
-				continue
-			var cg := String(MineTiles.info(t).cargo)
-			ground.set_tile(x, r, MineTiles.AIR)
-			if dynamite and cg != "" and t != MineTiles.FOOLS:
-				_take(cg)
+	var cc := MineGround.cell(c)
+	var res: Dictionary = ground.sim.explode(cc.x + 0.5, cc.y + 0.5, rad * MineGround.C, 0.45)
+	var counts: PackedInt32Array = res.counts
+	for m in counts.size():
+		if counts[m] > 0 and dynamite and m != MineTiles.FOOLS:
+			_ore(m, counts[m], c)
+	# gas just outside it goes off next
+	if counts[MineTiles.GAS] > 0:
+		var r := int((rad + 1.6) * MineGround.C)
+		var g: PackedInt32Array = ground.sim.find(MineTiles.GAS, cc.x - r, cc.y - r, cc.x + r, cc.y + r, 1)
+		if g.size() >= 2:
+			_chain.append([0.18, MineGround.world(Vector2i(g[0], g[1]))])
 	var d := c.distance_to(ship.p)
 	if not dynamite and d < rad + 1.5:
 		hurt(28.0 * (1.0 - d / (rad + 1.5)), "gas")
@@ -876,10 +1031,124 @@ func explode(c: Vector2, rad: float, dynamite: bool) -> void:
 	worm.blast(c, rad)
 	sound.play("mine_boom", Vector3.INF, 0.0 if not dynamite else -2.0)
 	shake(0.7)
+	_hitstop = maxf(_hitstop, 0.05)
 	spark(c, Color8(255, 180, 80), 26)
 	_boom_light.position = Vector3(c.x, c.y, 1.2)
 	_boom_light.light_energy = 6.0
 	_soft()
+
+## A puff of dust at c
+func _dust(c: Vector2) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.emitting = true
+	p.amount = 6
+	p.lifetime = 0.7
+	p.explosiveness = 0.9
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 70.0
+	p.initial_velocity_min = 0.4
+	p.initial_velocity_max = 1.2
+	p.gravity = Vector3(0, 0.3, 0)
+	p.scale_amount_min = 0.18
+	p.scale_amount_max = 0.4
+	var sm := SphereMesh.new()
+	sm.radius = 0.5
+	sm.height = 1.0
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.55, 0.48, 0.4, 0.35)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.material = m
+	p.mesh = sm
+	p.position = Vector3(c.x, c.y, 0.55)
+	world.add_child(p)
+	_sparks.append([p, 1.0])
+
+## Lava open to the air near the ship (for the glow on what's round it): a few spots, spread out
+func _lava_near() -> Array:
+	var c := MineGround.cell(ship.p)
+	var r := 14 * MineGround.C
+	var f: PackedInt32Array = ground.sim.find(MineTiles.LAVA, c.x - r, c.y - r, c.x + r, c.y + r, 400)
+	var out := []
+	var i := 0
+	while i < f.size() and out.size() < _lava_lights.size():
+		var p := MineGround.world(Vector2i(f[i], f[i + 1]))
+		var far := true
+		for q in out:
+			if (q as Vector2).distance_to(p) < 2.5:
+				far = false
+				break
+		if far:
+			out.append(p)
+		i += 2
+	return out
+
+# ---------------------------------------------------------------- the launcher
+
+## Right mouse (held) or F: a shot of what's picked (Q) toward the mouse
+func _launcher(dt: float, menu_up: bool) -> void:
+	_launch_t = maxf(0.0, _launch_t - dt)
+	var mp := arena.get_viewport().get_mouse_position()
+	var vr := arena.get_viewport().get_visible_rect()
+	aiming = not menu_up and vr.has_point(mp) and auto == null
+	var o := cam.project_ray_origin(mp)
+	var n := cam.project_ray_normal(mp)
+	if absf(n.z) > 0.0001:
+		var t := -o.z / n.z
+		aim = Vector2(o.x + n.x * t, o.y + n.y * t)
+	if aiming and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and _launch_t <= 0.0:
+		shoot()
+
+func launch_speed() -> float:
+	return MineShop.k("launcher", int(upg.get("launcher", 0)))
+
+## The shot's start and velocity toward the aim
+func shot_start() -> Array:
+	var from := ship.p + Vector2(0, 0.25)
+	var dir := (aim - from).normalized() if aim.distance_to(from) > 0.05 else Vector2(ship.face, 0.3).normalized()
+	return [from + dir * 0.5, dir * launch_speed()]
+
+func shoot() -> void:
+	if _launch_t > 0.0:
+		return
+	_launch_t = SHOT_EVERY
+	if int(ammo[ammo_sel]) < SHOT_CELLS:
+		say("Out of %s: drill some up" % String(AMMO_NAME[ammo_sel]).to_lower(), 1.2)
+		return
+	ammo[ammo_sel] = int(ammo[ammo_sel]) - SHOT_CELLS
+	var sv: Array = shot_start()
+	var m := int(AMMO_MAT[ammo_sel])
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.22, 0.22, 0.22)
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = MineTiles.shades(m)[4]
+	mi.material_override = mat
+	world.add_child(mi)
+	_shots.append({"n": mi, "p": sv[0], "v": sv[1], "m": m})
+	sound.play("mine_door", Vector3.INF, -12.0, 2.2)
+
+func _step_shots(dt: float) -> void:
+	for i in range(_shots.size() - 1, -1, -1):
+		var s: Dictionary = _shots[i]
+		var hit := false
+		for k in 4:
+			s.v.y -= 12.0 * dt / 4.0
+			var np: Vector2 = s.p + s.v * dt / 4.0
+			if ground.solid_at(np) or ground.count(np, Vector2(0.06, 0.06), -2) > 0 or np.y < -MineGround.D or critters.shot_hit(np):
+				hit = true
+				break
+			s.p = np
+		(s.n as MeshInstance3D).position = Vector3(s.p.x, s.p.y, 0.5)
+		if hit or s.p.y > 14.0:
+			if hit:
+				var c := MineGround.cell(s.p)
+				ground.sim.deposit(c.x + 0.5, c.y + 0.5, 2.6, int(s.m), int(s.m) == MineTiles.DIRT)
+				sound.play("mine_crumble", Vector3.INF, -8.0, 1.4)
+			s.n.queue_free()
+			_shots.remove_at(i)
 
 ## A burst of sparks at c.
 func spark(c: Vector2, col: Color, n := 14) -> void:
@@ -1055,6 +1324,7 @@ func new_claim() -> void:
 	critters.clear()
 	_chain.clear()
 	ground.generate(randi() % 1000000 + 1, _flags())
+	_ground_dirty = true
 	ground.build_all()
 	_feature_lights()
 	worm_dead = false

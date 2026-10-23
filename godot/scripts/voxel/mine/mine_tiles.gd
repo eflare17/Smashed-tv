@@ -1,16 +1,11 @@
 class_name MineTiles
 extends RefCounted
-## The dig mode's ground (the owner, 23 Oct: "build it all", the Motherload-style mine under the yard): what each 1 m
-## tile is, how hard it is to drill, what it's worth, and its picture: a 16 x 16 pixel square in one texture (the
-## atlas), drawn here in code so it can be changed. Ores and other things set in the rock are drawn over the rock of
-## their depth (the "over" pictures: see-through round them), so a gold vein in red rock shows the red rock round it.
-## Owned by the voxel session.
+## The mine's materials (the owner, 23 Oct: "the graphics from my sand digging game ... every pixel destructible"):
+## what each cell of the pixel world (MineSim) is, how hard it is to drill, what drilling it brings up, and its eight
+## shades, as Sand Miner (the cabinet game in Smashed.html) shaded its dirt, sand, water and ores; and the back walls
+## seen where it's dug. apply() hands it all to a MineSim. Owned by the voxel session.
 
-const PX := 16                  # pixels a tile's picture
-const COLS := 8                 # pictures a row in the atlas
-
-# what a tile is (the ground's tiles array) ...
-const AIR := 0                  # dug out, or open cave
+const AIR := 0
 const DIRT := 1                 # topsoil
 const CLAY := 2
 const STONE := 3                # grey stone
@@ -29,7 +24,7 @@ const GOLD := 15
 const OPAL := 16
 const DIAMOND := 17
 const FOOLS := 18               # fool's gold (in the mushroom caves): crumbles to nothing
-const SPORE := 19               # a spore clump (mushroom caves): sells
+const SPORE := 19               # spore clumps (mushroom caves): sell
 const LAVA := 20                # flows out into what you've dug, burns
 const GAS := 21                 # a gas pocket: goes off when drilled
 const BRICK := 22               # the sewers' walls
@@ -39,370 +34,140 @@ const EVIDENCE := 25            # the bunker's evidence lockers
 const STASH := 26               # the rival dealers' stockpile
 const HOARD := 27               # the worm's diamond hoard
 const SHROOM := 28              # the giant mushroom in the cathedral
-const TIMBER := 29              # the rival tunnels' props (drillable, soft)
+const TIMBER := 29              # the rival tunnels' props
+const SAND := 30                # falls and piles
+const WATER := 31               # flows and pools
+const OBSIDIAN := 32            # lava that met water
 
-# ... and what's behind an open tile (the bg array): the back wall's picture
-const BG_EARTH := 0
-const BG_MUSH := 1
-const BG_SEWER := 2
-const BG_BUNKER := 3
-const BG_RIVAL := 4
-const BG_WORM := 5
-const BG_CATHEDRAL := 6
+# the back walls (what's behind an open cell)
+const BG_SKY := 0
+const BG_DIRT := 1              # the earth's own, by zone: 1..6 (DIRT .. CRYSTAL's)
+const BG_MUSH := 10
+const BG_SEWER := 11
+const BG_BUNKER := 12
+const BG_RIVAL := 13
+const BG_WORM := 14
+const BG_CATHEDRAL := 15
 
-## Each tile: its name, how hard (seconds to drill it with the first drill), the drill level it needs, whether it's
-## drawn over the rock of its depth, what goes in the cargo hold ("": nothing), its atlas picture.
+const F := {"solid": 1, "falls": 2, "liquid": 4, "dig": 8, "twinkle": 16, "rim": 32, "crumble": 64, "softedge": 128,
+	"toplit": 256, "anim": 512, "glow": 1024, "hot": 2048, "wet": 4096, "grass": 8192}
+
+## Each material: name, hardness (seconds a metre to drill with the first drill; < 0 never), the drill level it
+## needs, what goes in the hold ("" nothing), cells a cargo item, its ways, its colour (the base of its shades) or
+## shades of its own, what it glows
 const INFO := {
-	AIR: {"name": "air", "hard": 0.0, "need": 0, "over": false, "cargo": "", "pic": 0},
-	DIRT: {"name": "topsoil", "hard": 0.32, "need": 0, "over": false, "cargo": "", "pic": 1},
-	CLAY: {"name": "clay", "hard": 0.5, "need": 0, "over": false, "cargo": "", "pic": 2},
-	STONE: {"name": "stone", "hard": 0.95, "need": 0, "over": false, "cargo": "", "pic": 3},
-	RED: {"name": "red rock", "hard": 1.5, "need": 0, "over": false, "cargo": "", "pic": 4},
-	BASALT: {"name": "basalt", "hard": 2.2, "need": 0, "over": false, "cargo": "", "pic": 5},
-	CRYSTAL: {"name": "crystal rock", "hard": 3.0, "need": 0, "over": false, "cargo": "", "pic": 6},
-	BEDROCK: {"name": "bedrock", "hard": -1.0, "need": 0, "over": false, "cargo": "", "pic": 7},
-	PAD: {"name": "concrete pad", "hard": -1.0, "need": 0, "over": false, "cargo": "", "pic": 8},
-	HARD1: {"name": "granite boulder", "hard": 2.0, "need": 1, "over": true, "cargo": "", "pic": 9},
-	HARD2: {"name": "ironstone boulder", "hard": 3.0, "need": 2, "over": true, "cargo": "", "pic": 10},
-	HARD3: {"name": "obsidian boulder", "hard": 4.0, "need": 3, "over": true, "cargo": "", "pic": 11},
-	COAL: {"name": "coal", "hard": 0.0, "need": 0, "over": true, "cargo": "coal", "pic": 12},
-	COPPER: {"name": "copper", "hard": 0.0, "need": 0, "over": true, "cargo": "copper", "pic": 13},
-	SILVER: {"name": "silver", "hard": 0.0, "need": 0, "over": true, "cargo": "silver", "pic": 14},
-	GOLD: {"name": "gold", "hard": 0.0, "need": 0, "over": true, "cargo": "gold", "pic": 15},
-	OPAL: {"name": "opal", "hard": 0.0, "need": 0, "over": true, "cargo": "opal", "pic": 16},
-	DIAMOND: {"name": "diamond", "hard": 0.0, "need": 0, "over": true, "cargo": "diamond", "pic": 17},
-	FOOLS: {"name": "gold?", "hard": 0.0, "need": 0, "over": true, "cargo": "", "pic": 15},
-	SPORE: {"name": "spore clump", "hard": 0.25, "need": 0, "over": true, "cargo": "spore", "pic": 19},
-	LAVA: {"name": "lava", "hard": -1.0, "need": 0, "over": false, "cargo": "", "pic": 20},
-	GAS: {"name": "gas pocket", "hard": 0.0, "need": 0, "over": true, "cargo": "", "pic": 21},
-	BRICK: {"name": "old brick", "hard": 0.7, "need": 0, "over": false, "cargo": "", "pic": 22},
-	JUNK: {"name": "junk", "hard": 0.4, "need": 0, "over": true, "cargo": "junk", "pic": 23},
-	CONCRETE: {"name": "bunker concrete", "hard": 2.4, "need": 1, "over": false, "cargo": "", "pic": 24},
-	EVIDENCE: {"name": "evidence locker", "hard": 0.8, "need": 0, "over": false, "cargo": "evidence", "pic": 25},
-	STASH: {"name": "rival stash", "hard": 0.5, "need": 0, "over": true, "cargo": "stash", "pic": 26},
-	HOARD: {"name": "hoard diamond", "hard": 0.4, "need": 0, "over": true, "cargo": "hoard", "pic": 27},
-	SHROOM: {"name": "giant mushroom", "hard": 0.6, "need": 0, "over": false, "cargo": "shroom", "pic": 28},
-	TIMBER: {"name": "timber prop", "hard": 0.3, "need": 0, "over": false, "cargo": "", "pic": 29},
+	AIR: {"name": "air", "hard": 0.0, "need": 0, "cargo": "", "per": 0, "f": []},
+	DIRT: {"name": "topsoil", "hard": 0.32, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "crumble", "grass"], "col": [112, 74, 46]},
+	CLAY: {"name": "clay", "hard": 0.5, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "crumble", "softedge"], "col": [150, 92, 56]},
+	STONE: {"name": "stone", "hard": 0.95, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"], "col": [112, 112, 118]},
+	RED: {"name": "red rock", "hard": 1.5, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"], "col": [132, 56, 42]},
+	BASALT: {"name": "basalt", "hard": 2.2, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"], "col": [52, 50, 58]},
+	CRYSTAL: {"name": "crystal rock", "hard": 3.0, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "glow"],
+		"shades": [[56, 48, 92], [58, 50, 95], [60, 52, 98], [62, 53, 101], [64, 55, 104], [66, 57, 107], [70, 60, 112], [150, 120, 230]], "glow": [0.3, 0.2, 0.7]},
+	BEDROCK: {"name": "bedrock", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["solid"], "col": [26, 26, 30]},
+	PAD: {"name": "concrete pad", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["solid"], "col": [140, 140, 136]},
+	HARD1: {"name": "granite boulder", "hard": 2.0, "need": 1, "cargo": "", "per": 0, "f": ["solid", "dig", "rim"], "col": [168, 158, 148]},
+	HARD2: {"name": "ironstone boulder", "hard": 3.0, "need": 2, "cargo": "", "per": 0, "f": ["solid", "dig", "rim"], "col": [124, 88, 76]},
+	HARD3: {"name": "obsidian boulder", "hard": 4.0, "need": 3, "cargo": "", "per": 0, "f": ["solid", "dig", "rim", "glow"], "col": [44, 30, 64], "glow": [0.35, 0.15, 0.6]},
+	COAL: {"name": "coal", "hard": 1.0, "need": 0, "cargo": "coal", "per": 10, "f": ["solid", "dig", "rim"],
+		"shades": [[37, 36, 42], [39, 39, 45], [41, 41, 47], [43, 42, 50], [53, 46, 54], [53, 57, 72], [66, 69, 91], [79, 87, 117]]},
+	COPPER: {"name": "copper", "hard": 1.1, "need": 0, "cargo": "copper", "per": 10, "f": ["solid", "dig", "rim"],
+		"shades": [[94, 48, 30], [126, 62, 34], [156, 76, 38], [184, 92, 44], [204, 110, 56], [222, 132, 72], [236, 158, 98], [248, 188, 132]]},
+	SILVER: {"name": "silver", "hard": 1.2, "need": 0, "cargo": "silver", "per": 9, "f": ["solid", "dig", "rim", "twinkle"],
+		"shades": [[81, 96, 117], [98, 117, 141], [119, 141, 164], [137, 163, 186], [148, 189, 213], [171, 214, 228], [197, 227, 237], [220, 245, 248]]},
+	GOLD: {"name": "gold", "hard": 1.3, "need": 0, "cargo": "gold", "per": 9, "f": ["solid", "dig", "rim", "twinkle"],
+		"shades": [[93, 48, 20], [172, 84, 9], [207, 94, 6], [227, 112, 5], [245, 133, 3], [251, 154, 1], [251, 191, 23], [254, 223, 42]]},
+	OPAL: {"name": "opal", "hard": 1.4, "need": 0, "cargo": "opal", "per": 8, "f": ["solid", "dig", "rim", "twinkle", "glow"],
+		"shades": [[60, 120, 140], [90, 170, 190], [130, 210, 220], [240, 150, 220], [150, 230, 170], [250, 220, 140], [200, 170, 250], [245, 250, 255]], "glow": [0.35, 0.5, 0.6]},
+	DIAMOND: {"name": "diamond", "hard": 1.6, "need": 0, "cargo": "diamond", "per": 7, "f": ["solid", "dig", "rim", "twinkle", "glow"],
+		"shades": [[73, 91, 99], [97, 135, 170], [131, 168, 192], [169, 198, 222], [170, 227, 246], [194, 237, 249], [211, 249, 252], [246, 254, 254]], "glow": [0.5, 0.75, 0.85]},
+	FOOLS: {"name": "gold?", "hard": 0.6, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "rim", "twinkle"],
+		"shades": [[93, 48, 20], [172, 84, 9], [207, 94, 6], [227, 112, 5], [245, 133, 3], [251, 154, 1], [251, 191, 23], [254, 223, 42]]},
+	SPORE: {"name": "spore clump", "hard": 0.25, "need": 0, "cargo": "spore", "per": 8, "f": ["solid", "dig", "rim", "glow"],
+		"shades": [[110, 40, 120], [140, 50, 150], [170, 60, 170], [200, 80, 190], [220, 110, 210], [235, 140, 225], [245, 170, 235], [250, 210, 245]], "glow": [0.6, 0.2, 0.6]},
+	LAVA: {"name": "lava", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["liquid", "anim", "hot", "glow"],
+		"shades": [[150, 30, 10], [200, 50, 10], [240, 80, 10], [255, 110, 20], [255, 140, 30], [255, 170, 40], [255, 200, 60], [255, 230, 110]], "glow": [1.0, 0.45, 0.1]},
+	GAS: {"name": "gas pocket", "hard": 0.6, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "glow"], "col": [92, 120, 60], "glow": [0.12, 0.28, 0.04]},
+	BRICK: {"name": "old brick", "hard": 0.7, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"],
+		"shades": [[120, 64, 46], [132, 72, 50], [110, 58, 42], [126, 70, 52], [116, 62, 46], [138, 78, 56], [80, 48, 36], [64, 58, 52]]},
+	JUNK: {"name": "junk", "hard": 0.4, "need": 0, "cargo": "junk", "per": 8, "f": ["solid", "dig", "rim"],
+		"shades": [[40, 40, 44], [70, 70, 76], [200, 40, 40], [230, 230, 230], [60, 140, 70], [90, 90, 200], [150, 150, 150], [30, 30, 30]]},
+	CONCRETE: {"name": "bunker concrete", "hard": 2.4, "need": 1, "cargo": "", "per": 0, "f": ["solid", "dig"],
+		"shades": [[140, 142, 146], [132, 134, 138], [146, 148, 152], [126, 128, 132], [150, 152, 156], [120, 122, 126], [90, 92, 96], [70, 72, 76]]},
+	EVIDENCE: {"name": "evidence locker", "hard": 0.8, "need": 0, "cargo": "evidence", "per": 12, "f": ["solid", "dig"],
+		"shades": [[70, 90, 120], [74, 94, 126], [70, 90, 120], [64, 84, 112], [80, 100, 130], [230, 200, 40], [40, 50, 70], [30, 36, 50]]},
+	STASH: {"name": "rival stash", "hard": 0.5, "need": 0, "cargo": "stash", "per": 10, "f": ["solid", "dig"],
+		"shades": [[230, 230, 220], [232, 232, 222], [200, 200, 190], [216, 216, 206], [160, 124, 64], [180, 140, 80], [100, 70, 40], [80, 56, 32]]},
+	HOARD: {"name": "hoard diamond", "hard": 0.4, "need": 0, "cargo": "hoard", "per": 6, "f": ["solid", "dig", "rim", "twinkle", "glow"],
+		"shades": [[150, 200, 220], [170, 220, 240], [190, 235, 250], [210, 245, 255], [225, 250, 255], [240, 252, 255], [250, 255, 255], [255, 255, 255]], "glow": [0.7, 0.85, 1.0]},
+	SHROOM: {"name": "giant mushroom", "hard": 0.6, "need": 0, "cargo": "shroom", "per": 14, "f": ["solid", "dig", "glow"],
+		"shades": [[190, 40, 100], [210, 50, 110], [220, 60, 120], [235, 80, 140], [245, 100, 160], [250, 120, 180], [255, 240, 230], [255, 255, 250]], "glow": [0.5, 0.15, 0.35]},
+	TIMBER: {"name": "timber", "hard": 0.3, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig"],
+		"shades": [[130, 90, 50], [120, 84, 46], [110, 76, 42], [124, 86, 48], [104, 70, 38], [140, 98, 56], [70, 46, 26], [60, 40, 22]]},
+	SAND: {"name": "sand", "hard": 0.05, "need": 0, "cargo": "", "per": 0, "f": ["solid", "falls", "dig", "toplit"], "col": [224, 198, 122]},
+	WATER: {"name": "water", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["liquid", "anim", "wet"],
+		"shades": [[40, 100, 200], [44, 108, 208], [48, 114, 214], [50, 118, 222], [54, 124, 226], [58, 130, 230], [64, 138, 234], [72, 146, 238]]},
+	OBSIDIAN: {"name": "obsidian", "hard": 2.4, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "rim"], "col": [30, 22, 44]},
 }
-## The back walls' pictures (an open tile's)
-const BG_PIC := {BG_MUSH: 32, BG_SEWER: 33, BG_BUNKER: 34, BG_RIVAL: 35, BG_WORM: 36, BG_CATHEDRAL: 37}
-const PIC_GRASS := 38           # the grass on top of the ground
-const PIC_NONE := 39            # nothing (see-through): an over picture for plain rock
 
-## The ores' extra drill time over the rock round them (a share of that rock's)
-const ORE_HARD := 0.25
+## The back walls: their colour (or a material's, darkened as Sand Miner did) and pattern (0 grain, 1 brick, 2 planks,
+## 3 tiles)
+const BACKS := {
+	1: {"of": DIRT}, 2: {"of": CLAY}, 3: {"of": STONE}, 4: {"of": RED}, 5: {"of": BASALT}, 6: {"of": CRYSTAL},
+	BG_MUSH: {"col": [62, 30, 76], "pattern": 0},
+	BG_SEWER: {"col": [84, 70, 60], "pattern": 1},
+	BG_BUNKER: {"col": [76, 80, 86], "pattern": 3},
+	BG_RIVAL: {"col": [84, 58, 36], "pattern": 2},
+	BG_WORM: {"col": [84, 40, 42], "pattern": 0},
+	BG_CATHEDRAL: {"col": [44, 32, 86], "pattern": 0},
+}
+
+## Which back wall the earth has in each zone (by its rock)
+const ZONE_BACK := {DIRT: 1, CLAY: 2, STONE: 3, RED: 4, BASALT: 5, CRYSTAL: 6}
 
 static func info(t: int) -> Dictionary:
 	return INFO.get(t, INFO[AIR])
 
-## Solid: the ship can't go through it (lava and air it can)
-static func solid(t: int) -> bool:
-	return t != AIR and t != LAVA
+static func is_ore(t: int) -> bool:
+	return String(info(t).cargo) != ""
 
-## Seconds to drill the tile t set in rock (base) with the first drill (< 0: it can't be drilled)
-static func hardness(t: int, base: int) -> float:
+## Eight shades from a base colour (Sand Miner's: 0.85 .. 1.13 of it)
+static func ramp(c: Array) -> PackedColorArray:
+	var out := PackedColorArray()
+	for v in 8:
+		var f := 0.85 + v * 0.04
+		out.append(Color(minf(1.0, c[0] / 255.0 * f), minf(1.0, c[1] / 255.0 * f), minf(1.0, c[2] / 255.0 * f)))
+	return out
+
+static func shades(t: int) -> PackedColorArray:
 	var i := info(t)
-	var h := float(i.hard)
-	if h < 0.0:
-		return -1.0
-	if i.over and t != HARD1 and t != HARD2 and t != HARD3:
-		return float(info(base).hard) * (1.0 + ORE_HARD) + h
-	return h
+	if i.has("shades"):
+		var out := PackedColorArray()
+		for c in i.shades:
+			out.append(Color8(int(c[0]), int(c[1]), int(c[2])))
+		return out
+	return ramp(i.get("col", [255, 0, 255]))
 
-# ---------------------------------------------------------------- the atlas
+static func flags(t: int) -> int:
+	var n := 0
+	for f in info(t).f:
+		n |= int(F[f])
+	return n
 
-## The atlas: albedo (rgb, a = 1 where drawn) and glow (what shines in the dark), both COLS x 6 pictures.
-static func build_atlas() -> Array:
-	var rows := 6
-	var img := Image.create(COLS * PX, rows * PX, false, Image.FORMAT_RGBA8)
-	var glow := Image.create(COLS * PX, rows * PX, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	glow.fill(Color(0, 0, 0, 1))
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 4242
-	_rock(img, 1, Color8(122, 84, 52), Color8(92, 62, 38), rng, 0.25, Color8(70, 48, 30))     # topsoil, little stones in it
-	_rock(img, 2, Color8(168, 108, 70), Color8(140, 86, 56), rng, 0.08, Color8(120, 74, 48))
-	_rock(img, 3, Color8(124, 124, 128), Color8(96, 96, 102), rng, 0.18, Color8(150, 150, 156))
-	_rock(img, 4, Color8(140, 58, 44), Color8(108, 40, 32), rng, 0.2, Color8(170, 80, 60))
-	_rock(img, 5, Color8(46, 44, 50), Color8(30, 29, 34), rng, 0.22, Color8(70, 68, 78))
-	_rock(img, 6, Color8(60, 50, 96), Color8(40, 34, 70), rng, 0.15, Color8(110, 90, 170))
-	_crystals(img, glow, 6, rng)
-	_rock(img, 7, Color8(22, 22, 26), Color8(12, 12, 14), rng, 0.3, Color8(40, 40, 46))
-	_pad(img, 8)
-	_boulder(img, 9, Color8(170, 160, 150), Color8(120, 112, 104), rng)
-	_boulder(img, 10, Color8(120, 90, 80), Color8(84, 56, 50), rng)
-	_boulder(img, 11, Color8(36, 26, 52), Color8(16, 10, 26), rng, Color8(140, 90, 220))
-	_ore(img, glow, 12, Color8(24, 24, 26), Color8(70, 70, 76), Color(0, 0, 0), rng, 7)
-	_ore(img, glow, 13, Color8(196, 110, 60), Color8(240, 170, 110), Color(0.5, 0.25, 0.1), rng, 6)
-	_ore(img, glow, 14, Color8(196, 200, 210), Color8(250, 252, 255), Color(0.55, 0.6, 0.7), rng, 6)
-	_ore(img, glow, 15, Color8(230, 180, 40), Color8(255, 236, 120), Color(0.9, 0.7, 0.15), rng, 5)
-	_ore(img, glow, 16, Color8(120, 210, 220), Color8(250, 160, 230), Color(0.4, 0.7, 0.8), rng, 4, true)
-	_ore(img, glow, 17, Color8(200, 240, 255), Color8(255, 255, 255), Color(0.8, 0.95, 1.0), rng, 4)
-	_spores(img, glow, 19, rng)
-	_lava(img, glow, 20, rng)
-	_gas(img, glow, 21, rng)
-	_bricks(img, 22, Color8(120, 70, 50), Color8(70, 60, 54), 1.0)
-	_junk(img, 23, rng)
-	_concrete(img, 24, rng)
-	_locker(img, 25)
-	_stash(img, 26)
-	_ore(img, glow, 27, Color8(220, 250, 255), Color8(255, 255, 255), Color(1.0, 1.0, 1.0), rng, 9)
-	_shroom(img, glow, 28, rng)
-	_timber(img, 29)
-	# the back walls
-	_rock(img, 32, Color8(60, 30, 70), Color8(40, 20, 50), rng, 0.2, Color8(90, 40, 110))
-	_bricks(img, 33, Color8(80, 70, 60), Color8(40, 36, 32), 0.8)
-	_tiles(img, 34)
-	_planks(img, 35)
-	_rock(img, 36, Color8(80, 40, 40), Color8(50, 22, 24), rng, 0.3, Color8(110, 60, 60))
-	_rock(img, 37, Color8(40, 30, 80), Color8(24, 18, 56), rng, 0.2, Color8(80, 60, 160))
-	_grass(img, 38, rng)
-	return [img, glow]
-
-static func origin(pic: int) -> Vector2i:
-	return Vector2i((pic % COLS) * PX, (pic / COLS) * PX)
-
-## The atlas UV rectangle of a picture (inset half a pixel so the next picture doesn't bleed in)
-static func uv(pic: int) -> Rect2:
-	var o := origin(pic)
-	var w := float(COLS * PX)
-	var h := float(6 * PX)
-	return Rect2((o.x + 0.02) / w, (o.y + 0.02) / h, (PX - 0.04) / w, (PX - 0.04) / h)
-
-static func _rock(img: Image, pic: int, a: Color, b: Color, rng: RandomNumberGenerator, specks: float, speck: Color) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var n := _vn(x, y, pic) * 0.6 + rng.randf() * 0.4
-			var c := a.lerp(b, n)
-			if rng.randf() < specks * 0.3:
-				c = speck
-			img.set_pixel(o.x + x, o.y + y, c)
-	# a faint crack
-	for k in 1:
-		var x := rng.randi_range(2, PX - 3)
-		var y := rng.randi_range(2, PX - 3)
-		for s in rng.randi_range(3, 5):
-			img.set_pixel(o.x + x, o.y + y, b.darkened(0.12))
-			x = clampi(x + rng.randi_range(-1, 1), 0, PX - 1)
-			y = clampi(y + 1, 0, PX - 1)
-
-## smooth-ish value noise over a picture (so the rock has patches, not just grain)
-static func _vn(x: int, y: int, s: int) -> float:
-	var fx := x / 5.0
-	var fy := y / 5.0
-	var ix := floori(fx)
-	var iy := floori(fy)
-	var tx := fx - ix
-	var ty := fy - iy
-	var h := func(i: int, j: int) -> float: return float(absi((i * 73856093) ^ (j * 19349663) ^ (s * 83492791)) % 997) / 997.0
-	return lerpf(lerpf(h.call(ix, iy), h.call(ix + 1, iy), tx), lerpf(h.call(ix, iy + 1), h.call(ix + 1, iy + 1), tx), ty)
-
-static func _blob(img: Image, o: Vector2i, cx: float, cy: float, r: float, c: Color, hi: Color) -> void:
-	for y in PX:
-		for x in PX:
-			var d := Vector2(x + 0.5 - cx, y + 0.5 - cy).length()
-			if d <= r:
-				img.set_pixel(o.x + x, o.y + y, hi if (x + 0.5 - cx) < -r * 0.2 and (y + 0.5 - cy) < -r * 0.2 else c)
-
-static func _ore(img: Image, glow: Image, pic: int, c: Color, hi: Color, g: Color, rng: RandomNumberGenerator, n: int, rainbow := false) -> void:
-	var o := origin(pic)
-	for k in n:
-		var cx := rng.randf_range(3.0, PX - 3.0)
-		var cy := rng.randf_range(3.0, PX - 3.0)
-		var r := rng.randf_range(1.3, 2.4)
-		var cc := c
-		if rainbow:
-			cc = Color.from_hsv(rng.randf(), 0.5, 0.95)
-		_blob(img, o, cx, cy, r, cc, hi)
-		# outline: a darker rim so it reads on any rock
-		for y in PX:
-			for x in PX:
-				var d := Vector2(x + 0.5 - cx, y + 0.5 - cy).length()
-				if d > r and d <= r + 0.8 and img.get_pixel(o.x + x, o.y + y).a < 0.5:
-					img.set_pixel(o.x + x, o.y + y, cc.darkened(0.6))
-		if g != Color(0, 0, 0):
-			glow.set_pixel(o.x + int(cx - r * 0.4), o.y + int(cy - r * 0.4), g)
-
-static func _crystals(img: Image, glow: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for k in 2:
-		var x := rng.randi_range(2, PX - 3) if k == 0 else rng.randi_range(9, PX - 3)
-		var y := rng.randi_range(6, PX - 2)
-		var h := rng.randi_range(3, 5)
-		var col := Color.from_hsv(rng.randf_range(0.5, 0.85), 0.6, 1.0)
-		for j in h:
-			for w in [0, 1]:
-				if y - j >= 0 and x + w < PX:
-					img.set_pixel(o.x + x + w, o.y + y - j, col if w == 0 else col.darkened(0.3))
-					glow.set_pixel(o.x + x + w, o.y + y - j, col * (0.5 if w == 0 else 0.25))
-
-static func _pad(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(150, 150, 146) if (y < 3) else Color8(120, 120, 116)
-			if (x + y * 3) % 7 == 0:
-				c = c.darkened(0.08)
-			if y == 3 or x == 0:
-				c = Color8(90, 90, 88)
-			img.set_pixel(o.x + x, o.y + y, c)
-	for x in PX:
-		if (x / 2) % 2 == 0:
-			img.set_pixel(o.x + x, o.y + 1, Color8(230, 190, 30))
-
-static func _boulder(img: Image, pic: int, a: Color, b: Color, rng: RandomNumberGenerator, vein := Color(0, 0, 0, 0)) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var d := Vector2((x + 0.5 - 8.0) / 7.2, (y + 0.5 - 8.5) / 6.6).length()
-			if d <= 1.0:
-				var c := a.lerp(b, clampf(d * 0.7 + (y / 16.0) * 0.4 + rng.randf() * 0.15, 0, 1))
-				if d > 0.86:
-					c = b.darkened(0.4)
-				img.set_pixel(o.x + x, o.y + y, c)
-	if vein.a > 0.0:
-		for k in 8:
-			img.set_pixel(o.x + rng.randi_range(4, 11), o.y + rng.randi_range(4, 12), vein)
-
-static func _spores(img: Image, glow: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for k in 9:
-		var cx := rng.randf_range(3.0, 13.0)
-		var cy := rng.randf_range(4.0, 14.0)
-		var col := Color.from_hsv(rng.randf_range(0.75, 0.95), 0.6, 0.9)
-		_blob(img, o, cx, cy, rng.randf_range(1.2, 2.2), col, col.lightened(0.4))
-		glow.set_pixel(o.x + int(cx), o.y + int(cy), col * 0.6)
-
-static func _lava(img: Image, glow: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var n := _vn(x, y, 99) * 0.7 + rng.randf() * 0.3
-			var c := Color8(255, 90, 10).lerp(Color8(255, 220, 60), n)
-			if n < 0.3:
-				c = Color8(150, 30, 10)
-			img.set_pixel(o.x + x, o.y + y, c)
-			glow.set_pixel(o.x + x, o.y + y, c * (0.9 if n >= 0.3 else 0.3))
-
-static func _gas(img: Image, glow: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for k in 6:
-		var cx := rng.randf_range(3.0, 13.0)
-		var cy := rng.randf_range(3.0, 13.0)
-		for y in PX:
-			for x in PX:
-				var d := Vector2(x + 0.5 - cx, y + 0.5 - cy).length()
-				if d < 2.2:
-					img.set_pixel(o.x + x, o.y + y, Color(0.45, 0.62, 0.2, 0.55 if d > 1.2 else 0.85))
-		glow.set_pixel(o.x + int(cx), o.y + int(cy), Color(0.12, 0.25, 0.02))
-
-static func _bricks(img: Image, pic: int, a: Color, mortar: Color, k: float) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var row := y / 4
-			var off := 4 if row % 2 == 1 else 0
-			var c := a.lerp(a.darkened(0.25), float(((x + off) / 8 + row) % 3) / 3.0)
-			if y % 4 == 3 or (x + off) % 8 == 7:
-				c = mortar
-			img.set_pixel(o.x + x, o.y + y, c.darkened(1.0 - k))
-
-static func _junk(img: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	# a bike wheel, a can, a bottle
-	for a in 24:
-		var ang := a / 24.0 * TAU
-		img.set_pixel(o.x + int(5 + cos(ang) * 3.5), o.y + int(6 + sin(ang) * 3.5), Color8(40, 40, 44))
-	for y in range(9, 14):
-		for x in range(9, 12):
-			img.set_pixel(o.x + x, o.y + y, Color8(200, 40, 40) if y != 10 else Color8(230, 230, 230))
-	for y in range(3, 9):
-		img.set_pixel(o.x + 12, o.y + y, Color8(60, 140, 70))
-		img.set_pixel(o.x + 13, o.y + y, Color8(80, 170, 90))
-
-static func _concrete(img: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(140, 142, 146).darkened(rng.randf() * 0.12)
-			if y == 0 or x == 0:
-				c = Color8(100, 102, 106)
-			img.set_pixel(o.x + x, o.y + y, c)
-	for y in [5, 11]:
-		for x in [5, 11]:
-			img.set_pixel(o.x + x, o.y + y, Color8(80, 80, 84))
-
-static func _locker(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(70, 90, 120)
-			if x == 0 or y == 0 or x == PX - 1 or y == PX - 1 or x == 8:
-				c = Color8(40, 50, 70)
-			if (y == 3 or y == 4) and (x > 1 and x < 7 or x > 9 and x < 15) and x % 2 == 0:
-				c = Color8(30, 36, 50)
-			if y == 9 and (x == 6 or x == 10):
-				c = Color8(220, 220, 220)
-			img.set_pixel(o.x + x, o.y + y, c)
-	for x in range(3, 13):
-		img.set_pixel(o.x + x, o.y + 13, Color8(230, 200, 40))
-
-static func _stash(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	# taped bricks of stuff in a crate
-	for y in range(2, 15):
-		for x in range(1, 15):
-			var c := Color8(160, 120, 70)
-			if y == 2 or y == 14 or x == 1 or x == 14:
-				c = Color8(100, 70, 40)
-			if y > 3 and y < 13 and x > 2 and x < 13:
-				c = Color8(230, 230, 220) if ((x / 3 + y / 3) % 2 == 0) else Color8(200, 200, 190)
-				if y % 3 == 0:
-					c = Color8(150, 120, 60)
-			img.set_pixel(o.x + x, o.y + y, c)
-
-static func _shroom(img: Image, glow: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(220, 60, 120).lerp(Color8(255, 120, 190), _vn(x, y, 7))
-			img.set_pixel(o.x + x, o.y + y, c)
-			glow.set_pixel(o.x + x, o.y + y, c * 0.25)
-	for k in 5:
-		var cx := rng.randf_range(3, 13)
-		var cy := rng.randf_range(3, 13)
-		_blob(img, o, cx, cy, 1.6, Color8(255, 240, 230), Color.WHITE)
-
-static func _timber(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(130, 90, 50).lerp(Color8(100, 66, 36), float((x * 3 + y / 4) % 5) / 5.0)
-			if x == 0 or x == PX - 1:
-				c = Color8(70, 46, 26)
-			img.set_pixel(o.x + x, o.y + y, c)
-
-static func _tiles(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(70, 76, 80) if (x / 8 + y / 8) % 2 == 0 else Color8(60, 64, 70)
-			if x % 8 == 0 or y % 8 == 0:
-				c = Color8(40, 42, 46)
-			img.set_pixel(o.x + x, o.y + y, c)
-
-static func _planks(img: Image, pic: int) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			var c := Color8(80, 56, 34).lerp(Color8(60, 40, 24), float((y * 7 + x / 5) % 4) / 4.0)
-			if y % 5 == 4:
-				c = Color8(36, 24, 14)
-			img.set_pixel(o.x + x, o.y + y, c)
-
-static func _grass(img: Image, pic: int, rng: RandomNumberGenerator) -> void:
-	var o := origin(pic)
-	for y in PX:
-		for x in PX:
-			img.set_pixel(o.x + x, o.y + y, Color8(70, 130, 46).lerp(Color8(96, 160, 60), rng.randf()))
+## Everything handed to the pixel world
+static func apply(sim: MineSim) -> void:
+	for t in INFO:
+		var i: Dictionary = INFO[t]
+		var g: Array = i.get("glow", [0.0, 0.0, 0.0])
+		sim.set_material(t, flags(t), float(i.hard), int(i.need), shades(t), Color(g[0], g[1], g[2]))
+	for b in BACKS:
+		var bi: Dictionary = BACKS[b]
+		var base := shades(int(bi.of)) if bi.has("of") else ramp(bi.col)
+		var dark := PackedColorArray()
+		for v in 8:
+			var k := (0.44 + (v & 3) * 0.02) if bi.has("of") else 1.0
+			if v == 7:
+				k *= 0.6             # (the mortar, the gaps)
+			dark.append(Color(base[v].r * k, base[v].g * k, base[v].b * k))
+		sim.set_back(b, dark, int(bi.get("pattern", 0)))
+	sim.set_special(BASALT, OBSIDIAN, BEDROCK)

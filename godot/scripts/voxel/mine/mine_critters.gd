@@ -21,7 +21,8 @@ const POD_HP := 3
 const POD_RAM := 7.0            # hull a pod's ram takes
 const SMASH := 4.2              # the ship going this fast at a drone or a pod breaks it
 const FIELD_T := 0.35
-const FIELD_MAX := 48           # tiles: farther than this the chasers lose the trail
+const FIELD_MAX := 96           # blocks (half metres): farther than this the chasers lose the trail
+const BS := 4                   # cells a block of the chasers' map (half a metre)
 const POD_BACK := 300.0         # seconds before a crew that's been rammed to bits is replaced
 
 var mine                        # VoxelMine
@@ -32,7 +33,10 @@ var pods: Array = []            # {n, p, hp, cool, chase: bool, dir: Vector2i, h
 var alarm := false
 var alarm_t := 0.0
 var alarm_rest := 0.0
-var _field := {}                # tile -> steps from the ship's tile
+var _field := {}                # block index -> steps from the ship's block
+var _open := PackedByteArray()  # the world in half-metre blocks: 1 open enough to fly through
+var _nx := 0
+var _ny := 0
 var _field_t := 0.0
 var _rat_t := 0.0
 var _flash := 0.0
@@ -42,6 +46,22 @@ var _pods_at := 0               # (msec) when the crew was last made up
 func setup(mine_, ground_: MineGround) -> void:
 	mine = mine_
 	ground = ground_
+
+## The block (half a metre square) a world point's in, and a block's middle
+func _block(p: Vector2) -> Vector2i:
+	var c := MineGround.cell(p)
+	return Vector2i(floori(float(c.x) / BS), floori(float(c.y) / BS))
+
+func _mid(b: Vector2i) -> Vector2:
+	return Vector2((b.x * BS + BS * 0.5) / MineGround.C, -((b.y * BS + BS * 0.5) - MineGround.SKY) / MineGround.C)
+
+func _is_open(b: Vector2i) -> bool:
+	return b.x >= 0 and b.y >= 0 and b.x < _nx and b.y < _ny and _open[b.y * _nx + b.x] == 1
+
+func _refresh_map() -> void:
+	_open = ground.sim.coarse(BS, 3)
+	_nx = ceili(float(MineGround.CW) / BS)
+	_ny = ceili(float(MineGround.CH) / BS)
 
 ## Everything gone (a new ground, a load).
 func clear() -> void:
@@ -57,6 +77,7 @@ func clear() -> void:
 
 ## Going down: the rats and the crew there (if they're switched on), topped up.
 func on_enter() -> void:
+	_refresh_map()
 	if VoxelMine.hazards.get("sewers", true) and ground.flags.get("sewers", true):
 		while rats.size() < RAT_MAX:
 			if not _spawn_rat():
@@ -85,41 +106,45 @@ func _drop(a: Array) -> void:
 
 func _make_field(from: Vector2i) -> void:
 	_field.clear()
-	if MineTiles.solid(ground.at(from.x, from.y)):
+	_refresh_map()
+	if from.x < 0 or from.y < 0 or from.x >= _nx or from.y >= _ny:
 		return
-	var q := [from]
-	_field[from] = 0
+	var q: Array[Vector2i] = [from]
+	_field[from.y * _nx + from.x] = 0
 	var h := 0
 	while h < q.size():
 		var c: Vector2i = q[h]
 		h += 1
-		var d: int = _field[c]
+		var d: int = _field[c.y * _nx + c.x]
 		if d >= FIELD_MAX:
 			continue
 		for o in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			var n: Vector2i = c + o
-			if _field.has(n) or n.y < -2 or n.y >= MineGround.D or n.x < 0 or n.x >= MineGround.W:
+			if not _is_open(n) or _field.has(n.y * _nx + n.x):
 				continue
-			if MineTiles.solid(ground.at(n.x, n.y)):
-				continue
-			_field[n] = d + 1
+			_field[n.y * _nx + n.x] = d + 1
 			q.append(n)
 
-## Where a chaser at p heads next: the middle of the open tile next to it nearer the ship (p itself: no trail).
+func _dist(b: Vector2i) -> int:
+	if b.x < 0 or b.y < 0 or b.x >= _nx or b.y >= _ny:
+		return 999
+	return int(_field.get(b.y * _nx + b.x, 999))
+
+## Where a chaser at p heads next: the middle of the open block next to it nearer the ship (p itself: no trail).
 func _next(p: Vector2) -> Vector2:
-	var t := MineGround.tile_of(p)
-	if not _field.has(t):
+	var t := _block(p)
+	var bd := _dist(t)
+	if bd >= 999:
 		return p
 	var best := t
-	var bd: int = _field[t]
 	for o in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 		var n: Vector2i = t + o
-		if _field.has(n) and int(_field[n]) < bd:
-			bd = _field[n]
+		if _dist(n) < bd:
+			bd = _dist(n)
 			best = n
 	if best == t:
 		return mine.ship.p
-	return MineGround.centre(best.x, best.y)
+	return _mid(best)
 
 # ---------------------------------------------------------------- each step
 
@@ -136,7 +161,7 @@ func step(dt: float) -> void:
 	_field_t -= dt
 	if _field_t <= 0.0 and (alarm or not pods.is_empty()):
 		_field_t = FIELD_T
-		_make_field(MineGround.tile_of(ship.drill_from if ship.drilling else ship.p))     # (mid-drill: it's in rock)
+		_make_field(_block(ship.p))
 	_rats(dt, ship)
 	_cops(dt, ship)
 	_pods(dt, ship)
@@ -146,27 +171,30 @@ func _rats(dt: float, ship: MineShip) -> void:
 	var chewing := 0
 	for i in range(rats.size() - 1, -1, -1):
 		var r: Dictionary = rats[i]
-		var t := MineGround.tile_of(r.p)
 		# falling, if what it ran on is dug away
-		if not ground.solid_at(t.x, t.y + 1):
+		if not ground.solid_at(r.p + Vector2(0, -0.07)):
 			r.p.y -= dt * 6.0
-			r.n.position = Vector3(r.p.x, r.p.y, 0.1)
+			r.n.position = Vector3(r.p.x, r.p.y, 0.3)
 			if r.p.y < -MineGround.D:
 				r.n.queue_free()
 				rats.remove_at(i)
 			continue
-		else:
-			r.p.y = -t.y - 1.0 + 0.1
+		var fc := MineGround.cell(r.p + Vector2(0, -0.07))
+		r.p.y = MineGround.world(fc).y + 0.5 / MineGround.C
 		var to_ship: Vector2 = ship.p - r.p
 		if absf(to_ship.y) < 1.2 and absf(to_ship.x) < 6.0:
 			r.dir = 1 if to_ship.x > 0.0 else -1
 		var nx: float = r.p.x + r.dir * RAT_SPEED * dt
-		var ahead := floori(nx + r.dir * 0.2)
-		if ground.solid_at(ahead, t.y) or not ground.solid_at(ahead, t.y + 1):
+		var low := ground.solid_at(Vector2(nx + r.dir * 0.14, r.p.y + 0.06))
+		var high := ground.solid_at(Vector2(nx + r.dir * 0.14, r.p.y + 0.2))
+		var cliff := not ground.solid_at(Vector2(nx + r.dir * 0.16, r.p.y - 0.07)) and not ground.solid_at(Vector2(nx + r.dir * 0.16, r.p.y - 0.3))
+		if high or cliff:
 			r.dir = -r.dir
 		else:
 			r.p.x = nx
-		r.n.position = Vector3(r.p.x, r.p.y, 0.1)
+			if low:
+				r.p.y += 1.0 / MineGround.C
+		r.n.position = Vector3(r.p.x, r.p.y, 0.3)
 		r.n.rotation.y = 0.0 if r.dir > 0 else PI
 		r.n.get_child(0).position.y = absf(sin(_flash * 14.0 + i)) * 0.03
 		# on the ship: chewing, unless it's squashed
@@ -197,9 +225,9 @@ func _spawn_rat() -> bool:
 	if sw.is_empty():
 		return false
 	var s: Array = sw[randi() % sw.size()]
-	var x := randi_range(int(s[0]), int(s[2]))
-	var r := int(s[1]) + 0     # (the tunnel's floor row)
-	if ground.at(x, r) != MineTiles.AIR or not ground.solid_at(x, r + 1):
+	var x := randf_range(float(s[0]) + 0.3, float(s[2]) - 0.3)
+	var at := Vector2(x, -float(s[1]) + 0.02)     # (on the tunnel's floor)
+	if ground.solid_at(at + Vector2(0, 0.1)) or not ground.solid_at(at + Vector2(0, -0.07)):
 		return false
 	var n := Node3D.new()
 	var body := Node3D.new()
@@ -241,21 +269,21 @@ func _spawn_rat() -> bool:
 	eye.position = Vector3(0.17, 0.13, 0.07)
 	body.add_child(eye)
 	add_child(n)
-	var p := Vector2(x + 0.5, -r - 1.0 + 0.1)
-	n.position = Vector3(p.x, p.y, 0.1)
-	rats.append({"n": n, "p": p, "dir": 1 if randf() < 0.5 else -1})
+	n.position = Vector3(at.x, at.y, 0.3)
+	rats.append({"n": n, "p": at, "dir": 1 if randf() < 0.5 else -1})
 	return true
 
 # ---------------------------------------------------------------- the cops
 
 ## In the bunker (or drilling its walls): the alarm.
-func check_bunker(tile: Vector2i, drilled_wall: bool) -> void:
+func check_bunker(at: Vector2, drilled_wall: bool) -> void:
 	if alarm or alarm_rest > 0.0 or not VoxelMine.hazards.get("cops", true):
 		return
 	var b: Array = ground.features.get("bunker", [])
 	if b.is_empty():
 		return
-	var inside := tile.x > int(b[0]) and tile.x < int(b[2]) and tile.y > int(b[1]) and tile.y < int(b[3])
+	var dep := -at.y
+	var inside := at.x > float(b[0]) + 0.9 and at.x < float(b[2]) - 0.9 and dep > float(b[1]) + 0.9 and dep < float(b[3]) - 0.9
 	if inside or drilled_wall:
 		_raise_alarm()
 
@@ -328,10 +356,10 @@ func _cops(dt: float, ship: MineShip) -> void:
 		var d: Dictionary = drones[i]
 		var to := _next(d.p)
 		var step := to - (d.p as Vector2)
-		var sp := DRONE_SPEED * (1.0 if _field.has(MineGround.tile_of(d.p)) else 0.3)
+		var sp := DRONE_SPEED * (1.0 if _dist(_block(d.p)) < 999 else 0.3)
 		if step.length() > 0.001:
 			d.p += step.normalized() * minf(step.length(), sp * dt)
-		d.n.position = Vector3(d.p.x, d.p.y + sin(_flash * 6.0 + i) * 0.05, 0.0)
+		d.n.position = Vector3(d.p.x, d.p.y + sin(_flash * 6.0 + i) * 0.05, 0.3)
 		var c := Color(0.2, 0.4, 1.0) if (blue != (i % 2 == 1)) else Color(1.0, 0.15, 0.1)
 		d.light.light_color = c
 		d.lamp.emission = c
@@ -365,8 +393,8 @@ func _spawn_pod() -> void:
 	var cells: Array = ground.features.get("rival", [])
 	if cells.is_empty():
 		return
-	var c: Vector2i = cells[randi() % cells.size()]
-	if ground.at(c.x, c.y) != MineTiles.AIR:
+	var c: Vector2 = cells[randi() % cells.size()]
+	if ground.solid_at(c) or ground.mat_at(c) != MineTiles.AIR:
 		return
 	var n := Node3D.new()
 	var paint := StandardMaterial3D.new()
@@ -403,30 +431,30 @@ func _spawn_pod() -> void:
 	eye.position = Vector3(0.12, 0.1, 0.28)
 	n.add_child(eye)
 	add_child(n)
-	var p := MineGround.centre(c.x, c.y)
-	n.position = Vector3(p.x, p.y, 0)
+	var p := c
+	n.position = Vector3(p.x, p.y, 0.3)
 	pods.append({"n": n, "p": p, "hp": POD_HP, "cool": 0.0, "chase": false, "dir": Vector2i(1 if randf() < 0.5 else -1, 0), "go": p, "face": 1})
 
 func _pods(dt: float, ship: MineShip) -> void:
 	for i in range(pods.size() - 1, -1, -1):
 		var d: Dictionary = pods[i]
 		d.cool = maxf(0.0, float(d.cool) - dt)
-		var t := MineGround.tile_of(d.p)
-		var dist := int(_field.get(t, 999))
-		if not d.chase and dist <= 14 and (d.p as Vector2).distance_to(ship.p) < 9.0:
+		var t := _block(d.p)
+		var dist := _dist(t)
+		if not d.chase and dist <= 28 and (d.p as Vector2).distance_to(ship.p) < 9.0:
 			d.chase = true
 			mine.say("The rival crew's coming for you: ram them back harder, or run", 2.5)
 			mine.tip("rivals")
-		elif d.chase and (dist > 24 or ship.p.y > -0.3):
+		elif d.chase and (dist > 48 or ship.p.y > -0.3):
 			d.chase = false
 		# given up, off their own tunnels and out of sight: back home (not left roaming the mine)
-		if not d.chase and ground.bg_at(t.x, t.y) != MineTiles.BG_RIVAL and (d.p as Vector2).distance_to(ship.p) > 14.0:
+		if not d.chase and ground.bg_at(d.p) != MineTiles.BG_RIVAL and (d.p as Vector2).distance_to(ship.p) > 14.0:
 			var cells: Array = ground.features.get("rival", [])
 			for k in 8:
-				var c: Vector2i = cells[randi() % cells.size()] if not cells.is_empty() else t
-				if ground.at(c.x, c.y) == MineTiles.AIR and MineGround.centre(c.x, c.y).distance_to(ship.p) > 14.0:
-					d.p = MineGround.centre(c.x, c.y)
-					d.go = d.p
+				var c: Vector2 = cells[randi() % cells.size()] if not cells.is_empty() else d.p
+				if ground.mat_at(c) == MineTiles.AIR and c.distance_to(ship.p) > 14.0:
+					d.p = c
+					d.go = c
 					break
 		var to: Vector2 = d.go
 		var sp := POD_SPEED
@@ -440,26 +468,26 @@ func _pods(dt: float, ship: MineShip) -> void:
 			# patrolling: along the tunnel, turning at its ends
 			if (d.p as Vector2).distance_to(d.go) < 0.05:
 				var nt: Vector2i = t + d.dir
-				if MineTiles.solid(ground.at(nt.x, nt.y)) or ground.bg_at(nt.x, nt.y) != MineTiles.BG_RIVAL or randf() < 0.05:
+				if not _patrol_ok(nt) or randf() < 0.05:
 					var opts := []
 					for o in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-						if not MineTiles.solid(ground.at(t.x + o.x, t.y + o.y)) and ground.bg_at(t.x + o.x, t.y + o.y) == MineTiles.BG_RIVAL:
+						if _patrol_ok(t + o):
 							opts.append(o)
 					if not opts.is_empty():
 						d.dir = opts[randi() % opts.size()]
 					nt = t + d.dir
-				if not MineTiles.solid(ground.at(nt.x, nt.y)) and ground.bg_at(nt.x, nt.y) == MineTiles.BG_RIVAL:
-					d.go = MineGround.centre(nt.x, nt.y)
+				if _patrol_ok(nt):
+					d.go = _mid(nt)
 			to = d.go
 		var step := to - (d.p as Vector2)
 		if step.length() > 0.001:
 			var mv := step.normalized() * minf(step.length(), sp * dt)
 			var np: Vector2 = d.p + mv
-			if not MineTiles.solid(ground.at(MineGround.tile_of(np).x, MineGround.tile_of(np).y)):
+			if not ground.solid_at(np):
 				d.p = np
 			if absf(mv.x) > 0.001:
 				d.face = 1 if mv.x > 0.0 else -1
-		d.n.position = Vector3(d.p.x, d.p.y + sin(_flash * 4.0 + i * 2.0) * 0.04, 0.0)
+		d.n.position = Vector3(d.p.x, d.p.y + sin(_flash * 4.0 + i * 2.0) * 0.04, 0.3)
 		d.n.rotation.y = 0.0 if int(d.face) > 0 else PI
 		# a ram
 		var gap: Vector2 = ship.p - d.p
@@ -485,6 +513,32 @@ func _pods(dt: float, ship: MineShip) -> void:
 				ship.v += dir * 6.0
 				mine.sound.play("mine_hit", Vector3.INF, 0.0, 0.7)
 				mine.say("Rammed by the rival crew!", 1.2)
+
+## A block the crew patrols: open, and their tunnels' back wall
+func _patrol_ok(b: Vector2i) -> bool:
+	return _is_open(b) and ground.bg_at(_mid(b)) == MineTiles.BG_RIVAL
+
+## A launcher shot at p: a rat squashed, a drone's rotors gummed up (down it goes), a pod knocked. -> hit anything
+func shot_hit(p: Vector2) -> bool:
+	for i in range(rats.size() - 1, -1, -1):
+		if (rats[i].p as Vector2).distance_to(p + Vector2(0, -0.1)) < 0.3:
+			mine.sound.play("mine_rat", Vector3.INF, -2.0, 0.8)
+			rats[i].n.queue_free()
+			rats.remove_at(i)
+			return true
+	for i in range(drones.size() - 1, -1, -1):
+		if (drones[i].p as Vector2).distance_to(p) < 0.4:
+			mine.spark(drones[i].p, Color(0.3, 0.5, 1.0))
+			mine.say("Gummed up a cop drone!", 1.2)
+			drones[i].n.queue_free()
+			drones.remove_at(i)
+			return true
+	for d in pods:
+		if (d.p as Vector2).distance_to(p) < 0.42:
+			d.p = (d.p as Vector2) + ((d.p as Vector2) - p).normalized() * 0.4
+			d.cool = 1.0
+			return true
+	return false
 
 ## Dynamite (or a gas pocket) at c, radius r: what's in it is gone.
 func blast(c: Vector2, r: float) -> int:

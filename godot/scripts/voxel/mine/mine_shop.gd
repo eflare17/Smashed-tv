@@ -35,8 +35,10 @@ const UPGRADES := {
 		"names": ["Tin", "Plated", "Armoured", "Tank"]},
 	"lights": {"name": "Lights", "k": [6.0, 9.0, 13.0, 18.0], "cost": [110, 420, 1200], "unit": " m",
 		"names": ["Torch", "Twin lamps", "Floodlights", "Stadium"]},
+	"launcher": {"name": "Launcher", "k": [10.0, 13.0, 17.0, 22.0], "cost": [150, 500, 1400], "unit": " m/s",
+		"names": ["Slingshot", "Spring gun", "Air cannon", "Rail launcher"]},
 }
-const UPGRADE_ORDER := ["drill", "tank", "cargo", "hull", "lights"]
+const UPGRADE_ORDER := ["drill", "tank", "cargo", "hull", "lights", "launcher"]
 
 ## The supplies: [id, name, cost, the most you can carry]
 const ITEMS := {

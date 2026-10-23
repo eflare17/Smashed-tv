@@ -169,7 +169,8 @@ func _draw() -> void:
 	var held: int = m.cargo_count()
 	var x := 18.0
 	var y := 16.0
-	draw_rect(Rect2(10, 8, 330, 180), Color(0, 0, 0, 0.35))
+	draw_rect(Rect2(10, 8, 330, 198), Color(0, 0, 0, 0.35))
+	_arc()
 	_bar(Vector2(x, y), 200, m.fuel / tank, Color8(240, 150, 30), "FUEL", "%.1f / %.0f L" % [m.fuel, tank], m.fuel < tank * 0.2)
 	y += 26
 	var hc := Color8(80, 200, 90).lerp(Color8(230, 50, 40), 1.0 - m.hull / hmax)
@@ -185,6 +186,11 @@ func _draw() -> void:
 	for id in MineShop.ITEM_ORDER:
 		it += "%s %s x%d   " % [MineShop.ITEMS[id].key, MineShop.ITEMS[id].name, int(m.items.get(id, 0))]
 	_text(Vector2(x, y), it, 13, Color(0.85, 0.85, 0.9))
+	y += 18
+	var am := "Q launcher:  "
+	for a in VoxelMine.AMMO_ORDER:
+		am += ("[%s %d]  " if a == m.ammo_sel else "%s %d  ") % [String(VoxelMine.AMMO_NAME[a]).split(" ")[0], int(m.ammo[a])]
+	_text(Vector2(x, y), am, 13, Color8(255, 220, 140))
 	y += 20
 	if m.trip > 0.05:
 		_text(Vector2(x, y), "TRIPPING " + "~".repeat(int(m.trip * 10.0)), 15, Color.from_hsv(fmod(Time.get_ticks_msec() / 900.0, 1.0), 0.7, 1.0))
@@ -215,7 +221,30 @@ func _draw() -> void:
 	for p in _pops:
 		var k: float = p.t / 1.8
 		_text(Vector2(190, 120 - k * 60.0), p.text, 24, Color(p.col.r, p.col.g, p.col.b, 1.0 - k * k))
-	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
+	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
+
+## The launcher's arc, from the ship toward the mouse (while right is held, or always faintly)
+func _arc() -> void:
+	var m = mine
+	var held := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if not m.aiming or m.cam == null or not held:
+		return
+	var sv: Array = m.shot_start()
+	var p: Vector2 = sv[0]
+	var v: Vector2 = sv[1]
+	var last := Vector2.INF
+	for k in 26:
+		for j in 3:
+			v.y -= 12.0 * 0.02
+			p += v * 0.02
+		if m.ground.solid_at(p):
+			break
+		var sp: Vector2 = m.cam.unproject_position(Vector3(p.x, p.y, 0.0))
+		if last != Vector2.INF and k % 2 == 0:
+			draw_line(last, sp, Color(1, 1, 1, 0.8 if held else 0.25), 2.0)
+		last = sp
+	var tip: Vector2 = m.cam.unproject_position(Vector3(p.x, p.y, 0.0))
+	draw_circle(tip, 5.0 if held else 3.0, Color(1, 0.85, 0.4, 0.9 if held else 0.35))
 
 func _wrap(s: String, w: float, sz: int) -> Array:
 	var out := []

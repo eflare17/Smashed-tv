@@ -5,7 +5,7 @@ writes godot/assets/voxel/sound/: mine_drill (the drill's grinding whine, looped
 rock is), mine_engine (the ship's motor and thrusters, looped), mine_clink (ore into the hold), mine_hit (the hull
 taking a knock), mine_alarm (the low-fuel beeps), mine_register (the trader's till: ka-ching), mine_boom (dynamite, a
 gas pocket), mine_siren (the cops, looped), mine_rat (a squeak), mine_roar (the rock worm), mine_door (the roller door
-rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss). Owned by the voxel
+rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss), mine_crunch_0..4\n(the drill biting off rock, played as it chews). Owned by the voxel
 session."""
 
 
@@ -78,6 +78,14 @@ def build():
     hs = band(noise(1.0), 1500, 7000) * env(n, 0.02, 0.8, 2)
     pops = mix(*[at(click(0.03, 900 + 200 * k, 0.01), 0.1 + k * 0.17) for k in range(5)])
     save("mine_lava", mix(hs * 0.7, pops), peak=0.6)
+
+    # crunches: the drill biting off a bit of rock (several, played as it chews, pitched by how hard it is)
+    for v in range(5):
+        n = int(0.16 * SR)
+        grit = band(noise(0.16), 300 + v * 80, 2800 + v * 300) * env(n, 0.001, 0.05 + v * 0.01, 5)
+        pops = mix(*[at(click(0.012, 1200 + 400 * ((v + k) % 3), 0.003) * rng.uniform(0.4, 1.0), rng.uniform(0.0, 0.09)) for k in range(4)])
+        thud = lowpass(noise(0.16), 220) * env(n, 0.001, 0.04, 6) * 1.6
+        save("mine_crunch_%d" % v, mix(grit, pops * 0.8, thud), peak=0.7)
 
 
 if __name__ == "__main__":
