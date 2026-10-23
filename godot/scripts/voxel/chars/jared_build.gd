@@ -19,7 +19,7 @@ static func part(name: String) -> Dictionary:
 		"head":
 			return _big(Vector3i(-16, 100, -13), Vector3i(19, 148, 26), _head_sdf, _head_paint)
 		"hair_classic":
-			return _big(Vector3i(-17, 116, -16), Vector3i(20, 151, 22), _hair_sdf, _hair_paint)
+			return _big(Vector3i(-17, 110, -17), Vector3i(20, 151, 22), _hair_sdf, _hair_paint)
 		"glasses":
 			return _big(Vector3i(-17, 120, -5), Vector3i(19, 132, 25), _glasses_sdf, _glasses_paint)
 		"torso":
@@ -149,7 +149,7 @@ static func _hairline(p: Vector3) -> float:
 	# of the ears; down to the nape at the back
 	var front := 134.0 + 2.4 * smoothstep(1.5, 7.5, x) - 1.2 * smoothstep(9.5, 12.5, x)
 	var side := 127.0 if x < 10.0 else lerpf(127.0, 119.5, clampf((x - 10.0) / 2.5, 0.0, 1.0))
-	var back := 117.5
+	var back := 112.5                                # (longer at the back: down to his nape)
 	if p.z > 9.0:
 		return front
 	if p.z > 3.5:
@@ -164,7 +164,7 @@ static func _hair_sdf(p: Vector3) -> float:
 	# forehead and is combed back; the top rounded off (not a dome, not a flat cap)
 	var top_k := smoothstep(131.0, 140.0, p.y)
 	var front_k := smoothstep(-8.0, 10.0, p.z)
-	var thick := 0.9 + top_k * (2.3 + 0.9 * front_k)
+	var thick := 0.9 + top_k * (2.3 + 0.9 * front_k) + 0.6 * smoothstep(2.0, -8.0, p.z) * (1.0 - top_k)   # (a little fuller down the back)
 	var hl := _hairline(p)
 	thick *= 0.3 + 0.7 * smoothstep(hl - 0.5, hl + 4.0, p.y)     # (thin at its edge: no brim over his forehead)
 	var d := skin - thick
