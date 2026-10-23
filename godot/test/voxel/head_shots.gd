@@ -1,6 +1,6 @@
 extends SceneTree
 ## Head shots of a sculpted character (under a display, Forward+: -- --out=dir [--model=jared_new] [--y=1.62]): the
-## head close from the front, three-quarters, the side, three-quarters behind, the back (head_0..4). Owned by the
+## head close (or with --dist=4 --y=1 the whole body) from the front, three-quarters, the side, three-quarters behind, the back (head_0..4). Owned by the
 ## voxel session.
 
 var arena: Node
@@ -13,6 +13,7 @@ var model := "jared_new"
 var hy := 1.62
 var yaws := [0.0, -PI * 0.25, -PI * 0.5, -PI * 0.75, PI]
 var base := 0.0
+var dist := 1.25
 
 func _initialize() -> void:
 	for x in OS.get_cmdline_user_args():
@@ -22,6 +23,8 @@ func _initialize() -> void:
 			model = x.trim_prefix("--model=")
 		if x.begins_with("--y="):
 			hy = float(x.trim_prefix("--y="))
+		if x.begins_with("--dist="):
+			dist = float(x.trim_prefix("--dist="))
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
 
@@ -63,7 +66,7 @@ func _process(dt: float) -> bool:
 		var bz: Vector3 = arena.sun.global_transform.basis.z
 		var fw := Vector3(bz.x, 0, bz.z).normalized()
 		base = atan2(fw.x, fw.z)
-		cam.global_position = Vector3(0, hy + 0.05, 8) + fw * 1.25
+		cam.global_position = Vector3(0, hy + 0.05 * dist / 1.25, 8) + fw * dist
 		cam.look_at(Vector3(0, hy, 8))
 		step = 1
 		t = 10.0

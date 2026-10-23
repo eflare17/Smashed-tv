@@ -193,7 +193,7 @@ func _make_other() -> void:
 	arena.add_child(_o_cam)
 	other_avatar = VoxelBody.new()
 	arena.add_child(other_avatar)
-	other_avatar.setup("jared_hd", 0.0125, 1, arena._mat)
+	other_avatar.setup("jared_new", 0.0125, 1, arena._mat)
 	other = VoxelShooter.new()
 	other.arena = arena
 	other.local = false

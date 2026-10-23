@@ -165,17 +165,17 @@ func grid(part: String) -> Dictionary:
 	if p.grid == null:
 		var v := VoxFile.load_file(DIR + (_dir if _dir != "" else char_name) + "/" + String(p.file))
 		p.grid = v.model_grid() if v else {"size": Vector3i.ZERO, "cells": PackedInt32Array()}
+		var bk0 := _baked_parts()
+		if bk0.has(part):
+			p.grid = bk0[part].grid
+			p.origin = bk0[part].origin
+			return p.grid
 		if _tint.has("built"):
 			var b := VoxelSculpt.part(String(_tint.built), part)
 			if not b.is_empty():
 				p.grid = b.grid
 				p.origin = b.origin
 				return p.grid
-		var bk := _baked_parts()
-		if bk.has(part):
-			p.grid = bk[part].grid
-			p.origin = bk[part].origin
-			return p.grid
 		if _tint.has("tint"):
 			p.grid = _tinted(p.grid, _tint.tint, float(_tint.mix))
 		if bool(_tint.get("reshape", false)):
@@ -187,7 +187,7 @@ func grid(part: String) -> Dictionary:
 	return p.grid
 
 func _baked_parts() -> Dictionary:
-	if not use_baked or not bool(_tint.get("reshape", false)):
+	if not use_baked or not (bool(_tint.get("reshape", false)) or _tint.has("built")):
 		return {}
 	if not _baked.has(char_name):
 		_baked[char_name] = {}
@@ -201,7 +201,8 @@ func _baked_parts() -> Dictionary:
 ## What the reshaping code is (a hash of its source; "" where the source can't be read, an exported game).
 static func source_version() -> String:
 	var t := ""
-	for path in ["res://scripts/voxel/voxel_reshape.gd", "res://scripts/voxel/voxel_model.gd"]:
+	for path in ["res://scripts/voxel/voxel_reshape.gd", "res://scripts/voxel/voxel_model.gd",
+			"res://scripts/voxel/chars/voxel_sculpt.gd", "res://scripts/voxel/chars/jared_build.gd"]:
 		t += FileAccess.get_file_as_string(path)
 	return "" if t.length() < 1000 else str(hash(t))
 

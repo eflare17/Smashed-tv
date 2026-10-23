@@ -590,6 +590,25 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### Jared sculpted from scratch (23 Oct, the owner: "rebuild from scratch, do Jared first")
+
+- `scripts/voxel/chars/voxel_sculpt.gd` (`VoxelSculpt`): characters built in code as smooth shapes (signed distance
+  functions: ellipsoids, capsules, tapering capsules, rounded boxes, blended with fillets) filled with cubes at the
+  model's voxel size; each surface cube painted by what it is, shaded by which way it faces and how tucked in it is
+  (creases darker). The models' rigs are kept: they animate, carry weapons and come apart (gore) as before.
+- `scripts/voxel/chars/jared_build.gd` (`JaredBuild`), the "jared_new" model (VoxelModel.VARIANTS "built"), from
+  his sprites' front, three-quarter, side and back views: a big tanned head (drawn 12% bigger than life, as in his
+  pictures) with a heavy brow, square jaw, big nose, ears and a drooping moustache; short back and sides with a
+  flatter top; blue wrap-around shades to his ears; a barrel chest and belly in his green singlet (JUICY JARED and
+  a round logo on the front, the back mottled green and blue, a deep scoop neck, thick straps, big armholes, a darker
+  trim, the singlet a layer over him); huge arms (deltoids, biceps, triceps, forearms, fists); grey shorts to
+  mid-thigh with rolled cuffs; thick legs; chunky black laced boots up the shin. Limbs built on his left, mirrored.
+- The arena's Jared (yours, and your mate's in co-op) is jared_new. Built ahead by `tools/bake_reshape.gd`
+  (`assets/voxel/baked/jared_new.bin`, in the export): loads in 0.1 s instead of 5.
+- Other hair styles (the old files) aren't refitted to the bigger head yet; the arena uses his classic hair.
+- `test/voxel/head_shots.gd` (head close, or the whole body with --dist=4.6 --y=0.95, from five sides),
+  `test/voxel/jared_clip.gd` (a clip: turning, head close, running).
+
 ### Jared and Gothica made solid (23 Oct, the owner: Gothica's side view "look bad"; Jared "a bit blurry, a little off")
 
 **Taken back out** (the owner, after the video: "Jared's looks bad and Gothica looks terrible ... put them back"):

@@ -7,7 +7,8 @@ func _initialize() -> void:
 	VoxelModel.use_baked = false
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(VoxelModel.BAKED_DIR))
 	for ch in VoxelModel.VARIANTS:
-		if not bool(VoxelModel.VARIANTS[ch].get("reshape", false)):
+		var v: Dictionary = VoxelModel.VARIANTS[ch]
+		if not (bool(v.get("reshape", false)) or v.has("built")):
 			continue
 		var t0 := Time.get_ticks_msec()
 		var m := VoxelModel.get_model(ch)
