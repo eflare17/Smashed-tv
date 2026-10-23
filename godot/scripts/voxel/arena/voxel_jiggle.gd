@@ -324,8 +324,8 @@ void fragment() {
 	float dark = 1.0 - smoothstep(0.08, 0.2, lum);
 	// matt on the cubes' steps (a sheen there is stripes); satin where it's shaded smooth (the chest)
 	float sheen = dark * v_soft;
-	ROUGHNESS = mix(mix(0.8, 0.32, sheen), 0.6, skin);
-	SPECULAR = mix(mix(0.4, 0.75, sheen), 0.35, skin);
+	ROUGHNESS = mix(mix(0.8, 0.5, sheen), 0.6, skin);
+	SPECULAR = mix(mix(0.4, 0.6, sheen), 0.35, skin);
 }
 """
 	return _shader

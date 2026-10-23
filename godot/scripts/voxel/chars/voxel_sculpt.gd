@@ -14,6 +14,8 @@ static func part(ch: String, name: String) -> Dictionary:
 	match ch:
 		"jared":
 			return JaredBuild.part(name)
+		"goth":
+			return GothBuild.part(name)
 	return {}
 
 # ---------------------------------------------------------------- distance functions (negative inside, in voxels)
