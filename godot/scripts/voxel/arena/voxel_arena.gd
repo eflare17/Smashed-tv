@@ -153,6 +153,7 @@ var hold_suck := false          # (tests: the vacuum's click held down)
 var flames: VoxelFlames         # fire, as little glowing cubes
 var kinds: VoxelKinds           # the charger's, thrower's and shielder's own moves, the thrown globs (Stage 11)
 var waves: VoxelWaves           # the escalating waves and the boss (Stage 12)
+var announcer: VoxelAnnouncer   # DOUBLE KILL, KILLING SPREE, HEADSHOT ... (this player's own kills)
 var melee := {}                 # weapon id -> its VoxelMelee
 var sword: VoxelSword           # melee.sword (F slashes with it whatever is out)
 var pieces: VoxelPieces         # the bits melee weapons take off, lying about
@@ -193,6 +194,9 @@ func _ready() -> void:
 	settings_menu.setup(self, (get_tree().current_scene == self and not testing) or _opts.has("settings"))
 	_player()
 	_hud()
+	announcer = VoxelAnnouncer.new()
+	add_child(announcer)
+	announcer.setup(self, _hud_layer)
 	debris = VoxelDebris.new()
 	add_child(debris)
 	debris.setup(_cube_m("grunt"))
@@ -1196,6 +1200,8 @@ func _on_died(b: VoxelBody) -> void:
 	if settings_menu and not settings_menu._bench.is_empty():
 		return                      # (the benchmark's fight: no kill counted, no cash)
 	kills += 1
+	if announcer and b != avatar:
+		announcer.on_kill(b)
 	if b and b.key == "boss" and waves:
 		waves.banner_text("%s IS DOWN" % VoxelWaves.BOSS_NAME, Color("#7fd89a"))
 	if b and VoxelFarm.KILL_CASH.has(b.key) and b != avatar:

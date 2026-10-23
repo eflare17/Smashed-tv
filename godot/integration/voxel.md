@@ -751,6 +751,28 @@ down or falls onto one of the spinning wheels and gets flung around")
 - `test/voxel/slot_shots.gd` (`voxel_shots/slot_front.png`, `slot_reels.png`, `slot_flung.png`, `slot_win.png`,
   `slot_side.png`, `slot_lever.png`).
 
+### The kill announcer (23 Oct, the owner: "like from Unreal ... double kill, multi kill, ultra kill")
+
+- `scripts/voxel/arena/voxel_announcer.gd` (`VoxelAnnouncer`, the arena's `announcer`): kills within 3 s of each
+  other chain: DOUBLE KILL (+$2), MULTI KILL (+$4), MEGA KILL (+$7), ULTRA KILL (+$10), MONSTER KILL (+$15),
+  LUDICROUS KILL (+$25), then HOLY SHIT (+$40) for every kill after. Kills without going down are a spree: KILLING
+  SPREE at 5 (+$10), RAMPAGE 10 (+$20), DOMINATING 15 (+$35), UNSTOPPABLE 20 (+$50), GODLIKE 25 (+$80), WICKED
+  SICK 30 (+$120); going down ends it (SPREE OVER). The first kill is FIRST BLOOD; a kill with the head off or the
+  brain shot through is a HEADSHOT (+$1). Big callouts in the upper middle (a punch in, colours climbing, HOLY SHIT
+  in rainbow), what else it was under them, the bonus under that.
+- Only this player's kills: a body remembers when this player last hit it (`VoxelBody.by_me`: stamped in `_net_in`
+  for this game's own changes, and in `_net_block` for a co-op guest's own hits, never for the other game's replayed
+  ones), and a death within 6 s of that is theirs. In co-op each of you gets your own callouts and bonuses.
+- Voices: until there are recordings it plays stingers (`assets/voxel/tools/sfx_announcer.py`: announce_1..7, a
+  spree swell, a headshot crack). A recording named for its line (double_kill, multi_kill, mega_kill, ultra_kill,
+  monster_kill, ludicrous_kill, holy_shit, killing_spree, rampage, dominating, unstoppable, godlike, wicked_sick,
+  headshot, first_blood, spree_over; .mp3, .ogg or .wav) in the `voices` folder next to the game's .exe (or
+  user://voices, or `assets/voxel/sound/voice/` in the project) is played instead, no rebuild needed.
+- Settings: Kill announcer: Off / Callouts only / Callouts and sound.
+- Tests: `test/voxel/announcer_test.gd` (14 checks: first blood, the chain to HOLY SHIT and its bonuses, the spree,
+  a pause ending the chain, a real headshot, someone else's kill counting for nothing, going down ending the spree,
+  Off, a recording picked up); `test/voxel/announcer_shots.gd` (a MONSTER KILL, a HEADSHOT).
+
 ### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
 
 - **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back

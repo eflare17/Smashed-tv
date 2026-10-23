@@ -163,6 +163,8 @@ var height := 1.8
 var radius := 0.5
 ## Health: shots take it by where they land (the head most) and how many cubes they knock out.
 var hp := 100.0
+var hit_by_me_t := 0             # (msec) when this player last hit it (by_me)
+var head_gone := false          # its head's off (a headshot, if that's what killed it)
 ## The brain: how many cubes of it there were, and how many are gone. A quarter gone kills (the owner, 20 Oct).
 var brain_start := 0
 var brain_lost := 0
@@ -817,6 +819,8 @@ func _damage_x(hit: Dictionary, r: float) -> Dictionary:
 		if base != "head":
 			hp -= float(out.size()) * 1.4 * float(PART_WEIGHT.get(base, 0.0)) / BODY_TOUGH
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * minf(0.85, BRAIN_KILL * tough)
+		if brain_dead:
+			head_gone = true            # (shot through the brain: a headshot)
 		if (hp <= 0.0 or brain_dead) and _can_die():
 			res.killed = true
 			alive = false
@@ -1083,6 +1087,7 @@ func _shatter_res() -> Dictionary:
 		alive = false
 		res.killed = true
 		res.head_off = true
+		head_gone = true
 		died.emit(self)
 	return res
 
@@ -1319,6 +1324,7 @@ func _sever_x(part: String) -> Dictionary:
 		res.parts.append(nm)
 		if nm == "head":
 			res.head_off = true
+			head_gone = true
 	if alive and res.head_off and _can_die():
 		res.killed = true
 		alive = false
@@ -1696,6 +1702,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 				"seam": not par_whole, "limb": _is_limb(nm)})
 			if nm == "head":
 				res.head_off = true
+				head_gone = true
 			var empty := PackedInt32Array()
 			empty.resize(cells.size())
 			p.grid = {"size": s, "cells": empty}
@@ -1974,6 +1981,7 @@ func _remove(opt: Dictionary) -> Dictionary:
 			(p.mesh as MeshInstance3D).visible = false
 			if nm == "head":
 				res.head_off = true
+				head_gone = true
 		else:
 			p.dirty = true
 	brain_lost += brain_hit
@@ -1986,6 +1994,8 @@ func _remove(opt: Dictionary) -> Dictionary:
 			# (a cube's worth by its size: twice the cube, eight times the health)
 			hp -= float(body_cut) * float(opt.get("hp_per_cube", 0.08)) * pow(vm / REF_VM, 3.0)
 		var brain_dead := brain_start > 0 and float(brain_lost) >= float(brain_start) * minf(0.85, BRAIN_KILL * tough)
+		if brain_dead:
+			head_gone = true            # (shot through the brain: a headshot)
 		if (hp <= 0.0 or brain_dead or res.head_off) and _can_die():
 			res.killed = true
 			alive = false
@@ -2265,7 +2275,20 @@ var net_id := 0                        # the body's number in both games (0: not
 var _net_depth := 0
 
 func _net_block() -> bool:
-	return net_locked and not _net_replay
+	if net_locked and not _net_replay:
+		_by_me()                    # (a co-op guest's own hit: the host makes it, but it's still the guest's)
+		return true
+	return false
+
+## This player's own hit (not the other game's, replayed here): the kill's theirs if it dies soon after
+## (VoxelAnnouncer).
+func _by_me() -> void:
+	if _net_depth == 0 and not _net_replay:
+		hit_by_me_t = Time.get_ticks_msec()
+
+## Whether this player hit it in the last secs (its kill counts for this player's announcer).
+func by_me(secs := 6.0) -> bool:
+	return hit_by_me_t > 0 and Time.get_ticks_msec() - hit_by_me_t <= int(secs * 1000.0)
 
 # whether a cut, hole, burn or blow here may kill: not while they can't die (F6), and never in a co-op guest's game,
 # where the host decides (its snapshot says when one's dead: a replay against the guest's own health could disagree)
@@ -2278,6 +2301,7 @@ func _no_cut() -> Dictionary:
 # a change starting: the host tells the guest (the outermost only: a carve's own hurt isn't told again); each
 # _net_in is matched by a _net_depth -= 1 when it's done
 func _net_in(what: String, args: Array) -> void:
+	_by_me()
 	if _net_depth == 0 and not _net_replay and net_rec.is_valid():
 		net_rec.call(self, what, args, pose())
 	_net_depth += 1
