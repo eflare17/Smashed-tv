@@ -507,6 +507,12 @@ func animate(dt: float, moving: bool) -> void:
 		rot["arm_l"] = Quaternion.from_euler(Vector3(0.45 * sin(ph), 0, 0.12))
 		rot["forearm_r"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
 		rot["forearm_l"] = Quaternion.from_euler(Vector3(-0.45, 0, 0))
+	if not model.rest.is_empty() and weapon == "" and alive and panic_t <= 0.0 and act == 0 and attack <= 0.0:
+		# (a model's own arms at rest: held a little out, elbows a little bent; walking, only held out)
+		for bn in model.rest:
+			if moving and String(bn).begins_with("forearm"):
+				continue
+			rot[bn] = (rot.get(bn, Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(model.rest[bn])
 	if flinch > 0.0 and alive:
 		# knocked back: the chest and head thrown back, arms flung up, a stumbling step
 		var f := smoothstep(0.0, 1.0, flinch)

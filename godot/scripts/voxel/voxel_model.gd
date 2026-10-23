@@ -19,7 +19,9 @@ const VARIANTS := {
 	"boss": {"base": "brute", "tint": Color(0.85, 0.12, 0.1), "mix": 0.55},     # (Stage 12: THE BUTCHER, twice the size)
 	"gothica": {"base": "goth", "bust": true},   # (the voxel arena's Gothica: her chest sculpted round for VoxelJiggle)
 	"jared_hd": {"base": "jared"},               # (the voxel arena's Jared: at full detail; VoxelReshape off, the owner: "put them back")
-	"jared_new": {"base": "jared", "built": "jared"},   # (Jared sculpted from scratch: VoxelSculpt, JaredBuild; being built)
+	"jared_new": {"base": "jared", "built": "jared", "pivots": {"head": Vector3(0, 115, 1)},
+		"rest": {"arm_l": Vector3(0, 0, 0.17), "arm_r": Vector3(0, 0, -0.17), "forearm_l": Vector3(-0.4, 0, 0),
+			"forearm_r": Vector3(-0.4, 0, 0)}},   # (Jared sculpted from scratch: VoxelSculpt, JaredBuild)
 }
 ## Gothica's sculpt (model voxels): each side's middle (x from the torso's middle, y, z), its half-widths (x, up, down,
 ## forward), how far apart the two are. VoxelJiggle reads these to know what moves.
@@ -45,6 +47,8 @@ var bone_names: PackedStringArray = PackedStringArray()
 var bone_index := {}
 var bone_parent: PackedInt32Array = PackedInt32Array()
 var bone_pivot: PackedVector3Array = PackedVector3Array()   # voxels, model space
+## A variant's arms at rest (bone -> euler, VoxelBody.animate: held a little out, elbows a little bent), or {}.
+var rest := {}
 var parts := {}                    # name -> {bone: int, origin: Vector3i, file, grid, group, style, arrays: {lod: Dictionary}}
 var _meshes := {}                  # key -> ArrayMesh
 
@@ -102,6 +106,11 @@ func _load(ch: String) -> bool:
 		bone_names.append(String(b.name))
 		var pv: Array = b.pivot
 		bone_pivot.append(Vector3(pv[0], pv[1], pv[2]))
+	var piv: Dictionary = _tint.get("pivots", {})
+	for nm in piv:
+		if bone_index.has(nm):
+			bone_pivot[int(bone_index[nm])] = piv[nm]
+	rest = _tint.get("rest", {})
 	for b in rig.get("bones", []):
 		var par := String(b.get("parent", ""))
 		bone_parent.append(int(bone_index.get(par, -1)))
