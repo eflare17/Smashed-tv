@@ -263,6 +263,27 @@ const engine = new Engine(GODOT_CONFIG);
 	}
 }());
 		</script>
+<!-- on a phone held upright: a note that it plays better sideways (goes away when you turn it, or tap Play anyway) -->
+<div id="landTip" role="dialog" aria-live="polite" style="display:none;position:fixed;inset:0;z-index:20;background:rgba(6,8,12,.82);align-items:center;justify-content:center;padding:24px;box-sizing:border-box;font-family:'Arial Black',Arial,sans-serif;color:#fff;text-align:center;touch-action:none">
+  <div style="max-width:300px;padding:26px 22px;border:2px solid #c9d0d7;border-radius:18px;background:rgba(18,20,26,.95)">
+    <div id="landTipPhone" style="width:46px;height:78px;margin:0 auto 18px;border:4px solid #c9d0d7;border-radius:10px;box-sizing:border-box"></div>
+    <div style="font-size:21px;line-height:1.25;margin-bottom:8px">Better played in landscape</div>
+    <div style="font:15px/1.4 Arial,sans-serif;color:#c9ccd2;margin-bottom:20px">Turn your phone sideways</div>
+    <button id="landTipOk" type="button" style="font:700 15px Arial,sans-serif;color:#111;background:#c9d0d7;border:0;border-radius:12px;padding:10px 20px">Play anyway</button>
+  </div>
+</div>
+<style>@keyframes landTipTurn{0%,25%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}#landTipPhone{animation:landTipTurn 2s ease-in-out infinite alternate}@media (prefers-reduced-motion:reduce){#landTipPhone{animation:none}}</style>
+<script>
+(function(){
+  var tip=document.getElementById('landTip'),ok=document.getElementById('landTipOk'),dismissed=false;
+  var touch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+  function sync(){tip.style.display=(touch&&!dismissed&&innerHeight>innerWidth)?'flex':'none';}
+  ok.addEventListener('click',function(e){e.stopPropagation();dismissed=true;sync();});
+  ['touchstart','touchend','pointerdown','pointerup'].forEach(function(n){tip.addEventListener(n,function(e){e.stopPropagation();},{passive:true});});
+  addEventListener('resize',sync);addEventListener('orientationchange',function(){setTimeout(sync,200);});
+  sync();
+})();
+</script>
 	</body>
 </html>
 
