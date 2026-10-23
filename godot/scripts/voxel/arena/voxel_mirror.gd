@@ -8,7 +8,11 @@ extends Node3D
 ## while you're near enough to see it. Owned by the voxel session.
 
 const LAYER_SELF := 2           # render layer (bit index + 1) the player's own Jared is on in first person
-const RES := 360                # the reflection's height in pixels (the width follows the glass)
+const RES := 360                # the reflection's height in pixels to start with (the width follows the glass) ...
+## ... then as many as the glass covers on screen (close up, nearly all of it: drawn at 360 and stretched it was
+## blurry), in steps of 64, up to max_res (the settings: the anti-aliasing's level sets it)
+static var max_res := 1080
+static var msaa := Viewport.MSAA_2X
 const NEAR_ENOUGH := 9.0        # metres: further off, it isn't rendered
 const SHEEN := Color(0.3, 0.33, 0.37)   # the glass while it isn't rendering (no frozen last reflection)
 
@@ -97,4 +101,12 @@ func _process(_dt: float) -> void:
 	var ox := to.dot(-_right)
 	var oy := to.dot(Vector3.UP)
 	_cam.set_frustum(height, Vector2(ox, oy), maxf(0.02, off), 60.0)
+	# sharp: as many pixels as the glass takes up on the screen
+	var screen_h := float(arena.get_viewport().get_visible_rect().size.y)
+	var px := height / (2.0 * maxf(0.3, eye.distance_to(centre)) * tan(deg_to_rad(main.fov) * 0.5)) * screen_h
+	var want := clampi(int(ceil(px / 64.0)) * 64, 256, max_res)
+	if absi(want - _vp.size.y) >= 64:
+		_vp.size = Vector2i(int(want * width / height), want)
+	if _vp.msaa_3d != msaa:
+		_vp.msaa_3d = msaa
 

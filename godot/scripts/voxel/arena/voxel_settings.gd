@@ -168,6 +168,9 @@ func apply(arena: Node3D) -> void:
 		else int(ProjectSettings.get_setting("rendering/global_illumination/sdfgi/probe_ray_count", 1)))
 	RenderingServer.environment_set_volumetric_fog_volume_size(128 if hi else 64, 128 if hi else 64)
 	VoxelMirror.enabled = bool(v.mirror)
+	var aa := int(v.msaa)                    # (the mirror as sharp as the rest: more pixels and its own MSAA at the higher levels)
+	VoxelMirror.max_res = {0: 720, 2: 1080, 4: 1440, 8: 2160}.get(aa, 1080)
+	VoxelMirror.msaa = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(aa, Viewport.MSAA_2X)
 	VoxelPieces.MAX_PIECES = int(v.pieces)
 	VoxelArena.MAX_DEAD = int(v.corpses)
 	var restart := false

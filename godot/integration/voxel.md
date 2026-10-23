@@ -590,6 +590,14 @@ clips, fuel) at a lobby bench")
   hole, FUEL, the top level, saved and loaded; `--host` / `--join`: the guest's levels on the host's copies and their
   DAMAGE on their hits); `test/voxel/upgrades_shots.gd` (`voxel_shots/upgrades_bench.png`).
 
+### The mirror, sharper (23 Oct, the owner: "the mirror ... looks blurry looking at Jared")
+
+- `VoxelMirror` drew its reflection at 360 pixels high whatever: close up the glass covers most of the screen, so it was
+  stretched two or three times. Now it's drawn at as many pixels as the glass covers on screen (worked out each frame
+  from how far off it is and the view's width, in steps of 64), up to `max_res`, with MSAA of its own: both from the
+  settings' anti-aliasing (off 720 / none, 2x 1080 / 2x, 4x 1440 / 4x, 8x 2160 / 8x). `test/voxel/mirror_shots.gd`
+  (`voxel_shots/mirror_sharp.png`; `mirror_old.png` in its run shows the 360 it was).
+
 ### The slot machine (23 Oct, the owner: "an old school one that you have to pull the lever and the dials spin";
 "a bit of a beat up looking machine, maybe some of the lights flicker"; "a spider in the machine that sometimes comes
 down or falls onto one of the spinning wheels and gets flung around")
