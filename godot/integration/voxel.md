@@ -597,6 +597,9 @@ clips, fuel) at a lobby bench")
   from how far off it is and the view's width, in steps of 64), up to `max_res`, with MSAA of its own: both from the
   settings' anti-aliasing (off 720 / none, 2x 1080 / 2x, 4x 1440 / 4x, 8x 2160 / 8x). `test/voxel/mirror_shots.gd`
   (`voxel_shots/mirror_sharp.png`; `mirror_old.png` in its run shows the 360 it was).
+- A vanity light on top of its frame (the owner: "add a light so I can see him"): a brass bar, three frosted bulbs, and
+  a warm spot out of it, a little down, onto whoever stands in front (the ceiling light's behind you there: you were a
+  dark shape in it).
 
 ### The slot machine (23 Oct, the owner: "an old school one that you have to pull the lever and the dials spin";
 "a bit of a beat up looking machine, maybe some of the lights flicker"; "a spider in the machine that sometimes comes

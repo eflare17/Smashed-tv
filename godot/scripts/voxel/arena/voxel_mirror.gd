@@ -72,6 +72,49 @@ func setup(arena_: Node3D, centre_: Vector3, normal_: Vector3, w: float, h: floa
 	add_child(_glass)
 	_glass.global_transform = Transform3D(basis, centre + normal * 0.001)
 	_glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# a vanity light on top of the frame (the owner, 23 Oct: "add a light so I can see him"): a brass bar, three frosted
+	# bulbs, and a warm light out of it onto whoever stands in front (the ceiling light's behind you there: you were a
+	# dark shape in it)
+	var brass := StandardMaterial3D.new()
+	brass.albedo_color = Color8(176, 138, 70)
+	brass.metallic = 0.8
+	brass.roughness = 0.35
+	var bar := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(w * 0.8, 0.035, 0.07)
+	bar.mesh = bm
+	bar.material_override = brass
+	add_child(bar)
+	bar.global_transform = Transform3D(basis, centre + Vector3.UP * (h * 0.5 + 0.08) + normal * 0.02)
+	var bulb_m := StandardMaterial3D.new()
+	bulb_m.albedo_color = Color(1.0, 0.95, 0.85)
+	bulb_m.emission_enabled = true
+	bulb_m.emission = Color(1.0, 0.86, 0.62)
+	bulb_m.emission_energy_multiplier = 3.0
+	var sm := SphereMesh.new()
+	sm.radius = 0.035
+	sm.height = 0.07
+	sm.radial_segments = 12
+	sm.rings = 6
+	for k in [-1, 0, 1]:
+		var bulb := MeshInstance3D.new()
+		bulb.mesh = sm
+		bulb.material_override = bulb_m
+		bulb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(bulb)
+		bulb.global_position = centre + Vector3.UP * (h * 0.5 + 0.08) + _right * (k * w * 0.3) + normal * 0.08
+	var lamp := SpotLight3D.new()
+	lamp.light_color = Color(1.0, 0.86, 0.66)
+	lamp.light_energy = 1.7
+	lamp.spot_range = 4.0
+	lamp.spot_angle = 50.0
+	lamp.spot_attenuation = 0.8
+	lamp.shadow_enabled = false
+	add_child(lamp)
+	# out of the glass and a little down, at a face and a body a metre or two in front
+	var at := centre + Vector3.UP * (h * 0.5 + 0.06) + normal * 0.12
+	lamp.global_position = at
+	lamp.look_at(at + normal * 1.6 + Vector3.DOWN * 0.7, Vector3.UP)
 	# a stand behind it
 	var leg := MeshInstance3D.new()
 	var lm := BoxMesh.new()
