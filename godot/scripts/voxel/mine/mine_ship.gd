@@ -5,8 +5,9 @@ extends Node3D
 ## ship-sized hole cell by cell in front of it (slower in harder rock; a boulder only with a good enough drill), the
 ## cracks spreading through the face, chips flying, the ship working its way in as the face gives. It pushes through
 ## loose rubble and sand (they're shoved aside) and water (it floats), and steps up small ledges. Landing hard hurts.
-## Positions in metres (x across, y up), in front of the ground's quad (z > 0). Its look changes with each upgrade
-## (the drill's bit, the fuel tanks, the cargo bay, the hull's plating, the lamps). The mine (VoxelMine) runs it,
+## Positions in metres (x across, y up), in front of the ground's quad (z > 0). It's drawn in pixel art (MineShipArt:
+## the Mole, Juicy Jared in its bubble), the whole of it turned to face the way it's going and tipped nose-first into
+## the ground to drill down; its look changes with each upgrade. The mine (VoxelMine) runs it,
 ## pays for the fuel, and takes what the drill brings up (dug). Owned by the voxel session.
 
 signal dug(res: Dictionary, dir: Vector2)
@@ -26,8 +27,6 @@ const FALL_SAFE := 8.8          # landing faster than this hurts
 const BUMP_SAFE := 6.0          # hitting a wall faster than this hurts
 const BIT_DEPTH := 0.34         # how far ahead of the ship the drill works (metres)
 const SPRAY := 0.22             # the share of what's drilled that flies off as chips
-const HULL_COLS := [Color8(240, 186, 40), Color8(50, 168, 160), Color8(196, 52, 50), Color8(62, 66, 76)]
-const DRILL_COLS := [Color8(170, 172, 180), Color8(196, 128, 70), Color8(240, 200, 60), Color8(170, 240, 255)]
 
 var ground: MineGround
 var p := Vector2()
@@ -47,14 +46,8 @@ var broke := 0                  # cells it broke this step
 var heat := 0.0                 # the bit's heat (glows in hard rock)
 var wet := 0.0                  # how much of it's in water (0 .. 1)
 var shove := 0                  # loose cells it pushed through this step
-var _drill_down := 0.0          # 0 drill forward .. 1 drill down
 var _spin := 0.0
 var _rattle := 0.0
-var _model: Node3D
-var _drill_piv: Node3D
-var _drill_bit: Node3D
-var _drill_mat: StandardMaterial3D
-var _flames: Array[MeshInstance3D] = []
 var lamp: OmniLight3D
 var spot: SpotLight3D
 
@@ -139,6 +132,8 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 	if shove > 0:
 		v *= 1.0 - minf(0.5, shove * 0.012)
 	grounded = ground.count(p + Vector2(0, -HALF - 0.5 / MineGround.C), Vector2(HALF - 0.005, 0.5 / MineGround.C), -1) > 0
+	if hy > 2.0 and falling:
+		squash(hy * 0.025)
 	if hy > FALL_SAFE and falling:
 		bumped.emit(hy, true)
 	elif hy > 2.0 and falling:
@@ -216,151 +211,164 @@ func place(at: Vector2) -> void:
 
 # ---------------------------------------------------------------- the look
 
+const SHADER := """
+shader_type spatial;
+render_mode diffuse_lambert, specular_disabled, cull_disabled;
+uniform sampler2D tex : filter_nearest, source_color;
+uniform float self_lit = 0.3;
+uniform vec3 glow = vec3(0.0);
+void fragment() {
+	vec4 c = texture(tex, UV);
+	if (c.a < 0.5) discard;
+	ALBEDO = c.rgb;
+	ROUGHNESS = 1.0;
+	EMISSION = c.rgb * self_lit + glow * dot(c.rgb, vec3(0.33));
+}
+"""
+static var _shader: Shader
+
+var cargo_full := 0.0           # (the mine sets it) how full the cargo bay is: the pod bulges with ore
+var hose_out := 0.0             # (the mine sets it) the hose run out of its back: unloading, sucking water up
+var lift_level := 0             # the lift's upgrade: 0 propeller, 1 big blades, 2 boosters, 3 mega booster
+var _upg := {}
+var _pivot: Node3D              # the whole ship's picture: turned to face, tipped nose-down to drill
+var _layers := {}               # name -> MeshInstance3D
+var _drill_tex: Array[ImageTexture] = []
+var _track_tex: Array[ImageTexture] = []
+var _lift_tex: Array[ImageTexture] = []
+var _flame_tex: Array[ImageTexture] = []
+var _hose_tex := {}
+var _body_full := -1
+var _turn := 1.0                # -1 facing left .. 1 right (through 0: it swings round)
+var _pitch := 0.0               # 0 level .. PI/2 nose-down
+var _squash := 0.0
+var _roll := 0.0
+var _rotor := 0.0
+var _flick := 0.0
+var _down_t := 0.0              # (drilling down a moment ago: it stays tipped as it drops into what it dug)
+
+func _layer(name: String, z: float, self_lit := 0.3) -> MeshInstance3D:
+	if _shader == null:
+		_shader = Shader.new()
+		_shader.code = SHADER
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(MineShipArt.W, MineShipArt.H) * MineShipArt.PX
+	mi.mesh = q
+	var m := ShaderMaterial.new()
+	m.shader = _shader
+	m.set_shader_parameter("self_lit", self_lit)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = Vector3((MineShipArt.W * 0.5 - MineShipArt.CX) * MineShipArt.PX, (MineShipArt.CY - MineShipArt.H * 0.5) * MineShipArt.PX, z)
+	_pivot.add_child(mi)
+	_layers[name] = mi
+	return mi
+
+func _set_tex(name: String, t: Texture2D) -> void:
+	(_layers[name].material_override as ShaderMaterial).set_shader_parameter("tex", t)
+
 func _pose(dt: float) -> void:
 	_rattle = move_toward(_rattle, (0.02 + hardness * 0.012) if (drilling and broke >= 0) else 0.0, dt * 0.5) if dt > 0.0 else 0.0
 	var jit := Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _rattle if drilling else Vector3.ZERO
 	position = Vector3(p.x, p.y, Z) + jit
-	if _model == null:
+	if _pivot == null:
 		return
-	_model.rotation.y = 0.0 if face > 0 else PI
-	var want := 1.0 if (drilling and drill_dir.y < 0.0) else 0.0
-	_drill_down = move_toward(_drill_down, want, dt * 8.0)
+	var snap := dt <= 0.0
+	# facing: it swings round through side-on (a quick spin, not a snap)
+	_turn = float(face) if snap else move_toward(_turn, float(face), dt * 11.0)
+	var tsign := 1.0 if _turn >= 0.0 else -1.0
+	# drilling down: the whole ship tips nose-first into the ground (and stays tipped while it's going down the hole)
+	var down := drilling and drill_dir.y < 0.0
+	if down:
+		_down_t = 0.35
+	elif dt > 0.0:
+		_down_t = maxf(0.0, _down_t - dt) if (grounded or v.y > 0.5 or thrusting) else _down_t
+	var want := PI * 0.5 if (down or _down_t > 0.0) else 0.0
+	_pitch = want if snap else move_toward(_pitch, want, dt * 7.0)
+	# leaning into the way it's going, nose up as it climbs; a squash when it lands
+	var lean := 0.0
+	if not grounded and _pitch < 0.1:
+		lean = -v.x * 0.035 + (0.12 * tsign if thrusting else 0.0)
+	_squash = 0.0 if snap else move_toward(_squash, 0.0, dt * 2.5)
+	_pivot.scale = Vector3(maxf(0.06, absf(_turn)) * tsign * (1.0 + _squash), 1.0 - _squash, 1.0)
+	_pivot.rotation.z = -_pitch * tsign + lean
+	# the drill spinning, glowing as it heats
 	if drilling:
-		_spin += dt * (30.0 + 20.0 * hardness)
-	_drill_piv.position = Vector3(lerpf(0.33, 0.0, _drill_down), lerpf(-0.12, -0.34, _drill_down), 0.0)
-	_drill_piv.rotation.z = lerpf(0.0, -PI * 0.5, _drill_down)
-	_drill_bit.rotation.x = _spin
-	if _drill_mat:
-		_drill_mat.emission_enabled = heat > 0.05 or drill_level == 3
+		_spin += dt * (24.0 + 16.0 * hardness)
+	if not _drill_tex.is_empty():
+		_set_tex("drill", _drill_tex[int(_spin) % 3])
 		var hot := Color(1.0, 0.35, 0.05).lerp(Color(1.0, 0.85, 0.4), heat)
-		_drill_mat.emission = hot if heat > 0.05 else DRILL_COLS[drill_level]
-		_drill_mat.emission_energy_multiplier = heat * 4.0 if heat > 0.05 else 0.8
-	_model.rotation.z = (-v.x * 0.04 * face if not grounded else 0.0)
-	for f in _flames:
-		f.visible = thrusting
-		if thrusting:
-			f.scale = Vector3(1, randf_range(0.7, 1.25), 1)
+		var g := Vector3(hot.r, hot.g, hot.b) * heat * 2.5 if heat > 0.05 else (Vector3(0.2, 0.5, 0.6) if drill_level == 3 else Vector3.ZERO)
+		(_layers["drill"].material_override as ShaderMaterial).set_shader_parameter("glow", g)
+	# the tracks rolling as it drives
+	if grounded:
+		_roll += v.x * dt * 18.0 * tsign
+	if not _track_tex.is_empty():
+		_set_tex("tracks", _track_tex[posmod(int(_roll), 2)])
+	# the rotor (faster when it's lifting), the boosters' flames
+	_rotor += dt * (40.0 if thrusting else 6.0)
+	_flick += dt * 30.0
+	if not _lift_tex.is_empty():
+		_set_tex("lift", _lift_tex[int(_rotor) % 2])
+		_layers["flames"].visible = thrusting and lift_level >= 2
+		_set_tex("flames", _flame_tex[int(_flick) % 2])
+	# the cargo pod filling up, the hose
+	var fb := int(cargo_full * 5.0)
+	if fb != _body_full and not _upg.is_empty():
+		_body_full = fb
+		_set_tex("body", MineShipArt.body(_upg, float(fb) / 5.0))
+	var hs := int(round(clampf(hose_out, 0.0, 1.0) * 7.0))
+	_layers["hose"].visible = hs > 0
+	if hs > 0:
+		if not _hose_tex.has(hs):
+			_hose_tex[hs] = MineShipArt.hose(hs / 7.0)
+		_set_tex("hose", _hose_tex[hs])
 	spot.position = Vector3(0.3 * face, 0.0, 0.3)
-	var aim := Vector3(face, -0.5, -0.4).normalized() if not (drilling and drill_dir.y < 0.0) else Vector3(0.05 * face, -1, -0.3).normalized()
+	var aim := Vector3(face, -0.5, -0.4).normalized() if not down else Vector3(0.05 * face, -1, -0.3).normalized()
 	if is_inside_tree():
 		spot.look_at(spot.global_position + aim, Vector3.UP if absf(aim.y) < 0.95 else Vector3.FORWARD)
 
-func _m(c: Color, rough := 0.6, metal := 0.3, glow := 0.0) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = rough
-	m.metallic = metal
-	if glow > 0.0:
-		m.emission_enabled = true
-		m.emission = c
-		m.emission_energy_multiplier = glow
-	return m
+## A hard landing: it squashes.
+func squash(k: float) -> void:
+	_squash = clampf(k, 0.0, 0.3)
 
-func _box(parent: Node3D, size: Vector3, at: Vector3, m: Material) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = m
-	mi.position = at
-	parent.add_child(mi)
-	return mi
+## Where the hose's nozzle is now (metres), turned with the ship.
+func nozzle_at() -> Vector2:
+	var n := MineShipArt.nozzle()
+	n.x *= float(face)
+	return p + n.rotated(_pivot.rotation.z if _pivot else 0.0)
 
-func _cyl(parent: Node3D, r0: float, r1: float, h: float, at: Vector3, rot: Vector3, m: Material) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = r0
-	cm.bottom_radius = r1
-	cm.height = h
-	cm.radial_segments = 12
-	mi.mesh = cm
-	mi.material_override = m
-	mi.position = at
-	mi.rotation = rot
-	parent.add_child(mi)
-	return mi
-
-## The ship built for its upgrades ({drill, tank, cargo, hull, lights}: levels 0..3).
+## The ship drawn for its upgrades ({drill, tank, cargo, hull, lights, lift}: levels 0..3).
 func build(upg: Dictionary) -> void:
-	if _model:
-		_model.queue_free()
-	_flames.clear()
-	_model = Node3D.new()
-	add_child(_model)
+	_upg = upg.duplicate()
 	var dl := int(upg.get("drill", 0))
-	var tl := int(upg.get("tank", 0))
-	var cl := int(upg.get("cargo", 0))
-	var hl := int(upg.get("hull", 0))
 	var ll := int(upg.get("lights", 0))
 	drill_level = dl
 	drill_power = MineShop.k("drill", dl)
-	var hull := _m(HULL_COLS[hl], 0.5, 0.35)
-	var dark := _m(Color8(40, 40, 44), 0.8, 0.2)
-	var steel := _m(Color8(150, 154, 162), 0.35, 0.8)
-	# the tracks and their wheels
-	_box(_model, Vector3(0.8, 0.16, 0.56), Vector3(0, -0.32, 0), dark)
-	for wx in [-0.27, 0.0, 0.27]:
-		_cyl(_model, 0.075, 0.075, 0.6, Vector3(wx, -0.32, 0), Vector3(PI * 0.5, 0, 0), steel)
-	# the body, the cockpit
-	_box(_model, Vector3(0.64, 0.34, 0.5), Vector3(-0.03, -0.07, 0), hull)
-	_box(_model, Vector3(0.5, 0.06, 0.52), Vector3(-0.06, 0.12, 0), hull)
-	var glass := _m(Color(0.5, 0.8, 1.0), 0.1, 0.1, 0.25)
-	var dome := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.17
-	sm.height = 0.3
-	dome.mesh = sm
-	dome.material_override = glass
-	dome.position = Vector3(0.1, 0.18, 0)
-	_model.add_child(dome)
-	# the hull's plating: plates at Armoured, gold trim on the Tank
-	if hl >= 1:
-		_box(_model, Vector3(0.66, 0.04, 0.54), Vector3(-0.03, -0.22, 0), _m(HULL_COLS[hl].darkened(0.3), 0.5, 0.5))
-	if hl >= 2:
-		for px in [-0.22, 0.0, 0.2]:
-			_box(_model, Vector3(0.16, 0.2, 0.03), Vector3(px, -0.07, 0.26), _m(HULL_COLS[hl].darkened(0.45), 0.4, 0.6))
-	if hl >= 3:
-		_box(_model, Vector3(0.66, 0.025, 0.535), Vector3(-0.03, 0.03, 0), _m(Color8(230, 190, 70), 0.3, 0.9))
-	# the drill: its bit bigger and finer each level
-	_drill_piv = Node3D.new()
-	_model.add_child(_drill_piv)
-	_drill_bit = Node3D.new()
-	_drill_piv.add_child(_drill_bit)
-	var dm := _m(DRILL_COLS[dl], 0.3, 0.9, 0.8)
-	_drill_mat = dm
-	var dh := 0.32 + 0.05 * dl
-	var dr := 0.15 + 0.02 * dl
-	var cone := _cyl(_drill_bit, 0.0, dr, dh, Vector3(dh * 0.5 + 0.04, 0, 0), Vector3(0, 0, -PI * 0.5), dm)
+	lift_level = int(upg.get("lift", 0))
+	if _pivot == null:
+		_pivot = Node3D.new()
+		add_child(_pivot)
+		_layer("flames", -0.004, 1.6)
+		_layer("lift", -0.003)
+		_layer("hose", -0.002)
+		_layer("body", 0.0)
+		_layer("tracks", 0.002)
+		_layer("drill", 0.004)
+	_drill_tex.clear()
 	for k in 3:
-		_box(cone, Vector3(dr * 1.5, 0.02, 0.03), Vector3(0, -dh * 0.25 + k * dh * 0.18, 0), _m(DRILL_COLS[dl].darkened(0.35), 0.4, 0.8)).rotation.y = k * 1.1
-	_cyl(_drill_piv, 0.07, 0.07, 0.1, Vector3(0.02, 0, 0), Vector3(0, 0, PI * 0.5), steel)
-	# the fuel tanks: a jerry can, then tanks along the side
-	var red := _m(Color8(200, 40, 30), 0.5, 0.3)
-	if tl == 0:
-		_box(_model, Vector3(0.12, 0.16, 0.08), Vector3(-0.3, 0.02, 0.3), red)
-	else:
-		for k in mini(tl, 2):
-			_cyl(_model, 0.06, 0.06, 0.34 + tl * 0.06, Vector3(-0.06, -0.12 + k * 0.13, 0.29), Vector3(0, 0, PI * 0.5), red)
-		if tl >= 3:
-			_cyl(_model, 0.07, 0.07, 0.5, Vector3(-0.1, 0.22, -0.12), Vector3(0, 0, PI * 0.5), red)
-	# the cargo bay on its back
-	var crate := _m(Color8(130, 96, 60), 0.85, 0.0)
-	var cs := Vector3(0.18 + 0.05 * cl, 0.1 + 0.05 * cl, 0.36 + 0.03 * cl)
-	_box(_model, cs, Vector3(-0.3 - 0.02 * cl, 0.15 + cs.y * 0.5, -0.02), crate)
-	# the lamps on its nose
-	var lampm := _m(Color8(255, 240, 180), 0.2, 0.0, 2.5)
-	for k in ll + 1:
-		_box(_model, Vector3(0.06, 0.06, 0.08), Vector3(0.3, 0.08 + k * 0.07, 0.18 - (k % 2) * 0.36), lampm)
+		_drill_tex.append(MineShipArt.drill(dl, k))
+	if _track_tex.is_empty():
+		for k in 2:
+			_track_tex.append(MineShipArt.tracks(k))
+	_lift_tex.clear()
+	_flame_tex.clear()
+	for k in 2:
+		_lift_tex.append(MineShipArt.lift(lift_level, k))
+		_flame_tex.append(MineShipArt.flames(lift_level, k))
+	_body_full = -1
 	lamp.omni_range = MineShop.k("lights", ll)
 	lamp.light_energy = 1.3 + ll * 0.2
 	spot.spot_range = MineShop.k("lights", ll) * 1.5
-	# the thrusters underneath at the back, their flames
-	var flame := _m(Color8(255, 150, 40), 0.5, 0.0, 4.0)
-	flame.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	flame.albedo_color.a = 0.85
-	for zx in [-0.17, 0.17]:
-		_cyl(_model, 0.05, 0.07, 0.1, Vector3(-0.28, -0.22, zx), Vector3.ZERO, steel)
-		var f := _cyl(_model, 0.07, 0.0, 0.32, Vector3(-0.28, -0.42, zx), Vector3.ZERO, flame)
-		f.visible = false
-		_flames.append(f)
 	_pose(0.0)
