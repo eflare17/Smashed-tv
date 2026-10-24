@@ -226,7 +226,7 @@ func _draw() -> void:
 	if _say_t > 0.0:
 		_text(Vector2(0, size.y * 0.3), _say, 26, Color(1, 1, 0.85, clampf(_say_t * 2.0, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, size.x)
 	if _prompt != "" and not _menu.visible:
-		_text(Vector2(0, size.y * 0.62), _prompt, 22, Color8(255, 220, 120), HORIZONTAL_ALIGNMENT_CENTER, size.x)
+		_text(Vector2(0, size.y * 0.76), _prompt, 22, Color8(255, 220, 120), HORIZONTAL_ALIGNMENT_CENTER, size.x)     # (below the Moles)
 	if _tip_t > 0.0:
 		var tw := minf(560.0, size.x - 40.0)
 		var lines := _wrap(_tip, tw - 24, 16)
@@ -237,8 +237,9 @@ func _draw() -> void:
 		for i in lines.size():
 			_text(at2 + Vector2(14, 24 + i * 21), lines[i], 16, Color(1, 1, 1, clampf(_tip_t, 0.0, 1.0)))
 	for p in _pops:
+		# (rising from under the middle line, clear of the panel's numbers)
 		var k: float = p.t / 1.8
-		_text(Vector2(190, 120 - k * 60.0), p.text, 24, Color(p.col.r, p.col.g, p.col.b, 1.0 - k * k))
+		_text(Vector2(0, size.y * 0.3 + 46 - k * 50.0), p.text, 24, Color(p.col.r, p.col.g, p.col.b, 1.0 - k * k), HORIZONTAL_ALIGNMENT_CENTER, size.x)
 	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   R suck water   G help your mate   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
 
 ## (co-op) Where your mate's Mole is, for the marker: {} when it's not down here with you; else at (on the screen),

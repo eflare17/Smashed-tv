@@ -110,7 +110,7 @@ func _process(dt: float) -> bool:
 	elif s < 13.0:
 		if role == "guest" and not v.has("boom"):
 			v.boom = true
-			m.explode(Vector2((HX + GX) * 0.5, -DEEP + 1.6), 1.6, true)
+			m.explode(Vector2((HX + GX) * 0.5, -DEEP + 2.2), 2.4, true)     # (up to the surface: a way out)
 	elif s < 15.0:
 		m.auto = {}
 	elif s < 19.5:
