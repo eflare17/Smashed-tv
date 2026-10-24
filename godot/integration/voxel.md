@@ -844,6 +844,29 @@ The mine's ground (below) was 1 m tiles; it's now Sand Miner's (the cabinet game
 - Tests (`mine_test.gd`, 56 checks): the lift's climb (5 and 9.5 m/s), the ORE box (prompt, hose out, paid in full,
   the counter), the hose sucking a pool down, sprayed lava going to stone.
 
+### The mine's physics, gone over (24 Oct, the owner: "go over the physics and look where you can improve")
+
+- **Floating**: the ship measures how high the water stands in the two cell columns either side of its own box (the
+  sim keeps water out of the box itself) and gets `BUOY` (1.7, less 0.4 with a full hold) x that x g of lift, with
+  drag; it floats about 3/5 under and bobs. S in water dives (`DIVE`). Coming down into water at over 3 m/s takes up
+  to 30 water cells from round it and throws them up either side as particles (`splashed`, `mine_splash`).
+- **Falling speeds up**: a falling cell (sand, rubble, water; lava stays slow) keeps its speed in its `dmg` byte
+  (1/32 cell a step: starts at 8, +2 a step, at most 96 = 3 cells a step) and the part of a cell it's got through in
+  `var`'s FRAC bits; `MineSim::fall` moves it that many cells. Landing (or sliding off diagonally) zeroes it. Cells
+  turned loose (crumbling, cave-ins) start with no leftover damage as speed.
+- **Nuggets** bounce (0.45 restitution, friction on the floor) for their first 0.45 s and then, pulled to the ship,
+  slide along walls rather than through them (through only if stuck 0.6 s).
+- **Cave-ins**: `var`'s DUG bit marks cells the drill or a blast emptied (it belongs to the place: `mv` and
+  `displace` leave it where it is). `collapse_scan` finds runs of roof rock (solid, diggable, not a boulder) over dug
+  space wider than the rock spans (12 cells + 28 a point of hardness: dirt ~21, clay ~26, stone ~38) above a dug void
+  at least 14 cells (1.75 m) tall at the run's middle, and returns a slab (the run, 3-6 cells thick). The mine scans
+  round the ship every 0.3 s; a slab cracks (`crack_rect`, the drill's crack look), groans (`mine_groan`) and drops
+  grit for 1.1 s, then `drop_rect` turns it to falling rubble (`mine_collapse`, a shake; 4-20 hull if the ship's
+  under it). Natural caves and ordinary 1 m tunnels never qualify. Tip "cavein".
+- The cargo pod's bulge (and the float's depth) now follow the hold (`ship.cargo_full`).
+- Tests (63 checks): splash and float (about 3/5 under, off the bottom), the dive, a nugget bouncing on a floor,
+  falling speeding up, a dug-out room in dirt cracking and coming down.
+
 ### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
 
 - **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back
