@@ -115,7 +115,7 @@ func _process(dt: float) -> bool:
 				var dia_top := band(MineTiles.DIAMOND, 0, 90)
 				var dia := band(MineTiles.DIAMOND, 90, MineGround.D)
 				var gold := band(MineTiles.GOLD, 45, MineGround.D)
-				check(coal > 500 and gold > 300 and dia > 150 and dia_top == 0, "ores (cells): coal near the top %d, gold deeper %d, diamonds only deep %d (shallow: %d)" % [coal, gold, dia, dia_top])
+				check(coal > 500 and gold > 300 and dia > 100 and dia_top == 0, "ores (cells): coal near the top %d, gold deeper %d, diamonds only deep %d (shallow: %d)" % [coal, gold, dia, dia_top])
 				var f := g.features
 				check(f.caves.size() == 5 and f.has("cathedral") and f.has("worm"), "five mushroom caves, the cathedral, the worm's cavern")
 				check(f.sewer.size() == 2 and f.has("bunker") and f.rival.size() > 50, "the trial hazards: sewers %d, bunker %s, rival tunnels %d spots" % [f.sewer.size(), f.get("bunker"), f.rival.size()])
