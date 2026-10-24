@@ -815,6 +815,35 @@ The mine's ground (below) was 1 m tiles; it's now Sand Miner's (the cabinet game
   and its hoard, dynamite's nuggets, a clay shot sticking to a wall, saving and loading the cells, the tow, coming back
   up); `mine_shots.gd`, `mine_clip.gd`.
 
+### The Mole, the lift, the ORE box, the water hose (24 Oct, the owner: "it needs to point the right direction ... the whole ship needs to move", "Juicy Jared inside the little capsule", "propeller blades ... bigger blades, and then boosters and stronger boosters", "squirt into a box", "suck up water and put it on lava to turn it to stone")
+
+- **The Mole** (`mine_ship_art.gd`, picked from three mock-ups): the ship's drawn in pixel art in code (grids of
+  palette letters, auto-outlined in the ground's outline colour): a yellow capsule whose nose is the drill, tracks on
+  its belly, Jared in a glass bubble (shades, moustache, green singlet). Every upgrade shows (the bit bigger and steel /
+  bronze / gold / diamond; plating, armour, gold trim; jerry can, side tanks, a top tank; the cargo pod growing and
+  bulging with ore as it fills; lamps; the lift). It's cut into layers (body, tracks, drill, lift, flames, hose) on one
+  canvas (W x H, the ship's middle at CX, CY, PX metres a pixel: its 0.8 m box is 36 px) so the drill spins, the
+  tracks roll, the rotor blurs and the flames flicker; each layer's a quad with a little shader (lit like the ground,
+  a bit of its own light, the drill's heat glow). `mine_ship.gd` turns the whole picture: it swings round through
+  side-on to face the way it's going, tips nose-first to drill down (staying tipped as it drops into the hole), leans
+  as it flies, squashes when it lands. The hitbox is unchanged (a square), so turning changes nothing physical.
+- **The lift** (a mechanic upgrade, `MineShop.UPGRADES.lift`): Propeller (5 m/s climb, a wobble, 0.8x the thrusters'
+  fuel), Big blades (7, 1x), Boosters (9.5, 1.4x), Mega booster (13, 1.8x); push `LIFT_PUSH`, fuel `LIFT_FUEL`. Sounds:
+  `mine_prop` (whup-whup), `mine_booster` (a crackling roar).
+- **The ORE box** (`mine_orebox.gd`): a pixel-art hopper at x 14 between the fuel station and the trader (on its own
+  pad). In reach (within 3.4 m, in the air or parked between the buildings) with cargo, E: the hose runs out of the
+  Mole's back and the cargo squirts out a nugget every 0.11 s, each thrown to land in the funnel; each one clunks
+  (`mine_clunk`, pitched by the ore), pays (`pay_quiet`) and rolls the box's counter; ka-ching at the end
+  (`unloaded`). Fly off and the rest stays in the hold. The trader now sells supplies only (`sell_all` is kept, for
+  the tests).
+- **The water hose**: hold R (`sucking`, `auto.suck` in tests) and the hose sucks up water round its nozzle (and round
+  the ship, sat in it) at 110 cells a second into the launcher's fourth ammo, water (up to 600), drops flying up it
+  (`mine_suck`). Water shots are a fast spray (6 cells every 0.07 s, `mine_spray`); landing on lava they deposit water,
+  which the sim turns (with the lava it touches) to obsidian, with a steam puff and hiss (`mine_steam`). Obsidian's now
+  hardness 1.1, need 0 (any drill), and a glassy purple-black. All shots now stop at liquids.
+- Tests (`mine_test.gd`, 56 checks): the lift's climb (5 and 9.5 m/s), the ORE box (prompt, hose out, paid in full,
+  the counter), the hose sucking a pool down, sprayed lava going to stone.
+
 ### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
 
 - **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back

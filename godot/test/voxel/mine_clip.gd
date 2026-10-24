@@ -1,9 +1,10 @@
 extends SceneTree
 ## A short film of the pixel mine, played by a little autopilot (under a display with --write-movie): through the
-## roller door, drill down, tunnel along through ore veins (nuggets flying to the ship), the launcher (clay shots
-## sticking to the wall, dirt piling), fly back up, sell, a better drill; then cuts to the deep: sand pouring in when
-## it's undermined, lava running into a tunnel, a mushroom cave (tripping), the cop bunker's alarm, the rival crew, and
-## the rock worm. Owned by the voxel session.
+## roller door, Jared's Mole drilling down nose-first, tunnelling along through ore veins (nuggets flying to the ship),
+## the launcher (clay shots sticking to the wall, dirt piling), the propeller back up, the cargo squirted into the ORE
+## box, boosters bought; then cuts: up a shaft on the boosters, the hose sucking up a pool, water sprayed on lava
+## turning it to stone, sand pouring in when it's undermined, a mushroom cave (tripping), the cop bunker's alarm, the
+## rival crew, and the rock worm. Owned by the voxel session.
 
 var arena: Node
 var m: VoxelMine
@@ -27,15 +28,16 @@ func _ready_plan() -> void:
 		{"do": "to_x", "x": SX + 7.0, "secs": 7.0},
 		{"do": "shoot", "ammo": "clay", "aim": Vector2(3.0, 0.4), "n": 4, "secs": 1.6},
 		{"do": "shoot", "ammo": "dirt", "aim": Vector2(-2.5, 1.2), "n": 3, "secs": 1.6},
-		{"do": "up", "x": SX, "depth": 0.0, "secs": 10.0},
-		{"do": "to_x", "x": MineGround.building_x("trader"), "secs": 6.0},
-		{"do": "menu", "at": "trader", "secs": 1.8},
-		{"do": "sell", "secs": 1.5},
-		{"do": "to_x", "x": MineGround.building_x("mechanic"), "secs": 4.0},
+		{"do": "up", "x": SX, "depth": 0.0, "secs": 12.0},
+		{"do": "to_x", "x": MineOreBox.X + 0.6, "secs": 9.0},
+		{"do": "unload", "secs": 3.2},
+		{"do": "to_x", "x": MineGround.building_x("mechanic"), "secs": 5.0},
 		{"do": "menu", "at": "mechanic", "secs": 1.5},
 		{"do": "upgrade", "secs": 2.0},
+		{"do": "cut", "to": "boost", "secs": 4.0},
+		{"do": "cut", "to": "water", "secs": 4.5},
+		{"do": "cut", "to": "lava", "secs": 5.5},
 		{"do": "cut", "to": "sand", "secs": 5.0},
-		{"do": "cut", "to": "lava", "secs": 5.0},
 		{"do": "cut", "to": "cave", "secs": 5.0},
 		{"do": "cut", "to": "bunker", "secs": 6.0},
 		{"do": "cut", "to": "rivals", "secs": 5.0},
@@ -84,17 +86,19 @@ func _start(c: Dictionary) -> void:
 	match String(c.do):
 		"enter":
 			m.enter()
-			m.tips_done = {"cops": true, "rivals": true, "worm": true, "mush": true, "sewer": true, "deep": true, "gas": true, "lava": true, "hard": true, "welcome": true}
+			m.tips_done = {"cops": true, "rivals": true, "worm": true, "mush": true, "sewer": true, "deep": true, "gas": true, "lava": true, "hard": true, "welcome": true, "water": true, "first_ore": true, "sold": true, "cargo_full": true}
 			g = m.ground
 			_route()
 		"menu":
 			m._near = String(c.at)
 			m.use()
-		"sell":
-			m.sell_all()
+		"unload":
+			m._buildings_near()
+			m.use()
 		"upgrade":
-			arena.cash = maxi(arena.cash, 300)
-			m.buy_upgrade("drill")
+			arena.cash = maxi(arena.cash, 3000)
+			m.buy_upgrade("lift")
+			m.buy_upgrade("lift")
 		"shoot":
 			m.auto = {}
 			m.ammo_sel = String(c.ammo)
@@ -116,15 +120,37 @@ func _start(c: Dictionary) -> void:
 					g.set_box(at + Vector2(0, -1.3), Vector2(3.5, 0.12), MineTiles.STONE)
 					_place(at + Vector2(-3.0, -0.8), 0.6)
 					c["t_open"] = 0.6
+				"boost":
+					# a shaft from 14 m down to the top, the boosters on: up it
+					m.hud.close_menu()
+					g.set_box(Vector2(40.0, -7.0), Vector2(1.6, 7.6), MineTiles.STONE)
+					g.set_box(Vector2(40.0, -6.6), Vector2(0.55, 7.2), MineTiles.AIR)
+					_place(Vector2(40.0, -13.8 + MineShip.HALF + 0.02), 0.6)
+					m.auto = {"up": true}
+				"water":
+					# a pool in a room behind the ship: the hose sucks it up
+					var at := Vector2(30.0, -20.0 + MineShip.HALF + 0.01)
+					g.set_box(at + Vector2(-1.4, 0.2), Vector2(3.0, 1.4), MineTiles.STONE)
+					g.set_box(at, Vector2(0.5, 0.46), MineTiles.AIR)
+					g.set_box(at + Vector2(-2.2, 0.0), Vector2(1.7, 0.5), MineTiles.AIR)
+					g.set_box(at + Vector2(-2.2, -0.15), Vector2(1.6, 0.32), MineTiles.WATER)
+					_place(at, 0.6)
+					m.ship.face = 1
+					m.ammo["water"] = 0
+					m.auto = {"suck": true}
 				"lava":
-					var lp: Vector2 = g.features.lava[0]
-					for cand in g.features.lava:
-						if g.count(cand, Vector2(1.0, 1.0), MineTiles.LAVA) > 30:
-							lp = cand
-							break
-					g.set_box(lp + Vector2(4.0, 0), Vector2(3.2, 0.5), MineTiles.AIR)
-					g.set_box(lp + Vector2(4.0, -0.62), Vector2(3.3, 0.12), MineTiles.STONE)
-					_place(lp + Vector2(6.6, -0.08), 0.8)
+					# lava down past a ledge, in a stone room: sprayed with water, it crusts over to stone
+					var at2 := Vector2(36.0, -30.0 + MineShip.HALF + 0.01)
+					g.set_box(at2 + Vector2(2.0, -0.6), Vector2(3.0, 1.6), MineTiles.STONE)
+					g.set_box(at2, Vector2(0.5, 0.46), MineTiles.AIR)
+					g.set_box(at2 + Vector2(2.3, -0.55), Vector2(1.75, 1.05), MineTiles.AIR)
+					g.set_box(at2 + Vector2(2.5, -1.35), Vector2(1.4, 0.25), MineTiles.LAVA)
+					_place(at2, 0.2)
+					m._cam_at.x = clampf(at2.x + 1.5, 9.0, MineGround.W - 9.0)
+					m.ship.face = 1
+					m.ammo_sel = "water"
+					m.ammo["water"] = 500
+					c["spray"] = at2 + Vector2(2.5, -1.2)
 				"cave":
 					var cv: Array = g.features.caves[1]
 					var f := g._floor_spot(float(cv[0]), float(cv[1]) - float(cv[3]), float(cv[1]) + float(cv[3]) + 1.0)
@@ -192,5 +218,9 @@ func _run(c: Dictionary, dt: float) -> void:
 				m.auto = {"x": 1.0}
 			if c.has("flee") and cur_t > 2.2:
 				m.auto = {"x": -1.0}
+			if c.has("spray") and cur_t > 0.6:
+				m.aim = c.spray
+				if m._launch_t <= 0.0:
+					m.shoot()
 		_:
 			m.auto = {}
