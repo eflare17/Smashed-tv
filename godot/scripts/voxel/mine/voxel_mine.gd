@@ -634,6 +634,10 @@ func _ground_swapped() -> void:
 	ground.build_all()
 	_feature_lights()
 
+## (the guest's) the host's ground has come: still at the door to go down? (not walked off, downed or down already)
+func ready_for_world() -> bool:
+	return can_enter() and arena.player.global_position.distance_to(MineHatch.AT) < 4.0 and float(arena.get("down_t")) <= 0.0
+
 ## (the guest's) the link to the host gone while down its mine: back up top
 func lost_link() -> void:
 	if active:
@@ -854,7 +858,7 @@ func _process(dt: float) -> void:
 			_alarm_t = 2.0
 			sound.play("mine_alarm", Vector3.INF, -8.0)
 			tip("fuel_low")
-	if fuel <= 0.0 and not ship.drilling:
+	if fuel <= 0.0 and not ship.drilling and _going == 0:
 		if net.mate_here() and ship.p.y < -1.0:
 			# (co-op: your mate can bring you some: wait, or T for the tow)
 			if not stranded:
@@ -1778,7 +1782,9 @@ func _trader_menu() -> void:
 		var it: Dictionary = MineShop.ITEMS[id]
 		var have := int(items.get(id, 0))
 		rows.append(["%s: $%d   (%s; you've %d of %d)" % [it.name, it.cost, it.desc, have, it.max], have < int(it.max) and arena.cash >= int(it.cost), func(): buy_item(id)])
-	rows.append(["Fresh claim: brand new ground, $%d" % MineShop.CLAIM_COST, arena.cash >= MineShop.CLAIM_COST, func(): new_claim()])
+	var sharing: bool = net.shared or net.guest_down
+	rows.append(["Fresh claim: brand new ground, $%d" % MineShop.CLAIM_COST + ("  (not while your mate's down here)" if sharing else ""),
+		arena.cash >= MineShop.CLAIM_COST and not sharing, func(): new_claim()])
 	hud.open_menu("TRADER", rows)
 
 func sell_all() -> void:
@@ -1802,6 +1808,8 @@ func buy_item(id: String) -> void:
 	_trader_menu()
 
 func new_claim() -> void:
+	if net.shared or net.guest_down:
+		return                      # (the shared mine: the host's ground, both of you in it)
 	if not hud.confirm("claim"):
 		return
 	if not _spend(MineShop.CLAIM_COST):

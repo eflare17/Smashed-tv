@@ -30,6 +30,9 @@ var _pending := []              # [[seq, kind, args]] not yet done by the host
 var _outbox := []               # (the same, not sent yet: they go 30 times a second)
 var _out_t := 0.0
 var _own_ground := PackedByteArray()
+var _want_t := 0.0              # (asked this long ago: no answer in WANT_WAIT, given up)
+var _lost := false              # (the link gone while down the host's mine: on the way up)
+const WANT_WAIT := 20.0
 # both
 var other: MineShip             # the other player's Mole, shown
 var other_on := false           # (down there, from their last state)
@@ -67,6 +70,7 @@ func need_world() -> bool:
 		return false
 	if not _want:
 		_want = true
+		_want_t = 0.0
 		_parts.clear()
 		_send(["want", mine.ship_look()])
 	return true
@@ -83,6 +87,7 @@ func _drop_shared() -> void:
 		return
 	shared = false
 	_want = false
+	_lost = false
 	_pending.clear()
 	_outbox.clear()
 	if not _own_ground.is_empty():
@@ -126,8 +131,8 @@ func _reach(kind: String, a: Array) -> PackedInt32Array:
 	match kind:
 		"dig":
 			if a.size() == 11:
-				var rx := float(a[2]) + float(a[4]) + 2.0
-				var ry := float(a[3]) + float(a[4]) + 2.0
+				var rx := float(a[2]) + float(a[4]) + 4.0     # (the dig crumbles up to 3 cells past its box)
+				var ry := float(a[3]) + float(a[4]) + 4.0
 				return PackedInt32Array([int(a[0] - rx), int(a[1] - ry), int(a[0] + rx), int(a[1] + ry)])
 		"boom", "dep":
 			if a.size() >= 3:
@@ -144,8 +149,13 @@ func step(dt: float) -> void:
 	var r := role()
 	if r == "":
 		if shared:
-			mine.lost_link()
-			_drop_shared()
+			# (on the way up first: its own ground back at the end of the fade, gone_up; not under the ship mid-fade)
+			if mine.active:
+				if not _lost:
+					_lost = true
+					mine.lost_link()
+			else:
+				_drop_shared()
 		if guest_down and mine._built:
 			mine.ground.sim.set_block2(0, 0, 0, 0)
 		guest_down = false
@@ -154,6 +164,13 @@ func step(dt: float) -> void:
 		_s_in = -1
 		_show_other(dt, false)
 		return
+	if _want and not shared:
+		_want_t += dt
+		if _want_t > WANT_WAIT:
+			_want = false
+			_parts.clear()
+			_send(["up"])
+			mine.arena.say("Your mate's mine didn't come: try again", 2.0)
 	# the guest's ops, to the host
 	_out_t += dt
 	if not _outbox.is_empty() and _out_t >= 1.0 / 30.0:
@@ -299,6 +316,11 @@ func on_net(m: Array) -> void:
 				for p in _parts:
 					all.append_array(p)
 				_parts.clear()
+				if not mine.ready_for_world():
+					# (walked off from the door, downed, gone down its own way meanwhile: not pulled down after all)
+					_want = false
+					_send(["up"])
+					return
 				_own_ground = mine.ground.save_bytes()
 				if mine.ground_shared(all):
 					shared = true
@@ -308,7 +330,10 @@ func on_net(m: Array) -> void:
 					mine.enter()
 				else:
 					_want = false
-					mine.say("Couldn't get your mate's mine", 2.0)
+					mine.ground_back(_own_ground)      # (its own ground as it was: a failed load may have changed it)
+					_own_ground = PackedByteArray()
+					_send(["up"])
+					mine.arena.say("Couldn't get your mate's mine", 2.0)
 		"ops":
 			if r == "host" and guest_down and m.size() >= 2 and typeof(m[1]) == TYPE_ARRAY:
 				for o in m[1]:

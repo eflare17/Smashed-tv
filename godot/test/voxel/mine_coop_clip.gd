@@ -79,6 +79,7 @@ func _process(dt: float) -> bool:
 			m.ship.place(Vector2(HX, 1.0))
 		if role == "guest" and not m.active and not v.has("asked"):
 			v.asked = true
+			arena.player.global_position = Vector3(MineHatch.AT.x, 0.05, MineHatch.AT.z + 1.0)     # (at the door)
 			m.enter()
 		var ready: bool = m.active and m._going == 0 and m.net.other_on and (role == "host" or m.net.shared)
 		if role == "guest" and m.active and not v.has("gpos"):

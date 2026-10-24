@@ -221,6 +221,7 @@ func _guest() -> bool:
 			m._build()
 			v.own_seed = m.ground.seed_
 			v.own_tot = _totals()
+			arena.player.global_position = Vector3(MineHatch.AT.x, 0.05, MineHatch.AT.z + 1.0)     # (at the door)
 			m.enter()
 			check(not m.active, "going down waits for the host's ground")
 			_next(2)

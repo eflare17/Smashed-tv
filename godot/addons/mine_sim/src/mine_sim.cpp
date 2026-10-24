@@ -480,7 +480,8 @@ void MineSim::update_cell(int x, int y) {
 			bool open = empty_for_mover(x - 1, y) || empty_for_mover(x + 1, y) || empty_for_mover(x, y - 1);
 			if (open) {
 				wake(x, y);
-				bool near = x >= bx - 3 && x < bx + bw + 3 && y >= by - 3 && y < by + bh + 3;
+				bool near = (x >= bx - 3 && x < bx + bw + 3 && y >= by - 3 && y < by + bh + 3) ||
+						(bw2 > 0 && x >= bx2 - 3 && x < bx2 + bw2 + 3 && y >= by2 - 3 && y < by2 + bh2 + 3);     // (the guest's Mole too)
 				if ((frame & 7) == 0 && !near) {
 					if (dmg[i] >= 254) {
 						mat[i] = (uint8_t)basalt_m;
@@ -962,8 +963,10 @@ void MineSim::crack_rect(int x0, int y0, int x1, int y1, int amount) {
 	for (int y = std::max(0, y0); y <= std::min(h - 1, y1); y++)
 		for (int x = std::max(0, x0); x <= std::min(w - 1, x1); x++) {
 			int i = idx(x, y);
-			if (!(var[i] & LOOSE) && roof_ok(mat[i]))
+			if (!(var[i] & LOOSE) && roof_ok(mat[i])) {
 				dmg[i] = (uint8_t)std::max((int)dmg[i], std::max(0, std::min(254, amount - (int)(hash2(x, y) % 60))));
+				wake(x, y);         // (touched: the cracks go to a co-op guest with the next chunk update)
+			}
 		}
 }
 
