@@ -198,6 +198,14 @@ panel, the farm plans (FARM.md).
 - **One wallet** for wave cash and trading money; travel uses game time; each new day sets new prices; crops are
   stock to sell; land is what the profits buy. Prices all in one tuning file, worked back from pacing targets
   (e.g. first extra land after about 3 game days), then tuned by playing.
+- **The tunnel to St Kilda (the owner, 24 Oct: "dig all the way to St Kilda ... almost no chance of getting caught
+  with drugs and it's faster"; "wait" for the trading game):** a long sideways dig off the side of the mine (hard
+  rock, water, lava: needs the drill and fuel upgrades and several trips; co-op can dig it together), its progress
+  saved; once through it stays open. Travel by it is much faster than the road (an hour or two of game time, not
+  most of a day) and almost never caught, but: it costs fuel, the Mole's cargo bay holds less than the road (cargo
+  upgrades matter), using it a lot raises heat (the cops may raid the entrance), and cave-ins, flooding and rival
+  dealers still happen. Comes up somewhere funny in St Kilda (a drain grate near Luna Park, a dodgy shop's cellar).
+  The trading game gets an "arrived by tunnel: low risk, small load" hook.
 
 ## Later: digging (the owner, 18 Oct: "don't do it yet", level 2 first, level 3 later)
 
