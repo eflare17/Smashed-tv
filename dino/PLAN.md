@@ -203,6 +203,25 @@ and eases back, the camera punches in 16% and eases out, a heavy crunch, a rip a
 big burst of blood and a red flash, and the **KILL!** lands as things speed back up instead of on the hit.
 Tests: 55 checks. `tests/shot_kill.gd` photographs the bite, the slow-mo and the popup.
 
+## Evolving (owner's go-ahead, 26 Oct; names and numbers PLACEHOLDERS)
+
+Four forms. You evolve by eating whole bodies (not by level), the instant you hit the count:
+
+| form | drawn at | grows to | speed | bite | health | meals to next |
+|---|---|---|---|---|---|---|
+| HATCHLING | 0.5 | 0.75 | 92 | 3.2 | 60 | 4 |
+| RAPTOR | 0.8 | 1.15 | 78 | 4.5 | 100 | 8 |
+| ALLOSAUR | 1.3 | 1.7 | 64 | 6.5 | 170 | 14 |
+| TYRANT | 2.0 | 2.5 | 54 | 9.0 | 280 | top |
+
+- Level-up bonuses sit on top of the form's stats and carry over. Growing between forms is slower now (+0.06 a
+  meal) and capped at the form's limit.
+- Evolving is a moment: a freeze, a white flash, the sprite swaps (same shape, new palette, a longer deeper head),
+  slow-mo, a roar, a shake, "YOU ARE NOW A RAPTOR", health refilled.
+- Bigger forms draw harder attacks (+15% damage a form), and nothing breaks free of a tyrant's jaws.
+- The top line shows the form and meals (EATEN 2/4).
+- Tests: 62 checks. `tests/shot_forms.gd` photographs the four forms and the evolve moment.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

@@ -240,7 +240,17 @@ static func hunter() -> Dictionary:
 
 ## The player: a raptor-ish shape on two legs with a head and jaw that move. PLACEHOLDER (which dinosaur you start
 ## as isn't decided).
-static func player(skin := PLAYER_SKIN, belly := Color(0.78, 0.74, 0.52), stripe := Color(0.18, 0.26, 0.14)) -> Dictionary:
+## Your four forms, PLACEHOLDERS: the same shape in another palette, with a longer, deeper head the further up the
+## chain (0 hatchling, 1 raptor, 2 the big hunter, 3 the tyrant). The game scales the whole rig for the size.
+const FORM_SKIN := [Color(0.62, 0.58, 0.36), PLAYER_SKIN, Color(0.42, 0.36, 0.3), Color(0.3, 0.26, 0.28)]
+const FORM_BELLY := [Color(0.88, 0.84, 0.6), Color(0.78, 0.74, 0.52), Color(0.7, 0.62, 0.5), Color(0.6, 0.5, 0.48)]
+const FORM_STRIPE := [Color(0.42, 0.38, 0.2), Color(0.18, 0.26, 0.14), Color(0.22, 0.16, 0.12), Color(0.12, 0.08, 0.1)]
+
+static func form(f: int) -> Dictionary:
+	return player(FORM_SKIN[f], FORM_BELLY[f], FORM_STRIPE[f], [0.8, 1.0, 1.25, 1.5][f])
+
+## `head_k` stretches the head and jaw (1 = the raptor's).
+static func player(skin := PLAYER_SKIN, belly := Color(0.78, 0.74, 0.52), stripe := Color(0.18, 0.26, 0.14), head_k := 1.0) -> Dictionary:
 	var c := Canvas.new(52, 26)
 	c.poly(PackedVector2Array([Vector2(18, 9), Vector2(1, 5), Vector2(0, 8), Vector2(18, 18)]), TAIL)
 	c.ellipse(26, 14, 11, 7, BODY)
@@ -250,22 +260,27 @@ static func player(skin := PLAYER_SKIN, belly := Color(0.78, 0.74, 0.52), stripe
 	var body := {"name": "body", "image": c.paint(skin, belly, stripe), "zones": c.zones, "pivot": Vector2(26, 17),
 			"pos": Vector2(0, -17), "anchors": _core(c, 26, 14, 5), "z": 0, "parent": ""}
 
-	var hd := Canvas.new(27, 13)
-	hd.ellipse(7, 6, 6, 5, HEAD)
-	hd.poly(PackedVector2Array([Vector2(6, 2), Vector2(25, 5), Vector2(26, 8), Vector2(6, 10)]), HEAD)
+	# the snout: 19 px long on the raptor, longer and deeper up the chain
+	var sl := int(19.0 * head_k)
+	var deep := 1 if head_k > 1.0 else 0
+	var hd := Canvas.new(8 + sl + 1, 13 + deep * 2)
+	hd.ellipse(7, 6 + deep, 6, 5 + deep, HEAD)
+	hd.poly(PackedVector2Array([Vector2(6, 2), Vector2(6 + sl, 5), Vector2(7 + sl, 8 + deep), Vector2(6, 10 + deep * 2)]), HEAD)
 	hd.mark(7, 4, EYE)
 	hd.mark(8, 4, PUPIL)
-	for x in range(10, 25, 2):
-		hd.mark(x, 8, TOOTH)
+	for x in range(10, 6 + sl, 2):
+		hd.mark(x, 8 + deep, TOOTH)
 	var head := {"name": "head", "image": hd.paint(skin, skin, stripe), "zones": hd.zones, "pivot": Vector2(3, 7),
-			"pos": Vector2(43 - 26, 5 - 17), "anchors": _core(hd, 6, 6, 3), "z": 2, "parent": "body", "tip": Vector2(25, 9)}
+			"pos": Vector2(43 - 26, 5 - 17), "anchors": _core(hd, 6, 6, 3), "z": 2, "parent": "body",
+			"tip": Vector2(6 + sl, 9 + deep)}
 
-	var jw := Canvas.new(20, 5)
-	jw.poly(PackedVector2Array([Vector2(0, 0), Vector2(20, 0), Vector2(20, 2), Vector2(0, 5)]), HEAD)
-	for x in range(5, 19, 2):
+	var jl := int(20.0 * head_k)
+	var jw := Canvas.new(jl, 5 + deep)
+	jw.poly(PackedVector2Array([Vector2(0, 0), Vector2(jl, 0), Vector2(jl, 2), Vector2(0, 5 + deep)]), HEAD)
+	for x in range(5, jl - 1, 2):
 		jw.mark(x, 0, TOOTH)
 	var jaw := {"name": "jaw", "image": jw.paint(belly, belly, belly), "zones": jw.zones, "pivot": Vector2(1, 1),
-			"pos": Vector2(5 - 3, 9 - 7), "anchors": _core(jw, 2, 2, 2), "z": -1, "parent": "head"}
+			"pos": Vector2(5 - 3, 9 + deep * 2 - 7), "anchors": _core(jw, 2, 2, 2), "z": -1, "parent": "head"}
 
 	var parts := [body, head, jaw]
 	var leg := _leg(9, 16, skin, true)

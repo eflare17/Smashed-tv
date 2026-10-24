@@ -12,10 +12,25 @@ extends Dino
 
 enum { QUICK, BIG }
 
-## The stats levelling up raises (main.gd's UPGRADES). Placeholder numbers, set by feel.
+## Your four forms, in order: name, the size the rig is drawn at when you become it, how big you can grow before
+## the next, walk speed, seconds between bites, bite radius, health, and the whole bodies eaten to reach the
+## next form. PLACEHOLDER names and numbers.
+const STAGES := [
+	{"name": "HATCHLING", "size": 0.5, "max_size": 0.75, "speed": 92.0, "cool": 0.34, "bite": 3.2, "hp": 60.0, "meals": 4},
+	{"name": "RAPTOR", "size": 0.8, "max_size": 1.15, "speed": 78.0, "cool": 0.42, "bite": 4.5, "hp": 100.0, "meals": 8},
+	{"name": "ALLOSAUR", "size": 1.3, "max_size": 1.7, "speed": 64.0, "cool": 0.5, "bite": 6.5, "hp": 170.0, "meals": 14},
+	{"name": "TYRANT", "size": 2.0, "max_size": 2.5, "speed": 54.0, "cool": 0.6, "bite": 9.0, "hp": 280.0, "meals": 99999},
+]
+var stage := 0
+
+## The stats (the form's, plus what levelling up has added: main.gd's UPGRADES). apply_stage() sets them.
 var bite_radius := 4.5
 var bite_cooldown := 0.42
 var walk_speed := 75.0
+var bite_bonus := 0.0
+var speed_mult := 1.0
+var cool_mult := 1.0
+var hp_bonus := 0.0
 
 ## Health. Hunters' bites take it; eating gives it back. PLACEHOLDER numbers.
 var max_hp := 100.0
@@ -42,9 +57,6 @@ const RIP := [1.5, 2.3]
 const SHAKE := [0.45, 0.9]
 const TEAR_EVERY := 0.07
 const TEAR := 0.6
-const MAX_SIZE := 2.0
-## You start small. PLACEHOLDER.
-const START_SIZE := 0.7
 const MOUTH_TIME := 0.35
 
 ## Seconds since the current bite started, -1 when not biting; which kind it is.
@@ -69,20 +81,48 @@ var _head_base := Vector2.ZERO
 var _rest_rot := 0.0
 ## The last snap: [the spot you aimed at (where it is now on the prey), where the teeth actually went] (tests).
 var snap_info: Array = []
-## How big you are (START_SIZE as you start, 1 = the size the art is drawn); eating whole bodies grows you.
-var size := START_SIZE
+## How big you are (1 = the size the art is drawn); eating whole bodies grows you, within the form.
+var size := 0.5
 
 func _ready() -> void:
-	build(DinoArt.player())
-	scale = Vector2(size, size)
-	_head_base = head.position
-	for part in parts:
-		part.carvable = false
 	_mouth = Sprite2D.new()
 	_mouth.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_mouth.visible = false
 	_mouth.z_index = 1
+	set_stage(0)
+	hp = max_hp
+
+## Becomes form `s`: new art on the rig, the form's size and stats (keeping what levelling up added).
+func set_stage(s: int) -> void:
+	stage = s
+	if _mouth.get_parent():
+		_mouth.get_parent().remove_child(_mouth)
+	clear_rig()
+	build(DinoArt.form(s))
+	_head_base = head.position
+	for part in parts:
+		part.carvable = false
 	head.add_child(_mouth)
+	size = STAGES[s].size
+	scale = Vector2(size, size)
+	apply_stage()
+
+## The stats from the form plus the level-up bonuses.
+func apply_stage() -> void:
+	var st: Dictionary = STAGES[stage]
+	bite_radius = st.bite + bite_bonus
+	walk_speed = st.speed * speed_mult
+	bite_cooldown = st.cool * cool_mult
+	var was_max := max_hp
+	max_hp = st.hp + hp_bonus
+	hp = minf(max_hp, hp + maxf(0.0, max_hp - was_max))
+
+func stage_name() -> String:
+	return STAGES[stage].name
+
+## Whole bodies eaten to reach the next form (or -1 at the top).
+func meals_to_evolve() -> int:
+	return STAGES[stage].meals if stage < STAGES.size() - 1 else -1
 
 ## `move_x` -1..1, `jump` and `bite_pressed` this frame's presses, `big_held` right click down, `aim_at` the mouse.
 func step(delta: float, move_x: float, jump: bool, bite_pressed: bool, aim_at: Vector2, big_held := false) -> void:
@@ -294,9 +334,9 @@ func covers(p: Vector2, margin: float) -> bool:
 func heal(amount: float) -> void:
 	hp = minf(max_hp, hp + amount)
 
-## A little bigger (after finishing a meal), up to MAX_SIZE.
+## A little bigger (after finishing a meal), up to this form's limit.
 func grow(amount: float) -> void:
-	size = minf(MAX_SIZE, size + amount)
+	size = minf(STAGES[stage].max_size, size + amount)
 	scale = Vector2(size, size)
 
 ## How much of you there is (pixels, grown), to compare with what you grab.

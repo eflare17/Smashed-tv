@@ -23,7 +23,7 @@ const GROUND_Y := 226.0
 const MAX_CORPSES := 4
 ## A dead body with less than this much of itself left counts as eaten; eating one grows you by GROW.
 const FINISHED := 0.05
-const GROW := 0.1
+const GROW := 0.06
 ## PLACEHOLDER numbers: XP and health for each thing, and XP to the next level.
 const XP_KILL_PREY := 10
 const XP_KILL_HUNTER := 25
@@ -221,7 +221,7 @@ func spawn_prey(x: float, kind := Prey.GRAZER) -> Prey:
 ## Hunters come at about your size (a touch bigger in later areas), so a big bite on one works from the start.
 func spawn_hunter(x: float) -> Hunter:
 	var h := _add(Hunter.new(), x) as Hunter
-	var s := clampf(player.size * (1.0 + (area_n - 1) * 0.1), 0.6, 1.4)
+	var s := clampf(player.size * (1.0 + (area_n - 1) * 0.1), 0.45, 1.4)
 	h.scale = Vector2(s, s)
 	return h
 
@@ -396,7 +396,9 @@ func _process(delta: float) -> void:
 		pu[1].y -= delta * 14.0
 	_popups = _popups.filter(func(pu): return pu[2] > 0.0)
 	hud.set_bars(player.hp / player.max_hp, float(xp) / xp_needed(), level, danger())
-	hud.stats.text = "KILLS %d   EATEN %d   SIZE x%.1f" % [kills, eaten, player.size]
+	var next := player.meals_to_evolve()
+	hud.stats.text = "%s   KILLS %d   EATEN %d%s   SIZE x%.1f" % [player.stage_name(), kills, eaten,
+			("/%d" % next) if next > 0 else "", player.size]
 	hud.area_label.text = "AREA %d   RUN %d" % [area_n, run_seed]
 	_overlay.queue_redraw()
 	if _shots_dir != "" and _frame > _shot_from and (_frame - _shot_from) % _shot_every == 0:
@@ -488,20 +490,20 @@ func _pick(i: int) -> void:
 	var u: int = _offered[i]
 	match u:
 		UP_BITE:
-			player.bite_radius += 1.5
+			player.bite_bonus += 1.5
 		UP_SPEED:
-			player.walk_speed *= 1.18
+			player.speed_mult *= 1.18
 		UP_RATE:
-			player.bite_cooldown *= 0.78
+			player.cool_mult *= 0.78
 		UP_HEALTH:
-			player.max_hp += 30.0
-			player.hp += 30.0
+			player.hp_bonus += 30.0
 		UP_LUNGE:
 			player.lunge_mult *= 1.25
 		UP_CHARGE:
 			player.charge_time *= 0.7
 		UP_SHAKE:
 			player.shake_mult *= 1.3
+	player.apply_stage()
 	_choices -= 1
 	hud.hide_choice()
 	state = PLAY
@@ -632,6 +634,9 @@ func break_free_time(who: Player, prey: Prey, length: float) -> float:
 	var mass := 0
 	for part in prey.parts:
 		mass += part.pixels_left()
+	# at the top of the chain nothing gets out of your jaws
+	if who.stage >= Player.STAGES.size() - 1:
+		return INF
 	mass *= prey.scale.x * prey.scale.x
 	var ratio := mass / who.mass()
 	# a little bigger than you still can't get loose; clearly bigger can, the bigger the sooner
@@ -655,7 +660,8 @@ func broke_free(who: Player, prey: Prey) -> void:
 
 ## Something's teeth, claws or horns reached you (a hunter, a pterodactyl, a charger): you lose `amount` health.
 func creature_hit(h: Prey, amount: float) -> void:
-	if state != PLAY or not player.hurt(amount * danger_mult(), h.global_position):
+	# bigger forms draw harder attacks: the late game is about not getting mobbed
+	if state != PLAY or not player.hurt(amount * danger_mult() * (1.0 + player.stage * 0.15), h.global_position):
 		return
 	hud.hurt()
 	sfx.play("crunch", 0.1, 2.0)
@@ -697,7 +703,27 @@ func _finish(who: Player, pr: Prey) -> Array:
 	add_xp(XP_EAT_ALL / 2 if rotten else XP_EAT_ALL, who.global_position + Vector2(0, -who.height * who.size))
 	sfx.play("gulp", 0.05, 3.0)
 	sfx.play("thud", 0.05, -6.0)
+	if who.meals_to_evolve() > 0 and eaten >= who.meals_to_evolve():
+		_evolve()
 	return scraps
+
+## Evolving: the next form. Everything freezes, you flash white, the sprite swaps and the new form lands with a
+## roar, a shake and a banner. Level-up bonuses carry over; health fills to the new maximum.
+func _evolve() -> void:
+	player.set_stage(player.stage + 1)
+	player.hp = player.max_hp
+	_stop = 0.25
+	_slow_t = KILL_SLOW_TIME
+	_zoom_punch = 0.22
+	_shake = 1.2
+	hud.flash(Color(1, 1, 1), 0.9)
+	sfx.play("roar", 0.0, 4.0)
+	sfx.play("thud", 0.0, 2.0)
+	for k in 24:
+		gore.add(player.global_position + Vector2(randf_range(-10, 10) * player.size, -randf_range(0, 28) * player.size),
+				Vector2(randf_range(-80, 80), -randf_range(40, 120)), Color(1, 0.95, 0.7))
+	hud.show_banner("YOU ARE NOW A %s" % player.stage_name(), 3.0)
+	_pending.append([0.4, ["EVOLVED!", player.global_position + Vector2(0, -player.height * player.size - 20), 1.8, Color(1, 1, 0.6)]])
 
 func _main_zone(zones: PackedInt32Array) -> int:
 	var best := 0

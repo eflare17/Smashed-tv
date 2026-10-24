@@ -80,6 +80,21 @@ func build(art: Dictionary) -> void:
 	for part in parts:
 		part.use_parent_material = true
 
+## Takes the rig apart (for a rebuild with new art: evolving).
+func clear_rig() -> void:
+	for c in rig.get_children():
+		rig.remove_child(c)
+		c.queue_free()
+	if rig.get_parent() == self:
+		remove_child(rig)
+	parts.clear()
+	legs.clear()
+	wings.clear()
+	_named.clear()
+	body = null
+	head = null
+	jaw = null
+
 static var _shader: Shader
 
 static func _flash_shader() -> Shader:

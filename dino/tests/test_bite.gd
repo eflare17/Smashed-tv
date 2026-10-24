@@ -128,6 +128,8 @@ func _run() -> void:
 	_check("the teeth meet on the spot you clicked", worst < 1.5, "worst %.2f px off" % worst)
 
 	# the big bite: charge it, it clamps on, shakes (tearing), and rips; it takes far more than a quick bite
+	# (measured as the raptor: the hatchling's bites are too small to compare)
+	pl.set_stage(1)
 	var quick_take := 0
 	var q: Prey = main.spawn_prey(1200.0)
 	q.die()
@@ -161,7 +163,8 @@ func _run() -> void:
 	_check("a big bite clamps on, shakes and lets go", grabbed and ripped)
 	_check("a big bite takes far more than a quick one", big_take > quick_take * 3, "%d vs %d" % [big_take, quick_take])
 
-	# a big live prey breaks free (you're smaller than it); a dead one can't
+	pl.set_stage(0)
+		# a big live prey breaks free (you're smaller than it); a dead one can't
 	var big_live: Prey = main.spawn_prey(1800.0)
 	await _frames(2)
 	_check("something bigger than you breaks free early", main.break_free_time(pl, big_live, 1.0) < 0.6,
@@ -398,6 +401,46 @@ func _run() -> void:
 	while main.state == main.CHOOSE:
 		main._pick(1)
 
+	# evolving: enough whole bodies eaten and you become the next form, bigger, with new art and stats; level-up
+	# bonuses carry over; at the top nothing breaks free
+	_check("you start as the first form", pl.stage == 0 and pl.stage_name() == "HATCHLING", pl.stage_name())
+	var size_before: float = pl.size
+	var bite_before: float = pl.bite_radius
+	var head_w_before: int = pl.head.w
+	pl.bite_bonus = 1.5
+	pl.apply_stage()
+	main.eaten = pl.meals_to_evolve() - 1
+	var meal: Prey = main.spawn_prey(1100.0, Prey.RUNNER)
+	meal.die()
+	await _frames(2)
+	for k in 300:
+		if not main.creatures.has(meal):
+			break
+		var mpts: Array = []
+		for z in [DinoArt.HEAD, DinoArt.NECK, DinoArt.BODY, DinoArt.TAIL, DinoArt.LEGS]:
+			mpts.append_array(_zone_points(meal, z))
+		if mpts.is_empty():
+			break
+		main.player_bite(pl, mpts[rng.randi() % mpts.size()], pl.bite_radius)
+	_check("eating enough evolves you", pl.stage == 1 and pl.stage_name() == "RAPTOR", "stage %d" % pl.stage)
+	_check("the new form is bigger with a bigger bite", pl.size > size_before and pl.bite_radius > bite_before,
+			"size %.2f, bite %.1f" % [pl.size, pl.bite_radius])
+	_check("the new form has new art", pl.head.w != head_w_before and pl.parts.size() > 0, "head %d -> %d px wide" % [head_w_before, pl.head.w])
+	_check("level-up bonuses carry over", pl.bite_radius == Player.STAGES[1].bite + 1.5)
+	_check("evolving is a moment", main.get("_slow_t") > 0.0 and main.get("_zoom_punch") > 0.0)
+	pl.set_stage(3)
+	var huge: Prey = main.spawn_prey(1300.0)
+	await _frames(2)
+	_check("a tyrant can't be broken free of", main.break_free_time(pl, huge, 1.0) == INF)
+	pl.set_stage(1)
+	pl.bite_bonus = 0.0
+	pl.apply_stage()
+	huge.queue_free()
+	main.creatures.erase(huge)
+	main.eaten = 0
+	while main.state == main.CHOOSE:
+		main._pick(1)
+
 	# bitten legs slow a creature down, and enough bites cripple it
 	var lame: Prey = main.spawn_prey(760.0)
 	await _frames(2)
@@ -426,6 +469,8 @@ func _run() -> void:
 	main.platforms.append(shelf)
 	pl.position = Vector2(930.0, main.GROUND_Y)
 	pl.vel = Vector2.ZERO
+	# a settle frame (it was teleported), then the jump
+	pl.step(1.0 / 60.0, 0.0, false, false, pl.global_position + Vector2(50, -10))
 	pl.step(1.0 / 60.0, 0.0, true, false, pl.global_position + Vector2(50, -10))
 	var went_through := false
 	var landed := false
