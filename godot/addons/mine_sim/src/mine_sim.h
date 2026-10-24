@@ -51,6 +51,12 @@ public:
 	static const int CS = 32;          // a chunk's cells across and down
 	static const uint8_t LOOSE = 0x80; // (in a cell's var) loose: falls like sand, the ship pushes through it
 	static const uint8_t CHIP = 0x40;  // (in a cell's var) landed from a chip of something already dug: not counted again
+	static const uint8_t DUG = 0x20;   // (in a cell's var, belonging to the place, not what's in it) dug out by the drill or
+	                                   // a blast: a void the player made (a cave-in can only come down over these)
+	static const uint8_t FRAC = 0x18;  // (in a falling cell's var) how far into the next cell it's got, in quarters
+	static const int FALL_G = 2;       // falling: speed gained a step (1/32 cell a step, kept in the cell's dmg) ...
+	static const int FALL_START = 8;   // ... what it sets off at ...
+	static const int FALL_MAX = 96;    // ... and the most (3 cells a step)
 
 	MineSim();
 
@@ -98,6 +104,10 @@ public:
 	// asking
 	int count_rect(int x0, int y0, int rw, int rh, int what) const;
 	int displace(int x0, int y0, int rw, int rh);
+	PackedInt32Array collapse_scan(int x0, int y0, int x1, int y1, int vmin, int max_out) const;
+	void crack_rect(int x0, int y0, int x1, int y1, int amount);
+	int drop_rect(int x0, int y0, int x1, int y1);
+	bool is_dug(int x, int y) const;
 	PackedByteArray coarse(int bs, int max_block) const;
 	PackedInt32Array find(int m, int x0, int y0, int x1, int y1, int max) const;
 	int particles() const { return (int)parts.size(); }
@@ -153,6 +163,8 @@ private:
 	void put(int x, int y, int m, bool loose);
 	bool empty_for_mover(int x, int y) const;
 	void update_cell(int x, int y);
+	void fall(int x, int y);
+	bool roof_ok(int m) const;
 	void step_parts();
 	uint8_t shade_for(int x, int y, int m) const;
 	static uint32_t pack(const Color &c);

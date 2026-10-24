@@ -12,6 +12,7 @@ extends Node3D
 
 signal dug(res: Dictionary, dir: Vector2)
 signal bumped(speed: float, landing: bool)
+signal splashed(speed: float)
 
 const HALF := 0.4               # half the ship's size (it fits a 1 m tunnel)
 const Z := 0.4                  # (in front of the ground's quad)
@@ -27,6 +28,8 @@ const FALL_SAFE := 8.8          # landing faster than this hurts
 const BUMP_SAFE := 6.0          # hitting a wall faster than this hurts
 const BIT_DEPTH := 0.34         # how far ahead of the ship the drill works (metres)
 const SPRAY := 0.22             # the share of what's drilled that flies off as chips
+const BUOY := 1.7               # water's lift on it, fully under, x its weight (it floats about 3/5 under; lower laden)
+const DIVE := 15.0              # S in water: pushing down
 
 var ground: MineGround
 var p := Vector2()
@@ -116,11 +119,19 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 	if up:
 		v.y += THRUST * MineShop.LIFT_PUSH[lift_level] * dt
 		thrusting = true
-	# water: it floats and drags; loose rubble and sand drag it as it's shoved through
-	wet = clampf(float(ground.count(p, Vector2(HALF + 0.1, HALF + 0.1), -5)) / 50.0, 0.0, 1.0)
-	v.y -= GRAV * grav_k * (1.0 - 0.7 * wet) * dt
+	# water: how high it stands against the ship's sides (the ship keeps it out of its own box): it floats (lower with a
+	# full hold), bobs, drags; S dives; coming down into it fast, a splash
+	var was_wet := wet
+	wet = _waterline()
+	v.y -= GRAV * grav_k * dt
 	if wet > 0.0:
-		v *= 1.0 - minf(0.5, 2.5 * wet * dt)
+		v.y += GRAV * (BUOY - 0.4 * cargo_full) * wet * dt
+		v.x *= 1.0 - minf(0.5, 2.2 * wet * dt)
+		v.y *= 1.0 - minf(0.5, 3.2 * wet * dt)
+		if down and not grounded and fuel:
+			v.y -= DIVE * dt
+	if was_wet < 0.15 and wet >= 0.15 and v.y < -3.0:
+		_splash(-v.y)
 	v.y = clampf(v.y, -MAX_FALL * (0.5 + 0.5 * grav_k), max_up)
 	driving = grounded and absf(ix) > 0.1
 	var hx := _move_x(v.x * dt)
@@ -200,6 +211,27 @@ func _unstick() -> void:
 				p += o
 				v = Vector2.ZERO
 				return
+
+## How far up its sides the water stands (0 dry .. 1 under): the deeper of the strips just left and right of it
+func _waterline() -> float:
+	var r := MineGround.cells_of(p, Vector2(HALF, HALF))
+	var left: int = ground.sim.count_rect(r.position.x - 2, r.position.y, 2, r.size.y, -5)
+	var right: int = ground.sim.count_rect(r.end.x, r.position.y, 2, r.size.y, -5)
+	return float(maxi(left, right)) / float(maxi(1, 2 * r.size.y))
+
+## Coming down into water fast: some of it thrown up either side
+func _splash(speed: float) -> void:
+	var c := MineGround.cell(p + Vector2(0, -HALF))
+	var n := clampi(int(speed * 3.0), 6, 30)
+	var found: PackedInt32Array = ground.sim.find(MineTiles.WATER, c.x - 8, c.y - 6, c.x + 8, c.y + 6, n)
+	var k := 0
+	for j in range(0, found.size(), 2):
+		ground.sim.set_cell(found[j], found[j + 1], MineTiles.AIR)
+		k += 1
+	var up := -clampf(speed * 0.09, 0.5, 1.4)
+	ground.sim.spray(c.x - 5.0, c.y - 2.0, MineTiles.WATER, k / 2, -0.45, up, 0.6)
+	ground.sim.spray(c.x + 5.0, c.y - 2.0, MineTiles.WATER, k - k / 2, 0.45, up, 0.6)
+	splashed.emit(speed)
 
 ## Put somewhere (a teleport, the tow truck): stopped, not drilling.
 func place(at: Vector2) -> void:

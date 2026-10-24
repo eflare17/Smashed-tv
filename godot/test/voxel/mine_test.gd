@@ -444,6 +444,78 @@ func _process(dt: float) -> bool:
 				check(ob > 20, "sprayed water on lava: it went to stone (%d obsidian)" % ob)
 				var oi := MineTiles.info(MineTiles.OBSIDIAN)
 				check(int(oi.need) == 0 and float(oi.hard) <= 1.2, "and that stone's soft enough for any drill (hard %.1f)" % float(oi.hard))
+				# a deep pool in a stone room: dropped in, it splashes and floats
+				var pc := Vector2(26.0, -100.0)
+				g.set_box(pc, Vector2(2.6, 2.6), MineTiles.STONE)
+				g.set_box(pc, Vector2(2.2, 2.2), MineTiles.AIR)
+				g.set_box(pc + Vector2(0, -1.1), Vector2(2.2, 1.1), MineTiles.WATER)
+				m.cargo = {}
+				m.ship.place(pc + Vector2(0, 1.4))
+				m.ship.v = Vector2(0, -6.0)
+				v.splashes = 0
+				m.ship.splashed.connect(func(_sp: float) -> void: v.splashes = int(v.splashes) + 1)
+				v.pc = pc
+				m.auto = {}
+				next(62)
+		62:
+			if e > 4.0:
+				var pc: Vector2 = v.pc
+				var floor_y := pc.y - 2.2
+				check(int(v.splashes) >= 1, "came down into the pool with a splash (%d)" % int(v.splashes))
+				check(m.ship.wet > 0.25 and m.ship.wet < 0.95 and absf(m.ship.v.y) < 1.0 and m.ship.p.y - MineShip.HALF > floor_y + 0.4,
+					"and floats: %.0f%% under, %.2f m off the bottom" % [m.ship.wet * 100.0, m.ship.p.y - MineShip.HALF - floor_y])
+				# S dives
+				m.auto = {"down": true}
+				v.y_float = m.ship.p.y
+				next(63)
+		63:
+			if e > 1.0:
+				m.auto = {}
+				check(m.ship.p.y < float(v.y_float) - 0.4, "S dives (%.2f m down)" % (float(v.y_float) - m.ship.p.y))
+				# a nugget popping out over a floor bounces on it, not through it
+				var at := sit(14.0, 110.0)
+				g.set_box(at + Vector2(3.0, 0.2), Vector2(2.0, 0.7), MineTiles.AIR)
+				m._nugget("gold", MineTiles.GOLD, at + Vector2(3.0, 0.0))
+				v.nug_floor = at.y - MineShip.HALF
+				next(64)
+		64:
+			if e > 0.35 and not v.has("nug_ok"):
+				var low := 99.0
+				for n in m._nuggets:
+					low = minf(low, (n.p as Vector2).y)
+				v.nug_ok = true
+				check(low > float(v.nug_floor) - 0.05, "a nugget bounces on the floor, not through it (%.2f over it)" % (low - float(v.nug_floor)))
+				# falling: faster and faster
+				var sim := MineSim.new()
+				sim.setup(16, 140, 0)
+				MineTiles.apply(sim)
+				sim.set_cell(8, 2, MineTiles.SAND)
+				var ys := []
+				for k in 30:
+					sim.step()
+					if k % 10 == 9:
+						ys.append(sim.find(MineTiles.SAND, 0, 0, 15, 139, 1)[1])
+				check(ys[2] - ys[1] > ys[0] - 2 + 3, "sand falls faster and faster (%s)" % [ys])
+				# a big room dug out under dirt: its roof cracks, then comes down
+				var rc := Vector2(30.0, -3.5)
+				var cc := MineGround.cell(rc)
+				g.set_box(rc + Vector2(0, -0.3), Vector2(4.0, 3.2), MineTiles.DIRT)     # (plain dirt there: no pockets of its own)
+				for k in 26:
+					g.sim.dig(cc.x, cc.y - 9.0 + k * 0.7, 20.0, 1.0, 0.5, 999.0, 3, 1.0, 0.0, 0.0, 1.0, false)
+				m.ship.place(rc + Vector2(6.0, 4.0))
+				m._cave_scan_t = 0.0
+				v.rc = rc
+				v.roof0 = g.count(rc + Vector2(0, 2.0), Vector2(2.4, 0.25), -1)
+				next(65)
+		65:
+			if e > 0.5 and not v.has("cracked"):
+				v.cracked = true
+				check(not m.caveins.is_empty(), "the dug-out room's roof cracks (%d slabs)" % m.caveins.size())
+			if e > 3.0:
+				var rc: Vector2 = v.rc
+				var roof1 := g.count(rc + Vector2(0, 2.0), Vector2(2.4, 0.25), -1)
+				var rubble := g.count(rc + Vector2(0, -1.0), Vector2(2.6, 1.2), -2)
+				check(roof1 < int(v.roof0) - 20 and rubble > 40, "and comes down: roof %d -> %d, %d rubble on the floor" % [int(v.roof0), roof1, rubble])
 				sit(20.0, 60.0)
 				m.leave()
 				next(20)

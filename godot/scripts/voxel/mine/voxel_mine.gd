@@ -47,6 +47,7 @@ const TIPS := {
 	"hard": "Too hard for your drill: that boulder needs a better bit (the MECHANIC).",
 	"deep": "It gets darker and the rock harder the deeper you go. Better lights help you see the ore.",
 	"lava": "Lava! It runs into your tunnels and burns the hull. Spray water on it and it turns to stone you can dig through.",
+	"cavein": "Cave-in! Dig out a big room (or blast one) and its roof can't hold: when it cracks and groans, get out from under it.",
 	"water": "Water! Hold R to suck it up with the hose. Q picks Water for the launcher: spray it on lava to turn it to stone.",
 	"gas": "Gas pocket! The greenish patches go off when you drill them.",
 	"mush": "A mushroom cave... the spores get in your head (and the controls). Spore clumps sell well. Not all that glitters is gold.",
@@ -141,6 +142,8 @@ var _suck_acc := 0.0
 var _suck_none_t := 0.0
 var _drops: Array = []          # {n, from, t}: water flying up the hose
 var _steam_t := 0.0
+var _cave_scan_t := 0.0
+var caveins: Array = []         # roofs about to come down: {r: Rect2i (cells), t: seconds left, dust}
 var _spray_t := 0.0
 var _chain: Array = []          # gas pockets about to go off: [time, Vector2]
 var _cave_lights: Array = []
@@ -244,6 +247,7 @@ func _build() -> void:
 	ship.ground = ground
 	world.add_child(ship)
 	ship.dug.connect(_on_dug)
+	ship.splashed.connect(func(sp: float) -> void: sound.play("mine_splash", Vector3.INF, clampf(-14.0 + sp, -14.0, -2.0), randf_range(0.9, 1.1)))
 	ship.bumped.connect(_on_bump)
 	critters = MineCritters.new()
 	world.add_child(critters)
@@ -657,6 +661,7 @@ func _process(dt: float) -> void:
 		ship.step(dt, ix, up, down, fuel > 0.0)
 		ground.keep_clear = MineGround.cells_of(ship.p, Vector2(MineShip.HALF, MineShip.HALF))
 		ground.tick(dt)
+		_caveins_step(dt)
 	if ship.refused > 0 and ship.broke == 0 and _refuse_t <= 0.0:
 		_refuse_t = 1.2
 		if ship.refused >= 100:
@@ -828,6 +833,7 @@ func _buildings_near() -> void:
 	if ore_box and (_near == "" or ore_box.unloading) and MineOreBox.in_reach(ship.p) and (cargo_count() > 0 or ore_box.unloading):
 		_near = "orebox"
 	ship.hose_out = maxf(ore_box.hose if ore_box else 0.0, _water_hose)
+	ship.cargo_full = float(cargo_count()) / maxf(1.0, float(cargo_cap()))     # (the pod bulging; it floats lower laden)
 	var t := ""
 	match _near:
 		"lift": t = "E  ride the lift up to the yard"
@@ -977,6 +983,8 @@ func _nugget(id: String, m: int, at: Vector2) -> void:
 		shake(0.25)
 		sound.play("mine_clink", Vector3.INF, 0.0, 1.5)
 
+const NUG_POP := 0.45            # a nugget bounces about this long before it's pulled to the ship
+
 func _step_nuggets(dt: float) -> void:
 	_combo_t -= dt
 	if _combo_t <= 0.0:
@@ -985,15 +993,37 @@ func _step_nuggets(dt: float) -> void:
 		var g: Dictionary = _nuggets[i]
 		g.age += dt
 		var to: Vector2 = ship.p - g.p
-		if g.age > 0.3:
+		if g.age > NUG_POP:
 			# pulled to the ship
 			g.v = (g.v as Vector2).lerp(to.normalized() * (6.0 + g.age * 6.0), minf(1.0, dt * 6.0))
 		else:
 			g.v.y -= 14.0 * dt
-		g.p += g.v * dt
+		var np: Vector2 = g.p + g.v * dt
+		if ground.solid_at(np):
+			var nx := Vector2(np.x, g.p.y)
+			var ny := Vector2(g.p.x, np.y)
+			if g.age <= NUG_POP:
+				# off the rock: a bounce (and a roll along the floor)
+				if ground.solid_at(nx):
+					g.v.x = -g.v.x * 0.45
+				if ground.solid_at(ny):
+					g.v.y = -g.v.y * 0.4
+					g.v.x *= 0.75
+				np = g.p + g.v * dt
+				if ground.solid_at(np):
+					np = g.p
+			elif not ground.solid_at(nx):
+				np = nx                         # (sliding round the corner on its way to the ship)
+			elif not ground.solid_at(ny):
+				np = ny
+			else:
+				g.stuck = float(g.get("stuck", 0.0)) + dt
+				if g.stuck < 0.6:
+					np = g.p                    # (it doesn't go through rock; if it's stuck a while, it does)
+		g.p = np
 		(g.n as MeshInstance3D).position = Vector3(g.p.x, g.p.y, 0.5)
 		(g.n as MeshInstance3D).rotation += Vector3(dt * 5.0, dt * 7.0, 0)
-		if (g.age > 0.3 and to.length() < 0.45) or g.age > 4.0:
+		if (g.age > NUG_POP and to.length() < 0.45) or g.age > 4.0:
 			g.n.queue_free()
 			_nuggets.remove_at(i)
 			_combo += 1
@@ -1236,6 +1266,61 @@ func _step_shots(dt: float) -> void:
 					sound.play("mine_crumble", Vector3.INF, -8.0, 1.4)
 			s.n.queue_free()
 			_shots.remove_at(i)
+
+# ---------------------------------------------------------------- cave-ins
+
+## Roofs over the voids you've dug that are too wide for the rock (a big room, a crater; not a tunnel): they crack
+## and groan, grit trickling, then come down as rubble (on the ship, if it's under them).
+func _caveins_step(dt: float) -> void:
+	_cave_scan_t -= dt
+	if _cave_scan_t <= 0.0:
+		_cave_scan_t = 0.3
+		var c := MineGround.cell(ship.p)
+		var slabs: PackedInt32Array = ground.sim.collapse_scan(c.x - 64, c.y - 64, c.x + 64, c.y + 40, 14, 3)
+		for k in range(0, slabs.size(), 4):
+			var r := Rect2i(slabs[k], slabs[k + 1], slabs[k + 2] - slabs[k] + 1, slabs[k + 3] - slabs[k + 1] + 1)
+			var dup := false
+			for q in caveins:
+				if (q.r as Rect2i).grow(2).intersects(r):
+					dup = true
+			if dup:
+				continue
+			ground.sim.crack_rect(r.position.x, r.position.y, r.end.x - 1, r.end.y - 1, 210)
+			caveins.append({"r": r, "t": 1.1, "dust": 0.0})
+			var mid := _slab_mid(r)
+			sound.play("mine_groan", Vector3.INF, -4.0 if mid.distance_to(ship.p) < 8.0 else -12.0, randf_range(0.85, 1.1))
+			if _under(r):
+				say("The roof's cracking! Get out from under it!", 1.5)
+			tip("cavein")
+	for i in range(caveins.size() - 1, -1, -1):
+		var q: Dictionary = caveins[i]
+		q.t -= dt
+		q.dust -= dt
+		var r: Rect2i = q.r
+		if q.dust <= 0.0:
+			q.dust = 0.22
+			var bx := randf_range(r.position.x, r.end.x)
+			_dust(MineGround.world(Vector2i(int(bx), r.end.y)) + Vector2(0, -0.1))
+		if q.t <= 0.0:
+			var n: int = ground.sim.drop_rect(r.position.x, r.position.y, r.end.x - 1, r.end.y - 1)
+			var mid := _slab_mid(r)
+			var near := clampf(1.0 - mid.distance_to(ship.p) / 14.0, 0.0, 1.0)
+			sound.play("mine_collapse", Vector3.INF, lerpf(-14.0, 0.0, near), randf_range(0.9, 1.05))
+			shake(0.15 + near * 0.6)
+			if _under(r):
+				hurt(minf(20.0, 4.0 + n * 0.03), "cave")
+				say("Cave-in!", 1.5)
+			_ground_dirty = true
+			caveins.remove_at(i)
+
+func _slab_mid(r: Rect2i) -> Vector2:
+	return MineGround.world(Vector2i(r.position.x + r.size.x / 2, r.end.y))
+
+## Whether the ship's under the slab r (within 6 m below it)
+func _under(r: Rect2i) -> bool:
+	var a := MineGround.world(Vector2i(r.position.x, r.end.y))
+	var b := MineGround.world(Vector2i(r.end.x, r.end.y))
+	return ship.p.x > a.x - 0.4 and ship.p.x < b.x + 0.4 and ship.p.y < a.y and ship.p.y > a.y - 6.0
 
 ## R held: the hose out of its back sucking up the water round its nozzle (into the launcher's tank), drops flying
 ## up it, a gurgle.

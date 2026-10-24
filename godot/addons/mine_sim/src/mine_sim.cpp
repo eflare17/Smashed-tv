@@ -109,6 +109,7 @@ void MineSim::set_loose(int x, int y, bool on) {
 		return;
 	int i = idx(x, y);
 	var[i] = on ? (var[i] | LOOSE) : (var[i] & ~LOOSE);
+	dmg[i] = 0;
 	wake(x, y);
 }
 
@@ -374,8 +375,11 @@ bool MineSim::empty_for_mover(int x, int y) const {
 }
 
 void MineSim::mv(int a, int b) {
+	uint8_t da = var[a] & DUG, db = var[b] & DUG;
 	std::swap(mat[a], mat[b]);
 	std::swap(var[a], var[b]);
+	var[a] = (uint8_t)((var[a] & ~DUG) | da);
+	var[b] = (uint8_t)((var[b] & ~DUG) | db);
 	std::swap(dmg[a], dmg[b]);
 	stamp[a] = stamp[b] = frame;
 	wake(a % w, a / w);
@@ -422,9 +426,15 @@ void MineSim::update_cell(int x, int y) {
 				wake(x, y);
 		} else {
 			if (empty_for_mover(x, y + 1)) {
+				if (!hot) {
+					fall(x, y);
+					return;
+				}
 				mv(i, i + w);
 				return;
 			}
+			if (!hot)
+				dmg[i] = 0;
 			if (empty_for_mover(x + d, y + 1)) {
 				mv(i, idx(x + d, y + 1));
 				return;
@@ -485,9 +495,11 @@ void MineSim::update_cell(int x, int y) {
 			return;
 		int b = i + w;
 		if (empty_for_mover(x, y + 1)) {
-			mv(i, b);
+			fall(x, y);
 			return;
 		}
+		dmg[i] = 0;     // (landed: its fall speed gone)
+		var[i] &= ~FRAC;
 		uint8_t bm = mat[b];
 		if (bm && (mats[bm].flags & F_LIQUID) && !blocked_cell(x, y + 1)) {
 			if (rnd() < 0.6f) {
@@ -515,8 +527,32 @@ void MineSim::update_cell(int x, int y) {
 					solid++;
 		if (solid <= 3 && rnd() < 0.15f) {
 			var[i] |= LOOSE;
+			dmg[i] = 0;
 			wake(x, y);
 		}
+	}
+}
+
+// Falling: faster each step (its speed in its dmg, the part of a cell it's got through in var's FRAC), down as many
+// cells as that takes it (stopping on whatever's under it).
+void MineSim::fall(int x, int y) {
+	int i = idx(x, y);
+	int v = std::min(FALL_MAX, std::max(FALL_START, (int)dmg[i] + FALL_G));
+	int tot = v + ((var[i] & FRAC) >> 3) * 8;
+	int n = tot / 32;
+	dmg[i] = (uint8_t)v;
+	var[i] = (uint8_t)((var[i] & ~FRAC) | (((tot % 32) / 8) << 3));
+	if (n == 0) {
+		wake(x, y);     // (still on its way: not this step)
+		return;
+	}
+	int cur = i;
+	for (int k = 0; k < n; k++) {
+		int cy = cur / w;
+		if (!empty_for_mover(x, cy + 1))
+			break;
+		mv(cur, cur + w);
+		cur += w;
 	}
 }
 
@@ -570,7 +606,7 @@ void MineSim::step_parts() {
 					if (empty_for_mover(cx, cyy - up)) {
 						int i = idx(cx, cyy - up);
 						mat[i] = p.m;
-						var[i] = (uint8_t)((p.v & (7 | CHIP)) | ((mats[p.m].flags & F_LIQUID) ? 0 : LOOSE));
+						var[i] = (uint8_t)((p.v & (7 | CHIP)) | ((mats[p.m].flags & F_LIQUID) ? 0 : LOOSE) | (var[i] & DUG));
 						dmg[i] = 0;
 						wake(cx, cyy - up);
 						changed++;
@@ -663,7 +699,7 @@ Dictionary MineSim::dig(float cx, float cy, float hx, float hy, float rc, float 
 						-0.5f - rnd() * 0.9f + (dy > 0.5f ? -0.4f : 0.0f), m, (uint8_t)((var[i] & 7) | CHIP)});
 			}
 			mat[i] = 0;
-			var[i] = 0;
+			var[i] = DUG;
 			dmg[i] = 0;
 			changed++;
 			wake(x, y);
@@ -684,6 +720,7 @@ Dictionary MineSim::dig(float cx, float cy, float hx, float hy, float rc, float 
 						solid++;
 			if (solid <= 4 && rnd() < 0.3f) {
 				var[i] |= LOOSE;
+				dmg[i] = 0;
 				wake(x, y);
 			}
 		}
@@ -726,12 +763,13 @@ Dictionary MineSim::explode(float cx, float cy, float r, float spr) {
 					parts.push_back({x + 0.5f, y + 0.5f, px / len * sp, py / len * sp - 0.8f, m, (uint8_t)((var[i] & 7) | CHIP)});
 				}
 				mat[i] = 0;
-				var[i] = 0;
+				var[i] = DUG;
 				dmg[i] = 0;
 				changed++;
 				wake(x, y);
 			} else if (d <= r + 2.5f && (M.flags & F_CRUMBLE) && rnd() < 0.5f) {
 				var[i] |= LOOSE;
+				dmg[i] = 0;
 				wake(x, y);
 			}
 		}
@@ -847,17 +885,97 @@ int MineSim::displace(int x0, int y0, int rw, int rh) {
 			}
 			if (to >= 0) {
 				mat[to] = m;
-				var[to] = var[i];
+				var[to] = (uint8_t)((var[i] & ~(DUG | FRAC)) | (var[to] & DUG));
 				dmg[to] = 0;
 				wake(to % w, to / w);
 			}
 			mat[i] = 0;
-			var[i] = 0;
+			var[i] &= DUG;
 			dmg[i] = 0;
 			changed++;
 			wake(x, y);
 		}
 	}
+	return n;
+}
+
+// ---------------------------------------------------------------- cave-ins
+
+// Rock a roof can be made of: solid, not sand or a liquid, diggable, not a boulder (they hold)
+bool MineSim::roof_ok(int m) const {
+	const Mat &M = mats[m];
+	return m && (M.flags & F_SOLID) && !(M.flags & (F_FALLS | F_LIQUID)) && M.hard >= 0.0f && M.need == 0;
+}
+
+bool MineSim::is_dug(int x, int y) const { return in(x, y) && mat[idx(x, y)] == 0 && (var[idx(x, y)] & DUG); }
+
+// Roofs over the player's own voids that are too wide for the rock to hold: a run of rock with dug-out space under it
+// wider than the rock can span (softer ground spans less: 12 cells and 28 more for each point of hardness), over a
+// void at least vmin cells tall (a tunnel's fine; a big room, a blast's crater isn't). -> slabs to come down,
+// [x0, y0, x1, y1, ...] (cells, inclusive): the run and a few cells of the rock over it.
+PackedInt32Array MineSim::collapse_scan(int x0, int y0, int x1, int y1, int vmin, int max_out) const {
+	PackedInt32Array out;
+	x0 = std::max(0, x0);
+	x1 = std::min(w - 1, x1);
+	y0 = std::max(sky, y0);
+	y1 = std::min(h - 2, y1);
+	for (int y = y0; y <= y1 && (int)out.size() < max_out * 4; y++) {
+		int x = x0;
+		while (x <= x1) {
+			int i = idx(x, y);
+			if ((var[i] & LOOSE) || !roof_ok(mat[i]) || !is_dug(x, y + 1)) {
+				x++;
+				continue;
+			}
+			int xl = x, xr = x;
+			while (xr + 1 < w && !(var[idx(xr + 1, y)] & LOOSE) && roof_ok(mat[idx(xr + 1, y)]) && is_dug(xr + 1, y + 1))
+				xr++;
+			float hard = 0.0f;
+			for (int k = xl; k <= xr; k++)
+				hard += mats[mat[idx(k, y)]].hard;
+			hard /= (float)(xr - xl + 1);
+			int span = 12 + (int)(hard * 28.0f);
+			int mid = (xl + xr) / 2;
+			int depth = 0;
+			while (depth < vmin && is_dug(mid, y + 1 + depth))
+				depth++;
+			if (xr - xl + 1 >= span && depth >= vmin) {
+				int thick = 3 + (int)(hash2(xl, y) % 4);
+				out.push_back(xl);
+				out.push_back(std::max(sky, y - thick + 1));
+				out.push_back(xr);
+				out.push_back(y);
+			}
+			x = xr + 1;
+		}
+	}
+	return out;
+}
+
+// The rock in a slab cracking (the cracks show as the drill's do): amount 0..254.
+void MineSim::crack_rect(int x0, int y0, int x1, int y1, int amount) {
+	for (int y = std::max(0, y0); y <= std::min(h - 1, y1); y++)
+		for (int x = std::max(0, x0); x <= std::min(w - 1, x1); x++) {
+			int i = idx(x, y);
+			if (!(var[i] & LOOSE) && roof_ok(mat[i]))
+				dmg[i] = (uint8_t)std::max((int)dmg[i], std::max(0, std::min(254, amount - (int)(hash2(x, y) % 60))));
+		}
+}
+
+// The slab down: its rock broken up into rubble (loose), falling. -> how many cells
+int MineSim::drop_rect(int x0, int y0, int x1, int y1) {
+	int n = 0;
+	for (int y = std::max(0, y0); y <= std::min(h - 1, y1); y++)
+		for (int x = std::max(0, x0); x <= std::min(w - 1, x1); x++) {
+			int i = idx(x, y);
+			if (!(var[i] & LOOSE) && roof_ok(mat[i])) {
+				var[i] = (uint8_t)((var[i] & ~FRAC) | LOOSE);
+				dmg[i] = (uint8_t)(hash2(x, y) % 6);       // (not all at the same speed: it breaks up as it goes)
+				changed++;
+				wake(x, y);
+				n++;
+			}
+		}
 	return n;
 }
 
@@ -1044,6 +1162,10 @@ void MineSim::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("spray", "x", "y", "m", "n", "vx", "vy", "spread"), &MineSim::spray);
 	ClassDB::bind_method(D_METHOD("count_rect", "x0", "y0", "w", "h", "what"), &MineSim::count_rect);
 	ClassDB::bind_method(D_METHOD("displace", "x0", "y0", "w", "h"), &MineSim::displace);
+	ClassDB::bind_method(D_METHOD("collapse_scan", "x0", "y0", "x1", "y1", "vmin", "max_out"), &MineSim::collapse_scan);
+	ClassDB::bind_method(D_METHOD("crack_rect", "x0", "y0", "x1", "y1", "amount"), &MineSim::crack_rect);
+	ClassDB::bind_method(D_METHOD("drop_rect", "x0", "y0", "x1", "y1"), &MineSim::drop_rect);
+	ClassDB::bind_method(D_METHOD("is_dug", "x", "y"), &MineSim::is_dug);
 	ClassDB::bind_method(D_METHOD("coarse", "bs", "max_block"), &MineSim::coarse);
 	ClassDB::bind_method(D_METHOD("find", "m", "x0", "y0", "x1", "y1", "max"), &MineSim::find);
 	ClassDB::bind_method(D_METHOD("particles"), &MineSim::particles);

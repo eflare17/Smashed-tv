@@ -6,7 +6,7 @@ rock is), mine_engine (the ship's motor and thrusters, looped), mine_clink (ore 
 taking a knock), mine_alarm (the low-fuel beeps), mine_register (the trader's till: ka-ching), mine_boom (dynamite, a
 gas pocket), mine_siren (the cops, looped), mine_rat (a squeak), mine_roar (the rock worm), mine_door (the roller door
 rattling up), mine_crumble (fool's gold, lost ore), mine_zap (the teleport), mine_lava (a hiss), mine_crunch_0..4\n(the drill biting off rock, played as it chews), mine_prop and mine_booster (the lift, looped), mine_squirt and
-mine_clunk (unloading into the ore box), mine_suck and mine_spray (the water hose, looped), mine_steam (water on lava). Owned by the voxel
+mine_clunk (unloading into the ore box), mine_suck and mine_spray (the water hose, looped), mine_steam (water on lava), mine_groan and mine_collapse (a cave-in), mine_splash. Owned by the voxel
 session."""
 
 
@@ -113,6 +113,25 @@ def build():
     n = int(1.2 * SR)
     steam = band(noise(1.2), 1200, 8000) * env(n, 0.005, 0.9, 2)
     save("mine_steam", mix(steam, at(click(0.04, 400, 0.02), 0.0) * 0.8, lowpass(noise(1.2), 200) * env(n, 0.005, 0.3, 4)), peak=0.65)
+
+    # a roof about to go: a low wooden-stony groan, creaks, grit trickling
+    n = int(1.2 * SR)
+    tt = t(1.2)
+    groan = lowpass(tone(70 + 18 * np.sin(2 * np.pi * 1.3 * tt), 1.2, "saw"), 300) * env(n, 0.25, 0.9, 1.5)
+    creaks = mix(*[at(band(noise(0.08), 600, 2400) * env(int(0.08 * SR), 0.005, 0.05, 3) * rng.uniform(0.4, 0.9), rng.uniform(0.1, 1.0), 1.2) for k in range(6)])
+    grit = band(noise(1.2), 1500, 6000) * env(n, 0.3, 0.8, 2) * 0.25
+    save("mine_groan", mix(groan * 1.2, creaks * 0.7, grit), peak=0.7)
+    # the roof coming down: a crack, a roar of rock, rubble settling
+    n = int(2.0 * SR)
+    crack = at(click(0.05, 900, 0.02), 0.0) * 1.2
+    roar = lowpass(noise(2.0), 260) * env(n, 0.02, 1.2, 2.5) * 3.0
+    rub = band(noise(2.0), 400, 3500) * env(n, 0.1, 1.6, 2) * 0.6
+    save("mine_collapse", mix(crack, roar, rub), peak=0.9)
+    # into the water: a splash
+    n = int(0.7 * SR)
+    sp = band(noise(0.7), 300, 6000) * env(n, 0.005, 0.35, 3)
+    plop = tone(np.linspace(260, 90, n), 0.7) * env(n, 0.002, 0.12, 5) * 0.6
+    save("mine_splash", mix(sp, plop), peak=0.7)
 
 
 if __name__ == "__main__":
