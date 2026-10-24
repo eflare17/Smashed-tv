@@ -511,6 +511,8 @@ func leave() -> void:
 	sound.stop("mine_suck")
 	sound.stop("mine_spray")
 	sound.stop("mine_siren")
+	sound.stop("mate_drill")
+	sound.stop("mate_lift")
 	critters.stand_down()
 	arena.get_viewport().disable_3d = false
 	arena.player.global_position = Vector3(MineHatch.AT.x, 0.05, MineHatch.AT.z + 1.0)
@@ -955,6 +957,24 @@ func _sounds(dt: float, was_drilling: bool) -> void:
 		sound.loop("mine_drill", "mine_drill", null, -5.0, clampf(1.5 - k * 0.35, 0.55, 1.5))
 	elif sound.playing("mine_drill"):
 		sound.stop("mine_drill")
+	_mate_sounds()
+
+## (co-op) your mate's Mole heard: its drill and its lift, quieter the further off (gone past 22 m)
+func _mate_sounds() -> void:
+	var o: MineShip = net.other if net.mate_here() else null
+	var d := ship.p.distance_to(o.p) if o else INF
+	var near := clampf(1.0 - d / 22.0, 0.0, 1.0)
+	var db := lerpf(-34.0, -9.0, near)
+	var keys := {"mate_drill": o != null and o.drilling and near > 0.0, "mate_lift": o != null and o.thrusting and near > 0.0}
+	for k in keys:
+		if not keys[k]:
+			if sound.playing(k):
+				sound.stop(k)
+			continue
+		if k == "mate_drill":
+			sound.loop(k, "mine_drill", null, db, 1.15)
+		else:
+			sound.loop(k, "mine_prop" if o.lift_level < 2 else "mine_booster", null, db + 3.0, [0.9, 1.25, 1.15, 0.85][clampi(o.lift_level, 0, 3)])
 
 func _view(dt: float) -> void:
 	var depth := maxf(0.0, -ship.p.y)
