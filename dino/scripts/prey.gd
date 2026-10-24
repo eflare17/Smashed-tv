@@ -32,6 +32,8 @@ var _flee_t := 0.0
 var _collapse := 0.0
 var _bleed := 0.0
 var _leg_rest: Array[float] = []
+## Seconds dead. Past the game's ROT_TIME the meat is rotten: it darkens and feeds you nothing.
+var dead_t := 0.0
 ## In your jaws (a big bite): it can't go anywhere, it just thrashes (or, dead, hangs there).
 var held := false
 var _held_t := 0.0
@@ -155,8 +157,20 @@ func _slump(delta: float) -> void:
 	if was < 1.0 and _collapse >= 1.0:
 		game.prey_landed(self)
 
+func rotten() -> bool:
+	return dead and dead_t >= game.ROT_TIME
+
+## Dead: counts the seconds and goes green-grey as it rots (every kind calls this from its step).
+func _rot_step(delta: float) -> void:
+	if not dead:
+		return
+	dead_t += delta
+	var k: float = clampf((dead_t - game.ROT_TIME * 0.6) / (game.ROT_TIME * 0.6), 0.0, 1.0)
+	rig.modulate = Color.WHITE.lerp(Color(0.55, 0.62, 0.45), k)
+
 ## Drips blood from its wounds, more the more it has.
 func _bleed_step(delta: float, rng: RandomNumberGenerator) -> void:
+	_rot_step(delta)
 	var n := wound_count()
 	if n == 0:
 		return

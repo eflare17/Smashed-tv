@@ -149,6 +149,22 @@ All the numbers above are placeholders to tune by playing.
 - Tests: 41 checks, all passing. Also `tests/shot_creatures.gd`, which photographs the cast, a dive, a charge and
   the danger warning.
 
+## Pressure, round 2 (25 Oct): staying is now deadly, moving on pays
+
+Measured first: the bot could camp area 1 for 9 minutes and reach level 15, because eating healed faster than
+hunters hurt. Changed:
+- **Attackers hit harder as the bar fills:** 1x with it empty, 2.5x full (a hunter's 14 becomes 35).
+- **Packs:** past half danger they arrive 2-4 at a time, every 1.2 s at worst, up to 12 at once.
+- **Bodies rot** after 30 s dead (they go green-grey): rotten meat heals nothing and gives half XP ("ROTTEN").
+  So you can't sit on a pile of old kills.
+- **Fresh ground:** arriving in the next area heals up to 40 and pays up to 40 XP, scaled by how low the bar was
+  when you left (leave at a quarter full: nearly all of it; leave with it full: a quarter).
+- Measured after (`tests/stats_run.gd`, the bot playing whole runs; `--leaves=<danger>` makes it head for the
+  exit once the bar reaches that): a camping bot now dies in 2-3 minutes at level 5-8; a bot that leaves at 30%
+  reaches area 2 and lives 5-6 minutes to level 11. Leaving at 50% sometimes makes it. That's the shape wanted:
+  the player who moves early does best.
+- All numbers PLACEHOLDERS. Tests: 47 checks, all passing.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

@@ -28,6 +28,12 @@ const PREY_DRY := 45.0
 const DANGER_TIME := 120.0
 ## Of the things sent after you, how many are pterodactyls rather than hunters.
 const FLYER_SHARE := 0.35
+## Attackers hit this many times harder with the danger bar full; a body is rotten (no healing, half XP) after
+## this many seconds; what reaching the next area pays (health, and XP; both scaled by how low the bar was).
+const DANGER_BITE := 2.5
+const ROT_TIME := 30.0
+const ARRIVE_HEAL := 40.0
+const ARRIVE_XP := 40
 const XP_EAT_BITE := 2
 const XP_EAT_ALL := 15
 const HEAL_EAT_BITE := 3.0
@@ -76,6 +82,8 @@ var _popups: Array = []   # [text, world pos, seconds left, colour]
 var _bot_t := 0.0
 var _bot_point := Vector2.ZERO
 var _bot_charge := 0.0
+## The demo bot leaves for the next area once the danger bar reaches this (1 = it never leaves: it camps).
+var bot_leaves_at := 1.0
 var _fixed_seed := -1
 var _shots_dir := ""
 var _shot_every := 75
@@ -160,6 +168,13 @@ func enter_area(n: int) -> void:
 	for h: Array in area.herds:
 		for k in h[1]:
 			_spawn_herd_kind(h[2], h[0] + k * 50.0)
+	# fresh ground: the sooner you got out of the last area, the more it pays
+	if n > 1:
+		var k := 1.0 - danger() * 0.75
+		var heal := int(ARRIVE_HEAL * k)
+		player.heal(heal)
+		_popups.append(["FRESH GROUND  +%d HP" % heal, player.global_position + Vector2(60, -50), 2.0, Color(0.5, 1.0, 0.5)])
+		add_xp(int(ARRIVE_XP * k), player.global_position + Vector2(60, -36))
 	area_t = 0.0
 	_warned = 0
 	_hunt_t = _hunt_gap() + 4.0
@@ -216,15 +231,25 @@ func _offscreen_x() -> float:
 ## Seconds between hunters and pterodactyls: shorter the higher your level, the further the area, and the longer
 ## you've stayed in this one. PLACEHOLDER curve.
 func _hunt_gap() -> float:
-	return maxf(1.8, 16.0 - level * 1.5 - (area_n - 1) * 2.0 - area_t * 0.1)
+	return maxf(1.2, 16.0 - level * 1.5 - (area_n - 1) * 2.0 - area_t * 0.15)
 
 ## How many can be after you at once: more with level, area, and time spent here.
 func _hunt_cap() -> int:
-	return mini(1 + (level - 1) / 2 + (area_n - 1) + int(area_t / 30.0), 10)
+	return mini(1 + (level - 1) / 2 + (area_n - 1) + int(area_t / 20.0), 12)
 
 ## 0..1: how long you've stayed in this area against DANGER_TIME (the danger bar).
 func danger() -> float:
 	return clampf(area_t / DANGER_TIME, 0.0, 1.0)
+
+## Attackers hit this much harder as the danger bar fills (1x empty, DANGER_BITE x full).
+func danger_mult() -> float:
+	return lerpf(1.0, DANGER_BITE, danger())
+
+## Past half danger, attackers arrive in packs rather than one at a time: how many at once.
+func _pack_size() -> int:
+	if danger() < 0.5:
+		return 1
+	return 2 + int((danger() - 0.5) * 4.0)
 
 func _spawners(delta: float) -> void:
 	area_t += delta
@@ -232,11 +257,13 @@ func _spawners(delta: float) -> void:
 	if _hunt_t <= 0.0:
 		_hunt_t = _hunt_gap()
 		var live := creatures.filter(func(c): return (c is Hunter or c is Flyer) and not c.dead).size()
-		if live < _hunt_cap():
+		for k in _pack_size():
+			if live + k >= _hunt_cap():
+				break
 			if rng.randf() < FLYER_SHARE:
-				spawn_flyer(_offscreen_x())
+				spawn_flyer(_offscreen_x() + k * 30.0)
 			else:
-				spawn_hunter(_offscreen_x())
+				spawn_hunter(_offscreen_x() + k * 24.0)
 	# keep something to eat around, but only for a while: then the herds have moved on
 	_herd_t -= delta
 	if _herd_t <= 0.0 and area_t < PREY_DRY:
@@ -448,9 +475,14 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 			_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7, Color(1, 0.9, 0.5)])
 		var was_dead := pr.dead
 		if was_dead:
-			# eating: a little health and XP for every mouthful
-			who.heal(HEAL_EAT_BITE)
-			add_xp(XP_EAT_BITE, p)
+			# eating: a little health and XP for every mouthful; rotten meat feeds you nothing
+			if pr.rotten():
+				if not light and rng.randf() < 0.3:
+					_popups.append(["ROTTEN", p + Vector2(0, -14), 0.8, Color(0.6, 0.8, 0.4)])
+				add_xp(XP_EAT_BITE / 2, p)
+			else:
+				who.heal(HEAL_EAT_BITE)
+				add_xp(XP_EAT_BITE, p)
 		if pr.hurt(who.global_position) and not was_dead:
 			kills += 1
 			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2, Color(1, 0.4, 0.3)])
@@ -529,7 +561,7 @@ func broke_free(who: Player, prey: Prey) -> void:
 
 ## Something's teeth, claws or horns reached you (a hunter, a pterodactyl, a charger): you lose `amount` health.
 func creature_hit(h: Prey, amount: float) -> void:
-	if state != PLAY or not player.hurt(amount, h.global_position):
+	if state != PLAY or not player.hurt(amount * danger_mult(), h.global_position):
 		return
 	hud.hurt()
 	sfx.play("crunch", 0.1, 2.0)
@@ -562,10 +594,13 @@ func _finish(who: Player, pr: Prey) -> Array:
 	pr.queue_free()
 	eaten += 1
 	var was := who.size
+	var rotten := pr.rotten()
 	who.grow(GROW)
-	who.heal(HEAL_EAT_ALL)
-	_popups.append(["EATEN!" if who.size == was else "GROWING!", who.global_position + Vector2(0, -who.height * who.size - 10), 1.4, Color(1, 0.9, 0.5)])
-	add_xp(XP_EAT_ALL, who.global_position + Vector2(0, -who.height * who.size))
+	if not rotten:
+		who.heal(HEAL_EAT_ALL)
+	_popups.append([("ROTTEN..." if rotten else "EATEN!") if who.size == was else "GROWING!",
+			who.global_position + Vector2(0, -who.height * who.size - 10), 1.4, Color(1, 0.9, 0.5)])
+	add_xp(XP_EAT_ALL / 2 if rotten else XP_EAT_ALL, who.global_position + Vector2(0, -who.height * who.size))
 	sfx.play("gulp", 0.05, 3.0)
 	sfx.play("thud", 0.05, -6.0)
 	return scraps
@@ -630,6 +665,10 @@ func _bot(delta: float) -> Array:
 		if target:
 			break
 	var jump := player.blocked != 0
+	# heading for the exit (a bot that knows to move on): past the danger it tolerates, it stops hunting and goes
+	if bot_leaves_at < 1.0 and danger() >= bot_leaves_at and target != null \
+			and not (is_attacker(target) and absf(target.position.x - me.x) < 45.0):
+		target = null
 	if target == null:
 		return [1.0, jump, false, me + Vector2(60, -20), false]
 	if _bot_t <= 0.0 or target.zone_at(_bot_point) == 0:

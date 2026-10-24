@@ -303,6 +303,35 @@ func _run() -> void:
 	main.area_t = 0.0
 	main.level = lvl0
 
+	# pressure: attackers hit harder as the bar fills, bodies rot, reaching the next area pays
+	main.area_t = 0.0
+	var d0: float = main.danger_mult()
+	main.area_t = main.DANGER_TIME
+	_check("a full danger bar makes bites hurt more", main.danger_mult() > d0 * 2.0, "%.1fx -> %.1fx" % [d0, main.danger_mult()])
+	_check("past half danger they come in packs", main._pack_size() >= 2, "%d at once" % main._pack_size())
+	main.area_t = 0.0
+	var old: Prey = main.spawn_prey(2000.0)
+	old.die()
+	old.dead_t = main.ROT_TIME + 1.0
+	await _frames(2)
+	pl.hp = 50.0
+	main.player_bite(pl, _zone_points(old, DinoArt.BODY)[30], pl.bite_radius)
+	_check("rotten meat doesn't heal", old.rotten() and pl.hp == 50.0, "hp %.0f" % pl.hp)
+	main.area_t = main.DANGER_TIME * 0.2
+	var hp_before: float = pl.hp
+	var xp_before: int = main.xp + (main.level - 1) * 1000
+	main.enter_area(main.area_n + 1)
+	var xp_after: int = main.xp + (main.level - 1) * 1000
+	_check("reaching the next area heals and pays XP", pl.hp > hp_before and xp_after > xp_before,
+			"hp %.0f -> %.0f" % [hp_before, pl.hp])
+	_check("...and resets the danger bar", main.area_t == 0.0)
+	main.enter_area(1)
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	main.obstacles.clear()
+	main.set("_hunt_t", 99999.0)
+	pl = main.player
+
 	# areas: the same run seed builds the same area, another seed a different one
 	var a1 := Area.new()
 	a1.generate(1, 777, main.GROUND_Y)
