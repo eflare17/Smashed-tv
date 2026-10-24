@@ -17,6 +17,14 @@ extends Node3D
 ## Co-op: the chickens are the host's (like the farm): a guest's gate, feeding, egg collecting and upgrading go to the
 ## host as requests, the host answers with what they got; where the hens are goes to the guest ten times a second, the
 ## rest every couple of seconds and on every change. Saved with the rest. Owned by the voxel session.
+##
+## Killing them (the owner, 24 Oct: "make it so you can kill the chickens. When you kill them they turn into a chicken
+## carcass", "You can only kill them if they are out of the chicken coop"): out in the yard, any weapon or tool that
+## lands on one (STRIKE; a grenade's blast or a fire patch through blast()) hurts it: it squawks, flaps, feathers fly
+## and it runs; HP blows kill a hen, one a chick. Dead, it's a carcass on the ground (plucked, lying on its side, its
+## feathers round it) that E picks up as a chicken carcass: sold at the buyer, or shredded for blood and bone. In the
+## run or the coop they're safe: a blow only sends them flapping off (and says why, the first time). A guest's blows
+## go to the host as "hit"s (the host's are the real chickens), its pick-ups as "take"s.
 
 ## The run (world metres), the gate in the yard's east fence, the coop in the run's south-east corner.
 const X0 := 22.65
@@ -77,6 +85,23 @@ const RUN := 2.2
 const SYNC_T := 2.0
 const POS_HZ := 10.0
 const START := 2                # hens to start with
+## What each weapon or tool does to a chicken it lands on (VoxelArena.MELEE's ids): [reach (metres), how far off the
+## look it still lands (degrees), damage, seconds before it can land again, held down it keeps landing]. Past RANGED
+## metres it's a shot: the walls stop it.
+const STRIKE := {
+	"sword": [2.6, 55.0, 1, 0.3, false], "bat": [2.4, 50.0, 1, 0.35, false], "hammer": [2.4, 45.0, 2, 0.5, false],
+	"chainsaw": [2.0, 35.0, 1, 0.3, true], "spear": [3.2, 15.0, 2, 0.4, false],
+	"pistol": [40.0, 2.5, 1, 0.15, true], "shotgun": [25.0, 7.0, 3, 0.6, false], "laser": [20.0, 2.5, 1, 0.3, true],
+	"flamethrower": [6.0, 14.0, 1, 0.4, true], "freezeray": [15.0, 3.0, 1, 0.4, true], "harpoon": [20.0, 3.0, 3, 0.6, false],
+	"gravity": [10.0, 5.0, 1, 0.5, false],
+	"shovel": [3.0, 40.0, 1, 0.4, false], "pick": [3.0, 40.0, 1, 0.4, false], "hoe": [3.0, 40.0, 1, 0.4, false],
+}
+const RANGED := 6.0
+const HP := 3                   # blows a hen takes (a chick: one)
+const CARCASS_PRICE := 15       # at the buyer's crate
+const CARCASS_POINTS := 1000.0  # in the shredder (a quarter of a bag of blood and bone)
+const CARCASS_MAX := 24         # lying about at once (past that the oldest goes)
+const FEATHERS_MAX := 160
 
 enum { PEN, COOP, YARD, NONE }
 
@@ -86,7 +111,8 @@ var level := 0
 var gate := false               # open: they roam the yard
 var food := 20.0
 var nests := []                 # per nest box: [egg hatch progress 0..1, ...]
-var hens := []                  # [{id, x, y, z, yaw, c, age, full, lay, poo, st, t, path, anim, nest}]
+var hens := []                  # [{id, x, y, z, yaw, c, age, full, lay, poo, st, t, path, anim, nest, hurt, hit_ms}]
+var carcasses := []             # [{id, x, y, z, yaw, c, chick}] (the host's, or alone; the guest's from the host's)
 var _next_id := 1
 var _views := {}                # hen id -> VoxelChicken
 var _sync_t := 0.0
@@ -102,6 +128,11 @@ var _sign: Label3D
 var _roof: Node3D
 var _feed_mesh: MeshInstance3D
 var _sack_nodes := []
+var _carc_views := {}           # carcass id -> its node
+var _feathers := []             # flying off a hit hen: [pos, vel, life, yaw, colour, ground y, phase]
+var _feather_mm: MultiMesh
+var _told_safe := false         # (the "safe in the coop" line: said once)
+var _strike_t := {}             # weapon id -> seconds till it can land on a chicken again
 
 ## In the run or the coop: the enemies keep out and don't go for anyone here.
 static func in_pen(p: Vector3) -> bool:
@@ -134,6 +165,7 @@ func _fresh() -> void:
 	for k in LEVELS[-1].nests:
 		nests.append([])
 	hens = []
+	carcasses = []
 	_next_id = 1
 	for i in START:
 		_hatch(Vector2(29.0 + i * 0.6, 37.0), 1.0, i)
@@ -155,7 +187,7 @@ func _is_host() -> bool:
 func _hatch(at: Vector2, age: float, coat := -1) -> Dictionary:
 	var h := {"id": _next_id, "x": at.x, "y": 0.0, "z": at.y, "yaw": randf() * TAU, "c": coat if coat >= 0 else randi() % VoxelChicken.COATS.size(),
 		"age": age, "full": 0.8, "lay": randf() * LAY_T * 0.5, "poo": randf() * POO_T, "st": "idle", "t": randf() * 2.0,
-		"path": [], "anim": 0, "nest": -1}
+		"path": [], "anim": 0, "nest": -1, "hurt": 0, "hit_ms": 0}
 	_next_id += 1
 	hens.append(h)
 	return h
@@ -171,6 +203,11 @@ func _process(dt: float) -> void:
 		_was_role = role
 	if not _is_guest():
 		_live(dt)
+	for id in _strike_t.keys():
+		_strike_t[id] = float(_strike_t[id]) - dt
+		if float(_strike_t[id]) <= 0.0:
+			_strike_t.erase(id)
+	_feathers_step(dt)
 	if _is_host():
 		_sync_t += dt
 		_pos_t += dt
@@ -508,6 +545,9 @@ func pick(eye: Vector3, dir: Vector3, reach := 2.6) -> Array:
 	for h in hens:
 		var s := 0.4 if float(h.age) >= 1.0 else 0.22
 		boxes["hen%d" % int(h.id)] = AABB(Vector3(float(h.x) - s * 0.5, float(h.y), float(h.z) - s * 0.5), Vector3(s, s * 1.2, s))
+	for c in carcasses:
+		var s2 := 0.6 if not bool(c.chick) else 0.36
+		boxes["carcass%d" % int(c.id)] = AABB(Vector3(float(c.x) - s2 * 0.5, float(c.y) - 0.05, float(c.z) - s2 * 0.5), Vector3(s2, 0.3, s2))
 	var best := ""
 	var bd := INF
 	for k in boxes:
@@ -557,6 +597,11 @@ func line(tag: String) -> String:
 		var s3 := "Nest box: %d egg%s" % [eggs.size(), "" if eggs.size() == 1 else "s"]
 		s3 += (" (coop full: no room to hatch)" if most >= 1.0 else " (left, they hatch: %d%%)" % int(most * 100.0))
 		return s3 + "     E  collect"
+	if tag.begins_with("carcass"):
+		var c = _carcass_by(int(tag.trim_prefix("carcass")))
+		if c == null:
+			return ""
+		return "E  pick up the %s carcass" % ("chick's" if bool(c.chick) else "chicken")
 	if tag.begins_with("hen"):
 		var h = _hen_by(int(tag.trim_prefix("hen")))
 		if h == null:
@@ -566,7 +611,8 @@ func line(tag: String) -> String:
 		if float(h.age) < 1.0:
 			return "Chick: growing up (%d%%), %s" % [int(float(h.age) * 100.0), mood]
 		var lay := ", laying soon" if float(h.lay) > LAY_T * 0.8 else (", not laying" if full < 0.25 else "")
-		return "Hen: %s%s" % [mood, lay]
+		var hurt := ", hurt" if int(h.get("hurt", 0)) > 0 else ""
+		return "Hen: %s%s%s" % [mood, lay, hurt]
 	return ""
 
 ## E on what pick found.
@@ -610,6 +656,8 @@ func use(tag: String) -> void:
 		upgrade()
 	elif tag.begins_with("nest"):
 		collect(int(tag.trim_prefix("nest")))
+	elif tag.begins_with("carcass"):
+		take_carcass(int(tag.trim_prefix("carcass")))
 
 func set_gate(open: bool) -> void:
 	if open == gate:
@@ -691,7 +739,228 @@ static func items() -> Dictionary:
 		"grain": {"name": "Grain", "col": Color8(214, 178, 96), "stack": 999, "desc": "Chicken feed. E at the coop's feeder puts it in."},
 		"poo": {"name": "Chicken poo", "col": POO[0], "stack": 9999, "cubes": POO,
 			"desc": "Vacuumed up in the run. Feeds a plant (%d at a time) or the worm farm." % VoxelFarm.POO_FEED},
+		"chicken_carcass": {"name": "Chicken carcass", "col": VoxelChicken.PLUCK[0], "stack": 20,
+			"desc": "A plucked chicken. Sells for $%d at the buyer, or the shredder makes blood and bone of it." % CARCASS_PRICE},
 	}
+
+# ---------------------------------------------------------------- killing them (out in the yard)
+
+## Out in the yard (the gate was open): the only place one can be hurt.
+static func killable(p: Vector2) -> bool:
+	return region_of(p) == YARD
+
+## The local player's weapon or tool w just swung or fired (VoxelArena._shoot on a press; held, again every
+## STRIKE[3] s for the ones that keep going): the chicken it lands on, if any, hit. Returns that one's id, or -1.
+func attack(w, held := false) -> int:
+	var id: String = w.weapon_id
+	if not STRIKE.has(id) or _strike_t.has(id):
+		return -1
+	var s: Array = STRIKE[id]
+	if held and not bool(s[4]):
+		return -1
+	var h = target(w.eye(), w.look(), float(s[0]), float(s[1]), w.top_down(), w.shooter)
+	if h == null:
+		return -1
+	_strike_t[id] = float(s[3])
+	strike(int(h.id), int(s[2]), w.shooter.player.global_position)
+	return int(h.id)
+
+## The chicken a blow from eye along dir lands on (the nearest in reach, within cone degrees of the look, or right
+## on its line; top-down: level, or where the mouse is), or null. A shot past RANGED metres doesn't go through walls.
+func target(eye: Vector3, dir: Vector3, reach: float, cone: float, top_down := false, shooter = null):
+	var best = null
+	var bd := INF
+	var mouse := Vector3.INF
+	if top_down and shooter != null:
+		mouse = shooter.mouse_floor()
+	for h in hens:
+		var adult := float(h.age) >= 1.0
+		var c := Vector3(float(h.x), float(h.y) + (0.2 if adult else 0.1), float(h.z))
+		var d: float
+		var ok := false
+		if top_down:
+			var v2 := Vector2(c.x - eye.x, c.z - eye.z)
+			d = v2.length()
+			if d > reach:
+				continue
+			var f2 := Vector2(dir.x, dir.z)
+			ok = d < 0.35 or (f2.length() > 0.01 and rad_to_deg(absf(v2.angle_to(f2))) <= cone)
+			if not ok and mouse != Vector3.INF:
+				ok = Vector2(mouse.x - c.x, mouse.z - c.z).length() < 0.6
+		else:
+			var v := c - eye
+			d = v.length()
+			if d > reach:
+				continue
+			var along := v.dot(dir)
+			ok = along > 0.0 and (rad_to_deg(v.angle_to(dir)) <= cone or (v - dir * along).length() < (0.3 if adult else 0.2))
+		if not ok or d >= bd:
+			continue
+		if reach > RANGED and is_inside_tree():
+			var q := PhysicsRayQueryParameters3D.create(eye, c)
+			q.collision_mask = 1
+			if shooter != null:
+				q.exclude = shooter.exclude()
+			if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+				continue
+		best = h
+		bd = d
+	return best
+
+## A blow of dmg on chicken id from a player standing at from. In the yard it hurts (kills at HP, a chick at one);
+## in the run or the coop it only sends it flapping off. A guest's goes to the host.
+func strike(id: int, dmg: int, from: Vector3) -> void:
+	var h = _hen_by(id)
+	if h == null:
+		return
+	var p := Vector2(float(h.x), float(h.z))
+	if not killable(p) and not _told_safe:
+		_told_safe = true
+		arena.say("Not in the coop: they're safe in there. Open the gate and let them out into the yard first", 3.5)
+	if _is_guest():
+		_msg(["hit", id, dmg, from])
+		if killable(p):
+			_hit_fx(Vector3(p.x, float(h.y) + 0.2, p.y), int(h.c), float(h.age) < 1.0, false)
+		return
+	_hurt(h, dmg, from, 0)
+
+## A grenade's blast or a fire patch at p (VoxelArena.hurt_players_near: the host's or alone): every chicken out in
+## the yard within r hurt (a blast kills, a patch of fire takes a blow at a time).
+func blast(p: Vector3, r: float, amount: float) -> void:
+	if _is_guest():
+		return
+	for h in hens.duplicate():
+		var c := Vector3(float(h.x), float(h.y) + 0.2, float(h.z))
+		if c.distance_to(p) < r and killable(Vector2(c.x, c.z)):
+			_hurt(h, HP if amount >= 20.0 else 1, p, -1)
+
+# (the host's, or alone) the blow landing: by is who struck (0 the host, 1 the guest, -1 a blast)
+func _hurt(h: Dictionary, dmg: int, from: Vector3, by: int) -> void:
+	var p := Vector2(float(h.x), float(h.z))
+	var away := p - Vector2(from.x, from.z)
+	if not killable(p):
+		_flee(h, away, 1.6)
+		_sound("flap", Vector3(p.x, 0.3, p.y))
+		return
+	var now := Time.get_ticks_msec()
+	if now - int(h.get("hit_ms", 0)) < 150:
+		return                  # (one blow, one hit: a blast and its fire, a chainsaw's bites)
+	h.hit_ms = now
+	h.hurt = int(h.get("hurt", 0)) + maxi(1, dmg)
+	var chick := float(h.age) < 1.0
+	var dead := int(h.hurt) >= (1 if chick else HP)
+	var at := Vector3(p.x, float(h.y) + 0.2, p.y)
+	_hit_fx(at, int(h.c), chick, dead)
+	_msg(["fx", at, int(h.c), chick, dead, by])
+	if dead:
+		_die(h, by)
+	else:
+		_flee(h, away, 3.5)
+	_changed()
+
+# off it runs, flapping, away from where the blow came (staying where it is: the yard, the run)
+func _flee(h: Dictionary, away: Vector2, dist: float) -> void:
+	if String(h.st) in ["hop", "sit"]:
+		return
+	var p := Vector2(float(h.x), float(h.z))
+	var a := away.normalized() if away.length() > 0.01 else Vector2.RIGHT.rotated(randf() * TAU)
+	for turn in [0.0, 0.6, -0.6, 1.2, -1.2, 2.0, -2.0]:
+		var to: Vector2 = p + a.rotated(turn) * dist
+		if region_of(to) == region_of(p) and not _through_gate(p, to):
+			h.path = [to]
+			h.st = "flee"
+			h.t = dist / RUN + 0.4
+			h.nest = -1
+			return
+
+# dead: a carcass where it fell (its place in the coop free)
+func _die(h: Dictionary, by: int) -> void:
+	hens.erase(h)
+	carcasses.append({"id": int(h.id), "x": float(h.x), "y": float(h.y), "z": float(h.z), "yaw": float(h.yaw), "c": int(h.c),
+		"chick": float(h.age) < 1.0})
+	while carcasses.size() > CARCASS_MAX:
+		carcasses.pop_front()
+	if by == 0 or (by == -1 and VoxelYard.in_yard(arena.player.global_position)):
+		arena.say("Chicken killed: E picks up the carcass", 2.5)
+
+# a blow landing, seen and heard: feathers, a squawk (killed: a burst of them, the last squawk)
+func _hit_fx(at: Vector3, coat: int, chick: bool, dead: bool) -> void:
+	var cols: Array = VoxelChicken.CHICK if chick else VoxelChicken.COATS[clampi(coat, 0, VoxelChicken.COATS.size() - 1)]
+	var gy := _ground_y(at.x, at.z) if yard else 0.0
+	for i in (22 if dead else 7) / (2 if chick else 1):
+		if _feathers.size() >= FEATHERS_MAX:
+			_feathers.pop_front()
+		var v := Vector3(randf_range(-1.0, 1.0), randf_range(0.8, 2.4), randf_range(-1.0, 1.0)) * (1.4 if dead else 1.0)
+		_feathers.append([at + Vector3(randf_range(-0.08, 0.08), randf_range(-0.05, 0.1), randf_range(-0.08, 0.08)), v,
+			randf_range(7.0, 11.0), randf() * TAU, (cols[0] as Color).lerp(cols[1], randf()), gy, randf() * TAU])
+	if dead:
+		arena.sound.play("death_squawk", at, -3.0, 1.35 if chick else 1.0)
+	else:
+		arena.sound.play("squawk", at, -3.0, 1.4 if chick else 1.0)
+	arena.sound.play("flap", at, -6.0)
+
+func _feathers_step(dt: float) -> void:
+	if _feather_mm == null:
+		return
+	var i := 0
+	while i < _feathers.size():
+		var f: Array = _feathers[i]
+		f[2] = float(f[2]) - dt
+		if float(f[2]) <= 0.0:
+			_feathers.remove_at(i)
+			continue
+		var pos: Vector3 = f[0]
+		if pos.y > float(f[5]) + 0.006:
+			var v: Vector3 = f[1]
+			v.y -= 4.0 * dt
+			v *= maxf(0.0, 1.0 - 3.2 * dt)             # (light: they drift down)
+			f[6] = float(f[6]) + dt * 5.0
+			pos += (v + Vector3(sin(float(f[6])) * 0.35, 0.0, cos(float(f[6]) * 0.7) * 0.25)) * dt
+			pos.y = maxf(pos.y, float(f[5]) + 0.006)
+			f[1] = v
+			f[3] = float(f[3]) + dt * 3.0
+			f[0] = pos
+		i += 1
+	_feather_mm.visible_instance_count = _feathers.size()
+	for k in _feathers.size():
+		var f: Array = _feathers[k]
+		var flying := (f[0] as Vector3).y > float(f[5]) + 0.007
+		var b := Basis(Vector3.UP, float(f[3])) * Basis(Vector3.RIGHT, sin(float(f[6])) * 0.6 if flying else 0.0)
+		_feather_mm.set_instance_transform(k, Transform3D(b, f[0]))
+		_feather_mm.set_instance_color(k, f[4])
+
+## Top-down: the carcass at the player's feet (within r metres), "carcass<id>" for use(); "" none.
+func carcass_near(p: Vector3, r := 1.0) -> String:
+	var best := ""
+	var bd := r
+	for c in carcasses:
+		var d := Vector2(float(c.x) - p.x, float(c.z) - p.z).length()
+		if d < bd:
+			bd = d
+			best = "carcass%d" % int(c.id)
+	return best
+
+## E at a carcass: into this player's backpack as a chicken carcass (a guest's: asked of the host, given back).
+func take_carcass(id: int) -> bool:
+	var c = _carcass_by(id)
+	if c == null:
+		return false
+	carcasses.erase(c)
+	arena.sound.play("item_pick", Vector3.INF, -4.0, 0.8)
+	arena.say("+1 chicken carcass: sell it at the buyer ($%d), or the shredder makes blood and bone" % CARCASS_PRICE, 2.5)
+	if _is_guest():
+		_msg(["take", id])
+		return true
+	arena.receive({"id": "chicken_carcass", "n": 1}, "inv")
+	_msg(["said", "Your mate picked up the chicken carcass"])
+	_changed()
+	return true
+
+func _carcass_by(id: int):
+	for c in carcasses:
+		if int(c.id) == id:
+			return c
+	return null
 
 # ---------------------------------------------------------------- co-op
 
@@ -776,6 +1045,29 @@ func on_net(m: Array) -> void:
 					level = to
 					_changed()
 				# (already that level: theirs was paid for nothing; rare enough to let be)
+		"hit":
+			if host:
+				var h = _hen_by(int(m[1]))
+				if h != null and typeof(m[3]) == TYPE_VECTOR3:
+					_hurt(h, clampi(int(m[2]), 1, HP), m[3], 1)
+		"fx":
+			# (the guest's own blow it saw at once; a kill it hears of here)
+			if _is_guest() and typeof(m[1]) == TYPE_VECTOR3 and (bool(m[4]) or int(m[5]) != 1):
+				_hit_fx(m[1], int(m[2]), bool(m[3]), bool(m[4]))
+			if _is_guest() and bool(m[4]) and int(m[5]) == 1:
+				arena.say("Chicken killed: E picks up the carcass", 2.5)
+		"take":
+			if host:
+				var c = _carcass_by(int(m[1]))
+				if c != null:
+					carcasses.erase(c)
+					_msg(["give", {"id": "chicken_carcass", "n": 1}])
+					arena.say("Your mate picked up the chicken carcass", 2.0)
+					_changed()
+				else:
+					_msg(["said", "Too late: your mate picked that one up"])
+		"said":
+			arena.say(String(m[1]), 2.0)
 		"give":
 			var g: Dictionary = m[1]
 			if VoxelItems.has(String(g.get("id", ""))) and int(g.get("n", 0)) > 0:
@@ -794,7 +1086,10 @@ func to_data(live := false) -> Dictionary:
 			d["yaw"] = float(h.yaw)
 			d["anim"] = int(h.anim)
 		hs.append(d)
-	return {"level": level, "gate": gate, "food": food, "nests": nests.duplicate(true), "hens": hs, "next": _next_id}
+	var cs := []
+	for c in carcasses:
+		cs.append({"id": int(c.id), "x": float(c.x), "y": float(c.y), "z": float(c.z), "yaw": float(c.yaw), "c": int(c.c), "chick": bool(c.chick)})
+	return {"level": level, "gate": gate, "food": food, "nests": nests.duplicate(true), "hens": hs, "carcasses": cs, "next": _next_id}
 
 func from_data(d) -> void:
 	if typeof(d) != TYPE_DICTIONARY:
@@ -824,10 +1119,20 @@ func from_data(d) -> void:
 				"yaw": float(o.get("yaw", randf() * TAU)), "c": clampi(int(o.get("c", 0)), 0, VoxelChicken.COATS.size() - 1),
 				"age": clampf(float(o.get("age", 1.0)), 0.0, 1.0), "full": clampf(float(o.get("full", 0.5)), 0.0, 1.0),
 				"lay": clampf(float(o.get("lay", 0.0)), 0.0, LAY_T), "poo": randf() * POO_T, "st": "idle", "t": randf(),
-				"path": [], "anim": int(o.get("anim", 0)), "nest": -1})
+				"path": [], "anim": int(o.get("anim", 0)), "nest": -1, "hurt": 0, "hit_ms": 0})
+	carcasses = []
+	var cs = d.get("carcasses", [])
+	if typeof(cs) == TYPE_ARRAY:
+		for o in cs:
+			if typeof(o) != TYPE_DICTIONARY or carcasses.size() >= CARCASS_MAX:
+				continue
+			carcasses.append({"id": int(o.get("id", 0)), "x": float(o.get("x", 15.0)), "y": float(o.get("y", 0.0)), "z": float(o.get("z", 30.0)),
+				"yaw": float(o.get("yaw", 0.0)), "c": clampi(int(o.get("c", 0)), 0, VoxelChicken.COATS.size() - 1), "chick": bool(o.get("chick", false))})
 	_next_id = maxi(int(d.get("next", 1)), 1)
 	for h in hens:
 		_next_id = maxi(_next_id, int(h.id) + 1)
+	for c in carcasses:
+		_next_id = maxi(_next_id, int(c.id) + 1)
 
 ## For the save file (a guest in someone's game: its own chickens).
 func save_data() -> Dictionary:
@@ -866,6 +1171,22 @@ func _show(dt: float) -> void:
 		if not seen.has(id):
 			(_views[id] as Node).queue_free()
 			_views.erase(id)
+	# the carcasses lying where they fell
+	var cseen := {}
+	for c in carcasses:
+		var cid := int(c.id)
+		cseen[cid] = true
+		var cv: Node3D = _carc_views.get(cid)
+		if cv == null:
+			cv = VoxelChicken.carcass(int(c.c), bool(c.chick), cid * 7919 + 13)
+			add_child(cv)
+			_carc_views[cid] = cv
+		cv.position = Vector3(float(c.x), float(c.y), float(c.z))
+		cv.rotation.y = float(c.yaw)
+	for cid in _carc_views.keys():
+		if not cseen.has(cid):
+			(_carc_views[cid] as Node).queue_free()
+			_carc_views.erase(cid)
 	# the gate swinging, the nests' boxes and eggs, the feeder's feed, the sign, the roof (off from above, inside)
 	_gate_a = move_toward(_gate_a, 1.0 if gate else 0.0, dt * 2.5)
 	_gate_node.rotation.y = _gate_a * PI * 0.5
@@ -957,6 +1278,18 @@ func _fence(a: Vector2, b: Vector2) -> void:
 		_box(Vector3(0.12, FENCE_H + 0.1, 0.12), Vector3(p.x, (FENCE_H + 0.1) * 0.5, p.y), post, self, false)
 
 func _build() -> void:
+	# the feathers flying off hit hens: one MultiMesh
+	_feather_mm = MultiMesh.new()
+	_feather_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_feather_mm.use_colors = true
+	_feather_mm.mesh = VoxelChicken.feather_mesh()
+	_feather_mm.instance_count = FEATHERS_MAX
+	_feather_mm.visible_instance_count = 0
+	var fmi := MultiMeshInstance3D.new()
+	fmi.multimesh = _feather_mm
+	fmi.material_override = VoxelChicken.feather_mat()
+	fmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(fmi)
 	var grass := _mat(Color8(70, 112, 44), 0.95)
 	var dirt := _mat(Color8(112, 84, 56), 1.0)
 	# the run's ground, scratched bare in patches; under it a floor nothing falls through

@@ -22,7 +22,8 @@ extends Node3D
 const AT := Vector3(14.0, 0, 38.3)      # where it stands (its front to the north)
 const BAG_POINTS := 4000.0
 ## What a cube of each is worth.
-const VALUE := {"meat": 1.0, "brain": 1.0, "bone": 2.0, "charred": 0.35, "blocks": 0.1}
+const VALUE := {"meat": 1.0, "brain": 1.0, "bone": 2.0, "charred": 0.35, "blocks": 0.1,
+	"chicken_carcass": VoxelChickens.CARCASS_POINTS}
 const FEED_MOST := 20000                # backpack cubes put in at a go
 const BAG_FEEDS := 12                   # a bag in the chickens' feeder
 const BAG_SCRAPS := 150.0               # a bag in the worm farm
@@ -281,7 +282,7 @@ func pick(eye: Vector3, dir: Vector3, reach := 2.6) -> Array:
 func _gore() -> Dictionary:
 	var out := {}
 	var left := FEED_MOST
-	for id in ["meat", "brain", "bone", "charred"]:
+	for id in ["meat", "brain", "bone", "charred", "chicken_carcass"]:
 		var n: int = mini(arena.inv.count(id), left)
 		if n > 0:
 			out[id] = n
@@ -325,7 +326,7 @@ func use(tag: String) -> void:
 		"sign":
 			upgrade()
 
-## E at the machine: the gore in this player's backpack (meat, brain, bone, charred bits) put in.
+## E at the machine: the gore in this player's backpack (meat, brain, bone, charred bits, chicken carcasses) put in.
 func feed() -> int:
 	var g := _gore()
 	if g.is_empty():

@@ -611,6 +611,8 @@ func _hurt_target(i: int, amount: float) -> void:
 func hurt_players_near(p: Vector3, r: float, amount: float) -> void:
 	if net.role == "guest" and net.linked:
 		return
+	if yard:
+		yard.chickens.blast(p, r, amount)          # (the chickens out in the yard too)
 	var mine := player.global_position + Vector3(0, 0.9, 0)
 	if mine.distance_to(p) < r:
 		hurt_player(amount * (1.0 - mine.distance_to(p) / r))
@@ -710,7 +712,7 @@ func _prop_line(p: String) -> String:
 			return ("E  buy a %s seed: $%d  (you've $%d)" if cash >= int(st.seed) else "%s seed: $%d (you've $%d: kills pay)") % [st.name, int(st.seed), cash]
 		"buyer":
 			var v := farm.sell_value()
-			return ("E  sell your buds and eggs: $%d" % v) if v > 0 else "Buyer: brings cash for buds and eggs"
+			return ("E  sell your buds, eggs and chicken carcasses: $%d" % v) if v > 0 else "Buyer: brings cash for buds, eggs and chicken carcasses"
 		"tank":
 			var can = melee.get("can")
 			return "E  fill the watering can" + (" (%d of %d)" % [int(ceil(can.water)), int(VoxelFarm.CAN)] if can else "")
@@ -964,6 +966,9 @@ func _storage_step(dt: float) -> void:
 		var at := _mouse_floor()
 		var dir := (Vector3(at.x, pp.y, at.z) - pp).normalized() if at != Vector3.INF else -cam.global_transform.basis.z
 		_near_st = stash.pick(pp, dir, 1.4)
+	var td_carcass := ""
+	if top_down and _near_st == null:
+		td_carcass = yard.chickens.carcass_near(player.global_position, 1.1)     # (top-down: one at your feet)
 	_near_bed = 0
 	_near_ward = false
 	_near_bench = false
@@ -972,7 +977,7 @@ func _storage_step(dt: float) -> void:
 	_near_goth = false
 	_near_prop = ""
 	_near_plant = -1
-	_near_hen = ""
+	_near_hen = td_carcass
 	_near_shred = ""
 	_near_game = ""
 	_near_hatch = false
@@ -2056,12 +2061,14 @@ func _shoot(dt: float) -> void:
 				_held[btn] = true
 				w.press(btn)
 				net.local_input("press", [btn, _mouse_v])     # (the mouse's move too: a slash's way, a swing's side)
+				yard.chickens.attack(w)                       # (a chicken out in the yard it lands on)
 				if not still:
 					_held[btn] = false
 					w.release(btn)
 					net.local_input("release", btn)
 			elif down and was:
 				w.hold(btn, dt)
+				yard.chickens.attack(w, true)
 			elif not down and was:
 				_held[btn] = false
 				w.release(btn)
@@ -2084,6 +2091,7 @@ func _sword_key(low: bool) -> void:
 		return
 	sword.quick(low)
 	net.local_input("quick", [low, _mouse_v])
+	yard.chickens.attack(sword)
 
 # a weapon switch (change: what moves the loadout): the melee weapon put away lets go of its buttons, buttons still
 # down count for nothing till they're let go
