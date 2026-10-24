@@ -191,8 +191,15 @@ renderer (Forward+), via the export presets "Windows Voxel Arena" / "Linux Voxel
   (the link alone), `test/voxel/peer_server.js` (a local PeerJS server for the WebRTC runs). Results: 0 bodies
   different over ENet, over WebRTC, with 120 ms lag and 10% loss and a mid-fight join, and from the exported build
   hosting; health 7/7 and 3/3; logic 337/337.
-- Not done yet: lag compensation (the guest's shots land where the host has the enemies, 0.1 s on); the harpoon's
-  and gravity gun's held pieces only roughly follow on the guest; resources the guest vacuums up aren't counted.
+- Lag compensation (24 Oct overnight): the host keeps half a second of every enemy's transform (`_keep_history`); the
+  guest's player state carries its view time (`_clock - BEHIND`, the host's clock); while the guest's weapons press,
+  hold and step in the host's game (`_apply_input`, `_other_frame`), `_rewind` puts every enemy where the guest saw
+  it, then back (plus whatever the weapon moved it by). `test/voxel/lagcomp_test.gd`: a brute walking at 3 m/s, 150 ms
+  each way, 12 pistol shots: 6 land (no lag at all: 5, the test's own aim; `--norewind`: 2). Cut-off pieces (held
+  ones too) are shown between the host's states like the bodies. The guest's vacuumed cubes come to its backpack
+  (`VoxelPieces.vacuum(..., true)` → `give_other`). Kill credit: `VoxelBody.credit` is false while the other's
+  weapons strike here and for what bodies do to themselves (burning, thawing, bowled into), so each game's announcer
+  and bonuses count only its own player's kills.
 
 ### Backpack and chests (21 Oct, the owner's Stage 2: "a proper inventory", "storage chests/cabinets")
 
@@ -1311,6 +1318,26 @@ First-person shots look at a blocks Jared standing in front of you. `overview.pn
 | `enemies_wave.png`, `enemies_wave_pixel.png` | a wave in blocks (batters with bats, swarmers, brutes) and the same wave as pictures |
 
 (Shot in the cloud's software-rendered browser, so the lighting is the high look at 7 am.)
+
+## The overnight sweep (24-25 Oct, the owner: "look over the whole game ... improve overnight")
+
+- The whole test suite run (about 50 runs: solo, co-op, with lag): all pass but the shredder's known flaky ash count.
+- Three read-only reviews (yard, arena extras, mine) and fixes: co-op kill credit counted in both games (fixed,
+  above); Jiggle Off sent NaN to Gothica's torso (`VoxelJiggle._ease`); a settings file from before Gore/Jiggle took
+  High's values (now the matching preset's); aiming the pistol (right) or an empty trigger hurt hens (`_struck`);
+  a fix saying an enemy's dead missed the guest's kill; the slot machine's spider could stay riding a stopped drum;
+  the mine: no fresh claim while sharing, the link lost mid-mine restores your own ground at the end of the fade (no
+  tow mid-fade), a failed or late ground transfer handled (20 s, still at the door), cracks reach the guest, lava
+  doesn't cool beside the guest's Mole. `test/voxel/fixes_test.gd`, more checks in chickens and the co-op mine.
+- **Saves** (`voxel_save_file.gd`, `VoxelSaveFile`): written to `.tmp` then put in place; the first save of a
+  session and then every 30 minutes keeps the old file as `.bak1` (up to `.bak3`); loading tries the file, a finished
+  `.tmp`, then the backups. The backpack's save and the mine's ground both. `test/voxel/save_test.gd`.
+- Bush Kush's meshes built at load (~50 ms each, quicker than before); the mine's pop-ups under the middle line, its
+  prompt below the Moles; your mate's Mole heard in the shared mine.
+- Measured: a 16-enemy fight's CPU frame isn't heavier on Extreme gore than Normal (the cloud CPU was busy: rough).
+- Not done (needs its own session): the mine's rats, cops, rival crew and worm shared in co-op (all of their logic is
+  built round one Mole: chasing, the bunker's alarm and busting, ramming, shots and blasts); the shared mine's chunk
+  updates sent as changed cells (about 30-45 KB/s now: the guest's prediction keeps whole chunks simple).
 
 ## What's left
 
