@@ -18,6 +18,7 @@ const S_HZ := 20.0              # enemy snapshots a second (host)
 const Q_HZ := 15.0              # piece positions a second (host)
 const CHECK_T := 2.0            # seconds between fingerprint checks (host)
 const BEHIND := 0.1             # seconds behind the host the guest shows the enemies
+const REWIND_MAX := 0.5         # (lag compensation) at most this far back the host puts the enemies for the guest's blows
 const MAX_FLAMES := 6           # flame points a burning body sends a snapshot
 
 signal changed                  # linked / unlinked / status (the arena's overlay)
@@ -53,6 +54,9 @@ var _s_t := 0.0
 var _q_t := 0.0
 var _check_t := 0.0
 var _clock := 0.0
+var _o_view_t := -1.0           # (the host's) the guest's view: the host's clock the enemies it sees are at
+var _hist := {}                 # (the host's) body instance id -> [[clock, Transform3D], ...] the last REWIND_MAX s
+var _rewound := []              # [[body, its real transform, where it was put]] while the guest's blows are worked out
 var _snaps := {}                # guest: nid -> [[time, state], ...] (the last few)
 var _pq := {}                   # guest: piece nid -> [[time, pos, rot], ...]
 var _got_world := false
@@ -286,8 +290,68 @@ func _apply_input(kind: String, arg) -> void:
 	if other == null:
 		return
 	_as_other(true)
+	_rewind(true)
 	_apply_input_x(kind, arg)
+	_rewind(false)
 	_as_other(false)
+
+## Lag compensation (the host's): the guest sees the enemies BEHIND s back and the line's delay on top, so while its
+## weapons work here every enemy is put back where the guest saw it (from the last REWIND_MAX s of where they were),
+## then straight back. What the guest aims at is what it hits.
+func _rewind(on: bool) -> void:
+	if not on:
+		for e in _rewound:
+			if is_instance_valid(e[0]):
+				# (back where it really is, plus whatever the guest's weapon moved it by meanwhile: a harpoon's pull)
+				var n: Node3D = e[0]
+				var moved: Vector3 = n.global_transform.origin - (e[2] as Transform3D).origin
+				n.global_transform = (e[1] as Transform3D).translated(moved)
+		_rewound.clear()
+		return
+	if role != "host" or _o_view_t < 0.0 or arena._opts.has("norewind"):
+		return
+	var back := _clock - _o_view_t
+	if back < 0.02 or back > REWIND_MAX:
+		return
+	for b in arena.bodies:
+		if not is_instance_valid(b) or b == arena.avatar:
+			continue
+		var list: Array = _hist.get(b.get_instance_id(), [])
+		if list.size() < 2:
+			continue
+		var xf := _hist_at(list, _o_view_t)
+		_rewound.append([b, b.global_transform, xf])
+		b.global_transform = xf
+
+static func _hist_at(list: Array, t: float) -> Transform3D:
+	if t <= float(list[0][0]):
+		return list[0][1]
+	for i in range(list.size() - 1, -1, -1):
+		if float(list[i][0]) <= t:
+			if i == list.size() - 1:
+				return list[i][1]
+			var a: Array = list[i]
+			var c: Array = list[i + 1]
+			var k := clampf((t - float(a[0])) / maxf(0.0001, float(c[0]) - float(a[0])), 0.0, 1.0)
+			return (a[1] as Transform3D).interpolate_with(c[1], k)
+	return list[0][1]
+
+## (the host's) where every enemy is, kept a while for _rewind
+func _keep_history() -> void:
+	var live := {}
+	for b in arena.bodies:
+		if not is_instance_valid(b) or b == arena.avatar:
+			continue
+		var id: int = b.get_instance_id()
+		live[id] = true
+		var list: Array = _hist.get(id, [])
+		list.append([_clock, b.global_transform])
+		while list.size() > 2 and _clock - float(list[1][0]) > REWIND_MAX:
+			list.pop_front()
+		_hist[id] = list
+	for id in _hist.keys():
+		if not live.has(id):
+			_hist.erase(id)
 
 func _apply_input_x(kind: String, arg) -> void:
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
@@ -385,12 +449,14 @@ func _other_frame(dt: float, rdt: float) -> void:
 	# their weapons: held buttons, then every weapon's step
 	var w: VoxelMelee = _o_weapons.get(other.weapon)
 	_as_other(true)
+	_rewind(true)
 	if w:
 		for btn in _o_held:
 			w.hold(btn, rdt)
 	for id in _o_weapons:
 		_o_weapons[id].step(rdt)
 		_o_weapons[id].view.visible = false
+	_rewind(false)
 	_as_other(false)
 
 func _player_state() -> PackedByteArray:
@@ -426,6 +492,7 @@ func _player_state() -> PackedByteArray:
 	b.put_float(arena.player_hp)
 	b.put_u8(1 if arena.down_t > 0.0 else 0)
 	b.put_u8(arena.lying)
+	b.put_float(_clock - BEHIND if role == "guest" else -1.0)       # (what it sees: the host puts the enemies back there for its blows)
 	return b.data_array
 
 func _read_player(d: PackedByteArray) -> void:
@@ -449,10 +516,12 @@ func _read_player(d: PackedByteArray) -> void:
 	other_hp = b.get_float()
 	other_down = b.get_u8() == 1
 	other_lying = b.get_u8() if b.get_available_bytes() > 0 else 0
+	_o_view_t = b.get_float() if b.get_available_bytes() >= 4 else -1.0
 
 # ---------------------------------------------------------------- the host
 
 func _host_frame(dt: float) -> void:
+	_keep_history()
 	# every body has a number and the guest knows it; the ones gone are told
 	for b in arena.bodies:
 		_ensure(b)
@@ -679,11 +748,20 @@ func _guest_frame(_dt: float) -> void:
 			continue
 		var rb: RigidBody3D = rv
 		var list2: Array = _pq[pnid]
-		var e: Array = list2[list2.size() - 1]
+		if list2.is_empty():
+			continue
+		# (between the two states either side of a tenth of a second ago, like the bodies: smooth, a held one too)
+		var e0: Array = list2[0]
+		var e1: Array = list2[0]
 		for i in list2.size():
 			if float(list2[i][0]) <= at:
-				e = list2[i]
-		rb.global_transform = rb.global_transform.interpolate_with(Transform3D(Basis(e[2] as Quaternion), e[1]), 0.5)
+				e0 = list2[i]
+				e1 = list2[mini(i + 1, list2.size() - 1)]
+		var kq := 0.0
+		if float(e1[0]) > float(e0[0]):
+			kq = clampf((at - float(e0[0])) / (float(e1[0]) - float(e0[0])), 0.0, 1.0)
+		var to := Transform3D(Basis((e0[2] as Quaternion).slerp(e1[2] as Quaternion, kq)), (e0[1] as Vector3).lerp(e1[1], kq))
+		rb.global_transform = rb.global_transform.interpolate_with(to, 0.7)
 
 func _read_snapshot(d: PackedByteArray) -> void:
 	var b := StreamPeerBuffer.new()
@@ -731,7 +809,7 @@ func _read_pieces(d: PackedByteArray) -> void:
 		var q := Quaternion(b.get_float(), b.get_float(), b.get_float(), b.get_float())
 		var list: Array = _pq.get(pnid, [])
 		list.append([t, p, q])
-		while list.size() > 4:
+		while list.size() > 6:
 			list.pop_front()
 		_pq[pnid] = list
 
