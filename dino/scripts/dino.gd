@@ -7,6 +7,12 @@ extends Node2D
 const DinoArt := preload("dino_art.gd")
 
 const GRAVITY := 520.0
+## Legs bitten away slow a creature down to this fraction of its speed; under CRIPPLED_UNDER of its legs it can't
+## jump or charge. PLACEHOLDER numbers.
+const LEG_MIN_SPEED := 0.3
+const CRIPPLED_UNDER := 0.5
+## A step this high or lower is walked up, not bumped into.
+const STEP := 12.0
 
 var game: Node
 var rig := Node2D.new()
@@ -93,12 +99,27 @@ func animate(delta: float, moving: bool, stride: float) -> void:
 		walk_phase += delta * stride
 	else:
 		walk_phase = lerpf(walk_phase, roundf(walk_phase / PI) * PI, minf(1.0, delta * 10.0))
+	# bitten legs: the stride shortens into a limp, and the body dips on each step
+	var limp := 1.0 - legs_left()
 	for l in legs:
 		var part: PixelPart = l[0]
-		part.rotation = sin(walk_phase + l[1]) * 0.55 if on_ground else (0.5 if l[1] == 0.0 else -0.3)
-	body.position.y = body.get_meta("y0") - absf(sin(walk_phase)) * 1.0
+		var swing := 0.55 - limp * 0.35
+		part.rotation = sin(walk_phase + l[1]) * swing if on_ground else (0.5 if l[1] == 0.0 else -0.3)
+	body.position.y = body.get_meta("y0") - absf(sin(walk_phase)) * 1.0 + limp * 3.0 + (maxf(0.0, sin(walk_phase)) * limp * 2.0)
 	(rig.material as ShaderMaterial).set_shader_parameter("flash", 0.85 if flash > 0.0 else 0.0)
 	flash -= delta
+
+## How much of its legs it still has, 0..1.
+func legs_left() -> float:
+	return zone_fraction(DinoArt.LEGS)
+
+## How fast it can go with the legs it has left: full speed with them whole, down to LEG_MIN_SPEED with them gone.
+func leg_speed() -> float:
+	return lerpf(LEG_MIN_SPEED, 1.0, legs_left())
+
+## Legs too bitten to jump or charge.
+func crippled() -> bool:
+	return legs_left() < CRIPPLED_UNDER
 
 ## The zone under `world` (top-most part first), or 0.
 func zone_at(world: Vector2) -> int:
@@ -187,6 +208,11 @@ func move(delta: float) -> void:
 	blocked = 0
 	for o: Rect2 in game.obstacles:
 		if position.x + hw > o.position.x and position.x - hw < o.end.x and position.y > o.position.y + 1.0:
+			# a low step is walked up; anything higher is a wall
+			if on_ground and position.y - o.position.y <= STEP + 0.5:
+				position.y = o.position.y
+				prev.y = o.position.y
+				continue
 			if prev.x <= o.get_center().x:
 				position.x = o.position.x - hw
 				blocked = 1
@@ -198,6 +224,12 @@ func move(delta: float) -> void:
 	for o: Rect2 in game.obstacles:
 		if position.x + hw > o.position.x and position.x - hw < o.end.x and prev.y <= o.position.y + 1.0:
 			floor_y = minf(floor_y, o.position.y - foot)
+	# shelves in the air are one-way: jump up through them, land on them from above
+	if vel.y >= 0.0:
+		for o: Rect2 in game.platforms:
+			if position.x + hw > o.position.x and position.x - hw < o.end.x and prev.y <= o.position.y + 1.0 \
+					and position.y >= o.position.y - 0.5:
+				floor_y = minf(floor_y, o.position.y - foot)
 	on_ground = position.y >= floor_y
 	if on_ground:
 		position.y = floor_y

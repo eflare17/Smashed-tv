@@ -34,12 +34,12 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			if _t <= 0.0:
 				_t = rng.randf_range(2.0, 4.0)
 				_dir = [-1.0, 0.0, 0.0, 1.0][rng.randi() % 4]
-			vel.x = move_toward(vel.x, _dir * wander_speed, delta * 200.0)
+			vel.x = move_toward(vel.x, _dir * wander_speed * leg_speed(), delta * 200.0)
 			if _dir != 0.0:
 				set_facing(_dir)
 		ANGRY:
 			set_facing(to)
-			vel.x = move_toward(vel.x, signf(to) * WALK, delta * 200.0)
+			vel.x = move_toward(vel.x, signf(to) * WALK * leg_speed(), delta * 200.0)
 			if absf(to) < 120.0:
 				state = PAW
 				_t = 0.7
@@ -49,14 +49,17 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 		PAW:
 			set_facing(to)
 			vel.x = move_toward(vel.x, 0.0, delta * 400.0)
-			if _t <= 0.0:
+			if _t <= 0.0 and crippled():
+				# can't get up to speed any more: it just plods at you
+				state = ANGRY
+			elif _t <= 0.0:
 				state = CHARGE
 				_t = 1.1
 				_did_hit = false
-				vel.x = facing * CHARGE_SPEED
+				vel.x = facing * CHARGE_SPEED * leg_speed()
 				game.sfx.play("cry", 0.1, 0.0)
 		CHARGE:
-			vel.x = facing * CHARGE_SPEED
+			vel.x = facing * CHARGE_SPEED * leg_speed()
 			if not _did_hit and (game.player.covers(_horns(), 4.0) or game.player.covers(_horns() + Vector2(0, 8), 4.0)):
 				_did_hit = true
 				game.creature_hit(self, DAMAGE)

@@ -85,7 +85,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			elif _t <= 0.0:
 				_t = rng.randf_range(1.5, 3.5)
 				_dir = [-1.0, 0.0, 0.0, 1.0][rng.randi() % 4]
-			vel.x = move_toward(vel.x, _dir * wander_speed, delta * 200.0)
+			vel.x = move_toward(vel.x, _dir * wander_speed * leg_speed(), delta * 200.0)
 		FLEE:
 			_flee_t -= delta
 			# cornered against the edge of the world or an obstacle: turn and bolt past
@@ -100,7 +100,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 					state = GRAZE
 					_rest = rest_time
 					_dir = 0.0
-			vel.x = move_toward(vel.x, _dir * run_speed, delta * 500.0)
+			vel.x = move_toward(vel.x, _dir * run_speed * leg_speed(), delta * 500.0)
 		DEAD:
 			vel.x = move_toward(vel.x, 0.0, delta * 300.0)
 	if _dir != 0.0 and state != DEAD:

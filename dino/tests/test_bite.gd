@@ -41,6 +41,7 @@ func _run() -> void:
 	rng.seed = 1
 	# a quiet, flat test ground: no obstacles, no hunters turning up
 	main.obstacles.clear()
+	main.platforms.clear()
 	main.set("_hunt_t", 99999.0)
 	var prey: Prey = main.creatures[0]
 
@@ -329,6 +330,7 @@ func _run() -> void:
 	while main.state == main.CHOOSE:
 		main._pick(1)
 	main.obstacles.clear()
+	main.platforms.clear()
 	main.set("_hunt_t", 99999.0)
 	pl = main.player
 
@@ -365,6 +367,49 @@ func _run() -> void:
 	# (killing the hunter may have levelled you up: pick, so the game runs on)
 	while main.state == main.CHOOSE:
 		main._pick(1)
+	# bitten legs slow a creature down, and enough bites cripple it
+	var lame: Prey = main.spawn_prey(760.0)
+	await _frames(2)
+	var full_speed: float = lame.leg_speed()
+	for k in 40:
+		var lpts: Array = _zone_points(lame, DinoArt.LEGS)
+		if lpts.is_empty() or lame.crippled():
+			break
+		main.player_bite(pl, lpts[rng.randi() % lpts.size()], pl.bite_radius)
+	_check("leg bites slow it down", lame.leg_speed() < full_speed * 0.8, "%.2f of its speed" % lame.leg_speed())
+	_check("enough leg bites cripple it", lame.crippled(), "%.0f%% of its legs left" % (lame.legs_left() * 100.0))
+	lame.queue_free()
+	main.creatures.erase(lame)
+
+	# terrain: a low step is walked up, a shelf in the air is landed on from above and jumped up through
+	var step := Rect2(800.0, main.GROUND_Y - 10.0, 60.0, 10.0)
+	main.obstacles.append(step)
+	pl.position = Vector2(780.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	for f in 60:
+		pl.step(1.0 / 60.0, 1.0, false, false, pl.global_position + Vector2(50, -10))
+	_check("a low step is walked up without jumping", pl.position.x > step.position.x + 10.0 and absf(pl.position.y - step.position.y) < 0.5,
+			"x %.0f, y %.0f" % [pl.position.x, pl.position.y])
+	main.obstacles.erase(step)
+	var shelf := Rect2(900.0, main.GROUND_Y - 32.0, 60.0, 6.0)
+	main.platforms.append(shelf)
+	pl.position = Vector2(930.0, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	pl.step(1.0 / 60.0, 0.0, true, false, pl.global_position + Vector2(50, -10))
+	var went_through := false
+	var landed := false
+	for f in 90:
+		pl.step(1.0 / 60.0, 0.0, false, false, pl.global_position + Vector2(50, -10))
+		if pl.position.y < shelf.position.y - 2.0:
+			went_through = true
+		if went_through and pl.on_ground and absf(pl.position.y - shelf.position.y) < 0.5:
+			landed = true
+			break
+	_check("a shelf is jumped up through and landed on", went_through and landed, "y %.0f" % pl.position.y)
+	main.platforms.erase(shelf)
+	while main.state == main.CHOOSE:
+		main._pick(1)
+
 	# the far end leads to the next area
 	pl.position = Vector2(main.area.exit_x + 1.0, main.GROUND_Y)
 	main.set("_stop", 0.0)

@@ -39,13 +39,13 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			set_facing(to)
 			_patience -= delta
 			if absf(to) > RANGE * 0.8 or _patience > 0.0:
-				vel.x = move_toward(vel.x, signf(to) * SPEED, delta * 400.0)
+				vel.x = move_toward(vel.x, signf(to) * SPEED * leg_speed(), delta * 400.0)
 				if absf(to) < RANGE * 0.6:
 					vel.x = move_toward(vel.x, 0.0, delta * 800.0)
 			else:
 				vel.x = 0.0
 				_go(WINDUP, WINDUP_TIME)
-			if blocked != 0 and on_ground:
+			if blocked != 0 and on_ground and not crippled():
 				vel.y = -JUMP
 				on_ground = false
 		WINDUP:
@@ -53,7 +53,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			vel.x = move_toward(vel.x, 0.0, delta * 600.0)
 			if _t <= 0.0:
 				_did_hit = false
-				vel.x = facing * LUNGE_SPEED
+				vel.x = facing * LUNGE_SPEED * leg_speed()
 				_go(LUNGE, LUNGE_TIME)
 				game.sfx.play("snap", 0.1, -4.0)
 		LUNGE:

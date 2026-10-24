@@ -64,6 +64,8 @@ var hud: Hud
 var area: Area
 var world_w := 2400
 var obstacles: Array[Rect2] = []
+## Shelves in the air: one-way (jump up through them, stand on them).
+var platforms: Array[Rect2] = []
 var rng := RandomNumberGenerator.new()
 
 var state := PLAY
@@ -167,6 +169,7 @@ func enter_area(n: int) -> void:
 	area.generate(n, run_seed, GROUND_Y)
 	world_w = area.width
 	obstacles = area.obstacles
+	platforms = area.platforms
 	add_child(area)
 	move_child(area, 0)
 	area.build(VIEW, GROUND_Y)
@@ -227,7 +230,8 @@ func is_attacker(c: Prey) -> bool:
 
 func _add(c: Prey, x: float) -> Prey:
 	c.game = self
-	c.position = Vector2(clampf(x, 20.0, world_w - 20.0), GROUND_Y)
+	x = clampf(x, 20.0, world_w - 20.0)
+	c.position = Vector2(x, area.floor_at(x))
 	area.add_child(c)
 	c.set_facing(-1.0 if x > player.position.x else 1.0)
 	if show_zones:
@@ -533,6 +537,14 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 			zone = _main_zone(r.zones)
 		if not light:
 			_popups.append([DinoArt.ZONE_NAMES[zone], p + Vector2(0, -6), 0.7, Color(1, 0.9, 0.5)])
+		# legs bitten: it slows, and past the point of no jumping it's crippled
+		if zone == DinoArt.LEGS and not pr.dead and not light:
+			var was_crippled: bool = pr.get_meta("crippled", false)
+			if pr.crippled() and not was_crippled:
+				pr.set_meta("crippled", true)
+				_popups.append(["CRIPPLED!", pr.global_position + Vector2(0, -pr.height - 14), 1.2, Color(1, 0.6, 0.3)])
+			elif not pr.crippled():
+				_popups.append(["SLOWED", p + Vector2(0, -14), 0.7, Color(1, 0.8, 0.5)])
 		var was_dead := pr.dead
 		if was_dead:
 			# eating: a little health and XP for every mouthful; rotten meat feeds you nothing

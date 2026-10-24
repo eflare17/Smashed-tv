@@ -184,6 +184,18 @@ hunters hurt. Changed:
    8-10 minutes looks about right; say if it's too hard or too easy.
 - Tests: 48 checks, all passing.
 
+## Legs and terrain (owner's asks, 26 Oct)
+
+- **Bite the legs and they slow down.** Speed follows how much leg is left: whole legs full speed, legs gone 30%.
+  The walk turns into a limp (short strides, the body dipping). Under half their legs they're **CRIPPLED**: a
+  hunter can't jump rocks any more, a charger can't get up to a charge and just plods at you. "SLOWED" shows on
+  each leg bite until then.
+- **Terrain with height** (all placeholder shapes): **rises** of 10-12 px you walk up in steps (a low step is
+  walked up, not bumped into; that goes for every creature); **plateaus** 26-36 px high you have to jump onto,
+  often with a herd grazing on top; **rock shelves** in the air you jump up through and stand on. Rocks and logs
+  are still there too. Creatures spawn on whatever's under them.
+- Tests: 52 checks, all passing. `tests/shot_terrain.gd` photographs the player at each kind.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?
