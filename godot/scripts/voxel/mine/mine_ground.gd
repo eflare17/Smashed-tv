@@ -433,9 +433,9 @@ func load_bytes(b: PackedByteArray) -> bool:
 # ---------------------------------------------------------------- each frame
 
 ## The world moving (the mine calls it while you're down there): the sand, water and lava, the chips flying.
-func tick(dt: float) -> void:
+func tick(dt: float, sim_on := true) -> void:
 	sim.set_block(keep_clear.position.x, keep_clear.position.y, keep_clear.size.x, keep_clear.size.y)
-	_step_acc = minf(_step_acc + dt, 3.0 / STEP_HZ)
+	_step_acc = minf(_step_acc + dt, 3.0 / STEP_HZ) if sim_on else 0.0      # (off: the shared mine's guest, the host's runs it)
 	while _step_acc >= 1.0 / STEP_HZ:
 		_step_acc -= 1.0 / STEP_HZ
 		sim.step()

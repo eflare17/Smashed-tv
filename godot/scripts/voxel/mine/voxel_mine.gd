@@ -136,6 +136,8 @@ var _refuse_t := 0.0
 var _save_t := 0.0
 var _near := ""
 var ore_box: MineOreBox         # where the cargo's sold: squirted in up top
+var net: MineNet                # the shared mine in co-op: both digging the host's ground
+var _cave_other := false        # (the host's: the cave-in scan round the guest's Mole this time)
 var _water_hose := 0.0          # (the hose run out for water: sucking it up)
 var sucking := false            # R held: the hose sucking water up
 var _suck_acc := 0.0
@@ -183,6 +185,9 @@ func setup(arena_: Node3D) -> void:
 	hatch.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	arena.add_child(hatch)
 	hatch.setup()
+	net = MineNet.new()
+	add_child(net)
+	net.setup(self)
 
 # ---------------------------------------------------------------- the world down there
 
@@ -249,6 +254,7 @@ func _build() -> void:
 	ship.dug.connect(_on_dug)
 	ship.splashed.connect(func(sp: float) -> void: sound.play("mine_splash", Vector3.INF, clampf(-14.0 + sp, -14.0, -2.0), randf_range(0.9, 1.1)))
 	ship.bumped.connect(_on_bump)
+	ship.dig_hook = func(a: Array) -> void: net.op("dig", a)
 	critters = MineCritters.new()
 	world.add_child(critters)
 	critters.setup(self, ground)
@@ -281,7 +287,7 @@ func _build() -> void:
 	ground.build_all()
 	_feature_lights()
 	worm.spawn(worm_dead)
-	ship.build(upg)
+	ship.build(ship_look())
 	ship.place(_lift_spot())
 
 func _flags() -> Dictionary:
@@ -444,6 +450,9 @@ func enter() -> void:
 	if not can_enter():
 		return
 	_build()
+	if net.need_world():
+		arena.say("Going down your mate's mine...", 2.0)     # (enter() again once the host's ground is here)
+		return
 	_going = 1
 	_fade = 0.0
 	hatch.want = 1.0
@@ -456,9 +465,13 @@ func enter() -> void:
 	day = MineShop.today()
 	fuel = minf(fuel, tank_max())
 	hull = minf(hull, hull_max())
-	ship.build(upg)
-	ship.place(_resume if _resume != Vector2.INF else _lift_spot())
-	_resume = Vector2.INF
+	ship.build(ship_look())
+	ship.spray = 0.0 if net.shared else MineShip.SPRAY
+	if net.shared:
+		ship.place(_lift_spot() + Vector2(1.2, 0))          # (your own resume spot waits for your own ground)
+	else:
+		ship.place(_resume if _resume != Vector2.INF else _lift_spot())
+		_resume = Vector2.INF
 	critters.on_enter()
 	stats.dives = int(stats.dives) + 1
 	trip = 0.0
@@ -505,8 +518,48 @@ func _finish_going(dt: float) -> void:
 			layer.visible = false
 			vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 			hatch.want = 0.0
+			net.gone_up()
 			if not arena.top_down:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+# ---------------------------------------------------------------- the shared mine (MineNet's calls)
+
+## How this player's Mole looks: its upgrades, blue for the guest in co-op
+func ship_look() -> Dictionary:
+	var d := upg.duplicate()
+	d["coat"] = 1 if net.role() == "guest" else 0
+	return d
+
+## (the host's) the guest's coming down: the world down there made, if it isn't yet
+func serve_start() -> void:
+	_build()
+
+## (the guest's) the host's ground in place of this game's own (its bytes): false if they're no good
+func ground_shared(b: PackedByteArray) -> bool:
+	if not ground.load_bytes(b):
+		return false
+	_ground_swapped()
+	worm.spawn(true)             # (the worm's the host's game's: there's one, and it hunts the host)
+	return true
+
+## (the guest's) this game's own ground back (its bytes, kept on the way down)
+func ground_back(b: PackedByteArray) -> void:
+	if ground.load_bytes(b):
+		_ground_swapped()
+		worm.spawn(worm_dead)
+
+func _ground_swapped() -> void:
+	critters.clear()
+	caveins.clear()
+	_chain.clear()
+	ground.build_all()
+	_feature_lights()
+
+## (the guest's) the link to the host gone while down its mine: back up top
+func lost_link() -> void:
+	if active:
+		leave()
+	arena.say("Lost your mate: back up top", 3.0)
 
 # ---------------------------------------------------------------- what's kept
 
@@ -537,7 +590,7 @@ func _soft() -> void:
 func save_data() -> Dictionary:
 	var d := {"v": 1, "upg": upg.duplicate(), "fuel": fuel, "hull": hull, "cargo": cargo.duplicate(), "items": items.duplicate(),
 		"worm_dead": worm_dead, "tips": tips_done.keys(), "stats": stats.duplicate()}
-	if _built and active and ship.p.y < -0.5:
+	if _built and active and ship.p.y < -0.5 and not net.shared:
 		d["ship"] = [ship.p.x, ship.p.y]     # (quit down there: back down there)
 	elif _resume != Vector2.INF:
 		d["ship"] = [_resume.x, _resume.y]
@@ -563,7 +616,7 @@ func _read_ground() -> PackedByteArray:
 
 ## The ground written out, if it's changed since
 func _write_ground() -> void:
-	if not _built or not _ground_dirty:
+	if not _built or not _ground_dirty or net.shared:
 		return
 	_ground_dirty = false
 	var b := ground.save_bytes()
@@ -614,12 +667,24 @@ func load_data(d) -> void:
 		ground.build_all()
 		_feature_lights()
 		worm.spawn(worm_dead)
-		ship.build(upg)
+		ship.build(ship_look())
 		ship.place(_lift_spot())
 
 # ---------------------------------------------------------------- each frame
 
 func _process(dt: float) -> void:
+	net.step(minf(dt, 0.1))
+	if not active and net.guest_down and _built:
+		# (the host up in the arena, the guest down its mine: the host's game still runs it)
+		ground.keep_clear = Rect2i()
+		ground.tick(minf(dt, 1.0 / 30.0))
+		_caveins_step(minf(dt, 1.0 / 30.0))
+		_save_t += dt
+		if _save_t > SAVE_EVERY and ground.changed > 0:
+			_save_t = 0.0
+			_ground_dirty = true    # (the guest's holes kept in the host's ground)
+			ground.changed = 0
+			_dirty()
 	if not active:
 		# (--mine on the command line: straight down the mine once the arena's up)
 		if arena._opts.has("mine") and not arena._opts.has("mine_done") and Engine.get_process_frames() > 30:
@@ -660,8 +725,9 @@ func _process(dt: float) -> void:
 		ground.keep_clear = MineGround.cells_of(ship.p, Vector2(MineShip.HALF, MineShip.HALF))
 		ship.step(dt, ix, up, down, fuel > 0.0)
 		ground.keep_clear = MineGround.cells_of(ship.p, Vector2(MineShip.HALF, MineShip.HALF))
-		ground.tick(dt)
-		_caveins_step(dt)
+		ground.tick(dt, not net.shared)
+		if not net.shared:
+			_caveins_step(dt)
 	if ship.refused > 0 and ship.broke == 0 and _refuse_t <= 0.0:
 		_refuse_t = 1.2
 		if ship.refused >= 100:
@@ -1102,7 +1168,8 @@ func busted() -> void:
 ## if it was dynamite (and there's room), anyone in it hurt, gas in it going off next.
 func explode(c: Vector2, rad: float, dynamite: bool) -> void:
 	var cc := MineGround.cell(c)
-	var res: Dictionary = ground.sim.explode(cc.x + 0.5, cc.y + 0.5, rad * MineGround.C, 0.45)
+	var res: Dictionary = ground.sim.explode(cc.x + 0.5, cc.y + 0.5, rad * MineGround.C, 0.0 if net.shared else 0.45)
+	net.op("boom", [cc.x + 0.5, cc.y + 0.5, rad * MineGround.C, 0.45])
 	var counts: PackedInt32Array = res.counts
 	for m in counts.size():
 		if counts[m] > 0 and dynamite and m != MineTiles.FOOLS:
@@ -1255,6 +1322,7 @@ func _step_shots(dt: float) -> void:
 				var c := MineGround.cell(s.p)
 				if int(s.m) == MineTiles.WATER:
 					ground.sim.deposit(c.x + 0.5, c.y + 0.5, 1.6, MineTiles.WATER, false)
+					net.op("dep", [c.x + 0.5, c.y + 0.5, 1.6, MineTiles.WATER, false])
 					# on lava: steam, and the lava it touches goes to stone
 					if ground.count(s.p, Vector2(0.5, 0.5), -4) > 0 and _steam_t <= 0.0:
 						_steam_t = 0.35
@@ -1263,6 +1331,7 @@ func _step_shots(dt: float) -> void:
 						tip("lava")
 				else:
 					ground.sim.deposit(c.x + 0.5, c.y + 0.5, 2.6, int(s.m), int(s.m) == MineTiles.DIRT)
+					net.op("dep", [c.x + 0.5, c.y + 0.5, 2.6, int(s.m), int(s.m) == MineTiles.DIRT])
 					sound.play("mine_crumble", Vector3.INF, -8.0, 1.4)
 			s.n.queue_free()
 			_shots.remove_at(i)
@@ -1274,8 +1343,10 @@ func _step_shots(dt: float) -> void:
 func _caveins_step(dt: float) -> void:
 	_cave_scan_t -= dt
 	if _cave_scan_t <= 0.0:
-		_cave_scan_t = 0.3
-		var c := MineGround.cell(ship.p)
+		# (round the ship; the host's game: round the guest's Mole too, every other time, or only, up in the arena)
+		_cave_scan_t = 0.3 if not net.guest_down else 0.15
+		_cave_other = net.guest_down and net.other_on and (not active or not _cave_other)
+		var c := MineGround.cell(net._o_to if _cave_other else ship.p)
 		var slabs: PackedInt32Array = ground.sim.collapse_scan(c.x - 64, c.y - 64, c.x + 64, c.y + 40, 14, 3)
 		for k in range(0, slabs.size(), 4):
 			var r := Rect2i(slabs[k], slabs[k + 1], slabs[k + 2] - slabs[k] + 1, slabs[k + 3] - slabs[k + 1] + 1)
@@ -1288,6 +1359,9 @@ func _caveins_step(dt: float) -> void:
 			ground.sim.crack_rect(r.position.x, r.position.y, r.end.x - 1, r.end.y - 1, 210)
 			caveins.append({"r": r, "t": 1.1, "dust": 0.0})
 			var mid := _slab_mid(r)
+			net.cave_fx("groan", mid)
+			if not active:
+				continue
 			sound.play("mine_groan", Vector3.INF, -4.0 if mid.distance_to(ship.p) < 8.0 else -12.0, randf_range(0.85, 1.1))
 			if _under(r):
 				say("The roof's cracking! Get out from under it!", 1.5)
@@ -1304,23 +1378,28 @@ func _caveins_step(dt: float) -> void:
 		if q.t <= 0.0:
 			var n: int = ground.sim.drop_rect(r.position.x, r.position.y, r.end.x - 1, r.end.y - 1)
 			var mid := _slab_mid(r)
-			var near := clampf(1.0 - mid.distance_to(ship.p) / 14.0, 0.0, 1.0)
-			sound.play("mine_collapse", Vector3.INF, lerpf(-14.0, 0.0, near), randf_range(0.9, 1.05))
-			shake(0.15 + near * 0.6)
-			if _under(r):
-				hurt(minf(20.0, 4.0 + n * 0.03), "cave")
-				say("Cave-in!", 1.5)
+			net.cave_fx("collapse", mid)
+			if net.guest_down and net.other_on and _under(r, net._o_to):
+				net.hurt_other(minf(20.0, 4.0 + n * 0.03), "cave")
+			if active:
+				var near := clampf(1.0 - mid.distance_to(ship.p) / 14.0, 0.0, 1.0)
+				sound.play("mine_collapse", Vector3.INF, lerpf(-14.0, 0.0, near), randf_range(0.9, 1.05))
+				shake(0.15 + near * 0.6)
+				if _under(r):
+					hurt(minf(20.0, 4.0 + n * 0.03), "cave")
+					say("Cave-in!", 1.5)
 			_ground_dirty = true
 			caveins.remove_at(i)
 
 func _slab_mid(r: Rect2i) -> Vector2:
 	return MineGround.world(Vector2i(r.position.x + r.size.x / 2, r.end.y))
 
-## Whether the ship's under the slab r (within 6 m below it)
-func _under(r: Rect2i) -> bool:
+## Whether the ship (or a ship at at) is under the slab r (within 6 m below it)
+func _under(r: Rect2i, at := Vector2.INF) -> bool:
+	var sp := ship.p if at == Vector2.INF else at
 	var a := MineGround.world(Vector2i(r.position.x, r.end.y))
 	var b := MineGround.world(Vector2i(r.end.x, r.end.y))
-	return ship.p.x > a.x - 0.4 and ship.p.x < b.x + 0.4 and ship.p.y < a.y and ship.p.y > a.y - 6.0
+	return sp.x > a.x - 0.4 and sp.x < b.x + 0.4 and sp.y < a.y and sp.y > a.y - 6.0
 
 ## R held: the hose out of its back sucking up the water round its nozzle (into the launcher's tank), drops flying
 ## up it, a gurgle.
@@ -1353,6 +1432,9 @@ func _suck(dt: float) -> void:
 					_drop(MineGround.world(Vector2i(found[k], found[k + 1])))
 			_suck_acc -= float(got)
 			ammo["water"] = have + got
+			if got > 0:
+				var sc2 := MineGround.cell(ship.p)
+				net.op("suck", [c.x, c.y, sc2.x, sc2.y, got])
 	if got > 0:
 		sound.loop("mine_suck", "mine_suck", null, -7.0, 1.0)
 		_suck_none_t = 0.0
@@ -1667,8 +1749,9 @@ func buy_upgrade(t: String) -> void:
 		fuel += tank_max() - old_tank       # (the new tank comes full of what the extra holds)
 	if t == "hull":
 		hull += hull_max() - old_hull
-	ship.build(upg)
+	ship.build(ship_look())
 	ship.place(ship.p)
+	net.send_look()
 	say("%s: %s" % [MineShop.UPGRADES[t].name, MineShop.UPGRADES[t].names[lv + 1]], 2.0)
 	sound.play("mine_clink", Vector3.INF, 0.0, 0.7)
 	_mechanic_menu()

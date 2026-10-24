@@ -52,6 +52,10 @@ void MineSim::setup(int w_, int h_, int sky_rows) {
 	stamp.assign(w * h, 0);
 	awake.assign(cw * chh, 0);
 	awake_next.assign(cw * chh, 0);
+	touched.assign(cw * chh, 0);
+	prev_mat.clear();
+	prev_var.clear();
+	prev_dmg.clear();
 	parts.clear();
 	changed = 0;
 }
@@ -135,6 +139,7 @@ void MineSim::wake(int x, int y) {
 			return;
 		awake[b * cw + a] = 1;
 		awake_next[b * cw + a] = 1;
+		touched[b * cw + a] = 1;
 	};
 	on(cx, cy);
 	int lx = x % CS, ly = y % CS;
@@ -979,6 +984,153 @@ int MineSim::drop_rect(int x0, int y0, int x1, int y1) {
 	return n;
 }
 
+// ---------------------------------------------------------------- the shared mine
+
+// The other ship's box (cells): nothing falls or flows into it either.
+void MineSim::set_block2(int x, int y, int bw_, int bh_) {
+	if (x == bx2 && y == by2 && bw_ == bw2 && bh_ == bh2)
+		return;
+	for (int yy = by2 - 1; yy <= by2 + bh2; yy++)
+		for (int xx = bx2 - 1; xx <= bx2 + bw2; xx++)
+			wake(xx, yy);
+	bx2 = x;
+	by2 = y;
+	bw2 = bw_;
+	bh2 = bh_;
+}
+
+// (the host's) the world as it stands taken as what the guest has (it's just been sent it whole).
+void MineSim::diff_reset() {
+	prev_mat = mat;
+	prev_var = var;
+	prev_dmg = dmg;
+	std::fill(touched.begin(), touched.end(), 0);
+}
+
+// (the host's) the chunks that have changed since the guest was last sent them (only the ones woken since are looked
+// at), at most max_chunks of them: [u16 chunk, then its cells' mat, var, dmg, row by row (the world's edge cut off)] ...
+PackedByteArray MineSim::take_diff(int max_chunks) {
+	PackedByteArray out;
+	if (prev_mat.size() != mat.size()) {
+		diff_reset();
+		return out;
+	}
+	int n = 0;
+	for (int ci = 0; ci < cw * chh && n < max_chunks; ci++) {
+		if (!touched[ci])
+			continue;
+		touched[ci] = 0;
+		int x0 = (ci % cw) * CS, y0 = (ci / cw) * CS;
+		int x1 = std::min(w, x0 + CS), y1 = std::min(h, y0 + CS);
+		bool diff = false;
+		for (int y = y0; y < y1 && !diff; y++) {
+			int i = idx(x0, y);
+			diff = std::memcmp(&mat[i], &prev_mat[i], x1 - x0) || std::memcmp(&var[i], &prev_var[i], x1 - x0) ||
+					std::memcmp(&dmg[i], &prev_dmg[i], x1 - x0);
+		}
+		if (!diff)
+			continue;
+		int at = out.size();
+		int rw = x1 - x0, rh = y1 - y0;
+		out.resize(at + 2 + rw * rh * 3);
+		uint8_t *p = out.ptrw() + at;
+		p[0] = (uint8_t)(ci & 255);
+		p[1] = (uint8_t)(ci >> 8);
+		p += 2;
+		for (int y = y0; y < y1; y++) {
+			int i = idx(x0, y);
+			std::memcpy(p, &mat[i], rw);
+			std::memcpy(p + rw * rh, &var[i], rw);
+			std::memcpy(p + 2 * rw * rh, &dmg[i], rw);
+			std::memcpy(&prev_mat[i], &mat[i], rw);
+			std::memcpy(&prev_var[i], &var[i], rw);
+			std::memcpy(&prev_dmg[i], &dmg[i], rw);
+			p += rw;
+		}
+		n++;
+	}
+	// (what's left over goes next time: touched stays set for the chunks not looked at)
+	return out;
+}
+
+// (the guest's) the host's chunks written in. -> how many
+int MineSim::apply_chunks(const PackedByteArray &data) {
+	const uint8_t *p = data.ptr();
+	int left = data.size(), n = 0;
+	while (left >= 2) {
+		int ci = p[0] | (p[1] << 8);
+		if (ci < 0 || ci >= cw * chh)
+			break;
+		int x0 = (ci % cw) * CS, y0 = (ci / cw) * CS;
+		int x1 = std::min(w, x0 + CS), y1 = std::min(h, y0 + CS);
+		int rw = x1 - x0, rh = y1 - y0;
+		if (left < 2 + rw * rh * 3)
+			break;
+		const uint8_t *q = p + 2;
+		for (int y = y0; y < y1; y++) {
+			int i = idx(x0, y);
+			std::memcpy(&mat[i], q, rw);
+			std::memcpy(&var[i], q + rw * rh, rw);
+			std::memcpy(&dmg[i], q + 2 * rw * rh, rw);
+			for (int k = 0; k < rw; k++)
+				if (mat[i + k] >= NM)
+					mat[i + k] = 0;
+			q += rw;
+		}
+		p += 2 + rw * rh * 3;
+		left -= 2 + rw * rh * 3;
+		n++;
+	}
+	return n;
+}
+
+// (the guest's) the chunks under some rects (x0, y0, x1, y1 each, cells, inclusive), but not those in except (chunk
+// data as take_diff makes it), as chunk data: kept to write back after its own ops are done again on the host's update
+PackedByteArray MineSim::chunks_in(const PackedInt32Array &rects, const PackedByteArray &except) const {
+	std::vector<uint8_t> want(cw * chh, 0);
+	for (int k = 0; k + 3 < rects.size(); k += 4) {
+		int cx0 = std::max(0, rects[k] / CS), cy0 = std::max(0, rects[k + 1] / CS);
+		int cx1 = std::min(cw - 1, rects[k + 2] / CS), cy1 = std::min(chh - 1, rects[k + 3] / CS);
+		for (int cy = cy0; cy <= cy1; cy++)
+			for (int cx = cx0; cx <= cx1; cx++)
+				want[cy * cw + cx] = 1;
+	}
+	const uint8_t *p = except.ptr();
+	int left = except.size();
+	while (left >= 2) {
+		int ci = p[0] | (p[1] << 8);
+		if (ci < 0 || ci >= cw * chh)
+			break;
+		want[ci] = 0;
+		int x0 = (ci % cw) * CS, y0 = (ci / cw) * CS;
+		int len = 2 + (std::min(w, x0 + CS) - x0) * (std::min(h, y0 + CS) - y0) * 3;
+		p += len;
+		left -= len;
+	}
+	PackedByteArray out;
+	for (int ci = 0; ci < cw * chh; ci++) {
+		if (!want[ci])
+			continue;
+		int x0 = (ci % cw) * CS, y0 = (ci / cw) * CS;
+		int x1 = std::min(w, x0 + CS), y1 = std::min(h, y0 + CS);
+		int rw = x1 - x0, rh = y1 - y0;
+		int at = out.size();
+		out.resize(at + 2 + rw * rh * 3);
+		uint8_t *q = out.ptrw() + at;
+		q[0] = (uint8_t)(ci & 255);
+		q[1] = (uint8_t)(ci >> 8);
+		q += 2;
+		for (int y = y0; y < y1; y++) {
+			int i = idx(x0, y);
+			std::memcpy(q, &mat[i], rw);
+			std::memcpy(q + rw * rh, &var[i], rw);
+			std::memcpy(q + 2 * rw * rh, &dmg[i], rw);
+			q += rw;
+		}
+	}
+	return out;
+}
+
 // The world in bs x bs blocks: 1 where a block has no more than max_block cells that stop things (open enough to
 // fly through), for the chasers' maps.
 PackedByteArray MineSim::coarse(int bs, int max_block) const {
@@ -1166,6 +1318,11 @@ void MineSim::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("crack_rect", "x0", "y0", "x1", "y1", "amount"), &MineSim::crack_rect);
 	ClassDB::bind_method(D_METHOD("drop_rect", "x0", "y0", "x1", "y1"), &MineSim::drop_rect);
 	ClassDB::bind_method(D_METHOD("is_dug", "x", "y"), &MineSim::is_dug);
+	ClassDB::bind_method(D_METHOD("set_block2", "x", "y", "w", "h"), &MineSim::set_block2);
+	ClassDB::bind_method(D_METHOD("take_diff", "max_chunks"), &MineSim::take_diff);
+	ClassDB::bind_method(D_METHOD("diff_reset"), &MineSim::diff_reset);
+	ClassDB::bind_method(D_METHOD("apply_chunks", "data"), &MineSim::apply_chunks);
+	ClassDB::bind_method(D_METHOD("chunks_in", "rects", "except"), &MineSim::chunks_in);
 	ClassDB::bind_method(D_METHOD("coarse", "bs", "max_block"), &MineSim::coarse);
 	ClassDB::bind_method(D_METHOD("find", "m", "x0", "y0", "x1", "y1", "max"), &MineSim::find);
 	ClassDB::bind_method(D_METHOD("particles"), &MineSim::particles);

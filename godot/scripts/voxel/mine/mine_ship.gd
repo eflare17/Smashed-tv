@@ -49,6 +49,8 @@ var broke := 0                  # cells it broke this step
 var heat := 0.0                 # the bit's heat (glows in hard rock)
 var wet := 0.0                  # how much of it's in water (0 .. 1)
 var shove := 0                  # loose cells it pushed through this step
+var spray := SPRAY              # (the shared mine's guest: 0, the host's game throws the chips)
+var dig_hook: Callable          # (the shared mine's guest) told each dig's args, to send them to the host
 var _spin := 0.0
 var _rattle := 0.0
 var lamp: OmniLight3D
@@ -105,7 +107,10 @@ func step(dt: float, ix: float, up: bool, down: bool, fuel: bool) -> void:
 			half = Vector2(BIT_DEPTH * 0.5, HALF + 0.07)
 		var cc := Vector2(c.x * MineGround.C, -c.y * MineGround.C + MineGround.SKY)
 		var res: Dictionary = ground.sim.dig(cc.x, cc.y, half.x * MineGround.C, half.y * MineGround.C, 0.04 * MineGround.C,
-			drill_power / BIT_DEPTH * (2.0 if dir.y < 0.0 else 1.0), drill_level, dt, SPRAY, dir.x, -dir.y, true)
+			drill_power / BIT_DEPTH * (2.0 if dir.y < 0.0 else 1.0), drill_level, dt, spray, dir.x, -dir.y, true)
+		if dig_hook.is_valid():
+			dig_hook.call([cc.x, cc.y, half.x * MineGround.C, half.y * MineGround.C, 0.04 * MineGround.C,
+				drill_power / BIT_DEPTH * (2.0 if dir.y < 0.0 else 1.0), drill_level, dt, SPRAY, dir.x, -dir.y])
 		refused = int(res.refused)
 		hardness = float(res.hard)
 		broke = int(res.broke)

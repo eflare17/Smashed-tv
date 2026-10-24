@@ -108,6 +108,11 @@ public:
 	void crack_rect(int x0, int y0, int x1, int y1, int amount);
 	int drop_rect(int x0, int y0, int x1, int y1);
 	bool is_dug(int x, int y) const;
+	void set_block2(int x, int y, int bw, int bh);
+	PackedByteArray take_diff(int max_chunks);
+	void diff_reset();
+	int apply_chunks(const PackedByteArray &data);
+	PackedByteArray chunks_in(const PackedInt32Array &rects, const PackedByteArray &except) const;
 	PackedByteArray coarse(int bs, int max_block) const;
 	PackedInt32Array find(int m, int x0, int y0, int x1, int y1, int max) const;
 	int particles() const { return (int)parts.size(); }
@@ -143,18 +148,23 @@ private:
 	std::vector<uint8_t> mat, var, dmg, back;
 	std::vector<uint16_t> stamp;
 	std::vector<uint8_t> awake, awake_next;
+	std::vector<uint8_t> touched;                      // chunks woken since the last diff (the shared mine's)
+	std::vector<uint8_t> prev_mat, prev_var, prev_dmg; // (the host's) the world as the guest was last sent it
 	std::vector<Part> parts;
 	Mat mats[NM];
 	Back backs[NB];
 	uint16_t frame = 1;
 	int bx = 0, by = 0, bw = 0, bh = 0;
+	int bx2 = 0, by2 = 0, bw2 = 0, bh2 = 0;            // the other ship's (the shared mine)
 	int changed = 0;
 	int basalt_m = 5, obsidian_m = 32, bedrock_m = 7;
 	uint32_t rng = 1234567;
 
 	inline int idx(int x, int y) const { return x + y * w; }
 	inline bool in(int x, int y) const { return x >= 0 && y >= 0 && x < w && y < h; }
-	inline bool blocked_cell(int x, int y) const { return x >= bx && x < bx + bw && y >= by && y < by + bh; }
+	inline bool blocked_cell(int x, int y) const {
+		return (x >= bx && x < bx + bw && y >= by && y < by + bh) || (x >= bx2 && x < bx2 + bw2 && y >= by2 && y < by2 + bh2);
+	}
 	inline float rnd() { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return (rng & 0xFFFFFF) / 16777216.0f; }
 	static inline uint32_t hash2(int x, int y) { uint32_t h = (uint32_t)(x * 73856093) ^ (uint32_t)(y * 19349663); h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15; return h; }
 	float noise(float x, float y, int seed) const;

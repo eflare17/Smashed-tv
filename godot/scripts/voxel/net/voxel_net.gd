@@ -925,6 +925,9 @@ func _got(d: PackedByteArray) -> void:
 		84:
 			if role == "guest":
 				arena.games.on_tv_frame(d.slice(1))     # (the host's TV picture, a JPEG)
+		77:
+			if arena.mine and arena.mine.net:
+				arena.mine.net.on_fast(d)                # (the other's Mole down the shared mine)
 		82:
 			var msg = bytes_to_var(d.slice(1))
 			if typeof(msg) == TYPE_ARRAY:
@@ -993,6 +996,9 @@ func _message(m: Array) -> void:
 			arena.yard.shredder.on_net(m.slice(1))
 		"Q":
 			arena.yard.barbecue.on_net(m.slice(1))
+		"N":
+			if arena.mine and arena.mine.net:
+				arena.mine.net.on_net(m.slice(1))
 		"R":
 			arena.games.on_net(m.slice(1))
 		"X":
@@ -1070,6 +1076,16 @@ func send_shredder(m: Array) -> void:
 func send_barbecue(m: Array) -> void:
 	if linked:
 		_send(["Q"] + m)
+
+## The shared mine's (MineNet), either way, reliable.
+func send_mine(m: Array) -> void:
+	if linked:
+		_send(["N"] + m)
+
+## The shared mine's Mole state (MineNet: its first byte 77), either way, fast.
+func send_mine_fast(d: PackedByteArray) -> void:
+	if linked:
+		_send_fast(d)
 
 ## The chickens' (VoxelChickens), either way, reliable.
 func send_chickens(m: Array) -> void:

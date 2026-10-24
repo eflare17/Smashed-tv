@@ -955,13 +955,46 @@ The mine's ground (below) was 1 m tiles; it's now Sand Miner's (the cabinet game
 - Tests (63 checks): splash and float (about 3/5 under, off the bottom), the dive, a nugget bouncing on a floor,
   falling speeding up, a dug-out room in dirt cracking and coming down.
 
+### The shared mine (24 Oct, the owner: "build the shared mine so we can dig together")
+
+In co-op both players now dig the host's ground (`scripts/voxel/mine/mine_net.gd`, `MineNet`, the mine's `net`;
+messages "N" reliable, byte 77 fast, through `VoxelNet.send_mine` / `send_mine_fast`):
+- **Going down (the guest):** `enter()` asks first (`need_world`, "want"); the host makes its mine if it hasn't yet
+  (`serve_start`), sends `ground.save_bytes()` in 48 KB parts ("wp") and calls `MineSim.diff_reset()`. The guest keeps
+  its own ground's bytes, loads the host's (`ground_shared`: the worm hidden, the critters cleared) and goes in, at
+  the lift a bit to the right. Its own ground (and its own resume spot) is put back on the way up (`gone_up`, "up"),
+  or when the link goes (`lost_link`: back up top). Shared, the guest never writes the host's ground to its file.
+- **The host runs it:** the sand, water, lava and cave-ins run in the host's game only, even with the host up in the
+  arena (`_process` ticks the ground and the cave-in scan while the guest's down; the guest's holes are saved in the
+  host's ground). Every 1/15 s `MineSim::take_diff` returns the touched chunks (32 x 32) whose cells changed since
+  the last one (mat, var, dmg), zstd-packed in "ch" with the number of the guest's last op done; `apply_chunks`
+  writes them in the guest's copy, whose `MineGround.tick(dt, false)` doesn't step the sim. ~30-45 KB/s with water
+  and lava moving.
+- **The guest digs at once:** its drill (`MineShip.dig_hook`), blasts, shots landing and water sucked up are done to
+  its own copy straight away (the drill and blasts without chips: the host's game throws those) and sent as ops
+  (numbered, 30 a second, "ops"); the host does them to the real ground (no loot: the guest's cargo is its own). Till
+  a "ch" says the host's done an op, the guest does it again on top of each update, in the chunks that update wrote
+  (`MineSim::chunks_in` keeps the others as they were, so nothing's done twice): holes don't flicker shut.
+- **The two Moles:** each game sends its Mole's state 20 times a second (place, speed, facing, drilling, lift, the
+  hose, the hold, the bit's heat; numbered, late ones dropped) and shows the other's as a `MineShip` driven by it
+  (smoothed; the guest's blue: upg "coat" 1, `MineShipArt.COAT_BLUE`; the host's yellow; the looks resent on an
+  upgrade). The host's sim keeps sand and water out of the guest's Mole too (`MineSim::set_block2`, and `displace`).
+- **Cave-ins** are scanned round both Moles in the host's game (alternately); one on the guest's Mole hurts it
+  ("hurt"), and the guest hears the groan and the fall ("cave"). Critters run in each game for its own player; the
+  worm only in the host's. Cargo, cash, fuel, upgrades and selling stay each player's own.
+- Test: `test/voxel/mine_coop_test.gd` (two copies, `--host=` / `--join=`, also with `--lag=150 --loss=15`; 20
+  checks): the ground came over (the same seed and stuff), the guest's hole in the host's ground with the host up in
+  the arena, the guest's Mole blue and where it is, the host's hole and Mole in the guest's game, the guest's hole
+  not shut by updates, sand dropped in the host's game landing the same in the guest's, the guest's own ground back.
+  Film: `mine_coop_clip.gd` (both screens).
+
 ### The mine: dig mode (23 Oct, the owner: "build it all", the Motherload-style digging from their design notes)
 
 - **Getting in:** a garage roller door in the yard side of the arena's south wall, between the buyer and the back
   door (`scripts/voxel/mine/mine_hatch.gd`, MINE sign over it). E at it: the door rolls up and the mine fades in.
   Up at the LIFT (top left of the mine) E takes you back to the yard. While you're down there the arena carries on
   (you're stood in the yard, where nothing comes for you); it isn't drawn (`disable_3d`), its keys and weapons are
-  off. Solo or in co-op (the mine is each player's own).
+  off. Solo or in co-op (in co-op both dig the host's ground: "The shared mine" above).
 - **Its own world:** `voxel_mine.gd` (`VoxelMine`, the arena's `mine`) draws a separate 3D world in a SubViewport on a
   CanvasLayer over the screen, with its own light: daylight up top, darker the deeper you go, the screen's edges
   fading dark with depth (a screen shader, which also does the mushroom trip and the red flash when you're hurt).

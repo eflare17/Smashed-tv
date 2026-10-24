@@ -36,6 +36,8 @@ const BASE := {
 	"Q": Color8(120, 200, 255), "q": Color8(230, 245, 255),
 	"P": Color8(232, 190, 60), "p": Color8(170, 120, 30),       # gold trim
 }
+# the guest's Mole in co-op (upg "coat" 1): the hull blue (the host's stays yellow)
+const COAT_BLUE := {"L": Color8(170, 225, 255), "H": Color8(48, 136, 232), "h": Color8(28, 92, 182), "j": Color8(16, 54, 118)}
 const DRILL_PAL := [
 	{"D": Color8(232, 236, 242), "d": Color8(160, 168, 180), "s": Color8(84, 90, 104)},
 	{"D": Color8(244, 196, 130), "d": Color8(200, 130, 72), "s": Color8(118, 68, 36)},
@@ -164,7 +166,7 @@ static func body(upg: Dictionary, full: float) -> ImageTexture:
 	var tl := int(upg.get("tank", 0))
 	var cl := int(upg.get("cargo", 0))
 	var ll := int(upg.get("lights", 0))
-	var g := Grid.new(BASE)
+	var g := Grid.new(BASE.merged(COAT_BLUE, true) if int(upg.get("coat", 0)) == 1 else BASE)
 	# the cargo pod on its back, behind the bubble (bigger each level; ore poking out the top when it's full)
 	var pw := 7 + cl * 2
 	var ph := 4 + cl
