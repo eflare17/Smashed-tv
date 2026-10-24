@@ -8,6 +8,7 @@ extends SceneTree
 var arena: Node
 var m: VoxelMine
 var role := ""
+var code := ""
 var t := 0.0
 var t0 := -1.0                  # when both are down there (the film's start)
 var v := {}
@@ -20,10 +21,20 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--host="):
 			role = "host"
+			code = a.trim_prefix("--host=")
 		elif a.begins_with("--join="):
 			role = "guest"
+			code = a.trim_prefix("--join=")
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
+
+## (the two copies keep in step through a file each: "ready" when down there, "done" at the end)
+func _flag(k: String) -> void:
+	var f := FileAccess.open("user://mclip_%s_%s_%s" % [code, role, k], FileAccess.WRITE)
+	f.store_string("1")
+
+func _their(k: String) -> bool:
+	return FileAccess.file_exists("user://mclip_%s_%s_%s" % [code, "guest" if role == "host" else "host", k])
 
 func _quiet() -> void:
 	m.tips_done = {}
@@ -40,10 +51,15 @@ func _process(dt: float) -> bool:
 	var n = arena.net
 	if not v.has("prep"):
 		v.prep = true
+		for r in ["host", "guest"]:
+			for k in ["ready", "done"]:
+				DirAccess.remove_absolute(ProjectSettings.globalize_path("user://mclip_%s_%s_%s" % [code, r, k]))
 		arena.frozen = true
 		arena.godmode = true
 		arena.waves.queue.clear()
-	if t > 120.0:
+	if int(t / 3.0) != int((t - dt) / 3.0):
+		print("MCLIP %s t=%.0f linked=%s active=%s going=%d shared=%s other_on=%s t0=%.1f" % [role, t, str(n != null and n.linked), str(m.active), m._going, str(m.net.shared), str(m.net.other_on), t0])
+	if t > 240.0:
 		print("MCLIP gave up")
 		quit()
 		return true
@@ -69,7 +85,10 @@ func _process(dt: float) -> bool:
 			v.gpos = true
 			_quiet()
 			m.ship.place(Vector2(GX, 1.0))
-		if ready:
+		if ready and not v.has("flagged"):
+			v.flagged = true
+			_flag("ready")
+		if v.has("flagged") and _their("ready"):
 			t0 = t
 		return false
 	m.hull = 9999.0
@@ -96,7 +115,12 @@ func _process(dt: float) -> bool:
 	elif s < 19.5:
 		m.auto = {"up": true, "x": -toward * 0.3 if s < 16.0 else 0.0}
 	else:
-		print("MCLIP done (%s): %.1f s" % [role, s])
-		quit()
-		return true
+		m.auto = {}
+		if not v.has("done"):
+			v.done = true
+			_flag("done")
+		if _their("done") or s > 60.0:
+			print("MCLIP done (%s): %.1f s" % [role, s])
+			quit()
+			return true
 	return false
