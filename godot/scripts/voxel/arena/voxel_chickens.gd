@@ -109,6 +109,9 @@ const ROAST_HP := 45.0          # ... roast
 const CARCASS_POINTS := 1000.0  # in the shredder (a quarter of a bag of blood and bone)
 const CARCASS_MAX := 24         # lying about at once (past that the oldest goes)
 const FEATHERS_MAX := 160
+const DAY_T := 600.0            # a game day (the chickens' clock: no day and night in the arena yet), morning at 0
+const COMEBACK_DAYS := 1        # a killed chicken comes back (a grown hen, in the coop) at this many mornings after
+const COMEBACK_AT := Vector2(29.3, 37.4)        # (in the coop, between the door and the nests)
 
 enum { PEN, COOP, YARD, NONE }
 
@@ -121,6 +124,8 @@ var nests := []                 # per nest box: [egg hatch progress 0..1, ...]
 var hens := []                  # [{id, x, y, z, yaw, c, age, full, lay, poo, st, t, path, anim, nest, hurt, hit_ms}]
 var carcasses := []             # [{id, x, y, z, yaw, c, chick}] (the host's, or alone; the guest's from the host's)
 var _next_id := 1
+var clock := 0.0                # game time (seconds; the day DAY_T long), saved
+var comebacks := []             # per chicken killed: the clock it comes back at (it waits for room under the cap)
 var _views := {}                # hen id -> VoxelChicken
 var _sync_t := 0.0
 var _pos_t := 0.0
@@ -174,6 +179,8 @@ func _fresh() -> void:
 	hens = []
 	carcasses = []
 	_next_id = 1
+	clock = 0.0
+	comebacks = []
 	for i in START:
 		_hatch(Vector2(29.0 + i * 0.6, 37.0), 1.0, i)
 
@@ -231,6 +238,8 @@ func _process(dt: float) -> void:
 	_show(dt)
 
 func _live(dt: float) -> void:
+	clock += dt
+	_come_back()
 	var fed_sum := 0.0
 	var adults := 0
 	for h in hens:
@@ -254,6 +263,21 @@ func _live(dt: float) -> void:
 					arena.say("A chick hatched! (%d of %d chickens)" % [hens.size(), cap()], 2.5)
 				_changed()
 				break
+
+## The morning COMEBACK_DAYS after the clock t (a killed chicken back then).
+static func morning_after(t: float) -> float:
+	return (floorf(t / DAY_T) + COMEBACK_DAYS) * DAY_T
+
+# the killed ones due back: a new grown hen in the coop each, while there's room
+func _come_back() -> void:
+	while not comebacks.is_empty() and float(comebacks[0]) <= clock and hens.size() < cap():
+		comebacks.pop_front()
+		var at := COMEBACK_AT + Vector2(randf_range(-0.5, 0.5), randf_range(-0.4, 0.4))
+		_hatch(at, 1.0)
+		_sound("cluck", Vector3(at.x, 0.3, at.y))
+		if in_pen(arena.player.global_position):
+			arena.say("A hen's back in the coop (%d of %d chickens)" % [hens.size(), cap()], 2.5)
+		_changed()
 
 func _hen(h: Dictionary, dt: float) -> void:
 	var adult := float(h.age) >= 1.0
@@ -586,6 +610,8 @@ func line(tag: String) -> String:
 		return ("E  buy %d grain: $%d  (you've $%d)" if arena.cash >= GRAIN_COST else "Grain: %d for $%d (you've $%d: kills pay)") % [GRAIN_BUY, GRAIN_COST, arena.cash]
 	if tag == "sign":
 		var s2 := "Coop: %d of %d chickens, %d nest boxes" % [hens.size(), cap(), nest_count()]
+		if not comebacks.is_empty():
+			s2 += ", %d coming back %s" % [comebacks.size(), "when there's room" if float(comebacks[0]) <= clock else "in the morning"]
 		if level + 1 >= LEVELS.size():
 			return s2 + " (as big as it gets)"
 		var nx: Dictionary = LEVELS[level + 1]
@@ -892,6 +918,8 @@ func _die(h: Dictionary, by: int, roast := false) -> void:
 		"chick": float(h.age) < 1.0, "roast": roast})
 	while carcasses.size() > CARCASS_MAX:
 		carcasses.pop_front()
+	if comebacks.size() < LEVELS[-1].cap:
+		comebacks.append(morning_after(clock))
 	if by == 0 or (by == -1 and VoxelYard.in_yard(arena.player.global_position)):
 		arena.say("Roast chicken! E picks it up" if roast else "Chicken killed: E picks up the carcass", 2.5)
 
@@ -1121,7 +1149,8 @@ func to_data(live := false) -> Dictionary:
 	for c in carcasses:
 		cs.append({"id": int(c.id), "x": float(c.x), "y": float(c.y), "z": float(c.z), "yaw": float(c.yaw), "c": int(c.c), "chick": bool(c.chick),
 			"roast": bool(c.get("roast", false))})
-	return {"level": level, "gate": gate, "food": food, "nests": nests.duplicate(true), "hens": hs, "carcasses": cs, "next": _next_id}
+	return {"level": level, "gate": gate, "food": food, "nests": nests.duplicate(true), "hens": hs, "carcasses": cs, "next": _next_id,
+		"clock": clock, "back": comebacks.duplicate()}
 
 func from_data(d) -> void:
 	if typeof(d) != TYPE_DICTIONARY:
@@ -1161,6 +1190,14 @@ func from_data(d) -> void:
 			carcasses.append({"id": int(o.get("id", 0)), "x": float(o.get("x", 15.0)), "y": float(o.get("y", 0.0)), "z": float(o.get("z", 30.0)),
 				"yaw": float(o.get("yaw", 0.0)), "c": clampi(int(o.get("c", 0)), 0, VoxelChicken.COATS.size() - 1), "chick": bool(o.get("chick", false)),
 				"roast": bool(o.get("roast", false))})
+	clock = maxf(0.0, float(d.get("clock", 0.0)))
+	comebacks = []
+	var bs = d.get("back", [])
+	if typeof(bs) == TYPE_ARRAY:
+		for b in bs:
+			if comebacks.size() < LEVELS[-1].cap:
+				comebacks.append(float(b))
+	comebacks.sort()
 	_next_id = maxi(int(d.get("next", 1)), 1)
 	for h in hens:
 		_next_id = maxi(_next_id, int(h.id) + 1)

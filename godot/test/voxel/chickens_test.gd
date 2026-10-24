@@ -13,6 +13,8 @@ extends SceneTree
 ## grenade's blast kills out there but not in the run; dead, a carcass where it fell, picked up with E (first person and
 ## top-down) as a chicken carcass, sold at the buyer, shredded; its place in the coop freed; carcasses saved. Co-op: the
 ## guest's blow kills the host's hen (a "hit" op), both see the carcass, the guest picks it up (theirs, not the host's).
+## Coming back (24 Oct): a killed hen is back, a new grown hen in the coop, the next game morning; not while the coop's
+## full (it waits); saved and loaded. Co-op: the host's comeback (the host's clock) shows in the guest's game.
 ## Prints "CHICKENS ok/FAIL ..." and "CHICKENS done N passed, M failed". Owned by the voxel session.
 
 var arena: Node
@@ -583,6 +585,64 @@ func _solo(dt: float) -> bool:
 				ch.carcasses.clear()
 				ch.from_data(dr)
 				check(ch._carcass_by(int(r2.id)) != null and bool(ch._carcass_by(int(r2.id)).roast), "a roast carcass saved and loaded")
+				# coming back: a hen killed out in the yard is back, grown, in the coop the next game morning
+				ch._fresh()
+				ch.gate = true
+				for k in ch.nests.size():
+					ch.nests[k] = []
+				ch.clock = VoxelChickens.DAY_T * 0.25
+				var k1 := ch._hatch(Vector2(15, 30), 1.0)
+				_still(k1)
+				ch.strike(int(k1.id), 3, Vector3(14, 0, 30))
+				check(ch.hens.size() == 2 and ch.comebacks.size() == 1 and is_equal_approx(float(ch.comebacks[0]), VoxelChickens.DAY_T), "killed in the yard: it's due back at the next morning (%.0f s)" % float(ch.comebacks[0]))
+				ch._live(VoxelChickens.DAY_T * 0.7)
+				check(ch.hens.size() == 2 and ch.comebacks.size() == 1, "not before the morning")
+				var ids0 := []
+				for o in ch.hens:
+					ids0.append(int(o.id))
+				ch._live(VoxelChickens.DAY_T * 0.1)
+				var back = null
+				for o in ch.hens:
+					if not ids0.has(int(o.id)):
+						back = o
+				check(ch.hens.size() == 3 and ch.comebacks.is_empty() and back != null and float(back.age) >= 1.0 and VoxelChickens.in_coop(Vector3(float(back.x), 0, float(back.z))), "the morning: a new grown hen in the coop (3 hens)")
+				check(int(back.id) != int(k1.id) and ch._carcass_by(int(k1.id)) != null, "a new hen (the carcass still lies where the old one fell)")
+				# the coop full: the comeback waits for room
+				var k2 := ch._hatch(Vector2(15, 28), 1.0)
+				_still(k2)
+				ch.strike(int(k2.id), 3, Vector3(14, 0, 28))
+				ch._hatch(Vector2(29.5, 37), 1.0)
+				check(ch.hens.size() == 4 and ch.comebacks.size() == 1, "one killed, an egg hatched into its place: 4 of 4, one coming back")
+				check(ch.line("sign").contains("1 coming back in the morning"), "the coop sign says so: \"%s\"" % ch.line("sign"))
+				ch._live(VoxelChickens.DAY_T * 1.5)
+				check(ch.hens.size() == 4 and ch.comebacks.size() == 1, "the morning, the coop full: none comes back, it waits")
+				check(ch.line("sign").contains("1 coming back when there's room"), "the sign: \"%s\"" % ch.line("sign"))
+				# saved and loaded: still waiting
+				var db := ch.to_data()
+				ch.comebacks.clear()
+				ch.clock = 0.0
+				ch.from_data(JSON.parse_string(JSON.stringify(db)))
+				check(ch.comebacks.size() == 1 and is_equal_approx(ch.clock, float(db.clock)), "the comeback saved and loaded (with the clock)")
+				var old = ch.hens[0]
+				ch.hens.erase(old)
+				ch._live(0.1)
+				check(ch.hens.size() == 4 and ch.comebacks.is_empty(), "room in the coop: it comes back at once (it's past the morning)")
+				# saved before the morning, loaded: back the next morning
+				ch._fresh()
+				ch.gate = true
+				ch.clock = VoxelChickens.DAY_T * 0.5
+				var k3 := ch._hatch(Vector2(15, 30), 1.0)
+				_still(k3)
+				ch.strike(int(k3.id), 3, Vector3(14, 0, 30))
+				arena.stash.save_path = "user://chickens_test_save.json"
+				arena.stash.save()
+				ch._fresh()
+				arena.stash.load_save()
+				DirAccess.remove_absolute(ProjectSettings.globalize_path("user://chickens_test_save.json"))
+				ch = _ch()
+				check(ch.comebacks.size() == 1 and ch.hens.size() == 2, "saved and loaded through the save file: one coming back")
+				ch._live(VoxelChickens.DAY_T * 0.6)
+				check(ch.hens.size() == 3 and ch.comebacks.is_empty(), "loaded, the next morning: it's back in the coop")
 				# eaten (H, no eggs): the roast first, then a raw one; not hurt: none
 				arena.inv.remove("egg", arena.inv.count("egg"))
 				arena.inv.add("chicken_carcass", 1)
@@ -699,6 +759,12 @@ func _coop() -> bool:
 				if v0.has("yard_id") and not v0.has("killed") and ch._carcass_by(int(v0.yard_id)) != null:
 					v0.killed = true
 					check(ch._hen_by(int(v0.yard_id)) == null, "co-op: the guest's blow (a hit op) killed the host's hen: a carcass in the host's game")
+					check(ch.comebacks.size() == 1, "co-op: the host's: it's coming back (%d)" % ch.comebacks.size())
+					v0.n_before = ch.hens.size()
+					ch.clock = float(ch.comebacks[0]) - 1.0      # (the morning in a second)
+				if v0.has("killed") and not v0.has("back") and ch.comebacks.is_empty() and ch.hens.size() > int(v0.n_before):
+					v0.back = true
+					check(true, "co-op: the morning: back in the host's coop")
 				if v0.has("killed") and not v0.has("taken") and ch._carcass_by(int(v0.yard_id)) == null:
 					v0.taken = true
 					check(arena.inv.count("chicken_carcass") == 0 and arena._say_text.contains("Your mate picked up"), "co-op: the guest picked it up: gone from the host's game, not in the host's backpack (\"%s\")" % arena._say_text)
@@ -786,6 +852,9 @@ func _coop() -> bool:
 					ch._show(0.016)
 					check(ch._carc_views.has(int(v0.yard_id)), "co-op: shown in the guest's game")
 					check(ch.take_carcass(int(v0.yard_id)), "co-op: the guest picks it up")
+					v0.seen = []
+					for o in ch.hens:
+						v0.seen.append(int(o.id))
 					mark = t
 					step = 7
 				elif t - mark > 30.0:
@@ -800,6 +869,19 @@ func _coop() -> bool:
 					check(false, "co-op: the carcass was never given")
 					step = 99
 			8:
+				# the morning (the host's clock): a new hen in the host's coop, seen in the guest's game
+				var back = null
+				for o in ch.hens:
+					if not (v0.seen as Array).has(int(o.id)):
+						back = o
+				if back != null:
+					check(VoxelChickens.in_coop(Vector3(float(back.x), 0, float(back.z))) and float(back.age) >= 1.0, "co-op: the comeback in the guest's game (a grown hen in the coop)")
+					mark = t
+					step = 10
+				elif t - mark > 30.0:
+					check(false, "co-op: the comeback never showed in the guest's game")
+					step = 99
+			10:
 				if t - mark > 3.0:
 					step = 99
 			99:
