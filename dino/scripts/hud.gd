@@ -179,7 +179,12 @@ func set_bars(hp: float, xp: float, level: int, danger: float) -> void:
 	_level.text = "LV %d" % level
 
 func hurt() -> void:
-	_flash_a = 0.45
+	flash(Color(1, 0, 0), 0.45)
+
+## A full-screen flash of `c` starting at alpha `a` (fades by itself).
+func flash(c: Color, a: float) -> void:
+	_flash.color = Color(c, 0.0)
+	_flash_a = a
 
 func show_banner(text: String, secs: float) -> void:
 	banner.text = text

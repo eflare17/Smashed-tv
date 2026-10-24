@@ -196,6 +196,13 @@ hunters hurt. Changed:
   are still there too. Creatures spawn on whatever's under them.
 - Tests: 52 checks, all passing. `tests/shot_terrain.gd` photographs the player at each kind.
 
+## The kill moment (owner's pick from the review, 26 Oct)
+
+The killing bite is now the climax: a hard freeze (0.1 s), then the world runs at 20% speed for half a second
+and eases back, the camera punches in 16% and eases out, a heavy crunch, a rip and a low roar (synthesised), a
+big burst of blood and a red flash, and the **KILL!** lands as things speed back up instead of on the hit.
+Tests: 55 checks. `tests/shot_kill.gd` photographs the bite, the slow-mo and the popup.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

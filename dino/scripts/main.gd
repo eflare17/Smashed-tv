@@ -40,6 +40,9 @@ const ARRIVE_HEAL := 40.0
 const ARRIVE_XP := 40
 ## Something has to be this many times your mass before it can break free of a big bite.
 const BREAK_FREE_OVER := 1.25
+## The kill moment: how slow the world runs on a killing bite, and for how long (real seconds).
+const KILL_SLOW := 0.2
+const KILL_SLOW_TIME := 0.55
 const XP_EAT_BITE := 2
 const XP_EAT_ALL := 15
 const HEAL_EAT_BITE := 3.0
@@ -87,6 +90,10 @@ var _herd_t := 0.0
 var area_t := 0.0
 var _warned := 0
 var _cam_lead := 0.0
+var _slow_t := 0.0
+var _zoom_punch := 0.0
+## Popups waiting their turn: [seconds left, the popup].
+var _pending: Array = []
 var _choices := 0
 ## Which three upgrades the cards show (indexes into UPGRADES).
 var _offered: Array = []
@@ -356,6 +363,10 @@ func _process(delta: float) -> void:
 	if _stop > 0.0:
 		_stop -= delta
 		sim = 0.0
+	elif _slow_t > 0.0:
+		# the kill moment: the world runs slow for a beat, easing back to full speed
+		_slow_t -= delta
+		sim = delta * lerpf(1.0, KILL_SLOW, clampf(_slow_t / KILL_SLOW_TIME * 2.0, 0.0, 1.0))
 	if state == PLAY and sim > 0.0:
 		_step(sim)
 	elif state == OVER:
@@ -364,6 +375,12 @@ func _process(delta: float) -> void:
 			start_run()
 	elif state == CHOOSE and demo:
 		_pick(rng.randi() % 3)
+	# popups held back for a beat (the KILL after the slow-mo)
+	for pu in _pending.duplicate():
+		pu[0] -= delta
+		if pu[0] <= 0.0:
+			_popups.append(pu[1])
+			_pending.erase(pu)
 	_shake *= exp(-9.0 * delta)
 	# looks a little ahead of where you face
 	_cam_lead = lerpf(_cam_lead, player.facing * 22.0, minf(1.0, delta * 2.0))
@@ -371,6 +388,9 @@ func _process(delta: float) -> void:
 	cam.position = Vector2(clampf(player.position.x + _cam_lead, half_w, world_w - half_w),
 			GROUND_Y + GROUND_FROM_BOTTOM - VIEW.y * 0.5 / ZOOM)
 	cam.offset = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * _shake * 5.0
+	# the camera punches in on a kill and eases back out
+	_zoom_punch = lerpf(_zoom_punch, 0.0, minf(1.0, delta * 3.0))
+	cam.zoom = Vector2.ONE * ZOOM * (1.0 + _zoom_punch)
 	for pu in _popups:
 		pu[2] -= delta
 		pu[1].y -= delta * 14.0
@@ -557,7 +577,7 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 				add_xp(XP_EAT_BITE, p)
 		if pr.hurt(who.global_position) and not was_dead:
 			kills += 1
-			_popups.append(["KILL!", pr.global_position + Vector2(0, -50), 1.2, Color(1, 0.4, 0.3)])
+			_kill_moment(pr, p, dir)
 			add_xp(_kill_xp(pr), pr.global_position + Vector2(0, -40))
 			_trim_corpses()
 		elif not pr.dead and (not light or rng.randf() < 0.25):
@@ -836,6 +856,21 @@ func _text(font: Font, text: String, at: Vector2, c: Color) -> void:
 	for o: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
 		_overlay.draw_string(font, p + o, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color(0, 0, 0, c.a))
 	_overlay.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, c)
+
+## The killing bite is the climax: a hard freeze, then the world runs slow for a beat while the camera punches
+## in, a heavy crunch and a roar, a big burst of blood, a red flash; the KILL! lands as it speeds back up.
+func _kill_moment(pr: Prey, p: Vector2, dir: Vector2) -> void:
+	_stop = 0.1
+	_slow_t = KILL_SLOW_TIME
+	_zoom_punch = 0.16
+	_shake = 1.2
+	hud.flash(Color(0.8, 0.0, 0.0), 0.3)
+	gore.blood(p, dir, 30, 170.0)
+	gore.blood(p, Vector2.UP, 16, 120.0)
+	sfx.play("crunch", 0.05, 5.0)
+	sfx.play("rip", 0.05, 1.0)
+	sfx.play("roar", 0.08, 0.0)
+	_pending.append([KILL_SLOW_TIME * 0.7, ["KILL!", pr.global_position + Vector2(0, -pr.height - 56), 1.6, Color(1, 0.3, 0.2)]])
 
 ## XP for killing `c`. PLACEHOLDER numbers.
 func _kill_xp(c: Prey) -> int:

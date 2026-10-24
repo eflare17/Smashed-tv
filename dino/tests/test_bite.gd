@@ -367,6 +367,37 @@ func _run() -> void:
 	# (killing the hunter may have levelled you up: pick, so the game runs on)
 	while main.state == main.CHOOSE:
 		main._pick(1)
+	# the kill moment: a killing bite freezes, then runs the world slow for a beat, punches the camera in, and
+	# the KILL! popup is held back until it's speeding up again
+	var victim: Prey = main.spawn_prey(700.0, Prey.RUNNER)
+	await _frames(2)
+	for k in 60:
+		if victim.dead:
+			break
+		var vpts: Array = _zone_points(victim, DinoArt.NECK) + _zone_points(victim, DinoArt.BODY)
+		if vpts.is_empty():
+			break
+		main.player_bite(pl, vpts[rng.randi() % vpts.size()], pl.bite_radius)
+	_check("a kill starts the slow-motion beat", victim.dead and main.get("_slow_t") > 0.0 and main.get("_zoom_punch") > 0.0)
+	var kill_shown := false
+	for pu in main.get("_popups"):
+		if pu[0] == "KILL!":
+			kill_shown = true
+	var kill_waiting := false
+	for pu in main.get("_pending"):
+		if pu[1][0] == "KILL!":
+			kill_waiting = true
+	_check("the KILL! popup waits for the beat", kill_waiting and not kill_shown)
+	for f in 60:
+		await process_frame
+	kill_shown = false
+	for pu in main.get("_popups"):
+		if pu[0] == "KILL!":
+			kill_shown = true
+	_check("...then shows", kill_shown)
+	while main.state == main.CHOOSE:
+		main._pick(1)
+
 	# bitten legs slow a creature down, and enough bites cripple it
 	var lame: Prey = main.spawn_prey(760.0)
 	await _frames(2)

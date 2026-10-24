@@ -27,6 +27,7 @@ func _ready() -> void:
 	_sounds["whoosh"] = _make(0.12, _whoosh)
 	_sounds["thud"] = _make(0.35, _thud)
 	_sounds["rip"] = _make(0.45, _rip)
+	_sounds["roar"] = _make(0.7, _roar)
 
 func play(sound: String, pitch_jitter := 0.06, db := 0.0) -> void:
 	var p := _players[_next]
@@ -83,6 +84,14 @@ func _whoosh(t: float, k: float) -> float:
 
 func _thud(t: float, k: float) -> float:
 	return sin(TAU * lerpf(70.0, 40.0, k) * t) * exp(-t * 9.0) * 0.9 + _noise() * exp(-t * 30.0) * 0.4
+
+## A low roar: a growling buzz that rises then falls, with a rough rasp over it.
+func _roar(t: float, k: float) -> float:
+	var f := 55.0 + sin(PI * k) * 40.0 + sin(TAU * 7.0 * t) * 4.0
+	var ph := fmod(t * f, 1.0)
+	var buzz := (ph * 2.0 - 1.0) * 0.5 + sin(TAU * f * 2.0 * t) * 0.25
+	var rasp := _noise() * 0.2 * (0.5 + 0.5 * sin(TAU * 31.0 * t))
+	return (buzz + rasp) * sin(PI * k) * 0.9
 
 func _rip(t: float, k: float) -> float:
 	# something big coming off: a long ragged tear with cracks in it
