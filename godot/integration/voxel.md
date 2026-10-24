@@ -391,6 +391,23 @@ a nesting area; chickens can be let out to roam the yard; max chicken cap tied t
 
 Chickens kill: done
 
+- **Coming back** (24 Oct, the owner: "Can they spawn back in the coop after you kill them?"): each chicken killed
+  (hen or chick) comes back as a new grown hen inside the coop (`COMEBACK_AT`, between the door and the nests; never out
+  in the yard) at the next game morning, with a cluck and "A hen's back in the coop". The arena has no day and night
+  yet, so the chickens keep their own game clock (`VoxelChickens.clock`, saved): a game day is `DAY_T` (600 s), morning
+  at its start, and the delay is `COMEBACK_DAYS` (1: the next morning). Only while the coop has room under its level's
+  cap: otherwise it waits (the COOP sign: "1 coming back in the morning" / "... when there's room") and comes back as
+  soon as a place frees; up to 16 waiting. Eggs waiting to hatch still take a freed place as before. Saved
+  (`clock`, `back` in the chickens' data); in co-op the host's clock and comebacks, the guest seeing the new hen with
+  the next chickens update. Tests (`test/voxel/chickens_test.gd`, 12 new solo checks, 89 in all; co-op host 8, guest
+  13): killed in the yard, due at the next morning, not before; the morning, a new grown hen in the coop; the coop full,
+  none, it waits (the sign says so); room, it comes back; saved and loaded (the data, and through the save file).
+  Co-op over ENet: the host's comeback in the host's coop and in the guest's game. Logic 340/340; barbecue,
+  shredder, inventory, health tests pass (the farm test's worm farm check fails the same without this change). In
+  the Windows zip (`downloads/SmashedVoxelArena-win64.zip`, the .pck rebuilt, README too).
+
+Chickens come back: done
+
 ### The barbecue (24 Oct, the owner: "add a barbecue so you can cook the chicken carcass")
 
 - **Where** (`voxel_barbecue.gd`, `VoxelBarbecue`): a gas barbecue on a steel stand in the back yard against the south
