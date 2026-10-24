@@ -159,6 +159,8 @@ func hurt_other(amount: float) -> void:
 
 func _on_connected() -> void:
 	linked = true
+	if arena.get("guide"):
+		arena.guide.tried("coop")
 	_make_other()
 	for id in arena.melee:
 		arena.melee[id].reset_state()       # (this player's weapons as fresh as the other game's new copies of them)

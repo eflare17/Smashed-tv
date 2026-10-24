@@ -43,6 +43,7 @@ var world_env: Environment
 var base_fov := 80.0            # (the settings: the view's width, the mouse's speed)
 var mouse_sens := 1.0
 var settings_menu: VoxelSettingsMenu
+var guide: VoxelHelp             # WHAT CAN I DO? (the ? key, the HELP button): a card an activity, ticked as you try them
 var bodies: Array[VoxelBody] = []
 var debris: VoxelDebris
 var player: CharacterBody3D
@@ -246,6 +247,9 @@ func _ready() -> void:
 	gothica = VoxelGothica.new()
 	add_child(gothica)
 	gothica.setup(self)
+	guide = VoxelHelp.new()
+	add_child(guide)
+	guide.setup(self)
 	# saved between games (not the self-tests'; --save=path elsewhere, --nosave never)
 	stash.save_path = String(_opts.get("save", "")) if _opts.has("save") else ("" if testing else VoxelStorages.SAVE_PATH)
 	stash.load_save()
@@ -487,7 +491,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   F12 waves/one at a time   Esc mouse"
+	help.text = "? WHAT CAN I DO   Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   F12 waves/one at a time   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -1217,6 +1221,8 @@ func _on_died(b: VoxelBody) -> void:
 	if settings_menu and not settings_menu._bench.is_empty():
 		return                      # (the benchmark's fight: no kill counted, no cash)
 	kills += 1
+	if guide and b != avatar and b.by_me():
+		guide.tried("fight")
 	if announcer and b != avatar:
 		announcer.on_kill(b)
 	if b and b.key == "boss" and waves:
@@ -1270,7 +1276,7 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(e: InputEvent) -> void:
-	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()):
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()):
 		return                  # (the online menu, the settings have the keys and the mouse)
 	if mine and mine.active:
 		return                  # (down the mine: VoxelMine has the keys)
@@ -1363,34 +1369,47 @@ func _unhandled_input(e: InputEvent) -> void:
 					pass                     # (down: nothing till you're up)
 				elif _near_st and _near_st.locked:
 					open_lock(_near_st, true)        # (locked: dial it open first, then the chest opens)
+					guide.tried("chests")
 				elif _near_st:
 					open_inventory(_near_st)
+					guide.tried("chests")
 				elif _near_bed > 0:
 					lie_down(_near_bed)
+					guide.tried("bed")
 				elif _near_ward:
 					house.ward_open = not house.ward_open
 				elif _near_bench:
 					bench_make()
 				elif _near_upg != "":
 					upgrade_buy(_near_upg)
+					guide.tried("bench")
 				elif _near_hatch:
 					mine.enter()
+					guide.tried("mine")
 				elif _near_goth:
 					gothica.interact()
+					guide.tried("gothica")
 				elif _near_slot:
 					slot.pull()
+					guide.tried("slot")
 				elif _near_game != "":
 					games.use(_near_game)
+					guide.tried("games")
 				elif _near_hen != "":
 					yard.chickens.use(_near_hen)
+					guide.tried("chickens")
 				elif _near_shred != "":
 					yard.shredder.use(_near_shred)
+					guide.tried("shredder")
 				elif _near_bbq != "":
 					yard.barbecue.use(_near_bbq)
+					guide.tried("barbecue")
 				elif _near_prop != "":
 					_farm_prop(_near_prop)
+					guide.tried("farm")
 				elif _near_plant >= 0:
 					_farm_spot(_near_plant)
+					guide.tried("farm")
 				else:
 					var vi := loadout.index_of("vacuum")
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
@@ -1644,7 +1663,7 @@ func _physics_process(dt: float) -> void:
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
-	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()):
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()):
 		iv = Vector2.ZERO           # (typing a room code isn't walking)
 	var sp := 7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5
 	var dir := Vector3.ZERO
@@ -2064,7 +2083,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or games.seated > 0 or games.held >= 0 or mine.active:
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active:
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return

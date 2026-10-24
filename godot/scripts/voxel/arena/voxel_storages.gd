@@ -419,6 +419,8 @@ func save() -> void:
 	var d := {"v": 1, "inv": arena.inv.to_data(), "storage": _own_chests if _own_chests != null else to_data(),
 		"locks": _own_locks if _own_locks != null else locks_data(true), "tools": {"shovel": arena.shovel_tier, "upg": arena.me.upg if arena.me else arena._upg},
 		"cash": arena.cash, "waiting": arena.waiting}
+	if arena.get("guide"):
+		d["help"] = arena.guide.to_data()
 	if arena.yard:
 		d["yard"] = arena.yard.save_data()
 		d["farm"] = arena.yard.farm.save_data()
@@ -453,6 +455,8 @@ func load_save() -> void:
 	if arena.yard and d.has("barbecue"):
 		arena.yard.barbecue.from_data(d.barbecue)
 	arena.cash = maxi(0, int(d.get("cash", 0)))
+	if arena.get("guide"):
+		arena.guide.from_data(d.get("help", []))
 	if arena.get("mine") and d.has("mine"):
 		arena.mine.load_data(d.mine)
 	arena.waiting = []

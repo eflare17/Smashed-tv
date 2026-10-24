@@ -384,6 +384,8 @@ func _bite() -> void:
 		r *= 0.6                  # (the rusty one slips: half a scoop)
 		sfx("dig_scrape", p, -4.0)
 	var got: Dictionary = yard.dig(p - n * r * 0.45, r, int(st[1]))
+	if VoxelBody.credit and arena.get("guide"):
+		arena.guide.tried("dig")              # (this player's own dig, not the other's copy of their shovel)
 	var cells: Array = got.get("_cells", [])
 	if cells.is_empty():
 		sfx("dig_clang", p, -2.0)

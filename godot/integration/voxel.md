@@ -1319,6 +1319,16 @@ First-person shots look at a blocks Jared standing in front of you. `overview.pn
 
 (Shot in the cloud's software-rendered browser, so the lighting is the high look at 7 am.)
 
+## WHAT CAN I DO? (25 Oct, the owner: "help page")
+
+`voxel_help.gd` (`VoxelHelp`, the arena's `guide`; the arena's own `help` is the key line along the bottom): a HELP
+(?) button under SETTINGS, and the ? (slash) key, open a full-screen page of 14 cards (fight, weapon bench, backpack
+and chests, bedroom, digging, farming, chickens, barbecue, shredder, games room, slot machine, Gothica, the mine,
+co-op), each its place, keys and point, with "✔ tried" once you have (ticked by `tried(id)`: E at each thing in the
+arena's E chain, your first own kill, your own dig, the link made); a "Tried: ..." note the first time; the button
+shows how many; the ticks saved with the backpack (`help`). Esc or CLOSE shuts it; it blocks the game's keys and
+mouse like the settings. `test/voxel/help_test.gd` (8 checks).
+
 ## The overnight sweep (24-25 Oct, the owner: "look over the whole game ... improve overnight")
 
 - The whole test suite run (about 50 runs: solo, co-op, with lag): all pass but the shredder's known flaky ash count.

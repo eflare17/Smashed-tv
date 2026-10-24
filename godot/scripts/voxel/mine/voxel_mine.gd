@@ -787,7 +787,7 @@ func _process(dt: float) -> void:
 	dt = minf(dt, 1.0 / 30.0)       # (a long frame, a window dragged: not through the floor)
 	if _going == 0 and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE     # (a menu closing grabs it for the arena: the mine's is clickable)
-	var menu_up: bool = hud.menu_open() or (arena.settings_menu and arena.settings_menu.is_open()) or (arena.net_menu and arena.net_menu.is_open()) or _going != 0
+	var menu_up: bool = hud.menu_open() or (arena.settings_menu and arena.settings_menu.is_open()) or (arena.guide and arena.guide.is_open()) or (arena.net_menu and arena.net_menu.is_open()) or _going != 0
 	var ix := 0.0
 	var up := false
 	var down := false
@@ -1049,7 +1049,7 @@ func _buildings_near() -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if not active or _going != 0:
 		return
-	if (arena.settings_menu and arena.settings_menu.is_open()) or (arena.net_menu and arena.net_menu.is_open()):
+	if (arena.settings_menu and arena.settings_menu.is_open()) or (arena.guide and arena.guide.is_open()) or (arena.net_menu and arena.net_menu.is_open()):
 		return
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		return
