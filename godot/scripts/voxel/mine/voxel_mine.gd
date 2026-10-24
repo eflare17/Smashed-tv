@@ -137,6 +137,25 @@ var _save_t := 0.0
 var _near := ""
 var ore_box: MineOreBox         # where the cargo's sold: squirted in up top
 var net: MineNet                # the shared mine in co-op: both digging the host's ground
+var stranded := false           # (co-op) out of fuel with your mate down here: wait for them to bring some, or T: the tow
+var _stranded_t := 0.0
+var helping := false            # G held next to your mate: your fuel into their tank, their hull welded
+var _help_fuel := 0.0           # (given, not sent yet)
+var _help_hull := 0.0
+var _help_send_t := 0.0
+var _helped_t := 0.0
+var _help_spark_t := 0.0
+var _help_warn_t := 0.0
+const HELP_REACH := 2.2         # metres from your mate's Mole you can help it
+const HELP_FUEL := 2.5          # litres a second pumped across
+const HELP_WELD := 5.0          # hull a second welded ...
+const WELD_FUEL := 0.6          # ... for this much of your fuel a second
+const HELP_KEEP := 1.0          # (litres you keep for yourself)
+const STRANDED_MAX := 120.0     # seconds stranded before the tow comes anyway
+const TEAM_RANGE := 6.0         # (co-op) within this many metres of your mate's Mole ...
+const TEAM_DIG := 1.5           # ... you both drill this much faster (the owner: "if you're near each other ... 50% extra digging")
+var team := false
+var _team_said := -100.0
 var _cave_other := false        # (the host's: the cave-in scan round the guest's Mole this time)
 var _water_hose := 0.0          # (the hose run out for water: sucking it up)
 var sucking := false            # R held: the hose sucking water up
@@ -524,6 +543,67 @@ func _finish_going(dt: float) -> void:
 
 # ---------------------------------------------------------------- the shared mine (MineNet's calls)
 
+## Whether your mate's Mole is close enough to help, and wants it (fuel or hull)
+func can_help() -> bool:
+	return net.mate_here() and ship.p.distance_to(net.other.p) < HELP_REACH and (net.other_fuel < 0.98 or net.other_hull < 0.99)
+
+## G held next to your mate: your fuel pumped into their tank (you keep a litre), their hull welded (for a bit of your
+## fuel), sent a few times a second; sparks and a hiss.
+func _help(dt: float, menu_up: bool) -> void:
+	var on := helping and not menu_up and can_help() and fuel > HELP_KEEP
+	if on:
+		var f := 0.0
+		var h := 0.0
+		if net.other_fuel < 0.98:
+			f = minf(HELP_FUEL * dt, fuel - HELP_KEEP)
+		if net.other_hull < 0.99:
+			h = HELP_WELD * dt
+			fuel = maxf(HELP_KEEP, fuel - WELD_FUEL * dt)
+		fuel -= f
+		_help_fuel += f
+		_help_hull += h
+		_help_spark_t -= dt
+		if _help_spark_t <= 0.0:
+			_help_spark_t = 0.12
+			spark(net.other.p + Vector2(randf_range(-0.3, 0.3), randf_range(-0.2, 0.3)), Color8(255, 220, 120) if h > 0.0 else Color8(255, 160, 40), 5)
+		if not sound.playing("mine_suck"):
+			sound.loop("mine_suck", "mine_suck", null, -9.0, 1.3)
+		_help_send_t += dt
+		if _help_send_t >= 0.2:
+			_help_flush()
+	else:
+		if sound.playing("mine_suck") and not sucking:
+			sound.stop("mine_suck")
+		_help_flush()
+		_help_warn_t -= dt
+		if helping and not menu_up and net.mate_here() and _help_warn_t <= 0.0:
+			_help_warn_t = 1.5
+			if ship.p.distance_to(net.other.p) >= HELP_REACH:
+				say("Get right next to your mate's Mole to help", 1.2)
+			elif fuel <= HELP_KEEP:
+				say("Not enough fuel to share", 1.2)
+			else:
+				say("Your mate's full up: nothing to fix", 1.2)
+
+func _help_flush() -> void:
+	_help_send_t = 0.0
+	if _help_fuel > 0.0 or _help_hull > 0.0:
+		net.help(_help_fuel, _help_hull)
+	_help_fuel = 0.0
+	_help_hull = 0.0
+
+## Your mate's help come in: fuel and hull, a pop now and then
+func helped(f: float, h: float) -> void:
+	fuel = minf(tank_max(), fuel + maxf(0.0, f))
+	hull = minf(hull_max(), hull + maxf(0.0, h))
+	if Time.get_ticks_msec() / 1000.0 - _helped_t > 1.2:
+		_helped_t = Time.get_ticks_msec() / 1000.0
+		hud.pop("+ fuel from your mate" if f > 0.0 else "+ hull: your mate's welding", Color8(150, 220, 255))
+		sound.play("mine_clink", Vector3.INF, -8.0, 1.3)
+	if stranded and fuel > 0.0:
+		stranded = false
+		say("Your mate's brought fuel!", 1.5)
+
 ## How this player's Mole looks: its upgrades, blue for the guest in co-op
 func ship_look() -> Dictionary:
 	var d := upg.duplicate()
@@ -703,12 +783,14 @@ func _process(dt: float) -> void:
 	var up := false
 	var down := false
 	if auto != null:
+		helping = bool(auto.get("help", false))
 		ix = float(auto.get("x", 0.0))
 		up = bool(auto.get("up", false))
 		down = bool(auto.get("down", false))
 		sucking = bool(auto.get("suck", false))
 	elif not menu_up:
 		sucking = Input.is_physical_key_pressed(KEY_R)
+		helping = Input.is_physical_key_pressed(KEY_G)
 		ix = float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 		up = Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP) or Input.is_physical_key_pressed(KEY_SPACE)
 		down = Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
@@ -770,7 +852,29 @@ func _process(dt: float) -> void:
 			sound.play("mine_alarm", Vector3.INF, -8.0)
 			tip("fuel_low")
 	if fuel <= 0.0 and not ship.drilling:
-		tow("fuel")                 # (anywhere, up top too: with none you can't move to the pumps)
+		if net.mate_here() and ship.p.y < -1.0:
+			# (co-op: your mate can bring you some: wait, or T for the tow)
+			if not stranded:
+				stranded = true
+				_stranded_t = 0.0
+				say("Out of fuel! Wait for your mate to bring some (G next to you), or T for the tow truck", 4.0)
+				sound.play("mine_alarm", Vector3.INF, -4.0, 0.8)
+			_stranded_t += dt
+			if _stranded_t > STRANDED_MAX:
+				tow("fuel")
+		else:
+			tow("fuel")                 # (anywhere, up top too: with none you can't move to the pumps)
+	if stranded and fuel > 0.0:
+		stranded = false
+	_help(dt, menu_up)
+	# the team bonus: close to your mate, you both drill faster
+	var was_team := team
+	team = net.mate_here() and ship.p.distance_to(net.other.p) < TEAM_RANGE
+	ship.dig_k = TEAM_DIG if team else 1.0
+	if team and not was_team and Time.get_ticks_msec() / 1000.0 - _team_said > 20.0:
+		_team_said = Time.get_ticks_msec() / 1000.0
+		hud.pop("TEAM BONUS: +50% digging", Color8(120, 255, 140))
+		sound.play("mine_clink", Vector3.INF, -6.0, 1.6)
 	# the ground: lava burning, gas going off one after another
 	var in_lava := ground.count(ship.p, Vector2(MineShip.HALF + 0.12, MineShip.HALF + 0.12), -4) > 0
 	if in_lava:
@@ -907,6 +1011,10 @@ func _buildings_near() -> void:
 		"trader": t = "E  TRADER: dynamite, repair kits, teleports"
 		"mechanic": t = "E  MECHANIC: upgrades and repairs"
 		"orebox": t = "Squirting it in..." if ore_box.unloading else "E  squirt your cargo into the ORE box"
+	if t == "" and can_help():
+		t = "Hold G  give your mate fuel" + (" and weld their hull" if net.other_hull < 0.99 else "") if net.other_fuel < 0.98 else "Hold G  weld your mate's hull"
+	if stranded:
+		t = "Out of fuel: wait for your mate (G next to you), or T for the tow truck"
 	hud.prompt(t)
 
 # ---------------------------------------------------------------- keys
@@ -941,6 +1049,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		KEY_F:
 			_launch_t = 0.0
 			shoot()
+		KEY_T:
+			if stranded:
+				tow("fuel")
 		KEY_ESCAPE:
 			if _near == "":
 				say("Up at the LIFT (top left) to leave the mine", 2.0)
@@ -1134,6 +1245,7 @@ func hurt(n: float, why: String) -> void:
 
 ## Out of fuel or wrecked: hauled up to the lift, the cargo lost, a fee.
 func tow(why: String) -> void:
+	stranded = false
 	var fee := mini(arena.cash, 40 + int(arena.cash * 0.1))
 	arena.cash -= fee
 	cargo.clear()

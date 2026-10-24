@@ -33,6 +33,9 @@ var _own_ground := PackedByteArray()
 # both
 var other: MineShip             # the other player's Mole, shown
 var other_on := false           # (down there, from their last state)
+var other_fuel := 1.0           # their tank and hull, how full (0 .. 1), and stranded out of fuel waiting for help
+var other_hull := 1.0
+var other_stranded := false
 var _o_to := Vector2()
 var _o_look := {}
 var _state_t := 0.0
@@ -204,15 +207,18 @@ func _state(on: bool) -> PackedByteArray:
 	f |= 8 if s.grounded else 0
 	f |= 16 if on else 0
 	f |= 32 if (s.drilling and s.drill_dir.y < 0.0) else 0
+	f |= 64 if mine.stranded else 0
 	b.put_u8(f)
 	b.put_u8(int(clampf(s.hose_out, 0.0, 1.0) * 255.0))
 	b.put_u8(int(clampf(s.cargo_full, 0.0, 1.0) * 255.0))
 	b.put_u8(int(clampf(s.heat, 0.0, 1.0) * 255.0))
+	b.put_u8(int(clampf(mine.fuel / maxf(0.01, mine.tank_max()), 0.0, 1.0) * 255.0))
+	b.put_u8(int(clampf(mine.hull / maxf(0.01, mine.hull_max()), 0.0, 1.0) * 255.0))
 	return b.data_array
 
 ## The other game's Mole's state (VoxelNet: the fast messages starting FAST)
 func on_fast(d: PackedByteArray) -> void:
-	if d.size() < 23 or other == null:
+	if d.size() < 25 or other == null:
 		return
 	var b := StreamPeerBuffer.new()
 	b.data_array = d
@@ -239,6 +245,9 @@ func on_fast(d: PackedByteArray) -> void:
 	other.hose_out = b.get_u8() / 255.0
 	other.cargo_full = b.get_u8() / 255.0
 	other.heat = b.get_u8() / 255.0
+	other_fuel = b.get_u8() / 255.0
+	other_hull = b.get_u8() / 255.0
+	other_stranded = (f & 64) != 0
 
 func _show_other(dt: float, on: bool) -> void:
 	if other == null:
@@ -346,6 +355,9 @@ func on_net(m: Array) -> void:
 				else:
 					mine.sound.play("mine_collapse", Vector3.INF, lerpf(-14.0, 0.0, near), randf_range(0.9, 1.05))
 					mine.shake(0.15 + near * 0.6)
+		"help":
+			if m.size() >= 3 and mine.active and (shared or r == "host"):
+				mine.helped(float(m[1]), float(m[2]))
 		"hurt":
 			if r == "guest" and shared and m.size() >= 3:
 				mine.hurt(float(m[1]), String(m[2]))
@@ -363,6 +375,15 @@ func _look_in(d) -> void:
 func send_look() -> void:
 	if role() != "" and (shared or guest_down):
 		_send(["look", mine.ship_look()])
+
+## Fuel (litres) and hull given to the other player's Mole (holding G next to it)
+func help(fuel: float, hull: float) -> void:
+	if role() != "" and other_on:
+		_send(["help", fuel, hull])
+
+## Whether the other player's Mole is down here with this one (for the marker, for helping)
+func mate_here() -> bool:
+	return other_on and other != null and other.visible
 
 ## (the host's) a roof cracking ("groan") or coming down ("collapse") at at: the guest hears it
 func cave_fx(kind: String, at: Vector2) -> void:

@@ -988,8 +988,18 @@ messages "N" reliable, byte 77 fast, through `VoxelNet.send_mine` / `send_mine_f
 - **Cave-ins** are scanned round both Moles in the host's game (alternately); one on the guest's Mole hurts it
   ("hurt"), and the guest hears the groan and the fall ("cave"). Critters run in each game for its own player; the
   worm only in the host's. Cargo, cash, fuel, upgrades and selling stay each player's own.
-- Test: `test/voxel/mine_coop_test.gd` (two copies, `--host=` / `--join=`, also with `--lag=150 --loss=15`; 20
-  checks): the ground came over (the same seed and stuff), the guest's hole in the host's ground with the host up in
+- **Helping each other** (the owner: "an option to bring fuel ... if they're damaged, it can repair them"; "if you're
+  near each other ... 50% extra digging"): the Mole state also carries the tank's and hull's fill and a stranded
+  bit. The HUD (`MineHud.mate_mark` / `_mate`) shows your mate: an arrow on the screen's edge toward them when off
+  screen (how far), MATE and their fuel and hull bars over their Mole when on, a HUD line (how deep, how far, OUT OF
+  FUEL / HULL LOW blinking). Hold G within `HELP_REACH` (2.2 m) of their Mole: your fuel pumped across (2.5 L/s, you
+  keep 1 L) and their hull welded (5/s for 0.6 L/s of yours), sent 5 times a second ("help"), sparks and a hiss;
+  `helped` adds it (a pop). Out of fuel down there with your mate in the mine: `stranded` instead of the tow (T calls
+  it, or it comes after 2 minutes; your mate leaving the mine, too). Within `TEAM_RANGE` (6 m) of each other: the
+  team bonus, `ship.dig_k` = 1.5 (+50% digging; the guest's dig ops carry the faster rate), a dotted green line
+  between the Moles, a pop and a HUD line.
+- Test: `test/voxel/mine_coop_test.gd` (two copies, `--host=` / `--join=`, also with `--lag=150 --loss=15`; 28
+  checks; also the marker, stranded, helped, the team bonus): the ground came over (the same seed and stuff), the guest's hole in the host's ground with the host up in
   the arena, the guest's Mole blue and where it is, the host's hole and Mole in the guest's game, the guest's hole
   not shut by updates, sand dropped in the host's game landing the same in the guest's, the guest's own ground back.
   Film: `mine_coop_clip.gd` (both screens).

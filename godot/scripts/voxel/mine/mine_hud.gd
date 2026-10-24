@@ -169,7 +169,8 @@ func _draw() -> void:
 	var held: int = m.cargo_count()
 	var x := 18.0
 	var y := 16.0
-	draw_rect(Rect2(10, 8, 330, 198), Color(0, 0, 0, 0.35))
+	var mk := mate_mark()
+	draw_rect(Rect2(10, 8, 330, 198 + (22 if not mk.is_empty() else 0) + (20 if m.team else 0)), Color(0, 0, 0, 0.35))
 	_arc()
 	_bar(Vector2(x, y), 200, m.fuel / tank, Color8(240, 150, 30), "FUEL", "%.1f / %.0f L" % [m.fuel, tank], m.fuel < tank * 0.2)
 	y += 26
@@ -192,6 +193,21 @@ func _draw() -> void:
 		am += ("[%s %d]  " if a == m.ammo_sel else "%s %d  ") % [String(VoxelMine.AMMO_NAME[a]).split(" ")[0], int(m.ammo[a])]
 	_text(Vector2(x, y), am, 13, Color8(255, 220, 140))
 	y += 20
+	if not mk.is_empty():
+		# (co-op) your mate: how deep, how far, in trouble
+		var warn := ""
+		if m.net.other_stranded:
+			warn = "  OUT OF FUEL!"
+		elif m.net.other_hull < 0.25:
+			warn = "  HULL LOW!"
+		elif m.net.other_fuel < 0.15:
+			warn = "  fuel low"
+		var blink := warn != "" and fmod(Time.get_ticks_msec() / 1000.0, 0.6) < 0.3
+		_text(Vector2(x, y + 4), "MATE  %d m down, %d m away%s" % [int(mk.depth), int(mk.dist), warn], 15, Color8(255, 90, 80) if blink else mk.col)
+		y += 22
+		if m.team:
+			_text(Vector2(x, y + 2), "TEAM BONUS  +50% digging", 15, Color8(120, 255, 140))
+			y += 20
 	if m.trip > 0.05:
 		_text(Vector2(x, y), "TRIPPING " + "~".repeat(int(m.trip * 10.0)), 15, Color.from_hsv(fmod(Time.get_ticks_msec() / 900.0, 1.0), 0.7, 1.0))
 	if m.critters and m.critters.alarm:
@@ -204,6 +220,8 @@ func _draw() -> void:
 		draw_rect(Rect2(at, Vector2(w, 18)), Color(0, 0, 0, 0.6))
 		draw_rect(Rect2(at + Vector2(2, 2), Vector2((w - 4) * m.worm.hp / MineWorm.HP_MAX, 14)), Color8(200, 40, 60))
 		_text(at + Vector2(0, -4), "THE ROCK WORM", 16, Color8(255, 120, 120))
+	if not mk.is_empty():
+		_mate(mk)
 	# the middle line, the prompt, the tip
 	if _say_t > 0.0:
 		_text(Vector2(0, size.y * 0.3), _say, 26, Color(1, 1, 0.85, clampf(_say_t * 2.0, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, size.x)
@@ -221,7 +239,62 @@ func _draw() -> void:
 	for p in _pops:
 		var k: float = p.t / 1.8
 		_text(Vector2(190, 120 - k * 60.0), p.text, 24, Color(p.col.r, p.col.g, p.col.b, 1.0 - k * k))
-	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   R suck water   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
+	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   R suck water   G help your mate   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
+
+## (co-op) Where your mate's Mole is, for the marker: {} when it's not down here with you; else at (on the screen),
+## on (on screen), dir (from the screen's middle), dist (metres), depth, col (theirs: the guest's blue, the host's yellow)
+func mate_mark() -> Dictionary:
+	var m = mine
+	if m.net == null or not m.net.mate_here() or m.cam == null or not m._built:
+		return {}
+	var op: Vector2 = m.net.other.p
+	var at: Vector2 = m.cam.unproject_position(Vector3(op.x, op.y, MineShip.Z))
+	var mid := size * 0.5
+	var inset := Rect2(Vector2(50, 50), size - Vector2(100, 100))
+	return {"at": at, "on": inset.has_point(at) and not m.cam.is_position_behind(Vector3(op.x, op.y, MineShip.Z)),
+		"dir": (at - mid).normalized() if at.distance_to(mid) > 1.0 else Vector2.DOWN, "dist": op.distance_to(m.ship.p),
+		"depth": maxf(0.0, -op.y - MineShip.HALF), "col": Color8(120, 190, 255) if m.net.role() == "host" else Color8(255, 215, 80)}
+
+## The marker: over your mate's Mole when it's on screen (MATE, its fuel and hull), else an arrow at the screen's edge
+## pointing to it, how far
+func _mate(mk: Dictionary) -> void:
+	var col: Color = mk.col
+	var m = mine
+	var trouble: bool = m.net.other_stranded or m.net.other_hull < 0.25
+	if trouble and fmod(Time.get_ticks_msec() / 1000.0, 0.6) < 0.3:
+		col = Color8(255, 90, 80)
+	if mk.on:
+		if m.team:
+			# (the team bonus on: a dotted green line between the two Moles)
+			var me: Vector2 = m.cam.unproject_position(Vector3(m.ship.p.x, m.ship.p.y, MineShip.Z))
+			var n := int(me.distance_to(mk.at) / 14.0)
+			var ph := fmod(Time.get_ticks_msec() / 400.0, 1.0)
+			for i in n:
+				var q := me.lerp(mk.at, (float(i) + ph) / maxf(1.0, float(n)))
+				draw_circle(q, 2.5, Color8(120, 255, 140, 170))
+		var top: Vector2 = mk.at + Vector2(0, -58)
+		_text(top + Vector2(-60, 0), "OUT OF FUEL" if m.net.other_stranded else "MATE", 14, col, HORIZONTAL_ALIGNMENT_CENTER, 120)
+		for i in 2:
+			var k: float = m.net.other_fuel if i == 0 else m.net.other_hull
+			var bc := Color8(240, 150, 30) if i == 0 else Color8(80, 200, 90).lerp(Color8(230, 50, 40), 1.0 - k)
+			var r := Rect2(top + Vector2(-22, 6 + i * 6), Vector2(44, 4))
+			draw_rect(r, Color(0, 0, 0, 0.6))
+			draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(k, 0.0, 1.0), r.size.y)), bc)
+		return
+	# off screen: the arrow on the edge, on the line from the middle to them
+	var mid := size * 0.5
+	var d: Vector2 = mk.dir
+	var half := mid - Vector2(46, 46)
+	var t := minf(half.x / maxf(0.001, absf(d.x)), half.y / maxf(0.001, absf(d.y)))
+	var p := mid + d * t
+	var side := Vector2(-d.y, d.x)
+	var pts := PackedVector2Array([p + d * 18.0, p - d * 8.0 + side * 12.0, p - d * 8.0 - side * 12.0])
+	draw_colored_polygon(pts, Color(0, 0, 0, 0.6))
+	var pts2 := PackedVector2Array([p + d * 15.0, p - d * 6.0 + side * 9.0, p - d * 6.0 - side * 9.0])
+	draw_colored_polygon(pts2, col)
+	var label := "MATE %d m" % int(mk.dist) + ("  OUT OF FUEL" if m.net.other_stranded else "")
+	var lp := p - d * 34.0 + Vector2(-70, 6)
+	_text(lp, label, 15, col, HORIZONTAL_ALIGNMENT_CENTER, 140)
 
 ## The launcher's arc, from the ship toward the mouse (while right is held, or always faintly)
 func _arc() -> void:

@@ -186,9 +186,23 @@ func _host() -> bool:
 		5:
 			if t - mark > 4.0:
 				_tell("sand", _sand_at(46.0))
-				print("HOST PIC at hp\n", _pic(v.hp))
 				_next(6)
 		6:
+			var sp := _v2(_settled("stranded", 0.5 * slow))
+			if sp != Vector2.INF and not v.has("helping"):
+				v.helping = true
+				check(net.other_stranded and net.other_fuel < 0.02, "the guest's out of fuel: the host's game knows (stranded)")
+				var mk: Dictionary = m.hud.mate_mark()
+				check(not mk.is_empty(), "the mate marker in the host's game too")
+				# over to them: in the shaft over the guest's Mole, G held
+				m.ship.place(sp + Vector2(0, 1.0))
+				m.fuel = m.tank_max()
+				m.auto = {"help": true}
+				v.fuel0 = m.fuel
+			if v.has("helping") and not v.has("helped") and t - mark > 1.0 and not net.other_stranded and net.other_fuel > 0.25 and net.other_hull > 0.6:
+				v.helped = true
+				m.auto = {}
+				check(m.fuel < float(v.fuel0) - 0.5, "the host's fuel went into the guest's tank (%.1f of %.1f L left)" % [m.fuel, float(v.fuel0)])
 			if _settled("left", 1.0 * slow) != null:
 				check(not net.guest_down and not net.other.visible, "the guest's gone back up: the host told, its Mole gone")
 				_next(99)
@@ -242,7 +256,6 @@ func _guest() -> bool:
 		4:
 			var hp := _v2(_settled("hp", 1.0 * slow))
 			if hp != Vector2.INF:
-				print("GUEST PIC at hp\n", _pic(hp))
 				check(_air(hp) > 0.8, "the host's hole is in the guest's ground (%.0f%% at %s)" % [_air(hp) * 100.0, str(hp)])
 				check(net.other_on and net.other.visible and net.other.p.distance_to(hp) < 0.6, "the host's Mole where it is in the guest's game (%s, %s)" % [str(net.other.p if net.other else Vector2.INF), str(hp)])
 				check(net.other and int(net.other._upg.get("coat", 1)) == 0, "the host's Mole yellow")
@@ -253,6 +266,26 @@ func _guest() -> bool:
 			if hsand != null:
 				var mine_sand := _sand_at(46.0)
 				check(int(hsand) > 50 and absi(mine_sand - int(hsand)) <= 2, "the host's sand fell the same in the guest's game (%d, the host's %d)" % [mine_sand, int(hsand)])
+				check(not m.team and m.ship.dig_k == 1.0, "8 m apart: no team bonus")
+				var mk: Dictionary = m.hud.mate_mark()
+				check(not mk.is_empty() and absf(float(mk.dist) - m.ship.p.distance_to(net.other.p)) < 0.1 and float(mk.depth) > 4.0, "the mate marker: your mate %d m away, %d m down" % [int(mk.get("dist", -1)), int(mk.get("depth", -1))])
+				# out of fuel, the hull knocked about: stranded, waiting for the host
+				v.at = m.ship.p
+				m.fuel = 0.0
+				m.hull = m.hull_max() * 0.4
+				v.hull0 = m.hull
+				_next(51)
+		51:
+			if t - mark > 1.0 and not v.has("str"):
+				v.str = true
+				check(m.stranded and m.active and m.ship.p.distance_to(v.at) < 0.5, "out of fuel with your mate down here: stranded, not towed (waiting for help)")
+				_tell("stranded", [m.ship.p.x, m.ship.p.y])
+			if v.has("str") and m.fuel > 1.0 and m.hull > float(v.hull0) + 3.0 and not m.stranded:
+				check(m.team and is_equal_approx(m.ship.dig_k, VoxelMine.TEAM_DIG), "side by side: the team bonus on (+50% digging)")
+				check(true, "the host's Mole came and helped: fuel %.1f L, hull %d (was %d), not stranded" % [m.fuel, int(m.hull), int(v.hull0)])
+				_next(52)
+		52:
+			if t - mark > 1.0:
 				m.leave()
 				_next(6)
 		6:
