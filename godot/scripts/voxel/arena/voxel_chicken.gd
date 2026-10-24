@@ -20,6 +20,8 @@ const LEG := Color8(226, 170, 60)
 const EYE := Color8(16, 12, 10)
 ## A plucked bird's skin (a carcass), and its shut eye.
 const PLUCK := [Color8(232, 168, 138), Color8(206, 134, 106)]
+const ROAST := [Color8(204, 128, 56), Color8(150, 82, 34)]       # (roasted where it stood: the flamethrower, the laser)
+const SINGED := [Color8(64, 54, 46), Color8(34, 28, 24)]
 const SHUT := Color8(150, 96, 80)
 
 static var _meshes := {}            # "coat,part" -> ArrayMesh
@@ -113,9 +115,10 @@ func _process(dt: float) -> void:
 static var _feather_mesh: BoxMesh
 
 ## A killed chicken: plucked, lying limp on its side (the head flopped down, the legs stuck out stiff), its feathers
-## scattered round on the ground (seed: where they lie). Its own node, not animated.
-static func carcass(coat_: int, chick_: bool, seed: int) -> Node3D:
-	var key := "pc" if chick_ else "p" + str(coat_)
+## scattered round on the ground (seed: where they lie); roast: golden brown, the feathers round it singed black.
+## Its own node, not animated.
+static func carcass(coat_: int, chick_: bool, seed: int, roast := false) -> Node3D:
+	var key := ("r" if roast else "p") + ("c" if chick_ else str(coat_))
 	var k := 0.5 if chick_ else 1.0
 	var n := Node3D.new()
 	n.name = "Carcass"
@@ -153,7 +156,7 @@ static func carcass(coat_: int, chick_: bool, seed: int) -> Node3D:
 		lm.material_override = _mat
 		l.add_child(lm)
 	# the feathers round it, flat on the ground
-	var cols: Array = CHICK if chick_ else COATS[coat_]
+	var cols: Array = SINGED if roast else (CHICK if chick_ else COATS[coat_])
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
 	var mm := MultiMesh.new()
@@ -201,9 +204,9 @@ static func _part(key: String, part: String) -> ArrayMesh:
 		_mat.vertex_color_use_as_albedo = true
 		_mat.vertex_color_is_srgb = true
 		_mat.roughness = 0.9
-	var plucked := key.begins_with("p")          # (a carcass's: "p0".."p2", "pc")
-	var base := key.trim_prefix("p")
-	var c: Array = PLUCK if plucked else (CHICK if base == "c" else COATS[int(base)])
+	var plucked := key.begins_with("p") or key.begins_with("r")      # (a carcass's: "p0".."p2", "pc"; roasted "r0".."rc")
+	var base := key.substr(1) if plucked else key
+	var c: Array = (ROAST if key.begins_with("r") else PLUCK) if plucked else (CHICK if base == "c" else COATS[int(base)])
 	var cells := {}                 # Vector3i -> Color, in cubes of V about the part's pivot
 	match part:
 		"body":

@@ -1339,8 +1339,13 @@ func _unhandled_input(e: InputEvent) -> void:
 				elif yard.chickens.eat_egg():
 					sound.play("item_pick", Vector3.INF, -4.0, 0.7)
 					say("Ate an egg: +%d health (%d left)" % [int(VoxelChickens.EGG_HP), inv.count("egg")], 2.0)
-				elif inv.count("egg") > 0:
-					say("Not hurt: save the eggs (or sell them at the buyer)", 1.5)
+				else:
+					var meat := yard.chickens.eat_meat()         # (no egg: a chicken, roast first)
+					if meat != "":
+						sound.play("item_pick", Vector3.INF, -4.0, 0.6)
+						say("Ate a %s: +%d health" % [VoxelItems.name_of(meat).to_lower(), int(VoxelChickens.ROAST_HP if meat == "roast_chicken" else VoxelChickens.CARCASS_HP)], 2.0)
+					elif inv.count("egg") + inv.count("chicken_carcass") + inv.count("roast_chicken") > 0:
+						say("Not hurt: save it (or sell it at the buyer)", 1.5)
 			KEY_E:
 				if down_t > 0.0:
 					pass                     # (down: nothing till you're up)

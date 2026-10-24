@@ -560,6 +560,42 @@ func _solo(dt: float) -> bool:
 				ch.carcasses.clear()
 				ch.from_data(dd)
 				check(ch.carcasses.size() == 1 and int(ch.carcasses[0].id) == int(f.id), "the carcass saved and loaded")
+				# roasted: the flamethrower's (or the laser's) kill, or burnt to death in a fire patch: a roast chicken
+				ch._fresh()
+				ch.gate = true
+				var r1 := ch._hatch(Vector2(15, 28), 1.0)
+				_still(r1)
+				ch.strike(int(r1.id), 3, Vector3(14, 0, 28), true)
+				var rc = ch._carcass_by(int(r1.id))
+				check(rc != null and bool(rc.roast), "the flamethrower's kill: a roast chicken")
+				var r2 := ch._hatch(Vector2(12, 26), 1.0)
+				_still(r2)
+				for k in VoxelChickens.HP:
+					r2.hit_ms = 0
+					ch.blast(Vector3(12.3, 0.3, 26.0), 2.0, 3.0)
+				var rc2 = ch._carcass_by(int(r2.id))
+				check(rc2 != null and bool(rc2.roast), "burnt to death in a fire patch: roast too")
+				ch._show(0.016)
+				check(ch._carc_views.has(int(r1.id)) and bool((ch._carc_views[int(r1.id)] as Node).get_meta("roast", false)), "shown roasted (golden, singed feathers)")
+				arena.inv.from_data([])
+				check(ch.take_carcass(int(r1.id)) and arena.inv.count("roast_chicken") == 1, "E: a roast chicken in the backpack")
+				var dr := ch.to_data()
+				ch.carcasses.clear()
+				ch.from_data(dr)
+				check(ch._carcass_by(int(r2.id)) != null and bool(ch._carcass_by(int(r2.id)).roast), "a roast carcass saved and loaded")
+				# eaten (H, no eggs): the roast first, then a raw one; not hurt: none
+				arena.inv.remove("egg", arena.inv.count("egg"))
+				arena.inv.add("chicken_carcass", 1)
+				arena.player_hp = 20.0
+				check(ch.eat_meat() == "roast_chicken" and is_equal_approx(arena.player_hp, 20.0 + VoxelChickens.ROAST_HP), "H with no eggs: the roast first (+%d health)" % int(VoxelChickens.ROAST_HP))
+				var hp0: float = arena.player_hp
+				check(ch.eat_meat() == "chicken_carcass" and is_equal_approx(arena.player_hp, minf(VoxelArena.HP_MAX, hp0 + VoxelChickens.CARCASS_HP)), "then a raw one (+%d)" % int(VoxelChickens.CARCASS_HP))
+				arena.inv.add("roast_chicken", 1)
+				arena.player_hp = VoxelArena.HP_MAX
+				check(ch.eat_meat() == "" and arena.inv.count("roast_chicken") == 1, "not hurt: nothing eaten")
+				arena.inv.add("roast_chicken", 1)
+				var got2: int = farm.sell()
+				check(got2 == 2 * VoxelChickens.ROAST_PRICE, "roast chickens sell for more: $%d for 2" % got2)
 				step = 99
 		99:
 			print("CHICKENS done %d passed, %d failed" % [passed, failed])

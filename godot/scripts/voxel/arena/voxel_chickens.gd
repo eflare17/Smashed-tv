@@ -25,6 +25,9 @@ extends Node3D
 ## feathers round it) that E picks up as a chicken carcass: sold at the buyer, or shredded for blood and bone. In the
 ## run or the coop they're safe: a blow only sends them flapping off (and says why, the first time). A guest's blows
 ## go to the host as "hit"s (the host's are the real chickens), its pick-ups as "take"s.
+## Roasted (the owner, 24 Oct: "add the roast and eating"): killed by the flamethrower, the laser or a patch of fire,
+## the carcass is a golden roast chicken (its feathers singed black round it), picked up as a roast chicken that sells
+## for more. H eats one when there's no egg to (roast first: it heals more; a raw carcass a little).
 
 ## The run (world metres), the gate in the yard's east fence, the coop in the run's south-east corner.
 const X0 := 22.65
@@ -99,6 +102,10 @@ const STRIKE := {
 const RANGED := 6.0
 const HP := 3                   # blows a hen takes (a chick: one)
 const CARCASS_PRICE := 15       # at the buyer's crate
+const ROAST_PRICE := 25
+const ROASTS := ["flamethrower", "laser"]      # (what roasts the one it kills)
+const CARCASS_HP := 12.0        # eaten (H): raw ...
+const ROAST_HP := 45.0          # ... roast
 const CARCASS_POINTS := 1000.0  # in the shredder (a quarter of a bag of blood and bone)
 const CARCASS_MAX := 24         # lying about at once (past that the oldest goes)
 const FEATHERS_MAX := 160
@@ -601,6 +608,8 @@ func line(tag: String) -> String:
 		var c = _carcass_by(int(tag.trim_prefix("carcass")))
 		if c == null:
 			return ""
+		if bool(c.get("roast", false)):
+			return "E  pick up the roast %s" % ("chick" if bool(c.chick) else "chicken")
 		return "E  pick up the %s carcass" % ("chick's" if bool(c.chick) else "chicken")
 	if tag.begins_with("hen"):
 		var h = _hen_by(int(tag.trim_prefix("hen")))
@@ -740,7 +749,9 @@ static func items() -> Dictionary:
 		"poo": {"name": "Chicken poo", "col": POO[0], "stack": 9999, "cubes": POO,
 			"desc": "Vacuumed up in the run. Feeds a plant (%d at a time) or the worm farm." % VoxelFarm.POO_FEED},
 		"chicken_carcass": {"name": "Chicken carcass", "col": VoxelChicken.PLUCK[0], "stack": 20,
-			"desc": "A plucked chicken. Sells for $%d at the buyer, or the shredder makes blood and bone of it." % CARCASS_PRICE},
+			"desc": "A plucked chicken. Sells for $%d at the buyer, the shredder makes blood and bone of it, or H eats it raw (+%d health)." % [CARCASS_PRICE, int(CARCASS_HP)]},
+		"roast_chicken": {"name": "Roast chicken", "col": VoxelChicken.ROAST[0], "stack": 20,
+			"desc": "Roasted where it stood (the flamethrower, the laser). Sells for $%d at the buyer; H eats it (+%d health)." % [ROAST_PRICE, int(ROAST_HP)]},
 	}
 
 # ---------------------------------------------------------------- killing them (out in the yard)
@@ -762,7 +773,7 @@ func attack(w, held := false) -> int:
 	if h == null:
 		return -1
 	_strike_t[id] = float(s[3])
-	strike(int(h.id), int(s[2]), w.shooter.player.global_position)
+	strike(int(h.id), int(s[2]), w.shooter.player.global_position, ROASTS.has(id))
 	return int(h.id)
 
 ## The chicken a blow from eye along dir lands on (the nearest in reach, within cone degrees of the look, or right
@@ -807,9 +818,10 @@ func target(eye: Vector3, dir: Vector3, reach: float, cone: float, top_down := f
 		bd = d
 	return best
 
-## A blow of dmg on chicken id from a player standing at from. In the yard it hurts (kills at HP, a chick at one);
-## in the run or the coop it only sends it flapping off. A guest's goes to the host.
-func strike(id: int, dmg: int, from: Vector3) -> void:
+## A blow of dmg on chicken id from a player standing at from (roast: a flamethrower's or a laser's: the one it kills
+## comes out roasted). In the yard it hurts (kills at HP, a chick at one); in the run or the coop it only sends it
+## flapping off. A guest's goes to the host.
+func strike(id: int, dmg: int, from: Vector3, roast := false) -> void:
 	var h = _hen_by(id)
 	if h == null:
 		return
@@ -818,11 +830,11 @@ func strike(id: int, dmg: int, from: Vector3) -> void:
 		_told_safe = true
 		arena.say("Not in the coop: they're safe in there. Open the gate and let them out into the yard first", 3.5)
 	if _is_guest():
-		_msg(["hit", id, dmg, from])
+		_msg(["hit", id, dmg, from, roast])
 		if killable(p):
 			_hit_fx(Vector3(p.x, float(h.y) + 0.2, p.y), int(h.c), float(h.age) < 1.0, false)
 		return
-	_hurt(h, dmg, from, 0)
+	_hurt(h, dmg, from, 0, roast)
 
 ## A grenade's blast or a fire patch at p (VoxelArena.hurt_players_near: the host's or alone): every chicken out in
 ## the yard within r hurt (a blast kills, a patch of fire takes a blow at a time).
@@ -832,10 +844,10 @@ func blast(p: Vector3, r: float, amount: float) -> void:
 	for h in hens.duplicate():
 		var c := Vector3(float(h.x), float(h.y) + 0.2, float(h.z))
 		if c.distance_to(p) < r and killable(Vector2(c.x, c.z)):
-			_hurt(h, HP if amount >= 20.0 else 1, p, -1)
+			_hurt(h, HP if amount >= 20.0 else 1, p, -1, amount < 20.0)     # (a fire's: roasted)
 
 # (the host's, or alone) the blow landing: by is who struck (0 the host, 1 the guest, -1 a blast)
-func _hurt(h: Dictionary, dmg: int, from: Vector3, by: int) -> void:
+func _hurt(h: Dictionary, dmg: int, from: Vector3, by: int, roast := false) -> void:
 	var p := Vector2(float(h.x), float(h.z))
 	var away := p - Vector2(from.x, from.z)
 	if not killable(p):
@@ -853,7 +865,7 @@ func _hurt(h: Dictionary, dmg: int, from: Vector3, by: int) -> void:
 	_hit_fx(at, int(h.c), chick, dead)
 	_msg(["fx", at, int(h.c), chick, dead, by])
 	if dead:
-		_die(h, by)
+		_die(h, by, roast)
 	else:
 		_flee(h, away, 3.5)
 	_changed()
@@ -874,14 +886,14 @@ func _flee(h: Dictionary, away: Vector2, dist: float) -> void:
 			return
 
 # dead: a carcass where it fell (its place in the coop free)
-func _die(h: Dictionary, by: int) -> void:
+func _die(h: Dictionary, by: int, roast := false) -> void:
 	hens.erase(h)
 	carcasses.append({"id": int(h.id), "x": float(h.x), "y": float(h.y), "z": float(h.z), "yaw": float(h.yaw), "c": int(h.c),
-		"chick": float(h.age) < 1.0})
+		"chick": float(h.age) < 1.0, "roast": roast})
 	while carcasses.size() > CARCASS_MAX:
 		carcasses.pop_front()
 	if by == 0 or (by == -1 and VoxelYard.in_yard(arena.player.global_position)):
-		arena.say("Chicken killed: E picks up the carcass", 2.5)
+		arena.say("Roast chicken! E picks it up" if roast else "Chicken killed: E picks up the carcass", 2.5)
 
 # a blow landing, seen and heard: feathers, a squawk (killed: a burst of them, the last squawk)
 func _hit_fx(at: Vector3, coat: int, chick: bool, dead: bool) -> void:
@@ -947,14 +959,33 @@ func take_carcass(id: int) -> bool:
 		return false
 	carcasses.erase(c)
 	arena.sound.play("item_pick", Vector3.INF, -4.0, 0.8)
-	arena.say("+1 chicken carcass: sell it at the buyer ($%d), or the shredder makes blood and bone" % CARCASS_PRICE, 2.5)
+	if bool(c.get("roast", false)):
+		arena.say("+1 roast chicken: sell it at the buyer ($%d), or H eats it (+%d health)" % [ROAST_PRICE, int(ROAST_HP)], 2.5)
+	else:
+		arena.say("+1 chicken carcass: sell it at the buyer ($%d), the shredder, or H eats it raw" % CARCASS_PRICE, 2.5)
 	if _is_guest():
 		_msg(["take", id])
 		return true
-	arena.receive({"id": "chicken_carcass", "n": 1}, "inv")
+	arena.receive({"id": _carcass_item(c), "n": 1}, "inv")
 	_msg(["said", "Your mate picked up the chicken carcass"])
 	_changed()
 	return true
+
+# what a carcass is in the backpack: a roast chicken, or a (raw) chicken carcass
+static func _carcass_item(c: Dictionary) -> String:
+	return "roast_chicken" if bool(c.get("roast", false)) else "chicken_carcass"
+
+## H: a chicken eaten for health, roast before raw (when there's no egg to eat). -> what was eaten ("" nothing: none,
+## or not hurt)
+func eat_meat() -> String:
+	if arena.player_hp >= VoxelArena.HP_MAX:
+		return ""
+	for id in ["roast_chicken", "chicken_carcass"]:
+		if arena.inv.count(id) > 0:
+			arena.inv.remove(id, 1)
+			arena.player_hp = minf(VoxelArena.HP_MAX, arena.player_hp + (ROAST_HP if id == "roast_chicken" else CARCASS_HP))
+			return id
+	return ""
 
 func _carcass_by(id: int):
 	for c in carcasses:
@@ -1049,7 +1080,7 @@ func on_net(m: Array) -> void:
 			if host:
 				var h = _hen_by(int(m[1]))
 				if h != null and typeof(m[3]) == TYPE_VECTOR3:
-					_hurt(h, clampi(int(m[2]), 1, HP), m[3], 1)
+					_hurt(h, clampi(int(m[2]), 1, HP), m[3], 1, m.size() > 4 and bool(m[4]))
 		"fx":
 			# (the guest's own blow it saw at once; a kill it hears of here)
 			if _is_guest() and typeof(m[1]) == TYPE_VECTOR3 and (bool(m[4]) or int(m[5]) != 1):
@@ -1061,7 +1092,7 @@ func on_net(m: Array) -> void:
 				var c = _carcass_by(int(m[1]))
 				if c != null:
 					carcasses.erase(c)
-					_msg(["give", {"id": "chicken_carcass", "n": 1}])
+					_msg(["give", {"id": _carcass_item(c), "n": 1}])
 					arena.say("Your mate picked up the chicken carcass", 2.0)
 					_changed()
 				else:
@@ -1088,7 +1119,8 @@ func to_data(live := false) -> Dictionary:
 		hs.append(d)
 	var cs := []
 	for c in carcasses:
-		cs.append({"id": int(c.id), "x": float(c.x), "y": float(c.y), "z": float(c.z), "yaw": float(c.yaw), "c": int(c.c), "chick": bool(c.chick)})
+		cs.append({"id": int(c.id), "x": float(c.x), "y": float(c.y), "z": float(c.z), "yaw": float(c.yaw), "c": int(c.c), "chick": bool(c.chick),
+			"roast": bool(c.get("roast", false))})
 	return {"level": level, "gate": gate, "food": food, "nests": nests.duplicate(true), "hens": hs, "carcasses": cs, "next": _next_id}
 
 func from_data(d) -> void:
@@ -1127,7 +1159,8 @@ func from_data(d) -> void:
 			if typeof(o) != TYPE_DICTIONARY or carcasses.size() >= CARCASS_MAX:
 				continue
 			carcasses.append({"id": int(o.get("id", 0)), "x": float(o.get("x", 15.0)), "y": float(o.get("y", 0.0)), "z": float(o.get("z", 30.0)),
-				"yaw": float(o.get("yaw", 0.0)), "c": clampi(int(o.get("c", 0)), 0, VoxelChicken.COATS.size() - 1), "chick": bool(o.get("chick", false))})
+				"yaw": float(o.get("yaw", 0.0)), "c": clampi(int(o.get("c", 0)), 0, VoxelChicken.COATS.size() - 1), "chick": bool(o.get("chick", false)),
+				"roast": bool(o.get("roast", false))})
 	_next_id = maxi(int(d.get("next", 1)), 1)
 	for h in hens:
 		_next_id = maxi(_next_id, int(h.id) + 1)
@@ -1177,8 +1210,12 @@ func _show(dt: float) -> void:
 		var cid := int(c.id)
 		cseen[cid] = true
 		var cv: Node3D = _carc_views.get(cid)
+		if cv != null and bool(cv.get_meta("roast", false)) != bool(c.get("roast", false)):
+			cv.queue_free()
+			cv = null
 		if cv == null:
-			cv = VoxelChicken.carcass(int(c.c), bool(c.chick), cid * 7919 + 13)
+			cv = VoxelChicken.carcass(int(c.c), bool(c.chick), cid * 7919 + 13, bool(c.get("roast", false)))
+			cv.set_meta("roast", bool(c.get("roast", false)))
 			add_child(cv)
 			_carc_views[cid] = cv
 		cv.position = Vector3(float(c.x), float(c.y), float(c.z))
