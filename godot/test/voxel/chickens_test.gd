@@ -489,6 +489,31 @@ func _solo(dt: float) -> bool:
 				arena._clicked[MOUSE_BUTTON_LEFT] = true
 				arena._shoot(0.016)
 				check(ch._hen_by(int(v0.ids[2])) == null and ch._carcass_by(int(v0.ids[2])) != null and bool(ch._carcass_by(int(v0.ids[2])).chick), "top-down, a click with the shovel: the chick dies in one, a chick's carcass")
+				# the pistol: aiming down the sights (right) or empty doesn't count as a blow on a hen; a shot does
+				# (VoxelArena._struck: headless, the mouse can't be captured, so asked directly)
+				arena.top_down = false
+				var pi: int = arena.loadout.index_of("pistol")
+				arena._switch(func(): arena.loadout.select(pi))
+				arena.loadout.switch_t = 0.0
+				var pist = arena.melee["pistol"]
+				var c0: int = pist.clip
+				pist.press(MOUSE_BUTTON_RIGHT)
+				var aimed: bool = arena._struck(pist, MOUSE_BUTTON_RIGHT, c0)
+				pist.release(MOUSE_BUTTON_RIGHT)
+				pist.clip = 0
+				pist._cd = 0.0
+				pist.press(MOUSE_BUTTON_LEFT)
+				var empty: bool = arena._struck(pist, MOUSE_BUTTON_LEFT, 0)
+				pist.release(MOUSE_BUTTON_LEFT)
+				pist.clip = pist.clip_max
+				pist.reload_t = 0.0
+				pist._cd = 0.0
+				c0 = pist.clip
+				pist.press(MOUSE_BUTTON_LEFT)
+				var shot: bool = arena._struck(pist, MOUSE_BUTTON_LEFT, c0)
+				pist.release(MOUSE_BUTTON_LEFT)
+				check(not aimed and not empty and shot, "the pistol: aimed (right) or empty, no blow on a hen; a shot is (%s %s %s)" % [str(aimed), str(empty), str(shot)])
+				check(not arena._struck(arena.melee["laser"], MOUSE_BUTTON_RIGHT, -1) and arena._struck(arena.melee["sword"], MOUSE_BUTTON_RIGHT, -1), "the laser's right button isn't a blow; the sword's is")
 				# a grenade's blast out in the yard
 				var d := ch._hatch(Vector2(12.0, 28.0), 1.0)
 				_still(d)

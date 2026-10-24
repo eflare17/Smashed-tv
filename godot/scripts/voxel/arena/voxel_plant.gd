@@ -140,9 +140,7 @@ static func mesh_for(s: int, st: int, lk: int) -> ArrayMesh:
 	var st_tool := SurfaceTool.new()
 	st_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if s in BUSHY:
-		_bush(st_tool, px, VOX * BUSH_SCALE, VOX * BUSH_SCALE * squash)
-		st_tool.generate_normals()
-		var bm := st_tool.commit()
+		var bm := _bush(px, VOX * BUSH_SCALE, VOX * BUSH_SCALE * squash)
 		_meshes[key] = bm
 		return bm
 	var sx := VOX
@@ -165,53 +163,85 @@ static func mesh_for(s: int, st: int, lk: int) -> ArrayMesh:
 ## its outline from the front and the back, again (a couple of rows lower, so it's not the same) from the sides, and
 ## from the corners the two together; each side shows the picture's leaves as seen from that way, darker deeper in.
 ## Only the faces showing are made.
-static func _bush(t: SurfaceTool, px: Dictionary, sx: float, sy: float) -> void:
+static func _bush(px: Dictionary, sx: float, sy: float) -> ArrayMesh:
 	var cx := int(FOOT.x)
-	var rows := {}                  # y -> [left, right] (picture x)
+	var NY := int(FOOT.y)
+	# the picture as flat arrays (fast to look in): its colours and whether a pixel's there, rows' reach from the stem
+	var pic := PackedColorArray()
+	pic.resize(W * NY)
+	var has := PackedByteArray()
+	has.resize(W * NY)
+	var reach_of := PackedInt32Array()
+	reach_of.resize(NY)
 	for p: Vector2i in px:
-		var r: Array = rows.get(p.y, [p.x, p.x])
-		rows[p.y] = [mini(int(r[0]), p.x), maxi(int(r[1]), p.x)]
+		if p.y < NY and p.x >= 0 and p.x < W:
+			pic[p.y * W + p.x] = px[p]
+			has[p.y * W + p.x] = 1
+			reach_of[p.y] = maxi(reach_of[p.y], absi(p.x - cx) + 1)
 	var R := 22
 	var NX := 2 * R + 1
-	var NY := int(FOOT.y)
 	var cells := PackedByteArray()
 	cells.resize(NX * NX * NY)
-	var cols := {}                  # cell index -> colour
-	var at := func(x: int, y: int) -> Variant:
-		return px.get(Vector2i(x, y))
+	var cols := PackedColorArray()
+	cols.resize(NX * NX * NY)
 	for y in NY:
-		if not rows.has(y):
+		var reach := reach_of[y]
+		if reach == 0:
 			continue
-		var reach := maxi(cx - int(rows[y][0]), int(rows[y][1]) - cx) + 1
-		var ys := clampi(y + 2, 0, NY - 1)        # (the sides' outline: the picture a couple of rows down)
-		for vz in range(-R, R + 1):
-			for vx in range(-R, R + 1):
-				var d := sqrt(float(vx * vx + vz * vz))
-				if d > reach:
+		var ys := mini(y + 2, NY - 1)        # (the sides' outline: the picture a couple of rows down)
+		var row := y * W
+		var rows := ys * W
+		for vz in range(-reach, reach + 1):
+			for vx in range(-reach, reach + 1):
+				var d2 := vx * vx + vz * vz
+				if d2 > reach * reach:
 					continue
+				var ax := absi(vx)
+				var az := absi(vz)
+				var fx := cx + vx
+				var sxp := cx - vz
 				# in it if it's inside the front's outline (the picture across x) or the side's (across z)
-				var front = at.call(cx + vx, y) if absi(vx) >= absi(vz) else null
-				var side = at.call(cx - vz, ys) if absi(vz) >= absi(vx) else null
-				if front == null and side == null and d > reach * 0.72:
+				var front := ax >= az and fx >= 0 and fx < W and has[row + fx] == 1
+				var side := az >= ax and sxp >= 0 and sxp < W and has[rows + sxp] == 1
+				var d := sqrt(float(d2))
+				if not front and not side and d > reach * 0.72:
 					continue
-				# its colour: the picture as seen from the way it faces (from the front or back: across x; from the
-				# sides: across z, mirrored round the back), else the nearest the picture has in the row
-				var c = at.call(cx + vx, y) if absi(vz) >= absi(vx) else at.call(cx + (-vz if vx > 0 else vz), ys)
-				if c == null:
-					c = front if front != null else side
-				if c == null:
-					for k in range(1, reach + 1):
-						c = at.call(cx + k, y) if vx >= 0 else at.call(cx - k, y)
-						if c != null:
+				# its colour: the picture as seen from the way it faces (front or back: across x; the sides: across
+				# z, mirrored round the back), else the outline's, else the nearest the picture has in the row
+				var c := Color(0, 0, 0, 0)
+				if az >= ax:
+					if fx >= 0 and fx < W and has[row + fx] == 1:
+						c = pic[row + fx]
+				else:
+					var qx := cx + (-vz if vx > 0 else vz)
+					if qx >= 0 and qx < W and has[rows + qx] == 1:
+						c = pic[rows + qx]
+				if c.a == 0.0:
+					if front:
+						c = pic[row + fx]
+					elif side:
+						c = pic[rows + sxp]
+				if c.a == 0.0:
+					for k in range(0, reach + 1):
+						var kx := cx + (k if vx >= 0 else -k)
+						if kx >= 0 and kx < W and has[row + kx] == 1:
+							c = pic[row + kx]
 							break
-				if c == null:
+				if c.a == 0.0:
 					continue
 				var i := (y * NX + (vz + R)) * NX + (vx + R)
 				cells[i] = 1
-				var deep := clampf(d / float(reach), 0.0, 1.0)
-				cols[i] = (c as Color) * (0.7 + 0.3 * deep)
+				var k2 := 0.7 + 0.3 * clampf(d / float(reach), 0.0, 1.0)
+				cols[i] = Color(c.r * k2, c.g * k2, c.b * k2, 1.0)
 	var dirs := [[Vector3i(1, 0, 0), 0.85], [Vector3i(-1, 0, 0), 0.85], [Vector3i(0, 1, 0), 1.0], [Vector3i(0, -1, 0), 0.6], [Vector3i(0, 0, 1), 0.95], [Vector3i(0, 0, -1), 0.8]]
-	for i: int in cols:
+	var size := Vector3(sx, sy, sx)
+	# (straight into the mesh's arrays: much quicker than a SurfaceTool)
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var vcols := PackedColorArray()
+	for i in cells.size():
+		if cells[i] == 0:
+			continue
 		var vx := i % NX - R
 		var vz := (i / NX) % NX - R
 		var y := i / (NX * NX)
@@ -224,10 +254,19 @@ static func _bush(t: SurfaceTool, px: Dictionary, sx: float, sy: float) -> void:
 			var ny := y - n.y               # (picture rows run down; up is a row less)
 			if nx >= -R and nx <= R and nz >= -R and nz <= R and ny >= 0 and ny < NY and cells[(ny * NX + (nz + R)) * NX + (nx + R)] == 1:
 				continue
-			_face(t, o, Vector3(sx, sy, sx), n, Color(c.r * float(dd[1]), c.g * float(dd[1]), c.b * float(dd[1])))
+			var k: float = dd[1]
+			_face(verts, norms, vcols, o, size, n, Color(c.r * k, c.g * k, c.b * k))
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_COLOR] = vcols
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	return m
 
 ## One face of a cube at o (its low corner) of size s, facing n
-static func _face(t: SurfaceTool, o: Vector3, s: Vector3, n: Vector3i, c: Color) -> void:
+static func _face(verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, o: Vector3, s: Vector3, n: Vector3i, c: Color) -> void:
 	var q: Array
 	if n.x != 0:
 		var x := o.x + (s.x if n.x > 0 else 0.0)
@@ -240,9 +279,11 @@ static func _face(t: SurfaceTool, o: Vector3, s: Vector3, n: Vector3i, c: Color)
 		q = [Vector3(o.x, o.y, z), Vector3(o.x + s.x, o.y, z), Vector3(o.x + s.x, o.y + s.y, z), Vector3(o.x, o.y + s.y, z)]
 	# (wound to face n: flipped for the ones facing the positive way)
 	var order := [0, 1, 2, 0, 2, 3] if (n.x + n.y + n.z) < 0 else [0, 2, 1, 0, 3, 2]
+	var nv := Vector3(n)
 	for k in order:
-		t.set_color(c)
-		t.add_vertex(q[k])
+		verts.append(q[k])
+		norms.append(nv)
+		cols.append(c)
 
 # a pixel's cube: its front and back always, its sides where the picture has no neighbour (nb: +x, -x, up, down in the
 # picture); slab 1 is turned a quarter round (its across is z)

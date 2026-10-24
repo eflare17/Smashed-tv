@@ -892,7 +892,7 @@ func _spider_step(dt: float) -> void:
 			_sp.rotation = Vector3(-rel, 0, 0)
 			_sp.visible = cos(rel) > -0.2
 			wiggle = 2.0
-			if _sp_t <= 0.0 and cos(rel) > 0.3:
+			if _sp_t <= 0.0 and (cos(rel) > 0.3 or absf(_reel_v[_sp_reel]) < 0.01):     # (the drum stopped facing away: off it gets)
 				# flung off along the drum's surface at its speed
 				_sp_v = Vector3(_rng.randf_range(-0.8, 0.8), _rng.randf_range(0.7, 1.3), 0.4)
 				_sp_p = _sp.position

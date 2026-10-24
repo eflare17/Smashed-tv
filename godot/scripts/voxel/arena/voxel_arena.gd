@@ -1209,6 +1209,9 @@ func _warm_up() -> void:
 		add_child(b)
 		b.setup(key, _cube_m(key), chunk, _mat)
 		b.queue_free()
+	for st in [1, 2, 3]:
+		for s in VoxelPlant.BUSHY:
+			VoxelPlant.mesh_for(s, st, 0)        # (the round bush's meshes take ~50 ms each: made now, not mid-game)
 
 func _on_died(b: VoxelBody) -> void:
 	if settings_menu and not settings_menu._bench.is_empty():
@@ -1781,16 +1784,30 @@ func _bowl() -> void:
 				sound.play("thwack", o.position + Vector3.UP, -4.0)
 
 ## Health off b that no player's weapon did (bowled over, run into a pillar): the weapon bench's DAMAGE kept out of it.
+## Whether a press or hold of btn on w just now really struck (for a chicken it lands on): a gun only if a round went
+## (aiming down the sights, empty or reloading: no), the beam and launcher weapons on their trigger (left) only.
+func _struck(w: VoxelMelee, btn: int, clip_was: int) -> bool:
+	if w is VoxelGun:
+		return int(w.get("clip")) < clip_was
+	if w.weapon_id in ["laser", "flamethrower", "freezeray", "harpoon", "gravity"]:
+		return btn == MOUSE_BUTTON_LEFT
+	return true
+
 func _plain_hurt(b: VoxelBody, amount: float) -> void:
 	var k := VoxelBody.hit_k
 	VoxelBody.hit_k = 1.0
+	var c := VoxelBody.credit
+	VoxelBody.credit = false          # (bowled into: nobody's kill)
 	b.hurt(amount)
+	VoxelBody.credit = c
 	VoxelBody.hit_k = k
 
 # fire and ice: the fire spreading and eating (flames, ash falling, burnt-off bits dropping), the thaw
 func _status_step(dt: float) -> void:
 	var any_burning := false
 	var ash_ok := true                # one body's ash taken out a frame
+	var credit_was := VoxelBody.credit
+	VoxelBody.credit = false          # (burning and thawing: their own doing, nobody's new hit)
 	for b: VoxelBody in bodies.duplicate():
 		if not is_instance_valid(b) or not b.has_status():
 			continue
@@ -1807,6 +1824,7 @@ func _status_step(dt: float) -> void:
 			debris.burst(r.bits, Vector3.UP, 0.6)
 			if not (r.pieces as Array).is_empty():
 				pieces.spawn(b, r.pieces, Vector3.UP * 0.4, Vector3.ZERO)
+	VoxelBody.credit = credit_was
 	if any_burning:
 		sound.loop("burning", "burn_loop", null, -8.0)
 	elif sound.playing("burning"):
@@ -2075,16 +2093,20 @@ func _shoot(dt: float) -> void:
 			var was: bool = _held.get(btn, false)
 			if down and not was and loadout.usable() and not free:
 				_held[btn] = true
+				var c0 := int(w.get("clip")) if w is VoxelGun else -1
 				w.press(btn)
 				net.local_input("press", [btn, _mouse_v])     # (the mouse's move too: a slash's way, a swing's side)
-				yard.chickens.attack(w)                       # (a chicken out in the yard it lands on)
+				if _struck(w, btn, c0):
+					yard.chickens.attack(w)                   # (a chicken out in the yard it lands on)
 				if not still:
 					_held[btn] = false
 					w.release(btn)
 					net.local_input("release", btn)
 			elif down and was:
+				var c1 := int(w.get("clip")) if w is VoxelGun else -1
 				w.hold(btn, dt)
-				yard.chickens.attack(w, true)
+				if _struck(w, btn, c1):
+					yard.chickens.attack(w, true)
 			elif not down and was:
 				_held[btn] = false
 				w.release(btn)

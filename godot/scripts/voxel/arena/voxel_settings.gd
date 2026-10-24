@@ -100,8 +100,26 @@ func load_file() -> void:
 		first_run = true
 		set_preset(guess())
 		return
+	var missing := []
 	for k in v:
-		v[k] = cf.get_value("settings", k, v[k])
+		if cf.has_section_key("settings", k):
+			v[k] = cf.get_value("settings", k, v[k])
+		else:
+			missing.append(k)
+	if not missing.is_empty():
+		# (a file from before a setting was added, gore or jiggle: it takes the value of the preset the rest match, not
+		# High's; a Low player shouldn't wake up to Ultra gore)
+		for name in ORDER:
+			var same: bool = int(v.get("fx", 0)) == FX_PRESETS[name] or missing.has("fx")
+			for k in PRESETS[name]:
+				if not missing.has(k) and v.get(k) != PRESETS[name][k]:
+					same = false
+					break
+			if same:
+				for k in missing:
+					if PRESETS[name].has(k):
+						v[k] = PRESETS[name][k]
+				break
 	preset = which_preset()
 	bench = cf.get_value("bench", "last", {})
 

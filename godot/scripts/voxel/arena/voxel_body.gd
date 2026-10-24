@@ -2268,6 +2268,10 @@ static func _near_cells(st: PackedByteArray, s: Vector3i, pt: Vector3, slack: fl
 ## A guest's game: bodies change only by the host's events (every cut, hole, freeze... made here is blocked: the
 ## guest's own weapons run for the look and sound, the host's copy of them does the cutting).
 static var net_locked := false
+## Whether a hit made now is this player's own (false while the other player's weapons strike in this game, VoxelNet's
+## _as_other, and for what bodies do to themselves: burning, thawing, being bowled into): only this player's own count
+## for its kill announcer and bonuses (in co-op both games used to count every kill).
+static var credit := true
 ## The host's: told every change to a body, func(body, what, args, pose), so the guest can make the same one.
 static var net_rec: Callable
 static var _net_replay := false        # making one of the host's changes (allowed while locked; not told again)
@@ -2283,7 +2287,7 @@ func _net_block() -> bool:
 ## This player's own hit (not the other game's, replayed here): the kill's theirs if it dies soon after
 ## (VoxelAnnouncer).
 func _by_me() -> void:
-	if _net_depth == 0 and not _net_replay:
+	if credit and _net_depth == 0 and not _net_replay:
 		hit_by_me_t = Time.get_ticks_msec()
 
 ## Whether this player hit it in the last secs (its kill counts for this player's announcer).

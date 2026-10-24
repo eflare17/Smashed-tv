@@ -154,7 +154,9 @@ func step(dt: float) -> void:
 	_first = false
 
 static func _ease(p: Vector3, reach: Vector3) -> Vector3:
-	return Vector3(reach.x * tanh(p.x / reach.x), reach.y * tanh(p.y / reach.y), reach.z * tanh(p.z / reach.z))
+	# (an axis with no reach: none; Jiggle Off's reach is all zero, and 0 / 0 here sent NaN to her torso's shader)
+	return Vector3(reach.x * tanh(p.x / reach.x) if reach.x > 0.0 else 0.0, reach.y * tanh(p.y / reach.y) if reach.y > 0.0 else 0.0,
+		reach.z * tanh(p.z / reach.z) if reach.z > 0.0 else 0.0)
 
 # one sub-step of a spring (linear, a little stiffer past its reach; held within three times it)
 func _spring(s: Dictionary, f: Vector3, w: Vector3, zeta: float, reach: Vector3, h: float) -> void:

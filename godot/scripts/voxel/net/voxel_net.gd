@@ -979,7 +979,11 @@ func _message(m: Array) -> void:
 				var b2: VoxelBody = bv2
 				stats.fixes += 1
 				b2.grids_in(m[2])
-				b2.alive = bool(m[3])
+				if b2.alive and not bool(m[3]):
+					b2.alive = false
+					b2.died.emit(b2)        # (a fix that says it's dead: the kill counted here too)
+				else:
+					b2.alive = bool(m[3])
 				b2.hp = float(m[4])
 		"V":
 			if role == "host":
@@ -1023,6 +1027,7 @@ func send_upgrades(d: Dictionary) -> void:
 
 # the other player's weapons running (their copies here): their DAMAGE on what they hit, then this player's back
 func _as_other(on: bool) -> void:
+	VoxelBody.credit = not on            # (the other's blows here aren't this player's kills)
 	VoxelBody.hit_k = other.upg_k("damage") if (on and other) else (arena.me.upg_k("damage") if arena.me else 1.0)
 
 ## A new wave (VoxelWaves) in the host's game: the guest's shows its number (and the boss's bar its full health).
