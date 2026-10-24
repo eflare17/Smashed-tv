@@ -2,7 +2,7 @@ class_name VoxelPlant
 extends Node3D
 ## A weed plant growing in the yard (Stage 5: "bring the weed growing mechanics across"), built in cubes from the HTML
 ## game's own plant art (assets/voxel/art/weed_sheet.png, its WEED_SHEET: six strains down, four stages across, 44 x
-## 64 each): each picture's pixels become cubes, two of the pictures crossed through each other so it's a plant from
+## 64 each; a seventh row added, Bush Kush, from the owner's own picture): each picture's pixels become cubes, two of the pictures crossed through each other so it's a plant from
 ## every side. Dry it droops (squashed down, yellowed), wilted it goes brown (as the HTML game's weedArt), and a drop
 ## bobs over it asking for water; ready, its buds glint. It sways in the breeze. Meshes are made once per strain,
 ## stage and look, and shared. Owned by the voxel session.
@@ -12,6 +12,9 @@ const W := 44
 const H := 64
 const FOOT := Vector2(21.5, 60.0)   # the stem's foot in the picture
 const VOX := 0.017                  # metres a pixel (a ready plant ~1 m tall)
+const BUSHY := [6]                  # strains built as a round bush, not crossed slabs (Bush Kush: the owner, "shouldn't
+                                    # it be more bushy?") ...
+const BUSH_SCALE := 1.3             # ... and a bit bigger (its picture's smaller than the others')
 
 static var _img: Image
 static var _meshes := {}            # "s,stage,look" -> ArrayMesh
@@ -102,7 +105,7 @@ static func _top(s: int, st: int, lk: int) -> float:
 			top = y
 			break
 	var squash: float = [1.0, 54.0 / 60.0, 47.0 / 60.0][lk]
-	_tops[k] = (FOOT.y - top) * VOX * squash
+	_tops[k] = (FOOT.y - top) * VOX * squash * (BUSH_SCALE if s in BUSHY else 1.0)
 	return _tops[k]
 
 static func _load() -> void:
@@ -136,6 +139,12 @@ static func mesh_for(s: int, st: int, lk: int) -> ArrayMesh:
 				px[Vector2i(x, y)] = c
 	var st_tool := SurfaceTool.new()
 	st_tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if s in BUSHY:
+		_bush(st_tool, px, VOX * BUSH_SCALE, VOX * BUSH_SCALE * squash)
+		st_tool.generate_normals()
+		var bm := st_tool.commit()
+		_meshes[key] = bm
+		return bm
 	var sx := VOX
 	var sy := VOX * squash
 	for slab in 2:
@@ -151,6 +160,89 @@ static func mesh_for(s: int, st: int, lk: int) -> ArrayMesh:
 	var m := st_tool.commit()
 	_meshes[key] = m
 	return m
+
+## A round bush from the picture (px: its pixels -> colours): each row a disc of cubes as wide as the row, the picture
+## its outline from the front and the back, again (a couple of rows lower, so it's not the same) from the sides, and
+## from the corners the two together; each side shows the picture's leaves as seen from that way, darker deeper in.
+## Only the faces showing are made.
+static func _bush(t: SurfaceTool, px: Dictionary, sx: float, sy: float) -> void:
+	var cx := int(FOOT.x)
+	var rows := {}                  # y -> [left, right] (picture x)
+	for p: Vector2i in px:
+		var r: Array = rows.get(p.y, [p.x, p.x])
+		rows[p.y] = [mini(int(r[0]), p.x), maxi(int(r[1]), p.x)]
+	var R := 22
+	var NX := 2 * R + 1
+	var NY := int(FOOT.y)
+	var cells := PackedByteArray()
+	cells.resize(NX * NX * NY)
+	var cols := {}                  # cell index -> colour
+	var at := func(x: int, y: int) -> Variant:
+		return px.get(Vector2i(x, y))
+	for y in NY:
+		if not rows.has(y):
+			continue
+		var reach := maxi(cx - int(rows[y][0]), int(rows[y][1]) - cx) + 1
+		var ys := clampi(y + 2, 0, NY - 1)        # (the sides' outline: the picture a couple of rows down)
+		for vz in range(-R, R + 1):
+			for vx in range(-R, R + 1):
+				var d := sqrt(float(vx * vx + vz * vz))
+				if d > reach:
+					continue
+				# in it if it's inside the front's outline (the picture across x) or the side's (across z)
+				var front = at.call(cx + vx, y) if absi(vx) >= absi(vz) else null
+				var side = at.call(cx - vz, ys) if absi(vz) >= absi(vx) else null
+				if front == null and side == null and d > reach * 0.72:
+					continue
+				# its colour: the picture as seen from the way it faces (from the front or back: across x; from the
+				# sides: across z, mirrored round the back), else the nearest the picture has in the row
+				var c = at.call(cx + vx, y) if absi(vz) >= absi(vx) else at.call(cx + (-vz if vx > 0 else vz), ys)
+				if c == null:
+					c = front if front != null else side
+				if c == null:
+					for k in range(1, reach + 1):
+						c = at.call(cx + k, y) if vx >= 0 else at.call(cx - k, y)
+						if c != null:
+							break
+				if c == null:
+					continue
+				var i := (y * NX + (vz + R)) * NX + (vx + R)
+				cells[i] = 1
+				var deep := clampf(d / float(reach), 0.0, 1.0)
+				cols[i] = (c as Color) * (0.7 + 0.3 * deep)
+	var dirs := [[Vector3i(1, 0, 0), 0.85], [Vector3i(-1, 0, 0), 0.85], [Vector3i(0, 1, 0), 1.0], [Vector3i(0, -1, 0), 0.6], [Vector3i(0, 0, 1), 0.95], [Vector3i(0, 0, -1), 0.8]]
+	for i: int in cols:
+		var vx := i % NX - R
+		var vz := (i / NX) % NX - R
+		var y := i / (NX * NX)
+		var c: Color = cols[i]
+		var o := Vector3(vx * sx - sx * 0.5, (FOOT.y - float(y) - 1.0) * sy, vz * sx - sx * 0.5)
+		for dd in dirs:
+			var n: Vector3i = dd[0]
+			var nx := vx + n.x
+			var nz := vz + n.z
+			var ny := y - n.y               # (picture rows run down; up is a row less)
+			if nx >= -R and nx <= R and nz >= -R and nz <= R and ny >= 0 and ny < NY and cells[(ny * NX + (nz + R)) * NX + (nx + R)] == 1:
+				continue
+			_face(t, o, Vector3(sx, sy, sx), n, Color(c.r * float(dd[1]), c.g * float(dd[1]), c.b * float(dd[1])))
+
+## One face of a cube at o (its low corner) of size s, facing n
+static func _face(t: SurfaceTool, o: Vector3, s: Vector3, n: Vector3i, c: Color) -> void:
+	var q: Array
+	if n.x != 0:
+		var x := o.x + (s.x if n.x > 0 else 0.0)
+		q = [Vector3(x, o.y, o.z), Vector3(x, o.y + s.y, o.z), Vector3(x, o.y + s.y, o.z + s.z), Vector3(x, o.y, o.z + s.z)]
+	elif n.y != 0:
+		var y := o.y + (s.y if n.y > 0 else 0.0)
+		q = [Vector3(o.x, y, o.z), Vector3(o.x, y, o.z + s.z), Vector3(o.x + s.x, y, o.z + s.z), Vector3(o.x + s.x, y, o.z)]
+	else:
+		var z := o.z + (s.z if n.z > 0 else 0.0)
+		q = [Vector3(o.x, o.y, z), Vector3(o.x + s.x, o.y, z), Vector3(o.x + s.x, o.y + s.y, z), Vector3(o.x, o.y + s.y, z)]
+	# (wound to face n: flipped for the ones facing the positive way)
+	var order := [0, 1, 2, 0, 2, 3] if (n.x + n.y + n.z) < 0 else [0, 2, 1, 0, 3, 2]
+	for k in order:
+		t.set_color(c)
+		t.add_vertex(q[k])
 
 # a pixel's cube: its front and back always, its sides where the picture has no neighbour (nb: +x, -x, up, down in the
 # picture); slab 1 is turned a quarter round (its across is z)

@@ -707,8 +707,8 @@ func _tilled_at(eye: Vector3, fwd: Vector3) -> int:
 func _prop_line(p: String) -> String:
 	var farm: VoxelFarm = yard.farm
 	match p:
-		"crate0", "crate1":
-			var s := 0 if p == "crate0" else 1
+		"crate0", "crate1", "crate2":
+			var s: int = VoxelFarm.SEED_BINS[int(p.trim_prefix("crate"))]
 			var st: Dictionary = VoxelFarm.STRAINS[s]
 			return ("E  buy a %s seed: $%d  (you've $%d)" if cash >= int(st.seed) else "%s seed: $%d (you've $%d: kills pay)") % [st.name, int(st.seed), cash]
 		"buyer":
@@ -732,8 +732,8 @@ func _prop_line(p: String) -> String:
 func _farm_prop(p: String) -> void:
 	var farm: VoxelFarm = yard.farm
 	match p:
-		"crate0", "crate1":
-			var s := 0 if p == "crate0" else 1
+		"crate0", "crate1", "crate2":
+			var s: int = VoxelFarm.SEED_BINS[int(p.trim_prefix("crate"))]
 			if farm.buy(s):
 				sound.play("item_pick", Vector3.INF, -4.0)
 				say("+1 %s seed ($%d left)" % [VoxelFarm.STRAINS[s].name, cash], 1.5)

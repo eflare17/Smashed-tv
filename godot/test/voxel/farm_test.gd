@@ -99,7 +99,9 @@ func _solo() -> bool:
 			farm.from_data({})
 			var nl: Dictionary = VoxelFarm.STRAINS[0]
 			var ww: Dictionary = VoxelFarm.STRAINS[5]
-			check(VoxelFarm.STRAINS.size() == 6 and nl.mins == 4.0 and nl.waves == 2 and nl.buds == 3 and nl.price == 40 and nl.seed == 10 and ww.mins == 15.0 and ww.waves == 6, "the HTML game's six strains (NL 4 min / 2 waves / 3 buds / $40, seed $10; WW 15 min / 6 waves)")
+			var bk: Dictionary = VoxelFarm.STRAINS[6]
+			check(VoxelFarm.STRAINS.size() == 7 and bk.short == "BK" and int(bk.seed) > 0 and VoxelFarm.SEED_BINS.has(6), "Bush Kush, the seventh strain, sold at the crate")
+			check(nl.mins == 4.0 and nl.waves == 2 and nl.buds == 3 and nl.price == 40 and nl.seed == 10 and ww.mins == 15.0 and ww.waves == 6, "the HTML game's six strains (NL 4 min / 2 waves / 3 buds / $40, seed $10; WW 15 min / 6 waves)")
 			# cash from a kill
 			var b := VoxelBody.new()
 			arena.add_child(b)
@@ -111,7 +113,9 @@ func _solo() -> bool:
 			var hs := VoxelAnnouncer.HEADSHOT_CASH if VoxelAnnouncer.level > 0 else 0     # (the head's off: the announcer's headshot bonus on top)
 			check(arena.cash == 5 + hs, "a brute killed: $5 (+$%d headshot; cash $%d)" % [hs, arena.cash])
 			arena.cash = 12
-			_look_at(VoxelFarm.CRATE + Vector3(-0.3, 0.4, 0))
+			var eye := VoxelFarm.CRATE + Vector3(0.6, 1.6, 1.5)
+			check(farm.prop_at(eye, (VoxelFarm.CRATE + Vector3(0.6, 0.4, 0) - eye).normalized()) == "crate2", "the seed crate's third bin (Bush Kush)")
+			_look_at(VoxelFarm.CRATE + Vector3(-0.6, 0.4, 0))
 			mark = t
 			step = 1
 		1:

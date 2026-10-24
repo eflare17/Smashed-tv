@@ -292,8 +292,14 @@ untouched, as the owner chose)
 ### Farming (21 Oct, the owner's Stage 5: "bring the weed growing mechanics across", "hoe dirt into rows, plant seeds,
 watering can", "rebuild the fertilising system from scratch", "worm farms")
 
-- **The HTML game's weed growing** (b332, `FARM.md`), its numbers (`VoxelFarm.STRAINS`): six strains; Northern Lights
-  ($10) and Sour Diesel ($30) seeds at the seed crate; a plant grows in real time (NL 4 min ... White Widow 15),
+- **The HTML game's weed growing** (b332, `FARM.md`), its numbers (`VoxelFarm.STRAINS`): six strains, and a seventh
+  of the owner's own (24 Oct, "I want this plant added", their pixel picture: **Bush Kush**, BK, $35 seed, 8 min / 4
+  waves, 3 buds, $110; a seventh row in `weed_sheet.png`: their 32 x 32 picture as the ready plant, its yellow tips
+  the buds, green-tipped for the grown stage, shrunk by majority colour for young and seedling, on a stem; the seed
+  crate's third bin, `SEED_BINS`; "shouldn't it be more bushy?": `VoxelPlant.BUSHY` builds it as a round bush, not
+  crossed slabs: each picture row a disc of cubes, the picture its outline from the front and (two rows lower) the
+  sides, each side coloured from the picture as seen that way, darker inside, only the showing faces; 1.3x the
+  others' cube size; ~70 ms to build a stage the first time, cached); Northern Lights ($10), Sour Diesel ($30) and Bush Kush seeds at the seed crate; a plant grows in real time (NL 4 min ... White Widow 15),
   watered at full speed for 3 minutes, dry at half, droops and wants water, dry 2 minutes it wilts and loses a bud;
   seedling, young, fan leaves, ready with buds; E harvests; the buyer's crate pays a plant's price for all its buds. A
   wave cleared jumps everything ahead (NL 2 waves ... WW 6), where a wave here is 8 of the arena's one-at-a-time

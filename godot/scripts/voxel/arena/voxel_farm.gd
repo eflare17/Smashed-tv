@@ -25,7 +25,10 @@ const STRAINS := [
 	{"name": "Blue Dream", "short": "BD", "price": 140, "mins": 9.0, "waves": 4, "buds": 3, "seed": 0},
 	{"name": "Acapulco Gold", "short": "AG", "price": 150, "mins": 10.0, "waves": 4, "buds": 2, "seed": 0},
 	{"name": "White Widow", "short": "WW", "price": 300, "mins": 15.0, "waves": 6, "buds": 2, "seed": 0},
+	# (the owner's own plant, 24 Oct: "I want this plant added": a big bushy one, its yellow tips the buds)
+	{"name": "Bush Kush", "short": "BK", "price": 110, "mins": 8.0, "waves": 4, "buds": 3, "seed": 35},
 ]
+const SEED_BINS := [0, 1, 6]    # the seed crate's bins, left to right: the strain each sells
 const WET_FOR := 180.0          # seconds a watering lasts ...
 const WILT_AFTER := 120.0       # ... then seconds dry before it wilts
 const DRY_SPEED := 0.5
@@ -351,7 +354,7 @@ static func bud_id(s: int) -> String:
 ## Items for VoxelItems: a seed and a bud of each strain, the castings.
 static func items() -> Dictionary:
 	var out := {}
-	var leaf := [Color8(60, 130, 50), Color8(150, 190, 60), Color8(110, 60, 140), Color8(90, 160, 170), Color8(200, 160, 50), Color8(220, 225, 210)]
+	var leaf := [Color8(60, 130, 50), Color8(150, 190, 60), Color8(110, 60, 140), Color8(90, 160, 170), Color8(200, 160, 50), Color8(220, 225, 210), Color8(143, 187, 54)]
 	for s in STRAINS.size():
 		var st: Dictionary = STRAINS[s]
 		out[seed_id(s)] = {"name": "%s seed" % st.name, "col": Color8(210, 196, 150), "stack": 99,
@@ -536,9 +539,10 @@ func hint(key: int) -> String:
 		s += ", fed x%d" % int(b.fed)
 	return s
 
-## What's at the props: "crate0" / "crate1" (the seed bins), "buyer", "tank", "wormery", or "".
+## What's at the props: "crate0" / "crate1" / "crate2" (the seed bins: SEED_BINS), "buyer", "tank", "wormery", or "".
 func prop_at(eye: Vector3, dir: Vector3, reach := 2.4) -> String:
-	var boxes := {"crate0": AABB(CRATE + Vector3(-0.6, 0, -0.3), Vector3(0.6, 0.8, 0.6)), "crate1": AABB(CRATE + Vector3(0.0, 0, -0.3), Vector3(0.6, 0.8, 0.6)),
+	var boxes := {"crate0": AABB(CRATE + Vector3(-0.9, 0, -0.3), Vector3(0.6, 0.8, 0.6)), "crate1": AABB(CRATE + Vector3(-0.3, 0, -0.3), Vector3(0.6, 0.8, 0.6)),
+		"crate2": AABB(CRATE + Vector3(0.3, 0, -0.3), Vector3(0.6, 0.8, 0.6)),
 		"buyer": AABB(BUYER + Vector3(-0.6, 0, -0.35), Vector3(1.2, 1.0, 0.7)), "tank": AABB(TANK + Vector3(-0.6, 0, -0.6), Vector3(1.2, 1.6, 1.2)),
 		"wormery": AABB(WORMERY + Vector3(-0.45, 0, -0.35), Vector3(0.9, 1.0, 0.7))}
 	var best := ""
@@ -590,21 +594,22 @@ func _label(text: String, at: Vector3, size := 48) -> void:
 func _props() -> void:
 	var wood := _mat(Color8(176, 136, 86))
 	var dark := _mat(Color8(110, 80, 50))
-	# the seed crate: two bins (Northern Lights left, Sour Diesel right), a SEEDS sign
+	# the seed crate: three bins (Northern Lights, Sour Diesel, Bush Kush), a SEEDS sign
 	var crate := Node3D.new()
 	crate.position = CRATE
 	add_child(crate)
-	_solid(Vector3(1.2, 0.5, 0.6), Vector3(0, 0.25, 0), wood, crate)
-	_solid(Vector3(0.04, 0.55, 0.62), Vector3(0, 0.275, 0), dark, crate)
+	_solid(Vector3(1.8, 0.5, 0.6), Vector3(0, 0.25, 0), wood, crate)
 	for k in 2:
+		_solid(Vector3(0.04, 0.55, 0.62), Vector3(-0.3 + 0.6 * k, 0.275, 0), dark, crate)
+	for k in 3:
 		var seeds := MeshInstance3D.new()
 		var sm := BoxMesh.new()
 		sm.size = Vector3(0.52, 0.04, 0.52)
 		seeds.mesh = sm
-		seeds.material_override = _mat([Color8(70, 130, 50), Color8(160, 190, 60)][k], 0.95)
-		seeds.position = Vector3(-0.3 + 0.6 * k, 0.49, 0)
+		seeds.material_override = _mat([Color8(70, 130, 50), Color8(160, 190, 60), Color8(40, 80, 40)][k], 0.95)
+		seeds.position = Vector3(-0.6 + 0.6 * k, 0.49, 0)
 		crate.add_child(seeds)
-	_label("SEEDS\nNL $10   SD $30", CRATE + Vector3(0, 0.95, -0.1), 40)
+	_label("SEEDS\nNL $10   SD $30   BK $35", CRATE + Vector3(0, 0.95, -0.1), 40)
 	# the buyer's crate (sell your buds), green
 	_solid(Vector3(1.2, 0.8, 0.7), BUYER + Vector3(0, 0.4, 0), _mat(Color8(60, 120, 60)))
 	_label("BUYER\nbuds for cash", BUYER + Vector3(0, 1.2, 0), 40)
