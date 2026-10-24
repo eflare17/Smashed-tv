@@ -27,9 +27,12 @@ const TRIP_DOWN := 1.0 / 18.0   # ... and wearing off
 const SAVE_EVERY := 8.0
 const CAM_Z := 10.0             # the camera's distance (Sand Miner's chunky pixels: ~7 screen pixels a cell at 720p)
 const CAM_EDGE := 9.0           # (it stops short of the world's sides)
-const AMMO_ORDER := ["dirt", "clay", "sand"]
-const AMMO_MAT := {"dirt": MineTiles.DIRT, "clay": MineTiles.CLAY, "sand": MineTiles.SAND}
-const AMMO_NAME := {"dirt": "Dirt", "clay": "Clay (sticks)", "sand": "Sand"}
+const AMMO_ORDER := ["dirt", "clay", "sand", "water"]
+const AMMO_MAT := {"dirt": MineTiles.DIRT, "clay": MineTiles.CLAY, "sand": MineTiles.SAND, "water": MineTiles.WATER}
+const AMMO_NAME := {"dirt": "Dirt", "clay": "Clay (sticks)", "sand": "Sand", "water": "Water (turns lava to stone)"}
+const WATER_CELLS := 6          # a squirt of water: smaller, faster (a hose, not a cannon)
+const WATER_EVERY := 0.07
+const SUCK_RATE := 110.0        # cells of water a second the hose sucks up
 const AMMO_MAX := 600           # cells of each the hopper holds
 const SHOT_CELLS := 14          # cells a shot takes
 const SHOT_EVERY := 0.22
@@ -43,7 +46,8 @@ const TIPS := {
 	"sold": "Spend it at the MECHANIC: a faster drill, a bigger tank, more cargo, a tougher hull, brighter lights.",
 	"hard": "Too hard for your drill: that boulder needs a better bit (the MECHANIC).",
 	"deep": "It gets darker and the rock harder the deeper you go. Better lights help you see the ore.",
-	"lava": "Lava! It runs into your tunnels and burns the hull. Left alone it cools to basalt.",
+	"lava": "Lava! It runs into your tunnels and burns the hull. Spray water on it and it turns to stone you can dig through.",
+	"water": "Water! Hold R to suck it up with the hose. Q picks Water for the launcher: spray it on lava to turn it to stone.",
 	"gas": "Gas pocket! The greenish patches go off when you drill them.",
 	"mush": "A mushroom cave... the spores get in your head (and the controls). Spore clumps sell well. Not all that glitters is gold.",
 	"cops": "You've set off the cop bunker's alarm! Don't let a drone catch you (you'd lose your cargo and some cash). Ram one at speed to smash it, or get up top.",
@@ -132,6 +136,12 @@ var _save_t := 0.0
 var _near := ""
 var ore_box: MineOreBox         # where the cargo's sold: squirted in up top
 var _water_hose := 0.0          # (the hose run out for water: sucking it up)
+var sucking := false            # R held: the hose sucking water up
+var _suck_acc := 0.0
+var _suck_none_t := 0.0
+var _drops: Array = []          # {n, from, t}: water flying up the hose
+var _steam_t := 0.0
+var _spray_t := 0.0
 var _chain: Array = []          # gas pockets about to go off: [time, Vector2]
 var _cave_lights: Array = []
 var _lava_lights: Array[OmniLight3D] = []
@@ -145,7 +155,7 @@ var _soft_dirty := false
 var last_hurt := ""             # what hurt the ship last ("fall", "lava", "rats" ...)
 var _resume := Vector2.INF      # where the ship was left underground (a quit down there): back there next time
 # the launcher (Sand Miner's): dirt, clay and sand the drill brings up, shot where the mouse points
-var ammo := {"dirt": 0, "clay": 0, "sand": 0}
+var ammo := {"dirt": 0, "clay": 0, "sand": 0, "water": 0}
 var ammo_sel := "dirt"
 var aim := Vector2.ZERO         # the world point the mouse is on
 var aiming := false             # the mouse is over the mine (the HUD draws the shot's arc)
@@ -463,6 +473,8 @@ func leave() -> void:
 	sound.stop("mine_engine")
 	sound.stop("mine_prop")
 	sound.stop("mine_booster")
+	sound.stop("mine_suck")
+	sound.stop("mine_spray")
 	sound.stop("mine_siren")
 	critters.stand_down()
 	arena.get_viewport().disable_3d = false
@@ -625,7 +637,9 @@ func _process(dt: float) -> void:
 		ix = float(auto.get("x", 0.0))
 		up = bool(auto.get("up", false))
 		down = bool(auto.get("down", false))
+		sucking = bool(auto.get("suck", false))
 	elif not menu_up:
+		sucking = Input.is_physical_key_pressed(KEY_R)
 		ix = float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT)) - float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 		up = Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP) or Input.is_physical_key_pressed(KEY_SPACE)
 		down = Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN)
@@ -660,7 +674,12 @@ func _process(dt: float) -> void:
 			sound.play("mine_hit", Vector3.INF, -2.0, 0.5)
 			shake(0.3)
 		_touch = 0.0
+	if menu_up and auto == null:
+		sucking = false
 	_launcher(dt, menu_up)
+	_suck(dt)
+	if ship.wet > 0.2:
+		tip("water")
 	_step_nuggets(dt)
 	_step_shots(dt)
 	# fuel
@@ -1153,23 +1172,40 @@ func shot_start() -> Array:
 func shoot() -> void:
 	if _launch_t > 0.0:
 		return
-	_launch_t = SHOT_EVERY
-	if int(ammo[ammo_sel]) < SHOT_CELLS:
-		say("Out of %s: drill some up" % String(AMMO_NAME[ammo_sel]).to_lower(), 1.2)
+	var wet := ammo_sel == "water"
+	var cells := WATER_CELLS if wet else SHOT_CELLS
+	_launch_t = WATER_EVERY if wet else SHOT_EVERY
+	if int(ammo.get(ammo_sel, 0)) < cells:
+		if wet:
+			say("Out of water: hold R in a pool to suck some up", 1.5)
+		else:
+			say("Out of %s: drill some up" % String(AMMO_NAME[ammo_sel]).to_lower(), 1.2)
 		return
-	ammo[ammo_sel] = int(ammo[ammo_sel]) - SHOT_CELLS
+	ammo[ammo_sel] = int(ammo[ammo_sel]) - cells
 	var sv: Array = shot_start()
 	var m := int(AMMO_MAT[ammo_sel])
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(0.22, 0.22, 0.22)
+	bm.size = Vector3(0.14, 0.14, 0.14) if wet else Vector3(0.22, 0.22, 0.22)
 	mi.mesh = bm
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = MineTiles.shades(m)[4]
+	if wet:
+		mat.albedo_color = Color(0.45, 0.75, 1.0)
+		mat.emission_enabled = true
+		mat.emission = Color(0.2, 0.45, 0.8)
+		mat.emission_energy_multiplier = 0.6
 	mi.material_override = mat
 	world.add_child(mi)
-	_shots.append({"n": mi, "p": sv[0], "v": sv[1], "m": m})
-	sound.play("mine_door", Vector3.INF, -12.0, 2.2)
+	var v: Vector2 = sv[1]
+	if wet:
+		v = v.rotated(randf_range(-0.05, 0.05)) * randf_range(0.95, 1.05)     # (a spray, not a rod)
+	_shots.append({"n": mi, "p": sv[0], "v": v, "m": m})
+	if wet:
+		sound.loop("mine_spray", "mine_spray", null, -8.0, 1.0)
+		_spray_t = 0.15
+	else:
+		sound.play("mine_door", Vector3.INF, -12.0, 2.2)
 
 func _step_shots(dt: float) -> void:
 	for i in range(_shots.size() - 1, -1, -1):
@@ -1178,7 +1214,8 @@ func _step_shots(dt: float) -> void:
 		for k in 4:
 			s.v.y -= 12.0 * dt / 4.0
 			var np: Vector2 = s.p + s.v * dt / 4.0
-			if ground.solid_at(np) or ground.count(np, Vector2(0.06, 0.06), -2) > 0 or np.y < -MineGround.D or critters.shot_hit(np):
+			if ground.solid_at(np) or ground.count(np, Vector2(0.06, 0.06), -2) > 0 or ground.count(np, Vector2(0.06, 0.06), -3) > 0 \
+					or np.y < -MineGround.D or critters.shot_hit(np):
 				hit = true
 				break
 			s.p = np
@@ -1186,10 +1223,122 @@ func _step_shots(dt: float) -> void:
 		if hit or s.p.y > 14.0:
 			if hit:
 				var c := MineGround.cell(s.p)
-				ground.sim.deposit(c.x + 0.5, c.y + 0.5, 2.6, int(s.m), int(s.m) == MineTiles.DIRT)
-				sound.play("mine_crumble", Vector3.INF, -8.0, 1.4)
+				if int(s.m) == MineTiles.WATER:
+					ground.sim.deposit(c.x + 0.5, c.y + 0.5, 1.6, MineTiles.WATER, false)
+					# on lava: steam, and the lava it touches goes to stone
+					if ground.count(s.p, Vector2(0.5, 0.5), -4) > 0 and _steam_t <= 0.0:
+						_steam_t = 0.35
+						sound.play("mine_steam", Vector3.INF, -4.0, randf_range(0.9, 1.15))
+						_puff(s.p)
+						tip("lava")
+				else:
+					ground.sim.deposit(c.x + 0.5, c.y + 0.5, 2.6, int(s.m), int(s.m) == MineTiles.DIRT)
+					sound.play("mine_crumble", Vector3.INF, -8.0, 1.4)
 			s.n.queue_free()
 			_shots.remove_at(i)
+
+## R held: the hose out of its back sucking up the water round its nozzle (into the launcher's tank), drops flying
+## up it, a gurgle.
+func _suck(dt: float) -> void:
+	_steam_t -= dt
+	_spray_t -= dt
+	if _spray_t <= 0.0 and sound.playing("mine_spray"):
+		sound.stop("mine_spray")
+	_water_hose = move_toward(_water_hose, 1.0 if sucking else 0.0, dt * 4.0)
+	var got := 0
+	var have := int(ammo.get("water", 0))
+	if sucking and _water_hose >= 1.0 and have < AMMO_MAX:
+		_suck_acc = minf(_suck_acc + SUCK_RATE * dt, 20.0)
+		var want := mini(int(_suck_acc), AMMO_MAX - have)
+		if want > 0:
+			var nz := ship.nozzle_at()
+			var c := MineGround.cell(nz)
+			var r := 9          # (cells round the nozzle: a bit over a metre)
+			var found: PackedInt32Array = ground.sim.find(MineTiles.WATER, c.x - r, c.y - r, c.x + r, c.y + r, want)
+			# (and round the ship, when it's sat in it)
+			if found.size() / 2 < want:
+				var sc := MineGround.cell(ship.p)
+				found.append_array(ground.sim.find(MineTiles.WATER, sc.x - 6, sc.y - 6, sc.x + 6, sc.y + 6, want - found.size() / 2))
+			for k in range(0, found.size(), 2):
+				if ground.sim.get_cell(found[k], found[k + 1]) != MineTiles.WATER:
+					continue
+				ground.sim.set_cell(found[k], found[k + 1], MineTiles.AIR)
+				got += 1
+				if _drops.size() < 40 and k % 6 == 0:
+					_drop(MineGround.world(Vector2i(found[k], found[k + 1])))
+			_suck_acc -= float(got)
+			ammo["water"] = have + got
+	if got > 0:
+		sound.loop("mine_suck", "mine_suck", null, -7.0, 1.0)
+		_suck_none_t = 0.0
+	else:
+		if sound.playing("mine_suck") and (not sucking or _suck_none_t > 0.2):
+			sound.stop("mine_suck")
+		if sucking and _water_hose >= 1.0:
+			_suck_none_t += dt
+			if _suck_none_t > 0.6 and have < AMMO_MAX:
+				_suck_none_t = -2.0
+				say("No water here: find a pool", 1.2)
+			elif have >= AMMO_MAX and _suck_none_t > 0.3:
+				_suck_none_t = -2.0
+				say("The water tank's full", 1.2)
+	# the drops flying up the hose
+	var nzp := ship.nozzle_at()
+	for i in range(_drops.size() - 1, -1, -1):
+		var d: Dictionary = _drops[i]
+		d.t += dt * 4.0
+		var p: Vector2 = (d.from as Vector2).lerp(nzp, minf(1.0, d.t * d.t))
+		(d.n as MeshInstance3D).position = Vector3(p.x, p.y, 0.5)
+		if d.t >= 1.0:
+			d.n.queue_free()
+			_drops.remove_at(i)
+
+func _drop(from: Vector2) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.08, 0.08, 0.08)
+	mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.5, 0.8, 1.0)
+	mat.emission_enabled = true
+	mat.emission = Color(0.25, 0.5, 0.9)
+	mat.emission_energy_multiplier = 0.8
+	mi.material_override = mat
+	mi.position = Vector3(from.x, from.y, 0.5)
+	world.add_child(mi)
+	_drops.append({"n": mi, "from": from, "t": 0.0})
+
+## A puff of steam at c (water on lava)
+func _puff(c: Vector2) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.emitting = true
+	p.amount = 26
+	p.lifetime = 1.2
+	p.explosiveness = 0.8
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 45.0
+	p.initial_velocity_min = 0.5
+	p.initial_velocity_max = 1.6
+	p.gravity = Vector3(0, 0.9, 0)
+	p.scale_amount_min = 0.05
+	p.scale_amount_max = 0.14
+	var bm := BoxMesh.new()
+	bm.size = Vector3.ONE
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.95, 0.96, 1.0)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	bm.material = m
+	p.mesh = bm
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1, 1, 1, 0.8))
+	grad.set_color(1, Color(1, 1, 1, 0.0))
+	p.color_ramp = grad
+	p.position = Vector3(c.x, c.y, 0.6)
+	world.add_child(p)
+	get_tree().create_timer(1.5).timeout.connect(p.queue_free)
 
 ## A burst of sparks at c.
 func spark(c: Vector2, col: Color, n := 14) -> void:

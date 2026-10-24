@@ -107,7 +107,8 @@ const INFO := {
 	SAND: {"name": "sand", "hard": 0.05, "need": 0, "cargo": "", "per": 0, "f": ["solid", "falls", "dig", "toplit"], "col": [224, 198, 122]},
 	WATER: {"name": "water", "hard": -1.0, "need": 0, "cargo": "", "per": 0, "f": ["liquid", "anim", "wet"],
 		"shades": [[40, 100, 200], [44, 108, 208], [48, 114, 214], [50, 118, 222], [54, 124, 226], [58, 130, 230], [64, 138, 234], [72, 146, 238]]},
-	OBSIDIAN: {"name": "obsidian", "hard": 2.4, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "rim"], "col": [30, 22, 44]},
+	OBSIDIAN: {"name": "obsidian", "hard": 1.1, "need": 0, "cargo": "", "per": 0, "f": ["solid", "dig", "rim", "twinkle"],
+		"shades": [[62, 48, 86], [54, 42, 76], [70, 56, 98], [46, 36, 66], [58, 46, 82], [96, 82, 130], [40, 30, 58], [30, 22, 44]]},
 }
 
 ## The back walls: their colour (or a material's, darkened as Sand Miner did) and pattern (0 grain, 1 brick, 2 planks,

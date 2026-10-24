@@ -221,7 +221,7 @@ func _draw() -> void:
 	for p in _pops:
 		var k: float = p.t / 1.8
 		_text(Vector2(190, 120 - k * 60.0), p.text, 24, Color(p.col.r, p.col.g, p.col.b, 1.0 - k * k))
-	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
+	_text(Vector2(14, size.y - 14), "A/D drive (push into rock to drill)   S drill down   W/Space fly   E use   right click / F launch   Q ammo   R suck water   1 dynamite  2 repair  3 teleport   F10 settings", 13, Color(0.8, 0.8, 0.85))
 
 ## The launcher's arc, from the ship toward the mouse (while right is held, or always faintly)
 func _arc() -> void:

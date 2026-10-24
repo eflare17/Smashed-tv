@@ -127,7 +127,7 @@ func _process(dt: float) -> bool:
 				g.set_box(Vector2(x, -3.0), Vector2(0.7, 3.0), MineTiles.DIRT)
 				m.ship.place(Vector2(x, MineShip.HALF + 0.01))
 				v.fuel = m.fuel
-				m.ammo = {"dirt": 0, "clay": 0, "sand": 0}
+				m.ammo = {"dirt": 0, "clay": 0, "sand": 0, "water": 0}
 				m.auto = {"down": true}
 				next(3)
 		3:
@@ -350,7 +350,7 @@ func _process(dt: float) -> bool:
 				g.set_box(at2 + Vector2(2.5, 0.5), Vector2(2.0, 1.2), MineTiles.AIR)
 				g.set_box(at2 + Vector2(5.0, 0.5), Vector2(0.5, 1.5), MineTiles.BASALT)
 				v.clay = g.count(at2 + Vector2(4.2, 0.5), Vector2(0.6, 1.2), MineTiles.CLAY)
-				m.ammo = {"dirt": 100, "clay": 100, "sand": 100}
+				m.ammo = {"dirt": 100, "clay": 100, "sand": 100, "water": 0}
 				m.ammo_sel = "clay"
 				m.aim = at2 + Vector2(5.0, 0.3)
 				m._launch_t = 0.0
@@ -409,6 +409,41 @@ func _process(dt: float) -> bool:
 				var fast: float = climb.call()
 				check(absf(slow - 5.0) < 0.2 and absf(fast - 9.5) < 0.2 and m.ship.lift_level == 2 and int(m.upg.lift) == 2,
 					"the lift: propeller climbs %.1f m/s, boosters %.1f" % [slow, fast])
+				# the hose: a pool behind the ship, R held: it's sucked up into the launcher's tank
+				var at := sit(30.0, 40.0)
+				g.set_box(at + Vector2(-2.2, 0.0), Vector2(1.7, 0.5), MineTiles.AIR)
+				g.set_box(at + Vector2(-2.2, -0.6), Vector2(1.8, 0.12), MineTiles.STONE)
+				g.set_box(at + Vector2(-2.2, -0.15), Vector2(1.6, 0.32), MineTiles.WATER)
+				m.ship.face = 1
+				m.ammo["water"] = 0
+				v.pool = at + Vector2(-2.2, -0.1)
+				v.w0 = g.count(v.pool, Vector2(1.7, 0.5), MineTiles.WATER)
+				m.auto = {"suck": true}
+				next(60)
+		60:
+			if e > 1.5:
+				m.auto = {}
+				var w1 := g.count(v.pool, Vector2(1.7, 0.5), MineTiles.WATER)
+				check(int(m.ammo.water) > 60 and w1 <= int(v.w0) - 60, "sucked up water with the hose: %d in the tank (the pool %d -> %d)" % [int(m.ammo.water), int(v.w0), w1])
+				# lava down past a ledge: spray it
+				var at2 := sit(36.0, 90.0)
+				g.set_box(at2 + Vector2(2.3, -0.55), Vector2(1.75, 1.05), MineTiles.AIR)
+				g.set_box(at2 + Vector2(2.3, -1.7), Vector2(1.9, 0.12), MineTiles.STONE)
+				g.set_box(at2 + Vector2(2.5, -1.35), Vector2(1.4, 0.25), MineTiles.LAVA)
+				m.ship.face = 1
+				m.ammo_sel = "water"
+				m.ammo["water"] = maxi(int(m.ammo.water), 400)
+				v.at2 = at2
+				next(61)
+		61:
+			m.aim = (v.at2 as Vector2) + Vector2(2.5, -1.2)
+			if m._launch_t <= 0.0:
+				m.shoot()
+			if e > 2.5:
+				var ob := g.count((v.at2 as Vector2) + Vector2(2.5, -1.3), Vector2(1.6, 0.45), MineTiles.OBSIDIAN)
+				check(ob > 20, "sprayed water on lava: it went to stone (%d obsidian)" % ob)
+				var oi := MineTiles.info(MineTiles.OBSIDIAN)
+				check(int(oi.need) == 0 and float(oi.hard) <= 1.2, "and that stone's soft enough for any drill (hard %.1f)" % float(oi.hard))
 				sit(20.0, 60.0)
 				m.leave()
 				next(20)
