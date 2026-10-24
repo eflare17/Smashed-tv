@@ -354,8 +354,8 @@ func _show(dt: float) -> void:
 			burning = true
 		if v == null:
 			v = VoxelChicken.carcass(k % VoxelChicken.COATS.size(), false, k, false, true)
-			v.scale = Vector3.ONE * 0.75
-			v.position = Vector3(-0.32 + k * 0.32 - 0.1, GRILL_Y - 0.01, 0.0)
+			v.scale = Vector3.ONE * 0.62
+			v.position = Vector3(0.3 - k * 0.3 - 0.08, GRILL_Y - 0.01, 0.02)      # (the first on the left, seen from the yard)
 			v.rotation.y = 0.15 * (k - 1)
 			add_child(v)
 			_views[k] = v

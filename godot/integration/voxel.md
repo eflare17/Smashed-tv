@@ -370,7 +370,7 @@ a nesting area; chickens can be let out to roam the yard; max chicken cap tied t
   stuck out stiff, its feathers (its own colour) scattered round. It stays (up to 24 lie about; saved with the rest).
   Look at it and E ("E  pick up the chicken carcass"; top-down, stand on it) puts a **chicken carcass** in the
   backpack. Sold at the buyer's crate ($15), or E at the shredder grinds it with the other gore (a quarter of a bag of
-  blood and bone). There's no barbecue or cooking in the block game yet, so it can't be cooked. A dead chicken frees
+  blood and bone), or cooked on the barbecue (below). A dead chicken frees
   its place in the coop (an egg waiting for room hatches into it).
 - **Co-op**: the host's chickens are the real ones. A guest's blow goes to the host as a "hit" (the guest sees the
   feathers and hears the squawk at once), the host decides (in the coop or not, dead or not) and sends the kill's
@@ -390,6 +390,39 @@ a nesting area; chickens can be let out to roam the yard; max chicken cap tied t
   `chickens_kill_topdown.png`. In the Windows zip (`downloads/SmashedVoxelArena-win64.zip`, the .pck rebuilt).
 
 Chickens kill: done
+
+### The barbecue (24 Oct, the owner: "add a barbecue so you can cook the chicken carcass")
+
+- **Where** (`voxel_barbecue.gd`, `VoxelBarbecue`): a gas barbecue on a steel stand in the back yard against the south
+  fence, between the shredder and the water tank (`AT` 18.0, 38.45), facing the yard: enamel firebox, a grate, the
+  hood open behind with its thermometer, three knobs, a red gas bottle on the shelf, a side table with tongs, a "BBQ"
+  sign. Solid: you bump into it.
+- **Cooking**: look at it and E ("E  put a chicken carcass on"; top-down, stand next to it) takes a chicken carcass
+  out of your backpack and lays it on the grill (three at a time; the burners catch with a click and a whoomp). While
+  anything's on, the burners glow orange under the grate, an orange light flickers, smoke rises and it sizzles; each
+  chicken browns from plucked pink to golden. After 30 s it's done ("Chicken's roasted: E at the barbecue takes it
+  off"): E takes everything done off as **roast chickens**, the same item a flamethrower or laser kill
+  gives (H eats one, +45 health; the buyer pays $25, a raw carcass $15). The line shows each one ("cooking 45%,
+  roasted (burning soon!)").
+- **Left on too long**: past 75 s it burns black, the smoke turns dark: a **burnt chicken** ($2 at the buyer; the
+  shredder takes it, worth a little; it's not eaten).
+- **Co-op**: the host's (like the shredder). A guest's put and take go to the host as requests (network message "Q":
+  "put", "take"), the host gives back what they got ("give": the roast or burnt chicken; a carcass back if the grill
+  filled up first); the grill goes to the guest every 2 s and on any change, and both games cook along meanwhile so
+  it browns in both. "Chicken's roasted" and "Your mate took the chicken off the barbecue" are said in both games.
+  Saved with the rest (mid-cook too).
+- Sounds (`assets/voxel/tools/sfx_barbecue.py`): `sizzle` (a loop: fat spitting, the gas's roar), `bbq_light`,
+  `bbq_tongs`.
+- Tests: `test/voxel/barbecue_test.gd` (27 checks alone: in the yard and solid; the lines with nothing, with
+  carcasses, cooking, roasted, burnt; E puts one on, three at most; it browns; roasted after 30 s and said; E takes
+  it off as a roast chicken; burnt after 75 s, black; eaten with H; sold; the burnt one shredded, not the roast ones;
+  top-down; saved mid-cook. With `--host` / `--join` 2 + 4 co-op checks: the guest's carcass on the host's grill,
+  cooked in both, the guest takes it off and gets the roast chicken, not the host). Screenshots
+  (`test/voxel/barbecue_shots.gd`): `voxel_shots/barbecue_yard.png`, `barbecue_cooking.png` (just on, half done,
+  roasted), `barbecue_take_off.png`, `barbecue_taken.png`, `barbecue_burnt.png`, `barbecue_topdown.png`. In the
+  Windows zip.
+
+Barbecue: done
 
 ### The shredder, blood and bone, burning (21 Oct, the owner's Stage 6.5: "gore pieces become a resource: shred them
 into bags of blood and bone fertiliser for crops, the worm farm and chickens; shredder: throw limbs in the top, it
