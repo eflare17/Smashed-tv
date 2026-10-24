@@ -427,14 +427,12 @@ func save() -> void:
 		d["barbecue"] = arena.yard.barbecue.save_data()
 	if arena.get("mine"):
 		d["mine"] = arena.mine.save_data()
-	var f := FileAccess.open(save_path, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(d))
+	VoxelSaveFile.write_text(save_path, JSON.stringify(d))      # (safely, a backup kept now and then)
 
 func load_save() -> void:
-	if save_path == "" or not FileAccess.file_exists(save_path):
+	if save_path == "":
 		return
-	var d = JSON.parse_string(FileAccess.get_file_as_string(save_path))
+	var d = VoxelSaveFile.read_json(save_path)      # (a broken save: its newest good backup)
 	if typeof(d) != TYPE_DICTIONARY:
 		return
 	if typeof(d.get("inv")) == TYPE_ARRAY:

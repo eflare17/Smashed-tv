@@ -299,8 +299,7 @@ func _build() -> void:
 	hud = MineHud.new()
 	_root.add_child(hud)
 	hud.setup(self)
-	var gb := _read_ground()
-	if gb.is_empty() or not ground.load_bytes(gb):
+	if not _load_ground():
 		ground.generate(randi() % 1000000 + 1, _flags())
 		_ground_dirty = true
 	ground.build_all()
@@ -688,11 +687,18 @@ func _ground_path() -> String:
 	var sp := String(arena.stash.save_path) if arena.stash else ""
 	return "" if sp == "" else sp.get_basename() + "_mine.bin"
 
-func _read_ground() -> PackedByteArray:
+## The saved ground loaded: the file, or (it won't load) its newest backup that does. False: none (a new ground's due)
+func _load_ground() -> bool:
 	var path := _ground_path()
-	if path != "" and FileAccess.file_exists(path):
-		return FileAccess.get_file_as_bytes(path)
-	return _ground_mem
+	if path == "":
+		return not _ground_mem.is_empty() and ground.load_bytes(_ground_mem)
+	for p in VoxelSaveFile.candidates(path):
+		if ground.load_bytes(FileAccess.get_file_as_bytes(p)):
+			if p != path:
+				push_warning("VoxelMine: the ground's file wouldn't load, loaded its backup %s" % p)
+				_ground_dirty = true
+			return true
+	return false
 
 ## The ground written out, if it's changed since
 func _write_ground() -> void:
@@ -704,9 +710,7 @@ func _write_ground() -> void:
 	if path == "":
 		_ground_mem = b
 		return
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f:
-		f.store_buffer(b)
+	VoxelSaveFile.write_bytes(path, b)
 
 func load_data(d) -> void:
 	if typeof(d) != TYPE_DICTIONARY:
@@ -741,8 +745,7 @@ func load_data(d) -> void:
 	_save = d
 	if _built:
 		worm.spawn(worm_dead)
-	var gb := _read_ground() if _built else PackedByteArray()
-	if _built and not gb.is_empty() and ground.load_bytes(gb):
+	if _built and _load_ground():
 		critters.clear()
 		ground.build_all()
 		_feature_lights()
