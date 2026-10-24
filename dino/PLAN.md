@@ -165,6 +165,25 @@ hunters hurt. Changed:
   the player who moves early does best.
 - All numbers PLACEHOLDERS. Tests: 47 checks, all passing.
 
+## Overnight, 25-26 Oct: the five review items
+
+1. **Camera:** zoomed in 1.5x and sat on the ground (30 px of dirt under the feet), looking a little ahead of
+   where you face. The dinosaurs fill the screen instead of the sky. Pterodactyls circle lower to stay in view.
+2. **Grazers are hard to catch:** the big one runs at 105 (you walk at 75) but only in 1.4 s bursts, then has to
+   catch its breath for 1.3 s. Corner it against a rock, catch it tired, or use the big-bite lunge.
+3. **Level-ups:** a slower curve (50 XP, then +35 a level, was 30 and +20), bigger jumps per pick, and a pool of
+   seven: BITE SIZE, SPEED, ATTACK SPEED, TOUGH HIDE (+30 health), LUNGE (+25% further), QUICK CHARGE (the big
+   bite charges 30% faster), DEATH SHAKE (shake 30% longer, bigger rip). Each level shows three of them. A level
+   earned mid-bite, mid-grab or mid-charge waits until that's over.
+4. **The big bite works from the start:** hunters now come at your size (a touch bigger each area), and nothing
+   can break free unless it's at least 1.25x your mass. The big grazer still can until you've grown.
+5. **Tuned by bot runs** (the bot is a clumsy player, so a person should do better than these): the danger bar
+   now takes 150 s to fill and the herds stay 60 s; hunters bite for 12, pterodactyls 8; area difficulty ramps a
+   little slower. Results: a camper dies in 4-6 minutes in area 1 (level 7-9); a bot that leaves at 30% danger
+   reaches area 2 and lives 7.5-8 minutes (level 7-10). The target of a good human run reaching area 3-4 in
+   8-10 minutes looks about right; say if it's too hard or too easy.
+- Tests: 48 checks, all passing.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

@@ -15,7 +15,7 @@ const LUNGE_TIME := 0.16
 const LUNGE_SPEED := 230.0
 const RECOVER_TIME := 0.7
 const STAGGER_TIME := 0.35
-const DAMAGE := 14.0
+const DAMAGE := 12.0
 const JUMP := 190.0
 
 var _did_hit := false

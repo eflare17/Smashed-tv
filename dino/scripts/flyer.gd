@@ -10,7 +10,7 @@ enum { CIRCLE = 20, AIM, DIVE, CLIMB, STAGGER, GROUNDED }
 
 const FLY := 70.0
 const DIVE_SPEED := 200.0
-const DAMAGE := 10.0
+const DAMAGE := 8.0
 ## Under this much wing left, it can't fly.
 const CRIPPLED := 0.6
 
@@ -27,7 +27,7 @@ func _ready() -> void:
 	state = CIRCLE
 	on_ground = false
 	_t = randf_range(2.5, 4.0)
-	_home_y = randf_range(60.0, 105.0)
+	_home_y = randf_range(100.0, 130.0)
 
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 	if held_step(delta, rng):

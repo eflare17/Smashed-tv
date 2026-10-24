@@ -15,6 +15,10 @@ extends Node2D
 const DinoArt := preload("dino_art.gd")
 
 const VIEW := Vector2(480, 270)
+## The camera zooms in this much: the fights fill the screen instead of the sky. What it sees is VIEW / ZOOM.
+const ZOOM := 1.5
+## The camera sits so the ground is this far up from the bottom of the screen.
+const GROUND_FROM_BOTTOM := 30.0
 const GROUND_Y := 226.0
 const MAX_CORPSES := 4
 ## A dead body with less than this much of itself left counts as eaten; eating one grows you by GROW.
@@ -24,8 +28,8 @@ const GROW := 0.1
 const XP_KILL_PREY := 10
 const XP_KILL_HUNTER := 25
 ## Seconds in an area before the herds stop coming, and before the danger bar is full. PLACEHOLDER.
-const PREY_DRY := 45.0
-const DANGER_TIME := 120.0
+const PREY_DRY := 60.0
+const DANGER_TIME := 150.0
 ## Of the things sent after you, how many are pterodactyls rather than hunters.
 const FLYER_SHARE := 0.35
 ## Attackers hit this many times harder with the danger bar full; a body is rotten (no healing, half XP) after
@@ -34,12 +38,17 @@ const DANGER_BITE := 2.5
 const ROT_TIME := 30.0
 const ARRIVE_HEAL := 40.0
 const ARRIVE_XP := 40
+## Something has to be this many times your mass before it can break free of a big bite.
+const BREAK_FREE_OVER := 1.25
 const XP_EAT_BITE := 2
 const XP_EAT_ALL := 15
 const HEAL_EAT_BITE := 3.0
 const HEAL_EAT_ALL := 15.0
 ## [name, what it does] for the three level-up choices, in order.
-const UPGRADES := [["BITE SIZE", "bigger chunks"], ["SPEED", "run faster"], ["ATTACK SPEED", "bite more often"]]
+enum { UP_BITE, UP_SPEED, UP_RATE, UP_HEALTH, UP_LUNGE, UP_CHARGE, UP_SHAKE }
+const UPGRADES := [["BITE SIZE", "bigger chunks"], ["SPEED", "run faster"], ["ATTACK SPEED", "bite more often"],
+		["TOUGH HIDE", "more health"], ["LUNGE", "bite from further"], ["QUICK CHARGE", "big bite charges faster"],
+		["DEATH SHAKE", "shake longer, rip more"]]
 
 enum { PLAY, CHOOSE, OVER }
 ## How heavy a bite lands (player_bite).
@@ -75,7 +84,10 @@ var _herd_t := 0.0
 ## Seconds spent in this area (the danger clock), and which warning banners have shown.
 var area_t := 0.0
 var _warned := 0
+var _cam_lead := 0.0
 var _choices := 0
+## Which three upgrades the cards show (indexes into UPGRADES).
+var _offered: Array = []
 var _over_t := 0.0
 var _overlay: Node2D
 var _popups: Array = []   # [text, world pos, seconds left, colour]
@@ -114,6 +126,7 @@ func _ready() -> void:
 	cam = Camera2D.new()
 	cam.limit_top = 0
 	cam.limit_bottom = int(VIEW.y)
+	cam.zoom = Vector2(ZOOM, ZOOM)
 	add_child(cam)
 	hud = Hud.new()
 	hud.picked.connect(_pick)
@@ -195,8 +208,12 @@ func spawn_prey(x: float, kind := Prey.GRAZER) -> Prey:
 	p.kind = kind
 	return _add(p, x)
 
+## Hunters come at about your size (a touch bigger in later areas), so a big bite on one works from the start.
 func spawn_hunter(x: float) -> Hunter:
-	return _add(Hunter.new(), x) as Hunter
+	var h := _add(Hunter.new(), x) as Hunter
+	var s := clampf(player.size * (1.0 + (area_n - 1) * 0.1), 0.6, 1.4)
+	h.scale = Vector2(s, s)
+	return h
 
 ## A pterodactyl, coming in from above the screen at `x`.
 func spawn_flyer(x: float) -> Flyer:
@@ -223,7 +240,7 @@ func _offscreen_x() -> float:
 	var sides := [-1.0, 1.0]
 	sides.shuffle()
 	for s: float in sides:
-		var x: float = cam.get_screen_center_position().x + s * (VIEW.x * 0.5 + 24.0)
+		var x: float = cam.get_screen_center_position().x + s * (VIEW.x * 0.5 / ZOOM + 24.0)
 		if x > 20.0 and x < world_w - 20.0:
 			return x
 	return world_w - 20.0
@@ -231,7 +248,7 @@ func _offscreen_x() -> float:
 ## Seconds between hunters and pterodactyls: shorter the higher your level, the further the area, and the longer
 ## you've stayed in this one. PLACEHOLDER curve.
 func _hunt_gap() -> float:
-	return maxf(1.2, 16.0 - level * 1.5 - (area_n - 1) * 2.0 - area_t * 0.15)
+	return maxf(1.2, 16.0 - level * 1.5 - (area_n - 1) * 1.2 - area_t * 0.12)
 
 ## How many can be after you at once: more with level, area, and time spent here.
 func _hunt_cap() -> int:
@@ -344,7 +361,11 @@ func _process(delta: float) -> void:
 	elif state == CHOOSE and demo:
 		_pick(rng.randi() % 3)
 	_shake *= exp(-9.0 * delta)
-	cam.position = Vector2(clampf(player.position.x, VIEW.x * 0.5, world_w - VIEW.x * 0.5), VIEW.y * 0.5)
+	# looks a little ahead of where you face
+	_cam_lead = lerpf(_cam_lead, player.facing * 22.0, minf(1.0, delta * 2.0))
+	var half_w := VIEW.x * 0.5 / ZOOM
+	cam.position = Vector2(clampf(player.position.x + _cam_lead, half_w, world_w - half_w),
+			GROUND_Y + GROUND_FROM_BOTTOM - VIEW.y * 0.5 / ZOOM)
 	cam.offset = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * _shake * 5.0
 	for pu in _popups:
 		pu[2] -= delta
@@ -376,6 +397,8 @@ func _step(delta: float) -> void:
 		bite = Input.is_action_just_pressed("bite")
 		big = Input.is_action_pressed("big")
 	player.step(delta, move_x, jump, bite, aim, big)
+	# a level-up earned mid-bite is offered once the bite is over
+	_maybe_offer()
 	for c in creatures.duplicate():
 		c.step(delta, player.global_position, rng)
 	_spawners(delta)
@@ -385,8 +408,9 @@ func _step(delta: float) -> void:
 
 # --- levels -----------------------------------------------------------------------------------------------
 
+## XP to the next level: a slower curve than before, so each level is earned and each pick is a bigger jump.
 func xp_needed() -> int:
-	return 30 + (level - 1) * 20
+	return 50 + (level - 1) * 35
 
 func add_xp(n: int, at: Vector2) -> void:
 	xp += n
@@ -395,33 +419,69 @@ func add_xp(n: int, at: Vector2) -> void:
 		xp -= xp_needed()
 		level += 1
 		_choices += 1
-	if _choices > 0 and state == PLAY:
+		_popups.append(["LEVEL UP!", player.global_position + Vector2(0, -player.height * player.size - 14), 1.4, Color(1, 0.85, 0.35)])
+	_maybe_offer()
+
+## The choice waits for a quiet moment: not mid-bite, not clamped onto something, not charging.
+func _maybe_offer() -> void:
+	if _choices > 0 and state == PLAY and player.bite_t < 0.0 and player.grab.is_empty() and not player.charging:
 		_offer()
 
+## Three of the pool, never the same one twice on one card row; each shows what it does now -> after.
 func _offer() -> void:
 	state = CHOOSE
+	var pool := range(UPGRADES.size())
+	pool.shuffle()
+	_offered = pool.slice(0, 3)
 	var cards: Array = []
-	cards.append([UPGRADES[0][0], "%s\n%.1f -> %.1f" % [UPGRADES[0][1], player.bite_radius, player.bite_radius + 1.0]])
-	cards.append([UPGRADES[1][0], "%s\n%d -> %d" % [UPGRADES[1][1], player.walk_speed, player.walk_speed * 1.12]])
-	cards.append([UPGRADES[2][0], "%s\n%.2fs -> %.2fs" % [UPGRADES[2][1], player.bite_cooldown, player.bite_cooldown * 0.85]])
+	for u in _offered:
+		cards.append([UPGRADES[u][0], "%s\n%s" % [UPGRADES[u][1], _upgrade_preview(u)]])
 	hud.show_choice(cards)
 	sfx.play("gulp", 0.0, 2.0)
 	_mouse()
 
+func _upgrade_preview(u: int) -> String:
+	match u:
+		UP_BITE:
+			return "%.1f -> %.1f" % [player.bite_radius, player.bite_radius + 1.5]
+		UP_SPEED:
+			return "%d -> %d" % [player.walk_speed, player.walk_speed * 1.18]
+		UP_RATE:
+			return "%.2fs -> %.2fs" % [player.bite_cooldown, player.bite_cooldown * 0.78]
+		UP_HEALTH:
+			return "%d -> %d" % [player.max_hp, player.max_hp + 30]
+		UP_LUNGE:
+			return "+25%% further"
+		UP_CHARGE:
+			return "%.1fs -> %.1fs" % [player.charge_time, player.charge_time * 0.7]
+		UP_SHAKE:
+			return "+30%% longer, bigger rip"
+	return ""
+
 func _pick(i: int) -> void:
-	if state != CHOOSE:
+	if state != CHOOSE or i >= _offered.size():
 		return
-	match i:
-		0:
-			player.bite_radius += 1.0
-		1:
-			player.walk_speed *= 1.12
-		2:
-			player.bite_cooldown *= 0.85
+	var u: int = _offered[i]
+	match u:
+		UP_BITE:
+			player.bite_radius += 1.5
+		UP_SPEED:
+			player.walk_speed *= 1.18
+		UP_RATE:
+			player.bite_cooldown *= 0.78
+		UP_HEALTH:
+			player.max_hp += 30.0
+			player.hp += 30.0
+		UP_LUNGE:
+			player.lunge_mult *= 1.25
+		UP_CHARGE:
+			player.charge_time *= 0.7
+		UP_SHAKE:
+			player.shake_mult *= 1.3
 	_choices -= 1
 	hud.hide_choice()
 	state = PLAY
-	_popups.append(["LEVEL %d: %s" % [level - _choices, UPGRADES[i][0]], player.global_position + Vector2(0, -50), 1.6, Color(1, 0.85, 0.35)])
+	_popups.append(["LEVEL %d: %s" % [level - _choices, UPGRADES[u][0]], player.global_position + Vector2(0, -50), 1.6, Color(1, 0.85, 0.35)])
 	if _choices > 0:
 		_offer()
 	_mouse()
@@ -540,8 +600,10 @@ func break_free_time(who: Player, prey: Prey, length: float) -> float:
 	var mass := 0
 	for part in prey.parts:
 		mass += part.pixels_left()
+	mass *= prey.scale.x * prey.scale.x
 	var ratio := mass / who.mass()
-	return INF if ratio <= 1.0 else length / (ratio * ratio)
+	# a little bigger than you still can't get loose; clearly bigger can, the bigger the sooner
+	return INF if ratio <= BREAK_FREE_OVER else length / (ratio * ratio)
 
 func grab_tear(who: Player, prey: Prey, p: Vector2, radius: float) -> void:
 	player_bite(who, p, radius, TEAR)

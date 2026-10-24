@@ -49,8 +49,12 @@ func _ready() -> void:
 		scare_range = 95.0
 		slump_drop = 6.0
 	else:
+		# the big grazer outruns you flat out, but only in bursts: catch it cornered, tired, or with the big lunge
 		build(DinoArt.prey())
 		half_w = 16.0
+		run_speed = 105.0
+		flee_time = 1.4
+		rest_time = 1.3
 
 ## Held in your jaws: thrash in place and bleed. Returns true if it was (and the normal step is skipped).
 func held_step(delta: float, rng: RandomNumberGenerator) -> bool:

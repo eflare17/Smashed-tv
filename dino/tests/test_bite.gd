@@ -168,13 +168,10 @@ func _run() -> void:
 	_check("a body can't break free", main.break_free_time(pl, big_target, 1.0) == INF)
 	var small: Hunter = main.spawn_hunter(1900.0)
 	await _frames(2)
-	_check("you start smaller than a hunter, so it breaks free", main.break_free_time(pl, small, 1.0) < 1.0,
-			"it's %.2fx you" % (_mass(small) / pl.mass()))
-	var size_was: float = pl.size
-	pl.size = 1.0
-	_check("grown to its size, it can't break free", main.break_free_time(pl, small, 1.0) == INF,
-			"it's %.2fx you" % (_mass(small) / pl.mass()))
-	pl.size = size_was
+	_check("a hunter comes at your size, so it can't break free", main.break_free_time(pl, small, 1.0) == INF
+			and absf(small.scale.x - pl.size) < 0.01, "it's drawn at %.2f, you at %.2f" % [small.scale.x, pl.size])
+	small.scale = Vector2(2.0, 2.0)
+	_check("a hunter twice your size can", main.break_free_time(pl, small, 1.0) < 1.0)
 	small.queue_free()
 	main.creatures.erase(small)
 
@@ -201,6 +198,9 @@ func _run() -> void:
 	var r0: float = pl.bite_radius
 	main.add_xp(main.xp_needed(), pl.global_position)
 	_check("enough XP offers a level-up choice", main.state == main.CHOOSE and main.level == lv0 + 1)
+	_check("the cards are three different upgrades", main._offered.size() == 3
+			and main._offered[0] != main._offered[1] and main._offered[1] != main._offered[2])
+	main._offered = [main.UP_BITE, main.UP_SPEED, main.UP_RATE]
 	main._pick(0)
 	_check("picking BITE SIZE makes bites bigger", pl.bite_radius > r0 and main.state == main.PLAY, "%.1f" % pl.bite_radius)
 	var gap1: float = main._hunt_gap()
@@ -296,7 +296,7 @@ func _run() -> void:
 	main.area_t = 0.0
 	var g0: float = main._hunt_gap()
 	var c0: int = main._hunt_cap()
-	main.area_t = 90.0
+	main.area_t = main.DANGER_TIME * 0.75
 	_check("staying longer brings attackers sooner and more of them", main._hunt_gap() < g0 and main._hunt_cap() > c0,
 			"every %.1fs, %d at once -> every %.1fs, %d at once" % [g0, c0, main._hunt_gap(), main._hunt_cap()])
 	_check("the danger bar fills", main.danger() > 0.7, "%.2f" % main.danger())
@@ -371,7 +371,9 @@ func _run() -> void:
 	await _frames(2)
 	_check("the sign at the end leads to area 2", main.area_n == 2 and pl.position.x < 100.0, "area %d, x %.0f, exit %.0f, width %d, state %d, stop %.2f" % [main.area_n, pl.position.x, main.area.exit_x, main.world_w, main.state, main.get("_stop")])
 
-	# out of health: the run is over
+	# out of health: the run is over (the arrival bonus may have levelled you: pick first)
+	while main.state == main.CHOOSE:
+		main._pick(1)
 	pl.hp = 1.0
 	pl.invuln = 0.0
 	var h2: Hunter = main.spawn_hunter(pl.position.x + 30.0)

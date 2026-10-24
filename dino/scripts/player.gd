@@ -33,6 +33,10 @@ const SNAP_HOLD := 0.16
 const HOLD := 0.05
 ## Seconds of holding right click for a full charge; the big bite's rip, from no charge to full, in bite radii.
 const CHARGE_TIME := 0.8
+## Level-ups raise these: how far the body lunges, how fast the big bite charges, how long (and hard) the shake.
+var lunge_mult := 1.0
+var charge_time := CHARGE_TIME
+var shake_mult := 1.0
 const RIP := [1.5, 2.3]
 ## The shake: how long (no charge to full), how often it tears, and how big each tear is (in bite radii).
 const SHAKE := [0.45, 0.9]
@@ -96,7 +100,7 @@ func step(delta: float, move_x: float, jump: bool, bite_pressed: bool, aim_at: V
 		charging = true
 		charge = 0.0
 	if charging:
-		charge = minf(1.0, charge + delta / CHARGE_TIME)
+		charge = minf(1.0, charge + delta / charge_time)
 		if not big_held:
 			charging = false
 			_bite_charge = charge
@@ -166,8 +170,8 @@ func head_len() -> float:
 func _lunge(to: Vector2, kind: int) -> Vector2:
 	var want := to - to.normalized() * head_len() * 0.95
 	var fwd := signf(to.x) if to.x != 0.0 else facing
-	var along := clampf(want.x * fwd, -BACK * size, LUNGE[kind] * size)
-	return Vector2(along * fwd, clampf(want.y, -LUNGE[kind] * size, 0.0))
+	var along := clampf(want.x * fwd, -BACK * size, LUNGE[kind] * size * lunge_mult)
+	return Vector2(along * fwd, clampf(want.y, -LUNGE[kind] * size * lunge_mult, 0.0))
 
 ## Where a bite at `p` started now would land (the aim marker): after the lunge, the nearest point the head reaches.
 func predict_bite(p: Vector2, kind := QUICK) -> Vector2:
@@ -210,7 +214,7 @@ func _snap() -> void:
 	if who:
 		grab = {
 			"who": who, "local": who.rig.to_local(p), "t": 0.0, "charge": _bite_charge,
-			"length": lerpf(SHAKE[0], SHAKE[1], _bite_charge), "tear_t": 0.0, "offset": global_position - p,
+			"length": lerpf(SHAKE[0], SHAKE[1], _bite_charge) * shake_mult, "tear_t": 0.0, "offset": global_position - p,
 		}
 		grab["breaks_at"] = game.break_free_time(self, who, grab.length)
 		who.held = true
@@ -239,7 +243,7 @@ func _grab_step(delta: float) -> void:
 		game.broke_free(self, who)
 		release()
 	elif grab.t >= grab.length:
-		game.grab_rip(self, who, spot, bite_radius * lerpf(RIP[0], RIP[1], grab.charge))
+		game.grab_rip(self, who, spot, bite_radius * lerpf(RIP[0], RIP[1], grab.charge) * sqrt(shake_mult))
 		release()
 	animate(delta, false, 0.0)
 
