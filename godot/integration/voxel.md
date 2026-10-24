@@ -350,8 +350,46 @@ a nesting area; chickens can be let out to roam the yard; max chicken cap tied t
   seed); the hens' sounds play in both. Grain, eggs and cash are each player's own. Saved with the rest.
 - Sounds (`assets/voxel/tools/sfx_chickens.py`): clucks, the egg song, chick peeps, wing flaps, the gate creaking,
   grain pouring, an egg picked up.
-- Tests: `test/voxel/chickens_test.gd` (41 checks alone; with `--host` / `--join` 4 + 7 co-op checks),
+- Tests: `test/voxel/chickens_test.gd` (68 checks alone; with `--host` / `--join` 6 + 12 co-op checks),
   `test/voxel/chickens_shots.gd` (`voxel_shots/chickens_*.png`).
+
+### Killing chickens (24 Oct, the owner: "Can you make it so you can kill the chickens. When you kill them they turn into a chicken carcass." and "You can only kill them if they are out of the chicken coop.")
+
+- **Only out in the yard** (`VoxelChickens.killable`: the gate opened and they've wandered out). In the run or the coop
+  a blow does nothing to them: they flap off clucking, and the first time it says "Not in the coop: they're safe in
+  there. Open the gate and let them out into the yard first". A blast or fire there doesn't touch them either.
+- **Every weapon and tool**: each press of a weapon (and the held ones while held: chainsaw, pistol, laser,
+  flamethrower, freeze ray) and the F / C quick slash go through `VoxelChickens.attack`, which finds the chicken it lands
+  on by the weapon's reach and spread (`STRIKE`: the sword 2.6 m wide, the spear long and narrow, guns to 25-40 m and
+  stopped by walls, the shovel, pick and hoe too); top-down it's the way you aim or a chicken under the mouse. A
+  grenade's blast kills every chicken out in the yard near it; a fire patch takes a blow at a time.
+- **A hit**: a loud squawk (new `squawk_0..2`, `death_squawk` in `sfx_chickens.py`), wings flapping, ten feathers
+  spraying off and drifting down to lie on the grass, and it runs off from you. Three blows kill a hen (the shotgun,
+  harpoon or a grenade at once; the hammer and spear count two), one a chick.
+- **Dead: a chicken carcass** where it fell: plucked pink, lying on its side with its head flopped down and its legs
+  stuck out stiff, its feathers (its own colour) scattered round. It stays (up to 24 lie about; saved with the rest).
+  Look at it and E ("E  pick up the chicken carcass"; top-down, stand on it) puts a **chicken carcass** in the
+  backpack. Sold at the buyer's crate ($15), or E at the shredder grinds it with the other gore (a quarter of a bag of
+  blood and bone). There's no barbecue or cooking in the block game yet, so it can't be cooked. A dead chicken frees
+  its place in the coop (an egg waiting for room hatches into it).
+- **Co-op**: the host's chickens are the real ones. A guest's blow goes to the host as a "hit" (the guest sees the
+  feathers and hears the squawk at once), the host decides (in the coop or not, dead or not) and sends the kill's
+  feathers and squawk back; the carcass reaches the guest with the next chickens update (within 0.2 s). Picking one up
+  is a "take": the host gives the carcass to whoever got there first, takes it off the ground in both games and tells
+  the other player "Your mate picked up the chicken carcass".
+- Controls: keyboard and mouse, first person and top-down. The block game (the PC voxel arena) has no gamepad or touch
+  controls at all yet, so there's no pad or touch E for this either.
+- Tests: `test/voxel/chickens_test.gd` (27 new solo checks: the sword in the run does nothing, a big blow and a blast
+  there neither; in the yard one blow hurts with feathers, three kill, a carcass where it fell; a chick killed in one
+  click through the real input path top-down with the shovel; a blast kills; picked up with E first person and
+  top-down; sold; shredded; the coop's place freed; saved. Co-op over ENet: the guest's hit kills the host's hen, both
+  see the carcass, the guest picks it up, not the host). Logic 340/340; shredder, farm, inventory and health tests
+  pass. Screenshots (`test/voxel/chickens_kill_shots.gd`): `voxel_shots/chickens_kill_hit.png` (a sword hit, feathers
+  flying), `chickens_kill_carcass.png` (three carcasses, a hen's, a brown hen's and a chick's), `chickens_kill_pickup.png`
+  (looking at one: E), `chickens_kill_picked.png`, `chickens_kill_backpack.png` (it in the backpack),
+  `chickens_kill_topdown.png`. In the Windows zip (`downloads/SmashedVoxelArena-win64.zip`, the .pck rebuilt).
+
+Chickens kill: done
 
 ### The shredder, blood and bone, burning (21 Oct, the owner's Stage 6.5: "gore pieces become a resource: shred them
 into bags of blood and bone fertiliser for crops, the worm farm and chickens; shredder: throw limbs in the top, it
