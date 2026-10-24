@@ -116,12 +116,18 @@ static var _feather_mesh: BoxMesh
 
 ## A killed chicken: plucked, lying limp on its side (the head flopped down, the legs stuck out stiff), its feathers
 ## scattered round on the ground (seed: where they lie); roast: golden brown, the feathers round it singed black.
-## Its own node, not animated.
-static func carcass(coat_: int, chick_: bool, seed: int, roast := false) -> Node3D:
+## on_grill: no feathers, and a material of its own (meta "mat") whose albedo_color browns it as it cooks
+## (VoxelBarbecue). Its own node, not animated.
+static func carcass(coat_: int, chick_: bool, seed: int, roast := false, on_grill := false) -> Node3D:
 	var key := ("r" if roast else "p") + ("c" if chick_ else str(coat_))
 	var k := 0.5 if chick_ else 1.0
 	var n := Node3D.new()
 	n.name = "Carcass"
+	_part(key, "body")                            # (makes _mat)
+	var mat: Material = _mat
+	if on_grill:
+		mat = _mat.duplicate()
+		n.set_meta("mat", mat)
 	var root := Node3D.new()
 	root.rotation.z = PI * 0.5                    # (on its side: its up toward -x, its left side up)
 	root.position = Vector3(0.26 * k, 3.5 * V * k, 0.0)
@@ -129,7 +135,7 @@ static func carcass(coat_: int, chick_: bool, seed: int, roast := false) -> Node
 	n.add_child(root)
 	var body := MeshInstance3D.new()
 	body.mesh = _part(key, "body")
-	body.material_override = _mat
+	body.material_override = mat
 	root.add_child(body)
 	var head := Node3D.new()
 	head.position = Vector3(-0.03, 0.34, -0.15)
@@ -137,12 +143,12 @@ static func carcass(coat_: int, chick_: bool, seed: int, roast := false) -> Node
 	root.add_child(head)
 	var hm := MeshInstance3D.new()
 	hm.mesh = _part(key, "head")
-	hm.material_override = _mat
+	hm.material_override = mat
 	head.add_child(hm)
 	for s in [-1, 1]:
 		var w := MeshInstance3D.new()
 		w.mesh = _part(key, "wing")
-		w.material_override = _mat
+		w.material_override = mat
 		w.scale.x = s
 		w.position = Vector3(s * 0.11, 0.3, -0.02)
 		w.rotation.z = s * 0.25
@@ -153,8 +159,10 @@ static func carcass(coat_: int, chick_: bool, seed: int, roast := false) -> Node
 		root.add_child(l)
 		var lm := MeshInstance3D.new()
 		lm.mesh = _part(key, "leg")
-		lm.material_override = _mat
+		lm.material_override = mat
 		l.add_child(lm)
+	if on_grill:
+		return n
 	# the feathers round it, flat on the ground
 	var cols: Array = SINGED if roast else (CHICK if chick_ else COATS[coat_])
 	var rng := RandomNumberGenerator.new()

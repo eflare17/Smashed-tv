@@ -323,13 +323,15 @@ func sell_value() -> int:
 		v += arena.inv.count(bud_id(s)) * float(STRAINS[s].price) / float(STRAINS[s].buds)
 	v += arena.inv.count("egg") * VoxelChickens.EGG_PRICE
 	v += arena.inv.count("chicken_carcass") * VoxelChickens.CARCASS_PRICE + arena.inv.count("roast_chicken") * VoxelChickens.ROAST_PRICE
+	v += arena.inv.count("burnt_chicken") * VoxelBarbecue.BURNT_PRICE
 	return int(round(v))
 
-## E at the buyer's crate: every bud, egg and chicken carcass this player has, sold. Returns the cash.
+## E at the buyer's crate: every bud, egg and chicken (carcass, cooked, burnt) this player has, sold. Returns the cash.
 func sell() -> int:
 	var v := float(arena.inv.remove("egg", arena.inv.count("egg")) * VoxelChickens.EGG_PRICE)
 	v += float(arena.inv.remove("chicken_carcass", arena.inv.count("chicken_carcass")) * VoxelChickens.CARCASS_PRICE)
 	v += float(arena.inv.remove("roast_chicken", arena.inv.count("roast_chicken")) * VoxelChickens.ROAST_PRICE)
+	v += float(arena.inv.remove("burnt_chicken", arena.inv.count("burnt_chicken")) * VoxelBarbecue.BURNT_PRICE)
 	for s in STRAINS.size():
 		var n: int = arena.inv.count(bud_id(s))
 		if n > 0:

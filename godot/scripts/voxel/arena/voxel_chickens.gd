@@ -749,9 +749,9 @@ static func items() -> Dictionary:
 		"poo": {"name": "Chicken poo", "col": POO[0], "stack": 9999, "cubes": POO,
 			"desc": "Vacuumed up in the run. Feeds a plant (%d at a time) or the worm farm." % VoxelFarm.POO_FEED},
 		"chicken_carcass": {"name": "Chicken carcass", "col": VoxelChicken.PLUCK[0], "stack": 20,
-			"desc": "A plucked chicken. Sells for $%d at the buyer, the shredder makes blood and bone of it, or H eats it raw (+%d health)." % [CARCASS_PRICE, int(CARCASS_HP)]},
+			"desc": "A plucked chicken. Cook it on the barbecue (E there: a roast chicken), sell it for $%d at the buyer, the shredder makes blood and bone of it, or H eats it raw (+%d health)." % [CARCASS_PRICE, int(CARCASS_HP)]},
 		"roast_chicken": {"name": "Roast chicken", "col": VoxelChicken.ROAST[0], "stack": 20,
-			"desc": "Roasted where it stood (the flamethrower, the laser). Sells for $%d at the buyer; H eats it (+%d health)." % [ROAST_PRICE, int(ROAST_HP)]},
+			"desc": "Off the barbecue, or roasted where it stood (the flamethrower, the laser). Sells for $%d at the buyer; H eats it (+%d health)." % [ROAST_PRICE, int(ROAST_HP)]},
 	}
 
 # ---------------------------------------------------------------- killing them (out in the yard)
@@ -962,7 +962,7 @@ func take_carcass(id: int) -> bool:
 	if bool(c.get("roast", false)):
 		arena.say("+1 roast chicken: sell it at the buyer ($%d), or H eats it (+%d health)" % [ROAST_PRICE, int(ROAST_HP)], 2.5)
 	else:
-		arena.say("+1 chicken carcass: sell it at the buyer ($%d), the shredder, or H eats it raw" % CARCASS_PRICE, 2.5)
+		arena.say("+1 chicken carcass: cook it on the barbecue, sell it at the buyer ($%d), shred it, or H eats it raw" % CARCASS_PRICE, 2.5)
 	if _is_guest():
 		_msg(["take", id])
 		return true

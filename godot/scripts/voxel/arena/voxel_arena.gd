@@ -145,6 +145,7 @@ var cash := 0                   # this player's money (Stage 5: kills pay, as in
 var _near_plant := -1           # the farm's spot looked at (a plant or tilled ground)
 var _near_prop := ""            # the farm's prop looked at (the seed bins, the buyer, the tank, the worm farm)
 var _near_hen := ""             # the chickens' thing looked at (the gate, the feeder, a nest box, a hen: VoxelChickens.pick)
+var _near_bbq := ""             # the barbecue looked at ("grill": VoxelBarbecue.pick)
 var _near_shred := ""           # the shredder's looked at (the machine, the bags, its sign: VoxelShredder.pick)
 var _near_bed := 0
 var _near_ward := false
@@ -712,7 +713,7 @@ func _prop_line(p: String) -> String:
 			return ("E  buy a %s seed: $%d  (you've $%d)" if cash >= int(st.seed) else "%s seed: $%d (you've $%d: kills pay)") % [st.name, int(st.seed), cash]
 		"buyer":
 			var v := farm.sell_value()
-			return ("E  sell your buds, eggs and chicken carcasses: $%d" % v) if v > 0 else "Buyer: brings cash for buds, eggs and chicken carcasses"
+			return ("E  sell your buds, eggs and chickens: $%d" % v) if v > 0 else "Buyer: brings cash for buds, eggs and chickens (raw or cooked)"
 		"tank":
 			var can = melee.get("can")
 			return "E  fill the watering can" + (" (%d of %d)" % [int(ceil(can.water)), int(VoxelFarm.CAN)] if can else "")
@@ -967,8 +968,11 @@ func _storage_step(dt: float) -> void:
 		var dir := (Vector3(at.x, pp.y, at.z) - pp).normalized() if at != Vector3.INF else -cam.global_transform.basis.z
 		_near_st = stash.pick(pp, dir, 1.4)
 	var td_carcass := ""
+	var td_bbq := ""
 	if top_down and _near_st == null:
 		td_carcass = yard.chickens.carcass_near(player.global_position, 1.1)     # (top-down: one at your feet)
+		if td_carcass == "":
+			td_bbq = VoxelBarbecue.near(player.global_position)                 # (top-down: standing at the barbecue)
 	_near_bed = 0
 	_near_ward = false
 	_near_bench = false
@@ -978,6 +982,7 @@ func _storage_step(dt: float) -> void:
 	_near_prop = ""
 	_near_plant = -1
 	_near_hen = td_carcass
+	_near_bbq = td_bbq
 	_near_shred = ""
 	_near_game = ""
 	_near_hatch = false
@@ -1006,6 +1011,8 @@ func _storage_step(dt: float) -> void:
 		if _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
 			_near_shred = String(yard.shredder.pick(eye, fwd)[0])
 		if _near_shred == "" and _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
+			_near_bbq = String(yard.barbecue.pick(eye, fwd)[0])
+		if _near_bbq == "" and _near_shred == "" and _near_hen == "" and _near_st == null and _near_bed == 0 and not _near_ward and not _near_bench and VoxelYard.in_yard(pp2):
 			_near_prop = yard.farm.prop_at(eye, fwd)
 			if _near_prop == "":
 				var ph: Array = yard.farm.plant_hit(eye, fwd)
@@ -1038,6 +1045,8 @@ func _storage_step(dt: float) -> void:
 		t = yard.chickens.line(_near_hen)
 	elif _near_shred != "":
 		t = yard.shredder.line(_near_shred)
+	elif _near_bbq != "":
+		t = yard.barbecue.line(_near_bbq)
 	elif _near_prop != "":
 		t = _prop_line(_near_prop)
 	elif _near_plant >= 0:
@@ -1373,6 +1382,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					yard.chickens.use(_near_hen)
 				elif _near_shred != "":
 					yard.shredder.use(_near_shred)
+				elif _near_bbq != "":
+					yard.barbecue.use(_near_bbq)
 				elif _near_prop != "":
 					_farm_prop(_near_prop)
 				elif _near_plant >= 0:

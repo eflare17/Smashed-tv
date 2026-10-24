@@ -26,6 +26,7 @@ static func _extra() -> Dictionary:
 		EXTRA = VoxelFarm.items()
 		EXTRA.merge(VoxelChickens.items())
 		EXTRA.merge(VoxelShredder.items())
+		EXTRA.merge(VoxelBarbecue.items())
 	return EXTRA
 
 static func _info(id: String) -> Dictionary:

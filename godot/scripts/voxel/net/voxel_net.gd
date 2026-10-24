@@ -940,6 +940,7 @@ func _message(m: Array) -> void:
 				arena.yard.farm.send_all()
 				arena.yard.chickens.send_all()
 				arena.yard.shredder.send_all()
+				arena.yard.barbecue.send_all()
 				arena.games.send_all()
 		"W":
 			_world(m[1], m[2])
@@ -990,6 +991,8 @@ func _message(m: Array) -> void:
 			arena.yard.chickens.on_net(m.slice(1))
 		"M":
 			arena.yard.shredder.on_net(m.slice(1))
+		"Q":
+			arena.yard.barbecue.on_net(m.slice(1))
 		"R":
 			arena.games.on_net(m.slice(1))
 		"X":
@@ -1062,6 +1065,11 @@ func send_tv(jpg: PackedByteArray) -> void:
 func send_shredder(m: Array) -> void:
 	if linked:
 		_send(["M"] + m)
+
+## The barbecue's (VoxelBarbecue), either way, reliable.
+func send_barbecue(m: Array) -> void:
+	if linked:
+		_send(["Q"] + m)
 
 ## The chickens' (VoxelChickens), either way, reliable.
 func send_chickens(m: Array) -> void:

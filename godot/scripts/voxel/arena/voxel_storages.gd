@@ -424,6 +424,7 @@ func save() -> void:
 		d["farm"] = arena.yard.farm.save_data()
 		d["chickens"] = arena.yard.chickens.save_data()
 		d["shredder"] = arena.yard.shredder.save_data()
+		d["barbecue"] = arena.yard.barbecue.save_data()
 	if arena.get("mine"):
 		d["mine"] = arena.mine.save_data()
 	var f := FileAccess.open(save_path, FileAccess.WRITE)
@@ -451,6 +452,8 @@ func load_save() -> void:
 		arena.yard.chickens.from_data(d.chickens)
 	if arena.yard and d.has("shredder"):
 		arena.yard.shredder.from_data(d.shredder)
+	if arena.yard and d.has("barbecue"):
+		arena.yard.barbecue.from_data(d.barbecue)
 	arena.cash = maxi(0, int(d.get("cash", 0)))
 	if arena.get("mine") and d.has("mine"):
 		arena.mine.load_data(d.mine)

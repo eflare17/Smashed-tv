@@ -31,6 +31,7 @@ var ground: VoxelTerrain
 var farm: VoxelFarm
 var chickens: VoxelChickens
 var shredder: VoxelShredder
+var barbecue: VoxelBarbecue
 var _sum_t := 0.0
 var _own = null                 # guest: their own yard's dug chunks while in someone else's (null: not a guest)
 var _was_role := ""
@@ -58,6 +59,9 @@ func setup(arena_: Node3D) -> void:
 	shredder = VoxelShredder.new()
 	add_child(shredder)
 	shredder.setup(arena)
+	barbecue = VoxelBarbecue.new()
+	add_child(barbecue)
+	barbecue.setup(arena)
 
 # ---------------------------------------------------------------- digging (the tools call these)
 
