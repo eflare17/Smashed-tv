@@ -19,7 +19,7 @@ const BEAK := Color8(232, 160, 40)
 const LEG := Color8(226, 170, 60)
 const EYE := Color8(16, 12, 10)
 ## A plucked bird's skin (a carcass), and its shut eye.
-const PLUCK := [Color8(242, 206, 176), Color8(224, 178, 146)]
+const PLUCK := [Color8(232, 168, 138), Color8(206, 134, 106)]
 const SHUT := Color8(150, 96, 80)
 
 static var _meshes := {}            # "coat,part" -> ArrayMesh
@@ -177,7 +177,7 @@ static func carcass(coat_: int, chick_: bool, seed: int) -> Node3D:
 static func feather_mesh() -> BoxMesh:
 	if _feather_mesh == null:
 		_feather_mesh = BoxMesh.new()
-		_feather_mesh.size = Vector3(0.03, 0.006, 0.075)
+		_feather_mesh.size = Vector3(0.036, 0.006, 0.09)
 	return _feather_mesh
 
 static var _fmat: StandardMaterial3D

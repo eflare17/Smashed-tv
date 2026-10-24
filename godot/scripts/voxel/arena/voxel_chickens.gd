@@ -887,7 +887,7 @@ func _die(h: Dictionary, by: int) -> void:
 func _hit_fx(at: Vector3, coat: int, chick: bool, dead: bool) -> void:
 	var cols: Array = VoxelChicken.CHICK if chick else VoxelChicken.COATS[clampi(coat, 0, VoxelChicken.COATS.size() - 1)]
 	var gy := _ground_y(at.x, at.z) if yard else 0.0
-	for i in (22 if dead else 7) / (2 if chick else 1):
+	for i in (24 if dead else 10) / (2 if chick else 1):
 		if _feathers.size() >= FEATHERS_MAX:
 			_feathers.pop_front()
 		var v := Vector3(randf_range(-1.0, 1.0), randf_range(0.8, 2.4), randf_range(-1.0, 1.0)) * (1.4 if dead else 1.0)

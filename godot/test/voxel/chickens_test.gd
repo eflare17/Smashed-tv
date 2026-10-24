@@ -8,6 +8,11 @@ extends SceneTree
 ## shut, nobody through; never anywhere they can't be; the chickens saved and loaded. With --host=CODE / --join=CODE
 ## (two copies, the host first): the host's hens in the guest's game and moving, the guest opening the gate, feeding,
 ## collecting the host's eggs (theirs, not the host's), upgrading the host's coop; the host's hens' poo in both games.
+## Killing them (24 Oct): a blow in the run or the coop does nothing but send it flapping (and says why); out in the
+## yard a blow hurts (feathers, a run), three kill a hen, one a chick (the real input path, top-down, with a tool), a
+## grenade's blast kills out there but not in the run; dead, a carcass where it fell, picked up with E (first person and
+## top-down) as a chicken carcass, sold at the buyer, shredded; its place in the coop freed; carcasses saved. Co-op: the
+## guest's blow kills the host's hen (a "hit" op), both see the carcass, the guest picks it up (theirs, not the host's).
 ## Prints "CHICKENS ok/FAIL ..." and "CHICKENS done N passed, M failed". Owned by the voxel session.
 
 var arena: Node
@@ -400,6 +405,161 @@ func _solo(dt: float) -> bool:
 				var after := ch.to_data()
 				check(after.level == 2 and int(after.food) == 33 and (after.nests[5] as Array).size() == 2 and (after.hens as Array).size() == (before.hens as Array).size() and not after.gate, "the chickens saved and loaded (level, feed, eggs, %d hens)" % (after.hens as Array).size())
 				DirAccess.remove_absolute(ProjectSettings.globalize_path("user://chickens_test_save.json"))
+				step = 17
+		17:
+			# killing them: one in the run, a hen and a chick out in the yard
+			ch._fresh()
+			arena.inv.from_data([])
+			ch.gate = true
+			ch._told_safe = false
+			var a := _hen(0)
+			a.x = 25.0
+			a.z = 28.0
+			var b := _hen(1)
+			b.x = 15.0
+			b.z = 30.0
+			var c := ch._hatch(Vector2(17.0, 33.0), 0.3)
+			for o in ch.hens:
+				_still(o)
+				o.y = ch._ground_y(float(o.x), float(o.z))
+			var si: int = arena.loadout.index_of("sword")
+			arena._switch(func(): arena.loadout.select(si))
+			arena.loadout.switch_t = 0.0
+			v0.ids = [int(a.id), int(b.id), int(c.id)]
+			# a blow in the run
+			_look_at(Vector3(25.0, 0.2, 28.0), Vector3(-1, 0, 0))
+			mark = t
+			step = 20
+		20:
+			if t - mark < 0.2:
+				return false
+			var a = ch._hen_by(int(v0.ids[0]))
+			for o in ch.hens:
+				_still(o)
+			arena._camera(0.0)
+			var got: int = ch.attack(arena.melee["sword"])
+			check(got == int(a.id) and int(a.hurt) == 0 and ch.hens.size() == 3 and String(a.st) == "flee", "in the run: the sword lands but does nothing, it flaps off (%s, hurt %d)" % [a.st, int(a.hurt)])
+			check(arena._say_text.contains("safe in there"), "says why: \"%s\"" % arena._say_text)
+			ch._strike_t.clear()
+			ch.strike(int(a.id), 3, Vector3(24, 0, 28))
+			check(ch.hens.size() == 3 and int(a.hurt) == 0 and ch.carcasses.is_empty(), "in the run even a big blow doesn't hurt it")
+			ch.blast(Vector3(float(a.x), 0.3, float(a.z)), 3.0, 50.0)
+			check(ch.hens.size() == 3 and int(a.hurt) == 0, "nor a grenade's blast")
+			# out in the yard
+			_look_at(Vector3(15.0, 0.2, 30.0), Vector3(-1, 0, 0))
+			mark = t
+			step = 21
+		21:
+			if t - mark < 0.2:
+				return false
+			var b = ch._hen_by(int(v0.ids[1]))
+			_still(b)
+			arena._camera(0.0)
+			var got: int = ch.attack(arena.melee["sword"])
+			check(got == int(b.id) and int(b.hurt) == 1 and String(b.st) == "flee" and ch._feathers.size() >= 5, "out in the yard: a sword blow hurts the hen, feathers fly (%d), it runs (%s)" % [ch._feathers.size(), b.st])
+			check(ch.attack(arena.melee["sword"]) == -1, "a second swing at once doesn't land (the sword's own pace)")
+			v0.at = Vector2(float(b.x), float(b.z))
+			mark = t
+			step = 18
+		18:
+			if t - mark > 0.5:
+				var b = ch._hen_by(int(v0.ids[1]))
+				b.hit_ms = 0
+				ch._strike_t.clear()
+				ch.strike(int(b.id), 1, Vector3(14, 0, 30))
+				check(ch.hens.size() == 3 and int(b.hurt) == 2, "two blows: still alive")
+				b.hit_ms = 0
+				var at := Vector2(float(b.x), float(b.z))
+				ch.strike(int(b.id), 1, Vector3(14, 0, 30))
+				check(ch.hens.size() == 2 and ch._hen_by(int(v0.ids[1])) == null, "the third kills it (%d left)" % ch.hens.size())
+				var cc = ch._carcass_by(int(v0.ids[1]))
+				check(cc != null and Vector2(float(cc.x), float(cc.z)).distance_to(at) < 0.01 and not bool(cc.chick), "a chicken carcass where it fell")
+				check(arena._say_text.contains("E picks up the carcass"), "says so: \"%s\"" % arena._say_text)
+				ch._show(0.016)
+				check(ch._carc_views.has(int(v0.ids[1])) and not ch._views.has(int(v0.ids[1])), "shown as a carcass, not a hen")
+				# the chick, through the real input path: top-down, a tool (the shovel), the chick at your feet
+				var c = ch._hen_by(int(v0.ids[2]))
+				arena.top_down = true
+				var vi: int = arena.loadout.index_of("shovel")
+				arena._switch(func(): arena.loadout.select(vi))
+				arena.loadout.switch_t = 0.0
+				_place(Vector3(float(c.x) + 0.25, 0, float(c.z)), 0.0, 0.0)
+				arena._clicked[MOUSE_BUTTON_LEFT] = true
+				arena._shoot(0.016)
+				check(ch._hen_by(int(v0.ids[2])) == null and ch._carcass_by(int(v0.ids[2])) != null and bool(ch._carcass_by(int(v0.ids[2])).chick), "top-down, a click with the shovel: the chick dies in one, a chick's carcass")
+				# a grenade's blast out in the yard
+				var d := ch._hatch(Vector2(12.0, 28.0), 1.0)
+				_still(d)
+				ch.blast(Vector3(12.3, 0.3, 28.0), 3.0, 50.0)
+				check(ch._hen_by(int(d.id)) == null and ch._carcass_by(int(d.id)) != null, "a grenade's blast kills one out in the yard")
+				var e := ch._hatch(Vector2(12.0, 26.0), 1.0)
+				_still(e)
+				ch.blast(Vector3(12.3, 0.3, 26.0), 2.0, 3.0)
+				check(ch._hen_by(int(e.id)) != null and int(e.hurt) == 1, "a fire patch takes one blow")
+				ch.hens.erase(e)
+				arena.top_down = false
+				mark = t
+				step = 19
+		19:
+			if t - mark > 0.3:
+				# picked up, first person
+				var cc = ch._carcass_by(int(v0.ids[1]))
+				_look_at(Vector3(float(cc.x), 0.05, float(cc.z)), Vector3(-1, 0, 0.2))
+				mark = t
+				step = 22
+		22:
+			if t - mark > 0.2:
+				var n := _near()
+				check(n == "carcass%d" % int(v0.ids[1]) and arena._use_label.text.contains("pick up the chicken carcass"), "at the carcass: \"%s\"" % arena._use_label.text)
+				_key(KEY_E)
+				check(arena.inv.count("chicken_carcass") == 1 and ch._carcass_by(int(v0.ids[1])) == null, "E: a chicken carcass in the backpack, gone from the ground")
+				ch._show(0.016)
+				check(not ch._carc_views.has(int(v0.ids[1])), "its model gone")
+				# picked up top-down
+				var ck = ch._carcass_by(int(v0.ids[2]))
+				arena.top_down = true
+				_place(Vector3(float(ck.x) + 0.3, 0, float(ck.z)), 0.0, 0.0)
+				n = _near()
+				check(n == "carcass%d" % int(v0.ids[2]) and arena._use_label.text.contains("chick's carcass"), "top-down, at your feet: \"%s\"" % arena._use_label.text)
+				_key(KEY_E)
+				check(arena.inv.count("chicken_carcass") == 2, "E: picked up top-down too (2)")
+				arena.top_down = false
+				# sold, shredded
+				arena.cash = 0
+				var farm: VoxelFarm = arena.yard.farm
+				check(farm.sell_value() == 2 * VoxelChickens.CARCASS_PRICE, "the buyer offers $%d for two" % farm.sell_value())
+				var shr: VoxelShredder = arena.yard.shredder
+				arena.inv.remove("chicken_carcass", 1)
+				shr.queue = {}
+				shr.points = 0.0
+				shr.bags = 0
+				check(shr.feed() == 1 and int(shr.queue.get("chicken_carcass", 0)) == 1, "E at the shredder: the carcass goes in")
+				shr._grind(1.0)
+				check(absf(shr.points - VoxelChickens.CARCASS_POINTS) < 0.01, "ground into a quarter bag of blood and bone (%.0f points)" % shr.points)
+				arena.inv.add("chicken_carcass", 1)
+				var got: int = farm.sell()
+				check(got == VoxelChickens.CARCASS_PRICE and arena.inv.count("chicken_carcass") == 0, "sold at the buyer: $%d" % got)
+				# the coop's place freed: full, one out in the yard killed, an egg hatches into its place
+				ch._fresh()
+				ch.gate = true
+				ch._hatch(Vector2(29, 37), 1.0)
+				var f := ch._hatch(Vector2(15, 30), 1.0)
+				for o in ch.hens:
+					_still(o)
+				for k in ch.nests.size():
+					ch.nests[k] = []
+				ch.nests[0] = [1.0]
+				ch._live(0.1)
+				check(ch.hens.size() == 4 and (ch.nests[0] as Array).size() == 1, "the coop full (4 of 4): the egg waits")
+				ch.strike(int(f.id), 3, Vector3(14, 0, 30))
+				check(ch.hens.size() == 3, "one killed out in the yard: 3 of 4")
+				ch._live(0.1)
+				check(ch.hens.size() == 4 and (ch.nests[0] as Array).is_empty(), "its place free: the egg hatched into it")
+				# saved and loaded
+				var dd := ch.to_data()
+				ch.carcasses.clear()
+				ch.from_data(dd)
+				check(ch.carcasses.size() == 1 and int(ch.carcasses[0].id) == int(f.id), "the carcass saved and loaded")
 				step = 99
 		99:
 			print("CHICKENS done %d passed, %d failed" % [passed, failed])
@@ -487,6 +647,12 @@ func _coop() -> bool:
 					var h := _hen(0)
 					h.full = 1.0
 					h.poo = VoxelChickens.POO_T - 0.01
+					# one out in the yard for the guest to kill
+					var y := ch._hatch(Vector2(15.0, 30.0), 1.0)
+					_still(y)
+					v0.yard_id = int(y.id)
+					arena.player.global_position = Vector3(10, 0, 20)
+					ch._changed()
 					mark = t
 					step = 9
 				elif t - mark > 30.0:
@@ -494,7 +660,15 @@ func _coop() -> bool:
 					step = 9
 					mark = t
 			9:
+				if v0.has("yard_id") and not v0.has("killed") and ch._carcass_by(int(v0.yard_id)) != null:
+					v0.killed = true
+					check(ch._hen_by(int(v0.yard_id)) == null, "co-op: the guest's blow (a hit op) killed the host's hen: a carcass in the host's game")
+				if v0.has("killed") and not v0.has("taken") and ch._carcass_by(int(v0.yard_id)) == null:
+					v0.taken = true
+					check(arena.inv.count("chicken_carcass") == 0 and arena._say_text.contains("Your mate picked up"), "co-op: the guest picked it up: gone from the host's game, not in the host's backpack (\"%s\")" % arena._say_text)
 				if not n.linked or t - mark > 120.0:
+					if v0.has("yard_id") and not v0.has("taken"):
+						check(false, "co-op: the guest's kill / pick-up never came (killed %s)" % str(v0.has("killed")))
 					step = 99
 			99:
 				print("CHICKENS done %d passed, %d failed" % [passed, failed])
@@ -556,6 +730,40 @@ func _coop() -> bool:
 					step = 5
 					mark = t
 			5:
+				# the host's hen out in the yard: killed with a blow from the guest
+				var y = null
+				for o in ch.hens:
+					if VoxelChickens.killable(Vector2(o.x, o.z)):
+						y = o
+				if y != null:
+					v0.yard_id = int(y.id)
+					ch.strike(int(y.id), VoxelChickens.HP, Vector3(float(y.x) - 1.0, 0, float(y.z)))
+					check(ch._feathers.size() > 0, "co-op: the guest's blow seen at once (feathers)")
+					mark = t
+					step = 6
+				elif t - mark > 30.0:
+					check(false, "co-op: the host's yard hen never showed")
+					step = 99
+			6:
+				if ch._carcass_by(int(v0.yard_id)) != null:
+					check(ch._hen_by(int(v0.yard_id)) == null, "co-op: the carcass in the guest's game too (the host's)")
+					ch._show(0.016)
+					check(ch._carc_views.has(int(v0.yard_id)), "co-op: shown in the guest's game")
+					check(ch.take_carcass(int(v0.yard_id)), "co-op: the guest picks it up")
+					mark = t
+					step = 7
+				elif t - mark > 30.0:
+					check(false, "co-op: the carcass never came to the guest")
+					step = 99
+			7:
+				if arena.inv.count("chicken_carcass") == 1:
+					check(true, "co-op: the chicken carcass in the guest's backpack (given by the host)")
+					mark = t
+					step = 8
+				elif t - mark > 30.0:
+					check(false, "co-op: the carcass was never given")
+					step = 99
+			8:
 				if t - mark > 3.0:
 					step = 99
 			99:
