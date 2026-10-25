@@ -226,7 +226,7 @@ func spawn_hunter(x: float) -> Hunter:
 	for part in h.parts:
 		h_mass += part.pixels_total()
 	h_mass *= h.art_k * h.art_k
-	var s := clampf(sqrt(player.mass() / maxf(1.0, h_mass)) * (1.0 + (area_n - 1) * 0.1), 0.3, 1.6)
+	var s := clampf(sqrt(player.mass() / maxf(1.0, h_mass)) * (1.0 + (area_n - 1) * 0.1), 0.1, 2.0)
 	h.scale = Vector2(s, s)
 	return h
 

@@ -330,7 +330,7 @@ func die_look() -> void:
 	for l in legs:
 		(l[0] as PixelPart).rotation = 1.2 if l[1] == 0.0 else -0.9
 	head.rotation = 0.5
-	jaw.rotation = 0.6
+	jaw.rotation = 0.6 * jaw_k
 
 ## True if `p` is on (or within `margin` of) your body: a box from your feet to your back, nose to tail.
 func covers(p: Vector2, margin: float) -> bool:
@@ -403,6 +403,7 @@ func _pose_head(delta: float) -> void:
 		open = 0.9 if bite_kind == QUICK else 1.1
 	elif _mouth_t > 0.0:
 		open = 0.15
+	open *= jaw_k
 	jaw.rotation = lerpf(jaw.rotation, open, minf(1.0, delta * (40.0 if open < jaw.rotation else 25.0)))
 
 ## Where the neck meets the head (at rest): the head reaches from here.

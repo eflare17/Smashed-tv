@@ -60,13 +60,27 @@ func _run() -> void:
 	c.state = 99
 	c.vel = Vector2.ZERO
 	c.set_facing(-1.0)
+	# drawn at its own size for the close-ups (a hunter is shrunk to match yours)
+	c.scale = Vector2.ONE
 	if c is Flyer:
 		c.position = Vector2(240.0, main.GROUND_Y - 40.0)
 	for f in 4:
 		await process_frame
 	_size = maxf(c.height, c.half_w * 3.0)
 	var at: Vector2 = c.get_global_transform_with_canvas().origin + Vector2(0, -c.height * 0.45)
+	if c.head:
+		# centre between the body and the head, so a long head stays in frame
+		at = (at + c.head.get_global_transform_with_canvas().origin) * 0.5
+		_size *= 1.2
 	await _shot(out, "%s_1_stand" % kind, at)
+	# the jaw hanging open (the hunter's wind-up, your bite)
+	if c.jaw:
+		c.state = 98
+		c.jaw.rotation = 0.9
+		await process_frame
+		await _shot(out, "%s_1b_jaw" % kind, at)
+		c.jaw.rotation = 0.0
+		c.state = 99
 	# walking: swing the legs a few frames in
 	c.set_facing(1.0)
 	for f in 7:
@@ -76,6 +90,8 @@ func _run() -> void:
 		await process_frame
 	await _shot(out, "%s_2_walk" % kind, at)
 	c.set_facing(-1.0)
+	# drawn at its own size for the close-ups (a hunter is shrunk to match yours)
+	c.scale = Vector2.ONE
 	# the zones
 	c.set_show_zones(true)
 	await process_frame

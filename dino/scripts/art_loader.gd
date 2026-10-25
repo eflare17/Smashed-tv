@@ -15,7 +15,7 @@ const DinoArt := preload("dino_art.gd")
 ## right of `head` (and above `head_y`) for bodies that include the head.
 const SPECS := {
 	"hatchling": {"width": 52.0, "legs": 2, "tail": 0.32, "neck": 0.8},
-	"raptor": {"width": 65.0, "legs": 2, "tail": 0.3, "neck": 0.78},
+	"raptor": {"width": 48.0, "jaw_k": 0.6, "jaw_trim": 0.3, "legs": 2, "leg_scale": 0.6, "tilt": 0.45, "tail": 0.3, "neck": 0.78},
 	"allosaur": {"width": 52.0, "legs": 2, "tail": 0.3, "neck": 0.8},
 	"tyrant": {"width": 52.0, "legs": 2, "tail": 0.28, "neck": 0.78},
 	"grazer": {"stand": 54.0, "legs": 4, "hips": [0.42, 0.72], "hip_y": 0.86, "tail": 0.36, "neck": 0.76, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
@@ -27,7 +27,7 @@ const SPECS := {
 ## Which creatures use their imported sprites. Off by default: each is switched on once its rig has been checked
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
-	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
+	"hatchling": false, "raptor": true, "allosaur": false, "tyrant": false,
 	"grazer": true, "runner": true, "charger": true, "flyer": true,
 }
 
@@ -70,7 +70,8 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 	if leg and legs > 0:
 		if tint != Color.WHITE:
 			leg = _tinted(leg, tint)
-		leg_len = leg.get_height() - 2
+		# the legs can be drawn smaller than the sheet made them (leg_scale); leg_len is how far they reach down
+		leg_len = int((leg.get_height() - 2) * spec.get("leg_scale", 1.0))
 	# the hips: where the legs hang from the body picture
 	var hip_y := int(bh * spec.get("hip_y", 0.74 if legs == 2 else 0.8))
 	var hips: Array = []
@@ -87,7 +88,7 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 	var deep := _deepest(body)
 	parts.append({"name": "body", "image": body, "zones": body_zones, "pivot": pivot,
 			"pos": Vector2(0, -leg_len), "anchors": _core(body, int(deep.x), int(deep.y), maxi(2, mini(int(bh * 0.2), int(deep.z) - 1))),
-			"z": 0, "parent": "", "front": _rightmost(body)})
+			"z": 0, "parent": "", "front": _rightmost(body), "rot": spec.get("tilt", 0.0)})
 	# legs: one picture, the far ones darker and behind
 	if leg and legs > 0:
 		var far: Image = leg.duplicate()
@@ -97,33 +98,61 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 		var la := _rows(leg, 0, 2)
 		if legs == 2:
 			parts.append({"name": "leg", "image": far, "zones": lz, "pivot": lp, "pos": Vector2(2, -leg_len),
-					"anchors": la, "z": -1, "parent": "", "leg": PI})
+					"anchors": la, "z": -1, "parent": "", "leg": PI, "scale": spec.get("leg_scale", 1.0)})
 			parts.append({"name": "leg", "image": leg, "zones": lz, "pivot": lp, "pos": Vector2(-2, -leg_len),
-					"anchors": la, "z": 1, "parent": "", "leg": 0.0})
+					"anchors": la, "z": 1, "parent": "", "leg": 0.0, "scale": spec.get("leg_scale", 1.0)})
 		else:
 			var mid := pivot.x
 			for spec_leg in [[far, hips[0] - mid - 2, -1, 0.0], [far, hips[1] - mid + 2, -1, PI],
 					[leg, hips[0] - mid + 2, 1, PI], [leg, hips[1] - mid - 2, 1, 0.0]]:
-				parts.append({"name": "leg", "image": spec_leg[0], "zones": lz, "pivot": lp,
+				parts.append({"name": "leg", "image": spec_leg[0], "zones": lz, "pivot": lp, "scale": spec.get("leg_scale", 1.0),
 						"pos": Vector2(spec_leg[1], -leg_len), "anchors": la, "z": spec_leg[2], "parent": "", "leg": spec_leg[3]})
 	# a separate head and jaw (the meat-eaters)
 	var head := _load(creature, "head")
 	if head:
 		if tint != Color.WHITE:
 			head = _tinted(head, tint)
+		# the sheet's head has the chin drawn on; the separate jaw replaces it, so cut it off below the upper jaw's
+		# edge (keeping the throat at the back, where the head meets the neck)
+		head = head.duplicate()
+		var edge := _bottom_in(head, int(head.get_width() * 0.8), head.get_width() - 2)
+		# only as far back as the jaw reaches, so no gap shows under the eye
+		var cut_from := int(head.get_width() * 0.22)
+		var jaw_pic := _load(creature, "jaw")
+		if jaw_pic:
+			var jl := jaw_pic.get_width() - int(jaw_pic.get_width() * spec.get("jaw_trim", 0.0))
+			cut_from = maxi(cut_from, head.get_width() - jl + 1)
+		for y in range(edge + 1, head.get_height()):
+			for x in range(cut_from, head.get_width()):
+				head.set_pixel(x, y, Color(0, 0, 0, 0))
+		# a row of teeth hanging from the upper jaw, from the snout tip back to where the jaw starts
+		_teeth(head, cut_from + 2, head.get_width() - 3, true)
 		var neck_y := _left_middle(head)
 		var hp := Vector2(2, neck_y)
 		var neck_end := _neck_end(body, spec)
 		parts.append({"name": "head", "image": head, "zones": _fill_zones(head, DinoArt.HEAD), "pivot": hp,
 				"pos": neck_end - pivot + Vector2(-3, 1), "anchors": _core(head, int(_deepest(head).x), int(_deepest(head).y), 4), "z": 2, "parent": "body",
-				"tip": _tip(head)})
+				"tip": _tip(head), "jaw_k": spec.get("jaw_k", 1.0)})
 		var jaw := _load(creature, "jaw")
 		if jaw:
 			if tint != Color.WHITE:
 				jaw = _tinted(jaw, tint)
-			var hinge := Vector2(head.get_width() * 0.22, head.get_height() * 0.72)
-			parts.append({"name": "jaw", "image": jaw, "zones": _fill_zones(jaw, DinoArt.HEAD), "pivot": Vector2(1, 1),
-					"pos": hinge - hp, "anchors": _core(jaw, 3, 2, 3), "z": -1, "parent": "head"})
+			# seat the jaw shut: its hinge at its back end, its top edge tucked up under the upper jaw's bottom edge
+			# at the snout, its front tip in line with the head's
+			# a long sheet jaw hinged at the very back of the skull swings out too far: trim its back end so it hinges
+			# further forward, under the eye (jaw_trim: the share cut off)
+			var trim := int(jaw.get_width() * spec.get("jaw_trim", 0.0))
+			if trim > 0:
+				jaw = jaw.get_region(Rect2i(trim, 0, jaw.get_width() - trim, jaw.get_height()))
+			# and a row standing up along the lower jaw's top edge
+			_teeth(jaw, 3, jaw.get_width() - 3, false)
+			var hw := head.get_width()
+			var jw := jaw.get_width()
+			var jaw_piv := Vector2(1, _left_middle(jaw))
+			var mouth_y := _bottom_in(head, int(hw * 0.8), hw - 2)
+			var hinge := Vector2(hw - jw + jaw_piv.x - 2, mouth_y - 2 + jaw_piv.y - _top_in(jaw, int(jw * 0.6), jw - 2))
+			parts.append({"name": "jaw", "image": jaw, "zones": _fill_zones(jaw, DinoArt.HEAD), "pivot": jaw_piv,
+					"pos": hinge - hp, "anchors": _core(jaw, 3, int(jaw_piv.y), 3), "z": -1, "parent": "head"})
 	# wings (the flyer): one picture, far wing darker and behind
 	var wing := _load(creature, "wing")
 	if wing:
@@ -285,6 +314,64 @@ static func _root_middle(img: Image) -> int:
 		return img.get_height() / 2
 	ys.sort()
 	return ys[ys.size() / 2]
+
+const TOOTH := Color(0.95, 0.92, 0.82)
+const TOOTH_SHADE := Color(0.72, 0.68, 0.6)
+const TOOTH_GAP := Color(0.12, 0.06, 0.05)
+
+## Paints a row of teeth along a jaw's edge, columns x0..x1: on the bottom edge pointing down (`upper`), or on
+## the top edge pointing up. Teeth 2 wide and 3 long with a shaded root, 2-wide dark gaps between, drawn over the edge
+## pixels (so the picture keeps its size and the jaw still fits).
+static func _teeth(img: Image, x0: int, x1: int, upper: bool) -> void:
+	var h := img.get_height()
+	var x := x0
+	var k := 0
+	while x <= x1:
+		var edge := -1
+		if upper:
+			for y in range(h - 1, -1, -1):
+				if _solid(img, x, y):
+					edge = y
+					break
+		else:
+			for y in h:
+				if _solid(img, x, y):
+					edge = y
+					break
+		if edge >= 0:
+			var step := -1 if upper else 1
+			if k % 4 < 2:
+				# a tooth (2 wide, 3 long: the sprite is drawn at about half size): white, shaded at the root
+				img.set_pixel(x, edge, TOOTH)
+				if _solid(img, x, edge + step):
+					img.set_pixel(x, edge + step, TOOTH)
+				if _solid(img, x, edge + step * 2):
+					img.set_pixel(x, edge + step * 2, TOOTH_SHADE)
+			else:
+				# the dark gap between teeth, so they read on a pale lip too
+				img.set_pixel(x, edge, TOOTH_GAP)
+		x += 1
+		k += 1
+
+## The lowest solid row anywhere in columns x0..x1 (the bottom edge of an upper jaw at the snout).
+static func _bottom_in(img: Image, x0: int, x1: int) -> int:
+	var best := 0
+	for x in range(maxi(0, x0), mini(img.get_width(), x1 + 1)):
+		for y in range(img.get_height() - 1, -1, -1):
+			if _solid(img, x, y):
+				best = maxi(best, y)
+				break
+	return best
+
+## The highest solid row in columns x0..x1 (the top of a lower jaw's teeth).
+static func _top_in(img: Image, x0: int, x1: int) -> int:
+	var best := img.get_height()
+	for x in range(maxi(0, x0), mini(img.get_width(), x1 + 1)):
+		for y in img.get_height():
+			if _solid(img, x, y):
+				best = mini(best, y)
+				break
+	return best
 
 ## The middle of the leftmost solid column (where a head joins its neck).
 static func _left_middle(img: Image) -> int:

@@ -36,6 +36,8 @@ var flash := 0.0
 var half_w := 8.0
 ## Imported art is scaled by this on the rig (1 for the placeholders).
 var art_k := 1.0
+## How far the jaw opens, as a share of the usual angle (a long sprite jaw opens less).
+var jaw_k := 1.0
 ## How high its origin sits above the ground when it stands (a flyer's origin is its body).
 var foot := 0.0
 ## Set by move(): the side it bumped into an obstacle this frame (-1 left, 1 right), else 0.
@@ -47,6 +49,7 @@ func build(art: Dictionary) -> void:
 	height = art.height
 	# imported sprites keep their own pixel size and the rig is scaled to the game's
 	art_k = art.get("k", 1.0)
+	jaw_k = 1.0
 	rig.scale = Vector2(facing * art_k, art_k)
 	if art.has("half_w"):
 		half_w = art.half_w
@@ -62,6 +65,8 @@ func build(art: Dictionary) -> void:
 		part.z_index = p.z
 		if p.has("scale"):
 			part.scale = Vector2.ONE * p.scale
+		if p.has("rot"):
+			part.rotation = p.rot
 		var parent: Node = rig if p.parent == "" else _named[p.parent]
 		parent.add_child(part)
 		parts.append(part)
@@ -71,6 +76,8 @@ func build(art: Dictionary) -> void:
 			wings.append(part)
 		if p.has("leg"):
 			legs.append([part, p.leg])
+		if p.has("jaw_k"):
+			jaw_k = p.jaw_k
 		if p.has("tip"):
 			part.set_meta("tip", p.tip)
 		if p.has("front"):

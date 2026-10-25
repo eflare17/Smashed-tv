@@ -103,7 +103,7 @@ func _pose(delta: float) -> void:
 	if state == WINDUP:
 		open = 0.8
 	head.rotation = lerpf(head.rotation, 0.25 if state == WINDUP else 0.0, minf(1.0, delta * 12.0))
-	jaw.rotation = lerpf(jaw.rotation, open, minf(1.0, delta * 25.0))
+	jaw.rotation = lerpf(jaw.rotation, open * jaw_k, minf(1.0, delta * 25.0))
 	(rig.material as ShaderMaterial).set_shader_parameter("flash", 0.85 if flash > 0.0 else
 			(0.35 if state == WINDUP and int(_t * 16.0) % 2 == 0 else 0.0))
 
