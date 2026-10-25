@@ -1,7 +1,9 @@
 extends SceneTree
-## Photographs the phone controls in use (needs a window): left thumb walking, the lock on a runner's neck, the
-## right thumb charging a big bite. From the dino folder:
+## Photographs the phone controls in use (needs a window): left thumb walking, a finger holding on a runner's
+## neck, charging a big bite there. From the dino folder:
 ##   godot --path . --script res://tests/shot_touch.gd -- --out=<folder>
+
+const DinoArt := preload("res://scripts/dino_art.gd")
 
 func _initialize() -> void:
 	_run.call_deferred()
@@ -39,16 +41,10 @@ func _run() -> void:
 	var r: Prey = main.spawn_prey(190.0, Prey.RUNNER)
 	await process_frame
 	r.state = 99
-	# pick the neck: one flick up
-	touch.handle(_ev(1, Vector2(400, 200), true))
-	touch.handle(_ev(1, Vector2(400, 180), false, true))
-	touch.handle(_ev(1, Vector2(400, 180), false))
-	for f in 10:
-		await process_frame
-	# left thumb down and a little right; right thumb holding
-	touch.handle(_ev(0, Vector2(90, 200), true))
-	touch.handle(_ev(0, Vector2(100, 200), false, true))
-	touch.handle(_ev(1, Vector2(410, 210), true))
+	# left thumb down and a little right; a finger holding on the runner's neck (charging the big bite there)
+	touch.handle(_ev(0, Vector2(60, 200), true))
+	touch.handle(_ev(0, Vector2(70, 200), false, true))
+	touch.handle(_ev(1, touch.get_canvas_transform() * _neck(r), true))
 	for f in 400:
 		await process_frame
 		r.state = 99
@@ -59,3 +55,13 @@ func _run() -> void:
 	root.get_viewport().get_texture().get_image().save_png("%s/touch_controls.png" % out)
 	print("saved")
 	quit()
+
+func _neck(c: Prey) -> Vector2:
+	var sum := Vector2.ZERO
+	var n := 0
+	for p in c.parts:
+		for i in p.w * p.h:
+			if p.alive[i] == 1 and p.zone[i] == DinoArt.NECK:
+				sum += p.to_world(Vector2(i % p.w + 0.5, i / p.w + 0.5))
+				n += 1
+	return sum / maxf(1.0, n)

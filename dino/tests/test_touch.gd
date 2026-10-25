@@ -42,6 +42,49 @@ func _drag(index: int, at: Vector2) -> void:
 	e.position = at
 	touch.handle(e)
 
+func _screen(world: Vector2) -> Vector2:
+	return touch.get_canvas_transform() * world
+
+## Keeps a creature standing still (and alive) for the test.
+func _hold(c: Prey) -> void:
+	c.state = 99
+	c.vel = Vector2.ZERO
+
+## The live pixel of a zone nearest that zone's middle.
+func _zone_point(c: Prey, zone: int) -> Vector2:
+	var pts: Array[Vector2] = []
+	var sum := Vector2.ZERO
+	for p in c.parts:
+		for i in p.w * p.h:
+			if p.alive[i] == 1 and p.zone[i] == zone:
+				var w := p.to_world(Vector2(i % p.w + 0.5, i / p.w + 0.5))
+				pts.append(w)
+				sum += w
+	var mid := sum / maxf(1.0, pts.size())
+	var best := mid
+	for w in pts:
+		if w.distance_to(mid) < best.distance_to(mid) or best == mid:
+			best = w
+	return best
+
+func _zone_count(c: Prey, zone: int) -> int:
+	var n := 0
+	for p in c.parts:
+		for i in p.w * p.h:
+			if p.alive[i] == 1 and p.zone[i] == zone:
+				n += 1
+	return n
+
+## Waits for the bite to finish and the cooldown to run out, keeping the creature still.
+func _settle(pl: Player, c: Prey) -> void:
+	for f in 200:
+		await process_frame
+		if is_instance_valid(c):
+			_hold(c)
+		if pl.bite_t < 0.0 and pl.cool <= 0.0 and pl.grab.is_empty() and main.get("_stop") <= 0.0:
+			break
+	pl.cool = 0.0
+
 func _run() -> void:
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
@@ -82,65 +125,93 @@ func _run() -> void:
 		if pl.on_ground:
 			break
 
-	# the lock: a runner nearby is picked, on its body to start with
+	# with nothing touched, the aim goes for the nearest creature's body
 	pl.position = Vector2(200.0, main.GROUND_Y)
 	pl.vel = Vector2.ZERO
 	var r: Prey = main.spawn_prey(235.0, Prey.RUNNER)
 	await _frames(3)
-	r.state = 99
-	r.vel = Vector2.ZERO
+	_hold(r)
 	await _frames(3)
 	_check("the aim locks onto the nearest creature", touch.target == r)
-	_check("...on its body to start", r.zone_at(touch.aim_point) == DinoArt.BODY or touch.part_name() == "BODY",
-			touch.part_name())
-	# a flick up on the right side picks the part nearer the head, without biting
-	_press(1, Vector2(400, 200))
-	_drag(1, Vector2(400, 180))
-	_release(1, Vector2(400, 180))
-	await _frames(2)
-	_check("a flick up moves the pick toward the head", touch.part_name() == "NECK", touch.part_name())
-	_check("...and doesn't bite", pl.bite_t < 0.0)
-	_press(1, Vector2(400, 200))
-	_drag(1, Vector2(400, 222))
-	_release(1, Vector2(400, 222))
-	_press(1, Vector2(400, 200))
-	_drag(1, Vector2(400, 222))
-	_release(1, Vector2(400, 222))
-	await _frames(2)
-	_check("two flicks down move it to the tail", touch.part_name() == "TAIL", touch.part_name())
-	await _frames(2)
-	_check("the aim sits on that part", r.zone_at(touch.aim_point) == DinoArt.TAIL,
-			DinoArt.ZONE_NAMES[r.zone_at(touch.aim_point)])
+	_check("...on its body", touch.part_name() == "BODY", touch.part_name())
 
-	# a tap bites (at the locked spot)
+	# touching a creature's head aims there; a quick tap bites it there
 	pl.cool = 0.0
-	_press(1, Vector2(400, 200))
-	_release(1, Vector2(400, 200))
+	var head := _screen(_zone_point(r, DinoArt.HEAD))
+	var heads := _zone_count(r, DinoArt.HEAD)
+	_press(1, head)
+	await _frames(1)
+	_check("touching a creature's head aims at its head", touch.part_name() == "HEAD", touch.part_name())
+	_check("...and doesn't bite until you let go", pl.bite_t < 0.0)
+	_release(1, head)
 	var bit := false
 	for f in 3:
 		await process_frame
 		if pl.bite_t >= 0.0:
 			bit = true
-	_check("a tap on the right side bites", bit)
-	for f in 120:
-		await process_frame
-		if pl.bite_t < 0.0 and pl.cool <= 0.0:
-			break
-	# holding charges the big bite; letting go bites with it
-	r.state = 99
-	r.vel = Vector2.ZERO
-	pl.cool = 0.0
-	_press(1, Vector2(400, 200))
+	_check("a tap on the head bites", bit and pl.bite_kind == Player.QUICK)
+	await _settle(pl, r)
+	_check("...and the head is what got bitten", _zone_count(r, DinoArt.HEAD) < heads,
+			"%d -> %d head pixels" % [heads, _zone_count(r, DinoArt.HEAD)])
+
+	# holding on the tail charges the big bite; letting go bites with it, on the tail
+	var tail := _screen(_zone_point(r, DinoArt.TAIL))
+	_press(1, tail)
 	var charged := false
 	for f in 400:
 		await process_frame
+		_hold(r)
 		if pl.charging and pl.charge > 0.3:
 			charged = true
 			break
-	_check("holding the right side charges a big bite", charged, "%.2f" % pl.charge)
-	_release(1, Vector2(400, 200))
+	_check("holding on the tail charges a big bite", charged, "%.2f" % pl.charge)
+	_check("...aimed at the tail", touch.part_name() == "TAIL", touch.part_name())
+	var spot := touch.aim_point
+	_release(1, tail)
 	await _frames(2)
 	_check("letting go does the big bite", pl.bite_t >= 0.0 and pl.bite_kind == Player.BIG)
+	await _settle(pl, r)
+
+	# BITE goes back for the spot you last touched (or what's left nearest it)
+	var btn: Vector2 = main.get_viewport().get_visible_rect().size + (Touch.BITE_BTN[0] as Vector2)
+	_press(1, btn)
+	await _frames(1)
+	_check("BITE aims where you last touched", touch.target == r and touch.aim_point.distance_to(spot) < 16.0,
+			"%.0f px away" % touch.aim_point.distance_to(spot))
+	_release(1, btn)
+	await _frames(2)
+	_check("...and a tap on it bites", pl.bite_t >= 0.0)
+	await _settle(pl, r)
+
+	# a creature on the left half is bitten, not walked to
+	var back: Prey = main.spawn_prey(pl.position.x - 30.0, Prey.RUNNER)
+	await _frames(3)
+	_hold(back)
+	var on_left := _screen(_zone_point(back, DinoArt.BODY))
+	_press(0, on_left)
+	await _frames(1)
+	_check("touching a creature on the left half aims at it", on_left.x < 240.0 and touch.target == back,
+			"at x %.0f" % on_left.x)
+	_check("...instead of being the move stick", touch.move_x == 0.0 and touch.get("_left_id") < 0)
+	_release(0, on_left)
+	await _settle(pl, back)
+
+	# the JUMP button
+	var jb: Vector2 = main.get_viewport().get_visible_rect().size + (Touch.JUMP_BTN[0] as Vector2)
+	_press(2, jb)
+	_check("the JUMP button isn't a bite", touch.get("_bite_id") < 0 and touch.get("_left_id") < 0)
+	var hopped := false
+	for f in 20:
+		await process_frame
+		if not pl.on_ground:
+			hopped = true
+			break
+	_release(2, jb)
+	_check("the JUMP button jumps", hopped)
+	for f in 120:
+		await process_frame
+		if pl.on_ground:
+			break
 
 	# level-up cards: a tap on one picks it
 	await _frames(30)
