@@ -14,7 +14,7 @@ const DinoArt := preload("dino_art.gd")
 ## fractions of the body picture: tail = left of `tail`, neck = right of `neck` (and above `neck_y`), head =
 ## right of `head` (and above `head_y`) for bodies that include the head.
 const SPECS := {
-	"hatchling": {"width": 52.0, "legs": 2, "tail": 0.32, "neck": 0.8},
+	"hatchling": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.3, "leg_scale": 0.6, "tilt": 0.35, "legs": 2, "tail": 0.32, "neck": 0.8},
 	"raptor": {"width": 48.0, "jaw_k": 0.6, "jaw_trim": 0.3, "legs": 2, "leg_scale": 0.6, "tilt": 0.45, "tail": 0.3, "neck": 0.78},
 	"allosaur": {"width": 52.0, "legs": 2, "tail": 0.3, "neck": 0.8},
 	"tyrant": {"width": 52.0, "legs": 2, "tail": 0.28, "neck": 0.78},
@@ -27,7 +27,7 @@ const SPECS := {
 ## Which creatures use their imported sprites. Off by default: each is switched on once its rig has been checked
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
-	"hatchling": false, "raptor": true, "allosaur": false, "tyrant": false,
+	"hatchling": true, "raptor": true, "allosaur": false, "tyrant": false,
 	"grazer": true, "runner": true, "charger": true, "flyer": true,
 }
 
