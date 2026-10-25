@@ -24,6 +24,8 @@ func enabled() -> bool:
 func _request(path: String, body: Dictionary, done: Callable) -> void:
 	var h := HTTPRequest.new()
 	h.timeout = 10.0
+	# in a browser the reply arrives already unzipped: unzipping it again fails
+	h.accept_gzip = false
 	add_child(h)
 	h.request_completed.connect(func(result: int, code: int, _headers: PackedStringArray, data: PackedByteArray):
 		h.queue_free()
