@@ -384,20 +384,21 @@ func _lava_crack(w: int) -> Image:
 			img.set_pixel(x, y, c)
 	return img
 
-## Quicksand: paler, wetter-looking sand in rings, with a darker rim.
+## Quicksand: dark wet sand swirling in rings, with a pale dry rim round it.
 func _quicksand(w: int, sand: Color) -> Image:
 	var img := Image.create(w, 6, false, Image.FORMAT_RGBA8)
 	var mid := w * 0.5
+	var wet := sand.darkened(0.3).lerp(Color(0.45, 0.33, 0.2), 0.3)
 	for y in 6:
 		for x in w:
 			var edge := mini(x, w - 1 - x)
 			if edge < 3 and y < 3 - edge:
 				continue
-			var c := sand.lightened(0.08)
-			if int(absf(x - mid) * 0.35 + y) % 3 == 0:
-				c = sand.darkened(0.12)
-			if edge < 2 or y == 5:
-				c = sand.darkened(0.28)
+			var c := wet
+			if int(absf(x - mid) * 0.3 + y * 0.8) % 4 == 0:
+				c = wet.lightened(0.2)
+			if edge < 2 or y == 0:
+				c = sand.lightened(0.15)
 			img.set_pixel(x, y, c)
 	return img
 

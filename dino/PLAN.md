@@ -346,3 +346,28 @@ double-clicking: it loads `tools/dino-refs.js`).
 - **More variety** (owner, 26 Oct): every area has at least one ankylosaurus in its first 60% (`Area.GUARANTEED`;
   each new kind joins it), and the mix is now runners 35%, grazers 30%, chargers 15%, ankylosaurus 20% (was
   45/35/10/10). The owner wants the other new dinosaurs added one at a time, each with its own moves.
+
+## Overnight 26-27 Oct: three new maps and ground patches (owner's picks before bed)
+
+Picked: Desert, Coast, Night jungle; swamp deep water, volcano lava cracks, desert quicksand; a morning report.
+Not picked (not done): Snowy forest, "night: hard to see", any new dinosaurs, the test wobble.
+
+- **Seven looks in turn** (`Area.NAMES`): JUNGLE, BADLANDS, DESERT, SWAMP, COAST, VOLCANO, NIGHT JUNGLE (area 3 is
+  now the desert, where it used to be the swamp).
+  - Desert: low sand dunes that shimmer in the heat, stubby cycads and dry shrubs, sand on top instead of grass.
+  - Coast: a far headland, the sea with light wave lines and white surf, a few palms, a sand beach; the obstacles
+    are mostly driftwood logs.
+  - Night jungle: the jungle's shapes in night colours, stars and a big moon, fireflies drifting over the
+    undergrowth, and everything on the ground (dinosaurs too) dimmed blue.
+- **Ground patches** (`Area.hazards`, placed on flat open ground clear of rocks, logs, raised ground, the start
+  and the exit; a few more each lap of the seven):
+  - Swamp water: 5+ pools, 60-140 px. Anything wading moves at half speed; the water is drawn over its feet.
+  - Volcano lava: 8+ glowing cracks, 16-36 px. It scorches you for 8 health and hops you up out of it; a creature
+    standing in it gets its feet burnt (a 4 px bite every 0.3 s), so it limps, gets crippled, and runs. Herd
+    prey into it.
+  - Desert quicksand: 4+ pits, 40-80 px. 45% speed, and you sink up to 5 px while in it; jump out.
+  - All numbers PLACEHOLDERS.
+- Tests: the seven looks, the patches being clear of obstacles, water and sand slowing, sand sinking, lava
+  scorching you and burning feet. The bite tests now clear the area's own herds at the start (the random mix and
+  the guaranteed ankylosaurus made timing checks wobble); three runs in a row clean after that.
+- `tests/shot_maps.gd` photographs every look with a grazer standing in the patch.
