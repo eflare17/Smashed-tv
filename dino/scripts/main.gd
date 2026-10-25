@@ -466,7 +466,7 @@ func _step(delta: float) -> void:
 		aim = b[3]
 		big = b[4]
 	elif touch.active:
-		# thumbs: the touch layer does the aiming (a lock on the nearest creature, the part you picked)
+		# thumbs: the touch layer does the aiming (the spot you touched, or the nearest creature)
 		touch.step(delta, player)
 		move_x = touch.move_x
 		jump = touch.jump
@@ -945,7 +945,7 @@ func _draw_overlay() -> void:
 	if demo or state != PLAY:
 		return
 	# the aim: red on a bitable spot in range (reach plus the lunge), white in range, grey past it (with a dot where
-	# the bite would land instead). With thumbs, it sits on the locked part, with a ring round it.
+	# the bite would land instead). With thumbs, it sits on the spot you touched, with a ring round it.
 	var m := touch.aim_point if touch.active else get_global_mouse_position()
 	if touch.active and touch.target:
 		_overlay.draw_arc(m, 6.0, 0.0, TAU, 16, Color(1, 0.85, 0.35, 0.8), 1.0)
