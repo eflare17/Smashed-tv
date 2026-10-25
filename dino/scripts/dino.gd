@@ -60,6 +60,8 @@ func build(art: Dictionary) -> void:
 		part.name = p.name
 		part.position = p.pos
 		part.z_index = p.z
+		if p.has("scale"):
+			part.scale = Vector2.ONE * p.scale
 		var parent: Node = rig if p.parent == "" else _named[p.parent]
 		parent.add_child(part)
 		parts.append(part)

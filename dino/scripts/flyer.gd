@@ -18,10 +18,14 @@ var _home_y := 80.0
 var _wander := 0.0
 var _flap := 0.0
 var _did_hit := false
+## The wings' angle lying dead (the code-drawn wing points forward, the sprite's trails back).
+var _wing_rest := 1.1
 
 func _ready() -> void:
 	var art := ArtLoader.rig("flyer")
 	build(art if not art.is_empty() else DinoArt.flyer())
+	if not art.is_empty():
+		_wing_rest = art.get("wing_rest", 1.1)
 	if art.is_empty():
 		half_w = 6.0
 		foot = 5.0
@@ -103,7 +107,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 			move(delta)
 			if on_ground:
 				for w in wings:
-					w.rotation = lerpf(w.rotation, 1.1, minf(1.0, delta * 8.0))
+					w.rotation = lerpf(w.rotation, _wing_rest, minf(1.0, delta * 8.0))
 				_slump(delta)
 	if state != DEAD and state != GROUNDED:
 		position.y = minf(position.y, ground - 10.0)

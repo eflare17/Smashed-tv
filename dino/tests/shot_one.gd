@@ -100,7 +100,7 @@ func _run() -> void:
 	# dead
 	if not c.dead:
 		c.die()
-	for f in 90:
+	for f in 240:
 		await process_frame
 	await _shot(out, "%s_5_dead" % kind, at)
 	print("%s: %d parts, height %.1f, half_w %.1f, art_k %.2f" % [kind, c.parts.size(), c.height, c.half_w, c.art_k])

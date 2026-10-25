@@ -204,7 +204,12 @@ func _name_pieces(creature: String, blobs: Array, wanted: int) -> Array:
 	names[0] = "body"
 	if wanted == 2:
 		for k in range(1, blobs.size()):
-			names[k] = "wing" if creature == "flyer" else "leg"
+			names[k] = "leg"
+		# a spread wing is bigger than the pterodactyl's body: the biggest piece is the wing
+		if creature == "flyer":
+			names[0] = "wing"
+			for k in range(1, blobs.size()):
+				names[k] = "body"
 		return names
 	var rest := range(1, blobs.size())
 	var leg := -1

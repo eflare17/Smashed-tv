@@ -21,14 +21,14 @@ const SPECS := {
 	"grazer": {"stand": 54.0, "legs": 4, "hips": [0.42, 0.72], "hip_y": 0.86, "tail": 0.36, "neck": 0.76, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
 	"runner": {"width": 36.0, "legs": 2, "tail": 0.42, "neck": 0.78, "head": 0.88, "head_y": 0.6},
 	"charger": {"stand": 46.0, "legs": 4, "hips": [0.34, 0.6], "hip_y": 0.6, "tail": 0.2, "head": 0.66, "head_y": 1.0},
-	"flyer": {"width": 44.0, "legs": 0, "tail": 0.25, "neck": 0.55, "head": 0.68, "head_y": 1.0},
+	"flyer": {"width": 38.0, "wing_scale": 0.75, "legs": 0, "hips": [0.4, 0.5], "hip_y": 0.6, "shoulder": [0.55, 0.5], "tail": 0.22, "head": 0.3, "head_y": 0.42},
 }
 
 ## Which creatures use their imported sprites. Off by default: each is switched on once its rig has been checked
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
 	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
-	"grazer": true, "runner": true, "charger": true, "flyer": false,
+	"grazer": true, "runner": true, "charger": true, "flyer": true,
 }
 
 static var _cache := {}
@@ -127,20 +127,26 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 	# wings (the flyer): one picture, far wing darker and behind
 	var wing := _load(creature, "wing")
 	if wing:
+		# the sheet draws the wing spread out to the right from its root on the left; side-on it trails back over
+		# the body from the shoulder, so mirror it and hinge it at the root
+		wing = wing.duplicate()
+		wing.flip_x()
+		var root := Vector2(wing.get_width() - 3, _root_middle(wing))
 		var far_w: Image = wing.duplicate()
 		_darken(far_w, 0.3)
 		var wz := _fill_zones(wing, DinoArt.WING)
-		var wp := Vector2(wing.get_width() * 0.3, 2)
-		var wa := _rows(wing, 0, 3)
-		var at := Vector2(bw * 0.42, bh * 0.35) - pivot
+		var wp := root
+		var wa := _core(wing, int(root.x), int(root.y), 4)
+		var sh: Array = spec.get("shoulder", [0.42, 0.35])
+		var at := Vector2(bw * sh[0], bh * sh[1]) - pivot
 		parts.append({"name": "wing", "image": far_w, "zones": wz, "pivot": wp, "pos": at + Vector2(-2, 0),
-				"anchors": wa, "z": -1, "parent": "", "wing": true})
+				"anchors": wa, "z": -1, "parent": "", "wing": true, "scale": spec.get("wing_scale", 1.0)})
 		parts.append({"name": "wing", "image": wing, "zones": wz, "pivot": wp, "pos": at,
-				"anchors": wa, "z": 1, "parent": "", "wing": true})
+				"anchors": wa, "z": 1, "parent": "", "wing": true, "scale": spec.get("wing_scale", 1.0)})
 	var height := (leg_len + hip_y) * k if legs > 0 else bh * k
 	# how far the body drops when it dies: most of the leg (in the rig's own pixels: the rig is scaled by k)
 	return {"parts": parts, "height": height, "k": k, "half_w": bw * k * 0.3, "foot": (bh * 0.5 * k) if legs == 0 else 0.0,
-			"drop": leg_len * 0.8}
+			"drop": leg_len * 0.8, "wing_rest": -0.15}
 
 # --- picture rules -----------------------------------------------------------------------------------------
 
@@ -267,6 +273,18 @@ static func _rows(img: Image, y0: int, y1: int) -> PackedInt32Array:
 			if _solid(img, x, y):
 				out.append(y * w + x)
 	return out
+
+## The middle of the rightmost few solid columns (where a mirrored wing joins the shoulder).
+static func _root_middle(img: Image) -> int:
+	var ys: Array = []
+	for x in range(img.get_width() - 1, maxi(-1, img.get_width() - 7), -1):
+		for y in img.get_height():
+			if _solid(img, x, y):
+				ys.append(y)
+	if ys.is_empty():
+		return img.get_height() / 2
+	ys.sort()
+	return ys[ys.size() / 2]
 
 ## The middle of the leftmost solid column (where a head joins its neck).
 static func _left_middle(img: Image) -> int:
