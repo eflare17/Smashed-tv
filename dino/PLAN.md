@@ -343,3 +343,6 @@ double-clicking: it loads `tools/dino-refs.js`).
   searches near a size hint in quarter pixels (`CELL_HINT`); the old sheets import exactly as before.
 - Known test wobble: about one run in five, one timing-based check fails (a pterodactyl dive or a low step); it
   moves between checks and passes on rerun. Worth a look.
+- **More variety** (owner, 26 Oct): every area has at least one ankylosaurus in its first 60% (`Area.GUARANTEED`;
+  each new kind joins it), and the mix is now runners 35%, grazers 30%, chargers 15%, ankylosaurus 20% (was
+  45/35/10/10). The owner wants the other new dinosaurs added one at a time, each with its own moves.

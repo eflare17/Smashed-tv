@@ -458,6 +458,16 @@ func _run() -> void:
 	seed(7)
 	pl = main.player
 
+	# every area has at least one of each newer kind, in its first part
+	var all_have := true
+	for s in 30:
+		var ar := Area.new()
+		ar.generate(1 + s % 4, 1000 + s, main.GROUND_Y)
+		for kind: int in Area.GUARANTEED:
+			if not ar.herds.any(func(hd: Array) -> bool: return hd[2] == kind and hd[0] < ar.width * 0.65):
+				all_have = false
+	_check("every area has an ankylosaurus early on", all_have)
+
 	# areas: the same run seed builds the same area, another seed a different one
 	var a1 := Area.new()
 	a1.generate(1, 777, main.GROUND_Y)
