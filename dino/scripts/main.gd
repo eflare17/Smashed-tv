@@ -31,8 +31,10 @@ const XP_KILL_HUNTER := 25
 ## Seconds in an area before the herds stop coming, and before the danger bar is full. PLACEHOLDER.
 const PREY_DRY := 60.0
 const DANGER_TIME := 150.0
-## Of the things sent after you, how many are pterodactyls rather than hunters.
-const FLYER_SHARE := 0.35
+## Of the things sent after you, how many are pterodactyls rather than hunters, and the most in the air at once
+## (any more become hunters).
+const FLYER_SHARE := 0.2
+const FLYER_MAX := 1
 ## Attackers hit this many times harder with the danger bar full; a body is rotten (no healing, half XP) after
 ## this many seconds; what reaching the next area pays (health, and XP; both scaled by how low the bar was).
 const DANGER_BITE := 2.5
@@ -250,6 +252,8 @@ func _spawn_herd_kind(kind: int, x: float) -> Prey:
 			return spawn_prey(x, Prey.RUNNER)
 		Area.HERD_CHARGER:
 			return _add(Charger.new(), x)
+		Area.HERD_ANKYLO:
+			return _add(Ankylosaurus.new(), x)
 	return spawn_prey(x)
 
 func spawn_prey(x: float, kind := Prey.GRAZER) -> Prey:
@@ -277,7 +281,8 @@ func spawn_flyer(x: float) -> Flyer:
 
 ## Hunters, flyers, and chargers while they're angry: the things that come for you.
 func is_attacker(c: Prey) -> bool:
-	return not c.dead and (c is Hunter or c is Flyer or (c is Charger and c.state != Prey.GRAZE))
+	return not c.dead and (c is Hunter or c is Flyer or (c is Charger and c.state != Prey.GRAZE)
+			or (c is Ankylosaurus and (c.state == Ankylosaurus.WIND or c.state == Ankylosaurus.SWING)))
 
 func _add(c: Prey, x: float) -> Prey:
 	c.game = self
@@ -329,11 +334,13 @@ func _spawners(delta: float) -> void:
 	if _hunt_t <= 0.0:
 		_hunt_t = _hunt_gap()
 		var live := creatures.filter(func(c): return (c is Hunter or c is Flyer) and not c.dead).size()
+		var flying := creatures.filter(func(c): return c is Flyer and not c.dead).size()
 		for k in _pack_size():
 			if live + k >= _hunt_cap():
 				break
-			if rng.randf() < FLYER_SHARE:
+			if rng.randf() < FLYER_SHARE and flying < FLYER_MAX:
 				spawn_flyer(_offscreen_x() + k * 30.0)
+				flying += 1
 			else:
 				spawn_hunter(_offscreen_x() + k * 24.0)
 	# keep something to eat around, but only for a while: then the herds have moved on
@@ -607,6 +614,10 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 		if pr.global_position.distance_to(p) > 160.0:
 			continue
 		var zone := pr.zone_at(p)
+		# an ankylosaurus's back plates: the bite barely gets through (Ankylosaurus.bite cuts it down)
+		if pr is Ankylosaurus and (pr as Ankylosaurus).armour_at(p) and not light:
+			_popups.append(["CLANK", p + Vector2(0, -16), 0.7, Color(0.8, 0.85, 0.9)])
+			sfx.play("snap", 0.1, 2.0)
 		var r := pr.bite(p, radius, rng)
 		var off := 0
 		for isl: Dictionary in r.islands:
@@ -1033,6 +1044,8 @@ func _kill_moment(pr: Prey, p: Vector2, dir: Vector2) -> void:
 func _meat_kg(c: Prey) -> float:
 	if c is Charger:
 		return 150.0
+	if c is Ankylosaurus:
+		return 130.0
 	if c is Hunter:
 		return 40.0
 	if c is Flyer:
@@ -1050,6 +1063,8 @@ func _kg_px(c: Prey) -> float:
 func _kill_xp(c: Prey) -> int:
 	if c is Charger:
 		return 30
+	if c is Ankylosaurus:
+		return 35
 	if c is Hunter:
 		return XP_KILL_HUNTER
 	if c is Flyer:

@@ -336,6 +336,45 @@ func _run() -> void:
 			break
 	_check("it charges", charged)
 	_check("its horns hurt", pl.hp < pl.max_hp, "%.0f" % pl.hp)
+	ch.queue_free()
+	main.creatures.erase(ch)
+
+	# an ankylosaurus: its back plates barely give, its belly does; it doesn't run; behind it, its club hurts
+	while main.state == main.CHOOSE:
+		main._pick(1)
+	var an: Ankylosaurus = main._spawn_herd_kind(Area.HERD_ANKYLO, 1400.0)
+	await _frames(3)
+	var col := int(an.body.w * 0.55)
+	var top := -1
+	var bottom := -1
+	for y in an.body.h:
+		if an.body.alive[y * an.body.w + col] == 1:
+			if top < 0:
+				top = y
+			bottom = y
+	var back: Vector2 = an.body.to_world(Vector2(col + 0.5, top + 3.5))
+	var belly: Vector2 = an.body.to_world(Vector2(col - 6.5, bottom - 2.5))
+	_check("the back is armour, the belly isn't", an.armour_at(back) and not an.armour_at(belly))
+	var on_back: int = an.bite(back, 4.5, rng).removed.size()
+	var on_belly: int = an.bite(belly, 4.5, rng).removed.size()
+	_check("a bite on the plates barely gets through", on_back * 3 < on_belly, "%d px vs %d on the belly" % [on_back, on_belly])
+	main.player_bite(pl, belly, pl.bite_radius)
+	await _frames(20)
+	_check("bitten, it doesn't run", an.state != Prey.FLEE and absf(an.vel.x) < 30.0, "state %d, speed %.0f" % [an.state, an.vel.x])
+	pl.hp = pl.max_hp
+	pl.invuln = 0.0
+	pl.position = Vector2(an.position.x - an.facing * an._reach() * 0.7, main.GROUND_Y)
+	var wound_up := false
+	for f in 300:
+		await process_frame
+		if an.state == Ankylosaurus.WIND:
+			wound_up = true
+		if pl.hp < pl.max_hp:
+			break
+	_check("behind it, it raises its tail club", wound_up)
+	_check("...and the club hurts", pl.hp < pl.max_hp, "%.0f" % pl.hp)
+	an.queue_free()
+	main.creatures.erase(an)
 
 	# runners are small and quick
 	var rn: Prey = main.spawn_prey(1600.0, Prey.RUNNER)
@@ -360,6 +399,38 @@ func _run() -> void:
 	main.area_t = main.DANGER_TIME
 	_check("a full danger bar makes bites hurt more", main.danger_mult() > d0 * 2.0, "%.1fx -> %.1fx" % [d0, main.danger_mult()])
 	_check("past half danger they come in packs", main._pack_size() >= 2, "%d at once" % main._pack_size())
+	# pterodactyls: about one in five of what's sent, and never more than one in the air
+	var keep: Array = main.creatures.duplicate()
+	var rng_state: int = main.rng.state
+	var lvl1: int = main.level
+	main.level = 8
+	var most_up := 0
+	var sent := 0
+	var flyers := 0
+	for k in 300:
+		main.set("_hunt_t", 0.0)
+		main._spawners(0.0)
+		for c in main.creatures.duplicate():
+			if keep.has(c) or (c is Flyer and k < 150):
+				continue
+			# the share is counted once nothing is left up to hold the next one back
+			if k >= 150:
+				sent += 1
+				flyers += 1 if c is Flyer else 0
+			c.queue_free()
+			main.creatures.erase(c)
+		most_up = maxi(most_up, main.creatures.filter(func(c): return c is Flyer and not c.dead).size())
+	for c in main.creatures.duplicate():
+		if not keep.has(c):
+			c.queue_free()
+			main.creatures.erase(c)
+	main.level = lvl1
+	main.set("_hunt_t", 99999.0)
+	# the later checks see the same random numbers as without this one
+	main.rng.state = rng_state
+	_check("never more than one pterodactyl up at once", most_up <= 1, "%d" % most_up)
+	_check("about one in five attackers is a pterodactyl", float(flyers) / sent > 0.1 and float(flyers) / sent < 0.3,
+			"%d of %d" % [flyers, sent])
 	main.area_t = 0.0
 	var old: Prey = main.spawn_prey(2000.0)
 	old.die()

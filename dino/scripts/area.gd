@@ -21,7 +21,7 @@ const PALETTES := [
 ]
 const NAMES := ["JUNGLE", "BADLANDS", "SWAMP", "VOLCANO"]
 ## What a herd is made of.
-enum { HERD_GRAZER, HERD_RUNNER, HERD_CHARGER }
+enum { HERD_GRAZER, HERD_RUNNER, HERD_CHARGER, HERD_ANKYLO }
 
 var number := 1
 var seed_value := 0
@@ -83,7 +83,7 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 					ground.append(st)
 			if _rng.randf() < 0.6:
 				var kind := herd_kind(_rng)
-				herds.append([x + w * 0.5, 1 if kind == HERD_CHARGER else _rng.randi_range(1, 2), kind])
+				herds.append([x + w * 0.5, 1 if kind == HERD_CHARGER or kind == HERD_ANKYLO else _rng.randi_range(1, 2), kind])
 			x += w
 		elif roll < 0.7:
 			# a rock shelf in the air: jump up through it and stand on it
@@ -91,7 +91,7 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 			platforms.append(Rect2(x, ground_y - _rng.randi_range(28, 36), w, 6))
 		else:
 			var kind := herd_kind(_rng)
-			herds.append([x + _rng.randf_range(-40.0, 40.0), 1 if kind == HERD_CHARGER else _rng.randi_range(1, 2 + mini(n, 2)), kind])
+			herds.append([x + _rng.randf_range(-40.0, 40.0), 1 if kind == HERD_CHARGER or kind == HERD_ANKYLO else _rng.randi_range(1, 2 + mini(n, 2)), kind])
 		x += _rng.randf_range(170.0, 380.0)
 	# always something to eat near the start
 	herds.push_front([300.0, 2, HERD_RUNNER])
@@ -268,7 +268,10 @@ func _shelf(w: int, h: int) -> Image:
 			img.set_pixel(x, y, c)
 	return img
 
-## A random kind of herd: small runners most often, then the big grazers, now and then a charger. PLACEHOLDER mix.
+## A random kind of herd: small runners most often, then the big grazers, now and then a charger or a lone
+## ankylosaurus. PLACEHOLDER mix.
 func herd_kind(rng: RandomNumberGenerator) -> int:
 	var r := rng.randf()
-	return HERD_RUNNER if r < 0.45 else (HERD_GRAZER if r < 0.85 else HERD_CHARGER)
+	if r < 0.45:
+		return HERD_RUNNER
+	return HERD_GRAZER if r < 0.8 else (HERD_CHARGER if r < 0.9 else HERD_ANKYLO)

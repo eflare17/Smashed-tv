@@ -14,6 +14,20 @@ const SHEETS := {
 	# the owner's first Dino Maker sheets (25 Oct): body and one leg each, nothing in the game yet
 	"ankylosaurus": 2, "stegosaurus": 2, "corythosaurus": 2, "iguanodon": 2, "pachycephalosaurus": 2,
 	"carnotaurus": 2, "dimetrodon": 2,
+	# ten more made in Gemini to fill the progression (26 Oct): the meat-eaters with a separate head and jaw
+	"compsognathus": 2, "microraptor": 2, "protoceratops": 2, "gallimimus": 2, "dilophosaurus": 4,
+	"utahraptor": 4, "therizinosaurus": 2, "quetzalcoatlus": 2, "spinosaurus": 4, "brachiosaurus": 2,
+}
+
+## Sheets whose second piece is a wing (the biggest piece on them is the spread wing, not the body).
+const FLYERS := ["flyer", "microraptor", "quetzalcoatlus"]
+
+## About how big a sheet's blocks are, for sheets the general search gets wrong: the ten from 26 Oct came out of
+## Gemini at 1024 px with blocks of about 10 px that aren't a whole number of pixels (doubled to 2048 to match the
+## rest). They're searched near the hint in quarter pixels instead.
+const CELL_HINT := {
+	"compsognathus": 20.5, "microraptor": 20.5, "protoceratops": 20.5, "gallimimus": 20.5, "dilophosaurus": 20.5,
+	"utahraptor": 20.5, "therizinosaurus": 20.5, "quetzalcoatlus": 20.5, "spinosaurus": 20.5, "brachiosaurus": 20.5,
 }
 
 func _initialize() -> void:
@@ -57,8 +71,8 @@ func _import(creature: String, pieces_wanted: int) -> void:
 	blobs.sort_custom(func(a, b): return a.count > b.count)
 	blobs = blobs.slice(0, pieces_wanted)
 	# 3. grid cell size: the most common short run length of one colour inside the biggest blob
-	var cell := _cell_size(img, blobs[0])
-	print("%s: %d pieces, cell %d px" % [creature, blobs.size(), cell])
+	var cell: float = _cell_near(img, blobs[0], CELL_HINT[creature]) if CELL_HINT.has(creature) else float(_cell_size(img, blobs[0]))
+	print("%s: %d pieces, cell %.2f px" % [creature, blobs.size(), cell])
 	for b: Dictionary in blobs:
 		print("   blob %d px at %d,%d-%d,%d" % [b.count, b.x0, b.y0, b.x1, b.y1])
 	# 4. name the pieces
@@ -148,24 +162,62 @@ func _cell_size(img: Image, b: Dictionary) -> int:
 			best_cell = cell
 	return best_cell
 
+## The cell size within 4 px of `hint`, in quarter pixels: the size and grid phase that put the most colour
+## changes along the rows within a pixel of a grid line, less what chance would give.
+func _cell_near(img: Image, b: Dictionary, hint: float) -> float:
+	var edges := PackedFloat32Array()
+	for y in range(b.y0, b.y1 + 1, 4):
+		var prev := _q(img.get_pixel(b.x0, y))
+		for x in range(b.x0 + 1, b.x1 + 1):
+			var c := _q(img.get_pixel(x, y))
+			if c != prev:
+				edges.append(x)
+				prev = c
+	var best_cell := hint
+	var best_score := -1.0
+	var cell := hint - 4.0
+	while cell <= hint + 4.0:
+		var top := 0
+		var ph := 0.0
+		while ph < cell:
+			var n := 0
+			for x in edges:
+				var r := fposmod(x - ph, cell)
+				if r <= 1.0 or cell - r <= 1.0:
+					n += 1
+			top = maxi(top, n)
+			ph += 0.5
+		var score := float(top) / maxi(1, edges.size()) - 3.0 / cell
+		if score > best_score:
+			best_score = score
+			best_cell = cell
+		cell += 0.25
+	return best_cell
+
 func _q(c: Color) -> int:
 	return int(c.r * 7.99) * 64 + int(c.g * 7.99) * 8 + int(c.b * 7.99)
 
 ## One pixel per cell: the most common colour in the cell's middle, keyed cells left clear.
-func _sample(img: Image, solid: PackedByteArray, label: PackedInt32Array, w: int, id: int, b: Dictionary, cell: int) -> Image:
+## `cell` may be fractional (a sheet whose blocks aren't a whole number of pixels): each cell starts where it falls.
+func _sample(img: Image, solid: PackedByteArray, label: PackedInt32Array, w: int, id: int, b: Dictionary, cell: float) -> Image:
 	# align the grid to the piece's left/top edge, then widen to catch the edge cells
 	var cols := int(ceil(float(b.x1 - b.x0 + 1) / cell))
 	var rows := int(ceil(float(b.y1 - b.y0 + 1) / cell))
 	var out := Image.create(cols, rows, false, Image.FORMAT_RGBA8)
 	for r in rows:
 		for c in cols:
-			var cx: int = b.x0 + c * cell
-			var cy: int = b.y0 + r * cell
+			var cxf: float = b.x0 + c * cell
+			var cyf: float = b.y0 + r * cell
+			var m := int(cell / 4.0)
+			var xs := int(cxf) + m
+			var xe := int(cxf + cell) - m
+			var ys := int(cyf) + m
+			var ye := int(cyf + cell) - m
 			var votes := {}
 			var hits := 0
 			var tot := 0
-			for sy in range(cy + cell / 4, cy + cell - cell / 4):
-				for sx in range(cx + cell / 4, cx + cell - cell / 4):
+			for sy in range(ys, ye):
+				for sx in range(xs, xe):
 					if sx >= w or sy >= img.get_height():
 						continue
 					tot += 1
@@ -185,8 +237,8 @@ func _sample(img: Image, solid: PackedByteArray, label: PackedInt32Array, w: int
 			# the mean of that quantised colour's samples, so the palette keeps its real shades
 			var sum := Color(0, 0, 0, 0)
 			var n := 0
-			for sy in range(cy + cell / 4, cy + cell - cell / 4):
-				for sx in range(cx + cell / 4, cx + cell - cell / 4):
+			for sy in range(ys, ye):
+				for sx in range(xs, xe):
 					if sx < w and sy < img.get_height() and _q(img.get_pixel(sx, sy)) == best and label[sy * w + sx] == id:
 						sum += img.get_pixel(sx, sy)
 						n += 1
@@ -209,7 +261,7 @@ func _name_pieces(creature: String, blobs: Array, wanted: int) -> Array:
 		for k in range(1, blobs.size()):
 			names[k] = "leg"
 		# a spread wing is bigger than the pterodactyl's body: the biggest piece is the wing
-		if creature == "flyer":
+		if creature in FLYERS:
 			names[0] = "wing"
 			for k in range(1, blobs.size()):
 				names[k] = "body"

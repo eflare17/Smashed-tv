@@ -324,3 +324,22 @@ double-clicking: it loads `tools/dino-refs.js`).
   rest of the tail. Dead creatures keep the tail where it was. The pterodactyl's little tail is cut but doesn't
   move (it doesn't walk). PLACEHOLDER numbers: 7 px a piece, sway 0.06 rad at 2.2/s, 0.1 rad at 6/s moving.
 - Tests: three new checks in `test_bite.gd` (every tail is cut, it wags, biting the base drops it all).
+
+## Fewer pterodactyls, the ankylosaurus, ten more sheets (owner's asks, 26 Oct)
+
+- **Pterodactyls:** "too many spawn". Now about one in five attackers (was one in three) and never more than one
+  in the air; any more come as hunters (`FLYER_SHARE`, `FLYER_MAX` in main.gd). Tests check both.
+- **The ankylosaurus is in** (`scripts/ankylosaurus.gd`; owner picked it from the suggestions): a lone one now and
+  then (about one herd in ten). It grazes slowly and never runs. Bites on the plates of its back (the upper 62% of
+  its body picture) are cut to 35% of their size and say CLANK; the belly, legs and head are soft. Stand behind it
+  and it raises its tail club (flashing), then swings it: 16 health and a knock. 130 kg, 35 XP. The sheet's stub of
+  a front leg is hidden under the game's front leg (hips at 0.4 and 0.7). All PLACEHOLDER numbers. Five tests.
+- **Weights and XP suggested for the rest** (not agreed yet): stegosaurus 120 kg / 30 XP, iguanodon 50 / 20,
+  corythosaurus 45 / 12, carnotaurus 90 / 45, pachycephalosaurus 25 / 15, dimetrodon 20 / 15.
+- **Ten more sheets** made in Gemini to fill the progression: compsognathus, microraptor, protoceratops,
+  gallimimus (hatchling to raptor), dilophosaurus (raptor), utahraptor, therizinosaurus (allosaur), quetzalcoatlus,
+  spinosaurus, brachiosaurus (tyrant). Imported (meat-eaters with a head and jaw, flyers with a wing), none in the
+  game yet. Gemini made them at 1024 px with blocks of about 10.25 px, so they're doubled to 2048 and the importer
+  searches near a size hint in quarter pixels (`CELL_HINT`); the old sheets import exactly as before.
+- Known test wobble: about one run in five, one timing-based check fails (a pterodactyl dive or a low step); it
+  moves between checks and passes on rerun. Worth a look.
