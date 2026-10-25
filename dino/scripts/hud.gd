@@ -2,13 +2,19 @@ class_name Hud
 extends CanvasLayer
 ## The screen overlay: health and XP bars with your level (top left), the area and run (top right), the controls
 ## hint, a red flash when you're bitten, a banner for a new area, the level-up choice (three cards: click one, or
-## press 1 / 2 / 3), and the end-of-run screen. Every Control is made once here; main.gd sets what they show.
+## press 1 / 2 / 3), and the end-of-run screen with the bones shop (Bones). Every Control is made once here;
+## main.gd sets what they show.
 
 signal picked(index: int)
+## The death screen's shop: a card clicked, and the next run button.
+signal bought(index: int)
+signal next_run
 
 const W := 480.0
 const H := 270.0
 const GOLD := Color(1.0, 0.85, 0.35)
+## Shop cards: the seven upgrades and the Raptor.
+const SHOP_SIZE := 8
 
 var stats: Label
 var area_label: Label
@@ -26,6 +32,12 @@ var _choice: Control
 var _cards: Array[Button] = []
 var _over: Control
 var _over_text: Label
+var _over_hint: Label
+var _shop: Array[Button] = []
+var _shop_lines: Array = []
+var _pips: Array[Control] = []
+var _shop_items: Array = []
+var _next: Button
 
 func _init() -> void:
 	layer = 10
@@ -135,6 +147,29 @@ func _build_choice() -> void:
 		_choice.add_child(b)
 		_cards.append(b)
 
+func _card_button(parent: Control, rect: Rect2) -> Button:
+	var b := Button.new()
+	b.position = rect.position
+	b.size = rect.size
+	b.add_theme_font_size_override("font_size", 8)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.12, 0.1, 0.08, 0.95)
+	sb.border_color = GOLD.darkened(0.3)
+	sb.set_border_width_all(1)
+	var hover := sb.duplicate() as StyleBoxFlat
+	hover.border_color = GOLD
+	hover.bg_color = Color(0.22, 0.17, 0.1, 0.95)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", hover)
+	b.add_theme_stylebox_override("pressed", hover)
+	b.add_theme_stylebox_override("focus", hover)
+	# a finger's tap comes through touch_tap; the mouse click the phone also makes from it must not buy twice
+	b.gui_input.connect(func(e: InputEvent):
+		if e is InputEventMouseButton and e.device == InputEvent.DEVICE_ID_EMULATION:
+			b.accept_event())
+	parent.add_child(b)
+	return b
+
 func _build_over() -> void:
 	_over = Control.new()
 	_over.size = Vector2(W, H)
@@ -142,7 +177,7 @@ func _build_over() -> void:
 	_over.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_over)
 	var dim := ColorRect.new()
-	dim.color = Color(0.15, 0, 0, 0.6)
+	dim.color = Color(0.15, 0, 0, 0.7)
 	dim.size = Vector2(W, H)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over.add_child(dim)
@@ -154,7 +189,7 @@ func _build_over() -> void:
 	title.label_settings.outline_color = Color.BLACK
 	title.text = "YOU WERE EATEN"
 	title.size = Vector2(W, 30)
-	title.position = Vector2(0, 52)
+	title.position = Vector2(0, 12)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over.add_child(title)
@@ -163,11 +198,58 @@ func _build_over() -> void:
 	_over_text.label_settings.font_size = 8
 	_over_text.label_settings.outline_size = 2
 	_over_text.label_settings.outline_color = Color.BLACK
-	_over_text.size = Vector2(W, 160)
-	_over_text.position = Vector2(0, 96)
+	_over_text.size = Vector2(W, 40)
+	_over_text.position = Vector2(0, 44)
 	_over_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_over_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over.add_child(_over_text)
+	# the shop: two rows of four cards (the seven upgrades, then the Raptor), and the button for the next run
+	for i in SHOP_SIZE:
+		var b := _card_button(_over, Rect2(31 + (i % 4) * 106, 84 + (i / 4) * 58, 100, 52))
+		b.pressed.connect(func(): bought.emit(i))
+		# its lines: the name, what it does, the rank squares (drawn), the price
+		var lines: Array[Label] = []
+		for y in [4, 15, 38]:
+			var l := Label.new()
+			l.label_settings = LabelSettings.new()
+			l.label_settings.font_size = 8
+			l.position = Vector2(0, y)
+			l.size = Vector2(b.size.x, 10)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(l)
+			lines.append(l)
+		var pips := Control.new()
+		pips.size = b.size
+		pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pips.draw.connect(_draw_pips.bind(pips, i))
+		b.add_child(pips)
+		_shop.append(b)
+		_shop_lines.append(lines)
+		_pips.append(pips)
+	_next = _card_button(_over, Rect2(W * 0.5 - 60, 204, 120, 24))
+	_next.text = "NEXT RUN"
+	_next.add_theme_color_override("font_color", GOLD)
+	_next.pressed.connect(func(): next_run.emit())
+	_over_hint = Label.new()
+	_over_hint.label_settings = _over_text.label_settings
+	_over_hint.size = Vector2(W, 12)
+	_over_hint.position = Vector2(0, 236)
+	_over_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_over_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_over_hint.modulate = Color(1, 1, 1, 0.7)
+	_over.add_child(_over_hint)
+
+## A card's ranks: MAX_RANK little squares, filled up to the rank (none on the Raptor card).
+func _draw_pips(c: Control, i: int) -> void:
+	var rank: int = _shop_items[i][2] if i < _shop_items.size() else -1
+	if rank < 0:
+		return
+	var x0 := c.size.x * 0.5 - (Bones.MAX_RANK * 7 - 2) * 0.5
+	for k in Bones.MAX_RANK:
+		var r := Rect2(x0 + k * 7, 28, 5, 5)
+		c.draw_rect(r, GOLD if k < rank else Color(0, 0, 0, 0.6))
+		c.draw_rect(r, GOLD.darkened(0.3), false, 1.0)
 
 ## Fractions 0..1 for the bars. The danger bar pulses once it's past half.
 func set_bars(hp: float, xp: float, level: int, danger: float) -> void:
@@ -212,11 +294,41 @@ func card_at(at: Vector2) -> int:
 func choosing() -> bool:
 	return _choice.visible
 
-func show_over(text: String) -> void:
+## The death screen: `text` (the run and the bones it paid), `hint` under the button, and the shop (set_shop).
+func show_over(text: String, hint_text: String, items: Array) -> void:
 	_over_text.text = text
+	_over_hint.text = hint_text
+	set_shop(items)
 	_over.visible = true
 	banner.visible = false
 	_banner_t = 0.0
+
+func over_hint() -> String:
+	return _over_hint.text
+
+## The shop's cards, each [name, what it does, rank (-1: the Raptor), price (-1: nothing left to buy), affordable].
+func set_shop(items: Array) -> void:
+	_shop_items = items
+	for i in SHOP_SIZE:
+		var it: Array = items[i]
+		var cost: String = "MAXED" if it[3] < 0 and it[2] >= 0 else ("OWNED" if it[3] < 0 else "%d BONES" % it[3])
+		var lines: Array[Label] = _shop_lines[i]
+		lines[0].text = it[0]
+		lines[1].text = it[1]
+		lines[2].text = cost
+		# what you can afford is lit up; the rest is dimmed
+		lines[0].label_settings.font_color = Color.WHITE if it[4] else Color(1, 1, 1, 0.5)
+		lines[1].label_settings.font_color = Color(0.8, 0.8, 0.8) if it[4] else Color(1, 1, 1, 0.35)
+		lines[2].label_settings.font_color = GOLD if it[4] else Color(1, 1, 1, 0.5)
+		_pips[i].queue_redraw()
+
+## What's under a point on the death screen (screen space): a shop card 0..SHOP_SIZE-1, SHOP_SIZE for the next run
+## button, or -1.
+func shop_at(at: Vector2) -> int:
+	for i in _shop.size():
+		if _shop[i].get_global_rect().has_point(at):
+			return i
+	return SHOP_SIZE if _next.get_global_rect().has_point(at) else -1
 
 func hide_over() -> void:
 	_over.visible = false

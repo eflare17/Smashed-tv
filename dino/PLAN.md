@@ -254,3 +254,19 @@ the allosaur's are stubby; where exactly the hips, neck and jaw hinge land is a 
 - How XP and levels work: XP per chunk or per kill, and the level-up numbers.
 - The world: one long scrolling area, arenas, or levels.
 - The name.
+
+## Bones: keeping something between runs (EXPERIMENT, branch claude/dino-incremental-67f8e3, 25 Oct)
+
+Agreed with the owner, one question at a time. A throwaway try: keep it or delete the branch.
+
+- Dying pays **BONES**: 1 a kill, 2 a body eaten, 10 a new area, 10 an evolve (about equal shares of a decent
+  run, which pays ~45). Banked the moment you die; saved in `user://bones.cfg` (browser storage on the web).
+- The death screen is the **shop**: two rows of cards (the 7 level-up upgrades, plus START AS RAPTOR) and a
+  NEXT RUN button (or R). Click or tap a card to buy one rank; what you can't afford is dimmed.
+- A rank is half an in-run level-up, max 5 each. Prices ("medium"): 30, 40, 55, 75, 100 a rank; Raptor 400.
+  Starting as a Raptor still needs 8 bodies in all to become an Allosaur (same as a normal run).
+- Code: `scripts/bones.gd` (earning, prices, buying, saving, putting ranks on the player). Tests:
+  `tests/test_bones.gd` (27 checks). `tests/shot_shop.gd` photographs the shop. The tests and the demo bot
+  never touch your real save.
+- Bot runs (12 each, `stats_run.gd --fixed-fps 60 --ranks=n`): fresh save 89 s / 21 bones a run (unchanged
+  game); 1 rank in everything (210 bones) 134 s / 57; 5 in everything 148 s / 101, still dying in area 1.

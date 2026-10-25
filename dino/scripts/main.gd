@@ -4,7 +4,8 @@ extends Node2D
 ## (PixelPart.carve), flies or lands in your mouth, and pieces bitten clean through fall off (Gore). Kills and
 ## eating give XP; each level you pick an upgrade (bite size, speed, attack speed). The higher your level, the more
 ## hunters come, so the less time you get to eat. Eat a body down to nothing and you grow. The sign at the far end
-## leads to the next area (harder). Die and the run is over; the next run is a new map.
+## leads to the next area (harder). Die and the run is over; the next run is a new map. Dying pays bones (Bones),
+## spent on the death screen on permanent starting ranks; they're put on the player at the start of every run.
 ##
 ## Each frame: input -> player (its snap calls player_bite) -> every creature -> the spawners -> gore; hit-stop
 ## freezes all of that for a few hundredths of a second after a bite lands, the camera shake keeps going.
@@ -64,6 +65,8 @@ var gore: Gore
 var sfx: Sfx
 var cam: Camera2D
 var hud: Hud
+## What carries over between runs: bones and the ranks bought with them.
+var bones := Bones.new()
 ## Phone controls (switch themselves on at the first touch).
 var touch: Touch
 var area: Area
@@ -81,6 +84,9 @@ var xp := 0
 var kills := 0
 var chunks := 0
 var eaten := 0
+## Times evolved this run (starting as a Raptor doesn't count), and what this run paid.
+var evolves := 0
+var run_bones := 0
 var show_zones := false
 var demo := false
 
@@ -130,6 +136,10 @@ func _ready() -> void:
 		elif a.begins_with("--shots="):
 			_shots_dir = a.substr(8)
 			demo = true
+	# the tests (run with --script) and the demo bot play on a fresh save and never write to yours
+	if demo or "--script" in OS.get_cmdline_args():
+		bones.path = ""
+	bones.load_save()
 	_add_inputs()
 	sfx = Sfx.new()
 	add_child(sfx)
@@ -147,6 +157,8 @@ func _ready() -> void:
 	add_child(cam)
 	hud = Hud.new()
 	hud.picked.connect(_pick)
+	hud.bought.connect(_buy)
+	hud.next_run.connect(_next_run)
 	add_child(hud)
 	hud.hint.text = "A/D MOVE   W JUMP   LEFT CLICK BITE   HOLD RIGHT CLICK BIG BITE   R NEW RUN"
 	start_run()
@@ -160,11 +172,13 @@ func start_run() -> void:
 	player = Player.new()
 	player.game = self
 	add_child(player)
+	bones.apply(player)
 	level = 1
 	xp = 0
 	kills = 0
 	chunks = 0
 	eaten = 0
+	evolves = 0
 	_choices = 0
 	state = PLAY
 	hud.hide_over()
@@ -359,11 +373,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		for i in 3:
 			if event.is_action_pressed("pick%d" % (i + 1)):
 				_pick(i)
-	elif state == OVER and _over_t <= 0.0 and event.is_action_pressed("bite"):
-		start_run()
 
-## A finger lifted while the game isn't being played: picks the level-up card it's on, or starts a new run once
-## the death screen has settled. False while playing (then the touch belongs to the controls).
+## A finger lifted while the game isn't being played: picks the level-up card it's on, or on the death screen
+## (once it has settled) buys the shop card it's on or starts the next run. False while playing (then the touch
+## belongs to the controls).
 func touch_tap(at: Vector2) -> bool:
 	if state == CHOOSE:
 		var i: int = hud.card_at(at)
@@ -371,8 +384,11 @@ func touch_tap(at: Vector2) -> bool:
 			_pick(i)
 		return true
 	if state == OVER:
-		if _over_t <= 0.0:
-			start_run()
+		var i: int = hud.shop_at(at)
+		if i == Hud.SHOP_SIZE:
+			_next_run()
+		elif i >= 0:
+			_buy(i)
 		return true
 	return false
 
@@ -719,10 +735,41 @@ func _game_over() -> void:
 	_over_t = 1.0
 	player.die_look()
 	sfx.play("thud", 0.0)
-	hud.show_over("LEVEL %d     AREA %d\nKILLS %d     EATEN %d     SIZE x%.1f\n\nRUN %d\n\n\n%s" % [
-		level, area_n, kills, eaten, player.size, run_seed,
-		"TAP FOR A NEW RUN" if touch.active else "CLICK OR PRESS R FOR A NEW RUN"])
+	# the bones are banked the moment you die (closing the game here doesn't lose them)
+	run_bones = Bones.earned(kills, eaten, area_n - 1, evolves)
+	bones.add(run_bones)
+	hud.show_over(_over_text(), "TAP A CARD TO BUY A RANK" if touch.active else "CLICK A CARD TO BUY A RANK     R: NEXT RUN",
+			_shop_items())
 	_mouse()
+
+func _over_text() -> String:
+	return "LEVEL %d     AREA %d     KILLS %d     EATEN %d     RUN %d\n+%d BONES          YOU HAVE %d BONES" % [
+		level, area_n, kills, eaten, run_seed, run_bones, bones.bones]
+
+## The death screen's cards, for Hud.set_shop.
+func _shop_items() -> Array:
+	var items: Array = []
+	for i in Hud.SHOP_SIZE:
+		if i == Bones.RAPTOR:
+			items.append(["START AS RAPTOR", "skip the hatchling", -1, bones.price(i), bones.can_buy(i)])
+		else:
+			items.append([UPGRADES[i][0], UPGRADES[i][1], bones.ranks[i], bones.price(i), bones.can_buy(i)])
+	return items
+
+## A shop card clicked or tapped (once the death screen has settled): buys its next rank if you have the bones.
+func _buy(i: int) -> void:
+	if state != OVER or _over_t > 0.0:
+		return
+	if bones.buy(i):
+		sfx.play("crunch", 0.05, 2.0)
+		sfx.play("gulp", 0.05, 0.0)
+	else:
+		sfx.play("snap", 0.1, -4.0)
+	hud.show_over(_over_text(), hud.over_hint(), _shop_items())
+
+func _next_run() -> void:
+	if state == OVER and _over_t <= 0.0:
+		start_run()
 
 ## A dead body eaten down to scraps: the scraps go down in one gulp, the body is gone, and you grow.
 ## Returns the scraps' pixels (for the mouthful).
@@ -752,6 +799,7 @@ func _finish(who: Player, pr: Prey) -> Array:
 ## Evolving: the next form. Everything freezes, you flash white, the sprite swaps and the new form lands with a
 ## roar, a shake and a banner. Level-up bonuses carry over; health fills to the new maximum.
 func _evolve() -> void:
+	evolves += 1
 	player.set_stage(player.stage + 1)
 	player.hp = player.max_hp
 	_stop = 0.25
