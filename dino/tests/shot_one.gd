@@ -5,6 +5,8 @@ extends SceneTree
 
 const DinoArt := preload("res://scripts/dino_art.gd")
 
+var _size := 40.0
+
 func _initialize() -> void:
 	_run.call_deferred()
 
@@ -12,7 +14,10 @@ func _shot(out: String, name: String, at: Vector2) -> void:
 	await RenderingServer.frame_post_draw
 	var img := root.get_viewport().get_texture().get_image()
 	# a 4x close-up around `at` (screen position)
-	var r := Rect2i(Vector2i(clampi(int(at.x) - 60, 0, 360), clampi(int(at.y) - 50, 0, 170)), Vector2i(120, 100))
+	# a bigger window for a bigger creature, so it fits
+	var cw := clampi(int(_size * 2.6), 120, 300)
+	var chh := cw * 100 / 120
+	var r := Rect2i(Vector2i(clampi(int(at.x) - cw / 2, 0, 480 - cw), clampi(int(at.y) - chh / 2, 0, 270 - chh)), Vector2i(cw, chh))
 	var zoom := img.get_region(r)
 	zoom.resize(480, 400, Image.INTERPOLATE_NEAREST)
 	zoom.save_png("%s/%s.png" % [out, name])
@@ -59,7 +64,8 @@ func _run() -> void:
 		c.position = Vector2(240.0, main.GROUND_Y - 40.0)
 	for f in 4:
 		await process_frame
-	var at: Vector2 = c.get_global_transform_with_canvas().origin + Vector2(-10, -10)
+	_size = maxf(c.height, c.half_w * 3.0)
+	var at: Vector2 = c.get_global_transform_with_canvas().origin + Vector2(0, -c.height * 0.45)
 	await _shot(out, "%s_1_stand" % kind, at)
 	# walking: swing the legs a few frames in
 	c.set_facing(1.0)

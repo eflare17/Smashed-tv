@@ -18,7 +18,7 @@ const SPECS := {
 	"raptor": {"width": 65.0, "legs": 2, "tail": 0.3, "neck": 0.78},
 	"allosaur": {"width": 52.0, "legs": 2, "tail": 0.3, "neck": 0.8},
 	"tyrant": {"width": 52.0, "legs": 2, "tail": 0.28, "neck": 0.78},
-	"grazer": {"width": 98.0, "legs": 4, "tail": 0.28, "neck": 0.62, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
+	"grazer": {"stand": 54.0, "legs": 4, "hips": [0.42, 0.72], "hip_y": 0.86, "tail": 0.36, "neck": 0.76, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
 	"runner": {"width": 36.0, "legs": 2, "tail": 0.42, "neck": 0.78, "head": 0.88, "head_y": 0.6},
 	"charger": {"width": 96.0, "legs": 4, "tail": 0.2, "head": 0.66, "head_y": 1.0},
 	"flyer": {"width": 44.0, "legs": 0, "tail": 0.25, "neck": 0.55, "head": 0.68, "head_y": 1.0},
@@ -28,7 +28,7 @@ const SPECS := {
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
 	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
-	"grazer": false, "runner": true, "charger": false, "flyer": false,
+	"grazer": true, "runner": true, "charger": false, "flyer": false,
 }
 
 static var _cache := {}
@@ -62,7 +62,7 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 		body = _tinted(body, tint)
 	var bw := body.get_width()
 	var bh := body.get_height()
-	var k: float = spec.width / bw
+	var k: float = spec.get("width", 50.0) / bw
 	var parts: Array = []
 	var legs: int = spec.legs
 	var leg := _load(creature, "leg")
@@ -72,9 +72,15 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 			leg = _tinted(leg, tint)
 		leg_len = leg.get_height() - 2
 	# the hips: where the legs hang from the body picture
-	var hip_y := int(bh * (0.74 if legs == 2 else 0.8))
-	var hips: Array = [int(bw * 0.56)] if legs == 2 else [int(bw * 0.24), int(bw * 0.7)]
-	var pivot := Vector2(hips[0] if legs == 2 else bw * 0.5, hip_y)
+	var hip_y := int(bh * spec.get("hip_y", 0.74 if legs == 2 else 0.8))
+	var hips: Array = []
+	for hx: float in spec.get("hips", [0.56] if legs == 2 else [0.24, 0.7]):
+		hips.append(int(bw * hx))
+	# sized by how tall it stands (feet to back), when the spec says so, else by its width
+	if spec.has("stand"):
+		k = spec.stand / float(leg_len + hip_y)
+	# the origin (between the feet) sits under the middle of the hips
+	var pivot := Vector2(hips[0] if legs == 2 else (hips[0] + hips[1]) * 0.5, hip_y)
 	var body_zones := _body_zones(body, spec)
 	# what holds the body together is its bulk, around the middle of its mass (never the head or the tail, or a
 	# bite through the neck would send the body flying off instead of the head)
@@ -95,7 +101,7 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 			parts.append({"name": "leg", "image": leg, "zones": lz, "pivot": lp, "pos": Vector2(-2, -leg_len),
 					"anchors": la, "z": 1, "parent": "", "leg": 0.0})
 		else:
-			var mid := bw * 0.5
+			var mid := pivot.x
 			for spec_leg in [[far, hips[0] - mid - 2, -1, 0.0], [far, hips[1] - mid + 2, -1, PI],
 					[leg, hips[0] - mid + 2, 1, PI], [leg, hips[1] - mid - 2, 1, 0.0]]:
 				parts.append({"name": "leg", "image": spec_leg[0], "zones": lz, "pivot": lp,
