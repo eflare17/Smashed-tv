@@ -3,7 +3,8 @@ extends RefCounted
 ## What carries over between runs. Dying pays BONES for the run (kills, eating, new areas and evolving, each about
 ## an equal share of a typical run); on the death screen you spend them on permanent starting ranks in the seven
 ## level-up upgrades (main.gd's UPGRADES, max MAX_RANK each, a rank is about half an in-run level-up) and on one
-## big unlock: starting the run as a Raptor. Saved in user:// (a file on a PC, the browser's storage on the web).
+## big unlock: starting the run as a Raptor. Also your leaderboard id and name. Saved in user:// (a file on a PC,
+## the browser's storage on the web).
 
 ## Bones per kill, per body eaten, per new area reached, per evolution. A decent run (15 kills, 6 eaten, area 2,
 ## evolved once) pays about 94, in four roughly equal shares; the demo bot's clumsy runs pay 20-60. (Doubled at
@@ -29,11 +30,44 @@ const RANK_SHAKE := 1.15
 ## The shop's eighth item (after the seven upgrades).
 const RAPTOR := 7
 
+## Leaderboard names: a random one of each and a number ("BLOODY RAPTOR 42"); NEW NAME rolls another.
+const NAME_A := ["BLOODY", "SAVAGE", "HUNGRY", "RAVENOUS", "GORY", "FERAL", "GRUMPY", "SNEAKY", "MIGHTY", "TOOTHY",
+		"VICIOUS", "RABID", "FURIOUS", "GREEDY", "SLOPPY", "SCALY", "SPIKY", "BONY", "WILD", "STINKY"]
+const NAME_B := ["RAPTOR", "REX", "TYRANT", "ALLOSAUR", "HATCHLING", "CHOMPER", "BITER", "GNASHER", "MUNCHER",
+		"STALKER", "LIZARD", "CLAW", "FANG", "JAWS", "MAW"]
+
 ## Where it's saved ("" = nowhere: the tests and the demo bot never touch your real save).
 var path := "user://bones.cfg"
 var bones := 0
 var ranks: Array[int] = [0, 0, 0, 0, 0, 0, 0]
 var raptor := false
+## You on the leaderboard: a random id (so a new name keeps your totals) and your name. Made on first load.
+var player_id := ""
+var name := ""
+
+static func random_name() -> String:
+	return "%s %s %d" % [NAME_A[randi() % NAME_A.size()], NAME_B[randi() % NAME_B.size()], randi_range(1, 99)]
+
+## A new name, different from the one you have.
+func new_name() -> void:
+	var was := name
+	while name == was:
+		name = random_name()
+	save()
+
+## Makes you an id and a name the first time.
+func _ensure_player() -> void:
+	if player_id == "":
+		# a random version-4 UUID (what the database expects)
+		var b := PackedByteArray()
+		for k in 16:
+			b.append(randi() % 256)
+		b[6] = (b[6] & 0x0f) | 0x40
+		b[8] = (b[8] & 0x3f) | 0x80
+		var h := b.hex_encode()
+		player_id = "%s-%s-%s-%s-%s" % [h.substr(0, 8), h.substr(8, 4), h.substr(12, 4), h.substr(16, 4), h.substr(20)]
+	if name == "":
+		name = random_name()
 
 ## What a run pays: kills, whole bodies eaten, areas reached past the first, and times evolved.
 static func earned(kills: int, eaten: int, areas: int, evolves: int) -> int:
@@ -80,16 +114,19 @@ func apply(p: Player) -> void:
 	p.hp = p.max_hp
 
 func load_save() -> void:
-	if path == "":
-		return
 	var cf := ConfigFile.new()
-	if cf.load(path) != OK:
-		return
-	bones = int(cf.get_value("bones", "bones", 0))
-	var r: Array = cf.get_value("bones", "ranks", [])
-	for k in mini(r.size(), ranks.size()):
-		ranks[k] = clampi(int(r[k]), 0, MAX_RANK)
-	raptor = bool(cf.get_value("bones", "raptor", false))
+	if path != "" and cf.load(path) == OK:
+		bones = int(cf.get_value("bones", "bones", 0))
+		var r: Array = cf.get_value("bones", "ranks", [])
+		for k in mini(r.size(), ranks.size()):
+			ranks[k] = clampi(int(r[k]), 0, MAX_RANK)
+		raptor = bool(cf.get_value("bones", "raptor", false))
+		player_id = str(cf.get_value("player", "id", ""))
+		name = str(cf.get_value("player", "name", ""))
+	var had := player_id != "" and name != ""
+	_ensure_player()
+	if not had:
+		save()
 
 func save() -> void:
 	if path == "":
@@ -98,4 +135,6 @@ func save() -> void:
 	cf.set_value("bones", "bones", bones)
 	cf.set_value("bones", "ranks", Array(ranks))
 	cf.set_value("bones", "raptor", raptor)
+	cf.set_value("player", "id", player_id)
+	cf.set_value("player", "name", name)
 	cf.save(path)

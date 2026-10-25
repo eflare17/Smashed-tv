@@ -1,5 +1,6 @@
 extends SceneTree
-## Photographs the death screen's bones shop (needs a window), with some bones and a few ranks bought.
+## Photographs the death screen's bones shop (needs a window), with some bones and a few ranks bought, and the
+## leaderboard over it (made-up rows).
 ## From the dino folder: godot --path . --script res://tests/shot_shop.gd -- --out=<folder>
 
 func _initialize() -> void:
@@ -30,5 +31,13 @@ func _run() -> void:
 	main.call("_game_over")
 	for f in 70:
 		await process_frame
+	main.hud.set_board_enabled(true)
 	await _shot(out, "shop")
+	# and the leaderboard over it, with made-up rows
+	main.hud.show_board(main.bones.name, "week")
+	main.hud.set_board_rows([[1, "RAVENOUS TYRANT 12", 4210.0, false], [2, "BLOODY RAPTOR 42", 2875.5, false],
+			[3, "SNEAKY CHOMPER 7", 1630.2, true], [4, "GRUMPY MAW 88", 910.0, false], [5, "SPIKY REX 3", 455.0, false]])
+	for f in 5:
+		await process_frame
+	await _shot(out, "leaderboard")
 	quit()

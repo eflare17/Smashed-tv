@@ -271,3 +271,15 @@ Agreed with the owner, one question at a time. A throwaway try: keep it or delet
   never touch your real save.
 - Bot runs (12 each, `stats_run.gd --fixed-fps 60 --ranks=n`, before the doubling): fresh save 89 s / 21 bones a run (unchanged
   game); 1 rank in everything (210 bones) 134 s / 57; 5 in everything 148 s / 101, still dying in area 1.
+
+## Leaderboard: kilograms of meat (owner's asks, 25 Oct)
+
+- Every mouthful counts as meat: chunks bitten off (alive or dead), scraps of a finished body, pieces picked up off
+  the ground. A whole animal at normal size: grazer 30 kg, runner 15, hunter 40 (scaled with its size), charger
+  150, pterodactyl 12. The death screen says YOU ATE N KG OF MEAT. Bot runs eat 85-250 kg.
+- Online boards (Supabase project "dino", owner's account; `dino/leaderboard.sql` sets it up): TODAY / THIS WEEK /
+  THIS MONTH, Melbourne time (midnight, Monday, the 1st); all your runs in the period add up; top 10 plus your spot.
+  Anyone can add a run (max 5000 kg), no one can change or read the raw list.
+- Names: random ("BLOODY RAPTOR 42") with NEW NAME to roll another; a random id keeps your totals across names.
+- On the death screen: a LEADERBOARD button next to NEXT RUN; BACK returns to the shop. Off in the tests and
+  the demo bot (nothing sent). Code: `scripts/leaderboard.gd`; checks in `tests/test_bones.gd` (50 in all).

@@ -137,6 +137,62 @@ func _run() -> void:
 	_check("...and starting as one isn't an evolve", main.evolves == 0)
 	main.call("_evolve")
 	_check("evolving is counted for the bones", main.evolves == 1)
+
+	# names: everyone gets a random one and an id; NEW NAME rolls another, and both are saved
+	_check("you get a random name", mb.name.split(" ").size() == 3 and mb.name.length() <= 24, mb.name)
+	_check("...and an id the database takes", mb.player_id.length() == 36 and mb.player_id[14] == "4", mb.player_id)
+	var old_name := mb.name
+	mb.new_name()
+	var reread := Bones.new()
+	reread.path = SAVE
+	reread.load_save()
+	_check("NEW NAME gives a different name, saved", mb.name != old_name and reread.name == mb.name
+			and reread.player_id == mb.player_id)
+
+	# kilograms: a whole grazer is 30 kg of meat, and every mouthful counts
+	main.set("_hunt_t", 99999.0)
+	main.set("_herd_t", 99999.0)
+	for c in main.creatures.duplicate():
+		c.queue_free()
+	main.creatures.clear()
+	main.obstacles.clear()
+	await _frames(2)
+	pl = main.player
+	pl.position = Vector2(200.0, main.GROUND_Y)
+	var g: Prey = main.spawn_prey(230.0)
+	var px := 0
+	for part in g.parts:
+		px += part.pixels_total()
+	_check("a whole grazer is 30 kg of meat", is_equal_approx(main.call("_kg_px", g) * px, 30.0))
+	_check("a run starts with no meat eaten", main.meat_kg == 0.0)
+	main.player_bite(pl, g.global_position + Vector2(0, -g.height * 0.5), 6.0)
+	_check("a bite of a live animal counts as meat", main.meat_kg > 0.0, "%.2f kg" % main.meat_kg)
+	main.call("_game_over")
+	_check("the death screen says how much meat", "KG OF MEAT" in main.hud.get("_over_text").text)
+
+	# the leaderboard: off in the tests (nothing is sent), so its button is hidden
+	_check("the tests never send to the leaderboard", not main.leaderboard.enabled())
+	_check("...and its button is hidden", not main.hud.get("_board_btn").visible)
+	main.set("_over_t", 0.0)
+	main.hud.set_board_enabled(true)
+	_tap(main, main.hud.get("_board_btn").get_global_rect().get_center())
+	_check("tapping LEADERBOARD shows the board over the shop", main.hud.board_showing()
+			and not main.hud.get("_shop")[0].is_visible_in_tree())
+	main.hud.set_board_rows([[1, "BLOODY REX 4", 123.4, false], [2, "SNEAKY FANG 9", 50.0, true]])
+	var rows: Array = main.hud.get("_rows")
+	_check("the board lists names and kilograms", rows[0][1].text == "BLOODY REX 4" and rows[0][2].text == "123 KG"
+			and rows[2][1].text == "", rows[0][2].text)
+	_check("...with you in gold", rows[1][1].label_settings.font_color == Hud.GOLD)
+	var tab: Button = main.hud.get("_tabs")[2]
+	_tap(main, tab.get_global_rect().get_center())
+	_check("a tab switches the period", main.get("_board_period") == "month")
+	var was := mb.name
+	var nn: Button = main.hud.get("_board").get_children().filter(func(b): return b is Button and b.text == "NEW NAME")[0]
+	_tap(main, nn.get_global_rect().get_center())
+	_check("NEW NAME on the board rolls a new name", mb.name != was and was not in main.hud.get("_board_name").text)
+	var back: Button = main.hud.get("_board").get_children().filter(func(b): return b is Button and b.text == "BACK")[0]
+	_tap(main, back.get_global_rect().get_center())
+	_check("BACK goes back to the shop", not main.hud.board_showing() and main.hud.get("_shop")[0].is_visible_in_tree())
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE))
 	print("%d failed" % _fails)
 	quit(_fails)

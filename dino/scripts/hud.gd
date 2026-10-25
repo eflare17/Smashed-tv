@@ -2,13 +2,18 @@ class_name Hud
 extends CanvasLayer
 ## The screen overlay: health and XP bars with your level (top left), the area and run (top right), the controls
 ## hint, a red flash when you're bitten, a banner for a new area, the level-up choice (three cards: click one, or
-## press 1 / 2 / 3), and the end-of-run screen with the bones shop (Bones). Every Control is made once here;
-## main.gd sets what they show.
+## press 1 / 2 / 3), and the end-of-run screen with the bones shop (Bones) and the leaderboard (Leaderboard).
+## Every Control is made once here; main.gd sets what they show.
 
 signal picked(index: int)
 ## The death screen's shop: a card clicked, and the next run button.
 signal bought(index: int)
 signal next_run
+## The leaderboard (from the death screen): open it, a tab (Leaderboard.PERIODS), NEW NAME, BACK.
+signal board_open
+signal board_tab(period: String)
+signal new_name
+signal board_back
 
 const W := 480.0
 const H := 270.0
@@ -38,6 +43,14 @@ var _shop_lines: Array = []
 var _pips: Array[Control] = []
 var _shop_items: Array = []
 var _next: Button
+var _shop_box: Control
+var _board_btn: Button
+var _board: Control
+var _tabs: Array[Button] = []
+## Each row's [rank, name, kg] labels.
+var _rows: Array = []
+var _board_status: Label
+var _board_name: Label
 
 func _init() -> void:
 	layer = 10
@@ -203,9 +216,14 @@ func _build_over() -> void:
 	_over_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_over_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over.add_child(_over_text)
-	# the shop: two rows of four cards (the seven upgrades, then the Raptor), and the button for the next run
+	# the shop: two rows of four cards (the seven upgrades, then the Raptor), and the buttons for the leaderboard
+	# and the next run (all hidden while the leaderboard is up)
+	_shop_box = Control.new()
+	_shop_box.size = Vector2(W, H)
+	_shop_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_over.add_child(_shop_box)
 	for i in SHOP_SIZE:
-		var b := _card_button(_over, Rect2(31 + (i % 4) * 106, 84 + (i / 4) * 58, 100, 52))
+		var b := _card_button(_shop_box, Rect2(31 + (i % 4) * 106, 84 + (i / 4) * 58, 100, 52))
 		b.pressed.connect(func(): bought.emit(i))
 		# its lines: the name, what it does, the rank squares (drawn), the price
 		var lines: Array[Label] = []
@@ -227,10 +245,15 @@ func _build_over() -> void:
 		_shop.append(b)
 		_shop_lines.append(lines)
 		_pips.append(pips)
-	_next = _card_button(_over, Rect2(W * 0.5 - 60, 204, 120, 24))
+	_next = _card_button(_shop_box, Rect2(W * 0.5 - 60, 204, 120, 24))
 	_next.text = "NEXT RUN"
 	_next.add_theme_color_override("font_color", GOLD)
 	_next.pressed.connect(func(): next_run.emit())
+	_board_btn = _card_button(_shop_box, Rect2(W * 0.5 - 124, 204, 120, 24))
+	_board_btn.text = "LEADERBOARD"
+	_board_btn.pressed.connect(func(): board_open.emit())
+	_board_btn.visible = false
+	_build_board()
 	_over_hint = Label.new()
 	_over_hint.label_settings = _over_text.label_settings
 	_over_hint.size = Vector2(W, 12)
@@ -239,6 +262,94 @@ func _build_over() -> void:
 	_over_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_over_hint.modulate = Color(1, 1, 1, 0.7)
 	_over.add_child(_over_hint)
+
+func _small_label(parent: Control, at: Vector2, w: float, align := HORIZONTAL_ALIGNMENT_LEFT) -> Label:
+	var l := Label.new()
+	l.label_settings = LabelSettings.new()
+	l.label_settings.font_size = 8
+	l.position = at
+	l.size = Vector2(w, 10)
+	l.horizontal_alignment = align
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(l)
+	return l
+
+## The leaderboard, over the shop: DAY / WEEK / MONTH tabs, the top 10 (and your spot) by kilograms of meat,
+## your name with NEW NAME, and BACK.
+func _build_board() -> void:
+	_board = Control.new()
+	_board.size = Vector2(W, H)
+	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board.visible = false
+	_over.add_child(_board)
+	var bg := _panel(_board, Rect2(70, 68, 340, 168), Color(0.08, 0.06, 0.05, 0.95))
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var title := _small_label(_board, Vector2(70, 72), 340, HORIZONTAL_ALIGNMENT_CENTER)
+	title.text = "MOST MEAT EATEN"
+	title.label_settings.font_color = GOLD
+	for k in Leaderboard.PERIODS.size():
+		var p: String = Leaderboard.PERIODS[k]
+		var b := _card_button(_board, Rect2(W * 0.5 - 85 + k * 58, 85, 54, 15))
+		b.text = ["TODAY", "THIS WEEK", "THIS MONTH"][k]
+		b.pressed.connect(func(): board_tab.emit(p))
+		_tabs.append(b)
+	for k in 11:
+		var y := 104.0 + k * 10.0
+		_rows.append([_small_label(_board, Vector2(80, y), 24, HORIZONTAL_ALIGNMENT_RIGHT),
+				_small_label(_board, Vector2(110, y), 200), _small_label(_board, Vector2(300, y), 100, HORIZONTAL_ALIGNMENT_RIGHT)])
+	_board_status = _small_label(_board, Vector2(70, 150), 340, HORIZONTAL_ALIGNMENT_CENTER)
+	_board_name = _small_label(_board, Vector2(80, 219), 180)
+	_board_name.label_settings.font_color = GOLD
+	var nn := _card_button(_board, Rect2(268, 216, 70, 15))
+	nn.text = "NEW NAME"
+	nn.pressed.connect(func(): new_name.emit())
+	var back := _card_button(_board, Rect2(342, 216, 60, 15))
+	back.text = "BACK"
+	back.pressed.connect(func(): board_back.emit())
+
+## Shows the leaderboard on `period`'s tab, loading (set_board_rows fills it in).
+func show_board(you: String, period: String) -> void:
+	_shop_box.visible = false
+	_board.visible = true
+	_board_name.text = "YOU: " + you
+	for k in _tabs.size():
+		var on: bool = Leaderboard.PERIODS[k] == period
+		_tabs[k].add_theme_color_override("font_color", GOLD if on else Color(1, 1, 1, 0.6))
+	set_board_rows([], "LOADING...")
+
+func hide_board() -> void:
+	_board.visible = false
+	_shop_box.visible = true
+
+func board_showing() -> bool:
+	return _board.visible
+
+## The board's rows, each [rank, name, kg, is it you] (yours in gold), or `status` instead ("" = the rows).
+func set_board_rows(rows: Array, status := "") -> void:
+	_board_status.text = status if status != "" else ("NO ONE HAS EATEN YET" if rows.is_empty() else "")
+	for k in _rows.size():
+		var labels: Array = _rows[k]
+		var r: Array = rows[k] if k < rows.size() and status == "" else []
+		labels[0].text = "" if r.is_empty() else "%d." % r[0]
+		labels[1].text = "" if r.is_empty() else r[1]
+		labels[2].text = "" if r.is_empty() else "%d KG" % roundi(r[2])
+		for l: Label in labels:
+			l.label_settings.font_color = GOLD if not r.is_empty() and r[3] else Color.WHITE
+
+## The leaderboard button: shown only when the leaderboard is on (NEXT RUN moves over to make room).
+func set_board_enabled(on: bool) -> void:
+	_board_btn.visible = on
+	_next.position.x = W * 0.5 + 4 if on else W * 0.5 - 60
+
+## The death screen's button (shop card, NEXT RUN, leaderboard and its buttons) under a point, or null.
+func over_button_at(at: Vector2) -> Button:
+	for b: Button in _shop + [_next, _board_btn] + _tabs:
+		if b.is_visible_in_tree() and b.get_global_rect().has_point(at):
+			return b
+	for b in _board.get_children():
+		if b is Button and b.is_visible_in_tree() and b.get_global_rect().has_point(at):
+			return b
+	return null
 
 ## A card's ranks: MAX_RANK little squares, filled up to the rank (none on the Raptor card).
 func _draw_pips(c: Control, i: int) -> void:
@@ -322,16 +433,9 @@ func set_shop(items: Array) -> void:
 		lines[2].label_settings.font_color = GOLD if it[4] else Color(1, 1, 1, 0.5)
 		_pips[i].queue_redraw()
 
-## What's under a point on the death screen (screen space): a shop card 0..SHOP_SIZE-1, SHOP_SIZE for the next run
-## button, or -1.
-func shop_at(at: Vector2) -> int:
-	for i in _shop.size():
-		if _shop[i].get_global_rect().has_point(at):
-			return i
-	return SHOP_SIZE if _next.get_global_rect().has_point(at) else -1
-
 func hide_over() -> void:
 	_over.visible = false
+	hide_board()
 
 func tick(delta: float) -> void:
 	_flash_a = maxf(0.0, _flash_a - delta * 1.6)

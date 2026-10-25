@@ -24,6 +24,8 @@ var _stain_img: Image
 var _stain_tex: ImageTexture
 var _stain_dirty := false
 var _pieces: Array = []   # [Sprite2D, vel, spin, resting]
+## Kilograms of meat in what the last eat_pieces ate.
+var eaten_kg := 0.0
 var _rng := RandomNumberGenerator.new()
 
 func setup(ground: float, width: int, stain_layer: Sprite2D) -> void:
@@ -86,9 +88,11 @@ func pool(x: float, half: float, n: int) -> void:
 func _blood_color() -> Color:
 	return Color(_rng.randf_range(0.5, 0.75), 0.02, _rng.randf_range(0.02, 0.06))
 
-## A piece that came off whole (PixelPart island), flung with `v`.
-func piece(island: Dictionary, v: Vector2) -> void:
+## A piece that came off whole (PixelPart island), flung with `v`; `kg_px` is how much meat each of its pixels is
+## (for eaten_kg when it's eaten).
+func piece(island: Dictionary, v: Vector2, kg_px := 0.0) -> void:
 	var s := Sprite2D.new()
+	s.set_meta("kg_px", kg_px)
 	s.texture = ImageTexture.create_from_image(island.image)
 	s.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	s.global_position = island.center
@@ -101,8 +105,10 @@ func piece(island: Dictionary, v: Vector2) -> void:
 		_pieces[0][0].queue_free()
 		_pieces.remove_at(0)
 
-## Eats every piece the bite at `p` (radius `r`) touches, whole. Returns their pixels as [world pos, colour].
+## Eats every piece the bite at `p` (radius `r`) touches, whole. Returns their pixels as [world pos, colour], and
+## sets eaten_kg to how much meat that was.
 func eat_pieces(p: Vector2, r: float) -> Array:
+	eaten_kg = 0.0
 	var out: Array = []
 	var k := 0
 	while k < _pieces.size():
@@ -130,6 +136,7 @@ func eat_pieces(p: Vector2, r: float) -> Array:
 				var col := img.get_pixel(x, y)
 				if col.a > 0.0:
 					out.append([s.to_global(Vector2(x + 0.5, y + 0.5) - size * 0.5), col])
+					eaten_kg += s.get_meta("kg_px", 0.0)
 		s.queue_free()
 		_pieces.remove_at(k)
 	return out

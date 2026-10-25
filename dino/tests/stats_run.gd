@@ -49,8 +49,8 @@ func _run() -> void:
 				hits += 1
 			hp_prev = main.player.hp
 			hp_low = minf(hp_low, main.player.hp)
-		print("run %d (seed %d): %ds, level %d, area %d, kills %d, eaten %d, evolved %d, bones %d, size %.1f, hit %d times, %s" % [
-			r + 1, main.run_seed, int(t), main.level, main.area_n, main.kills, main.eaten, main.evolves, main.run_bones, main.player.size, hits,
+		print("run %d (seed %d): %ds, level %d, area %d, kills %d, eaten %d, evolved %d, bones %d, meat %d kg, size %.1f, hit %d times, %s" % [
+			r + 1, main.run_seed, int(t), main.level, main.area_n, main.kills, main.eaten, main.evolves, main.run_bones, roundi(main.meat_kg), main.player.size, hits,
 			"died" if main.state == main.OVER else "still alive"])
 		print("   ", " ".join(levels_at), " | ", " ".join(areas_at))
 	quit()

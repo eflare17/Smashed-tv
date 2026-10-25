@@ -67,6 +67,9 @@ var cam: Camera2D
 var hud: Hud
 ## What carries over between runs: bones and the ranks bought with them.
 var bones := Bones.new()
+## Kilograms of meat eaten, day / week / month, online; and which tab it's on.
+var leaderboard: Leaderboard
+var _board_period := "day"
 ## Phone controls (switch themselves on at the first touch).
 var touch: Touch
 var area: Area
@@ -87,6 +90,9 @@ var eaten := 0
 ## Times evolved this run (starting as a Raptor doesn't count), and what this run paid.
 var evolves := 0
 var run_bones := 0
+## Kilograms of meat swallowed this run (every mouthful: bites, scraps, pieces off the ground). The leaderboard
+## adds these up.
+var meat_kg := 0.0
 var show_zones := false
 var demo := false
 
@@ -159,6 +165,16 @@ func _ready() -> void:
 	hud.picked.connect(_pick)
 	hud.bought.connect(_buy)
 	hud.next_run.connect(_next_run)
+	hud.board_open.connect(_show_board.bind(""))
+	hud.board_tab.connect(_show_board)
+	hud.new_name.connect(_new_name)
+	hud.board_back.connect(func(): hud.hide_board())
+	leaderboard = Leaderboard.new()
+	# the tests and the demo bot never send runs
+	if bones.path == "":
+		leaderboard.url = ""
+	leaderboard.loaded.connect(_board_loaded)
+	add_child(leaderboard)
 	add_child(hud)
 	hud.hint.text = "A/D MOVE   W JUMP   LEFT CLICK BITE   HOLD RIGHT CLICK BIG BITE   R NEW RUN"
 	start_run()
@@ -179,6 +195,7 @@ func start_run() -> void:
 	chunks = 0
 	eaten = 0
 	evolves = 0
+	meat_kg = 0.0
 	_choices = 0
 	state = PLAY
 	hud.hide_over()
@@ -375,7 +392,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pick(i)
 
 ## A finger lifted while the game isn't being played: picks the level-up card it's on, or on the death screen
-## (once it has settled) buys the shop card it's on or starts the next run. False while playing (then the touch
+## presses the button it's on (a shop card, NEXT RUN, the leaderboard's). False while playing (then the touch
 ## belongs to the controls).
 func touch_tap(at: Vector2) -> bool:
 	if state == CHOOSE:
@@ -384,11 +401,9 @@ func touch_tap(at: Vector2) -> bool:
 			_pick(i)
 		return true
 	if state == OVER:
-		var i: int = hud.shop_at(at)
-		if i == Hud.SHOP_SIZE:
-			_next_run()
-		elif i >= 0:
-			_buy(i)
+		var b: Button = hud.over_button_at(at)
+		if b:
+			b.pressed.emit()
 		return true
 	return false
 
@@ -603,12 +618,13 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 			first = pr
 		chunks += 1
 		got.append_array(r.removed)
+		meat_kg += r.removed.size() * _kg_px(pr)
 		# tearing while you shake throws most of it about; a rip throws it hard
 		gore.spray(r.removed, Vector2(rng.randf_range(-1.0, 1.0), -0.5) if light else dir, 0.8 if light else 0.35)
 		gore.blood(p, dir, (4 + r.removed.size() / 3) if light else (8 + r.removed.size() / 2), 150.0 if mode == RIP else 110.0)
 		for isl: Dictionary in r.islands:
 			var fling := 1.6 if mode == RIP else 1.0
-			gore.piece(isl, Vector2(dir.x * rng.randf_range(40.0, 100.0), -rng.randf_range(70.0, 150.0)) * fling)
+			gore.piece(isl, Vector2(dir.x * rng.randf_range(40.0, 100.0), -rng.randf_range(70.0, 150.0)) * fling, _kg_px(pr))
 			gore.blood(isl.center, Vector2.UP, 14, 90.0)
 			sfx.play("rip", 0.08)
 			_shake = minf(_shake + 0.5, 1.2)
@@ -649,6 +665,7 @@ func player_bite(who: Player, p: Vector2, radius: float, mode := SNAP) -> Prey:
 		if not bits.is_empty():
 			any = true
 			got.append_array(bits)
+			meat_kg += gore.eaten_kg
 			gore.blood(p, dir, 6, 80.0)
 			who.heal(HEAL_EAT_BITE)
 			add_xp(XP_EAT_BITE, p)
@@ -738,13 +755,34 @@ func _game_over() -> void:
 	# the bones are banked the moment you die (closing the game here doesn't lose them)
 	run_bones = Bones.earned(kills, eaten, area_n - 1, evolves)
 	bones.add(run_bones)
+	leaderboard.send_run(bones.player_id, bones.name, meat_kg)
+	hud.set_board_enabled(leaderboard.enabled())
 	hud.show_over(_over_text(), "TAP A CARD TO BUY A RANK" if touch.active else "CLICK A CARD TO BUY A RANK     R: NEXT RUN",
 			_shop_items())
 	_mouse()
 
 func _over_text() -> String:
-	return "LEVEL %d     AREA %d     KILLS %d     EATEN %d     RUN %d\n+%d BONES          YOU HAVE %d BONES" % [
-		level, area_n, kills, eaten, run_seed, run_bones, bones.bones]
+	return "LEVEL %d     AREA %d     KILLS %d     YOU ATE %d KG OF MEAT     RUN %d\n+%d BONES          YOU HAVE %d BONES" % [
+		level, area_n, kills, roundi(meat_kg), run_seed, run_bones, bones.bones]
+
+## The leaderboard over the shop, on tab `period` ("" = the one it was on last), asking for the latest.
+func _show_board(period: String) -> void:
+	if state != OVER or _over_t > 0.0:
+		return
+	if period != "":
+		_board_period = period
+	hud.show_board(bones.name, _board_period)
+	leaderboard.fetch(_board_period, bones.player_id)
+
+func _board_loaded(period: String, rows: Array, error: String) -> void:
+	if period == _board_period and hud.board_showing():
+		hud.set_board_rows(rows, error)
+
+## NEW NAME: another random name; the board shows it straight away (a run of no meat carries the new name).
+func _new_name() -> void:
+	bones.new_name()
+	hud.show_board(bones.name, _board_period)
+	leaderboard.send_run(bones.player_id, bones.name, 0.0, func(): _show_board(""))
 
 ## The death screen's cards, for Hud.set_shop.
 func _shop_items() -> Array:
@@ -779,6 +817,7 @@ func _finish(who: Player, pr: Prey) -> Array:
 		for i in part.w * part.h:
 			if part.alive[i] == 1:
 				scraps.append([part.to_world(Vector2(i % part.w + 0.5, i / part.w + 0.5)), part.skin.get_pixel(i % part.w, i / part.w)])
+	meat_kg += scraps.size() * _kg_px(pr)
 	creatures.erase(pr)
 	pr.queue_free()
 	eaten += 1
@@ -989,6 +1028,23 @@ func _kill_moment(pr: Prey, p: Vector2, dir: Vector2) -> void:
 	sfx.play("rip", 0.05, 1.0)
 	sfx.play("roar", 0.08, 0.0)
 	_pending.append([KILL_SLOW_TIME * 0.7, ["KILL!", pr.global_position + Vector2(0, -pr.height - 56), 1.6, Color(1, 0.3, 0.2)]])
+
+## Kilograms of meat in a whole `c` at its normal size (agreed with the owner: "realistic-ish").
+func _meat_kg(c: Prey) -> float:
+	if c is Charger:
+		return 150.0
+	if c is Hunter:
+		return 40.0
+	if c is Flyer:
+		return 12.0
+	return 15.0 if c.kind == Prey.RUNNER else 30.0
+
+## Kilograms of meat in one of `c`'s pixels: the whole body's meat (bigger for a bigger one) over its pixels.
+func _kg_px(c: Prey) -> float:
+	var n := 0
+	for part in c.parts:
+		n += part.pixels_total()
+	return _meat_kg(c) * c.scale.x * c.scale.x / maxf(1.0, n)
 
 ## XP for killing `c`. PLACEHOLDER numbers.
 func _kill_xp(c: Prey) -> int:
