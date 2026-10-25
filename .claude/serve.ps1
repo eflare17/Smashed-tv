@@ -4,7 +4,7 @@ $l = New-Object System.Net.HttpListener
 $l.Prefixes.Add('http://localhost:8765/')
 $l.Start()
 Write-Host "serving $root on http://localhost:8765/"
-$types = @{ '.html'='text/html'; '.png'='image/png'; '.webp'='image/webp'; '.js'='text/javascript'; '.json'='application/json'; '.css'='text/css' }
+$types = @{ '.html'='text/html'; '.png'='image/png'; '.webp'='image/webp'; '.js'='text/javascript'; '.json'='application/json'; '.css'='text/css'; '.wasm'='application/wasm'; '.pck'='application/octet-stream' }
 while ($l.IsListening) {
   $ctx = $l.GetContext()
   $p = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath.TrimStart('/'))

@@ -142,6 +142,28 @@ func _run() -> void:
 	await _frames(2)
 	_check("letting go does the big bite", pl.bite_t >= 0.0 and pl.bite_kind == Player.BIG)
 
+	# level-up cards: a tap on one picks it
+	await _frames(30)
+	main.set("_choices", 1)
+	main.call("_offer")
+	var card: Button = main.hud.get("_cards")[1]
+	var at := card.get_global_rect().get_center()
+	_press(1, at)
+	_check("touching a level-up card doesn't pick it yet", not main.playing())
+	_release(1, at)
+	_check("lifting the finger on a card picks it", main.playing() and main.get("_choices") == 0)
+	_check("...without biting", not touch.bite)
+	# the death screen: a tap starts a new run (once it has settled)
+	main.call("_game_over")
+	_check("the death screen says tap on a phone", "TAP" in main.hud.get("_over_text").text)
+	_press(0, Vector2(240, 135))
+	_release(0, Vector2(240, 135))
+	_check("an early tap on the death screen does nothing", not main.playing())
+	main.set("_over_t", 0.0)
+	_press(0, Vector2(240, 135))
+	_release(0, Vector2(240, 135))
+	_check("a tap on the death screen starts a new run", main.playing())
+
 	# a real mouse takes over again
 	var m := InputEventMouseMotion.new()
 	m.relative = Vector2(10, 0)

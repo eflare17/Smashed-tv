@@ -68,6 +68,15 @@ func _input(event: InputEvent) -> void:
 ## Touch events, in screen (viewport) coordinates. Also called by the tests.
 func handle(event: InputEvent) -> void:
 	var half: float = get_viewport().get_visible_rect().size.x * 0.5
+	if game and not game.playing():
+		# level-up cards and the death screen: a lifted finger is a tap on them, and nothing stays held
+		if event is InputEventScreenTouch and not event.pressed:
+			game.touch_tap(event.position)
+		_left_id = -1
+		_right_id = -1
+		move_x = 0.0
+		big = false
+		return
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
 		if t.pressed:

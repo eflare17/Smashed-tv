@@ -115,6 +115,9 @@ var _frame := 0
 
 func _ready() -> void:
 	rng.randomize()
+	# in a phone's browser the whole-number zoom can leave the game filling half the screen: fill it instead
+	if OS.has_feature("web_android") or OS.has_feature("web_ios"):
+		get_window().content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL
 	for a in OS.get_cmdline_user_args():
 		if a == "--demo":
 			demo = true
@@ -358,6 +361,23 @@ func _unhandled_input(event: InputEvent) -> void:
 				_pick(i)
 	elif state == OVER and _over_t <= 0.0 and event.is_action_pressed("bite"):
 		start_run()
+
+## A finger lifted while the game isn't being played: picks the level-up card it's on, or starts a new run once
+## the death screen has settled. False while playing (then the touch belongs to the controls).
+func touch_tap(at: Vector2) -> bool:
+	if state == CHOOSE:
+		var i: int = hud.card_at(at)
+		if i >= 0:
+			_pick(i)
+		return true
+	if state == OVER:
+		if _over_t <= 0.0:
+			start_run()
+		return true
+	return false
+
+func playing() -> bool:
+	return state == PLAY
 
 func _mouse() -> void:
 	if not demo:
@@ -699,8 +719,9 @@ func _game_over() -> void:
 	_over_t = 1.0
 	player.die_look()
 	sfx.play("thud", 0.0)
-	hud.show_over("LEVEL %d     AREA %d\nKILLS %d     EATEN %d     SIZE x%.1f\n\nRUN %d\n\n\nCLICK OR PRESS R FOR A NEW RUN" % [
-		level, area_n, kills, eaten, player.size, run_seed])
+	hud.show_over("LEVEL %d     AREA %d\nKILLS %d     EATEN %d     SIZE x%.1f\n\nRUN %d\n\n\n%s" % [
+		level, area_n, kills, eaten, player.size, run_seed,
+		"TAP FOR A NEW RUN" if touch.active else "CLICK OR PRESS R FOR A NEW RUN"])
 	_mouse()
 
 ## A dead body eaten down to scraps: the scraps go down in one gulp, the body is gone, and you grow.

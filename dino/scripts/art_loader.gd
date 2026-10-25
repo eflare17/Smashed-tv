@@ -41,11 +41,15 @@ static func _load(creature: String, part: String) -> Image:
 	if _cache.has(key):
 		return _cache[key]
 	var path := "res://art/%s_%s.png" % [creature, part]
-	if not FileAccess.file_exists(path):
+	# as Godot's imported texture (what a web build packs), not the PNG on disk
+	if not ResourceLoader.exists(path):
 		return null
-	var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-	if img == null:
+	var tex := load(path) as Texture2D
+	if tex == null:
 		return null
+	var img: Image = tex.get_image().duplicate()
+	if img.is_compressed():
+		img.decompress()
 	img.convert(Image.FORMAT_RGBA8)
 	_cache[key] = img
 	return img

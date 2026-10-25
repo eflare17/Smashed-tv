@@ -202,6 +202,13 @@ func show_choice(cards: Array) -> void:
 func hide_choice() -> void:
 	_choice.visible = false
 
+## Which card is under a point (screen space), or -1.
+func card_at(at: Vector2) -> int:
+	for i in _cards.size():
+		if _cards[i].get_global_rect().has_point(at):
+			return i
+	return -1
+
 func choosing() -> bool:
 	return _choice.visible
 
