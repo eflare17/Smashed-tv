@@ -6,14 +6,15 @@ extends RefCounted
 ## big unlock: starting the run as a Raptor. Saved in user:// (a file on a PC, the browser's storage on the web).
 
 ## Bones per kill, per body eaten, per new area reached, per evolution. A decent run (15 kills, 6 eaten, area 2,
-## evolved once) pays about 47, in four roughly equal shares; the demo bot's clumsy runs pay 10-30.
-const PER_KILL := 1
-const PER_EAT := 2
-const PER_AREA := 10
-const PER_EVOLVE := 10
+## evolved once) pays about 94, in four roughly equal shares; the demo bot's clumsy runs pay 20-60. (Doubled at
+## the owner's ask: a bad run paying 7 felt like nothing.)
+const PER_KILL := 2
+const PER_EAT := 4
+const PER_AREA := 20
+const PER_EVOLVE := 20
 const MAX_RANK := 5
-## The price of rank 1..5 of an upgrade (the first about one decent run, later ones two), and of starting as a
-## Raptor (about 8-10 decent runs). Agreed with the owner ("medium").
+## The price of rank 1..5 of an upgrade (about two ranks a decent run), and of starting as a Raptor (about 4-5
+## decent runs; buyable any time). Agreed with the owner ("medium").
 const PRICES := [30, 40, 55, 75, 100]
 const RAPTOR_PRICE := 400
 ## What one rank adds (half an in-run level-up): bite radius, speed x, bite cooldown x, health, lunge x, big-bite
