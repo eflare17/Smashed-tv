@@ -16,7 +16,7 @@ const DinoArt := preload("dino_art.gd")
 const SPECS := {
 	"hatchling": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.3, "leg_scale": 0.6, "tilt": 0.35, "legs": 2, "tail": 0.32, "neck": 0.8},
 	"raptor": {"width": 48.0, "jaw_k": 0.6, "jaw_trim": 0.3, "legs": 2, "leg_scale": 0.6, "tilt": 0.45, "tail": 0.3, "neck": 0.78},
-	"allosaur": {"width": 52.0, "legs": 2, "tail": 0.3, "neck": 0.8},
+	"allosaur": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.4, "leg_scale": 0.8, "tilt": 0.2, "legs": 2, "tail": 0.3, "neck": 0.8},
 	"tyrant": {"width": 52.0, "legs": 2, "tail": 0.28, "neck": 0.78},
 	"grazer": {"stand": 54.0, "legs": 4, "hips": [0.42, 0.72], "hip_y": 0.86, "tail": 0.36, "neck": 0.76, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
 	"runner": {"width": 36.0, "legs": 2, "tail": 0.42, "neck": 0.78, "head": 0.88, "head_y": 0.6},
@@ -27,7 +27,7 @@ const SPECS := {
 ## Which creatures use their imported sprites. Off by default: each is switched on once its rig has been checked
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
-	"hatchling": true, "raptor": true, "allosaur": false, "tyrant": false,
+	"hatchling": true, "raptor": true, "allosaur": true, "tyrant": false,
 	"grazer": true, "runner": true, "charger": true, "flyer": true,
 }
 
