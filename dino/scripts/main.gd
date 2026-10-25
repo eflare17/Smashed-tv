@@ -35,6 +35,10 @@ const DANGER_TIME := 150.0
 ## (any more become hunters).
 const FLYER_SHARE := 0.2
 const FLYER_MAX := 1
+## Lava: health lost each time it scorches you, how often it burns a creature standing in it, and how big a burn.
+const LAVA_HURT := 8.0
+const LAVA_BURN_EVERY := 0.3
+const LAVA_BURN := 4.0
 ## Attackers hit this many times harder with the danger bar full; a body is rotten (no healing, half XP) after
 ## this many seconds; what reaching the next area pays (health, and XP; both scaled by how low the bar was).
 const DANGER_BITE := 2.5
@@ -357,6 +361,43 @@ func _spawners(delta: float) -> void:
 		_warned = 2
 		hud.show_banner("PREDATORS ARE GATHERING. MOVE ON!", 3.0)
 
+## Lava (the volcano's cracks): it scorches you and hops you up out of it, and it burns the feet of any creature
+## standing in it, a little at a time (so herding prey into it cripples them). PLACEHOLDER numbers.
+func _lava_step(delta: float) -> void:
+	if area.hazards.is_empty():
+		return
+	if player.on_ground and area.hazard_at(player.position.x, player.position.y) == Area.LAVA \
+			and player.scorch(LAVA_HURT):
+		hud.hurt()
+		sfx.play("thud", 0.1, 2.0)
+		_popups.append(["HOT!", player.global_position + Vector2(0, -26), 0.7, Color(1.0, 0.6, 0.2)])
+		gore.spray(_embers(player.global_position), Vector2.UP, 0.8)
+		if player.hp <= 0.0:
+			_game_over()
+	for c: Prey in creatures.duplicate():
+		if c.dead or not c.on_ground or area.hazard_at(c.position.x, c.position.y) != Area.LAVA:
+			continue
+		var t: float = c.get_meta("lava_t", 0.0) - delta
+		if t <= 0.0:
+			t = LAVA_BURN_EVERY
+			# a foot, wherever its feet are (a four-legged one has them spread along its body)
+			var spread: float = c.half_w * absf(c.scale.x) * 1.6
+			var r := c.bite(c.global_position + Vector2(rng.randf_range(-spread, spread), -2.0), LAVA_BURN, rng)
+			gore.spray(r.removed, Vector2.UP, 0.8)
+			for isl: Dictionary in r.islands:
+				gore.piece(isl, Vector2(rng.randf_range(-40.0, 40.0), -90.0), _kg_px(c))
+			if c.hurt(c.global_position):
+				_trim_corpses()
+		c.set_meta("lava_t", t)
+
+## A few glowing bits flying up from a scorch.
+func _embers(at: Vector2) -> Array:
+	var out: Array = []
+	for k in 8:
+		out.append([at + Vector2(rng.randf_range(-4.0, 4.0), rng.randf_range(-3.0, 0.0)),
+				Color(1.0, rng.randf_range(0.4, 0.9), 0.1)])
+	return out
+
 func shake(amount: float) -> void:
 	_shake = minf(_shake + amount, 1.2)
 
@@ -506,6 +547,7 @@ func _step(delta: float) -> void:
 	_maybe_offer()
 	for c in creatures.duplicate():
 		c.step(delta, player.global_position, rng)
+	_lava_step(delta)
 	_spawners(delta)
 	gore.step(delta)
 	if player.position.x >= area.exit_x and state == PLAY:

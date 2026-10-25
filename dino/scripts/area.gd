@@ -14,12 +14,29 @@ const PALETTES := [
 			Color(0.16, 0.3, 0.18), Color(0.42, 0.3, 0.2), Color(0.33, 0.23, 0.15), Color(0.36, 0.52, 0.22)],
 	[Color(0.55, 0.62, 0.75), Color(0.98, 0.85, 0.6), Color(0.62, 0.5, 0.42), Color(0.55, 0.4, 0.28),
 			Color(0.38, 0.4, 0.2), Color(0.66, 0.5, 0.32), Color(0.55, 0.4, 0.25), Color(0.6, 0.55, 0.3)],
+	# desert: dunes, cycads, sand on top instead of grass
+	[Color(0.6, 0.72, 0.84), Color(1.0, 0.9, 0.7), Color(0.86, 0.7, 0.48), Color(0.8, 0.62, 0.4),
+			Color(0.34, 0.42, 0.2), Color(0.86, 0.72, 0.48), Color(0.74, 0.58, 0.36), Color(0.93, 0.8, 0.56)],
 	[Color(0.3, 0.4, 0.42), Color(0.62, 0.7, 0.6), Color(0.3, 0.38, 0.36), Color(0.2, 0.3, 0.24),
 			Color(0.12, 0.22, 0.16), Color(0.3, 0.28, 0.2), Color(0.22, 0.2, 0.14), Color(0.28, 0.4, 0.22)],
+	# coast: a far headland, the sea (near hills), a few palms, a sand beach
+	[Color(0.38, 0.6, 0.84), Color(0.86, 0.9, 0.94), Color(0.42, 0.5, 0.56), Color(0.16, 0.46, 0.6),
+			Color(0.2, 0.42, 0.22), Color(0.88, 0.8, 0.6), Color(0.76, 0.66, 0.46), Color(0.94, 0.88, 0.7)],
 	[Color(0.25, 0.12, 0.14), Color(0.85, 0.4, 0.2), Color(0.3, 0.18, 0.18), Color(0.2, 0.12, 0.12),
 			Color(0.15, 0.1, 0.08), Color(0.32, 0.22, 0.2), Color(0.22, 0.14, 0.12), Color(0.4, 0.3, 0.18)],
+	# night jungle: the jungle after dark (everything in it is dimmed blue too: see build)
+	[Color(0.03, 0.04, 0.12), Color(0.12, 0.16, 0.32), Color(0.1, 0.12, 0.22), Color(0.07, 0.12, 0.13),
+			Color(0.06, 0.14, 0.09), Color(0.2, 0.15, 0.13), Color(0.13, 0.1, 0.09), Color(0.12, 0.22, 0.12)],
 ]
-const NAMES := ["JUNGLE", "BADLANDS", "SWAMP", "VOLCANO"]
+const NAMES := ["JUNGLE", "BADLANDS", "DESERT", "SWAMP", "COAST", "VOLCANO", "NIGHT JUNGLE"]
+## Patches of ground that change how you move (owner's picks, 26 Oct; all numbers PLACEHOLDERS): WATER in the
+## swamp slows every creature wading through it, LAVA in the volcano scorches you and burns creatures' feet,
+## SAND (quicksand) in the desert slows and sinks.
+enum { WATER, LAVA, SAND }
+const HAZARD_OF := {"SWAMP": WATER, "VOLCANO": LAVA, "DESERT": SAND}
+## How fast anything moves through each (WATER, LAVA, SAND), and how deep it sinks into quicksand.
+const HAZARD_SPEED := [0.5, 1.0, 0.45]
+const SINK := 5.0
 ## What a herd is made of. LONE kinds come one at a time; every area has at least one of each GUARANTEED kind
 ## (the newer dinosaurs, so a normal run meets them).
 enum { HERD_GRAZER, HERD_RUNNER, HERD_CHARGER, HERD_ANKYLO }
@@ -40,6 +57,13 @@ var ground_y_ := 226.0
 var herds: Array = []
 var exit_x := 0.0
 var stains: Sprite2D
+## This area's look (one of NAMES).
+var look := "JUNGLE"
+## Ground patches: [x0, x1, kind (WATER, LAVA, SAND)], on the flat ground only.
+var hazards: Array = []
+## The lava's sprites (they glow and dim).
+var _lava: Array[Sprite2D] = []
+var _t := 0.0
 
 var _rng := RandomNumberGenerator.new()
 
@@ -50,6 +74,7 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 	seed_value = hash([run_seed, n])
 	_rng.seed = seed_value
 	palette = PALETTES[(n - 1) % PALETTES.size()]
+	look = NAMES[(n - 1) % NAMES.size()]
 	width = 2200 + n * 400 + _rng.randi_range(0, 600)
 	exit_x = width - 24.0
 	obstacles.clear()
@@ -61,7 +86,8 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 		var roll := _rng.randf()
 		if roll < 0.3:
 			# a rock to jump or a log to hop
-			if _rng.randf() < 0.55:
+			# on the coast it's mostly driftwood
+			if _rng.randf() < (0.2 if look == "COAST" else 0.55):
 				var w := _rng.randi_range(16, 30)
 				var h := _rng.randi_range(12, 22)
 				obstacles.append(Rect2(x, ground_y - h, w, h))
@@ -109,6 +135,41 @@ func generate(n: int, run_seed: int, ground_y: float) -> void:
 			hd[2] = kind
 	# always something to eat near the start
 	herds.push_front([300.0, 2, HERD_RUNNER])
+	_place_hazards()
+
+## This look's ground patches, on flat open ground (clear of rocks, logs and raised ground, of each other, and of
+## the start and the exit). Placed last, so the rest of the area is the same as without them.
+func _place_hazards() -> void:
+	hazards.clear()
+	if not HAZARD_OF.has(look):
+		return
+	var kind: int = HAZARD_OF[look]
+	# [how many, narrowest, widest] for WATER, LAVA, SAND
+	var spec: Array = [[5, 60, 140], [8, 16, 36], [4, 40, 80]][kind]
+	var want: int = spec[0] + number / 4
+	for tries in want * 12:
+		if hazards.size() >= want:
+			break
+		var w := float(_rng.randi_range(spec[1], spec[2]))
+		var x0 := _rng.randf_range(420.0, width - 320.0 - w)
+		var clear := true
+		for o: Rect2 in obstacles:
+			if x0 < o.end.x + 18.0 and x0 + w > o.position.x - 18.0:
+				clear = false
+		for hz: Array in hazards:
+			if x0 < hz[1] + 40.0 and x0 + w > hz[0] - 40.0:
+				clear = false
+		if clear:
+			hazards.append([x0, x0 + w, kind])
+
+## The ground patch under feet at (`x`, `feet_y`), or -1. Only on the flat ground (not raised ground or rocks).
+func hazard_at(x: float, feet_y: float) -> int:
+	if feet_y < ground_y_ - 1.5:
+		return -1
+	for hz: Array in hazards:
+		if x >= hz[0] and x <= hz[1]:
+			return hz[2]
+	return -1
 
 ## Where the feet go at `x`: the ground, or the top of raised ground there.
 func floor_at(x: float) -> float:
@@ -132,9 +193,33 @@ func build(view: Vector2, ground_y: float) -> void:
 	sky_rect.stretch_mode = TextureRect.STRETCH_SCALE
 	sky_rect.size = view
 	sky_layer.add_child(sky_rect)
-	_add_layer(_ridge(960, 120, 70.0, 0.012, palette[2]), 0.15, ground_y - 120)
-	_add_layer(_ridge(960, 90, 40.0, 0.03, palette[3]), 0.4, ground_y - 88)
-	_add_layer(_jungle(960, 70, palette[4]), 0.7, ground_y - 66)
+	match look:
+		"DESERT":
+			# low smooth dunes that shimmer in the heat, and stubby cycads
+			var shimmer := ShaderMaterial.new()
+			shimmer.shader = _shimmer_shader()
+			_add_layer(_ridge(960, 120, 46.0, 0.006, palette[2]), 0.15, ground_y - 120).material = shimmer
+			_add_layer(_ridge(960, 90, 26.0, 0.014, palette[3]), 0.4, ground_y - 88).material = shimmer
+			_add_layer(_cycads(960, 50, palette[4]), 0.7, ground_y - 46)
+		"COAST":
+			# a far headland, the sea with surf breaking along it, a few palms on the beach
+			_add_layer(_ridge(960, 120, 50.0, 0.01, palette[2]), 0.15, ground_y - 120)
+			_add_layer(_sea(960, 64, palette[3]), 0.4, ground_y - 62)
+			_add_layer(_jungle(960, 70, palette[4], 120, 260, false), 0.7, ground_y - 66)
+		"NIGHT JUNGLE":
+			sky_layer.add_child(_night_sky(view))
+			_add_layer(_ridge(960, 120, 70.0, 0.012, palette[2]), 0.15, ground_y - 120)
+			_add_layer(_ridge(960, 90, 40.0, 0.03, palette[3]), 0.4, ground_y - 88)
+			_add_layer(_jungle(960, 70, palette[4]), 0.7, ground_y - 66)
+			# everything down here is in the dark too, the dinosaurs included; the fireflies glow through it
+			var dark := CanvasModulate.new()
+			dark.color = Color(0.5, 0.56, 0.82)
+			add_child(dark)
+			add_child(_fireflies(ground_y))
+		_:
+			_add_layer(_ridge(960, 120, 70.0, 0.012, palette[2]), 0.15, ground_y - 120)
+			_add_layer(_ridge(960, 90, 40.0, 0.03, palette[3]), 0.4, ground_y - 88)
+			_add_layer(_jungle(960, 70, palette[4]), 0.7, ground_y - 66)
 
 	var ground_img := Image.create(width, int(view.y - ground_y) + 4, false, Image.FORMAT_RGBA8)
 	var n := FastNoiseLite.new()
@@ -161,6 +246,18 @@ func build(view: Vector2, ground_y: float) -> void:
 	stains = Sprite2D.new()
 	stains.z_index = -5
 	add_child(stains)
+
+	for hz: Array in hazards:
+		var w := int(hz[1] - hz[0])
+		match hz[2]:
+			WATER:
+				# a dark muddy bed on the ground, and the water itself over the feet of whatever wades in
+				_ground_patch(_mud(w), Vector2(hz[0], ground_y - 3), -4)
+				_ground_patch(_water(w), Vector2(hz[0], ground_y - 7), 3)
+			LAVA:
+				_lava.append(_ground_patch(_lava_crack(w), Vector2(hz[0], ground_y - 3), -4))
+			SAND:
+				_ground_patch(_quicksand(w, light), Vector2(hz[0], ground_y - 3), -4)
 
 	for slab in ground:
 		var s := Sprite2D.new()
@@ -198,7 +295,7 @@ func build(view: Vector2, ground_y: float) -> void:
 	post.z_index = -3
 	add_child(post)
 
-func _add_layer(img: Image, scroll: float, y: float) -> void:
+func _add_layer(img: Image, scroll: float, y: float) -> Sprite2D:
 	var par := Parallax2D.new()
 	par.scroll_scale = Vector2(scroll, 1.0)
 	par.repeat_size = Vector2(img.get_width(), 0)
@@ -210,6 +307,7 @@ func _add_layer(img: Image, scroll: float, y: float) -> void:
 	s.position = Vector2(-img.get_width(), y)
 	par.add_child(s)
 	add_child(par)
+	return s
 
 func _ridge(w: int, h: int, amp: float, freq: float, c: Color) -> Image:
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
@@ -225,7 +323,86 @@ func _ridge(w: int, h: int, amp: float, freq: float, c: Color) -> Image:
 			img.set_pixel(x, y, c.lightened(0.08) if y == top else c)
 	return img
 
-func _jungle(w: int, h: int, leaf: Color) -> Image:
+## The lava glows brighter and dimmer.
+func _process(delta: float) -> void:
+	_t += delta
+	for k in _lava.size():
+		var v := 0.85 + 0.25 * sin(_t * 3.0 + k * 1.7)
+		_lava[k].modulate = Color(v, v, v)
+
+func _ground_patch(img: Image, at: Vector2, z: int) -> Sprite2D:
+	var s := Sprite2D.new()
+	s.texture = ImageTexture.create_from_image(img)
+	s.centered = false
+	s.position = at
+	s.z_index = z
+	add_child(s)
+	return s
+
+## The swamp's muddy bottom (where the water is).
+func _mud(w: int) -> Image:
+	var img := Image.create(w, 6, false, Image.FORMAT_RGBA8)
+	for y in 6:
+		for x in w:
+			if (x < 3 or x >= w - 3) and y > x % 3 + 1:
+				continue
+			img.set_pixel(x, y, Color(0.16, 0.18, 0.12) if (x * 3 + y * 5) % 7 else Color(0.22, 0.24, 0.16))
+	return img
+
+## Swamp water, see-through, with a lighter rippled surface line: drawn over the wader's feet.
+func _water(w: int) -> Image:
+	var img := Image.create(w, 10, false, Image.FORMAT_RGBA8)
+	for y in range(1, 10):
+		for x in w:
+			var edge := mini(x, w - 1 - x)
+			if edge < 3 and y < 4 - edge:
+				continue
+			var c := Color(0.24, 0.42, 0.38, 0.55)
+			if y == 1 or (y == 2 and (x / 3) % 4 == 0):
+				c = Color(0.62, 0.8, 0.72, 0.85)
+			img.set_pixel(x, y, c)
+	return img
+
+## A glowing crack in the volcano's ground: yellow-hot in the middle, orange, then dark red at the edges.
+func _lava_crack(w: int) -> Image:
+	var img := Image.create(w, 6, false, Image.FORMAT_RGBA8)
+	var n := FastNoiseLite.new()
+	n.seed = _rng.randi()
+	n.frequency = 0.25
+	for x in w:
+		var taper := minf(1.0, minf(x, w - 1 - x) / 4.0)
+		var half := (1.5 + n.get_noise_1d(x) * 1.5) * taper
+		for y in 6:
+			var d := absf(y - 2.5)
+			if d > half + 1.0:
+				continue
+			var c := Color(0.45, 0.06, 0.04)
+			if d <= half * 0.4:
+				c = Color(1.0, 0.92, 0.45)
+			elif d <= half:
+				c = Color(1.0, 0.5, 0.1)
+			img.set_pixel(x, y, c)
+	return img
+
+## Quicksand: paler, wetter-looking sand in rings, with a darker rim.
+func _quicksand(w: int, sand: Color) -> Image:
+	var img := Image.create(w, 6, false, Image.FORMAT_RGBA8)
+	var mid := w * 0.5
+	for y in 6:
+		for x in w:
+			var edge := mini(x, w - 1 - x)
+			if edge < 3 and y < 3 - edge:
+				continue
+			var c := sand.lightened(0.08)
+			if int(absf(x - mid) * 0.35 + y) % 3 == 0:
+				c = sand.darkened(0.12)
+			if edge < 2 or y == 5:
+				c = sand.darkened(0.28)
+			img.set_pixel(x, y, c)
+	return img
+
+## Palms (`gap_lo`..`gap_hi` apart), with undergrowth along the bottom unless `bushes` is off (a beach).
+func _jungle(w: int, h: int, leaf: Color, gap_lo := 40, gap_hi := 90, bushes := true) -> Image:
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	var trunk := leaf.darkened(0.25).lerp(Color(0.2, 0.2, 0.16), 0.5)
 	var x := 10
@@ -246,12 +423,122 @@ func _jungle(w: int, h: int, leaf: Color) -> Image:
 					img.set_pixel(px, py, leaf)
 					if py + 1 < h:
 						img.set_pixel(px, py + 1, leaf.darkened(0.2))
-		x += _rng.randi_range(40, 90)
-	for y in range(h - 10, h):
-		for xx in w:
-			if _rng.randf() < 0.7 - (h - y) * 0.06:
-				img.set_pixel(xx, y, leaf.darkened(0.1))
+		x += _rng.randi_range(gap_lo, gap_hi)
+	if bushes:
+		for y in range(h - 10, h):
+			for xx in w:
+				if _rng.randf() < 0.7 - (h - y) * 0.06:
+					img.set_pixel(xx, y, leaf.darkened(0.1))
 	return img
+
+## Cycads for the desert: a short thick scaly trunk with a crown of stiff fronds, now and then a low shrub.
+func _cycads(w: int, h: int, leaf: Color) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var trunk := Color(0.45, 0.35, 0.22)
+	var x := 14
+	while x < w - 20:
+		var th := _rng.randi_range(8, 20)
+		for y in range(h - th, h):
+			for dx in range(-2, 3):
+				img.set_pixel(x + dx, y, trunk.darkened(0.25) if (y + dx) % 3 == 0 else trunk)
+		# stiff fronds fanning up and out
+		for f in 7:
+			var a := -PI * 0.5 + (f - 3) * 0.42
+			var p := Vector2(x, h - th)
+			for s in 10:
+				p += Vector2(cos(a), sin(a) + s * 0.04)
+				var px := int(p.x)
+				var py := int(p.y)
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, leaf if s < 8 else leaf.lightened(0.15))
+		# a low dry shrub between
+		var sx := x + _rng.randi_range(30, 50)
+		for k in 12:
+			var px := sx + _rng.randi_range(-6, 6)
+			var py := h - 1 - _rng.randi_range(0, 4)
+			if px >= 0 and px < w:
+				img.set_pixel(px, py, leaf.lerp(Color(0.6, 0.5, 0.3), 0.5))
+		x += _rng.randi_range(70, 150)
+	return img
+
+## The sea seen from the beach: flat bands of water darkening to the horizon, light wave lines, and a white line
+## of surf along the bottom where it breaks.
+func _sea(w: int, h: int, water: Color) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var n := FastNoiseLite.new()
+	n.seed = _rng.randi()
+	n.frequency = 0.05
+	var top := 18
+	for y in range(top, h):
+		var k := float(y - top) / (h - top)
+		var c := water.darkened(0.25).lerp(water.lightened(0.1), k)
+		for x in w:
+			var v := lerpf(n.get_noise_2d(x, y * 3.0), n.get_noise_2d(x - w, y * 3.0), float(x) / w)
+			var px := c
+			if v > 0.35:
+				px = c.lightened(0.25)
+			if y >= h - 4 and v > -0.3 - (y - (h - 4)) * 0.2:
+				px = Color(0.95, 0.97, 1.0)
+			img.set_pixel(x, y, px)
+	return img
+
+## Stars and a big moon, over the night sky.
+func _night_sky(view: Vector2) -> TextureRect:
+	var img := Image.create(int(view.x), int(view.y), false, Image.FORMAT_RGBA8)
+	for k in 90:
+		var x := _rng.randi_range(0, int(view.x) - 1)
+		var y := _rng.randi_range(0, int(view.y * 0.55))
+		img.set_pixel(x, y, Color(1, 1, 0.9, _rng.randf_range(0.4, 1.0)))
+	var mc := Vector2(view.x * 0.78, view.y * 0.2)
+	for y in range(int(mc.y) - 14, int(mc.y) + 15):
+		for x in range(int(mc.x) - 14, int(mc.x) + 15):
+			var d := Vector2(x, y).distance_to(mc)
+			if d <= 13.0:
+				var c := Color(0.95, 0.93, 0.8)
+				# a few darker patches, and a soft shadow on one side
+				if Vector2(x, y).distance_to(mc + Vector2(-4, -3)) < 3.0 or Vector2(x, y).distance_to(mc + Vector2(5, 4)) < 2.0:
+					c = c.darkened(0.15)
+				if x > mc.x + 6:
+					c = c.darkened(0.1)
+				img.set_pixel(x, y, c)
+			elif d <= 18.0:
+				img.set_pixel(x, y, Color(0.9, 0.9, 0.8, 0.12))
+	var tr := TextureRect.new()
+	tr.texture = ImageTexture.create_from_image(img)
+	tr.size = view
+	return tr
+
+## Fireflies drifting over the undergrowth, all along the area, glowing through the dark.
+func _fireflies(ground_y: float) -> CPUParticles2D:
+	var p := CPUParticles2D.new()
+	p.amount = maxi(40, width / 14)
+	p.lifetime = 4.0
+	p.preprocess = 4.0
+	p.position = Vector2(width * 0.5, ground_y - 40.0)
+	p.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+	p.emission_rect_extents = Vector2(width * 0.5, 34.0)
+	p.direction = Vector2.UP
+	p.spread = 180.0
+	p.gravity = Vector2.ZERO
+	p.initial_velocity_min = 2.0
+	p.initial_velocity_max = 8.0
+	p.scale_amount_min = 1.0
+	p.scale_amount_max = 2.0
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1.7, 2.0, 0.7, 0.0))
+	ramp.set_color(1, Color(1.7, 2.0, 0.7, 0.0))
+	ramp.add_point(0.3, Color(1.7, 2.0, 0.7, 1.0))
+	ramp.add_point(0.7, Color(1.7, 2.0, 0.7, 1.0))
+	p.color_ramp = ramp
+	p.z_index = 2
+	return p
+
+## The heat shimmer on the desert's dunes: each row wobbles sideways a little.
+func _shimmer_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = "shader_type canvas_item;\n" \
+				+ "void fragment() { vec2 uv = UV; uv.x += sin(TIME * 2.5 + UV.y * 70.0) * 0.0012; COLOR = texture(TEXTURE, uv); }"
+	return sh
 
 ## A slab of raised ground: dirt with a grass top and darker edges.
 func _slab(w: int, h: int, light: Color, dark: Color, grass: Color) -> Image:

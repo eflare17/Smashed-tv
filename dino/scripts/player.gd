@@ -321,6 +321,19 @@ func hurt(amount: float, from: Vector2) -> bool:
 	bite_t = -1.0
 	return true
 
+## Standing in lava: loses `amount` health (unless still blinking) and hops up out of it. True if it hurt.
+func scorch(amount: float) -> bool:
+	if invuln > 0.0 or hp <= 0.0:
+		return false
+	if not grab.is_empty():
+		release()
+	hp = maxf(0.0, hp - amount)
+	invuln = 0.5
+	flash = 0.08
+	vel.y = -130.0
+	on_ground = false
+	return true
+
 ## Out of health: slumped over on the ground.
 func die_look() -> void:
 	dead = true

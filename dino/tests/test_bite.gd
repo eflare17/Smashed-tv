@@ -47,6 +47,12 @@ func _run() -> void:
 	main.rng.seed = 7
 	seed(7)
 	var prey: Prey = main.creatures[0]
+	# only the first prey stays: the area's other herds (a random mix, with a club-swinging ankylosaurus) would
+	# wander into the checks below; each check brings what it needs
+	for c in main.creatures.duplicate():
+		if c != prey:
+			c.queue_free()
+			main.creatures.erase(c)
 
 	# a bite takes pixels from exactly the zone aimed at
 	var tail: Array = _zone_points(prey, DinoArt.TAIL)
@@ -633,6 +639,87 @@ func _run() -> void:
 	_check("losing all your health ends the run", main.state == main.OVER)
 	main.start_run()
 	_check("a new run starts fresh", main.state == main.PLAY and main.level == 1 and main.area_n == 1)
+
+	# the maps: seven looks in turn, and the swamp, volcano and desert have their ground patches, on open ground
+	var looks: Array = []
+	var patches_ok := true
+	for n in range(1, 8):
+		main.enter_area(n)
+		await _frames(1)
+		looks.append(main.area.look)
+		var want: bool = Area.HAZARD_OF.has(main.area.look)
+		if want == main.area.hazards.is_empty():
+			patches_ok = false
+		for hz: Array in main.area.hazards:
+			for o: Rect2 in main.obstacles:
+				if hz[0] < o.end.x and hz[1] > o.position.x:
+					patches_ok = false
+	_check("seven area looks in turn", looks == Area.NAMES, ", ".join(looks))
+	_check("swamp, volcano and desert have their patches, clear of rocks and raised ground", patches_ok)
+	# water and quicksand slow you; quicksand sinks you
+	for c in main.creatures.duplicate():
+		c.queue_free()
+		main.creatures.erase(c)
+	main.set("_hunt_t", 99999.0)
+	main.set("_herd_t", 99999.0)
+	var paces := {}
+	for n in [4, 3]:
+		main.enter_area(n)
+		for c in main.creatures.duplicate():
+			c.queue_free()
+			main.creatures.erase(c)
+		var hz: Array = main.area.hazards[0]
+		var wader: Prey = main.spawn_prey(hz[0] + 2.0, Prey.RUNNER)
+		await _frames(1)
+		wader.state = 99
+		var dry: Prey = main.spawn_prey(hz[0] - 60.0, Prey.RUNNER)
+		await _frames(1)
+		dry.state = 99
+		for c: Prey in [wader, dry]:
+			c.position.y = main.GROUND_Y
+			c.on_ground = true
+			c.vel = Vector2(40.0, 0.0)
+		var x_wet: float = wader.position.x
+		var x_dry: float = dry.position.x
+		for f in 10:
+			for c: Prey in [wader, dry]:
+				c.vel.x = 40.0
+				c.move(0.02)
+		paces[main.area.look] = [(wader.position.x - x_wet) / maxf(0.01, dry.position.x - x_dry), wader.sink]
+		wader.queue_free()
+		dry.queue_free()
+		main.creatures.erase(wader)
+		main.creatures.erase(dry)
+	_check("swamp water slows a wader", paces.SWAMP[0] < 0.7, "%.2f of dry speed" % paces.SWAMP[0])
+	_check("quicksand slows and sinks", paces.DESERT[0] < 0.7 and paces.DESERT[1] > 0.5,
+			"%.2f of dry speed, sunk %.1f px" % paces.DESERT)
+	# lava scorches you, and burns the feet of a creature standing in it
+	main.enter_area(6)
+	for c in main.creatures.duplicate():
+		c.queue_free()
+		main.creatures.erase(c)
+	var crack: Array = main.area.hazards[0]
+	# a new run has a new player
+	pl = main.player
+	var mid_lava: float = (crack[0] + crack[1]) * 0.5
+	pl.hp = pl.max_hp
+	pl.invuln = 0.0
+	pl.position = Vector2(mid_lava, main.GROUND_Y)
+	pl.vel = Vector2.ZERO
+	pl.on_ground = true
+	main._lava_step(0.016)
+	_check("lava scorches you", pl.hp < pl.max_hp, "%.0f" % pl.hp)
+	pl.position = Vector2(mid_lava + 300.0, main.GROUND_Y)
+	var cooked: Prey = main.spawn_prey(mid_lava)
+	await _frames(1)
+	cooked.state = 99
+	var legs_before: float = cooked.legs_left()
+	for f in 60:
+		cooked.position = Vector2(mid_lava, main.GROUND_Y)
+		cooked.on_ground = true
+		main._lava_step(0.05)
+	_check("lava burns a creature's feet", cooked.legs_left() < legs_before - 0.1 or cooked.dead, "legs %.2f -> %.2f" % [legs_before, cooked.legs_left()])
+	main.start_run()
 
 	# the whole game runs with the bot for a while without errors, and stays quick
 	main.demo = true

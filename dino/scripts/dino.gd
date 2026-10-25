@@ -47,6 +47,8 @@ var jaw_k := 1.0
 var foot := 0.0
 ## Set by move(): the side it bumped into an obstacle this frame (-1 left, 1 right), else 0.
 var blocked := 0
+## How far it has sunk into quicksand (it stands this much lower).
+var sink := 0.0
 var _named := {}
 
 func build(art: Dictionary) -> void:
@@ -283,7 +285,11 @@ func move(delta: float) -> void:
 	var prev := position
 	var hw := half_w * absf(scale.x)
 	vel.y += GRAVITY * delta
-	position.x = clampf(position.x + vel.x * delta, hw, game.world_w - hw)
+	# wading through water or quicksand slows you; quicksand also sinks you, and lets go once you're out of it
+	var under: int = game.area.hazard_at(position.x, position.y) if on_ground and game.area else -1
+	var pace: float = Area.HAZARD_SPEED[under] if under >= 0 else 1.0
+	sink = move_toward(sink, Area.SINK if under == Area.SAND else 0.0, delta * (6.0 if under == Area.SAND else 30.0))
+	position.x = clampf(position.x + vel.x * delta * pace, hw, game.world_w - hw)
 	blocked = 0
 	for o: Rect2 in game.obstacles:
 		if position.x + hw > o.position.x and position.x - hw < o.end.x and position.y > o.position.y + 1.0:
@@ -299,7 +305,7 @@ func move(delta: float) -> void:
 				position.x = o.end.x + hw
 				blocked = -1
 	position.y += vel.y * delta
-	var floor_y: float = game.GROUND_Y - foot
+	var floor_y: float = game.GROUND_Y - foot + sink
 	for o: Rect2 in game.obstacles:
 		if position.x + hw > o.position.x and position.x - hw < o.end.x and prev.y <= o.position.y + 1.0:
 			floor_y = minf(floor_y, o.position.y - foot)
