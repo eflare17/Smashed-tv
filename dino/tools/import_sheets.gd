@@ -11,6 +11,9 @@ extends SceneTree
 const SHEETS := {
 	"raptor": 4, "hatchling": 4, "allosaur": 4, "tyrant": 4,
 	"grazer": 2, "runner": 2, "charger": 2, "flyer": 2,
+	# the owner's first Dino Maker sheets (25 Oct): body and one leg each, nothing in the game yet
+	"ankylosaurus": 2, "stegosaurus": 2, "corythosaurus": 2, "iguanodon": 2, "pachycephalosaurus": 2,
+	"carnotaurus": 2, "dimetrodon": 2,
 }
 
 func _initialize() -> void:
