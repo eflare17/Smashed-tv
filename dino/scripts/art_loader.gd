@@ -14,7 +14,7 @@ const DinoArt := preload("dino_art.gd")
 ## fractions of the body picture: tail = left of `tail`, neck = right of `neck` (and above `neck_y`), head =
 ## right of `head` (and above `head_y`) for bodies that include the head.
 const SPECS := {
-	"hatchling": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.3, "leg_scale": 0.6, "tilt": 0.35, "legs": 2, "tail": 0.32, "neck": 0.8},
+	"hatchling": {"width": 52.0, "arm": [0.84, 0.66], "jaw_k": 0.6, "jaw_trim": 0.3, "leg_scale": 0.6, "tilt": 0.35, "legs": 2, "tail": 0.32, "neck": 0.8},
 	"raptor": {"width": 48.0, "jaw_k": 0.6, "jaw_trim": 0.3, "legs": 2, "leg_scale": 0.6, "tilt": 0.45, "tail": 0.3, "neck": 0.78},
 	"allosaur": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.4, "leg_scale": 0.8, "tilt": 0.2, "legs": 2, "tail": 0.3, "neck": 0.8},
 	"tyrant": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.4, "leg_scale": 0.55, "tilt": 0.4, "legs": 2, "tail": 0.28, "neck": 0.78},
@@ -89,6 +89,18 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 	parts.append({"name": "body", "image": body, "zones": body_zones, "pivot": pivot,
 			"pos": Vector2(0, -leg_len), "anchors": _core(body, int(deep.x), int(deep.y), maxi(2, mini(int(bh * 0.2), int(deep.z) - 1))),
 			"z": 0, "parent": "", "front": _rightmost(body), "rot": spec.get("tilt", 0.0)})
+	# little arms at the chest, for a sheet that drew none (spec "arm": where the shoulder is, as fractions of
+	# the body picture): drawn in the body's own colours, the far one darker and behind
+	if spec.has("arm"):
+		var arm := _arm(body)
+		var far_arm: Image = arm.duplicate()
+		_darken(far_arm, 0.3)
+		var at := Vector2(bw * spec.arm[0], bh * spec.arm[1]) - pivot
+		var az := _fill_zones(arm, DinoArt.BODY)
+		parts.append({"name": "arm", "image": far_arm, "zones": az, "pivot": Vector2(2, 1), "pos": at + Vector2(-2, 0),
+				"anchors": _core(arm, 2, 1, 2), "z": -1, "parent": "body"})
+		parts.append({"name": "arm", "image": arm, "zones": az, "pivot": Vector2(2, 1), "pos": at,
+				"anchors": _core(arm, 2, 1, 2), "z": 1, "parent": "body"})
 	# legs: one picture, the far ones darker and behind
 	if leg and legs > 0:
 		var far: Image = leg.duplicate()
@@ -352,6 +364,55 @@ static func _teeth(img: Image, x0: int, x1: int, upper: bool) -> void:
 				img.set_pixel(x, edge, TOOTH_GAP)
 		x += 1
 		k += 1
+
+## A small arm hanging down and forward from the shoulder (top-left): upper arm, forearm, two claws.
+## o = outline, x = skin, s = shade, w = claw. Colours are taken from `body` (its commonest, darkest, lightest).
+const ARM := [
+	".ooo.....",
+	"oxxso....",
+	"oxxso....",
+	".oxxso...",
+	".oxxxooo.",
+	"..oxxxxxo",
+	"...oossxo",
+	".....owow",
+]
+
+static func _arm(body: Image) -> Image:
+	var counts := {}
+	var dark := Color(0.1, 0.06, 0.05)
+	var dv := 1.0
+	for y in body.get_height():
+		for x in body.get_width():
+			var c := body.get_pixel(x, y)
+			if c.a < 0.5:
+				continue
+			if c.v < dv:
+				dv = c.v
+				dark = c
+			var key := c.to_html(false)
+			counts[key] = counts.get(key, 0) + 1
+	var best := ""
+	for k: String in counts:
+		if best == "" or counts[k] > counts[best]:
+			best = k
+	var skin := Color.html(best) if best != "" else Color(0.85, 0.7, 0.45)
+	var img := Image.create(ARM[0].length(), ARM.size(), false, Image.FORMAT_RGBA8)
+	for y in ARM.size():
+		for x in ARM[y].length():
+			var ch: String = ARM[y][x]
+			var c := Color(0, 0, 0, 0)
+			match ch:
+				"o":
+					c = dark
+				"x":
+					c = skin
+				"s":
+					c = skin.darkened(0.25)
+				"w":
+					c = TOOTH
+			img.set_pixel(x, y, c)
+	return img
 
 ## The lowest solid row anywhere in columns x0..x1 (the bottom edge of an upper jaw at the snout).
 static func _bottom_in(img: Image, x0: int, x1: int) -> int:
