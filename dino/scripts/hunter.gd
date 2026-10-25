@@ -23,8 +23,11 @@ var _did_hit := false
 var _patience := 0.0
 
 func _ready() -> void:
-	build(DinoArt.hunter())
-	half_w = 8.0
+	# the raptor's sprites in rust red (no sheet of its own yet)
+	var art := ArtLoader.rig("raptor", Color(0.72, 0.22, 0.14))
+	build(art if not art.is_empty() else DinoArt.hunter())
+	if art.is_empty():
+		half_w = 8.0
 	state = STALK
 
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
@@ -57,7 +60,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 				_go(LUNGE, LUNGE_TIME)
 				game.sfx.play("snap", 0.1, -4.0)
 		LUNGE:
-			if not _did_hit and player.covers(_teeth(), 3.0):
+			if not _did_hit and (player.covers(_teeth(), 3.0) or player.covers(Vector2(_teeth().x, player.global_position.y - player.height * player.size * 0.5), 3.0)):
 				_did_hit = true
 				game.creature_hit(self, DAMAGE)
 			if _t <= 0.0:

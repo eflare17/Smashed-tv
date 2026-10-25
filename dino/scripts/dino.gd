@@ -34,6 +34,8 @@ var height := 30.0
 var flash := 0.0
 ## Half its width for bumping into obstacles (before scaling).
 var half_w := 8.0
+## Imported art is scaled by this on the rig (1 for the placeholders).
+var art_k := 1.0
 ## How high its origin sits above the ground when it stands (a flyer's origin is its body).
 var foot := 0.0
 ## Set by move(): the side it bumped into an obstacle this frame (-1 left, 1 right), else 0.
@@ -43,6 +45,13 @@ var _named := {}
 func build(art: Dictionary) -> void:
 	add_child(rig)
 	height = art.height
+	# imported sprites keep their own pixel size and the rig is scaled to the game's
+	art_k = art.get("k", 1.0)
+	rig.scale = Vector2(facing * art_k, art_k)
+	if art.has("half_w"):
+		half_w = art.half_w
+	if art.has("foot"):
+		foot = art.foot
 	for p: Dictionary in art.parts:
 		var part := PixelPart.new()
 		part.setup(p.image, p.zones, p.pivot, p.anchors)
@@ -60,6 +69,8 @@ func build(art: Dictionary) -> void:
 			legs.append([part, p.leg])
 		if p.has("tip"):
 			part.set_meta("tip", p.tip)
+		if p.has("front"):
+			part.set_meta("front", p.front)
 		# where it hangs on its parent (the body for legs and the head, the head for the jaw), in the parent's pixels
 		if p.name != "body":
 			var host: Dictionary = {}
@@ -106,7 +117,13 @@ static func _flash_shader() -> Shader:
 
 func set_facing(f: float) -> void:
 	facing = signf(f) if f != 0.0 else facing
-	rig.scale.x = facing
+	rig.scale = Vector2(facing * art_k, art_k)
+
+## The body picture's front (a beak, horns) in the world, or a fallback point ahead of the body.
+func front_point() -> Vector2:
+	if body and body.has_meta("front"):
+		return body.to_world(body.get_meta("front"))
+	return global_position + Vector2(facing * half_w * 2.0, -height * 0.5)
 
 ## Legs swing with `walk_phase`; standing still they ease back to straight.
 func animate(delta: float, moving: bool, stride: float) -> void:
@@ -148,6 +165,16 @@ func zone_at(world: Vector2) -> int:
 			best = z
 			best_z = part.z_index
 	return best
+
+## The top-most carvable part with a live pixel under `world`, or the body.
+func part_at(world: Vector2) -> PixelPart:
+	var best: PixelPart = null
+	var best_z := -1000
+	for part in parts:
+		if part.carvable and part.zone_at(world) != 0 and part.z_index > best_z:
+			best = part
+			best_z = part.z_index
+	return best if best else body
 
 ## Bites at `world`: every part under the bite loses its pixels. Returns the merged carve results.
 func bite(world: Vector2, radius: float, rng: RandomNumberGenerator) -> Dictionary:

@@ -17,8 +17,10 @@ var _angry_t := 0.0
 var _did_hit := false
 
 func _ready() -> void:
-	build(DinoArt.charger())
-	half_w = 18.0
+	var art := ArtLoader.rig("charger")
+	build(art if not art.is_empty() else DinoArt.charger())
+	if art.is_empty():
+		half_w = 18.0
 	wander_speed = 16.0
 	slump_drop = 9.0
 
@@ -60,7 +62,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 				game.sfx.play("cry", 0.1, 0.0)
 		CHARGE:
 			vel.x = facing * CHARGE_SPEED * leg_speed()
-			if not _did_hit and (game.player.covers(_horns(), 4.0) or game.player.covers(_horns() + Vector2(0, 8), 4.0)):
+			if not _did_hit and (game.player.covers(_horns(), 4.0) or game.player.covers(Vector2(_horns().x, game.player.global_position.y - game.player.height * game.player.size * 0.5), 4.0)):
 				_did_hit = true
 				game.creature_hit(self, DAMAGE)
 			if _t <= 0.0 or blocked != 0:
@@ -86,8 +88,8 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 	_bleed_step(delta, rng)
 
 func _horns() -> Vector2:
-	# the front of the head, about the height of your body
-	return body.to_world(Vector2(90, 27))
+	# the front of the head
+	return front_point()
 
 ## Bitten: flash, and now it's angry (it doesn't run). True if that killed it.
 func hurt(from: Vector2) -> bool:

@@ -31,7 +31,7 @@ func _mass(p: Prey) -> float:
 	var n := 0
 	for part in p.parts:
 		n += part.pixels_left()
-	return n
+	return n * p.art_k * p.art_k * p.scale.x * p.scale.x
 
 func _run() -> void:
 	var main: Node = load("res://main.tscn").instantiate()
@@ -43,6 +43,9 @@ func _run() -> void:
 	main.obstacles.clear()
 	main.platforms.clear()
 	main.set("_hunt_t", 99999.0)
+	main.set("_herd_t", 99999.0)
+	main.rng.seed = 7
+	seed(7)
 	var prey: Prey = main.creatures[0]
 
 	# a bite takes pixels from exactly the zone aimed at
@@ -135,7 +138,8 @@ func _run() -> void:
 	q.die()
 	await _frames(2)
 	var m0: float = q.mass_fraction()
-	main.player_bite(pl, _zone_points(q, DinoArt.BODY)[40], pl.bite_radius)
+	var qp: Vector2 = _zone_points(q, DinoArt.BODY)[40]
+	main.player_bite(pl, qp, pl.bite_radius)
 	quick_take = int((m0 - q.mass_fraction()) * 10000)
 	var big_target: Prey = main.spawn_prey(1500.0)
 	big_target.die()
@@ -172,8 +176,8 @@ func _run() -> void:
 	_check("a body can't break free", main.break_free_time(pl, big_target, 1.0) == INF)
 	var small: Hunter = main.spawn_hunter(1900.0)
 	await _frames(2)
-	_check("a hunter comes at your size, so it can't break free", main.break_free_time(pl, small, 1.0) == INF
-			and absf(small.scale.x - pl.size) < 0.01, "it's drawn at %.2f, you at %.2f" % [small.scale.x, pl.size])
+	_check("a hunter comes at your mass, so it can't break free", main.break_free_time(pl, small, 1.0) == INF
+			and absf(_mass(small) / pl.mass() - 1.0) < 0.1, "it's %.2fx your mass, drawn at %.2f" % [_mass(small) / pl.mass(), small.scale.x])
 	small.scale = Vector2(2.0, 2.0)
 	_check("a hunter twice your size can", main.break_free_time(pl, small, 1.0) < 1.0)
 	small.queue_free()
@@ -193,7 +197,7 @@ func _run() -> void:
 			break
 		main.player_bite(pl, left[rng.randi() % left.size()], pl.bite_radius)
 	_check("eating a body completely removes it", not main.creatures.has(p3))
-	_check("eating a whole one grows you", pl.size > size0 and main.eaten == eaten0 + 1, "size %.2f" % pl.size)
+	_check("eating a whole one grows you", pl.size > size0 and main.eaten == eaten0 + 1, "size %.2f (was %.2f), eaten %d (was %d), still there %s" % [pl.size, size0, main.eaten, eaten0, main.creatures.has(p3)])
 
 	# levelling: enough XP offers the choice, picking one raises that stat (eating above may have levelled already)
 	while main.state == main.CHOOSE:
@@ -263,9 +267,9 @@ func _run() -> void:
 		await process_frame
 		if main.state == main.CHOOSE:
 			main._pick(1)
-		if fl.on_ground and fl.position.y > main.GROUND_Y - 8.0:
+		if fl.on_ground and fl.position.y > main.GROUND_Y - fl.foot - 2.0:
 			break
-	_check("biting its wing away brings it down", fl.on_ground and fl.position.y > main.GROUND_Y - 8.0 and (fl.state == Flyer.GROUNDED or fl.dead),
+	_check("biting its wing away brings it down", fl.on_ground and fl.position.y > main.GROUND_Y - fl.foot - 2.0 and (fl.state == Flyer.GROUNDED or fl.dead),
 			"state %d, y %.0f" % [fl.state, fl.position.y])
 
 	while main.state == main.CHOOSE:
@@ -335,6 +339,9 @@ func _run() -> void:
 	main.obstacles.clear()
 	main.platforms.clear()
 	main.set("_hunt_t", 99999.0)
+	main.set("_herd_t", 99999.0)
+	main.rng.seed = 7
+	seed(7)
 	pl = main.player
 
 	# areas: the same run seed builds the same area, another seed a different one
@@ -405,10 +412,10 @@ func _run() -> void:
 	# bonuses carry over; at the top nothing breaks free
 	_check("you start as the first form", pl.stage == 0 and pl.stage_name() == "HATCHLING", pl.stage_name())
 	var size_before: float = pl.size
-	var bite_before: float = pl.bite_radius
 	var head_w_before: int = pl.head.w
 	pl.bite_bonus = 1.5
 	pl.apply_stage()
+	var bite_before: float = pl.bite_radius
 	main.eaten = pl.meals_to_evolve() - 1
 	var meal: Prey = main.spawn_prey(1100.0, Prey.RUNNER)
 	meal.die()
@@ -424,7 +431,7 @@ func _run() -> void:
 		main.player_bite(pl, mpts[rng.randi() % mpts.size()], pl.bite_radius)
 	_check("eating enough evolves you", pl.stage == 1 and pl.stage_name() == "RAPTOR", "stage %d" % pl.stage)
 	_check("the new form is bigger with a bigger bite", pl.size > size_before and pl.bite_radius > bite_before,
-			"size %.2f, bite %.1f" % [pl.size, pl.bite_radius])
+			"size %.2f (was %.2f), bite %.1f (was %.1f)" % [pl.size, size_before, pl.bite_radius, bite_before])
 	_check("the new form has new art", pl.head.w != head_w_before and pl.parts.size() > 0, "head %d -> %d px wide" % [head_w_before, pl.head.w])
 	_check("level-up bonuses carry over", pl.bite_radius == Player.STAGES[1].bite + 1.5)
 	_check("evolving is a moment", main.get("_slow_t") > 0.0 and main.get("_zoom_punch") > 0.0)

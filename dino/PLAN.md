@@ -222,6 +222,23 @@ Four forms. You evolve by eating whole bodies (not by level), the instant you hi
 - The top line shows the form and meals (EATEN 2/4).
 - Tests: 62 checks. `tests/shot_forms.gd` photographs the four forms and the evolve moment.
 
+## The real art is in (26 Oct)
+
+The eight Gemini sheets (`art/raw/<creature>_sheet.jpg`: raptor, hatchling, allosaur, tyrant, grazer, runner,
+charger, pterodactyl) are imported by `tools/import_sheets.gd` into clean one-piece PNGs at the sheet's real
+pixel grid (`art/<creature>_<part>.png`; `tools/preview_art.gd` lays them all out in `art/_preview.png` to
+check). `scripts/art_loader.gd` builds each rig from the PNGs: hips, the neck join, the jaw hinge, the teeth and
+the beak/horns are found from the pictures by simple rules, the zones (head, neck, body, tail, legs, wing) are
+painted by position (`ArtLoader.SPECS`, per creature, tune by eye), the far legs are darkened copies, and the
+whole rig is scaled to the size the game wants (`k`). The sprites keep their finer pixels, so bites look better.
+The hunter is the raptor recoloured rust-red until it gets its own sheet. If a creature's PNGs are missing the
+code-drawn placeholder is used.
+
+To regenerate: drop a new `<creature>_sheet.jpg` in `art/raw/`, run the importer, look at `_preview.png`.
+
+Known rough edges to tune by eye: the raptor's legs are long (the sheet drew them that way, so it stands tall);
+the allosaur's are stubby; where exactly the hips, neck and jaw hinge land is a guess per creature.
+
 ## Questions for the morning
 
 1. How does the bite feel? Too small, too slow, reach too short or too long?

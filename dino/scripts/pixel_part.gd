@@ -188,33 +188,34 @@ func _mark_wounds(x0: int, y0: int, x1: int, y1: int, rng: RandomNumberGenerator
 				if alive[j] == 1 and wound[j] == 0 and rng.randf() < 0.7:
 					wound[j] = FLESH
 
-## Whatever isn't joined (4-way) to the anchor any more comes off.
+## Whatever isn't joined (4-way) to the part's core any more comes off. The core is the piece holding the most
+## anchor pixels (the biggest piece if none are left), so a bite that nicks one edge-side anchor can't send the
+## rest of the part flying.
 func _split(out: Dictionary) -> void:
 	var seen := PackedByteArray()
 	seen.resize(w * h)
-	var root := -1
+	var comps: Array = []
+	for i in w * h:
+		if alive[i] == 1 and seen[i] == 0:
+			comps.append(_fill(i, seen))
+	if comps.size() <= 1:
+		return
+	var comp_of := PackedInt32Array()
+	comp_of.resize(w * h)
+	comp_of.fill(-1)
+	for k in comps.size():
+		for i in comps[k]:
+			comp_of[i] = k
+	var anchors_in := PackedInt32Array()
+	anchors_in.resize(comps.size())
 	for a in anchor:
 		if alive[a] == 1:
-			root = a
-			break
-	var comps: Array = []
-	if root < 0:
-		# the anchor is gone: keep the biggest piece
-		for i in w * h:
-			if alive[i] == 1 and seen[i] == 0:
-				comps.append(_fill(i, seen))
-		var best := 0
-		for k in comps.size():
-			if comps[k].size() > comps[best].size():
-				best = k
-		if comps.is_empty():
-			return
-		comps.remove_at(best)
-	else:
-		_fill(root, seen)
-		for i in w * h:
-			if alive[i] == 1 and seen[i] == 0:
-				comps.append(_fill(i, seen))
+			anchors_in[comp_of[a]] += 1
+	var keep := 0
+	for k in comps.size():
+		if anchors_in[k] > anchors_in[keep] or (anchors_in[k] == anchors_in[keep] and comps[k].size() > comps[keep].size()):
+			keep = k
+	comps.remove_at(keep)
 	for comp: PackedInt32Array in comps:
 		if comp.size() < MIN_ISLAND:
 			for i in comp:

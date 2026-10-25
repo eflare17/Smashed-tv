@@ -221,7 +221,12 @@ func spawn_prey(x: float, kind := Prey.GRAZER) -> Prey:
 ## Hunters come at about your size (a touch bigger in later areas), so a big bite on one works from the start.
 func spawn_hunter(x: float) -> Hunter:
 	var h := _add(Hunter.new(), x) as Hunter
-	var s := clampf(player.size * (1.0 + (area_n - 1) * 0.1), 0.45, 1.4)
+	# matched by mass (pixels on screen), not drawn width: sprites differ in how much body they have
+	var h_mass := 0.0
+	for part in h.parts:
+		h_mass += part.pixels_total()
+	h_mass *= h.art_k * h.art_k
+	var s := clampf(sqrt(player.mass() / maxf(1.0, h_mass)) * (1.0 + (area_n - 1) * 0.1), 0.3, 1.6)
 	h.scale = Vector2(s, s)
 	return h
 
@@ -637,7 +642,7 @@ func break_free_time(who: Player, prey: Prey, length: float) -> float:
 	# at the top of the chain nothing gets out of your jaws
 	if who.stage >= Player.STAGES.size() - 1:
 		return INF
-	mass *= prey.scale.x * prey.scale.x
+	mass *= prey.scale.x * prey.scale.x * prey.art_k * prey.art_k
 	var ratio := mass / who.mass()
 	# a little bigger than you still can't get loose; clearly bigger can, the bigger the sooner
 	return INF if ratio <= BREAK_FREE_OVER else length / (ratio * ratio)

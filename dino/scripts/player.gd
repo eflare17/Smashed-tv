@@ -22,6 +22,8 @@ const STAGES := [
 	{"name": "TYRANT", "size": 2.0, "max_size": 2.5, "speed": 54.0, "cool": 0.6, "bite": 9.0, "hp": 280.0, "meals": 99999},
 ]
 var stage := 0
+## The imported sprites for each form (art/<name>_*.png), with DinoArt's placeholders as the fallback.
+const FORM_ART := ["hatchling", "raptor", "allosaur", "tyrant"]
 
 ## The stats (the form's, plus what levelling up has added: main.gd's UPGRADES). apply_stage() sets them.
 var bite_radius := 4.5
@@ -71,6 +73,8 @@ var charge := 0.0
 var grab := {}
 var _target_prey: Dino = null
 var _target_local := Vector2.ZERO
+## The part of the prey the spot is on (a part moves within the rig: a slumping body, a swinging leg).
+var _target_part: PixelPart = null
 var _target_world := Vector2.ZERO
 var _snapped := false
 var _big_was := false
@@ -98,7 +102,8 @@ func set_stage(s: int) -> void:
 	if _mouth.get_parent():
 		_mouth.get_parent().remove_child(_mouth)
 	clear_rig()
-	build(DinoArt.form(s))
+	var art := ArtLoader.rig(FORM_ART[s])
+	build(art if not art.is_empty() else DinoArt.form(s))
 	_head_base = head.position
 	for part in parts:
 		part.carvable = false
@@ -189,7 +194,8 @@ func _start_bite(kind: int) -> void:
 	_rest_rot = head.rotation
 	_target_prey = game.prey_at(aim)
 	if _target_prey:
-		_target_local = _target_prey.rig.to_local(aim)
+		_target_part = _target_prey.part_at(aim)
+		_target_local = _target_part.to_local(aim)
 	_target_world = aim
 	var to := aim - neck()
 	set_facing(to.x)
@@ -203,7 +209,7 @@ func _start_bite(kind: int) -> void:
 
 ## The head's length from the neck to where the teeth meet (in the world).
 func head_len() -> float:
-	return (_tip() + head.offset).length() * size
+	return (_tip() + head.offset).length() * size * art_k
 
 ## How far the body lunges for a spot `to` away from the neck: until the head just reaches it (stepping back for
 ## one right under your nose), at most LUNGE for that bite, and only up (a leap).
@@ -226,7 +232,7 @@ func predict_bite(p: Vector2, kind := QUICK) -> Vector2:
 func target_point() -> Vector2:
 	var p := _target_world
 	if _target_prey and is_instance_valid(_target_prey):
-		p = _target_prey.rig.to_global(_target_local)
+		p = _target_part.to_global(_target_local)
 	return clamp_reach(p)
 
 ## `p`, or the nearest point to it the head reaches from where the neck is now.
@@ -241,7 +247,7 @@ func _snap() -> void:
 	vel.y = maxf(vel.y, 0.0)
 	var wanted := _target_world
 	if _target_prey and is_instance_valid(_target_prey):
-		wanted = _target_prey.rig.to_global(_target_local)
+		wanted = _target_part.to_global(_target_local)
 	var p := clamp_reach(wanted)
 	snap_info = [wanted, p]
 	_target_world = p
@@ -253,7 +259,7 @@ func _snap() -> void:
 	var who: Prey = game.big_bite(self, p, _bite_charge)
 	if who:
 		grab = {
-			"who": who, "local": who.rig.to_local(p), "t": 0.0, "charge": _bite_charge,
+			"who": who, "part": who.part_at(p), "local": who.part_at(p).to_local(p), "t": 0.0, "charge": _bite_charge,
 			"length": lerpf(SHAKE[0], SHAKE[1], _bite_charge) * shake_mult, "tear_t": 0.0, "offset": global_position - p,
 		}
 		grab["breaks_at"] = game.break_free_time(self, who, grab.length)
@@ -268,7 +274,7 @@ func _grab_step(delta: float) -> void:
 		return
 	var who: Prey = grab.who
 	grab.t += delta
-	var spot: Vector2 = who.rig.to_global(grab.local)
+	var spot: Vector2 = (grab.part as PixelPart).to_global(grab.local)
 	var jolt := sin(grab.t * 42.0)
 	global_position = spot + grab.offset + Vector2(jolt * 2.0 * size, 0)
 	vel = Vector2.ZERO
@@ -329,7 +335,7 @@ func die_look() -> void:
 ## True if `p` is on (or within `margin` of) your body: a box from your feet to your back, nose to tail.
 func covers(p: Vector2, margin: float) -> bool:
 	var d := p - global_position
-	return absf(d.x) < 16.0 * size + margin and d.y > -30.0 * size - margin and d.y < margin
+	return absf(d.x) < half_w * 2.0 * size + margin and d.y > -height * size - margin and d.y < margin
 
 func heal(amount: float) -> void:
 	hp = minf(max_hp, hp + amount)
@@ -344,7 +350,7 @@ func mass() -> float:
 	var n := 0
 	for part in parts:
 		n += part.pixels_total()
-	return n * size * size
+	return n * size * size * art_k * art_k
 
 ## Holds a bitten-off chunk (a picture in the head's own frame) in the mouth for a moment, then swallows it.
 func hold(img: Image) -> void:

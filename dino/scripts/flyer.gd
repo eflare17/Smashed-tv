@@ -20,10 +20,12 @@ var _flap := 0.0
 var _did_hit := false
 
 func _ready() -> void:
-	build(DinoArt.flyer())
-	half_w = 6.0
+	var art := ArtLoader.rig("flyer")
+	build(art if not art.is_empty() else DinoArt.flyer())
+	if art.is_empty():
+		half_w = 6.0
+		foot = 5.0
 	slump_drop = 0.0
-	foot = 5.0
 	state = CIRCLE
 	on_ground = false
 	_t = randf_range(2.5, 4.0)
@@ -124,7 +126,7 @@ func _fold_wings(delta: float) -> void:
 		w.rotation = lerpf(w.rotation, -0.9, minf(1.0, delta * 12.0))
 
 func _beak() -> Vector2:
-	return body.to_world(Vector2(42, 7))
+	return front_point()
 
 ## Bitten: flash, a jolt down; it climbs away. True if that killed it.
 func hurt(from: Vector2) -> bool:
