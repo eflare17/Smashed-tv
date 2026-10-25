@@ -64,6 +64,8 @@ var gore: Gore
 var sfx: Sfx
 var cam: Camera2D
 var hud: Hud
+## Phone controls (switch themselves on at the first touch).
+var touch: Touch
 var area: Area
 var world_w := 2400
 var obstacles: Array[Rect2] = []
@@ -128,6 +130,9 @@ func _ready() -> void:
 	_add_inputs()
 	sfx = Sfx.new()
 	add_child(sfx)
+	touch = Touch.new()
+	touch.game = self
+	add_child(touch)
 	_overlay = Node2D.new()
 	_overlay.z_index = 50
 	_overlay.draw.connect(_draw_overlay)
@@ -401,6 +406,8 @@ func _process(delta: float) -> void:
 		pu[1].y -= delta * 14.0
 	_popups = _popups.filter(func(pu): return pu[2] > 0.0)
 	hud.set_bars(player.hp / player.max_hp, float(xp) / xp_needed(), level, danger())
+	# the keyboard hint isn't much use with thumbs (the touch layer draws its own)
+	hud.hint.visible = not touch.active
 	var next := player.meals_to_evolve()
 	hud.stats.text = "%s   KILLS %d   EATEN %d%s   SIZE x%.1f" % [player.stage_name(), kills, eaten,
 			("/%d" % next) if next > 0 else "", player.size]
@@ -422,12 +429,21 @@ func _step(delta: float) -> void:
 		bite = b[2]
 		aim = b[3]
 		big = b[4]
+	elif touch.active:
+		# thumbs: the touch layer does the aiming (a lock on the nearest creature, the part you picked)
+		touch.step(delta, player)
+		move_x = touch.move_x
+		jump = touch.jump
+		bite = touch.bite
+		big = touch.big
+		aim = touch.aim_point
 	else:
 		move_x = Input.get_axis("left", "right")
 		jump = Input.is_action_just_pressed("jump")
 		bite = Input.is_action_just_pressed("bite")
 		big = Input.is_action_pressed("big")
 	player.step(delta, move_x, jump, bite, aim, big)
+	touch.clear_presses()
 	# a level-up earned mid-bite is offered once the bite is over
 	_maybe_offer()
 	for c in creatures.duplicate():
@@ -860,8 +876,10 @@ func _draw_overlay() -> void:
 	if demo or state != PLAY:
 		return
 	# the aim: red on a bitable spot in range (reach plus the lunge), white in range, grey past it (with a dot where
-	# the bite would land instead)
-	var m := get_global_mouse_position()
+	# the bite would land instead). With thumbs, it sits on the locked part, with a ring round it.
+	var m := touch.aim_point if touch.active else get_global_mouse_position()
+	if touch.active and touch.target:
+		_overlay.draw_arc(m, 6.0, 0.0, TAU, 16, Color(1, 0.85, 0.35, 0.8), 1.0)
 	var reach := player.predict_bite(m, Player.BIG if player.charging else Player.QUICK)
 	var in_reach := reach.distance_to(m) < 1.0
 	var target := prey_at(m)
