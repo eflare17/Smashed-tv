@@ -21,8 +21,8 @@ func _ready() -> void:
 	build(art if not art.is_empty() else DinoArt.charger())
 	if art.is_empty():
 		half_w = 18.0
+		slump_drop = 9.0
 	wander_speed = 16.0
-	slump_drop = 9.0
 
 func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 	if held_step(delta, rng):

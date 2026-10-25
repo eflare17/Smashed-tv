@@ -20,7 +20,7 @@ const SPECS := {
 	"tyrant": {"width": 52.0, "legs": 2, "tail": 0.28, "neck": 0.78},
 	"grazer": {"stand": 54.0, "legs": 4, "hips": [0.42, 0.72], "hip_y": 0.86, "tail": 0.36, "neck": 0.76, "neck_y": 0.62, "head": 0.86, "head_y": 0.3},
 	"runner": {"width": 36.0, "legs": 2, "tail": 0.42, "neck": 0.78, "head": 0.88, "head_y": 0.6},
-	"charger": {"width": 96.0, "legs": 4, "tail": 0.2, "head": 0.66, "head_y": 1.0},
+	"charger": {"stand": 46.0, "legs": 4, "hips": [0.34, 0.6], "hip_y": 0.6, "tail": 0.2, "head": 0.66, "head_y": 1.0},
 	"flyer": {"width": 44.0, "legs": 0, "tail": 0.25, "neck": 0.55, "head": 0.68, "head_y": 1.0},
 }
 
@@ -28,7 +28,7 @@ const SPECS := {
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
 	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
-	"grazer": true, "runner": true, "charger": false, "flyer": false,
+	"grazer": true, "runner": true, "charger": true, "flyer": false,
 }
 
 static var _cache := {}
