@@ -5,6 +5,7 @@ extends Node2D
 ## brains; the scene root steps them (step) so hit-stop can freeze everything at once.
 
 const DinoArt := preload("dino_art.gd")
+const Tail := preload("tail.gd")
 
 const GRAVITY := 520.0
 ## Legs bitten away slow a creature down to this fraction of its speed; under CRIPPLED_UNDER of its legs it can't
@@ -22,6 +23,10 @@ var head: PixelPart
 var jaw: PixelPart
 ## Wings (flyers), flapped by their owner.
 var wings: Array[PixelPart] = []
+## The tail's pieces, base first (Tail.split), each hanging on the one before.
+var tails: Array[PixelPart] = []
+## The wag's clock: it runs faster on the move.
+var tail_t := 0.0
 ## [part, swing phase offset]
 var legs: Array = []
 var facing := 1.0
@@ -45,6 +50,7 @@ var blocked := 0
 var _named := {}
 
 func build(art: Dictionary) -> void:
+	art = Tail.split(art)
 	add_child(rig)
 	height = art.height
 	# imported sprites keep their own pixel size and the rig is scaled to the game's
@@ -76,6 +82,11 @@ func build(art: Dictionary) -> void:
 			wings.append(part)
 		if p.has("leg"):
 			legs.append([part, p.leg])
+		if p.has("tail"):
+			tails.append(part)
+			part.set_meta("tail", p.tail)
+			# under the piece in front (it copies a little of it, to fill the joint when it bends)
+			part.show_behind_parent = true
 		if p.has("jaw_k"):
 			jaw_k = p.jaw_k
 		if p.has("tip"):
@@ -112,6 +123,7 @@ func clear_rig() -> void:
 	parts.clear()
 	legs.clear()
 	wings.clear()
+	tails.clear()
 	_named.clear()
 	body = null
 	head = null
@@ -149,8 +161,18 @@ func animate(delta: float, moving: bool, stride: float) -> void:
 		var swing := 0.55 - limp * 0.35
 		part.rotation = sin(walk_phase + l[1]) * swing if on_ground else (0.5 if l[1] == 0.0 else -0.3)
 	body.position.y = body.get_meta("y0") - absf(sin(walk_phase)) * 1.0 + limp * 3.0 + (maxf(0.0, sin(walk_phase)) * limp * 2.0)
+	wag(delta, 1.0 if moving else 0.0)
 	(rig.material as ShaderMaterial).set_shader_parameter("flash", 0.85 if flash > 0.0 else 0.0)
 	flash -= delta
+
+## The tail swings up and down in a wave that runs from the base to the tip, each piece a little behind the one
+## before, so it bends instead of swinging stiff. `pace` 0 is a slow idle sway, 1 the quicker swish on the move.
+## PLACEHOLDER numbers.
+func wag(delta: float, pace: float) -> void:
+	tail_t += delta * lerpf(2.2, 6.0, pace)
+	var amp := lerpf(0.06, 0.1, pace)
+	for i in tails.size():
+		tails[i].rotation = sin(tail_t - i * 0.9) * amp * (1.0 + i * 0.35)
 
 ## How much of its legs it still has, 0..1.
 func legs_left() -> float:
@@ -203,7 +225,9 @@ func bite(world: Vector2, radius: float, rng: RandomNumberGenerator) -> Dictiona
 			continue
 		var at: Array = part.get_meta("attach")
 		var host: PixelPart = _named[at[0]]
-		if not host.holds(at[1], 2) or host.pixels_left() == 0:
+		# a tail piece also comes off when its own end at the joint is bitten through
+		var cut_off := part.has_meta("tail") and not part.holds(-part.offset, 2)
+		if not host.holds(at[1], 2) or host.pixels_left() == 0 or cut_off:
 			for p: PixelPart in [part] + _children(part):
 				var isl := p.detach()
 				if not isl.is_empty():
@@ -212,11 +236,13 @@ func bite(world: Vector2, radius: float, rng: RandomNumberGenerator) -> Dictiona
 						out.zones[z] += isl.zones[z]
 	return out
 
+## Every part hanging on `part`, all the way down (a jaw on a head, the rest of a tail).
 func _children(part: PixelPart) -> Array:
 	var out: Array = []
 	for c in part.get_children():
 		if c is PixelPart:
 			out.append(c)
+			out.append_array(_children(c))
 	return out
 
 func zone_fraction(z: int) -> float:

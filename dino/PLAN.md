@@ -307,3 +307,20 @@ double-clicking: it loads `tools/dino-refs.js`).
   `_meat_kg` in `scripts/main.gd`.
 - After a sheet in `art/raw/` changes, rerun `tools/make_maker_refs.gd` to update `tools/dino-refs.js`.
 - Not tried yet with a real Gemini key from this page (the Gemini call is the Sprite Maker's).
+
+## The owner's first seven Dino Maker sheets, and wagging tails (25 Oct)
+
+- **Seven new sheets** made with Gemini: ankylosaurus, stegosaurus, corythosaurus, iguanodon, pachycephalosaurus,
+  carnotaurus, dimetrodon (`art/raw/`), imported as a body and one leg each (`tools/import_sheets.gd`). None is in
+  the game yet. To decide when each goes in: what it does and its kg. Known snags: the ankylosaurus and stegosaurus
+  have a front leg drawn on the body (the game adds four legs to a four-legged one); the carnotaurus has its head
+  on its body with no separate jaw (it needs a redo as a "two-legged meat-eater" if it's to bite like the hunter);
+  the dimetrodon was drawn with four separate legs (the importer keeps one).
+- **Tails wag** (owner's pick: bendy, in code, no new art), on every creature, sprites and placeholders alike.
+  `scripts/tail.gd` cuts whatever the body's zone map calls TAIL into up to four pieces by distance along the tail
+  (so curled tails are cut across), each hanging on the one before; `Dino.wag` swings them in a wave from base to
+  tip: a slow sway standing, a quicker swish moving. Each piece copies 2 pixels of the one in front underneath
+  itself, so bending never opens a gap. Bites tear the pieces like anything else; biting through a joint drops the
+  rest of the tail. Dead creatures keep the tail where it was. The pterodactyl's little tail is cut but doesn't
+  move (it doesn't walk). PLACEHOLDER numbers: 7 px a piece, sway 0.06 rad at 2.2/s, 0.1 rad at 6/s moving.
+- Tests: three new checks in `test_bite.gd` (every tail is cut, it wags, biting the base drops it all).

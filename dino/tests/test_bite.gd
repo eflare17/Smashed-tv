@@ -100,6 +100,49 @@ func _run() -> void:
 		hip += Vector2(0, 1)
 	_check("leg comes off at the hip", off)
 
+	# the tail is cut into pieces that bend and wag, on every kind of creature
+	var cast := {"grazer": main.spawn_prey(1200.0), "runner": main.spawn_prey(1300.0, Prey.RUNNER),
+			"hunter": main.spawn_hunter(1400.0), "charger": main._spawn_herd_kind(Area.HERD_CHARGER, 1500.0),
+			"pterodactyl": main.spawn_flyer(1600.0), "player": main.player}
+	var counts := []
+	var all_cut := true
+	for k: String in cast:
+		var c: Dino = cast[k]
+		counts.append("%s %d" % [k, c.tails.size()])
+		if c.tails.size() < 2 and k != "pterodactyl":
+			all_cut = false
+	_check("every tail is cut into pieces", all_cut, ", ".join(counts))
+	var p4: Prey = cast.grazer
+	var tip: PixelPart = p4.tails[p4.tails.size() - 1]
+	var swings := {}
+	for f in 40:
+		await process_frame
+		swings[snappedf(tip.rotation, 0.01)] = true
+	_check("the tail wags", swings.size() > 5, "%d different angles" % swings.size())
+	var tail_px := 0
+	for t in p4.tails:
+		tail_px += t.pixels_left()
+	var dropped := 0
+	var base_at: Vector2 = p4.tails[0].to_world(-p4.tails[0].offset)
+	for k in 8:
+		var res4: Dictionary = p4.bite(base_at, 4.5, rng)
+		for isl: Dictionary in res4.islands:
+			dropped += isl.zones[DinoArt.TAIL]
+		var left := 0
+		for t in p4.tails:
+			left += t.pixels_left()
+		if left == 0:
+			break
+	var gone := 0
+	for t in p4.tails:
+		gone += t.pixels_left()
+	_check("biting through the base drops the whole tail", gone == 0 and dropped > tail_px / 2,
+			"%d of %d tail pixels fell off" % [dropped, tail_px])
+	for k: String in cast:
+		if k != "player":
+			(cast[k] as Node).queue_free()
+			main.creatures.erase(cast[k])
+
 	# the teeth meet exactly where you clicked: real bites through the player, at spots all over a prey
 	var pl: Player = main.player
 	var p3: Prey = main.spawn_prey(900.0)
