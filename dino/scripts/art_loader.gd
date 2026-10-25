@@ -24,6 +24,13 @@ const SPECS := {
 	"flyer": {"width": 44.0, "legs": 0, "tail": 0.25, "neck": 0.55, "head": 0.68, "head_y": 1.0},
 }
 
+## Which creatures use their imported sprites. Off by default: each is switched on once its rig has been checked
+## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
+const ENABLED := {
+	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
+	"grazer": false, "runner": false, "charger": false, "flyer": false,
+}
+
 static var _cache := {}
 
 static func has(creature: String) -> bool:
@@ -45,6 +52,8 @@ static func _load(creature: String, part: String) -> Image:
 
 ## The rig for `creature`, or {} if its sprites aren't there. `tint` recolours it (the hunter is a red raptor).
 static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
+	if not ENABLED.get(creature, false):
+		return {}
 	var spec: Dictionary = SPECS[creature]
 	var body := _load(creature, "body")
 	if body == null:
