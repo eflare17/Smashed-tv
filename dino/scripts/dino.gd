@@ -50,6 +50,8 @@ func build(art: Dictionary) -> void:
 	rig.scale = Vector2(facing * art_k, art_k)
 	if art.has("half_w"):
 		half_w = art.half_w
+	if art.has("drop") and "slump_drop" in self:
+		set("slump_drop", art.drop)
 	if art.has("foot"):
 		foot = art.foot
 	for p: Dictionary in art.parts:

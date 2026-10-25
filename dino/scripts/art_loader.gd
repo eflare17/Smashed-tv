@@ -28,7 +28,7 @@ const SPECS := {
 ## by eye (hinges, sizes, which piece is which); until then the code-drawn placeholder is used.
 const ENABLED := {
 	"hatchling": false, "raptor": false, "allosaur": false, "tyrant": false,
-	"grazer": false, "runner": false, "charger": false, "flyer": false,
+	"grazer": false, "runner": true, "charger": false, "flyer": false,
 }
 
 static var _cache := {}
@@ -132,7 +132,9 @@ static func rig(creature: String, tint: Color = Color.WHITE) -> Dictionary:
 		parts.append({"name": "wing", "image": wing, "zones": wz, "pivot": wp, "pos": at,
 				"anchors": wa, "z": 1, "parent": "", "wing": true})
 	var height := (leg_len + hip_y) * k if legs > 0 else bh * k
-	return {"parts": parts, "height": height, "k": k, "half_w": bw * k * 0.3, "foot": (bh * 0.5 * k) if legs == 0 else 0.0}
+	# how far the body drops when it dies: most of the leg (in the rig's own pixels: the rig is scaled by k)
+	return {"parts": parts, "height": height, "k": k, "half_w": bw * k * 0.3, "foot": (bh * 0.5 * k) if legs == 0 else 0.0,
+			"drop": leg_len * 0.8}
 
 # --- picture rules -----------------------------------------------------------------------------------------
 

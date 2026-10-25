@@ -44,12 +44,12 @@ func _ready() -> void:
 		build(art if not art.is_empty() else DinoArt.runner())
 		if art.is_empty():
 			half_w = 6.0
+			slump_drop = 6.0
 		wander_speed = 30.0
 		run_speed = 85.0
 		flee_time = 0.9
 		rest_time = 0.8
 		scare_range = 95.0
-		slump_drop = 6.0
 	else:
 		# the big grazer outruns you flat out, but only in bursts: catch it cornered, tired, or with the big lunge
 		var art := ArtLoader.rig("grazer")
