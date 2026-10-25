@@ -283,3 +283,27 @@ Agreed with the owner, one question at a time. A throwaway try: keep it or delet
 - Names: random ("BLOODY RAPTOR 42") with NEW NAME to roll another; a random id keeps your totals across names.
 - On the death screen: a LEADERBOARD button next to NEXT RUN; BACK returns to the shop. Off in the tests and
   the demo bot (nothing sent). Code: `scripts/leaderboard.gd`; checks in `tests/test_bones.gd` (50 in all).
+
+## Dino Maker: a generator for new dinosaurs (owner's asks, 25 Oct)
+
+Agreed: the next dinosaurs are new creatures to meet. First, a generator like the Sprite Maker, so new ones come out
+in the same style as the eight we have. Open `tools/dino-maker.html` (from a local server or GitHub Pages, not by
+double-clicking: it loads `tools/dino-refs.js`).
+
+- **You give it:** a name, a body type picked from four (two-legged meat-eater like the raptor, four-legged
+  plant-eater like the charger, small two-legged plant-eater like the runner, flyer like the pterodactyl), what it
+  looks like in words, and optionally a picture to copy.
+- **It sends Gemini:** the matching sheet as the layout to copy (so the pieces come out the way the importer cuts
+  them), all eight sheets for the style, and your picture. Same key and model as the Sprite Maker.
+- **Free way (no key):** Save references (two pictures: the layout and all eight on one board), Copy prompt, Open
+  Gemini, attach and paste, then Drop in a sheet. "Try again with this change" works both ways (the free way copies
+  the changed prompt and saves the last try to attach).
+- **You get:** each try's sheet and its parts cut out the same way as `tools/import_sheets.gd` (checked on the real
+  sheets: same sizes for raptor, charger, pterodactyl and tyrant; the runner comes out a few pixels smaller because
+  the browser decodes the JPEG slightly differently, so only the preview differs). Save sheet gives
+  `<name>_sheet.jpg` for `art/raw/`. Each name keeps its last 20 tries in the browser.
+- **Not done yet (separate step, once its behaviour is agreed):** putting a new dinosaur in the game. That needs
+  its entry in `SHEETS` in `tools/import_sheets.gd`, an `ArtLoader.SPECS` entry, its script, and a kg value in
+  `_meat_kg` in `scripts/main.gd`.
+- After a sheet in `art/raw/` changes, rerun `tools/make_maker_refs.gd` to update `tools/dino-refs.js`.
+- Not tried yet with a real Gemini key from this page (the Gemini call is the Sprite Maker's).

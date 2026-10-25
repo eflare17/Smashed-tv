@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dino Maker</title>
+<style>
+  :root {
+    --bg: #14151b; --panel: #1d1f28; --panel2: #262935; --line: #343848;
+    --text: #e6e8ee; --dim: #9aa0b2; --accent: #9fdc5a; --ok: #6fdc8c; --warn: #ffcc66; --bad: #ff7a7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 80px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; letter-spacing: 0.02em; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 16px; margin: 0; }
+  .sub { color: var(--dim); margin: 0 0 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 12px 0; }
+  label { display: block; color: var(--dim); font-size: 13px; margin: 10px 0 4px; }
+  input[type=text], textarea {
+    width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; font: inherit;
+  }
+  textarea { min-height: 78px; resize: vertical; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 12px; font: inherit; cursor: pointer; white-space: nowrap;
+  }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.primary { background: #3c5a22; border-color: #5f8a36; }
+  button.primary:hover:not(:disabled) { border-color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1 1 200px; }
+  .hint { color: var(--dim); font-size: 13px; }
+  details summary { cursor: pointer; color: var(--dim); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .design { display: flex; gap: 14px; flex-wrap: wrap; }
+  .drop {
+    width: 180px; min-height: 180px; border: 2px dashed var(--line); border-radius: 10px; display: flex;
+    align-items: center; justify-content: center; text-align: center; color: var(--dim); cursor: pointer; overflow: hidden;
+    background: var(--panel2); flex: 0 0 auto; position: relative; font-size: 13px; padding: 8px;
+  }
+  .drop.over { border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 240px; display: block; }
+  .drop .x { position: absolute; top: 4px; right: 4px; padding: 2px 8px; }
+  .bodies { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
+  .body {
+    border: 2px solid var(--line); border-radius: 8px; padding: 6px; background: var(--panel2); cursor: pointer; text-align: center;
+    font-size: 13px; color: var(--dim);
+  }
+  .body img { width: 100%; aspect-ratio: 1; object-fit: contain; display: block; border-radius: 4px; margin-bottom: 4px; }
+  .body.on { border-color: var(--accent); color: var(--text); }
+  .body b { display: block; color: inherit; font-size: 13px; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--panel2); color: var(--dim); }
+  .pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.busy { color: var(--accent); }
+  .try-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .try-body { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; align-items: flex-start; }
+  .thumb { width: 200px; height: 200px; object-fit: contain; border-radius: 6px; border: 1px solid var(--line); background: #0d0e12; cursor: zoom-in; display: block; flex: 0 0 auto; }
+  .thumb.empty { display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 12px; cursor: default; }
+  .parts {
+    flex: 1 1 300px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; padding: 10px; border-radius: 6px; min-height: 120px;
+    background: repeating-conic-gradient(#2a2d38 0 25%, #22242e 0 50%) 0 0 / 16px 16px;
+  }
+  .parts figure { margin: 0; }
+  .parts canvas { image-rendering: pixelated; display: block; max-width: 100%; }
+  .parts figcaption { font-size: 12px; color: var(--dim); margin-top: 2px; }
+  .note { font-size: 13px; color: var(--warn); margin-top: 6px; }
+  .err { color: var(--bad); white-space: pre-wrap; font-size: 13px; margin-top: 6px; }
+  .fixrow { margin-top: 10px; }
+  .steps { margin: 8px 0 0; padding-left: 22px; }
+  .steps li { margin: 8px 0; }
+  .steps .hint { display: inline-block; margin-left: 4px; }
+  a.btn {
+    display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 12px; text-decoration: none; white-space: nowrap;
+  }
+  a.btn:hover { border-color: var(--dim); }
+  .bar { position: sticky; bottom: 0; background: rgba(20,21,27,0.95); border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: center; }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: none; align-items: center; justify-content: center; z-index: 9; cursor: zoom-out; padding: 10px; }
+  #lightbox img { max-width: 100%; max-height: 100%; }
+  @media (max-width: 640px) {
+    .two { grid-template-columns: 1fr; } .drop { width: 100%; min-height: 120px; }
+    .bodies { grid-template-columns: repeat(2, 1fr); }
+    .thumb { width: 100%; height: auto; aspect-ratio: 1; }
+    .bar { padding: 6px 8px; gap: 6px; } .bar button { padding: 6px 10px; font-size: 14px; } .bar .hint { flex-basis: 100%; text-align: center; order: 9; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dino <span>Maker</span></h1>
+  <p class="sub">Describe a dinosaur and get a sprite sheet in the same style as the dino game's eight, cut into the parts the game uses.</p>
+
+  <div class="card">
+    <details id="setup">
+      <summary><b>Gemini key and model</b> <span class="hint" id="keyState"></span></summary>
+      <label for="apiKey">Gemini API key (get one at aistudio.google.com/apikey). The same one as the Sprite Maker.</label>
+      <input id="apiKey" type="text" name="gemini-api-key" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="paste your key" style="-webkit-text-security: disc">
+      <div class="row" style="margin-top:6px">
+        <label style="margin:0"><input type="checkbox" id="keepKey" checked> Remember it on this device</label>
+      </div>
+      <p class="hint">The key only goes to Google, from this browser. It's never put in the game or on GitHub.
+        No key? Use the free way below, in the Gemini app.</p>
+      <label for="imgModel">Image model</label>
+      <input id="imgModel" type="text" list="imgModels" value="gemini-nano-banana-2.1">
+      <datalist id="imgModels">
+        <option value="gemini-nano-banana-2.1"><option value="gemini-3-pro-image"><option value="gemini-3.1-flash-image">
+      </datalist>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>The dinosaur</h2>
+    <label for="dinoName">Name (each name keeps its own tries)</label>
+    <input id="dinoName" type="text" placeholder="ankylosaur" list="savedNames">
+    <datalist id="savedNames"></datalist>
+
+    <label>Body type (its sheet is copied for the layout, so the game can cut it up)</label>
+    <div class="bodies" id="bodies"></div>
+
+    <div class="design" style="margin-top:4px">
+      <div class="grow">
+        <label for="dinoDesc">What it looks like</label>
+        <textarea id="dinoDesc" placeholder="An ankylosaur: low and wide, covered in bony plates with spikes along the sides, a club on the end of its tail, sandy brown with a pale belly and dark brown plates."></textarea>
+      </div>
+      <div>
+        <label>A picture to copy (optional)</label>
+        <div class="drop" id="drop" tabindex="0">Drop a picture here<br>or tap to choose</div>
+        <input type="file" id="designFile" accept="image/*" hidden>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="freeWay">
+    <h2>Free way: the Gemini app (no key)</h2>
+    <ol class="steps">
+      <li><button id="saveRefs">Save references</button> <span class="hint">two pictures: the layout to copy, and all eight dinos for the style</span></li>
+      <li><button id="copyPrompt">Copy prompt</button> <span class="hint">fill in the name, body type and look above first</span></li>
+      <li><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener">Open Gemini</a>
+        <span class="hint">attach the two pictures in order (then your picture to copy, if you added one), paste the prompt, send</span></li>
+      <li><button id="dropSheet">Drop in a sheet</button><input type="file" id="sheetFile" accept="image/*" hidden>
+        <span class="hint">save the picture Gemini makes and drop it in here: it's cut up like the rest</span></li>
+    </ol>
+  </div>
+
+  <div id="tries"></div>
+</main>
+
+<div class="bar">
+  <button class="primary" id="make">Make it (with your key)</button>
+  <span class="hint" id="barState"></span>
+</div>
+
+<div id="lightbox"><img alt=""></div>
+
+<script src="dino-refs.js"></script>
+<script>
+'use strict';
+// ------------------------------------------------------------------ body types
+// Each copies one of the game's sheets for its layout. `pieces` must match dino/tools/import_sheets.gd: the
+// importer finds that many separate pieces and names them by shape.
+const BODIES = [
+  { id: 'meat', title: 'Two-legged meat-eater', ref: 'raptor', pieces: 4,
+    parts: 'four separate pieces: 1 the body with the neck, arms and tail but NO head and NO legs; 2 the head with the upper jaw and teeth; 3 the lower jaw on its own, hinge at the back; 4 ONE leg, hip to toes, hanging straight down' },
+  { id: 'plant', title: 'Four-legged plant-eater', ref: 'charger', pieces: 2,
+    parts: 'two separate pieces: 1 the body in ONE piece with the head, neck, tail and any horns, frill, plates or spikes, but NO legs; 2 ONE leg, hip to toes, hanging straight down' },
+  { id: 'small', title: 'Small two-legged plant-eater', ref: 'runner', pieces: 2,
+    parts: 'two separate pieces: 1 the body in ONE piece with the head, neck, arms and tail, but NO legs; 2 ONE leg, hip to toes, hanging straight down' },
+  { id: 'flyer', title: 'Flyer', ref: 'flyer', pieces: 2, flyer: true,
+    parts: 'two separate pieces: 1 the body in ONE piece with the head, crest, beak and tail, but NO wings; 2 ONE wing, spread out flat' },
+];
+const STYLE = ['raptor', 'hatchling', 'allosaur', 'tyrant', 'grazer', 'runner', 'charger', 'flyer'];
+const MAX_TRIES = 20;
+
+// ------------------------------------------------------------------ state
+const S = { body: 'meat', design: null, tries: [] };   // tries: newest first, { id, raw, fix, made, busy, err, parts, note }
+const $ = id => document.getElementById(id);
+const store = {   // 'sm-' so the key and model carry over from the Sprite Maker
+  get(k, d) { try { const v = localStorage.getItem('sm-' + k); return v === null ? d : v; } catch (_) { return d; } },
+  set(k, v) { try { localStorage.setItem('sm-' + k, v); } catch (_) {} },
+  del(k) { try { localStorage.removeItem('sm-' + k); } catch (_) {} },
+};
+// Pictures are big, so each dinosaur's tries live in IndexedDB (a refresh doesn't lose sheets you've paid for).
+const DB = {
+  db: null,
+  open() {
+    return new Promise(res => {
+      try {
+        const r = indexedDB.open('dino-maker', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => { DB.db = r.result; res(); };
+        r.onerror = () => res();
+      } catch (_) { res(); }
+    });
+  },
+  get(k) {
+    return new Promise(res => {
+      if (!DB.db) return res(null);
+      try { const q = DB.db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }
+      catch (_) { res(null); }
+    });
+  },
+  keys() {
+    return new Promise(res => {
+      if (!DB.db) return res([]);
+      try { const q = DB.db.transaction('kv').objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); }
+      catch (_) { res([]); }
+    });
+  },
+  set(k, v) {
+    if (!DB.db) return;
+    try { DB.db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); } catch (_) {}
+  },
+};
+function dinoName() { return $('dinoName').value.trim(); }
+function dinoKey() { return 'dino:' + (dinoName() || 'unnamed').toLowerCase(); }
+function fileName() { return dinoName().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'new_dino'; }
+function body() { return BODIES.find(b => b.id === S.body) || BODIES[0]; }
+let saveT = 0;
+function save() {
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    const tries = S.tries.filter(t => t.raw).map(t => ({ id: t.id, raw: t.raw, fix: t.fix || '', made: t.made, body: t.body }));
+    DB.set(dinoKey(), { body: S.body, desc: $('dinoDesc').value, design: S.design, tries });
+    store.set('dino-last', dinoName());
+    listNames();
+  }, 300);
+}
+async function load() {
+  const v = await DB.get(dinoKey());
+  S.body = v && v.body || S.body;
+  $('dinoDesc').value = v && v.desc || '';
+  S.design = v && v.design || null;
+  S.tries = (v && v.tries || []).map(t => Object.assign({}, t));
+  showBodies(); showDesign();
+  $('tries').innerHTML = '';
+  for (const t of S.tries) { renderTry(t); recut(t); }
+}
+async function listNames() {
+  const keys = await DB.keys();
+  $('savedNames').innerHTML = '';
+  for (const k of keys) if (String(k).startsWith('dino:')) $('savedNames').append(el('option', { value: String(k).slice(5) }));
+}
+
+// ------------------------------------------------------------------ pictures
+function loadImg(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+function fileToDataURL(f) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+}
+async function shrinkForSend(dataURL, max = 1024) {
+  const im = await loadImg(dataURL);
+  const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.92);
+}
+const b64 = d => d.slice(d.indexOf(',') + 1);
+const mimeOf = d => d.slice(5, d.indexOf(';'));
+function downloadURL(url, name) {
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+}
+// the style references as one picture, for the Gemini app (4 across, 2 down)
+async function styleBoard() {
+  const t = 384, c = document.createElement('canvas'); c.width = t * 4; c.height = t * 2;
+  const g = c.getContext('2d'); g.fillStyle = '#ff00ff'; g.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < STYLE.length; i++) g.drawImage(await loadImg(DINO_REFS[STYLE[i]]), (i % 4) * t, Math.floor(i / 4) * t, t, t);
+  return c.toDataURL('image/jpeg', 0.92);
+}
+
+// ------------------------------------------------------------------ Gemini
+function apiKey() { return $('apiKey').value.trim(); }
+async function gemini({ model, text, images, aspect }) {
+  const key = apiKey();
+  if (!key) throw new Error('No Gemini API key yet: open "Gemini key and model" at the top.');
+  const parts = [{ text }].concat(images.map(d => ({ inline_data: { mime_type: mimeOf(d), data: b64(d) } })));
+  // generateContent first; some settings aren't on every model, so it backs off them one at a time
+  const configs = [{ responseModalities: ['IMAGE'], imageConfig: { aspectRatio: aspect, imageSize: '2K' } },
+                   { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: aspect } },
+                   { responseModalities: ['TEXT', 'IMAGE'] }];
+  let lastErr = null;
+  for (const cfg of configs) {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts }], generationConfig: cfg }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) return readReply(j);
+    lastErr = (j.error && j.error.message) || ('HTTP ' + r.status);
+    if (r.status === 400 && /config|modalit|aspect|image_?size|imageSize|not supported/i.test(lastErr)) continue;
+    if (r.status === 404 || (r.status === 400 && /generateContent/i.test(lastErr))) break;   // try the newer API below
+    throw new Error(lastErr);
+  }
+  // the newer Interactions API
+  const input = [{ type: 'text', text }].concat(images.map(d => ({ type: 'image', mime_type: mimeOf(d), data: b64(d) })));
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({ model, input, response_format: { type: 'image', aspect_ratio: aspect, image_size: '2K' } }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(((j.error && j.error.message) || ('HTTP ' + r.status)) + (lastErr ? '\n(before that: ' + lastErr + ')' : ''));
+  return readReply(j);
+}
+// Find the picture and any words in a reply, whichever API shape it came back in.
+function readReply(j) {
+  let img = null; const words = [];
+  (function walk(o) {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) { o.forEach(walk); return; }
+    const inl = o.inlineData || o.inline_data;
+    if (inl && inl.data && /^image\//.test(inl.mimeType || inl.mime_type || '')) { img = img || 'data:' + (inl.mimeType || inl.mime_type) + ';base64,' + inl.data; }
+    else if (o.type === 'image' && o.data) { img = img || 'data:' + (o.mime_type || o.mimeType || 'image/png') + ';base64,' + o.data; }
+    if (typeof o.text === 'string' && !o.thought) words.push(o.text);
+    for (const k in o) if (k !== 'inlineData' && k !== 'inline_data' && k !== 'data') walk(o[k]);
+  })(j);
+  const block = j.promptFeedback && j.promptFeedback.blockReason;
+  const finish = j.candidates && j.candidates[0] && j.candidates[0].finishReason;
+  return { img, text: words.join('\n').trim(), why: block || (finish && finish !== 'STOP' ? finish : '') };
+}
+
+// The pictures go in this order: the layout sheet, the style sheets (one each, or one board for the Gemini app),
+// the picture to copy, the try being changed.
+function promptFor({ manual = false, fix = '', withPrev = false } = {}) {
+  const b = body();
+  const name = dinoName() || 'the new dinosaur';
+  const desc = $('dinoDesc').value.trim();
+  let n = 1;
+  const layout = n++;
+  const style = manual ? 'PICTURE ' + (n++) + ' shows' : 'PICTURES ' + n + ' to ' + (n += STYLE.length, n - 1) + ' are';
+  const design = S.design ? n++ : 0;
+  const prev = withPrev ? n++ : 0;
+  return [
+    'Make a pixel art sprite sheet of a new dinosaur for a side-on 16-bit game, in exactly the same art style as the game\'s other dinosaurs.',
+    'PICTURE ' + layout + ' is the LAYOUT to copy: one dinosaur drawn as ' + b.parts + ', on flat magenta. Draw the new dinosaur as the same ' + b.pieces + ' pieces, laid out the same way, at the same scale, with the same size of chunky pixels.',
+    style + ' the dinosaurs already in the game. Copy their pixel art style exactly: the size of the pixels, the 1-pixel dark outline, flat colours with no gradients and no anti-aliasing, a palette of about 8 colours, a lighter belly, a darker back, simple markings and small highlights on the top edges. Do NOT copy their species, shapes or colours.',
+    design ? 'PICTURE ' + design + ' is a picture of the dinosaur to make: copy its species, shape, colours and markings, but redraw it in the game\'s pixel style.' : '',
+    'The new dinosaur: ' + name + '.' + (desc ? ' ' + desc : ''),
+    'Rules: side view facing RIGHT, a neutral standing pose with the mouth closed. Exactly ' + b.pieces + ' pieces and nothing else on the sheet, each one separate with a wide gap of magenta round it, nothing touching or overlapping. Plain flat bright magenta background (#FF00FF) only: no ground, no shadow, no text, no labels, no borders. Crisp hard-edged pixels, no blur.',
+    prev ? 'PICTURE ' + prev + ' is your last try. Keep it as it is, except: ' + fix : (fix ? 'Also: ' + fix : ''),
+  ].filter(Boolean).join('\n\n');
+}
+
+// ------------------------------------------------------------------ making a sheet
+async function makeTry(fromTry, fix) {
+  if (!dinoName()) { alert('Give it a name first.'); $('dinoName').focus(); return; }
+  if (!$('dinoDesc').value.trim() && !S.design) { alert('Say what it looks like, or drop in a picture.'); $('dinoDesc').focus(); return; }
+  if (!apiKey()) { $('setup').open = true; $('apiKey').focus(); flash('No key yet: paste one at the top, or use the free way below.'); return; }
+  const t = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), raw: null, fix: fix || '', made: new Date().toISOString(), body: S.body, busy: true };
+  S.tries.unshift(t); renderTry(t);
+  try {
+    const images = [DINO_REFS[body().ref]].concat(STYLE.map(k => DINO_REFS[k]));
+    if (S.design) images.push(await shrinkForSend(S.design));
+    if (fromTry) images.push(await shrinkForSend(fromTry.raw));
+    const res = await gemini({ model: $('imgModel').value.trim(), text: promptFor({ fix, withPrev: !!fromTry }), images, aspect: '1:1' });
+    if (!res.img) throw new Error('Gemini sent back no picture' + (res.why ? ' (' + res.why + ')' : '') + (res.text ? ':\n' + res.text.slice(0, 400) : '.'));
+    t.raw = res.img;
+    while (S.tries.filter(x => x.raw).length > MAX_TRIES) S.tries.splice(S.tries.map(x => !!x.raw).lastIndexOf(true), 1);
+    save();
+    await recut(t);
+  } catch (e) {
+    t.err = String(e && e.message || e);
+  } finally {
+    t.busy = false; renderTry(t);
+  }
+}
+async function recut(t) {
+  if (!t.raw) return;
+  const im = await loadImg(t.raw);
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  const b = BODIES.find(x => x.id === t.body) || body();
+  const r = cutSheet(g.getImageData(0, 0, c.width, c.height), b.pieces, !!b.flyer);
+  t.parts = r.parts; t.note = r.note;
+  renderTry(t);
+}
+
+// ------------------------------------------------------------------ cutting (a copy of dino/tools/import_sheets.gd)
+// Key out the magenta, find the separate pieces, work out the sheet's pixel grid, sample one pixel per cell and
+// name the pieces by shape. Kept the same as the importer so what you see here is what the game gets.
+function cutSheet(img, wanted, flyer) {
+  const w = img.width, h = img.height, d = img.data;
+  let solid = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < w * h; i++, p += 4) solid[i] = (d[p] > 153 && d[p + 2] > 153 && d[p + 1] < 115) ? 0 : 1;
+  solid = openMask(solid, w, h);
+  const label = new Int32Array(w * h).fill(-1);
+  const minCount = Math.max(60, Math.round(400 * w * h / (2048 * 2048)));
+  let blobs = [], nextId = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (solid[i] === 1 && label[i] < 0) {
+      const b = flood(solid, label, w, h, i, nextId++);
+      if (b.count > minCount) blobs.push(b);
+    }
+  }
+  blobs.sort((a, b) => b.count - a.count);
+  const notes = [];
+  const extra = blobs.slice(wanted).filter(b => b.count > 0.05 * (blobs[wanted - 1] || blobs[0]).count);
+  blobs = blobs.slice(0, wanted);
+  if (!blobs.length) return { parts: [], note: 'No pieces found: is the background magenta?' };
+  if (blobs.length < wanted) notes.push('found ' + blobs.length + ' of ' + wanted + ' pieces (some may be touching: try again)');
+  if (extra.length) notes.push(extra.length + ' extra piece' + (extra.length > 1 ? 's' : '') + ' on the sheet (left out)');
+  const cell = cellSize(d, w, blobs[0]);
+  const names = namePieces(blobs, wanted, flyer);
+  const parts = blobs.map((b, k) => Object.assign({ name: names[k] }, sample(d, solid, label, w, h, b, cell)));
+  return { parts, cell, note: notes.join('; ') };
+}
+function openMask(solid, w, h) {
+  const er = new Uint8Array(w * h), di = new Uint8Array(w * h);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    er[i] = (solid[i] && solid[i - 1] && solid[i + 1] && solid[i - w] && solid[i + w]) ? 1 : 0;
+  }
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    di[i] = (er[i] || er[i - 1] || er[i + 1] || er[i - w] || er[i + w]) ? 1 : 0;
+  }
+  return di;
+}
+function flood(solid, label, w, h, start, id) {
+  const stack = [start]; label[start] = id;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0, n = 0;
+  while (stack.length) {
+    const i = stack.pop(); n++;
+    const x = i % w, y = (i - x) / w;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    // 8-way, so thin diagonal outlines stay joined
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const j = ny * w + nx;
+      if (solid[j] === 1 && label[j] < 0) { label[j] = id; stack.push(j); }
+    }
+  }
+  return { id, count: n, x0, y0, x1, y1 };
+}
+const q8 = v => Math.floor(v / 255 * 7.99);
+const quant = (d, p) => q8(d[p]) * 64 + q8(d[p + 1]) * 8 + q8(d[p + 2]);
+// The sheet's pixel grid: where the colour changes along the rows sits on the grid lines, so the cell size is the
+// one that lines the most of them up (less what chance would give).
+function cellSize(d, w, b) {
+  const edges = [];
+  for (let y = b.y0; y <= b.y1; y += 4) {
+    let prev = quant(d, (y * w + b.x0) * 4);
+    for (let x = b.x0 + 1; x <= b.x1; x++) { const c = quant(d, (y * w + x) * 4); if (c !== prev) { edges.push(x); prev = c; } }
+  }
+  const lo = Math.max(3, Math.round(8 * w / 2048)), hi = Math.round(40 * w / 2048);
+  let best = Math.round(16 * w / 2048), bestScore = -1;
+  for (let cell = lo; cell <= hi; cell++) {
+    const counts = new Int32Array(cell);
+    for (const x of edges) counts[x % cell]++;
+    let top = 0;
+    for (let ph = 0; ph < cell; ph++) top = Math.max(top, counts[ph] + counts[(ph + 1) % cell] + counts[(ph + cell - 1) % cell]);
+    const score = top / Math.max(1, edges.length) - 3 / cell;
+    if (score > bestScore) { bestScore = score; best = cell; }
+  }
+  return best;
+}
+// One pixel per cell: the most common colour in the cell's middle, cells that are mostly background left clear.
+function sample(d, solid, label, w, h, b, cell) {
+  const cols = Math.ceil((b.x1 - b.x0 + 1) / cell), rows = Math.ceil((b.y1 - b.y0 + 1) / cell);
+  const out = new Uint8ClampedArray(cols * rows * 4);
+  const m = Math.floor(cell / 4);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const cx = b.x0 + c * cell, cy = b.y0 + r * cell;
+    const votes = new Map(); let hits = 0, tot = 0;
+    for (let sy = cy + m; sy < cy + cell - m; sy++) for (let sx = cx + m; sx < cx + cell - m; sx++) {
+      if (sx >= w || sy >= h) continue;
+      tot++;
+      const i = sy * w + sx;
+      if (solid[i] === 1 && label[i] === b.id) { hits++; const k = quant(d, i * 4); votes.set(k, (votes.get(k) || 0) + 1); }
+    }
+    if (tot === 0 || hits * 2 < tot) continue;
+    let bestQ = -1, bestN = 0;
+    for (const [k, v] of votes) if (v > bestN) { bestN = v; bestQ = k; }
+    // the mean of that colour's samples, so the palette keeps its real shades
+    let sr = 0, sg = 0, sb = 0, n = 0;
+    for (let sy = cy + m; sy < cy + cell - m; sy++) for (let sx = cx + m; sx < cx + cell - m; sx++) {
+      if (sx >= w || sy >= h) continue;
+      const i = sy * w + sx;
+      if (label[i] === b.id && quant(d, i * 4) === bestQ) { sr += d[i * 4]; sg += d[i * 4 + 1]; sb += d[i * 4 + 2]; n++; }
+    }
+    const o = (r * cols + c) * 4;
+    out[o] = sr / n; out[o + 1] = sg / n; out[o + 2] = sb / n; out[o + 3] = 255;
+  }
+  return trim(out, cols, rows);
+}
+function trim(px, w, h) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return { width: w, height: h, data: px };
+  const tw = x1 - x0 + 1, th = y1 - y0 + 1, out = new Uint8ClampedArray(tw * th * 4);
+  for (let y = 0; y < th; y++) out.set(px.subarray(((y + y0) * w + x0) * 4, ((y + y0) * w + x0 + tw) * 4), y * tw * 4);
+  return { width: tw, height: th, data: out };
+}
+// Body: the biggest. Four pieces: leg = the tallest of the rest, jaw = the flattest, head = the other.
+// Two pieces: the other is the leg, except on a flyer, where the wing is the biggest and the body the other.
+function namePieces(blobs, wanted, flyer) {
+  const names = blobs.map(() => 'body');
+  if (wanted === 2) {
+    for (let k = 1; k < blobs.length; k++) names[k] = flyer ? 'body' : 'leg';
+    if (flyer) names[0] = 'wing';
+    return names;
+  }
+  const rest = blobs.map((_, k) => k).slice(1);
+  const pick = f => { let best = -1, bv = -1; for (const k of rest) { const v = f(blobs[k]); if (v > bv) { bv = v; best = k; } } if (best >= 0) rest.splice(rest.indexOf(best), 1); return best; };
+  const leg = pick(b => (b.y1 - b.y0) / Math.max(1, b.x1 - b.x0)); if (leg >= 0) names[leg] = 'leg';
+  const jaw = pick(b => (b.x1 - b.x0) / Math.max(1, b.y1 - b.y0)); if (jaw >= 0) names[jaw] = 'jaw';
+  for (const k of rest) names[k] = 'head';
+  return names;
+}
+
+// ------------------------------------------------------------------ drawing the page
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) {
+    if (k === 'class') e.className = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k] === true ? '' : attrs[k]);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(k));
+  return e;
+}
+function zoom(src) { const lb = $('lightbox'); lb.querySelector('img').src = src; lb.style.display = 'flex'; }
+$('lightbox').onclick = () => { $('lightbox').style.display = 'none'; };
+
+function showBodies() {
+  const box = $('bodies'); box.innerHTML = '';
+  for (const b of BODIES) {
+    box.append(el('div', { class: 'body' + (b.id === S.body ? ' on' : ''), tabindex: '0', title: 'Copies the ' + b.ref + '\'s layout',
+      onclick: () => { S.body = b.id; showBodies(); save(); },
+      onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); S.body = b.id; showBodies(); save(); } } },
+      el('img', { src: DINO_REFS[b.ref], alt: '' }), el('b', null, b.title), b.pieces + ' pieces, like the ' + (b.ref === 'flyer' ? 'pterodactyl' : b.ref)));
+  }
+}
+function showDesign() {
+  const drop = $('drop'); drop.innerHTML = '';
+  if (S.design) {
+    drop.append(el('img', { src: S.design, alt: 'picture to copy' }),
+      el('button', { class: 'x', title: 'Take the picture out', onclick: e => { e.stopPropagation(); S.design = null; showDesign(); save(); } }, '✕'));
+  } else drop.append('Drop a picture here', el('br'), 'or tap to choose');
+}
+function partCanvas(p, scale) {
+  const c = document.createElement('canvas'); c.width = p.width; c.height = p.height;
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(p.data), p.width, p.height), 0, 0);
+  if (scale) { c.style.width = p.width * scale + 'px'; c.style.height = p.height * scale + 'px'; }
+  return c;
+}
+function renderTry(t) {
+  let card = $('try-' + t.id);
+  const fresh = !card;
+  if (!card) card = el('div', { class: 'card', id: 'try-' + t.id });
+  const n = S.tries.indexOf(t);
+  if (fresh) { const next = S.tries[n + 1] && $('try-' + S.tries[n + 1].id); next ? $('tries').insertBefore(card, next) : $('tries').append(card); }
+  const b = BODIES.find(x => x.id === t.body) || body();
+  let pill;
+  if (t.busy) pill = el('span', { class: 'pill busy' }, 'drawing... (about a minute)');
+  else if (t.err) pill = el('span', { class: 'pill bad' }, 'failed');
+  else if (t.parts && t.parts.length === b.pieces && !t.note) pill = el('span', { class: 'pill ok' }, b.pieces + ' pieces');
+  else if (t.parts) pill = el('span', { class: 'pill warn' }, 'check it');
+  else pill = el('span', { class: 'pill' }, 'cutting...');
+  const when = new Date(t.made);
+  const head = el('div', { class: 'try-head' },
+    el('h2', null, 'Try ' + (S.tries.length - n)), pill,
+    el('span', { class: 'hint' }, b.title + ', ' + when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+    t.fix ? el('span', { class: 'hint' }, 'change: ' + t.fix) : null);
+  const thumb = t.raw ? el('img', { class: 'thumb', src: t.raw, alt: 'the sheet', onclick: () => zoom(t.raw) })
+                      : el('div', { class: 'thumb empty' }, t.busy ? 'drawing...' : 'no picture');
+  const parts = el('div', { class: 'parts' });
+  if (t.parts && t.parts.length) {
+    // the biggest piece about 300 px across (or the width of a phone)
+    const big = Math.max(...t.parts.map(p => p.width));
+    const scale = Math.max(1, Math.min(6, Math.floor(Math.min(300, window.innerWidth - 80) / big)));
+    for (const p of t.parts) parts.append(el('figure', null, partCanvas(p, scale), el('figcaption', null, p.name + ' ' + p.width + 'x' + p.height)));
+  } else parts.append(el('span', { class: 'hint' }, t.busy ? '' : 'The parts show here once there\'s a sheet.'));
+  const fixIn = el('input', { type: 'text', placeholder: 'e.g. make the tail club bigger, the plates darker' });
+  const btns = el('div', { class: 'row', style: 'margin-top:10px' },
+    el('button', { class: 'primary', disabled: !t.raw || t.busy, onclick: () => saveSheet(t) }, 'Save sheet'),
+    el('button', { disabled: !t.parts || t.busy, onclick: () => saveParts(t) }, 'Save parts'),
+    el('button', { disabled: t.busy, onclick: () => { if (confirm('Delete this try?')) { S.tries.splice(S.tries.indexOf(t), 1); card.remove(); save(); } } }, 'Delete'));
+  const fixRow = t.raw ? el('div', { class: 'row fixrow' },
+    el('div', { class: 'grow' }, fixIn),
+    el('button', { onclick: () => { const f = fixIn.value.trim(); if (!f) { fixIn.focus(); return; } apiKey() ? makeTry(t, f) : changeByHand(t, f); } }, 'Try again with this change')) : null;
+  card.innerHTML = '';
+  card.append(...[head, el('div', { class: 'try-body' }, thumb, parts),
+    t.note ? el('div', { class: 'note' }, t.note) : null,
+    t.err ? el('div', { class: 'err' }, t.err) : null,
+    btns, fixRow].filter(Boolean));
+}
+
+// ------------------------------------------------------------------ saving
+// As a .jpg named the way dino/tools/import_sheets.gd looks for it (art/raw/<name>_sheet.jpg).
+async function saveSheet(t) {
+  const im = await loadImg(t.raw);
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  c.getContext('2d').drawImage(im, 0, 0);
+  downloadURL(c.toDataURL('image/jpeg', 0.95), fileName() + '_sheet.jpg');
+}
+async function saveParts(t) {
+  for (const p of t.parts) {
+    downloadURL(partCanvas(p).toDataURL('image/png'), fileName() + '_' + p.name + '.png');
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
+// the free way's "try again": a prompt with the change, and the try saved to attach after the other pictures
+async function changeByHand(t, fix) {
+  const text = promptFor({ manual: true, fix, withPrev: true });
+  const im = await loadImg(t.raw);
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  c.getContext('2d').drawImage(im, 0, 0);
+  downloadURL(c.toDataURL('image/jpeg', 0.92), (S.design ? 4 : 3) + '_last_try.jpg');
+  try { await navigator.clipboard.writeText(text); flash('Prompt copied, and the try saved as picture ' + (S.design ? 4 : 3) + ': attach it after the others.'); }
+  catch (_) { prompt('Copy this prompt:', text); }
+}
+async function copyPrompt() {
+  const text = promptFor({ manual: true });
+  try { await navigator.clipboard.writeText(text); flash('Prompt copied. Attach the references (and your picture) in that order.'); }
+  catch (_) { prompt('Copy this prompt:', text); }
+}
+async function saveRefs() {
+  downloadURL(DINO_REFS[body().ref], '1_layout_' + body().ref + '.jpg');
+  await new Promise(r => setTimeout(r, 300));
+  downloadURL(await styleBoard(), '2_style_all_dinos.jpg');
+}
+let flashT = 0;
+function flash(msg) { $('barState').textContent = msg; clearTimeout(flashT); flashT = setTimeout(() => { $('barState').textContent = ''; }, 6000); }
+
+// ------------------------------------------------------------------ wiring
+(async function start() {
+  $('apiKey').value = store.get('key', '');
+  $('keepKey').checked = store.get('keepKey', '1') === '1';
+  $('imgModel').value = store.get('imgModel', $('imgModel').value);
+  const keyNote = () => { $('keyState').textContent = apiKey() ? '(key set)' : '(no key yet)'; };
+  keyNote();
+  if (!apiKey()) $('setup').open = true;
+  $('apiKey').oninput = () => { if ($('keepKey').checked) store.set('key', apiKey()); keyNote(); };
+  $('keepKey').onchange = () => { store.set('keepKey', $('keepKey').checked ? '1' : '0'); if ($('keepKey').checked) store.set('key', apiKey()); else store.del('key'); };
+  $('imgModel').onchange = () => store.set('imgModel', $('imgModel').value.trim());
+
+  await DB.open();
+  $('dinoName').value = store.get('dino-last', '');
+  await load();
+  listNames();
+  let nameT = 0;
+  $('dinoName').oninput = () => {      // a different name is a different dinosaur: load its tries, or start fresh keeping what's typed
+    clearTimeout(nameT);
+    nameT = setTimeout(async () => {
+      const v = await DB.get(dinoKey());
+      if (v) await load(); else { S.tries = []; $('tries').innerHTML = ''; }
+      save();
+    }, 500);
+  };
+  $('dinoDesc').oninput = save;
+
+  const drop = $('drop'), file = $('designFile');
+  const take = async f => { if (!f || !/^image\//.test(f.type)) return; S.design = await fileToDataURL(f); showDesign(); save(); };
+  drop.onclick = () => file.click();
+  drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') file.click(); };
+  file.onchange = () => { take(file.files[0]); file.value = ''; };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); take(e.dataTransfer.files[0]); };
+
+  $('make').onclick = () => makeTry(null, '');
+  $('copyPrompt').onclick = copyPrompt;
+  $('saveRefs').onclick = saveRefs;
+  // a sheet made in the Gemini app becomes a try
+  $('dropSheet').onclick = () => { if (!dinoName()) { alert('Give it a name first.'); $('dinoName').focus(); return; } $('sheetFile').click(); };
+  $('sheetFile').onchange = async () => {
+    const f = $('sheetFile').files[0]; $('sheetFile').value = '';
+    if (!f) return;
+    const t = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), raw: await fileToDataURL(f), fix: '', made: new Date().toISOString(), body: S.body };
+    S.tries.unshift(t); renderTry(t); save(); recut(t);
+  };
+})();
+</script>
+</body>
+</html>
