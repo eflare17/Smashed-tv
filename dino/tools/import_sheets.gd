@@ -17,6 +17,8 @@ const SHEETS := {
 	# ten more made in Gemini to fill the progression (26 Oct): the meat-eaters with a separate head and jaw
 	"compsognathus": 2, "microraptor": 2, "protoceratops": 2, "gallimimus": 2, "dilophosaurus": 4,
 	"utahraptor": 4, "therizinosaurus": 2, "quetzalcoatlus": 2, "spinosaurus": 4, "brachiosaurus": 2,
+	# the smallest meat-eater, to be the first form you play (26 Oct), so with a separate head and jaw
+	"anchiornis": 4,
 }
 
 ## Sheets whose second piece is a wing (the biggest piece on them is the spread wing, not the body).

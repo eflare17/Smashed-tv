@@ -23,6 +23,8 @@ const SPECS := {
 	"charger": {"stand": 46.0, "legs": 4, "hips": [0.34, 0.6], "hip_y": 0.6, "tail": 0.2, "head": 0.66, "head_y": 1.0},
 	# the front hip sits over the stub of a front leg the sheet drew on the body, so the game's leg hides it
 	"ankylosaurus": {"stand": 34.0, "legs": 4, "hips": [0.4, 0.7], "hip_y": 0.8, "leg_scale": 0.45, "tail": 0.3, "head": 0.8, "head_y": 1.0},
+	# the smallest meat-eater, meant as the first form you play (26 Oct): first guess, tuned by eye
+	"anchiornis": {"width": 52.0, "jaw_k": 0.6, "jaw_trim": 0.3, "legs": 2, "hips": [0.66], "leg_scale": 0.6, "tilt": 0.3, "tail": 0.42, "neck": 0.8},
 	# the runners family (26 Oct): first guesses, tuned by eye
 	"compsognathus": {"width": 24.0, "legs": 2, "tail": 0.45, "neck": 0.78, "head": 0.86, "head_y": 0.6},
 	"gallimimus": {"width": 46.0, "legs": 2, "tail": 0.45, "neck": 0.76, "head": 0.88, "head_y": 0.35},
@@ -35,7 +37,7 @@ const SPECS := {
 const ENABLED := {
 	"hatchling": true, "raptor": true, "allosaur": true, "tyrant": true,
 	"grazer": true, "runner": true, "charger": true, "flyer": true, "ankylosaurus": true,
-	"compsognathus": true, "gallimimus": true, "corythosaurus": true,
+	"compsognathus": true, "gallimimus": true, "corythosaurus": true, "anchiornis": true,
 }
 
 static var _cache := {}
