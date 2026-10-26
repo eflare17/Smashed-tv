@@ -235,7 +235,8 @@ func enter_area(n: int) -> void:
 	player.vel = Vector2.ZERO
 	for h: Array in area.herds:
 		for k in h[1]:
-			_spawn_herd_kind(h[2], h[0] + k * 50.0)
+			# compys bunch up tight; everything else stands a body length apart
+			_spawn_herd_kind(h[2], h[0] + k * (20.0 if h[2] == Area.HERD_COMPY else 50.0))
 	# fresh ground: the sooner you got out of the last area, the more it pays
 	if n > 1:
 		var k := 1.0 - danger() * 0.75
@@ -256,6 +257,12 @@ func _spawn_herd_kind(kind: int, x: float) -> Prey:
 			return spawn_prey(x, Prey.RUNNER)
 		Area.HERD_CHARGER:
 			return _add(Charger.new(), x)
+		Area.HERD_COMPY:
+			return spawn_prey(x, Prey.COMPY)
+		Area.HERD_GALLI:
+			return spawn_prey(x, Prey.GALLIMIMUS)
+		Area.HERD_CORYTHO:
+			return spawn_prey(x, Prey.CORYTHO)
 		Area.HERD_ANKYLO:
 			return _add(Ankylosaurus.new(), x)
 	return spawn_prey(x)
@@ -353,7 +360,12 @@ func _spawners(delta: float) -> void:
 		_herd_t = 5.0
 		var live := creatures.filter(func(c): return not is_attacker(c) and not (c is Hunter or c is Flyer) and not c.dead).size()
 		if live < 2 + area_n:
-			_spawn_herd_kind(area.herd_kind(rng), _offscreen_x())
+			# the runners family comes in groups (a lone compy is no herd); the rest one at a time
+			var kind := area.herd_kind(rng)
+			var group: int = area._herd_size(kind, 1) if kind in [Area.HERD_COMPY, Area.HERD_GALLI, Area.HERD_CORYTHO] else 1
+			var x0 := _offscreen_x()
+			for k in group:
+				_spawn_herd_kind(kind, x0 + k * (20.0 if kind == Area.HERD_COMPY else 40.0) * signf(x0 - player.position.x))
 	if _warned == 0 and area_t >= PREY_DRY:
 		_warned = 1
 		hud.show_banner("THE HERDS HAVE MOVED ON", 2.5)
@@ -397,6 +409,11 @@ func _embers(at: Vector2) -> Array:
 		out.append([at + Vector2(rng.randf_range(-4.0, 4.0), rng.randf_range(-3.0, 0.0)),
 				Color(1.0, rng.randf_range(0.4, 0.9), 0.1)])
 	return out
+
+## A corythosaurus honks the alarm (Prey._scare): the herd around it bolts.
+func honk(c: Prey) -> void:
+	sfx.play("honk", 0.05, 0.0)
+	_popups.append(["HONK!", c.global_position + Vector2(0, -c.height * c.scale.y - 10.0), 1.0, Color(0.85, 1.0, 0.6)])
 
 func shake(amount: float) -> void:
 	_shake = minf(_shake + amount, 1.2)
@@ -1092,7 +1109,8 @@ func _meat_kg(c: Prey) -> float:
 		return 40.0
 	if c is Flyer:
 		return 12.0
-	return 15.0 if c.kind == Prey.RUNNER else 30.0
+	# the runners family: compsognathus 5, gallimimus 35, corythosaurus 45 (owner OK'd the suggestions, 26 Oct)
+	return [30.0, 15.0, 5.0, 35.0, 45.0][c.kind]
 
 ## Kilograms of meat in one of `c`'s pixels: the whole body's meat (bigger for a bigger one) over its pixels.
 func _kg_px(c: Prey) -> float:
@@ -1111,4 +1129,4 @@ func _kill_xp(c: Prey) -> int:
 		return XP_KILL_HUNTER
 	if c is Flyer:
 		return 20
-	return 6 if c.kind == Prey.RUNNER else XP_KILL_PREY
+	return [XP_KILL_PREY, 6, 3, 12, 12][c.kind]

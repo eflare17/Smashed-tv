@@ -371,3 +371,15 @@ Not picked (not done): Snowy forest, "night: hard to see", any new dinosaurs, th
   scorching you and burning feet. The bite tests now clear the area's own herds at the start (the random mix and
   the guaranteed ankylosaurus made timing checks wobble); three runs in a row clean after that.
 - `tests/shot_maps.gd` photographs every look with a grazer standing in the patch.
+
+## The runners family is in (27 Oct; owner OK'd the suggested kg and XP)
+
+- **Compsognathus** (`Prey.COMPY`): tiny, in groups of 3-5 bunched together. Scare one and the whole group bolts,
+  each its own way. 5 kg, 3 XP. Hatchling food.
+- **Gallimimus** (`Prey.GALLIMIMUS`): herds of 2-4 that stampede together at 130 (faster than anything), for 2.2 s,
+  then have to stop and blow for 1.6 s: catch them tired or cornered. 35 kg, 12 XP.
+- **Corythosaurus** (`Prey.CORYTHO`): herds of 2-3, about grazer size. Scare one and it HONKS (a synthesised horn),
+  and every corythosaurus within 260 px bolts; once every 3 s. 45 kg, 12 XP.
+- All three are guaranteed early in every area (with the ankylosaurus), arrive as groups when herds come later,
+  and the mix is now runners 18, compys 12, grazers 16, gallimimus 12, corythosaurus 12, chargers 12,
+  ankylosaurus 18 (out of 100). All PLACEHOLDER numbers. Four new tests.

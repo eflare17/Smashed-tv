@@ -6,7 +6,13 @@ extends Dino
 ## a small fast skittish one (little meat, but your size at the start). Hunter, Charger and Flyer build on this.
 
 enum { GRAZE, FLEE, DEAD }
-enum { GRAZER, RUNNER }
+## The runners family (owner's pick, 26 Oct): COMPY (compsognathus) comes in little groups that scatter every which
+## way; GALLIMIMUS herds stampede together, faster than anything, but tire; CORYTHO (corythosaurus) honks and the
+## whole herd bolts.
+enum { GRAZER, RUNNER, COMPY, GALLIMIMUS, CORYTHO }
+## How far a scare spreads through the same kind (COMPY, GALLIMIMUS, CORYTHO), and how long between honks.
+const ALARM_RANGE := {COMPY: 90.0, GALLIMIMUS: 140.0, CORYTHO: 260.0}
+const HONK_EVERY := 3.0
 
 ## Placeholder death rule: under this much of its body left, or of its head.
 const DIE_MASS := 0.5
@@ -37,9 +43,12 @@ var dead_t := 0.0
 ## In your jaws (a big bite): it can't go anywhere, it just thrashes (or, dead, hangs there).
 var held := false
 var _held_t := 0.0
+var _honk_t := 0.0
 
 func _ready() -> void:
-	if kind == RUNNER:
+	if kind in [COMPY, GALLIMIMUS, CORYTHO]:
+		_ready_runner_family()
+	elif kind == RUNNER:
 		var art := ArtLoader.rig("runner")
 		build(art if not art.is_empty() else DinoArt.runner())
 		if art.is_empty():
@@ -59,6 +68,31 @@ func _ready() -> void:
 		run_speed = 105.0
 		flee_time = 1.4
 		rest_time = 1.3
+
+## PLACEHOLDER numbers for the runners family. Each falls back to the code-drawn runner without its sprites.
+func _ready_runner_family() -> void:
+	var art := ArtLoader.rig(["", "", "compsognathus", "gallimimus", "corythosaurus"][kind])
+	build(art if not art.is_empty() else DinoArt.runner())
+	match kind:
+		COMPY:
+			wander_speed = 26.0
+			run_speed = 80.0
+			flee_time = 0.7
+			rest_time = 0.6
+			scare_range = 80.0
+		GALLIMIMUS:
+			# faster than you flat out, for longer than the grazer, but it has to stop and blow
+			wander_speed = 26.0
+			run_speed = 130.0
+			flee_time = 2.2
+			rest_time = 1.6
+			scare_range = 110.0
+		CORYTHO:
+			wander_speed = 18.0
+			run_speed = 75.0
+			flee_time = 1.8
+			rest_time = 1.0
+			scare_range = 70.0
 
 ## Held in your jaws: thrash in place and bleed. Returns true if it was (and the normal step is skipped).
 func held_step(delta: float, rng: RandomNumberGenerator) -> bool:
@@ -81,6 +115,7 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 		return
 	_t -= delta
 	_rest -= delta
+	_honk_t -= delta
 	var near := absf(threat.x - global_position.x) < scare_range and absf(threat.y - global_position.y) < 50.0
 	match state:
 		GRAZE:
@@ -119,11 +154,28 @@ func step(delta: float, threat: Vector2, rng: RandomNumberGenerator) -> void:
 		animate(delta, absf(vel.x) > 3.0, 3.0 + absf(vel.x) * 0.13)
 	_bleed_step(delta, rng)
 
-func _scare() -> void:
+## Off it runs, away from you. In the runners family the scare spreads to the same kind nearby (`spread`): compys
+## each bolt their own way, a gallimimus herd stampedes together, and a corythosaurus honks first.
+func _scare(spread := true) -> void:
 	state = FLEE
 	_flee_t = flee_time
 	var away := signf(global_position.x - game.player.global_position.x)
 	_dir = away if away != 0.0 else 1.0
+	if kind == COMPY and randf() < 0.5:
+		_dir = -_dir
+	if not spread or not ALARM_RANGE.has(kind):
+		return
+	if kind == CORYTHO:
+		if _honk_t > 0.0:
+			return
+		_honk_t = HONK_EVERY
+		game.honk(self)
+	for c in game.creatures:
+		if c != self and c is Prey and c.kind == kind and not c.dead and c.state != FLEE \
+				and absf(c.global_position.x - global_position.x) < ALARM_RANGE[kind]:
+			c._scare(false)
+			if kind == CORYTHO:
+				c._honk_t = HONK_EVERY
 
 ## Bitten (the scene root calls this after carving): flash, flinch, run. Returns true if that killed it.
 func hurt(from: Vector2) -> bool:

@@ -28,6 +28,7 @@ func _ready() -> void:
 	_sounds["thud"] = _make(0.35, _thud)
 	_sounds["rip"] = _make(0.45, _rip)
 	_sounds["roar"] = _make(0.7, _roar)
+	_sounds["honk"] = _make(0.6, _honk)
 
 func play(sound: String, pitch_jitter := 0.06, db := 0.0) -> void:
 	var p := _players[_next]
@@ -97,3 +98,11 @@ func _rip(t: float, k: float) -> float:
 	# something big coming off: a long ragged tear with cracks in it
 	var crack := _noise() * (1.0 if _rng.randf() < 0.2 else 0.4)
 	return crack * (1.0 - k) * (0.6 + 0.4 * sin(TAU * 23.0 * t)) * 0.8
+
+## A corythosaurus honk: a low hollow horn through its crest, sliding up a little, with a nasal edge.
+func _honk(t: float, k: float) -> float:
+	var f := lerpf(105.0, 125.0, minf(1.0, k * 3.0))
+	var ph := fmod(t * f, 1.0)
+	var horn := sin(TAU * f * t) * 0.5 + sin(TAU * f * 2.0 * t) * 0.3 + (absf(ph * 2.0 - 1.0) * 2.0 - 1.0) * 0.2
+	var swell := minf(1.0, k * 8.0) * pow(1.0 - k, 0.7)
+	return horn * swell * 0.8

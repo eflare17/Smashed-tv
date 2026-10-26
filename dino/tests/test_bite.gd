@@ -387,6 +387,41 @@ func _run() -> void:
 	await _frames(2)
 	_check("a runner is smaller and faster than a grazer", _mass(rn) < 600 and rn.run_speed > 68.0, "%d px" % _mass(rn))
 
+	# the runners family: compys scatter every which way, a gallimimus herd stampedes together, a corythosaurus honks
+	pl.position = Vector2(1900.0, main.GROUND_Y)
+	var compys: Array = []
+	for k in 8:
+		compys.append(main.spawn_prey(1960.0 + k * 6.0, Prey.COMPY))
+	var gallis: Array = []
+	for k in 3:
+		gallis.append(main.spawn_prey(2300.0 + k * 40.0, Prey.GALLIMIMUS))
+	var coryths: Array = []
+	for x in [2700.0, 2760.0, 2820.0, 3300.0]:
+		coryths.append(main.spawn_prey(x, Prey.CORYTHO))
+	await _frames(2)
+	for c: Prey in compys + gallis + coryths:
+		c.state = Prey.GRAZE
+		c.set("_rest", 0.0)
+	compys[0].hurt(pl.global_position)
+	var dirs := {}
+	for c: Prey in compys:
+		dirs[c.get("_dir")] = true
+	_check("one compy scared scatters the group every which way", compys.all(func(c: Prey) -> bool: return c.state == Prey.FLEE) and dirs.size() == 2)
+	pl.position = Vector2(2240.0, main.GROUND_Y)
+	gallis[0].hurt(pl.global_position)
+	var same: bool = gallis.all(func(c: Prey) -> bool: return c.state == Prey.FLEE and c.get("_dir") == gallis[0].get("_dir"))
+	_check("a gallimimus herd stampedes together, faster than the grazer", same and gallis[0].run_speed > 105.0,
+			"%.0f vs the grazer's 105" % gallis[0].run_speed)
+	pl.position = Vector2(2650.0, main.GROUND_Y)
+	var popups_before: int = main.get("_popups").size()
+	coryths[0].hurt(pl.global_position)
+	var honked: bool = main.get("_popups").any(func(pu: Array) -> bool: return pu[0] == "HONK!")
+	_check("a corythosaurus honks and its herd bolts", honked and coryths.slice(0, 3).all(func(c: Prey) -> bool: return c.state == Prey.FLEE))
+	_check("...but not one too far away to hear", coryths[3].state != Prey.FLEE)
+	for c: Prey in compys + gallis + coryths:
+		c.queue_free()
+		main.creatures.erase(c)
+
 	# the danger clock: the longer you stay, the sooner and more things come, and the herds stop coming
 	var lvl0: int = main.level
 	main.area_t = 0.0
@@ -472,7 +507,7 @@ func _run() -> void:
 		for kind: int in Area.GUARANTEED:
 			if not ar.herds.any(func(hd: Array) -> bool: return hd[2] == kind and hd[0] < ar.width * 0.65):
 				all_have = false
-	_check("every area has an ankylosaurus early on", all_have)
+	_check("every area has each newer kind early on (ankylosaurus, compys, gallimimus, corythosaurus)", all_have)
 
 	# areas: the same run seed builds the same area, another seed a different one
 	var a1 := Area.new()
