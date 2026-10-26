@@ -112,6 +112,8 @@ var _warned := 0
 var _cam_lead := 0.0
 var _slow_t := 0.0
 var _zoom_punch := 0.0
+## The camera's zoom on top of ZOOM (1 = as always). For the evolve zoom-out (a mock-up so far: tests/video_evolve.gd).
+var zoom_mult := 1.0
 ## Popups waiting their turn: [seconds left, the popup].
 var _pending: Array = []
 var _choices := 0
@@ -510,13 +512,14 @@ func _process(delta: float) -> void:
 	_shake *= exp(-9.0 * delta)
 	# looks a little ahead of where you face
 	_cam_lead = lerpf(_cam_lead, player.facing * 22.0, minf(1.0, delta * 2.0))
-	var half_w := VIEW.x * 0.5 / ZOOM
+	var zoom := ZOOM * zoom_mult
+	var half_w := VIEW.x * 0.5 / zoom
 	cam.position = Vector2(clampf(player.position.x + _cam_lead, half_w, world_w - half_w),
-			GROUND_Y + GROUND_FROM_BOTTOM - VIEW.y * 0.5 / ZOOM)
+			GROUND_Y + GROUND_FROM_BOTTOM - VIEW.y * 0.5 / zoom)
 	cam.offset = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * _shake * 5.0
 	# the camera punches in on a kill and eases back out
 	_zoom_punch = lerpf(_zoom_punch, 0.0, minf(1.0, delta * 3.0))
-	cam.zoom = Vector2.ONE * ZOOM * (1.0 + _zoom_punch)
+	cam.zoom = Vector2.ONE * zoom * (1.0 + _zoom_punch)
 	for pu in _popups:
 		pu[2] -= delta
 		pu[1].y -= delta * 14.0
