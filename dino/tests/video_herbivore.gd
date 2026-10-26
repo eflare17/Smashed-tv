@@ -88,6 +88,7 @@ func _run() -> void:
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	await _frames(3)
+	main.auto_zoom = false
 	main.set("_hunt_t", 99999.0)
 	main.set("_herd_t", 99999.0)
 	for c in main.creatures.duplicate():

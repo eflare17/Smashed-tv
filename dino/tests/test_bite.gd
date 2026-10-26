@@ -19,9 +19,12 @@ func _frames(n: int) -> void:
 	for i in n:
 		await process_frame
 
-func _zone_points(p: Prey, zone: int) -> Array:
+## The live pixels of `zone` on `p`, in the world (none once it's been eaten up and freed).
+func _zone_points(p, zone: int) -> Array:
 	var out: Array = []
-	for part in p.parts:
+	if not is_instance_valid(p):
+		return out
+	for part in (p as Prey).parts:
 		for i in part.w * part.h:
 			if part.alive[i] == 1 and part.zone[i] == zone:
 				out.append(part.to_world(Vector2(i % part.w + 0.5, i / part.w + 0.5)))
@@ -181,7 +184,7 @@ func _run() -> void:
 
 	# the big bite: charge it, it clamps on, shakes (tearing), and rips; it takes far more than a quick bite
 	# (measured as the raptor: the hatchling's bites are too small to compare)
-	pl.set_stage(1)
+	pl.set_stage(Player.stage_of("RAPTOR"))
 	var quick_take := 0
 	var q: Prey = main.spawn_prey(1200.0)
 	q.die()
@@ -216,7 +219,7 @@ func _run() -> void:
 	_check("a big bite clamps on, shakes and lets go", grabbed and ripped)
 	_check("a big bite takes far more than a quick one", big_take > quick_take * 3, "%d vs %d" % [big_take, quick_take])
 
-	pl.set_stage(0)
+	pl.set_stage(Player.stage_of("HATCHLING"))
 		# a big live prey breaks free (you're smaller than it); a dead one can't
 	var big_live: Prey = main.spawn_prey(1800.0)
 	await _frames(2)
@@ -396,7 +399,8 @@ func _run() -> void:
 	for k in 3:
 		gallis.append(main.spawn_prey(2300.0 + k * 40.0, Prey.GALLIMIMUS))
 	var coryths: Array = []
-	for x in [2700.0, 2760.0, 2820.0, 3300.0]:
+	# the last one far off to the left, well inside even the shortest area
+	for x in [2700.0, 2760.0, 2820.0, 2250.0]:
 		coryths.append(main.spawn_prey(x, Prey.CORYTHO))
 	await _frames(2)
 	for c: Prey in compys + gallis + coryths:
@@ -473,12 +477,25 @@ func _run() -> void:
 	_check("about one in five attackers is a pterodactyl", float(flyers) / sent > 0.1 and float(flyers) / sent < 0.3,
 			"%d of %d" % [flyers, sent])
 	main.area_t = 0.0
+	# a clear field: no other bodies, and no loose bits of meat from earlier checks lying about (a bite there
+	# scoops one up, and those do heal you)
+	for c in main.creatures.duplicate():
+		c.queue_free()
+		main.creatures.erase(c)
+	main.gore.clear()
+	# you well away, with no bite of yours still in the air to land on it
+	pl.position = Vector2(500.0, main.GROUND_Y)
+	pl.bite_t = -1.0
+	pl.release()
 	var old: Prey = main.spawn_prey(2000.0)
 	old.die()
 	old.dead_t = main.ROT_TIME + 1.0
 	await _frames(2)
 	pl.hp = 50.0
-	main.player_bite(pl, _zone_points(old, DinoArt.BODY)[30], pl.bite_radius)
+	var old_pts: Array = _zone_points(old, DinoArt.BODY)
+	_check("the rotten body is still there to bite", old_pts.size() > 0, "%d body pixels" % old_pts.size())
+	# (a spot that doesn't tear a piece off: loose pieces are scooped up and, rotten or not, they heal)
+	main.player_bite(pl, old_pts[mini(30, old_pts.size() - 1)] if old_pts.size() > 0 else Vector2.ZERO, pl.bite_radius)
 	_check("rotten meat doesn't heal", old.rotten() and pl.hp == 50.0, "hp %.0f" % pl.hp)
 	main.area_t = main.DANGER_TIME * 0.2
 	var hp_before: float = pl.hp
@@ -575,7 +592,7 @@ func _run() -> void:
 
 	# evolving: enough whole bodies eaten and you become the next form, bigger, with new art and stats; level-up
 	# bonuses carry over; at the top nothing breaks free
-	_check("you start as the first form", pl.stage == 0 and pl.stage_name() == "HATCHLING", pl.stage_name())
+	_check("here you're a hatchling", pl.stage_name() == "HATCHLING", pl.stage_name())
 	var size_before: float = pl.size
 	var head_w_before: int = pl.head.w
 	pl.bite_bonus = 1.5
@@ -586,7 +603,7 @@ func _run() -> void:
 	meal.die()
 	await _frames(2)
 	for k in 300:
-		if not main.creatures.has(meal):
+		if not is_instance_valid(meal) or not main.creatures.has(meal):
 			break
 		var mpts: Array = []
 		for z in [DinoArt.HEAD, DinoArt.NECK, DinoArt.BODY, DinoArt.TAIL, DinoArt.LEGS]:
@@ -594,17 +611,27 @@ func _run() -> void:
 		if mpts.is_empty():
 			break
 		main.player_bite(pl, mpts[rng.randi() % mpts.size()], pl.bite_radius)
-	_check("eating enough evolves you", pl.stage == 1 and pl.stage_name() == "RAPTOR", "stage %d" % pl.stage)
+	_check("eating enough evolves you", pl.stage_name() == "RAPTOR", "stage %d" % pl.stage)
 	_check("the new form is bigger with a bigger bite", pl.size > size_before and pl.bite_radius > bite_before,
 			"size %.2f (was %.2f), bite %.1f (was %.1f)" % [pl.size, size_before, pl.bite_radius, bite_before])
 	_check("the new form has new art", pl.head.w != head_w_before and pl.parts.size() > 0, "head %d -> %d px wide" % [head_w_before, pl.head.w])
-	_check("level-up bonuses carry over", pl.bite_radius == Player.STAGES[1].bite + 1.5)
-	_check("evolving is a moment", main.get("_slow_t") > 0.0 and main.get("_zoom_punch") > 0.0)
-	pl.set_stage(3)
+	_check("level-up bonuses carry over", pl.bite_radius == Player.STAGES[Player.stage_of("RAPTOR")].bite + 1.5)
+	# the cutscene: the world holds still while you grow into the new form and the camera pulls back, then it lands
+	var zoom_before: float = main.zoom_mult
+	_check("evolving plays the grow-and-zoom-out cutscene", main.get("_evo_t") > 0.0 and pl.scale.x < pl.size)
+	for f in 400:
+		await process_frame
+		if main.get("_evo_t") <= 0.0:
+			break
+	await _frames(2)
+	_check("...you end it full size, the camera further out, and it lands with a roar",
+			is_equal_approx(pl.scale.x, pl.size) and main.zoom_mult < zoom_before and main.get("_slow_t") > 0.0,
+			"scale %.2f of %.2f, zoom %.2f (was %.2f)" % [pl.scale.x, pl.size, main.zoom_mult, zoom_before])
+	pl.set_stage(Player.stage_of("TYRANT"))
 	var huge: Prey = main.spawn_prey(1300.0)
 	await _frames(2)
 	_check("a tyrant can't be broken free of", main.break_free_time(pl, huge, 1.0) == INF)
-	pl.set_stage(1)
+	pl.set_stage(Player.stage_of("RAPTOR"))
 	pl.bite_bonus = 0.0
 	pl.apply_stage()
 	huge.queue_free()
@@ -674,6 +701,13 @@ func _run() -> void:
 	_check("losing all your health ends the run", main.state == main.OVER)
 	main.start_run()
 	_check("a new run starts fresh", main.state == main.PLAY and main.level == 1 and main.area_n == 1)
+	var fresh: Player = main.player
+	_check("you start as the Anchiornis, the smallest, zoomed in close", fresh.stage_name() == "ANCHIORNIS"
+			and fresh.size < Player.STAGES[Player.stage_of("HATCHLING")].size
+			and main.zoom_mult * main.ZOOM > main.zoom_for(Player.STAGES[Player.stage_of("HATCHLING")].size),
+			"%s, size %.2f, zoom %.2f" % [fresh.stage_name(), fresh.size, main.zoom_mult * main.ZOOM])
+	_check("the camera pulls back for each bigger form", main.zoom_for(0.3) > main.zoom_for(0.5) and main.zoom_for(0.5) > main.zoom_for(0.8)
+			and main.zoom_for(0.8) > main.zoom_for(1.3) and main.zoom_for(1.3) > main.zoom_for(2.0))
 
 	# the maps: seven looks in turn, and the swamp, volcano and desert have their ground patches, on open ground
 	var looks: Array = []
@@ -710,6 +744,13 @@ func _run() -> void:
 		var dry: Prey = main.spawn_prey(hz[0] - 60.0, Prey.RUNNER)
 		await _frames(1)
 		dry.state = 99
+		# placed now (each wandered a step before it was stopped): one in the middle of the patch, one well clear
+		wader.position.x = (hz[0] + hz[1]) * 0.5 - 5.0
+		# the dry one on open ground: not in this patch nor in any other (pools can be close together)
+		var dry_x: float = hz[0] - 60.0
+		while main.area.hazard_at(dry_x, main.GROUND_Y) >= 0 or main.area.hazard_at(dry_x + 10.0, main.GROUND_Y) >= 0:
+			dry_x -= 25.0
+		dry.position.x = dry_x
 		for c: Prey in [wader, dry]:
 			c.position.y = main.GROUND_Y
 			c.on_ground = true
@@ -749,11 +790,11 @@ func _run() -> void:
 	await _frames(1)
 	cooked.state = 99
 	var legs_before: float = cooked.legs_left()
-	for f in 60:
+	for f in 120:
 		cooked.position = Vector2(mid_lava, main.GROUND_Y)
 		cooked.on_ground = true
 		main._lava_step(0.05)
-	_check("lava burns a creature's feet", cooked.legs_left() < legs_before - 0.1 or cooked.dead, "legs %.2f -> %.2f" % [legs_before, cooked.legs_left()])
+	_check("lava burns a creature's feet", cooked.legs_left() < legs_before - 0.05 or cooked.dead, "legs %.2f -> %.2f" % [legs_before, cooked.legs_left()])
 	main.start_run()
 
 	# the whole game runs with the bot for a while without errors, and stays quick

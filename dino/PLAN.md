@@ -383,3 +383,31 @@ Not picked (not done): Snowy forest, "night: hard to see", any new dinosaurs, th
 - All three are guaranteed early in every area (with the ankylosaurus), arrive as groups when herds come later,
   and the mix is now runners 18, compys 12, grazers 16, gallimimus 12, corythosaurus 12, chargers 12,
   ankylosaurus 18 (out of 100). All PLACEHOLDER numbers. Four new tests.
+
+## The Anchiornis start, the camera that follows your size, the evolve cutscene (owner, 26 Oct)
+
+Decided along the way (talked through, with mock-up videos in `tests/video_*.gd`):
+- **Carnivores first.** A herbivore tree was talked through and mocked up (`tests/video_herbivore.gd`); the owner
+  found it "a little bit lame", so it's parked. If it comes back it should be built round chases, luring hunters
+  into trouble, and brutal weapons (gore, club, stomp) that tear pixels, not hiding.
+- **A tree of meat-eaters to come** (planned, not built): smallest to biggest with branches, unlocked by reaching
+  them, picked at each evolve. A list of 50 real dinosaurs smallest to largest was drawn (`dino-overnight/lineups`);
+  about 30 to keep in the world, ~16 playable. **Fact cards** (owner's idea): the real name, length, height, weight,
+  diet, when and where it lived and one fun fact, shown when you evolve or on the dinosaur screen.
+- Also talked through, not built: fewer but tougher hunters (hit and run), stamina and sprint, a hazard per map
+  that ramps up, starting bigger dinosaurs further into the game, sneaking up on prey, a boss at each exit.
+
+Built:
+- **The Anchiornis is the first form** (art from Gemini, `art/raw/anchiornis_sheet.jpg`): size 0.32, 100 speed, 2.4
+  bite, 40 health; it evolves into the hatchling after 2 bodies. The later evolves moved up by 2 (hatchling 6,
+  raptor 10, allosaur 16) so each form keeps its meals. Forms are looked up by name (`Player.stage_of`): the
+  shop's START AS RAPTOR still starts you as the raptor, and the "bigger forms draw harder attacks" bonus counts
+  from the hatchling, so nothing later hits harder than before.
+- **The camera follows your size**: zoom = 1.5 x (0.6 / size)^0.6 (Anchiornis 2.19, hatchling 1.67, raptor 1.26,
+  allosaur 0.94, tyrant 0.73), easing as you grow. The dirt strip under your feet stays the same height on screen,
+  and the ground is drawn deeper so the zoomed-out tyrant never sees past it.
+- **Evolving is a cutscene**: the world freezes, you grow into the new form over 1.8 s while the camera pulls back
+  (whoosh), then it lands with the roar, shake and banner as before.
+- All numbers PLACEHOLDERS. Tests updated to name forms; new checks for the Anchiornis start, the zoom and the
+  cutscene. `tests/video_anchiornis.gd` records the start of a run.
+- Known quirk (found by a test, 26 Oct): a piece torn off a ROTTEN body still heals you when it's scooped up (pieces don't remember they're rotten). Small; worth fixing.

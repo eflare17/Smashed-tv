@@ -222,7 +222,8 @@ func build(view: Vector2, ground_y: float) -> void:
 			_add_layer(_ridge(960, 90, 40.0, 0.03, palette[3]), 0.4, ground_y - 88)
 			_add_layer(_jungle(960, 70, palette[4]), 0.7, ground_y - 66)
 
-	var ground_img := Image.create(width, int(view.y - ground_y) + 4, false, Image.FORMAT_RGBA8)
+	# deep enough for the most zoomed-out camera (a tyrant) to never see past it
+	var ground_img := Image.create(width, int(view.y - ground_y) + 44, false, Image.FORMAT_RGBA8)
 	var n := FastNoiseLite.new()
 	n.seed = seed_value
 	n.frequency = 0.08

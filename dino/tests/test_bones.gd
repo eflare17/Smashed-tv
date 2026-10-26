@@ -83,7 +83,7 @@ func _run() -> void:
 	main.set("_herd_t", 99999.0)
 	_check("the tests never use your real save", main.bones.path == "")
 	var pl: Player = main.player
-	_check("with nothing bought you start as a plain hatchling", pl.stage == 0
+	_check("with nothing bought you start as a plain Anchiornis (the smallest)", pl.stage == 0 and pl.stage_name() == "ANCHIORNIS"
 			and is_equal_approx(pl.bite_radius, Player.STAGES[0].bite) and is_equal_approx(pl.max_hp, Player.STAGES[0].hp))
 
 	# dying pays the run's bones
@@ -129,10 +129,10 @@ func _run() -> void:
 	_check("NEXT RUN starts the next run", main.playing())
 	pl = main.player
 	_check("bought bite ranks are on the new run", is_equal_approx(pl.bite_radius,
-			Player.STAGES[1].bite + 3 * Bones.RANK_BITE), "%.2f" % pl.bite_radius)
+			Player.STAGES[Player.stage_of("RAPTOR")].bite + 3 * Bones.RANK_BITE), "%.2f" % pl.bite_radius)
 	_check("bought speed ranks are on the new run", is_equal_approx(pl.walk_speed,
-			Player.STAGES[1].speed * pow(Bones.RANK_SPEED, 2)), "%.1f" % pl.walk_speed)
-	_check("with the Raptor bought you start as a Raptor", pl.stage == 1 and pl.stage_name() == "RAPTOR")
+			Player.STAGES[Player.stage_of("RAPTOR")].speed * pow(Bones.RANK_SPEED, 2)), "%.1f" % pl.walk_speed)
+	_check("with the Raptor bought you start as a Raptor", pl.stage_name() == "RAPTOR")
 	_check("...at full health", is_equal_approx(pl.hp, pl.max_hp))
 	_check("...and starting as one isn't an evolve", main.evolves == 0)
 	main.call("_evolve")

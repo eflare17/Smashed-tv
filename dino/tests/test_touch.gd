@@ -98,6 +98,8 @@ func _run() -> void:
 	main.obstacles.clear()
 	main.platforms.clear()
 	var pl: Player = main.player
+	# these checks were made with the hatchling's reach (the tiny first form can't reach a runner's head from here)
+	pl.set_stage(Player.stage_of("HATCHLING"))
 	pl.position = Vector2(200.0, main.GROUND_Y)
 	await _frames(2)
 

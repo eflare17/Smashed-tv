@@ -16,14 +16,16 @@ enum { QUICK, BIG }
 ## the next, walk speed, seconds between bites, bite radius, health, and the whole bodies eaten to reach the
 ## next form. PLACEHOLDER names and numbers.
 const STAGES := [
-	{"name": "HATCHLING", "size": 0.5, "max_size": 0.75, "speed": 92.0, "cool": 0.34, "bite": 3.2, "hp": 60.0, "meals": 4},
-	{"name": "RAPTOR", "size": 0.8, "max_size": 1.15, "speed": 78.0, "cool": 0.42, "bite": 4.5, "hp": 100.0, "meals": 8},
-	{"name": "ALLOSAUR", "size": 1.3, "max_size": 1.7, "speed": 64.0, "cool": 0.5, "bite": 6.5, "hp": 170.0, "meals": 14},
+	# the smallest meat-eater, the first form (owner, 26 Oct): tiny, quick, a little bite. PLACEHOLDER numbers.
+	{"name": "ANCHIORNIS", "size": 0.32, "max_size": 0.46, "speed": 100.0, "cool": 0.3, "bite": 2.4, "hp": 40.0, "meals": 2},
+	{"name": "HATCHLING", "size": 0.5, "max_size": 0.75, "speed": 92.0, "cool": 0.34, "bite": 3.2, "hp": 60.0, "meals": 6},
+	{"name": "RAPTOR", "size": 0.8, "max_size": 1.15, "speed": 78.0, "cool": 0.42, "bite": 4.5, "hp": 100.0, "meals": 10},
+	{"name": "ALLOSAUR", "size": 1.3, "max_size": 1.7, "speed": 64.0, "cool": 0.5, "bite": 6.5, "hp": 170.0, "meals": 16},
 	{"name": "TYRANT", "size": 2.0, "max_size": 2.5, "speed": 54.0, "cool": 0.6, "bite": 9.0, "hp": 280.0, "meals": 99999},
 ]
 var stage := 0
 ## The imported sprites for each form (art/<name>_*.png), with DinoArt's placeholders as the fallback.
-const FORM_ART := ["hatchling", "raptor", "allosaur", "tyrant"]
+const FORM_ART := ["anchiornis", "hatchling", "raptor", "allosaur", "tyrant"]
 
 ## The stats (the form's, plus what levelling up has added: main.gd's UPGRADES). apply_stage() sets them.
 var bite_radius := 4.5
@@ -103,7 +105,8 @@ func set_stage(s: int) -> void:
 		_mouth.get_parent().remove_child(_mouth)
 	clear_rig()
 	var art := ArtLoader.rig(FORM_ART[s])
-	build(art if not art.is_empty() else DinoArt.form(s))
+	# the code-drawn placeholders only go back as far as the hatchling
+	build(art if not art.is_empty() else DinoArt.form(maxi(0, s - 1)))
 	_head_base = head.position
 	for part in parts:
 		part.carvable = false
@@ -422,3 +425,10 @@ func _pose_head(delta: float) -> void:
 ## Where the neck meets the head (at rest): the head reaches from here.
 func neck() -> Vector2:
 	return (head.get_parent() as Node2D).to_global(_head_base)
+
+## The form called `form_name` (as STAGES names it), or -1.
+static func stage_of(form_name: String) -> int:
+	for s in STAGES.size():
+		if STAGES[s].name == form_name:
+			return s
+	return -1

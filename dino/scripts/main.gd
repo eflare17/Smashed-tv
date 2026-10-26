@@ -20,6 +20,12 @@ const VIEW := Vector2(480, 270)
 const ZOOM := 1.5
 ## The camera sits so the ground is this far up from the bottom of the screen.
 const GROUND_FROM_BOTTOM := 30.0
+## The camera zoom for a dinosaur of size `s` is ZOOM * (ZOOM_REF / s)^ZOOM_POW: the camera makes up most of your
+## growth, not all of it, so you still get a little bigger on screen. PLACEHOLDER numbers.
+const ZOOM_REF := 0.6
+const ZOOM_POW := 0.6
+## How long the evolve cutscene takes (you grow, the camera pulls back).
+const EVOLVE_TIME := 1.8
 const GROUND_Y := 226.0
 const MAX_CORPSES := 4
 ## A dead body with less than this much of itself left counts as eaten; eating one grows you by GROW.
@@ -112,8 +118,15 @@ var _warned := 0
 var _cam_lead := 0.0
 var _slow_t := 0.0
 var _zoom_punch := 0.0
-## The camera's zoom on top of ZOOM (1 = as always). For the evolve zoom-out (a mock-up so far: tests/video_evolve.gd).
+## The camera's zoom on top of ZOOM. It follows your size (auto_zoom; the scripted videos turn that off and set it
+## themselves): in close on a tiny form, pulled back on a big one, so you stay about the same size on screen while
+## the world shrinks round you (owner's idea, 26 Oct).
 var zoom_mult := 1.0
+var auto_zoom := true
+## The evolve cutscene: seconds left, and the size you grow from and to.
+var _evo_t := 0.0
+var _evo_from := 0.0
+var _evo_to := 0.0
 ## Popups waiting their turn: [seconds left, the popup].
 var _pending: Array = []
 var _choices := 0
@@ -234,6 +247,8 @@ func enter_area(n: int) -> void:
 	cam.limit_left = 0
 	cam.limit_right = world_w
 	player.position = Vector2(40, GROUND_Y)
+	if auto_zoom:
+		zoom_mult = zoom_for(player.scale.x) / ZOOM
 	player.vel = Vector2.ZERO
 	for h: Array in area.herds:
 		for k in h[1]:
@@ -487,6 +502,14 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
 	_frame += 1
 	hud.tick(delta)
+	# the evolve cutscene: the world holds still while you grow into the new form
+	if _evo_t > 0.0:
+		_evo_t -= delta
+		var k := clampf(1.0 - _evo_t / EVOLVE_TIME, 0.0, 1.0)
+		player.scale = Vector2.ONE * lerpf(_evo_from, _evo_to, k * k * (3.0 - 2.0 * k))
+		_stop = maxf(_stop, 0.05)
+		if _evo_t <= 0.0:
+			_evolve_landed()
 	var sim := delta
 	if _stop > 0.0:
 		_stop -= delta
@@ -512,10 +535,14 @@ func _process(delta: float) -> void:
 	_shake *= exp(-9.0 * delta)
 	# looks a little ahead of where you face
 	_cam_lead = lerpf(_cam_lead, player.facing * 22.0, minf(1.0, delta * 2.0))
+	if auto_zoom:
+		var want := zoom_for(player.scale.x) / ZOOM
+		zoom_mult = lerpf(zoom_mult, want, minf(1.0, delta * (10.0 if _evo_t > 0.0 else 2.0)))
 	var zoom := ZOOM * zoom_mult
 	var half_w := VIEW.x * 0.5 / zoom
+	# the strip of dirt under your feet stays the same height on screen at any zoom
 	cam.position = Vector2(clampf(player.position.x + _cam_lead, half_w, world_w - half_w),
-			GROUND_Y + GROUND_FROM_BOTTOM - VIEW.y * 0.5 / zoom)
+			GROUND_Y + GROUND_FROM_BOTTOM * ZOOM / zoom - VIEW.y * 0.5 / zoom)
 	cam.offset = Vector2(rng.randf_range(-1, 1), rng.randf_range(-1, 1)) * _shake * 5.0
 	# the camera punches in on a kill and eases back out
 	_zoom_punch = lerpf(_zoom_punch, 0.0, minf(1.0, delta * 3.0))
@@ -808,7 +835,9 @@ func broke_free(who: Player, prey: Prey) -> void:
 ## Something's teeth, claws or horns reached you (a hunter, a pterodactyl, a charger): you lose `amount` health.
 func creature_hit(h: Prey, amount: float) -> void:
 	# bigger forms draw harder attacks: the late game is about not getting mobbed
-	if state != PLAY or not player.hurt(amount * danger_mult() * (1.0 + player.stage * 0.15), h.global_position):
+	# (counted from the hatchling: the tiny first form doesn't change what the rest draw)
+	var bigger := maxi(0, player.stage - Player.stage_of("HATCHLING"))
+	if state != PLAY or not player.hurt(amount * danger_mult() * (1.0 + bigger * 0.15), h.global_position):
 		return
 	hud.hurt()
 	sfx.play("crunch", 0.1, 2.0)
@@ -912,8 +941,24 @@ func _finish(who: Player, pr: Prey) -> Array:
 ## roar, a shake and a banner. Level-up bonuses carry over; health fills to the new maximum.
 func _evolve() -> void:
 	evolves += 1
+	# the cutscene: the world freezes and you grow into the new form while the camera pulls back (_process), then
+	# it lands with the roar (_evolve_landed)
+	_evo_from = player.scale.x
 	player.set_stage(player.stage + 1)
 	player.hp = player.max_hp
+	_evo_to = player.size
+	player.scale = Vector2.ONE * _evo_from
+	_evo_t = EVOLVE_TIME
+	hud.flash(Color(1, 1, 1), 0.5)
+	sfx.play("whoosh", 0.0, 4.0)
+
+## The camera zoom for a dinosaur of size `s` (see ZOOM_REF).
+func zoom_for(s: float) -> float:
+	return ZOOM * pow(ZOOM_REF / maxf(0.05, s), ZOOM_POW)
+
+## The end of the evolve cutscene: the new form lands with a roar, a shake and the banner.
+func _evolve_landed() -> void:
+	player.scale = Vector2.ONE * _evo_to
 	_stop = 0.25
 	_slow_t = KILL_SLOW_TIME
 	_zoom_punch = 0.22

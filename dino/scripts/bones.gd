@@ -102,7 +102,7 @@ func buy(i: int) -> bool:
 ## Puts the bought ranks on a fresh player (and makes it a Raptor if that's unlocked), full health.
 func apply(p: Player) -> void:
 	if raptor:
-		p.set_stage(1)
+		p.set_stage(Player.stage_of("RAPTOR"))
 	p.bite_bonus += RANK_BITE * ranks[0]
 	p.speed_mult *= pow(RANK_SPEED, ranks[1])
 	p.cool_mult *= pow(RANK_RATE, ranks[2])
