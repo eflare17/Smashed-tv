@@ -1695,7 +1695,7 @@ func _physics_process(dt: float) -> void:
 		player.velocity = Vector3.ZERO
 		player.global_position = house.lie_spot(lying)
 		dir = Vector3.ZERO
-	if games.seated > 0 or mine.active:
+	if games.seated > 0 or mine.active or (stkilda and stkilda.riding()):
 		player.velocity = Vector3.ZERO
 		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
@@ -1709,7 +1709,7 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	if lying <= 0 and games.seated == 0 and not mine.active:
+	if lying <= 0 and games.seated == 0 and not mine.active and not (stkilda and stkilda.riding()):
 		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
