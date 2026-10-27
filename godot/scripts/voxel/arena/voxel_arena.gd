@@ -171,6 +171,8 @@ var _hand_id := "-"             # top-down: what Jared's hand holds now
 var _hands := []                # top-down: the BoneAttachment3Ds holding it
 var _hud_layer: CanvasLayer
 var net_menu: VoxelNetMenu      # the online menu (O)
+var stkilda: VoxelStKilda        # St Kilda (Luna Park), down the phone's Travel (scripts/voxel/stkilda)
+var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
 var _dash_t := 0.0
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
@@ -297,6 +299,12 @@ func _ready() -> void:
 	net_menu = VoxelNetMenu.new()
 	add_child(net_menu)
 	net_menu.setup(self)
+	stkilda = VoxelStKilda.new()
+	add_child(stkilda)
+	stkilda.setup(self)
+	phone = VoxelPhone.new()
+	_hud_layer.add_child(phone)
+	phone.setup(self, stkilda)
 	waves.on = false                # (the test set-ups below: one at a time; the real game's chosen at the end)
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
@@ -335,6 +343,12 @@ func _ready() -> void:
 			net.host(String(_opts.host), via, String(_opts.get("server", "")), _opts.has("local"))
 		else:
 			net.join(String(_opts.join), via, String(_opts.get("server", "")), _opts.has("local"))
+	if _opts.has("stkilda"):         # (tests, pictures: --stkilda straight there, =dx,dz,yaw to stand elsewhere; --phone the phone out)
+		stkilda.go()
+		if String(_opts.stkilda) != "1":
+			stkilda.stand(String(_opts.stkilda))
+	if _opts.has("phone"):
+		phone.open()
 	print("VoxelArena: ready (renderer ", RenderingServer.get_current_rendering_method(), ")")
 
 func _cube_m(key: String) -> float:
@@ -491,7 +505,7 @@ func _hud() -> void:
 	hud.add_theme_constant_override("outline_size", 5)
 	cl.add_child(hud)
 	help = Label.new()
-	help.text = "? WHAT CAN I DO   Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   F12 waves/one at a time   Esc mouse"
+	help.text = "? WHAT CAN I DO   Tab backpack   E open a chest (or the vacuum)   6 dig (yard)   1-5 weapon groups (again: next in it) or wheel   Q last   R reload   F quick sword slash   WASD move   mouse look   Shift run   Space jump   V view   P phone   F1 shadows   F2 cube size   F3 +10 enemies   F4 freeze   F5 big wave   F6 can't die   F12 waves/one at a time   Esc mouse"
 	help.add_theme_font_size_override("font_size", 14)
 	help.add_theme_color_override("font_outline_color", Color.BLACK)
 	help.add_theme_constant_override("outline_size", 4)
@@ -1276,7 +1290,7 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 # ---------------------------------------------------------------- input
 
 func _unhandled_input(e: InputEvent) -> void:
-	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()):
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or (phone and phone.is_open()):
 		return                  # (the online menu, the settings have the keys and the mouse)
 	if mine and mine.active:
 		return                  # (down the mine: VoxelMine has the keys)
@@ -1663,7 +1677,7 @@ func _physics_process(dt: float) -> void:
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
-	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()):
+	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or (phone and phone.is_open()):
 		iv = Vector2.ZERO           # (typing a room code isn't walking)
 	var sp := 7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5
 	var dir := Vector3.ZERO
@@ -1964,8 +1978,8 @@ func _process(dt: float) -> void:
 		bodies.remove_at(old)
 		dead -= 1
 	var t3 := Time.get_ticks_usec()
-	waves.step(dt, not guest and settings_menu._bench.is_empty())     # (not mid-benchmark: its fight isn't a wave)
-	if not guest and not waves.on and not bodies.any(func(x): return x.alive):
+	waves.step(dt, not guest and settings_menu._bench.is_empty() and not stkilda.active)     # (not mid-benchmark: its fight isn't a wave; nor while you're in St Kilda)
+	if not guest and not waves.on and not stkilda.active and not bodies.any(func(x): return x.alive):
 		_next_t += dt
 		if _next_t >= 1.5:
 			_next_t = 0.0
@@ -2083,7 +2097,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active:
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.active):
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -2232,7 +2246,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active     # (in bed, dialling a padlock, on the couch, a game case in your hands: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.active)     # (in bed, dialling a padlock, on the couch, a game case in your hands, in St Kilda: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]
