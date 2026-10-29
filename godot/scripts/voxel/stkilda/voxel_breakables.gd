@@ -344,6 +344,8 @@ class Building:
 		for c in touched:
 			_column(c)
 		_draw()
+		if owner.sk.nav:
+			owner.sk.nav.changed()         # (a way through, maybe: the walking map made again)
 
 	## The roof tiles within r of p.
 	func roof_blast(p: Vector3, r: float) -> void:

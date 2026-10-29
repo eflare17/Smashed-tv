@@ -1746,11 +1746,12 @@ func _physics_process(dt: float) -> void:
 		b.react_step(dt)
 		var ice := b.frozen()                       # frozen solid: a statue till it thaws or shatters
 		var panic := b.panic_t > 0.0 and not ice    # on fire: running about, flailing, not fighting
-		var can := not frozen and not ice and b.stagger <= 0.0 and not b.floored()
+		var park := b.has_meta("park")             # (one of St Kilda's: along its walking map, not the arena's floor)
+		var can := (not frozen or park) and not ice and b.stagger <= 0.0 and not b.floored()
 		if can and panic:
 			mv = b.panic_dir * b.speed * 1.4 * b.move_factor()
 		elif can and d > stop:
-			mv = to / d * b.speed * b.move_factor()
+			mv = (stkilda.nav.way(b.get_instance_id(), b.position, pp, dt) if park else to / d) * b.speed * b.move_factor()
 		mv = kinds.step(b, pp, ti, to, d, mv, can and not panic and not everyone_down, dt)     # (the charger's, thrower's, shielder's own)
 		# keep apart
 		for j in range(maxi(0, i - 6), mini(bodies.size(), i + 7)):
@@ -1762,9 +1763,12 @@ func _physics_process(dt: float) -> void:
 			if dl < 0.8 and dl > 0.001:
 				mv += away / dl * (0.8 - dl) * 6.0
 		b.position += mv * dt
-		b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
-		b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
-		var out := out_of_pillars(b.position, 0.7 if b.key == "boss" else 0.35)
+		if park:
+			b.position = stkilda.nav.keep_on(b.position)
+		else:
+			b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
+			b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
+		var out := b.position if park else out_of_pillars(b.position, 0.7 if b.key == "boss" else 0.35)
 		if out != b.position and mv.length_squared() > 0.01:
 			# against a pillar: slide along its face, round toward the player
 			var push := out - b.position

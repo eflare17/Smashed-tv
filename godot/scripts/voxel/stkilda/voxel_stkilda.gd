@@ -33,6 +33,8 @@ var _help_text := ""
 var _arena_near := 0.05
 var day_night: SkDayNight
 var breaks: VoxelBreakables
+var nav: VoxelParkNav
+var _debris_bound := INF
 # (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
 # so nobody's knocked over)
 var driving := false
@@ -70,6 +72,9 @@ func build() -> void:
 	breaks = VoxelBreakables.new()
 	add_child(breaks)
 	breaks.setup(self, picked)
+	nav = VoxelParkNav.new()
+	add_child(nav)
+	nav.setup(self)
 	# its looks, as the St Kilda game (town_main) adds them
 	for nm in ["Carousel", "GhostTrain", "ArabianMerry", "MoonBalloons", "Spider", "SkyRider", "PowerSurge", "LunaPalace", "Supernova", "PharaohsCurse", "ConeyDrop", "SkLunaPark"]:
 		var ride := get_node_or_null(nm) as Node3D
@@ -123,6 +128,8 @@ func go() -> void:
 	_home_pitch = arena.look_pitch
 	_was_frozen = arena.frozen
 	_arena_near = arena.cam.near
+	_debris_bound = arena.debris.bound
+	arena.debris.bound = INF                    # (the arena's walls don't stop the cubes here)
 	arena.frozen = true
 	active = true
 	visible = true
@@ -144,12 +151,14 @@ func home() -> void:
 	if not active:
 		return
 	active = false
+	clear_park()
 	arena.frozen = _was_frozen
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
 	_we.environment = _arena_env
 	arena.sun.visible = true
 	arena.cam.near = _arena_near
+	arena.debris.bound = _debris_bound
 	arena.help.text = _help_text
 	_put(_home_at, _home_yaw, _home_pitch)
 	breaks.reset()                            # (smashed buildings built again for next time)
@@ -307,3 +316,22 @@ func _exit_tree() -> void:
 	walker.free()                          # (the crowd's stand-in: never in the scene)
 	if _rider and not _rider.is_inside_tree():
 		_rider.free()                      # (off the ride, the rider's out of the scene: freed by hand)
+
+# ================================================================ enemies in the park
+
+## An enemy of a kind standing at (or near: on the walking map) `at`, one of St Kilda's: it walks the park's paths
+## (VoxelParkNav), not the arena's floor. The walking map's made the first time.
+func spawn(key: String, at: Vector3) -> VoxelBody:
+	if not nav.ready_:
+		nav.bake()
+	var b := arena.spawn_kind(key, nav.spot_near(at))
+	b.set_meta("park", true)
+	return b
+
+## Every one of St Kilda's enemies gone (leaving, or a game over).
+func clear_park() -> void:
+	for b in arena.bodies.duplicate():
+		if b.has_meta("park"):
+			arena.bodies.erase(b)
+			nav.forget(b.get_instance_id())
+			b.queue_free()
