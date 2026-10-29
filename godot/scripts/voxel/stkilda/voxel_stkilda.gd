@@ -73,6 +73,7 @@ func build() -> void:
 	breaks = VoxelBreakables.new()
 	add_child(breaks)
 	breaks.setup(self, picked)
+	breaks.add_park()                         # (and Luna Park's own: the Ghost Train, Luna Palace, the shops)
 	nav = VoxelParkNav.new()
 	add_child(nav)
 	nav.setup(self)
