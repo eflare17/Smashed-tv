@@ -944,6 +944,8 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 	elif st.get("kind", "") == "sticky" and bool(st.get("on_body", false)):
 		push = -(st.n as Vector3)
 	var bl := blast(arena.bodies, p, get_world_3d().direct_space_state, ex, push)
+	if arena.stkilda and arena.stkilda.active:
+		arena.stkilda.breaks.blast(p, BLAST_R)          # (St Kilda's buildings: a hole)
 	arena.hurt_players_near(p, BLAST_R, 50.0)          # (yourself and your mate too, if you're close)
 	var info := {"boom": how, "shot": String(st.get("kind", "")), "flew_s": snappedf(float(st.get("t", 0.0)), 0.01),
 		"bounces": int(st.get("bounces", 0)), "bodies": 0, "cut": 0, "torn": 0, "pieces": 0, "killed": 0, "shattered": 0,

@@ -16,9 +16,11 @@ const ITEMS := {
 	"stone": {"name": "Stone", "col": Color8(128, 126, 122), "stack": 9999, "desc": "Broken out with the pick. The tool bench wants it."},
 	"gold": {"name": "Gold nugget", "col": Color8(236, 190, 56), "stack": 999, "desc": "From the gold ore deep down. For a silly golden shovel."},
 	"worm": {"name": "Worm", "col": Color8(214, 120, 128), "stack": 99, "desc": "Wriggly. Found digging the dirt; for a worm farm one day."},
+	"brick": {"name": "Brick", "col": Color8(181, 103, 76), "stack": 9999, "desc": "Bits of St Kilda's buildings. Smashed off them."},
 }
 
 static var _by_col := {}
+static var brick_cols := {}     # St Kilda's buildings' colours (VoxelBreakables: rgba32 -> true): their cubes are Brick
 static var EXTRA := {}          # the farm's, the chickens', the shredder's (their items()), made the first time asked
 
 static func _extra() -> Dictionary:
@@ -45,6 +47,8 @@ static func of_colour(col: Color) -> String:
 		for id in ex:
 			for c in ex[id].get("cubes", []):
 				_by_col[(c as Color).to_rgba32()] = id
+	if brick_cols.has(col.to_rgba32()):
+		return "brick"
 	return _by_col.get(col.to_rgba32(), "blocks")
 
 ## Made of cubes (what the vacuum takes): dropped, it falls as its cubes. The rest (a padlock) can't be dropped.

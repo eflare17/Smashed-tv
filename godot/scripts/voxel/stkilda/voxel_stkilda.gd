@@ -2,15 +2,16 @@ class_name VoxelStKilda
 extends Node3D
 ## St Kilda (the owner, 27 Oct: St Kilda as a map in the voxel game, step 1): a slice of the St Kilda game's map,
 ## Luna Park and the 50 m round it (its wall, Mr Moon's face entrance and forecourt, a bit of the Esplanade), to
-## walk round. No fighting there yet. You get there and back on the phone (P: VoxelPhone's Travel).
+## walk round, its buildings to smash (VoxelBreakables, 29 Oct: your weapons work here). You get there and back on
+## the phone (P: VoxelPhone's Travel).
 ##
 ## It's the St Kilda game's own code (scripts/voxel/stkilda/map, copied across by tools/stkilda_sync.sh, every class
 ## with "Sk" in front), built the first time you go, in the arena's own world but 3 km east of it (the copy's map is
 ## moved there: tools/stkilda_cut.gd), so it's the same player, view (V) and keys. Its looks come too: the old wood
 ## coaster, the ground, the soft shade, the crowd, the flags, and N for night. Not the St Kilda game's own play (its
-## people, the ute, knocking the crowd over). While you're there the arena waits for you (its enemies stood still, no new waves,
-## your weapons put away), and the St Kilda sky and sun take over. Where you are isn't saved: start the game again
-## and you're home.
+## people, the ute, knocking the crowd over). While you're there the arena waits for you (its enemies stood still, no
+## new waves), your weapons are put away while you ride the coaster, and the St Kilda sky and sun take over. Where
+## you are isn't saved: start the game again and you're home.
 
 const START_BACK := 18.0                     # you arrive this far out from Mr Moon's face, facing his mouth
 const WALL_H := 6.0                          # the slice's edge: an invisible wall this tall
@@ -31,6 +32,7 @@ var _we: WorldEnvironment                    # the arena's
 var _help_text := ""
 var _arena_near := 0.05
 var day_night: SkDayNight
+var breaks: VoxelBreakables
 # (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
 # so nobody's knocked over)
 var driving := false
@@ -62,8 +64,12 @@ func build() -> void:
 			town.skip[id] = true
 	var slice: Array = town.data.get("slice", [])
 	var box := Rect2(Vector2(slice[0], slice[1]), Vector2(slice[2] - slice[0], slice[3] - slice[1]))
+	var picked := VoxelBreakables.pick(town, box)     # (the buildings you can smash: the town leaves them to us)
 	town.build(self, [[luna, SkLunaPark.CLEAR]])
 	SkLunaPark.build(self, town)
+	breaks = VoxelBreakables.new()
+	add_child(breaks)
+	breaks.setup(self, picked)
 	# its looks, as the St Kilda game (town_main) adds them
 	for nm in ["Carousel", "GhostTrain", "ArabianMerry", "MoonBalloons", "Spider", "SkyRider", "PowerSurge", "LunaPalace", "Supernova", "PharaohsCurse", "ConeyDrop", "SkLunaPark"]:
 		var ride := get_node_or_null(nm) as Node3D
@@ -124,11 +130,10 @@ func go() -> void:
 	_arena_env = _we.environment
 	_we.environment = env
 	arena.sun.visible = false
-	arena.bar.visible = false                  # (no weapons here yet)
 	arena.cam.near = NEAR
 	sun.visible = true
 	_help_text = arena.help.text
-	arena.help.text = "P phone (travel home)   WASD walk   mouse look   Shift run   Space jump   V view   N night   Esc mouse"
+	arena.help.text = "P phone (travel home)   shoot the buildings   WASD walk   mouse look   Shift run   Space jump   V view   N night   1-5 weapons   Esc mouse"
 	var s := arrive_spot()
 	_put(s[0], s[1], 0.0)
 
@@ -144,10 +149,10 @@ func home() -> void:
 	process_mode = Node.PROCESS_MODE_DISABLED
 	_we.environment = _arena_env
 	arena.sun.visible = true
-	arena.bar.visible = true
 	arena.cam.near = _arena_near
 	arena.help.text = _help_text
 	_put(_home_at, _home_yaw, _home_pitch)
+	breaks.reset()                            # (smashed buildings built again for next time)
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:
 	arena.player.global_position = at

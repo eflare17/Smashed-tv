@@ -2097,7 +2097,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.active):
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.riding()):
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -2246,7 +2246,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.active)     # (in bed, dialling a padlock, on the couch, a game case in your hands, in St Kilda: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.riding())     # (in bed, dialling a padlock, on the couch, a game case in your hands, on St Kilda's coaster: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]
@@ -2330,6 +2330,8 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			# sparks off the wall or floor
 			flames.emit(end, 3, (wh.normal as Vector3) * 2.0, 0.8, 0.18)
 			sound.play("hit_world", end, -4.0)
+			if stkilda and stkilda.active:
+				stkilda.breaks.shot(wh, d)          # (a St Kilda building: a block knocked out)
 		_tracer_list.append({"a": muzzle, "b": end, "t": 0.06})
 		if best_b:
 			var rr := r
