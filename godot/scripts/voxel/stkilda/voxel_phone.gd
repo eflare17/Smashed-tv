@@ -1,13 +1,14 @@
 class_name VoxelPhone
 extends Control
 ## The phone (the owner, 27 Oct: "a phone-style menu pops up and you fast travel"): P gets it out, bottom right.
-## One app so far, Travel: Home (the arena), St Kilda (Luna Park, VoxelStKilda), or a game there (Kill 1, 2 come:
-## VoxelParkGame). Pick one (a click, or 1 / 2 / 3) and
+## One app so far, Travel: Home (the arena), St Kilda (Luna Park, VoxelStKilda), a game there (Kill 1, 2 come:
+## VoxelParkGame), or the gun range (VoxelGunRange). Pick one (a click, or its number) and
 ## the screen goes black a moment and you're there. P or Esc puts it away. Not while playing with a mate (yet).
 
 const W := 270.0
-const H := 560.0
-const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"]]
+const H := 600.0
+const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"],
+	["range", "Gun range", "Try every weapon"]]
 
 var arena: VoxelArena
 var stkilda: VoxelStKilda
@@ -49,7 +50,7 @@ func setup(a: VoxelArena, sk: VoxelStKilda) -> void:
 		var p: Array = PLACES[i]
 		var b := Button.new()
 		b.position = Vector2(16, y)
-		b.size = Vector2(W - 56, 92)
+		b.size = Vector2(W - 56, 78)
 		b.focus_mode = Control.FOCUS_NONE
 		b.add_theme_stylebox_override("normal", _box(Color("#f2f2f6"), 16))
 		b.add_theme_stylebox_override("hover", _box(Color("#ffffff"), 16, Color("#ffd54a"), 3))
@@ -57,11 +58,11 @@ func setup(a: VoxelArena, sk: VoxelStKilda) -> void:
 		b.add_theme_stylebox_override("disabled", _box(Color("#8792a8"), 16))
 		b.pressed.connect(travel.bind(String(p[0])))
 		screen.add_child(b)
-		_label(b, "%d  %s" % [i + 1, p[1]], 24, Vector2(16, 12), Color("#1a1c2c"))
-		var sub := _label(b, String(p[2]), 16, Vector2(42, 50), Color("#4a4f63"))
+		_label(b, "%d  %s" % [i + 1, p[1]], 24, Vector2(16, 8), Color("#1a1c2c"))
+		var sub := _label(b, String(p[2]), 16, Vector2(42, 44), Color("#4a4f63"))
 		sub.name = "Sub"
 		_buttons[p[0]] = b
-		y += 108.0
+		y += 88.0
 	_note = _label(screen, "", 14, Vector2(18, H - 28 - 80), Color(1.0, 0.85, 0.4))
 	_note.size = Vector2(W - 60, 40)
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -89,7 +90,11 @@ func is_open() -> bool:
 func open() -> void:
 	_open = true
 	get_node("Phone").visible = true
-	var here := "stkilda" if stkilda.active else "home"
+	var here := "home"
+	if stkilda.active:
+		here = "kill12" if stkilda.game and stkilda.game.running else "stkilda"
+	elif arena.gun_range.active:
+		here = "range"
 	var coop: bool = arena.net != null and arena.net.role != ""
 	for id in _buttons:
 		var b: Button = _buttons[id]
@@ -137,22 +142,28 @@ func travel(id: String) -> void:
 		return
 	_going = true
 	close()
-	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ..."}.get(id, "Heading home ...")
+	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "range": "To the gun range ..."}.get(id, "Heading home ...")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
 	await tw.finished
 	await get_tree().process_frame               # (the black drawn before the build stalls a frame)
 	await get_tree().process_frame
-	if id == "stkilda":
-		if stkilda.active:
-			stkilda.game.stop()
-		stkilda.go()
-	elif id == "kill12":
-		stkilda.go()
-		stkilda.game.start()
-	else:
-		stkilda.home()
+	if id != "range":
+		arena.gun_range.home()                 # (off the range first: back where you were in the arena)
+	match id:
+		"stkilda":
+			if stkilda.active:
+				stkilda.game.stop()
+			stkilda.go()
+		"kill12":
+			stkilda.go()
+			stkilda.game.start()
+		"range":
+			stkilda.home()
+			arena.gun_range.go()
+		_:
+			stkilda.home()
 	await get_tree().create_timer(0.25).timeout
 	tw = create_tween()
 	tw.tween_property(_black, "modulate:a", 0.0, 0.45)

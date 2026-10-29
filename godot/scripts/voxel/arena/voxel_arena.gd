@@ -172,6 +172,7 @@ var _hands := []                # top-down: the BoneAttachment3Ds holding it
 var _hud_layer: CanvasLayer
 var net_menu: VoxelNetMenu      # the online menu (O)
 var stkilda: VoxelStKilda        # St Kilda (Luna Park), down the phone's Travel (scripts/voxel/stkilda)
+var gun_range: VoxelGunRange    # the gun range (the phone's Travel: every weapon to try)
 var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
 var _dash_t := 0.0
@@ -302,6 +303,9 @@ func _ready() -> void:
 	stkilda = VoxelStKilda.new()
 	add_child(stkilda)
 	stkilda.setup(self)
+	gun_range = VoxelGunRange.new()
+	add_child(gun_range)
+	gun_range.setup(self)
 	phone = VoxelPhone.new()
 	_hud_layer.add_child(phone)
 	phone.setup(self, stkilda)
@@ -1763,12 +1767,13 @@ func _physics_process(dt: float) -> void:
 			if dl < 0.8 and dl > 0.001:
 				mv += away / dl * (0.8 - dl) * 6.0
 		b.position += mv * dt
+		var off_arena := park or b.has_meta("range")    # (St Kilda's, the gun range's: not in the arena's square)
 		if park:
 			b.position = stkilda.nav.keep_on(b.position)
-		else:
+		elif not off_arena:
 			b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)
 			b.position.z = clampf(b.position.z, -ARENA + 1.0, ARENA - 1.0)
-		var out := b.position if park else out_of_pillars(b.position, 0.7 if b.key == "boss" else 0.35)
+		var out := b.position if off_arena else out_of_pillars(b.position, 0.7 if b.key == "boss" else 0.35)
 		if out != b.position and mv.length_squared() > 0.01:
 			# against a pillar: slide along its face, round toward the player
 			var push := out - b.position
@@ -1982,8 +1987,8 @@ func _process(dt: float) -> void:
 		bodies.remove_at(old)
 		dead -= 1
 	var t3 := Time.get_ticks_usec()
-	waves.step(dt, not guest and settings_menu._bench.is_empty() and not stkilda.active)     # (not mid-benchmark: its fight isn't a wave; nor while you're in St Kilda)
-	if not guest and not waves.on and not stkilda.active and not bodies.any(func(x): return x.alive):
+	waves.step(dt, not guest and settings_menu._bench.is_empty() and not elsewhere())     # (not mid-benchmark: its fight isn't a wave; nor while you're in St Kilda or at the gun range)
+	if not guest and not waves.on and not elsewhere() and not bodies.any(func(x): return x.alive):
 		_next_t += dt
 		if _next_t >= 1.5:
 			_next_t = 0.0
@@ -2477,3 +2482,7 @@ func _finish() -> void:
 		get_viewport().get_texture().get_image().save_png(String(_opts.shot))
 		print("ARENA shot saved: ", _opts.shot)
 	get_tree().quit()
+
+## Away from the arena (in St Kilda, at the gun range): its waves wait.
+func elsewhere() -> bool:
+	return (stkilda != null and stkilda.active) or (gun_range != null and gun_range.active)
