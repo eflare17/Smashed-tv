@@ -1,12 +1,13 @@
 class_name VoxelPhone
 extends Control
 ## The phone (the owner, 27 Oct: "a phone-style menu pops up and you fast travel"): P gets it out, bottom right.
-## One app so far, Travel: Home (the arena) or St Kilda (Luna Park, VoxelStKilda). Pick one (a click, or 1 / 2) and
+## One app so far, Travel: Home (the arena), St Kilda (Luna Park, VoxelStKilda), or a game there (Kill 1, 2 come:
+## VoxelParkGame). Pick one (a click, or 1 / 2 / 3) and
 ## the screen goes black a moment and you're there. P or Esc puts it away. Not while playing with a mate (yet).
 
 const W := 270.0
-const H := 500.0
-const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"]]
+const H := 560.0
+const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"]]
 
 var arena: VoxelArena
 var stkilda: VoxelStKilda
@@ -94,7 +95,9 @@ func open() -> void:
 		var b: Button = _buttons[id]
 		b.disabled = id == here or coop
 		var sub: Label = b.get_node("Sub")
-		sub.text = "You're here" if id == here else String(PLACES[0 if id == "home" else 1][2])
+		sub.text = "You're here" if id == here else String(PLACES.filter(func(pl: Array) -> bool: return pl[0] == id)[0][2])
+		if id == "kill12" and stkilda.game and stkilda.game.over:
+			sub.text = "Play again (best %d kills)" % stkilda.game.best_kills
 	_note.text = "Travel's off while you're playing with a mate (for now)." if coop else ""
 	var t := Time.get_time_dict_from_system()
 	_clock.text = "%d:%02d" % [t.hour, t.minute]
@@ -119,7 +122,7 @@ func _unhandled_input(e: InputEvent) -> void:
 	if _open:
 		if k == KEY_P or k == KEY_ESCAPE:
 			close()
-		elif k == KEY_1 or k == KEY_2:
+		elif k >= KEY_1 and k < KEY_1 + PLACES.size():
 			var id: String = PLACES[k - KEY_1][0]
 			if not (_buttons[id] as Button).disabled:
 				travel(id)
@@ -134,7 +137,7 @@ func travel(id: String) -> void:
 		return
 	_going = true
 	close()
-	_black_label.text = "Off to St Kilda ..." if id == "stkilda" else "Heading home ..."
+	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ..."}.get(id, "Heading home ...")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
@@ -142,7 +145,12 @@ func travel(id: String) -> void:
 	await get_tree().process_frame               # (the black drawn before the build stalls a frame)
 	await get_tree().process_frame
 	if id == "stkilda":
+		if stkilda.active:
+			stkilda.game.stop()
 		stkilda.go()
+	elif id == "kill12":
+		stkilda.go()
+		stkilda.game.start()
 	else:
 		stkilda.home()
 	await get_tree().create_timer(0.25).timeout

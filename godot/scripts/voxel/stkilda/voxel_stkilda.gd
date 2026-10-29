@@ -34,6 +34,7 @@ var _arena_near := 0.05
 var day_night: SkDayNight
 var breaks: VoxelBreakables
 var nav: VoxelParkNav
+var game: VoxelParkGame                        # "Kill 1, 2 come" (the phone starts it)
 var _debris_bound := INF
 # (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
 # so nobody's knocked over)
@@ -75,6 +76,9 @@ func build() -> void:
 	nav = VoxelParkNav.new()
 	add_child(nav)
 	nav.setup(self)
+	game = VoxelParkGame.new()
+	add_child(game)
+	game.setup(self)
 	# its looks, as the St Kilda game (town_main) adds them
 	for nm in ["Carousel", "GhostTrain", "ArabianMerry", "MoonBalloons", "Spider", "SkyRider", "PowerSurge", "LunaPalace", "Supernova", "PharaohsCurse", "ConeyDrop", "SkLunaPark"]:
 		var ride := get_node_or_null(nm) as Node3D
@@ -151,6 +155,7 @@ func home() -> void:
 	if not active:
 		return
 	active = false
+	game.stop()
 	clear_park()
 	arena.frozen = _was_frozen
 	visible = false
