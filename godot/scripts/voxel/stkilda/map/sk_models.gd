@@ -279,6 +279,47 @@ static func _head(kind: String, hair: Color) -> Vox:
 			for x in range(-5, 6, 3):
 				v.fill(Vector3i(x, -5, 7), Vector3i(x, 9, 7), hi)                       # straight lighter strands
 			v.fill2(Vector3i(5, 0, -6), Vector3i(5, 10, -6), hi)
+		"maddie":
+			v.fill2(Vector3i(2, 8, F), Vector3i(4, 8, F), ink)                        # lashes
+			# Maddie (from Where's Shane, copied from her sprite there): thick wavy brown hair, a side fringe swept
+			# across her forehead, full at the sides and down past her shoulders, with lighter waves through it
+			var hi := hair.lightened(0.16)
+			var dk := hair.darkened(0.2)
+			v.fill(Vector3i(-6, 10, -6), Vector3i(6, 14, 5), hair, 0.15)
+			v.fill(Vector3i(-5, 15, -4), Vector3i(4, 15, 3), hair, 0.15)
+			v.fill(Vector3i(-5, 10, F - 1), Vector3i(1, 11, F - 1), hair, 0.15)      # the side fringe
+			v.fill(Vector3i(-5, 9, F - 1), Vector3i(-3, 9, F - 1), hair, 0.15)
+			v.fill2(Vector3i(5, -6, -6), Vector3i(6, 12, -4), hair, 0.15)            # framing her face
+			v.fill2(Vector3i(6, -6, -3), Vector3i(7, 12, 5), hair, 0.15)             # full at the sides
+			v.fill(Vector3i(-7, -7, 5), Vector3i(7, 13, 7), hair, 0.15)              # down past her shoulders
+			# the waves: the ends kinking out and back down the sides and the back, lighter on the outside
+			var k := 0
+			for y in range(-7, 12, 3):
+				v.fill2(Vector3i(8 if k % 2 == 0 else 7, y, -2), Vector3i(8 if k % 2 == 0 else 7, y + 1, 4), hi)
+				v.fill(Vector3i(-6, y, 8), Vector3i(6, y + 1, 8), hi if k % 2 == 0 else dk)
+				k += 1
+			v.fill(Vector3i(-1, 12, -6), Vector3i(3, 13, -6), hi)                    # a highlight on top
+		"fletcher":
+			# Fletcher (the owner's photos): short dirty-blond hair, lighter on top, a fringe swept across to his left,
+			# short at the sides and back; blue eyes; green mirrored sunnies (black frames)
+			v.fill2(Vector3i(2, 7, F), Vector3i(2, 7, F), Color("#5b8bbd"))           # blue eyes (under the sunnies)
+			var hi := hair.lightened(0.2)
+			v.fill(Vector3i(-6, 11, -6), Vector3i(6, 13, 5), hair, 0.1)
+			v.fill(Vector3i(-5, 14, -5), Vector3i(5, 14, 4), hi, 0.08)              # lighter on top
+			v.fill(Vector3i(-5, 13, -6), Vector3i(3, 13, -6), hi)
+			v.fill(Vector3i(-6, 10, F - 1), Vector3i(2, 11, F - 1), hair, 0.1)     # the fringe, swept to his left
+			v.fill(Vector3i(-6, 9, F - 1), Vector3i(-3, 9, F - 1), hair, 0.1)
+			v.fill2(Vector3i(6, 7, -4), Vector3i(6, 10, 4), hair.darkened(0.08), 0.08)   # short sides
+			v.fill(Vector3i(-5, 5, 5), Vector3i(5, 10, 5), hair.darkened(0.08), 0.08)    # short at the back
+			var fr := Color("#18181c")
+			var lens := Color("#2a9c8e")
+			for sx in [-1, 1]:
+				v.fill(Vector3i(sx * 1, 6, F - 1), Vector3i(sx * 5, 8, F - 1), lens)
+				v.put(Vector3i(sx * 4, 8, F - 1), lens.lightened(0.45))              # the mirror's glint
+				v.put(Vector3i(sx * 2, 6, F - 1), lens.darkened(0.3))
+				v.fill(Vector3i(sx * 1, 9, F - 1), Vector3i(sx * 5, 9, F - 1), fr)
+				v.fill(Vector3i(sx * 6, 8, F - 1), Vector3i(sx * 6, 9, 0), fr)       # the arms back to his ears
+			v.fill(Vector3i(-1, 8, F - 1), Vector3i(1, 8, F - 1), fr)
 		"sam":
 			# a long curly brown mullet: messy curls on top, a parted fringe, long down the sides and past his
 			# shoulders at the back; a short beard and a grin
@@ -309,6 +350,43 @@ static func _head(kind: String, hair: Color) -> Vox:
 			v.fill(Vector3i(-2, 2, F), Vector3i(2, 2, F), Color("#6a3330"))           # a flat, deadpan mouth
 			v.fill2(Vector3i(2, 9, F), Vector3i(4, 9, F), dk_hair.darkened(0.2))      # heavy brows
 			v.fill2(Vector3i(3, 10, F), Vector3i(4, 10, F), dk_hair.darkened(0.2))
+		"kev", "kev_happy":
+			# Kev (reference/people/kev.webp): short ginger hair, clippered at the sides and a bit longer on top, a short
+			# full ginger beard and moustache; a friendly smile (the photo's a silly face, so not that). "kev_happy" is him
+			# over the moon (the coaster video): a huge open grin, eyes squeezed shut into happy crescents, brows up
+			var dk := hair.darkened(0.18)
+			v.fill(Vector3i(-6, 11, -6), Vector3i(6, 13, 5), hair, 0.1)
+			v.fill(Vector3i(-5, 14, -5), Vector3i(5, 15, 4), hair, 0.1)             # longer on top
+			v.fill(Vector3i(-4, 14, -6), Vector3i(3, 15, -6), hair.lightened(0.08))   # swept up at the front
+			v.fill2(Vector3i(6, 7, -4), Vector3i(6, 10, 4), dk, 0.08)                 # short sides
+			v.fill(Vector3i(-5, 6, 5), Vector3i(5, 10, 5), dk, 0.08)                  # short at the back
+			var beard := hair.darkened(0.08)
+			v.fill(Vector3i(-5, -1, F), Vector3i(5, 1, F), beard, 0.1)               # chin and jaw
+			v.fill2(Vector3i(5, -1, -4), Vector3i(5, 6, 0), beard, 0.1)              # up the cheeks to the sideburns
+			v.fill2(Vector3i(3, 3, F), Vector3i(4, 4, F), beard, 0.1)
+			v.fill(Vector3i(-4, -1, F - 1), Vector3i(4, 0, F - 1), beard, 0.1)
+			v.fill(Vector3i(-4, -1, -4), Vector3i(4, -1, 3), beard, 0.08)
+			v.fill(Vector3i(-2, 3, F), Vector3i(2, 3, F), beard)                      # moustache
+			if kind == "kev_happy":
+				# eyes shut tight in a grin: an upturned arc each side instead of open eyes
+				v.fill2(Vector3i(2, 6, F), Vector3i(4, 9, F), skin)
+				v.fill2(Vector3i(1, 6, F), Vector3i(1, 6, F), ink)
+				v.fill2(Vector3i(2, 7, F), Vector3i(2, 7, F), ink)
+				v.fill2(Vector3i(3, 7, F), Vector3i(3, 8, F), ink)
+				v.fill2(Vector3i(4, 7, F), Vector3i(4, 7, F), ink)
+				v.fill2(Vector3i(5, 6, F), Vector3i(5, 6, F), ink)
+				v.fill2(Vector3i(2, 10, F), Vector3i(4, 10, F), hair.darkened(0.3))   # brows right up
+				# the grin: wide open, top teeth, a dark mouth, the tongue, the corners turned right up into the beard
+				v.fill(Vector3i(-3, 2, F), Vector3i(3, 2, F), Color("#f7f2e8"))
+				v.fill(Vector3i(-3, 1, F), Vector3i(3, 1, F), Color("#4a1414"))
+				v.fill(Vector3i(-2, 0, F), Vector3i(2, 0, F), Color("#4a1414"))
+				v.fill(Vector3i(-1, 0, F), Vector3i(1, 0, F), Color("#d9555a"))
+				v.fill2(Vector3i(4, 3, F), Vector3i(4, 3, F), Color("#4a1414"))
+				v.fill2(Vector3i(4, 5, F), Vector3i(5, 5, F), skin.lerp(Color("#e5484d"), 0.45))   # rosy cheeks
+			else:
+				v.fill(Vector3i(-2, 2, F), Vector3i(2, 2, F), Color("#f2ece2"))       # a smile, teeth showing
+				v.fill2(Vector3i(3, 2, F), Vector3i(3, 2, F), lips)
+				v.fill2(Vector3i(2, 9, F), Vector3i(4, 9, F), hair.darkened(0.3))     # ginger brows
 		"tow":
 			# a hi-vis orange cap, short hair under it
 			v.fill(Vector3i(-6, 11, -5), Vector3i(6, 14, 5), SkData.C_ORANGE)

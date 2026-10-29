@@ -30,6 +30,9 @@ const ROLLER := Color("#7a7f86")
 const AWNING := Color("#34383e")
 const CAR_PARK := Color("#26282c")      # the dark gap between a car park's decks
 
+## The windows' materials (SkDayNight lights them at night).
+static var glass: Array = []
+
 var town: SkTownBuilder
 var _windows := SurfaceTool.new()      # one storey of office / flat windows per picture
 var _shop := SurfaceTool.new()         # a shopfront bay per picture
@@ -48,7 +51,7 @@ func wall(st: SurfaceTool, a: Vector2, b: Vector2, n2: Vector2, h: float, kind: 
 	var len := a.distance_to(b)
 	var n := Vector3(n2.x, 0, n2.y)
 	# the darker band along the top
-	_flat_quad(st, a, b, n, h - 0.32, h - 0.04, OUT * 0.5, wall_col.darkened(0.22))
+	_flat_quad(st, a, b, n, h - 0.32, h - 0.04, OUT * 0.75, wall_col.darkened(0.22))
 	if bands != "":
 		_bands(st, a, b, n, h, street, bands)
 	if len < 2.5 or h < 2.4:
@@ -85,6 +88,10 @@ func wall(st: SurfaceTool, a: Vector2, b: Vector2, n2: Vector2, h: float, kind: 
 		_picture(_windows, a1, b1, n, 0.0, STOREY * floors, bays, floors)
 		if street:
 			_flat_quad(st, mid - d * 0.7, mid + d * 0.7, n, 0.0, 2.4, OUT * 2.0, DOOR)
+	# a slim ledge along each floor line (a string course), so the wall has some depth (on the walls facing a street: elsewhere it'd cost more than it shows)
+	if floors > 1 and street:
+		for fl in range(1, floors):
+			_ledge(st, a, b, n, STOREY * fl - 0.06, wall_col.lightened(0.12))
 
 ## Bands of colour across a wall, as Street View shows them: a sign band, a fascia, a coloured base. `bands` is a
 ## list like "#1d3a9a@0-0.9,s#0a0a0a@3.3-5": a colour, then from and to (metres up); an "s" in front means only on
@@ -149,13 +156,11 @@ func commit(parent: Node3D) -> void:
 		var mi := MeshInstance3D.new()
 		mi.name = p[2]
 		mi.mesh = (p[0] as SurfaceTool).commit()
-		var m := StandardMaterial3D.new()
-		m.albedo_texture = p[1]
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		m.alpha_scissor_threshold = 0.5
-		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-		m.roughness = 0.4
-		mi.material_override = m
+		var gm := _glass_material(p[1])
+		gm.set_shader_parameter("lit", {"Windows": 0.45, "Shopfronts": 0.85, "HouseWindows": 0.35}[p[2]])
+		gm.set_shader_parameter("bright", {"Windows": 1.4, "Shopfronts": 0.55, "HouseWindows": 1.2}[p[2]])
+		glass.append(gm)
+		mi.material_override = gm
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(mi)
 
@@ -249,3 +254,59 @@ static func _house_picture() -> ImageTexture:
 	_rect(img, 10, 15, 21, 16, Color("#f1efe8"))
 	_rect(img, 8, 23, 23, 23, SILL)
 	return _texture(img)
+
+## A slim ledge along a wall at height y: its front, its top and (darker) its underside, sticking out 0.12 m.
+static func _ledge(st: SurfaceTool, a: Vector2, b: Vector2, n: Vector3, y: float, c: Color) -> void:
+	var t := 0.12
+	_flat_quad(st, a, b, n, y, y + t, 0.12, c)
+	var n2 := Vector2(n.x, n.z)
+	var fa := a + n2 * 0.12
+	var fb := b + n2 * 0.12
+	for face in [[Vector3.UP, y + t, c.lightened(0.1)], [Vector3.DOWN, y, c.darkened(0.35)]]:
+		var up: Vector3 = face[0]
+		var fy: float = face[1]
+		st.set_normal(up)
+		st.set_color(face[2])
+		SkTownBuilder._face(st, Vector3(a.x, fy, a.y), Vector3(b.x, fy, b.y), Vector3(fb.x, fy, fb.y), up)
+		SkTownBuilder._face(st, Vector3(a.x, fy, a.y), Vector3(fb.x, fy, fb.y), Vector3(fa.x, fy, fa.y), up)
+
+## The windows' glass catching the sky (there are no real reflections in the plain renderer): where a picture's pixel
+## is glass (bluish), the sky's colour is mixed in, more the more side-on you see it, and the street's darker colour
+## where the reflection would be looking down; the frames stay as they are.
+static func _glass_material(pic: Texture2D) -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode cull_back;
+uniform sampler2D pic : source_color, filter_nearest_mipmap, repeat_enable;
+uniform vec3 sky_top : source_color = vec3(0.16, 0.45, 0.79);
+uniform vec3 sky_low : source_color = vec3(0.66, 0.80, 0.92);
+uniform float night = 0.0;
+uniform float lit = 0.45;                   // (how many of the windows have a light on at night)
+uniform float bright = 1.4;
+void fragment() {
+	vec4 t = texture(pic, UV);
+	if (t.a < 0.5) { discard; }
+	vec3 c = t.rgb;
+	float glass = step(0.03, c.b - c.r);
+	vec3 v = normalize((INV_VIEW_MATRIX * vec4(VIEW, 0.0)).xyz);
+	vec3 nw = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 r = reflect(-v, nw);
+	float fres = pow(1.0 - clamp(dot(v, nw), 0.0, 1.0), 2.5);
+	vec3 sky = mix(sky_low, sky_top, clamp(r.y * 2.5, 0.0, 1.0));
+	if (r.y < 0.0) { sky = sky_low * 0.35; }
+	c = mix(c, sky, glass * (0.3 + 0.55 * fres) * (1.0 - night * 0.8));
+	// at night: some windows lit, a warm glow (each window picture its own: on or off)
+	vec3 w = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float key = dot(floor(w / vec3(2.9, 3.2, 2.9)), vec3(12.9898, 78.233, 37.719));
+	float on = step(1.0 - lit, fract(sin(key) * 43758.5453));
+	EMISSION = vec3(1.0, 0.78, 0.48) * glass * on * night * bright * (0.75 + 0.25 * fract(key * 7.13));
+	ALBEDO = c;
+	ROUGHNESS = mix(0.85, 0.12, glass);
+	SPECULAR = mix(0.3, 0.9, glass);
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("pic", pic)
+	return m

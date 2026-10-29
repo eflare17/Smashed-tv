@@ -257,13 +257,40 @@ static func _carousel(parent: Node3D, ring: PackedVector2Array) -> Node3D:
 	var roof := MeshInstance3D.new()
 	roof.name = "Roof"
 	roof.mesh = st.commit()
-	roof.material_override = SkModels.baked_material()
+	roof.material_override = SkWornLook.material()
 	n.add_child(roof)
 	_cone(holder, 1.4, 1.4, 1.0, Vector3(0, band_hi + 2.9, 0), WHITE, 8)
 	_cone(holder, 1.6, 0.0, 1.0, Vector3(0, band_hi + 3.9, 0), Color("#b9bdc0"), 8)
-	_bake(n, holder, "Building")
+	# the black iron fence round it, 2 m out, with a gateway in the middle of each side (where they are: GUESS)
+	var fence := []                                  # [from, to] of each length of it
+	for k in corners.size():
+		var a: Vector3 = corners[k] + Vector3(corners[k].x, 0, corners[k].z).normalized() * 2.0
+		var b: Vector3 = corners[(k + 1) % corners.size()] + Vector3(corners[(k + 1) % corners.size()].x, 0, corners[(k + 1) % corners.size()].z).normalized() * 2.0
+		var gap := 1.6 / a.distance_to(b)
+		fence.append([a, a.lerp(b, 0.5 - gap)])
+		fence.append([a.lerp(b, 0.5 + gap), b])
+	for f in fence:
+		var a: Vector3 = f[0]
+		var b: Vector3 = f[1]
+		for y in [0.25, 1.0]:
+			_strut(holder, a + Vector3(0, y, 0), b + Vector3(0, y, 0), 0.06, Color("#1b1c1f"))
+		var bars := int(a.distance_to(b) / 0.18)
+		for q in bars + 1:
+			var p := a.lerp(b, float(q) / maxf(1.0, bars))
+			SkModels.box(holder, Vector3(0.03, 1.05, 0.03), p + Vector3(0, 0.55, 0), Color("#1b1c1f"))
+			if q % 6 == 0:
+				SkModels.box(holder, Vector3(0.09, 1.25, 0.09), p + Vector3(0, 0.62, 0), Color("#1b1c1f"))
+				SkModels.ball(holder, 0.07, p + Vector3(0, 1.3, 0), Color("#1b1c1f"))
+	_bake(n, holder, "Building").material_override = SkWornLook.material()
 	for k in corners.size():
 		_solid(n, Vector3(1.1, band_hi, 1.1), corners[k] + Vector3(0, band_hi / 2.0, 0))
+	for f in fence:
+		var a: Vector3 = f[0]
+		var b: Vector3 = f[1]
+		var bar := Node3D.new()
+		n.add_child(bar)
+		bar.transform = Transform3D(Basis.looking_at(b - a, Vector3.UP), (a + b) / 2.0)
+		_solid(bar, Vector3(0.12, 1.2, a.distance_to(b)), Vector3(0, 0.6, 0))
 	# the ride itself, turning
 	var spin := Spinner.new()
 	spin.name = "Ride"
@@ -288,8 +315,15 @@ static func _carousel(parent: Node3D, ring: PackedVector2Array) -> Node3D:
 		var at := Vector3(cos(a), 0, sin(a)) * (CAROUSEL_R + 0.25)
 		var panel := SkModels.box(ride, Vector3(1.3, 0.75, 0.08), at + Vector3(0, 4.8, 0), Color("#d9ab3a"))
 		panel.rotation.y = -a + PI / 2.0
-		var pic := SkModels.box(ride, Vector3(1.0, 0.5, 0.1), at + Vector3(0, 4.8, 0), Color("#6f9fb8"))
-		pic.rotation.y = -a + PI / 2.0
+		# (its oval painted panel: a sky over a green hill, in a cream frame)
+		var oval := Node3D.new()
+		ride.add_child(oval)
+		oval.position = at + Vector3(0, 4.8, 0)
+		oval.rotation.y = -a + PI / 2.0
+		for o in [[0.3, Color("#f3e6c4"), 0.06], [0.25, Color("#7fb3d1"), 0.08]]:
+			var d := _disc(oval, o[0], 0.04, Vector3(0, 0, o[2]), o[1])
+			d.scale = Vector3(1.55, 1.0, 1.0)
+		SkModels.box(oval, Vector3(0.62, 0.12, 0.02), Vector3(0, -0.12, 0.13), Color("#5f9a4a"))
 		var crown := SkModels.box(ride, Vector3(0.6, 0.6, 0.15), at + Vector3(0, 5.55, 0), Color("#d9ab3a"))
 		crown.rotation = Vector3(0, -a + PI / 2.0, PI / 4.0)
 	# rows of bulbs under the ceiling, and red stencilled flowers round its rim
@@ -304,6 +338,11 @@ static func _carousel(parent: Node3D, ring: PackedVector2Array) -> Node3D:
 	for k in 48:
 		var a := TAU * (k + 0.5) / 48.0
 		SkModels.box(ride, Vector3(0.12, 0.12, 0.12), Vector3(cos(a), 0, sin(a)) * (CAROUSEL_R + 0.3) + Vector3(0, 4.12, 0), BULB)
+	# the rim's scalloped lower edge (gold points)
+	for k in 96:
+		var a := TAU * k / 96.0
+		var sc := SkModels.box(ride, Vector3(0.32, 0.32, 0.05), Vector3(cos(a), 0, sin(a)) * (CAROUSEL_R + 0.24) + Vector3(0, 4.2, 0), Color("#d9ab3a"))
+		sc.rotation = Vector3(0, -a + PI / 2.0, PI / 4.0)
 	# the brass poles, and the horses on them (they ride up and down: Spinner moves them)
 	var horses := []
 	var kinds := []
@@ -319,6 +358,8 @@ static func _carousel(parent: Node3D, ring: PackedVector2Array) -> Node3D:
 			var a := TAU * (k + 0.5 * (count % 2)) / many
 			var at := Vector3(cos(a), 0, sin(a)) * r
 			SkModels.cyl(ride, 0.05, 3.55, at + Vector3(0, 2.38, 0), Color("#d9b24a"), true, 6)
+			for y in [1.05, 3.75]:                   # (the twisted brass's bands)
+				SkModels.cyl(ride, 0.08, 0.1, at + Vector3(0, y, 0), Color("#e8c25a"), true, 6)
 			var chariot := r > 6.0 and k % 9 == 4
 			var kind: int = kinds.size() - 1 if chariot else (k * 7 + count * 3) % HORSES.size()
 			# (facing round the way it turns: anticlockwise from above)
@@ -342,6 +383,12 @@ static func _carousel(parent: Node3D, ring: PackedVector2Array) -> Node3D:
 		b.multimesh.set_instance_transform(i, s[1])
 		horses.append([b, i, s[1], s[2], s[3]])
 	spin.horses = horses
+	# people on about half the horses, astride, holding the pole (a few kids waving)
+	var seats := []
+	for h in horses:
+		if float(h[3]) > 0.0 and _taken(0.5):
+			seats.append([(h[0] as MultiMeshInstance3D).multimesh, h[1], _seat(Vector3(-0.32, 1.36, 0), -PI / 2.0, 0.85)])
+	spin.riders = _riders(spin, seats, 0.0, 0.8, 0.15)
 	return n
 
 ## Many copies of one mesh drawn in one go (one draw for them all), each placed by set_instance_transform; no
@@ -360,6 +407,69 @@ static func _batch(parent: Node3D, mesh: Mesh, count: int, name := "Batch") -> M
 	parent.add_child(mi)
 	return mi
 
+# ================================================================ people riding (the owner: a packed park)
+
+static var _rider_rng: RandomNumberGenerator
+
+## People riding, all in one batch (SkCrowd's townsfolk), under `parent` (the ride's moving part): `seats` is a list of
+## [what they ride on (a batch's MultiMesh, or a node under `parent`), which copy in the batch, where on it (their
+## feet at its origin, facing -z)]. How they sit: `legs` 0 hanging down .. 1 straight out in front; `hold` arms out in
+## front holding on; `cheer` how many have their arms right up in the air.
+static func _riders(parent: Node3D, seats: Array, legs: float, hold: float, cheer: float) -> Riders:
+	if _rider_rng == null:
+		_rider_rng = RandomNumberGenerator.new()
+		_rider_rng.seed = 1912
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	mm.mesh = SkCrowd.person_mesh()
+	mm.instance_count = seats.size()
+	for k in seats.size():
+		mm.set_instance_custom_data(k, Color(float(_rider_rng.randi() % 8) / 16.0, _rider_rng.randf() * TAU,
+			float(_rider_rng.randi() % 6) / 8.0 + float(_rider_rng.randi() % 5) / 64.0, _rider_rng.randf()))
+	var r := Riders.new()
+	r.name = "Riders"
+	r.multimesh = mm
+	var m := SkCrowd.material().duplicate() as ShaderMaterial
+	m.set_shader_parameter("legs", legs)
+	m.set_shader_parameter("hold", hold)
+	m.set_shader_parameter("cheer", cheer)
+	r.material_override = m
+	r.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	r.visibility_range_end = 220.0
+	r.seats = seats
+	parent.add_child(r)
+	r.follow()
+	return r
+
+## Where a rider sits: their hips (0.88 up a standing person) at `hips`, turned `yaw`, `s` their size.
+static func _seat(hips: Vector3, yaw: float, s := 0.95) -> Transform3D:
+	return Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * s), hips - Vector3(0, 0.88 * s, 0))
+
+## Whether to fill a seat (`fill` of them are, the same ones every time).
+static func _taken(fill: float) -> bool:
+	if _rider_rng == null:
+		_rider_rng = RandomNumberGenerator.new()
+		_rider_rng.seed = 1912
+	return _rider_rng.randf() < fill
+
+## The riders on a ride: follow() puts each back on what they ride on (after the ride's moved it).
+class Riders extends MultiMeshInstance3D:
+	var seats: Array = []
+
+	func follow() -> void:
+		var buf := multimesh.buffer           # (written in one go: see SkCrowd.put)
+		for i in seats.size():
+			var s: Array = seats[i]
+			var on := Transform3D.IDENTITY
+			if s[0] is MultiMesh:
+				on = (s[0] as MultiMesh).get_instance_transform(s[1])
+			elif s[0] is Node3D:
+				on = (s[0] as Node3D).transform
+			SkCrowd.put(buf, i, on * (s[2] as Transform3D))
+		multimesh.buffer = buf
+
 ## A carousel horse, prancing, facing -z... no: along +x (it's turned to face round the ride).
 static func _horse(coat: Color, mane: Color) -> ArrayMesh:
 	var h := Node3D.new()
@@ -376,6 +486,7 @@ static func _horse(coat: Color, mane: Color) -> ArrayMesh:
 		bl.rotation.z = -0.35
 	SkModels.box(h, Vector3(0.45, 0.12, 0.42), Vector3(-0.05, 1.3, 0), Color("#6a2b2b"))   # saddle
 	_disc(h, 0.24, 0.05, Vector3(0.1, 1.0, 0.21), Color("#d9ab3a"))      # (the gold shield on its saddle)
+	SkModels.box(h, Vector3(0.1, 0.1, 0.05), Vector3(0.1, 1.0, 0.25), Color("#c0262c"))      # (its jewel)
 	var tail := SkModels.box(h, Vector3(0.12, 0.5, 0.12), Vector3(-0.68, 0.95, 0), mane)
 	tail.rotation.z = 0.4
 	var mesh := SkModels.bake(h)
@@ -396,6 +507,7 @@ static func _chariot() -> ArrayMesh:
 ## Turns the carousel and rides its horses up and down (only when you're near: it stands still further off).
 class Spinner extends Node3D:
 	var horses: Array = []             # [its batch, its number in it, where it stands, how far it rises, its phase]
+	var riders: Riders = null
 	var _t := 0.0
 
 	func _process(dt: float) -> void:
@@ -407,6 +519,8 @@ class Spinner extends Node3D:
 			var xf: Transform3D = h[2]
 			xf.origin.y = 0.6 + (sin(_t * 2.2 + float(h[4])) * 0.5 + 0.5) * float(h[3])
 			(h[0] as MultiMeshInstance3D).multimesh.set_instance_transform(h[1], xf)
+		if riders:
+			riders.follow()
 
 # ================================================================ the Ghost Train
 
@@ -448,6 +562,21 @@ static func _ghost_train(parent: Node3D, ring: PackedVector2Array, toward: Node3
 			continue
 		_skull(holder, Vector3(x, GHOST_H + 0.55, hd - 0.05), 0.42)
 		SkModels.box(holder, Vector3(0.3, 0.5, 0.2), Vector3(x, GHOST_H + 0.1, hd - 0.05), Color("#e8e6e0"))   # (its ribs)
+		# (playing music: a horn, a drum, a fiddle in turn)
+		match k % 3:
+			0:
+				var horn := SkModels.cyl(holder, 0.07, 0.6, Vector3(x + 0.12, GHOST_H + 0.35, hd + 0.2), Color("#e0b23a"), true, 8)
+				horn.rotation = Vector3(1.1, 0, -0.5)
+				var bell := _cone(holder, 0.08, 0.2, 0.18, Vector3(x + 0.3, GHOST_H + 0.22, hd + 0.42), Color("#e0b23a"), 8)
+				bell.rotation = Vector3(1.1, 0, -0.5)
+			1:
+				_disc(holder, 0.22, 0.25, Vector3(x, GHOST_H - 0.05, hd + 0.18), Color("#b8302c"))
+				_disc(holder, 0.19, 0.27, Vector3(x, GHOST_H - 0.05, hd + 0.18), Color("#efe6d2"))
+			2:
+				var body := SkModels.box(holder, Vector3(0.22, 0.34, 0.08), Vector3(x - 0.08, GHOST_H + 0.12, hd + 0.12), Color("#7a4320"))
+				body.rotation.z = 0.6
+				var neck := SkModels.box(holder, Vector3(0.05, 0.4, 0.05), Vector3(x + 0.1, GHOST_H + 0.38, hd + 0.12), Color("#3a2010"))
+				neck.rotation.z = 0.6
 	# the vampire's face in the middle below, gargoyles on the corners
 	SkModels.box(holder, Vector3(1.2, 1.0, 0.2), Vector3(0, GHOST_H - 0.3, front + 0.12), Color("#8d89a8"))
 	for s in [-1.0, 1.0]:
@@ -471,7 +600,30 @@ static func _ghost_train(parent: Node3D, ring: PackedVector2Array, toward: Node3
 	SkModels.cyl(big, 0.85, 0.08, Vector3(0, 2.65, 0.05), Color("#141416"), true, 16)
 	var cannon := SkModels.cyl(big, 0.25, 1.6, Vector3(-0.9, 1.6, 0.6), Color("#55473d"), true, 12)
 	cannon.rotation = Vector3(0.9, 0, -0.6)
-	_bake(n, holder, "GhostTrain")
+	# (GUESSES, for the spooky look: painted bats on the front between the doorways and along the sides, cobwebs in the
+	# top corners under the ivy)
+	for b in [[Vector3(-1.2, 3.2, front + 0.02), 0.0], [Vector3(0.9, 2.4, front + 0.02), 0.0], [Vector3(-0.3, 1.4, front + 0.02), 0.0]]:
+		_bat(holder, b[0], 0.0)
+	for s in [-1.0, 1.0]:
+		for q in 4:
+			_bat(holder, Vector3(s * (hw + 0.02), 3.0 + float(q % 2) * 1.3, hd - 2.5 - q * 2.6), s * PI / 2.0)
+		var corner := Vector3(s * (hw - 1.0), GHOST_H - 0.5, front + 0.2)
+		for q in 5:
+			var a: float = PI * 0.5 + s * (PI * 0.5 - q * PI / 8.0)
+			_strut(holder, corner, corner + Vector3(cos(a) * 1.4, -absf(sin(a)) * 1.4 - 0.05, 0), 0.02, Color("#ecebf2"))
+		for web in [0.5, 1.0]:
+			for q in 4:
+				var a0: float = PI * 0.5 + s * (PI * 0.5 - q * PI / 8.0)
+				var a1: float = PI * 0.5 + s * (PI * 0.5 - (q + 1) * PI / 8.0)
+				_strut(holder, corner + Vector3(cos(a0), -absf(sin(a0)), 0) * web, corner + Vector3(cos(a1), -absf(sin(a1)), 0) * web, 0.018, Color("#ecebf2"))
+	_bake(n, holder, "GhostTrain").material_override = SkWornLook.material()
+	# eyes glowing in the dark of the doorways (GUESS)
+	var eyes := []
+	for s in [-1.0, 1.0]:
+		for e in [[-0.6, 1.9], [0.5, 1.2], [0.1, 2.6]]:
+			for side in [-0.13, 0.13]:
+				eyes.append(Vector3(s * hw * 0.45 + float(e[0]) + side, float(e[1]), front + 0.08))
+	SkRideLights._bulbs(n, eyes, 0.0, [Color(1.0, 0.82, 0.15)])
 	# the sign
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["Chiller", "Brush Script MT", "Segoe Script", "cursive"])
@@ -489,6 +641,21 @@ static func _ghost_train(parent: Node3D, ring: PackedVector2Array, toward: Node3
 	n.add_child(l)
 	_solid(n, Vector3(hw * 2.0, GHOST_H + 1.4, hd * 2.0), Vector3(0, (GHOST_H + 1.4) / 2.0, 0))
 	return n
+
+## A bat painted on a wall at `at`, its wall facing +z turned by `yaw`: a body, ears, wings out in a V.
+static func _bat(parent: Node3D, at: Vector3, yaw: float) -> void:
+	var b := Node3D.new()
+	parent.add_child(b)
+	b.position = at
+	b.rotation.y = yaw
+	var c := Color("#1d1a24")
+	SkModels.box(b, Vector3(0.13, 0.24, 0.03), Vector3.ZERO, c)
+	for s in [-1.0, 1.0]:
+		SkModels.box(b, Vector3(0.04, 0.07, 0.03), Vector3(s * 0.04, 0.15, 0), c)
+		var w := SkModels.box(b, Vector3(0.42, 0.13, 0.03), Vector3(s * 0.25, 0.05, 0), c)
+		w.rotation.z = s * 0.35
+		var tip := SkModels.box(b, Vector3(0.18, 0.1, 0.03), Vector3(s * 0.47, 0.1, 0), c)
+		tip.rotation.z = -s * 0.5
 
 ## A skull (white, dark eyes and nose) facing +z, `s` across.
 static func _skull(parent: Node3D, at: Vector3, s: float) -> void:
@@ -524,17 +691,31 @@ static func _luna_palace(parent: Node3D, ring: PackedVector2Array, face: Vector2
 		for k in 3:
 			var a := PI * 0.15 + k * PI * 0.25
 			SkModels.box(holder, Vector3(0.25, 1.1, 0.25), tower + Vector3(cos(a) * 4.0, y, sin(a) * 4.0), DARK)
-	# upstairs: tall pointed-arch windows; downstairs: arches; along the front
+	# upstairs: tall round-arched windows (the 2008 photo: dark glass, white glazing bars, a fan in the arch) in a
+	# white frame on a sill; downstairs: a deep arcade of arches between square pillars; along the front
 	var span := hw * 2.0 - 8.0
 	var many := maxi(2, int(span / 4.5))
+	var glass := Color("#24303d")
 	for k in many:
 		var x := -hw + 7.0 + (k + 0.5) * span / many
-		SkModels.box(holder, Vector3(2.0, 3.0, 0.1), Vector3(x, 6.3, front), Color("#24303d"))
-		var tip := SkModels.box(holder, Vector3(1.42, 1.42, 0.1), Vector3(x, 7.8, front), Color("#24303d"))
-		tip.rotation.z = PI / 4.0
+		SkModels.box(holder, Vector3(2.5, 2.4, 0.1), Vector3(x, 6.0, front + 0.02), WHITE_SHADE)
+		_disc(holder, 1.25, 0.1, Vector3(x, 7.2, front + 0.02), WHITE_SHADE)
+		SkModels.box(holder, Vector3(2.0, 2.4, 0.1), Vector3(x, 6.0, front + 0.06), glass)
+		_disc(holder, 1.0, 0.1, Vector3(x, 7.2, front + 0.06), glass)
+		SkModels.box(holder, Vector3(2.8, 0.18, 0.35), Vector3(x, 4.78, front + 0.12), WHITE_SHADE)
+		SkModels.box(holder, Vector3(0.08, 3.3, 0.06), Vector3(x, 6.45, front + 0.12), WHITE)
+		SkModels.box(holder, Vector3(2.0, 0.08, 0.06), Vector3(x, 7.2, front + 0.12), WHITE)
+		SkModels.box(holder, Vector3(2.0, 0.06, 0.06), Vector3(x, 5.9, front + 0.12), WHITE)
+		for a in [PI / 4.0, 3.0 * PI / 4.0]:
+			_strut(holder, Vector3(x, 7.2, front + 0.12), Vector3(x + cos(a) * 0.98, 7.2 + sin(a) * 0.98, front + 0.12), 0.06, WHITE)
 		SkModels.box(holder, Vector3(2.6, 3.0, 0.1), Vector3(x, 1.5, front), Color("#2b2a2e"))
 		_disc(holder, 1.3, 0.1, Vector3(x, 3.0, front), Color("#2b2a2e"))
+	for k in many + 1:
+		var px := -hw + 7.0 + k * span / many
+		SkModels.box(holder, Vector3(0.7, 3.4, 0.35), Vector3(px, 1.7, front + 0.15), WHITE_SHADE)
+		SkModels.box(holder, Vector3(0.95, 0.25, 0.5), Vector3(px, 3.45, front + 0.18), WHITE)
 	# slim turrets along the top with pointed caps in red, teal and cream
+	var tops := PackedVector3Array([tower + Vector3(0, TOWER_H, 0)])      # (for SkParkFlags: a flag on each)
 	var t := 0
 	for side in [[Vector3(1, 0, 0), hd, hw], [Vector3(0, 0, 1), hw, hd], [Vector3(-1, 0, 0), hd, hw]]:
 		var out: Vector3 = side[0]
@@ -547,9 +728,17 @@ static func _luna_palace(parent: Node3D, ring: PackedVector2Array, face: Vector2
 			if at.distance_to(tower) > 5.0:
 				_cone(holder, 0.55, 0.55, 3.2, at + Vector3(0, PALACE_H + 1.6, 0), WHITE, 10)
 				_cone(holder, 0.7, 0.0, 1.8, at + Vector3(0, PALACE_H + 4.1, 0), CAPS[t % CAPS.size()], 10)
+				SkModels.cyl(holder, 0.68, 0.25, at + Vector3(0, PALACE_H + 3.1, 0), WHITE_SHADE, true, 10)      # (a band under its cap)
+				# the corbel it stands on, stepping out from the wall below
+				var c1 := SkModels.box(holder, Vector3(1.0, 0.45, 0.5), at + out * 0.6 + Vector3(0, PALACE_H - 0.3, 0), WHITE_SHADE)
+				c1.rotation.y = atan2(out.x, out.z)
+				var c2 := SkModels.box(holder, Vector3(0.6, 0.4, 0.3), at + out * 0.55 + Vector3(0, PALACE_H - 0.7, 0), WHITE_SHADE)
+				c2.rotation.y = atan2(out.x, out.z)
+				tops.append(at + Vector3(0, PALACE_H + 4.95, 0))
 				t += 1
 			k += 4.5
-	_bake(n, holder, "LunaPalace")
+	n.set_meta("flag_tops", tops)
+	_bake(n, holder, "LunaPalace").material_override = SkWornLook.material()
 	_solid(n, Vector3(hw * 2.0, PALACE_H, hd * 2.0), Vector3(0, PALACE_H / 2.0, 0))
 	_solid(n, Vector3(7.0, TOWER_H, 7.0), tower + Vector3(0, TOWER_H / 2.0, 0))
 	return n
@@ -666,6 +855,13 @@ static func _sky_rider(parent: Node3D, at: Vector2, along: Vector2) -> Node3D:
 		var a := TAU * k / GONDOLAS
 		wheel.spots.append(Vector3(cos(a), sin(a), 0) * WHEEL_R)
 	wheel.level()
+	# people sat in most of the gondolas, one or two to each
+	var seats := []
+	for k in GONDOLAS:
+		for z in [-0.42, 0.42]:
+			if _taken(0.5):
+				seats.append([wheel.batch.multimesh, k, _seat(Vector3(-0.42, -1.2, z), -PI / 2.0)])
+	wheel.riders = _riders(wheel, seats, 1.0, 0.0, 0.1)
 	for x in [-5.5, 5.5]:
 		for z in [-3.0, 3.0]:
 			_solid(n, Vector3(0.8, 3.0, 0.8), Vector3(x, 1.5, z))
@@ -677,6 +873,7 @@ class SkyWheel extends Node3D:
 	var gondolas: Array = []               # (separate ones, each its own mesh: Moon Balloons' are all different colours)
 	var batch: MultiMeshInstance3D = null  # (or all the same, drawn in one go: the Sky Rider's)
 	var spots := PackedVector3Array()      # where each of the batch's hangs
+	var riders: Riders = null
 
 	func _process(dt: float) -> void:
 		if not SkLunaRides._near(self):
@@ -692,6 +889,8 @@ class SkyWheel extends Node3D:
 			var upright := Basis(Vector3.BACK, -rotation.z)
 			for i in spots.size():
 				batch.multimesh.set_instance_transform(i, Transform3D(upright, spots[i]))
+		if riders:
+			riders.follow()
 
 # ================================================================ the Supernova (2019: 32 m, "a 12.5 metre circle")
 
@@ -752,6 +951,11 @@ static func _supernova(parent: Node3D, at: Vector2) -> Node3D:
 		var a := TAU * i / NOVA_ARMS
 		# where each hangs from, its local x pointing out from the tower
 		nova.chairs.append(Transform3D(Basis(Vector3.UP, -a), Vector3(cos(a) * NOVA_ARM, 0.35 * NOVA_ARM, sin(a) * NOVA_ARM)))
+	var seats := []
+	for i in NOVA_ARMS:
+		if _taken(0.75):
+			seats.append([nova.batch.multimesh, i, _seat(Vector3(-0.05, -NOVA_CHAIN + 0.02, 0), -PI / 2.0)])
+	nova.riders = _riders(nova, seats, 0.3, 0.0, 0.6)
 	nova.swing_chairs(0.0)
 	_solid(n, Vector3(2.0, NOVA_H, 2.0), Vector3(0, NOVA_H / 2.0, 0))
 	_solid(n, Vector3(6.0, 0.5, 6.0), Vector3(0, 0.25, 0))
@@ -767,6 +971,7 @@ class Nova extends Node3D:
 	const CYCLE := [[8.0, "rest"], [12.0, "up"], [14.0, "top"], [12.0, "down"]]
 	var chairs: Array = []                 # where each chair hangs from (its local x out from the tower)
 	var batch: MultiMeshInstance3D
+	var riders: Riders = null
 	var _t := 0.0
 	var _spin := 0.0
 
@@ -807,6 +1012,8 @@ class Nova extends Node3D:
 		for i in chairs.size():
 			var at: Transform3D = chairs[i]
 			batch.multimesh.set_instance_transform(i, Transform3D(at.basis * out, at.origin))
+		if riders:
+			riders.follow()
 
 # ================================================================ Pharaoh's Curse (2001: "flung 19 meters into the air")
 
@@ -848,6 +1055,14 @@ static func _pharaoh(parent: Node3D, at: Vector2, along: Vector2) -> Node3D:
 		mi.material_override = SkModels.baked_material()
 		arm.add_child(mi)
 		swing.arms.append(arm)
+	# a full car on each (it's the big thrill: arms up)
+	var seats := []
+	for arm in swing.arms:
+		var out := signf((arm as Node3D).position.z)
+		for x in [-1.2, -0.4, 0.4, 1.2]:
+			if _taken(0.85):
+				seats.append([arm, 0, _seat(Vector3(x, -ARM + 0.92, 0.1 * out), PI if out > 0.0 else 0.0)])
+	swing.riders = _riders(swing, seats, 1.0, 0.6, 0.7)
 	for x in [-3.0, 3.0]:
 		for z in [-3.8, 3.8]:
 			_solid(n, Vector3(1.0, 3.0, 1.0), Vector3(x, 1.5, z))
@@ -860,6 +1075,7 @@ class Pendulum extends Node3D:
 	const MAX_W := 2.6
 	const CYCLE := 60.0
 	var arms: Array = []
+	var riders: Riders = null
 	var _a := 0.0
 	var _w := 0.0
 	var _t := 0.0
@@ -885,6 +1101,8 @@ class Pendulum extends Node3D:
 		_a = wrapf(_a, -PI, PI)
 		(arms[0] as Node3D).rotation.z = _a
 		(arms[1] as Node3D).rotation.z = -_a
+		if riders:
+			riders.follow()
 
 # ================================================================ the Coney Drop (2010: "Spring 13 metres into the air")
 
@@ -918,6 +1136,14 @@ static func _coney_drop(parent: Node3D, at: Vector2) -> Node3D:
 		var panel := SkModels.box(c, Vector3(0.12, 1.5, 1.45), out * 2.6 + Vector3(0, 1.75, 0), RED if i % 2 == 0 else WHITE)
 		panel.basis = Basis(Vector3.UP, -a) * Basis(Vector3.BACK, 0.75)
 	_bake(drop, c, "Ring")
+	# people in most of the seats, facing out, legs dangling
+	var seats := []
+	for i in 12:
+		var a := TAU * i / 12.0
+		var out := Vector3(cos(a), 0, sin(a))
+		if _taken(0.7):
+			seats.append([null, 0, _seat(out * 2.1 + Vector3(0, 0.56, 0), atan2(-out.x, -out.z))])
+	_riders(drop, seats, 0.15, 0.0, 0.55)
 	_solid(n, Vector3(1.6, CONEY_H, 1.6), Vector3(0, CONEY_H / 2.0, 0))
 	return n
 
@@ -999,6 +1225,13 @@ static func _spider(parent: Node3D, at: Vector2) -> Node3D:
 	spin.cup_batch = _batch(spin, cm, SPIDER_LEGS, "Cups")
 	for i in SPIDER_LEGS:
 		spin.legs.append([TAU * i / SPIDER_LEGS, float(i) * TAU / 4.0, 0.0])
+	# two to a cup in most of them, facing out of the cup's open side
+	var seats := []
+	for i in SPIDER_LEGS:
+		for x in [-0.35, 0.35]:
+			if _taken(0.7):
+				seats.append([spin.cup_batch.multimesh, i, _seat(Vector3(x, 0.76, -0.25), PI)])
+	spin.riders = _riders(spin, seats, 1.0, 0.5, 0.5)
 	spin.pose()
 	_solid(n, Vector3(4.0, 0.5, 4.0), Vector3(0, 0.25, 0))
 	_solid(n, Vector3(1.8, 4.0, 1.8), Vector3(0, 2.0, 0))
@@ -1010,6 +1243,7 @@ class Octopus extends Node3D:
 	var legs: Array = []                   # [which way it points round the body, its phase, its cup's spin]
 	var leg_batch: MultiMeshInstance3D
 	var cup_batch: MultiMeshInstance3D
+	var riders: Riders = null
 	var _t := 0.0
 	var _go := 0.0
 
@@ -1021,6 +1255,8 @@ class Octopus extends Node3D:
 			var leg := Transform3D(Basis(Vector3.UP, float(l[0])) * Basis(Vector3.BACK, lift), Vector3.ZERO)
 			leg_batch.multimesh.set_instance_transform(i, leg)
 			cup_batch.multimesh.set_instance_transform(i, leg * Transform3D(Basis(Vector3.UP, float(l[2])), Vector3(SkLunaRides.SPIDER_LEG, -1.6, 0)))
+		if riders:
+			riders.follow()
 
 	func _process(dt: float) -> void:
 		if not SkLunaRides._near(self):
@@ -1103,6 +1339,13 @@ static func _power_surge(parent: Node3D, at: Vector2) -> Node3D:
 		mi.material_override = SkModels.baked_material()
 		holder2.add_child(mi)
 		surge.seats.append(holder2)
+	# two to a pair of seats on most arms (they roll over with them)
+	var seats := []
+	for s in surge.seats:
+		for x in [-0.5, 0.5]:
+			if _taken(0.75):
+				seats.append([s, 0, _seat(Vector3(x, 0.27, -0.1), PI)])
+	surge.riders = _riders(star, seats, 1.0, 0.4, 0.6)
 	_solid(n, Vector3(1.8, 7.0, 1.8), Vector3(0, 3.5, 0))
 	return n
 
@@ -1111,6 +1354,7 @@ class Surge extends Node3D:
 	const CYCLE := [[8.0, "rest"], [6.0, "start"], [24.0, "run"], [6.0, "stop"]]
 	var star: Node3D
 	var seats: Array = []
+	var riders: Riders = null
 	var _t := 0.0
 	var _go := 0.0
 
@@ -1132,6 +1376,8 @@ class Surge extends Node3D:
 		star.rotation.y = fposmod(star.rotation.y + dt * 1.6 * _go, TAU)
 		for s in seats:
 			(s as Node3D).rotation.x = fposmod((s as Node3D).rotation.x + dt * 1.3 * _go, TAU) if _go > 0.01 else lerp_angle((s as Node3D).rotation.x, 0.0, dt * 2.0)
+		if riders:
+			riders.follow()
 
 # ---------------------------------------------------------------- the Arabian Merry (flying elephants)
 
@@ -1178,6 +1424,12 @@ static func _arabian_merry(parent: Node3D, at: Vector2) -> Node3D:
 	merry.elephant_batch = _batch(merry, em, MERRY_N, "Elephants")
 	for i in MERRY_N:
 		merry.arms.append([TAU * i / MERRY_N, float(i)])
+	# kids astride most of the elephants
+	var seats := []
+	for i in MERRY_N:
+		if _taken(0.7):
+			seats.append([merry.elephant_batch.multimesh, i, _seat(Vector3(-0.15, 0.82, 0), -PI / 2.0, 0.62)])
+	merry.riders = _riders(merry, seats, 0.0, 0.7, 0.35)
 	merry.pose()
 	_solid(n, Vector3(2.8, 5.0, 2.8), Vector3(0, 2.5, 0))
 	return n
@@ -1188,6 +1440,7 @@ class Merry extends Node3D:
 	var arms: Array = []                   # [which way it points round the tower, its phase]
 	var arm_batch: MultiMeshInstance3D
 	var elephant_batch: MultiMeshInstance3D
+	var riders: Riders = null
 	var _t := 0.0
 	var _go := 0.0
 
@@ -1209,6 +1462,8 @@ class Merry extends Node3D:
 			arm_batch.multimesh.set_instance_transform(i, arm)
 			var tip := arm * Vector3(SkLunaRides.MERRY_ARM, 0.2, 0)
 			elephant_batch.multimesh.set_instance_transform(i, Transform3D(Basis(Vector3.UP, float(a[0]) - PI / 2.0), tip))
+		if riders:
+			riders.follow()
 
 ## No shadows from the small moving pieces under `root` (each shadow is another draw; on a small part you'd hardly see
 ## it): any mesh under a ride's moving part that's under 4 m across.

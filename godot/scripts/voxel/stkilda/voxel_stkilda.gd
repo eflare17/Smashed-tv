@@ -5,14 +5,16 @@ extends Node3D
 ## walk round. No fighting there yet. You get there and back on the phone (P: VoxelPhone's Travel).
 ##
 ## It's the St Kilda game's own code (scripts/voxel/stkilda/map, copied across by tools/stkilda_sync.sh, every class
-## with "Sk" in front), built the first time you go, OFFSET m away from the arena in the same world: the same
-## player, view (V) and keys. While you're there the arena waits for you (its enemies stood still, no new waves,
+## with "Sk" in front), built the first time you go, in the arena's own world but 3 km east of it (the copy's map is
+## moved there: tools/stkilda_cut.gd), so it's the same player, view (V) and keys. Its looks come too: the old wood
+## coaster, the ground, the soft shade, the crowd, the flags, and N for night. Not the St Kilda game's own play (its
+## people, the ute, knocking the crowd over). While you're there the arena waits for you (its enemies stood still, no new waves,
 ## your weapons put away), and the St Kilda sky and sun take over. Where you are isn't saved: start the game again
 ## and you're home.
 
-const OFFSET := Vector3(0.0, 0.0, -3000.0)   # where the slice's middle goes (far past the arena's sky line)
 const START_BACK := 18.0                     # you arrive this far out from Mr Moon's face, facing his mouth
 const WALL_H := 6.0                          # the slice's edge: an invisible wall this tall
+const NEAR := 0.15                           # the camera's nearest (m) here: as the St Kilda game's, so the fronts don't flicker
 
 var arena: VoxelArena
 var active := false
@@ -27,6 +29,14 @@ var _was_frozen := false
 var _arena_env: Environment
 var _we: WorldEnvironment                    # the arena's
 var _help_text := ""
+var _arena_near := 0.05
+var day_night: SkDayNight
+# (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
+# so nobody's knocked over)
+var driving := false
+var car: SkCar = null
+var walker := SkWalker.new()
+var fly := {"active": false}
 
 func setup(a: VoxelArena) -> void:
 	arena = a
@@ -38,7 +48,7 @@ func setup(a: VoxelArena) -> void:
 		if n is WorldEnvironment:
 			_we = n
 
-## Build the slice (the first time: about half a second; the screen's black then).
+## Build the slice (the first time: a second or two; the screen's black then).
 func build() -> void:
 	if built:
 		return
@@ -52,12 +62,32 @@ func build() -> void:
 			town.skip[id] = true
 	var slice: Array = town.data.get("slice", [])
 	var box := Rect2(Vector2(slice[0], slice[1]), Vector2(slice[2] - slice[0], slice[3] - slice[1]))
-	position = OFFSET - Vector3(box.get_center().x, 0.0, box.get_center().y)
 	town.build(self, [[luna, SkLunaPark.CLEAR]])
 	SkLunaPark.build(self, town)
+	# its looks, as the St Kilda game (town_main) adds them
+	for nm in ["Carousel", "GhostTrain", "ArabianMerry", "MoonBalloons", "Spider", "SkyRider", "PowerSurge", "LunaPalace", "Supernova", "PharaohsCurse", "ConeyDrop", "SkLunaPark"]:
+		var ride := get_node_or_null(nm) as Node3D
+		if ride:
+			SkContactShade.under_node(ride)
+	SkContactShade.build(town.root)
+	SkRideLights.build(self)
+	var crowd := SkCrowd.new()
+	crowd.name = "SkCrowd"
+	crowd.setup(town)
+	add_child(crowd)
+	var flags := SkParkFlags.new()
+	flags.name = "SkParkFlags"
+	add_child(flags)
+	day_night = SkDayNight.new()
+	day_night.name = "SkDayNight"
+	day_night.setup(town, luna, null)
+	add_child(day_night)
 	# the St Kilda sky: kept for when you're here (one WorldEnvironment in the world: the arena's, its sky swapped)
 	env = town.environment
 	sun = town.sun
+	# the St Kilda game's sharper shadows in the park (on a computer): its sun's shadows kept to the nearer 70 m. The
+	# shadow map's size, and the smoothing (MSAA), are the voxel game's settings', and F1 (shadows on or off) works here too.
+	sun.directional_shadow_max_distance = 70.0
 	for n in town.root.get_children():
 		if n is WorldEnvironment:
 			n.queue_free()
@@ -86,6 +116,7 @@ func go() -> void:
 	_home_yaw = arena.look_yaw
 	_home_pitch = arena.look_pitch
 	_was_frozen = arena.frozen
+	_arena_near = arena.cam.near
 	arena.frozen = true
 	active = true
 	visible = true
@@ -94,9 +125,10 @@ func go() -> void:
 	_we.environment = env
 	arena.sun.visible = false
 	arena.bar.visible = false                  # (no weapons here yet)
+	arena.cam.near = NEAR
 	sun.visible = true
 	_help_text = arena.help.text
-	arena.help.text = "P phone (travel home)   WASD walk   mouse look   Shift run   Space jump   V view   Esc mouse"
+	arena.help.text = "P phone (travel home)   WASD walk   mouse look   Shift run   Space jump   V view   N night   Esc mouse"
 	var s := arrive_spot()
 	_put(s[0], s[1], 0.0)
 
@@ -113,6 +145,7 @@ func home() -> void:
 	_we.environment = _arena_env
 	arena.sun.visible = true
 	arena.bar.visible = true
+	arena.cam.near = _arena_near
 	arena.help.text = _help_text
 	_put(_home_at, _home_yaw, _home_pitch)
 
@@ -156,6 +189,7 @@ func railway() -> Node3D:
 	return get_node_or_null("SkScenicRailway")
 
 func _process(dt: float) -> void:
+	sun.shadow_enabled = arena.sun.shadow_enabled     # (the settings' Shadows, and F1, are on the arena's sun)
 	if ride_train:
 		var up := float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)) \
 				- float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
@@ -180,6 +214,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
 	var k := (e as InputEventKey).physical_keycode
+	if k == KEY_N:                          # day or night (as in the St Kilda game)
+		day_night.toggle()
+		get_viewport().set_input_as_handled()
+		return
 	if ride_train:
 		if k == KEY_E:
 			end_ride()
@@ -261,5 +299,6 @@ func _head() -> void:
 		behind.look_at(you + fwd * 2.0, Vector3.UP)
 
 func _exit_tree() -> void:
+	walker.free()                          # (the crowd's stand-in: never in the scene)
 	if _rider and not _rider.is_inside_tree():
 		_rider.free()                      # (off the ride, the rider's out of the scene: freed by hand)

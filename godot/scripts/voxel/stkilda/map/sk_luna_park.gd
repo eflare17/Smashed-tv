@@ -66,7 +66,7 @@ static func build(parent: Node3D, town: SkTownBuilder) -> Node3D:
 	var mi := MeshInstance3D.new()
 	mi.name = "Face entrance"
 	mi.mesh = SkModels.bake(holder)
-	mi.material_override = SkModels.baked_material()
+	mi.material_override = SkWornLook.material()          # (its age: SkWornLook)
 	holder.free()
 	n.add_child(mi)
 	n.add_child(_head())
@@ -128,6 +128,7 @@ static func _grounds(parent: Node3D, town: SkTownBuilder, face: Transform3D, els
 		var cap := SkModels.box(holder, Vector3(len + 0.5, 0.25, 0.6), Vector3(mid.x, wh + 0.1, mid.y), RED)
 		cap.rotation.y = yaw
 		SkTownBuilder._wall(body, a, b, wh)
+		SkContactShade.line(a, b, 1.3, 0.3)
 	var mi := MeshInstance3D.new()
 	mi.name = "ParkWall"
 	mi.mesh = SkModels.bake(holder)
@@ -142,11 +143,11 @@ static func _grounds(parent: Node3D, town: SkTownBuilder, face: Transform3D, els
 	var idx := Geometry2D.triangulate_polygon(ring)
 	for k in range(0, idx.size(), 3):
 		_up(st, Vector3(ring[idx[k]].x, 0.15, ring[idx[k]].y), Vector3(ring[idx[k + 1]].x, 0.15, ring[idx[k + 1]].y),
-			Vector3(ring[idx[k + 2]].x, 0.15, ring[idx[k + 2]].y), Color("#6f7275"))           # (asphalt, as in the photos)
+			Vector3(ring[idx[k + 2]].x, 0.15, ring[idx[k + 2]].y), Color("#5f6266"))           # (dark grey asphalt, as in the photos)
 	var pave := MeshInstance3D.new()
 	pave.name = "ParkPaving"
 	pave.mesh = st.commit()
-	pave.material_override = SkModels.baked_material()
+	pave.material_override = _asphalt()
 	pave.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(pave)
 
@@ -534,3 +535,33 @@ static func _solid(n: Node3D) -> void:
 		cs.shape = shape
 		cs.position = bx[1]
 		b.add_child(cs)
+
+## The park's asphalt: dark grey, with a fine grain and big soft patches of wear (lighter where it's walked on most,
+## darker where it's been patched), laid over the ground in world space so it never stretches.
+static func _asphalt() -> StandardMaterial3D:
+	var grain := FastNoiseLite.new()
+	grain.noise_type = FastNoiseLite.TYPE_VALUE
+	grain.frequency = 0.5
+	grain.seed = 3
+	var wear := FastNoiseLite.new()
+	wear.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	wear.frequency = 0.012
+	wear.fractal_octaves = 3
+	wear.seed = 11
+	var g := grain.get_seamless_image(256, 256)
+	var w := wear.get_seamless_image(256, 256)
+	var img := Image.create(256, 256, false, Image.FORMAT_RGB8)
+	for y in 256:
+		for x in 256:
+			var v := 0.86 + (g.get_pixel(x, y).r - 0.5) * 0.12 + (w.get_pixel(x, y).r - 0.5) * 0.22
+			img.set_pixel(x, y, Color(v, v, v * 1.01))
+	img.generate_mipmaps()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
+	mat.albedo_texture = ImageTexture.create_from_image(img)
+	mat.uv1_triplanar = true
+	mat.uv1_world_triplanar = true
+	mat.uv1_scale = Vector3(1.0 / 24.0, 1.0 / 24.0, 1.0 / 24.0)      # (the pattern repeats every 24 m)
+	mat.roughness = 0.95
+	return mat

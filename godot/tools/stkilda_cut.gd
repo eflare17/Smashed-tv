@@ -3,11 +3,16 @@ extends SceneTree
 ## has: Luna Park (its wall, OpenStreetMap's way SkLunaPark.WALL_WAY in data/luna.json) and MARGIN m round it.
 ## Anything flat or built that touches the slice is kept whole (so nothing's cut in half at the edge); roads are
 ## trimmed to a little past it. The slice's box goes in as "slice" [x0, z0, x1, z1] (map metres), for its walls.
+## The whole slice is then moved PLACE_X m east (its middle there), well away from the arena: every x on the map, and
+## its origin's longitude so Luna Park's own data (lat / lon, data/luna.json) lands there too (an east-west move only,
+## so it's exact). The St Kilda code then works in its own map's metres with nothing to add (some of it reads where
+## things are in the world, some where they are on the map: the same here).
 ## Writes data/stkilda/town.json and data/stkilda/luna.json. Run by tools/stkilda_sync.sh (-- --src=<stkilda-godot>).
 
 const MARGIN := 50.0
 const WALL_WAY := 15477129      # (SkLunaPark.WALL_WAY: not loaded here, the copied classes may not be in yet)
 const ROAD_PAST := 30.0         # roads go on this far past the slice
+const PLACE_X := 3000.0         # where the slice's middle goes (m east of the arena: far past its sky line)
 
 func _init() -> void:
 	var src := "C:/Users/Admin/Documents/stkilda-godot"
@@ -52,7 +57,15 @@ func _init() -> void:
 				out[k] = _flat(v, {"trees": 3, "crossings": 5, "lights": 5}[k], box)
 			_:
 				out[k] = v
-	out.slice = [box.position.x, box.position.y, box.end.x, box.end.y]
+	# moved east, out of the arena's way
+	var dx := PLACE_X - box.get_center().x
+	for k in ["areas", "parks", "water", "buildings", "piers", "roads", "streams", "bays", "rails"]:
+		for it in out.get(k, []):
+			it.p = _east(it.p, dx, 2)
+	for k in ["trees", "crossings", "lights"]:
+		out[k] = _east(out[k], dx, {"trees": 3, "crossings": 5, "lights": 5}[k])
+	out.slice = [box.position.x + dx, box.position.y, box.end.x + dx, box.end.y]
+	out.origin = [lat0, lon0 - dx / (111320.0 * cos(deg_to_rad(lat0)) * s)]
 	out.note = String(town.get("note", "")) + " Cut to Luna Park and %d m round it by tools/stkilda_cut.gd." % int(MARGIN)
 	var f := FileAccess.open("res://data/stkilda/town.json", FileAccess.WRITE)
 	f.store_string(JSON.stringify(out))
@@ -63,6 +76,13 @@ func _init() -> void:
 	print("stkilda_cut: slice ", box, ": ", out.buildings.size(), " buildings, ", out.roads.size(), " roads (of ",
 			town.buildings.size(), ", ", town.roads.size(), ")")
 	quit()
+
+## The [x, z, ...] runs of `stride` numbers each, every x moved dx.
+static func _east(v: Array, dx: float, stride: int) -> Array:
+	var out := v.duplicate()
+	for i in range(0, out.size() - 1, stride):
+		out[i] = float(out[i]) + dx
+	return out
 
 ## Whether a flat [x, z, x, z ...] outline's box touches the slice.
 static func _touches(p: Array, box: Rect2) -> bool:

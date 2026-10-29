@@ -265,14 +265,15 @@ static func _shop(parent: Node3D, ring: PackedVector2Array, look: Array, track: 
 static func _moon_balloons(parent: Node3D, at: Vector2) -> Node3D:
 	var n := SkLunaRides._placed(parent, "MoonBalloons", at, Vector2(1, 0))
 	var holder := Node3D.new()
+	const HUB := 6.0                     # (high enough that the balloon at the bottom clears the platform)
 	for z in [-1.0, 1.0]:
 		for x in [-2.6, 2.6]:
-			SkLunaRides._strut(holder, Vector3(x, 0, z * 1.4), Vector3(0, 4.6, z * 0.9), 0.3, PINK)
+			SkLunaRides._strut(holder, Vector3(x, 0, z * 1.4), Vector3(0, HUB, z * 0.9), 0.3, PINK)
 	SkModels.cyl(holder, 3.4, 0.4, Vector3(0, 0.2, 0), Color("#3d7fd0"), true, 16)
 	SkLunaRides._bake(n, holder, "Frame")
 	var wheel := SkLunaRides.SkyWheel.new()
 	wheel.name = "Wheel"
-	wheel.position.y = 4.6
+	wheel.position.y = HUB
 	n.add_child(wheel)
 	var w := Node3D.new()
 	for i in 6:
@@ -285,10 +286,12 @@ static func _moon_balloons(parent: Node3D, at: Vector2) -> Node3D:
 	for i in 6:
 		var a := TAU * i / 6.0
 		var g := Node3D.new()
-		SkLunaRides._cone(g, 0.5, 0.9, 0.9, Vector3(0, -1.0, 0), colours[i], 10)          # the balloon's top
+		# the balloon: round on top, narrowing down to its ropes (a cone wide at the top read as a roof upside down)
+		SkModels.ball(g, 0.85, Vector3(0, -0.6, 0), colours[i])
+		SkLunaRides._cone(g, 0.28, 0.62, 0.55, Vector3(0, -1.325, 0), colours[i], 10)
 		for k in 6:
 			var b := TAU * k / 6.0
-			SkLunaRides._strut(g, Vector3(cos(b) * 0.85, -1.45, sin(b) * 0.85), Vector3(cos(b) * 0.7, -2.3, sin(b) * 0.7), 0.06, Color("#d7dade"))
+			SkLunaRides._strut(g, Vector3(cos(b) * 0.3, -1.6, sin(b) * 0.3), Vector3(cos(b) * 0.7, -2.3, sin(b) * 0.7), 0.06, Color("#d7dade"))
 		SkLunaRides._cone(g, 0.75, 0.6, 0.4, Vector3(0, -2.45, 0), colours[i], 10)       # its basket
 		var gm := SkModels.bake(g)
 		g.free()
@@ -312,12 +315,17 @@ static func _lamp(holder: Node3D, body: StaticBody3D, at: Vector3, k: int) -> vo
 	for x in [-0.5, 0.5]:
 		SkModels.ball(holder, 0.22, at + Vector3(x, 3.85, 0), Color("#fbf6e6"))
 	var bench := at + Vector3(0.9, 0, 0)
+	SkContactShade.blob(Vector2(at.x, at.z), 0.55, 0.4)
+	for x in [-0.5, 0.5]:
+		SkDayNight.lamps.append(at + Vector3(x, 3.85, 0))          # (lit at night)
+	SkContactShade.blob(Vector2(bench.x, bench.z), 0.95, 0.38)
 	SkModels.box(holder, Vector3(0.45, 0.08, 1.5), bench + Vector3(0, 0.45, 0), Color("#3f8a4a"))
 	SkModels.box(holder, Vector3(0.08, 0.45, 1.5), bench + Vector3(0.22, 0.7, 0), Color("#3f8a4a"))
 	for z in [-0.6, 0.6]:
 		SkModels.box(holder, Vector3(0.4, 0.45, 0.06), bench + Vector3(0, 0.22, z), Color("#2a2c30"))
 	if k % 3 == 0:
 		SkModels.cyl(holder, 0.28, 0.9, at + Vector3(-0.7, 0.45, 0.3), YELLOW, true, 10)
+		SkContactShade.blob(Vector2(at.x - 0.7, at.z + 0.3), 0.45, 0.4)
 	var cs := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
 	bs.size = Vector3(0.3, 3.0, 0.3)

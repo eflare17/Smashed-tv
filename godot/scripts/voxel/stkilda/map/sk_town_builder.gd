@@ -24,6 +24,7 @@ const C_WATER_EDGE := Color("#8a8460")
 const C_ROAD := SkData.C_ASPHALT
 const C_PATH := SkData.C_PATH
 const C_MALL := Color("#cdbfa8")
+const C_KERB := Color("#c9c6bd")
 const C_MEDIAN := Color("#8fa858")      # the grass down the middle of a divided road
 const C_BALLAST := Color("#7d766c")
 const C_RAIL := Color("#5a5650")
@@ -88,9 +89,11 @@ func build(parent: Node3D, lots: Array = []) -> Node3D:
 	_index_roads()
 	_cleared = lots
 	_light()
+	SkContactShade.begin()             # (the shade at buildings' feet and under things: made once everything's built)
 	_flat_things()
 	_buildings()
 	_landmarks()
+	_pier_rails()
 	SkTownTrees.new().build(self)
 	SkTownRoads.new().build(self)
 	return root
@@ -218,36 +221,79 @@ func in_lot(c: Vector2) -> bool:
 
 func _light() -> void:
 	sun = DirectionalLight3D.new()
-	sun.rotation = Vector3(deg_to_rad(-50.0), deg_to_rad(150.0), 0.0)     # (from the north, as in Melbourne: north fronts are sunny)
-	sun.light_energy = 0.55
-	sun.light_color = Color("#fff4e2")
+	# from the north (as in Melbourne: north fronts are sunny), a little lower and warmer than midday: an afternoon sun,
+	# so the shadows are longer and show the shapes
+	sun.rotation = Vector3(deg_to_rad(-38.0), deg_to_rad(150.0), 0.0)
+	sun.light_energy = 0.78
+	sun.light_color = Color("#ffe9cc")
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 120.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_split_1 = 0.22         # (more of the shadow map close up: sharper near you)
+	sun.shadow_blur = 1.4
+	sun.shadow_bias = 0.03
+	sun.shadow_normal_bias = 1.2
 	root.add_child(sun)
 	var env := WorldEnvironment.new()
 	var e := Environment.new()
 	var sky := Sky.new()
 	var sm := ProceduralSkyMaterial.new()
-	sm.sky_top_color = Color("#3d8fd6")
-	sm.sky_horizon_color = Color("#cfe6f5")
+	sm.sky_top_color = Color("#2a73c9")
+	sm.sky_horizon_color = Color("#a9cdea")
+	sm.sky_curve = 0.12
 	sm.ground_horizon_color = Color("#a9cbdb")      # (below the horizon: hazy sea, out over Port Phillip)
 	sm.ground_bottom_color = C_SEA
+	sm.sky_cover = _clouds()
+	sm.sky_cover_modulate = Color(1, 1, 1, 0.85)
+	sm.sun_angle_max = 20.0
 	sky.sky_material = sm
 	e.background_mode = Environment.BG_SKY
 	e.sky = sky
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color("#d3dbe6")
-	e.ambient_light_energy = 0.3
+	e.ambient_light_color = Color("#c4d2e6")        # (a bluish fill in the shade, from the sky)
+	e.ambient_light_energy = 0.36
 	e.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
-	e.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	# filmic: the brights roll off instead of going flat white, so the reds and blues stay rich
+	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	e.tonemap_exposure = 0.92
+	e.tonemap_white = 6.0
+	e.adjustment_enabled = true
+	e.adjustment_contrast = 1.12
+	e.adjustment_saturation = 1.12
+	# a soft glow on only the brightest things (the light bulbs, the Moon face's sun rays, signs)
+	e.glow_enabled = true
+	e.glow_intensity = 0.35
+	e.glow_strength = 0.9
+	e.glow_bloom = 0.0
+	e.glow_hdr_threshold = 1.1
+	e.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	e.fog_enabled = true                      # the far edge of the map fades into haze
-	e.fog_light_color = Color("#cfe0ec")
-	e.fog_density = 0.0006
+	e.fog_light_color = Color("#a9cdea")             # (the sky's horizon colour, so the far edge melts into it)
+	e.fog_density = 0.0009
 	e.fog_sky_affect = 0.0
 	env.environment = e
 	environment = e
 	root.add_child(env)
+
+## A few soft fair-weather clouds for the sky: noise, cut off so most of the sky stays clear.
+static func _clouds() -> Texture2D:
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = 0.006
+	n.fractal_octaves = 4
+	n.seed = 7
+	var w := 512
+	var h := 256
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		# (the cover wraps the whole sky, top row straight up, the middle row the horizon: keep them in a band
+		# partway up, off straight up and thinning out down to the horizon)
+		var band := clampf(1.0 - absf(float(y) / h - 0.33) * 6.0, 0.0, 1.0)
+		for x in w:
+			var v := n.get_noise_2d(x * 1.0, y * 2.0) * 0.5 + 0.5
+			var a := clampf((v - 0.58) * 4.0, 0.0, 1.0) * band
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	return ImageTexture.create_from_image(img)
 
 # ================================================================ the flat things: ground, parks, water, roads
 
@@ -258,18 +304,18 @@ func _flat_things() -> void:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_normal(Vector3.UP)
 	var b := bounds.grow(160.0)
-	_quad(st, b, 0.0, C_GROUND)
+	_quad(st, b, 0.0, SkGroundLook.kind(C_GROUND, SkGroundLook.GRASS))
 	# the ground under it all: houses' gardens, shops' paving, industry's gravel, school grounds, woods, paddocks
 	for a in data.get("areas", []):
 		if AREAS[a.k][1] < 0.03:
-			_poly(st, _pts(a.p), AREAS[a.k][1], AREAS[a.k][0], a.get("i", []))
+			_poly(st, _pts(a.p), AREAS[a.k][1], _area_look(a.k), a.get("i", []))
 	for p in data.parks:
-		_poly(st, _pts(p.p), 0.03, C_PITCH if p.k == "pitch" else C_PARK, p.get("i", []))
+		_poly(st, _pts(p.p), 0.03, SkGroundLook.kind(C_PITCH if p.k == "pitch" else C_PARK, SkGroundLook.GRASS), p.get("i", []))
 	# on top of the parks: playgrounds, ovals and courts with their white lines, car parks and their bays
 	for a in data.get("areas", []):
 		if AREAS[a.k][1] >= 0.03:
 			var ring := _pts(a.p)
-			_poly(st, ring, AREAS[a.k][1], AREAS[a.k][0], a.get("i", []))
+			_poly(st, ring, AREAS[a.k][1], _area_look(a.k), a.get("i", []))
 			if a.k in ["oval", "court"]:
 				_line(st, ring, 0.35 if a.k == "oval" else 0.15, AREAS[a.k][1] + 0.004, SkData.C_LINE, false)
 	for bay in data.get("bays", []):
@@ -277,11 +323,11 @@ func _flat_things() -> void:
 	for w in data.water:
 		var ring := _pts(w.p)
 		var sea: bool = w.get("sea", false)
-		_line(st, ring, 4.0 if sea else 2.4, 0.05, C_SAND_EDGE if sea else C_WATER_EDGE, false)
-		_poly(st, ring, 0.07, C_SEA if sea else C_WATER, w.get("i", []))
+		_line(st, ring, 4.0 if sea else 2.4, 0.05, SkGroundLook.kind(C_SAND_EDGE, SkGroundLook.SHORE) if sea else C_WATER_EDGE, false)
+		_poly(st, ring, 0.07, SkGroundLook.kind(C_SEA if sea else C_WATER, SkGroundLook.SEA), w.get("i", []))
 	# the piers' decks, the breakwater's and groynes' rocks, over the sea
 	for pr in data.get("piers", []):
-		var col := C_DECK if pr.k == "pier" else C_ROCK
+		var col := SkGroundLook.kind(C_DECK, SkGroundLook.DECK) if pr.k == "pier" else SkGroundLook.kind(C_ROCK, SkGroundLook.ROCK)
 		if pr.a:
 			_poly(st, _pts(pr.p), 0.09, col)
 		else:
@@ -294,30 +340,35 @@ func _flat_things() -> void:
 				# one side of a divided road: the footpath on its left (we drive on the left), a grass median on
 				# its right, between it and the other side
 				var p := _pts(r.p)
-				_line(st, _offset(p, r.w / 2.0 + PATH_W / 2.0), PATH_W, 0.10, C_PATH, true)
-				_line(st, _offset(p, -(r.w / 2.0 + 2.0)), 4.0, 0.10, C_MEDIAN, true)
+				_line(st, _offset(p, r.w / 2.0 + PATH_W / 2.0), PATH_W, 0.10, SkGroundLook.kind(C_PATH, SkGroundLook.PATH), true)
+				_line(st, _offset(p, -(r.w / 2.0 + 2.0)), 4.0, 0.10, SkGroundLook.kind(C_MEDIAN, SkGroundLook.GRASS), true)
 			else:
-				_line(st, _pts(r.p), r.w + PATH_W * 2.0, 0.10, C_PATH, true)
+				_line(st, _pts(r.p), r.w + PATH_W * 2.0, 0.10, SkGroundLook.kind(C_PATH, SkGroundLook.PATH), true)
 	# a mall's paving, shopfront to shopfront, under its slow lane (the Maude St Mall)
 	for r in data.roads:
 		if String(r.n).ends_with(" Mall"):
-			_line(st, _pts(r.p), 22.0, 0.12, C_MALL, true)
+			_line(st, _pts(r.p), 22.0, 0.12, SkGroundLook.kind(C_MALL, SkGroundLook.PATH), true)
 	for r in data.rails:
 		_line(st, _pts(r.p), 3.4, 0.12, C_BALLAST, true)
+	# kerbs: a pale concrete edge along each side of each road (under the roads, so junctions stay open)
+	for r in data.roads:
+		if not (r.k in NO_PATH) and r.k != "pedestrian" and not _in_any_lot(r):
+			for side in [-1.0, 1.0]:
+				_line(st, _offset(_pts(r.p), side * (r.w / 2.0 + 0.14)), 0.28, 0.13, C_KERB, false)
 	# roads over everything (the busier ones on top, so junctions read right)
 	var order: Array = data.roads.duplicate()
 	order.sort_custom(func(a, c): return _rank(a.k) < _rank(c.k))
 	for r in order:
 		if r.k == "service" and _in_any_lot(r):
 			continue
-		_line(st, _pts(r.p), r.w, 0.16 if r.k == "pedestrian" else 0.14, C_MALL if r.k == "pedestrian" else C_ROAD, true)
+		_line(st, _pts(r.p), r.w, 0.16 if r.k == "pedestrian" else 0.14, SkGroundLook.kind(C_MALL, SkGroundLook.PATH) if r.k == "pedestrian" else SkGroundLook.kind(C_ROAD, SkGroundLook.ROAD), true)
 	for r in data.rails:
 		for side in [-0.72, 0.72]:
 			_line(st, _offset(_pts(r.p), side), 0.12, 0.2, C_RAIL, false)
 	var mi := MeshInstance3D.new()
 	mi.name = "Ground"
+	mi.material_override = SkGroundLook.material()
 	mi.mesh = st.commit()
-	mi.material_override = SkModels.baked_material()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mi)
 	# one big flat floor to drive and walk on
@@ -334,6 +385,52 @@ func _flat_things() -> void:
 	root.add_child(body)
 	_lake_edges()
 	_map_edge(b.grow(-60.0))
+
+## An area's colour, carrying its kind of ground for SkGroundLook: the green ones grass, car parks worn asphalt, beaches
+## sand; the rest plain.
+static func _area_look(k: String) -> Color:
+	var c: Color = AREAS[k][0]
+	if k in ["homes", "school", "grass", "wood", "orchard", "oval", "paddock"]:
+		return SkGroundLook.kind(c, SkGroundLook.GRASS)
+	if k == "parking":
+		return SkGroundLook.kind(c, SkGroundLook.PARKING)
+	if k == "beach":
+		return SkGroundLook.kind(c, SkGroundLook.SAND)
+	return c
+
+## Timber railings along both edges of each pier: posts every 3 m, a top rail and a middle one, weathered grey-brown.
+func _pier_rails() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var wood := Color("#7d6a55")
+	var any := false
+	for pr in data.get("piers", []):
+		if pr.k != "pier" or pr.a:
+			continue
+		var line := _pts(pr.p)
+		for side in [-1.0, 1.0]:
+			var edge := _offset(line, side * (float(pr.w) / 2.0 - 0.15))
+			var walked := 0.0
+			for i in edge.size() - 1:
+				var a := edge[i]
+				var b := edge[i + 1]
+				var len := a.distance_to(b)
+				var k := 0.0
+				while k < len:
+					var p := a.lerp(b, k / len)
+					SkScenicRailway._beam(st, Vector3(p.x, 0.09, p.y), Vector3(p.x, 1.15, p.y), 0.14, wood.darkened(0.1))
+					k += 3.0
+				for y in [0.6, 1.1]:
+					SkScenicRailway._beam(st, Vector3(a.x, y, a.y), Vector3(b.x, y, b.y), 0.09, wood)
+				walked += len
+				any = true
+	if not any:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "PierRails"
+	mi.mesh = st.commit()
+	mi.material_override = SkModels.baked_material()
+	root.add_child(mi)
 
 static func _rank(k: String) -> int:
 	return {"service": 0, "pedestrian": 1, "residential": 2, "unclassified": 2, "tertiary_link": 3, "tertiary": 4,
@@ -591,6 +688,7 @@ func _block(st: SurfaceTool, walls: PackedVector3Array, ring: PackedVector2Array
 	var house := kind in SkFacades.HOUSES and ring.size() <= 12
 	if house:
 		h = 2.9 if h < 6.5 else 5.8
+	SkContactShade.skirt(ring, 1.3 if house else 1.9, 0.46)
 	for k in ring.size():
 		var a := ring[k]
 		var b := ring[(k + 1) % ring.size()]
@@ -608,9 +706,17 @@ func _block(st: SurfaceTool, walls: PackedVector3Array, ring: PackedVector2Array
 		var p2 := Vector3(b.x, h, b.y)
 		var p3 := Vector3(a.x, h, a.y)
 		st.set_normal(n)
+		# darker low down, fading up to AO_H (the shade where a wall meets the ground)
+		var lo := minf(AO_H, h)
+		var foot := shade.darkened(0.3)
+		var q0 := p0 + Vector3(0, lo, 0)
+		var q1 := p1 + Vector3(0, lo, 0)
+		_face_c(st, [p0, p1, q1], [foot, foot, shade], n)
+		_face_c(st, [p0, q1, q0], [foot, shade, shade], n)
 		st.set_color(shade)
-		_face(st, p0, p1, p2, n)
-		_face(st, p0, p2, p3, n)
+		if h > lo:
+			_face(st, q0, q1, p2, n)
+			_face(st, q0, p2, p3, n)
 		walls.append_array(PackedVector3Array([p0, p1, p2, p0, p2, p3]))
 		if fronts:
 			fronts.wall(st, a, b, n2, h, kind, shade, k in street_walls, look, bands)
@@ -623,6 +729,89 @@ func _block(st: SurfaceTool, walls: PackedVector3Array, ring: PackedVector2Array
 	for k in range(0, idx.size(), 3):
 		_tri(st, Vector3(ring[idx[k]].x, h, ring[idx[k]].y), Vector3(ring[idx[k + 1]].x, h, ring[idx[k + 1]].y),
 			Vector3(ring[idx[k + 2]].x, h, ring[idx[k + 2]].y), roof)
+	if not (kind in SkFacades.PLAIN) and h >= 6.0:              # (two storeys and up: the low ones aren't worth what it costs)
+		_parapet(st, ring, h, col)
+		_roof_bits(st, ring, h, idx)
+
+const PARAPET := 0.55                       # how high the low wall round a flat roof stands
+const PARAPET_W := 0.25
+
+## A low wall round the edge of a flat roof, with a lighter cap along its top (its outside carries on the wall's own).
+static func _parapet(st: SurfaceTool, ring: PackedVector2Array, h: float, col: Color) -> void:
+	var up := Vector3(0, PARAPET, 0)
+	for k in ring.size():
+		var a := ring[k]
+		var b := ring[(k + 1) % ring.size()]
+		if a.distance_to(b) < 0.3:
+			continue
+		var n2 := (b - a).normalized().orthogonal()
+		if Geometry2D.is_point_in_polygon((a + b) / 2.0 + n2 * 0.05, ring):
+			n2 = -n2
+		var n := Vector3(n2.x, 0, n2.y)
+		var shade: Color = col.darkened(0.12 if absf(n.x) > absf(n.z) else 0.0)
+		var oa := Vector3(a.x, h, a.y)
+		var ob := Vector3(b.x, h, b.y)
+		var ia := oa - n * PARAPET_W
+		var ib := ob - n * PARAPET_W
+		st.set_normal(n)
+		st.set_color(shade.darkened(0.22))
+		_face(st, oa, ob, ob + up, n)
+		_face(st, oa, ob + up, oa + up, n)
+		st.set_normal(-n)
+		st.set_color(col.darkened(0.3))
+		_face(st, ia, ib, ib + up, -n)
+		_face(st, ia, ib + up, ia + up, -n)
+		st.set_normal(Vector3.UP)
+		st.set_color(col.lightened(0.12))
+		_face(st, oa + up, ob + up, ib + up, Vector3.UP)
+		_face(st, oa + up, ib + up, ia + up, Vector3.UP)
+
+## What sits on a flat roof: an air-conditioning unit or a few (a grey box with a dark fan on top) and a vent pipe or
+## two, more on bigger roofs; where, picked from the building's own shape (the same every time).
+static func _roof_bits(st: SurfaceTool, ring: PackedVector2Array, h: float, idx: PackedInt32Array) -> void:
+	var area := 0.0
+	for k in range(0, idx.size(), 3):
+		area += absf((ring[idx[k + 1]] - ring[idx[k]]).cross(ring[idx[k + 2]] - ring[idx[k]])) / 2.0
+	if area < 250.0:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(ring[0])
+	var lo := Vector2(INF, INF)
+	var hi := -lo
+	for p in ring:
+		lo = lo.min(p)
+		hi = hi.max(p)
+	var units := clampi(int(area / 260.0), 1, 5)
+	var vents := clampi(int(area / 400.0), 0, 3)
+	var placed := 0
+	var tries := 0
+	while placed < units + vents and tries < 40:
+		tries += 1
+		var p := Vector2(rng.randf_range(lo.x, hi.x), rng.randf_range(lo.y, hi.y))
+		var ok := true
+		for d in [Vector2(1.6, 0), Vector2(-1.6, 0), Vector2(0, 1.6), Vector2(0, -1.6), Vector2.ZERO]:
+			if not Geometry2D.is_point_in_polygon(p + d, ring):
+				ok = false
+		if not ok:
+			continue
+		var base := Vector3(p.x, h, p.y)
+		if placed < units:
+			var grey := Color("#b9bcbd").darkened(rng.randf() * 0.15)
+			var tall := rng.randf_range(0.7, 1.1)
+			SkScenicRailway._beam(st, base, base + Vector3(0, tall, 0), rng.randf_range(0.9, 1.4), grey)
+			SkScenicRailway._beam(st, base + Vector3(0, tall, 0), base + Vector3(0, tall + 0.03, 0), 0.6, Color("#3a3d40"))
+		else:
+			SkScenicRailway._beam(st, base, base + Vector3(0, rng.randf_range(0.8, 1.6), 0), 0.18, Color("#8d9194"))
+		placed += 1
+
+const AO_H := 1.8                         # how far up a wall the shade at its foot reaches
+
+## A triangle facing n, each corner its own colour.
+static func _face_c(st: SurfaceTool, p: Array, c: Array, n: Vector3) -> void:
+	var order := [0, 2, 1] if ((p[1] as Vector3) - (p[0] as Vector3)).cross((p[2] as Vector3) - (p[0] as Vector3)).dot(n) > 0.0 else [0, 1, 2]
+	for k in order:
+		st.set_color(c[k])
+		st.add_vertex(p[k])
 
 ## A triangle facing n (Godot draws the side where the corners go clockwise).
 static func _face(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, n: Vector3) -> void:

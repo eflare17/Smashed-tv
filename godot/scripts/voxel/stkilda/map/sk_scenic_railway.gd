@@ -25,7 +25,8 @@ const SHARED_FAR := 6.5                  # ...and further apart than this, each 
 static var speed := 1.0
 const SPEED_MIN := 0.25
 const SPEED_MAX := 3.0
-const BENT := 4.0                        # a trestle bent every this far
+const BENT := 6.0                        # a trestle bent every this far (the owner: fewer posts than every 4 m)
+const CLEAR := 3.2                       # no posts this far either side of the way in from the mouth (it bridges over)
 const GAUGE := 2.4                       # the trough's width
 const WHITE := Color("#f2f0ea")
 const WHITE_SHADE := Color("#d9d6cd")
@@ -237,14 +238,22 @@ static func build(parent: Node3D, town: SkTownBuilder, face: Transform3D, els: A
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var posts := PackedVector3Array()
-	_deck(st, pts, r[3])
-	_trestles(st, pts, posts)
-	_sheds(st, pts, town, els, r[3])
+	SkCoasterWood.reset()
+	var wood := SurfaceTool.new()            # (the timber: its own mesh, textured)
+	wood.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_deck(st, wood, pts, r[3])
+	_trestles(st, wood, pts, posts, face)
+	_sheds(st, wood, pts, town, els, r[3])
 	var mi := MeshInstance3D.new()
 	mi.name = "Track"
 	mi.mesh = st.commit()
 	mi.material_override = SkModels.baked_material()
 	n.add_child(mi)
+	var timber := MeshInstance3D.new()
+	timber.name = "Timber"
+	timber.mesh = wood.commit()
+	timber.material_override = SkCoasterWood.material()
+	n.add_child(timber)
 	# the posts are solid (so you can't drive through them)
 	var body := StaticBody3D.new()
 	body.collision_layer = SkData.LAYER_WORLD
@@ -363,10 +372,14 @@ static func _across(pts: PackedVector3Array, i: int) -> Vector3:
 ## The track bed all the way round: the boarded floor, low side boards (the trough the cars run in), the two rails,
 ## a walkway along one side with its white handrail on posts: the first lap's on the outside (by the park's wall),
 ## the second's on the inside (the two laps run side by side).
-static func _deck(st: SurfaceTool, pts: PackedVector3Array, lap1: int) -> void:
+static func _deck(st: SurfaceTool, wood: SurfaceTool, pts: PackedVector3Array, lap1: int) -> void:
 	var g := GAUGE / 2.0
+	var board := SkCoasterWood.shade()           # (the side boards: a new length of board every 4 m)
+	var bed := SkCoasterWood.shade()
+	var rail_top := Vector3.INF               # (the last handrail post's top)
 	for i in pts.size() - 1:
 		if pts[i].distance_to(pts[i + 1]) > STEP * 3.0:
+			rail_top = Vector3.INF
 			continue                         # (where the first lap's end meets the second's start)
 		var a := pts[i]
 		var b := pts[i + 1]
@@ -375,77 +388,241 @@ static func _deck(st: SurfaceTool, pts: PackedVector3Array, lap1: int) -> void:
 		var side := -1.0 if i < lap1 else 1.0      # (which side the walkway is)
 		var wa := xa * side
 		var wb := xb * side
-		# the floor, its underside, the rails
-		_strip(st, a + wa * (g + 0.9), b + wb * (g + 0.9), a - wa * g, b - wb * g, Vector3.UP, WHITE_SHADE)
-		_strip(st, a + wa * (g + 0.9) - Vector3(0, 0.3, 0), b + wb * (g + 0.9) - Vector3(0, 0.3, 0), a - wa * g - Vector3(0, 0.3, 0), b - wb * g - Vector3(0, 0.3, 0), Vector3.DOWN, WHITE_SHADE.darkened(0.2))
+		if i % 4 == 0:
+			board = SkCoasterWood.shade()
+			bed = SkCoasterWood.shade()
+		var rng := SkCoasterWood.rng
+		# the trough's floor (the trains run on it: kept true), its underside, the rails
+		SkCoasterWood.plank(wood, a + wa * g, b + wb * g, a - wa * g, b - wb * g, Vector3.UP, bed)
+		SkCoasterWood.plank(wood, a + wa * g - Vector3(0, 0.3, 0), b + wb * g - Vector3(0, 0.3, 0), a - wa * g - Vector3(0, 0.3, 0), b - wb * g - Vector3(0, 0.3, 0), Vector3.DOWN, bed.darkened(0.3))
 		for s in [-0.55, 0.55]:
 			var up := Vector3(0, 0.03, 0)
 			_strip(st, a + xa * (s - 0.05) + up, b + xb * (s - 0.05) + up, a + xa * (s + 0.05) + up, b + xb * (s + 0.05) + up, Vector3.UP, RAIL)
+		# sleepers under it, two to the metre, out under the walkway: some gone, some split in two
+		for t0 in [0.0, 0.5]:
+			var c := a.lerp(b, t0) - Vector3(0, 0.37, 0)
+			var xc := xa.lerp(xb, t0).normalized()
+			var r := rng.randf()
+			if r < 0.1:
+				continue
+			var e0 := c - xc * side * (g + 0.2)
+			var e1 := c + xc * side * (g + 1.0)
+			if r < 0.18:
+				var brk := e0.lerp(e1, rng.randf_range(0.3, 0.7))
+				SkCoasterWood.beam(wood, e0, brk - xc * side * 0.06, 0.14, SkCoasterWood.shade())
+				SkCoasterWood.beam(wood, brk + xc * side * 0.06 - Vector3(0, 0.07, 0), e1 - Vector3(0, 0.1, 0), 0.14, SkCoasterWood.shade())
+			else:
+				SkCoasterWood.beam(wood, e0, e1, 0.14, SkCoasterWood.shade())
+		# the walkway: loose planks across it with gaps between, sagging between the bents; some missing, some with one
+		# end sprung up
+		var sag_a := Vector3(0, -0.14 * sin(PI * fposmod(float(i), BENT / STEP) / (BENT / STEP)), 0)
+		var sag_b := Vector3(0, -0.14 * sin(PI * fposmod(float(i + 1), BENT / STEP) / (BENT / STEP)), 0)
+		for k in 3:
+			var r := rng.randf()
+			if r < 0.1:
+				continue
+			var t0 := k / 3.0 + 0.015
+			var t1 := (k + 1) / 3.0 - 0.015
+			var p0 := a.lerp(b, t0) + sag_a.lerp(sag_b, t0)
+			var p1 := a.lerp(b, t1) + sag_a.lerp(sag_b, t1)
+			var x0 := xa.lerp(xb, t0).normalized() * side
+			var x1 := xa.lerp(xb, t1).normalized() * side
+			var lift := Vector3(0, rng.randf_range(0.12, 0.25), 0) if r < 0.18 else Vector3.ZERO
+			var pc := SkCoasterWood.shade()
+			# (across the walkway: the grain runs across)
+			SkCoasterWood.plank(wood, p0 + x0 * g, p0 + x0 * (g + 0.9) + lift, p1 + x1 * g, p1 + x1 * (g + 0.9) + lift, Vector3.UP, pc)
+			SkCoasterWood.plank(wood, p0 + x0 * g, p0 + x0 * (g + 0.9) + lift, p1 + x1 * g, p1 + x1 * (g + 0.9) + lift, Vector3.DOWN, pc.darkened(0.3))
 		# the side boards, both sides of the trough
 		for s in [-g, g]:
 			var lo := Vector3(0, -0.3, 0)
 			var hi := Vector3(0, 0.5, 0)
-			_strip(st, a + xa * s + lo, b + xb * s + lo, a + xa * s + hi, b + xb * s + hi, xa * signf(s), WHITE)
-			_strip(st, a + xa * s + lo, b + xb * s + lo, a + xa * s + hi, b + xb * s + hi, -xa * signf(s), WHITE_SHADE)
-		# the handrail along the walkway's outer edge, on posts every 2 m
-		var rail := Vector3(0, 1.0, 0)
-		_beam(st, a + wa * (g + 0.85) + rail, b + wb * (g + 0.85) + rail, 0.08, WHITE)
+			SkCoasterWood.plank(wood, a + xa * s + lo, b + xb * s + lo, a + xa * s + hi, b + xb * s + hi, xa * signf(s), board)
+			SkCoasterWood.plank(wood, a + xa * s + lo, b + xb * s + lo, a + xa * s + hi, b + xb * s + hi, -xa * signf(s), board.darkened(0.15))
+		# the handrail along the walkway's outer edge, on posts every 2 m: posts of all heights leaning every way, the
+		# rail going up and down between them; a length missing here and there, now and then one hanging down
 		if i % 2 == 0:
-			_beam(st, a + wa * (g + 0.85), a + wa * (g + 0.85) + rail, 0.08, WHITE)
+			var foot := a + wa * (g + 0.85) + sag_a
+			var lean := Vector3(rng.randf_range(-0.15, 0.15), 0, rng.randf_range(-0.15, 0.15))
+			var top := foot + Vector3(0, rng.randf_range(0.8, 1.15), 0) + lean
+			SkCoasterWood.beam(wood, foot, top, 0.09, board)
+			if rail_top != Vector3.INF:
+				var r := rng.randf()
+				if r < 0.06:
+					SkCoasterWood.beam(wood, rail_top, foot + Vector3(0, 0.15, 0) + wa * 0.3, 0.07, board)
+				elif r > 0.14:
+					SkCoasterWood.beam(wood, rail_top, top, 0.07, board)
+			rail_top = top
 
 ## Trestle bents every BENT m: two posts down to the ground with ledgers across and a diagonal brace between each
 ## pair of ledgers, and stringers along under the bed from bent to bent. The posts go into `solid` (as faces).
-static func _trestles(st: SurfaceTool, pts: PackedVector3Array, solid: PackedVector3Array) -> void:
+## None over the way in from the mouth (CLEAR either side of it, in `face`'s space): the track bridges over it on deep
+## stringers, from heavier bents either side.
+static func _trestles(st: SurfaceTool, wood: SurfaceTool, pts: PackedVector3Array, solid: PackedVector3Array, face: Transform3D) -> void:
 	var every := int(BENT / STEP)
+	var inv := face.affine_inverse()
+	var in_way := func(q: Vector3) -> bool:
+		var lq := inv * q
+		return absf(lq.x) < CLEAR and lq.z < 0.0 and lq.z > -30.0
+	var bents := range(0, pts.size(), every)
+	var skip := {}
+	for i in bents:
+		var x := _across(pts, i)
+		var c := Vector3(pts[i].x, 0, pts[i].z)
+		if in_way.call(c - x * (GAUGE / 2.0 + 0.9)) or in_way.call(c + x * (GAUGE / 2.0 + 0.7)) or in_way.call(c):
+			skip[i] = true
 	var prev := []
-	for i in range(0, pts.size(), every):
+	var spans := false                    # (the last bent was skipped: the stringers to this one bridge the way in)
+	for i in bents:
 		var p := pts[i]
 		var x := _across(pts, i)
 		var top := p.y - 0.3
 		if top < 0.4:
 			prev = []
 			continue
+		if skip.has(i):
+			spans = true
+			continue
 		var l := Vector3(p.x, 0, p.z) - x * (GAUGE / 2.0 + 0.3)
 		var r := Vector3(p.x, 0, p.z) + x * (GAUGE / 2.0 + 0.1)
-		# the posts lean in a little going up (a trestle's batter)
-		var lean := x * minf(0.6, top * 0.03)
-		_beam(st, l - lean, l + Vector3(0, top, 0), 0.22, WHITE)
-		_beam(st, r + lean, r + Vector3(0, top, 0), 0.22, WHITE)
-		for q in [l - lean, r + lean]:
-			var c: Vector3 = q
-			var s := 0.25
-			var bottom := [c + Vector3(-s, 0, -s), c + Vector3(s, 0, -s), c + Vector3(s, 0, s), c + Vector3(-s, 0, s)]
-			for k in 4:
-				var a0: Vector3 = bottom[k]
-				var b0: Vector3 = bottom[(k + 1) % 4]
-				var up := Vector3(0, minf(top, 3.0), 0)
-				solid.append_array(PackedVector3Array([a0, b0, b0 + up, a0, b0 + up, a0 + up]))
-		# ledgers every 3 m up, the top one under the bed; diagonals between them
+		var along := Vector3(x.z, 0, -x.x)
+		var rng := SkCoasterWood.rng
+		# either side of the way in, heavier: they carry the bridge (and stand straighter)
+		var heavy := spans or skip.has(i + every)
+		var pw := 0.42 if heavy else 0.22
+		# the posts: their tops hold the track up where it runs; their feet go out a little (a trestle's batter) and then
+		# wherever they've slipped to over the years (the owner: "proper cartoon unsafe"): most a few degrees off, now and
+		# then one well over and propped up. Each stands on whatever was handy (SkCoasterWood.footing).
+		var tops := [l + Vector3(0, top, 0), r + Vector3(0, top, 0)]
+		var outs := [-x, x]
+		var bad := not heavy and top > 3.0 and rng.randf() < 0.16
+		var bad_k := rng.randi() % 2
+		var feet := []
+		var lows := []                        # (where each post starts: on top of its footing)
+		for k in 2:
+			var slip := minf(tan(deg_to_rad(rng.randf_range(3.0, 9.0))) * top, 1.8)
+			if bad and k == bad_k:
+				slip = minf(tan(deg_to_rad(rng.randf_range(13.0, 18.0))) * top, 3.2)
+			if heavy:
+				slip *= 0.3
+			var dir: Vector3 = ((outs[k] as Vector3) * rng.randf_range(-0.6, 1.0) + along * rng.randf_range(-1.0, 1.0)).normalized()
+			var foot: Vector3 = (l if k == 0 else r) + (outs[k] as Vector3) * minf(0.6, top * 0.03) + dir * slip
+			feet.append(foot)
+			lows.append(foot + Vector3(0, SkCoasterWood.footing(st, wood, foot), 0))
+			SkCoasterWood.beam(wood, lows[k], tops[k], pw, SkCoasterWood.shade())
+			for q in [foot]:
+				var c: Vector3 = q
+				var s := 0.25
+				var bottom := [c + Vector3(-s, 0, -s), c + Vector3(s, 0, -s), c + Vector3(s, 0, s), c + Vector3(-s, 0, s)]
+				for kk in 4:
+					var a0: Vector3 = bottom[kk]
+					var b0: Vector3 = bottom[(kk + 1) % 4]
+					var up := Vector3(0, minf(top, 3.0), 0)
+					solid.append_array(PackedVector3Array([a0, b0, b0 + up, a0, b0 + up, a0 + up]))
+		# a point on post k at height yy
+		var on := func(k: int, yy: float) -> Vector3:
+			var lo: Vector3 = lows[k]
+			return lo.lerp(tops[k], clampf((yy - lo.y) / maxf(0.1, top - lo.y), 0.0, 1.0))
+		# the one well over: a rough prop from the ground to halfway up, on the side it's falling
+		if bad:
+			var mid: Vector3 = on.call(bad_k, top * 0.5)
+			var fall: Vector3 = tops[bad_k] - feet[bad_k]
+			fall.y = 0.0
+			var ground := Vector3(mid.x, 0, mid.z) + fall.normalized() * maxf(2.0, top * 0.25)
+			SkCoasterWood.beam(wood, ground + Vector3(0, SkCoasterWood.footing(st, wood, ground), 0), mid, 0.16, SkCoasterWood.shade())
+		# a post doubled up with a thinner one beside it, and lashed on with rope
+		if not heavy and top > 3.0 and rng.randf() < 0.1:
+			var k := rng.randi() % 2
+			var hi := top * rng.randf_range(0.5, 0.8)
+			var a0: Vector3 = (lows[k] as Vector3) + along * 0.2
+			var b0: Vector3 = on.call(k, hi) + along * 0.2
+			SkCoasterWood.beam(wood, a0, b0, 0.13, SkCoasterWood.shade())
+			SkCoasterWood.rope(st, on.call(k, hi * 0.35), pw + 0.2)
+			SkCoasterWood.rope(st, on.call(k, hi * 0.8), pw + 0.2)
+		elif rng.randf() < 0.08:
+			SkCoasterWood.rope(st, on.call(rng.randi() % 2, rng.randf_range(1.0, maxf(1.2, top * 0.6))), pw)
+		# ledgers every 3 m up (the top one under the bed), crooked and sticking out; diagonals between them. Some
+		# missing, some snapped (a scrap plank nailed over the break), now and then a diagonal snapped and hanging.
 		var y := 3.0
 		var last := 0.3
 		var flip := false
 		while true:
 			var yy := minf(y, top)
-			var la := l.lerp(l - lean, 1.0 - yy / top) + Vector3(0, yy, 0)
-			var ra := r.lerp(r + lean, 1.0 - yy / top) + Vector3(0, yy, 0)
-			_beam(st, la - x * 0.2, ra + x * 0.2, 0.14, WHITE_SHADE)
-			var lb := l.lerp(l - lean, 1.0 - last / top) + Vector3(0, last, 0)
-			var rb := r.lerp(r + lean, 1.0 - last / top) + Vector3(0, last, 0)
-			_beam(st, lb if flip else rb, ra if flip else la, 0.11, WHITE_SHADE)
+			var top_one := yy >= top
+			var tip := 0.06 if top_one else 0.3
+			var la: Vector3 = on.call(0, clampf(yy + rng.randf_range(-tip, tip), 0.3, top))
+			var ra: Vector3 = on.call(1, clampf(yy + rng.randf_range(-tip, tip), 0.3, top))
+			var gone := not top_one and rng.randf() < 0.16
+			if not gone:
+				var lo_end := la - x * rng.randf_range(0.1, 0.7)
+				var hi_end := ra + x * rng.randf_range(0.1, 0.7)
+				if not top_one and rng.randf() < 0.14:
+					# snapped in the middle, the halves sagging, a scrap board nailed over it
+					var midp := la.lerp(ra, rng.randf_range(0.35, 0.65)) - Vector3(0, 0.12, 0)
+					SkCoasterWood.beam(wood, lo_end, midp - x * 0.05, 0.14, SkCoasterWood.shade())
+					SkCoasterWood.beam(wood, midp + x * 0.05 - Vector3(0, 0.08, 0), hi_end, 0.14, SkCoasterWood.shade())
+					SkCoasterWood.patch(wood, midp, along, 1.1, 0.25)
+				else:
+					SkCoasterWood.beam(wood, lo_end, hi_end, 0.14, SkCoasterWood.shade())
+				# iron plates bolted on where it meets the posts (outside), some weeping rust down the wood
+				SkCoasterWood.plate(st, la - x * (pw / 2.0), -x, Vector3.UP, 0.42)
+				SkCoasterWood.plate(st, ra + x * (pw / 2.0), x, Vector3.UP, 0.42)
+			var lb: Vector3 = on.call(0, last)
+			var rb: Vector3 = on.call(1, last)
+			var from := lb if flip else rb
+			var to := ra if flip else la
+			var d := rng.randf()
+			if d < 0.16:
+				# snapped: a stub left on, and the rest hanging off it
+				var brk := from.lerp(to, rng.randf_range(0.3, 0.55))
+				SkCoasterWood.beam(wood, from, brk, 0.11, SkCoasterWood.shade())
+				var hang := (to - from).length() * rng.randf_range(0.4, 0.6)
+				var swing := (along * rng.randf_range(-0.3, 0.3) + x * rng.randf_range(-0.3, 0.3))
+				SkCoasterWood.beam(wood, brk, brk + Vector3(0, -hang, 0) + swing, 0.11, SkCoasterWood.shade())
+			elif d > 0.26:
+				SkCoasterWood.beam(wood, from, to, 0.11, SkCoasterWood.shade())
+			# (and the rest: just gone)
 			flip = not flip
 			last = yy
-			if yy >= top:
+			if top_one:
 				break
 			y += 3.0
+		# a scrap board or two nailed on somewhere, at an angle
+		if rng.randf() < 0.17:
+			var k := rng.randi() % 2
+			SkCoasterWood.patch(wood, on.call(k, rng.randf_range(0.8, maxf(1.0, top * 0.7))) + (outs[k] as Vector3) * (pw / 2.0), outs[k], rng.randf_range(0.8, 1.5), rng.randf_range(0.18, 0.3))
 		# stringers along from the last bent
-		if not prev.is_empty():
-			_beam(st, prev[0], l + Vector3(0, top, 0), 0.16, WHITE_SHADE)
-			_beam(st, prev[1], r + Vector3(0, top, 0), 0.16, WHITE_SHADE)
-		prev = [l + Vector3(0, top, 0), r + Vector3(0, top, 0)]
+		if not prev.is_empty() and spans:
+			# over the way in: a deep girder each side (a top and bottom chord, braced between), not just a stringer;
+			# the bottom chords bowed down in the middle
+			var drop := Vector3(0, 1.4, 0)
+			for k in 2:
+				var a0: Vector3 = prev[k]
+				var b0: Vector3 = tops[k]
+				var sag := Vector3(0, 0.25 + 0.3 * k, 0)
+				var bow := func(t0: float) -> Vector3:
+					return a0.lerp(b0, t0) - drop - sag * (1.0 - pow(2.0 * t0 - 1.0, 2.0))
+				SkCoasterWood.beam(wood, a0, b0, 0.3, SkCoasterWood.shade())
+				SkCoasterWood.beam(wood, bow.call(0.0), bow.call(0.5), 0.3, SkCoasterWood.shade())
+				SkCoasterWood.beam(wood, bow.call(0.5), bow.call(1.0), 0.3, SkCoasterWood.shade())
+				var n := 4
+				for j in n + 1:
+					var t0 := float(j) / n
+					SkCoasterWood.beam(wood, bow.call(t0), a0.lerp(b0, t0), 0.14, SkCoasterWood.shade())
+					if j < n and rng.randf() > 0.2:
+						SkCoasterWood.beam(wood, bow.call(t0), a0.lerp(b0, float(j + 1) / n), 0.11, SkCoasterWood.shade())
+		elif not prev.is_empty():
+			SkCoasterWood.beam(wood, prev[0], tops[0], 0.16, SkCoasterWood.shade())
+			SkCoasterWood.beam(wood, prev[1], tops[1], 0.16, SkCoasterWood.shade())
+		spans = false
+		prev = [tops[0], tops[1]]
 
-## Sheds over the covered bits (the station, and a tunnel): walls either side of the track and a roof. Over the first
-## lap's track only (and the last run into the station): the second lap's runs beside them.
-static func _sheds(st: SurfaceTool, pts: PackedVector3Array, town: SkTownBuilder, els: Array, lap1: int) -> void:
+## Sheds over the covered bits (the station, and a tunnel): walls either side of the track and a roof, over the first
+## lap's track only (and the last run into the station): the second lap's runs beside them. In the same old timber as
+## the rest of the ride (the owner: make the tunnel look better; what the real ones are clad in isn't known): rows of
+## boards along the walls, a few missing so the light shows through, a plank roof, dark inside; a rough timber frame
+## round each mouth; and dim old bulbs along the ceiling inside, lit at night (SkDayNight).
+static func _sheds(_st: SurfaceTool, wood: SurfaceTool, pts: PackedVector3Array, town: SkTownBuilder, els: Array, lap1: int) -> void:
+	var covered := {}
 	for e in els:
 		if e.type != "way" or not (int(e.id) in COVERED):
 			continue
@@ -460,17 +637,51 @@ static func _sheds(st: SurfaceTool, pts: PackedVector3Array, town: SkTownBuilder
 				near = minf(near, Geometry2D.get_closest_point_to_segment(p, line[k], line[k + 1]).distance_to(p))
 			if near > 4.0 or pts[i].distance_to(pts[i + 1]) > STEP * 3.0 or (i >= lap1 and i < pts.size() - 35):
 				continue
-			var a := pts[i]
-			var b := pts[i + 1]
-			var xa := _across(pts, i)
-			var xb := _across(pts, i + 1)
-			var w := GAUGE / 2.0 + 1.1
-			var h := Vector3(0, 3.0, 0)
-			for s in [-w, w]:
-				_strip(st, a + xa * s, b + xb * s, a + xa * s + h, b + xb * s + h, xa * signf(s), Color("#e6e1d3"))
-				_strip(st, a + xa * s, b + xb * s, a + xa * s + h, b + xb * s + h, -xa * signf(s), Color("#8f8a80"))
-			_strip(st, a - xa * (w + 0.3) + h, b - xb * (w + 0.3) + h, a + xa * (w + 0.3) + h, b + xb * (w + 0.3) + h, Vector3.UP, Color("#6b2a24"))
-			_strip(st, a - xa * (w + 0.3) + h, b - xb * (w + 0.3) + h, a + xa * (w + 0.3) + h, b + xb * (w + 0.3) + h, Vector3.DOWN, Color("#4a4640"))
+			covered[i] = true
+	var rng := SkCoasterWood.rng
+	var w := GAUGE / 2.0 + 1.1
+	var tall := 3.0
+	var rows := 10
+	for i in covered:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var xa := _across(pts, i)
+		var xb := _across(pts, i + 1)
+		# the walls: boards along, a row every 0.3 m, the odd one gone
+		for s in [-w, w]:
+			for r in rows:
+				if rng.randf() < 0.08:
+					continue
+				var y0 := Vector3(0, tall * r / rows + 0.004, 0)
+				var y1 := Vector3(0, tall * (r + 1) / rows - 0.004, 0)
+				var c := SkCoasterWood.shade()
+				SkCoasterWood.plank(wood, a + xa * s + y0, b + xb * s + y0, a + xa * s + y1, b + xb * s + y1, xa * signf(s), c)
+				SkCoasterWood.plank(wood, a + xa * s + y0, b + xb * s + y0, a + xa * s + y1, b + xb * s + y1, -xa * signf(s), c.darkened(0.6))
+		# the roof: planks across, dark underneath
+		var h := Vector3(0, tall, 0)
+		for k in 3:
+			var t0 := k / 3.0 + 0.01
+			var t1 := (k + 1) / 3.0 - 0.01
+			var p0 := a.lerp(b, t0) + h
+			var p1 := a.lerp(b, t1) + h
+			var x0 := xa.lerp(xb, t0).normalized() * (w + 0.35)
+			var x1 := xa.lerp(xb, t1).normalized() * (w + 0.35)
+			var c := SkCoasterWood.shade()
+			SkCoasterWood.plank(wood, p0 - x0, p0 + x0, p1 - x1, p1 + x1, Vector3.UP, c)
+			SkCoasterWood.plank(wood, p0 - x0, p0 + x0, p1 - x1, p1 + x1, Vector3.DOWN, c.darkened(0.65))
+		# a frame round the mouth where it starts or ends: two posts and a beam across
+		for end in [[i - 1, a, xa], [i + 1, b, xb]]:
+			if covered.has(end[0]):
+				continue
+			var m: Vector3 = end[1]
+			var x: Vector3 = end[2]
+			var lean := Vector3(rng.randf_range(-0.08, 0.08), 0, rng.randf_range(-0.08, 0.08))
+			SkCoasterWood.beam(wood, m - x * (w + 0.12), m - x * (w + 0.12) + h + Vector3(0, 0.35, 0) + lean, 0.32, SkCoasterWood.shade())
+			SkCoasterWood.beam(wood, m + x * (w + 0.12), m + x * (w + 0.12) + h + Vector3(0, 0.35, 0) - lean, 0.32, SkCoasterWood.shade())
+			SkCoasterWood.beam(wood, m - x * (w + 0.6) + h + Vector3(0, 0.2, 0), m + x * (w + 0.6) + h + Vector3(0, 0.28, 0), 0.34, SkCoasterWood.shade())
+		# a bulb on the ceiling every 4 m
+		if i % 4 == 0:
+			SkDayNight.bulbs.append([a + Vector3(0, tall - 0.18, 0), Color(1.0, 0.72, 0.38)])
 
 ## A four-cornered strip (a0-b0 along one edge, a1-b1 the other) facing n.
 static func _strip(st: SurfaceTool, a0: Vector3, b0: Vector3, a1: Vector3, b1: Vector3, n: Vector3, c: Color) -> void:
@@ -543,8 +754,8 @@ class Train extends Node3D:
 		rider_cam = Camera3D.new()
 		rider_cam.name = "FrontSeat"
 		rider_cam.fov = 75.0
-		rider_cam.near = 0.05
-		rider_cam.far = 9000.0
+		rider_cam.near = 0.15                 # (not too near, not too far: so the buildings' fronts don't flicker)
+		rider_cam.far = 2500.0
 		_cars[0].add_child(rider_cam)
 		rider_cam.position = Vector3(0, 1.75, -0.95)
 		rider_cam.rotation.x = -0.12
@@ -556,8 +767,8 @@ class Train extends Node3D:
 		chase_pivot.position = Vector3(0, 1.4, 0)
 		chase_cam = Camera3D.new()
 		chase_cam.fov = 65.0
-		chase_cam.near = 0.1
-		chase_cam.far = 9000.0
+		chase_cam.near = 0.3
+		chase_cam.far = 2500.0
 		chase_pivot.add_child(chase_cam)
 		chase_cam.position = Vector3(0, 2.6, 9.5)
 		chase_cam.rotation.x = -0.24

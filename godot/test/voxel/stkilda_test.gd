@@ -64,7 +64,7 @@ func _process(dt: float) -> bool:
 		3:
 			_check(arena.stkilda.active, "2 on the phone: off to St Kilda")
 			_check(arena.frozen, "the arena's enemies stood still")
-			_check(arena.player.global_position.z < -2000.0, "you're in St Kilda (%s)" % arena.player.global_position)
+			_check(arena.player.global_position.x > 2000.0, "you're in St Kilda (%s)" % arena.player.global_position)
 			_shot("stkilda_arrive")
 			walk_from = arena.player.global_position
 			step = 4
