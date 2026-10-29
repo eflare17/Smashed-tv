@@ -243,8 +243,14 @@ func _free(pinv: VoxelInventory) -> int:
 			n += 1
 	return n
 
-# a stack: a little cube in the item's colour (three shaded faces), the count bottom right
+# a stack: its picture (VoxelIcons; one without, a little cube in its colour: three shaded faces), the count bottom right
 func _draw_stack(r: Rect2, s: Dictionary) -> void:
+	var tex := VoxelIcons.of(String(s.id))
+	if tex:
+		var side := r.size.x * 0.8
+		draw_texture_rect(tex, Rect2(r.get_center() - Vector2(side, side) * 0.5 + Vector2(0, -3), Vector2(side, side)), false)
+		_draw_count(r, s)
+		return
 	var c := VoxelItems.colour(s.id)
 	var m := r.get_center() + Vector2(0, -2)
 	var w := r.size.x * 0.3
@@ -255,6 +261,9 @@ func _draw_stack(r: Rect2, s: Dictionary) -> void:
 	draw_colored_polygon(top, c.lightened(0.25))
 	draw_colored_polygon(left, c)
 	draw_colored_polygon(right, c.darkened(0.3))
+	_draw_count(r, s)
+
+func _draw_count(r: Rect2, s: Dictionary) -> void:
 	var t := str(int(s.n))
 	var tp := r.position + Vector2(r.size.x - 4 - _font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x, r.size.y - 5)
 	draw_string_outline(_font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color.BLACK)
