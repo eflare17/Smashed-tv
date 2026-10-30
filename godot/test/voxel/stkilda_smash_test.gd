@@ -112,7 +112,7 @@ func _process(dt: float) -> bool:
 			# a row of blasts along the wall's foot, 7 m of it: the wall above has nothing under it
 			for k in range(-3, 4):
 				sk.breaks.blast(b.block_at(wall_c + k * 2, 0) + Vector3(face_n.x, 0, face_n.y) * 0.3, 1.6)
-			_check(sk.breaks._fall.size() > 10, "the wall above comes down (%d falling)" % sk.breaks._fall.size())
+			_check(sk.breaks.falling_count() > 10, "the wall above comes down (%d falling)" % sk.breaks.falling_count())
 			_stand(16.0)
 			step = 5
 			t = 0.0
@@ -123,7 +123,7 @@ func _process(dt: float) -> bool:
 			if t > 0.35 and t < 0.45:
 				_shot("smash_falling")
 			if t > 3.5:
-				_check(sk.breaks._fall.is_empty(), "all down and smashed")
+				_check(sk.breaks.falling_count() == 0, "all down and smashed")
 				_check(sk.breaks.bricks_lying() > 300, "bricks piled on the ground (%d)" % sk.breaks.bricks_lying())
 				_shot("smash_after")
 				step = 6

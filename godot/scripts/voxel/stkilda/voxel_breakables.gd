@@ -17,6 +17,9 @@ const THICK := 0.8              # a wall's thickness
 const TILE := 2.0               # a roof tile
 const GLASS := Color("#1d3563")         # (the St Kilda game's window blue)
 const FALL_MAX := 500           # blocks falling at once (more: they burst where they are)
+const FALL_DRAW := 3000          # blocks drawn falling (on their own and in slabs)
+const SLAB_MIN := 4             # blocks come away together that fall as one slab, tipping over (fewer: each on its own)
+const SLAB_TIP := 2.2           # how fast a slab tips over faster (rad/s a second)
 const ROOF_GOES := 0.55         # the roof falls in when less than this of the walls are standing
 const SPAN := 4                # blocks a wall bridges over a gap, each side (more and it falls)
 const BRICK := 0.125            # a brick's face, about (a block breaks into its width and height in these, and its depth in BRICK_D)
@@ -33,6 +36,7 @@ var sk: VoxelStKilda
 var list: Array[Building] = []
 var _fall_mm: MultiMeshInstance3D
 var _fall: Array = []           # [{at, v, spin, basis, size, col, paint}]
+var _slabs: Array = []          # [{xf (its middle, how it's turned), v, axis, w (how fast it's tipping), parts: [[transform from its middle, colour, paint]]}]
 # bricks (the owner, 30 Oct: "like how the characters are ... brick size", "most fall"): a knocked-out block, or one
 # that's fallen and landed, breaks into pieces about BRICK across, each the colour of the wall where it was; they fly,
 # bounce and lie where they stop, piled up, till the next visit. A few just crumble (the voxel game's little cubes).
@@ -48,6 +52,12 @@ var _lie_mm: MultiMeshInstance3D
 var _lp := PackedVector3Array()   # lying: where, colour, how tall a part of its pile
 var _lc := PackedColorArray()
 var _lh := PackedFloat32Array()
+var _ls := PackedVector3Array()   # (lying: its size, to fly again)
+var _grid := {}                   # 1 m floor cell -> PackedInt32Array of the walls' columns over it (building * 100000 + column)
+const KICK_R := 0.45            # bricks this near your feet as you walk get kicked along
+const KICKS := 8                # ... at most this many a frame
+var kicked := 0                 # bricks kicked (the tests)
+var thrown := 0                 # lying bricks thrown up again by blasts (the tests)
 var _cells := {}                  # PILE m floor cell -> PackedInt32Array of the bricks lying there
 var _heights := {}                # PILE m floor cell -> how high the pile there is
 var _cols := {}                 # every colour a block is (rgba32 -> true): their cubes are Brick in the backpack
@@ -84,7 +94,7 @@ func setup(s: VoxelStKilda, picked: Array) -> void:
 	sk = s
 	name = "Breakables"
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	_fall_mm = _mm_of(FALL_MAX)
+	_fall_mm = _mm_of(FALL_DRAW)
 	_fly_mm = _mm_of(FLY_MAX)
 	_lie_mm = _mm_of(LIE_MAX)
 	for bd in picked:
@@ -92,6 +102,7 @@ func setup(s: VoxelStKilda, picked: Array) -> void:
 		b.make(self, bd)
 		list.append(b)
 	VoxelItems.brick_cols = _cols
+	_make_grid()
 
 ## Luna Park's own buildings (the owner, 30 Oct: "just do the ones in luna park"), built by SkLunaRides and
 ## SkLunaExtras, named here with the colour their blocks are: each box the park model stands you off with (its
@@ -132,6 +143,7 @@ func add_park() -> void:
 			(sb as StaticBody3D).collision_layer = 0          # (the blocks' walls stand there now)
 		for b in group:
 			b.partners = group.filter(func(x): return x != b)
+	_make_grid()
 
 ## A park model's own look (the baked shops' plain colours, or the Ghost Train's worn paint) with holes in it: where a
 ## block's been knocked out (the wall's column and row, from where on its box a bit of the model is) or a roof tile's
@@ -252,6 +264,7 @@ func reset() -> void:
 	for b in list:
 		b.reset()
 	_fall.clear()
+	_slabs.clear()
 	_fall_mm.multimesh.visible_instance_count = 0
 	_fp.clear()
 	_fv.clear()
@@ -263,6 +276,7 @@ func reset() -> void:
 	_lp.clear()
 	_lc.clear()
 	_lh.clear()
+	_ls.clear()
 	_cells.clear()
 	_heights.clear()
 	_lie_mm.multimesh.visible_instance_count = 0
@@ -311,10 +325,13 @@ func blast(p: Vector3, r: float) -> void:
 			continue
 		b.blast_bricks(p, r)
 		b.roof_blast(p, r)
+	thrown += _wake_near(p, r * 1.7, func(q: Vector3, d: float) -> Vector3: return (q - p).normalized() * (7.0 * (1.0 - d / (r * 1.7)) + 1.0) + Vector3.UP * randf_range(2.5, 5.0), 900)
 
 func _process(dt: float) -> void:
-	if not _fall.is_empty():
+	if not _fall.is_empty() or not _slabs.is_empty():
 		_falling(dt)
+	if sk.active:
+		_kick()
 	if not _fp.is_empty():
 		_flying(dt)
 	if _lie_mm.multimesh.visible_instance_count != _lp.size():
@@ -322,7 +339,54 @@ func _process(dt: float) -> void:
 	if _lp.size() > 0 and sk.arena and sk.arena.debris and sk.arena.debris.brush != Vector3.INF:
 		_vacuum(sk.arena.debris.brush, sk.arena.debris.brush_r)
 
+## A piece of wall come away whole (Building._hanging): its blocks, each [its transform (scaled), colour, paint], and
+## the way out of the wall (it tips that way). It drops, tipping over faster as it goes, and smashes into bricks where
+## it hits the ground, each going the way that bit of it was.
+func slab(parts: Array, out: Vector3) -> void:
+	var mid := Vector3.ZERO
+	for p in parts:
+		mid += (p[0] as Transform3D).origin
+	mid /= parts.size()
+	var local := []
+	for p in parts:
+		var xf: Transform3D = p[0]
+		local.append([Transform3D(xf.basis, xf.origin - mid), p[1], p[2]])
+	if out.length() < 0.1:
+		out = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+	var axis := Vector3.UP.cross(out).normalized()          # (turning this way, its top goes out)
+	_slabs.append({"xf": Transform3D(Basis.IDENTITY, mid), "v": out * randf_range(0.2, 0.6), "axis": axis,
+		"w": randf_range(0.4, 0.9), "parts": local})
+
+func _slabs_step(dt: float) -> void:
+	var i := 0
+	while i < _slabs.size():
+		var s: Dictionary = _slabs[i]
+		s.v = (s.v as Vector3) + Vector3(0, -9.8, 0) * dt
+		s.w = float(s.w) + SLAB_TIP * dt                          # (the further over, the faster it goes)
+		var xf: Transform3D = s.xf
+		xf.origin += (s.v as Vector3) * dt
+		xf.basis = xf.basis.rotated(s.axis, float(s.w) * dt).orthonormalized()
+		s.xf = xf
+		# its lowest corner on the ground: smashed
+		var low := INF
+		for p in s.parts:
+			var bx := xf * (p[0] as Transform3D)
+			var e := bx.basis.get_scale() * 0.5
+			var reach := absf(bx.basis.x.normalized().y) * e.x + absf(bx.basis.y.normalized().y) * e.y + absf(bx.basis.z.normalized().y) * e.z
+			low = minf(low, bx.origin.y - reach)
+		if low <= 0.0:
+			var spin := (s.axis as Vector3) * float(s.w)
+			for p in s.parts:
+				var bx := xf * (p[0] as Transform3D)
+				var at := spin.cross(bx.origin - xf.origin) + (s.v as Vector3)
+				bricks(Transform3D(bx.basis, Vector3(bx.origin.x, maxf(bx.origin.y, 0.1), bx.origin.z)), p[1], p[2],
+						Vector3(at.x * 0.6, absf(at.y) * 0.15 + 0.5, at.z * 0.6), 1.2)
+			_slabs.remove_at(i)
+			continue
+		i += 1
+
 func _falling(dt: float) -> void:
+	_slabs_step(dt)
 	var mm := _fall_mm.multimesh
 	var i := 0
 	while i < _fall.size():
@@ -337,11 +401,19 @@ func _falling(dt: float) -> void:
 			_fall.remove_at(i)
 			continue
 		i += 1
-	mm.visible_instance_count = _fall.size()
-	for k in _fall.size():
-		var f: Dictionary = _fall[k]
+	var k := 0
+	for f in _fall:
 		mm.set_instance_transform(k, Transform3D((f.basis as Basis).scaled(f.size), f.at))
 		mm.set_instance_color(k, f.col)
+		k += 1
+	for s in _slabs:
+		for p in s.parts:
+			if k >= FALL_DRAW:
+				break
+			mm.set_instance_transform(k, (s.xf as Transform3D) * (p[0] as Transform3D))
+			mm.set_instance_color(k, p[1])
+			k += 1
+	mm.visible_instance_count = k
 
 ## A block coming down from at (world), its size and colour; paint: its bricks' colours (Building.paint_of), or none.
 func drop(at: Vector3, size: Vector3, col: Color, push: Vector3, paint := PackedColorArray(), basis := Basis.IDENTITY, piece := BRICK) -> void:
@@ -402,6 +474,16 @@ func _flying(dt: float) -> void:
 	while i < _fp.size():
 		var v := _fv[i] + Vector3(0, -9.8, 0) * dt
 		var p := _fp[i] + v * dt
+		# (off a wall still standing: back out of it, bouncing a little, and nudged off its face: one landing on a wall's top
+		# slides off it; one already in one, as it broke, flies on out)
+		var wall := solid(p)
+		if wall != Vector3.ZERO and solid(_fp[i]) == Vector3.ZERO:
+			p = _fp[i] + wall * 0.12
+			var into := v.dot(wall)
+			if into < 0.0:
+				v -= wall * into * 1.35
+			v *= 0.75
+			_fspin[i] *= 0.6
 		var s := _fs[i]
 		var floor_ := _height(p)
 		if p.y - s.y * 0.5 <= floor_ and v.y < 0.0:
@@ -498,10 +580,11 @@ func _lay(p: Vector3, s: Vector3, c: Color, turn: Basis) -> void:
 	_lp.append(at)
 	_lc.append(c)
 	_lh.append(flat * 0.8)
+	_ls.append(size)
 	_heights[cell] = h + flat * 0.8
-	if not _cells.has(cell):
-		_cells[cell] = PackedInt32Array()
-	(_cells[cell] as PackedInt32Array).append(i)
+	var ids: PackedInt32Array = _cells.get(cell, PackedInt32Array())
+	ids.append(i)
+	_cells[cell] = ids                  # (a packed array's a copy: put back)
 	var mm := _lie_mm.multimesh
 	mm.set_instance_transform(i, Transform3D(b.scaled(size), at))
 	mm.set_instance_color(i, c)
@@ -531,6 +614,126 @@ func _vacuum(p: Vector3, r: float) -> void:
 			_cells[cell] = ids
 	if not dust.is_empty():
 		sk.arena.debris.burst(dust, Vector3.UP, 0.5)
+
+# ---------------------------------------------------------------- bricks knocking about (the owner, 30 Oct: "i want the
+# physic beter"): off the walls, kicked as you walk through them, thrown by a blast
+
+# which walls' columns stand over each 1 m of floor
+func _make_grid() -> void:
+	_grid.clear()
+	for bi in list.size():
+		var b := list[bi]
+		for c in b.cols.size():
+			var cc: Dictionary = b.cols[c]
+			var a: Vector2 = cc.a
+			var d: Vector2 = cc.dir
+			var n: Vector2 = cc.n
+			var w := float(cc.w)
+			for corner in [a + d * w * 0.5, a - d * w * 0.5, a + d * w * 0.5 - n * THICK, a - d * w * 0.5 - n * THICK]:
+				var k := Vector2i(floori((corner as Vector2).x), floori((corner as Vector2).y))
+				if not _grid.has(k):
+					_grid[k] = PackedInt32Array()
+				var ids: PackedInt32Array = _grid[k]
+				if not ids.has(bi * 100000 + c):
+					ids.append(bi * 100000 + c)
+					_grid[k] = ids
+
+## Is p inside a wall still standing (a block there, or a brick of a holed one)? Its way out (the nearer face), or zero.
+func solid(p: Vector3) -> Vector3:
+	var k := Vector2i(floori(p.x), floori(p.z))
+	if not _grid.has(k) or p.y < 0.0:
+		return Vector3.ZERO
+	for id in (_grid[k] as PackedInt32Array):
+		var b := list[id / 100000]
+		var c := id % 100000
+		if p.y >= b.h:
+			continue
+		var cc: Dictionary = b.cols[c]
+		var a: Vector2 = cc.a
+		var d: Vector2 = cc.dir
+		var n: Vector2 = cc.n
+		var rel := Vector2(p.x - a.x, p.z - a.y)
+		var along := rel.dot(d)
+		var depth := -rel.dot(n)
+		var w := float(cc.w)
+		if absf(along) > w * 0.5 or depth < 0.0 or depth > THICK:
+			continue
+		var row := mini(floori(p.y / b.bh), b.rows - 1)
+		var i := c * b.rows + row
+		if not b.alive[i]:
+			continue
+		if b.damaged[i]:
+			var x := clampi(floori((along / w + 0.5) * SX), 0, SX - 1)
+			var y := clampi(floori((p.y - row * b.bh) / b.bh * b.sy), 0, b.sy - 1)
+			if not b.sub[i * SX * b.sy + y * SX + x]:
+				continue
+		return Vector3(n.x, 0, n.y) * (1.0 if depth < THICK * 0.5 else -1.0)
+	return Vector3.ZERO
+
+# the bricks lying within r of p (at most `most`) up and flying again, each off at vel.call(where it is, how far)
+func _wake_near(p: Vector3, r: float, vel: Callable, most: int) -> int:
+	if _lp.is_empty():
+		return 0
+	var lo := _cell(p - Vector3(r, 0, r))
+	var hi := _cell(p + Vector3(r, 0, r))
+	var n := 0
+	for cx in range(lo.x, hi.x + 1):
+		for cz in range(lo.y, hi.y + 1):
+			var cell := Vector2i(cx, cz)
+			if not _cells.has(cell):
+				continue
+			var ids: PackedInt32Array = _cells[cell]
+			var j := ids.size() - 1
+			while j >= 0 and n < most:
+				var i := ids[j]
+				var d := _lp[i].distance_to(p)
+				if d < r:
+					ids.remove_at(j)
+					_heights[cell] = maxf(0.0, float(_heights[cell]) - _lh[i])
+					_fly_again(i, vel.call(_lp[i], d))
+					n += 1
+				j -= 1
+			_cells[cell] = ids
+	_lie_mm.multimesh.visible_instance_count = _lp.size()
+	return n
+
+# lying brick i up and off at v (its slot hidden: the lying are only ever added to, till the next visit)
+func _fly_again(i: int, v: Vector3) -> void:
+	_lie_mm.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO), _lp[i]))
+	if _fp.size() >= FLY_MAX:
+		return
+	_fp.append(_lp[i] + Vector3.UP * 0.05)
+	_fv.append(v)
+	_fs.append(_ls[i])
+	_fspin.append(Vector3(randf_range(-5, 5), randf_range(-5, 5), randf_range(-5, 5)))
+	_fb.append(Basis(Vector3.UP, randf() * TAU))
+	_fc.append(_lc[i])
+
+# you walking through rubble: the bricks at your feet kicked along the way you're going
+func _kick() -> void:
+	var me := sk.arena.player if sk.arena else null
+	if me == null or _lp.is_empty():
+		return
+	var v := (me as CharacterBody3D).velocity
+	var flat := Vector3(v.x, 0, v.z)
+	if flat.length() < 1.2:
+		return
+	var feet := (me as Node3D).global_position
+	if feet.y - _height(feet) > 0.6:
+		return
+	kicked += _wake_near(feet + flat.normalized() * 0.2, KICK_R,
+			func(_q: Vector3, _d: float) -> Vector3: return flat * randf_range(0.6, 1.1) + Vector3(randf_range(-0.6, 0.6), randf_range(0.8, 2.0), randf_range(-0.6, 0.6)),
+			KICKS)
+
+## How many blocks are coming down (on their own and in slabs), and how many slabs.
+func falling_count() -> int:
+	var n := _fall.size()
+	for s in _slabs:
+		n += (s.parts as Array).size()
+	return n
+
+func slabs_count() -> int:
+	return _slabs.size()
 
 ## How many bricks are lying about, and flying.
 func bricks_lying() -> int:
@@ -1109,20 +1312,50 @@ class Building:
 						cost[j] = k + 1
 						next.append(j)
 			now = next
+		var going := {}
 		for i in alive.size():
 			if alive[i] and cost[i] > SPAN:
 				alive[i] = 0
 				standing -= 1
 				var c := i / rows
 				var r := i % rows
-				var xf := _block_xf(c, r)
-				var nn: Vector2 = cols[c].n
+				touched[c] = true
 				if damaged[i]:
+					var nn: Vector2 = cols[c].n
 					_rest(c, r, Vector3(nn.x, 0, nn.y) * 0.5, 0.6)       # (a holed one: down in its bricks)
 				else:
-					owner.drop(xf.origin, Vector3(float(cols[c].w), bh, THICK), brick_col(c, r), Vector3(nn.x, 0, nn.y) * randf_range(0.0, 1.0),
-							paint_of(xf, nn), xf.basis.orthonormalized())
-				touched[c] = true
+					going[i] = true
+		# (each piece of wall that's come away, the blocks joined up, side by side or one on another: a big one comes down
+		# whole, a slab tipping over as it falls, and smashes when it hits the ground; a block or three, each on its own)
+		while not going.is_empty():
+			var first: int = going.keys()[0]
+			going.erase(first)
+			var piece := [first]
+			var k := 0
+			while k < piece.size():
+				var i: int = piece[k]
+				k += 1
+				var c := i / rows
+				var r := i % rows
+				for j in [i + 1 if r < rows - 1 else -1, i - 1 if r > 0 else -1, ((c + 1) % n) * rows + r, ((c - 1 + n) % n) * rows + r]:
+					if j >= 0 and going.has(j):
+						going.erase(j)
+						piece.append(j)
+			var parts := []
+			var out := Vector3.ZERO
+			for i in piece:
+				var c: int = i / rows
+				var r: int = i % rows
+				var xf := _block_xf(c, r)
+				var nn: Vector2 = cols[c].n
+				out += Vector3(nn.x, 0, nn.y)
+				parts.append([xf, brick_col(c, r), paint_of(xf, nn)])
+			if piece.size() >= SLAB_MIN:
+				owner.slab(parts, out.normalized())
+			else:
+				for p in parts:
+					var xf: Transform3D = p[0]
+					owner.drop(xf.origin, xf.basis.get_scale(), p[1], out.normalized() * randf_range(0.0, 1.0), p[2], xf.basis.orthonormalized())
 
 	func _roof_down() -> void:
 		var k := 0
