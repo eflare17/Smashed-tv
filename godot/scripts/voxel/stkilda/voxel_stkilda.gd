@@ -71,6 +71,7 @@ func build() -> void:
 	var picked := VoxelBreakables.pick(town, box)     # (the buildings you can smash: the town leaves them to us)
 	town.build(self, [[luna, SkLunaPark.CLEAR]])
 	SkLunaPark.build(self, town)
+	VoxelCarousel.dress(get_node_or_null("Carousel"))     # (its new horses)
 	breaks = VoxelBreakables.new()
 	add_child(breaks)
 	breaks.setup(self, picked)
