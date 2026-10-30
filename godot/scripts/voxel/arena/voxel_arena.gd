@@ -2340,7 +2340,7 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			flames.emit(end, 3, (wh.normal as Vector3) * 2.0, 0.8, 0.18)
 			sound.play("hit_world", end, -4.0)
 			if stkilda and stkilda.active:
-				stkilda.breaks.shot(wh, d, float(opts.get("wall", 1.0 / 3.0)))   # (a St Kilda building: a block hit, out in a few)
+				stkilda.breaks.shot(wh, d, float(opts.get("wall", 1.0 / 3.0)))   # (a St Kilda building: the bricks it hit knocked out)
 		_tracer_list.append({"a": muzzle, "b": end, "t": 0.06})
 		if best_b:
 			var rr := r

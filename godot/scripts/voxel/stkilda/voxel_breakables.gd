@@ -21,7 +21,8 @@ const ROOF_GOES := 0.55         # the roof falls in when less than this of the w
 const SPAN := 4                # blocks a wall bridges over a gap, each side (more and it falls)
 const BRICK := 0.125            # a brick's face, about (a block breaks into its width and height in these, and its depth in BRICK_D)
 const BRICK_D := 0.27           # a brick's depth, about
-const WALL_HP := 1.0            # a block's health: shots take from it (VoxelArena.fire's "wall": the pistol a third, a shotgun pellet less)
+const SX := 8                   # bricks across a block (its wall's share of BLOCK), and up it: about its height in BRICKs
+const KNOCK_LEFT := 0.35        # a block with less than this of its bricks left goes: the rest drop out
 const CRUMBLE := 0.12           # the share of bricks that crumble to cubes instead
 const FLY_MAX := 4000           # bricks flying at once (more: they drop straight onto the pile under them)
 const LIE_MAX := 150000         # bricks lying about (more: they crumble)
@@ -297,21 +298,12 @@ func shot(wh: Dictionary, dir: Vector3, dmg := 1.0 / 3.0) -> bool:
 	b.hit(col, row, dmg, wh.position, dir)
 	return true
 
-## A blast at p (a grenade's, VoxelWeaponGrenades.explode): the blocks within r of it gone, and the roof tiles.
+## A blast at p (a grenade's, VoxelWeaponGrenades.explode): the bricks within r of it gone (a round hole), and the roof tiles.
 func blast(p: Vector3, r: float) -> void:
 	for b in list:
 		if not b.near(p, r + 2.0):
 			continue
-		var out := []
-		for c in b.cols.size():
-			var mid: Vector3 = b.cols[c].mid
-			if Vector2(mid.x - p.x, mid.z - p.z).length() > r + b.cw(c):
-				continue
-			for row in b.rows:
-				if b.alive[c * b.rows + row] and b.block_at(c, row).distance_to(p) < r:
-					out.append([c, row])
-		if not out.is_empty():
-			b.knock(out, Vector3.ZERO, p)
+		b.blast_bricks(p, r)
 		b.roof_blast(p, r)
 
 func _process(dt: float) -> void:
@@ -553,7 +545,13 @@ class Building:
 	var bh := 1.0                 # a block's height
 	var cols: Array = []          # per column along the walls (round the outline, in order): {a, dir, w, n (out), mid, glass}
 	var alive := PackedByteArray()          # [col * rows + row]
-	var hp := PackedFloat32Array()          # [col * rows + row]: what's left of it (WALL_HP new)
+	var sy := 1                   # bricks up a block (SX across)
+	var sub := PackedByteArray()            # [(col * rows + row) * SX * sy + y * SX + x]: each block's bricks there
+	var left := PackedInt32Array()          # [col * rows + row]: its bricks there
+	var damaged := PackedByteArray()        # [col * rows + row]: a brick or more gone (drawn brick by brick then)
+	var chipped := 0                # bricks knocked out since it was last built
+	var walls: MultiMeshInstance3D  # the damaged blocks' bricks
+	var _sub_cols := {}             # block -> its bricks' colours (PackedColorArray, as sub)
 	var standing := 0
 	var whole := true             # not hit yet: drawn as the St Kilda game draws it
 	var root: Node3D
@@ -768,7 +766,7 @@ class Building:
 			return
 		for c in cols.size():
 			for r in rows:
-				_alive_img.set_pixel(c, r, Color.WHITE if alive[c * rows + r] else Color.BLACK)
+				_alive_img.set_pixel(c, r, Color.WHITE if alive[c * rows + r] and not damaged[c * rows + r] else Color.BLACK)
 		_alive_tex.update(_alive_img)
 		var lo := Vector2(_box.position.x, _box.position.z)
 		for i in roof_tiles.size():
@@ -787,6 +785,7 @@ class Building:
 	func _shape(o: VoxelBreakables) -> void:
 		rows = maxi(1, roundi(h / (SkFacades.STOREY / 3.0)))
 		bh = h / rows
+		sy = maxi(1, roundi(bh / BRICK))
 		for k in ring.size():
 			var a := ring[k]
 			var b := ring[(k + 1) % ring.size()]
@@ -820,6 +819,8 @@ class Building:
 		# in blocks (after)
 		blocks = _mm_node("Blocks", cols.size() * rows)
 		roof = _mm_node("Roof", roof_tiles.size())
+		walls = _mm_node("Bricks", 0)
+		((walls.multimesh.mesh as BoxMesh).material as StandardMaterial3D).vertex_color_is_srgb = true     # (paint as written)
 		body = StaticBody3D.new()
 		body.name = "Walls"
 		body.collision_layer = 1 | SkData.LAYER_WORLD
@@ -851,8 +852,16 @@ class Building:
 		whole = true
 		alive.resize(cols.size() * rows)
 		alive.fill(1)
-		hp.resize(alive.size())
-		hp.fill(WALL_HP)
+		var per := SX * sy
+		sub.resize(alive.size() * per)
+		sub.fill(1)
+		left.resize(alive.size())
+		left.fill(per)
+		damaged.resize(alive.size())
+		damaged.fill(0)
+		chipped = 0
+		_sub_cols.clear()
+		walls.visible = false
 		standing = alive.size()
 		roof_on.resize(roof_tiles.size())
 		roof_on.fill(1)
@@ -892,29 +901,122 @@ class Building:
 		var j := hash(Vector2i(c, row)) % 7
 		return c0.darkened(0.03 * (j % 3)).lightened(0.02 * int(j == 5))
 
-	## A shot into block [c, row] at p, going dir, taking dmg from it: out once it's none left; till then a brick or a few
-	## chipped off where it went in (the owner, 30 Oct: the pistol and shotgun "do 2 much damage 2 the wall").
+	## A shot into block [c, row] at p, going dir, dmg (VoxelArena.fire's "wall": the pistol a third, a shotgun pellet
+	## less) the size of the bite: the bricks round where it went in knocked out, just those (the owner, 30 Oct: "i just
+	## want it to blow out the small blocks"). Into a hole already: the nearest brick of that block still there.
 	func hit(c: int, row: int, dmg: float, p: Vector3, dir: Vector3) -> void:
 		var i := c * rows + row
 		if alive[i] == 0:
 			return
-		hp[i] -= dmg
-		if hp[i] <= 0.001:
+		var n: Vector2 = cols[c].n
+		var push := Vector3(n.x, 0.3, n.y) * 1.5 - dir * 0.4
+		var n3 := Vector3(n.x, 0, n.y)
+		p -= n3 * (p - block_at(c, row)).dot(n3)          # (on the wall's middle, where its bricks' middles are)
+		var out := _chip(c, row, p, 0.06 + dmg * 0.25, push, 0.8)
+		if out < 0:
 			knock([[c, row]], dir)
-			return
+		elif out == 0:
+			if _chip(c, row, p, 0.45, push, 0.8, true) < 0:
+				knock([[c, row]], dir)
+			else:
+				_draw()
+		else:
+			_draw()
+
+	## A blast at p, r: the bricks within r of it out, all round (a round hole); blocks with too few left go too.
+	func blast_bricks(p: Vector3, r: float) -> void:
+		var out := []
+		var any := false
+		for c in cols.size():
+			var mid: Vector3 = cols[c].mid
+			if Vector2(mid.x - p.x, mid.z - p.z).length() > r + cw(c):
+				continue
+			for row in rows:
+				if alive[c * rows + row] and block_at(c, row).distance_to(p) < r + 0.8:
+					var got := _chip(c, row, p, r, (block_at(c, row) - p).normalized() * 4.5 + Vector3.UP * 1.5, 2.0)
+					if got < 0:
+						out.append([c, row])
+					elif got > 0:
+						any = true
+		if not out.is_empty():
+			knock(out, Vector3.ZERO, p)
+		elif any:
+			_draw()
+
+	## A brick's middle (world): block [c, row]'s brick x across, y up.
+	func sub_at(c: int, row: int, x: int, y: int) -> Vector3:
+		var d: Vector2 = cols[c].dir
+		return block_at(c, row) + Vector3(d.x, 0, d.y) * (((x + 0.5) / SX - 0.5) * cw(c)) + Vector3.UP * (((y + 0.5) / sy - 0.5) * bh)
+
+	# Block [c, row]'s bricks within r of p (nearest: just the nearest one within r) knocked out, flying off with push:
+	# how many (-1: too few left now, the block's to go).
+	func _chip(c: int, row: int, p: Vector3, r: float, push: Vector3, spread: float, nearest := false) -> int:
+		var i := c * rows + row
+		var per := SX * sy
+		var d: Vector2 = cols[c].dir
+		var bx := Basis(Vector3(d.x, 0, d.y), Vector3.UP, Vector3(-(cols[c].n as Vector2).x, 0, -(cols[c].n as Vector2).y))
+		var piece := Vector3(cw(c) / SX, bh / sy, THICK)
+		var gone := PackedInt32Array()
+		var best := INF
+		for y in sy:
+			for x in SX:
+				var k := i * per + y * SX + x
+				if sub[k] == 0:
+					continue
+				var dd := sub_at(c, row, x, y).distance_to(p)
+				if dd < r:
+					if nearest:
+						if dd < best:
+							best = dd
+							gone = PackedInt32Array([k])
+					else:
+						gone.append(k)
+		if gone.is_empty():
+			return 0
 		if whole:
 			_to_blocks()
+		var cs := _cols_of(c, row)
+		for k in gone:
+			sub[k] = 0
+			var j := k - i * per
+			owner.bricks(Transform3D(bx.scaled(piece), sub_at(c, row, j % SX, j / SX)), cs[j], PackedColorArray(), push, spread)
+		damaged[i] = 1
+		left[i] -= gone.size()
+		chipped += gone.size()
+		if left[i] < per * KNOCK_LEFT:
+			return -1
+		return gone.size()
+
+	# block [c, row]'s bricks' colours (its paint where it's a park model's, else its own), worked out the first time
+	func _cols_of(c: int, row: int) -> PackedColorArray:
+		var i := c * rows + row
+		if _sub_cols.has(i):
+			return _sub_cols[i]
+		var out := PackedColorArray()
+		var base := brick_col(c, row)
 		var n: Vector2 = cols[c].n
-		var out := Vector3(n.x, 0, n.y)
-		var k := 2 if dmg > 0.2 else 1
-		var bx := _block_xf(c, row).basis.orthonormalized()
-		var at := p + out * 0.08
-		var pc := _paint_at(at) if over else Color(0, 0, 0, 0)
+		var to := Vector3(n.x, 0, n.y) * (THICK * 0.5 + 0.05)
 		if over and not _painted:
 			_paint_grid()
-			pc = _paint_at(at)
-		owner.bricks(Transform3D(bx.scaled(Vector3(BRICK * k, BRICK * k, BRICK_D)), at), brick_col(c, row),
-				PackedColorArray([pc, pc, pc, pc]), out * 1.5 + Vector3.UP * 0.5 - dir * 0.5, 0.8)
+		for y in sy:
+			for x in SX:
+				var pc := _paint_at(sub_at(c, row, x, y) + to) if over else Color(0, 0, 0, 0)
+				out.append(pc if pc.a > 0.0 else base)
+		_sub_cols[i] = out
+		return out
+
+	# a damaged block that's going (knocked out or fallen): what's left of it in bricks, flying off with push
+	func _rest(c: int, row: int, push: Vector3, spread: float) -> void:
+		var i := c * rows + row
+		var per := SX * sy
+		var cs := _cols_of(c, row)
+		var d: Vector2 = cols[c].dir
+		var bx := Basis(Vector3(d.x, 0, d.y), Vector3.UP, Vector3(-(cols[c].n as Vector2).x, 0, -(cols[c].n as Vector2).y))
+		var piece := Vector3(cw(c) / SX, bh / sy, THICK)
+		for j in per:
+			if sub[i * per + j]:
+				sub[i * per + j] = 0
+				owner.bricks(Transform3D(bx.scaled(piece), sub_at(c, row, j % SX, j / SX)), cs[j], PackedColorArray(), push, spread)
 
 	## Knock these blocks out ([col, row] each): burst into cubes; then whatever's left hanging falls.
 	func knock(which: Array, dir: Vector3, from := Vector3.INF) -> void:
@@ -932,7 +1034,10 @@ class Building:
 			# (a shot: mostly spilling out of the wall at your feet, a little the way it went; a blast: away from it)
 			var push := Vector3(n.x, 0.3, n.y) * 1.8 + dir * 0.8 if from == Vector3.INF else (at - from).normalized() * 5.0 + Vector3.UP * 1.5
 			var xf := _block_xf(cr[0], cr[1])
-			owner.bricks(xf, brick_col(cr[0], cr[1]), paint_of(xf, n), push, 1.0 if from == Vector3.INF else 2.0)
+			if damaged[i]:
+				_rest(cr[0], cr[1], push * 0.5, 0.8 if from == Vector3.INF else 2.0)      # (what's left of it: a few bricks dropping out)
+			else:
+				owner.bricks(xf, brick_col(cr[0], cr[1]), paint_of(xf, n), push, 1.0 if from == Vector3.INF else 2.0)
 			touched[cr[0]] = true
 		_hanging(touched)
 		if float(standing) / alive.size() < ROOF_GOES:
@@ -1006,8 +1111,11 @@ class Building:
 				var r := i % rows
 				var xf := _block_xf(c, r)
 				var nn: Vector2 = cols[c].n
-				owner.drop(xf.origin, Vector3(float(cols[c].w), bh, THICK), brick_col(c, r), Vector3(nn.x, 0, nn.y) * randf_range(0.0, 1.0),
-						paint_of(xf, nn), xf.basis.orthonormalized())
+				if damaged[i]:
+					_rest(c, r, Vector3(nn.x, 0, nn.y) * 0.5, 0.6)       # (a holed one: down in its bricks)
+				else:
+					owner.drop(xf.origin, Vector3(float(cols[c].w), bh, THICK), brick_col(c, r), Vector3(nn.x, 0, nn.y) * randf_range(0.0, 1.0),
+							paint_of(xf, nn), xf.basis.orthonormalized())
 				touched[c] = true
 
 	func _roof_down() -> void:
@@ -1023,7 +1131,7 @@ class Building:
 		var k := 0
 		for c in cols.size():
 			for r in rows:
-				if alive[c * rows + r]:
+				if alive[c * rows + r] and not damaged[c * rows + r]:
 					var xf := _block_xf(c, r)
 					if over:
 						# (just inside the model's skin and under its top: seen only through the holes)
@@ -1035,6 +1143,7 @@ class Building:
 					owner._cols[_block_col(c, r).to_rgba32()] = true
 					k += 1
 		mm.visible_instance_count = k
+		_draw_bricks()
 		var rm := roof.multimesh
 		k = 0
 		for i in roof_tiles.size():
@@ -1044,6 +1153,60 @@ class Building:
 				k += 1
 		rm.visible_instance_count = k
 		_holes()
+
+	# the holed blocks, brick by brick: each a bar through the wall (so a hole's sides show), in its paint
+	func _draw_bricks() -> void:
+		var per := SX * sy
+		var n_out := 0
+		for i in alive.size():
+			if alive[i] and damaged[i]:
+				n_out += left[i]
+		var mm := walls.multimesh
+		walls.visible = n_out > 0
+		if n_out == 0:
+			mm.visible_instance_count = 0
+			return
+		if mm.instance_count < n_out:
+			mm.instance_count = n_out + n_out / 2 + 256
+		var buf := PackedFloat32Array()
+		buf.resize(mm.instance_count * 16)
+		var k := 0
+		for i in alive.size():
+			if not (alive[i] and damaged[i]):
+				continue
+			var c := i / rows
+			var r := i % rows
+			var d: Vector2 = cols[c].dir
+			var n: Vector2 = cols[c].n
+			var ax := Vector3(d.x, 0, d.y) * (cw(c) / SX)
+			var ay := Vector3.UP * (bh / sy)
+			var az := Vector3(-n.x, 0, -n.y) * THICK
+			var cs := _cols_of(c, r)
+			for j in per:
+				if sub[i * per + j] == 0:
+					continue
+				var p := sub_at(c, r, j % SX, j / SX)
+				var col_: Color = cs[j]
+				var o := k * 16
+				buf[o] = ax.x
+				buf[o + 1] = ay.x
+				buf[o + 2] = az.x
+				buf[o + 3] = p.x
+				buf[o + 4] = ax.y
+				buf[o + 5] = ay.y
+				buf[o + 6] = az.y
+				buf[o + 7] = p.y
+				buf[o + 8] = ax.z
+				buf[o + 9] = ay.z
+				buf[o + 10] = az.z
+				buf[o + 11] = p.z
+				buf[o + 12] = col_.r
+				buf[o + 13] = col_.g
+				buf[o + 14] = col_.b
+				buf[o + 15] = 1.0
+				k += 1
+		mm.buffer = buf
+		mm.visible_instance_count = k
 
 	# a column's collision: a box for each run of blocks still there
 	func _column(c: int) -> void:

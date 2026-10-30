@@ -103,7 +103,7 @@ func _process(dt: float) -> bool:
 					_click()
 				return false
 			_check(not gt.whole, "clicking at it: in blocks now")
-			_check(gt.standing < start, "blocks knocked out (%d)" % (start - gt.standing))
+			_check(gt.chipped > 0, "bricks knocked out (%d)" % gt.chipped)
 			_check((sk.get_node("GhostTrain") as Node3D).visible, "its own model still there (holes in it)")
 			_shot("luna_shot")
 			step = 20
