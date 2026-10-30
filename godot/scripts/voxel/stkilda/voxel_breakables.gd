@@ -241,6 +241,12 @@ static func holed(node: Node3D) -> Array:
 		(mi as MeshInstance3D).material_override = hm
 	return out
 
+# (the partners hold each other: let go, or they and their hole shaders outlive the renderer and the game crashes
+# closing)
+func _exit_tree() -> void:
+	for b in list:
+		b.partners.clear()
+
 ## Built again, as new (the next visit).
 func reset() -> void:
 	for b in list:
