@@ -32,6 +32,7 @@ var _we: WorldEnvironment                    # the arena's
 var _help_text := ""
 var _arena_near := 0.05
 var day_night: SkDayNight
+var rain: VoxelRain
 var breaks: VoxelBreakables
 var nav: VoxelParkNav
 var game: VoxelParkGame                        # "Kill 1, 2 come" (the phone starts it)
@@ -98,6 +99,9 @@ func build() -> void:
 	day_night.name = "SkDayNight"
 	day_night.setup(town, luna, null)
 	add_child(day_night)
+	rain = VoxelRain.new()                     # (K: rain, laid over the day or night)
+	rain.setup(self)
+	add_child(rain)
 	# the St Kilda sky: kept for when you're here (one WorldEnvironment in the world: the arena's, its sky swapped)
 	env = town.environment
 	sun = town.sun
@@ -145,9 +149,10 @@ func go() -> void:
 	arena.cam.near = NEAR
 	sun.visible = true
 	_help_text = arena.help.text
-	arena.help.text = "P phone (travel home)   shoot the buildings   WASD walk   mouse look   Shift run   Space jump   V view   N night   1-5 weapons   Esc mouse"
+	arena.help.text = "P phone (travel home)   shoot the buildings   WASD walk   mouse look   Shift run   Space jump   V view   N night   K rain   1-5 weapons   Esc mouse"
 	var s := arrive_spot()
 	_put(s[0], s[1], 0.0)
+	rain.arrived()
 
 ## Home to the arena, where you were.
 func home() -> void:
@@ -234,6 +239,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
 	var k := (e as InputEventKey).physical_keycode
+	if k == KEY_K:                          # rain or dry
+		rain.toggle()
+		get_viewport().set_input_as_handled()
+		return
 	if k == KEY_N:                          # day or night (as in the St Kilda game)
 		day_night.toggle()
 		get_viewport().set_input_as_handled()
