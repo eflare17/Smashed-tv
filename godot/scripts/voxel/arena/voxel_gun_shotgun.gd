@@ -13,6 +13,7 @@ const HOLE := 1.7               # a pellet's hole at point blank, cubes ...
 const FALLOFF := 11.0           # ... half that this many metres off
 const PUMP_T := 0.55
 const DOUBLE_PELLETS := 18
+const WALL := 0.15              # what a pellet takes from a St Kilda wall's block (VoxelBreakables.WALL_HP: 1)
 const DOUBLE_SPREAD := 6.5
 const DOUBLE_PUMP_T := 0.95
 const SHELL_T := 0.42           # seconds a shell takes to load
@@ -75,7 +76,7 @@ func press(button: int) -> void:
 
 # the pellets, then what a close blast does to whoever took it
 func _blast(a: Array, pellets: int, spread: float, both: bool) -> void:
-	var hits: Array = arena.fire(a[0], a[1], pellets, spread, HOLE, {"muzzle": a[2], "falloff": FALLOFF})
+	var hits: Array = arena.fire(a[0], a[1], pellets, spread, HOLE, {"muzzle": a[2], "falloff": FALLOFF, "wall": WALL})
 	var by := {}
 	for h in hits:
 		var b: VoxelBody = h.body

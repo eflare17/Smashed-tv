@@ -92,13 +92,14 @@ func _process(dt: float) -> bool:
 				step = 2
 				t = 0.0
 		2:
-			# five shots at the wall, chest high, a little apart
+			# five spots on the wall, chest high, a little apart, three shots each (a block takes three)
 			for k in 5:
 				var at := b.block_at(wall_c + k - 2, 1)
 				var from := at + Vector3(face_n.x, 0, face_n.y) * 9.0
-				arena.fire(from, (at - from).normalized(), 1, 0.0, 2.2)
+				for s in 3:
+					arena.fire(from, (at - from).normalized(), 1, 0.0, 2.2)
 			_check(not b.whole, "hit: in blocks now")
-			_check(b.standing == start_standing - 5, "five shots, five blocks out (%d)" % (start_standing - b.standing))
+			_check(b.standing == start_standing - 5, "fifteen shots, five blocks out (%d)" % (start_standing - b.standing))
 			step = 3
 			t = 0.0
 		3:
