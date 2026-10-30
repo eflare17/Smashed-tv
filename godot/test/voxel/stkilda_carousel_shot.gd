@@ -3,7 +3,7 @@ extends SceneTree
 ## (--out=dir). Checks there are 12 of them riding up and down on it. Prints PASS or FAIL. Owned by the St Kilda session.
 
 # [where you stand: metres out from its middle, height, how far round (radians)], look at this high, night?
-const SHOTS := [[11.0, 1.7, 0.4, 2.0, false, "day"], [6.3, 1.6, 1.3, 1.6, false, "close"], [8.0, 1.65, 2.2, 1.3, false, "edge"],
+const SHOTS := [[11.0, 1.7, 0.4, 2.0, false, "day"], [6.3, 1.6, 1.3, 1.6, false, "close"], [8.0, 1.65, 2.2, 1.3, false, "edge"], [6.6, 1.5, 3.4, 4.6, false, "ceiling"],
 	[11.0, 1.7, 0.4, 2.0, true, "night"]]
 
 var arena: VoxelArena
