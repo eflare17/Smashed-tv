@@ -122,7 +122,7 @@ func _process(dt: float) -> bool:
 				_shot("smash_falling")
 			if t > 3.5:
 				_check(sk.breaks._fall.is_empty(), "all down and smashed")
-				_check(arena.debris.count() + arena.debris.lying() > 100, "cubes on the ground (%d)" % (arena.debris.count() + arena.debris.lying()))
+				_check(sk.breaks.bricks_lying() > 300, "bricks piled on the ground (%d)" % sk.breaks.bricks_lying())
 				_shot("smash_after")
 				step = 6
 				t = 0.0
