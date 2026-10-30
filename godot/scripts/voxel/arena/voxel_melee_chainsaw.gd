@@ -22,6 +22,7 @@ const NEAR := 0.45              # metres in front of the eye the kerf starts
 const FAR := 1.6                # ... and ends (enemies stop about 1.2 m off; this reaches through them)
 const DROP := 0.07              # metres below the eye line the bar runs
 const KERF_R := 0.04            # the kerf's radius, metres
+const WALL_KERF := 0.08         # ... and in a St Kilda wall (a brick's about 0.12)
 const JUDDER := 0.005           # metres the bar jumps about each bite (a ragged kerf)
 const CHEW := 0.012             # held still: metres the kerf chews wider each other bite,
 const CHEW_MAX := 0.06          # ... up to this each side
@@ -415,6 +416,10 @@ func _bite() -> void:
 				break
 	_tick = LUNGE_TICK if _lunge_t >= 0.0 else TICK
 	if touched.is_empty():
+		# a St Kilda wall: the bar cuts its slot through it, a brick or two a bite
+		if wall_strike(FAR, WALL_KERF, 1.2) > 0:
+			_in_t = 0.12
+			_bite_k = 1.0
 		return
 	_carve(touched[0], a, z, fr)
 	for i in range(1, touched.size()):

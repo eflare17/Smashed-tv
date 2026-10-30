@@ -30,6 +30,7 @@ extends VoxelMelee
 ## hole's flight, pull, crush and burst) is static so the logic test can run it. Owned by the voxel session.
 
 const REACH := 14.0             # metres it grabs from
+const WALL_RIP := 0.3           # metres round where the beam meets a St Kilda wall it rips the bricks out
 const PICK_R := 0.6             # a piece whose middle is this near the aim's line can be grabbed ...
 const BODY_PICK_R := 0.35       # ... a body whose middle is (when the line slips between its cubes)
 const HOLD_D := 1.8             # metres out a thing is held ...
@@ -447,6 +448,14 @@ func _holding() -> bool:
 func grab() -> void:
 	var h := _pick_now()
 	if h.is_empty():
+		# a St Kilda wall: the beam rips a patch of bricks out of it, flying at you
+		var bricks := wall_strike(REACH, WALL_RIP, 7.0)
+		if bricks > 0:
+			sfx("gravity_grab")
+			_recoil_t = 0.3
+			_punch = maxf(_punch, 0.4)
+			last = {"move": "grab", "what": "wall", "bricks": bricks}
+			return
 		_miss()
 		return
 	var what := String(h.kind)
@@ -1226,6 +1235,9 @@ func _hole_key() -> String:
 # open: bodies dragged in and crushed, pieces pulled in and swallowed; collapsing, the same, harder, no crushing
 func _pull_step(dt: float, crushing: bool) -> void:
 	var c := _hp
+	var wb := walls()
+	if wb != null:
+		wb.pull_to(c, HOLE_R, 40)          # (St Kilda's rubble lying round: sucked in too)
 	var grow := clampf(_ht / 0.3, 0.0, 1.0) if _hs == "open" else 1.6
 	var pulled := 0
 	var due: VoxelBody = null       # the one crushed now: of those due, the living first (one at a time, dead in a few

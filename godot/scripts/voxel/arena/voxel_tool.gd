@@ -16,6 +16,8 @@ extends VoxelMelee
 ## eight plants a can; fill it at the water tank with E). Owned by the voxel session.
 
 const REACH := 3.0              # metres from the eye (top-down: the chest) it reaches
+const PICK_BITE := 0.1          # metres round where the pick meets a St Kilda wall it breaks the bricks out
+const SCOOP_R := 0.5            # metres round where the shovel scoops St Kilda's rubble up
 const IMPACT := 0.16            # seconds into the swing it bites
 const SWING_T := 0.5
 ## The shovel by tier: [scoop radius (m), the hardest it digs, seconds between scoops, name].
@@ -358,6 +360,8 @@ func _aim_ground() -> Array:
 
 # the swing lands: dig (or fill) where it points; what comes up into the backpack
 func _bite() -> void:
+	if walls() != null and _st_kilda():
+		return
 	var a := _aim_ground()
 	if a.is_empty():
 		return
@@ -418,6 +422,30 @@ func _bite() -> void:
 		arena.receive({"id": "worm", "n": worms}, "inv")
 		sfx("worm_find", p, -2.0)
 		arena.say("A worm! (%d in your backpack)" % arena.inv.count("worm") if worms == 1 else "%d worms! (%d in your backpack)" % [worms, arena.inv.count("worm")], 2.0)
+
+# In St Kilda (the owner, 31 Oct: every weapon on the buildings): the pick breaks a brick or two out of the wall you
+# look at; the shovel scoops up the bricks lying where you look into the backpack (Brick). True if it did either.
+func _st_kilda() -> bool:
+	var wb := walls()
+	if weapon_id == "pick":
+		var n := wall_strike(REACH, PICK_BITE, 1.5)
+		if n > 0:
+			sfx("dig_stone", eye() + look() * 1.5, -2.0, randf_range(0.9, 1.1))
+			return true
+		return false
+	if not is_shovel() or _filling:
+		return false
+	var q := PhysicsRayQueryParameters3D.create(eye(), eye() + look() * REACH)
+	q.exclude = shooter.exclude()
+	var hit := arena.get_world_3d().direct_space_state.intersect_ray(q)
+	var at: Vector3 = hit.position if not hit.is_empty() else eye() + look() * REACH
+	var n := wb.scoop(at, SCOOP_R)
+	if n == 0:
+		return false
+	arena.receive({"id": "brick", "n": n}, "inv")
+	sfx("dig_dirt", at, -2.0, 0.8)
+	arena.say("%d bricks into your backpack" % n, 1.2)
+	return true
 
 # the hoe lands at p: the spot there and the next two the way you face, tilled
 func _hoe(p: Vector3) -> void:

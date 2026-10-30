@@ -129,6 +129,21 @@ func look() -> Vector3:
 		return Vector3(-sin(shooter.look_yaw), 0, -cos(shooter.look_yaw))
 	return -shooter.cam.global_transform.basis.z
 
+## St Kilda's buildings you can smash (VoxelBreakables), while you're there; else null.
+func walls() -> VoxelBreakables:
+	var sk = arena.get("stkilda")
+	if sk != null and sk.active:
+		return sk.breaks
+	return null
+
+## A blow on the St Kilda wall you're looking at, within reach: the bricks within r of where it lands knocked out,
+## flying back at you at push m/s (nearest: just the one brick). How many (0: no wall there; not in St Kilda).
+func wall_strike(reach: float, r: float, push: float, nearest := false) -> int:
+	var wb := walls()
+	if wb == null:
+		return 0
+	return wb.strike(eye(), look(), reach, r, push, nearest)
+
 ## The camera's basis (first person) or one facing look() level (top-down): x right, y up, -z forward.
 func frame() -> Basis:
 	if top_down():

@@ -20,6 +20,7 @@ const BUTT_Z := 0.3             # the spear's own space: the grip near the butt 
 const TIP_Z := -1.7             # ... and the point this far forward (-z), its top +y
 const THRUST_FROM := 0.3        # the thrust's line: from this far past the eye ...
 const THRUST_TO := 3.2          # ... to this far
+const WALL_BITE := 0.12         # metres round where the tip meets a St Kilda wall it knocks bricks out
 const THRUST_R := 0.045         # the tunnel's radius, metres
 const THRUST_HURT := 8.0
 const HP_PER_CUBE := 0.05       # health a body (torso) cube the tunnel takes costs (carve's own)
@@ -329,6 +330,8 @@ func _strike() -> void:
 	for h in hits:
 		_land(h[0], h[1], f, 5.0, 0.8)
 		_tally(info, h[1])
+	if hits.is_empty():
+		info["wall"] = wall_strike(THRUST_TO, WALL_BITE, 2.0)     # (a St Kilda wall: a brick or two where the tip goes in)
 	info["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	last = info
 	if top_down():
@@ -624,7 +627,7 @@ func _fly_step(dt: float) -> void:
 	_vis *= exp(-dt * 14.0)
 	if String(_fly.stuck) != "":
 		_stick()
-	elif float(_fly.t) > MAX_FLIGHT or (_fly.p as Vector3).length() > 120.0:
+	elif float(_fly.t) > MAX_FLIGHT or (_fly.p as Vector3).distance_to(shooter.player.global_position) > 120.0:     # (from you: St Kilda's far off the arena's middle)
 		recall()
 	else:
 		_proj.global_transform = Transform3D(dir_basis(_fly.v), (_fly.p as Vector3) + _vis)
@@ -642,6 +645,11 @@ func _stick() -> void:
 	sfx("spear_stick", _fly.p)
 	# the cubes lying where it went in jump
 	arena.debris.pop(_fly.p, 0.6, 2.5, 80)
+	# thrown into a St Kilda wall: a brick or two knocked out where the tip went in
+	var wb := walls()
+	if wb != null and String(_fly.stuck) == "wall":
+		var d: Vector3 = _fly.dir
+		last.wall = wb.strike((_fly.p as Vector3) - d * 0.6, d, 1.0, WALL_BITE, 2.0)
 
 # stuck in: a twang (the shaft quivering about the tip), and it comes back if you walk up to it
 func _stuck_step(dt: float) -> void:

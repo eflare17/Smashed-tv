@@ -21,6 +21,8 @@ extends VoxelMelee
 ## the patch's catching, the lob, the fuel) is static so the logic test can run it. Owned by the voxel session.
 
 const REACH := 6.0              # metres the stream reaches
+const SCORCH_R := 0.6           # metres round where it lands on a St Kilda wall it blackens
+const SCORCH := 0.12            # ... and how much more each hit test
 const STREAM_V := 11.0          # m/s the burning fuel leaves the nozzle
 const DROOP := 2.6              # m/s/s it droops
 const AIM_AT := 4.5             # metres out along the look the stream crosses the crosshair (aimed up a little for the droop)
@@ -485,6 +487,10 @@ func _spray(dt: float, s: Array) -> void:
 	_tick -= dt
 	if _tick <= 0.0:
 		_hit_test(o, d)
+		# a St Kilda wall it's on: scorched blacker where it lands (it doesn't break bricks)
+		var wb := walls()
+		if wb != null:
+			wb.scorch(o, d, REACH, SCORCH_R, SCORCH)
 
 # the stream run dry: it stops and coughs out
 func _run_dry() -> void:

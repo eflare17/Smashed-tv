@@ -13,6 +13,7 @@ extends VoxelMelee
 ## Owned by the voxel session.
 
 const REACH := 2.3              # metres from the eye (top-down: the chest) the bat reaches
+const WALL_BITE := 0.17         # metres round where it meets a St Kilda wall it knocks bricks out
 const COS_ARC := 0.342          # the arc in front it covers: 70 degrees each side
 const SCALE_FP := 0.0135        # metres a voxel of the bat, first person
 const SCALE_HAND := 0.0125      # top-down, in Jared's hand
@@ -333,6 +334,13 @@ func _strike() -> void:
 	last["trace_ms"] = snappedf((t1 - t0) / 1000.0, 0.01)
 	last["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.01)
 	if list.is_empty():
+		# a St Kilda wall: a bite out of it (a full home run's bigger), the bricks back at you
+		var k := clampf((_power - 0.3) / 0.7, 0.0, 1.0) if _hr else 0.0
+		var bricks := wall_strike(REACH, WALL_BITE * (1.0 + 0.6 * k), 2.5)
+		if bricks > 0:
+			last["wall"] = bricks
+			hit_stop(0.05, 0.05)
+			shooter.kick = maxf(float(shooter.kick), 0.7)
 		return
 	# the blow lands: a freeze, a kick, a puff, harder the harder the swing
 	var p01 := clampf((_power - 0.3) / 0.7, 0.0, 1.0) if _hr else 0.0

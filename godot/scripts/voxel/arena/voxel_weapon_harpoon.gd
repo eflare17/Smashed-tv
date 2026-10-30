@@ -34,6 +34,7 @@ const HEFT := {"brute": 0.6, "swarmer": 1.2, "shielder": 0.5, "charger": 1.1, "b
 const LIFT := {"swarmer": 0.16, "grunt": 0.06, "batter": 0.05, "charger": 0.14, "thrower": 0.06}   # metres a light one is lifted off its feet
 const LET_GO := 1.0             # seconds they stagger once let go
 const WORLD_T := 0.35           # seconds stuck in a wall or the floor before it reels back
+const WALL_YANK := 0.16         # metres round where it hits a St Kilda wall it yanks the bricks out
 const REEL_V := 34.0            # m/s it's reeled back empty
 const COOLDOWN := 0.8           # seconds after it's back on the rail till it can fire again
 const LOAD_T := 0.2             # back: the harpoon slides into the rail ...
@@ -560,6 +561,10 @@ func _hit_world(at: Vector3, dir: Vector3) -> void:
 	last.hit = "world"
 	sfx("harpoon_clank", at)
 	arena.debris.pop(at, 0.5, 2.0, 40)
+	# a St Kilda wall: the barbs yank a few bricks out, flying back at you
+	var wb := walls()
+	if wb != null:
+		last.wall = wb.strike(at - dir * 0.5, dir, 1.0, WALL_YANK, 6.0)
 	shooter.kick = maxf(float(shooter.kick), 0.2)
 
 # a carve's pieces flung off at vel, spinning about spin radians a second (the rigid body, or null)

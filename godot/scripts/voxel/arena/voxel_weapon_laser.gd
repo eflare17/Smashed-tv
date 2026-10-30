@@ -21,6 +21,8 @@ extends VoxelMelee
 ## test can run it. Owned by the voxel session.
 
 const RANGE := 60.0             # metres the beam reaches at most (the arena is 44 across)
+const WALL_CUT := 0.07          # metres round where the beam meets a St Kilda wall it cuts the bricks out
+const WALL_TICK := 0.04         # seconds between its cuts there
 const CUT_R := 0.022            # the cut line's radius, metres
 const CUT_DEPTH := 0.7          # metres past where the beam goes in that it cuts (or less: to where it comes out)
 const CUT_PRE := 0.04           # ... and before it (the surface is never quite where the trace said)
@@ -78,6 +80,7 @@ const HOT := [Color(1.0, 0.92, 0.55), Color(1.0, 0.6, 0.12), Color(1.0, 0.42, 0.
 const STRIP_COLD := Color(0.24, 0.06, 0.03)
 const STRIP_HOT := Color(1.0, 0.48, 0.07)
 
+var _wall_t := 0.0
 var _tool: Node3D               # first person: the tool (posed under view; the model inside it faces -z)
 var _view_parts := {}           # its lens, strip, glow ... (see _model)
 var _hand_parts := {}           # top-down: the same in Jared's hands (the arena frees it on a switch)
@@ -549,6 +552,13 @@ func _beam_frame(dt: float) -> void:
 	if h.is_empty():
 		_end = wall[1]
 		_end_n = wall[2]
+		# on a St Kilda wall: it cuts a thin line of bricks out where you drag it
+		_wall_t -= dt
+		if _wall_t <= 0.0:
+			_wall_t = WALL_TICK
+			var wb := walls()
+			if wb != null:
+				wb.strike(from, dir, float(wall[0]) + 0.2, WALL_CUT, 0.6)
 	else:
 		_hit_b = h.body
 		d = float(h.dist)

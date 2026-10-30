@@ -316,11 +316,13 @@ func shot(wh: Dictionary, dir: Vector3, dmg := 1.0 / 3.0) -> bool:
 		return false
 	var col := int((cs as Node).get_meta("col"))
 	var row := clampi(floori(((wh.position as Vector3).y) / b.bh), 0, b.rows - 1)
+	shatter(wh.position)
 	b.hit(col, row, dmg, wh.position, dir)
 	return true
 
 ## A blast at p (a grenade's, VoxelWeaponGrenades.explode): the bricks within r of it gone (a round hole), and the roof tiles.
 func blast(p: Vector3, r: float) -> void:
+	shatter(p)
 	for b in list:
 		if not b.near(p, r + 2.0):
 			continue
@@ -727,6 +729,93 @@ func _kick() -> void:
 			func(_q: Vector3, _d: float) -> Vector3: return flat * randf_range(0.6, 1.1) + Vector3(randf_range(-0.6, 0.6), randf_range(0.8, 2.0), randf_range(-0.6, 0.6)),
 			KICKS)
 
+# ---------------------------------------------------------------- the other weapons on the walls (the owner, 31 Oct:
+# "more weapons destructible to building. Sledge hammer ect", "All. Maybe a little chip" for the sword)
+
+const CHAR := Color(0.09, 0.08, 0.07)       # scorched black
+const ICE := Color(0.72, 0.88, 1.0)         # frozen
+const SHATTER_R := 1.2                      # a hit this near frozen bricks shatters them all
+
+## The wall where a line from `from` along dir meets one of these within reach: {b, c (column), row, pos, n (its face's
+## way out)}, or empty.
+func wall_ray(from: Vector3, dir: Vector3, reach: float) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * reach, 1 | SkData.LAYER_WORLD)
+	var wh := get_world_3d().direct_space_state.intersect_ray(q)
+	if wh.is_empty():
+		return {}
+	var b := of(wh.get("collider"))
+	if b == null:
+		return {}
+	var co := wh.collider as CollisionObject3D
+	var cs := co.shape_owner_get_owner(co.shape_find_owner(int(wh.shape)))
+	if cs == null or not (cs as Node).has_meta("col"):
+		return {}
+	var c := int((cs as Node).get_meta("col"))
+	var row := clampi(floori((wh.position as Vector3).y / b.bh), 0, b.rows - 1)
+	return {"b": b, "c": c, "row": row, "pos": wh.position, "n": wh.normal}
+
+## A blow on the wall where you look (a hammer, a bat, a saw, a spear, a sword, a pick, the laser): the bricks within r
+## of where it lands knocked out, flying out at push m/s (back at you, a little up); nearest: just the one brick nearest.
+## Frozen bricks near it shatter first. How many came out (0: no wall there, or nothing left to take).
+func strike(from: Vector3, dir: Vector3, reach: float, r: float, push: float, nearest := false) -> int:
+	var h := wall_ray(from, dir, reach)
+	if h.is_empty():
+		return 0
+	var b: Building = h.b
+	var n := shatter(h.pos)
+	return n + b.bite(h.c, h.row, h.pos, r, -dir * push + Vector3.UP * push * 0.3 + (h.n as Vector3) * push * 0.4, nearest)
+
+## The flamethrower's stream on the wall where it lands: the bricks within r blackened a bit more (amt of the way).
+func scorch(from: Vector3, dir: Vector3, reach: float, r: float, amt: float) -> bool:
+	var h := wall_ray(from, dir, reach)
+	if h.is_empty():
+		return false
+	(h.b as Building).tint(h.c, h.row, h.pos, r, CHAR, amt, false)
+	return true
+
+## The freeze ray on the wall: the bricks within r frozen (icy), to shatter at the next blow near them.
+func freeze(from: Vector3, dir: Vector3, reach: float, r: float) -> bool:
+	var h := wall_ray(from, dir, reach)
+	if h.is_empty():
+		return false
+	(h.b as Building).tint(h.c, h.row, h.pos, r, ICE, 0.55, true)
+	return true
+
+## Every frozen brick within SHATTER_R of p out at once, bursting (an ice shot, or any blow near them). How many.
+func shatter(p: Vector3) -> int:
+	var n := 0
+	for b in list:
+		if b.near(p, SHATTER_R + 1.0) and b.any_frozen:
+			n += b.shatter_near(p, SHATTER_R)
+	return n
+
+## The shovel on the ground at p: the bricks lying within r scooped up into the backpack. How many.
+func scoop(p: Vector3, r: float) -> int:
+	var lo := _cell(p - Vector3(r, 0, r))
+	var hi := _cell(p + Vector3(r, 0, r))
+	var n := 0
+	for cx in range(lo.x, hi.x + 1):
+		for cz in range(lo.y, hi.y + 1):
+			var cell := Vector2i(cx, cz)
+			if not _cells.has(cell):
+				continue
+			var ids: PackedInt32Array = _cells[cell]
+			var j := ids.size() - 1
+			while j >= 0:
+				var i := ids[j]
+				if Vector2(_lp[i].x - p.x, _lp[i].z - p.z).length() < r:
+					ids.remove_at(j)
+					_heights[cell] = maxf(0.0, float(_heights[cell]) - _lh[i])
+					_lie_mm.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO), _lp[i]))
+					n += 1
+				j -= 1
+			_cells[cell] = ids
+	return n
+
+## The black hole at c: the bricks lying within r pulled up into it (flying at it, faster the nearer).
+func pull_to(c: Vector3, r: float, most: int) -> int:
+	return _wake_near(c, r, func(q: Vector3, d: float) -> Vector3: return (c - q).normalized() * (4.0 + 6.0 * (1.0 - d / r)) + Vector3.UP * 2.0, most)
+
 ## How many blocks are coming down (on their own and in slabs), and how many slabs.
 func falling_count() -> int:
 	var n := _fall.size()
@@ -761,6 +850,8 @@ class Building:
 	var left := PackedInt32Array()          # [col * rows + row]: its bricks there
 	var damaged := PackedByteArray()        # [col * rows + row]: a brick or more gone (drawn brick by brick then)
 	var chipped := 0                # bricks knocked out since it was last built
+	var frozen := PackedByteArray()         # [as sub]: a frozen brick (the freeze ray: the next blow near shatters it)
+	var any_frozen := false
 	var walls: MultiMeshInstance3D  # the damaged blocks' bricks
 	var _sub_cols := {}             # block -> its bricks' colours (PackedColorArray, as sub)
 	var standing := 0
@@ -1071,6 +1162,9 @@ class Building:
 		damaged.resize(alive.size())
 		damaged.fill(0)
 		chipped = 0
+		frozen.resize(sub.size())
+		frozen.fill(0)
+		any_frozen = false
 		_sub_cols.clear()
 		walls.visible = false
 		standing = alive.size()
@@ -1153,6 +1247,104 @@ class Building:
 			knock(out, Vector3.ZERO, p)
 		elif any:
 			_draw()
+
+	## A blow at p on column c, row's wall: the bricks within r of it out (on the wall's middle, where their middles are;
+	## round the blocks either side too), flying off at push; nearest: just the nearest brick there. How many came out.
+	func bite(c: int, row: int, p: Vector3, r: float, push: Vector3, nearest := false) -> int:
+		var before := chipped
+		var n3 := Vector3((cols[c].n as Vector2).x, 0, (cols[c].n as Vector2).y)
+		p -= n3 * (p - block_at(c, row)).dot(n3)
+		var out := []
+		if nearest:
+			if alive[c * rows + row] and _chip(c, row, p, 0.45, push, 0.8, true) < 0:
+				out.append([c, row])
+		else:
+			for c2 in cols.size():
+				var mid: Vector3 = cols[c2].mid
+				if Vector2(mid.x - p.x, mid.z - p.z).length() > r + cw(c2):
+					continue
+				for r2 in rows:
+					if alive[c2 * rows + r2] and block_at(c2, r2).distance_to(p) < r + 0.8:
+						if _chip(c2, r2, p, r, push, 1.0) < 0:
+							out.append([c2, r2])
+		if not out.is_empty():
+			knock(out, -push.normalized())
+		elif chipped > before:
+			_draw()
+		return chipped - before
+
+	## The bricks within r of p (on the wall's middle) turned amt of the way to col (scorched, frozen): drawn brick by
+	## brick from now; frozen ones marked, to shatter.
+	func tint(c: int, row: int, p: Vector3, r: float, col_: Color, amt: float, freezing: bool) -> void:
+		var n3 := Vector3((cols[c].n as Vector2).x, 0, (cols[c].n as Vector2).y)
+		p -= n3 * (p - block_at(c, row)).dot(n3)
+		var per := SX * sy
+		var any := false
+		for c2 in cols.size():
+			var mid: Vector3 = cols[c2].mid
+			if Vector2(mid.x - p.x, mid.z - p.z).length() > r + cw(c2):
+				continue
+			for r2 in rows:
+				var i := c2 * rows + r2
+				if not alive[i] or block_at(c2, r2).distance_to(p) > r + 0.8:
+					continue
+				var cs := _cols_of(c2, r2)
+				var hit := false
+				for j in per:
+					if sub[i * per + j] and sub_at(c2, r2, j % SX, j / SX).distance_to(p) < r:
+						cs[j] = cs[j].lerp(col_, amt)
+						if freezing:
+							frozen[i * per + j] = 1
+						hit = true
+				if hit:
+					_sub_cols[i] = cs
+					damaged[i] = 1
+					any = true
+		if not any:
+			return
+		if freezing:
+			any_frozen = true
+		if whole:
+			_to_blocks()
+		_draw()
+
+	## Every frozen brick still there within r of p out at once, bursting away from p. How many.
+	func shatter_near(p: Vector3, r: float) -> int:
+		var per := SX * sy
+		var out := []
+		var n := 0
+		for c2 in cols.size():
+			var mid: Vector3 = cols[c2].mid
+			if Vector2(mid.x - p.x, mid.z - p.z).length() > r + cw(c2):
+				continue
+			for r2 in rows:
+				var i := c2 * rows + r2
+				if not alive[i]:
+					continue
+				var d: Vector2 = cols[c2].dir
+				var bx := Basis(Vector3(d.x, 0, d.y), Vector3.UP, Vector3(-(cols[c2].n as Vector2).x, 0, -(cols[c2].n as Vector2).y))
+				var piece := Vector3(cw(c2) / SX, bh / sy, THICK)
+				var cs := _cols_of(c2, r2)
+				for j in per:
+					var k := i * per + j
+					if not (sub[k] and frozen[k]):
+						continue
+					var at := sub_at(c2, r2, j % SX, j / SX)
+					if at.distance_to(p) > r:
+						continue
+					sub[k] = 0
+					frozen[k] = 0
+					left[i] -= 1
+					chipped += 1
+					n += 1
+					owner.bricks(Transform3D(bx.scaled(piece), at), cs[j], PackedColorArray(), (at - p).normalized() * 5.0 + Vector3.UP * 1.5, 2.0, BRICK * 0.7)
+				if left[i] < per * KNOCK_LEFT:
+					out.append([c2, r2])
+		if not out.is_empty():
+			knock(out, Vector3.ZERO, p)
+		elif n > 0:
+			_draw()
+		return n
 
 	## A brick's middle (world): block [c, row]'s brick x across, y up.
 	func sub_at(c: int, row: int, x: int, y: int) -> Vector3:

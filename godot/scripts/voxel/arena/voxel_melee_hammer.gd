@@ -19,6 +19,8 @@ extends VoxelMelee
 ## static so the logic test can run them. Owned by the voxel session.
 
 const REACH := 2.6              # metres from the eye a smash reaches
+const WALL_BITE := 0.42         # metres round where a smash meets a St Kilda wall it knocks the bricks out (a side swing: SIDE_BITE)
+const SIDE_BITE := 0.3
 const CRATER_R := 0.17          # the crater's radius, metres
 const SINK := 0.05              # its middle this far in past where the hammer meets the body
 const HP_PER_CUBE := 0.04       # health a body cube the crater takes costs (carve's own; it scales it by the cube's size)
@@ -84,6 +86,7 @@ var _hand: Node3D               # top-down: the hammer's pivot in Jared's hand (
 var _move := ""                 # "smash", "side", "slam" or "" (at rest)
 var _t := -1.0                  # seconds into the move
 var _hit_done := false
+var _wall_done := false        # (a side swing's blow on a St Kilda wall: once, halfway round)
 var _low := false               # the smash is coming down on the floor (the view takes it lower)
 var _side := 1                  # the side swing's way: 1 to the right, -1 to the left
 var _ray_a := 0.0               # its next ray, degrees along the arc (-SIDE_ARC .. SIDE_ARC)
@@ -208,6 +211,7 @@ func _start(m: String) -> void:
 	_move = m
 	_t = 0.0
 	_hit_done = false
+	_wall_done = false
 	_low = false
 	_ray_a = -SIDE_ARC
 	_trace_ms = 0.0
@@ -366,6 +370,14 @@ func _smash_now() -> void:
 	var t0 := Time.get_ticks_usec()
 	var tg := _target()
 	if tg.is_empty():
+		# a St Kilda wall: a big bite out of it, the bricks spilling back at you
+		var bricks := wall_strike(REACH + 0.3, WALL_BITE, 3.5)
+		if bricks > 0:
+			sfx("hammer_hit", eye() + look() * REACH * 0.8, 3.0)
+			shooter.kick = 2.0
+			hit_stop(0.09, 0.03)
+			last = {"move": "smash", "hit": "wall", "bricks": bricks, "ms": snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)}
+			return
 		# the floor: a thud, the lying cubes round it jump
 		var fp := _floor_point(eye(), look())
 		var popped: int = arena.debris.pop(fp, 1.1, 3.2, 500)
@@ -579,6 +591,16 @@ func _side_step(dt: float) -> void:
 	var tg := side_hit(arena.bodies, eye(), look(), frame().x, _side, _ray_a, a1)
 	_trace_ms += (Time.get_ticks_usec() - t0) / 1000.0
 	_ray_a = a1 + SIDE_STEP
+	if not _wall_done and to >= 0.0:
+		_wall_done = true
+		var bricks := wall_strike(REACH, SIDE_BITE, 3.0)
+		if bricks > 0 and tg.is_empty():
+			sfx("hammer_hit", eye() + look() * REACH * 0.8, 2.0)
+			shooter.kick = maxf(float(shooter.kick), 1.5)
+			hit_stop(0.07, 0.04)
+			_hit_done = true
+			last = {"move": "side", "side": "right" if _side > 0 else "left", "hit": "wall", "bricks": bricks}
+			return
 	if not tg.is_empty():
 		_hit_done = true
 		_side_land(tg[0], tg[1], side_push(frame().x, _side), true)

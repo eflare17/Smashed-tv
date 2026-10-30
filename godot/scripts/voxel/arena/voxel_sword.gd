@@ -183,6 +183,9 @@ func _cut() -> void:
 			_n * randf_range(4.0, 8.0) + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)))
 		if b.alive and not (r.parts as Array).is_empty():
 			b.hit_react(_side, 30, String(r.parts[0]))
+	if not hit:
+		# a St Kilda wall: just a chip off it, a brick (the owner, 31 Oct: "Maybe a little chip")
+		res_all["wall"] = wall_strike(REACH, 0.0, 1.5, true)
 	res_all["ms"] = snappedf((Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	last = res_all
 	if hit:

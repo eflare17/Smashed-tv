@@ -19,6 +19,7 @@ extends VoxelMelee
 ## shard's strike, the charge) is static so the logic test can run it. Owned by the voxel session.
 
 const RANGE := 16.0             # metres the beam reaches
+const FREEZE_R := 0.5           # metres round where it's on a St Kilda wall it freezes the bricks
 const FREEZE_S := 0.75          # seconds of steady beam that freeze a grunt solid (taller ones longer, by height squared)
 const BEAM_V := 90.0            # m/s the beam shoots out to what it hits (frost only once it gets there)
 const ENERGY := 6.0             # seconds of beam a full charge
@@ -55,6 +56,7 @@ const CYAN := Color(0.3, 0.88, 1.0)
 const FROST := Color(0.8, 0.92, 1.0)
 const ICE_COL := Color(0.72, 0.88, 1.0)
 
+var _wall_t := 0.0
 var _gun: Node3D                # first person: the gun (its grip at the origin), posed under view
 var _gun_m: Node3D              # ... its boxes, turned to face -z
 var _coils: Array = []          # the coil's rings (spin while firing), the view's
@@ -529,6 +531,13 @@ func _beam_step(dt: float) -> void:
 		_beam_hide()
 	else:
 		on_body = _beam_draw(a[0], a[1], dt)
+		# on a St Kilda wall: the bricks it's on frozen, to shatter at the next blow (an ice shot, a bullet, a hammer...)
+		_wall_t -= dt
+		if _beam_on and not on_body and _wall_t <= 0.0:
+			_wall_t = 0.1
+			var wb := walls()
+			if wb != null:
+				wb.freeze(a[0], a[1], RANGE, FREEZE_R)
 	if _beam_on:
 		sfx_loop("hum", "freezeray_loop", -5.0 + (1.5 if on_body else 0.0), 1.0 + 0.02 * sin(_clock * 3.1) + (0.05 if on_body else 0.0))
 		_snd_hum = true
@@ -793,7 +802,7 @@ func _shard_step(s: Dictionary, dt: float) -> void:
 				return
 			s.vis = (s.vis as Vector3) * exp(-dt * 16.0)
 			var p: Vector3 = st.p
-			if float(st.t) > SHARD_LIFE or absf(p.x) > 30.0 or absf(p.z) > 30.0:
+			if float(st.t) > SHARD_LIFE or Vector2(p.x - shooter.player.global_position.x, p.z - shooter.player.global_position.z).length() > 45.0:     # (from you: St Kilda's far off the arena's middle)
 				_shard_off(s)
 				return
 			var v: Vector3 = st.v
@@ -839,6 +848,12 @@ func _shard_hit(s: Dictionary, h: Dictionary) -> bool:
 	var dir: Vector3 = (st.v as Vector3).normalized()
 	var at: Vector3 = h.point
 	if not h.has("body"):
+		# a St Kilda wall: what's frozen near it shatters; nothing frozen, a brick chipped off
+		var wb := walls()
+		if wb != null:
+			last.wall = wb.shatter(at)
+			if int(last.wall) == 0:
+				last.wall = wb.strike(at - dir * 0.4, dir, 0.8, 0.0, 2.0, true)
 		_shard_break(at, h.normal, dir, 26)
 		sfx("freezeray_tink", at)
 		last.world = int(last.get("world", 0)) + 1
