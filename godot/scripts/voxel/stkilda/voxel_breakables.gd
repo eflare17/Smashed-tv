@@ -27,7 +27,7 @@ const BRICK_D := 0.27           # a brick's depth, about
 const SX := 8                   # bricks across a block (its wall's share of BLOCK), and up it: about its height in BRICKs
 const KNOCK_LEFT := 0.35        # a block with less than this of its bricks left goes: the rest drop out
 const CRUMBLE := 0.12           # the share of bricks that crumble to cubes instead
-const FLY_MAX := 4000           # bricks flying at once (more: they drop straight onto the pile under them)
+const FLY_MAX := 3000           # bricks flying at once (more: they drop straight onto the pile under them)
 const LIE_MAX := 150000         # bricks lying about (more: they crumble)
 const PILE := 0.3               # a pile's floor cell
 const NO_SHOPS :=["w1000251780", "w1000251784"]   # (Cafe Luna, the Gift Shop: Luna Park's own shop is on that outline)
@@ -48,6 +48,7 @@ var _fspin := PackedVector3Array()
 var _fb: Array[Basis] = []
 var _fc := PackedColorArray()
 var _fbuf := PackedFloat32Array()
+var _frame := 0
 var _lie_mm: MultiMeshInstance3D
 var _lp := PackedVector3Array()   # lying: where, colour, how tall a part of its pile
 var _lc := PackedColorArray()
@@ -469,16 +470,17 @@ func bricks(xf: Transform3D, col: Color, paint: PackedColorArray, push: Vector3,
 		sk.arena.debris.burst(dust, push.normalized() if push.length() > 0.1 else Vector3.UP, 2.0)
 
 func _flying(dt: float) -> void:
+	_frame += 1
 	var mm := _fly_mm.multimesh
 	var i := 0
 	while i < _fp.size():
 		var v := _fv[i] + Vector3(0, -9.8, 0) * dt
 		var p := _fp[i] + v * dt
-		# (off a wall still standing: back out of it, bouncing a little, and nudged off its face: one landing on a wall's top
-		# slides off it; one already in one, as it broke, flies on out)
-		var wall := solid(p)
-		if wall != Vector3.ZERO and solid(_fp[i]) == Vector3.ZERO:
-			p = _fp[i] + wall * 0.12
+		# (heading into a wall still standing: back out of it, bouncing a little, nudged off its face (one landing on a
+		# wall's top slides off it). Each looks every other frame: it can't get through a wall's THICK in two)
+		var wall := solid(p) if (i + _frame) % 2 == 0 else Vector3.ZERO
+		if wall != Vector3.ZERO and v.dot(wall) < 0.0:
+			p = (_fp[i] if solid(_fp[i]) == Vector3.ZERO else p) + wall * 0.2
 			var into := v.dot(wall)
 			if into < 0.0:
 				v -= wall * into * 1.35

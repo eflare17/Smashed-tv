@@ -41,6 +41,16 @@ var tumble := 0.0
 var tumble_v := 0.0
 var down_t := 0.0
 var up_t := 0.0
+## Which way they go over (its own space): the tumble about tumble_axis (across the way it's thrown); lying, or toppled
+## dead, turned fall_sign * a right angle about fall_axis (the way it came down, or away from the hit that killed it).
+var tumble_axis := Vector3(-1, 0, 0)
+var fall_axis := Vector3(-1, 0, 0)
+var fall_sign := 1.0
+var _fell := false              # (fall_axis worked out: by landing, or the first moment dead)
+const BOUNCE_V := 4.5           # m/s down hitting the floor that bounces (slower: lands)
+## A wall to bounce off in the air (St Kilda's buildings: VoxelBreakables.solid, while you're there): (world) -> its way
+## out, or zero.
+static var wall_at := Callable()
 var since_air := 9.0               # seconds since it last came down (a dead one is posed lying a moment after)
 const UP_T := 0.6
 const DOWN_T := 1.3
@@ -92,6 +102,10 @@ func launch(v: Vector3, spin: float = 6.0) -> void:
 		spin *= 0.3
 	if not airborne:
 		tumble = 0.0             # hit again in the air: it keeps turning over from where it was
+		# (head over heels the way it's thrown, not always backward as it faces: the St Kilda session, 30 Oct)
+		var flat := Vector3(v.x, 0.0, v.z)
+		if flat.length() > 0.5:
+			tumble_axis = Vector3.UP.cross(Quaternion(Vector3.UP, -yaw) * flat.normalized()).normalized()
 	airborne = true
 	air_v = v
 	tumble_v = spin
@@ -130,10 +144,27 @@ func react_step(dt: float) -> void:
 		position += air_v * dt
 		air_v.y -= 9.8 * dt
 		tumble += tumble_v * dt
-		if position.y <= 0.0 and air_v.y < 0.0:
-			# down: a slide along the floor, then lying there a while
+		# (into a wall still standing (St Kilda's: wall_at): back off it, bouncing, turning the other way)
+		if wall_at.is_valid():
+			var wn: Vector3 = wall_at.call(global_position + Vector3.UP * height * 0.5)
+			if wn != Vector3.ZERO and air_v.dot(wn) < 0.0:
+				position -= air_v * dt
+				air_v -= wn * air_v.dot(wn) * 1.5
+				air_v *= 0.6
+				tumble_v *= -0.5
+		if position.y <= 0.0 and air_v.y < -BOUNCE_V and not frozen():
+			# down hard: a bounce, turning over slower
+			position.y = 0.0
+			air_v = Vector3(air_v.x * 0.55, -air_v.y * 0.3, air_v.z * 0.55)
+			tumble_v *= 0.45
+		elif position.y <= 0.0 and air_v.y < 0.0:
+			# down: a slide along the floor, then lying there a while, on its back or its front, whichever it came
+			# down nearer (turned about the way it was going over)
 			position.y = 0.0
 			airborne = false
+			fall_axis = tumble_axis
+			fall_sign = 1.0 if fposmod(tumble, TAU) < PI else -1.0
+			_fell = true
 			if frozen():
 				_shatter_now(air_v)      # an ice statue hitting the floor breaks (it's posed as it froze: it can't lie there)
 			knock = Vector3(air_v.x, 0.0, air_v.z) * 0.35
@@ -147,6 +178,8 @@ func react_step(dt: float) -> void:
 			up_t = UP_T if legs_lost() < 2 else 0.0     # no legs to get up on: straight back to crawling
 	elif up_t > 0.0:
 		up_t = maxf(0.0, up_t - dt)
+		if up_t == 0.0:
+			_fell = false             # (up again: the next fall's its own)
 	since_air += dt
 	position += knock * dt
 	knock *= exp(-dt * 6.0)
@@ -556,7 +589,7 @@ func animate(dt: float, moving: bool) -> void:
 	if airborne:
 		# turning over backward about the middle, arms and legs flung out
 		pivot = Vector3(0, height * 0.5, 0)
-		turn = Quaternion.from_euler(Vector3(-tumble, 0, 0))
+		turn = Quaternion(tumble_axis, tumble)
 		lift = Vector3.ZERO
 		rot = {"arm_r": Quaternion.from_euler(Vector3(-2.6, 0, -0.6)), "arm_l": Quaternion.from_euler(Vector3(-2.6, 0, 0.6)),
 			"thigh_l": Quaternion.from_euler(Vector3(-0.7, 0, 0.2)), "thigh_r": Quaternion.from_euler(Vector3(-0.4, 0, -0.2)),
@@ -566,14 +599,20 @@ func animate(dt: float, moving: bool) -> void:
 		# toppled backward about the feet, over half a second
 		# (already on the floor, crawling or knocked down: lying at once, no getting up to fall)
 		var k2 := 1.0 if (lost == 2 or down_t > 0.0 or up_t > 0.0 or since_air < 1.0) else smoothstep(0.0, 0.55, dead_t)
-		turn = Quaternion.from_euler(Vector3(-PI / 2.0 * k2, 0, 0))
+		if not _fell:
+			_fell = true          # (died on its feet: over away from what hit it, if it was shoved)
+			var shove := Vector3(knock.x, 0.0, knock.z)
+			if shove.length() > 0.05:
+				fall_axis = Vector3.UP.cross(Quaternion(Vector3.UP, -yaw) * shove.normalized()).normalized()
+				fall_sign = 1.0
+		turn = Quaternion(fall_axis, PI / 2.0 * fall_sign * k2)
 		lift = Vector3(0, 0.12 * k2, 0)
 		rot = {}
 	elif down_t > 0.0 or up_t > 0.0:
 		# flat on their back where they landed, then pushing back up
 		var k3 := 1.0 if down_t > 0.0 else smoothstep(0.0, 1.0, up_t / UP_T)
 		pivot = Vector3.ZERO
-		turn = Quaternion.from_euler(Vector3(-PI / 2.0 * k3, 0, 0))
+		turn = Quaternion(fall_axis, PI / 2.0 * fall_sign * k3)
 		lift = Vector3(0, 0.12 * k3, 0)
 		rot = {"arm_r": Quaternion.from_euler(Vector3(-0.4 * k3, 0, -0.9 * k3)), "arm_l": Quaternion.from_euler(Vector3(-0.4 * k3, 0, 0.9 * k3)),
 			"head": Quaternion.from_euler(Vector3(-0.3 * k3, 0, 0))}

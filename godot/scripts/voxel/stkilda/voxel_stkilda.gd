@@ -153,6 +153,7 @@ func go() -> void:
 	var s := arrive_spot()
 	_put(s[0], s[1], 0.0)
 	rain.arrived()
+	VoxelBody.wall_at = breaks.solid           # (bodies knocked flying bounce off the buildings)
 
 ## Home to the arena, where you were.
 func home() -> void:
@@ -173,6 +174,7 @@ func home() -> void:
 	arena.help.text = _help_text
 	_put(_home_at, _home_yaw, _home_pitch)
 	breaks.reset()                            # (smashed buildings built again for next time)
+	VoxelBody.wall_at = Callable()
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:
 	arena.player.global_position = at

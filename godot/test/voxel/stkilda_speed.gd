@@ -1,12 +1,12 @@
 extends SceneTree
 ## St Kilda's speed (not a pass or fail: numbers to read): how long the graphics card takes a frame (its own
 ## measure, so the frame cap doesn't hide it) and the game's own code, in Luna Park on the Low and High settings:
-## stood in the park by day, by night, while a building comes down, and with 40 enemies about. Prints a table
-## (milliseconds a frame: the average and the slowest 1 in 20; draw calls). The second figure is the whole frame on
-## the main thread, waiting for the frame cap included: not the game's own code (the arena's HUD shows that). Under
-## a display, Forward+. Owned by the St Kilda session.
+## stood in the park by day, by night, while a building comes down, with 40 enemies about, and on a rainy night.
+## Prints a table (milliseconds a frame: the average and the slowest 1 in 20; draw calls). The second figure is the
+## whole frame on the main thread, waiting for the frame cap included: not the game's own code (the arena's HUD shows
+## that). Under a display, Forward+. Owned by the St Kilda session.
 
-const SCENES := ["day", "night", "collapse", "forty"]
+const SCENES := ["day", "night", "collapse", "forty", "rain night"]
 const PRESETS := ["low", "high"]
 const WARM := 1.5
 const MEASURE := 3.0
@@ -75,7 +75,7 @@ func _process(dt: float) -> bool:
 				for x in cpu:
 					c_avg += x
 				c_avg /= maxf(1.0, cpu.size())
-				rows.append("%-5s %-9s graphics card %5.2f ms (slowest 1 in 20: %5.2f)   game + drawing set-up %5.2f ms   %4d draw calls" % [PRESETS[pi_], SCENES[si], avg, slow, c_avg, draws])
+				rows.append("%-5s %-10s graphics card %5.2f ms (slowest 1 in 20: %5.2f)   game + drawing set-up %5.2f ms   %4d draw calls" % [PRESETS[pi_], SCENES[si], avg, slow, c_avg, draws])
 				print(rows[-1])
 				si += 1
 				if si >= SCENES.size():
@@ -93,6 +93,7 @@ func _process(dt: float) -> bool:
 
 func _set_scene(name: String) -> void:
 	sk.clear_park()
+	sk.rain.dry()
 	if sk.day_night.night:
 		sk.day_night.toggle()
 	sk.stand("0,-40,0")
@@ -114,6 +115,13 @@ func _set_scene(name: String) -> void:
 			sk._put(at + Vector3(n.x, 0, n.y) * 20.0, atan2(n.x, n.y), 0.15)
 			for k in range(-8, 9):
 				sk.breaks.blast(b.block_at((c + k * 2 + b.cols.size()) % b.cols.size(), 0) + Vector3(n.x, 0, n.y) * 0.3, 1.6)
+		"rain night":
+			sk.day_night.toggle()
+			sk.day_night.t = 1.0
+			sk.rain.raining = true
+			sk.rain.w = 1.0
+			sk.rain.fill = 1.0
+			sk.rain._lay()
 		"forty":
 			var me := arena.player.global_position
 			for k in 40:
