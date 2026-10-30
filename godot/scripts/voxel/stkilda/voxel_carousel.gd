@@ -317,8 +317,8 @@ static func _horses(spin: SkLunaRides.Spinner) -> void:
 		var a := TAU * k / RING
 		var at := Vector3(cos(a), 0, sin(a)) * R
 		_pole(poles, at)
-		# (facing round the way it turns, as the old ones: anticlockwise from above)
-		var xf := Transform3D(Basis(Vector3.UP, -a), at + Vector3(0, FLOOR, 0))
+		# (nose first the way the ride turns: the Spinner turns it +y, so a horse at angle a moves along (sin a, 0, -cos a))
+		var xf := Transform3D(Basis(Vector3.UP, PI / 2.0 - a), at + Vector3(0, FLOOR, 0))
 		mm.set_instance_transform(k, xf)
 		list.append([horses, k, xf, RISE, float(k) * 1.7])
 		if rng.randf() < 0.5:
