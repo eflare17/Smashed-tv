@@ -1,7 +1,7 @@
 # (Copied from stkilda-godot scripts/town/crowd.gd by tools/stkilda_sync.sh: don't edit here, edit there and re-run.)
 class_name SkCrowd
 extends Node3D
-## People about the place, so it doesn't feel empty: walking round Luna Park between the rides (keeping out from under
+## SkPeople about the place, so it doesn't feel empty: walking round Luna Park between the rides (keeping out from under
 ## the moving ones and off anything solid), standing in little queues by the rides, walking up and down the
 ## footpaths of Acland St, Fitzroy St and The Esplanade, and riding in the Scenic Railway's cars. They're simple blocky
 ## townsfolk (legs, a body, arms, a head with hair, in the chunky style of the rest), one shape for everyone, each
@@ -24,6 +24,8 @@ var _swings: Array = []                  # [centre (x, z), radius]
 var _rng := RandomNumberGenerator.new()
 var _space: PhysicsDirectSpaceState3D
 var _probe: PhysicsShapeQueryParameters3D
+## Set up (the park's wall read, the space to ask about open spots): the ibises wait for it.
+var ready_ := false
 
 static var _mesh: ArrayMesh
 static var _mat: ShaderMaterial
@@ -115,6 +117,7 @@ func _ready() -> void:
 	mmi.material_override = material()
 	add_child(mmi)
 	_riders(main)
+	ready_ = true
 
 func _process(dt: float) -> void:
 	if _mm == null:
@@ -378,7 +381,7 @@ func _open(p: Vector3) -> bool:
 	_probe.transform = Transform3D(Basis(), p + Vector3(0, 1.1, 0))
 	return _space.intersect_shape(_probe, 1).is_empty()
 
-## People sitting in the Scenic Railway's cars (not the front seat: that's yours), riding round with them.
+## SkPeople sitting in the Scenic Railway's cars (not the front seat: that's yours), riding round with them.
 func _riders(main: Node) -> void:
 	var rail := main.get_node_or_null("SkScenicRailway")
 	if rail == null:
@@ -526,3 +529,17 @@ void fragment() {
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
 	return _mat
+
+## Somewhere open in the park within `r` m of `from` that's straight there (or not, if not `straight`), or `from`: for
+## the ibises (with their own dice, so the crowd stays the same every time).
+func next_spot_near(from: Vector3, r: float, rng: RandomNumberGenerator, straight := true) -> Vector3:
+	for k in 12:
+		var p := from + Vector3(rng.randf_range(-r, r), 0, rng.randf_range(-r, r))
+		if not _open(p):
+			continue
+		if not straight:
+			return p
+		var q := PhysicsRayQueryParameters3D.create(from + Vector3(0, 0.5, 0), p + Vector3(0, 0.5, 0), SkData.LAYER_WORLD)
+		if _space.intersect_ray(q).is_empty():
+			return p
+	return from

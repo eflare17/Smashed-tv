@@ -411,7 +411,7 @@ static func _batch(parent: Node3D, mesh: Mesh, count: int, name := "Batch") -> M
 
 static var _rider_rng: RandomNumberGenerator
 
-## People riding, all in one batch (SkCrowd's townsfolk), under `parent` (the ride's moving part): `seats` is a list of
+## SkPeople riding, all in one batch (SkCrowd's townsfolk), under `parent` (the ride's moving part): `seats` is a list of
 ## [what they ride on (a batch's MultiMesh, or a node under `parent`), which copy in the batch, where on it (their
 ## feet at its origin, facing -z)]. How they sit: `legs` 0 hanging down .. 1 straight out in front; `hold` arms out in
 ## front holding on; `cheer` how many have their arms right up in the air.

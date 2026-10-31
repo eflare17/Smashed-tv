@@ -18,10 +18,11 @@ mkdir -p "$OUT" data/stkilda
 FILES=(town/town_builder town/town_roads town/town_trees town/facades town/landmarks
        town/luna_park town/luna_rides town/luna_extras town/scenic_railway world/models
        town/coaster_wood town/contact_shade town/ground_look town/worn_look town/crowd town/ragdoll
-       town/day_night town/park_flags town/ride_lights)
+       town/day_night town/park_flags town/ride_lights
+       world/ibis world/feather world/impact_puff world/sounds world/people world/props player/walker camera/follow_cam)
 NAMES=(TownBuilder TownRoads TownTrees Facades Landmarks LunaPark LunaRides LunaExtras ScenicRailway Models
        CoasterWood ContactShade GroundLook WornLook Crowd Ragdoll DayNight ParkFlags RideLights GameData
-       Car Walker)
+       Car Walker Ibis Feather ImpactPuff Sounds People Props FollowCam Jared)
 
 # a file as committed in the St Kilda project
 src() {
@@ -35,7 +36,8 @@ rename() {
 		[ "$n" = GameData ] && to=SkData
 		s+="s/\\b$n\\b/$to/g;"
 	done
-	sed -E "$s"'s#res://data/(town|luna)\.json#res://data/stkilda/\1.json#g'
+	# (but not node names: the crowd's "People", the ibis's "Ibis")
+	sed -E "$s"'s/"Sk(People|Ibis)"/"\1"/g;s#res://data/(town|luna)\.json#res://data/stkilda/\1.json#g'
 }
 
 for f in "${FILES[@]}"; do
@@ -51,9 +53,9 @@ done
 	echo "class_name SkData"
 	src game_data.gd | sed -E 's/^extends Node$/extends RefCounted/' | rename
 } > "$OUT/sk_data.gd"
-# The crowd knocks people over when the St Kilda game's car (Car) or you on foot (Walker) bump into them. Neither is
-# here (the voxel game has its own player, and no car), so stand-ins: VoxelStKilda's walker never moves, so nobody's
-# knocked over.
+# The crowd knocks people over when the St Kilda game's car (Car) bumps into them: no car here, so a stand-in. (You on
+# foot, Walker, is the real one, SkWalker: VoxelStKilda's is never in the scene, so it never moves and nobody's knocked
+# over; the ibis clip walks one.)
 cat > "$OUT/sk_car.gd" <<'EOF'
 # (Made by tools/stkilda_sync.sh: a stand-in for the St Kilda game's Car, which SkCrowd names. No car here.)
 class_name SkCar
@@ -62,15 +64,28 @@ extends Node3D
 var speed := 0.0
 var velocity := Vector3.ZERO
 EOF
-cat > "$OUT/sk_walker.gd" <<'EOF'
-# (Made by tools/stkilda_sync.sh: a stand-in for the St Kilda game's Walker, which SkCrowd names. It never moves, so
-# the crowd never gets knocked over.)
-class_name SkWalker
-extends CharacterBody3D
+# SkWalker names Juicy Jared (Jared), for when you're him: nobody plays him here, so a stand-in (never made).
+cat > "$OUT/sk_jared.gd" <<'EOF'
+# (Made by tools/stkilda_sync.sh: a stand-in for the St Kilda game's Juicy Jared, which SkWalker names. Nobody's him
+# here.)
+class_name SkJared
+extends Node3D
 
-func shove() -> void:
+const WALK := 2.0
+const RUN := 4.0
+
+var model: Node3D
+var anim: AnimationPlayer
+
+func jump() -> void:
+	pass
+
+func animate(_speed: float, _moving: bool) -> void:
 	pass
 EOF
+# the ibis's model (the owner's STL cut down to 6,000 triangles), for SkIbis
+mkdir -p assets/ibis
+git -C "$SRC" show HEAD:assets/ibis/ibis_simple.res > assets/ibis/ibis_simple.res
 
 # (its map too, as committed)
 TMP="$(mktemp -d)"
