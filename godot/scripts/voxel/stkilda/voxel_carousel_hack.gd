@@ -310,6 +310,9 @@ func _process(dt: float) -> void:
 
 # what E does here: the box, a horse's bolt (held)
 func _prompt(dt: float) -> void:
+	if _cam and _cam.current:
+		sk.arena._use_label.text = "Mouse: swing the view round   Wheel: nearer / further"
+		return
 	if sk.riding() or sk.near_ride or (sk.bushes and sk.bushes.dragging >= 0):
 		return
 	var pp := sk.arena.player.global_position
@@ -363,6 +366,19 @@ func _horse_near(p: Vector3) -> int:
 	return best
 
 func _input(e: InputEvent) -> void:
+	if _cam and _cam.current:
+		if e is InputEventMouseMotion:
+			var rel := (e as InputEventMouseMotion).relative
+			orbit.x -= rel.x * ORBIT_SENS
+			orbit.y = clampf(orbit.y - rel.y * ORBIT_SENS, -1.2, 1.2)
+			get_viewport().set_input_as_handled()
+			return
+		if e is InputEventMouseButton and (e as InputEventMouseButton).pressed:
+			var b := (e as InputEventMouseButton).button_index
+			if b == MOUSE_BUTTON_WHEEL_UP or b == MOUSE_BUTTON_WHEEL_DOWN:
+				zoom = clampf(zoom * (0.88 if b == MOUSE_BUTTON_WHEEL_UP else 1.14), 0.35, 3.0)
+				get_viewport().set_input_as_handled()
+				return
 	if e is InputEventKey and (e as InputEventKey).physical_keycode == KEY_E and not e.echo:
 		_e_down = e.pressed
 	if not _open or not (e is InputEventKey and e.pressed and not e.echo):
@@ -407,6 +423,9 @@ var _sill_out := Vector3.ZERO
 var _cam: Camera3D
 var _cam_tb: VoxelCarouselTumble
 var _cam_dir := Vector3.FORWARD
+var orbit := Vector2.ZERO       # (the owner, 31 Oct: "choose the angle of the camera during flight") the mouse swinging the
+var zoom := 1.0                 # view round them: how far round (rad), how far up or down; the wheel, how near
+const ORBIT_SENS := 0.006
 
 # where they'd hit Luna Palace's wall, looking across from the Carousel at FLY_H
 func _palace_wall() -> bool:
@@ -511,6 +530,8 @@ func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
 		add_child(_cam)
 	_cam_tb = tb
 	_cam_dir = dir
+	orbit = Vector2.ZERO
+	zoom = 1.0
 	var p := _where(tb)
 	_cam.global_position = p - dir * 6.0 + Vector3(0, 2.5, 0)
 	_cam.look_at(p, Vector3.UP)
@@ -546,6 +567,13 @@ func _follow_step(dt: float) -> void:
 	else:
 		want = p - _cam_dir * 7.0 + side * 4.5 + Vector3(0, 2.2, 0)     # (stood off to the side: the wall, the drop, up again)
 		want.y = maxf(want.y, 1.5)
+	# swung round them as the mouse has, nearer or further as the wheel has (never under the ground)
+	var off := Basis(Vector3.UP, orbit.x) * (want - p)
+	var tilt := off.cross(Vector3.UP).normalized()
+	if tilt.length() > 0.5:
+		off = Basis(tilt, orbit.y) * off
+	want = p + off * zoom
+	want.y = maxf(want.y, 0.4)
 	_cam.global_position = _cam.global_position.lerp(want, minf(1.0, dt * 4.0))
 	_cam.look_at(p, Vector3.UP)
 

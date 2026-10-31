@@ -139,6 +139,7 @@ func _physics_process(_dt: float) -> void:
 	_last_v = sp
 
 func _process(dt: float) -> void:
+	_crack_step(dt)
 	if (stage == "flying" and hang_at == Vector3.INF) or stage == "done":
 		return
 	_t += dt
@@ -260,8 +261,133 @@ func _splat() -> void:
 	_t = 0.0
 	hits += 1
 	_sound("thwack", 0.0, 0.85)
+	_sound("crunch", -4.0, 0.7)
+	var at := hang_at + Vector3(0, SLIDE - 0.8 * size, 0) - hang_out * 0.15     # (where their middle smacks into it)
+	_dust(at)
+	_crack(at)
 
 func _sound(nm: String, db: float, pitch: float) -> void:
 	var arena = get_tree().root.get_node_or_null("VoxelArena")
 	if arena and arena.sound:
 		arena.sound.play(nm, hang_at, db, pitch)
+
+# ---------------------------------------------------------------- the smack into the wall (the owner, 31 Oct: "a puff of
+# plaster dust and bits of render bursting off the wall", "a cartoon crack spreading out")
+
+const PLASTER := [Color("#f3efe6"), Color("#e6e0d3"), Color("#d8d1c2"), Color("#fbf8f1")]
+const DUST_N := 70
+const BITS_N := 45
+const CRACK_COL := Color("#1e1b18")
+const CRACK_T := 0.35           # s the crack takes to spread right out
+const CRACK_ARMS := 6
+
+## A puff of plaster dust off the wall where they hit, and bits of its render knocked off, falling to the ground.
+func _dust(at: Vector3) -> void:
+	var p := CPUParticles3D.new()
+	p.name = "Dust"
+	p.one_shot = true
+	p.emitting = false
+	p.amount = DUST_N
+	p.lifetime = 1.8
+	p.explosiveness = 0.92
+	p.local_coords = false
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.35
+	p.direction = hang_out
+	p.spread = 75.0
+	p.initial_velocity_min = 1.2
+	p.initial_velocity_max = 3.8
+	p.gravity = Vector3(0, -1.2, 0)
+	p.damping_min = 2.5
+	p.damping_max = 4.0
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 2.2
+	var grow := Curve.new()
+	grow.add_point(Vector2(0, 0.5))
+	grow.add_point(Vector2(1, 1.6))
+	p.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(PLASTER[0], 0.85))
+	fade.set_color(1, Color(PLASTER[2], 0.0))
+	p.color_ramp = fade
+	var cube := BoxMesh.new()
+	cube.size = Vector3(0.11, 0.11, 0.11)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	cube.material = m
+	p.mesh = cube
+	add_child(p)
+	p.global_position = at + hang_out * 0.1
+	p.emitting = true
+	# bits of render knocked off it, flying out and down (the arena's loose cubes: they land and lie about)
+	var arena = get_tree().root.get_node_or_null("VoxelArena")
+	if arena and arena.debris:
+		var bits := []
+		for k in BITS_N:
+			bits.append({"pos": at + Vector3(randf_range(-0.4, 0.4), randf_range(-0.5, 0.5), randf_range(-0.4, 0.4)) + hang_out * 0.12,
+				"col": PLASTER[k % PLASTER.size()]})
+		arena.debris.burst(bits, hang_out, 2.6)
+
+## A cartoon crack in the wall where they hit: CRACK_ARMS dark lines out from the middle, crooked, forking, spreading
+## out over CRACK_T (each bit grows as the crack gets to it), and staying there.
+var _crack_bits: Array = []     # [MeshInstance3D, from, to, width, when it starts growing (0..1 of CRACK_T)]
+var _crack_t := -1.0
+
+func _crack(at: Vector3) -> void:
+	var holder := Node3D.new()
+	holder.name = "Crack"
+	add_child(holder)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = CRACK_COL
+	m.roughness = 1.0
+	var up := Vector3.UP
+	var side := up.cross(hang_out).normalized()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var face := at + hang_out * 0.0
+	for arm in CRACK_ARMS:
+		var a := TAU * arm / CRACK_ARMS + rng.randf_range(-0.35, 0.35)
+		_crack_arm(holder, m, rng, face, a, rng.randf_range(0.6, 1.15), 0.09, 0.0, side, up, 2)
+	_crack_t = 0.0
+
+# one crooked line out from p at angle a (on the wall), length long, width w, starting to grow at `when`; forks
+func _crack_arm(holder: Node3D, m: Material, rng: RandomNumberGenerator, p: Vector3, a: float, long: float, w: float,
+		when: float, side: Vector3, up: Vector3, forks: int) -> void:
+	var steps := 3
+	var from := p
+	for s in steps:
+		a += rng.randf_range(-0.5, 0.5)
+		var to := from + (side * cos(a) + up * sin(a)) * long / steps
+		var bit := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(1, 1, 1)
+		bit.mesh = box
+		bit.material_override = m
+		bit.visible = false
+		holder.add_child(bit)
+		var t0 := when + (1.0 - when) * float(s) / steps * 0.8
+		_crack_bits.append([bit, from, to, w * (1.0 - 0.25 * s), t0])
+		if forks > 0 and s == 1 and rng.randf() < 0.75:
+			_crack_arm(holder, m, rng, to, a + rng.randf_range(0.6, 1.1) * (1.0 if rng.randf() < 0.5 else -1.0), long * 0.45, w * 0.6, t0, side, up, forks - 1)
+		from = to
+
+func _crack_step(dt: float) -> void:
+	if _crack_t < 0.0 or _crack_t > CRACK_T + 0.1:
+		return
+	_crack_t += dt
+	var k := _crack_t / CRACK_T
+	for b in _crack_bits:
+		var bit: MeshInstance3D = b[0]
+		var from: Vector3 = b[1]
+		var to: Vector3 = b[2]
+		var grow := clampf((k - float(b[4])) / 0.25, 0.0, 1.0)
+		bit.visible = grow > 0.0
+		if not bit.visible:
+			continue
+		var end := from.lerp(to, grow)
+		var d := end - from
+		var x := d.normalized() if d.length() > 0.0001 else Vector3.RIGHT
+		var y := hang_out.cross(x).normalized()
+		bit.global_transform = Transform3D(Basis(x * maxf(d.length(), 0.001), y * float(b[3]), hang_out * 0.02), (from + end) * 0.5 + hang_out * 0.005)

@@ -143,6 +143,17 @@ func _process(dt: float) -> bool:
 		6:
 			# the game's own view goes after the one thrown off (VoxelCarouselHack's FollowCam), and comes back
 			label.text = "6. BRAKE: stopped dead"
+			# swinging the view round him with the mouse as he flies (and a little nearer with the wheel)
+			if hack._cam and hack._cam.current and t < 1.6:
+				var mm := InputEventMouseMotion.new()
+				mm.relative = Vector2(-0.35 if t < 0.8 else 0.35, -0.08 if t < 0.8 else 0.08)
+				Input.parse_input_event(mm)
+				if t > 0.6 and not has_meta("wheel"):
+					set_meta("wheel", true)
+					var wb := InputEventMouseButton.new()
+					wb.button_index = MOUSE_BUTTON_WHEEL_UP
+					wb.pressed = true
+					Input.parse_input_event(wb)
 			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
 			if tb != null:
 				match tb.stage:

@@ -155,12 +155,29 @@ func _process(dt: float) -> bool:
 			t = 0.0
 		9:
 			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
+			if tb != null and tb.stage == "flying" and not has_meta("swung"):
+				set_meta("swung", true)
+				var mm := InputEventMouseMotion.new()
+				mm.relative = Vector2(120, -40)
+				Input.parse_input_event(mm)
+				var wb := InputEventMouseButton.new()
+				wb.button_index = MOUSE_BUTTON_WHEEL_UP
+				wb.pressed = true
+				Input.parse_input_event(wb)
 			if tb == null or (tb.stage != "hang" and t < 15.0) or (tb.stage == "hang" and tb._t < 1.5):
 				return false
 			_check(tb.hang_at != Vector3.INF, "thrown at a window of Luna Palace")
+			var crack := tb.get_node_or_null("Crack")
+			var shown := 0
+			if crack:
+				for c in crack.get_children():
+					shown += 1 if (c as Node3D).visible else 0
+			_check(shown > 10, "a crack spread across the wall where he hit (%d bits of it)" % shown)
+			_check(tb.get_node_or_null("Dust") != null, "a puff of plaster dust off it")
 			# caught on the sill by a foot, upside down
 			_check(tb.stage == "hang", "caught on the sill (%s)" % tb.stage)
 			_check(hack._cam != null and hack._cam.current, "the view's gone with them")
+			_check(hack.orbit.x < -0.5 and hack.orbit.y > 0.1 and hack.zoom < 1.0, "the mouse swung the view round them, the wheel brought it nearer (%s, %.2f)" % [str(hack.orbit), hack.zoom])
 			var c := hack.carousel.global_position
 			_check(Vector2(tb.at.x - c.x, tb.at.z - c.z).length() > 25.0, "all the way over at Luna Palace (%.1f m from the ride)" % Vector2(tb.at.x - c.x, tb.at.z - c.z).length())
 			var xf := tb._mm.get_instance_transform(0) if tb._mm.buffer.size() == 0 else Transform3D(Basis(Vector3(tb._mm.buffer[0], tb._mm.buffer[4], tb._mm.buffer[8]), Vector3(tb._mm.buffer[1], tb._mm.buffer[5], tb._mm.buffer[9]), Vector3(tb._mm.buffer[2], tb._mm.buffer[6], tb._mm.buffer[10])), Vector3(tb._mm.buffer[3], tb._mm.buffer[7], tb._mm.buffer[11]))
