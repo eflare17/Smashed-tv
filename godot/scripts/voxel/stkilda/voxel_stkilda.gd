@@ -36,6 +36,8 @@ var rain: VoxelRain
 var breaks: VoxelBreakables
 var nav: VoxelParkNav
 var game: VoxelParkGame                        # "Kill 1, 2 come" (the phone starts it)
+var dirt: VoxelParkDirt                        # the dirt along Luna Park's wall you can dig (the break-in)
+var bushes: VoxelParkBushes                    # the bushes in it: cut down, dragged over a hole, hidden in
 var _debris_bound := INF
 # (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
 # so nobody's knocked over)
@@ -88,6 +90,12 @@ func build() -> void:
 		if ride:
 			SkContactShade.under_node(ride)
 	SkContactShade.build(town.root)
+	dirt = VoxelParkDirt.new()                # (after the shade along the wall: it's cut away over the dirt)
+	add_child(dirt)
+	dirt.setup(self)
+	bushes = VoxelParkBushes.new()
+	add_child(bushes)
+	bushes.setup(self, dirt)
 	SkRideLights.build(self)
 	var crowd := SkCrowd.new()
 	crowd.name = "SkCrowd"
@@ -175,6 +183,8 @@ func home() -> void:
 	arena.help.text = _help_text
 	_put(_home_at, _home_yaw, _home_pitch)
 	breaks.reset()                            # (smashed buildings built again for next time)
+	dirt.reset()                              # (the holes filled in, the bushes grown back)
+	bushes.reset()
 	VoxelBody.wall_at = Callable()
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:

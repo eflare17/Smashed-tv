@@ -142,6 +142,9 @@ func wall_strike(reach: float, r: float, push: float, nearest := false) -> int:
 	var wb := walls()
 	if wb == null:
 		return 0
+	var bushes = arena.stkilda.bushes          # (a bush along Luna Park's wall: cut down with a few blows)
+	if bushes != null and bushes.strike(eye(), look(), reach):
+		return 0
 	return wb.strike(eye(), look(), reach, r, push, nearest)
 
 ## The camera's basis (first person) or one facing look() level (top-down): x right, y up, -z forward.

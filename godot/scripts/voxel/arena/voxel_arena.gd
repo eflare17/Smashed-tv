@@ -172,6 +172,7 @@ var _hands := []                # top-down: the BoneAttachment3Ds holding it
 var _hud_layer: CanvasLayer
 var net_menu: VoxelNetMenu      # the online menu (O)
 var stkilda: VoxelStKilda        # St Kilda (Luna Park), down the phone's Travel (scripts/voxel/stkilda)
+var speed_k := 1.0               # how fast you walk, of your own pace (St Kilda: slower dragging a bush)
 var gun_range: VoxelGunRange    # the gun range (the phone's Travel: every weapon to try)
 var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
@@ -1683,7 +1684,7 @@ func _physics_process(dt: float) -> void:
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
 	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or (phone and phone.is_open()):
 		iv = Vector2.ZERO           # (typing a room code isn't walking)
-	var sp := 7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5
+	var sp := (7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5) * speed_k
 	var dir := Vector3.ZERO
 	if top_down:
 		dir = Vector3(iv.x, 0, iv.y)

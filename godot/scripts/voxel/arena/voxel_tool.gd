@@ -319,7 +319,7 @@ func _pour(dt: float) -> void:
 	_pour_t = 0.0
 	sfx("vacuum_pop", Vector3.INF, -18.0, 2.2)
 	var a := _aim_ground()
-	if a.is_empty():
+	if a.is_empty() or a[2] != arena.yard:
 		return
 	var farm: VoxelFarm = arena.yard.farm
 	var p: Vector3 = a[0]
@@ -333,9 +333,15 @@ func _pour(dt: float) -> void:
 					break
 
 # where the look meets the ground within reach: [point, normal] or []
+## Where the tool meets the ground it digs: [where, its normal, what to dig: the back yard, or a patch of St Kilda's
+## dirt along Luna Park's wall (VoxelParkDirt)], or [] (out of reach, or not ground that digs).
 func _aim_ground() -> Array:
 	var yard = arena.yard
-	if yard == null:
+	var dirt: VoxelParkDirt = null
+	var sk = arena.get("stkilda")
+	if sk != null and sk.active:
+		dirt = sk.dirt
+	if yard == null and dirt == null:
 		return []
 	var from := eye()
 	var dir := look()
@@ -351,12 +357,17 @@ func _aim_ground() -> Array:
 	if hit.is_empty():
 		return []
 	var p: Vector3 = hit.position
-	if not yard.ground.contains(p) or (top_down() and Vector2(p.x - shooter.player.global_position.x, p.z - shooter.player.global_position.z).length() > REACH):
+	if top_down() and Vector2(p.x - shooter.player.global_position.x, p.z - shooter.player.global_position.z).length() > REACH:
 		return []
 	var col: Object = hit.collider
-	if col == null or not (col as Node).get_parent() == yard.ground:
+	if col == null:
 		return []
-	return [p, hit.normal]
+	if dirt != null:
+		var pt := dirt.patch_of(col)
+		return [p, hit.normal, pt] if pt != null else []
+	if not yard.ground.contains(p) or not (col as Node).get_parent() == yard.ground:
+		return []
+	return [p, hit.normal, yard]
 
 # the swing lands: dig (or fill) where it points; what comes up into the backpack
 func _bite() -> void:
@@ -370,15 +381,17 @@ func _bite() -> void:
 	var st := stats()
 	var r: float = st[0]
 	var yard = arena.yard
+	var patch := a[2] as VoxelParkDirt.Patch       # (St Kilda's dirt; null: the back yard)
 	if weapon_id == "hoe":
-		_hoe(p)
+		if patch == null:
+			_hoe(p)
 		return
 	if _filling:
 		var have: int = arena.inv.count("dirt")
 		if have <= 0:
 			arena.say("No dirt in your backpack to fill with", 1.5)
 			return
-		var k: int = yard.fill(p + n * r * 0.6, r, have)
+		var k: int = patch.wfill(p + n * r * 0.6, r, have) if patch else yard.fill(p + n * r * 0.6, r, have)
 		if k > 0:
 			arena.inv.remove("dirt", k)
 			sfx("dig_dirt", p, -2.0, 0.85)
@@ -387,7 +400,7 @@ func _bite() -> void:
 	if is_shovel() and tier == 0 and randf() < 0.25:
 		r *= 0.6                  # (the rusty one slips: half a scoop)
 		sfx("dig_scrape", p, -4.0)
-	var got: Dictionary = yard.dig(p - n * r * 0.45, r, int(st[1]))
+	var got: Dictionary = patch.wdig(p - n * r * 0.45, r, int(st[1])) if patch else yard.dig(p - n * r * 0.45, r, int(st[1]))
 	if VoxelBody.credit and arena.get("guide"):
 		arena.guide.tried("dig")              # (this player's own dig, not the other's copy of their shovel)
 	var cells: Array = got.get("_cells", [])
@@ -417,7 +430,7 @@ func _bite() -> void:
 		worms += 1
 		var w := VoxelWorm.new()
 		arena.add_child(w)
-		w.start(yard.ground.centre_of(c.x, c.y, c.z) + Vector3.UP * 0.05, arena.player)
+		w.start((patch.wcentre(c) if patch else yard.ground.centre_of(c.x, c.y, c.z)) + Vector3.UP * 0.05, arena.player)
 	if worms > 0:
 		arena.receive({"id": "worm", "n": worms}, "inv")
 		sfx("worm_find", p, -2.0)
