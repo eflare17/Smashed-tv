@@ -38,6 +38,7 @@ var nav: VoxelParkNav
 var game: VoxelParkGame                        # "Kill 1, 2 come" (the phone starts it)
 var dirt: VoxelParkDirt                        # the dirt along Luna Park's wall you can dig (the break-in)
 var bushes: VoxelParkBushes                    # the bushes in it: cut down, dragged over a hole, hidden in
+var hack: VoxelCarouselHack                    # the Carousel's control box, the gadget, a loose bolt (the sabotage)
 var _debris_bound := INF
 # (what SkCrowd looks for on its parent, from the St Kilda game: no car here, and a stand-in walker that never moves,
 # so nobody's knocked over)
@@ -97,6 +98,9 @@ func build() -> void:
 	add_child(bushes)
 	bushes.setup(self, dirt)
 	SkRideLights.build(self)
+	hack = VoxelCarouselHack.new()            # (after the lights: it turns the Carousel's off and on)
+	add_child(hack)
+	hack.setup(self)
 	var crowd := SkCrowd.new()
 	crowd.name = "SkCrowd"
 	crowd.setup(town)
@@ -185,6 +189,7 @@ func home() -> void:
 	breaks.reset()                            # (smashed buildings built again for next time)
 	dirt.reset()                              # (the holes filled in, the bushes grown back)
 	bushes.reset()
+	hack.reset()
 	VoxelBody.wall_at = Callable()
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:
