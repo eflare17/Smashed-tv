@@ -148,6 +148,10 @@ func _process(dt: float) -> bool:
 				match tb.stage:
 					"flying":
 						label.text = "6. BRAKE: stopped dead... into the castle"
+					"splat":
+						label.text = "...splat, above the window..."
+					"slide":
+						label.text = "...sliding down..."
 					"hang":
 						label.text = "...caught by a foot on a window sill"
 					"down", "up":

@@ -391,8 +391,8 @@ func _unhandled_input(e: InputEvent) -> void:
 #
 # (The owner, 31 Oct: "flung off really far hitting the castle, the camera follows them".) Thrown at Luna Palace: the
 # rider going the way most toward it is the one, and they fly in an arc FLY_SPEED m/s across at the upstairs window
-# nearest the Carousel, where a foot catches on its sill (the owner: "his leg gets caught on the window sill and he
-# gets stuck hanging upside down"): left hanging there till you come again. (Its front facing away, no window to
+# nearest the Carousel: they hit the wall above it, slide down it and a foot catches on its sill (the owner: "his leg
+# gets caught on the window sill and he gets stuck hanging upside down"): left hanging there till you come again. (Its front facing away, no window to
 # aim at: into its wall FLY_H m up, down, up and off back toward the ride.) The view goes with them (FollowCam) and
 # comes back to you once they're hanging (or walking). No Luna Palace (or something between): the old short throw,
 # into whatever's nearest.
@@ -520,7 +520,7 @@ func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
 static func _where(tb: VoxelCarouselTumble) -> Vector3:
 	if tb.stage == "hang":
 		return tb.hang_at + Vector3(0, -0.9, 0)
-	if tb.stage == "flying" and tb.hang_at != Vector3.INF:
+	if tb.stage in ["flying", "splat", "slide"] and tb.hang_at != Vector3.INF:
 		return tb.mid_now
 	if tb._rag != null and is_instance_valid(tb._rag):
 		var b := tb._rag._parts.get("body") as RigidBody3D
@@ -541,7 +541,7 @@ func _follow_step(dt: float) -> void:
 	var want: Vector3
 	if _cam_tb.stage == "flying" and p.distance_to(_wall_at) > 6.0:
 		want = p - _cam_dir * 6.0 + Vector3(0, 2.0, 0)                    # (behind them, flying)
-	elif _cam_tb.stage == "hang":
+	elif _cam_tb.stage in ["hang", "splat", "slide"]:
 		want = p + _cam_tb.hang_out * 4.2 + side * 1.3 + Vector3(0, -0.5, 0)    # (out in front of the wall, looking at them)
 	else:
 		want = p - _cam_dir * 7.0 + side * 4.5 + Vector3(0, 2.2, 0)     # (stood off to the side: the wall, the drop, up again)

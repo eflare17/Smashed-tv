@@ -5,8 +5,9 @@ extends Node3D
 ## platform into whatever's there (the ride's iron fence); a thump when they hit it. Then the way the crowd gets up
 ## after a fall: lying there a moment, up again, stood swaying with stars going round their head, and off they walk,
 ## away from the ride, wobbly at first. Or (hang_at set: thrown at a window of Luna Palace, the owner: "his leg gets
-## caught on the window sill and he gets stuck hanging upside down") caught by a foot on its sill as they get there,
-## and left hanging upside down below it, swinging a little, arms waving. Owned by the St Kilda session.
+## caught on the window sill and he gets stuck hanging upside down"): into the wall above it, upside down, stuck there
+## a moment, then sliding down it till a foot catches on the sill ("hit above the window sill then kinda slide down"),
+## left hanging upside down below it, swinging a little, arms waving. Owned by the St Kilda session.
 
 const DOWN := 2.5               # s lying there
 const UP := 0.9                 # s getting up
@@ -18,7 +19,7 @@ const THUMP := 3.5              # m/s lost in one step: they've hit something
 var look: Array = []            # [shirt, pants, hair, skin] (as the crowd's)
 var custom := Color()
 var size := 0.85
-var stage := "flying"           # flying, down, up, dizzy, walk, done; or flying, hang
+var stage := "flying"           # flying, down, up, dizzy, walk, done; or (at a window) flying, splat, slide, hang
 var at := Vector3.ZERO          # their feet
 var head_dir := Vector3.FORWARD # lying: which way their head is
 var yaw := 0.0
@@ -42,6 +43,9 @@ var _fly_yaw := 0.0
 
 const FLY_SPEED := 26.0         # m/s across, at a window
 const TURNS := PI * 3.0         # head over heels on the way there
+const SLIDE := 1.7              # m above the sill they hit the wall (their feet), and slide down
+const SPLAT_T := 0.35           # s stuck flat to it first
+const SLIDE_T := 1.0            # s sliding down
 
 ## Throw them from `xf` (feet, facing -z) at `v` (m/s), the ride's middle at `mid` (they walk off away from it).
 func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.2, spin := 6.0) -> void:
@@ -142,19 +146,39 @@ func _process(dt: float) -> void:
 		"flying":
 			# (at a window) along the arc, turning over
 			if _t >= _fly_T:
-				_hang()
+				_splat()
 				return
 			mid_now = _fly_from + _fly_v * _t + Vector3(0, -4.9 * _t * _t, 0)
 			var b := Basis(_fly_side, TURNS * _t / _fly_T) * Basis(Vector3.UP, _fly_yaw)
 			_put(Transform3D(b.scaled(Vector3.ONE * size), mid_now - b * Vector3(0, 0.9 * size, 0)), false)
+		"splat", "slide":
+			# flat against the wall above the window, upside down, a moment; then sliding down it, faster and faster,
+			# till their foot gets to the sill
+			var drop := 0.0
+			var squash := 1.0
+			if stage == "splat":
+				squash = 0.75 + 0.25 * smoothstep(0.0, SPLAT_T, _t)       # (flattened by it, coming back)
+				if _t >= SPLAT_T:
+					stage = "slide"
+					_t = 0.0
+					_sound("gate_creak", -4.0, 1.7)
+			else:
+				var k := _t / SLIDE_T
+				drop = SLIDE * k * k
+				if k >= 1.0:
+					_hang()
+					return
+			var feet := hang_at + Vector3(0, SLIDE - drop + 0.05, 0) - hang_out * 0.05
+			var b := _upside_down()
+			var flat := Basis(b.x, b.y, b.z * squash)
+			_put(Transform3D(flat.scaled(Vector3.ONE * size), feet), false)
+			mid_now = feet + Vector3(0, -0.9 * size, 0)
 		"hang":
 			# upside down: their feet at the sill, their head toward the ground, facing out; swinging a little (more
 			# just after), arms waving
-			var down := Vector3.DOWN
-			var back := -hang_out
-			var side := down.cross(back)
 			var swing := sin(_t * 1.8) * (0.08 + 0.3 * exp(-_t * 1.2)) + sin(_t * 5.3) * 0.03
-			var b := Basis(side.normalized(), swing) * Basis(side, down, back)
+			var up := _upside_down()
+			var b := Basis(up.x.normalized(), swing) * up
 			_put(Transform3D(b.scaled(Vector3.ONE * size), hang_at + Vector3(0, 0.05, 0) - hang_out * 0.05), false)
 		"down", "up":
 			var tip := 1.0
@@ -207,14 +231,13 @@ func _hang() -> void:
 	_mmi.material_override = m
 	var arena = get_tree().root.get_node_or_null("VoxelArena")
 	if arena and arena.sound:
-		arena.sound.play("thwack", hang_at, 0.0, 0.85)
-		arena.sound.play("gate_creak", hang_at, -6.0, 1.3)
+		arena.sound.play("hammer_thud_0", hang_at, -2.0, 1.2)     # (caught: a jolt)
 
-# the arc to the window: from their middle on the horse to their middle hung from the sill, FLY_SPEED m/s across
+# the arc to the window: from their middle on the horse to the wall SLIDE m above the sill, FLY_SPEED m/s across
 func _arc(xf: Transform3D) -> void:
 	size = xf.basis.get_scale().x
 	_fly_from = xf.origin + Vector3(0, 0.9 * size, 0)
-	var to := hang_at + Vector3(0, -0.9 * size, 0)
+	var to := hang_at + Vector3(0, SLIDE - 0.9 * size, 0)      # (hitting the wall above the window, upside down)
 	var across := Vector3(to.x - _fly_from.x, 0, to.z - _fly_from.z)
 	_fly_T = maxf(across.length() / FLY_SPEED, 0.3)
 	_fly_v = (to - _fly_from + Vector3(0, 4.9 * _fly_T * _fly_T, 0)) / _fly_T
@@ -224,3 +247,21 @@ func _arc(xf: Transform3D) -> void:
 	mid_now = _fly_from
 	stage = "flying"
 	_t = 0.0
+
+# upside down against the wall: their head toward the ground, their back to it, facing out
+func _upside_down() -> Basis:
+	var down := Vector3.DOWN
+	var back := -hang_out
+	return Basis(down.cross(back), down, back)
+
+## Into the wall above the window: a smack, stuck flat to it a moment.
+func _splat() -> void:
+	stage = "splat"
+	_t = 0.0
+	hits += 1
+	_sound("thwack", 0.0, 0.85)
+
+func _sound(nm: String, db: float, pitch: float) -> void:
+	var arena = get_tree().root.get_node_or_null("VoxelArena")
+	if arena and arena.sound:
+		arena.sound.play(nm, hang_at, db, pitch)
