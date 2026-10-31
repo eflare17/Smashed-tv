@@ -2,8 +2,8 @@ extends SceneTree
 ## The Carousel sabotaged (VoxelCarouselHack): E at the control box holds the gadget up; its signals (shuffled) speed
 ## the ride up, slow it, stop it dead and turn its lights off and on; with it stopped, E held by an empty horse loosens
 ## its bolt; sped up and stopped dead, that horse is thrown over crooked on its pole, and a rider flies into a window
-## of Luna Palace, caught on its sill by a foot, hanging upside down, the view going with them. Home and back, all as
-## it was.
+## of Luna Palace, caught on its sill by a foot, hanging upside down, then into the bin under it, the view going with
+## them. Home and back, all as it was.
 ## Pictures (under a display, Forward+: -- --out=dir). Prints PASS or FAIL. Owned by the St Kilda session.
 
 var arena: VoxelArena
@@ -187,10 +187,19 @@ func _process(dt: float) -> bool:
 			step = 11
 			t = 0.0
 		11:
-			if t < 5.5:
+			# after a while hanging there, the foot slips: head first into the wheelie bin under the window
+			var tb: VoxelCarouselTumble = hack.tumbles[0]
+			if (tb.stage != "binned" or tb._t < 3.5) and t < 15.0:
 				return false
+			_check(hack.bin != null, "a wheelie bin under the window")
+			_check(tb.stage == "binned", "the foot slipped: he fell in the bin (%s)" % tb.stage)
+			var b := hack.bin.global_position
+			_check(Vector2(tb.mid_now.x - b.x, tb.mid_now.z - b.z).length() < 0.3, "head first in it (%.2f m from its middle)" % Vector2(tb.mid_now.x - b.x, tb.mid_now.z - b.z).length())
+			var buf := tb._mm.buffer
+			var feet_y := buf[7]
+			_check(feet_y > 1.2 and feet_y < 2.0, "his legs up out of it (feet %.2f m up, its rim 1.0)" % feet_y)
 			_check(hack._cam == null or not hack._cam.current, "then the view's back to you")
-			_check(hack.tumbles[0].stage == "hang", "still hanging there")
+			_shot("6_binned")
 			sk.home()
 			sk.go()
 			_check(hack.loose == -1 and hack.level == 1 and hack.thrown == 0.0 and hack.seen.count(true) == 0 and hack.tumbles.is_empty(), "home and back: all as it was")

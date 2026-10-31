@@ -7,7 +7,9 @@ extends Node3D
 ## away from the ride, wobbly at first. Or (hang_at set: thrown at a window of Luna Palace, the owner: "his leg gets
 ## caught on the window sill and he gets stuck hanging upside down"): into the wall above it, upside down, stuck there
 ## a moment, then sliding down it till a foot catches on the sill ("hit above the window sill then kinda slide down"),
-## left hanging upside down below it, swinging a little, arms waving. Owned by the St Kilda session.
+## left hanging upside down below it, swinging a little, arms waving; after HANG_T the foot slips and they drop head
+## first into the wheelie bin under the window (bin_at), legs up out of it, kicking, the bin rocking. Owned by the St
+## Kilda session.
 
 const DOWN := 2.5               # s lying there
 const UP := 0.9                 # s getting up
@@ -19,7 +21,7 @@ const THUMP := 3.5              # m/s lost in one step: they've hit something
 var look: Array = []            # [shirt, pants, hair, skin] (as the crowd's)
 var custom := Color()
 var size := 0.85
-var stage := "flying"           # flying, down, up, dizzy, walk, done; or (at a window) flying, splat, slide, hang
+var stage := "flying"           # flying, down, up, dizzy, walk, done; or (at a window) flying, splat, slide, hang, fall, binned
 var at := Vector3.ZERO          # their feet
 var head_dir := Vector3.FORWARD # lying: which way their head is
 var yaw := 0.0
@@ -28,6 +30,8 @@ var hits := 0                   # (thumps heard: tests)
 var walk_back := false          # walk off back toward the ride (thrown a long way, into a wall: not on into it)
 var hang_at := Vector3.INF      # a window sill's top, at its front edge: caught on it by a foot (INF: not)
 var hang_out := Vector3.ZERO    # out from the wall there
+var bin_at := Vector3.INF       # the wheelie bin under the window (its foot): after HANG_T they fall in it (INF: none)
+var bin: Node3D                 # (it rocks as they land in it)
 var _t := 0.0
 var _rag: SkRagdoll
 var _last_v := 0.0
@@ -46,6 +50,8 @@ const TURNS := PI * 3.0         # head over heels on the way there
 const SLIDE := 1.7              # m above the sill they hit the wall (their feet), and slide down
 const SPLAT_T := 0.35           # s stuck flat to it first
 const SLIDE_T := 1.0            # s sliding down
+const HANG_T := 5.0             # s hanging there before the foot slips off (the owner: "hang like 5 seconds then fall into a bin")
+const BIN_FLOOR := 0.12         # m: the bin's floor, inside, off the ground
 
 ## Throw them from `xf` (feet, facing -z) at `v` (m/s), the ride's middle at `mid` (they walk off away from it).
 func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.2, spin := 6.0) -> void:
@@ -181,6 +187,42 @@ func _process(dt: float) -> void:
 			var up := _upside_down()
 			var b := Basis(up.x.normalized(), swing) * up
 			_put(Transform3D(b.scaled(Vector3.ONE * size), hang_at + Vector3(0, 0.05, 0) - hang_out * 0.05), false)
+			mid_now = hang_at + Vector3(0, -0.9 * size, 0)
+			if bin_at != Vector3.INF and _t > HANG_T:
+				stage = "fall"                  # (the foot slips off the sill)
+				_t = 0.0
+				_sound("gate_creak", -6.0, 1.9)
+		"fall":
+			# straight down, head first, out over the bin as they go; in up to their knees
+			var drop := 4.9 * _t * _t
+			var top := hang_at + Vector3(0, 0.05, 0) - hang_out * 0.05
+			var over := Vector3(bin_at.x, top.y, bin_at.z)
+			var feet := top.lerp(over, minf(1.0, _t * 2.5)) - Vector3(0, drop, 0)
+			var deep := bin_at.y + BIN_FLOOR + 1.75 * size        # (their feet, their head on the bin's floor)
+			if feet.y <= deep:
+				feet.y = deep
+				stage = "binned"
+				_t = 0.0
+				_mmi.material_override = SkCrowd.material()     # (arms down by their sides: in the bin, not through it)
+				_sound("cabinet_close", 2.0, 0.6)
+				_sound("bag_drop", 0.0, 0.7)
+				if bin:
+					bin.set_meta("wobble", 1.0)
+			_put(Transform3D(_upside_down().scaled(Vector3.ONE * size), feet), false)
+			mid_now = feet + Vector3(0, -0.9 * size, 0)
+		"binned":
+			# head first in the bin, legs up out of it, kicking; the bin rocking from it
+			var feet := Vector3(bin_at.x, bin_at.y + BIN_FLOOR + 1.75 * size, bin_at.z)
+			var kick := sin(_t * 7.0) * 0.06 * (0.4 + 0.6 * exp(-_t * 0.4))
+			var b := Basis(_upside_down().x.normalized(), kick) * _upside_down()
+			if bin:
+				var w := float(bin.get_meta("wobble", 0.0))
+				var rock := sin(_t * 14.0) * 0.12 * w
+				bin.set_meta("wobble", w * exp(-dt * 2.5))
+				bin.rotation = Vector3(rock, bin.rotation.y, 0)
+				b = Basis(bin.global_transform.basis.x.normalized(), rock) * b
+			_put(Transform3D(b.scaled(Vector3.ONE * size), feet), false)
+			mid_now = feet + Vector3(0, -0.6 * size, 0)
 		"down", "up":
 			var tip := 1.0
 			if stage == "up":

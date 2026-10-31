@@ -94,6 +94,9 @@ func reset() -> void:
 		_cam.current = false
 		sk.arena.cam.current = true
 	_cam_tb = null
+	if bin:
+		bin.rotation.x = 0.0
+		bin.set_meta("wobble", 0.0)
 	for g in _gone_seats:
 		(g[0] as Array)[2] = g[1]
 	_gone_seats.clear()
@@ -301,6 +304,10 @@ func _process(dt: float) -> void:
 	if box:
 		(box.get_node("Lamp0") as Node3D).visible = w > 0.02
 		(box.get_node("Lamp1") as Node3D).visible = w <= 0.02
+	if bin == null and _bin_tries < 30 and SkLunaRides._near(spin):
+		_bin_tries += 1                         # (the window found by looking across at Luna Palace: once its walls are there to hit)
+		if _palace_wall() and _sill != Vector3.INF:
+			_make_bin()
 	_follow_step(dt)
 	if _open:
 		_refresh()
@@ -420,6 +427,8 @@ var _wall_at := Vector3.INF     # where on Luna Palace's wall (and its normal): 
 var _wall_n := Vector3.ZERO
 var _sill := Vector3.INF        # the window sill they catch on: its top, at its front edge (INF: none facing the ride)
 var _sill_out := Vector3.ZERO
+var bin: Node3D                 # the wheelie bin under that window (the owner: "fall into a bin")
+var _bin_tries := 0
 var _cam: Camera3D
 var _cam_tb: VoxelCarouselTumble
 var _cam_dir := Vector3.FORWARD
@@ -506,6 +515,9 @@ func _throw() -> void:
 			aim = _sill + _sill_out * 0.4 + Vector3(0, 0.6, 0)        # (where VoxelCarouselTumble catches them on it)
 			tb.hang_at = _sill
 			tb.hang_out = _sill_out
+			if bin:
+				tb.bin_at = bin.global_position
+				tb.bin = bin
 		var across := Vector3(aim.x - start.x, 0, aim.z - start.z)
 		var t := across.length() / FLY_SPEED
 		fly = across / t
@@ -541,7 +553,7 @@ func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
 static func _where(tb: VoxelCarouselTumble) -> Vector3:
 	if tb.stage == "hang":
 		return tb.hang_at + Vector3(0, -0.9, 0)
-	if tb.stage in ["flying", "splat", "slide"] and tb.hang_at != Vector3.INF:
+	if tb.stage in ["flying", "splat", "slide", "fall", "binned"] and tb.hang_at != Vector3.INF:
 		return tb.mid_now
 	if tb._rag != null and is_instance_valid(tb._rag):
 		var b := tb._rag._parts.get("body") as RigidBody3D
@@ -552,7 +564,7 @@ static func _where(tb: VoxelCarouselTumble) -> Vector3:
 func _follow_step(dt: float) -> void:
 	if _cam == null or not _cam.current:
 		return
-	if _cam_tb == null or not is_instance_valid(_cam_tb) or _cam_tb.stage == "done" or (_cam_tb.stage == "walk" and _cam_tb._t > 3.5) or (_cam_tb.stage == "hang" and _cam_tb._t > 6.0):
+	if _cam_tb == null or not is_instance_valid(_cam_tb) or _cam_tb.stage == "done" or (_cam_tb.stage == "walk" and _cam_tb._t > 3.5) or (_cam_tb.stage == "hang" and _cam_tb.bin_at == Vector3.INF and _cam_tb._t > 6.0) or (_cam_tb.stage == "binned" and _cam_tb._t > 3.0):
 		_cam.current = false
 		sk.arena.cam.current = true          # (back to you)
 		_cam_tb = null
@@ -562,7 +574,7 @@ func _follow_step(dt: float) -> void:
 	var want: Vector3
 	if _cam_tb.stage == "flying" and p.distance_to(_wall_at) > 6.0:
 		want = p - _cam_dir * 6.0 + Vector3(0, 2.0, 0)                    # (behind them, flying)
-	elif _cam_tb.stage in ["hang", "splat", "slide"]:
+	elif _cam_tb.stage in ["hang", "splat", "slide", "fall", "binned"]:
 		want = p + _cam_tb.hang_out * 4.2 + side * 1.3 + Vector3(0, -0.5, 0)    # (out in front of the wall, looking at them)
 	else:
 		want = p - _cam_dir * 7.0 + side * 4.5 + Vector3(0, 2.2, 0)     # (stood off to the side: the wall, the drop, up again)
@@ -603,3 +615,44 @@ func _window(palace: Node3D) -> void:
 			_sill = xf * Vector3(x, 4.78 + 0.09, hd + 0.05 + 0.12 + 0.175)
 	_sill_out = out
 	_wall_at = _sill
+
+## A wheelie bin on the path under the window (a council one: dark green, its red lid flung open back against the
+## wall), its open top up; you bump into it. VoxelCarouselTumble drops the one hanging there into it.
+func _make_bin() -> void:
+	var h := Node3D.new()
+	var green := Color("#2d5a34")
+	var inside := Color("#16241a")
+	var w := 0.58
+	var d := 0.72
+	var tall := 1.0
+	SkModels.box(h, Vector3(w, 0.06, d), Vector3(0, 0.1, 0), inside)                                    # its floor, inside
+	SkModels.box(h, Vector3(w, tall, 0.04), Vector3(0, tall / 2.0, d / 2.0 - 0.02), green)               # front
+	SkModels.box(h, Vector3(w, tall, 0.04), Vector3(0, tall / 2.0, -d / 2.0 + 0.02), green.darkened(0.1))  # back
+	for s in [-1.0, 1.0]:
+		SkModels.box(h, Vector3(0.04, tall, d), Vector3(s * (w / 2.0 - 0.02), tall / 2.0, 0), green.darkened(0.05))
+		SkModels.box(h, Vector3(0.05, 0.22, 0.22), Vector3(s * (w / 2.0 + 0.03), 0.11, -d / 2.0 + 0.1), Color("#1a1a1a"))  # wheels
+	SkModels.box(h, Vector3(w - 0.08, 0.02, d - 0.08), Vector3(0, tall - 0.25, 0), inside)               # (dark in it)
+	SkModels.box(h, Vector3(w + 0.04, 0.05, d + 0.04), Vector3(0, tall, 0), green.lightened(0.05))       # the rim
+	SkModels.box(h, Vector3(0.36, 0.04, 0.06), Vector3(0, tall - 0.05, -d / 2.0 - 0.05), Color("#222222"))  # the handle
+	var lid := SkModels.box(h, Vector3(w + 0.06, d + 0.06, 0.04), Vector3(0, tall + (d + 0.06) / 2.0 - 0.02, -d / 2.0 - 0.05), Color("#c23a2e"))
+	lid.rotation.x = -0.25                                                                                # (open, leant back)
+	bin = Node3D.new()
+	bin.name = "WheelieBin"
+	var mi := MeshInstance3D.new()
+	mi.mesh = SkModels.bake(h)
+	mi.material_override = SkModels.baked_material()
+	h.free()
+	bin.add_child(mi)
+	var body := StaticBody3D.new()
+	body.collision_layer = SkData.LAYER_WORLD
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(w, tall, d)
+	cs.shape = bs
+	cs.position = Vector3(0, tall / 2.0, 0)
+	body.add_child(cs)
+	bin.add_child(body)
+	add_child(bin)
+	var at := _sill + _sill_out * 0.45
+	bin.global_transform = Transform3D(Basis(Vector3.UP, atan2(_sill_out.x, _sill_out.z)), Vector3(at.x, 0.0, at.z))

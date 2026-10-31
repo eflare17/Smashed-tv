@@ -165,12 +165,16 @@ func _process(dt: float) -> bool:
 						label.text = "...sliding down..."
 					"hang":
 						label.text = "...caught by a foot on a window sill"
+					"fall":
+						label.text = "...his foot slips..."
+					"binned":
+						label.text = "...into the bin!"
 					"down", "up":
 						label.text = "Up again..."
 					"dizzy", "walk":
 						label.text = "...dizzy, and off they go"
 			if arena.cam.current and t > 3.0:
-				label.text = "Back to you (he's still up there)"
+				label.text = "Back to you (he's in the bin)"
 				arena.look_pitch = -0.1
 				if not has_meta("back"):
 					set_meta("back", t)
