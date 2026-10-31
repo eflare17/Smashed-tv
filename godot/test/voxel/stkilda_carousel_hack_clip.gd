@@ -1,8 +1,8 @@
 extends SceneTree
-## A clip (with --write-movie): the Carousel sabotaged (VoxelCarouselHack). The gadget held up to the control box,
-## its signals tried one by one (faster, the lights, the brake: found out as you go); the ride stopped, a horse's bolt
-## loosened (E held); then flat out, the loose horse rattling, and stopped dead: thrown over on its pole. Owned by the
-## St Kilda session.
+## A clip (with --write-movie): the Carousel sabotaged (VoxelCarouselHack), played through step by step as you would:
+## arriving, the gadget held up to the control box, its signals tried one by one (found out as you go), the ride
+## stopped and a horse's bolt loosened (E held), then flat out and stopped dead: a rider thrown into Luna Palace's
+## wall, the game's view following them, and back to you. Owned by the St Kilda session.
 
 var arena: VoxelArena
 var sk: VoxelStKilda
@@ -73,25 +73,31 @@ func _process(dt: float) -> bool:
 			cam.fov = 60.0
 			arena.add_child(cam)
 			arena._switch(func(): arena.loadout.select(arena.loadout.index_of("pick")))
-			var b := hack.box.global_position
-			var c := hack.carousel.global_position
-			_put(b + hack.box.global_transform.basis.z * 1.3 + hack.box.global_transform.basis.x * 0.6 + Vector3(0, 0.05, 0), c.lerp(b, 0.3), -0.05)
 			# the order they're tried in: as the buttons come, till the brake's found last
 			for k in 4:
 				if hack.keys[k] != "brake":
 					tries.append(k)
 			tries.append(hack.keys.find("brake"))
-			step = 1
+			step = 10
 			t = 0.0
+		10:
+			# where you arrive: Luna Park's forecourt, Mr Moon's face ahead
+			label.text = "1. P phone, Travel to St Kilda"
+			if t > 3.0:
+				var b := hack.box.global_position
+				var c := hack.carousel.global_position
+				_put(b + hack.box.global_transform.basis.z * 1.3 + hack.box.global_transform.basis.x * 0.6 + Vector3(0, 0.05, 0), c.lerp(b, 0.3), -0.05)
+				step = 1
+				t = 0.0
 		1:
-			label.text = "The Carousel's control box"
-			if t > 1.5:
+			label.text = "2. In through Mr Moon's mouth to the\n    Carousel's control box (grey cabinet)"
+			if t > 3.0:
 				_tap(KEY_E)
 				step = 2
 				t = 0.0
 				next = 1.0
 		2:
-			label.text = "Try each signal: what does it do?"
+			label.text = "3. E: the gadget\n4. Keys 1-4: try each signal, see what it does"
 			if t >= next and not tries.is_empty():
 				var k: int = tries.pop_front()
 				_tap(KEY_1 + k)
@@ -102,7 +108,7 @@ func _process(dt: float) -> bool:
 				step = 3
 				t = 0.0
 		3:
-			label.text = "Stopped: now for a bolt"
+			label.text = "Stopped (brake). Now a bolt (optional):\nE puts the gadget away"
 			if t > 1.0:
 				_tap(KEY_E)
 				horse = hack._empty[0]
@@ -113,7 +119,7 @@ func _process(dt: float) -> bool:
 				step = 4
 				t = 0.0
 		4:
-			label.text = "Hold E: loosen a horse's bolt"
+			label.text = "Hold E by an empty horse: its bolt's loose"
 			if t > 0.6 and step == 4 and not hack._e_down and hack.loose < 0:
 				_key(KEY_E, true)
 			if hack.loose >= 0:
@@ -125,33 +131,36 @@ func _process(dt: float) -> bool:
 					step = 5
 					t = 0.0
 		5:
-			label.text = "Flat out..."
-			if t > 0.3 and t < 0.5:
+			# back at the box (E: the gadget again), faster up to SPEED 4, waiting for it to get there
+			label.text = "5. E at the box again, FASTER till SPEED 4,\n    wait for full speed..."
+			if t > 0.6 and t < 0.8:
 				for k in 4:
 					_tap(KEY_1 + hack.keys.find("faster"))
-			# beside the ride, the loose horse coming round
-			var c := hack.carousel.global_position
-			var b := hack.box.global_position
-			var side := (b - c)
-			side.y = 0
-			side = side.normalized()
-			_film(c + side * 11.0 + side.cross(Vector3.UP) * 4.0 + Vector3(0, 2.6, 0), c + Vector3(0, 1.2, 0))
-			if t > 7.5:
-				# brake when the loose horse is on our side
-				var at := _horse_at(hack.loose)
-				if (at - c).normalized().dot(side) > 0.6 or t > 11.0:
-					hack.send(hack.keys.find("brake"))
-					step = 6
-					t = 0.0
+			if t > 8.0:
+				_tap(KEY_1 + hack.keys.find("brake"))
+				step = 6
+				t = 0.0
 		6:
-			label.text = "...and stopped dead"
-			if t > 2.0:
-				var at := _horse_at(hack.loose)
-				var c := hack.carousel.global_position
-				var out := Vector3(at.x - c.x, 0, at.z - c.z).normalized()
-				_film(at + out * 2.6 + out.cross(Vector3.UP) * 1.2 + Vector3(0, 1.6, 0), at + Vector3(0, 0.7, 0))
-				label.text = "The loose horse, thrown over on its pole"
-			if t > 5.5:
+			# the game's own view goes after the one thrown off (VoxelCarouselHack's FollowCam), and comes back
+			label.text = "6. BRAKE: stopped dead"
+			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
+			if tb != null:
+				match tb.stage:
+					"flying":
+						label.text = "6. BRAKE: stopped dead... into the castle"
+					"down", "up":
+						label.text = "Up again..."
+					"dizzy", "walk":
+						label.text = "...dizzy, and off they go"
+			if arena.cam.current and t > 3.0:
+				label.text = "Back to you (the loose horse thrown over)"
+				arena.look_pitch = -0.1
+				if not has_meta("back"):
+					set_meta("back", t)
+				if t - float(get_meta("back")) > 3.0:
+					quit()
+					return true
+			if t > 30.0:
 				quit()
 				return true
 	return false
