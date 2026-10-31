@@ -545,9 +545,30 @@ func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
 	orbit = Vector2.ZERO
 	zoom = 1.0
 	var p := _where(tb)
-	_cam.global_position = p - dir * 6.0 + Vector3(0, 2.5, 0)
+	# (off to their side, outside the ride: straight behind them is in under its roof)
+	_cam.global_position = _clear_of_ride(p + dir.cross(Vector3.UP) * 5.0 - dir * 1.5 + Vector3(0, 1.8, 0))
 	_cam.look_at(p, Vector3.UP)
 	_cam.current = true
+
+# the Carousel's canopy, as a round tower: (its middle, how far out, how high its top), found the first time
+var _roof := Vector3.INF
+const ROOF_MARGIN := 0.8
+
+## Where the view can be, kept out of the Carousel (the owner, 31 Oct: "the camera clips through the carousel"): from
+## the ground to just over its roof it's pushed out past the edge of its canopy.
+func _clear_of_ride(at: Vector3) -> Vector3:
+	if _roof == Vector3.INF:
+		var roof := carousel.find_child("Roof", true, false) as MeshInstance3D
+		var box := roof.global_transform * roof.get_aabb() if roof else AABB(carousel.global_position, Vector3(14, 6, 14))
+		_roof = Vector3(maxf(box.size.x, box.size.z) * 0.5, box.end.y, 0.0)
+	var c := carousel.global_position
+	var out := Vector3(at.x - c.x, 0, at.z - c.z)
+	var r := _roof.x + ROOF_MARGIN
+	if at.y > _roof.y + ROOF_MARGIN or out.length() >= r:
+		return at
+	if out.length() < 0.01:
+		out = _cam_dir
+	return Vector3(c.x, at.y, c.z) + out.normalized() * r
 
 # where the thrown one is now: the ragdoll's middle, or them stood up
 static func _where(tb: VoxelCarouselTumble) -> Vector3:
@@ -586,7 +607,7 @@ func _follow_step(dt: float) -> void:
 		off = Basis(tilt, orbit.y) * off
 	want = p + off * zoom
 	want.y = maxf(want.y, 0.4)
-	_cam.global_position = _cam.global_position.lerp(want, minf(1.0, dt * 4.0))
+	_cam.global_position = _clear_of_ride(_cam.global_position.lerp(_clear_of_ride(want), minf(1.0, dt * 4.0)))
 	_cam.look_at(p, Vector3.UP)
 
 # the upstairs window of Luna Palace nearest the Carousel, if its front's toward the ride (SkLunaRides' Luna Palace:
