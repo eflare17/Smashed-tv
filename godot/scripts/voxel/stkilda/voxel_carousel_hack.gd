@@ -11,6 +11,8 @@ extends Node3D
 ## - A loose bolt: with the ride stood still, hold E by a horse nobody's on for LOOSEN s (a bar fills): its bolt's
 ##   loose. From then it rattles on its pole as the ride turns, the faster the worse, and when the ride stops dead
 ##   it's thrown over crooked on its pole and stays that way.
+## - Stopped dead from speed (THROW_FROM), the rider who'd hit something soonest goes flying off the way the ride was
+##   taking them (the owner, 31 Oct: "they hit the wall then get up and walk away"): VoxelCarouselTumble.
 ## Put back as it was the next time you come (reset). Owned by the St Kilda session.
 
 const SPEEDS := [0.0, 0.45, 1.2, 2.2, 3.4]   # rad/s the ride turns at each speed (1: its own)
@@ -21,6 +23,8 @@ const NEAR_BOX := 1.8           # m from the box to use it
 const AWAY := 9.0               # m from the box and the gadget's put away
 const NEAR_HORSE := 1.7         # m (level) from a horse's pole to get at its bolt
 const ACTS := ["faster", "slower", "brake", "lights"]
+const THROW_FROM := 3.0         # rad/s (flat out): stopped dead faster than this and a rider goes flying (VoxelCarouselTumble)
+const THROW_MAX := 9.0          # m/s they fly off at, at most
 const BOX_GREY := Color("#6f777d")
 
 var sk: VoxelStKilda
@@ -43,6 +47,8 @@ var _hold := 0.0                # s E's been held at a horse
 var _hold_horse := -1
 var _open := false
 var _e_down := false            # E held (from its key events: a held key, seen the same way in tests)
+var tumbles: Array = []         # the riders thrown off (VoxelCarouselTumble)
+var _gone_seats: Array = []     # [seat, where they sat] of those
 var _rattle := 0.0
 var _hidden_lights: Array = []  # the Carousel's bulbs, and its share of the coloured light at night
 var _spill_entry = null
@@ -80,6 +86,13 @@ func reset() -> void:
 	braking = 0.0
 	loose = -1
 	thrown = 0.0
+	for tb in tumbles:
+		if is_instance_valid(tb):
+			(tb as Node).queue_free()
+	tumbles.clear()
+	for g in _gone_seats:
+		(g[0] as Array)[2] = g[1]
+	_gone_seats.clear()
 	_hold = 0.0
 	_set_lights(true)
 	keys = ACTS.duplicate()
@@ -207,6 +220,8 @@ func send(k: int) -> void:
 			if w > 0.05:
 				braking = DEAD_STOP
 				_brake_from = w
+				if w > THROW_FROM:
+					_throw()
 				sk.arena.sound.play("slam", carousel.global_position, 2.0, 0.7)
 				sk.arena.sound.play("mine_groan", carousel.global_position, 0.0, 1.2)
 			level = 0
@@ -365,3 +380,53 @@ func _unhandled_input(e: InputEvent) -> void:
 	else:
 		return
 	get_viewport().set_input_as_handled()
+
+# ---------------------------------------------------------------- a rider thrown off (stopped dead from speed)
+
+## The rider who'd fly off into something soonest (the way the ride's taking them), thrown: they go on as a ragdoll.
+func _throw() -> void:
+	if spin.riders == null:
+		return
+	var mid := spin.global_position
+	var space := get_world_3d().direct_space_state
+	var best := -1
+	var best_d := INF
+	var best_xf := Transform3D()
+	var best_v := Vector3.ZERO
+	var seats: Array = spin.riders.seats
+	for i in seats.size():
+		var s: Array = seats[i]
+		if (s[2] as Transform3D).basis.get_scale().x < 0.01:
+			continue                         # (thrown off already)
+		var on := Transform3D()
+		for h in spin.horses:
+			if int(h[1]) == int(s[1]):
+				on = h[2]
+		var xf := spin.global_transform * on * (s[2] as Transform3D)
+		var r := xf.origin - mid
+		r.y = 0.0
+		var v := Vector3.UP.cross(r) * w
+		var from := xf.origin + Vector3(0, 1.0, 0)
+		var q := PhysicsRayQueryParameters3D.create(from, from + v.normalized() * 15.0, SkData.LAYER_WORLD)
+		var hit := space.intersect_ray(q)
+		var d: float = from.distance_to(hit.position) if not hit.is_empty() else 50.0
+		if d > 1.0 and d < best_d:
+			best = i
+			best_d = d
+			best_xf = xf
+			best_v = v
+	if best < 0:
+		return
+	var seat: Array = seats[best]
+	_gone_seats.append([seat, seat[2]])
+	var custom := spin.riders.multimesh.get_instance_custom_data(best)
+	seat[2] = Transform3D(Basis().scaled(Vector3.ONE * 0.001), (seat[2] as Transform3D).origin)
+	var flat := Vector3(best_v.x, 0, best_v.z)
+	var fly := flat.normalized() * minf(flat.length(), THROW_MAX)
+	var tb := VoxelCarouselTumble.new()
+	tb.name = "Tumble"
+	add_child(tb)
+	var face := Basis(Vector3.UP, atan2(-fly.x, -fly.z))
+	tb.start(Transform3D(face.scaled(Vector3.ONE * best_xf.basis.get_scale().x), best_xf.origin), custom, fly, mid)
+	tumbles.append(tb)
+	sk.arena.sound.play("swoosh_heavy", best_xf.origin, 0.0, 0.8)

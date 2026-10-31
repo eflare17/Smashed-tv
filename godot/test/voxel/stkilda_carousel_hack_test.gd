@@ -147,10 +147,25 @@ func _process(dt: float) -> bool:
 			if t < 0.6:
 				return false
 			_check(hack.w == 0.0 and hack.thrown > 0.0, "stopped dead: the loose horse thrown over on its pole")
+			_check(hack.tumbles.size() == 1, "and a rider thrown off")
 			_shot("4_thrown")
+			step = 9
+			t = 0.0
+		9:
+			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
+			if tb != null and tb.stage == "dizzy" and not has_meta("dizzy"):
+				set_meta("dizzy", true)
+				_shot("5_dizzy")
+			if tb == null or (tb.stage != "walk" and tb.stage != "done" and t < 15.0) or (tb.stage == "walk" and tb._t < 3.0):
+				return false
+			_check(tb.hits > 0, "they hit something (%d thumps)" % tb.hits)
+			var c := hack.carousel.global_position
+			_check(tb.stage == "walk" or tb.stage == "done", "they got up and are walking off (%s)" % tb.stage)
+			_check(Vector2(tb.at.x - c.x, tb.at.z - c.z).length() > VoxelCarousel.EDGE, "away from the ride (%.1f m from its middle)" % Vector2(tb.at.x - c.x, tb.at.z - c.z).length())
+			_shot("6_walking")
 			sk.home()
 			sk.go()
-			_check(hack.loose == -1 and hack.level == 1 and hack.thrown == 0.0 and hack.seen.count(true) == 0, "home and back: all as it was")
+			_check(hack.loose == -1 and hack.level == 1 and hack.thrown == 0.0 and hack.seen.count(true) == 0 and hack.tumbles.is_empty(), "home and back: all as it was")
 			print("PASS" if fails.is_empty() else "FAIL %s" % str(fails))
 			quit(0 if fails.is_empty() else 1)
 			return true
