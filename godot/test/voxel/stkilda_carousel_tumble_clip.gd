@@ -1,6 +1,7 @@
 extends SceneTree
-## A clip (with --write-movie): the Carousel flat out and stopped dead with the gadget; a rider goes flying off into
-## the ride's fence, lies there a moment, gets up dizzy (stars round their head) and walks off (VoxelCarouselTumble).
+## A clip (with --write-movie): the Carousel flat out and stopped dead with the gadget; a rider goes flying off all the
+## way into Luna Palace's wall (the game's view following them), lies there a moment, gets up dizzy (stars round
+## their head) and walks off (VoxelCarouselTumble).
 ## Owned by the St Kilda session.
 
 var arena: VoxelArena
@@ -78,12 +79,7 @@ func _process(dt: float) -> bool:
 				quit()
 				return true
 			label.text = "...stopped dead"
-			var p := _them()
-			var c := hack.carousel.global_position
-			var out := p - c
-			out.y = 0
-			out = out.normalized()
-			_film(p + out * 3.0 + out.cross(Vector3.UP) * 5.5 + Vector3(0, 2.4, 0), p, dt, 4.0)
+			# (the game's own view goes with them: VoxelCarouselHack's FollowCam)
 			var tb: VoxelCarouselTumble = hack.tumbles[0]
 			if tb.stage == "up":
 				label.text = "Up again..."

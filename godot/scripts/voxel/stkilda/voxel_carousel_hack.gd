@@ -11,8 +11,9 @@ extends Node3D
 ## - A loose bolt: with the ride stood still, hold E by a horse nobody's on for LOOSEN s (a bar fills): its bolt's
 ##   loose. From then it rattles on its pole as the ride turns, the faster the worse, and when the ride stops dead
 ##   it's thrown over crooked on its pole and stays that way.
-## - Stopped dead from speed (THROW_FROM), the rider who'd hit something soonest goes flying off the way the ride was
-##   taking them (the owner, 31 Oct: "they hit the wall then get up and walk away"): VoxelCarouselTumble.
+## - Stopped dead from flat out (THROW_FROM), a rider goes flying, all the way into Luna Palace's wall, the view going
+##   with them; then up, dizzy, and off they walk (the owner, 31 Oct: "they hit the wall then get up and walk away"):
+##   VoxelCarouselTumble.
 ## Put back as it was the next time you come (reset). Owned by the St Kilda session.
 
 const SPEEDS := [0.0, 0.45, 1.2, 2.2, 3.4]   # rad/s the ride turns at each speed (1: its own)
@@ -90,6 +91,10 @@ func reset() -> void:
 		if is_instance_valid(tb):
 			(tb as Node).queue_free()
 	tumbles.clear()
+	if _cam and _cam.current:
+		_cam.current = false
+		sk.arena.cam.current = true
+	_cam_tb = null
 	for g in _gone_seats:
 		(g[0] as Array)[2] = g[1]
 	_gone_seats.clear()
@@ -297,6 +302,7 @@ func _process(dt: float) -> void:
 	if box:
 		(box.get_node("Lamp0") as Node3D).visible = w > 0.02
 		(box.get_node("Lamp1") as Node3D).visible = w <= 0.02
+	_follow_step(dt)
 	if _open:
 		_refresh()
 		if sk.arena.player.global_position.distance_to(box.global_position) > AWAY:
@@ -381,13 +387,47 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	get_viewport().set_input_as_handled()
 
-# ---------------------------------------------------------------- a rider thrown off (stopped dead from speed)
 
-## The rider who'd fly off into something soonest (the way the ride's taking them), thrown: they go on as a ragdoll.
+# ---------------------------------------------------------------- a rider thrown off (stopped dead from speed)
+#
+# (The owner, 31 Oct: "flung off really far hitting the castle, the camera follows them".) Thrown at Luna Palace: the
+# rider going the way most toward it is the one, and they fly in an arc into its wall FLY_H m up, FLY_SPEED m/s
+# across, drop down it, then up and off back toward the ride. The view goes with them (FollowCam) and comes back to
+# you once they're walking. No Luna Palace (or something between): the old short throw, into whatever's nearest.
+
+const FLY_H := 6.0              # m up Luna Palace's wall they hit
+const FLY_SPEED := 26.0         # m/s across
+
+var _wall_at := Vector3.INF     # where on Luna Palace's wall (and its normal): found the first time
+var _wall_n := Vector3.ZERO
+var _cam: Camera3D
+var _cam_tb: VoxelCarouselTumble
+var _cam_dir := Vector3.FORWARD
+
+# where they'd hit Luna Palace's wall, looking across from the Carousel at FLY_H
+func _palace_wall() -> bool:
+	if _wall_at != Vector3.INF:
+		return true
+	var palace := sk.get_node_or_null("LunaPalace") as Node3D
+	if palace == null:
+		return false
+	var a := spin.global_position + Vector3(0, FLY_H, 0)
+	var b := palace.global_position
+	b.y = FLY_H
+	var q := PhysicsRayQueryParameters3D.create(a, a + (b - a) * 1.2, SkData.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or (hit.position as Vector3).distance_to(b) > (a.distance_to(b)) * 0.6:
+		return false                    # (something else in the way, nearer the Carousel)
+	_wall_at = hit.position
+	_wall_n = hit.normal
+	return true
+
+## The rider thrown off: at Luna Palace if it's there to hit, else into whatever's nearest the way they're going.
 func _throw() -> void:
 	if spin.riders == null:
 		return
 	var mid := spin.global_position
+	var far := _palace_wall()
 	var space := get_world_3d().direct_space_state
 	var best := -1
 	var best_d := INF
@@ -406,11 +446,19 @@ func _throw() -> void:
 		var r := xf.origin - mid
 		r.y = 0.0
 		var v := Vector3.UP.cross(r) * w
-		var from := xf.origin + Vector3(0, 1.0, 0)
-		var q := PhysicsRayQueryParameters3D.create(from, from + v.normalized() * 15.0, SkData.LAYER_WORLD)
-		var hit := space.intersect_ray(q)
-		var d: float = from.distance_to(hit.position) if not hit.is_empty() else 50.0
-		if d > 1.0 and d < best_d:
+		var d := 0.0
+		if far:
+			var to := _wall_at - xf.origin
+			to.y = 0.0
+			d = 1.0 - v.normalized().dot(to.normalized())        # (going most toward Luna Palace)
+		else:
+			var from := xf.origin + Vector3(0, 1.0, 0)
+			var q := PhysicsRayQueryParameters3D.create(from, from + v.normalized() * 15.0, SkData.LAYER_WORLD)
+			var hit := space.intersect_ray(q)
+			d = from.distance_to(hit.position) if not hit.is_empty() else 50.0
+			if d <= 1.0:
+				continue
+		if d < best_d:
 			best = i
 			best_d = d
 			best_xf = xf
@@ -421,12 +469,67 @@ func _throw() -> void:
 	_gone_seats.append([seat, seat[2]])
 	var custom := spin.riders.multimesh.get_instance_custom_data(best)
 	seat[2] = Transform3D(Basis().scaled(Vector3.ONE * 0.001), (seat[2] as Transform3D).origin)
-	var flat := Vector3(best_v.x, 0, best_v.z)
-	var fly := flat.normalized() * minf(flat.length(), THROW_MAX)
 	var tb := VoxelCarouselTumble.new()
 	tb.name = "Tumble"
 	add_child(tb)
+	var start := best_xf.origin
+	var fly := Vector3(best_v.x, 0, best_v.z)
+	var lift := 2.2
+	if far:
+		# an arc that comes down on the wall a little in front of it (the body's middle about 1.1 m up off their feet)
+		var aim := _wall_at + _wall_n * 0.3
+		var across := Vector3(aim.x - start.x, 0, aim.z - start.z)
+		var t := across.length() / FLY_SPEED
+		fly = across / t
+		lift = (aim.y - (start.y + 1.1) + 0.5 * 9.8 * t * t) / t
+		tb.walk_back = true
+	else:
+		fly = fly.normalized() * minf(fly.length(), THROW_MAX)
 	var face := Basis(Vector3.UP, atan2(-fly.x, -fly.z))
-	tb.start(Transform3D(face.scaled(Vector3.ONE * best_xf.basis.get_scale().x), best_xf.origin), custom, fly, mid)
+	tb.start(Transform3D(face.scaled(Vector3.ONE * best_xf.basis.get_scale().x), start), custom, fly, mid, lift, 4.0 if far else 6.0)
 	tumbles.append(tb)
-	sk.arena.sound.play("swoosh_heavy", best_xf.origin, 0.0, 0.8)
+	sk.arena.sound.play("swoosh_heavy", start, 0.0, 0.8)
+	if far:
+		_follow(tb, fly.normalized())
+
+# ---------------------------------------------------------------- the view going with them
+
+func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
+	if _cam == null:
+		_cam = Camera3D.new()
+		_cam.name = "FollowCam"
+		_cam.fov = 65.0
+		add_child(_cam)
+	_cam_tb = tb
+	_cam_dir = dir
+	var p := _where(tb)
+	_cam.global_position = p - dir * 6.0 + Vector3(0, 2.5, 0)
+	_cam.look_at(p, Vector3.UP)
+	_cam.current = true
+
+# where the thrown one is now: the ragdoll's middle, or them stood up
+static func _where(tb: VoxelCarouselTumble) -> Vector3:
+	if tb._rag != null and is_instance_valid(tb._rag):
+		var b := tb._rag._parts.get("body") as RigidBody3D
+		if b:
+			return b.global_position
+	return tb.at + Vector3(0, 0.9, 0)
+
+func _follow_step(dt: float) -> void:
+	if _cam == null or not _cam.current:
+		return
+	if _cam_tb == null or not is_instance_valid(_cam_tb) or _cam_tb.stage == "done" or (_cam_tb.stage == "walk" and _cam_tb._t > 3.5):
+		_cam.current = false
+		sk.arena.cam.current = true          # (back to you)
+		_cam_tb = null
+		return
+	var p := _where(_cam_tb)
+	var side := _cam_dir.cross(Vector3.UP)
+	var want: Vector3
+	if _cam_tb.stage == "flying" and p.distance_to(_wall_at) > 6.0:
+		want = p - _cam_dir * 6.0 + Vector3(0, 2.0, 0)                    # (behind them, flying)
+	else:
+		want = p - _cam_dir * 7.0 + side * 4.5 + Vector3(0, 2.2, 0)     # (stood off to the side: the wall, the drop, up again)
+		want.y = maxf(want.y, 1.5)
+	_cam.global_position = _cam.global_position.lerp(want, minf(1.0, dt * 4.0))
+	_cam.look_at(p, Vector3.UP)

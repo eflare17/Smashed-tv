@@ -22,6 +22,7 @@ var head_dir := Vector3.FORWARD # lying: which way their head is
 var yaw := 0.0
 var away := Vector3.FORWARD     # which way they walk off
 var hits := 0                   # (thumps heard: tests)
+var walk_back := false          # walk off back toward the ride (thrown a long way, into a wall: not on into it)
 var _t := 0.0
 var _rag: SkRagdoll
 var _last_v := 0.0
@@ -29,7 +30,7 @@ var _mm: MultiMesh
 var _stars: Node3D
 
 ## Throw them from `xf` (feet, facing -z) at `v` (m/s), the ride's middle at `mid` (they walk off away from it).
-func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3) -> void:
+func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.2, spin := 6.0) -> void:
 	custom = custom_
 	var shirt := int(floor(fposmod(custom.r, 0.5) * 16.0 + 0.01))
 	look = [shirt, int(floor(custom.b * 8.0)), int(floor(fposmod(custom.b * 8.0, 1.0) * 8.0 + 0.01)), custom.a]
@@ -37,7 +38,12 @@ func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3) -> void:
 	_rag = SkRagdoll.new()
 	_rag.name = "SkRagdoll"
 	add_child(_rag)
-	_rag.setup(xf, look, flat, 2.2, 6.0)
+	_rag.setup(xf, look, flat, lift, spin)
+	for p in _rag.get_children():
+		if p is RigidBody3D:
+			(p as RigidBody3D).continuous_cd = true     # (fast: into a wall, not through it)
+			if flat.length() > 12.0:
+				(p as RigidBody3D).linear_velocity = flat + Vector3(0, lift, 0)   # (all of them together: a long way, not torn apart)
 	_rag.done.connect(_landed.bind(mid))
 	# them stood up again: one of the crowd, on their own (hidden till they've landed)
 	_mm = MultiMesh.new()
@@ -89,6 +95,8 @@ func _landed(where: Vector3, dir: Vector3, mid: Vector3) -> void:
 	var off := at - mid
 	off.y = 0.0
 	away = off.normalized() if off.length() > 0.1 else Vector3.FORWARD
+	if walk_back:
+		away = -away
 	stage = "down"
 	_t = 0.0
 
