@@ -6,6 +6,9 @@ extends SceneTree
 ## taken off (the ride has long ones it rides up and down), cut down from ~370,000 triangles to about TRIS (close up, fewer smear its colours), and sized
 ## and turned for the ride: facing +x, its pole's line at x = z = 0, its hooves LIFT up.
 ##   godot --headless --path . -s tools/carousel_horse.gd
+## Or, to print it in colour (the owner, 31 Oct): the owner's 3MF again, whole (every triangle, its own pole and stand),
+## painted with Bambu Studio's filaments (FILAMENTS: 1 white .. 7 dark brown), the project set for seven filaments:
+##   godot --headless --path . -s tools/carousel_horse.gd -- --bambu=C:/somewhere/CarouselHorse-coloured.3mf
 ## Parts are found by where they are (side on: the model's z along it, y up, in mm) and, for straps and trim, by how
 ## far they stand out of the surface (relief: against a smoothed copy of the horse).
 
@@ -54,6 +57,11 @@ func _initialize() -> void:
 			lift_x += p.x
 			n += 1
 	lift_x /= n
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--bambu="):
+			_bambu(arg.trim_prefix("--bambu="), idx)
+			quit()
+			return
 	var col := PackedColorArray()
 	col.resize(pos.size())
 	for i in pos.size():
@@ -314,3 +322,106 @@ func _scallops(idx: PackedInt32Array) -> void:
 		if comp.size() < FILL_MAX:
 			for v in comp:
 				hung[v] = 1
+
+# ---------------------------------------------------------------- printing it in colour (Bambu Studio)
+
+## The filaments, in Bambu Studio's order (1 the part's own: left unpainted), and which of the colours goes on which.
+const FILAMENTS := ["#F4F0E6", "#E2B443", "#E98BB8", "#2F63C9", "#B3262E", "#1FA59A", "#3A2A24"]
+const SLOT := {"f4f0e6": 1, "e2b443": 2, "e98bb8": 3, "e0218a": 3, "2f63c9": 4, "7a2a22": 5, "b3262e": 5, "1fa59a": 6,
+	"3a2a24": 7, "1c1410": 7}
+
+## The owner's 3MF again with every triangle of the horse painted its filament (Bambu Studio's "paint_color", as its
+## colour painting saves it: a triangle all one filament), and its project set for FILAMENTS. Everything else as it was.
+func _bambu(out_path: String, idx: PackedInt32Array) -> void:
+	var paint := PackedByteArray()
+	paint.resize(idx.size() / 3)
+	var counts := {}
+	for t in paint.size():
+		var s := []
+		for k in 3:
+			s.append(int(SLOT.get(_colour(idx[t * 3 + k]).to_html(false), 1)))
+		var pick: int = s[1] if s[1] == s[2] else s[0]           # (most of its corners)
+		paint[t] = pick
+		counts[pick] = int(counts.get(pick, 0)) + 1
+	print("triangles by filament: ", counts)
+	var zin := ZIPReader.new()
+	zin.open(SRC)
+	var zout := ZIPPacker.new()
+	if zout.open(out_path) != OK:
+		push_error("can't write " + out_path)
+		return
+	for f in zin.get_files():
+		var data := zin.read_file(f)
+		if f == "3D/Objects/object_5.model":
+			data = _painted(data, paint)
+		elif f == "Metadata/project_settings.config":
+			data = _seven(data)
+		zout.start_file(f)
+		zout.write_file(data)
+		zout.close_file()
+	zout.close()
+	zin.close()
+	print("saved ", out_path)
+
+# the horse's triangles (object 2's) with their filaments
+func _painted(data: PackedByteArray, paint: PackedByteArray) -> PackedByteArray:
+	var lines := data.get_string_from_utf8().split("\n")
+	var obj := 0
+	var t := 0
+	for i in lines.size():
+		var l := lines[i]
+		if l.contains("<object "):
+			obj = 2 if l.contains("id=\"2\"") else 1
+		elif obj == 2 and l.contains("<triangle ") and t < paint.size():
+			var slot := paint[t]
+			t += 1
+			if slot > 1:
+				lines[i] = l.replace("/>", " paint_color=\"%s\"/>" % _paint_code(slot))
+	print("painted %d of the horse's triangles" % t)
+	return "\n".join(lines).to_utf8_buffer()
+
+# Bambu Studio's (PrusaSlicer's) code for a whole triangle painted filament n: 4, 8, then 0C, 1C, 2C ...
+static func _paint_code(n: int) -> String:
+	if n == 1:
+		return "4"
+	if n == 2:
+		return "8"
+	return "%XC" % (n - 3)
+
+# the project set for seven filaments: their colours, each like the one it had (the slicer takes a filament's settings
+# it doesn't list from the first's), flushing between each two
+func _seven(data: PackedByteArray) -> PackedByteArray:
+	var cfg = JSON.parse_string(data.get_string_from_utf8())
+	if not (cfg is Dictionary):
+		return data
+	var n := FILAMENTS.size()
+	for key in cfg.keys():
+		var v = cfg[key]
+		if String(key).begins_with("filament_") and v is Array and (v as Array).size() == 1:
+			var more := []
+			for k in n:
+				more.append(v[0])
+			cfg[key] = more
+	cfg["filament_colour"] = FILAMENTS
+	var selfs := []
+	for k in n:
+		selfs.append(str(k + 1))
+	cfg["filament_self_index"] = selfs
+	var flush := []
+	for a in n:
+		for b in n:
+			flush.append("0" if a == b else "280")
+	cfg["flush_volumes_matrix"] = flush
+	var vec := []
+	for k in n * 2:
+		vec.append("140")
+	cfg["flush_volumes_vector"] = vec
+	for key in ["different_settings_to_system", "inherits_group"]:
+		if cfg.has(key) and cfg[key] is Array and (cfg[key] as Array).size() == 3:
+			var a: Array = cfg[key]
+			var b := [a[0]]
+			for k in n:
+				b.append(a[1])
+			b.append(a[2])
+			cfg[key] = b
+	return JSON.stringify(cfg, "    ").to_utf8_buffer()
