@@ -33,6 +33,9 @@ var pos: PackedVector3Array
 var nrm: PackedVector3Array
 var relief: PackedFloat32Array
 var hung := PackedByteArray()   # the scallops hung from the bands (filled inside their creases)
+var hung_z := PackedFloat32Array() # (the same and the corners round it: 1, else 0; see _colour_at)
+var strap := PackedByteArray()  # the bridle's straps: the raised carving along STRAPS, filled out to the groove each side
+var strap_z := PackedFloat32Array()
 var lift_x := 0.0               # the raised front leg's x
 var pole := Vector2.ZERO        # the pole's middle (x, z)
 
@@ -41,6 +44,9 @@ func _initialize() -> void:
 	_normals(idx)
 	_relief(idx)
 	_scallops(idx)
+	_straps(idx)
+	hung_z = _ring(idx, hung)
+	strap_z = _ring(idx, strap)
 	var n := 0
 	var low := INF
 	var length := Vector2(INF, -INF)
@@ -60,6 +66,10 @@ func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--bambu="):
 			_bambu(arg.trim_prefix("--bambu="), idx)
+			quit()
+			return
+		if arg == "--strap":
+			_strap_profile()
 			quit()
 			return
 		if arg == "--leg":
@@ -219,6 +229,9 @@ const STRAPS := [[Vector2(24.8, 25.5), Vector2(24.6, 21.5)], [Vector2(24.6, 21.5
 	[Vector2(35.8, 12.6), Vector2(31.0, 10.6)], [Vector2(31.0, 10.6), Vector2(30.6, 6.2)]]
 const CREASE := -0.04           # less than this: the crease round a scallop (a fill stops there)
 const FILL_MAX := 1700          # a scallop's fill bigger than this has leaked onto the body: not one
+const STRAP_R := 0.0            # the strap stands out more than this (its top 0.2, the groove each side -0.2)
+const STRAP_SEED := 0.25        # mm from its line (side on), standing out 0.08: on it for sure
+const STRAP_WIDE := 0.6         # mm: it doesn't go further from its line than this (it's about 0.55 wide)
 
 func _pole(p: Vector3, r: float) -> bool:
 	return Vector2(p.x, p.z).distance_to(pole) < r and (p.y > 7.5 or p.y < -12.0)
@@ -237,11 +250,15 @@ static func _strap_d(q: Vector2) -> float:
 	return d
 
 func _colour(i: int) -> Color:
-	var p := pos[i]
+	return _colour_at(pos[i], relief[i], hung_z[i], strap_z[i])
+
+## The colour at p, where the surface stands out r (relief), h and s how much it's in a scallop's fill and on the bridle's
+## strap (1 in it, 0 not: a corner's, or between two corners part of each: so a line between colours can be found
+## anywhere along an edge, _split).
+func _colour_at(p: Vector3, r: float, h: float, s: float) -> Color:
 	var z := p.z
 	var y := p.y
 	var q := Vector2(z, y)
-	var r := relief[i]
 	if _pole(p, 2.6):
 		return GOLD
 	if y < -33.8 or (absf(p.x - lift_x) < 3.5 and Geometry2D.is_point_in_polygon(q, LIFTED)):
@@ -259,9 +276,8 @@ func _colour(i: int) -> Color:
 			return GOLD
 		if q.distance_to(Vector2(32.4, 21.5)) < 2.6 and absf(p.x) < 3.0:
 			return GOLD                     # the forelock
-		var sd := _strap_d(q)
-		if sd < 0.45 or (sd < 0.85 and r > -0.05):             # (right on its line, or where it stands out beside it)
-			return STRAP
+		if s > 0.5 and r > STRAP_R:
+			return STRAP                    # (the raised strap the carving has, up to the groove along it)
 	if z > 7.0 and y > 2.0 and z < _mane_edge(y) and not (y < 8.0 and z < 9.5):
 		return GOLD                         # the mane
 	if z > 22.0 and y > 4.0:
@@ -279,13 +295,13 @@ func _colour(i: int) -> Color:
 	var top := _line(z, 23.5, 0.6, 9.3, 5.4)
 	if z >= 9.5 and z < 28.0 and y < top + 0.4 and y > top - 1.8:
 		return GOLD
-	if z >= 9.5 and z < 28.0 and y <= top - 1.8 and y > top - 8.0 and hung[i] == 1:
+	if z >= 9.5 and z < 28.0 and y <= top - 1.8 and y > top - 8.0 and h > 0.5 and r > CREASE:
 		return GOLD if r > 0.3 else TEAL
 	# the band across the rump: the same, blue
 	var rt := _line(z, -11.0, 0.6, -26.0, 0.1)
 	if z <= -12.0 and z > -28.0 and y < rt + 0.3 and y > rt - 2.4:
 		return GOLD
-	if z <= -12.0 and z > -28.0 and y <= rt - 2.4 and y > rt - 7.5 and hung[i] == 1:
+	if z <= -12.0 and z > -28.0 and y <= rt - 2.4 and y > rt - 7.5 and h > 0.5 and r > CREASE:
 		return GOLD if r > 0.3 else BLUE
 	return WHITE
 
@@ -342,7 +358,7 @@ const SLOT := {"f4f0e6": 1, "e2b443": 2, "e98bb8": 3, "e0218a": 3, "2f63c9": 4, 
 ## The owner's 3MF again with every triangle of the horse painted its filament (Bambu Studio's "paint_color", as its
 ## colour painting saves it: a triangle all one filament), and its project set for FILAMENTS. Everything else as it was.
 func _bambu(out_path: String, idx: PackedInt32Array) -> void:
-	var paint := _labels(idx)
+	var painted := _painting(idx)
 	var zin := ZIPReader.new()
 	zin.open(SRC)
 	var zout := ZIPPacker.new()
@@ -352,7 +368,9 @@ func _bambu(out_path: String, idx: PackedInt32Array) -> void:
 	for f in zin.get_files():
 		var data := zin.read_file(f)
 		if f == "3D/Objects/object_5.model":
-			data = _painted(data, paint)
+			data = _write_horse(data, painted[0], painted[1], painted[2])
+		elif f == "Metadata/model_settings.config":
+			data = _counts(data, (painted[1] as PackedInt32Array).size() / 3)
 		elif f == "Metadata/project_settings.config":
 			data = _seven(data)
 		zout.start_file(f)
@@ -448,7 +466,10 @@ func _labels(idx: PackedInt32Array) -> PackedByteArray:
 
 ## (Checking the painting) pictures of the horse in its filaments' colours, flat, from round about, into dir.
 func _preview(dir: String, idx: PackedInt32Array) -> void:
-	var paint := _labels(idx)
+	var painted := _painting(idx)
+	var pv: PackedVector3Array = painted[0]
+	var pt: PackedInt32Array = painted[1]
+	var paint: PackedByteArray = painted[2]
 	var v := PackedVector3Array()
 	var c := PackedColorArray()
 	var mid := Vector3.ZERO
@@ -458,7 +479,7 @@ func _preview(dir: String, idx: PackedInt32Array) -> void:
 	for t in paint.size():
 		var col := Color(FILAMENTS[paint[t] - 1])
 		for k in [0, 1, 2]:
-			v.append(pos[idx[t * 3 + k]])
+			v.append(pv[pt[t * 3 + k]])
 			c.append(col)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -493,7 +514,9 @@ func _preview(dir: String, idx: PackedInt32Array) -> void:
 		["front", Vector3(-0.4, 0.2, 1), mid, 120.0], ["head_l", Vector3(-1, 0.2, 0.4), Vector3(0, 15, 28), 40.0],
 		["head_r", Vector3(1, 0.2, 0.4), Vector3(0, 15, 28), 40.0], ["hoof_l", Vector3(-1, -0.2, 0.5), Vector3(lift_x, -23, 28), 22.0],
 		["hoof_r", Vector3(1, -0.4, 0.6), Vector3(lift_x, -23, 28), 22.0], ["hoof_under", Vector3(0.2, -1, 0.5), Vector3(lift_x, -23, 28), 22.0],
-		["chest", Vector3(-0.6, 0.0, 1), Vector3(0, -2, 18), 45.0], ["saddle", Vector3(-1, 0.4, 0), Vector3(0, 2, -3), 50.0]]
+		["chest", Vector3(-0.6, 0.0, 1), Vector3(0, -2, 18), 45.0], ["saddle", Vector3(-1, 0.4, 0), Vector3(0, 2, -3), 50.0],
+		["hoof_close", Vector3(-1, 0.1, 0.3), Vector3(lift_x, -20.5, 25.5), 9.0], ["brow", Vector3(-0.3, 0.5, 1), Vector3(0, 20, 29), 18.0],
+		["chin", Vector3(-0.6, -0.3, 1), Vector3(0, 8, 32), 16.0]]
 	for vw in views:
 		var look: Vector3 = vw[2]
 		cam.position = look + (vw[1] as Vector3).normalized() * float(vw[3])
@@ -529,7 +552,7 @@ const SPECK := 150              # triangles: a white patch smaller than this, sh
 const DOT := 40                 # triangles: a coloured one smaller than this (a dot of it on the white)
 const KEEP_SMALL := [3, 7]      # (the jewel's pink, the eyes' dark brown)
 
-func _tidy(idx: PackedInt32Array, paint: PackedByteArray) -> void:
+func _tidy(idx: PackedInt32Array, paint: PackedByteArray, passes := TIDY_PASSES) -> void:
 	var n := paint.size()
 	# each triangle's three neighbours across its edges: every edge (its two corners) with its triangle, sorted, so a
 	# shared edge's two triangles come together
@@ -556,7 +579,7 @@ func _tidy(idx: PackedInt32Array, paint: PackedByteArray) -> void:
 				fill[t1] += 1
 				fill[t2] += 1
 	# ragged edges, specks
-	for it in TIDY_PASSES:
+	for it in passes:
 		var next := paint.duplicate()
 		var changed := 0
 		for t in n:
@@ -615,3 +638,286 @@ func _tidy(idx: PackedInt32Array, paint: PackedByteArray) -> void:
 			paint[t] = best
 		filled += comp.size()
 	print("little patches filled: %d triangles" % filled)
+
+## (Checking) the carving across the bridle's cheek strap: how far it stands out (relief), at each distance across the
+## strap's line (side on), on the side of the head.
+func _strap_profile() -> void:
+	var a := Vector2(25.7, 18.8)
+	var b := Vector2(31.0, 10.8)
+	var d := (b - a).normalized()
+	var nrm2 := Vector2(-d.y, d.x)
+	var sum := {}
+	var cnt := {}
+	for i in pos.size():
+		var p := pos[i]
+		if p.x < 3.0:
+			continue
+		var q := Vector2(p.z, p.y)
+		var along := (q - a).dot(d)
+		if along < 1.0 or along > (b - a).length() - 1.0:
+			continue
+		var across := (q - a).dot(nrm2)
+		if absf(across) > 2.0:
+			continue
+		var k := int(round(across * 10.0))
+		sum[k] = float(sum.get(k, 0.0)) + relief[i]
+		cnt[k] = int(cnt.get(k, 0)) + 1
+	var keys := sum.keys()
+	keys.sort()
+	for k in keys:
+		var r: float = float(sum[k]) / int(cnt[k])
+		print("%5.1f  %6.3f  %s" % [k / 10.0, r, "#".repeat(clampi(int((r + 0.3) * 40.0), 0, 40))])
+
+# ---------------------------------------------------------------- the bridle by its carving; colours' edges cut clean
+
+# each corner's neighbours (the corners it shares a triangle with), for the head only (where the bridle is)
+func _head_nb(idx: PackedInt32Array) -> Dictionary:
+	var nb := {}
+	for t in range(0, idx.size(), 3):
+		for k in 3:
+			var a := idx[t + k]
+			var p := pos[a]
+			if p.z < 21.0 or p.y < 4.0:
+				continue
+			var l: PackedInt32Array = nb.get(a, PackedInt32Array())
+			l.append(idx[t + (k + 1) % 3])
+			l.append(idx[t + (k + 2) % 3])
+			nb[a] = l
+	return nb
+
+## The bridle's straps: from the corners right on a strap's line standing out (its top), filled out over the corners
+## still standing out (STRAP_R), to the groove each side, never further than STRAP_WIDE from the line.
+func _straps(idx: PackedInt32Array) -> void:
+	strap.resize(pos.size())
+	strap.fill(0)
+	var nb := _head_nb(idx)
+	var todo := PackedInt32Array()
+	for a in nb:
+		var q := Vector2(pos[a].z, pos[a].y)
+		if _strap_d(q) < STRAP_SEED and relief[a] > 0.08:
+			strap[a] = 1
+			todo.append(a)
+	var k := 0
+	while k < todo.size():
+		var a := todo[k]
+		k += 1
+		for b in nb.get(a, PackedInt32Array()):
+			if strap[b] == 0 and relief[b] > STRAP_R and _strap_d(Vector2(pos[b].z, pos[b].y)) < STRAP_WIDE:
+				strap[b] = 1
+				todo.append(b)
+	print("the bridle's straps: %d corners" % todo.size())
+
+# 1 for the corners marked and those next to them, else 0 (so the colour's edge can be found between them)
+func _ring(idx: PackedInt32Array, mark: PackedByteArray) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(pos.size())
+	for t in range(0, idx.size(), 3):
+		var any := mark[idx[t]] + mark[idx[t + 1]] + mark[idx[t + 2]] > 0
+		if any:
+			out[idx[t]] = 1.0
+			out[idx[t + 1]] = 1.0
+			out[idx[t + 2]] = 1.0
+	return out
+
+func _slot_at(p: Vector3, r: float, h: float, s: float) -> int:
+	return int(SLOT.get(_colour_at(p, r, h, s).to_html(false), 1))
+
+## The horse cut along every line between two colours: each triangle with corners of different colours split where
+## the colour changes along its edges (found by halving, BISECT times), so each piece is one colour and the line
+## between them runs smooth, not stepping triangle by triangle. Returns [corners, triangles, each one's filament].
+const BISECT := 10
+
+func _split(idx: PackedInt32Array) -> Array:
+	var verts := pos.duplicate()
+	var lab := PackedByteArray()
+	lab.resize(pos.size())
+	for i in pos.size():
+		lab[i] = _slot_at(pos[i], relief[i], hung_z[i], strap_z[i])
+	_tidy_corners(idx, lab)
+	var cut := {}                   # edge (lower corner * 2^20 + higher) -> the new corner where its colour changes
+	var cut_edge := func(a: int, b: int) -> int:
+		var lo := mini(a, b)
+		var hi := maxi(a, b)
+		var key := lo * 1048576 + hi
+		if cut.has(key):
+			return cut[key]
+		var la := lab[lo]
+		var t0 := 0.0
+		var t1 := 1.0
+		for it in BISECT:
+			var t := (t0 + t1) * 0.5
+			var l := _slot_at(pos[lo].lerp(pos[hi], t), lerpf(relief[lo], relief[hi], t), lerpf(hung_z[lo], hung_z[hi], t), lerpf(strap_z[lo], strap_z[hi], t))
+			if l == la:
+				t0 = t
+			else:
+				t1 = t
+		var at := pos[lo].lerp(pos[hi], (t0 + t1) * 0.5)
+		cut[key] = verts.size()
+		verts.append(at)
+		return verts.size() - 1
+	var tris := PackedInt32Array()
+	var paint := PackedByteArray()
+	var add := func(a: int, b: int, c: int, l: int) -> void:
+		tris.append_array([a, b, c])
+		paint.append(l)
+	for t in range(0, idx.size(), 3):
+		var v := [idx[t], idx[t + 1], idx[t + 2]]
+		var l := [lab[v[0]], lab[v[1]], lab[v[2]]]
+		if l[0] == l[1] and l[1] == l[2]:
+			add.call(v[0], v[1], v[2], l[0])
+			continue
+		if l[0] != l[1] and l[1] != l[2] and l[0] != l[2]:
+			# three colours: each corner's share, round the middle
+			var c := verts.size()
+			verts.append((verts[v[0]] + verts[v[1]] + verts[v[2]]) / 3.0)
+			var p01: int = cut_edge.call(v[0], v[1])
+			var p12: int = cut_edge.call(v[1], v[2])
+			var p20: int = cut_edge.call(v[2], v[0])
+			add.call(v[0], p01, c, l[0])
+			add.call(v[0], c, p20, l[0])
+			add.call(p01, v[1], c, l[1])
+			add.call(v[1], p12, c, l[1])
+			add.call(p12, v[2], c, l[2])
+			add.call(v[2], p20, c, l[2])
+			continue
+		# two colours: turned so v0 and v1 share one, v2 has the other (the same way round as it was)
+		var o := 2 if l[0] == l[1] else (0 if l[1] == l[2] else 1)
+		var a: int = v[(o + 1) % 3]
+		var b: int = v[(o + 2) % 3]
+		var c2: int = v[o]
+		var pb: int = cut_edge.call(b, c2)
+		var pa: int = cut_edge.call(c2, a)
+		add.call(a, b, pb, lab[a])
+		add.call(a, pb, pa, lab[a])
+		add.call(pb, c2, pa, lab[c2])
+	print("cut along the colours: %d triangles (were %d), %d corners (were %d)" % [tris.size() / 3, idx.size() / 3, verts.size(), pos.size()])
+	return [verts, tris, paint]
+
+## object_5.model with the horse (object 2) made again: these corners (back in the 3MF's axes) and triangles, each
+## painted its filament.
+func _write_horse(data: PackedByteArray, verts: PackedVector3Array, tris: PackedInt32Array, paint: PackedByteArray) -> PackedByteArray:
+	var lines := data.get_string_from_utf8().split("\n")
+	var out := PackedStringArray()
+	var obj := 0
+	var skip := false
+	for l in lines:
+		if l.contains("<object "):
+			obj = 2 if l.contains("id=\"2\"") else 1
+		if obj == 2 and l.contains("<mesh>"):
+			out.append(l)
+			out.append("<vertices>")
+			for p in verts:
+				out.append("<vertex x=\"%.5f\" y=\"%.5f\" z=\"%.5f\"/>" % [p.x, -p.z, p.y])
+			out.append("</vertices>")
+			out.append("<triangles>")
+			for t in paint.size():
+				var a := tris[t * 3]
+				var b := tris[t * 3 + 2]          # (the 3MF's winding: _read turned it)
+				var c := tris[t * 3 + 1]
+				if paint[t] > 1:
+					out.append("<triangle v1=\"%d\" v2=\"%d\" v3=\"%d\" paint_color=\"%s\"/>" % [a, b, c, _paint_code(paint[t])])
+				else:
+					out.append("<triangle v1=\"%d\" v2=\"%d\" v3=\"%d\"/>" % [a, b, c])
+			out.append("</triangles>")
+			skip = true
+			continue
+		if skip:
+			if l.contains("</mesh>"):
+				skip = false
+				out.append(l)
+			continue
+		out.append(l)
+	return "\n".join(out).to_utf8_buffer()
+
+## The horse as it's printed: its corners' colours tidied (_tidy_corners), then cut along them (_split).
+func _painting(idx: PackedInt32Array) -> Array:
+	return _split(idx)
+
+# the part's triangle count where the project keeps it (the horse made again: more of them)
+func _counts(data: PackedByteArray, n: int) -> PackedByteArray:
+	var t := data.get_string_from_utf8()
+	t = t.replace("<metadata face_count=\"369144\"/>", "<metadata face_count=\"%d\"/>" % (n + 124))
+	t = t.replace("<mesh_stat face_count=\"369020\"", "<mesh_stat face_count=\"%d\"" % n)
+	return t.to_utf8_buffer()
+
+## The corners' filaments tidied before the cut (after it, tidying chews the clean lines): a corner none of its
+## neighbours share goes the most of theirs; then a little patch of corners shut in by another filament takes it
+## (CORNER_GAP white ones: a gap; CORNER_DOT of a colour: a dot) but for the eyes and the jewel (KEEP_SMALL).
+const CORNER_GAP := 60
+const CORNER_DOT := 15
+
+func _tidy_corners(idx: PackedInt32Array, lab: PackedByteArray) -> void:
+	var n := lab.size()
+	# each corner's neighbours, packed: those of corner i are nbs[start[i] .. start[i + 1]]
+	var deg := PackedInt32Array()
+	deg.resize(n + 1)
+	for t in range(0, idx.size(), 3):
+		for k in 3:
+			deg[idx[t + k]] += 2
+	var start := PackedInt32Array()
+	start.resize(n + 1)
+	for i in n:
+		start[i + 1] = start[i] + deg[i]
+	var nbs := PackedInt32Array()
+	nbs.resize(start[n])
+	var at := start.duplicate()
+	for t in range(0, idx.size(), 3):
+		for k in 3:
+			var a := idx[t + k]
+			nbs[at[a]] = idx[t + (k + 1) % 3]
+			nbs[at[a] + 1] = idx[t + (k + 2) % 3]
+			at[a] += 2
+	var alone := 0
+	for i in n:
+		var own := false
+		var count := {}
+		for j in range(start[i], start[i + 1]):
+			var l := lab[nbs[j]]
+			if l == lab[i]:
+				own = true
+				break
+			count[l] = int(count.get(l, 0)) + 1
+		if not own and not count.is_empty() and not KEEP_SMALL.has(lab[i]):
+			var best := 0
+			var most := -1
+			for l in count:
+				if int(count[l]) > most:
+					most = int(count[l])
+					best = l
+			lab[i] = best
+			alone += 1
+	var seen := PackedByteArray()
+	seen.resize(n)
+	var filled := 0
+	for i0 in n:
+		if seen[i0]:
+			continue
+		var l0 := lab[i0]
+		var limit := CORNER_GAP if l0 == 1 else CORNER_DOT
+		var comp := PackedInt32Array([i0])
+		seen[i0] = 1
+		var k := 0
+		var around := {}
+		while k < comp.size() and comp.size() <= limit:
+			var v := comp[k]
+			k += 1
+			for j in range(start[v], start[v + 1]):
+				var u := nbs[j]
+				if lab[u] == l0:
+					if not seen[u]:
+						seen[u] = 1
+						comp.append(u)
+				else:
+					around[lab[u]] = int(around.get(lab[u], 0)) + 1
+		if comp.size() > limit or KEEP_SMALL.has(l0) or around.is_empty():
+			continue
+		var best := 0
+		var most := -1
+		for l in around:
+			if int(around[l]) > most:
+				most = int(around[l])
+				best = l
+		for v in comp:
+			lab[v] = best
+		filled += comp.size()
+	print("corners tidied: %d on their own, %d in little patches" % [alone, filled])
