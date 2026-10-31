@@ -1,8 +1,8 @@
 extends SceneTree
 ## A clip (with --write-movie): the Carousel sabotaged (VoxelCarouselHack), played through step by step as you would:
 ## arriving, the gadget held up to the control box, its signals tried one by one (found out as you go), the ride
-## stopped and a horse's bolt loosened (E held), then flat out and stopped dead: a rider thrown into Luna Palace's
-## wall, the game's view following them, and back to you. Owned by the St Kilda session.
+## stopped and a horse's bolt loosened (E held), then flat out and stopped dead: a rider thrown at Luna Palace, caught
+## by a foot on a window sill and left hanging upside down, the game's view following them, and back to you. Owned by the St Kilda session.
 
 var arena: VoxelArena
 var sk: VoxelStKilda
@@ -148,12 +148,14 @@ func _process(dt: float) -> bool:
 				match tb.stage:
 					"flying":
 						label.text = "6. BRAKE: stopped dead... into the castle"
+					"hang":
+						label.text = "...caught by a foot on a window sill"
 					"down", "up":
 						label.text = "Up again..."
 					"dizzy", "walk":
 						label.text = "...dizzy, and off they go"
 			if arena.cam.current and t > 3.0:
-				label.text = "Back to you (the loose horse thrown over)"
+				label.text = "Back to you (he's still up there)"
 				arena.look_pitch = -0.1
 				if not has_meta("back"):
 					set_meta("back", t)

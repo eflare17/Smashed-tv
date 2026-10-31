@@ -4,7 +4,9 @@ extends Node3D
 ## away"): the rider goes on the way the ride was taking them, as the crowd's ragdoll (SkRagdoll), tumbling off the
 ## platform into whatever's there (the ride's iron fence); a thump when they hit it. Then the way the crowd gets up
 ## after a fall: lying there a moment, up again, stood swaying with stars going round their head, and off they walk,
-## away from the ride, wobbly at first. Owned by the St Kilda session.
+## away from the ride, wobbly at first. Or (hang_at set: thrown at a window of Luna Palace, the owner: "his leg gets
+## caught on the window sill and he gets stuck hanging upside down") caught by a foot on its sill as they get there,
+## and left hanging upside down below it, swinging a little, arms waving. Owned by the St Kilda session.
 
 const DOWN := 2.5               # s lying there
 const UP := 0.9                 # s getting up
@@ -16,18 +18,30 @@ const THUMP := 3.5              # m/s lost in one step: they've hit something
 var look: Array = []            # [shirt, pants, hair, skin] (as the crowd's)
 var custom := Color()
 var size := 0.85
-var stage := "flying"           # flying, down, up, dizzy, walk, done
+var stage := "flying"           # flying, down, up, dizzy, walk, done; or flying, hang
 var at := Vector3.ZERO          # their feet
 var head_dir := Vector3.FORWARD # lying: which way their head is
 var yaw := 0.0
 var away := Vector3.FORWARD     # which way they walk off
 var hits := 0                   # (thumps heard: tests)
 var walk_back := false          # walk off back toward the ride (thrown a long way, into a wall: not on into it)
+var hang_at := Vector3.INF      # a window sill's top, at its front edge: caught on it by a foot (INF: not)
+var hang_out := Vector3.ZERO    # out from the wall there
 var _t := 0.0
 var _rag: SkRagdoll
 var _last_v := 0.0
 var _mm: MultiMesh
 var _stars: Node3D
+var _mmi: MultiMeshInstance3D
+var mid_now := Vector3.ZERO     # (flying at a window: their middle now, for the view to follow)
+var _fly_from := Vector3.ZERO   # (flying at a window: an exact arc, head over heels one and a half times, so they come
+var _fly_v := Vector3.ZERO      # feet first and upside down to the sill: not the ragdoll, which falls short)
+var _fly_T := 1.0
+var _fly_side := Vector3.RIGHT
+var _fly_yaw := 0.0
+
+const FLY_SPEED := 26.0         # m/s across, at a window
+const TURNS := PI * 3.0         # head over heels on the way there
 
 ## Throw them from `xf` (feet, facing -z) at `v` (m/s), the ride's middle at `mid` (they walk off away from it).
 func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.2, spin := 6.0) -> void:
@@ -35,16 +49,6 @@ func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.
 	var shirt := int(floor(fposmod(custom.r, 0.5) * 16.0 + 0.01))
 	look = [shirt, int(floor(custom.b * 8.0)), int(floor(fposmod(custom.b * 8.0, 1.0) * 8.0 + 0.01)), custom.a]
 	var flat := Vector3(v.x, 0, v.z)
-	_rag = SkRagdoll.new()
-	_rag.name = "SkRagdoll"
-	add_child(_rag)
-	_rag.setup(xf, look, flat, lift, spin)
-	for p in _rag.get_children():
-		if p is RigidBody3D:
-			(p as RigidBody3D).continuous_cd = true     # (fast: into a wall, not through it)
-			if flat.length() > 12.0:
-				(p as RigidBody3D).linear_velocity = flat + Vector3(0, lift, 0)   # (all of them together: a long way, not torn apart)
-	_rag.done.connect(_landed.bind(mid))
 	# them stood up again: one of the crowd, on their own (hidden till they've landed)
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -52,12 +56,25 @@ func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.
 	_mm.use_custom_data = true
 	_mm.mesh = SkCrowd.person_mesh()
 	_mm.instance_count = 1
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = _mm
-	mmi.material_override = SkCrowd.material()
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
+	_mmi = MultiMeshInstance3D.new()
+	_mmi.multimesh = _mm
+	_mmi.material_override = SkCrowd.material()
+	_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_mmi)
 	_put(Transform3D(Basis().scaled(Vector3.ONE * 0.001), xf.origin), false)
+	if hang_at != Vector3.INF:
+		_arc(xf)
+	else:
+		_rag = SkRagdoll.new()
+		_rag.name = "SkRagdoll"
+		add_child(_rag)
+		_rag.setup(xf, look, flat, lift, spin)
+		for p in _rag.get_children():
+			if p is RigidBody3D:
+				(p as RigidBody3D).continuous_cd = true     # (fast: into a wall, not through it)
+				if flat.length() > 12.0:
+					(p as RigidBody3D).linear_velocity = flat + Vector3(0, lift, 0)   # (all of them together: a long way, not torn apart)
+		_rag.done.connect(_landed.bind(mid))
 	_stars = Node3D.new()
 	for k in 3:
 		var s := MeshInstance3D.new()
@@ -106,6 +123,9 @@ func _physics_process(_dt: float) -> void:
 	var body := _rag._parts.get("body") as RigidBody3D
 	if body == null:
 		return
+	if hang_at != Vector3.INF and body.global_position.distance_to(hang_at + hang_out * 0.4 + Vector3(0, 0.6, 0)) < 1.4:
+		_hang()
+		return
 	var sp := body.linear_velocity.length()
 	if _last_v - sp > THUMP:
 		hits += 1
@@ -115,10 +135,27 @@ func _physics_process(_dt: float) -> void:
 	_last_v = sp
 
 func _process(dt: float) -> void:
-	if stage == "flying" or stage == "done":
+	if (stage == "flying" and hang_at == Vector3.INF) or stage == "done":
 		return
 	_t += dt
 	match stage:
+		"flying":
+			# (at a window) along the arc, turning over
+			if _t >= _fly_T:
+				_hang()
+				return
+			mid_now = _fly_from + _fly_v * _t + Vector3(0, -4.9 * _t * _t, 0)
+			var b := Basis(_fly_side, TURNS * _t / _fly_T) * Basis(Vector3.UP, _fly_yaw)
+			_put(Transform3D(b.scaled(Vector3.ONE * size), mid_now - b * Vector3(0, 0.9 * size, 0)), false)
+		"hang":
+			# upside down: their feet at the sill, their head toward the ground, facing out; swinging a little (more
+			# just after), arms waving
+			var down := Vector3.DOWN
+			var back := -hang_out
+			var side := down.cross(back)
+			var swing := sin(_t * 1.8) * (0.08 + 0.3 * exp(-_t * 1.2)) + sin(_t * 5.3) * 0.03
+			var b := Basis(side.normalized(), swing) * Basis(side, down, back)
+			_put(Transform3D(b.scaled(Vector3.ONE * size), hang_at + Vector3(0, 0.05, 0) - hang_out * 0.05), false)
 		"down", "up":
 			var tip := 1.0
 			if stage == "up":
@@ -155,3 +192,35 @@ func _process(dt: float) -> void:
 			elif stage == "walk" and _t > WALK:
 				stage = "done"
 				_put(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), at), false)
+
+## Caught on the sill by a foot: the ragdoll gone, them hung there upside down (arms waving: the crowd's riders' cheer).
+func _hang() -> void:
+	if _rag and is_instance_valid(_rag):
+		_rag.queue_free()
+	_rag = null
+	stage = "hang"
+	_t = 0.0
+	hits += 1
+	at = hang_at
+	var m := (SkCrowd.material() as ShaderMaterial).duplicate() as ShaderMaterial
+	m.set_shader_parameter("cheer", 1.0)
+	_mmi.material_override = m
+	var arena = get_tree().root.get_node_or_null("VoxelArena")
+	if arena and arena.sound:
+		arena.sound.play("thwack", hang_at, 0.0, 0.85)
+		arena.sound.play("gate_creak", hang_at, -6.0, 1.3)
+
+# the arc to the window: from their middle on the horse to their middle hung from the sill, FLY_SPEED m/s across
+func _arc(xf: Transform3D) -> void:
+	size = xf.basis.get_scale().x
+	_fly_from = xf.origin + Vector3(0, 0.9 * size, 0)
+	var to := hang_at + Vector3(0, -0.9 * size, 0)
+	var across := Vector3(to.x - _fly_from.x, 0, to.z - _fly_from.z)
+	_fly_T = maxf(across.length() / FLY_SPEED, 0.3)
+	_fly_v = (to - _fly_from + Vector3(0, 4.9 * _fly_T * _fly_T, 0)) / _fly_T
+	var dir := across.normalized()
+	_fly_yaw = atan2(-dir.x, -dir.z)
+	_fly_side = Vector3.UP.cross(dir).normalized()      # (head first, over forward)
+	mid_now = _fly_from
+	stage = "flying"
+	_t = 0.0

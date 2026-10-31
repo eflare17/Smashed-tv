@@ -1,7 +1,9 @@
 extends SceneTree
 ## The Carousel sabotaged (VoxelCarouselHack): E at the control box holds the gadget up; its signals (shuffled) speed
 ## the ride up, slow it, stop it dead and turn its lights off and on; with it stopped, E held by an empty horse loosens
-## its bolt; sped up and stopped dead, that horse is thrown over crooked on its pole. Home and back, all as it was.
+## its bolt; sped up and stopped dead, that horse is thrown over crooked on its pole, and a rider flies into a window
+## of Luna Palace, caught on its sill by a foot, hanging upside down, the view going with them. Home and back, all as
+## it was.
 ## Pictures (under a display, Forward+: -- --out=dir). Prints PASS or FAIL. Owned by the St Kilda session.
 
 var arena: VoxelArena
@@ -153,16 +155,25 @@ func _process(dt: float) -> bool:
 			t = 0.0
 		9:
 			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
-			if tb != null and tb.stage == "dizzy" and not has_meta("dizzy"):
-				set_meta("dizzy", true)
-				_shot("5_dizzy")
-			if tb == null or (tb.stage != "walk" and tb.stage != "done" and t < 15.0) or (tb.stage == "walk" and tb._t < 3.0):
+			if tb == null or (tb.stage != "hang" and t < 15.0) or (tb.stage == "hang" and tb._t < 1.5):
 				return false
-			_check(tb.hits > 0, "they hit something (%d thumps)" % tb.hits)
+			_check(tb.hang_at != Vector3.INF, "thrown at a window of Luna Palace")
+			# caught on the sill by a foot, upside down
+			_check(tb.stage == "hang", "caught on the sill (%s)" % tb.stage)
+			_check(hack._cam != null and hack._cam.current, "the view's gone with them")
 			var c := hack.carousel.global_position
-			_check(tb.stage == "walk" or tb.stage == "done", "they got up and are walking off (%s)" % tb.stage)
-			_check(Vector2(tb.at.x - c.x, tb.at.z - c.z).length() > VoxelCarousel.EDGE, "away from the ride (%.1f m from its middle)" % Vector2(tb.at.x - c.x, tb.at.z - c.z).length())
-			_shot("6_walking")
+			_check(Vector2(tb.at.x - c.x, tb.at.z - c.z).length() > 25.0, "all the way over at Luna Palace (%.1f m from the ride)" % Vector2(tb.at.x - c.x, tb.at.z - c.z).length())
+			var xf := tb._mm.get_instance_transform(0) if tb._mm.buffer.size() == 0 else Transform3D(Basis(Vector3(tb._mm.buffer[0], tb._mm.buffer[4], tb._mm.buffer[8]), Vector3(tb._mm.buffer[1], tb._mm.buffer[5], tb._mm.buffer[9]), Vector3(tb._mm.buffer[2], tb._mm.buffer[6], tb._mm.buffer[10])), Vector3(tb._mm.buffer[3], tb._mm.buffer[7], tb._mm.buffer[11]))
+			_check(xf.basis.y.normalized().y < -0.9, "upside down (up's %.2f)" % xf.basis.y.normalized().y)
+			_check(xf.origin.distance_to(tb.hang_at) < 0.3 and absf(tb.hang_at.y - 4.87) < 0.2, "feet on the sill, 4.9 m up (%.2f m)" % tb.hang_at.y)
+			_shot("5_hanging")
+			step = 11
+			t = 0.0
+		11:
+			if t < 5.5:
+				return false
+			_check(hack._cam == null or not hack._cam.current, "then the view's back to you")
+			_check(hack.tumbles[0].stage == "hang", "still hanging there")
 			sk.home()
 			sk.go()
 			_check(hack.loose == -1 and hack.level == 1 and hack.thrown == 0.0 and hack.seen.count(true) == 0 and hack.tumbles.is_empty(), "home and back: all as it was")

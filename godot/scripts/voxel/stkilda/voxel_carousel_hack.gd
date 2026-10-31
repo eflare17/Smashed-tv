@@ -11,9 +11,8 @@ extends Node3D
 ## - A loose bolt: with the ride stood still, hold E by a horse nobody's on for LOOSEN s (a bar fills): its bolt's
 ##   loose. From then it rattles on its pole as the ride turns, the faster the worse, and when the ride stops dead
 ##   it's thrown over crooked on its pole and stays that way.
-## - Stopped dead from flat out (THROW_FROM), a rider goes flying, all the way into Luna Palace's wall, the view going
-##   with them; then up, dizzy, and off they walk (the owner, 31 Oct: "they hit the wall then get up and walk away"):
-##   VoxelCarouselTumble.
+## - Stopped dead from flat out (THROW_FROM), a rider goes flying across the park at Luna Palace, the view going with
+##   them, and is caught by a foot on a window sill, left hanging upside down (the owner, 31 Oct). VoxelCarouselTumble.
 ## Put back as it was the next time you come (reset). Owned by the St Kilda session.
 
 const SPEEDS := [0.0, 0.45, 1.2, 2.2, 3.4]   # rad/s the ride turns at each speed (1: its own)
@@ -391,15 +390,20 @@ func _unhandled_input(e: InputEvent) -> void:
 # ---------------------------------------------------------------- a rider thrown off (stopped dead from speed)
 #
 # (The owner, 31 Oct: "flung off really far hitting the castle, the camera follows them".) Thrown at Luna Palace: the
-# rider going the way most toward it is the one, and they fly in an arc into its wall FLY_H m up, FLY_SPEED m/s
-# across, drop down it, then up and off back toward the ride. The view goes with them (FollowCam) and comes back to
-# you once they're walking. No Luna Palace (or something between): the old short throw, into whatever's nearest.
+# rider going the way most toward it is the one, and they fly in an arc FLY_SPEED m/s across at the upstairs window
+# nearest the Carousel, where a foot catches on its sill (the owner: "his leg gets caught on the window sill and he
+# gets stuck hanging upside down"): left hanging there till you come again. (Its front facing away, no window to
+# aim at: into its wall FLY_H m up, down, up and off back toward the ride.) The view goes with them (FollowCam) and
+# comes back to you once they're hanging (or walking). No Luna Palace (or something between): the old short throw,
+# into whatever's nearest.
 
 const FLY_H := 6.0              # m up Luna Palace's wall they hit
 const FLY_SPEED := 26.0         # m/s across
 
 var _wall_at := Vector3.INF     # where on Luna Palace's wall (and its normal): found the first time
 var _wall_n := Vector3.ZERO
+var _sill := Vector3.INF        # the window sill they catch on: its top, at its front edge (INF: none facing the ride)
+var _sill_out := Vector3.ZERO
 var _cam: Camera3D
 var _cam_tb: VoxelCarouselTumble
 var _cam_dir := Vector3.FORWARD
@@ -420,6 +424,7 @@ func _palace_wall() -> bool:
 		return false                    # (something else in the way, nearer the Carousel)
 	_wall_at = hit.position
 	_wall_n = hit.normal
+	_window(palace)
 	return true
 
 ## The rider thrown off: at Luna Palace if it's there to hit, else into whatever's nearest the way they're going.
@@ -478,6 +483,10 @@ func _throw() -> void:
 	if far:
 		# an arc that comes down on the wall a little in front of it (the body's middle about 1.1 m up off their feet)
 		var aim := _wall_at + _wall_n * 0.3
+		if _sill != Vector3.INF:
+			aim = _sill + _sill_out * 0.4 + Vector3(0, 0.6, 0)        # (where VoxelCarouselTumble catches them on it)
+			tb.hang_at = _sill
+			tb.hang_out = _sill_out
 		var across := Vector3(aim.x - start.x, 0, aim.z - start.z)
 		var t := across.length() / FLY_SPEED
 		fly = across / t
@@ -509,6 +518,10 @@ func _follow(tb: VoxelCarouselTumble, dir: Vector3) -> void:
 
 # where the thrown one is now: the ragdoll's middle, or them stood up
 static func _where(tb: VoxelCarouselTumble) -> Vector3:
+	if tb.stage == "hang":
+		return tb.hang_at + Vector3(0, -0.9, 0)
+	if tb.stage == "flying" and tb.hang_at != Vector3.INF:
+		return tb.mid_now
 	if tb._rag != null and is_instance_valid(tb._rag):
 		var b := tb._rag._parts.get("body") as RigidBody3D
 		if b:
@@ -518,7 +531,7 @@ static func _where(tb: VoxelCarouselTumble) -> Vector3:
 func _follow_step(dt: float) -> void:
 	if _cam == null or not _cam.current:
 		return
-	if _cam_tb == null or not is_instance_valid(_cam_tb) or _cam_tb.stage == "done" or (_cam_tb.stage == "walk" and _cam_tb._t > 3.5):
+	if _cam_tb == null or not is_instance_valid(_cam_tb) or _cam_tb.stage == "done" or (_cam_tb.stage == "walk" and _cam_tb._t > 3.5) or (_cam_tb.stage == "hang" and _cam_tb._t > 6.0):
 		_cam.current = false
 		sk.arena.cam.current = true          # (back to you)
 		_cam_tb = null
@@ -528,8 +541,37 @@ func _follow_step(dt: float) -> void:
 	var want: Vector3
 	if _cam_tb.stage == "flying" and p.distance_to(_wall_at) > 6.0:
 		want = p - _cam_dir * 6.0 + Vector3(0, 2.0, 0)                    # (behind them, flying)
+	elif _cam_tb.stage == "hang":
+		want = p + _cam_tb.hang_out * 4.2 + side * 1.3 + Vector3(0, -0.5, 0)    # (out in front of the wall, looking at them)
 	else:
 		want = p - _cam_dir * 7.0 + side * 4.5 + Vector3(0, 2.2, 0)     # (stood off to the side: the wall, the drop, up again)
 		want.y = maxf(want.y, 1.5)
 	_cam.global_position = _cam.global_position.lerp(want, minf(1.0, dt * 4.0))
 	_cam.look_at(p, Vector3.UP)
+
+# the upstairs window of Luna Palace nearest the Carousel, if its front's toward the ride (SkLunaRides' Luna Palace:
+# windows along its front between the round tower and the far end, sills 4.78 m up standing out from the wall; its
+# size from where the tower's flag is)
+func _window(palace: Node3D) -> void:
+	if not palace.has_meta("flag_tops"):
+		return
+	var xf := palace.global_transform
+	var out := xf.basis.z.normalized()
+	var to := spin.global_position - palace.global_position
+	to.y = 0.0
+	if out.dot(to.normalized()) < 0.3:
+		return
+	var tower: Vector3 = (palace.get_meta("flag_tops") as PackedVector3Array)[0]
+	var hw := 3.0 - tower.x
+	var hd := tower.z + 3.0
+	var span := hw * 2.0 - 8.0
+	var many := maxi(2, int(span / 4.5))
+	var near := xf.affine_inverse() * spin.global_position
+	var best := INF
+	for k in many:
+		var x := -hw + 7.0 + (k + 0.5) * span / many
+		if absf(x - near.x) < best:
+			best = absf(x - near.x)
+			_sill = xf * Vector3(x, 4.78 + 0.09, hd + 0.05 + 0.12 + 0.175)
+	_sill_out = out
+	_wall_at = _sill
