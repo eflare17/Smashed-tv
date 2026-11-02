@@ -151,15 +151,34 @@ html,body{position:fixed;inset:0;width:100%;height:100%;margin:0;padding:0;overf
 			Your browser does not support JavaScript.
 		</noscript>
 
+		<style>
+/* the loading screen, dressed like the game's start screen */
+#status{position:fixed;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.2vmin;padding:12px;box-sizing:border-box;background:#161d30;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center}
+#load-sign{width:min(70vw,62vh,520px);height:auto;display:block}
+#load-title{color:#ffd21f;font-weight:800;font-size:clamp(20px,6vmin,44px);letter-spacing:.02em;margin:0}
+#status-progress{position:static;transform:none;left:auto;right:auto;bottom:auto;margin:0;width:min(80vw,560px)}
+#load-bar{height:clamp(14px,3.4vmin,24px);background:#0b0f1c;border:2px solid #f7f3e8;border-radius:999px;overflow:hidden}
+#load-fill{height:100%;width:0;background:#ff9a1f;border-radius:999px;transition:width .25s linear}
+#load-big{color:#fff;font-weight:700;font-size:clamp(18px,5vmin,32px);margin:1.4vmin 0 0}
+#load-small{color:#cfe8ff;font-size:clamp(13px,3vmin,18px);margin:.6vmin 0 0;min-height:1.3em}
+#load-tip{color:#cfe8ff;opacity:.85;font-size:clamp(13px,3vmin,18px);margin:0}
+#status-notice{position:static;transform:none;max-width:90vw}
+		</style>
 		<div id="status">
-			<img id="status-splash" class="show-image--true fullsize--true use-filter--true" src="index.png" alt="">
-			<progress id="status-progress"></progress>
+			<img id="load-sign" src="sign.png" alt="Cobram Caravans">
+			<h1 id="load-title">DESTRUCTION SIMULATOR</h1>
+			<div id="status-progress">
+				<div id="load-bar"><div id="load-fill"></div></div>
+				<p id="load-big">Loading…</p>
+				<p id="load-small"></p>
+			</div>
+			<p id="load-tip">Turn your phone sideways to play</p>
 			<div id="status-notice"></div>
 		</div>
 
 		<script src="../godot-play/index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"ensureCrossOriginIsolationHeaders":true,"executable":"../godot-play/index","mainPack":"game-38c25097.pck","experimentalVK":false,"fileSizes":{"game-38c25097.pck":193008,"index.wasm":43699190},"focusCanvas":true,"gdextensionLibs":[]};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"ensureCrossOriginIsolationHeaders":true,"executable":"../godot-play/index","mainPack":"game-762f5d97.pck","experimentalVK":false,"fileSizes":{"game-762f5d97.pck":193008,"../godot-play/index.wasm":43699190},"focusCanvas":true,"gdextensionLibs":[]};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
@@ -247,15 +266,73 @@ const engine = new Engine(GODOT_CONFIG);
 		}
 	} else {
 		setStatusMode('progress');
+		// the download takes the bar to 90%, the phone getting the game going afterwards the rest of the way. The time left
+		// is the download's, from its speed over the last few seconds, plus a guess at the start-up (the browser gives no
+		// measure of that). Seconds shown only once there's a speed to go on, and rounded so it doesn't flicker.
+		const START_UP_S = 5;
+		const fill = document.getElementById('load-fill');
+		const big = document.getElementById('load-big');
+		const small = document.getElementById('load-small');
+		const samples = [];
+		let startedAt = 0;
+		let lastShown = -1;
+		let lastShownAt = 0;
+		let doneAt = 0;
+		let creep = 0;
+
+		function roughly(s) {
+			if (s < 10) return 'Less than 10 seconds left';
+			if (s < 60) return 'About ' + Math.round(s / 5) * 5 + ' seconds left';
+			if (s < 90) return 'About a minute left';
+			return 'About ' + Math.round(s / 60) + ' minutes left';
+		}
+
+		function setBar(p) {
+			fill.style.width = Math.min(100, p).toFixed(1) + '%';
+		}
+
+		function gettingReady() {
+			if (!initializing) return;
+			// creeps on towards 100 without getting there, so it never looks stuck
+			creep = 90 + 9.5 * (1 - Math.exp(-(performance.now() - doneAt) / 4000));
+			setBar(creep);
+			big.textContent = Math.floor(creep) + '%';
+			small.textContent = 'Nearly there: getting Kev ready…';
+			requestAnimationFrame(gettingReady);
+		}
+
 		engine.startGame({
 			'onProgress': function (current, total) {
-				if (current > 0 && total > 0) {
-					statusProgress.value = current;
-					statusProgress.max = total;
-				} else {
-					statusProgress.removeAttribute('value');
-					statusProgress.removeAttribute('max');
+				if (!(current > 0 && total > 0)) return;
+				const now = performance.now();
+				if (!startedAt) startedAt = now;
+				if (current >= total) {
+					if (!doneAt) {
+						doneAt = now;
+						gettingReady();
+					}
+					return;
 				}
+				const pct = 100 * current / total;
+				setBar(pct * 0.9);
+				big.textContent = Math.floor(pct * 0.9) + '%';
+				samples.push([now, current]);
+				while (samples.length > 2 && now - samples[0][0] > 4000) samples.shift();
+				const span = (now - samples[0][0]) / 1000;
+				const mb = (n) => (n / 1048576).toFixed(0);
+				let text = mb(current) + ' of ' + mb(total) + ' MB';
+				if (span > 1 && now - startedAt > 1500 && current > samples[0][1]) {
+					const speed = (current - samples[0][1]) / span;
+					const left = (total - current) / speed + START_UP_S;
+					if (lastShown < 0 || now - lastShownAt > 1000) {
+						lastShown = left;
+						lastShownAt = now;
+					}
+					text = roughly(lastShown) + '  ·  ' + text;
+				} else {
+					text = 'Working out how long…  ·  ' + text;
+				}
+				small.textContent = text;
 			},
 		}).then(() => {
 			setStatusMode('hidden');
