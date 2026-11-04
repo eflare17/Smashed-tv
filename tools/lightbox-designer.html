@@ -1,0 +1,2030 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LumenStack Studio</title>
+<meta name="description" content="Design a 5-layer 3D-printable lightbox: map images to filament thickness, preview backlit colour blending, export heightmaps, STLs and a print spec sheet.">
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: { extend: {
+      colors: {
+        ink: { 950:'#0b0d11', 900:'#101318', 850:'#14181e', 800:'#191e25', 700:'#232a33', 600:'#2f3743', 500:'#46505e', 400:'#6b7584', 300:'#98a1ae', 200:'#c5cbd3', 100:'#e6e9ee' },
+        accent: { DEFAULT:'#f5a524', 400:'#ffb946', 600:'#d98a0b' }
+      },
+      fontFamily: { sans:['Inter','ui-sans-serif','system-ui','sans-serif'], mono:['"JetBrains Mono"','ui-monospace','SFMono-Regular','monospace'] }
+    } }
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  :root { --acc:#f5a524; --glow:rgba(255,190,120,.35); --split:50%; }
+  html, body { height:100%; }
+  body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:12.5px; background:#0b0d11; color:#e6e9ee; -webkit-font-smoothing:antialiased; }
+  * { scrollbar-width:thin; scrollbar-color:#262d37 transparent; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-thumb { background:#262d37; border-radius:8px; border:2px solid transparent; background-clip:padding-box; }
+  button { cursor:pointer; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--acc); outline-offset:1px; }
+  svg.lucide { width:15px; height:15px; stroke-width:1.9; flex-shrink:0; }
+
+  /* ---------- panels ---------- */
+  .sec { border-bottom:1px solid rgba(255,255,255,.05); }
+  .sec > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px; padding:11px 14px; font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:#98a1ae; user-select:none; }
+  .sec > summary::-webkit-details-marker { display:none; }
+  .sec > summary:hover { color:#e6e9ee; }
+  .sec > summary svg.lucide { width:14px; height:14px; }
+  .sec > summary .chev { margin-left:auto; transition:transform .2s; opacity:.6; }
+  .sec[open] > summary .chev { transform:rotate(90deg); }
+  .sec-body { padding:0 14px 15px; display:flex; flex-direction:column; gap:11px; }
+  .subhead { font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:#6b7584; font-weight:600; padding-top:4px; border-top:1px dashed rgba(255,255,255,.06); margin-top:2px; padding-top:10px; }
+  .ctl-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:3px; }
+  .ctl-label { color:#c5cbd3; white-space:nowrap; }
+  .ctl-val { display:flex; align-items:center; }
+  .num { width:60px; background:#0d1014; border:1px solid #232a33; border-radius:6px; padding:2px 6px; text-align:right; font-family:"JetBrains Mono",ui-monospace,monospace; font-size:11px; color:#e6e9ee; -moz-appearance:textfield; }
+  .num::-webkit-inner-spin-button, .num::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  .num:focus { outline:none; border-color:var(--acc); }
+  .unit { color:#6b7584; font-size:10.5px; margin-left:5px; font-family:"JetBrains Mono",monospace; min-width:16px; }
+  .hint { font-size:11px; color:#7f8896; line-height:1.45; }
+  .hint b { color:#c5cbd3; font-weight:600; }
+
+  input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:16px; background:transparent; cursor:pointer; --p:50%; margin:0; display:block; }
+  input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:4px; background:linear-gradient(90deg,var(--acc) var(--p),#2a313c var(--p)); }
+  input[type=range]::-moz-range-track { height:4px; border-radius:4px; background:#2a313c; }
+  input[type=range]::-moz-range-progress { height:4px; border-radius:4px; background:var(--acc); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:#fff; margin-top:-5px; box-shadow:0 0 0 3px rgba(245,165,36,.22),0 1px 3px rgba(0,0,0,.6); transition:box-shadow .15s; }
+  input[type=range]::-moz-range-thumb { width:14px; height:14px; border:0; border-radius:50%; background:#fff; box-shadow:0 0 0 3px rgba(245,165,36,.22),0 1px 3px rgba(0,0,0,.6); }
+  input[type=range]:hover::-webkit-slider-thumb { box-shadow:0 0 0 5px rgba(245,165,36,.3),0 1px 3px rgba(0,0,0,.6); }
+  input[type=range].kelvin::-webkit-slider-runnable-track { background:linear-gradient(90deg,#ff8a1c,#ffb36b,#ffd9b0,#fff4ea,#e8eeff,#c7d6ff); }
+  input[type=range].kelvin::-moz-range-track { background:linear-gradient(90deg,#ff8a1c,#ffb36b,#ffd9b0,#fff4ea,#e8eeff,#c7d6ff); }
+  input[type=range].kelvin::-moz-range-progress { background:transparent; }
+
+  .sel-i { width:100%; background:#0d1014 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2398a1ae' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center; border:1px solid #232a33; border-radius:8px; padding:6px 26px 6px 9px; color:#e6e9ee; font-size:12px; -webkit-appearance:none; appearance:none; }
+  .sel-i:hover { border-color:#323b47; }
+  .sel-i option { background:#14181e; }
+  .txt-i { width:100%; background:#0d1014; border:1px solid #232a33; border-radius:8px; padding:6px 9px; color:#e6e9ee; font-size:12px; }
+  .txt-i:focus { outline:none; border-color:var(--acc); }
+
+  .seg { display:flex; background:#0d1014; border:1px solid #232a33; border-radius:9px; padding:2px; gap:2px; }
+  .seg button { flex:1; padding:5px 4px; border-radius:7px; color:#8f98a6; font-size:11.5px; font-weight:500; display:flex; align-items:center; justify-content:center; gap:5px; white-space:nowrap; transition:background .15s,color .15s; }
+  .seg button:hover { color:#e6e9ee; }
+  .seg button.on { background:#262d37; color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.07); }
+  .seg button.on svg { color:var(--acc); }
+  .seg button svg.lucide { width:13px; height:13px; }
+
+  .tgl { -webkit-appearance:none; appearance:none; width:30px; height:17px; border-radius:99px; background:#2a313c; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0; margin:0; }
+  .tgl::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#c5cbd3; transition:left .2s, background .2s; }
+  .tgl:checked { background:var(--acc); }
+  .tgl:checked::after { left:15px; background:#fff; }
+  .tgl-row { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#c5cbd3; cursor:pointer; }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:6px 10px; border-radius:8px; background:#191e25; border:1px solid #262d37; color:#e6e9ee; font-weight:500; font-size:12px; transition:background .15s,border-color .15s; white-space:nowrap; }
+  .btn:hover { background:#212731; border-color:#343d4a; }
+  .btn-acc { background:var(--acc); color:#1d1404; border-color:transparent; font-weight:600; }
+  .btn-acc:hover { background:#ffb946; border-color:transparent; }
+  .btn-sm { padding:4px 8px; font-size:11px; border-radius:7px; }
+  .btn-sm svg.lucide { width:13px; height:13px; }
+  .ibtn { width:26px; height:26px; display:inline-grid; place-items:center; border-radius:7px; color:#8f98a6; transition:background .15s,color .15s; }
+  .ibtn:hover { background:#262d37; color:#fff; }
+  .ibtn.on { color:var(--acc); }
+
+  /* ---------- header ---------- */
+  .logo { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:linear-gradient(135deg,#ffcf70,#f5a524 45%,#e0612b); box-shadow:0 0 18px rgba(245,165,36,.35); color:#1d1404; }
+  .logo svg.lucide { width:17px; height:17px; stroke-width:2.2; }
+  .tab { display:flex; align-items:center; gap:6px; padding:6px 11px; border-radius:8px; color:#8f98a6; font-weight:500; transition:.15s; white-space:nowrap; }
+  .tab:hover { color:#e6e9ee; background:#171b21; }
+  .tab.on { color:#fff; background:#20262e; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+  .tab.on svg { color:var(--acc); }
+  .lb-toggle { position:relative; display:flex; white-space:nowrap; flex-shrink:0; align-items:center; gap:9px; height:34px; padding:0 14px 0 4px; border-radius:99px; background:#171b21; border:1px solid #2a313c; color:#98a1ae; font-weight:600; transition:all .35s; }
+  .lb-toggle .knob { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; background:#262d37; color:#6b7584; transition:all .35s; }
+  .lb-toggle.on { color:#fff; border-color:rgba(245,165,36,.55); background:linear-gradient(90deg,rgba(245,165,36,.18),rgba(245,165,36,.04)); box-shadow:0 0 22px rgba(245,165,36,.25); }
+  .lb-toggle.on .knob { background:radial-gradient(circle at 40% 35%,#fff6d8,#ffc24a 55%,#f08a1c); color:#3a2300; box-shadow:0 0 14px rgba(255,190,80,.9); }
+  .kbd { font-family:"JetBrains Mono",monospace; font-size:10px; padding:1px 5px; border-radius:4px; background:#232a33; color:#98a1ae; border:1px solid #2f3743; }
+
+  /* ---------- layer stack list ---------- */
+  .stack-cap { display:flex; align-items:center; gap:8px; font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:#5b6472; font-weight:600; padding:2px 2px; }
+  .stack-cap::after { content:''; flex:1; height:1px; background:linear-gradient(90deg,rgba(255,255,255,.08),transparent); }
+  .lcard { position:relative; display:flex; align-items:center; gap:9px; padding:7px 6px 7px 12px; border-radius:10px; background:#13171c; border:1px solid #1f252d; cursor:pointer; transition:border-color .15s, background .15s, transform .15s; }
+  .lcard:hover { border-color:#2c343f; background:#161a20; }
+  .lcard.sel { border-color:rgba(245,165,36,.65); background:linear-gradient(90deg,rgba(245,165,36,.09),#161a20 60%); box-shadow:0 0 0 3px rgba(245,165,36,.08); }
+  .lcard.off .lthumb, .lcard.off .lmeta { opacity:.4; }
+  .lcard.drop { border-color:var(--acc); border-style:dashed; background:rgba(245,165,36,.08); }
+  .lcard .bar { position:absolute; left:4px; top:8px; bottom:8px; width:3px; border-radius:3px; background:var(--c); box-shadow:0 0 8px var(--c); }
+  .lnum { width:20px; height:20px; border-radius:6px; display:grid; place-items:center; font-size:10.5px; font-weight:700; background:#20262e; color:#c5cbd3; font-family:"JetBrains Mono",monospace; flex-shrink:0; }
+  .lcard.sel .lnum { background:var(--acc); color:#1d1404; }
+  .lthumb { width:54px; height:36px; border-radius:6px; overflow:hidden; flex-shrink:0; background:#0b0d11; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+  .lthumb canvas { width:100%; height:100%; display:block; }
+  .lmeta { flex:1; min-width:0; }
+  .lname { font-weight:600; color:#e6e9ee; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lsub { font-size:10.5px; color:#7f8896; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .lact { display:flex; align-items:center; gap:0; }
+  .lact .ibtn { width:22px; height:22px; }
+  .lact .ibtn svg.lucide { width:13px; height:13px; }
+  .lact .updn { display:flex; flex-direction:column; }
+  .lact .hov { display:none; }
+  .lcard:hover .lact .hov, .lcard.sel .lact .hov, .lact .hov.on { display:inline-grid; }
+  .lcard:hover .lact .updn.hov, .lcard.sel .lact .updn.hov { display:flex; }
+  .lact .updn .ibtn { height:13px; width:18px; border-radius:4px; }
+  .lact .updn svg.lucide { width:12px; height:12px; }
+
+  /* ---------- viewport ---------- */
+  #viewport { background:radial-gradient(ellipse at 50% 40%,#171b22 0%,#0e1014 70%); transition:background .6s; }
+  body.lit #viewport { background:radial-gradient(ellipse at 50% 45%,#0f1013 0%,#060709 75%); }
+  #viewport.dropping::after { content:'Drop image onto the selected layer'; position:absolute; inset:14px; border:2px dashed var(--acc); border-radius:16px; display:grid; place-items:center; font-size:15px; font-weight:600; color:var(--acc); background:rgba(245,165,36,.06); pointer-events:none; z-index:40; }
+  .stage-wrap { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+  .frame { position:relative; border-radius:8px; transition:box-shadow .6s; box-shadow:0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.04); }
+  body.lit .frame { box-shadow:0 30px 90px rgba(0,0,0,.7), 0 0 120px 10px var(--glow), 0 0 0 1px rgba(255,255,255,.04); }
+  .frame-none { padding:0 !important; background:transparent; }
+  .frame-black { background:linear-gradient(145deg,#1d1f23,#0b0c0e); box-shadow:inset 0 1px 0 rgba(255,255,255,.06); }
+  .frame-white { background:linear-gradient(145deg,#f3f1ec,#d8d4cb); }
+  .frame-walnut { background:linear-gradient(135deg,#6b452a 0%,#4a2d19 35%,#5d3b22 60%,#3d2513 100%); }
+  .frame-oak { background:linear-gradient(135deg,#c79b66 0%,#a87b49 40%,#bf9461 70%,#956a3c 100%); }
+  .frame::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08), inset 0 -3px 8px rgba(0,0,0,.35); }
+  #stage { position:relative; overflow:hidden; border-radius:2px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.4); touch-action:none; }
+  #stage canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #stage.checker { background:conic-gradient(#2a2f37 25%,#1e2229 0 50%,#2a2f37 0 75%,#1e2229 0) 0 0/16px 16px; }
+  #cvLight { transition:opacity .55s ease; }
+  #cvBloom { mix-blend-mode:screen; pointer-events:none; transition:opacity .55s ease; }
+  .print-lines { position:absolute; inset:0; pointer-events:none; mix-blend-mode:soft-light; opacity:0; transition:opacity .55s; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.16) 0 1px,rgba(0,0,0,.12) 1px 2px,transparent 2px 4px); }
+  .room-shade { position:absolute; inset:0; pointer-events:none; background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.35)); opacity:0; transition:opacity .55s; }
+  body.lit .room-shade { opacity:1; }
+  .flick { animation:flick .7s steps(1,end) 1; }
+  @keyframes flick { 0%{opacity:.0} 8%{opacity:.85} 14%{opacity:.15} 22%{opacity:.9} 30%{opacity:.4} 40%{opacity:1} 100%{opacity:1} }
+  .split { position:absolute; top:0; bottom:0; left:var(--split); width:2px; margin-left:-1px; background:rgba(255,255,255,.9); box-shadow:0 0 12px rgba(0,0,0,.6); cursor:ew-resize; z-index:5; }
+  .split .h { position:absolute; top:50%; left:50%; width:28px; height:28px; margin:-14px 0 0 -14px; border-radius:50%; background:#fff; color:#111; display:grid; place-items:center; box-shadow:0 2px 10px rgba(0,0,0,.5); }
+  .split .h svg.lucide { width:14px; height:14px; }
+  .split-lbl { position:absolute; top:10px; font-size:9.5px; font-weight:700; letter-spacing:.12em; padding:3px 7px; border-radius:5px; background:rgba(0,0,0,.6); color:#fff; backdrop-filter:blur(4px); pointer-events:none; z-index:6; }
+  .glass { background:rgba(16,19,24,.78); border:1px solid rgba(255,255,255,.07); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-radius:11px; box-shadow:0 8px 28px rgba(0,0,0,.35); }
+  .badge-dot { width:7px; height:7px; border-radius:50%; background:#6b7584; }
+  body.lit .badge-dot { background:#ffc24a; box-shadow:0 0 8px #ffb02e; }
+
+  /* ---------- 3D ---------- */
+  #view3d { perspective:1500px; perspective-origin:50% 45%; cursor:grab; touch-action:none; }
+  #view3d:active { cursor:grabbing; }
+  .stack3d { position:absolute; left:50%; top:50%; transform-style:preserve-3d; width:0; height:0; }
+  .plate3d { position:absolute; left:0; top:0; transform-style:preserve-3d; border-radius:3px; transition:transform .35s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+  .plate3d .face { position:absolute; inset:0; border-radius:3px; background:rgba(255,255,255,.035); box-shadow:inset 0 0 0 1px rgba(255,255,255,.16); overflow:hidden; }
+  .plate3d canvas { width:100%; height:100%; display:block; }
+  .plate3d.sel .face { box-shadow:inset 0 0 0 2px var(--acc), 0 0 24px rgba(245,165,36,.35); }
+  .plate3d .ptag { position:absolute; right:calc(100% + 14px); top:0; white-space:nowrap; font-size:11px; padding:4px 8px; border-radius:7px; background:rgba(14,16,20,.85); border:1px solid rgba(255,255,255,.08); color:#e6e9ee; display:flex; align-items:center; gap:6px; pointer-events:auto; cursor:pointer; }
+  .plate3d .ptag i { width:9px; height:9px; border-radius:3px; display:inline-block; background:var(--c); }
+  .plate3d.sel .ptag { border-color:rgba(245,165,36,.6); }
+  .led3d { position:absolute; left:0; top:0; border-radius:4px; background:#1a1d22; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); transition:background .5s, box-shadow .5s; }
+  body.lit .led3d { background:radial-gradient(ellipse at center,#fff 0%,var(--ledc) 60%,var(--ledc2) 100%); box-shadow:0 0 90px 25px var(--ledglow); }
+
+  /* ---------- swatches ---------- */
+  .swatches { display:grid; grid-template-columns:repeat(8,1fr); gap:6px; }
+  .swb { aspect-ratio:1; border-radius:7px; background:var(--c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.14), inset 0 -6px 10px rgba(0,0,0,.22); transition:transform .12s; position:relative; }
+  .swb:hover { transform:scale(1.1); }
+  .swb.on { box-shadow:0 0 0 2px #0b0d11, 0 0 0 4px var(--acc); }
+  .cpick { -webkit-appearance:none; appearance:none; width:34px; height:30px; border:1px solid #2a313c; border-radius:8px; background:none; padding:2px; cursor:pointer; }
+  .cpick::-webkit-color-swatch-wrapper { padding:0; }
+  .cpick::-webkit-color-swatch { border:0; border-radius:5px; }
+  .cpick::-moz-color-swatch { border:0; border-radius:5px; }
+  .src-box { position:relative; border-radius:10px; overflow:hidden; background:conic-gradient(#20252c 25%,#191d23 0 50%,#20252c 0 75%,#191d23 0) 0 0/12px 12px; border:1px dashed #2f3743; min-height:96px; display:grid; place-items:center; color:#6b7584; text-align:center; }
+  .src-box canvas { max-width:100%; max-height:130px; display:block; }
+  .src-box.drop { border-color:var(--acc); }
+  .histo { width:100%; height:44px; border-radius:7px; background:#0d1014; border:1px solid #1f252d; display:block; }
+  .tbar { display:flex; gap:1px; height:10px; border-radius:3px; overflow:hidden; }
+  .tbar span { flex:1; }
+
+  /* ---------- spec sheet ---------- */
+  .spec-doc { max-width:1120px; margin:0 auto; padding:28px 28px 60px; }
+  .spec-card { background:#11151a; border:1px solid #1f252d; border-radius:14px; }
+  .spec-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .spec-table th { text-align:left; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#7f8896; font-weight:600; padding:10px 10px; border-bottom:1px solid #232a33; white-space:nowrap; }
+  .spec-table td { padding:11px 10px; border-bottom:1px solid #1b2027; vertical-align:top; }
+  .spec-table tr:last-child td { border-bottom:0; }
+  .spec-table .mono { font-family:"JetBrains Mono",monospace; font-size:11.5px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:2px 8px 2px 3px; border-radius:99px; background:#1a1f26; border:1px solid #262d37; font-size:11.5px; white-space:nowrap; }
+  .chip i { width:14px; height:14px; border-radius:50%; display:inline-block; background:var(--c); box-shadow:inset 0 0 0 1px rgba(255,255,255,.2); }
+  .kpi { padding:14px 16px; }
+  .kpi .v { font-size:20px; font-weight:700; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+  .kpi .l { font-size:10.5px; color:#7f8896; text-transform:uppercase; letter-spacing:.08em; font-weight:600; }
+
+  #toasts { position:fixed; bottom:40px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; gap:8px; z-index:100; align-items:center; pointer-events:none; }
+  .toast { padding:9px 14px; border-radius:10px; background:#1d232b; border:1px solid #2f3743; color:#e6e9ee; box-shadow:0 10px 30px rgba(0,0,0,.45); font-weight:500; animation:tin .25s ease; display:flex; gap:8px; align-items:center; }
+  .toast svg.lucide { color:var(--acc); }
+  @keyframes tin { from { opacity:0; transform:translateY(8px); } }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(3px); z-index:90; display:grid; place-items:center; padding:16px; }
+
+  @media (max-width:639px) { .help-btn { display:none; } }
+  @media (max-width:1023px) {
+    #app { height:auto !important; min-height:100vh; }
+    body { overflow:auto !important; }
+    #viewport { height:64vh; min-height:380px; }
+    #viewSpec { position:relative !important; }
+  }
+
+  @media print {
+    @page { margin:12mm; }
+    body { background:#fff !important; color:#111 !important; overflow:visible !important; font-size:11px; }
+    #app { height:auto !important; display:block !important; }
+    header, #left, #right, footer, #view2d, #view3d, .no-print, #overlay2d, #toasts { display:none !important; }
+    #main, #viewport { display:block !important; overflow:visible !important; height:auto !important; background:#fff !important; position:static !important; }
+    #viewSpec { display:block !important; position:static !important; overflow:visible !important; background:#fff !important; }
+    .spec-doc { padding:0; max-width:none; }
+    .spec-card { background:#fff !important; border-color:#ccc !important; break-inside:avoid; }
+    .spec-table th { color:#555 !important; border-color:#bbb !important; }
+    .spec-table td { border-color:#ddd !important; }
+    .chip { background:#fff !important; border-color:#ccc !important; color:#111 !important; }
+    .spec-doc * { color:#111 !important; }
+    .spec-doc .muted { color:#555 !important; }
+    .spec-doc .lnum { background:#eee !important; box-shadow:inset 0 0 0 1px #ccc; }
+  }
+</style>
+</head>
+<body class="h-full overflow-hidden">
+<div id="app" class="h-screen flex flex-col">
+
+  <!-- ================= HEADER ================= -->
+  <header class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 border-b border-white/5 bg-ink-900/90 backdrop-blur z-20">
+    <div class="flex items-center gap-2.5 pr-1">
+      <div class="logo"><i data-lucide="layers-3"></i></div>
+      <div class="leading-tight">
+        <div class="font-bold text-[13.5px] tracking-tight">LumenStack <span class="text-accent">Studio</span></div>
+        <div class="text-[10px] text-ink-400 tracking-wide">5-layer lightbox designer</div>
+      </div>
+    </div>
+    <div class="h-6 w-px bg-white/10 hidden md:block"></div>
+    <input id="projName" class="bg-transparent border border-transparent hover:border-ink-700 focus:border-accent rounded-md px-2 py-1 text-[13px] font-medium text-ink-100 w-44 outline-none" data-k="S.project" spellcheck="false" title="Project name">
+
+    <nav class="flex items-center gap-1 mx-auto order-last lg:order-none w-full lg:w-auto justify-start sm:justify-center overflow-x-auto" id="tabs">
+      <button class="tab" data-view="preview"><i data-lucide="image"></i>Preview</button>
+      <button class="tab" data-view="3d"><i data-lucide="box"></i>3D Stack</button>
+      <button class="tab" data-view="height"><i data-lucide="mountain"></i>Heightmap</button>
+      <button class="tab" data-view="spec"><i data-lucide="clipboard-list"></i>Spec Sheet</button>
+    </nav>
+
+    <div class="flex items-center gap-2 ml-auto lg:ml-0">
+      <button id="lbToggle" class="lb-toggle" title="Light Box Mode — simulate the LED behind Layer 1 (L)">
+        <span class="knob"><i data-lucide="lightbulb"></i></span><span>Light Box</span>
+      </button>
+      <button id="cmpToggle" class="ibtn" title="Compare front-lit vs backlit (C)"><i data-lucide="columns-2"></i></button>
+      <div class="h-6 w-px bg-white/10"></div>
+      <button class="ibtn" data-act="new" title="New blank project"><i data-lucide="file-plus-2"></i></button>
+      <button class="ibtn" data-act="demo" title="Load demo scene"><i data-lucide="sparkles"></i></button>
+      <button class="ibtn" data-act="open" title="Open project (.json)"><i data-lucide="folder-open"></i></button>
+      <button class="ibtn" data-act="save" title="Save project with images (.json)"><i data-lucide="save"></i></button>
+      <button class="btn btn-acc" data-act="zip" title="Download heightmaps, colour slices, previews and spec as a ZIP"><i data-lucide="package"></i><span class="hidden sm:inline">Export</span></button>
+      <button class="ibtn help-btn" data-act="help" title="Shortcuts (?)"><i data-lucide="keyboard"></i></button>
+    </div>
+  </header>
+
+  <!-- ================= BODY ================= -->
+  <div id="main" class="flex-1 min-h-0 flex flex-col lg:flex-row">
+
+    <!-- LEFT: layers + light + plate -->
+    <aside id="left" class="lg:w-[292px] shrink-0 border-r border-white/5 bg-ink-900/60 overflow-y-auto order-2 lg:order-none">
+      <details class="sec" open>
+        <summary><i data-lucide="layers"></i>Layer Stack<span class="ml-auto normal-case tracking-normal text-[10.5px] text-ink-500 font-normal">drop images on a layer</span></summary>
+        <div class="sec-body" style="gap:6px" id="layerList"></div>
+      </details>
+      <details class="sec" open>
+        <summary><i data-lucide="sun"></i>Light Source<i data-lucide="chevron-right" class="chev"></i></summary>
+        <div class="sec-body" id="lightPanel"></div>
+      </details>
+      <details class="sec">
+        <summary><i data-lucide="ruler"></i>Plate &amp; Stack<i data-lucide="chevron-right" class="chev"></i></summary>
+        <div class="sec-body" id="platePanel"></div>
+      </details>
+    </aside>
+
+    <!-- CENTER -->
+    <main id="viewport" class="flex-1 min-w-0 relative overflow-hidden order-1 lg:order-none">
+      <!-- 2D views -->
+      <div id="view2d" class="absolute inset-0">
+        <div class="stage-wrap" id="stageWrap">
+          <div class="frame" id="frame">
+            <div id="stage">
+              <canvas id="cvDesign"></canvas>
+              <canvas id="cvLight"></canvas>
+              <canvas id="cvBloom"></canvas>
+              <canvas id="cvHeight" style="display:none"></canvas>
+              <div class="print-lines" id="printLines"></div>
+              <div class="room-shade"></div>
+              <div class="split" id="split" style="display:none"><div class="h"><i data-lucide="move-horizontal"></i></div></div>
+              <div class="split-lbl" id="lblL" style="display:none;left:10px">FRONT-LIT</div>
+              <div class="split-lbl" id="lblR" style="display:none;right:10px">BACKLIT</div>
+            </div>
+          </div>
+        </div>
+        <div id="overlay2d">
+          <div class="absolute top-3 left-3 glass px-3 py-2 flex items-center gap-2.5 text-[11px]" id="badge">
+            <span class="badge-dot"></span><span id="badgeText" class="font-medium tracking-wide"></span>
+          </div>
+          <div class="absolute top-3 right-3 glass px-3 py-2 text-[11px] hidden" id="hLegend"></div>
+          <div class="absolute bottom-3 left-1/2 -translate-x-1/2 glass p-1 flex items-center gap-1">
+            <div class="seg" style="border:0;background:transparent" id="toolSeg">
+              <button data-tool="pan" title="Pan view (drag) — or hold Space"><i data-lucide="hand"></i></button>
+              <button data-tool="move" title="Move selected layer image (V)"><i data-lucide="move"></i></button>
+            </div>
+            <div class="w-px h-5 bg-white/10 mx-0.5"></div>
+            <button class="ibtn" data-act="zoom-out" title="Zoom out"><i data-lucide="zoom-out"></i></button>
+            <button class="text-[11px] font-mono w-12 text-ink-300 hover:text-white" data-act="zoom-fit" id="zoomLbl" title="Fit (F)">100%</button>
+            <button class="ibtn" data-act="zoom-in" title="Zoom in"><i data-lucide="zoom-in"></i></button>
+            <div class="w-px h-5 bg-white/10 mx-0.5"></div>
+            <button class="ibtn" data-act="png" title="Download current preview PNG"><i data-lucide="camera"></i></button>
+          </div>
+          <div class="absolute bottom-3 right-3 glass px-3 py-2 text-[11px] font-mono min-w-[176px] hidden" id="hud"></div>
+        </div>
+      </div>
+
+      <!-- 3D view -->
+      <div id="view3d" class="absolute inset-0 hidden">
+        <div class="stack3d" id="stack3d"></div>
+        <div class="absolute top-3 left-3 glass px-3 py-2 text-[11px] text-ink-300 max-w-[260px] leading-relaxed">
+          <div class="font-semibold text-ink-100 mb-0.5 flex items-center gap-1.5"><i data-lucide="rotate-3d"></i>Exploded stack</div>
+          Drag to orbit · wheel to zoom · click a plate to select it. LED is behind Layer 1.
+        </div>
+        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 glass px-3 py-2 flex items-center gap-3 text-[11px]">
+          <span class="text-ink-300">Explode</span>
+          <input type="range" data-k="S.view.explode" min="0" max="3" step="0.01" style="width:140px">
+          <label class="tgl-row gap-2"><span class="text-ink-300">Spin</span><input type="checkbox" class="tgl" data-k="S.view.spin"></label>
+          <button class="btn btn-sm" data-act="reset3d"><i data-lucide="rotate-ccw"></i>Reset</button>
+        </div>
+      </div>
+
+      <!-- Spec view -->
+      <div id="viewSpec" class="absolute inset-0 overflow-y-auto hidden"></div>
+    </main>
+
+    <!-- RIGHT: properties -->
+    <aside id="right" class="lg:w-[324px] shrink-0 border-l border-white/5 bg-ink-900/60 overflow-y-auto order-3 lg:order-none">
+      <div id="props"></div>
+    </aside>
+  </div>
+
+  <!-- ================= STATUS ================= -->
+  <footer class="h-7 shrink-0 border-t border-white/5 bg-ink-900 flex items-center gap-4 px-3 text-[10.5px] text-ink-400 font-mono overflow-hidden whitespace-nowrap" id="status"></footer>
+</div>
+
+<input type="file" id="fileImg" accept="image/*" class="hidden">
+<input type="file" id="fileProj" accept=".json,application/json" class="hidden">
+<div id="toasts"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   LumenStack Studio — 5-layer lightbox designer
+   Single-file app: image → thickness mapping, Beer–Lambert backlight
+   simulation, CSS post-filters, heightmap/STL/ZIP export, spec sheet.
+   ===================================================================== */
+
+// ---------------------------------------------------------------- utils
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a || 1e-6), 0, 1); return t * t * (3 - 2 * t); };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const slug = s => (String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'layer');
+const tick = () => new Promise(r => setTimeout(r, 30));
+const fmt = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d);
+function hexToRgb(h) {
+  h = String(h || '#000').replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16) || 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const rgbToHex = (r, g, b) => '#' + [r, g, b].map(v => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('').toUpperCase();
+const S2L = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const v = i / 255; S2L[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+const L2S = new Uint8ClampedArray(4097);
+for (let i = 0; i <= 4096; i++) { const v = i / 4096; L2S[i] = Math.round(255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); }
+const l2s = v => L2S[(v <= 0 ? 0 : v >= 1 ? 4096 : (v * 4096) | 0)];
+// tone curve 1 - e^-x, tabulated on [0, 12]
+const TONE = new Float32Array(6145);
+for (let i = 0; i <= 6144; i++) TONE[i] = 1 - Math.exp(-i / 512);
+const tone = x => TONE[x >= 12 ? 6144 : (x * 512) | 0];
+const lumLin = rgb => 0.2126 * S2L[rgb[0]] + 0.7152 * S2L[rgb[1]] + 0.0722 * S2L[rgb[2]];
+function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function icons() { try { window.lucide && lucide.createIcons(); } catch (e) {} }
+function toast(msg, icon = 'check') {
+  const t = document.createElement('div'); t.className = 'toast';
+  t.innerHTML = `<i data-lucide="${icon}"></i><span>${esc(msg)}</span>`;
+  $('#toasts').appendChild(t); icons();
+  setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, 2600);
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+const canvasPNG = c => new Promise(res => c.toBlob(b => b.arrayBuffer().then(a => res(new Uint8Array(a))), 'image/png'));
+
+// ------------------------------------------------------------ constants
+const FILAMENTS = [
+  { id:'white',   name:'White',   hex:'#F4F4F0', td:3.0 },
+  { id:'natural', name:'Natural', hex:'#E9E3D3', td:9.0 },
+  { id:'grey',    name:'Grey',    hex:'#8A8F96', td:1.3 },
+  { id:'black',   name:'Black',   hex:'#141414', td:0.6 },
+  { id:'red',     name:'Red',     hex:'#D32F2F', td:2.4 },
+  { id:'orange',  name:'Orange',  hex:'#F57C1F', td:3.0 },
+  { id:'yellow',  name:'Yellow',  hex:'#F9D21C', td:4.6 },
+  { id:'lime',    name:'Lime',    hex:'#9BD43B', td:3.6 },
+  { id:'green',   name:'Green',   hex:'#2E9D4C', td:2.4 },
+  { id:'cyan',    name:'Cyan',    hex:'#00A6D6', td:3.4 },
+  { id:'blue',    name:'Blue',    hex:'#1E4FD8', td:1.8 },
+  { id:'purple',  name:'Purple',  hex:'#6B2FA3', td:1.6 },
+  { id:'magenta', name:'Magenta', hex:'#D6268E', td:2.6 },
+  { id:'pink',    name:'Pink',    hex:'#F4A3C4', td:4.2 },
+  { id:'brown',   name:'Brown',   hex:'#6E4426', td:1.0 },
+  { id:'beige',   name:'Beige',   hex:'#E8C39E', td:3.8 },
+];
+const TYPES = {
+  'pla-basic':  { label:'PLA Basic',        density:1.24 },
+  'pla-matte':  { label:'PLA Matte',        density:1.32 },
+  'pla-trans':  { label:'PLA Translucent',  density:1.24 },
+  'petg':       { label:'PETG',             density:1.27 },
+  'petg-trans': { label:'PETG Translucent', density:1.27 },
+  'pla-silk':   { label:'PLA Silk',         density:1.24 },
+};
+const BLENDS = ['normal','multiply','screen','overlay','darken','lighten','color-dodge','color-burn','hard-light','soft-light','difference','exclusion','hue','saturation','color','luminosity'];
+const MODES = { solid:'Solid', mask:'Silhouette', depth:'Depth', edges:'Lines' };
+const LAYER_HEIGHTS = [0.04, 0.06, 0.08, 0.1, 0.12, 0.16, 0.2, 0.24, 0.28];
+const ROLES = ['Back plate · diffuser (LED side)', 'Layer 2 · background', 'Layer 3 · midground', 'Layer 4 · foreground', 'Front plate · detail (viewer side)'];
+const PREVIEW_LONG = 640;
+// optical model: absorption per mm = (K_S + K_A·(1 − colour_lin)) / TD
+const K_S = 1.5, K_A = 6.0, K_OPQ = 2.3;
+
+// ---------------------------------------------------------------- state
+function makeLayer(i, o = {}) {
+  const f = FILAMENTS[[0, 9, 12, 10, 3][i]];
+  return Object.assign({
+    name: ['Diffuser', 'Background', 'Midground', 'Foreground', 'Details'][i],
+    visible: true, solo: false, src: null,
+    fit: 'cover', scale: 1, ox: 0, oy: 0, rot: 0, channel: 'luma',
+    mode: i === 0 ? 'solid' : 'depth', invert: false, bright: 0, contrast: 0, gamma: 1,
+    threshold: 0.5, soft: 0.04, blur: 0, lineW: 0.6,
+    preset: f.id, color: f.hex, td: f.td, type: 'auto',
+    minT: 0, maxT: i === 0 ? 0.6 : 1.2, layerH: i === 0 ? 0.2 : 0.12,
+    opacity: 1, blend: 'multiply'
+  }, o);
+}
+const DEFAULT_STATE = () => ({
+  project: 'Sunset Peaks',
+  plate: { w: 150, h: 100, gap: 4, rim: 0, diffusion: 0.1, frame: 'walnut', bg: 'paper' },
+  light: { on: true, model: 'physical', colorMode: 'kelvin', kelvin: 3800, custom: '#FFFFFF', intensity: 2.6,
+           layout: 'panel', uniformity: 0.85, ambient: 0.04, bright: 1.05, contrast: 1.06, saturate: 1.12, bloom: 0.38, texture: true },
+  view: { mode: 'preview', compare: false, split: 0.5, zoom: 1, panX: 0, panY: 0, tool: 'pan', hmap: 'turbo', explode: 1, rx: -16, ry: -36, z3: 1, spin: false },
+  exp: { pxmm: 8, stlRes: 0.4 },
+  sel: 4,
+  layers: [0, 1, 2, 3, 4].map(i => makeLayer(i))
+});
+let state = DEFAULT_STATE();
+const selL = () => state.layers[state.sel];
+
+// per-layer runtime (images, caches) — keyed by layer object so reordering keeps it
+const RT = new WeakMap();
+let IMG_ID = 0;
+const rt = L => { let r = RT.get(L); if (!r) { r = { img: null, ver: 0, imgId: 0 }; RT.set(L, r); } return r; };
+
+// preview dims
+const P = { W: 0, H: 0, N: 0, pxmm: 1 };
+let PAT = null;          // LED pattern
+let designPix = null;    // front-lit pixels for ambient
+
+// --------------------------------------------------------------- canvases
+const cvD = $('#cvDesign'), ctxD = cvD.getContext('2d', { willReadFrequently: true });
+const cvL = $('#cvLight'),  ctxL = cvL.getContext('2d');
+const cvB = $('#cvBloom'),  ctxB = cvB.getContext('2d');
+const cvH = $('#cvHeight'), ctxH = cvH.getContext('2d');
+let lightImg = null;
+const scratch = mkCanvas(4, 4), sctx = scratch.getContext('2d', { willReadFrequently: true });
+
+function updatePreviewDims() {
+  const { w, h } = state.plate;
+  if (w >= h) { P.W = PREVIEW_LONG; P.H = Math.max(16, Math.round(PREVIEW_LONG * h / w)); }
+  else { P.H = PREVIEW_LONG; P.W = Math.max(16, Math.round(PREVIEW_LONG * w / h)); }
+  P.N = P.W * P.H; P.pxmm = P.W / w;
+  for (const c of [cvD, cvL, cvH]) { c.width = P.W; c.height = P.H; }
+  cvB.width = Math.max(8, P.W >> 2); cvB.height = Math.max(8, P.H >> 2);
+  lightImg = ctxL.createImageData(P.W, P.H);
+  invalidateAll();
+  layoutStage();
+}
+
+// ------------------------------------------------------- image pipeline
+function sampleImage(L, W, H) {
+  const img = rt(L).img;
+  if (!img) return null;
+  scratch.width = W; scratch.height = H;
+  sctx.clearRect(0, 0, W, H);
+  const iw = img.naturalWidth || img.width || 1200, ih = img.naturalHeight || img.height || 800;
+  let sx, sy;
+  if (L.fit === 'stretch') { sx = W / iw; sy = H / ih; }
+  else { const s = L.fit === 'contain' ? Math.min(W / iw, H / ih) : Math.max(W / iw, H / ih); sx = sy = s; }
+  sctx.save();
+  sctx.imageSmoothingQuality = 'high';
+  sctx.translate(W / 2 + L.ox * W, H / 2 + L.oy * H);
+  sctx.rotate(L.rot * Math.PI / 180);
+  sctx.scale(sx * L.scale, sy * L.scale);
+  sctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+  sctx.restore();
+  return sctx.getImageData(0, 0, W, H).data;
+}
+function blur1(src, dst, W, H, r, horiz) {
+  const inv = 1 / (2 * r + 1);
+  if (horiz) {
+    for (let y = 0; y < H; y++) {
+      const o = y * W; let acc = 0;
+      for (let x = -r; x <= r; x++) acc += src[o + clamp(x, 0, W - 1)];
+      for (let x = 0; x < W; x++) {
+        dst[o + x] = acc * inv;
+        acc += src[o + Math.min(W - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
+      }
+    }
+  } else {
+    for (let x = 0; x < W; x++) {
+      let acc = 0;
+      for (let y = -r; y <= r; y++) acc += src[clamp(y, 0, H - 1) * W + x];
+      for (let y = 0; y < H; y++) {
+        dst[y * W + x] = acc * inv;
+        acc += src[Math.min(H - 1, y + r + 1) * W + x] - src[Math.max(0, y - r) * W + x];
+      }
+    }
+  }
+}
+function boxBlur(a, W, H, radius) {
+  const r = Math.round(radius / 1.6);
+  if (r < 1) return a;
+  const tmp = new Float32Array(a.length);
+  for (let p = 0; p < 2; p++) { blur1(a, tmp, W, H, r, true); blur1(tmp, a, W, H, r, false); }
+  return a;
+}
+
+/** Map a layer's image to a printable thickness field (mm), quantised to layer height. */
+function computeThickness(L, W, H, pxmm, cache) {
+  const N = W * H, solid = L.mode === 'solid';
+  const k1 = cache && [W, H, rt(L).imgId, L.mode === 'edges' ? 'e' + L.lineW : solid ? 's' : 'd', L.fit, L.scale, L.ox, L.oy, L.rot, L.channel, L.invert, L.bright, L.contrast, L.gamma, L.blur].join('|');
+  const k2 = cache && [k1, L.mode, L.threshold, L.soft, L.minT, L.maxT, L.layerH, state.plate.rim].join('|');
+  if (cache && cache.k2 === k2) return { thick: cache.thick, hist: cache.hist };
+  let m, hist;
+  if (cache && cache.k1 === k1) { m = cache.m; hist = cache.hist; }
+  else { ({ m, hist } = mapField(L, W, H, pxmm, solid)); if (cache) { cache.k1 = k1; cache.m = m; cache.hist = hist; } }
+  const out = thicknessFrom(L, m, W, H, pxmm);
+  if (cache) { cache.k2 = k2; cache.thick = out; }
+  return { thick: out, hist };
+}
+function mapField(L, W, H, pxmm, solid) {
+  const N = W * H, d = new Float32Array(N), hist = new Float32Array(64);
+  const data = solid ? null : sampleImage(L, W, H);
+  if (solid) d.fill(1);
+  else if (data) {
+    const c = L.contrast, cf = c >= 0 ? 1 + c * 4 : 1 + c;
+    const b = L.bright * 0.6, ig = 1 / Math.max(0.05, L.gamma), useG = Math.abs(L.gamma - 1) > 1e-3;
+    const alphaCh = L.channel === 'alpha', inv = L.invert && L.mode !== 'edges';
+    for (let i = 0, j = 0; i < N; i++, j += 4) {
+      const a = data[j + 3] / 255;
+      let v = alphaCh ? 1 - a : ((0.2126 * data[j] + 0.7152 * data[j + 1] + 0.0722 * data[j + 2]) / 255) * a + (1 - a);
+      v = (v - 0.5) * cf + 0.5 + b;
+      v = v < 0 ? 0 : v > 1 ? 1 : v;
+      if (useG) v = Math.pow(v, ig);
+      d[i] = inv ? v : 1 - v;
+    }
+  } else if (L.invert && L.mode !== 'edges') d.fill(1);
+
+  if (!solid && L.blur > 0) boxBlur(d, W, H, L.blur * pxmm);
+
+  let m = d;
+  if (L.mode === 'edges') {
+    m = new Float32Array(N);
+    const r = Math.max(1, Math.round(L.lineW * 0.5 * pxmm));
+    for (let y = 0; y < H; y++) {
+      const y0 = Math.max(0, y - r) * W, y1 = Math.min(H - 1, y + r) * W, yc = y * W;
+      for (let x = 0; x < W; x++) {
+        const x0 = Math.max(0, x - r), x1 = Math.min(W - 1, x + r);
+        const gx = (d[y0 + x1] + 2 * d[yc + x1] + d[y1 + x1]) - (d[y0 + x0] + 2 * d[yc + x0] + d[y1 + x0]);
+        const gy = (d[y1 + x0] + 2 * d[y1 + x] + d[y1 + x1]) - (d[y0 + x0] + 2 * d[y0 + x] + d[y0 + x1]);
+        let g = Math.sqrt(gx * gx + gy * gy) * 0.35;
+        g = g > 1 ? 1 : g;
+        m[yc + x] = L.invert ? 1 - g : g;
+      }
+    }
+  }
+  for (let i = 0; i < N; i += 3) hist[Math.min(63, (m[i] * 64) | 0)]++;
+  return { m, hist };
+}
+function thicknessFrom(L, m, W, H, pxmm) {
+  const N = W * H;
+  const lh = Math.max(0.01, L.layerH), lo = Math.max(0, L.minT), hi = Math.max(lo, L.maxT);
+  const th = L.threshold, s = Math.max(0.002, L.soft), thresh = L.mode === 'mask' || L.mode === 'edges';
+  const out = new Float32Array(N);
+  const e0 = th - s, inv2s = 1 / (2 * s), span = hi - lo, ilh = 1 / lh;
+  for (let i = 0; i < N; i++) {
+    let k = m[i];
+    if (thresh) { k = (k - e0) * inv2s; k = k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k); }
+    out[i] = (((lo + span * k) * ilh + 0.5) | 0) * lh;
+  }
+  const rim = state.plate.rim;
+  if (rim > 0) {
+    const rp = rim * pxmm, top = Math.round(hi / lh) * lh;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (x < rp || y < rp || x >= W - rp || y >= H - rp) { const i = y * W + x; if (out[i] < top) out[i] = top; }
+    }
+  }
+  return out;
+}
+
+/** absorption coefficients per mm for R,G,B */
+function absorb(L) {
+  const lin = hexToRgb(L.color).map(v => S2L[v]), td = Math.max(0.05, L.td);
+  return lin.map(v => (K_S + K_A * (1 - v)) / td);
+}
+function transLum(L, t) { const a = absorb(L); return 0.2126 * Math.exp(-a[0] * t) + 0.7152 * Math.exp(-a[1] * t) + 0.0722 * Math.exp(-a[2] * t); }
+
+function computeLayer(L) {
+  const r = rt(L), { W, H, N, pxmm } = P;
+  r.fc = r.fc || {};
+  const f = computeThickness(L, W, H, pxmm, r.fc);
+  r.thick = f.thick; r.hist = f.hist; r.ver++;
+  const a = absorb(L), lh = Math.max(0.01, L.layerH), col = hexToRgb(L.color), kd = K_OPQ / Math.max(0.05, L.td);
+  // thickness is quantised → tabulate per step
+  const ks = new Uint16Array(N), ilh = 1 / lh; let kmax = 0;
+  for (let i = 0; i < N; i++) { const k = (f.thick[i] * ilh + 0.5) | 0; ks[i] = k; if (k > kmax) kmax = k; }
+  const tR = new Float32Array(kmax + 1), tG = new Float32Array(kmax + 1), tB = new Float32Array(kmax + 1), tO = new Uint8ClampedArray(kmax + 1);
+  for (let k = 0; k <= kmax; k++) { const t = k * lh; tR[k] = Math.exp(-a[0] * t); tG[k] = Math.exp(-a[1] * t); tB[k] = Math.exp(-a[2] * t); tO[k] = Math.round(255 * (1 - Math.exp(-kd * t))); }
+  if (!r.Tr || r.Tr.length !== N) { r.Tr = new Float32Array(N); r.Tg = new Float32Array(N); r.Tb = new Float32Array(N); }
+  if (!r.dc || r.dc.width !== W || r.dc.height !== H) { r.dc = mkCanvas(W, H); r.tc = mkCanvas(W, H); }
+  const dctx = r.dc.getContext('2d', { willReadFrequently: true }), tctx = r.tc.getContext('2d', { willReadFrequently: true });
+  const di = dctx.createImageData(W, H), ti = tctx.createImageData(W, H), dd = di.data, tdd = ti.data;
+  let sum = 0, cov = 0, mx = 0;
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const t = f.thick[i], k = ks[i];
+    r.Tr[i] = tR[k]; r.Tg[i] = tG[k]; r.Tb[i] = tB[k];
+    dd[j] = col[0]; dd[j + 1] = col[1]; dd[j + 2] = col[2]; dd[j + 3] = tO[k];
+    tdd[j] = l2s(tR[k]); tdd[j + 1] = l2s(tG[k]); tdd[j + 2] = l2s(tB[k]); tdd[j + 3] = 255;
+    if (t > 0) { cov++; sum += t; if (t > mx) mx = t; }
+  }
+  dctx.putImageData(di, 0, 0); tctx.putImageData(ti, 0, 0);
+  r.stats = { coverage: cov / N, vol: sum / (pxmm * pxmm), maxUsed: mx, avg: cov ? sum / cov : 0 };
+  r.blurKey = null; r.glowKey = null;
+}
+
+// ----------------------------------------------------------- light model
+function kelvinRGB(k) {
+  const t = k / 100; let r, g, b;
+  if (t <= 66) { r = 255; g = 99.4708025861 * Math.log(t) - 161.1195681661; b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307; }
+  else { r = 329.698727446 * Math.pow(t - 60, -0.1332047592); g = 288.1221695283 * Math.pow(t - 60, -0.0755148492); b = 255; }
+  return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
+}
+function ledSRGB() { return state.light.colorMode === 'kelvin' ? kelvinRGB(state.light.kelvin) : hexToRgb(state.light.custom); }
+function ledLin() { const lin = ledSRGB().map(v => S2L[Math.round(v)]); const m = Math.max(...lin, 1e-4); return lin.map(v => v / m); }
+
+function buildPattern() {
+  const { W, H, N } = P, lay = state.light.layout, u = state.light.uniformity, ar = W / H;
+  PAT = new Float32Array(N); let mx = 1e-6;
+  const spots = [];
+  if (lay === 'grid') { const cols = ar >= 1 ? 4 : 2, rows = ar >= 1 ? 2 : 4; for (let gy = 0; gy < rows; gy++) for (let gx = 0; gx < cols; gx++) spots.push([(gx + .5) / cols, (gy + .5) / rows]); }
+  for (let y = 0, i = 0; y < H; y++) {
+    const ny = (y + .5) / H;
+    for (let x = 0; x < W; x++, i++) {
+      const nx = (x + .5) / W; let v;
+      if (lay === 'center') { const dx = (nx - .5) * ar, dy = ny - .5; v = Math.exp(-(dx * dx + dy * dy) / (2 * 0.3 * 0.3)); }
+      else if (lay === 'edge') { v = Math.exp(-ny / 0.15) + Math.exp(-(1 - ny) / 0.15) + 0.06; }
+      else if (lay === 'grid') { v = 0.04; for (const s of spots) { const dx = (nx - s[0]) * ar, dy = ny - s[1]; v += Math.exp(-(dx * dx + dy * dy) / (2 * 0.1 * 0.1)); } }
+      else { const e = Math.min(nx, 1 - nx, ny, 1 - ny); v = 0.8 + 0.2 * smooth(0, 0.16, e); }
+      PAT[i] = v; if (v > mx) mx = v;
+    }
+  }
+  for (let i = 0; i < N; i++) PAT[i] = (PAT[i] / mx) * (1 - u) + u;
+}
+
+function activeLayers() {
+  const anySolo = state.layers.some(l => l.solo);
+  return state.layers.filter(l => anySolo ? l.solo : l.visible);
+}
+function blurredT(L, order, count) {
+  const r = rt(L), front = count - 1 - order;
+  const px = state.plate.diffusion * front * (state.plate.gap * 0.35 + 0.5) * P.pxmm;
+  const key = Math.round(px * 4);
+  if (r.blurKey === key) return r;
+  if (px < 1.2) { r.bTr = r.Tr; r.bTg = r.Tg; r.bTb = r.Tb; }
+  else {
+    r.bTr = boxBlur(Float32Array.from(r.Tr), P.W, P.H, px);
+    r.bTg = boxBlur(Float32Array.from(r.Tg), P.W, P.H, px);
+    r.bTb = boxBlur(Float32Array.from(r.Tb), P.W, P.H, px);
+  }
+  r.blurKey = key; return r;
+}
+
+// ---------------------------------------------------------------- render
+function renderDesign() {
+  const c = ctxD, { W, H } = P, bg = state.plate.bg;
+  c.save();
+  c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+  c.clearRect(0, 0, W, H);
+  if (bg !== 'checker') { c.fillStyle = { paper: '#EEEAE1', white: '#FFFFFF', dark: '#1A1D23' }[bg] || '#EEEAE1'; c.fillRect(0, 0, W, H); }
+  for (const L of activeLayers()) {
+    c.globalAlpha = L.opacity;
+    c.globalCompositeOperation = L.blend === 'normal' ? 'source-over' : L.blend;
+    c.drawImage(rt(L).dc, 0, 0);
+  }
+  c.restore();
+  designPix = ctxD.getImageData(0, 0, W, H).data;
+}
+
+let glowRGB = [255, 190, 120], ACC = null, PROD = null, lastEdit = null;
+function renderLight() {
+  const { W, H, N } = P, lt = state.light;
+  const led = ledLin(), ex = lt.intensity;
+  const act = activeLayers();
+  if (lt.model === 'physical') {
+    const amb = lt.ambient, dp = designPix, out = lightImg.data;
+    if (!ACC || ACC.r.length !== N) ACC = { r: new Float32Array(N), g: new Float32Array(N), b: new Float32Array(N) };
+    const ar = ACC.r, ag = ACC.g, ab = ACC.b, lr = led[0] * ex, lg = led[1] * ex, lb = led[2] * ex;
+    const parts = act.map((L, k) => ({ L, r: blurredT(L, k, act.length) }));
+    const mul = (L, r, xr, xg, xb) => {
+      const tr = r.bTr, tg = r.bTg, tb = r.bTb, o = L.opacity;
+      if (o >= 1) { for (let i = 0; i < N; i++) { xr[i] *= tr[i]; xg[i] *= tg[i]; xb[i] *= tb[i]; } }
+      else if (o > 0) { const q = 1 - o; for (let i = 0; i < N; i++) { xr[i] *= q + o * tr[i]; xg[i] *= q + o * tg[i]; xb[i] *= q + o * tb[i]; } }
+    };
+    const edit = parts.find(q => q.L === lastEdit);
+    if (edit && parts.length > 1) {
+      // product of every other plate is cached while one layer is being edited → one fused pass per frame
+      const key = parts.map(q => q === edit ? 'X' : `${q.r.ver}:${q.r.blurKey}:${q.L.opacity}`).join('|');
+      if (!PROD || PROD.key !== key || PROD.r.length !== N) {
+        PROD = PROD && PROD.r.length === N ? PROD : { r: new Float32Array(N), g: new Float32Array(N), b: new Float32Array(N) };
+        PROD.r.fill(1); PROD.g.fill(1); PROD.b.fill(1);
+        for (const q of parts) if (q !== edit) mul(q.L, q.r, PROD.r, PROD.g, PROD.b);
+        PROD.key = key;
+      }
+      const pr = PROD.r, pg = PROD.g, pb = PROD.b;
+      for (let i = 0; i < N; i++) { const p = PAT[i]; ar[i] = lr * p * pr[i]; ag[i] = lg * p * pg[i]; ab[i] = lb * p * pb[i]; }
+      mul(edit.L, edit.r, ar, ag, ab);
+    } else {
+      for (let i = 0; i < N; i++) { const p = PAT[i]; ar[i] = lr * p; ag[i] = lg * p; ab[i] = lb * p; }
+      for (const q of parts) mul(q.L, q.r, ar, ag, ab);
+    }
+    const useAmb = amb > 0 && dp;
+    for (let i = 0, j = 0; i < N; i++, j += 4) {
+      let r = ar[i], g = ag[i], b = ab[i];
+      r = TONE[r >= 12 ? 6144 : (r * 512) | 0]; g = TONE[g >= 12 ? 6144 : (g * 512) | 0]; b = TONE[b >= 12 ? 6144 : (b * 512) | 0];
+      if (useAmb) { r += amb * S2L[dp[j]]; g += amb * S2L[dp[j + 1]]; b += amb * S2L[dp[j + 2]]; }
+      out[j] = L2S[r >= 1 ? 4096 : (r * 4096) | 0]; out[j + 1] = L2S[g >= 1 ? 4096 : (g * 4096) | 0]; out[j + 2] = L2S[b >= 1 ? 4096 : (b * 4096) | 0]; out[j + 3] = 255;
+    }
+    ctxL.putImageData(lightImg, 0, 0);
+  } else {
+    // artistic: LED glow + per-layer blend modes on transmission maps
+    const img = ctxL.createImageData(W, H), o = img.data;
+    for (let i = 0, j = 0; i < N; i++, j += 4) { const p = PAT[i] * ex; o[j] = l2s(tone(led[0] * p)); o[j + 1] = l2s(tone(led[1] * p)); o[j + 2] = l2s(tone(led[2] * p)); o[j + 3] = 255; }
+    ctxL.putImageData(img, 0, 0);
+    ctxL.save();
+    for (const L of act) {
+      ctxL.globalAlpha = L.opacity;
+      ctxL.globalCompositeOperation = L.blend === 'normal' ? 'source-over' : L.blend;
+      ctxL.drawImage(rt(L).tc, 0, 0);
+    }
+    ctxL.restore();
+  }
+  ctxB.clearRect(0, 0, cvB.width, cvB.height);
+  ctxB.drawImage(cvL, 0, 0, cvB.width, cvB.height);
+  // average colour → room glow (from CPU pixels; avoids a GPU readback)
+  const px = lt.model === 'physical' ? lightImg.data : ctxL.getImageData(0, 0, W, H).data;
+  let sr = 0, sg = 0, sb = 0, n = 0;
+  for (let j = 0; j < px.length; j += 4 * 61) { sr += px[j]; sg += px[j + 1]; sb += px[j + 2]; n++; }
+  glowRGB = [sr / n, sg / n, sb / n];
+}
+
+const TURBO = (() => {
+  const t = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255;
+    t[i * 3]     = 34.61 + x * (1172.33 + x * (-10793.56 + x * (33300.12 + x * (-38394.49 + x * 14825.05))));
+    t[i * 3 + 1] = 23.31 + x * (557.33 + x * (1225.33 + x * (-3574.96 + x * (1073.77 + x * 707.56))));
+    t[i * 3 + 2] = 27.2 + x * (3211.1 + x * (-15327.97 + x * (27814 + x * (-22569.18 + x * 6838.66))));
+  }
+  return t;
+})();
+function renderHeight() {
+  const L = selL(), r = rt(L), { W, H, N } = P;
+  if (!r.thick) return;
+  const img = ctxH.createImageData(W, H), d = img.data, mx = Math.max(1e-6, L.maxT), turbo = state.view.hmap === 'turbo';
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const v = clamp(r.thick[i] / mx, 0, 1), k = (v * 255) | 0;
+    if (turbo) { d[j] = TURBO[k * 3]; d[j + 1] = TURBO[k * 3 + 1]; d[j + 2] = TURBO[k * 3 + 2]; }
+    else { d[j] = d[j + 1] = d[j + 2] = k; }
+    d[j + 3] = 255;
+  }
+  ctxH.putImageData(img, 0, 0);
+  const steps = [0, .25, .5, .75, 1].map(x => { const k = (x * 255) | 0; return turbo ? `rgb(${TURBO[k * 3]},${TURBO[k * 3 + 1]},${TURBO[k * 3 + 2]}) ${x * 100}%` : `rgb(${k},${k},${k}) ${x * 100}%`; }).join(',');
+  const layers = Math.round(L.maxT / L.layerH);
+  $('#hLegend').innerHTML = `
+    <div class="flex items-center justify-between gap-3 mb-1.5"><span class="font-semibold text-ink-100">L${state.sel + 1} · ${esc(L.name)}</span>
+      <div class="seg" style="padding:1px"><button data-hmap="turbo" class="${turbo ? 'on' : ''}" style="padding:2px 7px">Turbo</button><button data-hmap="gray" class="${turbo ? '' : 'on'}" style="padding:2px 7px">Gray</button></div></div>
+    <div style="height:9px;border-radius:3px;background:linear-gradient(90deg,${steps});width:210px"></div>
+    <div class="flex justify-between mt-1 font-mono text-[10px] text-ink-300"><span>0 mm</span><span>${fmt(L.maxT / 2)}</span><span>${fmt(L.maxT)} mm</span></div>
+    <div class="text-ink-400 mt-1">${layers} print layers @ ${L.layerH} mm · ${Math.round((L.maxT - L.minT) / L.layerH) + 1} tone steps</div>`;
+}
+
+// --------------------------------------------------------- invalidation
+const dirty = { layers: new Set(), design: true, light: true, pattern: true, cards: true, spec: true, d3: true, height: true };
+let raf = 0, lastMs = 0;
+function schedule() { if (!raf) raf = requestAnimationFrame(frame); }
+function invalidateLayer(L) { dirty.layers.add(L); lastEdit = L; markComposite(); }
+function markComposite() { dirty.design = dirty.light = dirty.cards = dirty.spec = dirty.d3 = dirty.height = true; schedule(); }
+function invalidateAll() { state.layers.forEach(l => dirty.layers.add(l)); dirty.pattern = true; markComposite(); }
+function frame() {
+  raf = 0;
+  const t0 = performance.now();
+  for (const L of dirty.layers) computeLayer(L);
+  const hadLayers = dirty.layers.size > 0;
+  dirty.layers.clear();
+  if (dirty.pattern) { buildPattern(); dirty.pattern = false; dirty.light = true; }
+  if (dirty.design) { renderDesign(); dirty.design = false; }
+  if (dirty.light) { renderLight(); dirty.light = false; }
+  lastMs = performance.now() - t0;
+  applyViewCss();
+  const v = state.view.mode;
+  if (v === 'height' && dirty.height) { renderHeight(); dirty.height = false; }
+  if (v === '3d' && dirty.d3) { update3D(); dirty.d3 = false; }
+  if (v === 'spec' && dirty.spec) { renderSpec(); dirty.spec = false; }
+  if (dirty.cards) { updateCards(); dirty.cards = false; }
+  if (hadLayers) { drawHisto(); drawSrcThumb(); }
+  updateOutputs();
+  updateStatus();
+}
+
+// ------------------------------------------------------------ view css
+function cssFilter() { const l = state.light; return `brightness(${l.bright}) contrast(${l.contrast}) saturate(${l.saturate})`; }
+function applyViewCss() {
+  const v = state.view, l = state.light, lit = l.on;
+  document.body.classList.toggle('lit', lit && v.mode !== 'height' && v.mode !== 'spec');
+  $('#lbToggle').classList.toggle('on', lit);
+  $('#cmpToggle').classList.toggle('on', v.compare);
+  $$('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.view === v.mode));
+  $('#view2d').classList.toggle('hidden', !(v.mode === 'preview' || v.mode === 'height'));
+  $('#view3d').classList.toggle('hidden', v.mode !== '3d');
+  $('#viewSpec').classList.toggle('hidden', v.mode !== 'spec');
+  const height = v.mode === 'height', cmp = v.compare && !height;
+  const showLight = !height && (lit || cmp);
+  cvD.style.display = height ? 'none' : '';
+  cvH.style.display = height ? '' : 'none';
+  cvL.style.filter = cssFilter();
+  cvL.style.opacity = showLight ? 1 : 0;
+  cvB.style.filter = `blur(${Math.round(10 + 22 * l.bloom)}px) brightness(1.35) saturate(1.25)`;
+  cvB.style.opacity = showLight ? l.bloom : 0;
+  const clip = cmp ? `inset(0 0 0 ${v.split * 100}%)` : 'none';
+  cvL.style.clipPath = cvB.style.clipPath = clip;
+  const pl = $('#printLines');
+  pl.style.opacity = (showLight && l.texture) ? 0.55 : 0;
+  pl.style.clipPath = clip;
+  $('#split').style.display = cmp ? '' : 'none';
+  $('#lblL').style.display = $('#lblR').style.display = cmp ? '' : 'none';
+  $('#stage').style.setProperty('--split', v.split * 100 + '%');
+  $('#stage').classList.toggle('checker', state.plate.bg === 'checker' && !height);
+  $('#hLegend').classList.toggle('hidden', !height);
+  const frame = $('#frame');
+  frame.className = 'frame frame-' + state.plate.frame;
+  document.documentElement.style.setProperty('--glow', `rgba(${glowRGB.map(Math.round).join(',')},${(0.22 + 0.3 * l.bloom).toFixed(2)})`);
+  $$('#toolSeg button').forEach(b => b.classList.toggle('on', b.dataset.tool === v.tool));
+  $('#zoomLbl').textContent = Math.round(v.zoom * 100) + '%';
+  $('#stageWrap').style.transform = `translate(calc(-50% + ${v.panX}px), calc(-50% + ${v.panY}px))`;
+  const led = rgbToHex(...ledSRGB());
+  $('#badgeText').innerHTML = height
+    ? `HEIGHTMAP · <span class="text-ink-300">Layer ${state.sel + 1}</span>`
+    : cmp ? `COMPARE · <span class="text-ink-300">front-lit ↔ backlit</span>`
+    : lit ? `BACKLIT · <span class="text-ink-300">${l.colorMode === 'kelvin' ? l.kelvin + ' K' : led} · ${l.model === 'physical' ? 'Physical' : 'Blend modes'}</span>`
+    : `FRONT-LIT · <span class="text-ink-300">design view · LED off</span>`;
+  // printed line texture scaled to 0.4 mm
+  const stageW = $('#stage').clientWidth || 1;
+  const per = Math.max(2, 0.45 * stageW / state.plate.w);
+  pl.style.backgroundSize = `${per * 2}px ${per * 2}px`;
+  pl.style.backgroundImage = `repeating-linear-gradient(45deg,rgba(255,255,255,.16) 0 ${per * 0.35}px,rgba(0,0,0,.14) ${per * 0.35}px ${per * 0.7}px,transparent ${per * 0.7}px ${per}px)`;
+}
+function layoutStage() {
+  const vp = $('#view2d'), cw = vp.clientWidth, ch = vp.clientHeight;
+  if (!cw || !ch) return;
+  const fp = state.plate.frame === 'none' ? 0 : Math.round(Math.min(cw, ch) * 0.028 + 6);
+  const pad = 56 + fp;
+  const aspect = state.plate.w / state.plate.h;
+  const base = Math.max(60, Math.min(cw - pad * 2, (ch - pad * 2 - 30) * aspect));
+  const w = base * state.view.zoom, h = w / aspect;
+  const st = $('#stage'); st.style.width = w + 'px'; st.style.height = h + 'px';
+  $('#frame').style.padding = fp * Math.sqrt(state.view.zoom) + 'px';
+  applyViewCss();
+}
+
+// ----------------------------------------------------------- 3D stack
+function build3D() {
+  $('#stack3d').innerHTML = '<div class="led3d" id="led3d"></div>' + state.layers.map((L, i) =>
+    `<div class="plate3d" data-i="${i}"><div class="face"><canvas></canvas></div><div class="ptag" data-i="${i}"><i></i><span></span></div></div>`).join('');
+}
+function update3D() {
+  const vp = $('#view3d'), cw = vp.clientWidth || 800, ch = vp.clientHeight || 600;
+  const v = state.view, aspect = state.plate.w / state.plate.h;
+  let pw = Math.min(cw * 0.46, 470), ph = pw / aspect;
+  if (ph > ch * 0.5) { ph = ch * 0.5; pw = ph * aspect; }
+  const sp = 18 + 46 * v.explode;
+  const lit = state.light.on, act = new Set(activeLayers()), led = ledSRGB();
+  const stack = $('#stack3d');
+  stack.style.transform = `scale(${v.z3}) rotateX(${v.rx}deg) rotateY(${v.ry}deg)`;
+  const ledEl = $('#led3d');
+  ledEl.style.width = pw + 'px'; ledEl.style.height = ph + 'px';
+  ledEl.style.transform = `translate(-50%,-50%) translateZ(${-2.5 * sp - 26}px)`;
+  ledEl.style.marginLeft = ledEl.style.marginTop = '0';
+  ledEl.style.left = '0'; ledEl.style.top = '0';
+  ledEl.style.setProperty('--ledc', `rgb(${led.map(Math.round).join(',')})`);
+  ledEl.style.setProperty('--ledc2', `rgba(${led.map(Math.round).join(',')},.55)`);
+  ledEl.style.setProperty('--ledglow', `rgba(${led.map(Math.round).join(',')},${0.25 + state.light.intensity * 0.08})`);
+  const ledLinV = ledLin(), ex = state.light.intensity;
+  $$('.plate3d', stack).forEach(el => {
+    const i = +el.dataset.i, L = state.layers[i], r = rt(L);
+    el.style.width = pw + 'px'; el.style.height = ph + 'px';
+    el.style.transform = `translate(-50%,-50%) translateZ(${(i - 2) * sp}px)`;
+    el.style.opacity = act.has(L) ? 1 : 0.15;
+    el.classList.toggle('sel', i === state.sel);
+    const cv = $('canvas', el), W = P.W >> 1, H = P.H >> 1;
+    if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, W, H);
+    if (!r.dc) return;
+    if (lit) {
+      // per-plate glow: colour of LED light through this plate alone; alpha by optical density
+      const key = r.ver + '|' + ledLinV.join(',') + '|' + ex;
+      if (r.glowKey !== key) {
+        r.gc = r.gc || mkCanvas(P.W, P.H);
+        if (r.gc.width !== P.W || r.gc.height !== P.H) { r.gc.width = P.W; r.gc.height = P.H; }
+        const g = r.gc.getContext('2d'), im = g.createImageData(P.W, P.H), d = im.data, ad = r.dc.getContext('2d').getImageData(0, 0, P.W, P.H).data;
+        for (let k = 0, j = 0; k < P.N; k++, j += 4) {
+          d[j] = l2s(tone(ledLinV[0] * ex * r.Tr[k])); d[j + 1] = l2s(tone(ledLinV[1] * ex * r.Tg[k])); d[j + 2] = l2s(tone(ledLinV[2] * ex * r.Tb[k]));
+          d[j + 3] = Math.max(ad[j + 3], r.thick[k] > 0 ? 70 : 0);
+        }
+        g.putImageData(im, 0, 0); r.glowKey = key;
+      }
+      c.drawImage(r.gc, 0, 0, W, H);
+      cv.style.filter = 'brightness(1.1) saturate(1.15)';
+    } else { c.drawImage(r.dc, 0, 0, W, H); cv.style.filter = ''; }
+    const tag = $('.ptag', el);
+    tag.style.setProperty('--c', L.color);
+    $('span', tag).textContent = `L${i + 1} · ${L.name} · ${fmt(L.minT)}–${fmt(L.maxT)} mm`;
+  });
+}
+
+// --------------------------------------------------------- spec sheet
+function recommend(L, i) {
+  const rgb = hexToRgb(L.color), lum = lumLin(rgb);
+  const mx = Math.max(...rgb), mn = Math.min(...rgb), sat = mx ? (mx - mn) / mx : 0;
+  let type, why;
+  if (L.mode === 'solid' && lum > 0.55) { type = 'pla-basic'; why = 'Even diffuser — hides LED hot-spots. Print at 100% infill.'; }
+  else if (lum < 0.03) { type = 'pla-matte'; why = 'Matte black blocks light completely and gives crisp, glare-free outlines.'; }
+  else if (L.td >= 6) { type = 'petg-trans'; why = 'High-TD translucent material for a soft tinted glow.'; }
+  else if (L.mode === 'depth') { type = 'pla-basic'; why = 'Stable, predictable TD gives smooth tonal gradients.'; }
+  else if (L.mode === 'edges') { type = 'pla-matte'; why = 'Matte finish keeps thin line-work sharp under backlight.'; }
+  else if (sat > 0.45) { type = 'pla-basic'; why = 'Saturated colour silhouette — blends cleanly with layers behind.'; }
+  else { type = 'pla-basic'; why = 'General-purpose PLA with consistent light transmission.'; }
+  const lh = { solid: 0.2, mask: 0.16, edges: 0.12, depth: 0.08 }[L.mode];
+  return { type, why, lh };
+}
+function presetName(L) { const f = FILAMENTS.find(f => f.hex.toUpperCase() === L.color.toUpperCase()); return f ? f.name : 'Custom ' + L.color.toUpperCase(); }
+function effType(L, i) { return L.type === 'auto' ? recommend(L, i).type : L.type; }
+function specRows() {
+  const act = new Set(activeLayers());
+  let z = 0;
+  return state.layers.map((L, i) => {
+    const r = rt(L), rec = recommend(L, i), type = effType(L, i), st = r.stats || { coverage: 0, vol: 0, maxUsed: 0 };
+    const dens = TYPES[type].density, grams = st.vol / 1000 * dens, meters = st.vol / (Math.PI * 0.875 * 0.875) / 1000;
+    const a = absorb(L), block = Math.log(50) / Math.min(...a);
+    const row = {
+      i, n: i + 1, L, name: L.name, role: ROLES[i], color: L.color.toUpperCase(), colorName: presetName(L),
+      type: TYPES[type].label, typeId: type, why: rec.why, td: L.td, mode: MODES[L.mode],
+      minT: L.minT, maxT: L.maxT, layerH: L.layerH, layers: Math.round(L.maxT / L.layerH), minLayers: Math.round(L.minT / L.layerH),
+      steps: Math.round((L.maxT - L.minT) / L.layerH) + 1, recLH: rec.lh, coverage: st.coverage, grams, meters,
+      trans: transLum(L, L.maxT), block, z, active: act.has(L)
+    };
+    z += L.maxT + state.plate.gap;
+    return row;
+  });
+}
+function stackTotals(rows) {
+  const used = rows.filter(r => r.active);
+  const depth = used.reduce((s, r) => s + r.maxT, 0) + Math.max(0, used.length - 1) * state.plate.gap;
+  return { depth, grams: used.reduce((s, r) => s + r.grams, 0), meters: used.reduce((s, r) => s + r.meters, 0), count: used.length, colors: new Set(used.map(r => r.color)).size };
+}
+function renderSpec() {
+  const rows = specRows(), T = stackTotals(rows), l = state.light, p = state.plate;
+  const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const byColor = {};
+  rows.filter(r => r.active).forEach(r => { const k = r.colorName + '|' + r.type; byColor[k] = byColor[k] || { name: r.colorName, color: r.color, type: r.type, g: 0, m: 0 }; byColor[k].g += r.grams; byColor[k].m += r.meters; });
+  const stlRes = state.exp.stlRes, pxmm = state.exp.pxmm;
+  $('#viewSpec').innerHTML = `
+  <div class="spec-doc">
+    <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+      <div>
+        <div class="text-[11px] uppercase tracking-[.14em] text-accent font-semibold mb-1 muted">Lightbox print spec</div>
+        <h1 class="text-[26px] font-bold tracking-tight">${esc(state.project)}</h1>
+        <div class="text-ink-400 mt-1 muted">${date} · ${p.w} × ${p.h} mm plates · ${T.count} active layers · LED ${l.colorMode === 'kelvin' ? l.kelvin + ' K' : rgbToHex(...ledSRGB())} (${({ panel: 'diffuse panel', center: 'single LED', edge: 'edge-lit strips', grid: 'LED grid' })[l.layout]})</div>
+      </div>
+      <div class="flex flex-wrap gap-2 no-print">
+        <button class="btn" data-act="print"><i data-lucide="printer"></i>Print / PDF</button>
+        <button class="btn" data-act="copy-spec"><i data-lucide="copy"></i>Copy</button>
+        <button class="btn" data-act="csv"><i data-lucide="sheet"></i>CSV</button>
+        <button class="btn" data-act="settings"><i data-lucide="file-json"></i>Settings JSON</button>
+        <button class="btn" data-act="stl-all"><i data-lucide="box"></i>All STLs</button>
+        <button class="btn btn-acc" data-act="zip"><i data-lucide="package"></i>Slice package</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+      ${[['Stack depth', fmt(T.depth, 1) + ' mm'], ['Plates', T.count + ' / 5'], ['Filament colours', T.colors], ['Est. filament', fmt(T.grams, 1) + ' g'], ['Filament length', fmt(T.meters, 2) + ' m']]
+        .map(([k, v]) => `<div class="spec-card kpi"><div class="l muted">${k}</div><div class="v">${v}</div></div>`).join('')}
+    </div>
+
+    <div class="spec-card overflow-x-auto mb-5">
+      <table class="spec-table">
+        <thead><tr><th>Layer</th><th>Colour</th><th>Recommended filament</th><th>Mapping</th><th>Thickness</th><th>Layer height</th><th>Print layers</th><th>Light at max</th><th>Coverage</th><th>Est. use</th><th class="no-print"></th></tr></thead>
+        <tbody>
+        ${rows.map(r => `
+          <tr style="${r.active ? '' : 'opacity:.45'}">
+            <td style="min-width:190px"><div class="flex items-center gap-2"><span class="lnum">${r.n}</span><div><div class="font-semibold">${esc(r.name)}</div><div class="text-[11px] text-ink-400 muted">${r.role}</div></div></div></td>
+            <td><span class="chip" style="--c:${r.color}"><i></i>${esc(r.colorName.replace(/^Custom /, ''))}</span><div class="mono text-ink-400 mt-1 muted">${r.color} · TD ${fmt(r.td, 1)}</div></td>
+            <td><div class="font-semibold">${r.type}</div><div class="text-[11px] text-ink-400 max-w-[220px] muted">${r.L.type === 'auto' ? r.why : 'User selected.'}</div></td>
+            <td>${r.mode}${r.L.invert ? ' · inv' : ''}</td>
+            <td class="mono">${fmt(r.minT)} – ${fmt(r.maxT)} mm</td>
+            <td class="mono">${fmt(r.layerH)} mm${Math.abs(r.recLH - r.layerH) > 1e-6 ? `<div class="text-[10.5px] text-ink-400 muted">suggest ${fmt(r.recLH)}</div>` : ''}</td>
+            <td class="mono">${r.minLayers}–${r.layers}<div class="text-[10.5px] text-ink-400 muted">${r.steps} tone steps</div></td>
+            <td class="mono">${fmt(r.trans * 100, 1)}%<div class="text-[10.5px] text-ink-400 muted">opaque ≈ ${fmt(r.block, 1)} mm</div></td>
+            <td class="mono">${fmt(r.coverage * 100, 0)}%</td>
+            <td class="mono">${fmt(r.grams, 1)} g<div class="text-[10.5px] text-ink-400 muted">${fmt(r.meters, 2)} m</div></td>
+            <td class="no-print"><div class="flex gap-1"><button class="btn btn-sm" data-act="stl" data-i="${r.i}" title="Download STL"><i data-lucide="box"></i>STL</button><button class="btn btn-sm" data-act="hm" data-i="${r.i}" title="Download heightmap PNG"><i data-lucide="image-down"></i></button></div></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="spec-card p-4">
+        <div class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="layers-3"></i>Assembly order (back → front)</div>
+        <ol class="space-y-2">
+          <li class="flex items-center gap-2 text-ink-300 muted"><span class="lnum" style="background:#3a2a0c;color:#ffc24a">☀</span>LED ${l.colorMode === 'kelvin' ? l.kelvin + ' K' : ''} ${({ panel: 'diffuse panel', center: 'single LED', edge: 'edge strips', grid: 'LED grid' })[l.layout]}</li>
+          ${rows.filter(r => r.active).map(r => `<li class="flex items-center gap-2"><span class="lnum">${r.n}</span><span class="chip" style="--c:${r.color}"><i></i>${esc(r.name)}</span><span class="mono text-ink-400 ml-auto muted">z ${fmt(r.z, 1)} mm</span></li>`).join('')}
+          <li class="flex items-center gap-2 text-ink-300 muted"><span class="lnum">👁</span>Viewer</li>
+        </ol>
+        <div class="hint mt-3 muted">${fmt(p.gap, 1)} mm spacers between plates. Relief side of each plate faces the viewer.</div>
+      </div>
+      <div class="spec-card p-4">
+        <div class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="settings-2"></i>Recommended slicer settings</div>
+        <ul class="space-y-1.5 text-ink-200 text-[12px] list-disc pl-4 muted">
+          <li><b>100% infill</b>, rectilinear/monotonic — partial infill shows as patterns when lit.</li>
+          <li>0.4 mm nozzle; first layer height = layer height of the plate.</li>
+          <li>Print every plate <b>flat side down</b>, same orientation, same top-surface direction.</li>
+          <li>Disable ironing on relief plates; slow outer walls (≤ 60 mm/s).</li>
+          <li>Keep one filament brand per colour — TD varies between brands.</li>
+          ${p.rim > 0 ? `<li>${fmt(p.rim, 1)} mm solid rim on every plate for alignment.</li>` : ''}
+        </ul>
+      </div>
+      <div class="spec-card p-4">
+        <div class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="shopping-basket"></i>Filament shopping list</div>
+        <div class="space-y-2">
+          ${Object.values(byColor).map(c => `<div class="flex items-center gap-2"><span class="chip" style="--c:${c.color}"><i></i>${esc(c.name.replace(/^Custom /, ''))}</span><span class="text-ink-400 muted">${c.type}</span><span class="mono ml-auto">${fmt(c.g, 1)} g</span></div>`).join('')}
+        </div>
+        <div class="hint mt-3 muted">Estimates from the preview at ${fmt(P.pxmm, 1)} px/mm, before brims/purge.</div>
+      </div>
+    </div>
+
+    <div class="spec-card p-4 mt-4 no-print">
+      <div class="font-semibold mb-3 flex items-center gap-2"><i data-lucide="download"></i>Export settings</div>
+      <div class="grid sm:grid-cols-3 gap-4 items-end">
+        <label class="block"><div class="ctl-label mb-1">Slice PNG resolution</div>
+          <select class="sel-i" data-k="S.exp.pxmm" data-num>${[4, 6, 8, 10, 12, 16, 20].map(v => `<option value="${v}">${v} px/mm (${Math.round(p.w * v)}×${Math.round(p.h * v)})</option>`).join('')}</select></label>
+        <label class="block"><div class="ctl-label mb-1">STL grid resolution</div>
+          <select class="sel-i" data-k="S.exp.stlRes" data-num>${[0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1].map(v => `<option value="${v}">${v} mm (${Math.round(p.w / v)}×${Math.round(p.h / v)} cells)</option>`).join('')}</select></label>
+        <div class="hint">Heightmaps: black = 0 mm, white = that layer's max thickness. STLs are watertight height-fields; zero-thickness pixels become holes.</div>
+      </div>
+    </div>
+  </div>`;
+  icons(); syncControls();
+}
+function specText() {
+  const rows = specRows(), T = stackTotals(rows);
+  const lines = [`# ${state.project} — lightbox spec`, '', `Plates ${state.plate.w}×${state.plate.h} mm · gap ${state.plate.gap} mm · stack depth ${fmt(T.depth, 1)} mm · ~${fmt(T.grams, 1)} g filament`, '',
+    '| Layer | Name | Colour | Filament | TD | Mapping | Thickness (mm) | Layer h | Layers | Light@max | Coverage | Grams |',
+    '|---|---|---|---|---|---|---|---|---|---|---|---|'];
+  rows.forEach(r => lines.push(`| ${r.n}${r.active ? '' : ' (off)'} | ${r.name} | ${r.colorName} ${r.color} | ${r.type} | ${fmt(r.td, 1)} | ${r.mode} | ${fmt(r.minT)}–${fmt(r.maxT)} | ${fmt(r.layerH)} | ${r.minLayers}–${r.layers} | ${fmt(r.trans * 100, 1)}% | ${fmt(r.coverage * 100, 0)}% | ${fmt(r.grams, 1)} |`));
+  lines.push('', 'Print at 100% infill, flat side down. Heightmap PNGs: black = 0 mm, white = layer max.');
+  return lines.join('\n');
+}
+function specCSV() {
+  const rows = specRows();
+  const head = ['layer', 'name', 'active', 'color_name', 'hex', 'filament_type', 'td_mm', 'mode', 'invert', 'min_mm', 'max_mm', 'layer_height_mm', 'min_layers', 'max_layers', 'tone_steps', 'transmission_at_max', 'coverage', 'grams', 'meters', 'z_mm'];
+  const q = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v;
+  return [head.join(','), ...rows.map(r => [r.n, r.name, r.active, r.colorName, r.color, r.type, r.td, r.mode, r.L.invert, r.minT, r.maxT, r.layerH, r.minLayers, r.layers, r.steps, fmt(r.trans, 4), fmt(r.coverage, 4), fmt(r.grams, 2), fmt(r.meters, 3), fmt(r.z, 2)].map(q).join(','))].join('\n');
+}
+
+// ------------------------------------------------------------ exports
+function serialize(withImages) {
+  const s = JSON.parse(JSON.stringify(state));
+  if (!withImages) s.layers.forEach(l => { l.src = l.src ? '(image omitted)' : null; });
+  return { app: 'LumenStack Studio', version: 1, saved: new Date().toISOString(), state: s };
+}
+function saveProject() {
+  download(new Blob([JSON.stringify(serialize(true))], { type: 'application/json' }), slug(state.project) + '.lumenstack.json');
+  toast('Project saved with images');
+}
+function exportSettings() {
+  download(new Blob([JSON.stringify(serialize(false), null, 2)], { type: 'application/json' }), slug(state.project) + '_settings.json');
+  toast('Layer settings exported');
+}
+function loadProject(json) {
+  const src = json && json.state ? json.state : json;
+  if (!src || !Array.isArray(src.layers)) throw new Error('Not a LumenStack project');
+  const d = DEFAULT_STATE();
+  const s = Object.assign(d, src, { plate: Object.assign(d.plate, src.plate), light: Object.assign(d.light, src.light), view: Object.assign(d.view, src.view, { zoom: 1, panX: 0, panY: 0 }), exp: Object.assign(d.exp, src.exp) });
+  s.layers = [0, 1, 2, 3, 4].map(i => makeLayer(i, src.layers[i] || {}));
+  s.layers.forEach(l => { if (typeof l.src !== 'string' || !l.src.startsWith('data:')) l.src = null; });
+  s.sel = clamp(s.sel | 0, 0, 4);
+  state = s;
+  state.layers.forEach(L => setLayerImage(L, L.src));
+  afterStateReplace();
+}
+function setLayerImage(L, url) {
+  const r = rt(L);
+  L.src = url || null;
+  if (!url) { r.img = null; r.imgId = ++IMG_ID; invalidateLayer(L); return; }
+  const img = new Image();
+  img.onload = () => { if (L.src === url) { r.img = img; r.imgId = ++IMG_ID; invalidateLayer(L); drawSrcThumb(); } };
+  img.src = url;
+}
+function snapshotLight() {
+  const c = mkCanvas(P.W, P.H), x = c.getContext('2d');
+  if (state.light.on) {
+    try { x.filter = cssFilter(); } catch (e) {}
+    x.drawImage(cvL, 0, 0);
+    x.filter = 'none';
+    if (state.light.bloom > 0) {
+      x.globalCompositeOperation = 'screen'; x.globalAlpha = state.light.bloom;
+      try { x.filter = `blur(${Math.round(6 + 10 * state.light.bloom)}px) brightness(1.35) saturate(1.25)`; } catch (e) {}
+      x.drawImage(cvL, 0, 0); x.filter = 'none';
+    }
+  } else x.drawImage(cvD, 0, 0);
+  return c;
+}
+async function exportZip() {
+  toast('Building slice package…', 'loader');
+  await tick();
+  const { w, h } = state.plate;
+  let pxmm = state.exp.pxmm; if (Math.max(w, h) * pxmm > 3200) pxmm = 3200 / Math.max(w, h);
+  const W = Math.round(w * pxmm), H = Math.round(h * pxmm);
+  const base = slug(state.project), files = [], enc = new TextEncoder();
+  const cv = mkCanvas(W, H), cx = cv.getContext('2d');
+  for (let i = 0; i < 5; i++) {
+    const L = state.layers[i], f = computeThickness(L, W, H, pxmm), mx = Math.max(1e-6, L.maxT);
+    const im = cx.createImageData(W, H), d = im.data, col = hexToRgb(L.color), kd = K_OPQ / Math.max(0.05, L.td);
+    for (let k = 0, j = 0; k < W * H; k++, j += 4) { const v = Math.round(255 * clamp(f.thick[k] / mx, 0, 1)); d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255; }
+    cx.putImageData(im, 0, 0);
+    const nm = `${base}/L${i + 1}_${slug(L.name)}`;
+    files.push({ name: `${nm}_heightmap_${fmt(L.maxT)}mm.png`, data: await canvasPNG(cv) });
+    for (let k = 0, j = 0; k < W * H; k++, j += 4) { d[j] = col[0]; d[j + 1] = col[1]; d[j + 2] = col[2]; d[j + 3] = Math.round(255 * (1 - Math.exp(-kd * f.thick[k]))); }
+    cx.putImageData(im, 0, 0);
+    files.push({ name: `${nm}_colour.png`, data: await canvasPNG(cv) });
+    await tick();
+  }
+  const wasOn = state.light.on;
+  state.light.on = true; files.push({ name: `${base}/preview_backlit.png`, data: await canvasPNG(snapshotLight()) });
+  files.push({ name: `${base}/preview_frontlit.png`, data: await canvasPNG(cvD) });
+  state.light.on = wasOn;
+  files.push({ name: `${base}/spec.md`, data: enc.encode(specText()) });
+  files.push({ name: `${base}/spec.csv`, data: enc.encode(specCSV()) });
+  files.push({ name: `${base}/settings.json`, data: enc.encode(JSON.stringify(serialize(false), null, 2)) });
+  download(makeZip(files), `${base}_lightbox_slices.zip`);
+  toast(`Exported ${files.length} files (${W}×${H} px slices)`, 'package-check');
+}
+async function exportHeightmap(i) {
+  const L = state.layers[i], { w, h } = state.plate;
+  let pxmm = state.exp.pxmm; if (Math.max(w, h) * pxmm > 3200) pxmm = 3200 / Math.max(w, h);
+  const W = Math.round(w * pxmm), H = Math.round(h * pxmm), f = computeThickness(L, W, H, pxmm), mx = Math.max(1e-6, L.maxT);
+  const cv = mkCanvas(W, H), cx = cv.getContext('2d'), im = cx.createImageData(W, H), d = im.data;
+  for (let k = 0, j = 0; k < W * H; k++, j += 4) { const v = Math.round(255 * clamp(f.thick[k] / mx, 0, 1)); d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255; }
+  cx.putImageData(im, 0, 0);
+  download(new Blob([await canvasPNG(cv)], { type: 'image/png' }), `${slug(state.project)}_L${i + 1}_${slug(L.name)}_heightmap_${fmt(L.maxT)}mm.png`);
+}
+
+/** Watertight height-field STL. Each pixel with thickness > 0 becomes a column; shared corner heights keep it closed. */
+function buildSTL(L) {
+  const { w, h } = state.plate, res = state.exp.stlRes;
+  const W = Math.max(2, Math.round(w / res)), H = Math.max(2, Math.round(h / res)), pxmm = W / w;
+  const { thick } = computeThickness(L, W, H, pxmm);
+  // bridge pixels that touch only diagonally (would give non-manifold edges)
+  for (let pass = 0, fixed = 1; pass < 6 && fixed; pass++) {
+    fixed = 0;
+    for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) {
+      const i = y * W + x, a = thick[i], b = thick[i + 1], c = thick[i + W], d = thick[i + W + 1];
+      if (a > 0 && d > 0 && !(b > 0) && !(c > 0)) { thick[i + 1] = Math.min(a, d); fixed++; }
+      else if (b > 0 && c > 0 && !(a > 0) && !(d > 0)) { thick[i] = Math.min(b, c); fixed++; }
+    }
+  }
+  const sx = w / W, sy = h / H, VW = W + 1;
+  const vh = new Float32Array(VW * (H + 1)), vc = new Uint8Array(VW * (H + 1));
+  const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && thick[y * W + x] > 1e-6;
+  let cells = 0, walls = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const t = thick[y * W + x]; if (t <= 1e-6) continue;
+    cells++;
+    for (const v of [y * VW + x, y * VW + x + 1, (y + 1) * VW + x, (y + 1) * VW + x + 1]) { vh[v] += t; vc[v]++; }
+    if (!on(x - 1, y)) walls++; if (!on(x + 1, y)) walls++; if (!on(x, y - 1)) walls++; if (!on(x, y + 1)) walls++;
+  }
+  for (let v = 0; v < vh.length; v++) if (vc[v]) vh[v] /= vc[v];
+  const tris = cells * 4 + walls * 2;
+  const buf = new ArrayBuffer(84 + tris * 50), dv = new DataView(buf);
+  const hdr = `LumenStack ${state.project} L${state.layers.indexOf(L) + 1} ${L.name}`.slice(0, 79);
+  for (let i = 0; i < hdr.length; i++) dv.setUint8(i, hdr.charCodeAt(i) & 127);
+  dv.setUint32(80, tris, true);
+  let o = 84;
+  const tri = (ax, ay, az, bx, by, bz, cx, cy, cz) => {
+    const ux = bx - ax, uy = by - ay, uz = bz - az, wx = cx - ax, wy = cy - ay, wz = cz - az;
+    let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx; const nl = Math.hypot(nx, ny, nz) || 1;
+    dv.setFloat32(o, nx / nl, true); dv.setFloat32(o + 4, ny / nl, true); dv.setFloat32(o + 8, nz / nl, true);
+    dv.setFloat32(o + 12, ax, true); dv.setFloat32(o + 16, ay, true); dv.setFloat32(o + 20, az, true);
+    dv.setFloat32(o + 24, bx, true); dv.setFloat32(o + 28, by, true); dv.setFloat32(o + 32, bz, true);
+    dv.setFloat32(o + 36, cx, true); dv.setFloat32(o + 40, cy, true); dv.setFloat32(o + 44, cz, true);
+    dv.setUint16(o + 48, 0, true); o += 50;
+  };
+  // wall from P to Q, outward normal to the left of P→Q (seen from +Z)
+  const wall = (px, py, ph, qx, qy, qh) => { tri(px, py, 0, qx, qy, qh, px, py, ph); tri(px, py, 0, qx, qy, 0, qx, qy, qh); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (!on(x, y)) continue;
+    const X0 = x * sx, X1 = (x + 1) * sx, Y1 = (H - y) * sy, Y0 = (H - y - 1) * sy;
+    const hTL = vh[y * VW + x], hTR = vh[y * VW + x + 1], hBL = vh[(y + 1) * VW + x], hBR = vh[(y + 1) * VW + x + 1];
+    tri(X0, Y0, hBL, X1, Y0, hBR, X1, Y1, hTR); tri(X0, Y0, hBL, X1, Y1, hTR, X0, Y1, hTL);
+    tri(X0, Y0, 0, X1, Y1, 0, X1, Y0, 0); tri(X0, Y0, 0, X0, Y1, 0, X1, Y1, 0);
+    if (!on(x - 1, y)) wall(X0, Y1, hTL, X0, Y0, hBL);
+    if (!on(x + 1, y)) wall(X1, Y0, hBR, X1, Y1, hTR);
+    if (!on(x, y - 1)) wall(X1, Y1, hTR, X0, Y1, hTL);
+    if (!on(x, y + 1)) wall(X0, Y0, hBL, X1, Y0, hBR);
+  }
+  return new Uint8Array(buf);
+}
+async function exportSTL(i) {
+  const L = state.layers[i];
+  toast(`Building STL for layer ${i + 1}…`, 'loader'); await tick();
+  const data = buildSTL(L);
+  download(new Blob([data], { type: 'model/stl' }), `${slug(state.project)}_L${i + 1}_${slug(L.name)}.stl`);
+  toast(`STL ready · ${(data.length / 1048576).toFixed(1)} MB`, 'box');
+}
+async function exportAllSTL() {
+  toast('Building 5 STLs…', 'loader'); await tick();
+  const files = [];
+  for (let i = 0; i < 5; i++) { const L = state.layers[i]; files.push({ name: `${slug(state.project)}_L${i + 1}_${slug(L.name)}.stl`, data: buildSTL(L) }); await tick(); }
+  download(makeZip(files), `${slug(state.project)}_stl.zip`);
+  toast('STL package ready', 'package-check');
+}
+// minimal store-only ZIP writer
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+  const now = new Date();
+  const dtime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const ddate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  for (const f of files) {
+    const name = enc.encode(f.name), data = f.data, crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dtime, true); lh.setUint16(12, ddate, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dtime, true); ch.setUint16(14, ddate, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+    ch.setUint16(30, 0, true); ch.setUint16(32, 0, true); ch.setUint16(34, 0, true); ch.setUint16(36, 0, true); ch.setUint32(38, 0, true); ch.setUint32(42, off, true);
+    central.push(ch.buffer, name);
+    off += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((s, b) => s + b.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+
+// ------------------------------------------------------- demo artwork
+const DW = 1200, DH = 800;
+const SUN = [800, 392];
+function drawStars(x, seed, n, maxY) {
+  const r = rng(seed); x.fillStyle = '#fff';
+  for (let i = 0; i < n; i++) {
+    const sx = r() * DW, sy = r() * maxY, s = 1.6 + r() * r() * 4.5;
+    x.beginPath(); x.arc(sx, sy, s, 0, Math.PI * 2); x.fill();
+    if (s > 4.2) { x.fillRect(sx - s * 2.4, sy - 0.9, s * 4.8, 1.8); x.fillRect(sx - 0.9, sy - s * 2.4, 1.8, s * 4.8); }
+  }
+}
+function ridge(seed, n, rough) {
+  const r = rng(seed), a = new Float32Array(n + 1); a[0] = r(); a[n] = r();
+  let step = n, sc = 1;
+  while (step > 1) { const hf = step / 2; for (let i = hf; i < n; i += step) a[i] = (a[i - hf] + a[i + hf]) / 2 + (r() - 0.5) * sc; step = hf; sc *= rough; }
+  let mn = Infinity, mx = -Infinity; for (const v of a) { mn = Math.min(mn, v); mx = Math.max(mx, v); }
+  return a.map(v => (v - mn) / (mx - mn || 1));
+}
+function fillRidge(x, seed, y0, amp, rough, fill) {
+  const n = 256, a = ridge(seed, n, rough);
+  x.beginPath(); x.moveTo(0, DH);
+  for (let i = 0; i <= n; i++) x.lineTo(i / n * DW, y0 - a[i] * amp);
+  x.lineTo(DW, DH); x.closePath(); x.fillStyle = fill; x.fill();
+}
+const CABIN = { x: 250, y: 640 };
+function genDemo(i) {
+  const c = mkCanvas(DW, DH), x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, DW, DH);
+  if (i === 1) { // sunset glow (orange, depth)
+    const g = x.createRadialGradient(SUN[0], SUN[1], 0, SUN[0], SUN[1], 940);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.06, '#fff'); g.addColorStop(0.085, '#dcdcdc'); g.addColorStop(0.26, '#9e9e9e'); g.addColorStop(0.55, '#4c4c4c'); g.addColorStop(1, '#121212');
+    x.fillStyle = g; x.fillRect(0, 0, DW, DH);
+    drawStars(x, 7, 150, DH * 0.36);
+  } else if (i === 2) { // twilight sky (blue, depth)
+    const g = x.createLinearGradient(0, 0, 0, DH);
+    g.addColorStop(0, '#000'); g.addColorStop(0.17, '#2a2a2a'); g.addColorStop(0.4, '#b8b8b8'); g.addColorStop(0.53, '#fff'); g.addColorStop(1, '#fff');
+    x.fillStyle = g; x.fillRect(0, 0, DW, DH);
+    drawStars(x, 7, 150, DH * 0.36);
+  } else if (i === 3) { // distant peaks (purple, depth with haze)
+    const g1 = x.createLinearGradient(0, DH * 0.36, 0, DH * 0.8); g1.addColorStop(0, '#a8a8a8'); g1.addColorStop(1, '#5a5a5a');
+    fillRidge(x, 11, DH * 0.67, DH * 0.22, 0.55, g1);
+    const g2 = x.createLinearGradient(0, DH * 0.5, 0, DH); g2.addColorStop(0, '#5c5c5c'); g2.addColorStop(1, '#1a1a1a');
+    fillRidge(x, 23, DH * 0.8, DH * 0.13, 0.5, g2);
+    x.fillStyle = '#fff'; x.fillRect(CABIN.x + 28, CABIN.y - 44, 40, 34); // light path for the cabin window
+  } else if (i === 4) { // foreground silhouette (black, mask)
+    x.fillStyle = '#000';
+    x.beginPath(); x.moveTo(0, DH * 0.83);
+    x.bezierCurveTo(DW * 0.22, DH * 0.74, DW * 0.42, DH * 0.86, DW * 0.62, DH * 0.85);
+    x.bezierCurveTo(DW * 0.8, DH * 0.84, DW * 0.9, DH * 0.78, DW, DH * 0.8);
+    x.lineTo(DW, DH); x.lineTo(0, DH); x.closePath(); x.fill();
+    const r = rng(5);
+    const pine = (px, py, ph) => {
+      const w = ph * 0.42; x.fillRect(px - ph * 0.025, py - ph * 0.12, ph * 0.05, ph * 0.14);
+      for (let t = 0; t < 6; t++) {
+        const f = t / 6, ty = py - ph * 0.1 - f * ph * 0.88, tw = w * (1 - f * 0.82);
+        x.beginPath(); x.moveTo(px - tw / 2, ty); x.lineTo(px + tw / 2, ty); x.lineTo(px, ty - ph * 0.26); x.closePath(); x.fill();
+      }
+    };
+    [[40, 690, 300], [105, 665, 210], [150, 690, 160], [880, 690, 190], [950, 680, 290], [1030, 670, 360], [1110, 665, 250], [1165, 675, 330]].forEach(([px, py, ph]) => pine(px + (r() - .5) * 8, py, ph));
+    for (let k = 0; k < 7; k++) pine(560 + k * 38 + r() * 14, 690 + r() * 6, 50 + r() * 40);
+    // cabin with a lit window
+    const { x: cx, y: cy } = CABIN;
+    x.fillRect(cx, cy - 70, 120, 72);
+    x.beginPath(); x.moveTo(cx - 14, cy - 66); x.lineTo(cx + 60, cy - 122); x.lineTo(cx + 134, cy - 66); x.closePath(); x.fill();
+    x.fillRect(cx + 88, cy - 130, 14, 40);
+    x.fillStyle = '#fff'; x.fillRect(cx + 30, cy - 42, 36, 30);
+    x.fillStyle = '#000'; x.fillRect(cx + 46, cy - 42, 3, 30); x.fillRect(cx + 30, cy - 29, 36, 3);
+    // birds
+    x.strokeStyle = '#000'; x.lineWidth = 4; x.lineCap = 'round';
+    [[380, 230, 18], [420, 205, 14], [455, 245, 12]].forEach(([bx, by, s]) => { x.beginPath(); x.moveTo(bx - s, by - s * 0.4); x.quadraticCurveTo(bx - s * 0.4, by - s * 0.6, bx, by); x.quadraticCurveTo(bx + s * 0.4, by - s * 0.6, bx + s, by - s * 0.4); x.stroke(); });
+    // frame border
+    x.lineWidth = 26; x.strokeStyle = '#000'; x.strokeRect(13, 13, DW - 26, DH - 26);
+  }
+  return c.toDataURL('image/png');
+}
+function genSample(kind, text, font) {
+  const c = mkCanvas(DW, DH), x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, DW, DH);
+  if (kind === 'lgrad') { const g = x.createLinearGradient(0, 0, 0, DH); g.addColorStop(0, '#000'); g.addColorStop(1, '#fff'); x.fillStyle = g; x.fillRect(0, 0, DW, DH); }
+  else if (kind === 'rgrad') { const g = x.createRadialGradient(DW / 2, DH / 2, 0, DW / 2, DH / 2, DW * 0.6); g.addColorStop(0, '#fff'); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(0, 0, DW, DH); }
+  else if (kind === 'stars') { x.fillStyle = '#000'; x.fillRect(0, 0, DW, DH); drawStars(x, Math.random() * 1e6 | 0, 260, DH); }
+  else if (kind === 'vignette') { const g = x.createRadialGradient(DW / 2, DH / 2, DH * 0.25, DW / 2, DH / 2, DW * 0.62); g.addColorStop(0, '#fff'); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(0, 0, DW, DH); }
+  else if (kind === 'steps') { for (let k = 0; k < 10; k++) { const v = Math.round(255 * k / 9); x.fillStyle = `rgb(${v},${v},${v})`; x.fillRect(k * DW / 10, 0, DW / 10 + 1, DH); } }
+  else if (kind === 'text') {
+    const fam = { sans: '800 {s}px Inter, Arial Black, sans-serif', serif: '700 {s}px Georgia, "Times New Roman", serif', script: 'italic 700 {s}px "Brush Script MT", "Segoe Script", cursive', mono: '700 {s}px "JetBrains Mono", Consolas, monospace' }[font] || '800 {s}px Inter, sans-serif';
+    const lines = String(text || 'Hello').split(/\\n|\n/);
+    let s = 400; x.font = fam.replace('{s}', s);
+    const widest = () => Math.max(...lines.map(l => x.measureText(l).width));
+    while ((widest() > DW * 0.86 || s * 1.1 * lines.length > DH * 0.8) && s > 20) { s -= 8; x.font = fam.replace('{s}', s); }
+    x.fillStyle = '#000'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    lines.forEach((l, k) => x.fillText(l, DW / 2, DH / 2 + (k - (lines.length - 1) / 2) * s * 1.1));
+  }
+  return c.toDataURL('image/png');
+}
+function demoState() {
+  const s = DEFAULT_STATE();
+  const cfg = [
+    { name: 'Diffuser', mode: 'solid', preset: 'white', maxT: 0.6, layerH: 0.2 },
+    { name: 'Sunset Glow', mode: 'depth', preset: 'orange', minT: 0, maxT: 1.28, layerH: 0.08 },
+    { name: 'Twilight Sky', mode: 'depth', preset: 'blue', minT: 0, maxT: 1.2, layerH: 0.08 },
+    { name: 'Distant Peaks', mode: 'depth', preset: 'purple', minT: 0, maxT: 0.84, layerH: 0.12 },
+    { name: 'Pines & Cabin', mode: 'mask', preset: 'black', minT: 0, maxT: 1.2, layerH: 0.2, threshold: 0.5 },
+  ];
+  s.layers = cfg.map((c, i) => { const f = FILAMENTS.find(f => f.id === c.preset); return makeLayer(i, Object.assign({ color: f.hex, td: f.td }, c)); });
+  return s;
+}
+function loadDemo() {
+  state = demoState();
+  state.layers.forEach((L, i) => { if (i > 0) setLayerImage(L, genDemo(i)); });
+  afterStateReplace();
+}
+function newProject() {
+  state = DEFAULT_STATE(); state.project = 'Untitled lightbox';
+  state.layers.forEach((L, i) => { if (i > 0) { L.mode = 'mask'; } });
+  afterStateReplace();
+}
+function afterStateReplace() {
+  updatePreviewDims(); build3D(); renderLayerList(); buildProps(); syncControls(); schedule();
+}
+
+// --------------------------------------------------------- UI builders
+const sl = (label, k, min, max, step, unit = '', extra = '') => `
+  <div class="ctl" ${extra}>
+    <div class="ctl-top"><span class="ctl-label">${label}</span><span class="ctl-val"><input type="number" class="num" data-k="${k}" min="${min}" max="${max}" step="${step}"><span class="unit">${unit}</span></span></div>
+    <input type="range" data-k="${k}" min="${min}" max="${max}" step="${step}">
+  </div>`;
+const selc = (label, k, opts, num = false) => `
+  <label class="block"><div class="ctl-label mb-1">${label}</div>
+    <select class="sel-i" data-k="${k}" ${num ? 'data-num' : ''}>${opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>`;
+const tg = (label, k, title = '') => `<label class="tgl-row" title="${title}"><span>${label}</span><input type="checkbox" class="tgl" data-k="${k}"></label>`;
+const seg = (k, opts) => `<div class="seg" data-seg="${k}">${opts.map(([v, l, ic]) => `<button data-v="${v}">${ic ? `<i data-lucide="${ic}"></i>` : ''}${l}</button>`).join('')}</div>`;
+const sec = (icon, title, body, open = true) => `<details class="sec" ${open ? 'open' : ''}><summary><i data-lucide="${icon}"></i>${title}<i data-lucide="chevron-right" class="chev"></i></summary><div class="sec-body">${body}</div></details>`;
+
+function buildLeftPanels() {
+  $('#lightPanel').innerHTML = `
+    ${tg('<span class="flex items-center gap-2"><b class="text-ink-100">Light Box Mode</b><span class="kbd">L</span></span>', 'S.light.on', 'Simulate the LED behind Layer 1')}
+    <div><div class="ctl-label mb-1">Light model</div>${seg('S.light.model', [['physical', 'Physical'], ['artistic', 'Blend modes']])}</div>
+    <div class="hint" data-out="modelHint"></div>
+    <div><div class="ctl-label mb-1">LED colour</div>${seg('S.light.colorMode', [['kelvin', 'Temperature', 'thermometer'], ['custom', 'RGB', 'palette']])}</div>
+    <div data-show="S.light.colorMode=kelvin">${sl('Colour temp', 'S.light.kelvin', 1800, 9000, 50, 'K').replace('type="range"', 'type="range" class="kelvin"')}</div>
+    <div data-show="S.light.colorMode=custom" class="flex items-center gap-2"><input type="color" class="cpick" data-k="S.light.custom"><input class="txt-i font-mono" data-k="S.light.custom" data-hex maxlength="7"></div>
+    ${sl('Intensity', 'S.light.intensity', 0.2, 6, 0.05, '×')}
+    ${selc('LED layout', 'S.light.layout', [['panel', 'Diffuse LED panel'], ['center', 'Single LED (centre hot-spot)'], ['edge', 'Edge-lit strips (top & bottom)'], ['grid', 'LED grid (array)']])}
+    ${sl('Uniformity', 'S.light.uniformity', 0, 1, 0.01, '')}
+    ${sl('Room light', 'S.light.ambient', 0, 0.5, 0.01, '', 'title="Ambient front light mixed into the backlit view"')}
+    <div class="subhead">CSS post-filters</div>
+    ${sl('Brightness', 'S.light.bright', 0.4, 2, 0.01, '')}
+    ${sl('Contrast', 'S.light.contrast', 0.4, 2, 0.01, '')}
+    ${sl('Saturation', 'S.light.saturate', 0, 2.5, 0.01, '')}
+    ${sl('Bloom glow', 'S.light.bloom', 0, 1, 0.01, '')}
+    ${tg('Printed line texture', 'S.light.texture')}`;
+  $('#platePanel').innerHTML = `
+    <div class="grid grid-cols-2 gap-3">
+      <label><div class="ctl-label mb-1">Width</div><div class="flex items-center"><input type="number" class="num w-full" style="width:100%" data-k="S.plate.w" min="20" max="400" step="1"><span class="unit">mm</span></div></label>
+      <label><div class="ctl-label mb-1">Height</div><div class="flex items-center"><input type="number" class="num w-full" style="width:100%" data-k="S.plate.h" min="20" max="400" step="1"><span class="unit">mm</span></div></label>
+    </div>
+    <div class="flex flex-wrap gap-1.5">${[[150, 100], [100, 100], [200, 150], [100, 150], [210, 297]].map(([w, h]) => `<button class="btn btn-sm" data-size="${w}x${h}">${w}×${h}</button>`).join('')}</div>
+    ${sl('Gap between plates', 'S.plate.gap', 0, 20, 0.5, 'mm')}
+    ${sl('Diffusion (depth blur)', 'S.plate.diffusion', 0, 1, 0.01, '', 'title="Plates further back look softer through the plates in front"')}
+    ${sl('Solid rim', 'S.plate.rim', 0, 12, 0.5, 'mm', 'title="Solid border on every plate for alignment / frame"')}
+    ${selc('Frame', 'S.plate.frame', [['walnut', 'Walnut'], ['oak', 'Oak'], ['black', 'Matte black'], ['white', 'White'], ['none', 'None']])}
+    ${selc('Front-lit background', 'S.plate.bg', [['paper', 'Paper'], ['white', 'White'], ['dark', 'Dark'], ['checker', 'Transparent']])}`;
+}
+
+function renderLayerList() {
+  const html = [4, 3, 2, 1, 0].map(i => {
+    const L = state.layers[i];
+    return `<div class="lcard ${i === state.sel ? 'sel' : ''} ${L.visible ? '' : 'off'}" data-i="${i}" style="--c:${L.color}">
+      <span class="bar"></span><span class="lnum">${i + 1}</span>
+      <div class="lthumb"><canvas id="th${i}" width="108" height="72"></canvas></div>
+      <div class="lmeta"><div class="lname" id="ln${i}"></div><div class="lsub" id="ls${i}"></div></div>
+      <div class="lact">
+        <button class="ibtn hov ${L.solo ? 'on' : ''}" data-lact="solo" title="Solo this layer"><i data-lucide="focus"></i></button>
+        <button class="ibtn" data-lact="vis" title="Show / hide (H)"><i data-lucide="${L.visible ? 'eye' : 'eye-off'}"></i></button>
+        <div class="updn hov"><button class="ibtn" data-lact="up" title="Move toward front"><i data-lucide="chevron-up"></i></button><button class="ibtn" data-lact="down" title="Move toward back"><i data-lucide="chevron-down"></i></button></div>
+      </div></div>`;
+  }).join('');
+  $('#layerList').innerHTML = `<div class="stack-cap">Front · viewer</div>${html}<div class="stack-cap">Back · LED</div>`;
+  icons(); dirty.cards = true; schedule();
+}
+function updateCards() {
+  state.layers.forEach((L, i) => {
+    const c = $('#th' + i); if (!c) return;
+    const x = c.getContext('2d'), r = rt(L);
+    x.fillStyle = '#EEEAE1'; x.fillRect(0, 0, c.width, c.height);
+    if (r.dc) {
+      const s = Math.min(c.width / P.W, c.height / P.H), w = P.W * s, h = P.H * s;
+      x.drawImage(r.dc, (c.width - w) / 2, (c.height - h) / 2, w, h);
+    }
+    $('#ln' + i).textContent = L.name;
+    $('#ls' + i).textContent = `${MODES[L.mode]} · ${fmt(L.minT)}–${fmt(L.maxT)} mm · ${presetName(L).replace(/^Custom /, '')}`;
+    const card = c.closest('.lcard'); card.style.setProperty('--c', L.color);
+  });
+}
+
+function buildProps() {
+  const L = selL(), i = state.sel;
+  $('#props').innerHTML = `
+  <div class="flex items-center gap-3 px-4 py-3.5 border-b border-white/5 sticky top-0 bg-ink-900/95 backdrop-blur z-10">
+    <span class="lnum" style="width:30px;height:30px;font-size:13px;background:var(--acc);color:#1d1404;border-radius:9px">${i + 1}</span>
+    <div class="flex-1 min-w-0">
+      <input class="w-full bg-transparent text-[14px] font-semibold outline-none border-b border-transparent focus:border-accent" data-k="L.name" spellcheck="false">
+      <div class="text-[10.5px] text-ink-400 mt-0.5">${ROLES[i]}</div>
+    </div>
+    <button class="ibtn" data-act="reset-layer" title="Reset this layer's settings"><i data-lucide="rotate-ccw"></i></button>
+  </div>
+
+  ${sec('image', 'Image Source', `
+    <div class="src-box" id="srcBox"><canvas id="srcThumb" style="display:none"></canvas>
+      <div id="srcEmpty" class="p-4"><i data-lucide="image-plus" style="width:22px;height:22px;margin:0 auto 6px;display:block"></i><div class="text-[11.5px]">Drop, paste or upload an image</div><div class="text-[10.5px] text-ink-500 mt-0.5">PNG with transparency supported</div></div>
+    </div>
+    <div class="grid grid-cols-[1fr_1fr_auto] gap-1.5">
+      <button class="btn btn-sm" data-act="upload"><i data-lucide="upload"></i>Upload</button>
+      <select class="sel-i" id="sampleSel" style="padding:4px 22px 4px 8px;font-size:11px">
+        <option value="">Samples…</option>
+        ${i > 0 ? '<option value="demo">Demo scene part</option>' : ''}
+        <option value="text">Text…</option><option value="lgrad">Linear gradient</option><option value="rgrad">Radial glow</option>
+        <option value="vignette">Vignette</option><option value="stars">Starfield</option><option value="steps">10-step test strip</option>
+      </select>
+      <button class="btn btn-sm" data-act="clear-img" title="Remove image"><i data-lucide="trash-2"></i></button>
+    </div>
+    <div id="textGen" class="hidden flex flex-col gap-2 p-2.5 rounded-lg bg-ink-950 border border-ink-700">
+      <textarea id="textIn" rows="2" class="txt-i" placeholder="Your text (new line for 2 lines)">Good Night</textarea>
+      <div class="flex gap-1.5"><select id="textFont" class="sel-i" style="padding:4px 22px 4px 8px;font-size:11px"><option value="sans">Sans bold</option><option value="serif">Serif</option><option value="script">Script</option><option value="mono">Mono</option></select>
+      <button class="btn btn-sm btn-acc" data-act="text-go"><i data-lucide="type"></i>Render</button></div>
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      ${selc('Fit', 'L.fit', [['cover', 'Cover'], ['contain', 'Contain'], ['stretch', 'Stretch']])}
+      ${selc('Channel', 'L.channel', [['luma', 'Luminance'], ['alpha', 'Alpha mask']])}
+    </div>
+    ${sl('Scale', 'L.scale', 0.1, 4, 0.01, '×')}
+    <div class="grid grid-cols-2 gap-3">${sl('Offset X', 'L.ox', -1, 1, 0.005, '')}${sl('Offset Y', 'L.oy', -1, 1, 0.005, '')}</div>
+    ${sl('Rotation', 'L.rot', -180, 180, 1, '°')}
+    <div class="flex items-center justify-between"><span class="hint">Tip: use the <b>Move</b> tool (V) to drag the image on the canvas.</span><button class="btn btn-sm" data-act="reset-xf">Reset</button></div>
+  `)}
+
+  ${sec('scan-line', 'Depth Mapping', `
+    ${seg('L.mode', [['solid', 'Solid', 'square'], ['mask', 'Silhouette', 'contrast'], ['depth', 'Depth', 'mountain'], ['edges', 'Lines', 'pen-tool']])}
+    <div class="hint" data-out="modeHint"></div>
+    <div data-show="L.mode=mask|depth|edges" class="flex flex-col gap-[11px]">
+      ${tg('Invert <span class="text-ink-500 text-[11px]">(light areas become material)</span>', 'L.invert')}
+      ${sl('Brightness', 'L.bright', -1, 1, 0.01, '')}
+      ${sl('Contrast', 'L.contrast', -1, 1, 0.01, '')}
+      ${sl('Gamma', 'L.gamma', 0.2, 3, 0.01, '')}
+      <div data-show="L.mode=mask|edges" class="flex flex-col gap-[11px]">
+        <div><div class="ctl-top"><span class="ctl-label">Histogram</span><button class="btn btn-sm" data-act="otsu" title="Automatic threshold (Otsu)"><i data-lucide="wand-sparkles"></i>Auto</button></div><canvas id="histo" class="histo" width="560" height="88"></canvas></div>
+        ${sl('Threshold', 'L.threshold', 0, 1, 0.005, '')}
+        ${sl('Edge softness', 'L.soft', 0, 0.3, 0.005, '')}
+      </div>
+      <div data-show="L.mode=edges">${sl('Line width', 'L.lineW', 0.2, 3, 0.05, 'mm')}</div>
+      ${sl('Smoothing', 'L.blur', 0, 4, 0.05, 'mm')}
+    </div>
+  `)}
+
+  ${sec('palette', 'Filament', `
+    <div class="swatches">${FILAMENTS.map(f => `<button class="swb" data-preset="${f.id}" style="--c:${f.hex}" title="${f.name} · TD ${f.td} mm"></button>`).join('')}</div>
+    <div class="flex items-center gap-2">
+      <input type="color" class="cpick" data-k="L.color">
+      <input class="txt-i font-mono" style="width:96px" data-k="L.color" data-hex maxlength="7">
+      <span class="text-ink-300 text-[12px] truncate" data-out="presetName"></span>
+    </div>
+    ${sl('Transmission distance', 'L.td', 0.2, 15, 0.1, 'mm', 'title="TD: thickness at which this filament stops letting light through (HueForge-style)"')}
+    <div class="hint" data-out="tdHint"></div>
+    ${selc('Filament type', 'L.type', [['auto', 'Auto (recommended)'], ...Object.entries(TYPES).map(([k, v]) => [k, v.label])])}
+    <div class="hint" data-out="recHint"></div>
+  `)}
+
+  ${sec('ruler', 'Thickness &amp; Layers', `
+    ${selc('Print layer height', 'L.layerH', LAYER_HEIGHTS.map(v => [v, v.toFixed(2) + ' mm']), true)}
+    <div class="ctl">
+      <div class="ctl-top"><span class="ctl-label">Max thickness</span><span class="ctl-val"><input type="number" class="num" data-k="L.maxLayers" min="1" max="200" step="1" style="width:46px" title="layers"><span class="unit" style="min-width:34px">layers</span><input type="number" class="num" data-k="L.maxT" min="0" max="8" step="0.01"><span class="unit">mm</span></span></div>
+      <input type="range" data-k="L.maxT" min="0" max="6" step="0.01" data-lstep>
+    </div>
+    <div class="ctl" data-show="L.mode=mask|depth|edges">
+      <div class="ctl-top"><span class="ctl-label">Min thickness</span><span class="ctl-val"><input type="number" class="num" data-k="L.minLayers" min="0" max="200" step="1" style="width:46px"><span class="unit" style="min-width:34px">layers</span><input type="number" class="num" data-k="L.minT" min="0" max="8" step="0.01"><span class="unit">mm</span></span></div>
+      <input type="range" data-k="L.minT" min="0" max="6" step="0.01" data-lstep>
+    </div>
+    <div><div class="tbar" id="tbar"></div><div class="hint mt-1.5" data-out="thickSummary"></div></div>
+  `)}
+
+  ${sec('blend', 'Preview Blending', `
+    ${sl('Opacity', 'L.opacity', 0, 1, 0.01, '')}
+    ${selc('Blend mode', 'L.blend', BLENDS.map(b => [b, b.replace(/-/g, ' ').replace(/^./, c => c.toUpperCase())]))}
+    <div class="hint">Blend mode drives the <b>front-lit</b> view and the <b>Blend modes</b> light model. The Physical model multiplies transmitted light (Beer–Lambert).</div>
+  `)}
+  <div class="h-6"></div>`;
+  icons(); syncControls(); drawHisto(); drawSrcThumb();
+}
+
+function drawSrcThumb() {
+  const c = $('#srcThumb'); if (!c) return;
+  const img = rt(selL()).img;
+  $('#srcEmpty').style.display = img ? 'none' : '';
+  c.style.display = img ? '' : 'none';
+  if (!img) return;
+  const iw = img.naturalWidth || 1200, ih = img.naturalHeight || 800, s = Math.min(560 / iw, 260 / ih);
+  c.width = Math.max(1, Math.round(iw * s)); c.height = Math.max(1, Math.round(ih * s));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+}
+function drawHisto() {
+  const c = $('#histo'); if (!c) return;
+  const L = selL(), h = rt(L).hist; const x = c.getContext('2d'), W = c.width, H = c.height;
+  x.clearRect(0, 0, W, H);
+  if (!h) return;
+  let mx = 0; for (let i = 1; i < 63; i++) mx = Math.max(mx, h[i]);
+  mx = Math.max(mx, 1);
+  const bw = W / 64;
+  for (let i = 0; i < 64; i++) {
+    const v = Math.min(1, Math.sqrt(h[i] / mx)), bh = v * (H - 8);
+    const on = (i + 0.5) / 64 >= L.threshold;
+    x.fillStyle = on ? L.color : '#3a4350';
+    x.globalAlpha = on ? 0.95 : 0.8;
+    x.fillRect(i * bw + 1, H - bh, bw - 2, bh);
+  }
+  x.globalAlpha = 1;
+  const tx = L.threshold * W;
+  x.fillStyle = 'rgba(245,165,36,.18)'; x.fillRect((L.threshold - L.soft) * W, 0, L.soft * 2 * W, H);
+  x.fillStyle = '#f5a524'; x.fillRect(tx - 1.5, 0, 3, H);
+}
+function otsu(h) {
+  let total = 0, sum = 0; for (let i = 0; i < 64; i++) { total += h[i]; sum += i * h[i]; }
+  let sB = 0, wB = 0, best = 0, th = 32;
+  for (let i = 0; i < 64; i++) {
+    wB += h[i]; if (!wB) continue; const wF = total - wB; if (!wF) break;
+    sB += i * h[i]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2;
+    if (v > best) { best = v; th = i; }
+  }
+  return (th + 1) / 64;
+}
+
+// ----------------------------------------------------- binding engine
+const VIRT = {
+  maxLayers: { get: L => Math.round(L.maxT / L.layerH), set: (L, v) => { L.maxT = +(Math.max(1, Math.round(v)) * L.layerH).toFixed(3); } },
+  minLayers: { get: L => Math.round(L.minT / L.layerH), set: (L, v) => { L.minT = +(Math.max(0, Math.round(v)) * L.layerH).toFixed(3); } },
+};
+function getK(k) {
+  const [root, ...p] = k.split('.');
+  if (root === 'L') { const L = selL(), key = p.join('.'); return VIRT[key] ? VIRT[key].get(L) : L[key]; }
+  return p.reduce((o, x) => o == null ? o : o[x], state);
+}
+function setK(k, v) {
+  const [root, ...p] = k.split('.');
+  if (root === 'L') {
+    const L = selL(), key = p.join('.');
+    if (VIRT[key]) VIRT[key].set(L, v); else L[key] = v;
+    onLayerKey(L, key);
+  } else {
+    if (k === 'S.project') { state.project = v; dirty.spec = true; schedule(); return; }
+    let o = state; for (let i = 0; i < p.length - 1; i++) o = o[p[i]];
+    o[p[p.length - 1]] = v;
+    onStateKey(p.join('.'));
+  }
+  syncControls();
+}
+function snapT(L, t) { const lh = L.layerH; return +(Math.round(Math.max(0, t) / lh) * lh).toFixed(3); }
+function onLayerKey(L, key) {
+  if (key === 'maxT' || key === 'maxLayers') { L.maxT = Math.max(L.layerH, snapT(L, L.maxT)); if (L.minT > L.maxT) L.minT = L.maxT; }
+  if (key === 'minT' || key === 'minLayers') { L.minT = snapT(L, L.minT); if (L.minT > L.maxT) L.maxT = L.minT; }
+  if (key === 'layerH') { L.maxT = Math.max(L.layerH, snapT(L, L.maxT)); L.minT = Math.min(L.maxT, snapT(L, L.minT)); }
+  if (key === 'color') { const f = FILAMENTS.find(f => f.hex.toUpperCase() === String(L.color).toUpperCase()); L.preset = f ? f.id : 'custom'; L.color = String(L.color).toUpperCase(); }
+  if (key === 'name') { dirty.cards = dirty.spec = dirty.d3 = true; schedule(); return; }
+  if (key === 'type') { dirty.spec = true; schedule(); return; }
+  if (key === 'opacity' || key === 'blend') { markComposite(); return; }
+  if (key === 'mode' && L.mode !== 'solid' && !rt(L).img) toast('Add an image to this layer to map it', 'image-plus');
+  invalidateLayer(L);
+}
+function onStateKey(path) {
+  if (path === 'plate.w' || path === 'plate.h') { state.plate.w = clamp(+state.plate.w || 100, 20, 400); state.plate.h = clamp(+state.plate.h || 100, 20, 400); updatePreviewDims(); build3D(); return; }
+  if (path === 'plate.rim') { invalidateAll(); return; }
+  if (path === 'plate.frame') { layoutStage(); return; }
+  if (path === 'plate.bg') { markComposite(); return; }
+  if (path.startsWith('plate.')) { markComposite(); return; }
+  if (path === 'light.layout' || path === 'light.uniformity') { dirty.pattern = true; markComposite(); return; }
+  if (path === 'light.on') { flicker(); markComposite(); return; }
+  if (path.startsWith('light.')) {
+    if (['light.bright', 'light.contrast', 'light.saturate', 'light.texture'].includes(path)) { applyViewCss(); return; }
+    if (path === 'light.bloom') { applyViewCss(); return; }
+    dirty.light = dirty.d3 = dirty.spec = true; schedule(); return;
+  }
+  if (path === 'view.explode' || path === 'view.spin') { dirty.d3 = true; schedule(); if (state.view.spin) spin(); return; }
+  if (path.startsWith('exp.')) { dirty.spec = true; schedule(); return; }
+  schedule();
+}
+function decimals(step) { const s = String(step); return s.includes('.') ? Math.min(3, s.split('.')[1].length) : 0; }
+function syncControls() {
+  const L = selL();
+  for (const el of $$('[data-k]')) {
+    const k = el.dataset.k, v = getK(k);
+    if (v === undefined) continue;
+    if (el.type === 'checkbox') { el.checked = !!v; continue; }
+    if (el === document.activeElement && (el.type === 'number' || el.type === 'text' || el.tagName === 'TEXTAREA' || el.hasAttribute('data-hex') || k === 'S.project' || k === 'L.name')) continue;
+    if (el.type === 'range') {
+      if (el.hasAttribute('data-lstep')) el.step = L.layerH;
+      el.value = v;
+      const mn = +el.min, mx = +el.max; el.style.setProperty('--p', clamp((v - mn) / (mx - mn) * 100, 0, 100) + '%');
+    } else if (el.type === 'number') el.value = (+v).toFixed(decimals(el.step || 1)).replace(/\.?0+$/, m => m.includes('.') ? '' : m) || '0';
+    else if (el.type === 'color') el.value = String(v).toLowerCase();
+    else if (el.tagName === 'SELECT') el.value = String(v);
+    else el.value = v;
+  }
+  for (const s of $$('[data-seg]')) { const v = String(getK(s.dataset.seg)); $$('button', s).forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+  for (const el of $$('[data-show]')) {
+    const [k, vals] = el.dataset.show.split('=');
+    el.style.display = vals.split('|').includes(String(getK(k))) ? '' : 'none';
+  }
+  $$('[data-preset]').forEach(b => b.classList.toggle('on', b.dataset.preset === L.preset));
+  updateOutputs();
+}
+const OUT = {
+  modeHint: () => ({
+    solid: 'Uniform plate at the max thickness — ideal for the back diffuser or a colour filter.',
+    mask: 'Threshold the image into a silhouette: material where it is dark (or opaque). Great for outlines and cut-outs.',
+    depth: 'Lithophane-style: darker pixels print thicker, giving smooth shading through the plate.',
+    edges: 'Extract outlines from the image (Sobel) and print them as line-work.'
+  })[selL().mode],
+  presetName: () => presetName(selL()),
+  tdHint: () => { const L = selL(), a = absorb(L), block = Math.log(50) / Math.min(...a); return `Light through max thickness: <b>${fmt(transLum(L, L.maxT) * 100, 1)}%</b> · effectively opaque at ≈ <b>${fmt(block, 1)} mm</b>`; },
+  recHint: () => { const L = selL(), r = recommend(L, state.sel); const lhNote = Math.abs(r.lh - L.layerH) > 1e-6 ? ` Suggested layer height <b>${r.lh} mm</b> <button class="text-accent underline" data-act="apply-lh">apply</button>` : ''; return `<b>${TYPES[r.type].label}</b> — ${r.why}${lhNote}`; },
+  thickSummary: () => { const L = selL(), n = Math.round(L.maxT / L.layerH), st = rt(L).stats; return `<b>${n}</b> print layers · <b>${Math.round((L.maxT - L.minT) / L.layerH) + 1}</b> tone steps · relief ${fmt(L.maxT - L.minT)} mm${st ? ` · coverage ${fmt(st.coverage * 100, 0)}%` : ''}`; },
+  modelHint: () => state.light.model === 'physical' ? 'Each plate absorbs light per colour channel by its thickness and TD (Beer–Lambert), then CSS filters add glow.' : 'LED glow composited with each layer\'s transmission map using its blend mode and opacity.'
+};
+function updateOutputs() {
+  for (const el of $$('[data-out]')) { const f = OUT[el.dataset.out]; if (f) { const h = f(); if (el._h !== h) { el.innerHTML = h; el._h = h; } } }
+  const tb = $('#tbar');
+  if (tb) {
+    const L = selL(), n = Math.min(60, Math.round(L.maxT / L.layerH)), lo = Math.round(L.minT / L.layerH), a = absorb(L), led = ledLin();
+    let html = '';
+    for (let k = 1; k <= n; k++) { const t = k * L.layerH, c = [0, 1, 2].map(ch => l2s(tone(led[ch] * 2.2 * Math.exp(-a[ch] * t)))); html += `<span style="background:rgb(${c})${k <= lo ? ';outline:1px solid rgba(255,255,255,.25)' : ''}" title="${fmt(t)} mm"></span>`; }
+    if (tb._h !== html) { tb.innerHTML = html; tb._h = html; }
+  }
+}
+function updateStatus() {
+  const rows = specRows(), T = stackTotals(rows);
+  $('#status').innerHTML = `<span>${P.W}×${P.H} preview · ${fmt(P.pxmm, 1)} px/mm</span><span>render ${lastMs.toFixed(1)} ms</span><span class="hidden sm:inline">plate ${state.plate.w}×${state.plate.h} mm</span><span>stack depth ${fmt(T.depth, 1)} mm</span><span>~${fmt(T.grams, 1)} g filament</span><span class="ml-auto hidden md:inline">L light box · C compare · 1–5 layers · V move · ? help</span>`;
+}
+
+// ------------------------------------------------------------ events
+function readVal(el) {
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'range' || el.type === 'number' || el.hasAttribute('data-num')) { const v = parseFloat(el.value); return isNaN(v) ? null : v; }
+  return el.value;
+}
+document.addEventListener('input', e => {
+  const el = e.target.closest('[data-k]'); if (!el) return;
+  if (el.type === 'number' || el.hasAttribute('data-hex')) return; // commit on change
+  const v = readVal(el); if (v === null) return;
+  setK(el.dataset.k, v);
+});
+document.addEventListener('change', e => {
+  const el = e.target.closest('[data-k]'); if (!el) return;
+  let v = readVal(el);
+  if (el.hasAttribute('data-hex')) { const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(String(v).trim()); if (!m) { syncControls(); return; } v = '#' + hexToRgb(m[1]).map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase(); }
+  if (v === null) { syncControls(); return; }
+  if (el.type === 'number') { if (el.min !== '') v = Math.max(+el.min, v); if (el.max !== '') v = Math.min(+el.max, v); }
+  setK(el.dataset.k, v);
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input.num')) e.target.blur(); });
+document.addEventListener('click', e => {
+  const segBtn = e.target.closest('[data-seg] button');
+  if (segBtn) { const k = segBtn.closest('[data-seg]').dataset.seg; setK(k, segBtn.dataset.v); return; }
+  const pre = e.target.closest('[data-preset]');
+  if (pre) { const f = FILAMENTS.find(f => f.id === pre.dataset.preset), L = selL(); L.preset = f.id; L.color = f.hex; L.td = f.td; invalidateLayer(L); syncControls(); return; }
+  const tab = e.target.closest('[data-view]');
+  if (tab) { setView(tab.dataset.view); return; }
+  const tool = e.target.closest('[data-tool]');
+  if (tool) { state.view.tool = tool.dataset.tool; applyViewCss(); return; }
+  const sz = e.target.closest('[data-size]');
+  if (sz) { const [w, h] = sz.dataset.size.split('x').map(Number); state.plate.w = w; state.plate.h = h; onStateKey('plate.w'); syncControls(); return; }
+  const hm = e.target.closest('[data-hmap]');
+  if (hm) { state.view.hmap = hm.dataset.hmap; dirty.height = true; schedule(); return; }
+  const lact = e.target.closest('[data-lact]');
+  const card = e.target.closest('.lcard');
+  if (lact && card) { layerAction(+card.dataset.i, lact.dataset.lact); e.stopPropagation(); return; }
+  if (card) { selectLayer(+card.dataset.i); return; }
+  const tag = e.target.closest('.ptag');
+  if (tag) { selectLayer(+tag.dataset.i); return; }
+  const act = e.target.closest('[data-act]');
+  if (act) doAction(act.dataset.act, act);
+});
+$('#lbToggle').addEventListener('click', () => setK('S.light.on', !state.light.on));
+$('#cmpToggle').addEventListener('click', () => toggleCompare());
+document.addEventListener('change', e => {
+  if (e.target.id === 'sampleSel') {
+    const v = e.target.value; e.target.value = '';
+    if (!v) return;
+    if (v === 'text') { $('#textGen').classList.remove('hidden'); $('#textIn').focus(); return; }
+    const L = selL();
+    setLayerImage(L, v === 'demo' ? genDemo(state.sel) : genSample(v));
+    if (L.mode === 'solid') L.mode = v === 'stars' || v === 'demo' ? 'mask' : 'depth';
+    syncControls();
+  }
+});
+
+function selectLayer(i) {
+  if (i === state.sel) return;
+  state.sel = i;
+  $$('.lcard').forEach(c => c.classList.toggle('sel', +c.dataset.i === i));
+  buildProps(); dirty.height = dirty.d3 = true; schedule();
+}
+function layerAction(i, a) {
+  const L = state.layers[i];
+  if (a === 'vis') { L.visible = !L.visible; renderLayerList(); markComposite(); }
+  else if (a === 'solo') { const was = L.solo; state.layers.forEach(l => l.solo = false); L.solo = !was; renderLayerList(); markComposite(); }
+  else if (a === 'up' || a === 'down') {
+    const j = a === 'up' ? i + 1 : i - 1; if (j < 0 || j > 4) return;
+    [state.layers[i], state.layers[j]] = [state.layers[j], state.layers[i]];
+    if (state.sel === i) state.sel = j; else if (state.sel === j) state.sel = i;
+    renderLayerList(); buildProps(); build3D(); markComposite();
+    state.layers.forEach(l => rt(l).blurKey = null);
+  }
+}
+function setView(v) {
+  state.view.mode = v;
+  dirty.height = dirty.d3 = dirty.spec = true;
+  applyViewCss(); layoutStage(); schedule();
+  if (v === '3d' && state.view.spin) spin();
+}
+function toggleCompare() { state.view.compare = !state.view.compare; if (state.view.mode !== 'preview') setView('preview'); applyViewCss(); }
+let flickT = 0;
+function flicker() {
+  if (!state.light.on) return;
+  for (const c of [cvL, cvB]) { c.classList.remove('flick'); void c.offsetWidth; c.classList.add('flick'); }
+  clearTimeout(flickT); flickT = setTimeout(() => { cvL.classList.remove('flick'); cvB.classList.remove('flick'); }, 800);
+}
+async function doAction(a, el) {
+  const L = selL();
+  switch (a) {
+    case 'upload': $('#fileImg').click(); break;
+    case 'clear-img': setLayerImage(L, null); drawSrcThumb(); break;
+    case 'text-go': setLayerImage(L, genSample('text', $('#textIn').value, $('#textFont').value)); if (L.mode === 'solid' || L.mode === 'depth') L.mode = 'mask'; $('#textGen').classList.add('hidden'); syncControls(); break;
+    case 'reset-xf': Object.assign(L, { scale: 1, ox: 0, oy: 0, rot: 0, fit: 'cover' }); invalidateLayer(L); syncControls(); break;
+    case 'reset-layer': {
+      const fresh = makeLayer(state.sel, { name: L.name, src: L.src });
+      Object.keys(fresh).forEach(k => { if (k !== 'src' && k !== 'name') L[k] = fresh[k]; });
+      invalidateLayer(L); buildProps(); renderLayerList(); toast('Layer settings reset', 'rotate-ccw'); break;
+    }
+    case 'otsu': { const h = rt(L).hist; if (h) { L.threshold = +otsu(h).toFixed(3); invalidateLayer(L); syncControls(); toast(`Threshold set to ${L.threshold.toFixed(2)}`, 'wand-sparkles'); } break; }
+    case 'apply-lh': L.layerH = recommend(L, state.sel).lh; onLayerKey(L, 'layerH'); syncControls(); break;
+    case 'zoom-in': zoomBy(1.25); break;
+    case 'zoom-out': zoomBy(0.8); break;
+    case 'zoom-fit': state.view.zoom = 1; state.view.panX = state.view.panY = 0; layoutStage(); break;
+    case 'png': download(await new Promise(r => (state.view.mode === 'height' ? cvH : snapshotLight()).toBlob(r, 'image/png')), `${slug(state.project)}_${state.view.mode === 'height' ? 'heightmap_L' + (state.sel + 1) : state.light.on ? 'backlit' : 'frontlit'}.png`); break;
+    case 'zip': exportZip(); break;
+    case 'save': saveProject(); break;
+    case 'settings': exportSettings(); break;
+    case 'open': $('#fileProj').click(); break;
+    case 'new': if (confirm('Start a new blank project? Unsaved changes will be lost.')) { newProject(); toast('New project', 'file-plus-2'); } break;
+    case 'demo': if (confirm('Load the demo scene? Unsaved changes will be lost.')) { loadDemo(); toast('Demo scene loaded', 'sparkles'); } break;
+    case 'stl': exportSTL(+el.dataset.i); break;
+    case 'hm': exportHeightmap(+el.dataset.i); break;
+    case 'stl-all': exportAllSTL(); break;
+    case 'csv': download(new Blob([specCSV()], { type: 'text/csv' }), slug(state.project) + '_spec.csv'); break;
+    case 'copy-spec': try { await navigator.clipboard.writeText(specText()); toast('Spec copied as Markdown', 'copy'); } catch (e) { toast('Clipboard unavailable', 'x'); } break;
+    case 'print': renderSpec(); setTimeout(() => window.print(), 50); break;
+    case 'reset3d': Object.assign(state.view, { rx: -16, ry: -36, z3: 1, explode: 1 }); dirty.d3 = true; syncControls(); schedule(); break;
+    case 'help': showHelp(); break;
+  }
+}
+function zoomBy(f) { state.view.zoom = clamp(state.view.zoom * f, 0.25, 8); layoutStage(); }
+
+// file inputs, drag & drop, paste
+function loadFileToLayer(file, L) {
+  if (!file || !/^image\//.test(file.type)) { toast('That file is not an image', 'x'); return; }
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    let w = img.naturalWidth || 1200, h = img.naturalHeight || 800;
+    const s = Math.min(1, 1800 / Math.max(w, h)); w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+    const c = mkCanvas(w, h), x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data; let transparent = 0;
+    for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) transparent++;
+    const hasAlpha = transparent > d.length / 28 * 0.02;
+    setLayerImage(L, hasAlpha ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.92));
+    if (L.mode === 'solid') L.mode = hasAlpha ? 'mask' : 'depth';
+    if (hasAlpha) { L.channel = 'alpha'; L.mode = 'mask'; toast('Transparent PNG detected — using its alpha as the silhouette', 'scan'); }
+    else toast(`Image loaded into layer ${state.layers.indexOf(L) + 1}`, 'image');
+    URL.revokeObjectURL(url); syncControls(); dirty.cards = true; schedule();
+  };
+  img.onerror = () => { toast('Could not read that image', 'x'); URL.revokeObjectURL(url); };
+  img.src = url;
+}
+$('#fileImg').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadFileToLayer(f, selL()); e.target.value = ''; });
+$('#fileProj').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try { loadProject(JSON.parse(await f.text())); toast('Project loaded', 'folder-open'); }
+  catch (err) { toast('Could not open project: ' + err.message, 'x'); }
+});
+let dragDepth = 0;
+document.addEventListener('dragover', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+document.addEventListener('dragenter', e => {
+  if (![...(e.dataTransfer?.types || [])].includes('Files')) return;
+  dragDepth++;
+  $$('.lcard').forEach(c => c.classList.toggle('drop', c.contains(e.target)));
+  $('#viewport').classList.toggle('dropping', $('#viewport').contains(e.target));
+});
+document.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $$('.lcard').forEach(c => c.classList.remove('drop')); $('#viewport').classList.remove('dropping'); } });
+document.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0;
+  $$('.lcard').forEach(c => c.classList.remove('drop')); $('#viewport').classList.remove('dropping');
+  const f = e.dataTransfer?.files?.[0]; if (!f) return;
+  if (/json/.test(f.type) || f.name.endsWith('.json')) { f.text().then(t => { try { loadProject(JSON.parse(t)); toast('Project loaded', 'folder-open'); } catch (err) { toast('Could not open project', 'x'); } }); return; }
+  const card = e.target.closest('.lcard');
+  if (card) { selectLayer(+card.dataset.i); }
+  loadFileToLayer(f, selL());
+});
+window.addEventListener('paste', e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) { e.preventDefault(); loadFileToLayer(item.getAsFile(), selL()); }
+});
+
+// stage interaction: pan / move layer / compare split / HUD
+const stage = $('#stage');
+let drag = null, spaceDown = false;
+stage.addEventListener('pointerdown', e => {
+  const v = state.view;
+  if (e.target.closest('#split')) { drag = { kind: 'split' }; }
+  else if (v.tool === 'move' && e.button === 0 && !spaceDown && v.mode === 'preview') { drag = { kind: 'move', x: e.clientX, y: e.clientY, ox: selL().ox, oy: selL().oy }; }
+  else drag = { kind: 'pan', x: e.clientX, y: e.clientY, px: v.panX, py: v.panY };
+  stage.setPointerCapture(e.pointerId);
+});
+$('#view2d').addEventListener('pointerdown', e => {
+  if (e.target.closest('#stage') || e.target.closest('.glass')) return;
+  drag = { kind: 'pan', x: e.clientX, y: e.clientY, px: state.view.panX, py: state.view.panY };
+  $('#view2d').setPointerCapture(e.pointerId);
+});
+function onDragMove(e) {
+  if (!drag) return;
+  const r = stage.getBoundingClientRect();
+  if (drag.kind === 'split') { state.view.split = clamp((e.clientX - r.left) / r.width, 0.02, 0.98); applyViewCss(); }
+  else if (drag.kind === 'move') { const L = selL(); L.ox = +(drag.ox + (e.clientX - drag.x) / r.width).toFixed(4); L.oy = +(drag.oy + (e.clientY - drag.y) / r.height).toFixed(4); invalidateLayer(L); syncControls(); }
+  else { state.view.panX = drag.px + e.clientX - drag.x; state.view.panY = drag.py + e.clientY - drag.y; applyViewCss(); }
+}
+stage.addEventListener('pointermove', e => { onDragMove(e); hud(e); });
+$('#view2d').addEventListener('pointermove', onDragMove);
+const endDrag = () => { drag = null; };
+stage.addEventListener('pointerup', endDrag); stage.addEventListener('pointercancel', endDrag);
+$('#view2d').addEventListener('pointerup', endDrag);
+stage.addEventListener('pointerleave', () => $('#hud').classList.add('hidden'));
+stage.addEventListener('dblclick', () => doAction('zoom-fit'));
+$('#view2d').addEventListener('wheel', e => {
+  e.preventDefault();
+  if (e.altKey && state.view.tool === 'move') { const L = selL(); L.scale = clamp(+(L.scale * Math.exp(-e.deltaY * 0.0015)).toFixed(3), 0.1, 4); invalidateLayer(L); syncControls(); return; }
+  state.view.zoom = clamp(state.view.zoom * Math.exp(-e.deltaY * 0.0015), 0.25, 8); layoutStage();
+}, { passive: false });
+function hud(e) {
+  const r = stage.getBoundingClientRect(), u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+  if (u < 0 || v < 0 || u >= 1 || v >= 1) return;
+  const x = (u * P.W) | 0, y = (v * P.H) | 0, i = y * P.W + x;
+  const height = state.view.mode === 'height', lit = state.light.on && (!state.view.compare || u >= state.view.split);
+  const src = height ? ctxH : lit ? ctxL : ctxD, p = src.getImageData(x, y, 1, 1).data, hex = rgbToHex(p[0], p[1], p[2]);
+  const rows = [4, 3, 2, 1, 0].map(k => {
+    const L = state.layers[k], t = rt(L).thick ? rt(L).thick[i] : 0;
+    return `<div class="flex justify-between gap-3 ${k === state.sel ? 'text-accent' : ''} ${activeLayers().includes(L) ? '' : 'opacity-40'}"><span>L${k + 1} <span style="color:${L.color}">■</span></span><span>${fmt(t)} mm · ${Math.round(t / L.layerH)}L</span></div>`;
+  }).join('');
+  $('#hud').innerHTML = `<div class="flex items-center justify-between gap-3 mb-1.5 text-ink-300"><span>${fmt(u * state.plate.w, 1)}, ${fmt(v * state.plate.h, 1)} mm</span><span class="flex items-center gap-1.5"><i style="width:10px;height:10px;border-radius:3px;background:${hex};display:inline-block;box-shadow:0 0 0 1px rgba(255,255,255,.2)"></i>${hex}</span></div>${rows}`;
+  $('#hud').classList.remove('hidden');
+}
+
+// 3D orbit
+let d3drag = null, spinRaf = 0;
+$('#view3d').addEventListener('pointerdown', e => {
+  if (e.target.closest('.glass')) return;
+  const plate = e.target.closest('.plate3d');
+  d3drag = { x: e.clientX, y: e.clientY, rx: state.view.rx, ry: state.view.ry, moved: false, plate };
+  $('#view3d').setPointerCapture(e.pointerId);
+});
+$('#view3d').addEventListener('pointermove', e => {
+  if (!d3drag) return;
+  const dx = e.clientX - d3drag.x, dy = e.clientY - d3drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) d3drag.moved = true;
+  state.view.ry = d3drag.ry + dx * 0.4; state.view.rx = clamp(d3drag.rx - dy * 0.4, -85, 85);
+  $('#stack3d').style.transform = `scale(${state.view.z3}) rotateX(${state.view.rx}deg) rotateY(${state.view.ry}deg)`;
+});
+$('#view3d').addEventListener('pointerup', e => {
+  if (d3drag && !d3drag.moved && d3drag.plate) selectLayer(+d3drag.plate.dataset.i);
+  d3drag = null;
+});
+$('#view3d').addEventListener('wheel', e => { e.preventDefault(); state.view.z3 = clamp(state.view.z3 * Math.exp(-e.deltaY * 0.0012), 0.4, 2.5); dirty.d3 = true; schedule(); }, { passive: false });
+function spin() {
+  if (spinRaf) return;
+  const stepF = () => {
+    spinRaf = 0;
+    if (!state.view.spin || state.view.mode !== '3d') return;
+    if (!d3drag) { state.view.ry += 0.25; $('#stack3d').style.transform = `scale(${state.view.z3}) rotateX(${state.view.rx}deg) rotateY(${state.view.ry}deg)`; }
+    spinRaf = requestAnimationFrame(stepF);
+  };
+  spinRaf = requestAnimationFrame(stepF);
+}
+
+// keyboard
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (e.ctrlKey || e.metaKey) { if (e.key === 's') { e.preventDefault(); saveProject(); } if (e.key === 'o') { e.preventDefault(); $('#fileProj').click(); } return; }
+  const k = e.key.toLowerCase();
+  if (k === ' ') { spaceDown = true; e.preventDefault(); }
+  else if (k === 'l') setK('S.light.on', !state.light.on);
+  else if (k === 'c') toggleCompare();
+  else if ('12345'.includes(k) && k) selectLayer(+k - 1);
+  else if (k === 'h') layerAction(state.sel, 'vis');
+  else if (k === 'v') { state.view.tool = state.view.tool === 'move' ? 'pan' : 'move'; applyViewCss(); }
+  else if (k === 'f') doAction('zoom-fit');
+  else if (k === '[') selectLayer(Math.max(0, state.sel - 1));
+  else if (k === ']') selectLayer(Math.min(4, state.sel + 1));
+  else if (k === 'p') setView('preview'); else if (k === 'd') setView('3d'); else if (k === 'm') setView('height'); else if (k === 's') setView('spec');
+  else if (k === '?' ) showHelp();
+  else if (k === 'escape') $('.modal-bg')?.remove();
+});
+document.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
+function showHelp() {
+  if ($('.modal-bg')) return;
+  const m = document.createElement('div'); m.className = 'modal-bg';
+  const keys = [['L', 'Toggle Light Box Mode'], ['C', 'Compare front-lit / backlit'], ['1 – 5', 'Select layer'], ['[  ]', 'Previous / next layer'], ['H', 'Hide / show selected layer'], ['V', 'Move-layer tool'], ['Alt + wheel', 'Scale layer (Move tool)'], ['Wheel · Space-drag', 'Zoom · pan'], ['F / double-click', 'Fit view'], ['P · D · M · S', 'Preview · 3D · Heightmap · Spec'], ['Ctrl+S · Ctrl+O', 'Save · open project'], ['Ctrl+V', 'Paste image into layer']];
+  m.innerHTML = `<div class="glass p-5 w-full max-w-md" style="background:#12161b"><div class="flex items-center justify-between mb-3"><div class="font-semibold text-[14px] flex items-center gap-2"><i data-lucide="keyboard"></i>Shortcuts &amp; tips</div><button class="ibtn" data-close><i data-lucide="x"></i></button></div>
+    <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">${keys.map(([k, d]) => `<span class="kbd text-center">${k}</span><span class="text-ink-300">${d}</span>`).join('')}</div>
+    <div class="hint mt-4 leading-relaxed"><b>How it works:</b> each plate's image is mapped to a thickness field (quantised to your layer height). The backlit view sends LED light through plates 1→5; every plate absorbs red, green and blue by its thickness ÷ TD, so thin areas glow and stacked colours mix subtractively — just like real translucent filament.</div></div>`;
+  m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) m.remove(); });
+  document.body.appendChild(m); icons();
+}
+
+// ---------------------------------------------------------------- init
+new ResizeObserver(() => { layoutStage(); if (state.view.mode === '3d') { dirty.d3 = true; schedule(); } }).observe($('#viewport'));
+buildLeftPanels();
+loadDemo();
+icons();
+</script>
+</body>
+</html>
