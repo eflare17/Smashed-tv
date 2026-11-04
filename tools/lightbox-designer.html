@@ -23,7 +23,9 @@
 <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
 <style>
   :root { --acc:#f5a524; --glow:rgba(255,190,120,.35); --split:50%; }
+  :root { color-scheme:dark; }
   html, body { height:100%; }
+  body { overflow:hidden; }
   body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:12.5px; background:#0b0d11; color:#e6e9ee; -webkit-font-smoothing:antialiased; }
   * { scrollbar-width:thin; scrollbar-color:#262d37 transparent; }
   ::-webkit-scrollbar { width:8px; height:8px; }
@@ -239,7 +241,7 @@
 </style>
 </head>
 <body class="h-full overflow-hidden">
-<div id="app" class="h-screen flex flex-col">
+<div id="app" class="h-full flex flex-col">
 
   <!-- ================= HEADER ================= -->
   <header class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 border-b border-white/5 bg-ink-900/90 backdrop-blur z-20">
@@ -410,7 +412,19 @@ function toast(msg, icon = 'check') {
   $('#toasts').appendChild(t); icons();
   setTimeout(() => { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 320); }, 2600);
 }
-function download(blob, name) {
+const ARTIFACT = false; // true in the claude.ai-hosted copy: saves go through the viewer's download prompt
+let dlCap = null;
+async function download(blob, name) {
+  if (ARTIFACT) {
+    try {
+      dlCap = dlCap || (window.claude && window.claude.use ? await window.claude.use('downloads') : null);
+      if (!dlCap) { toast('Saving files is not available in this view', 'x'); return; }
+      if (/\.stl$/i.test(name)) { blob = makeZip([{ name, data: new Uint8Array(await blob.arrayBuffer()) }]); name = name.replace(/\.stl$/i, '.zip'); }
+      await dlCap.save({ filename: name, data: blob });
+      toast('Saved ' + name, 'download');
+    } catch (e) { if (!e || e.code !== 'declined') toast('Could not save the file' + (e && e.code ? ' (' + e.code + ')' : ''), 'x'); }
+    return;
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
@@ -1020,7 +1034,7 @@ function renderSpec() {
         <div class="text-ink-400 mt-1 muted">${date} · ${p.w} × ${p.h} mm plates · ${T.count} active layers · LED ${l.colorMode === 'kelvin' ? l.kelvin + ' K' : rgbToHex(...ledSRGB())} (${({ panel: 'diffuse panel', center: 'single LED', edge: 'edge-lit strips', grid: 'LED grid' })[l.layout]})</div>
       </div>
       <div class="flex flex-wrap gap-2 no-print">
-        <button class="btn" data-act="print"><i data-lucide="printer"></i>Print / PDF</button>
+        ${ARTIFACT ? '' : '<button class="btn" data-act="print"><i data-lucide="printer"></i>Print / PDF</button>'}
         <button class="btn" data-act="copy-spec"><i data-lucide="copy"></i>Copy</button>
         <button class="btn" data-act="csv"><i data-lucide="sheet"></i>CSV</button>
         <button class="btn" data-act="settings"><i data-lucide="file-json"></i>Settings JSON</button>
@@ -1123,11 +1137,11 @@ function serialize(withImages) {
 }
 function saveProject() {
   download(new Blob([JSON.stringify(serialize(true))], { type: 'application/json' }), slug(state.project) + '.lumenstack.json');
-  toast('Project saved with images');
+  if (!ARTIFACT) toast('Project saved with images');
 }
 function exportSettings() {
   download(new Blob([JSON.stringify(serialize(false), null, 2)], { type: 'application/json' }), slug(state.project) + '_settings.json');
-  toast('Layer settings exported');
+  if (!ARTIFACT) toast('Layer settings exported');
 }
 function loadProject(json) {
   const src = json && json.state ? json.state : json;
@@ -1190,8 +1204,8 @@ async function exportZip() {
   files.push({ name: `${base}/spec.md`, data: enc.encode(specText()) });
   files.push({ name: `${base}/spec.csv`, data: enc.encode(specCSV()) });
   files.push({ name: `${base}/settings.json`, data: enc.encode(JSON.stringify(serialize(false), null, 2)) });
-  download(makeZip(files), `${base}_lightbox_slices.zip`);
-  toast(`Exported ${files.length} files (${W}×${H} px slices)`, 'package-check');
+  if (!ARTIFACT) toast(`Exported ${files.length} files (${W}×${H} px slices)`, 'package-check');
+  await download(makeZip(files), `${base}_lightbox_slices.zip`);
 }
 async function exportHeightmap(i) {
   const L = state.layers[i], { w, h } = state.plate;
@@ -1262,15 +1276,14 @@ async function exportSTL(i) {
   const L = state.layers[i];
   toast(`Building STL for layer ${i + 1}…`, 'loader'); await tick();
   const data = buildSTL(L);
-  download(new Blob([data], { type: 'model/stl' }), `${slug(state.project)}_L${i + 1}_${slug(L.name)}.stl`);
-  toast(`STL ready · ${(data.length / 1048576).toFixed(1)} MB`, 'box');
+  if (!ARTIFACT) toast(`STL ready · ${(data.length / 1048576).toFixed(1)} MB`, 'box');
+  await download(new Blob([data], { type: 'model/stl' }), `${slug(state.project)}_L${i + 1}_${slug(L.name)}.stl`);
 }
 async function exportAllSTL() {
   toast('Building 5 STLs…', 'loader'); await tick();
   const files = [];
   for (let i = 0; i < 5; i++) { const L = state.layers[i]; files.push({ name: `${slug(state.project)}_L${i + 1}_${slug(L.name)}.stl`, data: buildSTL(L) }); await tick(); }
-  download(makeZip(files), `${slug(state.project)}_stl.zip`);
-  toast('STL package ready', 'package-check');
+  await download(makeZip(files), `${slug(state.project)}_stl.zip`);
 }
 // minimal store-only ZIP writer
 const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -1848,8 +1861,8 @@ async function doAction(a, el) {
     case 'save': saveProject(); break;
     case 'settings': exportSettings(); break;
     case 'open': $('#fileProj').click(); break;
-    case 'new': if (confirm('Start a new blank project? Unsaved changes will be lost.')) { newProject(); toast('New project', 'file-plus-2'); } break;
-    case 'demo': if (confirm('Load the demo scene? Unsaved changes will be lost.')) { loadDemo(); toast('Demo scene loaded', 'sparkles'); } break;
+    case 'new': if (await askConfirm('Start a new blank project?', 'Your current layers and settings will be replaced. Save the project first if you want to keep it.', 'Start new')) { newProject(); toast('New project', 'file-plus-2'); } break;
+    case 'demo': if (await askConfirm('Load the demo scene?', 'Your current layers and settings will be replaced with the Sunset Peaks demo.', 'Load demo')) { loadDemo(); toast('Demo scene loaded', 'sparkles'); } break;
     case 'stl': exportSTL(+el.dataset.i); break;
     case 'hm': exportHeightmap(+el.dataset.i); break;
     case 'stl-all': exportAllSTL(); break;
@@ -2009,6 +2022,16 @@ document.addEventListener('keydown', e => {
   else if (k === 'escape') $('.modal-bg')?.remove();
 });
 document.addEventListener('keyup', e => { if (e.key === ' ') spaceDown = false; });
+function askConfirm(title, body, ok) {
+  return new Promise(res => {
+    $('.modal-bg')?.remove();
+    const m = document.createElement('div'); m.className = 'modal-bg';
+    m.innerHTML = `<div class="glass p-5 w-full max-w-sm" style="background:#12161b" role="dialog" aria-modal="true"><div class="font-semibold text-[14px] mb-1.5">${esc(title)}</div><div class="hint mb-4">${esc(body)}</div><div class="flex justify-end gap-2"><button class="btn" data-no>Cancel</button><button class="btn btn-acc" data-yes>${esc(ok)}</button></div></div>`;
+    const done = v => { m.remove(); res(v); };
+    m.addEventListener('click', e => { if (e.target.closest('[data-yes]')) done(true); else if (e.target === m || e.target.closest('[data-no]')) done(false); });
+    document.body.appendChild(m); $('[data-yes]', m).focus();
+  });
+}
 function showHelp() {
   if ($('.modal-bg')) return;
   const m = document.createElement('div'); m.className = 'modal-bg';
