@@ -16,6 +16,7 @@ const GRASS_NAMES := ["Off", "Low", "Medium", "High"]
 const MAX_DENSITY := 64.0
 const GRASS_CHUNK := 8.0
 const CLODS_PER_M2 := 28.0
+const FADED := 0.22             # how solid something in the way is drawn
 const RES_STEPS := [1.0, 0.85, 0.7]
 const CHECK_TOTAL_EVERY := 5.0
 ## The web graphics mode lights things twice as hard as the phone mode. Measured against a phone-mode picture, half matches.
@@ -138,6 +139,9 @@ var join_word: Label
 var join_status: Label
 var _banner_clock := 0.0
 var _guest_ui := ""
+var house: MeshInstance3D
+## Things that go see-through while they stand between the camera and the machine being driven.
+var fadeables: Array[GeometryInstance3D] = []
 var obstacles: Array = []       # solid things that aren't machines, as machine footprints are: [a, b, radius]
 var menu: Control
 var menu_kind := ""             # "start" or "done", or nothing with no menu up
@@ -557,6 +561,7 @@ func _build_props() -> void:
 	far.mesh = kit.mesh()
 	far.material_override = prop_mat
 	add_child(far)
+	_gather_fadeables()
 	_build_fx()
 	sfx = Sfx.new()
 	add_child(sfx)
@@ -631,13 +636,18 @@ func _add_site(kit: MeshKit) -> void:
 	const DEEP := 9.0
 	const WALL := 2.8
 	var mid := front - DEEP * 0.5
-	kit.box(Vector3(0.0, WALL * 0.5, mid), Vector3(WIDE, WALL, DEEP), Props.c("#e8d9b8"))
+	var hk := MeshKit.new()
+	hk.box(Vector3(0.0, WALL * 0.5, mid), Vector3(WIDE, WALL, DEEP), Props.c("#e8d9b8"))
 	var roof := [Vector2(-WIDE * 0.5 - 0.5, WALL), Vector2(WIDE * 0.5 + 0.5, WALL), Vector2(0.0, WALL + 2.4)]
-	kit.prism(roof, front - DEEP - 0.5, front + 0.5, Props.c("#a8553a"))
+	hk.prism(roof, front - DEEP - 0.5, front + 0.5, Props.c("#a8553a"))
 	# The garage door faces straight down the driveway, as wide as it is.
-	kit.box(Vector3(r.get_center().x, 1.1, front + 0.03), Vector3(r.size.x, 2.2, 0.08), Props.c("#8a8f94"))
+	hk.box(Vector3(r.get_center().x, 1.1, front + 0.03), Vector3(r.size.x, 2.2, 0.08), Props.c("#8a8f94"))
 	for side: float in [-1.0, 1.0]:
-		kit.box(Vector3(side * 5.0, 1.6, front + 0.03), Vector3(2.0, 1.2, 0.08), Props.c("#5f8fb5"))
+		hk.box(Vector3(side * 5.0, 1.6, front + 0.03), Vector3(2.0, 1.2, 0.08), Props.c("#5f8fb5"))
+	house = MeshInstance3D.new()
+	house.mesh = hk.mesh()
+	house.material_override = prop_mat
+	add_child(house)
 	obstacles.append([Vector2(-WIDE * 0.5 + DEEP * 0.5, mid), Vector2(WIDE * 0.5 - DEEP * 0.5, mid), DEEP * 0.5])
 
 func _near_line(p: Vector2, a: Vector2, b: Vector2, within: float) -> bool:
@@ -1168,6 +1178,68 @@ func _update_grass_lod() -> void:
 	set_meta("blades", count)
 
 ## ---------------------------------------------------------------- the camera
+
+## The house, the trees and every machine's parts, each remembering which machine it belongs to.
+func _gather_fadeables() -> void:
+	fadeables.clear()
+	if house != null:
+		fadeables.append(house)
+	for t in trees.list:
+		fadeables.append(t.node)
+	for m: Node in get_children():
+		if m is Machine:
+			for g: Node in m.find_children("*", "GeometryInstance3D", true, false):
+				if (g as GeometryInstance3D).material_override == prop_mat:
+					g.set_meta("machine", m)
+					fadeables.append(g)
+
+## Anything between the camera and the machine being driven fades to see-through, and comes back once it's out of the way.
+func _update_fades(delta: float) -> void:
+	if camera == null:
+		return
+	var from := camera.global_position
+	var aim := active.camera_aim()
+	var points := [aim, aim + Vector3.UP * 1.4]
+	var cab := view == "Cab"
+	for g in fadeables:
+		if not is_instance_valid(g):
+			continue
+		var want := 1.0
+		if not cab and g.is_visible_in_tree() and not (g.has_meta("machine") and g.get_meta("machine") == active):
+			var box := (g.global_transform * g.get_aabb()).grow(0.15)
+			# With the camera inside it, it would cover the whole view: it goes altogether.
+			if box.grow(0.4).has_point(from):
+				want = 0.0
+			for p: Vector3 in points:
+				if want == 0.0:
+					break
+				if box.intersects_segment(from, p):
+					want = FADED
+					break
+		var now: float = g.get_meta("fade", 1.0)
+		if now == want:
+			continue
+		now = move_toward(now, want, delta * 3.0)
+		g.set_meta("fade", now)
+		var see: ShaderMaterial = g.get_meta("fade_mat") if g.has_meta("fade_mat") else null
+		if now < 1.0:
+			if see == null:
+				# Only things in the plain prop look: anything wearing something else right now is left alone.
+				if g.material_override != prop_mat:
+					g.set_meta("fade", 1.0)
+					continue
+				see = ShaderMaterial.new()
+				see.shader = preload("res://shaders/prop_fade.gdshader")
+				# After the grass and the lumps, so blades don't poke through its walls.
+				see.render_priority = 2
+				g.set_meta("fade_mat", see)
+			see.set_shader_parameter("fade", now)
+			g.material_override = see
+		elif see != null:
+			if g.material_override == see:
+				g.material_override = prop_mat
+			g.remove_meta("fade_mat")
+
 
 func _behind_yaw() -> float:
 	var f := active.view_forward()
@@ -2342,6 +2414,7 @@ func _process(delta: float) -> void:
 	if _clod_wait <= 0.0:
 		_clod_wait = 0.2
 		_update_clods()
+	_update_fades(delta)
 	cost_sync = Time.get_ticks_usec() - t1
 	var fps := 1.0 / maxf(delta, 0.0001)
 	worst_clock += delta
