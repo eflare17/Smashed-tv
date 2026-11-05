@@ -41,8 +41,40 @@ func _init() -> void:
 	truck_tests()
 	bobcat_tests()
 	dingo_tests()
+	spread_over_trench_test()
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(fails)
+
+## A filled trench, and SPREAD driven across it: the bucket rides over on the ground either side and doesn't dig the fill back out.
+func spread_over_trench_test() -> void:
+	var s := DirtSim.new()
+	var j0 := DirtSim.cell_of(Vector2(0, 0)).y
+	var i0 := DirtSim.cell_of(Vector2(-12, 0)).x
+	var i1 := DirtSim.cell_of(Vector2(0, 0)).x
+	for i in range(i0, i1):
+		for j in range(j0 - 12, j0 + 12):
+			var n := j * DirtSim.CELLS + i
+			if j == j0 or j == j0 - 1:
+				s.bed[n] = -1500
+				s.soil[n] = 1520
+				s.clean_cut[n] = 1
+			else:
+				s.soil[n] = 50
+	var d := new_loader(s, Vector2(-6.0, 2.5), Vector2(0.0, -1.0), Loader.DINGO)
+	var total := s.total()
+	d.toggle_spread()
+	run(s, [d], 1.0)
+	d.throttle = 0.6
+	run(s, [d], 6.0)
+	d.stop_commands()
+	var lowest := 9999
+	for i in range(DirtSim.cell_of(Vector2(-6.4, 0)).x, DirtSim.cell_of(Vector2(-5.6, 0)).x):
+		for j in [j0 - 1, j0]:
+			lowest = mini(lowest, s.bed[j * DirtSim.CELLS + i] + s.soil[j * DirtSim.CELLS + i])
+	print("      filled trench after a SPREAD pass across it: lowest %d mm" % lowest)
+	check(lowest > -60, "SPREAD across a filled trench leaves it filled")
+	check(s.total() == total, "and the total never changes")
+	d.queue_free()
 
 func truck_tests() -> void:
 	var s := DirtSim.new()
@@ -298,6 +330,13 @@ func dingo_tests() -> void:
 	for j in range(run_cells.y + 2, run_cells.y + 8):
 		ridge = maxi(ridge, t.soil[j * DirtSim.CELLS + run_cells.x])
 	check(ridge > 30, "the dirt lands to the right (%d mm)" % ridge)
+	# Dug ground swells, so there's more than enough to fill the trench again.
+	var dug := 0
+	var loose := 0
+	for n in t.bed.size():
+		dug += maxi(-t.bed[n], 0)
+		loose += t.soil[n]
+	check(loose > dug * 1.3, "dug dirt swells: %.2f m3 loose from a %.2f m3 trench" % [DirtSim.to_m3(loose), DirtSim.to_m3(dug)])
 
 	# The walls hold: left a while, a metre-deep slot doesn't cave in.
 	var wall_before := t.bed[run_cells.y * DirtSim.CELLS + run_cells.x]

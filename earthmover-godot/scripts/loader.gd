@@ -23,15 +23,16 @@ const CHAIN_X := 0.72           # how far ahead of the middle it cuts
 const CHAIN_SPEED := 0.6        # m/s: as fast as the machine crawls with it in the ground
 const CHAIN_CUT := 42           # mm off a cell in a tick
 const CHAIN_HALF := 0.125       # m either side of the middle: two cells of the dirt grid
-const THROW_NEAR := 1.05        # m to the right the soil lands, at least, and more for a deep cut: there's more of it to clear the slot
-const THROW_FAR := 1.65
-const THROW_DEEP := 0.55        # m further out for each m of depth
+const THROW_NEAR := 0.95        # m to the right the soil lands, at least, and more for a deep cut: there's more of it to clear the slot
+const THROW_FAR := 1.5
+const THROW_DEEP := 0.25        # m further out for each m of depth
 const PIPE_EVERY := 0.5         # m of ground between each length laid
 const PIPE_SPEED := 0.8         # m/s, laying
 const PIPE_AT := -0.75          # how far ahead of the middle it lays: behind the machine
 const TRENCH_LOW := 0.2         # m below the ground either side, for pipe to go down
 const ROCK_SCRAPE_MM := 90      # how far below rock the edge can be pressed before it stops the machine dead
 const SPREAD_MM := 50           # what backing up with the bucket low leaves behind
+const REACH_BELOW := 0.03       # m: spreading, the edge reaches no lower than this below the firm ground under the bucket
 const DRAG_LOW := 0.22          # m above the firm ground the edge has to be to spread
 const SPREAD_CURL := 0.15        # where the SPREAD button holds the bucket: flat, edge just off the ground
 const POUR_WIDTH := 0.5          # how much of the bucket's width a load comes out of: the middle, so it lands in a heap
@@ -470,7 +471,14 @@ func _back_drag(dt: float) -> void:
 	var pushing := speed > 0.03 and spread_on and down
 	if not backing and not pushing:
 		return
-	var moved := sim.drag(blade_a, blade_b, forward() * signf(speed), SPREAD_MM, clampf(absf(speed) * dt / 0.12, 0.0, 1.0))
+	# The bucket's floor is wider and longer than a trench: it rests on the highest firm ground under it, so it can't follow a slot down.
+	var stands := -99.0
+	var f := forward()
+	for k in 5:
+		var p := blade_a.lerp(blade_b, k / 4.0)
+		for along: float in [-0.8, -0.4, 0.0, 0.4]:
+			stands = maxf(stands, sim.firm_at(p + f * along))
+	var moved := sim.drag(blade_a, blade_b, forward() * signf(speed), SPREAD_MM, clampf(absf(speed) * dt / 0.12, 0.0, 1.0), int((stands - REACH_BELOW) * 1000.0))
 	if moved <= 0:
 		return
 	spreading = true

@@ -76,6 +76,11 @@ var moved_last_tick := 0
 var loose_total_cached := 0
 var chunks_left := 0
 
+## Dug ground takes more room loose than it did firm, so a trench's dirt more than fills it again. The trencher's
+## dirt swells by this much, and what it's made is counted here.
+const SWELL_PCT := 35
+var swelled := 0
+
 func _init() -> void:
 	bed.resize(CELLS * CELLS)
 	soil.resize(CELLS * CELLS)
@@ -84,9 +89,9 @@ func _init() -> void:
 	dust.resize(CELLS * CELLS)
 	_awake.resize(CHUNKS * CHUNKS)
 
-## Everything there is, wherever it is.
+## Everything there is, wherever it is, less what digging has made by loosening firm ground: so this never changes.
 func total() -> int:
-	var t := store + in_air + held
+	var t := store + in_air + held - swelled
 	for n in bed.size():
 		t += bed[n] + soil[n]
 	return t
@@ -286,9 +291,12 @@ func trench(at: Vector2i, floor_mm: int, rate: int, to: Vector2i) -> int:
 	var want := mini(bed[n] + soil[n] - floor_mm, rate)
 	if want <= 0:
 		return 0
+	var firm_was := bed[n]
 	var got := take(at.x, at.y, want)
 	clean_cut[n] = 1
-	put(to.x, to.y, got, last_dust)
+	var extra := (firm_was - bed[n]) * SWELL_PCT / 100
+	swelled += extra
+	put(to.x, to.y, got + extra, last_dust)
 	return got
 
 ## Puts soil on a cell. It always all goes on: nothing can be refused without losing it.
@@ -466,7 +474,8 @@ func _spill(p: Vector2, forward: Vector2, out: Vector2, to_end: float, amt: int,
 ## A bucket back-dragged from a to b, moving along `toward`: it floats on the firm ground and leaves `leave_mm` of loose soil behind,
 ## carrying the rest along in front of it. So what's heaped gets laid out at an even depth, and thin spots fill as the heap passes
 ## over them. It never cuts firm ground. Returns mm moved.
-func drag(a: Vector2, b: Vector2, toward: Vector2, leave_mm: int, share: float) -> int:
+## `lowest_mm` is as low as the edge can go, being on an arm on a machine standing on firm ground: it can't follow a slot down.
+func drag(a: Vector2, b: Vector2, toward: Vector2, leave_mm: int, share: float, lowest_mm := BED_FLOOR) -> int:
 	var moved := 0
 	var steps := int(a.distance_to(b) / (CELL_M * 0.5)) + 1
 	var width := a.distance_to(b)
@@ -474,13 +483,20 @@ func drag(a: Vector2, b: Vector2, toward: Vector2, leave_mm: int, share: float) 
 	for row in 2:
 		# The trailing row finishes the job, so nothing leaks past a moving bucket.
 		var row_share := share if row == 0 else minf(share * 3.0, 1.0)
+		# The edge is straight and rides on the highest firm ground across it, so it bridges a trench rather than dipping in
+		# and dragging the backfill back out. What's below it is left, and fills as soil spills ahead.
+		var edge := lowest_mm
+		for s in steps + 1:
+			var at := cell_of(a.lerp(b, float(s) / steps) - toward * (0.22 * row))
+			if at.x >= 1 and at.y >= 1 and at.x < CELLS - 1 and at.y < CELLS - 1:
+				edge = maxi(edge, bed[at.y * CELLS + at.x])
 		for s in steps + 1:
 			var p := a.lerp(b, float(s) / steps) - toward * (0.22 * row)
 			var at := cell_of(p)
 			if at.x < 1 or at.y < 1 or at.x >= CELLS - 1 or at.y >= CELLS - 1:
 				continue
 			var n := at.y * CELLS + at.x
-			var over := soil[n] - leave_mm
+			var over := mini(soil[n] - leave_mm, bed[n] + soil[n] - edge - leave_mm)
 			if over <= 0:
 				continue
 			var got := mini(over, ceili(mini(over, DRAG_MOUTH) * row_share))
