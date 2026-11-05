@@ -11,6 +11,7 @@ var length_m := 0.0
 var _mesh: MultiMesh
 var _points := PackedVector3Array()   # the last point of the run being laid is the last in here
 var _used := 0
+var _seg_from := PackedInt32Array()   # for each length laid, the point it starts from
 
 func setup(mat: Material) -> void:
 	var kit := MeshKit.new()
@@ -45,16 +46,37 @@ func lay_to(p: Vector3) -> bool:
 	var size := along.length()
 	if size < 0.01:
 		return false
-	var x := along / size
-	var up_axis := Vector3.UP if absf(x.y) < 0.9 else Vector3.RIGHT
-	var z := x.cross(up_axis).normalized()
-	var y := z.cross(x).normalized()
-	_mesh.set_instance_transform(_used, Transform3D(Basis(x * size, y, z), from))
+	_seg_from.append(_points.size() - 1)
+	_place(_used, from, p)
 	_used += 1
 	_mesh.visible_instance_count = _used
 	length_m += size
 	_points.append(p)
 	return true
+
+func _place(k: int, from: Vector3, to: Vector3) -> void:
+	var along := to - from
+	var size := maxf(along.length(), 0.01)
+	var x := along / size
+	var up_axis := Vector3.UP if absf(x.y) < 0.9 else Vector3.RIGHT
+	var z := x.cross(up_axis).normalized()
+	var y := z.cross(x).normalized()
+	_mesh.set_instance_transform(k, Transform3D(Basis(x * size, y, z), from))
+
+## Pipe lies on the firm floor of its trench: cut that deeper under it and it drops down to the new floor. Returns whether any moved.
+func settle(sim: DirtSim) -> bool:
+	var moved := false
+	for k in _points.size():
+		var p := _points[k]
+		var floor_y := sim.firm_at(Vector2(p.x, p.z)) + RADIUS + 0.02
+		if p.y > floor_y + 0.005:
+			p.y = floor_y
+			_points[k] = p
+			moved = true
+	if moved:
+		for k in _used:
+			_place(k, _points[_seg_from[k]], _points[_seg_from[k] + 1])
+	return moved
 
 ## Every point it's been laid to, in order: laying them again elsewhere gives the same pipe.
 func points() -> PackedVector3Array:

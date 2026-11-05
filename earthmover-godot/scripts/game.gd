@@ -138,6 +138,10 @@ var water: MeshInstance3D
 var water_left := 1.0
 var filled := 0.0
 var drain_puffs: CPUParticles3D
+## A flood job: whether a pipe's joined at both ends (the water may still not get through), and the flag where it stops.
+var pipe_connected := false
+var stop_flag: Node3D
+var water_y0 := 0.07
 var online: Online
 var online_arg := ""
 var report_page := false
@@ -658,9 +662,11 @@ func _add_site(kit: MeshKit) -> void:
 	house.material_override = prop_mat
 	add_child(house)
 	obstacles.append([Vector2(-WIDE * 0.5 + DEEP * 0.5, mid), Vector2(WIDE * 0.5 - DEEP * 0.5, mid), DEEP * 0.5])
-	if Mission.kind(mission) == "pipe":
+	if Mission.kind(mission) != "driveway":
 		_add_drain(kit)
 		_add_flood()
+	if Mission.kind(mission) == "flood":
+		_add_back_fence(kit)
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
@@ -670,6 +676,53 @@ func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
 	hk.box(Vector3(at.x, wall * 0.5, at.y), Vector3(0.11, wall, 0.11), grey)
 	# Its foot turns out from the wall, spilling onto the lawn: where the flood comes from.
 	hk.box(Vector3(at.x, 0.1, at.y + 0.18), Vector3(0.11, 0.11, 0.36), grey)
+
+## A paling fence along the back of the yard, with the drain pit in front of it.
+func _add_back_fence(kit: MeshKit) -> void:
+	var z: float = mission["fence_z"]
+	var wood := Props.c("#9a7650")
+	var x := -13.5
+	while x < 13.6:
+		kit.box(Vector3(x, 0.9, z), Vector3(0.12, 1.8, 0.12), wood)
+		x += 2.25
+	for y: float in [0.45, 1.35]:
+		kit.box(Vector3(0.0, y, z + 0.08), Vector3(27.2, 0.1, 0.05), wood)
+	x = -13.45
+	while x < 13.5:
+		kit.box(Vector3(x, 0.85, z + 0.12), Vector3(0.13, 1.6, 0.02), Props.c("#b08a5e") if int(x * 4.0) % 2 == 0 else Props.c("#a07b52"))
+		x += 0.15
+
+## The flag where the water stops in a pipe that goes uphill somewhere, so it's plain where to dig deeper.
+func _show_stop_flag(at: Variant) -> void:
+	if at == null:
+		if stop_flag != null:
+			stop_flag.visible = false
+		return
+	if stop_flag == null:
+		stop_flag = Node3D.new()
+		var kit := MeshKit.new()
+		kit.box(Vector3(0.0, 1.0, 0.0), Vector3(0.06, 2.0, 0.06), Props.c("#f2f2ee"))
+		kit.box(Vector3(0.22, 1.75, 0.0), Vector3(0.42, 0.28, 0.03), Props.c("#ff4fa3"))
+		var post := MeshInstance3D.new()
+		post.mesh = kit.mesh()
+		post.material_override = prop_mat
+		stop_flag.add_child(post)
+		var word := Label3D.new()
+		word.text = "WATER STOPS HERE\nDIG DEEPER"
+		word.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		word.no_depth_test = true
+		# The same size on screen however far off, so it can be read from the driving camera.
+		word.fixed_size = true
+		word.font_size = 64
+		word.outline_size = 16
+		word.pixel_size = 0.0006
+		word.modulate = Color("#ffd23f")
+		word.position = Vector3(0.0, 2.45, 0.0)
+		stop_flag.add_child(word)
+		add_child(stop_flag)
+	var p: Vector3 = at
+	stop_flag.position = p
+	stop_flag.visible = true
 
 ## The drain at the edge of the street: a dark pit with a grate on it.
 func _add_drain(kit: MeshKit) -> void:
@@ -714,7 +767,8 @@ func _add_flood() -> void:
 	water.mesh = m
 	water.material_override = look
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	water.position = Vector3(c.x, 0.07, c.y)
+	water_y0 = Mission.water_y(mission)
+	water.position = Vector3(c.x, water_y0, c.y)
 	add_child(water)
 	# Under the water the lawn's drowned to bare mud, so the grass doesn't stand up through it, and it stays muddy once it's drained.
 	var a := DirtSim.cell_of(c - r * 1.2)
@@ -732,7 +786,7 @@ func _drain_flood(delta: float) -> void:
 	water_left = maxf(water_left - delta / Mission.DRAIN_S, 0.0)
 	var k := lerpf(0.15, 1.0, water_left)
 	water.scale = Vector3(k, 1.0, k)
-	water.position.y = lerpf(0.01, 0.07, water_left)
+	water.position.y = lerpf(water_y0 - 0.06, water_y0, water_left)
 	water.visible = water_left > 0.0
 	if drain_puffs == null:
 		drain_puffs = _puffs(Color(0.55, 0.72, 0.85, 0.7), 18, 0.7)
@@ -1962,8 +2016,10 @@ func _show_banner() -> void:
 		return
 	if banner == null or mission.is_empty():
 		return
-	if Mission.kind(mission) == "pipe":
-		if not pipe_joined:
+	if Mission.kind(mission) != "driveway":
+		if not pipe_joined and Mission.kind(mission) == "flood":
+			banner.text = "THE WATER STOPS AT THE FLAG: DIG DEEPER THERE" if pipe_connected else "PIPE THE FLOOD DOWNHILL TO THE DRAIN"
+		elif not pipe_joined:
 			banner.text = "PIPE THE DOWNPIPE TO THE DRAIN"
 		elif water_left > 0.0:
 			banner.text = "JOINED UP! THE LAWN'S DRAINING..."
@@ -1991,7 +2047,7 @@ func _build_menu() -> void:
 	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	box.grow_vertical = Control.GROW_DIRECTION_BOTH
 	# The end of a job has the most on it, so it's drawn a bit smaller to fit.
-	var snug := menu_kind == "done"
+	var snug := menu_kind in ["done", "start", "host"]
 	box.add_theme_constant_override("separation", int(h * (0.016 if snug else 0.025)))
 	menu.add_child(box)
 	var heading := func(text: String, size: float, colour: Color) -> void:
@@ -2006,7 +2062,7 @@ func _build_menu() -> void:
 		b.text = text
 		b.disabled = not enabled
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(h * 1.15, h * (0.115 if snug else 0.14))
+		b.custom_minimum_size = Vector2(h * 1.15, h * ((0.1 if menu_kind == "start" else 0.115) if snug else 0.14))
 		b.add_theme_font_size_override("font_size", int(h * 0.05))
 		b.pressed.connect(what)
 		box.add_child(b)
@@ -2265,11 +2321,17 @@ func _check_mission(delta: float) -> void:
 	if mission_clock > 0.0:
 		return
 	mission_clock = 0.25
-	if Mission.kind(mission) == "pipe":
-		if not pipe_joined and Mission.joined(pipes.points(), mission):
-			pipe_joined = true
-			sfx.clunked(0.8)
-			Input.vibrate_handheld(120)
+	if Mission.kind(mission) != "driveway":
+		pipes.settle(sim)
+		if not pipe_joined:
+			var run := Mission.pipe_run(pipes.points(), mission)
+			pipe_connected = not run.is_empty()
+			var stops := Mission.water_stops_at(run, mission)
+			if pipe_connected and stops < 0:
+				pipe_joined = true
+				sfx.clunked(0.8)
+				Input.vibrate_handheld(120)
+			_show_stop_flag(run[stops] if pipe_connected and stops >= 0 else null)
 		filled = Mission.filled_in(sim, mission)
 		_show_banner()
 		if mission_done or online.is_guest() or not pipe_joined or water_left > 0.0 or filled < Mission.FILL_PASS:

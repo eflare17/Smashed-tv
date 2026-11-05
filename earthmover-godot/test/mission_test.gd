@@ -19,6 +19,8 @@ func _init() -> void:
 	for job: Dictionary in Mission.LIST:
 		if Mission.kind(job) == "pipe":
 			pipe_job_test(job)
+		elif Mission.kind(job) == "flood":
+			flood_job_test(job)
 		else:
 			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
@@ -272,6 +274,123 @@ func pipe_job_test(job: Dictionary) -> void:
 	check(s.total() == total, "the total never changes")
 	d.queue_free()
 	pipes.queue_free()
+
+## The backyard flood with the real Dingo. First the trench at one depth all the way, as a player might: over the rise the floor
+## goes up, so the water stops, and it says where. Then the trencher run again deeper under the rise, the pipe drops into the new
+## floor, and the water gets through. Then it's filled in.
+func flood_job_test(job: Dictionary) -> void:
+	print("--- %s" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var total := s.total()
+	var flood: Vector2 = job["flood"]
+	var drain: Vector2 = job["drain"]
+	check(s.firm_at(flood) < -0.2 and s.firm_at(job["rise"]) > 0.25, "the hollow's low (%.2f m) and the rise is high (%.2f m)" % [s.firm_at(flood), s.firm_at(job["rise"])])
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new())
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	var way := (drain - flood).normalized()
+	var length := flood.distance_to(drain)
+	# The first try: the chain kept at 0.5 m the whole way.
+	_trench_along(d, s, flood, drain, func(_k: float) -> float: return -99.0)
+	_lay_along(d, s, flood, drain)
+	pipes.settle(s)
+	var run := Mission.pipe_run(pipes.points(), job)
+	var stops := Mission.water_stops_at(run, job)
+	print("      one depth all the way: joined %s, water stops at point %d of %d (%s)" % [not run.is_empty(), stops, run.size(), run[stops] if stops >= 0 else "-"])
+	check(not run.is_empty() and stops > 0, "the same depth over the rise: joined up, but the water stops partway")
+	# Again, the trencher back along it, its depth worked so the floor falls the whole way.
+	var top_floor := -0.8
+	var low_floor := -1.1
+	# A little past the first one's end, as a player would make sure of.
+	_trench_along(d, s, flood - way * 0.3, drain + way * 0.3, func(k: float) -> float: return lerpf(top_floor, low_floor, k))
+	pipes.settle(s)
+	run = Mission.pipe_run(pipes.points(), job)
+	stops = Mission.water_stops_at(run, job)
+	print("      dug again, falling: joined %s, water stops at %d" % [not run.is_empty(), stops])
+	check(not run.is_empty() and stops == -1, "dug deeper under the rise, the pipe drops and the water gets through")
+	# Fill it in: SPREAD across it in strips, from the side the dirt went.
+	while d.trencher_on or d.pipe_on:
+		d.toggle_attachment()
+	var across := Vector2(-way.y, way.x)
+	var heap := 0
+	var other := 0
+	for k in range(2, int(length) - 1):
+		var c := DirtSim.cell_of(flood + way * k + across * 1.4)
+		heap += s.soil[c.y * DirtSim.CELLS + c.x]
+		c = DirtSim.cell_of(flood + way * k - across * 1.4)
+		other += s.soil[c.y * DirtSim.CELLS + c.x]
+	var side := across if heap > other else -across
+	for round in 2:
+		var k := -0.6
+		while k < length + 0.6:
+			var mid := flood + way * k
+			d.reposition(mid + side * 3.6, -side)
+			d.toggle_spread()
+			_run(d, s, 1.0)
+			d.throttle = 0.6
+			var t := 0.0
+			while (d.spot - mid).dot(side) > -1.2 and t < 15.0:
+				_run(d, s, 0.1)
+				t += 0.1
+			d.stop_commands()
+			if d.spread_on:
+				d.toggle_spread()
+			k += 0.6
+		_run(d, s, 2.0)
+		print("      filled in after SPREAD round %d: %.0f%%" % [round + 1, Mission.filled_in(s, job) * 100.0])
+	check(Mission.filled_in(s, job) >= Mission.FILL_PASS, "the trench can be filled back in (%.0f%%)" % (Mission.filled_in(s, job) * 100.0))
+	check(s.total() == total, "the total never changes")
+	d.queue_free()
+	pipes.queue_free()
+
+## Drives the trencher in a straight line from a to b. `floor_at` gives the floor wanted at each share of the way along, or a
+## number under -50 to keep the chain at 0.5 m; the chain's raised and lowered to suit, as a player would.
+func _trench_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2, floor_at: Callable) -> void:
+	var way := (b - a).normalized()
+	if not d.trencher_on:
+		while not d.trencher_on:
+			d.toggle_attachment()
+	d.reposition(a - way * 0.75, way)
+	var length := a.distance_to(b)
+	var t := 0.0
+	d.throttle = 0.0
+	while t < 90.0:
+		var cut_at := Vector2(d.teeth.x, d.teeth.z)
+		var k := clampf((cut_at - a).dot(way) / length, 0.0, 1.0)
+		if (cut_at - a).dot(way) > length - 0.1:
+			break
+		var want: float = floor_at.call(k)
+		var side := Vector2(-way.y, way.x)
+		var sides := minf(s.firm_at(cut_at + side * 0.65), s.firm_at(cut_at - side * 0.65))
+		var depth := 0.5 if want < -50.0 else clampf(sides - want, 0.05, Loader.CHAIN_MOST)
+		d.lift_cmd = -1.0 if d.chain_depth < depth - 0.02 else (1.0 if d.chain_depth > depth + 0.02 else 0.0)
+		d.throttle = 1.0 if absf(d.chain_depth - depth) < 0.1 else 0.0
+		_run(d, s, 1.0 / 60.0)
+		t += 1.0 / 60.0
+	d.stop_commands()
+	d.lift_cmd = 1.0
+	_run(d, s, 2.0)
+	d.stop_commands()
+
+## The pipe layer along the same line.
+func _lay_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2) -> void:
+	var way := (b - a).normalized()
+	while not d.pipe_on:
+		d.toggle_attachment()
+	d.reposition(a - way * 0.2, way)
+	d.throttle = 1.0
+	var t := 0.0
+	while (d.spot - a).dot(way) < a.distance_to(b) + 0.9 and t < 60.0:
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
 
 func _run(d: Loader, s: DirtSim, seconds: float) -> void:
 	for k in int(seconds / DT):

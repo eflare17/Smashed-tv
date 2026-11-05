@@ -50,6 +50,9 @@ var spreading := false          # moving soil out flat
 var spread_on := false          # the SPREAD button: the bucket floats on the ground and lays out what it meets, going either way
 var trencher_on := false
 var chain_depth := 0.0          # m, with the trencher on: 0 is carried clear
+## m the trench floor rises (+) or falls (-) per m, measured along the last half metre cut. Less than -1 until known.
+var floor_trend := -9.0
+var _floor_mark := Vector3.INF
 var trench_m := 0.0             # m of trench cut, for the readout and tests
 var pipe_on := false
 var pipes: Pipes                # where pipe it lays goes
@@ -241,7 +244,15 @@ func gauge_word() -> Array:
 		if on_rock:
 			return ["ROCK: CAN'T CUT", Color("#ff9a4a")]
 		if chain_depth > 0.02:
-			return ["TRENCH %.2f m DEEP" % chain_depth, Color("#ff9a4a")]
+			# Which way the floor's going, for a pipe that has to run downhill.
+			var way := ""
+			if floor_trend < -0.01:
+				way = "   FLOOR GOING DOWN"
+			elif floor_trend > 0.01:
+				way = "   FLOOR GOING UP"
+			elif floor_trend > -1.0:
+				way = "   FLOOR LEVEL"
+			return ["TRENCH %.2f m DEEP%s" % [chain_depth, way], Color("#ff9a4a")]
 		return ["TRENCHER UP: LOWER IT", Color("#a8f07a")]
 	if pipe_on:
 		var laid := pipes.length_m if pipes else 0.0
@@ -546,6 +557,16 @@ func _work_chain(dt: float) -> void:
 	on_rock = false
 	_dig_force = 0.0
 	var worked := 0
+	if chain_depth <= 0.02:
+		_floor_mark = Vector3.INF
+		floor_trend = -9.0
+	elif _floor_mark == Vector3.INF:
+		_floor_mark = teeth
+	else:
+		var gone := Vector2(teeth.x - _floor_mark.x, teeth.z - _floor_mark.z).length()
+		if gone >= 0.5:
+			floor_trend = (teeth.y - _floor_mark.y) / gone
+			_floor_mark = teeth
 	if chain_depth > 0.02:
 		digging = true
 		var floor_mm := int(floor_y * 1000.0)
