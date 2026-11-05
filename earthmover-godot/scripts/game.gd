@@ -131,6 +131,13 @@ var mission_done := false
 var mission_clock := 0.0
 var covered := 0.0
 var banner: Label
+var stars_got := 0
+## The roof water job: whether the pipe's joined up, the flood on the lawn and how much of it's left, and how much of the trench is filled in.
+var pipe_joined := false
+var water: MeshInstance3D
+var water_left := 1.0
+var filled := 0.0
+var drain_puffs: CPUParticles3D
 var online: Online
 var online_arg := ""
 var report_page := false
@@ -182,7 +189,7 @@ func _ready() -> void:
 	if mission.is_empty():
 		sim.add_dust_pile(FREE_DUST, FREE_DUST_M3)
 	else:
-		sim.add_dust_pile(mission["pile"], mission["pile_m3"])
+		Mission.lay_out(sim, mission)
 	sim.store = int(START_STORE_M3 / (DirtSim.CELL_M * DirtSim.CELL_M) * DirtSim.MM)
 	start_total = sim.total()
 	sim.loose_total_cached = sim.loose_total()
@@ -533,7 +540,7 @@ func _build_props() -> void:
 		if Engine.has_meta("online_keep") or online_arg != "":
 			var second := Loader.new()
 			add_child(second)
-			second.setup(sim, view_data, prop_mat, mission["start"] + Vector2(-3.0, 0.0), mission["dir"], active.machine_name)
+			second.setup(sim, view_data, prop_mat, mission.get("friend", mission["start"] + Vector2(-3.0, 0.0)), mission["dir"], active.machine_name)
 			second.pipes = pipes
 			second.hint = mission["hint"]
 			machines.append(second)
@@ -644,11 +651,104 @@ func _add_site(kit: MeshKit) -> void:
 	hk.box(Vector3(r.get_center().x, 1.1, front + 0.03), Vector3(r.size.x, 2.2, 0.08), Props.c("#8a8f94"))
 	for side: float in [-1.0, 1.0]:
 		hk.box(Vector3(side * 5.0, 1.6, front + 0.03), Vector3(2.0, 1.2, 0.08), Props.c("#5f8fb5"))
+	if Mission.kind(mission) == "pipe":
+		_add_downpipe(hk, front, WIDE, WALL)
 	house = MeshInstance3D.new()
 	house.mesh = hk.mesh()
 	house.material_override = prop_mat
 	add_child(house)
 	obstacles.append([Vector2(-WIDE * 0.5 + DEEP * 0.5, mid), Vector2(WIDE * 0.5 - DEEP * 0.5, mid), DEEP * 0.5])
+	if Mission.kind(mission) == "pipe":
+		_add_drain(kit)
+		_add_flood()
+
+## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
+func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
+	var grey := Props.c("#d6d6cf")
+	var at: Vector2 = mission["downpipe"]
+	hk.box(Vector3(0.0, wall - 0.05, front + 0.45), Vector3(wide + 1.0, 0.16, 0.16), grey)
+	hk.box(Vector3(at.x, wall * 0.5, at.y), Vector3(0.11, wall, 0.11), grey)
+	# Its foot turns out from the wall, spilling onto the lawn: where the flood comes from.
+	hk.box(Vector3(at.x, 0.1, at.y + 0.18), Vector3(0.11, 0.11, 0.36), grey)
+
+## The drain at the edge of the street: a dark pit with a grate on it.
+func _add_drain(kit: MeshKit) -> void:
+	var at: Vector2 = mission["drain"]
+	kit.box(Vector3(at.x, 0.03, at.y), Vector3(0.8, 0.06, 0.8), Props.c("#2f3134"))
+	for k in 4:
+		kit.box(Vector3(at.x - 0.27 + k * 0.18, 0.065, at.y), Vector3(0.05, 0.03, 0.72), Props.c("#7c8085"))
+	kit.box(Vector3(at.x, 0.065, at.y - 0.38), Vector3(0.8, 0.03, 0.05), Props.c("#7c8085"))
+	kit.box(Vector3(at.x, 0.065, at.y + 0.38), Vector3(0.8, 0.03, 0.05), Props.c("#7c8085"))
+
+## The flooded lawn: a sheet of water lying round the foot of the downpipe. It's only for looks: the dirt knows nothing of it.
+func _add_flood() -> void:
+	var c: Vector2 = mission["flood"]
+	var r: Vector2 = mission["flood_r"]
+	const SIDES := 32
+	var points := PackedVector3Array()
+	for k in SIDES:
+		var a := TAU * k / SIDES
+		var wobble := 1.0 + 0.1 * sin(a * 3.0 + 0.7) + 0.06 * sin(a * 5.0 + 2.1)
+		points.append(Vector3(cos(a) * r.x * wobble, 0.0, sin(a) * r.y * wobble))
+	var at := PackedVector3Array()
+	for k in SIDES:
+		at.append(Vector3.ZERO)
+		at.append(points[(k + 1) % SIDES])
+		at.append(points[k])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = at
+	var normals := PackedVector3Array()
+	normals.resize(at.size())
+	normals.fill(Vector3.UP)
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var look := StandardMaterial3D.new()
+	look.albedo_color = Color(0.38, 0.6, 0.78, 0.82)
+	look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	look.cull_mode = BaseMaterial3D.CULL_DISABLED
+	look.roughness = 0.12
+	look.metallic_specular = 0.7
+	water = MeshInstance3D.new()
+	water.mesh = m
+	water.material_override = look
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	water.position = Vector3(c.x, 0.07, c.y)
+	add_child(water)
+	# Under the water the lawn's drowned to bare mud, so the grass doesn't stand up through it, and it stays muddy once it's drained.
+	var a := DirtSim.cell_of(c - r * 1.2)
+	var b := DirtSim.cell_of(c + r * 1.2)
+	for j in range(a.y, b.y + 1):
+		for i in range(a.x, b.x + 1):
+			var p := (Vector2(i, j) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M - c) / r
+			if p.length() < 1.02:
+				view_data.wear(i, j)
+
+## Once the pipe's joined, the flood shrinks away and water spurts at the drain until it's gone.
+func _drain_flood(delta: float) -> void:
+	if water == null or not pipe_joined or water_left <= 0.0:
+		return
+	water_left = maxf(water_left - delta / Mission.DRAIN_S, 0.0)
+	var k := lerpf(0.15, 1.0, water_left)
+	water.scale = Vector3(k, 1.0, k)
+	water.position.y = lerpf(0.01, 0.07, water_left)
+	water.visible = water_left > 0.0
+	if drain_puffs == null:
+		drain_puffs = _puffs(Color(0.55, 0.72, 0.85, 0.7), 18, 0.7)
+		var d: Vector2 = mission["drain"]
+		drain_puffs.position = Vector3(d.x, 0.1, d.y)
+		drain_puffs.direction = Vector3(0.0, 1.0, 0.0)
+		drain_puffs.spread = 30.0
+		drain_puffs.initial_velocity_min = 0.6
+		drain_puffs.initial_velocity_max = 1.4
+		drain_puffs.scale_amount_min = 0.12
+		drain_puffs.scale_amount_max = 0.28
+		drain_puffs.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		drain_puffs.emission_box_extents = Vector3(0.3, 0.02, 0.3)
+	drain_puffs.emitting = water_left > 0.0
+	if water_left <= 0.0:
+		_show_banner()
 
 func _near_line(p: Vector2, a: Vector2, b: Vector2, within: float) -> bool:
 	return Geometry2D.get_closest_point_to_segment(p, a, b).distance_to(p) < within
@@ -1709,7 +1809,7 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_left", pad)
 	margin.add_theme_constant_override("margin_right", pad)
 	margin.add_theme_constant_override("margin_top", int(pad * 0.4))
-	for key: String in ["menu", "machine", "mode", "view", "tool", "ink", "grass", "res", "reset"]:
+	for key: String in ["menu", "machine", "mode", "view", "tool", "ink", "grass", "res", "reset", "finish"]:
 		var b := Button.new()
 		b.add_theme_font_size_override("font_size", font)
 		b.custom_minimum_size = Vector2(h * 0.19, h * 0.095)
@@ -1718,6 +1818,9 @@ func _build_ui() -> void:
 		row.add_child(b)
 		buttons[key] = b
 	buttons["reset"].text = "Reset"
+	# A driveway with a star or more can be called done here; it's shown once there's a star to have.
+	buttons["finish"].visible = false
+	buttons["finish"].add_theme_color_override("font_color", Color("#ffd23f"))
 	buttons["menu"].text = "Menu"
 	stats = Label.new()
 	stats.add_theme_font_size_override("font_size", int(font * 0.8))
@@ -1857,8 +1960,24 @@ func _show_banner() -> void:
 	# The room code, or who's just joined, isn't to be written over.
 	if online and online.is_online() and (_banner_clock > 0.0 or (online.is_host() and not online.live)):
 		return
-	if banner and not mission.is_empty():
-		banner.text = "%s: %d%% DONE   NEED %d%%" % [String(mission["title"]).to_upper(), int(covered * 100.0), int(Mission.PASS * 100.0)]
+	if banner == null or mission.is_empty():
+		return
+	if Mission.kind(mission) == "pipe":
+		if not pipe_joined:
+			banner.text = "PIPE THE DOWNPIPE TO THE DRAIN"
+		elif water_left > 0.0:
+			banner.text = "JOINED UP! THE LAWN'S DRAINING..."
+		else:
+			banner.text = "FILL THE TRENCH IN: %d%%   NEED %d%%" % [int(filled * 100.0), int(Mission.FILL_PASS * 100.0)]
+		return
+	var got := Mission.stars_for(covered)
+	var title := String(mission["title"]).to_upper()
+	if got == 0:
+		banner.text = "%s: %d%%   %d%% FOR 1 STAR" % [title, int(covered * 100.0), int(Mission.STARS[0] * 100.0)]
+	elif got < Mission.STARS.size():
+		banner.text = "%s: %d%%   %d STAR%s, %d%% FOR %d" % [title, int(covered * 100.0), got, "" if got == 1 else "S", int(Mission.STARS[got] * 100.0), got + 1]
+	else:
+		banner.text = "%s: %d%%   3 STARS" % [title, int(covered * 100.0)]
 
 ## A whole-screen menu over the site: the jobs and free play at the start, or how a job went at the end of it.
 func _build_menu() -> void:
@@ -1871,7 +1990,9 @@ func _build_menu() -> void:
 	box.set_anchors_preset(Control.PRESET_CENTER)
 	box.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	box.grow_vertical = Control.GROW_DIRECTION_BOTH
-	box.add_theme_constant_override("separation", int(h * 0.025))
+	# The end of a job has the most on it, so it's drawn a bit smaller to fit.
+	var snug := menu_kind == "done"
+	box.add_theme_constant_override("separation", int(h * (0.016 if snug else 0.025)))
 	menu.add_child(box)
 	var heading := func(text: String, size: float, colour: Color) -> void:
 		var word := Label.new()
@@ -1885,7 +2006,7 @@ func _build_menu() -> void:
 		b.text = text
 		b.disabled = not enabled
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(h * 1.15, h * 0.14)
+		b.custom_minimum_size = Vector2(h * 1.15, h * (0.115 if snug else 0.14))
 		b.add_theme_font_size_override("font_size", int(h * 0.05))
 		b.pressed.connect(what)
 		box.add_child(b)
@@ -1895,7 +2016,8 @@ func _build_menu() -> void:
 			if Mission.open(m):
 				var word := "%s: %s" % [m["title"], m["machine"]]
 				if Mission.is_done(m["id"]):
-					word += "   DONE"
+					var best := Mission.stars(m["id"])
+					word += "   DONE" if Mission.kind(m) != "driveway" else "   %d STAR%s" % [best, "" if best == 1 else "S"]
 				choice.call(word, true, _start_mission.bind(m["id"]))
 			else:
 				choice.call("%s: finish %s first" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
@@ -1921,15 +2043,19 @@ func _build_menu() -> void:
 		heading.call("THE HOST HAS GONE", 0.08, Color("#ffd23f"))
 		choice.call("Menu", true, _pressed.bind("menu"))
 	else:
-		heading.call("%s DONE" % String(mission["title"]).to_upper(), 0.1, Color("#ffd23f"))
+		heading.call("%s DONE" % String(mission["title"]).to_upper(), 0.085, Color("#ffd23f"))
+		if Mission.kind(mission) == "driveway":
+			heading.call("%d STAR%s OF 3" % [stars_got, "" if stars_got == 1 else "S"], 0.06, Color.WHITE)
 		if mission["done"] != "":
-			heading.call(mission["done"], 0.07, Color("#a8f07a"))
+			heading.call(mission["done"], 0.055, Color("#a8f07a"))
 		var next := Mission.after(mission)
 		if not next.is_empty():
 			if online.is_guest():
 				heading.call("The host picks what's next", 0.05, Color.WHITE)
 			else:
 				choice.call("Next job: %s" % next["title"], true, _start_mission.bind(next["id"]))
+		if Mission.kind(mission) == "driveway" and stars_got < 3 and not online.is_guest():
+			choice.call("Try again for 3 stars", true, _start_mission.bind(mission["id"]))
 		choice.call("Keep working", true, _close_menu)
 		choice.call("Menu", true, _pressed.bind("menu"))
 	_show_buttons()
@@ -2139,18 +2265,36 @@ func _check_mission(delta: float) -> void:
 	if mission_clock > 0.0:
 		return
 	mission_clock = 0.25
+	if Mission.kind(mission) == "pipe":
+		if not pipe_joined and Mission.joined(pipes.points(), mission):
+			pipe_joined = true
+			sfx.clunked(0.8)
+			Input.vibrate_handheld(120)
+		filled = Mission.filled_in(sim, mission)
+		_show_banner()
+		if mission_done or online.is_guest() or not pipe_joined or water_left > 0.0 or filled < Mission.FILL_PASS:
+			return
+		finish_mission()
+		return
 	covered = Mission.coverage(sim, mission)
 	_show_banner()
-	# With a friend, the host's game says when it's done, so both finish together.
-	if mission_done or covered < Mission.PASS or online.is_guest():
+	var can_finish := not mission_done and not online.is_guest() and menu == null and Mission.stars_for(covered) > 0
+	buttons["finish"].visible = can_finish
+	if can_finish:
+		var n := Mission.stars_for(covered)
+		buttons["finish"].text = "FINISH: %d STAR%s" % [n, "" if n == 1 else "S"]
+	# With a friend, the host's game says when it's done, so both finish together. Three stars and it's done by itself.
+	if mission_done or covered < Mission.STARS[Mission.STARS.size() - 1] or online.is_guest():
 		return
 	finish_mission()
 
 func finish_mission() -> void:
 	mission_done = true
+	buttons["finish"].visible = false
+	stars_got = Mission.stars_for(covered) if Mission.kind(mission) == "driveway" else 3
 	# Checks and demos leave the real save alone.
 	if demo == "":
-		Mission.mark_done(mission["id"])
+		Mission.mark_done(mission["id"], stars_got)
 	sfx.clunked(1.0)
 	Input.vibrate_handheld(200)
 	print("MISSION DONE: %s at %.1f%%" % [mission["id"], covered * 100.0])
@@ -2394,6 +2538,9 @@ func _pressed(key: String) -> void:
 			_set_res((res_i + 1) % RES_STEPS.size())
 		"reset":
 			get_tree().reload_current_scene()
+		"finish":
+			if not mission.is_empty() and not mission_done and Mission.kind(mission) == "driveway" and Mission.stars_for(covered) > 0 and not online.is_guest():
+				finish_mission()
 		"menu":
 			online.leave()
 			for meta_name: String in ["mission", "free_play"]:
@@ -2466,6 +2613,7 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 		alert.visible = false
 	if not mission.is_empty():
 		_check_mission(delta)
+		_drain_flood(delta)
 	if _banner_clock > 0.0:
 		_banner_clock -= delta
 		if _banner_clock <= 0.0:

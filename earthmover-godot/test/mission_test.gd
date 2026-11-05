@@ -17,7 +17,10 @@ func _init() -> void:
 	spread_button_tests()
 	save_tests()
 	for job: Dictionary in Mission.LIST:
-		job_test(job)
+		if Mission.kind(job) == "pipe":
+			pipe_job_test(job)
+		else:
+			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(fails)
 
@@ -31,6 +34,15 @@ func save_tests() -> void:
 	Mission.mark_done("driveway")
 	check(Mission.is_done("driveway") and Mission.open(second), "finishing the first opens it")
 	check(Mission.after(Mission.LIST[0]) == second, "and it's the one offered next")
+	# Stars: 70% one, 80% two, 90% three, and the best is kept.
+	check(Mission.stars_for(0.69) == 0 and Mission.stars_for(0.7) == 1 and Mission.stars_for(0.85) == 2 and Mission.stars_for(0.9) == 3, "stars at 70, 80 and 90%")
+	check(Mission.stars("driveway") == 3, "done before there were stars counts as three")
+	Mission.mark_done("long_driveway", 1)
+	check(Mission.stars("long_driveway") == 1, "one star kept")
+	Mission.mark_done("long_driveway", 2)
+	Mission.mark_done("long_driveway", 1)
+	check(Mission.stars("long_driveway") == 2, "the best kept, not the last")
+	check(Mission.open(Mission.find("roof_water")), "a star on the long driveway opens the roof water job")
 	DirAccess.remove_absolute(Mission.save_path)
 
 func dust_ok(s: DirtSim) -> bool:
@@ -178,6 +190,93 @@ func spread_button_tests() -> void:
 		l.step(DT)
 		check(not l.spread_on, "RAISE turns SPREAD off")
 		l.queue_free()
+
+## The roof water job with the real Dingo and its real controls: trench from the downpipe to the drain, lay pipe along it, then fill
+## it in with SPREAD from the side the dirt went, in strips across it, twice over.
+func pipe_job_test(job: Dictionary) -> void:
+	print("--- %s" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var total := s.total()
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new())
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	var line_x: float = (job["downpipe"] as Vector2).x
+	var drain_z: float = (job["drain"] as Vector2).y
+	check(is_zero_approx(Mission.filled_in(s, job)) and not Mission.joined(pipes.points(), job), "nothing's done to start with")
+	# The trencher, from as near the downpipe as the house lets it get, out to the drain.
+	d.reposition(Vector2(line_x, 0.95), Vector2(0.0, 1.0))
+	d.toggle_attachment()
+	d.lift_cmd = -1.0
+	_run(d, s, 1.0)
+	d.lift_cmd = 0.0
+	d.throttle = 1.0
+	var t := 0.0
+	while d.teeth.z < drain_z - 0.1 and t < 60.0:
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
+	d.lift_cmd = 1.0
+	_run(d, s, 2.0)
+	d.stop_commands()
+	print("      trench cut in %.0f s, %.1f m of it" % [t, d.trench_m])
+	# Pipe, driving along it from the house end.
+	d.toggle_attachment()
+	d.reposition(Vector2(line_x, 0.95), Vector2(0.0, 1.0))
+	d.throttle = 1.0
+	t = 0.0
+	while d.spot.y < drain_z + 0.9 and t < 40.0:
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
+	var pts := pipes.points()
+	print("      pipe laid: %.1f m, from %s to %s" % [pipes.length_m, pts[0] if pts.size() > 0 else "-", pts[pts.size() - 1] if pts.size() > 0 else "-"])
+	check(Mission.joined(pts, job), "the pipe joins the downpipe to the drain")
+	# Back to the bucket and fill it in: SPREAD from the side the dirt went, across the trench.
+	d.toggle_attachment()
+	var right := 0
+	var left := 0
+	for z in range(2, 8):
+		right += s.soil[DirtSim.cell_of(Vector2(line_x + 1.4, z)).y * DirtSim.CELLS + DirtSim.cell_of(Vector2(line_x + 1.4, z)).x]
+		left += s.soil[DirtSim.cell_of(Vector2(line_x - 1.4, z)).y * DirtSim.CELLS + DirtSim.cell_of(Vector2(line_x - 1.4, z)).x]
+	var from_side := 1.0 if right > left else -1.0
+	for round in 2:
+		var z := 0.9
+		while z < drain_z + 0.4:
+			d.reposition(Vector2(line_x + from_side * 3.6, z), Vector2(-from_side, 0.0))
+			d.toggle_spread()
+			_run(d, s, 1.0)
+			d.throttle = 0.6
+			t = 0.0
+			while (d.spot.x - line_x) * from_side > -1.2 and t < 15.0:
+				_run(d, s, 0.1)
+				t += 0.1
+			d.stop_commands()
+			if d.spread_on:
+				d.toggle_spread()
+			z += 0.6
+		_run(d, s, 2.0)
+		print("      filled in after SPREAD round %d: %.0f%%" % [round + 1, Mission.filled_in(s, job) * 100.0])
+	var short := ""
+	for n in s.bed.size():
+		if s.clean_cut[n] == 1 and s.bed[n] + s.soil[n] < s.start_ground[n] - Mission.FILLED_MM:
+			short += "(%.2f,%.2f):%d " % [(n % DirtSim.CELLS) * 0.25 - 32.0, (n / DirtSim.CELLS) * 0.25 - 32.0, s.bed[n] + s.soil[n] - s.start_ground[n]]
+	print("      short cells: " + short)
+	check(Mission.filled_in(s, job) >= Mission.FILL_PASS, "the trench can be filled back in (%.0f%%, need %.0f%%)" % [Mission.filled_in(s, job) * 100.0, Mission.FILL_PASS * 100.0])
+	check(s.total() == total, "the total never changes")
+	d.queue_free()
+	pipes.queue_free()
+
+func _run(d: Loader, s: DirtSim, seconds: float) -> void:
+	for k in int(seconds / DT):
+		d.step(DT)
+		s.step(DT, 1000000)
 
 func job_test(job: Dictionary) -> void:
 	print("--- %s" % job["title"])

@@ -32,6 +32,7 @@ const PIPE_AT := -0.75          # how far ahead of the middle it lays: behind th
 const TRENCH_LOW := 0.2         # m below the ground either side, for pipe to go down
 const ROCK_SCRAPE_MM := 90      # how far below rock the edge can be pressed before it stops the machine dead
 const SPREAD_MM := 50           # what backing up with the bucket low leaves behind
+const RAKE_REACH := 10          # cells, 2.5 m: how far round a spreading bucket rakes leftover soil into a low trench
 const REACH_BELOW := 0.03       # m: spreading, the edge reaches no lower than this below the firm ground under the bucket
 const DRAG_LOW := 0.22          # m above the firm ground the edge has to be to spread
 const SPREAD_CURL := 0.15        # where the SPREAD button holds the bucket: flat, edge just off the ground
@@ -479,6 +480,13 @@ func _back_drag(dt: float) -> void:
 		for along: float in [-0.8, -0.4, 0.0, 0.4]:
 			stands = maxf(stands, sim.firm_at(p + f * along))
 	var moved := sim.drag(blade_a, blade_b, forward() * signf(speed), SPREAD_MM, clampf(absf(speed) * dt / 0.12, 0.0, 1.0), int((stands - REACH_BELOW) * 1000.0))
+	# Over a trench that's still low after backfilling, it rakes the leftover soil round about in, so the trench can be finished flat.
+	for k in 5:
+		var at := DirtSim.cell_of(blade_a.lerp(blade_b, k / 4.0) - f * 0.2)
+		if at.x < 1 or at.y < 1 or at.x >= DirtSim.CELLS - 1 or at.y >= DirtSim.CELLS - 1:
+			continue
+		if sim.clean_cut[at.y * DirtSim.CELLS + at.x] == 1:
+			moved += sim.rake_into(at.x, at.y, RAKE_REACH)
 	if moved <= 0:
 		return
 	spreading = true

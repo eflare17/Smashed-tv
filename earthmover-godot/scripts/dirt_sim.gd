@@ -79,6 +79,8 @@ var chunks_left := 0
 ## Dug ground takes more room loose than it did firm, so a trench's dirt more than fills it again. The trencher's
 ## dirt swells by this much, and what it's made is counted here.
 const SWELL_PCT := 35
+## Raking leftover soil into a trench leaves this much on the cells it comes from.
+const RAKE_KEEP_MM := 20
 var swelled := 0
 
 func _init() -> void:
@@ -298,6 +300,37 @@ func trench(at: Vector2i, floor_mm: int, rate: int, to: Vector2i) -> int:
 	swelled += extra
 	put(to.x, to.y, got + extra, last_dust)
 	return got
+
+## Fills a low trench cell back up to the ground it was cut from with spare loose soil from round about, nearest first: soil
+## standing above its own first ground, within `reach` cells. Only loose soil moves, so firm ground is never dug. It's what a bucket
+## spreading over a backfilled trench does, raking the leftover in. Returns mm moved.
+func rake_into(i: int, j: int, reach: int) -> int:
+	if start_ground.size() != bed.size():
+		return 0
+	var n := j * CELLS + i
+	var need := start_ground[n] - (bed[n] + soil[n])
+	if need <= 0:
+		return 0
+	var moved := 0
+	for r in range(1, reach + 1):
+		for dj in range(-r, r + 1):
+			for di in range(-r, r + 1):
+				if maxi(absi(di), absi(dj)) != r:
+					continue
+				var x := i + di
+				var y := j + dj
+				if x < RIM or y < RIM or x >= CELLS - RIM or y >= CELLS - RIM:
+					continue
+				var k := y * CELLS + x
+				var spare := mini(soil[k], bed[k] + soil[k] - start_ground[k] - RAKE_KEEP_MM)
+				if spare <= 0:
+					continue
+				var got := take(x, y, mini(spare, need - moved))
+				put(i, j, got, last_dust)
+				moved += got
+				if moved >= need:
+					return moved
+	return moved
 
 ## Puts soil on a cell. It always all goes on: nothing can be refused without losing it.
 func put(i: int, j: int, amt: int, dust_amt := 0) -> void:
