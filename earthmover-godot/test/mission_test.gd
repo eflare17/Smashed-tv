@@ -23,6 +23,7 @@ func _init() -> void:
 			flood_job_test(job)
 			grade_test(job)
 			words_test(job)
+			too_deep_test(job)
 		else:
 			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
@@ -369,6 +370,7 @@ func grade_test(job: Dictionary) -> void:
 	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
 	d.pipes = pipes
 	d.grade_toward = job["drain"]
+	d.plan = Mission.trench_plan(s, job)
 	var a: Vector2 = Mission.source(job)[0]
 	var b: Vector2 = job["drain"]
 	var way := (b - a).normalized()
@@ -417,6 +419,7 @@ func words_test(job: Dictionary) -> void:
 	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
 	d.pipes = pipes
 	d.grade_toward = job["drain"]
+	d.plan = Mission.trench_plan(s, job)
 	var b := BucketView.new()
 	b.machine = d
 	root.add_child(b)
@@ -442,7 +445,7 @@ func words_test(job: Dictionary) -> void:
 					bits.append("%.2f:%.3f%s" % [xs[k], line["floors"][k], "!" if line["uphill"][k] else ""])
 			print("      first red at %.1f s, chain %.2f aim %.2f: %s" % [t, d.chain_depth, d.aim_depth, " ".join(bits)])
 		said_red = said_red or word.begins_with("RED")
-		d.lift_cmd = -1.0 if word.begins_with("LOWER") or word.begins_with("GO DEEPER") else 0.0
+		d.lift_cmd = -1.0 if word.begins_with("LOWER") or word.begins_with("GO DEEPER") else (1.0 if word.begins_with("TOO DEEP") else 0.0)
 		if d.lift_cmd < 0.0:
 			lowered += 0.1
 		_run(d, s, 0.1)
@@ -582,3 +585,59 @@ func job_test(job: Dictionary) -> void:
 	check(s.dust_total() + carrying == had, "no dust is lost (%d of %d)" % [s.dust_total() + carrying, had])
 	check(dust_ok(s), "and no cell has more dust than soil")
 	l.queue_free()
+
+## The owner's go: LOWER held down at the start, as if to the bottom. The depth stop holds the chain at the job's line, the aim
+## stays that line all the way (it once followed the chain down and asked for more than the trencher has), and doing what the
+## picture says gets the water through with no red on the way.
+func too_deep_test(job: Dictionary) -> void:
+	print("--- %s, LOWER held down at the start" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new())
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	d.grade_toward = job["drain"]
+	d.plan = Mission.trench_plan(s, job)
+	var b := BucketView.new()
+	b.machine = d
+	root.add_child(b)
+	var a: Vector2 = Mission.source(job)[0]
+	var c: Vector2 = job["drain"]
+	var way := (c - a).normalized()
+	d.toggle_attachment()
+	d.reposition(a - way * 0.75, way)
+	d.lift_cmd = -1.0
+	_run(d, s, 6.0)
+	d.lift_cmd = 0.0
+	var first: String = b.trench_word(d, false)[0]
+	print("      chain %.2f m, aim %.2f m: \"%s\"" % [d.chain_depth, d.aim_depth, first])
+	check(d.chain_depth <= d.aim_depth + 0.03 and not first.begins_with("TOO DEEP"), "LOWER held down, the chain stops at the aim (%.2f m, aim %.2f m)" % [d.chain_depth, d.aim_depth])
+	d.throttle = 1.0
+	var t := 0.0
+	var aim_most := 0.0
+	var said_red := false
+	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < a.distance_to(c) - 0.1 and t < 120.0:
+		var line := b.trench_line(d)
+		var word: String = b.trench_word(d, line["any_uphill"])[0]
+		aim_most = maxf(aim_most, d.aim_depth)
+		said_red = said_red or word.begins_with("RED")
+		d.lift_cmd = -1.0 if word.begins_with("LOWER") or word.begins_with("GO DEEPER") else (1.0 if word.begins_with("TOO DEEP") else 0.0)
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
+	print("      deepest aim on the way: %.2f m, chain at the end %.2f m" % [aim_most, d.chain_depth])
+	check(aim_most < 1.1 and aim_most < Loader.CHAIN_MOST, "the aim stays the job's own line (deepest %.2f m), however deep it was dug" % aim_most)
+	check(not said_red, "no stretch goes uphill")
+	_lay_along(d, s, a, c)
+	pipes.settle(s)
+	var run := Mission.pipe_run(pipes.points(), job)
+	check(not run.is_empty() and Mission.water_stops_at(run, job) == -1, "and the water gets through first time")
+	d.queue_free()
+	pipes.queue_free()
+	b.queue_free()

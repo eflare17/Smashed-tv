@@ -15,6 +15,8 @@ const FILL_PASS := 0.9          # how much of the trench filled in for three sta
 const FALL_SLACK := 0.03         # m: a pipe may rise this much between lengths and the water still gets over it
 const DRAIN_S := 6.0            # seconds the flooded lawn takes to drain once the pipe's joined
 const SPREAD_MM := 50           # what spreading with the bucket leaves behind
+const PLAN_COVER := 0.3          # m: the planned trench floor is at least this far under the ground
+const PLAN_UNDER_WATER := 0.1    # m: and for a flood, this far under the water where it starts
 
 const LIST := [
 	{
@@ -332,3 +334,23 @@ static func stars(id: String) -> int:
 
 static func open(m: Dictionary) -> bool:
 	return not m.has("needs") or is_done(m["needs"])
+
+## The trench floor this job wants: a straight line from where the water comes from to the drain, falling Loader.GRADE_FALL each
+## metre, low enough to be at least PLAN_COVER under the ground everywhere along it (so under the rise too), and for a flood
+## under the water where it starts. Worked out once from the ground as it was, so it doesn't move about with the digging.
+## {from, way, length, y0}: the floor's y at `from`, in m.
+static func trench_plan(sim: DirtSim, m: Dictionary) -> Dictionary:
+	var from: Vector2 = source(m)[0]
+	var to: Vector2 = m["drain"]
+	var length := from.distance_to(to)
+	var way := (to - from) / length
+	var y0 := INF
+	var d := 0.0
+	while d <= length + 0.001:
+		var at := DirtSim.cell_of(from + way * d)
+		var ground := float(sim.start_ground[at.y * DirtSim.CELLS + at.x]) / 1000.0
+		y0 = minf(y0, ground - PLAN_COVER + Loader.GRADE_FALL * d)
+		d += 0.25
+	if kind(m) == "flood":
+		y0 = minf(y0, water_y(m) - PLAN_UNDER_WATER)
+	return {"from": from, "way": way, "length": length, "y0": y0}

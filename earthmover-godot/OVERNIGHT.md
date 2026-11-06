@@ -227,3 +227,13 @@ From the owner's phone screenshot: told to dig deeper, but couldn't see how. Wit
 - Dingo: settles onto the ground slower (7 a second, was 16), leans no more than 8 degrees sideways (side_lean_most), half the
   jiggle. Steering off the touch stick has a dead zone (STEER_DEAD 0.18) and builds gently to full lock.
 - test/fill_feel_test.gd checks the run along, the lean, and the tip-in. `--demo=touchsteer` prints the steering from a thumb.
+
+## The trench aim is the job's own line, with a depth stop (6 Nov)
+- The owner held LOWER to the bottom (1.5 m); the aim followed the chain down and then asked for 1.75 m. Fixed:
+  Mission.trench_plan works out one floor line per job from the ground at the start: water source to drain, falling
+  GRADE_FALL a metre, at least PLAN_COVER 0.3 m under the ground everywhere, and 0.1 m under the water at a flood's start.
+  Loader.plan holds it; the aim is that line wherever you are within PLAN_NEAR 1.5 m of it.
+- Depth stop: on a job, the chain won't go more than DEPTH_STOP 2 cm below the line by hand, because digging deeper and
+  coming back up would be a rise. GRADE follows the line. Free play keeps the old aim (from where you start, follows you down).
+- "TOO DEEP x m: RAISE" in the picture if it still ends up 10 cm under (the ground beside dropping away).
+- mission_test too_deep_test: LOWER held at the start stops at the aim (0.32 m), the aim never passes 0.84 m, water through.

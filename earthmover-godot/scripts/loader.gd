@@ -30,6 +30,9 @@ const PIPE_EVERY := 0.5         # m of ground between each length laid
 const PIPE_SPEED := 0.8         # m/s, laying
 const PIPE_AT := -0.75          # how far ahead of the middle it lays: behind the machine
 const GRADE_FALL := 0.03        # m the floor drops for each m nearer the drain, with GRADE on
+const PLAN_NEAR := 1.5         # m: this near a job's planned trench line, the trencher shows its aim
+const TOO_DEEP := 0.1          # m under the aim that says to come up: a deep dip and back up again is a rise the water stops at
+const DEPTH_STOP := 0.02       # m past the aim the chain can go, by hand, on a job
 const GRADE_START := 0.45       # m the chain goes down to before GRADE takes the floor from there
 const PIPE_SNAP := 0.6          # m either side of the layer it looks for the bottom of the trench
 const TRENCH_LOW := 0.2         # m below the ground either side, for pipe to go down
@@ -54,6 +57,8 @@ var spreading := false          # moving soil out flat
 ## (a job's drain), from wherever the cut began. The aim is worked out with it off too, and shown, as the depth to dig to.
 var grade_on := false
 var grade_toward := Vector2.INF
+var plan := {}                  # a job's planned trench floor (Mission.trench_plan): the aim, the same wherever and however it's dug
+var at_stop := false            # the chain's down on the depth stop
 var aim_depth := -1.0
 var grade_short := false
 var _grade_from := Vector2.INF
@@ -253,6 +258,9 @@ func fill() -> float:
 
 ## Where the trench floor ought to be at `p` for the pipe to run downhill from where this cut began, or NAN with no cut begun.
 func aim_floor(p: Vector2) -> float:
+	if not plan.is_empty():
+		var d := clampf((p - (plan["from"] as Vector2)).dot(plan["way"]), 0.0, plan["length"])
+		return float(plan["y0"]) - GRADE_FALL * d
 	if _grade_from == Vector2.INF:
 		return NAN
 	var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(p) if grade_toward != Vector2.INF else _grade_from.distance_to(p)
@@ -260,7 +268,7 @@ func aim_floor(p: Vector2) -> float:
 
 ## Where this cut began, or INF with none begun.
 func aim_from() -> Vector2:
-	return _grade_from
+	return plan["from"] if not plan.is_empty() else _grade_from
 
 func gauge_word() -> Array:
 	if trencher_on:
@@ -273,7 +281,8 @@ func gauge_word() -> Array:
 		if chain_depth > 0.02 and aim_depth > 0.0:
 			# How deep it ought to be here for the pipe to run downhill, and whether it is.
 			var short := chain_depth < aim_depth - 0.04
-			return ["TRENCH %.2f m DEEP   AIM %.2f m%s" % [chain_depth, aim_depth, "   GO DEEPER" if short else ""], Color("#ff6a4a") if short else Color("#ff9a4a")]
+			var deep := chain_depth > aim_depth + TOO_DEEP
+			return ["TRENCH %.2f m DEEP   AIM %.2f m%s" % [chain_depth, aim_depth, "   GO DEEPER" if short else ("   TOO DEEP" if deep else "")], Color("#ff6a4a") if short else (Color("#ffd23f") if deep else Color("#ff9a4a"))]
 		if chain_depth > 0.02:
 			# Which way the floor's going, for a pipe that has to run downhill.
 			var way := ""
@@ -597,15 +606,26 @@ func _work_chain(dt: float) -> void:
 	elif _grade_from == Vector2.INF and chain_depth >= (GRADE_START - 0.02 if grade_on else 0.2):
 		_grade_from = here
 		_grade_floor0 = beside - chain_depth
+	at_stop = false
 	aim_depth = -1.0
-	if _grade_from != Vector2.INF:
+	if not plan.is_empty():
+		# Only on or near the line: off somewhere else, there's nothing to aim for.
+		var off := absf((here - (plan["from"] as Vector2)).dot(Vector2(-(plan["way"] as Vector2).y, (plan["way"] as Vector2).x)))
+		if off < PLAN_NEAR:
+			aim_depth = beside - aim_floor(here)
+	elif _grade_from != Vector2.INF:
 		var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(here) if grade_toward != Vector2.INF else _grade_from.distance_to(here)
 		aim_depth = beside - (_grade_floor0 - GRADE_FALL * nearer)
-		# Dug deeper than the aim, the aim comes down to it: coming back up to the old one would be uphill.
+		# Free play: dug deeper than the aim, the aim comes down to it, as coming back up to the old one would be uphill.
 		if not grade_on and chain_depth > aim_depth + 0.02:
 			_grade_from = here
 			_grade_floor0 = beside - chain_depth
 			aim_depth = chain_depth
+	# On a job, the depth stop: the chain won't go below the job's line. Dug deeper and brought back up to it would be a rise the
+	# water stops at, so it never gets deeper than it.
+	if not plan.is_empty() and not grade_on and aim_depth > 0.0 and chain_depth > aim_depth + DEPTH_STOP:
+		chain_depth = move_toward(chain_depth, aim_depth + DEPTH_STOP, CHAIN_RATE * dt)
+		at_stop = true
 	if grade_on:
 		var want := aim_depth if aim_depth > 0.0 else GRADE_START
 		grade_short = want > CHAIN_MOST

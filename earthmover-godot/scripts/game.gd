@@ -695,6 +695,7 @@ func _add_site(kit: MeshKit) -> void:
 		for m: Machine in machines:
 			if m is Loader:
 				(m as Loader).grade_toward = mission["drain"]
+				(m as Loader).plan = Mission.trench_plan(sim, mission)
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:

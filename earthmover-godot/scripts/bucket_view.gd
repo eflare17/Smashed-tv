@@ -250,6 +250,8 @@ func trench_word(l: Loader, any_uphill: bool) -> Array:
 		return ["GRADE ON: JUST DRIVE", GOOD]
 	if short:
 		return ["GO DEEPER %.2f m: LOWER" % (l.aim_depth - l.chain_depth), UPHILL]
+	if l.chain_depth > 0.02 and l.aim_depth > 0.0 and l.chain_depth > l.aim_depth + Loader.TOO_DEEP:
+		return ["TOO DEEP %.2f m: RAISE" % (l.chain_depth - l.aim_depth), Color("#ffd23f")]
 	if l.chain_depth > 0.02 and l.aim_depth > 0.0:
 		return ["ON THE AIM: KEEP GOING", GOOD]
 	return ["LOWER IT TO DIG", Color("#ffd23f")]
