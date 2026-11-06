@@ -19,6 +19,7 @@ const CLODS_PER_M2 := 28.0
 ## For trying the game out: in the job list, a SKIP beside each job not done yet. Held down, it counts that job done, so the
 ## next one opens. A skipped job earns no stars. Set to false to lock it away.
 const TEST_SKIP := true
+const STEER_DEAD := 0.18         # of the stick's reach sideways that does no steering
 const SKIP_HOLD_S := 1.5         # how long SKIP has to be held
 const FADED := 0.22             # how solid something in the way is drawn
 const RES_STEPS := [1.0, 0.85, 0.7]
@@ -1844,13 +1845,13 @@ func _physics_process(dt: float) -> void:
 			else:
 				digger.swing_cmd = 0.0
 				digger.throttle = clampf(-moved.y, -1.0, 1.0)
-				digger.steer = clampf(moved.x, -1.0, 1.0)
+				digger.steer = _steer_of(moved.x)
 			digger.reach_cmd = clampf(arm.x, -1.0, 1.0)
 			digger.raise_cmd = clampf(-arm.y, -1.0, 1.0)
 			digger.curl_cmd = Input.get_axis("dig_dump", "dig_curl")
 		else:
 			active.throttle = clampf(-moved.y, -1.0, 1.0)
-			active.steer = clampf(moved.x, -1.0, 1.0)
+			active.steer = _steer_of(moved.x)
 			if active == dozer:
 				dozer.lift_cmd = Input.get_axis("blade_down", "blade_up")
 			elif active == truck:
@@ -1916,6 +1917,14 @@ func _physics_process(dt: float) -> void:
 		_place_camera()
 
 ## A thumb a hair off the middle shouldn't creep the arm along.
+## Steering off the stick: a finger pushing ahead always drifts a little sideways, so near the middle does nothing, and turning
+## builds gently from there, to full lock at the side.
+func _steer_of(x: float) -> float:
+	var off := absf(x)
+	if off < STEER_DEAD:
+		return 0.0
+	return signf(x) * pow(minf((off - STEER_DEAD) / (1.0 - STEER_DEAD), 1.0), 1.7)
+
 func _dead_zone(v: Vector2) -> Vector2:
 	var size := v.length()
 	if size < 0.14:
@@ -2306,16 +2315,26 @@ func _show_banner() -> void:
 		elif water_left > 0.0:
 			banner.text = "JOINED UP! THE LAWN'S DRAINING..."
 		else:
-			banner.text = "FILL THE TRENCH IN: %d%%   NEED %d%%" % [int(filled * 100.0), int(Mission.FILL_PASS * 100.0)]
+			banner.text = _star_words("SPREAD ALONG THE TRENCH", filled)
 		return
-	var got := Mission.stars_for(covered)
-	var title := String(mission["title"]).to_upper()
+	banner.text = _star_words(String(mission["title"]).to_upper(), covered)
+
+## How much is done and what that's worth: "DRIVEWAY: 74%   1 STAR, 80% FOR 2".
+func _star_words(title: String, done: float) -> String:
+	var got := Mission.stars_for(done)
 	if got == 0:
-		banner.text = "%s: %d%%   %d%% FOR 1 STAR" % [title, int(covered * 100.0), int(Mission.STARS[0] * 100.0)]
-	elif got < Mission.STARS.size():
-		banner.text = "%s: %d%%   %d STAR%s, %d%% FOR %d" % [title, int(covered * 100.0), got, "" if got == 1 else "S", int(Mission.STARS[got] * 100.0), got + 1]
-	else:
-		banner.text = "%s: %d%%   3 STARS" % [title, int(covered * 100.0)]
+		return "%s: %d%%   %d%% FOR 1 STAR" % [title, int(done * 100.0), int(Mission.STARS[0] * 100.0)]
+	if got < Mission.STARS.size():
+		return "%s: %d%%   %d STAR%s, %d%% FOR %d" % [title, int(done * 100.0), got, "" if got == 1 else "S", int(Mission.STARS[got] * 100.0), got + 1]
+	return "%s: %d%%   3 STARS" % [title, int(done * 100.0)]
+
+## How much of the job's done, 0 to 1, for its stars: the driveway covered, or the trench filled back in.
+func _score() -> float:
+	return covered if Mission.kind(mission) == "driveway" else filled
+
+## Whether the stars can be earned yet: a pipe job needs the water through first.
+func _can_score() -> bool:
+	return Mission.kind(mission) == "driveway" or (pipe_joined and water_left <= 0.0)
 
 ## A whole-screen menu over the site: the jobs and free play at the start, or how a job went at the end of it.
 func _build_menu() -> void:
@@ -2358,7 +2377,7 @@ func _build_menu() -> void:
 					if best == 0:
 						word += "   SKIPPED"
 					else:
-						word += "   DONE" if Mission.kind(m) != "driveway" else "   %d STAR%s" % [best, "" if best == 1 else "S"]
+						word += "   %d STAR%s" % [best, "" if best == 1 else "S"]
 				if TEST_SKIP and not Mission.is_done(m["id"]):
 					_skip_row(box, h, word, String(m["id"]), snug)
 				else:
@@ -2388,8 +2407,7 @@ func _build_menu() -> void:
 		choice.call("Menu", true, _pressed.bind("menu"))
 	else:
 		heading.call("%s DONE" % String(mission["title"]).to_upper(), 0.085, Color("#ffd23f"))
-		if Mission.kind(mission) == "driveway":
-			heading.call("%d STAR%s OF 3" % [stars_got, "" if stars_got == 1 else "S"], 0.06, Color.WHITE)
+		heading.call("%d STAR%s OF 3" % [stars_got, "" if stars_got == 1 else "S"], 0.06, Color.WHITE)
 		if mission["done"] != "":
 			heading.call(mission["done"], 0.055, Color("#a8f07a"))
 		var next := Mission.after(mission)
@@ -2398,7 +2416,7 @@ func _build_menu() -> void:
 				heading.call("The host picks what's next", 0.05, Color.WHITE)
 			else:
 				choice.call("Next job: %s" % next["title"], true, _start_mission.bind(next["id"]))
-		if Mission.kind(mission) == "driveway" and stars_got < 3 and not online.is_guest():
+		if stars_got < 3 and not online.is_guest():
 			choice.call("Try again for 3 stars", true, _start_mission.bind(mission["id"]))
 		choice.call("Keep working", true, _close_menu)
 		choice.call("Menu", true, _pressed.bind("menu"))
@@ -2657,20 +2675,16 @@ func _check_mission(delta: float) -> void:
 			_show_end_marks(end_reached)
 			_show_stop_flag(run[stops] if pipe_connected and stops >= 0 else null)
 		filled = Mission.filled_in(sim, mission)
-		_show_banner()
-		if mission_done or online.is_guest() or not pipe_joined or water_left > 0.0 or filled < Mission.FILL_PASS:
-			return
-		finish_mission()
-		return
-	covered = Mission.coverage(sim, mission)
+	else:
+		covered = Mission.coverage(sim, mission)
 	_show_banner()
-	var can_finish := not mission_done and not online.is_guest() and menu == null and Mission.stars_for(covered) > 0
+	var can_finish := not mission_done and not online.is_guest() and menu == null and _can_score() and Mission.stars_for(_score()) > 0
 	buttons["finish"].visible = can_finish
 	if can_finish:
-		var n := Mission.stars_for(covered)
+		var n := Mission.stars_for(_score())
 		buttons["finish"].text = "FINISH: %d STAR%s" % [n, "" if n == 1 else "S"]
 	# With a friend, the host's game says when it's done, so both finish together. Three stars and it's done by itself.
-	if mission_done or covered < Mission.STARS[Mission.STARS.size() - 1] or online.is_guest():
+	if mission_done or not _can_score() or _score() < Mission.STARS[Mission.STARS.size() - 1] or online.is_guest():
 		return
 	finish_mission()
 
@@ -2693,13 +2707,13 @@ func _hold_skip(delta: float) -> void:
 func finish_mission() -> void:
 	mission_done = true
 	buttons["finish"].visible = false
-	stars_got = Mission.stars_for(covered) if Mission.kind(mission) == "driveway" else 3
+	stars_got = Mission.stars_for(_score())
 	# Checks and demos leave the real save alone.
 	if demo == "":
 		Mission.mark_done(mission["id"], stars_got)
 	sfx.clunked(1.0)
 	Input.vibrate_handheld(200)
-	print("MISSION DONE: %s at %.1f%%" % [mission["id"], covered * 100.0])
+	print("MISSION DONE: %s at %.1f%%" % [mission["id"], _score() * 100.0])
 	active.stop_commands()
 	if shot_path != "":
 		shot_wait = mini(shot_wait, 20)
@@ -2951,7 +2965,7 @@ func _pressed(key: String) -> void:
 		"reset":
 			get_tree().reload_current_scene()
 		"finish":
-			if not mission.is_empty() and not mission_done and Mission.kind(mission) == "driveway" and Mission.stars_for(covered) > 0 and not online.is_guest():
+			if not mission.is_empty() and not mission_done and _can_score() and Mission.stars_for(_score()) > 0 and not online.is_guest():
 				finish_mission()
 		"menu":
 			online.leave()
@@ -3257,6 +3271,24 @@ func _run_touch_demo() -> void:
 				_drag(0, right_thumb + Vector2(0.0, -s.y * 0.14))
 			elif _touch_tick == 110:
 				print("TOUCH right side: throttle %.2f, went %.1f m" % [dozer.throttle, dozer.spot.distance_to(GroundData.dozer_spot())])
+		"touchsteer":
+			# A thumb pushing ahead that wanders a little sideways keeps it straight; pushed right over, it turns hard.
+			var thumb := s * Vector2(0.3, 0.6)
+			var reach := s.y * 0.14
+			if _touch_tick == 20:
+				_touch(0, thumb, true)
+			elif _touch_tick == 22:
+				_drag(0, thumb + Vector2(reach * 0.12, -reach))
+			elif _touch_tick == 60:
+				print("STEER drift: throttle %.2f steer %.2f" % [active.throttle, active.steer])
+				_drag(0, thumb + Vector2(reach * 0.6, -reach * 0.8))
+			elif _touch_tick == 80:
+				print("STEER half: steer %.2f" % active.steer)
+				_drag(0, thumb + Vector2(reach * 1.2, 0.0))
+			elif _touch_tick == 100:
+				print("STEER full: steer %.2f" % active.steer)
+				_touch(0, thumb, false)
+				get_tree().quit()
 		"touchlate":
 			if _touch_tick == 20:
 				DisplayServer.window_set_size(Vector2i(1280, 720))

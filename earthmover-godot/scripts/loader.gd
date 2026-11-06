@@ -160,6 +160,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		turn_rate = 1.25
 		support_x = 0.55
 		support_z = 0.52
+		side_lean_most = 0.14
 		track_z = 0.44
 		track_rear = 0.55
 		pivot = Vector2(-0.1, 0.85)
@@ -409,7 +410,8 @@ func step(dt: float) -> void:
 	if trencher_on and chain_depth > 0.02:
 		share = 0.3
 	_drive(dt, _drag(), false, share)
-	_settle(minf(dt * (16.0 if kind == DINGO else 12.0), 1.0))
+	# Eased onto the ground, so lumps and clods rock it rather than jolt it.
+	_settle(minf(dt * (7.0 if kind == DINGO else 12.0), 1.0))
 
 var _dig_force := 0.0
 
@@ -755,7 +757,7 @@ func _rock_it(dt: float) -> void:
 	var nose := -0.03 * out + 0.03 * bog
 	var jig := 0.0
 	if kind == DINGO:
-		jig = sin(_clock * 37.0) * 0.006 * absf(drive) + sin(_clock * 23.0) * 0.004 * absf(drive)
+		jig = sin(_clock * 37.0) * 0.003 * absf(drive) + sin(_clock * 23.0) * 0.002 * absf(drive)
 	tilt = tilt.slerp(Basis(Vector3.BACK, nose + jig), minf(dt * 6.0, 1.0)).orthonormalized()
 	_body.rotation.z = rock_pitch * 1.2 + sin(_clock * 49.0) * 0.0015 * absf(drive)
 	_body.rotation.x = rock_roll * 1.5

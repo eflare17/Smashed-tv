@@ -41,6 +41,7 @@ var back_speed := 3.6
 var turn_rate := 0.8
 var support_x := 1.8            # the corners it rests on
 var support_z := 1.15
+var side_lean_most := 1.0      # the steepest it leans side to side, as a slope (rise over run)
 var track_z := 1.15             # middle of each track
 var track_rear := 1.7
 
@@ -175,7 +176,8 @@ func _settle(k: float) -> void:
 	var br := _ground_at(-support_x, support_z)
 	var f := forward()
 	var along := Vector3(f.x, ((fl + fr) - (bl + br)) * 0.25 / support_x, f.y).normalized()
-	var across := Vector3(sin(angle), ((fr + br) - (fl + bl)) * 0.25 / support_z, cos(angle)).normalized()
+	# A little machine on a heap beside a slot would lean hard over one track: it's held to `side_lean_most` instead, as if it settled into the loose soil.
+	var across := Vector3(sin(angle), clampf(((fr + br) - (fl + bl)) * 0.25 / support_z, -side_lean_most, side_lean_most), cos(angle)).normalized()
 	var up := across.cross(along).normalized()
 	across = along.cross(up).normalized()
 	var want := Basis(along, up, across)

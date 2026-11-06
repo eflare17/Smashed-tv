@@ -217,3 +217,13 @@ The owner couldn't get the backyard pipe to run: a trench at one depth follows t
 
 ## Trench picture (6 Nov)
 From the owner's phone screenshot: told to dig deeper, but couldn't see how. With the trencher on, the side picture (top right, where the bucket picture goes) now draws the trench side-on along the way the machine faces, 7 m behind the chain to 2 m ahead (`BucketView._draw_trench`): the ground, the slot cut so far (the flood drawn in it where the ground's under water), its floor green, or red where it climbs more than 5 cm over any floor before it on the way to the drain (`trench_line`), the aim floor dashed, the chain and its teeth, a white tick where the teeth ought to be and a red arrow down when they're short. Top: DEPTH and AIM; bottom: LOWER IT TO DIG / ON THE AIM: KEEP GOING / GO DEEPER x m: LOWER / RED GOES UPHILL: DIG IT DEEPER / GRADE ON: JUST DRIVE (`trench_word`). The picture's depth range follows the trench (0.9 to 1.85 m). Change to the aim: dug deeper than it, it comes down to that depth, as coming back up to the old aim would be uphill. 5 cm, not 3, before it says red: the chain leaves 3 cm bumps that don't stop the water. mission_test has a player who only does what the picture says (LOWER while it says so), and the water gets through first time with no red; and lifting the chain partway shows red. `--demo=trenchview` for a picture of it.
+
+## Filling in, stars and a steadier Dingo (6 Nov)
+- Pipe jobs now give stars for how much of the trench is filled back in: 70/80/90% for 1/2/3, like the driveway. FINISH shows from
+  1 star once the water's through; 90% finishes by itself. The menu and the end screen show stars for every job.
+- A pile of plain fill dirt beside the trench in both pipe jobs (`fill`, `fill_m3` in Mission.LIST; DirtSim.add_pile).
+- Dirt falling within 0.75 m of a trench that's still low tips into it (DirtSim._land, FUNNEL), so DUMPing beside it fills it.
+- The easy way, now in the hints and the banner: SPREAD on, drive along the trench. One run fills about 88%, two fill it.
+- Dingo: settles onto the ground slower (7 a second, was 16), leans no more than 8 degrees sideways (side_lean_most), half the
+  jiggle. Steering off the touch stick has a dead zone (STEER_DEAD 0.18) and builds gently to full lock.
+- test/fill_feel_test.gd checks the run along, the lean, and the tip-in. `--demo=touchsteer` prints the steering from a thumb.

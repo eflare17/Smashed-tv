@@ -11,7 +11,7 @@ const STARS := [0.7, 0.8, 0.9]  # how much done for each star. The last finishes
 const LAID_MM := 60             # cracker dust on a driveway done in an earlier job
 const PIPE_REACH := 2.5          # m: a pipe's end this close to the downpipe or the drain joins it
 const FILLED_MM := 100          # a trench cell's filled in once it's within this of the ground it was cut from
-const FILL_PASS := 0.9          # how much of the trench has to be filled in
+const FILL_PASS := 0.9          # how much of the trench filled in for three stars (STARS, like a driveway)
 const FALL_SLACK := 0.03         # m: a pipe may rise this much between lengths and the water still gets over it
 const DRAIN_S := 6.0            # seconds the flooded lawn takes to drain once the pipe's joined
 const SPREAD_MM := 50           # what spreading with the bucket leaves behind
@@ -57,10 +57,13 @@ const LIST := [
 		"dir": Vector2(0.0, -1.0),
 		"friend": Vector2(12.5, 5.0),
 		"downpipe": Vector2(6.6, -0.05),
+		# Spare dirt for filling the trench in, off to the side of it.
+		"fill": Vector2(11.0, 2.5),
+		"fill_m3": 1.0,
 		"drain": Vector2(6.6, 8.45),
 		"flood": Vector2(5.6, 2.2),
 		"flood_r": Vector2(3.0, 2.3),
-		"hint": "ATTACH the trencher, LOWER it and dig from the downpipe to the drain. ATTACH again to lay pipe along it. Then SPREAD to fill it in",
+		"hint": "ATTACH the trencher, LOWER it and dig from the downpipe to the drain. ATTACH again to lay pipe along it. Then SPREAD along the trench to fill it",
 		"done": "BACKYARD FLOOD UNLOCKED",
 	},
 	{
@@ -92,10 +95,12 @@ const LIST := [
 		"drain": Vector2(7.5, -21.4),
 		# Where the pipe's to start: a spot in the water on the near side of the rise, marked like the drain.
 		"inlet": Vector2(-2.5, -16.0),
+		"fill": Vector2(3.9, -16.0),
+		"fill_m3": 1.5,
 		"trampoline": Vector2(-5.5, -17.9),
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
-		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and fill it in",
+		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and SPREAD along the trench to fill it",
 		"done": "",
 	},
 ]
@@ -159,6 +164,8 @@ static func lay_out(sim: DirtSim, m: Dictionary) -> int:
 	var had := 0
 	if kind(m) == "flood":
 		_shape(sim, m)
+	if m.has("fill"):
+		sim.add_pile(m["fill"], m["fill_m3"], false)
 	if m["pile_m3"] > 0.0:
 		had += sim.add_dust_pile(m["pile"], m["pile_m3"])
 	if m.get("laid", false):

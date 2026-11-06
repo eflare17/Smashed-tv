@@ -22,6 +22,7 @@ const DRAG_HEAP := 320          # mm it heaps what it's carrying, above what it 
 const SIDE_LOWER_MM := 900      # the ridge left past each end of the blade stands this much lower than the heap in front
 const SPILL_AHEAD: Array[float] = [0.4, 0.6, 0.9, 1.3, 1.8, 2.4, 3.0]   # m ahead of the blade it lays soil, nearest first
 const SPILL_SIDE: Array[float] = [0.15, 0.4, 0.7]                       # m past the blade's end it then rolls off, close in
+const FUNNEL := 3              # cells, 0.75 m: soil falling this near a low trench tips into it
 const TRACK_SINK := 200        # mm, the deepest a track goes into it: deep soil holds a machine up, it doesn't swallow it
 const RIM := 6                  # cells round the edge that soil never reaches, so it stops at the site fence
 
@@ -109,6 +110,10 @@ func dust_total() -> int:
 
 ## Tips a heap of cracker dust here, as steep as loose soil stands. Returns how much it really put down, in mm on one cell's area.
 func add_dust_pile(c: Vector2, m3: float) -> int:
+	return add_pile(c, m3, true)
+
+## Tips a heap here, as steep as loose soil stands: cracker dust, or plain dirt for filling a trench in.
+func add_pile(c: Vector2, m3: float, is_dust: bool) -> int:
 	var r := pow(m3 / 0.628, 1.0 / 3.0)
 	var high := r * 0.6 * MM
 	var at := cell_of(c)
@@ -120,7 +125,7 @@ func add_dust_pile(c: Vector2, m3: float) -> int:
 			if d >= 1.0:
 				continue
 			var mm := int(high * (1.0 - d))
-			put(i, j, mm, mm)
+			put(i, j, mm, mm if is_dust else 0)
 			put_down += mm
 	return put_down
 
@@ -408,7 +413,7 @@ func _step_air(dt: float) -> void:
 			var at := cell_of(Vector2(p.x, p.z))
 			var amt := air_amt[k]
 			in_air -= amt
-			put(at.x, at.y, amt, air_dust[k])
+			_land(at, amt, air_dust[k])
 			# Off the list by moving the last one into its place.
 			var last := air_amt.size() - 1
 			air_pos[k] = air_pos[last]
@@ -669,3 +674,30 @@ func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
 	if moved:
 		dirty[cj * CHUNKS + ci] = true
 	return moved
+
+## Where falling soil comes down. Near a trench that's still low it tips in, nearest first, filling each cell back up to the ground
+## it was cut from; what's left over lands where it fell. So dumping beside a trench fills it, the way a slot swallows what's tipped
+## at its edge.
+func _land(at: Vector2i, amt: int, dust_amt: int) -> void:
+	if start_ground.size() != bed.size() or at.x < RIM + FUNNEL or at.y < RIM + FUNNEL or at.x >= CELLS - RIM - FUNNEL or at.y >= CELLS - RIM - FUNNEL:
+		put(at.x, at.y, amt, dust_amt)
+		return
+	var left := amt
+	for r in range(0, FUNNEL + 1):
+		for dj in range(-r, r + 1):
+			for di in range(-r, r + 1):
+				if maxi(absi(di), absi(dj)) != r:
+					continue
+				var k := (at.y + dj) * CELLS + at.x + di
+				if clean_cut[k] == 0:
+					continue
+				var need := start_ground[k] - (bed[k] + soil[k])
+				if need <= 0:
+					continue
+				var got := mini(need, left)
+				var d := dust_amt * got / amt
+				put(at.x + di, at.y + dj, got, d)
+				left -= got
+				if left <= 0:
+					return
+	put(at.x, at.y, left, dust_amt * left / amt)
