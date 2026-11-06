@@ -192,6 +192,25 @@ static func pipe_run(points: PackedVector3Array, m: Dictionary) -> PackedVector3
 		first = k
 	return PackedVector3Array()
 
+## Whether any run of pipe has an end at where the water comes from, and whether any has one at the drain.
+static func ends_reached(points: PackedVector3Array, m: Dictionary) -> Array:
+	var from: Array = source(m)
+	var from_at: Vector2 = from[0]
+	var drain: Vector2 = m["drain"]
+	var at_source := false
+	var at_drain := false
+	var first := 0
+	for k in range(1, points.size() + 1):
+		if k < points.size() and points[k].distance_to(points[k - 1]) <= Pipes.JOIN_WITHIN + 0.01:
+			continue
+		if k - first >= 2:
+			for e: Vector3 in [points[first], points[k - 1]]:
+				var p := Vector2(e.x, e.z)
+				at_source = at_source or p.distance_to(from_at) <= float(from[1])
+				at_drain = at_drain or p.distance_to(drain) <= PIPE_REACH
+		first = k
+	return [at_source, at_drain]
+
 static func joined(points: PackedVector3Array, m: Dictionary) -> bool:
 	return not pipe_run(points, m).is_empty()
 

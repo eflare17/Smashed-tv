@@ -149,6 +149,10 @@ var drain_puffs: CPUParticles3D
 var pipe_connected := false
 var stop_flag: Node3D
 var water_y0 := 0.07
+## The rings and words at each end of a pipe job, and whether a pipe's reached each.
+var end_marks: Array = []
+var end_reached := [false, false]
+var pipe_laid := false
 ## The backyard's floating outdoor set: each piece's node, where it is, how deep it floats, and its own sway.
 var floaters: Array = []
 var _float_t := 0.0
@@ -678,6 +682,8 @@ func _add_site(kit: MeshKit) -> void:
 	if Mission.kind(mission) == "flood":
 		_add_back_fence(kit)
 		_add_backyard_things(kit)
+	if Mission.kind(mission) != "driveway":
+		_add_end_marks()
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
@@ -771,6 +777,75 @@ func _update_floaters(delta: float) -> void:
 		node.position = Vector3(at.x, y, at.y)
 		var rock := 0.06 * sin(_float_t * 1.1 + ph) if afloat else 0.0
 		node.rotation = Vector3(rock, f["turn"], rock * 0.6)
+
+## A hoop over the ground at each end of the pipe, with words over it: where the pipe starts and where it ends. Yellow until a
+## pipe's end is inside it, then green.
+func _add_end_marks() -> void:
+	var flood := Mission.kind(mission) == "flood"
+	var from: Array = Mission.source(mission)
+	var spots: Array = [[from[0], "START THE PIPE IN THE WATER" if flood else "START THE PIPE HERE", 0.0 if flood else Mission.PIPE_REACH],
+		[mission["drain"], "END THE PIPE HERE", Mission.PIPE_REACH]]
+	for spot: Array in spots:
+		var at: Vector2 = spot[0]
+		var mark := Node3D.new()
+		mark.position = Vector3(at.x, sim.height_at(at), at.y)
+		add_child(mark)
+		var look := StandardMaterial3D.new()
+		look.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		look.albedo_color = Color("#ffd23f")
+		var reach: float = spot[2]
+		if reach > 0.0:
+			var hoop := MeshInstance3D.new()
+			var torus := TorusMesh.new()
+			torus.inner_radius = reach - 0.07
+			torus.outer_radius = reach
+			torus.rings = 48
+			torus.ring_segments = 6
+			hoop.mesh = torus
+			hoop.material_override = look
+			hoop.position.y = 0.32
+			hoop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mark.add_child(hoop)
+		var word := Label3D.new()
+		word.text = spot[1]
+		word.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		word.no_depth_test = true
+		word.fixed_size = true
+		word.font_size = 56
+		word.outline_size = 14
+		word.pixel_size = 0.0008
+		word.modulate = Color("#ffd23f")
+		word.position.y = 1.4
+		mark.add_child(word)
+		end_marks.append([mark, look, word])
+
+## The hoops and words go green as a pipe reaches each end, and away once the water's running.
+func _show_end_marks(reached: Array) -> void:
+	for k in end_marks.size():
+		var mark: Node3D = end_marks[k][0]
+		mark.visible = not pipe_joined
+		var colour := Color("#7ee06a") if reached[k] else Color("#ffd23f")
+		(end_marks[k][1] as StandardMaterial3D).albedo_color = colour
+		(end_marks[k][2] as Label3D).modulate = colour
+
+## Once the water's running, short lengths join the pipe up: from the foot of the downpipe down into the trench, and from the
+## trench into the drain, so it's plain it's all connected.
+func _add_joins(run: PackedVector3Array) -> void:
+	if run.is_empty():
+		return
+	var kit := MeshKit.new()
+	var white := Props.c("#e9e6dc")
+	var d: Vector2 = mission["drain"]
+	kit.cone(run[run.size() - 1], Vector3(d.x, sim.height_at(d) - 0.25, d.y), Pipes.RADIUS, Pipes.RADIUS, 8, white)
+	if Mission.kind(mission) == "pipe":
+		var dp: Vector2 = mission["downpipe"]
+		var foot := Vector3(dp.x, 0.1, dp.y + 0.36)
+		kit.cone(foot, run[0], Pipes.RADIUS, Pipes.RADIUS, 8, white)
+		kit.cone(foot + Vector3(0.0, 0.0, -0.36), foot, Pipes.RADIUS, Pipes.RADIUS, 8, white)
+	var joins := MeshInstance3D.new()
+	joins.mesh = kit.mesh()
+	joins.material_override = prop_mat
+	add_child(joins)
 
 ## The flag where the water stops in a pipe that goes uphill somewhere, so it's plain where to dig deeper.
 func _show_stop_flag(at: Variant) -> void:
@@ -2109,10 +2184,14 @@ func _show_banner() -> void:
 	if banner == null or mission.is_empty():
 		return
 	if Mission.kind(mission) != "driveway":
-		if not pipe_joined and Mission.kind(mission) == "flood":
-			banner.text = "THE WATER STOPS AT THE FLAG: DIG DEEPER THERE" if pipe_connected else "PIPE THE FLOOD DOWNHILL TO THE DRAIN"
+		var flood := Mission.kind(mission) == "flood"
+		if not pipe_joined and flood and pipe_connected:
+			banner.text = "THE WATER STOPS AT THE FLAG: DIG DEEPER THERE"
+		elif not pipe_joined and not pipe_laid:
+			banner.text = "PIPE THE FLOOD DOWNHILL TO THE DRAIN" if flood else "PIPE THE DOWNPIPE TO THE DRAIN"
 		elif not pipe_joined:
-			banner.text = "PIPE THE DOWNPIPE TO THE DRAIN"
+			# Which end is still to reach, in the hoop's own words.
+			banner.text = "PIPE: %s %s   DRAIN %s" % ["WATER" if flood else "DOWNPIPE", "JOINED" if end_reached[0] else "NOT YET", "JOINED" if end_reached[1] else "NOT YET"]
 		elif water_left > 0.0:
 			banner.text = "JOINED UP! THE LAWN'S DRAINING..."
 		else:
@@ -2453,11 +2532,15 @@ func _check_mission(delta: float) -> void:
 		if not pipe_joined:
 			var run := Mission.pipe_run(pipes.points(), mission)
 			pipe_connected = not run.is_empty()
+			pipe_laid = pipes.segments() > 0
+			end_reached = Mission.ends_reached(pipes.points(), mission)
 			var stops := Mission.water_stops_at(run, mission)
 			if pipe_connected and stops < 0:
 				pipe_joined = true
 				sfx.clunked(0.8)
 				Input.vibrate_handheld(120)
+				_add_joins(run)
+			_show_end_marks(end_reached)
 			_show_stop_flag(run[stops] if pipe_connected and stops >= 0 else null)
 		filled = Mission.filled_in(sim, mission)
 		_show_banner()

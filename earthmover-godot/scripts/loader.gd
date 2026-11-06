@@ -29,6 +29,7 @@ const THROW_DEEP := 0.25        # m further out for each m of depth
 const PIPE_EVERY := 0.5         # m of ground between each length laid
 const PIPE_SPEED := 0.8         # m/s, laying
 const PIPE_AT := -0.75          # how far ahead of the middle it lays: behind the machine
+const PIPE_SNAP := 0.6          # m either side of the layer it looks for the bottom of the trench
 const TRENCH_LOW := 0.2         # m below the ground either side, for pipe to go down
 const ROCK_SCRAPE_MM := 90      # how far below rock the edge can be pressed before it stops the machine dead
 const SPREAD_MM := 50           # what backing up with the bucket low leaves behind
@@ -617,9 +618,19 @@ func _work_pipe() -> void:
 	var f := forward()
 	var side := Vector2(sin(angle), cos(angle))
 	var here := spot + f * PIPE_AT
-	var floor_y := sim.height_at(here)
+	# The pipe finds the bottom of the trench: the lowest firm ground across, a little either side of the layer, so it goes in
+	# the slot even with the machine a bit off line, and never up its wall.
+	var floor_y := sim.firm_at(here)
+	var s := -PIPE_SNAP
+	while s <= PIPE_SNAP + 0.001:
+		var p := here + side * s
+		var y := sim.firm_at(p)
+		if y < floor_y - 0.005:
+			floor_y = y
+			here = p
+		s += 0.125
 	# A trench is ground lower than what's either side of it. The ridge beside it only makes that more so.
-	var low := minf(sim.height_at(here + side * 0.7), sim.height_at(here - side * 0.7)) - floor_y
+	var low := minf(sim.height_at(here + side * 0.45), sim.height_at(here - side * 0.45)) - floor_y
 	in_trench = low > TRENCH_LOW
 	teeth = Vector3(here.x, floor_y, here.y)
 	blade_a = here
