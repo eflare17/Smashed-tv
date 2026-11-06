@@ -37,6 +37,8 @@ const POUR_EACH := 320          # mm on one cell a chunk carries (0.02 m3)
 const POUR_HIGH := 5.0
 const SCOOP_RATE := 30          # mm a tick at the middle
 const TOOL_R := 1.6
+const GET_IN_GAP := 0.9           # m between him and a machine that's near enough to climb into
+const ROOMY := 1.2               # m clear round him that's plenty, stepping off: past this, the usual side will do
 
 var ground: GroundData
 var sim := DirtSim.new()
@@ -47,6 +49,12 @@ var truck: Truck
 var bobcat: Loader
 var dingo: Loader
 var machines: Array[Machine] = []
+var workers: Array[Worker] = []   # the drivers on foot, one for each player: hidden while they're in a machine
+var _walk_from: Machine
+var _walk_spot := Vector2.ZERO
+var get_in_button: TouchScreenButton
+var get_in_word: Label
+var _hinted := {}                 # machines whose hint's been said once already
 var pipes: Pipes
 var tick_count := 0
 var active: Machine
@@ -570,6 +578,13 @@ func _build_props() -> void:
 			second.pipes = pipes
 			second.hint = mission["hint"]
 			machines.append(second)
+	# One for each player, on foot. In the list last, so every machine keeps its number, and parked out of sight till wanted.
+	for k in 2:
+		var w := Worker.new()
+		add_child(w)
+		w.setup(sim, view_data, prop_mat, active.spot, active.forward())
+		workers.append(w)
+		machines.append(w)
 	chase_yaw = _behind_yaw()
 
 	var tr := RandomNumberGenerator.new()
@@ -1270,6 +1285,13 @@ func _on_tree_landed(at: Vector3) -> void:
 func _update_fx(dt: float) -> void:
 	sfx.update(dt, active)
 	shake = maxf(shake - dt * 1.7, 0.0)
+	# On foot there's no engine working, no tracks and nothing being dug.
+	if active is Worker:
+		for p: CPUParticles3D in [track_dust, exhaust, clods, dust, tumble, pour_dust]:
+			p.emitting = false
+		sfx.pouring(dt, 0.0)
+		slip_time = 0.0
+		return
 	var turn := Basis(Vector3.UP, active.angle)
 	track_dust.position = active.to_global(Vector3(-2.2, 0.15, 0.0))
 	track_dust.rotation = turn.get_euler()
@@ -1443,9 +1465,10 @@ func _show_buttons() -> void:
 	var who := active.machine_name
 	for b in touch_buttons:
 		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(who)
-	gauge.visible = mode == "Drive" and menu == null
+	gauge.visible = mode == "Drive" and menu == null and not active is Worker
 	bucket_view.visible = gauge.visible and side_shown
 	_label("machine", "Now: " + who)
+	_show_get_in()
 
 ## Swaps which machine the player is in. The other stays parked where it is, and its work stays done.
 func _swap_machine() -> void:
@@ -1456,7 +1479,12 @@ func _swap_machine() -> void:
 		online.swap_for(0)
 		_take_machine(machines[online.drivers[0]])
 		return
-	_take_machine(machines[(machines.find(active) + 1) % machines.size()])
+	var at := machines.find(active)
+	for k in range(1, machines.size()):
+		var next: Machine = machines[(at + k) % machines.size()]
+		if not next is Worker:
+			_take_machine(next)
+			return
 
 ## The player climbs into this one.
 func _take_machine(next: Machine) -> void:
@@ -1468,12 +1496,134 @@ func _take_machine(next: Machine) -> void:
 	stick2_finger = -1
 	fingers.clear()
 	slip_time = 0.0
-	hint_time = 7.0 if active.hint != "" else 0.0
+	# Each machine's hint once: climbing back in shouldn't say it all again.
+	hint_time = 7.0 if active.hint != "" and not _hinted.has(active) else 0.0
+	_hinted[active] = true
 	_show_buttons()
 	_show_left()
 	stick_ui.queue_redraw()
 	chase_yaw = _behind_yaw()
 	_set_view(view)
+
+## ---------------------------------------------------------------- on foot
+
+## Which machine each player's in, by its place in `machines`: player 0 first.
+func _who_drives() -> Array[int]:
+	if online and online.is_online() and not online.drivers.is_empty():
+		return online.drivers
+	var just_me: Array[int] = [machines.find(active)]
+	return just_me
+
+## Shows the drivers where they are: a worker on the ground only while his player's on foot, and the driver on a Dingo only while
+## someone's in it. Every tick, so swaps and a friend coming or going are all caught.
+func _sync_people() -> void:
+	var d := _who_drives()
+	for k in workers.size():
+		var w := workers[k]
+		var walking := k < d.size() and d[k] == machines.find(w)
+		if online.is_guest():
+			w.visible = walking
+			w.on_foot = walking
+		elif w.on_foot and not walking:
+			w.climb_on()
+	for m: Machine in machines:
+		if not m is Worker:
+			m.show_driver(d.has(machines.find(m)))
+
+## The GET OUT button: off the machine and onto the ground beside it.
+func _get_out() -> void:
+	if online.is_guest():
+		online.ask("out")
+		return
+	_get_out_for(0)
+
+func _get_out_for(player: int) -> void:
+	var d := _who_drives()
+	if player >= d.size() or player >= workers.size():
+		return
+	var m: Machine = machines[d[player]]
+	if m is Worker:
+		return
+	var w := workers[player]
+	var f := m.forward()
+	var side := Vector2(sin(m.angle), cos(m.angle))
+	var mid := m.spot + f * (m.fp_front - m.fp_back) * 0.5
+	# Down the side, as a driver would, unless the other side, behind or in front has more room. Not into a gap he'd be stuck in.
+	var half := (m.fp_front + m.fp_back) * 0.5
+	var tries: Array[Vector2] = []
+	for out: float in [0.45, 1.3]:
+		for k in 8:
+			# Left side first, then round: right, behind, in front, and the corners.
+			var a: float = [PI * 0.5, -PI * 0.5, PI, 0.0, PI * 0.75, -PI * 0.75, PI * 0.25, -PI * 0.25][k]
+			tries.append(mid + f * cos(a) * (half + out) - side * sin(a) * (m.fp_r + out))
+	var chosen := tries[0]
+	var roomiest := -INF
+	for p: Vector2 in tries:
+		w.step_off(p, m.angle)
+		if absf(p.x) >= Machine.AREA or absf(p.y) >= Machine.AREA:
+			continue
+		var room := minf(_machine_gap(w), ROOMY)
+		if room > roomiest + 0.01:
+			roomiest = room
+			chosen = p
+	m.stop_commands()
+	w.step_off(chosen, m.angle)
+	if online.is_host():
+		online.drivers[player] = machines.find(w)
+	if player == 0:
+		_take_machine(w)
+	_sync_people()
+
+## The machine this worker is near enough to climb into, that nobody else is in, or null.
+func _near_machine(w: Worker) -> Machine:
+	if not w.on_foot:
+		return null
+	var d := _who_drives()
+	var a: Array = w.footprint()
+	var best: Machine = null
+	var best_gap := GET_IN_GAP
+	for m: Machine in machines:
+		if m is Worker or d.has(machines.find(m)) or not m.visible:
+			continue
+		var b: Array = m.footprint()
+		var near := Geometry2D.get_closest_points_between_segments(a[0], a[1], b[0], b[1])
+		var gap: float = near[0].distance_to(near[1]) - a[2] - b[2]
+		if gap < best_gap:
+			best_gap = gap
+			best = m
+	return best
+
+## The GET IN button: into the machine he's standing by.
+func _get_in() -> void:
+	if online.is_guest():
+		online.ask("in")
+		return
+	_get_in_for(0)
+
+func _get_in_for(player: int) -> void:
+	if player >= workers.size():
+		return
+	var w := workers[player]
+	var m := _near_machine(w)
+	if m == null:
+		return
+	w.climb_on()
+	if online.is_host():
+		online.drivers[player] = machines.find(m)
+	if player == 0:
+		_take_machine(m)
+	_sync_people()
+
+## GET IN shows only when there's something to get into, and says what.
+func _show_get_in() -> void:
+	if get_in_button == null:
+		return
+	var m: Machine = _near_machine(active as Worker) if active is Worker else null
+	get_in_button.visible = m != null and mode == "Drive" and menu == null
+	if m != null:
+		get_in_word.text = "GET IN
+" + m.machine_name.to_upper()
+	buttons["out"].visible = not active is Worker and mode == "Drive"
 
 ## Whether the two thumbs work apart: the excavator's left thumb swings the house and the right moves the arm.
 func _two_sticks() -> bool:
@@ -1723,6 +1873,12 @@ func _unhandled_input(e: InputEvent) -> void:
 		if e.physical_keycode == KEY_M:
 			_swap_machine()
 			return
+		if e.physical_keycode == KEY_F:
+			if active is Worker:
+				_get_in()
+			else:
+				_get_out()
+			return
 		if e.physical_keycode == KEY_T and active == digger:
 			_toggle_left()
 			return
@@ -1857,7 +2013,7 @@ func _physics_process(dt: float) -> void:
 				dozer.lift_cmd = Input.get_axis("blade_down", "blade_up")
 			elif active == truck:
 				truck.tip_cmd = 1.0 if Input.is_action_pressed("blade_up") else 0.0
-			else:
+			elif active is Loader:
 				var small := active as Loader
 				small.lift_cmd = Input.get_axis("blade_down", "blade_up")
 				small.curl_cmd = Input.get_axis("dig_dump", "dig_curl")
@@ -1866,6 +2022,8 @@ func _physics_process(dt: float) -> void:
 			if m != online.guest_machine():
 				m.stop_commands()
 
+	_sync_people()
+	_show_get_in()
 	# A guest's game only says what its thumbs are doing and draws what it's told.
 	if online.is_guest():
 		online.guest_tick(dt)
@@ -1965,7 +2123,7 @@ func _bump_machines(was_spot: Vector2, was_angle: float, who: Machine = null) ->
 		who.spot = now_spot
 		who.angle = now_angle
 		return
-	if absf(who.speed) > 0.5 and who == active:
+	if absf(who.speed) > 0.5 and who == active and not who is Worker:
 		shake = maxf(shake, 0.5)
 		sfx.clunked(1.0)
 		Input.vibrate_handheld(90)
@@ -2145,7 +2303,7 @@ func _build_ui() -> void:
 	margin.add_theme_constant_override("margin_left", pad)
 	margin.add_theme_constant_override("margin_right", pad)
 	margin.add_theme_constant_override("margin_top", int(pad * 0.4))
-	for key: String in ["menu", "machine", "mode", "view", "tool", "ink", "grass", "res", "reset", "finish"]:
+	for key: String in ["menu", "out", "machine", "mode", "view", "tool", "ink", "grass", "res", "reset", "finish"]:
 		var b := Button.new()
 		b.add_theme_font_size_override("font_size", font)
 		b.custom_minimum_size = Vector2(h * 0.19, h * 0.095)
@@ -2154,6 +2312,7 @@ func _build_ui() -> void:
 		row.add_child(b)
 		buttons[key] = b
 	buttons["reset"].text = "Reset"
+	buttons["out"].text = "Get out"
 	# A driveway with a star or more can be called done here; it's shown once there's a star to have.
 	buttons["finish"].visible = false
 	buttons["finish"].add_theme_color_override("font_color", Color("#ffd23f"))
@@ -2275,6 +2434,13 @@ func _build_ui() -> void:
 	side_word.add_theme_font_size_override("font_size", int(h * 0.028))
 	side_button.pressed.connect(_toggle_side)
 	_show_side()
+	# On foot: the one button, where the right thumb rests, shown when he's by a machine.
+	var in_made := _touch_button("", "", Vector2(screen.x - size * 2.0 - pad * 1.5, h - size - pad), size, "On foot")
+	get_in_button = in_made[0]
+	get_in_word = in_made[1]
+	get_in_word.position = get_in_button.position + Vector2(size * 0.08, size * 0.28)
+	get_in_word.add_theme_font_size_override("font_size", int(size * 0.14))
+	get_in_button.pressed.connect(_get_in)
 
 	# How the job's going, big enough to read while driving.
 	banner = Label.new()
@@ -2593,6 +2759,10 @@ func online_action(player: int, what: String, arg: int) -> void:
 	match what:
 		"swap":
 			online.swap_for(player)
+		"out":
+			_get_out_for(player)
+		"in":
+			_get_in_for(player)
 		"level":
 			if m == dozer:
 				dozer.set_level(not dozer.level_on)
@@ -2948,6 +3118,8 @@ func _draw_stick() -> void:
 
 func _pressed(key: String) -> void:
 	match key:
+		"out":
+			_get_out()
 		"machine":
 			_swap_machine()
 		"mode":
@@ -3272,6 +3444,41 @@ func _run_touch_demo() -> void:
 				_drag(0, right_thumb + Vector2(0.0, -s.y * 0.14))
 			elif _touch_tick == 110:
 				print("TOUCH right side: throttle %.2f, went %.1f m" % [dozer.throttle, dozer.spot.distance_to(GroundData.dozer_spot())])
+		"touchwalk":
+			# GET OUT tapped, a walk away on the stick, round, back to the machine, and GET IN tapped.
+			var thumb := s * Vector2(0.3, 0.6)
+			var reach := s.y * 0.14
+			var out_b: Button = buttons["out"]
+			if _touch_tick == 30:
+				_walk_from = active
+				print("WALK start: in %s, Get out shown %s" % [active.machine_name, out_b.visible])
+				_click(out_b.global_position + out_b.size * 0.5)
+			elif _touch_tick == 40:
+				print("WALK out: now %s at %s, %.2f m from the %s, its driver shown %s" % [active.machine_name, active.spot, active.spot.distance_to(_walk_from.spot), _walk_from.machine_name, (_walk_from as Loader)._driver.visible if _walk_from is Loader and (_walk_from as Loader)._driver else "-"])
+				_walk_spot = active.spot
+				_touch(0, thumb, true)
+			elif _touch_tick == 42:
+				_drag(0, thumb + Vector2(0.0, -reach))
+			elif _touch_tick == 160:
+				print("WALK walked %.2f m, GET IN shown %s" % [active.spot.distance_to(_walk_spot), get_in_button.visible])
+			elif _touch_tick > 160 and _touch_tick < 600 and _near_machine(active as Worker) == null:
+				# Thumb steering him back towards the machine, as a player would.
+				var to := _walk_from.spot - active.spot
+				var off := wrapf(atan2(-to.y, to.x) - active.angle, -PI, PI)
+				_drag(0, thumb + Vector2(clampf(-off * 1.5, -1.0, 1.0) * reach, -reach * (0.9 if absf(off) < 0.6 else 0.0)))
+			elif _touch_tick > 220 and _touch_tick < 600 and _near_machine(active as Worker) != null:
+				_touch(0, thumb, false)
+				print("WALK back by the %s after %d ticks, GET IN shown %s: %s" % [_near_machine(active as Worker).machine_name, _touch_tick, get_in_button.visible, get_in_word.text.replace("
+", " ")])
+				_touch(1, get_in_button.position + Vector2.ONE * get_in_button.get_meta("size") * 0.5, true)
+				_touch(1, get_in_button.position + Vector2.ONE * get_in_button.get_meta("size") * 0.5, false)
+				_touch_tick = 600
+			elif _touch_tick == 610:
+				print("WALK in: now %s, worker shown %s, Get out shown %s" % [active.machine_name, workers[0].visible, out_b.visible])
+				get_tree().quit()
+			elif _touch_tick == 599:
+				print("WALK never got back to a machine: at %s" % active.spot)
+				get_tree().quit()
 		"touchsteer":
 			# A thumb pushing ahead that wanders a little sideways keeps it straight; pushed right over, it turns hard.
 			var thumb := s * Vector2(0.3, 0.6)

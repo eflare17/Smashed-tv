@@ -237,3 +237,18 @@ From the owner's phone screenshot: told to dig deeper, but couldn't see how. Wit
   coming back up would be a rise. GRADE follows the line. Free play keeps the old aim (from where you start, follows you down).
 - "TOO DEEP x m: RAISE" in the picture if it still ends up 10 cm under (the ground beside dropping away).
 - mission_test too_deep_test: LOWER held at the start stops at the aim (0.32 m), the aim never passes 0.84 m, water through.
+
+## On foot (6 Nov, big run step 1)
+- scripts/worker.gd: Worker extends Machine, so the camera, buttons and online work as for any machine. Push the stick to walk
+  (2.2 m/s, 1.1 back), sideways to turn (tank style, like the machines). Arms and legs swing. Upright on the ground, no track wear.
+- Two workers, one per player, appended last to game.machines so every machine keeps its number. Hidden (and footprint far
+  away) while in a machine. game._sync_people() every tick: hides a worker whose player isn't on foot, shows the Dingo's
+  driver (now a separate mesh, Props.dingo_driver) only while someone's in it. Guests set visibility from online.drivers.
+- "Get out" in the top bar, next to Menu (F on a keyboard): steps off on whichever of 16 spots round the machine has most
+  room (left side first). GET IN: a big button where the right thumb rests, shown with the machine's name when he's within
+  0.9 m of one nobody's in. Online: ask("out") / ask("in"), host does it. The quick switch skips workers.
+- Checks: `--demo=touchwalk` (also with --mission=roof_water): out, walk, home in, GET IN, all by touch. The net demo's guest
+  now gets out, walks and gets back in; host sees it.
+- Known, not from this: drive_test's "no tower ahead of the blade" is borderline when the dirt runs out of its 4 ms a tick
+  (4.32-4.41 m against 4.31); with no time limit it passes at 4.28. The touchswap and touchmenu checks are older than the
+  machine list and the SKIP rows.

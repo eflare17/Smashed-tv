@@ -93,6 +93,7 @@ var _lump: MeshInstance3D
 var _chain: MeshInstance3D
 var _spool: MeshInstance3D
 var _body: Node3D
+var _driver: MeshInstance3D       # the Dingo's driver standing on the back, gone when he's stepped off
 var _v_lift := 0.0
 var _v_curl := 0.0
 var _edge_was := Vector3.ZERO
@@ -191,6 +192,9 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		body_reach = 0.8
 		Props.dingo_body(kit)
 		_add_mesh(_body, kit, mat)
+		var man := MeshKit.new()
+		Props.dingo_driver(man)
+		_driver = _add_mesh(_body, man, mat)
 		var frames := MeshKit.new()
 		Props.track_frames(frames, 0.44, 0.1, 0.56, 0.72, 0.6)
 		var frame := _add_mesh(self, frames, mat)
@@ -240,6 +244,10 @@ func reposition(at: Vector2, dir: Vector2) -> void:
 	_pose()
 	teeth = _edge_world()
 	_edge_was = teeth
+
+func show_driver(on: bool) -> void:
+	if _driver:
+		_driver.visible = on
 
 func _add_mesh(parent: Node3D, kit: MeshKit, mat: Material) -> MeshInstance3D:
 	var m := MeshInstance3D.new()

@@ -183,7 +183,7 @@ func _free_machine(from: int) -> int:
 	var start: int = truck_at if truck_at >= 0 and drivers.size() == 1 and role == "host" and truck_at != from else from + 1
 	for k in count:
 		var m := (start + k) % count
-		if m not in drivers:
+		if m not in drivers and not game.machines[m] is Worker:
 			return m
 	return from
 
@@ -192,7 +192,7 @@ func swap_for(player: int) -> void:
 	var count: int = game.machines.size()
 	for k in range(1, count):
 		var m := (drivers[player] + k) % count
-		if m not in drivers:
+		if m not in drivers and not game.machines[m] is Worker:
 			game.machines[drivers[player]].stop_commands()
 			drivers[player] = m
 			return
@@ -403,6 +403,9 @@ func run_demo(dt: float) -> void:
 	if not game.mission.is_empty():
 		_run_job_demo(dt)
 		return
+	if role == "host" and _demo_t > 13.5 and _demo_t < 13.55:
+		var gw: Worker = game.workers[1]
+		print("HOST sees the guest on foot %s at %s, its worker shown %s" % [game.machines[drivers[1]] == gw, gw.spot, gw.visible])
 	if role == "host":
 		var dozer: Dozer = game.dozer
 		dozer.lift_cmd = -1.0 if _demo_t < 1.0 else 0.0
@@ -420,6 +423,23 @@ func run_demo(dt: float) -> void:
 			game._swap_machine()
 		if _demo_t > 8.0 and _demo_t < 8.1:
 			print("GUEST swapped to the %s" % game.active.machine_name)
+		# Off on foot, a walk, and back in.
+		if _demo_t > 10.0 and _demo_t < 10.05:
+			print("GUEST asks to get out of the %s" % game.active.machine_name)
+			game._get_out()
+		if _demo_t > 10.9 and _demo_t < 10.95:
+			print("GUEST stepped off at %s, gap %.2f" % [m.spot, game._machine_gap(m)])
+		if _demo_t > 11.0 and _demo_t < 11.6:
+			m.steer = 1.0
+		if _demo_t > 11.6 and _demo_t < 13.0:
+			m.steer = 0.0
+			m.throttle = -1.0
+		if _demo_t > 13.5 and _demo_t < 13.55:
+			print("GUEST on foot: now %s at %s, near %s" % [m.machine_name, m.spot, game._near_machine(m) if m is Worker else "-"])
+		if _demo_t > 14.0 and _demo_t < 14.05:
+			game._get_in()
+		if _demo_t > 15.0 and _demo_t < 15.05:
+			print("GUEST back in: now %s, my worker shown %s" % [game.active.machine_name, game.workers[1].visible])
 	_say_every(dt)
 	if _demo_t > 60.0 and not OS.has_feature("web"):
 		get_tree().quit()

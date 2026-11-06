@@ -132,7 +132,9 @@ static func dingo_body(kit: MeshKit) -> void:
 	kit.box(Vector3(-0.92, 0.2, 0), Vector3(0.62, 0.05, 0.58), STEEL)
 	for z: float in [-0.25, 0.25]:
 		kit.box(Vector3(-0.68, 0.3, z), Vector3(0.28, 0.14, 0.05), CHARCOAL)
-	# The driver.
+
+## The Dingo's driver, standing on its back plate, hands on the controls. Apart from the body, so he can step off.
+static func dingo_driver(kit: MeshKit) -> void:
 	for z: float in [-0.1, 0.1]:
 		kit.box(Vector3(-0.92, 0.26, z), Vector3(0.26, 0.08, 0.1), BLACK)
 		kit.box(Vector3(-0.94, 0.6, z), Vector3(0.14, 0.66, 0.13), DENIM)
@@ -306,3 +308,22 @@ static func pine(kit: MeshKit, at: Vector3, high: float, rng: RandomNumberGenera
 		var tip := at + Vector3(rng.randf_range(-0.05, 0.05), y + step * 1.75, rng.randf_range(-0.05, 0.05))
 		kit.cone(bottom, tip, r * (0.45 + 0.55 * k), 0.0, sides, greens[i % 3], 0.1, rng)
 		y += step
+
+## The driver on foot, in three kinds of part so he can swing his arms and legs as he walks. Facing +x, feet at 0, in the same
+## gear as the Dingo's driver: hard hat, hi-vis, jeans, boots.
+static func worker_body(kit: MeshKit) -> void:
+	kit.box(Vector3(0.0, 0.95, 0), Vector3(0.22, 0.54, 0.38), HI_VIS)
+	kit.box(Vector3(0.0, 0.95, 0), Vector3(0.23, 0.04, 0.39), LAMP)
+	kit.box(Vector3(0.0, 1.32, 0), Vector3(0.2, 0.2, 0.19), SKIN)
+	kit.box(Vector3(0.0, 1.45, 0), Vector3(0.28, 0.09, 0.26), YELLOW)
+	kit.box(Vector3(0.06, 1.42, 0), Vector3(0.22, 0.03, 0.27), YELLOW_DARK)
+
+## One leg, hanging from the hip at 0: jeans down to a boot.
+static func worker_leg(kit: MeshKit) -> void:
+	kit.box(Vector3(0.0, -0.33, 0), Vector3(0.14, 0.66, 0.13), DENIM)
+	kit.box(Vector3(0.04, -0.68, 0), Vector3(0.26, 0.08, 0.12), BLACK)
+
+## One arm, hanging from the shoulder at 0: a hi-vis sleeve and a hand.
+static func worker_arm(kit: MeshKit) -> void:
+	kit.box(Vector3(0.0, -0.2, 0), Vector3(0.09, 0.4, 0.09), HI_VIS)
+	kit.box(Vector3(0.0, -0.44, 0), Vector3(0.08, 0.08, 0.08), SKIN)

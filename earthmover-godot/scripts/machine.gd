@@ -121,6 +121,10 @@ func can_shove(_tree_down: bool) -> bool:
 func footprint() -> Array:
 	return [spot - forward() * fp_back, spot + forward() * fp_front, fp_r]
 
+## Whether someone's on board, for a machine whose driver can be seen.
+func show_driver(_on: bool) -> void:
+	pass
+
 ## Lets go of every control.
 func stop_commands() -> void:
 	throttle = 0.0
