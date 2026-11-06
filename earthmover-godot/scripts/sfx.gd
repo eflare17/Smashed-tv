@@ -99,6 +99,13 @@ func scraping() -> PackedFloat32Array:
 	for i in blend:
 		var k := float(i) / blend
 		out[i] = lerpf(raw[n + i], raw[i], k)
+	# It's random, so now and then it peaks over full scale and would clip: brought down to just under it when it does.
+	var peak := 0.0
+	for v in out:
+		peak = maxf(peak, absf(v))
+	if peak > 0.95:
+		for i in out.size():
+			out[i] *= 0.95 / peak
 	return out
 
 func crack_sound() -> PackedFloat32Array:
