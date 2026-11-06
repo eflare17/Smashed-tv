@@ -272,6 +272,7 @@ static func is_done(id: String) -> bool:
 	return f.get_value("done", id, false)
 
 ## Done, with this many stars: the best kept.
+## Skipped, it's done with none: that opens what comes after, and playing it properly later still earns them.
 static func mark_done(id: String, stars_now := 3) -> void:
 	var f := ConfigFile.new()
 	f.load(save_path)

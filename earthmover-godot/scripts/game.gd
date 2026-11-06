@@ -17,7 +17,7 @@ const MAX_DENSITY := 64.0
 const GRASS_CHUNK := 8.0
 const CLODS_PER_M2 := 28.0
 ## For trying the game out: in the job list, a SKIP beside each job not done yet. Held down, it counts that job done, so the
-## next one opens. Set to false to lock it away.
+## next one opens. A skipped job earns no stars. Set to false to lock it away.
 const TEST_SKIP := true
 const SKIP_HOLD_S := 1.5         # how long SKIP has to be held
 const FADED := 0.22             # how solid something in the way is drawn
@@ -2165,7 +2165,10 @@ func _build_menu() -> void:
 				var word := "%s: %s" % [m["title"], m["machine"]]
 				if Mission.is_done(m["id"]):
 					var best := Mission.stars(m["id"])
-					word += "   DONE" if Mission.kind(m) != "driveway" else "   %d STAR%s" % [best, "" if best == 1 else "S"]
+					if best == 0:
+						word += "   SKIPPED"
+					else:
+						word += "   DONE" if Mission.kind(m) != "driveway" else "   %d STAR%s" % [best, "" if best == 1 else "S"]
 				if TEST_SKIP and not Mission.is_done(m["id"]):
 					_skip_row(box, h, word, String(m["id"]), snug)
 				else:
@@ -2474,7 +2477,7 @@ func _check_mission(delta: float) -> void:
 		return
 	finish_mission()
 
-## A SKIP in the job list held long enough: that job's counted done with three stars, and the list's drawn again with the next open.
+## A SKIP in the job list held long enough: that job's counted done but with no stars, and the list's drawn again with the next open.
 func _hold_skip(delta: float) -> void:
 	if _skip_held < 0.0:
 		return
@@ -2486,7 +2489,7 @@ func _hold_skip(delta: float) -> void:
 	if _skip_held < SKIP_HOLD_S:
 		return
 	_skip_held = -1.0
-	Mission.mark_done(_skip_id, 3)
+	Mission.mark_done(_skip_id, 0)
 	print("SKIPPED %s" % _skip_id)
 	_open_menu("start")
 
