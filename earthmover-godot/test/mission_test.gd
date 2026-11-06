@@ -287,7 +287,8 @@ func flood_job_test(job: Dictionary) -> void:
 	var total := s.total()
 	var flood: Vector2 = job["flood"]
 	var drain: Vector2 = job["drain"]
-	check(s.firm_at(flood) < -0.2 and s.firm_at(job["rise"]) > 0.25, "the hollow's low (%.2f m) and the rise is high (%.2f m)" % [s.firm_at(flood), s.firm_at(job["rise"])])
+	check(s.firm_at(flood) < Mission.water_y(job) - 0.1 and s.firm_at(job["rise"]) > Mission.water_y(job) + 0.1, "the yard's under water (%.2f m) and the rise stands out of it (%.2f m)" % [s.firm_at(flood), s.firm_at(job["rise"])])
+	check(s.firm_at(drain) > Mission.water_y(job), "and the drain pit's dry")
 	var pipes := Pipes.new()
 	root.add_child(pipes)
 	pipes.setup(StandardMaterial3D.new())

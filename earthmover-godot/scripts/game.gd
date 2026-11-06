@@ -142,6 +142,9 @@ var drain_puffs: CPUParticles3D
 var pipe_connected := false
 var stop_flag: Node3D
 var water_y0 := 0.07
+## The backyard's floating outdoor set: each piece's node, where it is, how deep it floats, and its own sway.
+var floaters: Array = []
+var _float_t := 0.0
 var online: Online
 var online_arg := ""
 var report_page := false
@@ -667,6 +670,7 @@ func _add_site(kit: MeshKit) -> void:
 		_add_flood()
 	if Mission.kind(mission) == "flood":
 		_add_back_fence(kit)
+		_add_backyard_things(kit)
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
@@ -691,6 +695,75 @@ func _add_back_fence(kit: MeshKit) -> void:
 	while x < 13.5:
 		kit.box(Vector3(x, 0.85, z + 0.12), Vector3(0.13, 1.6, 0.02), Props.c("#b08a5e") if int(x * 4.0) % 2 == 0 else Props.c("#a07b52"))
 		x += 0.15
+
+## A trampoline standing in the flood, and a plastic outdoor table and chairs floating about on it.
+func _add_backyard_things(kit: MeshKit) -> void:
+	var at: Vector2 = mission["trampoline"]
+	var base := Vector3(at.x, sim.height_at(at), at.y)
+	const R := 1.65
+	for k in 6:
+		var a := TAU * k / 6.0
+		kit.box(base + Vector3(cos(a) * R, 0.42, sin(a) * R), Vector3(0.06, 0.84, 0.06), Props.c("#5d6166"))
+	for k in 22:
+		var a := TAU * (k + 0.5) / 22.0
+		var turn := Basis(Vector3.UP, -(a + PI * 0.5))
+		kit.box(base + Vector3(cos(a) * R, 0.84, sin(a) * R), Vector3(0.5, 0.07, 0.07), Props.c("#7d8288"), turn)
+		kit.box(base + Vector3(cos(a) * (R - 0.16), 0.875, sin(a) * (R - 0.16)), Vector3(0.5, 0.05, 0.34), Props.c("#2f7fd6"), turn)
+	kit.cone(base + Vector3(0.0, 0.85, 0.0), base + Vector3(0.0, 0.87, 0.0), R - 0.32, R - 0.32, 22, Props.c("#1d1f22"))
+	obstacles.append([at, at, R + 0.15])
+	var white := Props.c("#ecece4")
+	for spec: Array in mission["floaters"]:
+		var piece := MeshKit.new()
+		var sink := 0.0
+		if spec[0] == "table":
+			piece.cone(Vector3(0.0, 0.72, 0.0), Vector3(0.0, 0.76, 0.0), 0.55, 0.55, 14, white)
+			piece.cone(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.72, 0.0), 0.045, 0.045, 8, white)
+			piece.cone(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.03, 0.0), 0.32, 0.3, 10, white)
+			sink = 0.64
+		else:
+			piece.box(Vector3(0.0, 0.45, 0.0), Vector3(0.46, 0.04, 0.44), white)
+			piece.box(Vector3(0.0, 0.72, -0.21), Vector3(0.46, 0.5, 0.04), white, Basis(Vector3.RIGHT, -0.15))
+			for cx: float in [-0.2, 0.2]:
+				for cz: float in [-0.19, 0.19]:
+					piece.box(Vector3(cx, 0.22, cz), Vector3(0.04, 0.45, 0.04), white)
+			sink = 0.36
+		var node := MeshInstance3D.new()
+		node.mesh = piece.mesh()
+		node.material_override = prop_mat
+		add_child(node)
+		var home: Vector2 = spec[1]
+		floaters.append({"node": node, "home": home, "at": home, "sink": sink, "turn": randf() * TAU, "phase": randf() * TAU})
+	_update_floaters(0.0)
+
+## The outdoor set bobs and wanders on the water, gets shoved aside by a machine driving into it, and once the water's gone it sits
+## on the mud wherever it ended up.
+func _update_floaters(delta: float) -> void:
+	if floaters.is_empty():
+		return
+	_float_t += delta
+	var level := water.position.y if water != null and water.visible else -99.0
+	for f: Dictionary in floaters:
+		var at: Vector2 = f["at"]
+		var ground := sim.height_at(at)
+		var afloat := level - float(f["sink"]) > ground
+		var ph: float = f["phase"]
+		if afloat:
+			at += Vector2(sin(_float_t * 0.31 + ph), cos(_float_t * 0.23 + ph * 1.7)) * 0.12 * delta
+			var home: Vector2 = f["home"]
+			if at.distance_to(home) > 2.5:
+				at = home + (at - home).limit_length(2.5)
+			f["turn"] = float(f["turn"]) + sin(_float_t * 0.2 + ph) * 0.15 * delta
+		for m: Machine in machines:
+			var away := at - m.spot
+			if away.length() < 1.3 and away.length() > 0.001:
+				at += away.normalized() * (1.3 - away.length())
+		f["at"] = at
+		ground = sim.height_at(at)
+		var y := maxf(level - float(f["sink"]) + sin(_float_t * 1.4 + ph) * 0.015, ground)
+		var node: MeshInstance3D = f["node"]
+		node.position = Vector3(at.x, y, at.y)
+		var rock := 0.06 * sin(_float_t * 1.1 + ph) if afloat else 0.0
+		node.rotation = Vector3(rock, f["turn"], rock * 0.6)
 
 ## The flag where the water stops in a pipe that goes uphill somewhere, so it's plain where to dig deeper.
 func _show_stop_flag(at: Variant) -> void:
@@ -738,10 +811,12 @@ func _add_flood() -> void:
 	var c: Vector2 = mission["flood"]
 	var r: Vector2 = mission["flood_r"]
 	const SIDES := 32
+	# A flooded yard's sheet is bigger than the water: the ground round it stands higher, and that's its shore.
+	var spread := 1.3 if Mission.kind(mission) == "flood" else 1.0
 	var points := PackedVector3Array()
 	for k in SIDES:
 		var a := TAU * k / SIDES
-		var wobble := 1.0 + 0.1 * sin(a * 3.0 + 0.7) + 0.06 * sin(a * 5.0 + 2.1)
+		var wobble := (1.0 + 0.1 * sin(a * 3.0 + 0.7) + 0.06 * sin(a * 5.0 + 2.1)) * spread
 		points.append(Vector3(cos(a) * r.x * wobble, 0.0, sin(a) * r.y * wobble))
 	var at := PackedVector3Array()
 	for k in SIDES:
@@ -771,10 +846,15 @@ func _add_flood() -> void:
 	water.position = Vector3(c.x, water_y0, c.y)
 	add_child(water)
 	# Under the water the lawn's drowned to bare mud, so the grass doesn't stand up through it, and it stays muddy once it's drained.
-	var a := DirtSim.cell_of(c - r * 1.2)
-	var b := DirtSim.cell_of(c + r * 1.2)
+	var a := DirtSim.cell_of(c - r * 1.4)
+	var b := DirtSim.cell_of(c + r * 1.4)
 	for j in range(a.y, b.y + 1):
 		for i in range(a.x, b.x + 1):
+			if Mission.kind(mission) == "flood":
+				# Mud where it's more than a few centimetres deep; round the edge the grass stands up through it.
+				if sim.start_ground[j * DirtSim.CELLS + i] < int((water_y0 - 0.04) * 1000.0):
+					view_data.wear(i, j)
+				continue
 			var p := (Vector2(i, j) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M - c) / r
 			if p.length() < 1.02:
 				view_data.wear(i, j)
@@ -783,10 +863,15 @@ func _add_flood() -> void:
 func _drain_flood(delta: float) -> void:
 	if water == null or not pipe_joined or water_left <= 0.0:
 		return
-	water_left = maxf(water_left - delta / Mission.DRAIN_S, 0.0)
-	var k := lerpf(0.15, 1.0, water_left)
-	water.scale = Vector3(k, 1.0, k)
-	water.position.y = lerpf(water_y0 - 0.06, water_y0, water_left)
+	var yard := Mission.kind(mission) == "flood"
+	water_left = maxf(water_left - delta / (Mission.DRAIN_S * (1.7 if yard else 1.0)), 0.0)
+	if yard:
+		# A whole yard drains by its level going down: the ground comes up out of it, the hollow last.
+		water.position.y = lerpf(water_y0 - 0.5, water_y0, water_left)
+	else:
+		var k := lerpf(0.15, 1.0, water_left)
+		water.scale = Vector3(k, 1.0, k)
+		water.position.y = lerpf(water_y0 - 0.06, water_y0, water_left)
 	water.visible = water_left > 0.0
 	if drain_puffs == null:
 		drain_puffs = _puffs(Color(0.55, 0.72, 0.85, 0.7), 18, 0.7)
@@ -2676,6 +2761,7 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 	if not mission.is_empty():
 		_check_mission(delta)
 		_drain_flood(delta)
+		_update_floaters(delta)
 	if _banner_clock > 0.0:
 		_banner_clock -= delta
 		if _banner_clock <= 0.0:

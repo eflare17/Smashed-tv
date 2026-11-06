@@ -78,14 +78,20 @@ const LIST := [
 		"start": Vector2(2.5, -12.0),
 		"dir": Vector2(0.0, -1.0),
 		"friend": Vector2(5.5, -12.0),
-		"flood": Vector2(-6.0, -15.5),
-		"flood_r": Vector2(2.6, 2.0),
-		"hollow_mm": 250,
-		"water_mm": -80,
+		# Most of the yard sits in a shallow dip and is under water, with a deeper hollow at one end. The rise stands out of it.
+		"flood": Vector2(-2.0, -16.5),
+		"flood_r": Vector2(11.0, 5.5),
+		"basin_mm": 250,
+		"hollow": Vector2(-6.0, -15.5),
+		"hollow_r": Vector2(2.0, 1.6),
+		"hollow_mm": 150,
+		"water_mm": -50,
 		"rise": Vector2(0.3, -18.3),
 		"rise_r": 3.2,
 		"rise_mm": 300,
-		"drain": Vector2(6.5, -21.2),
+		"drain": Vector2(7.5, -21.4),
+		"trampoline": Vector2(-5.5, -17.9),
+		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
 		"hint": "Trench from the flood to the drain pit, going DOWN all the way: LOWER the trencher further under the rise. Then lay pipe and fill it in",
 		"done": "",
@@ -118,6 +124,8 @@ static func water_y(m: Dictionary) -> float:
 static func _shape(sim: DirtSim, m: Dictionary) -> void:
 	var c: Vector2 = m["flood"]
 	var r: Vector2 = m["flood_r"]
+	var hc: Vector2 = m["hollow"]
+	var hr: Vector2 = m["hollow_r"]
 	var rise: Vector2 = m["rise"]
 	var rise_r: float = m["rise_r"]
 	for j in range(1, DirtSim.CELLS - 1):
@@ -125,7 +133,13 @@ static func _shape(sim: DirtSim, m: Dictionary) -> void:
 			var p := Vector2(i, j) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M
 			var n := j * DirtSim.CELLS + i
 			var change := 0
-			var d := ((p - c) / (r * 1.35)).length()
+			# A ragged edge, so the water's shore wanders like a real one.
+			var q := (p - c) / (r * 1.35)
+			var ang := q.angle()
+			var d := q.length() * (1.0 + 0.1 * sin(ang * 3.0 + 0.4) + 0.07 * sin(ang * 7.0 + 1.9) + 0.04 * sin(ang * 13.0 + 0.3))
+			if d < 1.0:
+				change -= int(m["basin_mm"] * (1.0 - d * d) * (1.0 - d * d))
+			d = ((p - hc) / (hr * 1.35)).length()
 			if d < 1.0:
 				change -= int(m["hollow_mm"] * (1.0 - d * d) * (1.0 - d * d))
 			var e := p.distance_to(rise) / rise_r
