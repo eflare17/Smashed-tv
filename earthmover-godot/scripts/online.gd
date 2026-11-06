@@ -452,6 +452,9 @@ func _run_job_demo(dt: float) -> void:
 				_bot = load("res://test/spread_bot.gd").new(game.active, game.sim, game.mission)
 			_bot.tick(dt)
 			# The bot is slow: past this the check fills in the rest, as it is the finish that it is after.
+			# Nothing ends by itself: at three stars the host taps FINISH.
+			if game._can_score() and Mission.stars_for(game._score()) >= 3:
+				game.finish_mission()
 			if _demo_t > 25.0:
 				var r: Rect2 = game.mission["rect"]
 				var from := DirtSim.cell_of(r.position)

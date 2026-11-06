@@ -252,3 +252,13 @@ From the owner's phone screenshot: told to dig deeper, but couldn't see how. Wit
 - Known, not from this: drive_test's "no tower ahead of the blade" is borderline when the dirt runs out of its 4 ms a tick
   (4.32-4.41 m against 4.31); with no time limit it passes at 4.28. The touchswap and touchmenu checks are older than the
   machine list and the SKIP rows.
+
+## FINISH or KEEP GOING at every star (6 Nov)
+- Owner: no option to stop at 1 or 2 stars in the backyard, and wants to choose to carry on too, on every job type. FINISH was
+  there, but only small in the top bar, and 90% ended the job by itself.
+- Now each new star brings up a card mid-screen: "2 STARS!", "Finish now, or keep going for 90%", FINISH and KEEP GOING
+  (real multi-touch buttons, kept clear of the machine buttons below). Nothing ends by itself, 3 stars included. The top-bar
+  FINISH stays for later. Same code for driveway, pipe and flood jobs (_score / _can_score); a new job kind just needs those.
+- Online: only the host gets the card; both finish together. The net job demo's host taps FINISH at 3 stars.
+- `--demo=fillstars` with --mission=driveway / roof_water / backyard: fills a share at a time, prints the card, taps KEEP GOING
+  then FINISH.

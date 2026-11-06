@@ -52,6 +52,13 @@ var machines: Array[Machine] = []
 var workers: Array[Worker] = []   # the drivers on foot, one for each player: hidden while they're in a machine
 var _walk_from: Machine
 var _walk_spot := Vector2.ZERO
+var _fill_cells: Array[Vector2i] = []
+var star_card: Control          # "1 STAR!" with FINISH and KEEP GOING, each time a new star's earned
+var star_title: Label
+var star_note: Label
+var _star_up := false
+var _stars_offered := 0          # the most stars the card's been shown for this go
+var _fill_step := -1
 var get_in_button: TouchScreenButton
 var get_in_word: Label
 var _hinted := {}                 # machines whose hint's been said once already
@@ -2142,6 +2149,59 @@ func _use_tool(at: Vector2, which: String) -> void:
 func _run_demo(dt: float) -> void:
 	demo_clock += dt
 	match demo:
+		"fillstars":
+			# A pipe job past the digging: the trench cut and piped, the water gone, then filled back in a bit at a time. What the
+			# player sees at each step: the banner, the FINISH button, and whether it ended by itself.
+			var steps := [0.0, 0.5, 0.75, 0.85, 0.95, 1.0]
+			var at := int(demo_clock / 1.5)
+			if Mission.kind(mission) == "driveway" and _fill_cells.is_empty() and demo_clock > 0.5:
+				# A driveway: its cells dusted, a share at a time.
+				var r: Rect2 = mission["rect"]
+				for j in range(DirtSim.cell_of(r.position).y, DirtSim.cell_of(r.end).y):
+					for i in range(DirtSim.cell_of(r.position).x, DirtSim.cell_of(r.end).x):
+						_fill_cells.append(Vector2i(i, j))
+			if Mission.kind(mission) == "driveway" and not _fill_cells.is_empty() and at < steps.size() and at != _fill_step:
+				_fill_step = at
+				for k in int(steps[at] * _fill_cells.size()):
+					var c: Vector2i = _fill_cells[k]
+					var n := c.y * DirtSim.CELLS + c.x
+					if sim.dust[n] < Mission.COVERED_MM:
+						sim.put(c.x, c.y, Mission.COVERED_MM, Mission.COVERED_MM)
+			if _fill_cells.is_empty() and demo_clock > 0.5:
+				var from: Vector2 = Mission.source(mission)[0]
+				var to: Vector2 = mission["drain"]
+				for k in int(from.distance_to(to) / 0.2):
+					var c := DirtSim.cell_of(from.lerp(to, k * 0.2 / from.distance_to(to)))
+					if not _fill_cells.has(c):
+						sim.trench(c, sim.bed[c.y * DirtSim.CELLS + c.x] - 400, 400, c + Vector2i(0, 12))
+						_fill_cells.append(c)
+				pipe_joined = true
+				water_left = 0.0
+				if water:
+					water.visible = false
+			if not _fill_cells.is_empty() and at < steps.size() and at != _fill_step:
+				_fill_step = at
+				var want := int(steps[at] * _fill_cells.size())
+				for k in want:
+					var c: Vector2i = _fill_cells[k]
+					var n := c.y * DirtSim.CELLS + c.x
+					sim.put(c.x, c.y, maxi(sim.start_ground[n] - sim.bed[n] - sim.soil[n], 0))
+			if not _fill_cells.is_empty() and fmod(demo_clock, 1.5) > 1.3 and fmod(demo_clock - dt, 1.5) <= 1.3:
+				print("FILL %.0f%%: banner \"%s\", FINISH shown %s \"%s\", card %s \"%s / %s\", done %s, stars %d" % [_score() * 100.0, banner.text, buttons["finish"].visible, buttons["finish"].text, star_card.visible, star_title.text, star_note.text, mission_done, stars_got])
+				# KEEP GOING tapped at each star till the last, then FINISH, by touch on the card's own buttons.
+				if star_card.visible:
+					var pick: TouchScreenButton = null
+					for c in star_card.get_children():
+						if c is TouchScreenButton:
+							pick = c
+							if _fill_step < 4:
+								continue
+							break
+					var mid: Vector2 = pick.position + pick.scale * 8.0
+					_touch(3, mid, true)
+					_touch(3, mid, false)
+			if demo_clock > 10.0:
+				get_tree().quit()
 		"pour":
 			if demo_clock < 8.0:
 				_use_tool(Vector2(-19.0, 1.5), "Drop")
@@ -2455,6 +2515,7 @@ func _build_ui() -> void:
 	banner.visible = not mission.is_empty()
 	ui.add_child(banner)
 	_show_banner()
+	_build_star_card(screen, h)
 	if menu_kind != "":
 		_build_menu()
 	else:
@@ -2854,10 +2915,81 @@ func _check_mission(delta: float) -> void:
 	if can_finish:
 		var n := Mission.stars_for(_score())
 		buttons["finish"].text = "FINISH: %d STAR%s" % [n, "" if n == 1 else "S"]
-	# With a friend, the host's game says when it's done, so both finish together. Three stars and it's done by itself.
-	if mission_done or not _can_score() or _score() < Mission.STARS[Mission.STARS.size() - 1] or online.is_guest():
-		return
-	finish_mission()
+	# Each new star, the choice: finish with it, or keep going. Nothing ends by itself, not even at three. With a friend it's the
+	# host who says, so both finish together.
+	var got := Mission.stars_for(_score()) if can_finish else 0
+	if got > _stars_offered:
+		_stars_offered = got
+		_star_up = true
+		star_title.text = "%d STAR%s!" % [got, "" if got == 1 else "S"]
+		star_note.text = "Finish now, or keep going for %d%%" % int(Mission.STARS[got] * 100.0) if got < Mission.STARS.size() else "Finish now, or keep going to tidy up"
+		sfx.clunked(0.5)
+		Input.vibrate_handheld(60)
+	_show_star_card()
+
+## The card that comes up with each new star: big enough to hit while driving, and it doesn't stop anything.
+func _build_star_card(screen: Vector2, h: float) -> void:
+	star_card = Control.new()
+	star_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	star_card.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(star_card)
+	var w := h * 0.95
+	var left := (screen.x - w) * 0.5
+	var back := ColorRect.new()
+	back.color = Color(0.0, 0.0, 0.0, 0.5)
+	back.position = Vector2(left, h * 0.225)
+	back.size = Vector2(w, h * 0.29)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	star_card.add_child(back)
+	star_title = _card_label(Vector2(left, h * 0.23), Vector2(w, h * 0.08), int(h / 14.0), Color("#ffd23f"))
+	star_note = _card_label(Vector2(left, h * 0.31), Vector2(w, h * 0.045), int(h / 30.0), Color.WHITE)
+	var bw := w * 0.44
+	# Clear of the buttons below it, so a tap on the card can't press one of them too.
+	var bh := h * 0.13
+	var top := h * 0.365
+	_card_button("FINISH", Vector2(left + w * 0.04, top), Vector2(bw, bh), Color(0.86, 0.62, 0.08, 0.92), h, _on_star_finish)
+	_card_button("KEEP GOING", Vector2(left + w * 0.52, top), Vector2(bw, bh), Color(0.12, 0.12, 0.12, 0.85), h, _on_star_keep)
+	star_card.visible = false
+
+func _card_label(at: Vector2, size: Vector2, font: int, colour: Color) -> Label:
+	var l := Label.new()
+	l.position = at
+	l.size = size
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", font)
+	l.add_theme_color_override("font_color", colour)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 6)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	star_card.add_child(l)
+	return l
+
+## A real multi-touch button, so it works with the other thumb still on the stick.
+func _card_button(text: String, at: Vector2, size: Vector2, colour: Color, h: float, on_press: Callable) -> void:
+	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	img.fill(colour)
+	var b := TouchScreenButton.new()
+	b.texture_normal = ImageTexture.create_from_image(img)
+	b.scale = size / 16.0
+	b.position = at
+	b.pressed.connect(on_press)
+	star_card.add_child(b)
+	var l := _card_label(at, size, int(h / 22.0), Color.WHITE)
+	l.text = text
+
+func _show_star_card() -> void:
+	if star_card:
+		star_card.visible = _star_up and not mission_done and menu == null and not online.is_guest()
+
+func _on_star_finish() -> void:
+	if star_card.visible and not mission_done and _can_score() and Mission.stars_for(_score()) > 0:
+		finish_mission()
+
+func _on_star_keep() -> void:
+	if star_card.visible:
+		_star_up = false
+		_show_star_card()
 
 ## A SKIP in the job list held long enough: that job's counted done but with no stars, and the list's drawn again with the next open.
 func _hold_skip(delta: float) -> void:
@@ -2878,6 +3010,8 @@ func _hold_skip(delta: float) -> void:
 func finish_mission() -> void:
 	mission_done = true
 	buttons["finish"].visible = false
+	_star_up = false
+	_show_star_card()
 	stars_got = Mission.stars_for(_score())
 	# Checks and demos leave the real save alone.
 	if demo == "":
