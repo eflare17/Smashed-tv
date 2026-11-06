@@ -16,6 +16,10 @@ const GRASS_NAMES := ["Off", "Low", "Medium", "High"]
 const MAX_DENSITY := 64.0
 const GRASS_CHUNK := 8.0
 const CLODS_PER_M2 := 28.0
+## For trying the game out: in the job list, a SKIP beside each job not done yet. Held down, it counts that job done, so the
+## next one opens. Set to false to lock it away.
+const TEST_SKIP := true
+const SKIP_HOLD_S := 1.5         # how long SKIP has to be held
 const FADED := 0.22             # how solid something in the way is drawn
 const RES_STEPS := [1.0, 0.85, 0.7]
 const CHECK_TOTAL_EVERY := 5.0
@@ -132,6 +136,9 @@ var mission_clock := 0.0
 var covered := 0.0
 var banner: Label
 var stars_got := 0
+var _skip_held := -1.0          # seconds a SKIP has been held, or less than 0 when none is
+var _skip_id := ""
+var _skip_button: Button
 ## The roof water job: whether the pipe's joined up, the flood on the lawn and how much of it's left, and how much of the trench is filled in.
 var pipe_joined := false
 var water: MeshInstance3D
@@ -2159,7 +2166,10 @@ func _build_menu() -> void:
 				if Mission.is_done(m["id"]):
 					var best := Mission.stars(m["id"])
 					word += "   DONE" if Mission.kind(m) != "driveway" else "   %d STAR%s" % [best, "" if best == 1 else "S"]
-				choice.call(word, true, _start_mission.bind(m["id"]))
+				if TEST_SKIP and not Mission.is_done(m["id"]):
+					_skip_row(box, h, word, String(m["id"]), snug)
+				else:
+					choice.call(word, true, _start_mission.bind(m["id"]))
 			else:
 				choice.call("%s: finish %s first" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
 		choice.call("Free play: every machine", true, _start_free_play)
@@ -2201,6 +2211,35 @@ func _build_menu() -> void:
 		choice.call("Menu", true, _pressed.bind("menu"))
 	_show_buttons()
 	stick_ui.queue_redraw()
+
+## A job in the list with a SKIP beside it, which has to be held down.
+func _skip_row(box: VBoxContainer, h: float, word: String, id: String, snug: bool) -> void:
+	var tall := h * (0.1 if snug else 0.14)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", int(h * 0.02))
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(row)
+	var go := Button.new()
+	go.text = word
+	go.focus_mode = Control.FOCUS_NONE
+	go.custom_minimum_size = Vector2(h * 0.91, tall)
+	go.add_theme_font_size_override("font_size", int(h * 0.05))
+	go.pressed.connect(_start_mission.bind(id))
+	row.add_child(go)
+	var skip := Button.new()
+	skip.text = "HOLD TO SKIP"
+	skip.focus_mode = Control.FOCUS_NONE
+	skip.custom_minimum_size = Vector2(h * 0.22, tall)
+	skip.add_theme_font_size_override("font_size", int(h * 0.026))
+	skip.add_theme_color_override("font_color", Color("#ff9a4a"))
+	skip.button_down.connect(func() -> void:
+		_skip_id = id
+		_skip_button = skip
+		_skip_held = 0.0)
+	skip.button_up.connect(func() -> void:
+		_skip_held = -1.0
+		skip.text = "HOLD TO SKIP")
+	row.add_child(skip)
 
 func _open_menu(kind: String) -> void:
 	if kind != "join":
@@ -2434,6 +2473,22 @@ func _check_mission(delta: float) -> void:
 	if mission_done or covered < Mission.STARS[Mission.STARS.size() - 1] or online.is_guest():
 		return
 	finish_mission()
+
+## A SKIP in the job list held long enough: that job's counted done with three stars, and the list's drawn again with the next open.
+func _hold_skip(delta: float) -> void:
+	if _skip_held < 0.0:
+		return
+	if _skip_button == null or not is_instance_valid(_skip_button):
+		_skip_held = -1.0
+		return
+	_skip_held += delta
+	_skip_button.text = "%d%%" % int(minf(_skip_held / SKIP_HOLD_S, 1.0) * 100.0)
+	if _skip_held < SKIP_HOLD_S:
+		return
+	_skip_held = -1.0
+	Mission.mark_done(_skip_id, 3)
+	print("SKIPPED %s" % _skip_id)
+	_open_menu("start")
 
 func finish_mission() -> void:
 	mission_done = true
@@ -2758,6 +2813,7 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 	stats.text = lines
 	if menu != null:
 		alert.visible = false
+	_hold_skip(delta)
 	if not mission.is_empty():
 		_check_mission(delta)
 		_drain_flood(delta)
