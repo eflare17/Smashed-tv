@@ -21,6 +21,7 @@ func _init() -> void:
 			pipe_job_test(job)
 		elif Mission.kind(job) == "flood":
 			flood_job_test(job)
+			grade_test(job)
 		else:
 			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
@@ -348,6 +349,52 @@ func flood_job_test(job: Dictionary) -> void:
 		print("      filled in after SPREAD round %d: %.0f%%" % [round + 1, Mission.filled_in(s, job) * 100.0])
 	check(Mission.filled_in(s, job) >= Mission.FILL_PASS, "the trench can be filled back in (%.0f%%)" % (Mission.filled_in(s, job) * 100.0))
 	check(s.total() == total, "the total never changes")
+	d.queue_free()
+	pipes.queue_free()
+
+## The backyard the easy way: the trencher with GRADE on (the same button as SPREAD), driven straight from the start ring to the
+## drain without touching its depth, then pipe. The water should get through first time.
+func grade_test(job: Dictionary) -> void:
+	print("--- %s with GRADE" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new())
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	d.grade_toward = job["drain"]
+	var a: Vector2 = Mission.source(job)[0]
+	var b: Vector2 = job["drain"]
+	var way := (b - a).normalized()
+	d.toggle_attachment()
+	d.toggle_spread()
+	check(d.grade_on, "with the trencher on, SPREAD is GRADE")
+	d.reposition(a - way * 0.75, way)
+	d.throttle = 1.0
+	var t := 0.0
+	var short := false
+	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < a.distance_to(b) - 0.1 and t < 90.0:
+		_run(d, s, 0.1)
+		t += 0.1
+		short = short or d.grade_short
+	d.stop_commands()
+	print("      dug with GRADE in %.0f s, the chain at %.2f m at the end, ran out of depth: %s" % [t, d.chain_depth, short])
+	check(not short, "GRADE never runs out of depth on this job")
+	_lay_along(d, s, a, b)
+	pipes.settle(s)
+	var run := Mission.pipe_run(pipes.points(), job)
+	check(not run.is_empty() and Mission.water_stops_at(run, job) == -1, "dug with GRADE, the water gets through first time")
+	d.lift_cmd = 1.0
+	d.toggle_attachment()
+	d.toggle_attachment()
+	d.toggle_attachment()
+	d.toggle_spread()
+	check(not d.grade_on, "and changing attachment turns GRADE off")
 	d.queue_free()
 	pipes.queue_free()
 

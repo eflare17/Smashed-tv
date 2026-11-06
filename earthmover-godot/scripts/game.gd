@@ -153,6 +153,8 @@ var water_y0 := 0.07
 var end_marks: Array = []
 var end_reached := [false, false]
 var pipe_laid := false
+var stop_at := -1
+var stop_dry := false
 var _mark_t := 0.0
 ## The look round at the start of a pipe job: where the pipe starts, then where it ends. Less than 0 when it isn't running.
 var _tour_t := -1.0
@@ -689,6 +691,9 @@ func _add_site(kit: MeshKit) -> void:
 		_add_backyard_things(kit)
 	if Mission.kind(mission) != "driveway":
 		_add_end_marks()
+		for m: Machine in machines:
+			if m is Loader:
+				(m as Loader).grade_toward = mission["drain"]
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
@@ -946,7 +951,7 @@ func _show_stop_flag(at: Variant) -> void:
 		post.material_override = prop_mat
 		stop_flag.add_child(post)
 		var word := Label3D.new()
-		word.text = "WATER STOPS HERE\nDIG DEEPER"
+		word.text = "WATER STOPS HERE\nDIG DEEPER FROM HERE\nTO THE DRAIN"
 		word.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		word.no_depth_test = true
 		# The same size on screen however far off, so it can be read from the driving camera.
@@ -1876,7 +1881,7 @@ func _physics_process(dt: float) -> void:
 		if hit != null:
 			_use_tool(hit, tool_name)
 
-	if spread_button and _spread_shown != (active is Loader and (active as Loader).spread_on):
+	if spread_button and spread_word.text != _spread_label():
 		_show_spread()
 	if cut_button and _cut_shown != dozer.cut_on:
 		_show_cut()
@@ -2278,7 +2283,7 @@ func _show_banner() -> void:
 	if Mission.kind(mission) != "driveway":
 		var flood := Mission.kind(mission) == "flood"
 		if not pipe_joined and flood and pipe_connected:
-			banner.text = "THE WATER STOPS AT THE FLAG: DIG DEEPER THERE"
+			banner.text = "START THE PIPE DEEPER, UNDER THE WATER" if stop_dry else "DIG DEEPER FROM THE FLAG TO THE DRAIN"
 		elif not pipe_joined and not pipe_laid:
 			banner.text = "PIPE THE FLOOD DOWNHILL TO THE DRAIN" if flood else "PIPE THE DOWNPIPE TO THE DRAIN"
 		elif not pipe_joined:
@@ -2627,6 +2632,9 @@ func _check_mission(delta: float) -> void:
 			pipe_laid = pipes.segments() > 0
 			end_reached = Mission.ends_reached(pipes.points(), mission)
 			var stops := Mission.water_stops_at(run, mission)
+			stop_at = stops
+			# Stopped where it goes in, as that's above the water, rather than at a rise further on.
+			stop_dry = stops >= 0 and run[stops].y > Mission.water_y(mission) and (stops == 0 or run[stops].y <= run[stops - 1].y + Mission.FALL_SLACK)
 			if pipe_connected and stops < 0:
 				pipe_joined = true
 				sfx.clunked(0.8)
@@ -2711,12 +2719,22 @@ func _on_spread() -> void:
 		(active as Loader).toggle_spread()
 	_show_spread()
 
+## SPREAD, or with the trencher on, GRADE: the word, and whether it's on.
+func _spread_label() -> String:
+	if not active is Loader:
+		return "SPREAD"
+	var l := active as Loader
+	if l.trencher_on:
+		return "GRADE ON" if l.grade_on else "GRADE"
+	return "SPREAD ON" if l.spread_on else "SPREAD"
+
 func _show_spread() -> void:
-	_spread_shown = active is Loader and (active as Loader).spread_on
+	var word := _spread_label()
+	_spread_shown = word.ends_with(" ON")
 	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.1, 0.55, 0.15, 0.85) if _spread_shown else Color(0.1, 0.1, 0.1, 0.55))
 	spread_button.texture_normal = ImageTexture.create_from_image(img)
-	spread_word.text = "SPREAD ON" if _spread_shown else "SPREAD"
+	spread_word.text = word
 
 func _on_attach() -> void:
 	if online.is_guest():

@@ -95,7 +95,7 @@ const LIST := [
 		"trampoline": Vector2(-5.5, -17.9),
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
-		"hint": "Trench from the flood to the drain pit, going DOWN all the way: LOWER the trencher further under the rise. Then lay pipe and fill it in",
+		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and fill it in",
 		"done": "",
 	},
 ]
@@ -223,9 +223,22 @@ static func joined(points: PackedVector3Array, m: Dictionary) -> bool:
 static func water_stops_at(run: PackedVector3Array, m: Dictionary) -> int:
 	if kind(m) != "flood" or run.is_empty():
 		return -1
-	if run[0].y > water_y(m):
-		return 0
-	for k in range(1, run.size()):
+	# The water goes in at the last of the pipe inside the start's ring, and is at the drain at the first inside the drain's:
+	# what the pipe does outside that stretch doesn't matter.
+	var from: Array = source(m)
+	var drain: Vector2 = m["drain"]
+	var first := 0
+	for k in run.size():
+		if Vector2(run[k].x, run[k].z).distance_to(from[0]) <= float(from[1]):
+			first = k
+	var last := run.size() - 1
+	for k in range(first, run.size()):
+		if Vector2(run[k].x, run[k].z).distance_to(drain) <= PIPE_REACH:
+			last = k
+			break
+	if run[first].y > water_y(m):
+		return first
+	for k in range(first + 1, last + 1):
 		if run[k].y > run[k - 1].y + FALL_SLACK:
 			return k
 	return -1

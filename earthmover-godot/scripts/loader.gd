@@ -29,6 +29,8 @@ const THROW_DEEP := 0.25        # m further out for each m of depth
 const PIPE_EVERY := 0.5         # m of ground between each length laid
 const PIPE_SPEED := 0.8         # m/s, laying
 const PIPE_AT := -0.75          # how far ahead of the middle it lays: behind the machine
+const GRADE_FALL := 0.03        # m the floor drops for each m nearer the drain, with GRADE on
+const GRADE_START := 0.45       # m the chain goes down to before GRADE takes the floor from there
 const PIPE_SNAP := 0.6          # m either side of the layer it looks for the bottom of the trench
 const TRENCH_LOW := 0.2         # m below the ground either side, for pipe to go down
 const ROCK_SCRAPE_MM := 90      # how far below rock the edge can be pressed before it stops the machine dead
@@ -48,6 +50,14 @@ var curl := 0.25                # the bucket floor against the machine: up holds
 var bucket_mm := 0
 var bucket_dust := 0            # how much of what's in the bucket is cracker dust
 var spreading := false          # moving soil out flat
+## GRADE, the trencher's laser level: it sets the chain's depth itself so the trench floor falls steadily towards `grade_toward`
+## (a job's drain), from wherever the cut began. The aim is worked out with it off too, and shown, as the depth to dig to.
+var grade_on := false
+var grade_toward := Vector2.INF
+var aim_depth := -1.0
+var grade_short := false
+var _grade_from := Vector2.INF
+var _grade_floor0 := 0.0
 var spread_on := false          # the SPREAD button: the bucket floats on the ground and lays out what it meets, going either way
 var trencher_on := false
 var chain_depth := 0.0          # m, with the trencher on: 0 is carried clear
@@ -244,6 +254,14 @@ func gauge_word() -> Array:
 	if trencher_on:
 		if on_rock:
 			return ["ROCK: CAN'T CUT", Color("#ff9a4a")]
+		if grade_on and grade_short:
+			return ["GRADE: TOO DEEP FOR THE TRENCHER", Color("#ff6a4a")]
+		if grade_on:
+			return ["GRADE ON   TRENCH %.2f m DEEP" % chain_depth, Color("#7ee06a")]
+		if chain_depth > 0.02 and aim_depth > 0.0:
+			# How deep it ought to be here for the pipe to run downhill, and whether it is.
+			var short := chain_depth < aim_depth - 0.04
+			return ["TRENCH %.2f m DEEP   AIM %.2f m%s" % [chain_depth, aim_depth, "   GO DEEPER" if short else ""], Color("#ff6a4a") if short else Color("#ff9a4a")]
 		if chain_depth > 0.02:
 			# Which way the floor's going, for a pipe that has to run downhill.
 			var way := ""
@@ -294,6 +312,7 @@ func toggle_attachment() -> void:
 	back_speed = 1.7
 	spreading = false
 	spread_on = false
+	grade_on = false
 	_show_attachment()
 	hit_end = 0.6
 
@@ -308,7 +327,13 @@ func _show_attachment() -> void:
 
 ## The SPREAD button. RAISE, CURL or DUMP also turn it off.
 func toggle_spread() -> void:
-	if trencher_on or pipe_on:
+	if pipe_on:
+		return
+	# With the trencher on, the same button is GRADE.
+	if trencher_on:
+		grade_on = not grade_on
+		_grade_from = Vector2.INF
+		hit_end = 0.3
 		return
 	spread_on = not spread_on
 	hit_end = 0.3
@@ -540,7 +565,11 @@ func _pour(dt: float) -> void:
 ## The trencher: the chain goes down, the machine crawls, and the slot's cut in front of the tracks, between them.
 func _work_chain(dt: float) -> void:
 	var was := chain_depth
-	chain_depth = clampf(chain_depth - lift_cmd * CHAIN_RATE * dt, 0.0, CHAIN_MOST)
+	# RAISE takes back control from GRADE; otherwise GRADE works the chain itself, below.
+	if grade_on and lift_cmd > 0.05:
+		grade_on = false
+	if not grade_on:
+		chain_depth = clampf(chain_depth - lift_cmd * CHAIN_RATE * dt, 0.0, CHAIN_MOST)
 	hyd = clampf(absf(chain_depth - was) / dt / CHAIN_RATE, 0.0, 1.0)
 	if chain_depth >= CHAIN_MOST and was < CHAIN_MOST:
 		hit_end = 0.5
@@ -548,6 +577,22 @@ func _work_chain(dt: float) -> void:
 	var f := forward()
 	var side := Vector2(sin(angle), cos(angle))
 	var here := spot + f * CHAIN_X
+	# Where the floor ought to be here, for a pipe that runs downhill: falling from where this cut began, nearer the drain.
+	var beside := minf(sim.firm_at(here + side * 0.65), sim.firm_at(here - side * 0.65))
+	if chain_depth <= 0.02 and not grade_on:
+		_grade_from = Vector2.INF
+	elif _grade_from == Vector2.INF and chain_depth >= (GRADE_START - 0.02 if grade_on else 0.2):
+		_grade_from = here
+		_grade_floor0 = beside - chain_depth
+	aim_depth = -1.0
+	if _grade_from != Vector2.INF:
+		var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(here) if grade_toward != Vector2.INF else _grade_from.distance_to(here)
+		aim_depth = beside - (_grade_floor0 - GRADE_FALL * nearer)
+	if grade_on:
+		var want := aim_depth if aim_depth > 0.0 else GRADE_START
+		grade_short = want > CHAIN_MOST
+		chain_depth = move_toward(chain_depth, clampf(want, 0.05, CHAIN_MOST), CHAIN_RATE * dt)
+		hyd = clampf(absf(chain_depth - was) / dt / CHAIN_RATE, 0.0, 1.0)
 	# Measured from the firm ground either side of the slot, not from the machine, or a machine dipping into its own cut would dig
 	# deeper, dip further, and end up in a crater.
 	var floor_y := minf(sim.firm_at(here + side * 0.65), sim.firm_at(here - side * 0.65)) - chain_depth
@@ -650,7 +695,7 @@ var _net_curl := 0.25
 var _net_chain := 0.0
 
 func _net_more() -> PackedFloat32Array:
-	return PackedFloat32Array([arm, curl, bucket_mm, bucket_dust, int(trencher_on) | int(pipe_on) << 1 | int(spread_on) << 2 | int(spreading) << 3 | int(in_trench) << 4, chain_depth])
+	return PackedFloat32Array([arm, curl, bucket_mm, bucket_dust, int(trencher_on) | int(pipe_on) << 1 | int(spread_on) << 2 | int(spreading) << 3 | int(in_trench) << 4 | int(grade_on) << 5, chain_depth])
 
 func _net_take_more(s: PackedFloat32Array) -> void:
 	_net_arm = s[NET_BASE]
@@ -663,6 +708,7 @@ func _net_take_more(s: PackedFloat32Array) -> void:
 	trencher_on = flags & 1 != 0
 	pipe_on = flags & 2 != 0
 	spread_on = flags & 4 != 0
+	grade_on = flags & 32 != 0
 	spreading = flags & 8 != 0
 	in_trench = flags & 16 != 0
 	_net_chain = s[NET_BASE + 5]
