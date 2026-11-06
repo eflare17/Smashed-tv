@@ -4,11 +4,11 @@ extends Control
 ## It's there because from the driver's view the machine itself often hides the bucket.
 
 const SKY := Color(0.12, 0.14, 0.18, 0.88)
-const DIRT := Color("#7d4329")
-const BODY := Color("#d8a400")
-const ARM := Color("#ffd23f")
+var DIRT := Color("#7d4329")
+var BODY := Color("#d8a400")
+var ARM := Color("#ffd23f")
 const STEEL := Color("#e8e8e8")
-const SOIL := Color("#6b4423")
+var SOIL := Color("#6b4423")
 const DUST := Color("#c9c6bb")
 const TIPPING := Color("#ff9a4a")
 const GOOD := Color("#a8f07a")
@@ -324,7 +324,7 @@ func _say_fit(font: Font, at: Vector2, word: String, font_size: int, room: float
 func _truck_word(v: Dictionary) -> Dictionary:
 	if truck == null or not v.has("pour"):
 		return {}
-	if truck.spot.distance_to(machine.spot) > NEAR_TRUCK:
+	if truck.spot.distance_to(machine.spot) > NEAR_TRUCK * (2.0 if truck.haul else 1.0):
 		return {}
 	var pour: Vector2 = v["pour"]
 	var at := machine.side_world(pour)
@@ -363,8 +363,8 @@ func _draw_truck(to_px: Callable, lining: Dictionary, line: float) -> void:
 	var fade := func(c: Color) -> Color:
 		return Color(c.r, c.g, c.b, strength)
 	_draw_hull(shapes["chassis"], to_px, fade.call(Color("#333333")), line * 0.0)
-	_draw_hull(shapes["cab"], to_px, fade.call(Color("#d9482b")), line * 0.7)
-	_draw_hull(shapes["tray"], to_px, fade.call(Color("#7a2a18")), line * 0.7, GOOD if lining.get("over", false) else INK)
+	_draw_hull(shapes["cab"], to_px, fade.call(Color("#e8e6df") if truck.haul else Color("#d9482b")), line * 0.7)
+	_draw_hull(shapes["tray"], to_px, fade.call(Color("#9a9c98") if truck.haul else Color("#7a2a18")), line * 0.7, GOOD if lining.get("over", false) else INK)
 	if truck.tray_mm > 0:
 		_draw_hull(shapes["soil"], to_px, fade.call(SOIL), 0.0)
 
@@ -383,3 +383,12 @@ func _draw_hull(corners: PackedVector3Array, to_px: Callable, colour: Color, edg
 func _say(font: Font, at: Vector2, word: String, font_size: int, colour: Color) -> void:
 	draw_string_outline(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, 6, INK)
 	draw_string(font, at, word, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, colour)
+
+## The mine's colours: fleet-white machines and red dirt. Called once the site's known.
+func set_mine(on: bool) -> void:
+	if not on:
+		return
+	DIRT = Color("#a8492a")
+	SOIL = Color("#8f3d22")
+	BODY = Color("#c9cac5")
+	ARM = Color("#f2f1ec")

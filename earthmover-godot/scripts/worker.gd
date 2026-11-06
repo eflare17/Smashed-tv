@@ -88,7 +88,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 		held.visible = false
 		_tools[t] = held
 	kit = MeshKit.new()
-	kit.prism([Vector2(-0.1, 0.0), Vector2(0.1, 0.0), Vector2(0.05, 0.08), Vector2(-0.05, 0.08)], -0.09, 0.09, Props.c("#7d4329"))
+	kit.prism([Vector2(-0.1, 0.0), Vector2(0.1, 0.0), Vector2(0.05, 0.08), Vector2(-0.05, 0.08)], -0.09, 0.09, Props.DIRT)
 	_load = _add(_tools["shovel"], kit, mat)
 	_load.position = Vector3(0.55, -0.6, 0.0)
 	_load.visible = false

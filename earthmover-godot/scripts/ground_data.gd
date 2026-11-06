@@ -28,7 +28,8 @@ static func at(i: int, j: int) -> int:
 
 ## With a site given it's a plain block for a job: flat there, a painted driveway, a sealed road, and none of the pit and pile.
 ## With `paddock`, it's the big site: open rolling ground with no pit or pile, and flat where `site` is given.
-func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false) -> void:
+## With `mine`, it's the mine: see _mine().
+func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false, mine := false) -> void:
 	var lumps := FastNoiseLite.new()
 	lumps.seed = 7
 	lumps.frequency = 0.035
@@ -56,6 +57,14 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false)
 			var fade := 1.0 - smoothstep(HALF - 8.0, HALF - 1.0, edge)
 			var h := lumps.get_noise_2dv(p) * 1.5 * fade
 			var ragged := rag.get_noise_2dv(p)
+			if mine:
+				var n_m := at(i, j)
+				var got := _mine(p, lumps, ragged, fade)
+				heights[n_m] = got[0]
+				loose_depth[n_m] = got[1]
+				loose[n_m] = got[2]
+				packed[n_m] = got[3]
+				continue
 			if paddock:
 				# Long low rises, a paddock's worth, flat where the job is.
 				var hp := (lumps.get_noise_2dv(p * 0.55) * 2.6 + 0.45 * sin(p.x * 0.07 + 0.6) * cos(p.y * 0.05)) * fade
@@ -234,3 +243,91 @@ func height_texture() -> ImageTexture:
 
 func data_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(Image.create_from_data(SIDE, SIDE, false, Image.FORMAT_RGBA8, data))
+
+## ---------------------------------------------------------------- the mine
+## A stepped pit with a ramp cut down its south side, a haul road from the parking area past the top of the ramp to the dump,
+## windrows along the road and along the ramp's open edge, and a bund round the lot. Each cut is a level with faces rising from
+## it at the batter, and the ground is whichever is lowest, so the ramp runs down onto the first bench and then into the floor.
+const MINE_BENCH := Rect2(-10.0, -12.0, 44.0, 38.0)     # the first bench's level ground: x -10 to 34, z -12 to 26
+const MINE_FLOOR := Rect2(-2.0, -4.0, 28.0, 22.0)        # the pit floor: x -2 to 26, z -4 to 18
+const MINE_STEP := 2.5          # m each bench goes down
+const MINE_BATTER := 1.5        # m up for each m across, on a cut face
+const MINE_RAMP_Z := -10.0      # the ramp's middle: it runs along the pit's south side, coming down eastward
+const MINE_RAMP_HALF := 5.5
+const MINE_RAMP := [Vector2(-25.0, 0.0), Vector2(-10.0, -2.5), Vector2(-4.0, -2.5), Vector2(10.0, -5.0), Vector2(16.0, -5.0)]   # x and level
+const MINE_ROAD := Rect2(-39.0, -30.0, 14.0, 55.0)      # the haul road, x -39 to -25
+const MINE_PARK := Rect2(-41.0, -41.0, 26.0, 14.0)
+const MINE_DUMP := Rect2(-41.0, 22.0, 22.0, 19.0)
+const MINE_WINDROWS := [[Vector2(-40.3, -26.0), Vector2(-40.3, 21.0)], [Vector2(-23.7, -1.5), Vector2(-23.7, 21.0)], [Vector2(-23.7, -27.0), Vector2(-23.7, -17.5)], [Vector2(-4.0, -6.0), Vector2(6.0, -6.0)]]
+const MINE_WINDROW_HIGH := 1.0
+const MINE_WINDROW_HALF := 1.6
+const MINE_BUND_AT := 44.6      # m out from the middle, all round
+const MINE_BUND_HIGH := 2.2
+
+## How far a point is outside a rectangle, or 0 inside it.
+static func _outside(p: Vector2, r: Rect2) -> float:
+	return Vector2(maxf(maxf(r.position.x - p.x, p.x - r.end.x), 0.0), maxf(maxf(r.position.y - p.y, p.y - r.end.y), 0.0)).length()
+
+## The ramp's level at x along it.
+static func mine_ramp_level(x: float) -> float:
+	var pts: Array = MINE_RAMP
+	if x <= pts[0].x:
+		return 0.0
+	for k in pts.size() - 1:
+		var a: Vector2 = pts[k]
+		var b: Vector2 = pts[k + 1]
+		if x <= b.x:
+			return lerpf(a.y, b.y, (x - a.x) / (b.x - a.x))
+	return pts[pts.size() - 1].y
+
+## The firm ground of the pit and ramp at a point: 0 outside them.
+static func mine_cut(p: Vector2) -> float:
+	var bench := -MINE_STEP + MINE_BATTER * _outside(p, MINE_BENCH)
+	var floor_h := -2.0 * MINE_STEP + MINE_BATTER * _outside(p, MINE_FLOOR)
+	var last: float = MINE_RAMP[MINE_RAMP.size() - 1].x
+	var off := Vector2(maxf(p.x - last, 0.0), maxf(absf(p.y - MINE_RAMP_Z) - MINE_RAMP_HALF, 0.0)).length()
+	var ramp := mine_ramp_level(minf(p.x, last)) + MINE_BATTER * off
+	return minf(minf(0.0, bench), minf(floor_h, ramp))
+
+## Whether a point's on the ramp's running surface.
+static func on_mine_ramp(p: Vector2) -> bool:
+	return p.x > MINE_RAMP[0].x - 1.0 and p.x < MINE_RAMP[MINE_RAMP.size() - 1].x + 1.0 and absf(p.y - MINE_RAMP_Z) < MINE_RAMP_HALF
+
+## One corner of the mine: its height, how much of that is loose, and how it's painted (soil, packed).
+func _mine(p: Vector2, lumps: FastNoiseLite, ragged: float, fade: float) -> Array:
+	var cut := mine_cut(p)
+	# Low red rises round about, flattened near anything that's been made.
+	var near := minf(minf(_outside(p, MINE_BENCH) - 2.0, _outside(p, MINE_ROAD)), minf(_outside(p, MINE_PARK), _outside(p, MINE_DUMP)))
+	near = minf(near, _outside(p, mine_ramp_rect()))
+	var rise := (lumps.get_noise_2dv(p * 0.7) * 1.1 + 0.3 * sin(p.x * 0.09) * cos(p.y * 0.07)) * fade * smoothstep(3.0, 12.0, near)
+	var edge: float = maxf(absf(p.x), absf(p.y))
+	var bund := MINE_BUND_HIGH * (0.5 + 0.5 * cos(PI * clampf(absf(edge - MINE_BUND_AT) / 2.7, 0.0, 1.0)))
+	var lay := 0.0
+	for w: Array in MINE_WINDROWS:
+		var a: Vector2 = w[0]
+		var b: Vector2 = w[1]
+		var along := (b - a).normalized()
+		var t := (p - a).dot(along)
+		var across := absf((p - a).dot(Vector2(-along.y, along.x)))
+		var ends := smoothstep(-1.5, 0.5, t) * (1.0 - smoothstep(a.distance_to(b) - 0.5, a.distance_to(b) + 1.5, t))
+		var shape := 0.5 + 0.5 * cos(PI * clampf(across / MINE_WINDROW_HALF, 0.0, 1.0))
+		lay = maxf(lay, MINE_WINDROW_HIGH * shape * ends)
+	var h := cut + rise + bund + lay
+	var soil := 0.0
+	if cut < -0.05 + ragged * 0.04:
+		soil = 1.0
+	soil = maxf(soil, smoothstep(0.03, 0.2, lay + bund * 0.4 + ragged * 0.05))
+	var pack := 0.0
+	var worked := minf(minf(_outside(p, MINE_ROAD), _outside(p, MINE_PARK)), _outside(p, MINE_DUMP))
+	if worked < 0.3 + ragged * 0.6 or on_mine_ramp(p + Vector2(0.0, ragged * 0.5)):
+		pack = 1.0
+	pack *= 1.0 - smoothstep(0.03, 0.2, lay)
+	if pack > 0.0:
+		soil *= 1.0 - pack
+	return [h, lay, soil, pack]
+
+## The ramp's running surface as a rectangle on the ground.
+static func mine_ramp_rect() -> Rect2:
+	var first: float = MINE_RAMP[0].x
+	var last: float = MINE_RAMP[MINE_RAMP.size() - 1].x
+	return Rect2(first, MINE_RAMP_Z - MINE_RAMP_HALF, last - first, MINE_RAMP_HALF * 2.0)

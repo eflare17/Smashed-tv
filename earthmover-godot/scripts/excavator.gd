@@ -108,7 +108,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	_speed_cap = TOP_SPEED
 	_rng.seed = 21
 	var carriage := MeshKit.new()
-	Props.track_frames(carriage, 1.25, 0.32, 1.9, 2.4, 2.05)
+	Props.track_frames(carriage, 1.25, 0.32, 1.9, 2.4, 2.05, size > 1.0)
 	Props.excavator_carriage(carriage)
 	_add_mesh(self, carriage, mat)
 	tracks = TrackRig.new()
@@ -117,19 +117,21 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	_house = Node3D.new()
 	add_child(_house)
 	var house_kit := MeshKit.new()
-	Props.excavator_house(house_kit)
+	Props.excavator_house(house_kit, size > 1.0)
 	_add_mesh(_house, house_kit, mat)
+	if size > 1.0:
+		_add_beacon(_house, Vector3(0.0, 3.12 + Props.MINE_CAB_UP, -0.8), mat)
 	var kit := MeshKit.new()
-	Props.excavator_boom(kit, BOOM)
+	Props.excavator_boom(kit, BOOM, size > 1.0)
 	_boom = _add_mesh(_house, kit, mat)
 	kit = MeshKit.new()
-	Props.excavator_stick(kit, STICK)
+	Props.excavator_stick(kit, STICK, size > 1.0)
 	_stick = _add_mesh(_house, kit, mat)
 	kit = MeshKit.new()
-	Props.excavator_bucket(kit, BUCKET, BUCKET_HALF)
+	Props.excavator_bucket(kit, BUCKET, BUCKET_HALF, size > 1.0)
 	_bucket = _add_mesh(_house, kit, mat)
 	kit = MeshKit.new()
-	kit.box(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0), Props.c("#7d4329"), Basis(Vector3.RIGHT, 0.05))
+	kit.box(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0), Props.DIRT, Basis(Vector3.RIGHT, 0.05))
 	_lump = _add_mesh(_bucket, kit, mat)
 	_lump.visible = false
 	_mat = mat
@@ -172,7 +174,7 @@ func exhaust_point() -> Vector3:
 	return _house.to_global(Vector3(-1.72, 3.05, 0.8))
 
 func cab_eye() -> Vector3:
-	return _house.to_global(Vector3(0.6, 2.55, -0.8))
+	return _house.to_global(Vector3(0.6, 2.55 + (Props.MINE_CAB_UP if size > 1.0 else 0.0), -0.8))
 
 func effort() -> float:
 	return maxf(absf(throttle), hyd * 0.8)

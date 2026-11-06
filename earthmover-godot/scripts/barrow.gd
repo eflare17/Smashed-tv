@@ -71,7 +71,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	Props.barrow(kit, WHEEL)
 	_add(_tray, kit, mat)
 	kit = MeshKit.new()
-	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.3, 0.6), Vector2(0.0, 1.0), Vector2(-0.3, 0.6)], -0.5, 0.5, Props.c("#7d4329"))
+	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.3, 0.6), Vector2(0.0, 1.0), Vector2(-0.3, 0.6)], -0.5, 0.5, Props.DIRT)
 	_lump = _add(_tray, kit, mat)
 	_lump.visible = false
 	kit = MeshKit.new()

@@ -320,3 +320,29 @@ Picks below are Claude's unless said; the owner agreed the list, not the details
 - online: place_id() says where the host is ("big" for big free play) so a friend follows onto the big site.
 - This PC's test window draws at about 4 frames a second even for the build before this work, so on-screen speed here says
   nothing; phone speed on the big site is still to be tried.
+
+## The mine (7 Nov 2026)
+Owner: the big machines should look different, "more like mining", so unlocking them feels like a different thing. Agreed
+(owner's picks from a list): mine-white colours, the big site becomes a mine, free play with them stays open from the start,
+and a haul truck now. Farm dam is to be swapped for a mine job, to be worked out with the owner next: until then it keeps the
+green paddock (only the mine is new).
+- Big dozer and excavator (Props.* with `mine`): fleet white with grey, black tracks, hi-vis stripes, painted fleet numbers in
+  block letters (Props.stencil: DZ-01, EX-01, HT-01), safety-yellow handrails and ladders, a spinning orange beacon
+  (Machine.beacon, turned in game._process). Dozer: closed cab (one block of glass, so the seat view still sees out), walkways
+  over the tracks, one big ripper tooth, U-blade wings. Excavator: cab up on a riser (cab_eye follows), ladder, rails round the
+  engine deck, chevrons on the counterweight, a grey rock bucket with five big teeth.
+- Haul truck: Truck with `haul` set before setup (the truck's sizes became vars; the consts stay for the road truck). About
+  11 m long and 7 wide, cab up on a deck on the left, a stair across the front, a canopy over the cab, tray rim 5 m up. Holds
+  40 m3 (about five full big buckets), 65 t empty, 30 km/h empty. On the mine `truck` IS the haul truck, so the bucket view,
+  TIP and online all work as they did; "Haul " is dropped when matching buttons.
+- The mine (GroundData `mine`, game `mine` = big site with no job): a stepped pit (first bench 2.5 m down, floor 5 m down, faces
+  at 1.5:1), a ramp cut down its south side onto the bench then the floor, a haul road from the parking area past the top of
+  the ramp to the dump, windrows of loose dirt along the road and the ramp's open edge, and a bund all round instead of the
+  fence. Red dirt (ground and clod shader colours, Props.set_dirt for lumps and buckets, red dust), no grass at all, no trees.
+  Two site huts, four lighting towers, red flat-topped hills, spinifex and gums out past the bund.
+- Free play: the excavator and haul truck start on the pit floor by a 70 m3 heap of broken rock, ready to load; the dozer and
+  ute up by the parking area; a 45 m3 stockpile at the dump. Menu entry is now "Free play: the mine".
+- test/mine_test.gd: levels where they should be, windrows and bund there, the haul truck takes a full load up the ramp (slowest
+  4 m/s) and the big dozer climbs it too, a big bucket tipped over the tray all lands in it, no soil lost.
+- `--machine="Big excavator" --demo=mineload`: a full bucket tipped into the haul truck, with a picture as it pours.
+- Online checked: the friend follows onto the mine and gets the haul truck; both games' ground matches.

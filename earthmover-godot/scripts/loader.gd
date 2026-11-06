@@ -224,7 +224,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 	Props.loader_bucket(kit, bucket_len, bucket_half, bucket_high)
 	_bucket = _add_mesh(_body, kit, mat)
 	kit = MeshKit.new()
-	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.28, 0.72), Vector2(-0.4, 1.0)], -0.5, 0.5, Props.c("#7d4329"))
+	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.28, 0.72), Vector2(-0.4, 1.0)], -0.5, 0.5, Props.DIRT)
 	_lump = _add_mesh(_bucket, kit, mat)
 	_lump.visible = false
 	y_smooth = sim.track_height_at(spot)

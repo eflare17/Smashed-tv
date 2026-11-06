@@ -34,6 +34,20 @@ static var GLASS := c("#2c4656")
 static var WHITE_PAINT := c("#efe8d8")
 static var RED := c("#c9402c")
 static var HI_VIS := c("#ff7a1a")
+# The mine's big machines: fleet white, grey for the shaded parts, safety yellow for what you hold on to.
+static var MINE_WHITE := c("#eeece6")
+static var MINE_GREY := c("#b9bbb7")
+static var SAFETY := c("#ffd21f")
+# Dirt off the ground: in a bucket or tray, or flying. Red on the mine.
+static var DIRT := c("#7d4329")
+static var DIRT_DARK := c("#6a3722")
+static var DIRT_LIGHT := c("#8a4c30")
+
+## The mine's red dirt or the usual brown, for what's built next. These outlive a scene, so every scene sets them.
+static func set_dirt(mine: bool) -> void:
+	DIRT = c("#9c4a30") if mine else c("#7d4329")
+	DIRT_DARK = c("#7e3b26") if mine else c("#6a3722")
+	DIRT_LIGHT = c("#ad5a3c") if mine else c("#8a4c30")
 static var SKIN := c("#d9a06f")
 static var DENIM := c("#37506e")
 
@@ -163,12 +177,12 @@ static func pipe_spool(kit: MeshKit) -> void:
 		kit.cone(Vector3(0.75, 0.98, z - 0.015), Vector3(0.75, 0.98, z + 0.015), 0.4, 0.4, 10, c("#3f7fbf"))
 
 ## The solid part of a pair of tracks. The cleats and wheels that run on it are TrackRig's.
-static func track_frames(kit: MeshKit, z_mid: float, half_w: float, flat: float, nose: float, top: float) -> void:
+static func track_frames(kit: MeshKit, z_mid: float, half_w: float, flat: float, nose: float, top: float, mine := false) -> void:
 	for side: float in [-1.0, 1.0]:
 		kit.prism([Vector2(-nose, 0.42), Vector2(-flat, 0.0), Vector2(flat, 0.0), Vector2(nose, 0.42), Vector2(top, 0.88), Vector2(-top, 0.88)], side * (z_mid - half_w), side * (z_mid + half_w), CHARCOAL)
 		var face_z := side * (z_mid + half_w + 0.02)
 		var k := flat - 0.08
-		kit.prism([Vector2(-k, 0.3), Vector2(-k + 0.27, 0.14), Vector2(k - 0.27, 0.14), Vector2(k, 0.3), Vector2(k - 0.17, 0.7), Vector2(-k + 0.17, 0.7)], face_z - side * 0.03, face_z, YELLOW_DARK)
+		kit.prism([Vector2(-k, 0.3), Vector2(-k + 0.27, 0.14), Vector2(k - 0.27, 0.14), Vector2(k, 0.3), Vector2(k - 0.17, 0.7), Vector2(-k + 0.17, 0.7)], face_z - side * 0.03, face_z, MINE_GREY if mine else YELLOW_DARK)
 
 ## The way round a track that its cleats run, starting along the bottom going back.
 static func track_path(flat: float, nose: float, top: float) -> PackedVector2Array:
@@ -192,94 +206,176 @@ static func excavator_carriage(kit: MeshKit) -> void:
 	kit.box(Vector3(0, 0.68, 0), Vector3(3.0, 0.42, 2.0), CHARCOAL)
 	kit.cone(Vector3(0, 0.85, 0), Vector3(0, 1.02, 0), 1.05, 1.05, 12, BLACK)
 
+## How far up a mine excavator's cab sits on its riser, above where the small one's is.
+const MINE_CAB_UP := 0.55
+
 ## The turning part, in its own coordinates: forward is +x, the ground at y = 0. The cab is on the left, the boom right of middle.
-static func excavator_house(kit: MeshKit) -> void:
-	kit.box(Vector3(-0.55, 1.2, 0), Vector3(4.1, 0.34, 2.7), YELLOW_DARK)
-	kit.box(Vector3(-1.5, 1.78, 0.0), Vector3(1.95, 0.84, 2.6), YELLOW)
+## The mine's one is fleet white, its cab up on a riser with a ladder to it, rails round the engine deck and stripes on the back.
+static func excavator_house(kit: MeshKit, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
+	kit.box(Vector3(-0.55, 1.2, 0), Vector3(4.1, 0.34, 2.7), dark)
+	kit.box(Vector3(-1.5, 1.78, 0.0), Vector3(1.95, 0.84, 2.6), body)
 	for i in 5:
-		kit.box(Vector3(-2.1 + i * 0.3, 2.21, 0.45), Vector3(0.15, 0.02, 1.3), YELLOW_DARK)
-	kit.box(Vector3(-2.72, 1.5, 0), Vector3(0.55, 1.12, 2.7), CHARCOAL)
-	kit.box(Vector3(0.62, 1.6, 0.98), Vector3(1.5, 0.48, 0.72), YELLOW)
-	kit.box(Vector3(0.62, 1.86, 0.98), Vector3(1.3, 0.03, 0.55), YELLOW_DARK)
+		kit.box(Vector3(-2.1 + i * 0.3, 2.21, 0.45), Vector3(0.15, 0.02, 1.3), dark)
+	kit.box(Vector3(-2.72, 1.5, 0), Vector3(0.55, 1.12, 2.7), body if mine else CHARCOAL)
+	kit.box(Vector3(0.62, 1.6, 0.98), Vector3(1.5, 0.48, 0.72), body)
+	kit.box(Vector3(0.62, 1.86, 0.98), Vector3(1.3, 0.03, 0.55), dark)
 	kit.cone(Vector3(-1.7, 2.18, 0.8), Vector3(-1.7, 2.95, 0.8), 0.07, 0.07, 6, BLACK)
 	kit.cone(Vector3(-1.7, 2.95, 0.8), Vector3(-1.75, 3.05, 0.8), 0.09, 0.09, 6, BLACK)
 	# The foot of the boom.
-	kit.box(Vector3(0.95, 1.6, 0.25), Vector3(0.9, 0.75, 0.62), YELLOW_DARK)
-	# The cab: dark glass in a yellow frame.
-	var glass := c("#2c4656")
-	kit.box(Vector3(0.45, 2.15, -0.8), Vector3(1.55, 1.56, 0.98), glass)
-	kit.box(Vector3(0.45, 2.97, -0.8), Vector3(1.66, 0.1, 1.08), YELLOW)
+	kit.box(Vector3(0.95, 1.6, 0.25), Vector3(0.9, 0.75, 0.62), dark)
+	# The cab: dark glass in a frame.
+	var up := MINE_CAB_UP if mine else 0.0
+	kit.box(Vector3(0.45, 2.15 + up, -0.8), Vector3(1.55, 1.56, 0.98), GLASS)
+	kit.box(Vector3(0.45, 2.97 + up, -0.8), Vector3(1.66, 0.1, 1.08), body)
 	for x: float in [-0.32, 1.22]:
 		for z: float in [-1.29, -0.31]:
-			kit.box(Vector3(x, 2.15, z), Vector3(0.07, 1.6, 0.07), YELLOW)
-	kit.box(Vector3(1.28, 2.98, -0.55), Vector3(0.1, 0.12, 0.16), LAMP)
+			kit.box(Vector3(x, 2.15 + up, z), Vector3(0.07, 1.6, 0.07), body)
+	kit.box(Vector3(1.28, 2.98 + up, -0.55), Vector3(0.1, 0.12, 0.16), LAMP)
+	if not mine:
+		return
+	# Up on its riser, with a ladder from the deck's edge to the door.
+	kit.box(Vector3(0.45, 1.37 + up * 0.5, -0.8), Vector3(1.5, up, 0.95), dark)
+	kit.box(Vector3(-0.32, 3.0 + up, -0.8), Vector3(0.1, 0.12, 0.16), LAMP)
+	for x: float in [-0.58, -0.24]:
+		kit.box(Vector3(x, 1.62, -1.42), Vector3(0.045, 1.34, 0.045), SAFETY)
+	for k in 6:
+		kit.box(Vector3(-0.41, 1.03 + k * 0.17, -1.42), Vector3(0.34, 0.035, 0.05), STEEL)
+	# Rails round the engine deck.
+	for z: float in [-1.28, 1.28]:
+		for x: float in [-2.4, -1.5, -0.6]:
+			kit.box(Vector3(x, 2.47, z), Vector3(0.045, 0.54, 0.045), SAFETY)
+		kit.box(Vector3(-1.5, 2.74, z), Vector3(1.85, 0.045, 0.045), SAFETY)
+		kit.box(Vector3(-1.5, 2.5, z), Vector3(1.85, 0.035, 0.035), SAFETY)
+	# Hi-vis chevrons across the back of the counterweight, and a band along each side.
+	for k in 4:
+		kit.box(Vector3(-3.005, 1.5, -0.98 + k * 0.65), Vector3(0.02, 0.95, 0.16), HI_VIS, Basis(Vector3.RIGHT, 0.6))
+	for z: float in [-1.352, 1.352]:
+		kit.box(Vector3(-1.95, 1.27, z), Vector3(2.9, 0.08, 0.012), HI_VIS)
+	stencil(kit, "EX-01", Vector3(-1.5, 1.74, 1.3), Vector3.RIGHT, Vector3.BACK, 0.075, BLACK)
+	stencil(kit, "EX-01", Vector3(-1.5, 1.74, -1.3), Vector3.LEFT, Vector3.FORWARD, 0.075, BLACK)
 
 ## From the shoulder along +x to the elbow, `length` m away, with the bend upward. Banana-shaped, so in two pieces.
-static func excavator_boom(kit: MeshKit, length: float) -> void:
+static func excavator_boom(kit: MeshKit, length: float, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
 	var m := length * 0.5
-	kit.prism([Vector2(-0.22, -0.2), Vector2(m, 0.32), Vector2(m, 0.98), Vector2(-0.22, 0.24)], -0.23, 0.23, YELLOW, YELLOW_DARK)
-	kit.prism([Vector2(m, 0.32), Vector2(length + 0.14, -0.14), Vector2(length + 0.14, 0.2), Vector2(m, 0.98)], -0.23, 0.23, YELLOW, YELLOW_DARK)
+	kit.prism([Vector2(-0.22, -0.2), Vector2(m, 0.32), Vector2(m, 0.98), Vector2(-0.22, 0.24)], -0.23, 0.23, body, dark)
+	kit.prism([Vector2(m, 0.32), Vector2(length + 0.14, -0.14), Vector2(length + 0.14, 0.2), Vector2(m, 0.98)], -0.23, 0.23, body, dark)
 
 ## From the elbow along +x to the bucket's pin, with a stub behind the elbow for the ram to push on.
-static func excavator_stick(kit: MeshKit, length: float) -> void:
-	kit.prism([Vector2(-0.62, 0.0), Vector2(length + 0.08, -0.1), Vector2(length + 0.08, 0.1), Vector2(-0.62, 0.42)], -0.17, 0.17, YELLOW, YELLOW_DARK)
+static func excavator_stick(kit: MeshKit, length: float, mine := false) -> void:
+	kit.prism([Vector2(-0.62, 0.0), Vector2(length + 0.08, -0.1), Vector2(length + 0.08, 0.1), Vector2(-0.62, 0.42)], -0.17, 0.17, MINE_WHITE if mine else YELLOW, MINE_GREY if mine else YELLOW_DARK)
 
 ## The bucket, from its pin along +x to the teeth; its open side is -y. Plates and curved floor, so it really is a hollow.
-static func excavator_bucket(kit: MeshKit, length: float, half_w: float) -> void:
+## The mine's is a rock bucket: worn grey, a heavy steel lip, five big teeth and a cutter at each corner.
+static func excavator_bucket(kit: MeshKit, length: float, half_w: float, mine := false) -> void:
 	var floor_line := [Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length - 0.12, 0.14), Vector2(length, -0.02)]
 	for i in floor_line.size() - 1:
 		var a: Vector2 = floor_line[i]
 		var b: Vector2 = floor_line[i + 1]
-		kit.prism([a, b, b + Vector2(0.0, 0.07), a + Vector2(0.0, 0.07)], -half_w, half_w, YELLOW_DARK, CHARCOAL)
+		kit.prism([a, b, b + Vector2(0.0, 0.07), a + Vector2(0.0, 0.07)], -half_w, half_w, CHARCOAL if mine else YELLOW_DARK, CHARCOAL)
 	for z: float in [-half_w, half_w]:
-		kit.prism([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length, -0.02), Vector2(0.15, -0.28)], z - 0.03, z + 0.03, YELLOW)
-	for k in 6:
-		var z := lerpf(-half_w + 0.08, half_w - 0.08, k / 5.0)
-		kit.prism([Vector2(length - 0.06, -0.05), Vector2(length + 0.2, -0.04), Vector2(length - 0.06, 0.07)], z - 0.055, z + 0.055, STEEL)
+		kit.prism([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length, -0.02), Vector2(0.15, -0.28)], z - 0.03, z + 0.03, MINE_GREY if mine else YELLOW)
+	var count := 5 if mine else 6
+	var reach := 0.36 if mine else 0.2
+	var thick := 0.085 if mine else 0.055
+	for k in count:
+		var z := lerpf(-half_w + 0.08, half_w - 0.08, k / float(count - 1))
+		kit.prism([Vector2(length - 0.06, -0.06), Vector2(length + reach, -0.04), Vector2(length - 0.06, 0.09)], z - thick, z + thick, STEEL)
+	if mine:
+		kit.box(Vector3(length - 0.04, 0.0, 0.0), Vector3(0.16, 0.1, half_w * 2.0), STEEL)
+		for z: float in [-half_w, half_w]:
+			kit.box(Vector3(length - 0.25, -0.02, z), Vector3(0.5, 0.14, 0.09), STEEL)
+		for x: float in [0.45, 0.8]:
+			kit.box(Vector3(x, 0.58, 0.0), Vector3(0.12, 0.04, half_w * 1.9), STEEL)
 	# The lugs it hangs from.
-	kit.box(Vector3(0.0, 0.12, 0.0), Vector3(0.36, 0.36, 0.34), YELLOW_DARK)
+	kit.box(Vector3(0.0, 0.12, 0.0), Vector3(0.36, 0.36, 0.34), CHARCOAL if mine else YELLOW_DARK)
 
 ## The bulldozer: forward is +x, the ground at y = 0, about 4.5 m long without the blade. Its tracks are built apart from it.
-static func bulldozer(kit: MeshKit) -> void:
-	for side: float in [-1.0, 1.0]:
-		# Canopy posts, and a work lamp up front.
-		kit.box(Vector3(-0.1, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
-		kit.box(Vector3(-1.5, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
-		kit.box(Vector3(0.05, 3.0, side * 0.6), Vector3(0.1, 0.12, 0.16), LAMP)
-
+## The mine's one is fleet white, with a closed cab, rails and a ladder up to walkways over the tracks, and one big ripper.
+static func bulldozer(kit: MeshKit, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
 	# The body: a deck over the tracks, the sloped engine hood and its grille, the back of the machine.
-	kit.box(Vector3(-0.2, 1.0, 0), Vector3(4.0, 0.45, 2.1), YELLOW)
-	kit.prism([Vector2(0.05, 1.2), Vector2(2.2, 1.2), Vector2(2.2, 1.72), Vector2(1.9, 1.85), Vector2(0.05, 2.08)], -0.62, 0.62, YELLOW)
+	kit.box(Vector3(-0.2, 1.0, 0), Vector3(4.0, 0.45, 2.1), body)
+	kit.prism([Vector2(0.05, 1.2), Vector2(2.2, 1.2), Vector2(2.2, 1.72), Vector2(1.9, 1.85), Vector2(0.05, 2.08)], -0.62, 0.62, body)
 	kit.box(Vector3(2.23, 1.46, 0), Vector3(0.08, 0.42, 1.0), BLACK)
 	for i in 4:
 		kit.box(Vector3(2.28, 1.3 + i * 0.105, 0), Vector3(0.04, 0.045, 1.0), STEEL)
 	for i in 5:
-		kit.box(Vector3(0.5 + i * 0.28, 1.89 - i * 0.03, 0), Vector3(0.14, 0.02, 0.9), YELLOW_DARK)
+		kit.box(Vector3(0.5 + i * 0.28, 1.89 - i * 0.03, 0), Vector3(0.14, 0.02, 0.9), dark)
 	kit.cone(Vector3(1.05, 1.95, 0.38), Vector3(1.05, 2.65, 0.38), 0.07, 0.07, 6, BLACK)
 	kit.cone(Vector3(1.05, 2.65, 0.38), Vector3(1.0, 2.75, 0.38), 0.09, 0.09, 6, BLACK)
-	kit.box(Vector3(-1.95, 1.45, 0), Vector3(0.5, 0.75, 1.85), YELLOW)
+	kit.box(Vector3(-1.95, 1.45, 0), Vector3(0.5, 0.75, 1.85), body)
 	kit.box(Vector3(-2.22, 1.45, 0), Vector3(0.05, 0.42, 1.0), BLACK)
 
-	# The open cab: a floor, seat and levers under a canopy on four posts, so you can see out and see the machine.
+	# A floor, seat and levers: under an open canopy on the small one, shut in a cab on the mine's.
 	kit.box(Vector3(-0.8, 1.27, 0), Vector3(1.55, 0.08, 1.6), CHARCOAL)
 	kit.box(Vector3(-0.95, 1.6, 0), Vector3(0.5, 0.58, 0.62), SEAT)
 	kit.box(Vector3(-1.2, 2.05, 0), Vector3(0.14, 0.7, 0.58), SEAT)
 	for z: float in [-0.42, 0.42]:
 		kit.cone(Vector3(-0.3, 1.32, z), Vector3(-0.42, 1.95, z), 0.03, 0.03, 5, BLACK)
 		kit.cone(Vector3(-0.42, 1.95, z), Vector3(-0.42, 2.02, z), 0.06, 0.06, 6, STEEL)
-	kit.prism([Vector2(-1.72, 3.05), Vector2(0.14, 3.05), Vector2(0.14, 3.16), Vector2(-1.72, 3.2)], -1.02, 1.02, YELLOW)
-	kit.box(Vector3(-0.8, 3.02, 0), Vector3(1.62, 0.05, 1.62), BLACK)
+	if not mine:
+		for side: float in [-1.0, 1.0]:
+			# Canopy posts, and a work lamp up front.
+			kit.box(Vector3(-0.1, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
+			kit.box(Vector3(-1.5, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
+			kit.box(Vector3(0.05, 3.0, side * 0.6), Vector3(0.1, 0.12, 0.16), LAMP)
+		kit.prism([Vector2(-1.72, 3.05), Vector2(0.14, 3.05), Vector2(0.14, 3.16), Vector2(-1.72, 3.2)], -1.02, 1.02, body)
+		kit.box(Vector3(-0.8, 3.02, 0), Vector3(1.62, 0.05, 1.62), BLACK)
+		# The ripper on the back.
+		kit.box(Vector3(-2.55, 0.92, 0), Vector3(0.2, 0.2, 1.6), dark)
+		for z: float in [-0.6, 0.6]:
+			kit.box(Vector3(-2.3, 0.95, z), Vector3(0.6, 0.14, 0.12), dark)
+			kit.prism([Vector2(-2.7, 1.0), Vector2(-2.5, 1.0), Vector2(-2.58, 0.05), Vector2(-2.72, 0.05)], z - 0.06, z + 0.06, CHARCOAL)
+		return
 
-	# The ripper on the back.
-	kit.box(Vector3(-2.55, 0.92, 0), Vector3(0.2, 0.2, 1.6), YELLOW_DARK)
-	for z: float in [-0.6, 0.6]:
-		kit.box(Vector3(-2.3, 0.95, z), Vector3(0.6, 0.14, 0.12), YELLOW_DARK)
-		kit.prism([Vector2(-2.7, 1.0), Vector2(-2.5, 1.0), Vector2(-2.58, 0.05), Vector2(-2.72, 0.05)], z - 0.06, z + 0.06, CHARCOAL)
-
-## The blade, its push arms and lift rams: separate from the body because it lifts. Same coordinates as the body.
-static func dozer_blade(kit: MeshKit) -> void:
+	# The cab: solid walls to the waist, then one block of glass, which drops out of sight from the seat.
+	for x: float in [0.1, -1.7]:
+		kit.box(Vector3(x, 1.54, 0), Vector3(0.06, 0.48, 1.66), body)
+	for z: float in [-0.83, 0.83]:
+		kit.box(Vector3(-0.8, 1.54, z), Vector3(1.86, 0.48, 0.06), body)
+	kit.box(Vector3(-0.8, 2.37, 0), Vector3(1.78, 1.18, 1.6), GLASS)
+	for x: float in [0.1, -0.75, -1.7]:
+		for z: float in [-0.82, 0.82]:
+			kit.box(Vector3(x, 2.37, z), Vector3(0.09, 1.2, 0.09), body)
+	kit.box(Vector3(-0.8, 3.02, 0), Vector3(1.98, 0.12, 1.82), body)
+	kit.box(Vector3(-1.25, 3.2, 0), Vector3(0.7, 0.24, 1.0), dark)
+	for x: float in [0.13, -1.73]:
+		for z: float in [-0.6, 0.6]:
+			kit.box(Vector3(x, 2.97, z), Vector3(0.1, 0.12, 0.18), LAMP)
+	# Walkways over the tracks, with rails, and a ladder up the outside of the left track frame.
 	for side: float in [-1.0, 1.0]:
-		kit.box(Vector3(1.85, 0.72, side * 1.58), Vector3(2.0, 0.18, 0.16), YELLOW_DARK, Basis(Vector3.BACK, deg_to_rad(-6.0)))
+		kit.box(Vector3(-0.65, 0.93, side * 1.26), Vector3(2.5, 0.05, 0.42), dark)
+		for x: float in [-1.85, -0.65, 0.55]:
+			kit.box(Vector3(x, 1.24, side * 1.45), Vector3(0.04, 0.62, 0.04), SAFETY)
+		kit.box(Vector3(-0.65, 1.55, side * 1.45), Vector3(2.44, 0.04, 0.04), SAFETY)
+		kit.box(Vector3(-0.65, 1.26, side * 1.45), Vector3(2.44, 0.03, 0.03), SAFETY)
+		kit.box(Vector3(-0.2, 1.12, side * 1.056), Vector3(3.95, 0.08, 0.012), HI_VIS)
+	for x: float in [-1.75, -1.45]:
+		kit.box(Vector3(x, 0.62, -1.56), Vector3(0.04, 0.84, 0.04), SAFETY)
+	for k in 4:
+		kit.box(Vector3(-1.6, 0.3 + k * 0.17, -1.56), Vector3(0.3, 0.03, 0.05), STEEL)
+	# One big ripper tooth on a heavy frame.
+	kit.box(Vector3(-2.6, 0.95, 0), Vector3(0.28, 0.3, 1.1), dark)
+	for z: float in [-0.45, 0.45]:
+		kit.box(Vector3(-2.35, 0.98, z), Vector3(0.55, 0.16, 0.14), dark)
+	kit.cone(Vector3(-2.1, 1.75, 0.0), Vector3(-2.6, 1.08, 0.0), 0.07, 0.07, 6, STEEL)
+	kit.prism([Vector2(-2.84, 1.3), Vector2(-2.5, 1.3), Vector2(-2.64, 0.2), Vector2(-2.78, 0.06), Vector2(-2.9, 0.22)], -0.09, 0.09, CHARCOAL)
+	kit.prism([Vector2(-2.92, 0.02), Vector2(-2.74, 0.04), Vector2(-2.66, 0.24), Vector2(-2.9, 0.24)], -0.07, 0.07, STEEL)
+	stencil(kit, "DZ-01", Vector3(1.12, 1.47, 0.62), Vector3.RIGHT, Vector3.BACK, 0.075, BLACK)
+	stencil(kit, "DZ-01", Vector3(1.12, 1.47, -0.62), Vector3.LEFT, Vector3.FORWARD, 0.075, BLACK)
+
+## The blade, its push arms and lift rams: separate from the body because it lifts. Same coordinates as the body. The mine's has
+## wings on its ends, the way a big U-blade does.
+static func dozer_blade(kit: MeshKit, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
+	for side: float in [-1.0, 1.0]:
+		kit.box(Vector3(1.85, 0.72, side * 1.58), Vector3(2.0, 0.18, 0.16), dark, Basis(Vector3.BACK, deg_to_rad(-6.0)))
 		kit.cone(Vector3(0.9, 1.65, side * 0.72), Vector3(2.5, 1.0, side * 1.05), 0.075, 0.075, 6, STEEL)
 
 	# Curved, in straight facets, with a dark steel cutting edge and end plates.
@@ -288,11 +384,36 @@ static func dozer_blade(kit: MeshKit) -> void:
 	for i in profile.size() - 1:
 		var a: Vector2 = profile[i]
 		var b: Vector2 = profile[i + 1]
-		kit.prism([a, b, b + Vector2(-0.18, 0.0), a + Vector2(-0.18, 0.0)], -w, w, YELLOW, YELLOW_DARK)
+		kit.prism([a, b, b + Vector2(-0.18, 0.0), a + Vector2(-0.18, 0.0)], -w, w, body, dark)
 	kit.prism([Vector2(2.72, 0.0), Vector2(2.98, 0.0), Vector2(2.82, 0.16), Vector2(2.66, 0.16)], -w, w, STEEL)
 	for z: float in [-w, w]:
-		kit.prism([Vector2(2.5, 0.08), Vector2(2.9, 0.08), Vector2(2.72, 1.5), Vector2(2.5, 1.5)], z - 0.05, z + 0.05, YELLOW_DARK)
-	kit.box(Vector3(2.48, 0.8, 0), Vector3(0.1, 1.0, 3.5), YELLOW_DARK)
+		kit.prism([Vector2(2.5, 0.08), Vector2(2.9, 0.08), Vector2(2.72, 1.5), Vector2(2.5, 1.5)], z - 0.05, z + 0.05, dark)
+	kit.box(Vector3(2.48, 0.8, 0), Vector3(0.1, 1.0, 3.5), dark)
+	if mine:
+		for side: float in [-1.0, 1.0]:
+			kit.box(Vector3(2.98, 0.86, side * (w - 0.1)), Vector3(0.62, 1.55, 0.09), body, Basis(Vector3.UP, side * 0.46))
+			kit.box(Vector3(3.0, 0.05, side * (w - 0.1)), Vector3(0.64, 0.1, 0.11), STEEL, Basis(Vector3.UP, side * 0.46))
+
+## Block letters a fleet number is painted in, three wide and five high, read across then down.
+const GLYPHS := {
+	"D": "110101101101110", "Z": "111001010100111", "E": "111100110100111", "X": "101101010101101",
+	"H": "101101111101101", "T": "111010010010010", "-": "000000111000000", "0": "111101101101111",
+	"1": "010110010010111", "2": "111001111100111", "3": "111001111001111", "L": "100100100100111",
+	"V": "101101101101010",
+}
+
+## A fleet number painted on a machine's side: `along` is the way it reads, `out` the way the side faces, `px` one block's size.
+static func stencil(kit: MeshKit, text: String, middle: Vector3, along: Vector3, out: Vector3, px: float, col: Color) -> void:
+	var wide := text.length() * 4 - 1
+	var start := middle - along * (wide * px * 0.5)
+	var size := along.abs() * px + Vector3(0.0, px, 0.0) + out.abs() * 0.012
+	for k in text.length():
+		var g: String = GLYPHS.get(text[k], "")
+		for n in g.length():
+			if g[n] != "1":
+				continue
+			var at := start + along * ((k * 4 + n % 3 + 0.5) * px) + Vector3.UP * ((2 - n / 3) * px) + out * 0.006
+			kit.box(at, size, col)
 
 ## A pine: a trunk and stacked faceted cones, a bit uneven, in two or three greens.
 static func pine(kit: MeshKit, at: Vector3, high: float, rng: RandomNumberGenerator, tiers := 3, sides := 7) -> void:
@@ -404,3 +525,135 @@ static func ute_body(kit: MeshKit) -> void:
 	for z: float in [-0.55, 0.55]:
 		kit.box(Vector3(2.5, 1.05, z), Vector3(0.1, 0.5, 0.08), BLACK)
 	kit.box(Vector3(2.5, 1.28, 0), Vector3(0.1, 0.08, 1.2), BLACK)
+
+## The mine's haul truck, without its wheels or tray: forward is +x, ground at y = 0, about 11 m long and 7 wide. Fleet white, the
+## cab up on a deck over the front wheels on the left, a big grille, and a stair up across the front to get there.
+static func haul_body(kit: MeshKit) -> void:
+	# Chassis, axle housings, the tanks between the wheels, tail lights.
+	kit.box(Vector3(-0.2, 1.75, 0), Vector3(9.4, 0.9, 1.7), CHARCOAL)
+	kit.box(Vector3(-3.2, 1.5, 0), Vector3(1.4, 1.1, 2.6), BLACK)
+	kit.box(Vector3(3.0, 1.5, 0), Vector3(0.8, 0.6, 3.6), BLACK)
+	kit.box(Vector3(-0.1, 2.1, -1.6), Vector3(2.6, 1.2, 1.1), MINE_WHITE)
+	kit.box(Vector3(-0.1, 2.1, 1.6), Vector3(2.6, 1.2, 1.1), MINE_GREY)
+	for z: float in [-0.6, 0.6]:
+		kit.box(Vector3(-4.92, 1.85, z), Vector3(0.06, 0.2, 0.3), RED)
+	# The engine and its grille, and a heavy bumper.
+	kit.box(Vector3(3.7, 2.65, 0), Vector3(3.0, 2.3, 2.4), MINE_WHITE)
+	kit.box(Vector3(5.22, 2.6, 0), Vector3(0.08, 1.8, 2.1), BLACK)
+	for i in 6:
+		kit.box(Vector3(5.27, 1.85 + i * 0.3, 0), Vector3(0.04, 0.1, 2.0), STEEL)
+	kit.box(Vector3(5.35, 1.2, 0), Vector3(0.5, 0.6, 3.2), CHARCOAL)
+	for z: float in [-1.3, 1.3]:
+		kit.box(Vector3(5.62, 1.3, z), Vector3(0.06, 0.2, 0.36), LAMP)
+	# The deck over the front wheels.
+	kit.box(Vector3(3.8, 3.9, 0), Vector3(3.6, 0.16, 6.8), MINE_GREY)
+	for z: float in [-3.41, 3.41]:
+		kit.box(Vector3(3.8, 3.86, z), Vector3(3.6, 0.1, 0.02), HI_VIS)
+	for z: float in [-2.7, 2.7]:
+		kit.box(Vector3(5.62, 4.02, z), Vector3(0.06, 0.16, 0.4), LAMP)
+	# The cab on the left: solid to the dash, then glass, and the air conditioner on the roof.
+	kit.box(Vector3(3.65, 4.26, -2.05), Vector3(2.5, 0.56, 1.9), MINE_WHITE)
+	kit.box(Vector3(3.65, 5.2, -2.05), Vector3(2.44, 1.3, 1.84), GLASS)
+	for x: float in [2.42, 4.88]:
+		for z: float in [-2.98, -1.12]:
+			kit.box(Vector3(x, 5.2, z), Vector3(0.1, 1.32, 0.1), MINE_WHITE)
+	kit.box(Vector3(3.65, 5.92, -2.05), Vector3(2.7, 0.14, 2.05), MINE_WHITE)
+	kit.box(Vector3(3.2, 6.1, -2.05), Vector3(0.9, 0.24, 1.1), MINE_GREY)
+	# The air cleaners and a cabinet on the right of the deck.
+	kit.box(Vector3(3.6, 4.45, 2.1), Vector3(2.2, 1.1, 1.7), MINE_WHITE)
+	for x: float in [3.0, 4.2]:
+		kit.cone(Vector3(x, 5.0, 2.1), Vector3(x, 5.5, 2.1), 0.32, 0.32, 8, MINE_GREY)
+	# Rails round the deck's front and sides.
+	for z: float in [-3.35, -1.7, 0.0, 1.7, 3.35]:
+		kit.box(Vector3(5.55, 4.45, z), Vector3(0.06, 0.95, 0.06), SAFETY)
+	kit.box(Vector3(5.55, 4.92, 0.0), Vector3(0.06, 0.06, 6.76), SAFETY)
+	kit.box(Vector3(5.55, 4.45, 0.0), Vector3(0.05, 0.05, 6.76), SAFETY)
+	for z: float in [-3.35, 3.35]:
+		for x: float in [2.05, 3.8]:
+			kit.box(Vector3(x, 4.45, z), Vector3(0.06, 0.95, 0.06), SAFETY)
+		kit.box(Vector3(3.8, 4.92, z), Vector3(3.5, 0.06, 0.06), SAFETY)
+	# The stair up across the front, from beside the bumper to the deck, and the rungs below it.
+	var low := Vector3(6.0, 1.0, 2.95)
+	var high := Vector3(6.0, 3.9, 0.35)
+	var mid := (low + high) * 0.5
+	var run := (high - low).length()
+	var lean := Basis(Vector3.RIGHT, atan2(high.z - low.z, high.y - low.y))
+	for x: float in [5.66, 6.34]:
+		kit.box(Vector3(x, mid.y, mid.z), Vector3(0.06, run, 0.14), SAFETY, lean)
+	kit.box(Vector3(6.36, mid.y + 0.95, mid.z), Vector3(0.05, run, 0.05), SAFETY, lean)
+	for k in 9:
+		var at := low.lerp(high, (k + 0.5) / 9.0)
+		kit.box(at, Vector3(0.68, 0.05, 0.28), STEEL)
+	for x: float in [5.75, 6.25]:
+		kit.box(Vector3(x, 0.65, 2.95), Vector3(0.05, 0.75, 0.05), SAFETY)
+	for k in 3:
+		kit.box(Vector3(6.0, 0.4 + k * 0.22, 2.95), Vector3(0.5, 0.04, 0.06), STEEL)
+
+## The haul truck's body, from its hinge at the back along +x: a deep steel box with a canopy reaching forward over the cab, so it
+## all tips as one. Its fleet number is painted big on each side.
+static func haul_tray(kit: MeshKit, length: float, half: float, high: float) -> void:
+	kit.box(Vector3(length * 0.5, 0.06, 0), Vector3(length, 0.12, half * 2.0), MINE_GREY)
+	for z: float in [-half, half]:
+		kit.prism([Vector2(0.0, 0.06), Vector2(length, 0.06), Vector2(length, high), Vector2(0.8, high), Vector2(0.0, high * 0.6)], z - 0.08, z + 0.08, MINE_WHITE)
+		for x: float in [1.4, 2.8, 4.2, 5.6]:
+			kit.box(Vector3(x, high * 0.5, z * 1.03), Vector3(0.14, high * 0.9, 0.1), MINE_GREY)
+		kit.box(Vector3(length * 0.5 + 0.4, high, z * 1.02), Vector3(length - 0.8, 0.16, 0.24), MINE_WHITE)
+		kit.box(Vector3(length * 0.5 + 0.3, high - 0.3, z * 1.04), Vector3(length - 1.4, 0.14, 0.02), HI_VIS)
+	stencil(kit, "HT-01", Vector3(length * 0.5, high * 0.42, half + 0.09), Vector3.RIGHT, Vector3.BACK, 0.17, BLACK)
+	stencil(kit, "HT-01", Vector3(length * 0.5, high * 0.42, -half - 0.09), Vector3.LEFT, Vector3.FORWARD, 0.17, BLACK)
+	# A low lip at the back, the front wall up to the canopy, and the canopy out over the cab.
+	kit.box(Vector3(0.1, 0.25, 0), Vector3(0.24, 0.4, half * 2.0), MINE_GREY)
+	kit.box(Vector3(length, 1.6, 0), Vector3(0.16, 3.1, half * 2.0), MINE_WHITE)
+	kit.box(Vector3(length + 1.85, 3.15, 0), Vector3(3.9, 0.16, half * 2.0 + 0.2), MINE_WHITE)
+	for z: float in [-half * 0.6, 0.0, half * 0.6]:
+		kit.box(Vector3(length + 1.85, 3.0, z), Vector3(3.9, 0.16, 0.12), MINE_GREY)
+	for z: float in [-0.9, 0.9]:
+		kit.box(Vector3(length * 0.5, -0.12, z), Vector3(length, 0.24, 0.3), CHARCOAL)
+
+## A lighting tower on its trailer, the lamps facing `face` radians round from +x.
+static func light_tower(kit: MeshKit, at: Vector3, face: float) -> void:
+	var b := Basis(Vector3.UP, face)
+	kit.box(at + b * Vector3(0.0, 0.95, 0.0), Vector3(2.2, 1.1, 1.4), MINE_WHITE, b)
+	kit.box(at + b * Vector3(0.0, 1.53, 0.0), Vector3(2.26, 0.06, 1.46), SAFETY, b)
+	kit.box(at + b * Vector3(1.65, 0.5, 0.0), Vector3(1.2, 0.09, 0.09), CHARCOAL, b)
+	for z: float in [-0.8, 0.8]:
+		kit.cone(at + b * Vector3(-0.2, 0.36, z - 0.13), at + b * Vector3(-0.2, 0.36, z + 0.13), 0.36, 0.36, 10, BLACK)
+	for z: float in [-1.15, 1.15]:
+		kit.box(at + b * Vector3(0.0, 0.55, z), Vector3(0.12, 0.1, 0.5), SAFETY, b)
+		kit.box(at + b * Vector3(0.0, 0.28, z * 1.15), Vector3(0.1, 0.56, 0.1), SAFETY, b)
+	kit.box(at + b * Vector3(-0.6, 4.9, 0.0), Vector3(0.16, 7.6, 0.16), STEEL, b)
+	kit.box(at + b * Vector3(-0.55, 8.6, 0.0), Vector3(0.12, 0.12, 1.9), CHARCOAL, b)
+	for z: float in [-0.66, -0.22, 0.22, 0.66]:
+		kit.box(at + b * Vector3(-0.42, 8.6 + (0.22 if absf(z) < 0.3 else -0.02), z), Vector3(0.18, 0.36, 0.34), LAMP, b)
+
+## A site hut: a transportable building up on blocks, long along x, its door, windows and steps on the +z side.
+static func donga(kit: MeshKit, at: Vector3) -> void:
+	kit.box(at + Vector3(0.0, 1.85, 0.0), Vector3(12.0, 2.7, 3.3), c("#ece6d4"))
+	kit.box(at + Vector3(0.0, 3.27, 0.0), Vector3(12.3, 0.14, 3.6), c("#c9cdd0"))
+	for x: float in [-5.5, -2.0, 1.5, 5.0]:
+		for z: float in [-1.3, 1.3]:
+			kit.box(at + Vector3(x, 0.25, z), Vector3(0.5, 0.5, 0.5), CHARCOAL)
+	for x: float in [-4.2, -1.6, 3.6]:
+		kit.box(at + Vector3(x, 2.1, 1.66), Vector3(1.4, 0.9, 0.06), GLASS)
+	kit.box(at + Vector3(1.0, 1.55, 1.66), Vector3(0.9, 2.0, 0.06), c("#8a8f94"))
+	kit.box(at + Vector3(1.0, 0.25, 2.2), Vector3(1.4, 0.5, 1.0), STEEL)
+	for x: float in [0.3, 1.7]:
+		kit.box(at + Vector3(x, 0.8, 2.2), Vector3(0.05, 0.9, 0.9), SAFETY)
+	kit.box(at + Vector3(6.15, 2.2, 0.6), Vector3(0.3, 0.6, 0.8), c("#d6d6cf"))
+	kit.box(at + Vector3(0.0, 0.62, 1.66), Vector3(12.0, 0.1, 0.03), HI_VIS)
+
+## A flat-topped red hill on the horizon, its cap a darker band of rock.
+static func mesa(kit: MeshKit, at: Vector3, r: float, high: float, rng: RandomNumberGenerator) -> void:
+	kit.cone(at, at + Vector3(0.0, high * 0.8, 0.0), r, r * 0.74, 9, c("#b9653d"), 0.12, rng)
+	kit.cone(at + Vector3(0.0, high * 0.8, 0.0), at + Vector3(0.0, high, 0.0), r * 0.74, r * 0.7, 9, c("#8f4a2d"), 0.08, rng)
+
+## A clump of spinifex, the dry yellow-green tussock out round the mine.
+static func spinifex(kit: MeshKit, at: Vector3, r: float, rng: RandomNumberGenerator) -> void:
+	kit.cone(at, at + Vector3(0.0, r * 0.75, 0.0), r, r * 0.25, 6, c("#b8a65c") if rng.randf() < 0.6 else c("#9f9a55"), 0.25, rng)
+
+## A white-trunked gum, thin and scraggly, as they grow out in the red country.
+static func gum(kit: MeshKit, at: Vector3, high: float, rng: RandomNumberGenerator) -> void:
+	kit.cone(at, at + Vector3(rng.randf_range(-0.6, 0.6), high * 0.7, rng.randf_range(-0.6, 0.6)), high * 0.035, high * 0.02, 6, c("#efe9dc"), 0.0, null, false)
+	for k in 3:
+		var c_at := at + Vector3(rng.randf_range(-high * 0.18, high * 0.18), high * rng.randf_range(0.62, 0.85), rng.randf_range(-high * 0.18, high * 0.18))
+		kit.cone(c_at, c_at + Vector3(0.0, high * 0.22, 0.0), high * rng.randf_range(0.14, 0.2), high * 0.06, 7, c("#7f9a62") if k % 2 == 0 else c("#6c8a55"), 0.2, rng)

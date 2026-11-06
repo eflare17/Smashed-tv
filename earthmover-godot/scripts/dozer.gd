@@ -83,19 +83,21 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	back_speed = BACK_SPEED
 	turn_rate = TURN
 	var frame_kit := MeshKit.new()
-	Props.track_frames(frame_kit, 1.15, 0.3, 1.8, 2.3, 1.95)
+	Props.track_frames(frame_kit, 1.15, 0.3, 1.8, 2.3, 1.95, size > 1.0)
 	var frame := MeshInstance3D.new()
 	frame.mesh = frame_kit.mesh()
 	frame.material_override = mat
 	add_child(frame)
 	var body_kit := MeshKit.new()
-	Props.bulldozer(body_kit)
+	Props.bulldozer(body_kit, size > 1.0)
 	_body = MeshInstance3D.new()
 	_body.mesh = body_kit.mesh()
 	_body.material_override = mat
 	add_child(_body)
+	if size > 1.0:
+		_add_beacon(self, Vector3(-0.45, 3.2, 0.5), mat)
 	var blade_kit := MeshKit.new()
-	Props.dozer_blade(blade_kit)
+	Props.dozer_blade(blade_kit, size > 1.0)
 	_pivot = MeshInstance3D.new()
 	_pivot.mesh = blade_kit.mesh()
 	_pivot.material_override = mat

@@ -80,6 +80,7 @@ var fp_back := 2.3
 var fp_front := 2.3
 var fp_r := 1.5
 var wheels: Array[Dictionary] = []
+var beacon: Node3D             # the flashing light on a mine machine's roof, turned by the game, or null
 
 var tracks: TrackRig
 var tilt := Basis.IDENTITY      # the whole machine rocking on its tracks, as an excavator does
@@ -419,3 +420,16 @@ func _sized(b: Basis) -> Basis:
 ## Makes it a big one: called before setup, which sizes everything from it.
 func make_big(k: float) -> void:
 	size = k
+
+## A mine machine's orange beacon, on `parent` at `at` in its own space. The game turns it.
+func _add_beacon(parent: Node3D, at: Vector3, mat: Material) -> void:
+	var kit := MeshKit.new()
+	kit.box(Vector3(0.0, -0.06, 0.0), Vector3(0.2, 0.06, 0.2), Props.BLACK)
+	kit.box(Vector3.ZERO, Vector3(0.22, 0.14, 0.12), Props.HI_VIS)
+	kit.box(Vector3.ZERO, Vector3(0.12, 0.15, 0.2), Props.c("#ffb36b"))
+	var m := MeshInstance3D.new()
+	m.mesh = kit.mesh()
+	m.material_override = mat
+	m.position = at
+	parent.add_child(m)
+	beacon = m

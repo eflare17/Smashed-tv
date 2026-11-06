@@ -43,6 +43,15 @@ const BIG := 1.9                     # how much bigger the big machines are, eve
 const BIG_DOZER_AT := Vector2(-24.0, -4.0)
 const BIG_DIGGER_AT := Vector2(-8.0, 15.0)
 const BIG_UTE_AT := Vector2(-30.0, -20.0)
+# The mine: big machines' free play. The excavator and haul truck start down on the pit floor by a heap of broken rock, ready to
+# load; the dozer and ute up in the parking area. GroundData has the pit, ramp and roads.
+const MINE_HEAPS := [[Vector2(20.0, 13.0), 70.0], [Vector2(-30.0, 33.0), 45.0]]
+const MINE_DOZER_AT := Vector2(-34.0, -22.0)
+const MINE_DIGGER_AT := Vector2(22.0, 4.0)
+const MINE_TRUCK_AT := Vector2(10.0, 6.0)
+const MINE_UTE_AT := Vector2(-28.5, -25.0)
+const MINE_HUTS := [Vector2(-35.0, -38.3), Vector2(-21.5, -38.3)]
+const MINE_LIGHTS := [Vector3(-21.5, 0.0, -19.5), Vector3(38.5, 0.0, 8.0), Vector3(8.0, 0.0, 33.5), Vector3(-16.0, 0.0, 30.0)]
 const MOST_PEGS := 12
 const UTE_PAD_TOL := 0.05           # m: a pegged pad is done where it's this near its level
 const GET_IN_GAP := 0.9           # m between him and a machine that's near enough to climb into
@@ -50,7 +59,8 @@ const ROOMY := 1.2               # m clear round him that's plenty, stepping off
 
 var ground: GroundData
 var sim: DirtSim
-var big_site := false             # the big machines' site: a paddock half as big again each way
+var big_site := false             # the big machines' site: half as big again each way
+var mine := false                 # the big site as a mine, for free play; the Farm dam job keeps it a paddock
 var view_data: GroundView
 var dozer: Dozer
 var digger: Excavator
@@ -254,17 +264,25 @@ func _ready() -> void:
 	rng.seed = 77
 	_read_args()
 	_choose_mission()
-	big_site = mission.get("site", "") == "big" if not mission.is_empty() else (Engine.has_meta("big_site") or start_machine.begins_with("Big"))
+	big_site = mission.get("site", "") == "big" if not mission.is_empty() else (Engine.has_meta("big_site") or start_machine.begins_with("Big") or start_machine == "Haul truck")
 	DirtSim.set_world(BIG_HALF if big_site else 32.0)
 	sim = DirtSim.new()
-	if big_site:
-		ground = GroundData.new(Mission.site(mission) if not mission.is_empty() else Rect2(), Rect2(), Rect2(), true)
+	mine = big_site and mission.is_empty()
+	Props.set_dirt(mine)
+	if mine:
+		ground = GroundData.new(Rect2(), Rect2(), Rect2(), false, true)
+		# Red dirt and no grass at all.
+		grass = "Off"
+	elif big_site:
+		ground = GroundData.new(Mission.site(mission), Rect2(), Rect2(), true)
 	elif mission.is_empty():
 		ground = GroundData.new()
 	else:
 		ground = GroundData.new(Mission.site(mission), mission["rect"], Mission.road(mission))
 	# A phone browser has far less to spare than the phone app, so it starts with less grass. The Grass button still works.
-	if OS.has_feature("web_android") or OS.has_feature("web_ios"):
+	if mine:
+		pass
+	elif OS.has_feature("web_android") or OS.has_feature("web_ios"):
 		grass = "Low"
 	elif RenderingServer.get_current_rendering_method() == "forward_plus" and grass == "Medium":
 		grass = "High"
@@ -273,8 +291,8 @@ func _ready() -> void:
 		grass = "Low"
 	var t0 := Time.get_ticks_msec()
 	ground.fill_sim(sim)
-	if big_site and mission.is_empty():
-		for heap: Array in BIG_HEAPS:
+	if mine:
+		for heap: Array in MINE_HEAPS:
 			sim.add_pile(heap[0], heap[1], false)
 	elif mission.is_empty():
 		sim.add_dust_pile(FREE_DUST, FREE_DUST_M3)
@@ -464,6 +482,10 @@ func _ground_material() -> ShaderMaterial:
 	m.set_shader_parameter("noise_tex", noise_tex)
 	m.set_shader_parameter("dust_tex", view_data.dust_tex)
 	m.set_shader_parameter("clods_tex", preload("res://textures/clods.png"))
+	if mine:
+		# Pilbara red: the untouched ground orange-red, cut ground darker, the roads pale and dusty, and dark iron rock.
+		for pair: Array in [["grass_a", Color(0.63, 0.37, 0.25)], ["grass_b", Color(0.59, 0.34, 0.23)], ["soil_a", Color(0.6, 0.3, 0.19)], ["soil_b", Color(0.47, 0.22, 0.13)], ["under_a", Color(0.36, 0.16, 0.1)], ["cut_a", Color(0.52, 0.26, 0.17)], ["packed_a", Color(0.7, 0.5, 0.39)], ["rock_a", Color(0.46, 0.33, 0.3)], ["rock_b", Color(0.4, 0.29, 0.27)]]:
+			m.set_shader_parameter(pair[0], pair[1])
 	return m
 
 func _build_ground() -> void:
@@ -510,6 +532,8 @@ func _blade() -> ArrayMesh:
 
 ## Grass in 8 m chunks, each holding its most blades in a random order, so showing fewer is just drawing the first ones.
 func _build_grass() -> void:
+	if mine:
+		return
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/grass.gdshader")
 	mat.set_shader_parameter("height_tex", height_tex)
@@ -579,6 +603,9 @@ func _build_clods() -> void:
 	mat.set_shader_parameter("HALF", GroundData.HALF)
 	mat.set_shader_parameter("data_tex", data_tex)
 	mat.set_shader_parameter("dust_tex", view_data.dust_tex)
+	if mine:
+		mat.set_shader_parameter("soil_a", Color(0.62, 0.32, 0.2))
+		mat.set_shader_parameter("soil_b", Color(0.48, 0.23, 0.14))
 	mat.render_priority = 1
 	var gr := RandomNumberGenerator.new()
 	gr.seed = 29
@@ -647,6 +674,11 @@ func _build_props() -> void:
 		dz_dir = mission.get("dir", Vector2(1.0, 0.0))
 		dg_at = mission.get("digger", BIG_DIGGER_AT)
 		dg_dir = mission.get("digger_dir", Vector2(-1.0, 0.2).normalized())
+	if mine:
+		dz_at = MINE_DOZER_AT
+		dz_dir = Vector2(0.0, 1.0)
+		dg_at = MINE_DIGGER_AT
+		dg_dir = (MINE_HEAPS[0][0] - MINE_DIGGER_AT).normalized()
 	dozer = Dozer.new()
 	if big_site:
 		dozer.make_big(BIG)
@@ -661,7 +693,8 @@ func _build_props() -> void:
 	digger.setup(sim, view_data, prop_mat, dg_at, dg_dir)
 	truck = Truck.new()
 	add_child(truck)
-	truck.setup(sim, view_data, prop_mat, GroundData.truck_spot(), Vector2(1.0, 0.0))
+	truck.haul = mine
+	truck.setup(sim, view_data, prop_mat, MINE_TRUCK_AT if mine else GroundData.truck_spot(), Vector2(0.0, -1.0) if mine else Vector2(1.0, 0.0))
 	bobcat = Loader.new()
 	add_child(bobcat)
 	bobcat.setup(sim, view_data, prop_mat, GroundData.bobcat_spot(), (GroundData.PILE - GroundData.bobcat_spot()).normalized(), Loader.BOBCAT)
@@ -677,7 +710,8 @@ func _build_props() -> void:
 	barrow.setup(sim, view_data, prop_mat, GroundData.barrow_spot(), Vector2(0.0, 1.0))
 	ute = Ute.new()
 	add_child(ute)
-	ute.setup(sim, view_data, prop_mat, BIG_UTE_AT if big_site else GroundData.ute_spot(), Vector2(1.0, 0.25).normalized() if big_site else Vector2(1.0, 0.0))
+	var ute_at := MINE_UTE_AT if mine else (BIG_UTE_AT if big_site else GroundData.ute_spot())
+	ute.setup(sim, view_data, prop_mat, ute_at, Vector2(0.0, 1.0) if mine else (Vector2(1.0, 0.25).normalized() if big_site else Vector2(1.0, 0.0)))
 	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute]
 	active = dozer
 	for m: Machine in machines:
@@ -687,6 +721,8 @@ func _build_props() -> void:
 	if big_site:
 		# The big machines only. The rest are kept out of sight, as for a job.
 		var on_site: Array[Machine] = [dozer, digger, ute]
+		if mine:
+			on_site.insert(2, truck)
 		for m: Machine in machines:
 			m.visible = on_site.has(m)
 			if not on_site.has(m):
@@ -750,11 +786,14 @@ func _build_props() -> void:
 	trees.setup(sim, prop_mat, _tree_spots(tr), tr)
 	trees.knocked.connect(_on_tree_knocked)
 	trees.landed.connect(_on_tree_landed)
-	_add_fence(kit)
+	if mine:
+		_add_mine_site(kit, tr)
+	else:
+		_add_fence(kit)
 	if not mission.is_empty():
 		_add_site(kit)
-	# A treeline in the distance, plainer, so the horizon isn't empty.
-	for i in 170:
+	# A treeline in the distance, plainer, so the horizon isn't empty. The mine has red hills and scrub instead.
+	for i in (0 if mine else 170):
 		var a := tr.randf() * TAU
 		var far_off := GroundData.HALF - 32.0
 		var d := tr.randf_range(42.0, 150.0) + far_off
@@ -775,6 +814,8 @@ func _build_props() -> void:
 func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	if not mission.is_empty():
 		return _job_tree_spots(tr)
+	if mine:
+		return []
 	if big_site:
 		return _big_tree_spots(tr)
 	var start := GroundData.dozer_spot()
@@ -896,6 +937,37 @@ func _add_site(kit: MeshKit) -> void:
 			if m is Loader:
 				(m as Loader).grade_toward = mission["drain"]
 				(m as Loader).plan = Mission.trench_plan(sim, mission)
+
+## The mine's things: site huts by the parking area, lighting towers round the pit and the dump, and out past the bund, red
+## hills, spinifex and a few gums where the paddock would have its pines.
+func _add_mine_site(kit: MeshKit, tr: RandomNumberGenerator) -> void:
+	var built := MeshKit.new()
+	for at: Vector2 in MINE_HUTS:
+		Props.donga(built, Vector3(at.x, sim.height_at(at), at.y))
+		obstacles.append([at + Vector2(-4.6, 0.0), at + Vector2(4.6, 0.0), 1.9])
+	for at: Vector3 in MINE_LIGHTS:
+		var spot2 := Vector2(at.x, at.z)
+		# Each faces in, toward the middle of the pit.
+		var to_pit := Vector2(12.0, 7.0) - spot2
+		Props.light_tower(kit, Vector3(at.x, sim.height_at(spot2), at.z), atan2(-to_pit.y, to_pit.x))
+		obstacles.append([spot2, spot2, 1.4])
+	var huts := MeshInstance3D.new()
+	huts.mesh = built.mesh()
+	huts.material_override = prop_mat
+	add_child(huts)
+	house = huts
+	for i in 12:
+		var a := TAU * (i + tr.randf_range(-0.3, 0.3)) / 12.0
+		var d := tr.randf_range(170.0, 420.0)
+		Props.mesa(kit, Vector3(cos(a) * d, -1.0, sin(a) * d), tr.randf_range(28.0, 75.0), tr.randf_range(12.0, 34.0), tr)
+	for i in 220:
+		var a := tr.randf() * TAU
+		var d := tr.randf_range(GroundData.HALF + 3.0, 150.0)
+		Props.spinifex(kit, Vector3(cos(a) * d, 0.0, sin(a) * d), tr.randf_range(0.4, 0.9), tr)
+	for i in 26:
+		var a := tr.randf() * TAU
+		var d := tr.randf_range(GroundData.HALF + 8.0, 140.0)
+		Props.gum(kit, Vector3(cos(a) * d, 0.0, sin(a) * d), tr.randf_range(5.0, 9.0), tr)
 
 ## The farm dam: pegged out on the flat of the paddock, a tank and a shed beside it so it reads as a farm.
 func _add_dam_site(kit: MeshKit) -> void:
@@ -1426,8 +1498,8 @@ func _flying_lump(colours: Array, size: float) -> ArrayMesh:
 	return m
 
 func _build_fx() -> void:
-	clods = _chunks([Props.c("#7d4329")], 0.2, 26)
-	clods.mesh = _flying_lump([Props.c("#7d4329"), Props.c("#6a3722")], 0.3)
+	clods = _chunks([Props.DIRT], 0.2, 26)
+	clods.mesh = _flying_lump([Props.DIRT, Props.DIRT_DARK], 0.3)
 	clods.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	clods.emission_box_extents = Vector3(0.2, 0.2, 2.0)
 	clods.direction = Vector3(0.5, 1.0, 0.0)
@@ -1437,7 +1509,7 @@ func _build_fx() -> void:
 	clods.scale_amount_min = 0.5
 	clods.scale_amount_max = 1.3
 
-	dust = _puffs(Color("#c9a77c"), 26, 1.3)
+	dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 26, 1.3)
 	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	dust.emission_box_extents = Vector3(0.5, 0.2, 2.2)
 	dust.direction = Vector3(0.0, 1.0, 0.0)
@@ -1448,7 +1520,7 @@ func _build_fx() -> void:
 	dust.scale_amount_min = 0.8
 	dust.scale_amount_max = 1.7
 
-	track_dust = _puffs(Color("#d6bd98"), 18, 1.0)
+	track_dust = _puffs(Color("#d89a72") if mine else Color("#d6bd98"), 18, 1.0)
 	track_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	track_dust.emission_box_extents = Vector3(0.3, 0.1, 1.2)
 	track_dust.direction = Vector3(0.0, 1.0, 0.0)
@@ -1480,7 +1552,7 @@ func _build_fx() -> void:
 	needles.scale_amount_min = 0.5
 	needles.scale_amount_max = 1.4
 
-	slam = _puffs(Color("#d8c6a4"), 26, 1.2)
+	slam = _puffs(Color("#dba07c") if mine else Color("#d8c6a4"), 26, 1.2)
 	slam.one_shot = true
 	slam.explosiveness = 0.95
 	slam.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
@@ -1494,8 +1566,8 @@ func _build_fx() -> void:
 	slam.scale_amount_max = 2.3
 
 	# Lumps rolling down the front of the heap on the blade: the more it's carrying, the more of them.
-	tumble = _chunks([Props.c("#7d4329")], 0.34, 40)
-	tumble.mesh = _flying_lump([Props.c("#7d4329"), Props.c("#6a3722"), Props.c("#8a4c30")], 0.4)
+	tumble = _chunks([Props.DIRT], 0.34, 40)
+	tumble.mesh = _flying_lump([Props.DIRT, Props.DIRT_DARK, Props.DIRT_LIGHT], 0.4)
 	tumble.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	tumble.emission_box_extents = Vector3(0.15, 0.1, 1.9)
 	tumble.direction = Vector3(1.0, 0.15, 0.0)
@@ -1509,7 +1581,7 @@ func _build_fx() -> void:
 	tumble.angular_velocity_min = -420.0
 	tumble.angular_velocity_max = 420.0
 
-	pour_dust = _puffs(Color("#c9a77c"), 22, 1.4)
+	pour_dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 22, 1.4)
 	pour_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	pour_dust.emission_box_extents = Vector3(0.9, 0.15, 0.9)
 	pour_dust.direction = Vector3(0.0, 1.0, 0.0)
@@ -1618,13 +1690,13 @@ func _update_dig_fx(dt: float) -> void:
 ## Falling clods: one chunky faceted lump drawn up to the air's limit.
 func _build_air() -> void:
 	var kit := MeshKit.new()
-	var soil := Props.c("#7d4329")
+	var soil := Props.DIRT
 	kit.box(Vector3.ZERO, Vector3(0.22, 0.17, 0.2), soil, Basis(Vector3(0.4, 1.0, 0.2).normalized(), 0.6))
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/prop.gdshader")
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _flying_lump([soil, Props.c("#6a3722")], 0.27)
+	mm.mesh = _flying_lump([soil, Props.DIRT_DARK], 0.27)
 	mm.instance_count = DirtSim.AIR_MAX
 	mm.visible_instance_count = 0
 	air_mesh = MultiMeshInstance3D.new()
@@ -1717,7 +1789,7 @@ func _apply_all() -> void:
 func _show_buttons() -> void:
 	var who := active.machine_name
 	# A big one has the same buttons as the small one.
-	var kind := who.trim_prefix("Big ").capitalize()
+	var kind := who.trim_prefix("Big ").trim_prefix("Haul ").capitalize()
 	for b in touch_buttons:
 		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(kind)
 	if spade_button and spade_button.visible:
@@ -2756,6 +2828,24 @@ func _run_demo(dt: float) -> void:
 			dozer.throttle = 1.0
 		"excavate":
 			_excavate_demo()
+		"mineload":
+			# The mine: the big excavator, its bucket full and swung out over the haul truck, tips it in. A picture as it pours
+			# and once it's in.
+			if demo_clock < 0.05 and digger.bucket_mm == 0:
+				var to_tray := Vector2(truck.spot.x, truck.spot.y + 1.35) - digger.spot
+				digger.swing = atan2(-to_tray.y, to_tray.x) - digger.angle
+				digger.wrist = Vector2(to_tray.length() / digger.size, 4.6)
+				digger.curl = Excavator.CURL_MAX
+				digger.bucket_mm = digger.capacity()
+				sim.held += digger.bucket_mm
+				sim.store -= digger.bucket_mm
+				truck.tray_mm = truck.capacity / 3
+				sim.held += truck.tray_mm
+				sim.store -= truck.tray_mm
+			digger.curl_cmd = -1.0 if demo_clock > 1.0 and demo_clock < 5.0 else 0.0
+			if demo_clock > 2.6 and not has_meta("shot_pour"):
+				set_meta("shot_pour", true)
+				_demo_shot("pour")
 		"spread":
 			# The test bot does the job with the player's controls. It lives with the tests, which never go on the phone.
 			if bot == null:
@@ -2949,6 +3039,7 @@ func _build_ui() -> void:
 
 	# The bucket from the side, as from the driver's view the machine often hides it.
 	bucket_view = BucketView.new()
+	bucket_view.set_mine(mine)
 	bucket_view.size = Vector2(h * 0.42, h * 0.325)
 	bucket_view.position = Vector2(screen.x - bucket_view.size.x - pad, h * 0.135)
 	ui.add_child(bucket_view)
@@ -3191,7 +3282,7 @@ func _build_menu() -> void:
 				choice.call("%s: after %s" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
 		into[0] = cols[1]
 		choice.call("Free play: every machine", true, _start_free_play)
-		choice.call("Free play: big machines", true, _start_big_play)
+		choice.call("Free play: the mine", true, _start_big_play)
 		if Online.available():
 			choice.call("Play with a friend", true, _open_menu.bind("online"))
 	elif menu_kind == "online":
@@ -3208,7 +3299,7 @@ func _build_menu() -> void:
 				choice.call("%s: %s" % [m["title"], Mission.crew(m)], true, _host_job.bind(m["id"]))
 		into[0] = cols[1]
 		choice.call("Free play: every machine", true, _host_game)
-		choice.call("Free play: big machines", true, _host_game.bind(true))
+		choice.call("Free play: the mine", true, _host_game.bind(true))
 		choice.call("Back", true, _open_menu.bind("online"))
 	elif menu_kind == "join":
 		_build_join_menu(box, h)
@@ -3802,7 +3893,7 @@ func _draw_gauge() -> void:
 		return panel.position.y + panel.size.y * (1.0 - clampf((l - low) / (high - low), 0.0, 1.0))
 	gauge.draw_rect(panel, Color(0.1, 0.1, 0.1, 0.55))
 	var ground_y: float = y_of.call(gauge_ground)
-	gauge.draw_rect(Rect2(panel.position.x, ground_y, panel.size.x, panel.end.y - ground_y), Color("#7d4329"))
+	gauge.draw_rect(Rect2(panel.position.x, ground_y, panel.size.x, panel.end.y - ground_y), Color("#a8492a") if mine else Color("#7d4329"))
 	gauge.draw_line(Vector2(panel.position.x, ground_y), Vector2(panel.end.x, ground_y), Color.BLACK, 2.0)
 	var blade_y: float = y_of.call(dozer.lift)
 	var blade_h := panel.size.y * 0.09
@@ -3919,6 +4010,10 @@ func _process(delta: float) -> void:
 		_clod_wait = 0.2
 		_update_clods()
 	_update_fades(delta)
+	# Mine machines' beacons go round.
+	for m: Machine in machines:
+		if m.beacon != null:
+			m.beacon.rotation.y = fposmod(m.beacon.rotation.y + delta * 7.0, TAU)
 	cost_sync = Time.get_ticks_usec() - t1
 	var fps := 1.0 / maxf(delta, 0.0001)
 	worst_clock += delta
