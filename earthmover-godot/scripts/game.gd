@@ -153,6 +153,11 @@ var water_y0 := 0.07
 var end_marks: Array = []
 var end_reached := [false, false]
 var pipe_laid := false
+var _mark_t := 0.0
+## The look round at the start of a pipe job: where the pipe starts, then where it ends. Less than 0 when it isn't running.
+var _tour_t := -1.0
+var _tour_from := Transform3D()
+const TOUR_S := 5.6
 ## The backyard's floating outdoor set: each piece's node, where it is, how deep it floats, and its own sway.
 var floaters: Array = []
 var _float_t := 0.0
@@ -781,9 +786,8 @@ func _update_floaters(delta: float) -> void:
 ## A hoop over the ground at each end of the pipe, with words over it: where the pipe starts and where it ends. Yellow until a
 ## pipe's end is inside it, then green.
 func _add_end_marks() -> void:
-	var flood := Mission.kind(mission) == "flood"
 	var from: Array = Mission.source(mission)
-	var spots: Array = [[from[0], "START THE PIPE IN THE WATER" if flood else "START THE PIPE HERE", 0.0 if flood else Mission.PIPE_REACH],
+	var spots: Array = [[from[0], "START THE PIPE HERE", float(from[1]) if float(from[1]) <= Mission.PIPE_REACH else 0.0],
 		[mission["drain"], "END THE PIPE HERE", Mission.PIPE_REACH]]
 	for spot: Array in spots:
 		var at: Vector2 = spot[0]
@@ -815,9 +819,88 @@ func _add_end_marks() -> void:
 		word.outline_size = 14
 		word.pixel_size = 0.0008
 		word.modulate = Color("#ffd23f")
-		word.position.y = 1.4
+		word.position.y = 3.6
 		mark.add_child(word)
-		end_marks.append([mark, look, word])
+		# A big arrow over it, bobbing and flashing, so it can be found from anywhere on the site.
+		var arrow_kit := MeshKit.new()
+		arrow_kit.cone(Vector3(0.0, 0.6, 0.0), Vector3(0.0, 0.0, 0.0), 0.45, 0.02, 12, Color("#ffd23f"))
+		arrow_kit.box(Vector3(0.0, 1.0, 0.0), Vector3(0.24, 0.8, 0.24), Color("#ffd23f"))
+		var arrow := MeshInstance3D.new()
+		arrow.mesh = arrow_kit.mesh()
+		var bright := StandardMaterial3D.new()
+		bright.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		bright.vertex_color_use_as_albedo = true
+		arrow.material_override = bright
+		arrow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		arrow.position.y = 2.0
+		mark.add_child(arrow)
+		end_marks.append([mark, look, word, arrow])
+
+## The arrows bob and flash, over the ends no pipe has reached yet.
+func _wave_end_marks(delta: float) -> void:
+	_mark_t += delta
+	for k in end_marks.size():
+		var arrow: MeshInstance3D = end_marks[k][3]
+		arrow.position.y = 2.0 + sin(_mark_t * 4.0) * 0.25
+		arrow.visible = not end_reached[k] and fmod(_mark_t, 0.8) < 0.56
+
+## The look round: the camera goes to where the pipe starts, then to the drain, then back to the machine. Any tap ends it.
+func _start_tour() -> void:
+	if mission.is_empty() or Mission.kind(mission) == "driveway" or demo != "" or shot_path != "" or camera == null:
+		return
+	_tour_t = 0.0
+	_tour_from = camera.global_transform
+
+func _end_tour() -> void:
+	_tour_t = -1.0
+	_show_banner()
+	_place_camera()
+
+func _tour_step(delta: float) -> void:
+	if _tour_t < 0.0:
+		return
+	_tour_t += delta
+	if _tour_t >= TOUR_S:
+		_end_tour()
+
+## Where the camera is partway through the look round.
+func _tour_camera() -> void:
+	var from: Array = Mission.source(mission)
+	var a: Vector2 = from[0]
+	var b: Vector2 = mission["drain"]
+	var at_a := Vector3(a.x, sim.height_at(a), a.y)
+	var at_b := Vector3(b.x, sim.height_at(b), b.y)
+	var off := Vector3(3.5, 6.0, 6.0)
+	var look_at_now: Vector3
+	var pos: Vector3
+	var t := _tour_t
+	if t < 0.8:
+		var k := smoothstep(0.0, 0.8, t)
+		pos = _tour_from.origin.lerp(at_a + off, k)
+		look_at_now = (_tour_from.origin - _tour_from.basis.z * 8.0).lerp(at_a, k)
+	elif t < 2.8:
+		pos = at_a + off
+		look_at_now = at_a
+	elif t < 3.6:
+		var k := smoothstep(2.8, 3.6, t)
+		pos = (at_a + off).lerp(at_b + off, k)
+		look_at_now = at_a.lerp(at_b, k)
+	else:
+		pos = at_b + off
+		look_at_now = at_b
+	camera.global_position = pos
+	camera.look_at(look_at_now)
+
+func _tour_words() -> String:
+	return ("THE PIPE STARTS HERE" if _tour_t < 3.2 else "AND ENDS HERE, AT THE DRAIN") + "   (TAP TO SKIP)"
+
+func _input(e: InputEvent) -> void:
+	if _tour_t < 0.0:
+		return
+	var pressed: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed) or (e is InputEventKey and e.pressed and not e.echo)
+	if pressed:
+		_end_tour()
+		get_viewport().set_input_as_handled()
 
 ## The hoops and words go green as a pipe reaches each end, and away once the water's running.
 func _show_end_marks(reached: Array) -> void:
@@ -1571,6 +1654,9 @@ func _behind_yaw() -> float:
 func _place_camera() -> void:
 	if camera == null:
 		return
+	if _tour_t >= 0.0:
+		_tour_camera()
+		return
 	if view == "Cab":
 		var f := active.view_forward()
 		camera.global_position = active.cab_eye()
@@ -2176,12 +2262,18 @@ func _build_ui() -> void:
 	_show_banner()
 	if menu_kind != "":
 		_build_menu()
+	else:
+		# A pipe job opens with a look at where the pipe goes.
+		_start_tour.call_deferred()
 
 func _show_banner() -> void:
 	# The room code, or who's just joined, isn't to be written over.
 	if online and online.is_online() and (_banner_clock > 0.0 or (online.is_host() and not online.live)):
 		return
 	if banner == null or mission.is_empty():
+		return
+	if _tour_t >= 0.0:
+		banner.text = _tour_words()
 		return
 	if Mission.kind(mission) != "driveway":
 		var flood := Mission.kind(mission) == "flood"
@@ -2900,6 +2992,11 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 	if menu != null:
 		alert.visible = false
 	_hold_skip(delta)
+	_tour_step(delta)
+	if _tour_t >= 0.0:
+		banner.text = _tour_words()
+	if not end_marks.is_empty():
+		_wave_end_marks(delta)
 	if not mission.is_empty():
 		_check_mission(delta)
 		_drain_flood(delta)

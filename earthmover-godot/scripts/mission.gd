@@ -90,6 +90,8 @@ const LIST := [
 		"rise_r": 3.2,
 		"rise_mm": 300,
 		"drain": Vector2(7.5, -21.4),
+		# Where the pipe's to start: a spot in the water on the near side of the rise, marked like the drain.
+		"inlet": Vector2(-2.5, -16.0),
 		"trampoline": Vector2(-5.5, -17.9),
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
@@ -111,6 +113,8 @@ static func stars_for(cover: float) -> int:
 
 ## Where the water comes from, and how near it a pipe's end has to be to take it.
 static func source(m: Dictionary) -> Array:
+	if m.has("inlet"):
+		return [m["inlet"], PIPE_REACH]
 	if kind(m) == "flood":
 		var r: Vector2 = m["flood_r"]
 		return [m["flood"], maxf(r.x, r.y) + 0.6]
