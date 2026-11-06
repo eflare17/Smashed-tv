@@ -327,3 +327,80 @@ static func worker_leg(kit: MeshKit) -> void:
 static func worker_arm(kit: MeshKit) -> void:
 	kit.box(Vector3(0.0, -0.2, 0), Vector3(0.09, 0.4, 0.09), HI_VIS)
 	kit.box(Vector3(0.0, -0.44, 0), Vector3(0.08, 0.08, 0.08), SKIN)
+
+## A wheelbarrow facing +x, its wheel's axle at `pivot`, built round that axle so the whole thing tips up over the wheel.
+static func barrow(kit: MeshKit, pivot: Vector3) -> void:
+	var o := -pivot
+	var tub := c("#c9402c")
+	var tub_dark := c("#a5321f")
+	var side := [Vector2(-0.2, 0.36), Vector2(0.5, 0.36), Vector2(0.66, 0.68), Vector2(-0.32, 0.68)]
+	var moved: Array[Vector2] = []
+	for p: Vector2 in side:
+		moved.append(p + Vector2(o.x, o.y))
+	for z: float in [-0.34, 0.3]:
+		kit.prism(moved, z, z + 0.04, tub, tub_dark)
+	kit.box(Vector3(0.15, 0.375, 0.0) + o, Vector3(0.72, 0.03, 0.64), tub_dark)
+	for wall: Array in [[Vector2(-0.2, 0.36), Vector2(-0.16, 0.36), Vector2(-0.28, 0.68), Vector2(-0.32, 0.68)], [Vector2(0.46, 0.36), Vector2(0.5, 0.36), Vector2(0.66, 0.68), Vector2(0.62, 0.68)]]:
+		var w: Array[Vector2] = []
+		for p: Vector2 in wall:
+			w.append(p + Vector2(o.x, o.y))
+		kit.prism(w, -0.32, 0.32, tub, tub_dark)
+	for z: float in [-0.25, 0.25]:
+		# Handles from the wheel back past the tub, with grips; legs under the back of the tub; the fork down to the axle.
+		kit.cone(Vector3(0.78, 0.2, z * 0.4) + o, Vector3(-1.05, 0.55, z) + o, 0.022, 0.022, 5, STEEL)
+		kit.cone(Vector3(-0.85, 0.51, z) + o, Vector3(-1.08, 0.555, z) + o, 0.035, 0.035, 6, BLACK)
+		kit.cone(Vector3(-0.22, 0.36, z) + o, Vector3(-0.28, 0.0, z * 1.1) + o, 0.02, 0.02, 5, STEEL)
+		kit.box(Vector3(-0.28, 0.015, z * 1.1) + o, Vector3(0.08, 0.03, 0.05), BLACK)
+
+## A long-handled shovel held in the right hand, the hand at 0, the blade down and ahead.
+static func shovel(kit: MeshKit) -> void:
+	kit.cone(Vector3(-0.35, 0.3, 0.0), Vector3(0.45, -0.5, 0.0), 0.02, 0.02, 5, c("#b88a55"))
+	kit.box(Vector3(0.53, -0.6, 0.0), Vector3(0.05, 0.24, 0.22), STEEL, Basis(Vector3.BACK, deg_to_rad(40.0)))
+
+## A garden rake, its head out ahead on the ground.
+static func rake(kit: MeshKit) -> void:
+	kit.cone(Vector3(-0.3, 0.25, 0.0), Vector3(0.95, -0.75, 0.0), 0.018, 0.018, 5, c("#b88a55"))
+	kit.box(Vector3(0.97, -0.77, 0.0), Vector3(0.05, 0.05, 0.62), STEEL)
+	for k in 9:
+		kit.box(Vector3(1.0, -0.82, -0.28 + k * 0.07), Vector3(0.02, 0.08, 0.015), STEEL)
+
+## A survey peg: a pale stake with a pink ribbon tied near the top.
+static func survey_peg(kit: MeshKit, at: Vector3) -> void:
+	kit.box(at + Vector3(0.0, 0.45, 0.0), Vector3(0.06, 0.9, 0.06), c("#efe8d8"))
+	kit.box(at + Vector3(0.0, 0.82, 0.0), Vector3(0.075, 0.08, 0.075), c("#ff4fa3"))
+	kit.box(at + Vector3(0.06, 0.74, 0.0), Vector3(0.12, 0.16, 0.012), c("#ff4fa3"))
+
+## The scout ute, without its wheels: a white single cab with a steel tray, a bull bar, a hi-vis stripe and a bundle of pegs in the
+## back. Forward is +x, ground at y = 0, about 5 m long.
+static func ute_body(kit: MeshKit) -> void:
+	var white := c("#f2f0ea")
+	kit.box(Vector3(0.0, 0.58, 0), Vector3(4.9, 0.24, 1.4), CHARCOAL)
+	kit.box(Vector3(0.95, 0.95, 0), Vector3(2.9, 0.62, 1.8), white)
+	kit.box(Vector3(1.9, 1.3, 0), Vector3(1.1, 0.12, 1.74), white)
+	kit.box(Vector3(0.15, 1.6, 0), Vector3(1.45, 0.72, 1.72), white)
+	kit.box(Vector3(0.15, 1.97, 0), Vector3(1.5, 0.06, 1.76), white)
+	kit.box(Vector3(0.93, 1.6, 0), Vector3(0.07, 0.62, 1.6), GLASS, Basis(Vector3.BACK, deg_to_rad(-28.0)))
+	kit.box(Vector3(-0.58, 1.62, 0), Vector3(0.05, 0.5, 1.5), GLASS)
+	for z: float in [-0.87, 0.87]:
+		kit.box(Vector3(0.2, 1.62, z), Vector3(1.1, 0.48, 0.03), GLASS)
+		kit.box(Vector3(0.4, 0.98, z * 1.04), Vector3(3.9, 0.1, 0.03), HI_VIS)
+		# Wheel arches.
+		for x: float in [1.55, -1.55]:
+			kit.box(Vector3(x, 0.98, z * 1.03), Vector3(1.0, 0.12, 0.12), BLACK)
+		kit.box(Vector3(2.42, 1.0, z * 0.78), Vector3(0.06, 0.14, 0.3), LAMP)
+		kit.box(Vector3(-2.47, 1.0, z * 0.8), Vector3(0.06, 0.16, 0.22), RED)
+		# The tray's sides.
+		kit.box(Vector3(-1.58, 1.18, z * 1.0), Vector3(1.85, 0.32, 0.05), STEEL)
+	kit.box(Vector3(-1.58, 1.0, 0), Vector3(1.85, 0.06, 1.78), STEEL)
+	kit.box(Vector3(-2.48, 1.18, 0), Vector3(0.05, 0.32, 1.78), STEEL)
+	kit.box(Vector3(-0.66, 1.3, 0), Vector3(0.06, 0.56, 1.78), STEEL)
+	kit.box(Vector3(-1.0, 1.24, 0), Vector3(0.5, 0.42, 1.7), CHARCOAL)
+	# A bundle of survey pegs in the back.
+	for k in 5:
+		kit.box(Vector3(-1.9, 1.1 + (k % 2) * 0.06, -0.3 + k * 0.12), Vector3(1.0, 0.05, 0.05), c("#efe8d8"))
+	kit.box(Vector3(-1.5, 1.17, 0.0), Vector3(0.06, 0.07, 0.62), c("#ff4fa3"))
+	# Bull bar.
+	kit.box(Vector3(2.5, 0.88, 0), Vector3(0.1, 0.12, 1.7), BLACK)
+	for z: float in [-0.55, 0.55]:
+		kit.box(Vector3(2.5, 1.05, z), Vector3(0.1, 0.5, 0.08), BLACK)
+	kit.box(Vector3(2.5, 1.28, 0), Vector3(0.1, 0.08, 1.2), BLACK)

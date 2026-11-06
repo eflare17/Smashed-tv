@@ -13,7 +13,7 @@ uniform vec3 tip_a : source_color = vec3(0.42, 0.66, 0.24);
 uniform vec3 tip_b : source_color = vec3(0.50, 0.72, 0.26);
 
 const float CELL = 0.25;
-const float HALF = 32.0;
+uniform float HALF = 32.0;
 
 varying float v_t;
 varying float v_patch;

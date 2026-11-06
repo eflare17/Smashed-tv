@@ -13,7 +13,7 @@ uniform vec3 soil_b : source_color = vec3(0.38, 0.19, 0.13);
 uniform vec3 dust_a : source_color = vec3(0.80, 0.78, 0.70);
 
 const float CELL = 0.25;
-const float HALF = 32.0;
+uniform float HALF = 32.0;
 
 varying float v_shade;
 varying float v_low;

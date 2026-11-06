@@ -3,9 +3,9 @@ extends RefCounted
 ## Keeps the ground's two textures in step with the simulation, redoing only the chunks that changed. The ground and grass
 ## shaders read those textures, so this is all it takes for holes to open and grass to vanish.
 
-const CELLS := DirtSim.CELLS
+var CELLS := DirtSim.CELLS
 const CHUNK := DirtSim.CHUNK
-const CHUNKS := DirtSim.CHUNKS
+var CHUNKS := DirtSim.CHUNKS
 const UPLOAD_EVERY := 1.0 / 30.0
 const RINGS := [[3, 0.45], [8, 1.2], [18, 2.4]]
 

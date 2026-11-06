@@ -21,10 +21,13 @@ uniform vec3 cut_a : source_color = vec3(0.37, 0.21, 0.14);
 uniform vec3 packed_a : source_color = vec3(0.35, 0.24, 0.17);
 uniform vec3 rock_a : source_color = vec3(0.56, 0.56, 0.55);
 uniform vec3 rock_b : source_color = vec3(0.50, 0.50, 0.50);
+// Ground pegged out to be brought to a height: R inside, G the height wanted, B and A how far above and below it may be.
+uniform sampler2D pad_tex : filter_nearest, repeat_disable;
+uniform bool has_pads = false;
 
 const float CELL = 0.25;
-const float HALF = 32.0;
-const int LAST = 256;
+uniform float HALF = 32.0;
+uniform int LAST = 256;
 const float CLOD_M = 3.6;       // metres one copy of the lumps' picture covers
 
 varying vec3 v_world;
@@ -113,6 +116,19 @@ void fragment() {
 
 	// Hollows go darker and warmer: this is what lets you judge a hole's depth.
 	col *= mix(vec3(0.42, 0.36, 0.40), vec3(1.0), m.a);
+
+	// Inside a pad: red where there's still dirt to take off, blue where it's to be filled, green where it's right, with a line
+	// every 10 cm of how far off it is, like a contour map.
+	if (has_pads && !outside) {
+		vec4 pad = texture(pad_tex, uv);
+		if (pad.r > 0.5) {
+			float off = v_world.y - pad.g;
+			vec3 tint = off > pad.b ? vec3(0.95, 0.22, 0.15) : (off < -pad.a ? vec3(0.18, 0.45, 1.0) : vec3(0.3, 0.95, 0.3));
+			float ring = abs(fract(off * 10.0 + 0.5) - 0.5);
+			float line = (1.0 - smoothstep(0.03, 0.06, ring)) * step(0.05, abs(off));
+			col = mix(col, tint, 0.4 + 0.35 * line);
+		}
+	}
 
 	ALBEDO = col;
 	NORMAL = (VIEW_MATRIX * vec4(n, 0.0)).xyz;

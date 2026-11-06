@@ -17,6 +17,9 @@ const DRAIN_S := 6.0            # seconds the flooded lawn takes to drain once t
 const SPREAD_MM := 50           # what spreading with the bucket leaves behind
 const PLAN_COVER := 0.3          # m: the planned trench floor is at least this far under the ground
 const PLAN_UNDER_WATER := 0.1    # m: and for a flood, this far under the water where it starts
+const HAND_TOL := 0.035          # m: a garden patch is done where it's this near level, above or below
+const DAM_TOL := 0.15            # m: a dam floor's done where it's this near
+const DAM_EDGE := 1.5            # m in from the pegs that counts as floor: the sides slope
 
 const LIST := [
 	{
@@ -103,6 +106,52 @@ const LIST := [
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
 		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and SPREAD along the trench to fill it",
+		"done": "GARDEN PATCH UNLOCKED",
+	},
+	{
+		# By hand: a sunken patch of lawn by the driveway, filled level with the garden soil heaped by the fence. No machine, just a
+		# shovel, a barrow and a rake.
+		"id": "garden",
+		"title": "Garden patch",
+		"kind": "hand",
+		"machine": "On foot",
+		"needs": "backyard",
+		"rect": Rect2(-1.5, 0.0, 3.0, 8.0),
+		"laid": true,
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"start": Vector2(11.5, 3.0),
+		"dir": Vector2(-1.0, 0.0),
+		"friend": Vector2(11.5, 5.0),
+		"patch": Vector2(5.0, 4.0),
+		"patch_r": 1.1,
+		"patch_mm": 100,
+		"fill": Vector2(10.0, 6.8),
+		"fill_m3": 0.45,
+		"barrow": Vector2(8.6, 5.6),
+		"barrow_dir": Vector2(-1.0, 0.0),
+		"barrow2": Vector2(8.6, 7.6),
+		"hint": "Grab the SHOVEL and fill the barrow from the dirt pile. GET IN the barrow, push it to the pegs, TIP it, then RAKE it level",
+		"done": "FARM DAM UNLOCKED",
+	},
+	{
+		# The big machines, out on a paddock: a farm dam dug out to its floor inside the pegs. The dirt can go anywhere outside it.
+		"id": "farm_dam",
+		"title": "Farm dam",
+		"kind": "dam",
+		"site": "big",
+		"machine": "Big dozer",
+		"needs": "garden",
+		"rect": Rect2(),
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"start": Vector2(-24.0, -6.0),
+		"dir": Vector2(1.0, 0.0),
+		"digger": Vector2(0.0, 8.0),
+		"digger_dir": Vector2(0.0, -1.0),
+		"dam": Rect2(-12.0, -13.0, 24.0, 14.0),
+		"dam_deep": 1.0,
+		"hint": "Dig the dam out inside the pegs: red's still to come out, green's at the floor. The dozer's CUT stops at the floor",
 		"done": "",
 	},
 ]
@@ -166,6 +215,8 @@ static func lay_out(sim: DirtSim, m: Dictionary) -> int:
 	var had := 0
 	if kind(m) == "flood":
 		_shape(sim, m)
+	elif kind(m) == "hand":
+		_sink_patch(sim, m)
 	if m.has("fill"):
 		sim.add_pile(m["fill"], m["fill_m3"], false)
 	if m["pile_m3"] > 0.0:
@@ -287,11 +338,15 @@ static func after(m: Dictionary) -> Dictionary:
 static func house_front(m: Dictionary) -> float:
 	return (m["rect"] as Rect2).position.y - 0.5
 
-static func road(_m: Dictionary) -> Rect2:
+static func road(m: Dictionary) -> Rect2:
+	if kind(m) == "dam":
+		return Rect2()
 	return Rect2(-80.0, 9.0, 160.0, 6.0)
 
 ## The ground kept flat for the job: the house, the driveway, the pile and the street out front, and a flood job's backyard.
 static func site(m: Dictionary) -> Rect2:
+	if kind(m) == "dam":
+		return (m["dam"] as Rect2).grow(7.0)
 	# A flood job has the backyard as well.
 	var top := house_front(m) - (23.5 if kind(m) == "flood" else 11.0)
 	return Rect2(-14.0, top, 28.0, 16.0 - top)
@@ -354,3 +409,48 @@ static func trench_plan(sim: DirtSim, m: Dictionary) -> Dictionary:
 	if kind(m) == "flood":
 		y0 = minf(y0, water_y(m) - PLAN_UNDER_WATER)
 	return {"from": from, "way": way, "length": length, "y0": y0}
+
+## The garden patch: a dip in the lawn, flat across the bottom and rising to the lawn at its edge.
+static func _sink_patch(sim: DirtSim, m: Dictionary) -> void:
+	var c: Vector2 = m["patch"]
+	var r: float = m["patch_r"]
+	var at := DirtSim.cell_of(c)
+	var reach := int(ceil(r / DirtSim.CELL_M)) + 1
+	for j in range(at.y - reach, at.y + reach + 1):
+		for i in range(at.x - reach, at.x + reach + 1):
+			var p := Vector2(i, j) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M
+			var d := p.distance_to(c) / r
+			if d >= 1.0:
+				continue
+			sim.bed[j * DirtSim.CELLS + i] -= int(m["patch_mm"] * (1.0 - pow(d, 4.0)))
+			sim.dirty[(j >> 4) * DirtSim.CHUNKS + (i >> 4)] = true
+	sim.mark_start_ground()
+
+## Whether the job's done by bringing a pegged-out patch to one height, scored by its Pad.
+static func is_pad_job(m: Dictionary) -> bool:
+	return kind(m) in ["hand", "dam"]
+
+## The patch of ground the job's to bring to height, pegged out.
+static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
+	if kind(m) == "hand":
+		var c: Vector2 = m["patch"]
+		var r: float = m["patch_r"]
+		var p := Pad.new(Pad.ring(c, Vector2(r, r), 14), sim.height_at(c + Vector2(r + 1.0, 0.0)), HAND_TOL, HAND_TOL)
+		p.title = String(m["title"]).to_upper()
+		return p
+	if kind(m) == "dam":
+		var r: Rect2 = m["dam"]
+		var level := sim.height_at(r.get_center()) - float(m["dam_deep"])
+		var p := Pad.new(Pad.box(r), level, DAM_TOL, DAM_TOL, DAM_EDGE)
+		p.title = String(m["title"]).to_upper()
+		return p
+	return null
+
+## Who's on the job, for the menu: one machine each, or what's on site to share.
+static func crew(m: Dictionary) -> String:
+	match kind(m):
+		"hand":
+			return "both on foot"
+		"dam":
+			return "big dozer and big excavator"
+	return "two %ss" % m["machine"]

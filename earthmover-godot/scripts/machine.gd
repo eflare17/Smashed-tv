@@ -6,7 +6,7 @@ const GRIP := 0.75              # of its weight the tracks can push with before 
 const LOOSE_GRIP := 0.55        # of its usual grip, on deep loose soil
 const ROLLING := 7000.0         # N, for a machine of ROLLING_MASS or more
 const ROLLING_MASS := 20000.0   # kg
-const AREA := 26.0              # how far from the middle a machine can go
+static var AREA := 26.0        # how far from the middle a machine can go: further on the big site
 const ENGINE := 150000.0        # N, the most the tracks are driven with
 const DRIVE_STIFF := 0.6        # m/s behind the speed asked for at which the tracks are pushing flat out
 const DRIVE_UP := 0.6           # a second: how fast the drive comes on. It's about 1.7 s to full, so it gets going like 20 tonnes
@@ -36,6 +36,10 @@ var drive := 0.0                # what the machine is actually doing about it
 var turn_cmd := 0.0
 
 var mass := 20000.0
+## A big machine is the same machine scaled up: everything in its own space is `size` times bigger in the world. Its weight and
+## engine go up with its volume, so it handles the same as the small one, only bigger in every way.
+var size := 1.0
+var engine := ENGINE
 var top_speed := 3.2
 var back_speed := 3.6
 var turn_rate := 0.8
@@ -189,7 +193,7 @@ func _settle(k: float) -> void:
 	# On a sharp crest the corners hang lower than the middle: it sits on the crest, or the crest comes up through it.
 	var rest := maxf((fl + fr + bl + br) * 0.25, maxf(_ground_at(0.0, -support_z), _ground_at(0.0, support_z)))
 	y_smooth = lerpf(y_smooth, rest, k)
-	transform = Transform3D(basis_smooth * tilt, Vector3(spot.x, y_smooth, spot.y))
+	transform = Transform3D(_sized(basis_smooth * tilt), Vector3(spot.x, y_smooth, spot.y))
 
 ## Drives it one tick. `drag` is what its work is holding it back with, in N; `ignore_loose` turns off the loose-soil penalty;
 ## `turn_share` is how much of its turning it has left.
@@ -202,13 +206,13 @@ func _drive(dt: float, drag: float, ignore_loose := false, turn_share := 1.0) ->
 	var mg := mass * 9.8
 	# Tracks hold worse on loose soil and on a slope, so a pile can't just be driven up.
 	var soft := 1.0 if ignore_loose else lerpf(1.0, LOOSE_GRIP, clampf(_loose_under() / 200.0, 0.0, 1.0))
-	var hold := GRIP * mg * transform.basis.y.y * soft
+	var hold := GRIP * mg * transform.basis.y.y / size * soft
 	# The tracks drive towards a speed, as hydraulic drives do. Even a timid push gets it going at a walk.
 	var how_much := absf(drive)
 	var target := signf(drive) * (0.35 * minf(how_much / 0.1, 1.0) + 0.65 * how_much) * (top_speed if drive >= 0.0 else back_speed)
-	var most := minf(ENGINE, hold)
-	var push := clampf((target - speed) * ENGINE / DRIVE_STIFF, -most, most)
-	var slope := -mg * transform.basis.x.y
+	var most := minf(engine, hold)
+	var push := clampf((target - speed) * engine / DRIVE_STIFF, -most, most)
+	var slope := -mg * transform.basis.x.y / size
 	var net := push + slope
 	# Rolling drag goes with weight, or a machine as light as a Dingo has less grip on loose soil than it takes to roll at all.
 	var resist := ROLLING * minf(mass / ROLLING_MASS, 1.0) + (drag if drive >= 0.0 else 0.0)
@@ -247,7 +251,7 @@ func _drive(dt: float, drag: float, ignore_loose := false, turn_share := 1.0) ->
 	var left := belt + turning * track_z
 	var right := belt - turning * track_z
 	if tracks:
-		tracks.update(left, right, dt)
+		tracks.update(left / size, right / size, dt)
 	if not wheels.is_empty():
 		_spin_wheels(left, right, dt)
 	_print_ruts(left, right, dt)
@@ -308,20 +312,20 @@ func net_take(s: PackedFloat32Array) -> void:
 		_net_fresh = false
 		spot = _net_spot
 		angle = _net_angle
-		transform = Transform3D(Basis(_net_quat), Vector3(spot.x, _net_y, spot.y))
+		transform = Transform3D(_sized(Basis(_net_quat)), Vector3(spot.x, _net_y, spot.y))
 
 func net_follow(dt: float) -> void:
 	var k := minf(dt * 14.0, 1.0)
 	spot = spot.lerp(_net_spot, k)
 	angle = lerp_angle(angle, _net_angle, k)
 	var place := position.lerp(Vector3(spot.x, _net_y, spot.y), k)
-	transform = Transform3D(Basis(transform.basis.orthonormalized().get_rotation_quaternion().slerp(_net_quat, k)), Vector3(spot.x, place.y, spot.y))
+	transform = Transform3D(_sized(Basis(transform.basis.orthonormalized().get_rotation_quaternion().slerp(_net_quat, k))), Vector3(spot.x, place.y, spot.y))
 	var belt := drive * top_speed * 0.8 if slipping else speed
 	var turning := turn_cmd * turn_rate
 	var left := belt + turning * track_z
 	var right := belt - turning * track_z
 	if tracks:
-		tracks.update(left, right, dt)
+		tracks.update(left / size, right / size, dt)
 	if not wheels.is_empty():
 		_spin_wheels(left, right, dt)
 	if absf(speed) > 0.05 or absf(turn_cmd) > 0.1:
@@ -407,3 +411,11 @@ func side_point(w: Vector3) -> Vector3:
 ## A point in that plane, in the world.
 func side_world(p: Vector2) -> Vector3:
 	return transform * Vector3(p.x, p.y, 0.0)
+
+## A rotation, made `size` times bigger.
+func _sized(b: Basis) -> Basis:
+	return b if size == 1.0 else b * Basis.from_scale(Vector3.ONE * size)
+
+## Makes it a big one: called before setup, which sizes everything from it.
+func make_big(k: float) -> void:
+	size = k

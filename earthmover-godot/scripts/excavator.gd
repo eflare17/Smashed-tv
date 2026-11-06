@@ -59,6 +59,8 @@ var bucket_dust := 0
 var _pour_dust := 0
 var _mat: Material
 var stopped_by_rock := false
+## The pegged-out pad it's digging, if any: the readout says how much more there is to take out where the teeth are.
+var pad: Pad
 
 var _boom_a := 0.0
 var _stick_a := 0.0
@@ -86,21 +88,23 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	view = v
 	spot = at
 	angle = atan2(-dir.y, dir.x)
-	machine_name = "Excavator"
+	machine_name = "Excavator" if size == 1.0 else "Big excavator"
 	hint = "Reach OUT, go DOWN, pull IN through the dirt, then UP, SWING and DUMP"
-	view_dist = 16.0
+	view_dist = 16.0 * (sqrt(size) * 1.15 if size > 1.0 else 1.0)
 	view_pitch = 27.0
-	fp_back = 2.4
-	fp_front = 2.4
-	fp_r = 1.6
-	mass = MASS
+	fp_back = 2.4 * size
+	fp_front = 2.4 * size
+	fp_r = 1.6 * size
+	mass = MASS * size * size * size
+	engine = ENGINE * size * size * size
+	body_reach *= size
 	top_speed = TOP_SPEED
 	back_speed = BACK_SPEED
 	turn_rate = TURN
-	support_x = 1.9
-	support_z = 1.25
-	track_z = 1.25
-	track_rear = 1.8
+	support_x = 1.9 * size
+	support_z = 1.25 * size
+	track_z = 1.25 * size
+	track_rear = 1.8 * size
 	_speed_cap = TOP_SPEED
 	_rng.seed = 21
 	var carriage := MeshKit.new()
@@ -160,9 +164,9 @@ func view_forward() -> Vector2:
 ## In dig mode the camera looks at the work, ahead of the machine, rather than at the machine.
 func camera_aim() -> Vector3:
 	if not dig_mode:
-		return position + Vector3(0.0, 1.8, 0.0)
+		return position + Vector3(0.0, 1.8 * size, 0.0)
 	var f := house_forward()
-	return position + Vector3(f.x * 2.5, 1.4, f.y * 2.5)
+	return position + Vector3(f.x * 2.5, 1.4, f.y * 2.5) * size
 
 func exhaust_point() -> Vector3:
 	return _house.to_global(Vector3(-1.72, 3.05, 0.8))
@@ -190,13 +194,25 @@ func gauge_word() -> Array:
 	if on_rock:
 		return ["ROCK: CAN'T DIG", Color("#ff9a4a")]
 	var word := "BUCKET %.1f m3" % DirtSim.to_m3(bucket_mm)
+	var at := Vector2(teeth.x, teeth.z)
+	if pad and pad.inside(at):
+		var left := sim.height_at(at) - pad.level
+		if left > pad.tol_up:
+			return [word + "   %.1f m TO THE FLOOR" % left, Color("#ff9a4a")]
+		if left < -pad.tol_down:
+			return [word + "   TOO DEEP %.1f m" % -left, Color("#7ab8ff")]
+		return [word + "   AT THE FLOOR", Color("#a8f07a")]
 	var deep := teeth_depth()
 	if deep > 0.03:
 		return [word + "   IN %.1f m" % deep, Color("#ff9a4a")]
 	return [word, Color("#a8f07a")]
 
 func fill() -> float:
-	return float(bucket_mm) / CAPACITY
+	return float(bucket_mm) / capacity()
+
+## What its bucket holds, heaped: a big one's bucket is bigger every way.
+func capacity() -> int:
+	return int(CAPACITY * size * size * size)
 
 ## How far below the ground the teeth are, in m.
 func teeth_depth() -> float:
@@ -341,7 +357,7 @@ func _move_arm(dt: float) -> void:
 	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt
 	# Pushing down, the teeth only go so far into the ground before there's no pushing any further.
 	var deep := teeth_depth()
-	if deep > STAB_MOST and _v_raise < 0.0:
+	if deep > STAB_MOST * size and _v_raise < 0.0:
 		want.y = wrist.y
 	_solve(want)
 	var spin := _v_curl * CURL_SPEED
@@ -392,13 +408,14 @@ func _dig(p0: Vector3, p1: Vector3, dt: float) -> void:
 	var inward := -path.dot(in_house)
 	var worked := 0.0
 	if inward > 0.0002 and curl < CURL_MAX - 0.05:
-		var room := CAPACITY - bucket_mm
+		var room := capacity() - bucket_mm
 		var along := int(dist / 0.12) + 1
 		var share := clampf(dist / SWEEP, 0.0, 1.0)
+		var across := maxi(6, int(ceil(BUCKET_HALF * 2.0 * size / 0.2)) + 1)
 		for k in along + 1:
 			var p := p0.lerp(p1, float(k) / along)
-			for w in 6:
-				var offset := lerpf(-BUCKET_HALF, BUCKET_HALF, w / 5.0)
+			for w in across:
+				var offset := lerpf(-BUCKET_HALF, BUCKET_HALF, w / float(across - 1)) * size
 				var at := DirtSim.cell_of(Vector2(p.x, p.z) + side * offset)
 				if at.x < 1 or at.y < 1 or at.x >= DirtSim.CELLS - 1 or at.y >= DirtSim.CELLS - 1:
 					continue
@@ -410,7 +427,7 @@ func _dig(p0: Vector3, p1: Vector3, dt: float) -> void:
 				if room <= 0:
 					worked += 200.0
 					continue
-				var r: Array = sim.bite(at.x, at.y, mini(ceili(high * share), room), FIRM_RATE)
+				var r: Array = sim.bite(at.x, at.y, mini(ceili(high * share), room), ceili(FIRM_RATE * size))
 				room -= r[0]
 				bucket_mm += r[0]
 				bucket_dust += r[2]
@@ -419,20 +436,22 @@ func _dig(p0: Vector3, p1: Vector3, dt: float) -> void:
 	elif teeth_depth() > 0.05 and (absf(_v_reach) > 0.05 or absf(_v_raise) > 0.05):
 		worked = 300.0
 	moved_m3 += DirtSim.to_m3(moved_tick)
-	bog = lerpf(bog, clampf(worked / BOG_AT, 0.0, 1.0), minf(dt * 10.0, 1.0))
+	bog = lerpf(bog, clampf(worked / (BOG_AT * size * size), 0.0, 1.0), minf(dt * 10.0, 1.0))
 
 ## How much the bucket can hold, the way it's tilted.
 func _holds() -> int:
-	return int(CAPACITY * clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0))
+	return int(capacity() * clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0))
 
 ## What it can't hold falls out, in real chunks of soil. A heaped bucket sheds some when it's thrown about.
 func _pour(dt: float) -> void:
+	var heaped := int(HEAPED * size * size * size)
+	var chunk := int(CHUNK * size * size)
 	var over := maxi(bucket_mm - _holds(), 0)
-	var out := mini(over, ceili(POUR_RATE * dt))
-	if bucket_mm > HEAPED and over == 0:
+	var out := mini(over, ceili(POUR_RATE * size * size * size * dt))
+	if bucket_mm > heaped and over == 0:
 		var fast := absf(_v_swing) + absf(_v_reach) + absf(_v_raise)
-		out = mini(bucket_mm - HEAPED, ceili(fast * 500.0 * dt))
-	pouring = lerpf(pouring, clampf(float(out) / (POUR_RATE * dt), 0.0, 1.0), minf(dt * 10.0, 1.0))
+		out = mini(bucket_mm - heaped, ceili(fast * 500.0 * dt))
+	pouring = lerpf(pouring, clampf(float(out) / (POUR_RATE * size * size * size * dt), 0.0, 1.0), minf(dt * 10.0, 1.0))
 	if out <= 0:
 		return
 	var out_dust := bucket_dust * out / bucket_mm
@@ -443,8 +462,8 @@ func _pour(dt: float) -> void:
 	var side3 := (transform.basis * Basis(Vector3.UP, swing)) * Vector3.BACK
 	var pin_world := transform * (Basis(Vector3.UP, swing) * Vector3(wrist.x, wrist.y, ARM_Z))
 	pour_spot = teeth.lerp(pin_world, 0.25)
-	while _pour_store >= CHUNK or (bucket_mm == 0 and _pour_store > 0):
-		var amt := mini(CHUNK, _pour_store)
+	while _pour_store >= chunk or (bucket_mm == 0 and _pour_store > 0):
+		var amt := mini(chunk, _pour_store)
 		var chunk_dust := _pour_dust * amt / _pour_store
 		_pour_store -= amt
 		_pour_dust -= chunk_dust

@@ -3,10 +3,10 @@ extends RefCounted
 ## The look test's made-up dirt grid: a pit, a dumped pile and a scraped dozer run, as the real simulation's grid would
 ## hold them (a height and a set of material amounts at each corner). Nothing moves yet. These numbers only set the scene.
 
-const N := 256                  # cells a side
+static var N := 256             # cells a side: DirtSim.set_world() changes these three for the big site
 const CELL := 0.25              # metres
-const HALF := 32.0              # metres from the middle to the edge
-const SIDE := N + 1             # corners a side
+static var HALF := 32.0         # metres from the middle to the edge
+static var SIDE := 257          # corners a side
 
 const PIT := Vector2(-9.5, -4.0)
 const PIT_R := Vector2(11.0, 8.0)
@@ -27,7 +27,8 @@ static func at(i: int, j: int) -> int:
 	return j * SIDE + i
 
 ## With a site given it's a plain block for a job: flat there, a painted driveway, a sealed road, and none of the pit and pile.
-func _init(site := Rect2(), paint := Rect2(), road := Rect2()) -> void:
+## With `paddock`, it's the big site: open rolling ground with no pit or pile, and flat where `site` is given.
+func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false) -> void:
 	var lumps := FastNoiseLite.new()
 	lumps.seed = 7
 	lumps.frequency = 0.035
@@ -52,8 +53,17 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2()) -> void:
 		for i in SIDE:
 			var p := Vector2(-HALF + i * CELL, -HALF + j * CELL)
 			var edge: float = maxf(abs(p.x), abs(p.y))
-			var h := lumps.get_noise_2dv(p) * 1.5 * (1.0 - smoothstep(24.0, 31.0, edge))
+			var fade := 1.0 - smoothstep(HALF - 8.0, HALF - 1.0, edge)
+			var h := lumps.get_noise_2dv(p) * 1.5 * fade
 			var ragged := rag.get_noise_2dv(p)
+			if paddock:
+				# Long low rises, a paddock's worth, flat where the job is.
+				var hp := (lumps.get_noise_2dv(p * 0.55) * 2.6 + 0.45 * sin(p.x * 0.07 + 0.6) * cos(p.y * 0.05)) * fade
+				if site.has_area():
+					var off_p := Vector2(maxf(maxf(site.position.x - p.x, p.x - site.end.x), 0.0), maxf(maxf(site.position.y - p.y, p.y - site.end.y), 0.0)).length()
+					hp *= smoothstep(2.0, 14.0, off_p)
+				heights[at(i, j)] = hp
+				continue
 			if site.has_area():
 				var off := Vector2(maxf(maxf(site.position.x - p.x, p.x - site.end.x), 0.0), maxf(maxf(site.position.y - p.y, p.y - site.end.y), 0.0)).length()
 				var at_n := at(i, j)
@@ -203,6 +213,14 @@ static func truck_spot() -> Vector2:
 
 static func bobcat_spot() -> Vector2:
 	return Vector2(8.5, -1.5)
+
+## The wheelbarrow, by the cracker dust, out of the dozer's way.
+static func barrow_spot() -> Vector2:
+	return Vector2(18.0, -9.5)
+
+## The scout ute, parked on the open side of the pit.
+static func ute_spot() -> Vector2:
+	return Vector2(-18.0, 17.0)
 
 ## The Dingo starts on open firm ground, for trenching.
 static func dingo_spot() -> Vector2:

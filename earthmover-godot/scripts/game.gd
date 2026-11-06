@@ -37,18 +37,54 @@ const POUR_EACH := 320          # mm on one cell a chunk carries (0.02 m3)
 const POUR_HIGH := 5.0
 const SCOOP_RATE := 30          # mm a tick at the middle
 const TOOL_R := 1.6
+const BIG_HALF := 48.0             # m from the middle to the edge of the big site
+const BIG_HEAPS := [[Vector2(16.0, -14.0), 70.0], [Vector2(-18.0, 18.0), 45.0]]   # stockpiles to push about there, m3
+const BIG := 1.9                     # how much bigger the big machines are, every way
+const BIG_DOZER_AT := Vector2(-24.0, -4.0)
+const BIG_DIGGER_AT := Vector2(-8.0, 15.0)
+const BIG_UTE_AT := Vector2(-30.0, -20.0)
+const MOST_PEGS := 12
+const UTE_PAD_TOL := 0.05           # m: a pegged pad is done where it's this near its level
 const GET_IN_GAP := 0.9           # m between him and a machine that's near enough to climb into
 const ROOMY := 1.2               # m clear round him that's plenty, stepping off: past this, the usual side will do
 
 var ground: GroundData
-var sim := DirtSim.new()
+var sim: DirtSim
+var big_site := false             # the big machines' site: a paddock half as big again each way
 var view_data: GroundView
 var dozer: Dozer
 var digger: Excavator
 var truck: Truck
 var bobcat: Loader
 var dingo: Loader
+var barrow: Barrow
+var ute: Ute
+var peg_spots := PackedVector2Array()   # the ute's pegs going in, before they're closed up into a pad
+var peg_version := 0                    # goes up each time the pegs change, so a friend's game hears of it
+var ute_pad: Pad                        # the pad the ute pegged out, in free play
+var ute_pad_done := 0.0
+var _pad_clock := 0.0
+var _open_pegs: MeshInstance3D
+var peg_button: TouchScreenButton
+var peg_word: Label
+var peg2_button: TouchScreenButton
+var peg2_word: Label
+var _ute_ui := ""
 var machines: Array[Machine] = []
+var pads: Array[Pad] = []          # patches of ground pegged out to be brought to a height, tinted to show what's left
+var job_pad: Pad                  # the one a job's scored on
+var pad_done := 0.0
+var pad_img: Image
+var pad_tex: ImageTexture
+var _pad_marks: Dictionary = {}   # pad -> its pegs and string
+var ground_mat: ShaderMaterial
+var shovel_button: TouchScreenButton
+var shovel_word: Label
+var rake_button: TouchScreenButton
+var rake_word: Label
+var spade_button: TouchScreenButton
+var spade_word: Label
+var _tools_ui := ""
 var workers: Array[Worker] = []   # the drivers on foot, one for each player: hidden while they're in a machine
 var _walk_from: Machine
 var _walk_spot := Vector2.ZERO
@@ -218,7 +254,12 @@ func _ready() -> void:
 	rng.seed = 77
 	_read_args()
 	_choose_mission()
-	if mission.is_empty():
+	big_site = mission.get("site", "") == "big" if not mission.is_empty() else (Engine.has_meta("big_site") or start_machine.begins_with("Big"))
+	DirtSim.set_world(BIG_HALF if big_site else 32.0)
+	sim = DirtSim.new()
+	if big_site:
+		ground = GroundData.new(Mission.site(mission) if not mission.is_empty() else Rect2(), Rect2(), Rect2(), true)
+	elif mission.is_empty():
 		ground = GroundData.new()
 	else:
 		ground = GroundData.new(Mission.site(mission), mission["rect"], Mission.road(mission))
@@ -227,7 +268,10 @@ func _ready() -> void:
 		grass = "Low"
 	var t0 := Time.get_ticks_msec()
 	ground.fill_sim(sim)
-	if mission.is_empty():
+	if big_site and mission.is_empty():
+		for heap: Array in BIG_HEAPS:
+			sim.add_pile(heap[0], heap[1], false)
+	elif mission.is_empty():
 		sim.add_dust_pile(FREE_DUST, FREE_DUST_M3)
 	else:
 		Mission.lay_out(sim, mission)
@@ -373,6 +417,8 @@ func _ground_material() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://shaders/ground.gdshader")
 	m.set_shader_parameter("height_tex", height_tex)
+	m.set_shader_parameter("HALF", GroundData.HALF)
+	m.set_shader_parameter("LAST", GroundData.N)
 	m.set_shader_parameter("data_tex", data_tex)
 	m.set_shader_parameter("noise_tex", noise_tex)
 	m.set_shader_parameter("dust_tex", view_data.dust_tex)
@@ -381,6 +427,10 @@ func _ground_material() -> ShaderMaterial:
 
 func _build_ground() -> void:
 	var mat := _ground_material()
+	ground_mat = mat
+	pad_img = Image.create(DirtSim.CELLS, DirtSim.CELLS, false, Image.FORMAT_RGBAF)
+	pad_tex = ImageTexture.create_from_image(pad_img)
+	mat.set_shader_parameter("pad_tex", pad_tex)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2.ONE * GroundData.HALF * 2.0
 	plane.subdivide_width = GroundData.N - 1
@@ -388,13 +438,14 @@ func _build_ground() -> void:
 	plane.material = mat
 	var patch := MeshInstance3D.new()
 	patch.mesh = plane
-	patch.custom_aabb = AABB(Vector3(-32, -8, -32), Vector3(64, 18, 64))
+	var half := GroundData.HALF
+	patch.custom_aabb = AABB(Vector3(-half, -8, -half), Vector3(half * 2.0, 18, half * 2.0))
 	add_child(patch)
 	# Flat grass round the patch, out to the horizon.
 	mat = mat.duplicate()
 	mat.set_shader_parameter("outside", true)
 	const OUT := 600.0
-	for r: Rect2 in [Rect2(-OUT, -OUT, OUT * 2.0, OUT - 32.0), Rect2(-OUT, 32.0, OUT * 2.0, OUT - 32.0), Rect2(-OUT, -32.0, OUT - 32.0, 64.0), Rect2(32.0, -32.0, OUT - 32.0, 64.0)]:
+	for r: Rect2 in [Rect2(-OUT, -OUT, OUT * 2.0, OUT - half), Rect2(-OUT, half, OUT * 2.0, OUT - half), Rect2(-OUT, -half, OUT - half, half * 2.0), Rect2(half, -half, OUT - half, half * 2.0)]:
 		var p := PlaneMesh.new()
 		p.size = r.size
 		p.material = mat
@@ -421,6 +472,7 @@ func _build_grass() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/grass.gdshader")
 	mat.set_shader_parameter("height_tex", height_tex)
+	mat.set_shader_parameter("HALF", GroundData.HALF)
 	mat.set_shader_parameter("data_tex", data_tex)
 	mat.set_shader_parameter("noise_tex", noise_tex)
 	mat.render_priority = 1
@@ -483,6 +535,7 @@ func _build_clods() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/clod.gdshader")
 	mat.set_shader_parameter("height_tex", height_tex)
+	mat.set_shader_parameter("HALF", GroundData.HALF)
 	mat.set_shader_parameter("data_tex", data_tex)
 	mat.set_shader_parameter("dust_tex", view_data.dust_tex)
 	mat.render_priority = 1
@@ -543,14 +596,28 @@ func _build_props() -> void:
 	prop_mat = ShaderMaterial.new()
 	prop_mat.shader = preload("res://shaders/prop.gdshader")
 
+	# On the big site the dozer and excavator are the big ones: everything that speaks to `dozer` and `digger` works the same.
+	var dz_at := GroundData.dozer_spot()
+	var dz_dir := GroundData.dozer_dir()
+	var dg_at := GroundData.digger_spot()
+	var dg_dir := (GroundData.PILE - GroundData.digger_spot()).normalized()
+	if big_site:
+		dz_at = mission.get("start", BIG_DOZER_AT)
+		dz_dir = mission.get("dir", Vector2(1.0, 0.0))
+		dg_at = mission.get("digger", BIG_DIGGER_AT)
+		dg_dir = mission.get("digger_dir", Vector2(-1.0, 0.2).normalized())
 	dozer = Dozer.new()
+	if big_site:
+		dozer.make_big(BIG)
 	add_child(dozer)
-	dozer.setup(sim, view_data, prop_mat, GroundData.dozer_spot(), GroundData.dozer_dir())
+	dozer.setup(sim, view_data, prop_mat, dz_at, dz_dir)
 	if not is_nan(start_lift):
 		dozer.lift = start_lift
 	digger = Excavator.new()
+	if big_site:
+		digger.make_big(BIG)
 	add_child(digger)
-	digger.setup(sim, view_data, prop_mat, GroundData.digger_spot(), (GroundData.PILE - GroundData.digger_spot()).normalized())
+	digger.setup(sim, view_data, prop_mat, dg_at, dg_dir)
 	truck = Truck.new()
 	add_child(truck)
 	truck.setup(sim, view_data, prop_mat, GroundData.truck_spot(), Vector2(1.0, 0.0))
@@ -564,27 +631,60 @@ func _build_props() -> void:
 	add_child(pipes)
 	pipes.setup(prop_mat)
 	dingo.pipes = pipes
-	machines = [dozer, digger, truck, bobcat, dingo]
+	barrow = Barrow.new()
+	add_child(barrow)
+	barrow.setup(sim, view_data, prop_mat, GroundData.barrow_spot(), Vector2(0.0, 1.0))
+	ute = Ute.new()
+	add_child(ute)
+	ute.setup(sim, view_data, prop_mat, BIG_UTE_AT if big_site else GroundData.ute_spot(), Vector2(1.0, 0.25).normalized() if big_site else Vector2(1.0, 0.0))
+	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute]
 	active = dozer
 	for m: Machine in machines:
 		if m.machine_name == start_machine:
 			active = m
-	if not mission.is_empty():
-		# Only the job's machine is on site. The others are kept, out of sight and doing nothing, as so much here speaks to them by name.
-		sim.catchers.erase(truck)
+	var hand := Mission.kind(mission) == "hand"
+	if big_site:
+		# The big machines only. The rest are kept out of sight, as for a job.
+		var on_site: Array[Machine] = [dozer, digger, ute]
 		for m: Machine in machines:
-			m.visible = m == active
-		machines = [active]
-		(active as Loader).reposition(mission["start"], mission["dir"])
-		active.hint = mission["hint"]
+			m.visible = on_site.has(m)
+			if not on_site.has(m):
+				sim.catchers.erase(m)
+		machines = on_site
+		if not on_site.has(active):
+			active = dozer
+		if not mission.is_empty():
+			dozer.hint = mission["hint"]
+			digger.hint = mission["hint"]
+	elif not mission.is_empty():
+		# Only the job's machines are on site. The others are kept, out of sight and doing nothing, as so much here speaks to them by name.
+		var on_site: Array[Machine] = []
+		if hand:
+			barrow.reposition(mission["barrow"], mission["barrow_dir"])
+			on_site.append(barrow)
+		else:
+			on_site.append(active)
+			(active as Loader).reposition(mission["start"], mission["dir"])
+			active.hint = mission["hint"]
+		for m: Machine in machines:
+			m.visible = on_site.has(m)
+			if not on_site.has(m):
+				sim.catchers.erase(m)
+		machines = on_site
 		# Playing with a friend, the friend gets the same machine, parked on the side away from the driveway.
 		if Engine.has_meta("online_keep") or online_arg != "":
-			var second := Loader.new()
-			add_child(second)
-			second.setup(sim, view_data, prop_mat, mission.get("friend", mission["start"] + Vector2(-3.0, 0.0)), mission["dir"], active.machine_name)
-			second.pipes = pipes
-			second.hint = mission["hint"]
-			machines.append(second)
+			if hand:
+				var spare := Barrow.new()
+				add_child(spare)
+				spare.setup(sim, view_data, prop_mat, mission["barrow2"], mission["barrow_dir"])
+				machines.append(spare)
+			else:
+				var second := Loader.new()
+				add_child(second)
+				second.setup(sim, view_data, prop_mat, mission.get("friend", mission["start"] + Vector2(-3.0, 0.0)), mission["dir"], active.machine_name)
+				second.pipes = pipes
+				second.hint = mission["hint"]
+				machines.append(second)
 	# One for each player, on foot. In the list last, so every machine keeps its number, and parked out of sight till wanted.
 	for k in 2:
 		var w := Worker.new()
@@ -592,6 +692,13 @@ func _build_props() -> void:
 		w.setup(sim, view_data, prop_mat, active.spot, active.forward())
 		workers.append(w)
 		machines.append(w)
+	# A job done by hand starts on foot.
+	if hand:
+		workers[0].step_off(mission["start"], atan2(-mission["dir"].y, mission["dir"].x))
+		workers[0].hint = mission["hint"]
+		active = workers[0]
+		if Engine.has_meta("online_keep") or online_arg != "":
+			workers[1].spot = mission["friend"]
 	chase_yaw = _behind_yaw()
 
 	var tr := RandomNumberGenerator.new()
@@ -608,9 +715,10 @@ func _build_props() -> void:
 	# A treeline in the distance, plainer, so the horizon isn't empty.
 	for i in 170:
 		var a := tr.randf() * TAU
-		var d := tr.randf_range(42.0, 150.0)
-		if a > 0.2 and a < 1.25 and d < 95.0:
-			d = 95.0 + tr.randf() * 30.0
+		var far_off := GroundData.HALF - 32.0
+		var d := tr.randf_range(42.0, 150.0) + far_off
+		if a > 0.2 and a < 1.25 and d < 95.0 + far_off:
+			d = 95.0 + far_off + tr.randf() * 30.0
 		Props.pine(kit, Vector3(cos(a) * d, 0.0, sin(a) * d), tr.randf_range(8.0, 15.0), tr, 2, 6)
 	var far := MeshInstance3D.new()
 	far.mesh = kit.mesh()
@@ -626,17 +734,19 @@ func _build_props() -> void:
 func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	if not mission.is_empty():
 		return _job_tree_spots(tr)
+	if big_site:
+		return _big_tree_spots(tr)
 	var start := GroundData.dozer_spot()
 	var spots: Array[Vector2] = [start + GroundData.dozer_dir() * 8.0]
 	var tries := 0
 	while spots.size() < 20 and tries < 800:
 		tries += 1
-		var p := Vector2(tr.randf_range(-28.0, 28.0), tr.randf_range(-28.0, 28.0))
+		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
 		if ((p - GroundData.PIT) / GroundData.PIT_R).length() < 1.15:
 			continue
 		if p.distance_to(GroundData.PILE) < GroundData.PILE_R + 1.5:
 			continue
-		if p.distance_to(FREE_DUST) < 5.0:
+		if p.distance_to(FREE_DUST) < 5.0 or p.distance_to(GroundData.barrow_spot()) < 3.5 or p.distance_to(GroundData.ute_spot()) < 6.0:
 			continue
 		if p.distance_to(GroundData.digger_spot()) < 5.0 or p.distance_to(GroundData.truck_spot()) < 6.0 or p.distance_to(GroundData.bobcat_spot()) < 4.0:
 			continue
@@ -654,6 +764,22 @@ func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 			spots.append(p)
 	return spots
 
+## The big site's trees: scattered over the paddock, clear of the heaps and where the machines start.
+func _big_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
+	var spots: Array[Vector2] = []
+	var tries := 0
+	while spots.size() < 24 and tries < 900:
+		tries += 1
+		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
+		var clear := p.distance_to(BIG_DOZER_AT) > 12.0 and p.distance_to(BIG_DIGGER_AT) > 12.0 and p.distance_to(BIG_UTE_AT) > 8.0 and p.length() > 10.0
+		for heap: Array in BIG_HEAPS:
+			clear = clear and p.distance_to(heap[0]) > 10.0
+		for other: Vector2 in spots:
+			clear = clear and other.distance_to(p) > 8.0
+		if clear:
+			spots.append(p)
+	return spots
+
 ## A few trees round the block, clear of the job and the road.
 func _job_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	var spots: Array[Vector2] = []
@@ -662,7 +788,7 @@ func _job_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	var tries := 0
 	while spots.size() < 12 and tries < 400:
 		tries += 1
-		var p := Vector2(tr.randf_range(-28.0, 28.0), tr.randf_range(-28.0, 28.0))
+		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
 		if keep.has_point(p) or road.has_point(p):
 			continue
 		var crowded := false
@@ -676,6 +802,9 @@ func _job_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 
 ## The job's house at the top of the driveway, and the pegs and string down each side of it.
 func _add_site(kit: MeshKit) -> void:
+	if Mission.kind(mission) == "dam":
+		_add_dam_site(kit)
+		return
 	var r: Rect2 = mission["rect"]
 	var peg := Props.c("#efe8d8")
 	var line := Props.c("#ff4fa3")
@@ -706,18 +835,99 @@ func _add_site(kit: MeshKit) -> void:
 	house.material_override = prop_mat
 	add_child(house)
 	obstacles.append([Vector2(-WIDE * 0.5 + DEEP * 0.5, mid), Vector2(WIDE * 0.5 - DEEP * 0.5, mid), DEEP * 0.5])
-	if Mission.kind(mission) != "driveway":
+	var piped := Mission.kind(mission) in ["pipe", "flood"]
+	if piped:
 		_add_drain(kit)
 		_add_flood()
 	if Mission.kind(mission) == "flood":
 		_add_back_fence(kit)
 		_add_backyard_things(kit)
-	if Mission.kind(mission) != "driveway":
+	if Mission.is_pad_job(mission):
+		job_pad = Mission.pad_for(sim, mission)
+		_add_pad(job_pad)
+		# A garden bed's bare dirt, not lawn.
+		if Mission.kind(mission) == "hand":
+			for n: int in job_pad.shown:
+				view_data.wear(n % DirtSim.CELLS, n / DirtSim.CELLS)
+	if piped:
 		_add_end_marks()
 		for m: Machine in machines:
 			if m is Loader:
 				(m as Loader).grade_toward = mission["drain"]
 				(m as Loader).plan = Mission.trench_plan(sim, mission)
+
+## The farm dam: pegged out on the flat of the paddock, a tank and a shed beside it so it reads as a farm.
+func _add_dam_site(kit: MeshKit) -> void:
+	job_pad = Mission.pad_for(sim, mission)
+	_add_pad(job_pad)
+	dozer.pad = job_pad
+	digger.pad = job_pad
+	var r: Rect2 = mission["dam"]
+	var tank := Vector2(r.end.x + 9.0, r.position.y - 2.0)
+	var g := sim.height_at(tank)
+	kit.cone(Vector3(tank.x, g, tank.y), Vector3(tank.x, g + 2.6, tank.y), 1.8, 1.8, 14, Props.c("#b9c2c6"))
+	kit.cone(Vector3(tank.x, g + 2.6, tank.y), Vector3(tank.x, g + 3.1, tank.y), 1.85, 0.2, 14, Props.c("#9aa4a8"))
+	obstacles.append([tank, tank, 1.9])
+	var shed := Vector2(r.position.x - 12.0, r.end.y + 8.0)
+	g = sim.height_at(shed)
+	var sk := MeshKit.new()
+	sk.box(Vector3(0.0, 1.6, 0.0), Vector3(8.0, 3.2, 6.0), Props.c("#c9cdd0"))
+	sk.prism([Vector2(-4.4, 3.2), Vector2(4.4, 3.2), Vector2(0.0, 4.6)], -3.2, 3.2, Props.c("#a8553a"))
+	sk.box(Vector3(0.0, 1.3, 3.03), Vector3(3.6, 2.6, 0.08), Props.c("#8a8f94"))
+	var built := MeshInstance3D.new()
+	built.mesh = sk.mesh()
+	built.material_override = prop_mat
+	built.position = Vector3(shed.x, g - 0.1, shed.y)
+	add_child(built)
+	house = built
+	obstacles.append([shed + Vector2(-1.0, 0.0), shed + Vector2(1.0, 0.0), 3.0])
+
+## ---------------------------------------------------------------- pads: ground pegged out to be brought to a height
+
+## Pegs it out, with string round it, and tints the ground inside.
+func _add_pad(p: Pad) -> void:
+	pads.append(p)
+	var kit := MeshKit.new()
+	var deep := p.level < sim.height_at(p.middle()) - 0.25
+	var tops := PackedVector3Array()
+	# A peg at every corner, or every other one round a curve.
+	var every := 2 if p.outline.size() > 8 else 1
+	for k in p.outline.size():
+		var at := p.outline[k]
+		var g := sim.height_at(at)
+		if k % every == 0:
+			Props.survey_peg(kit, Vector3(at.x, g, at.y))
+		# The string's at the height wanted, so it shows where the ground's to come to. Below ground, as for a dam, it just runs round.
+		tops.append(Vector3(at.x, g + 0.3 if deep else p.level + 0.07, at.y))
+	for k in tops.size():
+		var a := tops[k]
+		var b := tops[(k + 1) % tops.size()]
+		var along := b - a
+		var flat := Vector2(along.x, along.z)
+		var tilt := Basis(Vector3.UP, atan2(-flat.y, flat.x)) * Basis(Vector3.BACK, atan2(along.y, flat.length()))
+		kit.box((a + b) * 0.5, Vector3(along.length(), 0.018, 0.018), Props.c("#ff4fa3"), tilt)
+	var marks := MeshInstance3D.new()
+	marks.mesh = kit.mesh()
+	marks.material_override = prop_mat
+	add_child(marks)
+	_pad_marks[p] = marks
+	_refresh_pads()
+
+func _remove_pad(p: Pad) -> void:
+	pads.erase(p)
+	if _pad_marks.has(p):
+		(_pad_marks[p] as Node).queue_free()
+		_pad_marks.erase(p)
+	_refresh_pads()
+
+## The tint's texture: for each cell inside a pad, the height wanted and how far off it may be.
+func _refresh_pads() -> void:
+	pad_img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	for p: Pad in pads:
+		for n: int in p.shown:
+			pad_img.set_pixel(n % DirtSim.CELLS, n / DirtSim.CELLS, Color(1.0, p.level, p.tol_up, p.tol_down))
+	pad_tex.update(pad_img)
+	ground_mat.set_shader_parameter("has_pads", not pads.is_empty())
 
 ## A gutter along the front of the roof and a downpipe down the wall to the ground, where the trench is to start.
 func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
@@ -875,7 +1085,7 @@ func _wave_end_marks(delta: float) -> void:
 
 ## The look round: the camera goes to where the pipe starts, then to the drain, then back to the machine. Any tap ends it.
 func _start_tour() -> void:
-	if mission.is_empty() or Mission.kind(mission) == "driveway" or demo != "" or shot_path != "" or camera == null:
+	if mission.is_empty() or not Mission.kind(mission) in ["pipe", "flood"] or demo != "" or shot_path != "" or camera == null:
 		return
 	_tour_t = 0.0
 	_tour_from = camera.global_transform
@@ -1088,11 +1298,12 @@ func _near_line(p: Vector2, a: Vector2, b: Vector2, within: float) -> bool:
 
 ## Posts and tape round the site, so the limit of the work can be seen, just past where the blade can reach.
 func _add_fence(kit: MeshKit) -> void:
-	const AT := 30.5
+	var AT := Machine.AREA + 4.5
 	var post := Color("#efe8d8")
 	var tape := Color("#ff7a1a")
-	var spacing := 6.1
-	for i in 11:
+	var posts := int(round(AT * 2.0 / 6.1))
+	var spacing := AT * 2.0 / posts
+	for i in posts + 1:
 		var k := -AT + spacing * i
 		for spot2: Vector2 in [Vector2(k, -AT), Vector2(k, AT), Vector2(-AT, k), Vector2(AT, k)]:
 			kit.box(Vector3(spot2.x, 0.65, spot2.y), Vector3(0.14, 1.3, 0.14), post)
@@ -1293,7 +1504,7 @@ func _update_fx(dt: float) -> void:
 	sfx.update(dt, active)
 	shake = maxf(shake - dt * 1.7, 0.0)
 	# On foot there's no engine working, no tracks and nothing being dug.
-	if active is Worker:
+	if active is Worker or active is Barrow:
 		for p: CPUParticles3D in [track_dust, exhaust, clods, dust, tumble, pour_dust]:
 			p.emitting = false
 		sfx.pouring(dt, 0.0)
@@ -1470,10 +1681,28 @@ func _apply_all() -> void:
 ## Who the right-hand buttons belong to.
 func _show_buttons() -> void:
 	var who := active.machine_name
+	# A big one has the same buttons as the small one.
+	var kind := who.trim_prefix("Big ").capitalize()
 	for b in touch_buttons:
-		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(who)
+		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(kind)
+	if spade_button and spade_button.visible:
+		spade_button.visible = active is Worker and (active as Worker).tool == "shovel"
+	# Hints run clear of whichever buttons are showing down the right.
+	var screen_w: float = get_viewport().get_visible_rect().size.x
+	var clear_to := screen_w
+	for b in touch_buttons:
+		if b.visible and b.position.y > get_viewport().get_visible_rect().size.y * 0.45:
+			clear_to = minf(clear_to, b.position.x)
+	if alert:
+		alert.size.x = maxf(clear_to - alert.position.x * 2.0, screen_w * 0.4)
 	gauge.visible = mode == "Drive" and menu == null and not active is Worker
-	bucket_view.visible = gauge.visible and side_shown
+	bucket_view.visible = gauge.visible and side_shown and not active is Barrow and not active is Ute
+	# Pegging out is for free play: on a job the ute just gets about.
+	if peg_button and not mission.is_empty():
+		peg_button.visible = false
+		peg2_button.visible = false
+	elif peg2_button and peg2_button.visible:
+		peg2_button.visible = not peg_spots.is_empty() or ute_pad != null
 	_label("machine", "Now: " + who)
 	_show_get_in()
 
@@ -1628,9 +1857,261 @@ func _show_get_in() -> void:
 	var m: Machine = _near_machine(active as Worker) if active is Worker else null
 	get_in_button.visible = m != null and mode == "Drive" and menu == null
 	if m != null:
-		get_in_word.text = "GET IN
-" + m.machine_name.to_upper()
+		get_in_word.text = ("PUSH\nBARROW" if m is Barrow else "GET IN\n" + m.machine_name.to_upper())
 	buttons["out"].visible = not active is Worker and mode == "Drive"
+
+## ---------------------------------------------------------------- the ute's pegs
+
+## PEG: a survey peg in beside the driver's door. With a pad already pegged out, it starts a new one.
+func _on_peg() -> void:
+	if online.is_guest():
+		online.ask("peg")
+		return
+	_peg_for(0)
+
+func _peg_for(player: int) -> void:
+	if player >= _who_drives().size() or not machines[_who_drives()[player]] is Ute or not mission.is_empty():
+		return
+	var u := machines[_who_drives()[player]] as Ute
+	if ute_pad != null:
+		_pull_pegs()
+	var at := u.peg_spot()
+	if peg_spots.size() >= MOST_PEGS or (not peg_spots.is_empty() and peg_spots[peg_spots.size() - 1].distance_to(at) < 1.5):
+		return
+	peg_spots.append(at)
+	_pegs_changed()
+	sfx.clunked(0.3)
+	if player == 0:
+		Input.vibrate_handheld(30)
+
+## The button above PEG: takes the last peg back, closes them up into a pad once there are three, or pulls them all out.
+func _on_peg2() -> void:
+	if online.is_guest():
+		online.ask("peg2")
+		return
+	_peg2_for(0)
+
+func _peg2_for(_player: int) -> void:
+	if not mission.is_empty():
+		return
+	if ute_pad != null:
+		_pull_pegs()
+	elif peg_spots.size() >= 3:
+		_close_pegs()
+	elif not peg_spots.is_empty():
+		peg_spots.remove_at(peg_spots.size() - 1)
+		_pegs_changed()
+
+## The pegs closed up into a pad: round the outside of them, levelled to the ground's average height inside, so what comes off the
+## high side is about what the low side needs. The machines work to it.
+func _close_pegs(level := NAN) -> void:
+	var hull := Geometry2D.convex_hull(peg_spots)
+	if hull.size() > 1:
+		hull.remove_at(hull.size() - 1)
+	if hull.size() < 3:
+		return
+	if is_nan(level):
+		var probe := Pad.new(hull, 0.0, 0.05, 0.05)
+		if probe.cells.size() < 16:
+			alert.text = "TOO SMALL: SPREAD THE PEGS OUT"
+			slip_time = 0.0
+			hint_time = 2.5
+			return
+		var sum := 0
+		for n: int in probe.cells:
+			sum += sim.bed[n] + sim.soil[n]
+		level = float(sum) / probe.cells.size() / 1000.0
+	ute_pad = Pad.new(hull, level, UTE_PAD_TOL, UTE_PAD_TOL)
+	ute_pad.title = "PAD"
+	peg_spots = hull
+	_add_pad(ute_pad)
+	dozer.pad = ute_pad
+	digger.pad = ute_pad
+	_stars_offered = 0
+	_star_up = false
+	ute_pad_done = ute_pad.score(sim)
+	_pegs_changed()
+	sfx.clunked(0.7)
+
+## All the pegs out, and the pad gone.
+func _pull_pegs() -> void:
+	if ute_pad != null:
+		_remove_pad(ute_pad)
+	ute_pad = null
+	dozer.pad = null
+	digger.pad = null
+	peg_spots.clear()
+	_star_up = false
+	_show_star_card()
+	if mission.is_empty() and banner and _banner_clock <= 0.0:
+		banner.visible = false
+	_pegs_changed()
+
+## Pegs still going in: drawn with string from each to the next, not yet closed.
+func _pegs_changed() -> void:
+	peg_version += 1
+	if _open_pegs:
+		_open_pegs.queue_free()
+		_open_pegs = null
+	if ute_pad == null and not peg_spots.is_empty():
+		var kit := MeshKit.new()
+		var tops := PackedVector3Array()
+		for at: Vector2 in peg_spots:
+			var g := sim.height_at(at)
+			Props.survey_peg(kit, Vector3(at.x, g, at.y))
+			tops.append(Vector3(at.x, g + 0.62, at.y))
+		for k in tops.size() - 1:
+			var along := tops[k + 1] - tops[k]
+			var flat := Vector2(along.x, along.z)
+			var tilt := Basis(Vector3.UP, atan2(-flat.y, flat.x)) * Basis(Vector3.BACK, atan2(along.y, flat.length()))
+			kit.box((tops[k] + tops[k + 1]) * 0.5, Vector3(along.length(), 0.018, 0.018), Props.c("#ff4fa3"), tilt)
+		_open_pegs = MeshInstance3D.new()
+		_open_pegs.mesh = kit.mesh()
+		_open_pegs.material_override = prop_mat
+		add_child(_open_pegs)
+	_ute_ui = ""
+	_show_ute()
+
+## Online, the guest's game is told the pegs and draws the same.
+func net_pegs(spots: PackedVector2Array, closed: bool, level: float) -> void:
+	if ute_pad != null:
+		_remove_pad(ute_pad)
+		ute_pad = null
+	peg_spots = spots
+	if closed and spots.size() >= 3:
+		_close_pegs(level)
+	else:
+		_pegs_changed()
+
+## What the ute's buttons say.
+func _show_ute() -> void:
+	if peg_button == null:
+		return
+	var second := ""
+	if ute_pad != null:
+		second = "PULL\nPEGS"
+	elif peg_spots.size() >= 3:
+		second = "CLOSE\nIT UP"
+	elif not peg_spots.is_empty():
+		second = "UNDO\nPEG"
+	var first := "NEW\nPEGS" if ute_pad != null else "PEG %d" % (peg_spots.size() + 1)
+	var now := first + second
+	if now == _ute_ui:
+		return
+	_ute_ui = now
+	peg_word.text = first
+	peg2_word.text = second
+	_show_buttons()
+
+## Free play with a pad pegged out: how level it is, and a star card as each star's earned, like a job.
+func _check_ute_pad(delta: float) -> void:
+	_pad_clock -= delta
+	if _pad_clock > 0.0:
+		return
+	_pad_clock = 0.25
+	ute_pad_done = ute_pad.score(sim)
+	if _banner_clock <= 0.0 and menu == null:
+		banner.visible = true
+		banner.text = _star_words("PAD", ute_pad_done)
+	var got := Mission.stars_for(ute_pad_done)
+	if got > _stars_offered and not online.is_guest():
+		_stars_offered = got
+		_star_up = true
+		star_title.text = "%d STAR%s!" % [got, "" if got == 1 else "S"]
+		star_note.text = "Finish the pad now, or keep going for %d%%" % int(Mission.STARS[got] * 100.0) if got < Mission.STARS.size() else "Finish the pad now, or keep going to tidy up"
+		sfx.clunked(0.5)
+		Input.vibrate_handheld(60)
+	_show_star_card()
+
+## FINISH on a pegged pad: it's done, with its stars, and the pegs come out for the next one.
+func _finish_ute_pad() -> void:
+	var got := Mission.stars_for(ute_pad_done)
+	_pull_pegs()
+	banner.visible = true
+	banner.text = "PAD DONE: %d STAR%s" % [got, "" if got == 1 else "S"]
+	_banner_clock = 4.0
+	sfx.clunked(1.0)
+	Input.vibrate_handheld(200)
+	print("PAD DONE at %.1f%%, %d stars" % [ute_pad_done * 100.0, got])
+
+## ---------------------------------------------------------------- the hand tools
+
+## SHOVEL or RAKE tapped: picked up, or put down if it's the one in his hands.
+func _on_tool(t: String) -> void:
+	if online.is_guest():
+		online.ask("tool", Worker.TOOLS.find(t))
+		return
+	_tool_for(0, t)
+
+func _tool_for(player: int, t: String) -> void:
+	if player < workers.size():
+		workers[player].take_tool(t)
+	_show_tools()
+
+## The shovel's button: dig a shovelful, or throw it, into a barrow if one's right there.
+func _on_spade() -> void:
+	if online.is_guest():
+		online.ask("spade")
+		return
+	_spade_for(0)
+
+func _spade_for(player: int) -> void:
+	if player >= workers.size():
+		return
+	var w := workers[player]
+	if w.shovel_mm == 0:
+		w.dig()
+	else:
+		var into := _barrow_for(w)
+		w.throw(into.tray_middle() if into else null)
+		if into and player == 0:
+			Input.vibrate_handheld(25)
+	_show_tools()
+
+## A barrow he's facing, near enough to throw a shovelful in, with room for it.
+func _barrow_for(w: Worker) -> Barrow:
+	var best: Barrow = null
+	var best_d := 1.4
+	var ahead := w.spot + w.forward() * 0.9
+	for m: Machine in machines:
+		if not m is Barrow or not m.visible:
+			continue
+		var b := m as Barrow
+		if b.tray_mm >= Barrow.CAPACITY or b.tip > 0.05:
+			continue
+		var mid := b.tray_middle()
+		var d := Vector2(mid.x, mid.z).distance_to(ahead)
+		if d < best_d and (Vector2(mid.x, mid.z) - w.spot).dot(w.forward()) > 0.0:
+			best_d = d
+			best = b
+	return best
+
+## The tool buttons say what's in his hands and what the shovel will do next.
+func _show_tools() -> void:
+	if shovel_button == null:
+		return
+	var w: Worker = active as Worker if active is Worker else null
+	var tool := w.tool if w else ""
+	var spade := ""
+	if w and tool == "shovel":
+		if w.shovel_mm == 0:
+			spade = "DIG"
+		elif _barrow_for(w):
+			spade = "THROW IN\nBARROW"
+		else:
+			spade = "THROW"
+	var now := tool + "|" + spade
+	if now == _tools_ui:
+		return
+	_tools_ui = now
+	shovel_word.text = "PUT DOWN\nSHOVEL" if tool == "shovel" else "SHOVEL"
+	rake_word.text = "PUT DOWN\nRAKE" if tool == "rake" else "RAKE"
+	spade_word.text = spade
+	for pair: Array in [[shovel_button, tool == "shovel"], [rake_button, tool == "rake"]]:
+		var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0.1, 0.55, 0.15, 0.85) if pair[1] else Color(0.1, 0.1, 0.1, 0.55))
+		(pair[0] as TouchScreenButton).texture_normal = ImageTexture.create_from_image(img)
+	_show_buttons()
 
 ## Whether the two thumbs work apart: the excavator's left thumb swings the house and the right moves the arm.
 func _two_sticks() -> bool:
@@ -2020,6 +2501,8 @@ func _physics_process(dt: float) -> void:
 				dozer.lift_cmd = Input.get_axis("blade_down", "blade_up")
 			elif active == truck:
 				truck.tip_cmd = 1.0 if Input.is_action_pressed("blade_up") else 0.0
+			elif active is Barrow:
+				(active as Barrow).tip_cmd = 1.0 if Input.is_action_pressed("blade_up") else 0.0
 			elif active is Loader:
 				var small := active as Loader
 				small.lift_cmd = Input.get_axis("blade_down", "blade_up")
@@ -2031,6 +2514,8 @@ func _physics_process(dt: float) -> void:
 
 	_sync_people()
 	_show_get_in()
+	_show_tools()
+	_show_ute()
 	# A guest's game only says what its thumbs are doing and draws what it's told.
 	if online.is_guest():
 		online.guest_tick(dt)
@@ -2396,8 +2881,9 @@ func _build_ui() -> void:
 	# Big enough to read at a glance on a phone, which the readout isn't.
 	alert = Label.new()
 	alert.text = "TOO MUCH TO PUSH: back up, raise the blade, or try LEVEL"
-	alert.position = Vector2(0.0, h * 0.6)
-	alert.size = Vector2(screen.x, h * 0.1)
+	# Clear of the buttons down the right, so a long hint doesn't run under them.
+	alert.position = Vector2(pad, h * 0.6)
+	alert.size = Vector2(screen.x - h * 0.4 - pad * 3.0 - pad, h * 0.1)
 	alert.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	alert.add_theme_font_size_override("font_size", int(h / 22.0))
 	alert.add_theme_color_override("font_color", Color("#ffd23f"))
@@ -2470,12 +2956,12 @@ func _build_ui() -> void:
 	# The buttons the machines share, and the ones the small machines and the truck need.
 	touch_buttons[0].set_meta("for", "Dozer,Bobcat,Dingo")
 	touch_buttons[1].set_meta("for", "Dozer,Bobcat,Dingo")
-	touch_buttons[2].set_meta("for", "Dozer,Truck")
-	touch_buttons[3].set_meta("for", "Dozer,Truck")
+	touch_buttons[2].set_meta("for", "Dozer,Truck,Ute")
+	touch_buttons[3].set_meta("for", "Dozer,Truck,Ute")
 	var col2 := screen.x - size * 2.0 - pad * 1.5
 	_touch_button("CURL", "dig_curl", Vector2(col2, h - size * 2.0 - pad * 1.5), size, "Bobcat,Dingo")
 	_touch_button("DUMP", "dig_dump", Vector2(col2, h - size - pad), size, "Bobcat,Dingo")
-	_touch_button("TIP", "blade_up", Vector2(screen.x - size - pad, h - size * 1.5 - pad), size, "Truck")
+	_touch_button("TIP", "blade_up", Vector2(screen.x - size - pad, h - size * 1.5 - pad), size, "Truck,Barrow")
 	var attach_made := _touch_button("ATTACH", "", Vector2(left - size - pad * 0.5, h - size - pad), size, "Dingo")
 	attach_button = attach_made[0]
 	attach_word = attach_made[1]
@@ -2501,6 +2987,37 @@ func _build_ui() -> void:
 	get_in_word.position = get_in_button.position + Vector2(size * 0.08, size * 0.28)
 	get_in_word.add_theme_font_size_override("font_size", int(size * 0.14))
 	get_in_button.pressed.connect(_get_in)
+	# The hand tools: pick one up, put it down, and the shovel's one button that digs and throws.
+	var tool_made := _touch_button("", "", Vector2(screen.x - size - pad, h - size * 2.0 - pad * 1.5), size, "On foot")
+	shovel_button = tool_made[0]
+	shovel_word = tool_made[1]
+	shovel_button.pressed.connect(_on_tool.bind("shovel"))
+	tool_made = _touch_button("", "", Vector2(screen.x - size * 2.0 - pad * 1.5, h - size * 2.0 - pad * 1.5), size, "On foot")
+	rake_button = tool_made[0]
+	rake_word = tool_made[1]
+	rake_button.pressed.connect(_on_tool.bind("rake"))
+	tool_made = _touch_button("", "", Vector2(screen.x - size - pad, h - size - pad), size, "On foot")
+	spade_button = tool_made[0]
+	spade_word = tool_made[1]
+	spade_button.pressed.connect(_on_spade)
+	for word: Label in [shovel_word, rake_word, spade_word]:
+		word.position += Vector2(0.0, size * 0.02)
+		word.add_theme_font_size_override("font_size", int(size * 0.15))
+	_tools_ui = ""
+	_show_tools()
+	# The ute's: PEG where the right thumb rests, and above it the one that undoes, closes up or pulls the pegs.
+	var peg_made := _touch_button("PEG", "", Vector2(screen.x - size - pad, h - size - pad), size, "Ute")
+	peg_button = peg_made[0]
+	peg_word = peg_made[1]
+	peg_button.pressed.connect(_on_peg)
+	peg_made = _touch_button("", "", Vector2(screen.x - size - pad, h - size * 2.0 - pad * 1.5), size, "Ute")
+	peg2_button = peg_made[0]
+	peg2_word = peg_made[1]
+	peg2_button.pressed.connect(_on_peg2)
+	for word: Label in [peg_word, peg2_word]:
+		word.add_theme_font_size_override("font_size", int(size * 0.15))
+	_ute_ui = ""
+	_show_ute()
 
 	# How the job's going, big enough to read while driving.
 	banner = Label.new()
@@ -2531,6 +3048,9 @@ func _show_banner() -> void:
 	if _tour_t >= 0.0:
 		banner.text = _tour_words()
 		return
+	if Mission.is_pad_job(mission):
+		banner.text = _star_words(job_pad.title, pad_done)
+		return
 	if Mission.kind(mission) != "driveway":
 		var flood := Mission.kind(mission) == "flood"
 		if not pipe_joined and flood and pipe_connected:
@@ -2558,11 +3078,13 @@ func _star_words(title: String, done: float) -> String:
 
 ## How much of the job's done, 0 to 1, for its stars: the driveway covered, or the trench filled back in.
 func _score() -> float:
+	if Mission.is_pad_job(mission):
+		return pad_done
 	return covered if Mission.kind(mission) == "driveway" else filled
 
 ## Whether the stars can be earned yet: a pipe job needs the water through first.
 func _can_score() -> bool:
-	return Mission.kind(mission) == "driveway" or (pipe_joined and water_left <= 0.0)
+	return Mission.kind(mission) == "driveway" or Mission.is_pad_job(mission) or (pipe_joined and water_left <= 0.0)
 
 ## A whole-screen menu over the site: the jobs and free play at the start, or how a job went at the end of it.
 func _build_menu() -> void:
@@ -2586,17 +3108,37 @@ func _build_menu() -> void:
 		word.add_theme_font_size_override("font_size", int(h * size))
 		word.add_theme_color_override("font_color", colour)
 		box.add_child(word)
+	# The job list and the rest side by side, so it all fits on a phone's screen. `into` is where the next choice goes.
+	var two_cols := menu_kind in ["start", "host"]
+	var into: Array[Container] = [box]
+	var cols: Array[VBoxContainer] = []
 	var choice := func(text: String, enabled: bool, what: Callable) -> void:
 		var b := Button.new()
 		b.text = text
 		b.disabled = not enabled
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(h * 1.15, h * ((0.1 if menu_kind == "start" else 0.115) if snug else 0.14))
-		b.add_theme_font_size_override("font_size", int(h * 0.05))
+		if two_cols:
+			b.custom_minimum_size = Vector2(h * (0.93 if into[0] == cols[0] else 0.66), h * 0.092)
+			b.add_theme_font_size_override("font_size", int(h * 0.04))
+		else:
+			b.custom_minimum_size = Vector2(h * 1.15, h * (0.115 if snug else 0.14))
+			b.add_theme_font_size_override("font_size", int(h * 0.05))
 		b.pressed.connect(what)
-		box.add_child(b)
+		into[0].add_child(b)
+	var split := func() -> void:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", int(h * 0.05))
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		box.add_child(row)
+		for k in 2:
+			var c := VBoxContainer.new()
+			c.add_theme_constant_override("separation", int(h * 0.014))
+			row.add_child(c)
+			cols.append(c)
+		into[0] = cols[0]
 	if menu_kind == "start":
-		heading.call("DOZER DRIVE", 0.1, Color("#ffd23f"))
+		heading.call("DOZER DRIVE", 0.09, Color("#ffd23f"))
+		split.call()
 		for m: Dictionary in Mission.LIST:
 			if Mission.open(m):
 				var word := "%s: %s" % [m["title"], m["machine"]]
@@ -2607,12 +3149,14 @@ func _build_menu() -> void:
 					else:
 						word += "   %d STAR%s" % [best, "" if best == 1 else "S"]
 				if TEST_SKIP and not Mission.is_done(m["id"]):
-					_skip_row(box, h, word, String(m["id"]), snug)
+					_skip_row(cols[0], h, word, String(m["id"]), snug)
 				else:
 					choice.call(word, true, _start_mission.bind(m["id"]))
 			else:
-				choice.call("%s: finish %s first" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
+				choice.call("%s: after %s" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
+		into[0] = cols[1]
 		choice.call("Free play: every machine", true, _start_free_play)
+		choice.call("Free play: big machines", true, _start_big_play)
 		if Online.available():
 			choice.call("Play with a friend", true, _open_menu.bind("online"))
 	elif menu_kind == "online":
@@ -2623,10 +3167,13 @@ func _build_menu() -> void:
 		choice.call("Back", true, _open_menu.bind("start"))
 	elif menu_kind == "host":
 		heading.call("WHAT WILL YOU PLAY?", 0.08, Color("#ffd23f"))
+		split.call()
 		for m: Dictionary in Mission.LIST:
 			if Mission.open(m):
-				choice.call("%s: two %ss" % [m["title"], m["machine"]], true, _host_job.bind(m["id"]))
+				choice.call("%s: %s" % [m["title"], Mission.crew(m)], true, _host_job.bind(m["id"]))
+		into[0] = cols[1]
 		choice.call("Free play: every machine", true, _host_game)
+		choice.call("Free play: big machines", true, _host_game.bind(true))
 		choice.call("Back", true, _open_menu.bind("online"))
 	elif menu_kind == "join":
 		_build_join_menu(box, h)
@@ -2653,22 +3200,22 @@ func _build_menu() -> void:
 
 ## A job in the list with a SKIP beside it, which has to be held down.
 func _skip_row(box: VBoxContainer, h: float, word: String, id: String, snug: bool) -> void:
-	var tall := h * (0.1 if snug else 0.14)
+	var tall := h * 0.092
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", int(h * 0.02))
+	row.add_theme_constant_override("separation", int(h * 0.012))
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(row)
 	var go := Button.new()
 	go.text = word
 	go.focus_mode = Control.FOCUS_NONE
-	go.custom_minimum_size = Vector2(h * 0.91, tall)
-	go.add_theme_font_size_override("font_size", int(h * 0.05))
+	go.custom_minimum_size = Vector2(h * 0.75, tall)
+	go.add_theme_font_size_override("font_size", int(h * 0.04))
 	go.pressed.connect(_start_mission.bind(id))
 	row.add_child(go)
 	var skip := Button.new()
 	skip.text = "HOLD TO SKIP"
 	skip.focus_mode = Control.FOCUS_NONE
-	skip.custom_minimum_size = Vector2(h * 0.22, tall)
+	skip.custom_minimum_size = Vector2(h * 0.17, tall)
 	skip.add_theme_font_size_override("font_size", int(h * 0.026))
 	skip.add_theme_color_override("font_color", Color("#ff9a4a"))
 	skip.button_down.connect(func() -> void:
@@ -2749,21 +3296,42 @@ func online_go_to(id: String) -> void:
 	# Sent straight on to the job this one unlocks: this one's done, even if the word never got here.
 	if demo == "" and not mission.is_empty() and Mission.find(id).get("needs", "") == mission["id"]:
 		Mission.mark_done(mission["id"])
-	if id != "":
+	if id != "" and id != "big":
 		_start_mission(id)
 		return
 	Engine.remove_meta("mission")
 	Engine.set_meta("free_play", true)
+	if id == "big":
+		Engine.set_meta("big_site", true)
+	elif Engine.has_meta("big_site"):
+		Engine.remove_meta("big_site")
 	online.carry_over()
 	get_tree().reload_current_scene()
 
+## Where this game is, for a friend's game to follow: the job, "big" for the big machines' free play, or nothing for free play.
+func place_id() -> String:
+	if not mission.is_empty():
+		return mission["id"]
+	return "big" if big_site else ""
+
 ## The world behind the first menu is free play already, so a host just gets on with it and the room's open while it does.
-func _host_game() -> void:
+## For the big machines, the host goes there first and the room comes along.
+func _host_game(big := false) -> void:
+	online.host(online_arg.substr(5) if online_arg.begins_with("host:") else "")
+	if big != big_site or not mission.is_empty():
+		online_go_to("big" if big else "")
+		return
 	if mission.is_empty():
 		_start_free_play()
-	online.host(online_arg.substr(5) if online_arg.begins_with("host:") else "")
 	_online_bar()
 	online_changed()
+
+## Free play with the big machines on the big site.
+func _start_big_play() -> void:
+	Engine.set_meta("free_play", true)
+	Engine.set_meta("big_site", true)
+	Engine.remove_meta("mission")
+	get_tree().reload_current_scene()
 
 func _online_from_arg() -> void:
 	if online_arg.begins_with("host"):
@@ -2843,6 +3411,14 @@ func online_action(player: int, what: String, arg: int) -> void:
 			if m == digger:
 				digger.dig_mode = not digger.dig_mode
 				digger.stop_commands()
+		"tool":
+			_tool_for(player, Worker.TOOLS[clampi(arg, 0, 2)])
+		"spade":
+			_spade_for(player)
+		"peg":
+			_peg_for(player)
+		"peg2":
+			_peg2_for(player)
 
 ## What the host's word has done to the machine's buttons.
 func _guest_buttons() -> void:
@@ -2866,8 +3442,9 @@ func _close_menu() -> void:
 	stick_ui.queue_redraw()
 
 func _start_mission(id: String) -> void:
-	if Engine.has_meta("free_play"):
-		Engine.remove_meta("free_play")
+	for meta_name: String in ["free_play", "big_site"]:
+		if Engine.has_meta(meta_name):
+			Engine.remove_meta(meta_name)
 	Engine.set_meta("mission", id)
 	if online.is_online():
 		online.carry_over()
@@ -2876,10 +3453,12 @@ func _start_mission(id: String) -> void:
 ## The world behind the first menu is already free play, so it only has to get out of the way.
 func _start_free_play() -> void:
 	Engine.set_meta("free_play", true)
-	if mission.is_empty():
+	if mission.is_empty() and not big_site:
 		_close_menu()
 	else:
-		Engine.remove_meta("mission")
+		for meta_name: String in ["mission", "big_site"]:
+			if Engine.has_meta(meta_name):
+				Engine.remove_meta(meta_name)
 		get_tree().reload_current_scene()
 
 ## Every so often: how much of the driveway's done, and whether that's the job finished.
@@ -2888,7 +3467,9 @@ func _check_mission(delta: float) -> void:
 	if mission_clock > 0.0:
 		return
 	mission_clock = 0.25
-	if Mission.kind(mission) != "driveway":
+	if Mission.is_pad_job(mission):
+		pad_done = job_pad.score(sim)
+	elif Mission.kind(mission) != "driveway":
 		pipes.settle(sim)
 		if not pipe_joined:
 			var run := Mission.pipe_run(pipes.points(), mission)
@@ -2983,6 +3564,9 @@ func _show_star_card() -> void:
 		star_card.visible = _star_up and not mission_done and menu == null and not online.is_guest()
 
 func _on_star_finish() -> void:
+	if star_card.visible and mission.is_empty() and ute_pad != null:
+		_finish_ute_pad()
+		return
 	if star_card.visible and not mission_done and _can_score() and Mission.stars_for(_score()) > 0:
 		finish_mission()
 
@@ -3164,7 +3748,7 @@ func _draw_gauge() -> void:
 		word = "BLADE IN DIRT %.2f m" % -gap
 		colour = Color("#ff9a4a")
 	if dozer.cut_on:
-		word = "CUT %d cm: DRIVE" % dozer.cut_cm
+		word = "CUT TO THE PEGS' LEVEL: DRIVE" if dozer.at_pad else "CUT %d cm: DRIVE" % dozer.cut_cm
 	var font := ThemeDB.fallback_font
 	gauge.draw_string_outline(font, Vector2(0.0, text_h * 0.72), word, HORIZONTAL_ALIGNMENT_RIGHT, gauge.size.x, font_size, 8, Color.BLACK)
 	gauge.draw_string(font, Vector2(0.0, text_h * 0.72), word, HORIZONTAL_ALIGNMENT_RIGHT, gauge.size.x, font_size, colour)
@@ -3276,7 +3860,7 @@ func _pressed(key: String) -> void:
 				finish_mission()
 		"menu":
 			online.leave()
-			for meta_name: String in ["mission", "free_play"]:
+			for meta_name: String in ["mission", "free_play", "big_site"]:
 				if Engine.has_meta(meta_name):
 					Engine.remove_meta(meta_name)
 			get_tree().reload_current_scene()
@@ -3355,6 +3939,8 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 		_check_mission(delta)
 		_drain_flood(delta)
 		_update_floaters(delta)
+	elif ute_pad != null:
+		_check_ute_pad(delta)
 	if _banner_clock > 0.0:
 		_banner_clock -= delta
 		if _banner_clock <= 0.0:
@@ -3613,6 +4199,148 @@ func _run_touch_demo() -> void:
 			elif _touch_tick == 599:
 				print("WALK never got back to a machine: at %s" % active.spot)
 				get_tree().quit()
+		"touchhand":
+			# The garden patch by hand, with the on-screen buttons: SHOVEL, DIG and THROW into the barrow, PUSH BARROW, TIP, Get out,
+			# RAKE, and the stick to rake with. He's put by the pile and the barrow by the patch rather than walked there.
+			var w := workers[0]
+			var b := barrow
+			var at_b := func(t: TouchScreenButton) -> Vector2:
+				return t.position + Vector2.ONE * t.get_meta("size") * 0.5
+			var pile: Vector2 = mission["fill"]
+			var thumb := s * Vector2(0.3, 0.6)
+			var reach := s.y * 0.14
+			if _touch_tick == 30:
+				print("HAND start: %s, SHOVEL shown %s, RAKE shown %s, DIG shown %s" % [active.machine_name, shovel_button.visible, rake_button.visible, spade_button.visible])
+				_touch(1, at_b.call(shovel_button), true)
+				_touch(1, at_b.call(shovel_button), false)
+			elif _touch_tick == 34:
+				print("HAND shovel: tool %s, DIG shown %s, says %s" % [w.tool, spade_button.visible, spade_word.text.replace("\n", " ")])
+			elif _touch_tick >= 40 and _touch_tick < 40 + 8 * 70:
+				var k := (_touch_tick - 40) % 70
+				var way := (pile - b.spot).normalized()
+				if k == 0:
+					w.spot = pile - way * 1.0
+					w.angle = atan2(-way.y, way.x)
+					_touch(1, at_b.call(spade_button), true)
+					_touch(1, at_b.call(spade_button), false)
+				elif k == 30:
+					var to := b.tray_middle()
+					var face := (Vector2(to.x, to.z) - w.spot).normalized()
+					w.angle = atan2(-face.y, face.x)
+				elif k == 34:
+					if _touch_tick < 110:
+						print("HAND dug %d mm, button says %s" % [w.shovel_mm, spade_word.text.replace("\n", " ")])
+					_touch(1, at_b.call(spade_button), true)
+					_touch(1, at_b.call(spade_button), false)
+			elif _touch_tick == 640:
+				_demo_shot("1")
+				print("HAND barrow: %d of %d scoops, %s" % [b.scoops(), Barrow.CAPACITY / Worker.SCOOP, b.gauge_word()[0]])
+				w.spot = b.spot - b.forward() * 1.6
+				w.angle = b.angle
+			elif _touch_tick == 645:
+				print("HAND by the barrow: %s" % get_in_word.text.replace("\n", " "))
+				_touch(1, at_b.call(get_in_button), true)
+				_touch(1, at_b.call(get_in_button), false)
+			elif _touch_tick == 650:
+				print("HAND pushing: now %s, pusher shown %s" % [active.machine_name, b._man.visible])
+				_touch(0, thumb, true)
+			elif _touch_tick == 652:
+				_drag(0, thumb + Vector2(0.0, -reach))
+			elif _touch_tick == 700:
+				print("HAND pushed it %.2f m" % b.spot.distance_to(mission["barrow"]))
+				_touch(0, thumb, false)
+				b.reposition(mission["patch"] - Vector2(1.0, 0.0), Vector2(1.0, 0.0))
+			elif _touch_tick == 710:
+				var tip_b: TouchScreenButton = null
+				for t in touch_buttons:
+					if t.get_meta("label") == "TIP" and t.visible:
+						tip_b = t
+				print("HAND TIP shown %s" % (tip_b != null))
+				if tip_b:
+					_touch(1, at_b.call(tip_b), true)
+			elif _touch_tick == 860:
+				for t in touch_buttons:
+					if t.get_meta("label") == "TIP":
+						_touch(1, at_b.call(t), false)
+				print("HAND tipped: %d mm left in it, patch %d%% level" % [b.tray_mm, int(job_pad.score(sim) * 100.0)])
+				var out_b: Button = buttons["out"]
+				_click(out_b.global_position + out_b.size * 0.5)
+			elif _touch_tick == 870:
+				print("HAND let go: now %s" % active.machine_name)
+				_touch(1, at_b.call(rake_button), true)
+				_touch(1, at_b.call(rake_button), false)
+			elif _touch_tick == 875:
+				print("HAND rake: tool %s, says %s" % [workers[0].tool, rake_word.text.replace("\n", " ")])
+				# Wheeled back out of the way, as a player would.
+				b.reposition(mission["barrow"], mission["barrow_dir"])
+				w.spot = mission["patch"] + Vector2(-1.8, 0.0)
+				w.angle = 0.0
+				_touch(0, thumb, true)
+			elif _touch_tick > 877 and _touch_tick < 1400:
+				if _touch_tick % 100 == 0:
+					print("HAND raking at %s speed %.2f throttle %.2f tool %s, stick finger %d, fingers %s, active %s, mode %s menu %s" % [w.spot, w.speed, w.throttle, w.tool, stick_finger, fingers, active.machine_name, mode, menu])
+				# Back and forth over the patch, turning at each end.
+				var to: Vector2 = mission["patch"] + Vector2(1.8 if (_touch_tick / 150) % 2 == 0 else -1.8, ((_touch_tick / 300) % 3 - 1) * 0.4)
+				var go := to - w.spot
+				var off := wrapf(atan2(-go.y, go.x) - w.angle, -PI, PI)
+				_drag(0, thumb + Vector2(clampf(-off * 1.5, -1.0, 1.0) * reach, -reach * (0.9 if absf(off) < 0.5 else 0.0)))
+			elif _touch_tick == 1400:
+				_demo_shot("2")
+				_touch(0, thumb, false)
+				print("HAND raked %d mm, patch now %d%% level, banner: %s, he's at %s (patch %s)" % [w.raked, int(job_pad.score(sim) * 100.0), banner.text, w.spot, mission["patch"]])
+			elif _touch_tick == 1460:
+				get_tree().quit()
+		"touchute":
+			# The scout ute: driven on the stick, four pegs in with PEG, CLOSE IT UP, the ground made level as the machines would,
+			# then FINISH on the star card. It's put at each corner rather than driven round.
+			var at_b := func(t: TouchScreenButton) -> Vector2:
+				return t.position + Vector2.ONE * t.get_meta("size") * 0.5
+			var thumb := s * Vector2(0.3, 0.6)
+			var reach := s.y * 0.14
+			var corners := [Vector2(-22.0, 10.0), Vector2(-14.0, 10.0), Vector2(-14.0, 16.0), Vector2(-22.0, 16.0)]
+			if _touch_tick == 20:
+				print("UTE start: in the %s, PEG shown %s (%s), second shown %s" % [active.machine_name, peg_button.visible, peg_word.text.replace("\n", " "), peg2_button.visible])
+				_touch(0, thumb, true)
+			elif _touch_tick == 22:
+				_drag(0, thumb + Vector2(0.0, -reach))
+			elif _touch_tick == 150:
+				print("UTE drove %.1f m, %.0f km/h" % [active.spot.distance_to(GroundData.ute_spot()), absf(active.speed) * 3.6])
+				_touch(0, thumb, false)
+			elif _touch_tick >= 200 and _touch_tick < 200 + 4 * 20:
+				var k := (_touch_tick - 200) / 20
+				if (_touch_tick - 200) % 20 == 0:
+					var u := active as Ute
+					u.spot = corners[k] - Vector2(sin(u.angle), cos(u.angle)) * Ute.PEG_OUT
+					u.speed = 0.0
+					u.drive = 0.0
+					_touch(1, at_b.call(peg_button), true)
+					_touch(1, at_b.call(peg_button), false)
+				elif (_touch_tick - 200) % 20 == 10:
+					print("UTE peg %d in at %s: %d pegs, buttons say %s / %s" % [k + 1, peg_spots[peg_spots.size() - 1] if not peg_spots.is_empty() else Vector2.ZERO, peg_spots.size(), peg_word.text.replace("\n", " "), peg2_word.text.replace("\n", " ")])
+			elif _touch_tick == 290:
+				_touch(1, at_b.call(peg2_button), true)
+				_touch(1, at_b.call(peg2_button), false)
+			elif _touch_tick == 300:
+				print("UTE closed: pad %s, level %.2f m, %d cells, %d%% level now, buttons say %s / %s" % [ute_pad != null, ute_pad.level if ute_pad else 0.0, ute_pad.cells.size() if ute_pad else 0, int(ute_pad.score(sim) * 100.0) if ute_pad else 0, peg_word.text.replace("\n", " "), peg2_word.text.replace("\n", " ")])
+				_demo_shot("1")
+				# Levelled, as the machines would: the ground inside brought to the pad's height, the soil kept.
+				if ute_pad:
+					var want := int(ute_pad.level * 1000.0)
+					for n: int in ute_pad.shown:
+						var h := sim.bed[n] + sim.soil[n]
+						sim.bed[n] += want - h
+						sim.store += h - want
+					for n: int in ute_pad.shown:
+						sim.wake(n % DirtSim.CELLS, n / DirtSim.CELLS)
+			elif _touch_tick == 340:
+				print("UTE levelled: %s, card up %s: %s" % [banner.text, star_card.visible, star_title.text])
+				_demo_shot("2")
+				var fin := star_card.get_child(3) as TouchScreenButton
+				_touch(1, fin.position + fin.scale * 8.0, true)
+				_touch(1, fin.position + fin.scale * 8.0, false)
+			elif _touch_tick == 350:
+				print("UTE finished: pad %s, banner %s, pegs %d" % [ute_pad != null, banner.text, peg_spots.size()])
+				get_tree().quit()
 		"touchsteer":
 			# A thumb pushing ahead that wanders a little sideways keeps it straight; pushed right over, it turns hard.
 			var thumb := s * Vector2(0.3, 0.6)
@@ -3732,3 +4460,9 @@ func _run_touch_demo() -> void:
 				_click(buttons["mode"].get_global_rect().get_center())
 			elif _touch_tick == 50:
 				print("CLICK mode: now %s, raise button visible %s" % [mode, touch_buttons[0].visible])
+
+## A picture partway through a demo, beside the --shot one: name_1.png and so on.
+func _demo_shot(tag: String) -> void:
+	if shot_path == "":
+		return
+	get_viewport().get_texture().get_image().save_png(shot_path.get_basename() + "_" + tag + ".png")

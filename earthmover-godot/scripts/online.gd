@@ -18,7 +18,7 @@ const STALE_MS := 600           # nothing from the guest for this long: its mach
 const SILENT_MS := 8000         # nothing at all for this long: they've gone
 const ABC := "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"     # no O/0, no I/1
 
-enum {SNAP, CMD, DIRT, ACTION, PIPE, READY, LOADING}
+enum {SNAP, CMD, DIRT, ACTION, PIPE, READY, LOADING, PEGS}
 const LOADING_MS := 30000       # how long a game gets to build the next job before it counts as gone
 
 var game: Node
@@ -41,6 +41,7 @@ var _dirt_t := 0.0
 var _heard_ms := 0
 var _cmd_ms := 0
 var _pipes_sent := 0
+var _pegs_sent := -1
 var _demo_t := 0.0
 var _say_t := 0.0
 var report := false
@@ -138,6 +139,7 @@ func _send_everything() -> void:
 	for c in DirtSim.CHUNKS * DirtSim.CHUNKS:
 		view.changed[c] = true
 	_pipes_sent = 0
+	_pegs_sent = -1
 
 ## Starting a job reloads the whole game. This comes out of the old game first, so the connection carries on into the new one.
 func carry_over() -> void:
@@ -219,8 +221,11 @@ func host_tick(dt: float) -> void:
 	if _send_t >= 1.0 / SNAP_HZ:
 		_send_t = 0.0
 		if waiting < BACKLOG_MOST:
-			_send([SNAP, PackedInt32Array(drivers), _machine_states(), game.trees.net_state(), game.trees.down, _air_state(), game.mission.get("id", ""), game.mission_done])
+			_send([SNAP, PackedInt32Array(drivers), _machine_states(), game.trees.net_state(), game.trees.down, _air_state(), game.place_id(), game.mission_done])
 	_send_pipes()
+	if game.peg_version != _pegs_sent:
+		_pegs_sent = game.peg_version
+		_send([PEGS, game.peg_spots, game.ute_pad != null, game.ute_pad.level if game.ute_pad else 0.0])
 	_dirt_t += dt
 	if _dirt_t >= 1.0 / DIRT_HZ:
 		_dirt_t = 0.0
@@ -358,6 +363,8 @@ func _on_received(data: PackedByteArray) -> void:
 			PIPE:
 				for p: Vector3 in msg[1]:
 					game.pipes.lay_to(p)
+			PEGS:
+				game.net_pegs(msg[1], msg[2], msg[3])
 			LOADING:
 				_heard_ms = Time.get_ticks_msec() + LOADING_MS
 	elif role == "host":
@@ -378,7 +385,7 @@ func _on_received(data: PackedByteArray) -> void:
 func _load_snapshot(msg: Array) -> void:
 	# The host's in a different job from this game: everything else in the message is about that one.
 	var job: String = msg[6]
-	if job != game.mission.get("id", ""):
+	if job != game.place_id():
 		game.online_go_to(job)
 		return
 	drivers.assign(msg[1])

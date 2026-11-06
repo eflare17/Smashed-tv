@@ -46,6 +46,10 @@ var level_ease := 0.0
 var cut_on := false
 var cut_cm := 20
 
+## The pad it's working in, if any: CUT stops at its height.
+var pad: Pad
+var at_pad := false
+
 var edge_gap := 0.0             # m from the blade's cutting edge down to the ground under it; negative is below the surface
 var bit_ground := false         # the blade touched down this tick
 
@@ -61,11 +65,20 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	view = v
 	spot = at
 	angle = atan2(-dir.y, dir.x)
-	machine_name = "Dozer"
+	machine_name = "Dozer" if size == 1.0 else "Big dozer"
 	stuck_word = "TOO MUCH TO PUSH: back up, raise the blade, or try LEVEL"
-	fp_front = 2.7
-	fp_r = 1.6
-	mass = MASS
+	fp_front = 2.7 * size
+	fp_back = 2.3 * size
+	fp_r = 1.6 * size
+	mass = MASS * size * size * size
+	engine = ENGINE * size * size * size
+	support_x *= size
+	support_z *= size
+	track_z *= size
+	track_rear *= size
+	body_reach *= size
+	view_dist *= sqrt(size) * 1.15 if size > 1.0 else 1.0
+	view_aim *= size
 	top_speed = TOP_SPEED
 	back_speed = BACK_SPEED
 	turn_rate = TURN
@@ -102,7 +115,7 @@ func can_shove(tree_down: bool) -> bool:
 	return not (tree_down and lift > 0.9)
 
 func _place_blade() -> void:
-	var swing := asin(clampf((lift + _steady) / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
+	var swing := asin(clampf((lift + _steady / size) / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
 	var turn := Basis(Vector3.BACK, swing)
 	_pivot.transform = Transform3D(turn, ARM_PIVOT - turn * ARM_PIVOT)
 
@@ -122,21 +135,29 @@ func set_cut(on: bool) -> void:
 		level_on = false
 		level_trim = 0.0
 
-## Deeper or shallower, in steps.
+## Deeper or shallower, in steps. A big one can take off twice as much.
 func change_cut(steps: int) -> void:
-	cut_cm = clampi(cut_cm + steps * CUT_STEP, CUT_STEP, CUT_MOST)
+	cut_cm = clampi(cut_cm + steps * CUT_STEP, CUT_STEP, cut_most())
+
+func cut_most() -> int:
+	return CUT_MOST * (2 if size > 1.5 else 1)
 
 ## Holds the cutting edge the set depth below where the ground began, measured across the blade just ahead of it.
 func _hold_cut(dt: float) -> void:
-	var ahead := spot + forward() * (EDGE_X + CUT_READ)
-	var side := Vector2(sin(angle), cos(angle)) * HALF_WIDTH * 0.8
+	var ahead := spot + forward() * (EDGE_X * size + CUT_READ)
+	var side := Vector2(sin(angle), cos(angle)) * HALF_WIDTH * size * 0.8
 	var began := (sim.start_at(ahead) + sim.start_at(ahead + side) + sim.start_at(ahead - side)) / 3.0
-	_blade_to(began - cut_cm * 0.01, dt)
+	var want := began - cut_cm * 0.01
+	# Inside a pegged-out pad it goes no deeper than the pad's height, so it can't dig the floor too low.
+	if pad and pad.inside(ahead):
+		want = maxf(want, pad.level)
+	at_pad = pad != null and pad.inside(ahead) and want <= pad.level + 0.001
+	_blade_to(want, dt)
 
 ## Holds the cutting edge just above the firm ground ahead of it. RAISE and LOWER set how far above.
 func _hold_level(dt: float) -> void:
 	level_trim += lift_cmd * LIFT_SPEED * 0.5 * dt
-	var ahead := spot + forward() * (EDGE_X + 0.3)
+	var ahead := spot + forward() * (EDGE_X * size + 0.3)
 	_blade_to(sim.firm_at(ahead) + LEVEL_SKIM + level_trim, dt)
 
 func _blade_to(want: float, dt: float) -> void:
@@ -164,8 +185,8 @@ func _steady_blade(dt: float) -> void:
 		_edge_avg = raw
 		_steady = move_toward(_steady, 0.0, 1.5 * dt)
 		return
-	_edge_avg = lerpf(_edge_avg, raw, minf(absf(speed) * dt / STEADY_OVER, 1.0))
-	_steady = clampf((_edge_avg - raw) * STEADY_SHARE, -STEADY_MOST, STEADY_MOST)
+	_edge_avg = lerpf(_edge_avg, raw, minf(absf(speed) * dt / (STEADY_OVER * size), 1.0))
+	_steady = clampf((_edge_avg - raw) * STEADY_SHARE, -STEADY_MOST * size, STEADY_MOST * size)
 
 ## One physics tick.
 func step(dt: float) -> void:
@@ -205,19 +226,19 @@ func step(dt: float) -> void:
 	if speed > 0.02 or (throttle > 0.05 and speed > -0.05):
 		# It moves what it sweeps through: no travel, no soil moved, so a stalled blade can't pump soil up a pile.
 		var share := clampf(maxf(speed, 0.0) * dt / SWEEP_DEPTH, 0.0, 1.0)
-		var r: Array = sim.blade(a, b, f, edge_mm, FIRM_RATE, share, CUT_CLEAN if cut_on else 2)
+		var r: Array = sim.blade(a, b, f, edge_mm, ceili(FIRM_RATE * size), share, CUT_CLEAN if cut_on else 2, size)
 		moved_m3 += DirtSim.to_m3(r[0])
 		moved_tick = r[0]
 		cut = r[1]
 		on_rock = r[2]
-	load_t = sim.load_ahead(a, b, f, edge_mm)
+	load_t = sim.load_ahead(a, b, f, edge_mm, size)
 
 	var drag := load_t * 1000.0 * 9.8 * FRICTION + cut * CUT_FORCE
 	if level_on:
 		drag *= LEVEL_DRAG
 	elif cut_on:
 		drag *= CUT_DRAG
-	_drive(dt, drag, level_on or cut_on, 1.0 - clampf(load_t / 20.0, 0.0, 0.65))
+	_drive(dt, drag, level_on or cut_on, 1.0 - clampf(load_t / (20.0 * size * size * size), 0.0, 0.65))
 	_shake_body(dt)
 	_settle(minf(dt * 10.0, 1.0))
 
@@ -253,7 +274,7 @@ func _shake_body(dt: float) -> void:
 	_clock += dt
 	var work := absf(drive)
 	_body.position.y = sin(_clock * 58.0) * (0.006 + 0.014 * work) + sin(_clock * 37.0) * 0.004 * work
-	var lean := clampf(load_t / 25.0, 0.0, 1.0) * 0.012 * work
+	var lean := clampf(load_t / (25.0 * size * size * size), 0.0, 1.0) * 0.012 * work
 	_body.rotation.z = rock_pitch + lean + sin(_clock * 23.0) * 0.0015 * work
 	_body.rotation.x = rock_roll
 
@@ -285,3 +306,13 @@ func side_view() -> Dictionary:
 		"near": 0.06,
 		"blade": true,
 	}
+
+## For the checks: put back somewhere else, settled, blade where it was.
+func reposition_for_test(at: Vector2, dir: Vector2) -> void:
+	spot = at
+	angle = atan2(-dir.y, dir.x)
+	speed = 0.0
+	drive = 0.0
+	y_smooth = sim.track_height_at(spot)
+	basis_smooth = Basis.IDENTITY
+	_settle(1.0)

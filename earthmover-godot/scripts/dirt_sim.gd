@@ -9,11 +9,12 @@ extends RefCounted
 ## Only the parts of the grid where something moved are worked on: a chunk goes to sleep once nothing in it moves. Work
 ## over the time budget waits for the next tick, so a big slide goes slower rather than stalling the game.
 
-const CELLS := 257              # cells a side
+## How big the world is: set_world() makes it bigger for the big site, before anything's built.
+static var CELLS := 257         # cells a side
 const CELL_M := 0.25
-const HALF_M := 32.0
+static var HALF_M := 32.0
 const CHUNK := 16               # cells a chunk side
-const CHUNKS := 17              # chunks a side
+static var CHUNKS := 17        # chunks a side
 const MM := 1000.0
 const TRACK_RIDE := 0.55         # how much of the loose soil under a track holds it up
 const HEAP_MM := 1600           # how high a blade heaps soil above its cutting edge: a load piled a bit over the blade's top
@@ -83,6 +84,16 @@ const SWELL_PCT := 35
 ## Raking leftover soil into a trench leaves this much on the cells it comes from.
 const RAKE_KEEP_MM := 20
 var swelled := 0
+
+## Sizes the world, `half` m from the middle to each edge: the grid, the drawn ground and how far a machine can go.
+static func set_world(half: float) -> void:
+	HALF_M = half
+	CELLS = int(round(half * 2.0 / CELL_M)) + 1
+	CHUNKS = (CELLS + CHUNK - 1) / CHUNK
+	GroundData.HALF = half
+	GroundData.N = CELLS - 1
+	GroundData.SIDE = CELLS
+	Machine.AREA = half - 6.0
 
 func _init() -> void:
 	bed.resize(CELLS * CELLS)
@@ -337,6 +348,76 @@ func rake_into(i: int, j: int, reach: int) -> int:
 					return moved
 	return moved
 
+## A rake drawn through the soil: in a strip `half` m either side of `c`, across `forward`, loose soil standing above the strip's
+## average height is drawn into the cells below it, the lowest getting most. Only loose soil moves, so firm ground is never dug, and
+## it moves in whole mm, so none is lost. `share` is how much of the difference goes this tick. Returns mm moved.
+func rake(c: Vector2, forward: Vector2, half: float, share: float) -> int:
+	var across := Vector2(-forward.y, forward.x)
+	var cells := PackedInt32Array()
+	var steps := int(half * 2.0 / (CELL_M * 0.5)) + 1
+	for row in 3:
+		var back := forward * (0.25 - row * 0.25)
+		for s in steps + 1:
+			var at := cell_of(c + back + across * lerpf(-half, half, float(s) / steps))
+			if at.x < RIM or at.y < RIM or at.x >= CELLS - RIM or at.y >= CELLS - RIM:
+				continue
+			var n := at.y * CELLS + at.x
+			if not cells.has(n):
+				cells.append(n)
+	if cells.size() < 2 or share <= 0.0:
+		return 0
+	var mean := 0
+	for n in cells:
+		mean += bed[n] + soil[n]
+	mean /= cells.size()
+	var spare := 0
+	var need := 0
+	for n in cells:
+		var h := bed[n] + soil[n]
+		if h > mean:
+			spare += mini(h - mean, soil[n])
+		else:
+			need += mean - h
+	var moving := int(minf(spare, need) * share)
+	if moving <= 0:
+		return 0
+	var pool := 0
+	var pool_dust := 0
+	for n in cells:
+		var give := mini(bed[n] + soil[n] - mean, soil[n])
+		if give <= 0:
+			continue
+		var got := mini(soil[n], ceili(float(give) * moving / spare))
+		got = mini(got, moving - pool)
+		if got <= 0:
+			break
+		var d := dust[n] * got / soil[n] if dust[n] > 0 else 0
+		soil[n] -= got
+		dust[n] -= d
+		pool += got
+		pool_dust += d
+		wake(n % CELLS, n / CELLS)
+	var left := pool
+	var left_dust := pool_dust
+	var lowest := -1
+	for n in cells:
+		var short := mean - (bed[n] + soil[n])
+		if short <= 0:
+			continue
+		if lowest < 0 or bed[n] + soil[n] < bed[lowest] + soil[lowest]:
+			lowest = n
+		var amt := mini(pool * short / need, left)
+		var d := mini(pool_dust * short / need, left_dust)
+		soil[n] += amt
+		dust[n] += d
+		left -= amt
+		left_dust -= d
+		wake(n % CELLS, n / CELLS)
+	if lowest >= 0:
+		soil[lowest] += left
+		dust[lowest] += left_dust
+	return pool
+
 ## Puts soil on a cell. It always all goes on: nothing can be refused without losing it.
 func put(i: int, j: int, amt: int, dust_amt := 0) -> void:
 	if amt <= 0:
@@ -430,7 +511,8 @@ func _step_air(dt: float) -> void:
 ## above the edge and drops it just ahead. Firm ground comes away slowly, and rock doesn't. Returns what it did:
 ## [mm moved, mm cut from firm ground, whether rock stopped it].
 ## `rows` over 2 sweep further back as well, for loose soil only: what slid off the heap onto ground already cut.
-func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int, share := 1.0, rows := 2) -> Array:
+## `scale` is for a big machine's blade: it heaps that much higher and lays its load that much further ahead.
+func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int, share := 1.0, rows := 2, scale := 1.0) -> Array:
 	var moved := 0
 	var cut := 0
 	var hit_rock := false
@@ -470,13 +552,13 @@ func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int
 				var along := float(s) / steps
 				var out := across * (1.0 if along >= 0.5 else -1.0)
 				var to_end := width * (0.5 - absf(along - 0.5))
-				_spill(p, forward, out, to_end, got, edge_mm + HEAP_MM, got_dust)
+				_spill(p, forward, out, to_end, got, edge_mm + int(HEAP_MM * scale), got_dust, scale)
 				moved += got
 	return [moved, cut, hit_rock]
 
 ## Lays what the blade took just ahead of it, up to `top_mm`. What's left over goes further ahead, then rolls off past the end
 ## of the blade as a windrow. This happens in the tick: slumping alone can't keep up, and soil would stack into a tower.
-func _spill(p: Vector2, forward: Vector2, out: Vector2, to_end: float, amt: int, top_mm: int, dust_amt := 0) -> void:
+func _spill(p: Vector2, forward: Vector2, out: Vector2, to_end: float, amt: int, top_mm: int, dust_amt := 0, scale := 1.0) -> void:
 	var left := amt
 	var left_dust := dust_amt
 	var lowest := -1
@@ -484,9 +566,9 @@ func _spill(p: Vector2, forward: Vector2, out: Vector2, to_end: float, amt: int,
 	for k in SPILL_AHEAD.size() + SPILL_SIDE.size():
 		var spot: Vector2
 		if k < SPILL_AHEAD.size():
-			spot = p + forward * SPILL_AHEAD[k]
+			spot = p + forward * SPILL_AHEAD[k] * scale
 		else:
-			spot = p + forward * 0.25 + out * (to_end + SPILL_SIDE[k - SPILL_AHEAD.size()])
+			spot = p + forward * 0.25 * scale + out * (to_end + SPILL_SIDE[k - SPILL_AHEAD.size()] * scale)
 		var at := cell_of(spot)
 		var i := clampi(at.x, RIM, CELLS - 1 - RIM)
 		var j := clampi(at.y, RIM, CELLS - 1 - RIM)
@@ -496,7 +578,7 @@ func _spill(p: Vector2, forward: Vector2, out: Vector2, to_end: float, amt: int,
 		if lowest < 0 or h < lowest_h:
 			lowest = n
 			lowest_h = h
-		var room := top_mm - h if ahead else top_mm - SIDE_LOWER_MM - h
+		var room := top_mm - h if ahead else top_mm - int(SIDE_LOWER_MM * scale) - h
 		if room <= 0:
 			continue
 		var given := mini(room, left)
@@ -551,10 +633,10 @@ func drag(a: Vector2, b: Vector2, toward: Vector2, leave_mm: int, share: float, 
 
 ## What's banked up against the blade: loose soil above the cutting edge in a strip ahead of it, in tonnes. Firm ground
 ## rising ahead doesn't count: it isn't being pushed yet.
-func load_ahead(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int) -> float:
+func load_ahead(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, scale := 1.0) -> float:
 	var over := 0
 	for row in 5:
-		var off := forward * (0.2 + row * 0.3)
+		var off := forward * (0.2 + row * 0.3) * scale
 		for s in 9:
 			var p := a.lerp(b, s / 8.0) + off
 			var at := cell_of(p)
@@ -563,7 +645,7 @@ func load_ahead(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int) -> float
 			if h > 0:
 				over += h
 	# Each sample stands for a patch of 0.3 m by an eighth of the blade.
-	var patch := 0.3 * a.distance_to(b) / 8.0
+	var patch := 0.3 * scale * a.distance_to(b) / 8.0
 	return over / MM * patch * 1.5
 
 ## ---------------------------------------------------------------- slumping
@@ -597,17 +679,18 @@ func step(dt: float, budget_usec := 4000) -> void:
 ## of each in turn so piles come out round rather than diamond-shaped. Corner neighbours are further away, so they may
 ## stand that much higher. Returns whether anything moved.
 func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
+	var cells := CELLS
 	var i0 := ci * CHUNK
 	var j0 := cj * CHUNK
-	var i1 := mini(i0 + CHUNK, CELLS)
-	var j1 := mini(j0 + CHUNK, CELLS)
+	var i1 := mini(i0 + CHUNK, cells)
+	var j1 := mini(j0 + CHUNK, cells)
 	var moved := false
-	var last := CELLS - 1
+	var last := cells - 1
 	var soil_limit := SOIL_LIMIT_CORNER if diagonals else SOIL_LIMIT
 	var dust_limit := DUST_LIMIT_CORNER if diagonals else DUST_LIMIT
 	var bed_limit := BED_LIMIT_CORNER if diagonals else BED_LIMIT
-	var off_a := CELLS + 1 if diagonals else 1
-	var off_b := CELLS - 1 if diagonals else CELLS
+	var off_a := cells + 1 if diagonals else 1
+	var off_b := cells - 1 if diagonals else cells
 	# Sweep a different way each tick, or soil would lean one way.
 	var ja := j0 if _flip else j1 - 1
 	var jb := j1 if _flip else j0 - 1
@@ -619,7 +702,7 @@ func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
 		for i in range(ia, ib, is_):
 			if i == 0 or j == 0 or i == last or j == last:
 				continue
-			var n := j * CELLS + i
+			var n := j * cells + i
 			var s := soil[n]
 			var h := bed[n] + s
 			var acted := false
@@ -635,8 +718,8 @@ func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
 				if d <= soil_limit:
 					continue
 				if s > 0:
-					var to_i := m % CELLS
-					var to_j := m / CELLS
+					var to_i := m % cells
+					var to_j := m / cells
 					if to_i < RIM or to_j < RIM or to_i > last - RIM or to_j > last - RIM:
 						continue
 					if ds < 0:
@@ -654,8 +737,8 @@ func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
 					soil[m] += mv
 					acted = true
 					moved_last_tick += mv
-					var mi := m % CELLS
-					var mj := m / CELLS
+					var mi := m % cells
+					var mj := m / cells
 					if (mi >> 4) != ci or (mj >> 4) != cj:
 						wake(mi, mj)
 				elif d > bed_limit and rock[n] == 0 and bed[n] > BED_FLOOR and not (clean_cut[m] != 0 and d <= CUT_WALL_MM):
