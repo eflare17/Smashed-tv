@@ -2030,6 +2030,20 @@ func _run_demo(dt: float) -> void:
 			dingo.lift_cmd = -1.0 if demo_clock < 1.4 else 0.0
 			dingo.throttle = 1.0
 			dingo.steer = 0.25 * sin(demo_clock * 0.25)
+		"trenchview":
+			# For a picture of the trench gauge: from the start ring toward the drain, then the chain lifted a bit, so a stretch
+			# goes uphill and the chain's short of the aim.
+			var l := dingo as Loader
+			if demo_clock < dt * 1.5:
+				_take_machine(l)
+				var a: Vector2 = Mission.source(mission)[0] if not mission.is_empty() else l.spot
+				var b: Vector2 = mission["drain"] if not mission.is_empty() else l.spot + Vector2(0.0, -8.0)
+				l.reposition(a - (b - a).normalized() * 0.75, (b - a).normalized())
+				l.toggle_attachment()
+				_show_attach()
+				_tour_t = -1.0
+			l.lift_cmd = -1.0 if demo_clock < 0.6 else (1.0 if demo_clock > 7.0 and demo_clock < 7.4 else 0.0)
+			l.throttle = 1.0 if demo_clock < 11.0 else 0.0
 		"piperun":
 			# Cut a trench, back along it laying pipe, and bury a stretch.
 			if demo_clock < dt * 1.5:
@@ -3005,6 +3019,7 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 		gauge.queue_redraw()
 		bucket_view.machine = active
 		bucket_view.truck = truck if machines.has(truck) else null
+		bucket_view.water_y = water.position.y if water != null and water.visible and Mission.kind(mission) == "flood" else NAN
 		bucket_view.queue_redraw()
 	stats.text = lines
 	if menu != null:

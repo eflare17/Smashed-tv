@@ -250,6 +250,17 @@ func stop_commands() -> void:
 func fill() -> float:
 	return float(bucket_mm) / capacity
 
+## Where the trench floor ought to be at `p` for the pipe to run downhill from where this cut began, or NAN with no cut begun.
+func aim_floor(p: Vector2) -> float:
+	if _grade_from == Vector2.INF:
+		return NAN
+	var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(p) if grade_toward != Vector2.INF else _grade_from.distance_to(p)
+	return _grade_floor0 - GRADE_FALL * nearer
+
+## Where this cut began, or INF with none begun.
+func aim_from() -> Vector2:
+	return _grade_from
+
 func gauge_word() -> Array:
 	if trencher_on:
 		if on_rock:
@@ -588,6 +599,11 @@ func _work_chain(dt: float) -> void:
 	if _grade_from != Vector2.INF:
 		var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(here) if grade_toward != Vector2.INF else _grade_from.distance_to(here)
 		aim_depth = beside - (_grade_floor0 - GRADE_FALL * nearer)
+		# Dug deeper than the aim, the aim comes down to it: coming back up to the old one would be uphill.
+		if not grade_on and chain_depth > aim_depth + 0.02:
+			_grade_from = here
+			_grade_floor0 = beside - chain_depth
+			aim_depth = chain_depth
 	if grade_on:
 		var want := aim_depth if aim_depth > 0.0 else GRADE_START
 		grade_short = want > CHAIN_MOST

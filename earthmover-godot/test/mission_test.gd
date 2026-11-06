@@ -22,6 +22,7 @@ func _init() -> void:
 		elif Mission.kind(job) == "flood":
 			flood_job_test(job)
 			grade_test(job)
+			words_test(job)
 		else:
 			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
@@ -400,6 +401,80 @@ func grade_test(job: Dictionary) -> void:
 
 ## Drives the trencher in a straight line from a to b. `floor_at` gives the floor wanted at each share of the way along, or a
 ## number under -50 to keep the chain at 0.5 m; the chain's raised and lowered to suit, as a player would.
+## Without GRADE, a player who does only what the trench picture says: LOWER while it says to, otherwise just drive. The water
+## should get through first time, and the picture should never have had to say a stretch went uphill.
+func words_test(job: Dictionary) -> void:
+	print("--- %s doing what the trench picture says" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new())
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	d.grade_toward = job["drain"]
+	var b := BucketView.new()
+	b.machine = d
+	root.add_child(b)
+	var a: Vector2 = Mission.source(job)[0]
+	var c: Vector2 = job["drain"]
+	var way := (c - a).normalized()
+	d.toggle_attachment()
+	d.reposition(a - way * 0.75, way)
+	d.throttle = 1.0
+	var t := 0.0
+	var said_red := false
+	var lowered := 0.0
+	var words := {}
+	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < a.distance_to(c) - 0.1 and t < 120.0:
+		var line := b.trench_line(d)
+		var word: String = b.trench_word(d, line["any_uphill"])[0]
+		words[word.get_slice(" ", 0)] = true
+		if word.begins_with("RED") and not said_red:
+			var xs: Array = line["xs"]
+			var bits := []
+			for k in xs.size():
+				if line["cut"][k]:
+					bits.append("%.2f:%.3f%s" % [xs[k], line["floors"][k], "!" if line["uphill"][k] else ""])
+			print("      first red at %.1f s, chain %.2f aim %.2f: %s" % [t, d.chain_depth, d.aim_depth, " ".join(bits)])
+		said_red = said_red or word.begins_with("RED")
+		d.lift_cmd = -1.0 if word.begins_with("LOWER") or word.begins_with("GO DEEPER") else 0.0
+		if d.lift_cmd < 0.0:
+			lowered += 0.1
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
+	print("      dug in %.0f s, LOWER held %.1f s in all, the chain at %.2f m at the end; it said: %s" % [t, lowered, d.chain_depth, ", ".join(words.keys())])
+	check(not said_red, "doing what it says, it never has to say a stretch goes uphill")
+	_lay_along(d, s, a, c)
+	pipes.settle(s)
+	var run := Mission.pipe_run(pipes.points(), job)
+	check(not run.is_empty() and Mission.water_stops_at(run, job) == -1, "doing what the trench picture says, the water gets through first time")
+	# And a stretch dug going up shows red: lift the chain partway along a fresh cut.
+	d.toggle_attachment()
+	while not d.trencher_on:
+		d.toggle_attachment()
+	var a2 := a + Vector2(0.0, 2.0)
+	d.reposition(a2 - way * 0.75, way)
+	d.throttle = 1.0
+	d.lift_cmd = -1.0
+	_run(d, s, 0.6)
+	d.lift_cmd = 0.0
+	_run(d, s, 4.0)
+	d.lift_cmd = 1.0
+	_run(d, s, 0.3)
+	d.lift_cmd = 0.0
+	_run(d, s, 3.0)
+	d.stop_commands()
+	var after := b.trench_line(d)
+	print("      lifted the chain partway: it says %s" % b.trench_word(d, after["any_uphill"])[0])
+	check(after["any_uphill"], "lifting the chain partway along shows a red stretch")
+	b.queue_free()
+
 func _trench_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2, floor_at: Callable) -> void:
 	var way := (b - a).normalized()
 	if not d.trencher_on:
