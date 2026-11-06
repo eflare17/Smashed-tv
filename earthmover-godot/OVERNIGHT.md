@@ -262,3 +262,61 @@ From the owner's phone screenshot: told to dig deeper, but couldn't see how. Wit
 - Online: only the host gets the card; both finish together. The net job demo's host taps FINISH at 3 stars.
 - `--demo=fillstars` with --mission=driveway / roof_water / backyard: fills a share at a time, prints the card, taps KEEP GOING
   then FINISH.
+
+## Big run steps 2 to 5 (6 Nov, owner: "keep going with the plan... go, go, go")
+Picks below are Claude's unless said; the owner agreed the list, not the details.
+
+### Hand tools and the garden patch (step 2)
+- On foot: SHOVEL and RAKE buttons pick a tool up or put it down (green while held). With the shovel, the bottom-right button
+  says DIG, then THROW, or THROW IN BARROW when a barrow's right in front. A shovelful is 0.012 m3 (Worker.SCOOP), loose soil
+  comes freely, firm ground 24 mm a cell at a time. Thrown as four clods on an arc (sim.launch), so a barrow's tray catches them.
+- scripts/barrow.gd: Barrow extends Machine. PUSH BARROW (the GET IN button) takes the handles; the worker's drawn pushing it.
+  Holds eight shovelfuls (0.096 m3), TIP lifts the handles and pours it over the wheel. Get out lets go. A sim catcher, like
+  the truck. Free play has one by the cracker dust.
+- Rake (DirtSim.rake): walking with it out, loose soil in a strip ahead that stands above the strip's average is drawn into
+  what's below it, the lowest getting most. Whole mm, loose only, so it never digs and never loses soil. Slower walk.
+- Garden patch job (after Backyard flood, "machine": On foot): a sunken patch by the driveway (10 cm, flat bottomed, 1.1 m
+  across), garden soil heaped by the fence, a barrow. Done within 3.5 cm of level, 70/80/90% for the stars. Starts on foot.
+- test/hand_test.gd: 8 shovelfuls fill a barrow, TIP empties it, four loads and raking get the patch to 100%, no soil lost.
+  `--mission=garden --demo=touchhand` does it all with the real buttons.
+
+### Pads: pegged-out ground and its tint
+- scripts/pad.gd: an outline of pegs, a level, how far above and below counts as done, and the cells inside (less a margin for
+  a dam's sloping sides). score() is the share at level. The ground shader tints inside: red to take off, blue to fill, green
+  done, with a line every 10 cm off. Pegs and pink string drawn by game._add_pad.
+
+### Big machines on the big site (step 3)
+- The world's size is now set per site: DirtSim.set_world(half) before anything's built (CELLS, CHUNKS, GroundData sizes,
+  Machine.AREA are static vars; shaders take HALF/LAST as uniforms). The big site is 96 m across (385 cells), a rolling paddock.
+- Big dozer and big excavator are the same classes made 1.9 times bigger (Machine.size, make_big before setup): the machine's
+  own transform carries the scale, so everything worked out in its own space comes out bigger. Weight and engine x size cubed,
+  so they handle like the small ones. Blade heaps and spills further (DirtSim.blade scale), the bucket holds 8.2 m3, both bite
+  firm ground faster. The big dozer's CUT goes to 1 m. Buttons are the small ones' ("Big " is dropped when matching).
+- Free play: big machines (start menu) puts them on the big site with two stockpiles. On a phone it starts with Low grass
+  (twice the ground); on the PC, High.
+- Farm dam job (after Garden patch): 24 x 14 m pegged out, 1 m deep, a tank and a shed beside it. The floor counts (1.5 m in
+  from the pegs), within 15 cm. Inside the pegs CUT stops at the floor; the excavator's readout says how far to the floor.
+  Finishing fills it with water. Online, the friend gets the other big machine.
+- test/big_test.gd: the big dozer pushes eight times the load, the big excavator takes three times the bite, CUT passes dig the
+  dam to 93-100% and never below the floor, no soil lost.
+
+### The scout ute (step 4)
+- scripts/ute.gd: white single cab, steel tray, bull bar, beacon; 40 km/h, road steering. In both free plays and the dam job.
+- Free play only: PEG drops a survey peg beside the driver's door (up to 12), the button above says UNDO PEG, then CLOSE IT UP
+  from three. Closing makes a pad round the outside of the pegs, levelled to the ground's average inside (cut and fill
+  balance), within 5 cm. The dozer's CUT and the excavator's readout work to it. Stars and the FINISH / KEEP GOING card like a
+  job; FINISH says PAD DONE and pulls the pegs. PULL PEGS or NEW PEGS start again. Pegs go to a friend online (PEGS message).
+- `--machine=Ute --demo=touchute`: drives, four pegs, closes, levels, FINISH.
+
+### The PC build (step 5)
+- Same game, not a branch: project renderer is Forward+ on desktop, Mobile on phones, Compatibility on the web.
+- On the PC (_pc_look): soft shading in corners (SSAO), screen-space reflections, sky reflections, 4 shadow splits, 4x MSAA,
+  High grass, and shaders/water_pc.gdshader: moving ripples, the ground seen through and bent, darker deep, foam at the edges.
+- "Windows" export preset, embedded pack: build/DozerDrive.exe, copied to G:\My Drive\Dozer Drive PC\. Not signed, so
+  Windows may warn the first time.
+
+### Also
+- Start and host menus in two columns, so seven jobs and two free plays fit on a phone. Hints wrap clear of the buttons.
+- online: place_id() says where the host is ("big" for big free play) so a friend follows onto the big site.
+- This PC's test window draws at about 4 frames a second even for the build before this work, so on-screen speed here says
+  nothing; phone speed on the big site is still to be tried.

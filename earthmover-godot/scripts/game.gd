@@ -266,6 +266,11 @@ func _ready() -> void:
 	# A phone browser has far less to spare than the phone app, so it starts with less grass. The Grass button still works.
 	if OS.has_feature("web_android") or OS.has_feature("web_ios"):
 		grass = "Low"
+	elif RenderingServer.get_current_rendering_method() == "forward_plus" and grass == "Medium":
+		grass = "High"
+	elif big_site and grass == "Medium":
+		# The big site has more than twice the ground to cover: a phone starts it with less grass. The Grass button still works.
+		grass = "Low"
 	var t0 := Time.get_ticks_msec()
 	ground.fill_sim(sim)
 	if big_site and mission.is_empty():
@@ -409,9 +414,45 @@ func _build_world() -> void:
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
+	if _pc_look():
+		_pc_extras(sun, env, sky)
 
 func _web_look() -> bool:
 	return RenderingServer.get_current_rendering_method() == "gl_compatibility"
+
+## The PC build: the full renderer, so the extras that phones can't afford are switched on.
+func _pc_look() -> bool:
+	return RenderingServer.get_current_rendering_method() == "forward_plus"
+
+## Water: on the PC, the shader with waves, seeing in, reflections and foam; elsewhere, plain see-through blue.
+func _water_look() -> Material:
+	if _pc_look():
+		var w := ShaderMaterial.new()
+		w.shader = preload("res://shaders/water_pc.gdshader")
+		w.set_shader_parameter("noise_tex", noise_tex)
+		return w
+	var look := StandardMaterial3D.new()
+	look.albedo_color = Color(0.38, 0.6, 0.78, 0.82)
+	look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	look.cull_mode = BaseMaterial3D.CULL_DISABLED
+	look.roughness = 0.12
+	look.metallic_specular = 0.7
+	return look
+
+## On the PC: soft shading in corners and creases, reflections off the water, smoother edges, longer shadows and more grass.
+func _pc_extras(sun: DirectionalLight3D, env: Environment, sky: Sky) -> void:
+	env.ssao_enabled = true
+	env.ssao_radius = 1.4
+	env.ssao_intensity = 1.6
+	env.ssao_power = 1.3
+	env.ssao_light_affect = 0.15
+	env.ssr_enabled = true
+	env.ssr_max_steps = 56
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	sky.radiance_size = Sky.RADIANCE_SIZE_128
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = 170.0 if big_site else 120.0
+	get_viewport().msaa_3d = Viewport.MSAA_4X
 
 func _ground_material() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
@@ -1236,15 +1277,9 @@ func _add_flood() -> void:
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	var look := StandardMaterial3D.new()
-	look.albedo_color = Color(0.38, 0.6, 0.78, 0.82)
-	look.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	look.cull_mode = BaseMaterial3D.CULL_DISABLED
-	look.roughness = 0.12
-	look.metallic_specular = 0.7
 	water = MeshInstance3D.new()
 	water.mesh = m
-	water.material_override = look
+	water.material_override = _water_look()
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	water_y0 = Mission.water_y(mission)
 	water.position = Vector3(c.x, water_y0, c.y)
@@ -3318,11 +3353,14 @@ func place_id() -> String:
 ## For the big machines, the host goes there first and the room comes along.
 func _host_game(big := false) -> void:
 	online.host(online_arg.substr(5) if online_arg.begins_with("host:") else "")
-	if big != big_site or not mission.is_empty():
+	# Picked from the menu: free play, on the big site or the usual one. Hosting where it already is, it just carries on.
+	if menu_kind == "host" and (big != big_site or not mission.is_empty()):
 		online_go_to("big" if big else "")
 		return
 	if mission.is_empty():
-		_start_free_play()
+		Engine.set_meta("free_play", true)
+		if menu != null:
+			_close_menu()
 	_online_bar()
 	online_changed()
 
@@ -3603,6 +3641,8 @@ func finish_mission() -> void:
 	sfx.clunked(1.0)
 	Input.vibrate_handheld(200)
 	print("MISSION DONE: %s at %.1f%%" % [mission["id"], _score() * 100.0])
+	if Mission.kind(mission) == "dam":
+		_fill_dam()
 	active.stop_commands()
 	if shot_path != "":
 		shot_wait = mini(shot_wait, 20)
@@ -4466,3 +4506,18 @@ func _demo_shot(tag: String) -> void:
 	if shot_path == "":
 		return
 	get_viewport().get_texture().get_image().save_png(shot_path.get_basename() + "_" + tag + ".png")
+
+## The farm dam done: it fills with water, rising up its sides over a few seconds.
+func _fill_dam() -> void:
+	var r: Rect2 = (mission["dam"] as Rect2).grow(1.5)
+	var sheet := PlaneMesh.new()
+	sheet.size = r.size
+	sheet.subdivide_width = 24
+	sheet.subdivide_depth = 16
+	var dam_water := MeshInstance3D.new()
+	dam_water.mesh = sheet
+	dam_water.material_override = _water_look()
+	dam_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	dam_water.position = Vector3(r.get_center().x, job_pad.level - 0.1, r.get_center().y)
+	add_child(dam_water)
+	create_tween().tween_property(dam_water, "position:y", job_pad.level + 0.7, 8.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
