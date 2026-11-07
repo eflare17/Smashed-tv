@@ -1789,7 +1789,9 @@ func _apply_all() -> void:
 func _show_buttons() -> void:
 	var who := active.machine_name
 	# A big one has the same buttons as the small one.
-	var kind := who.trim_prefix("Big ").trim_prefix("Haul ").capitalize()
+	# Only the first letter made big: "Big dozer" is a Dozer, but "On foot" has to stay "On foot" to match its buttons.
+	var kind := who.trim_prefix("Big ").trim_prefix("Haul ")
+	kind = kind.left(1).to_upper() + kind.substr(1)
 	for b in touch_buttons:
 		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(kind)
 	if spade_button and spade_button.visible:
