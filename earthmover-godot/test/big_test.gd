@@ -104,6 +104,7 @@ func dam_test() -> void:
 	var r: Rect2 = job["dam"]
 	check(absf(pad.level - (s.height_at(r.get_center()) - 1.0)) < 0.05, "its floor is 1 m down (%.2f m)" % pad.level)
 	check(pad.score(s) < 0.05, "none of it's dug to start with")
+	check(_wet(s, pad, pad.shown) == 0.0, "the water under it is hidden to start with (%.0f%% of it shows)" % (_wet(s, pad, pad.shown) * 100.0))
 	var total := s.total()
 	var d := Dozer.new()
 	d.make_big(1.9)
@@ -131,6 +132,9 @@ func dam_test() -> void:
 	check(pad.score(s) > 0.15, "passes with CUT get the floor going (%d%%)" % int(pad.score(s) * 100.0))
 	check(below == 0, "CUT never digs below the floor (%d cells too deep)" % below)
 	check(s.total() == total, "no soil lost digging the dam")
+	# Water showing is what counts: dig till you see it.
+	var wet := _wet(s, pad, pad.cells)
+	check(wet > 0.1 and absf(wet - pad.score(s)) < 0.02, "the water shows on just the floor that counts (%d%% shows, %d%% counts)" % [int(wet * 100.0), int(pad.score(s) * 100.0)])
 	# Dug too deep, as with the blade pushed down on LOWER, it still counts: a deeper dam's still a dam.
 	for n in pad.cells:
 		s.bed[n] = int((pad.level - 0.6) * 1000.0)
@@ -139,3 +143,12 @@ func dam_test() -> void:
 	for n in pad.cells:
 		s.bed[n] = int((pad.level + 0.4) * 1000.0)
 	check(pad.score(s) < 0.01, "but one 0.4 m short doesn't (%d%%)" % int(pad.score(s) * 100.0))
+
+## How much of these cells are dug down under the dam's water, so it shows there, 0 to 1.
+func _wet(s: DirtSim, pad: Pad, of: PackedInt32Array) -> float:
+	var top := int(Mission.dam_water_y(pad) * 1000.0)
+	var n := 0
+	for c in of:
+		if s.bed[c] + s.soil[c] < top:
+			n += 1
+	return float(n) / maxi(of.size(), 1)

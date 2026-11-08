@@ -62,6 +62,8 @@ func _process(_d: float) -> bool:
 		check(g.active.machine_name == "On foot", "LET GO lets go of it")
 		check(g.get_in_button.visible and g.get_in_word.text == "PUSH\nBARROW", "and PUSH BARROW is back, to take hold again")
 		check(not g.buttons["out"].visible, "on foot, the top bar's Let go is gone")
+		# Out of the tree first, as the game's own reload does: the mine's a bigger world, and the old one mustn't run another frame in it.
+		root.remove_child(g)
 		g.queue_free()
 		on_mine = true
 		_start()

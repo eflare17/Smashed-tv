@@ -211,6 +211,8 @@ var drain_puffs: CPUParticles3D
 var pipe_connected := false
 var stop_flag: Node3D
 var water_y0 := 0.07
+## The farm dam's water, lying under the ground at the floor's depth, so it shows wherever it's been dug deep enough.
+var dam_sheet: MeshInstance3D
 ## The rings and words at each end of a pipe job, and whether a pipe's reached each.
 var end_marks: Array = []
 var end_reached := [false, false]
@@ -976,7 +978,9 @@ func _add_dam_site(kit: MeshKit) -> void:
 	dozer.pad = job_pad
 	digger.pad = job_pad
 	var r: Rect2 = mission["dam"]
-	var tank := Vector2(r.end.x + 9.0, r.position.y - 2.0)
+	# Only inside the pegs: it's the floor in there that's to come down to it.
+	dam_sheet = _water_sheet(r, Mission.dam_water_y(job_pad))
+	var tank :=Vector2(r.end.x + 9.0, r.position.y - 2.0)
 	var g := sim.height_at(tank)
 	kit.cone(Vector3(tank.x, g, tank.y), Vector3(tank.x, g + 2.6, tank.y), 1.8, 1.8, 14, Props.c("#b9c2c6"))
 	kit.cone(Vector3(tank.x, g + 2.6, tank.y), Vector3(tank.x, g + 3.1, tank.y), 1.85, 0.2, 14, Props.c("#9aa4a8"))
@@ -4622,17 +4626,25 @@ func _demo_shot(tag: String) -> void:
 		return
 	get_viewport().get_texture().get_image().save_png(shot_path.get_basename() + "_" + tag + ".png")
 
-## The farm dam done: it fills with water, rising up its sides over a few seconds.
-func _fill_dam() -> void:
-	var r: Rect2 = (mission["dam"] as Rect2).grow(1.5)
+## A flat sheet of water over a patch, at a height.
+func _water_sheet(r: Rect2, y: float) -> MeshInstance3D:
 	var sheet := PlaneMesh.new()
 	sheet.size = r.size
 	sheet.subdivide_width = 24
 	sheet.subdivide_depth = 16
-	var dam_water := MeshInstance3D.new()
-	dam_water.mesh = sheet
-	dam_water.material_override = _water_look()
-	dam_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	dam_water.position = Vector3(r.get_center().x, job_pad.level - 0.1, r.get_center().y)
-	add_child(dam_water)
+	var w := MeshInstance3D.new()
+	w.mesh = sheet
+	w.material_override = _water_look()
+	w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	w.position = Vector3(r.get_center().x, y, r.get_center().y)
+	add_child(w)
+	return w
+
+## The farm dam done: it fills with water, rising from the floor's up its sides over a few seconds.
+func _fill_dam() -> void:
+	var y := Mission.dam_water_y(job_pad)
+	if dam_sheet != null:
+		dam_sheet.queue_free()
+		dam_sheet = null
+	var dam_water := _water_sheet((mission["dam"] as Rect2).grow(1.5), y)
 	create_tween().tween_property(dam_water, "position:y", job_pad.level + 0.7, 8.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)

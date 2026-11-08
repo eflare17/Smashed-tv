@@ -22,6 +22,10 @@ const DAM_TOL := 0.15            # m: a dam floor's done where it's no more than
 const DAM_DEEPER_OK := 10.0      # m: and dug deeper counts too: a deeper dam just holds more water, and it's not meant to be fiddly
 const DAM_EDGE := 1.5            # m in from the pegs that counts as floor: the sides slope
 
+## The water lying under a dam, hidden till it's dug down to: it shows just where the floor's deep enough to count.
+static func dam_water_y(p: Pad) -> float:
+	return p.level + DAM_TOL
+
 const LIST := [
 	{
 		"id": "driveway",
@@ -152,7 +156,7 @@ const LIST := [
 		"digger_dir": Vector2(0.0, -1.0),
 		"dam": Rect2(-12.0, -13.0, 24.0, 14.0),
 		"dam_deep": 1.0,
-		"hint": "Dig the dam out inside the pegs: red's still to come out, green's deep enough. The dozer's CUT stops at the floor",
+		"hint": "Dig the dam out inside the pegs until you hit water: that's deep enough. Red's still to come out. The dozer's CUT stops at the floor",
 		"done": "",
 	},
 ]
