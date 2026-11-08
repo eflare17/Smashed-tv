@@ -125,9 +125,11 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 
 - **More machines (stage 10).** On the same DsMachine base, parked by the gate:
   - Bobcat (`ds_bobcat.gd`): a DsDingo with wheels and a cab, faster, a 520-block bucket 1.5 m wide.
-  - Excavator (`ds_excavator.gd`): tracks, a house that slews (Z/X), boom (R/F), stick (T/G), bucket (right mouse curls
-    in and digs while it's in the ground, left opens and pours). Reaches ~2 m below its tracks; breaks stone (not hard
-    rock). The driver's view slews with the house.
+  - Excavator (`ds_excavator.gd`): the digger game's own, after the owner said the first one "looks trash compared to
+    the other one". Its model (`ds_props.gd`, `ds_kit.gd`, `ds_track_rig.gd`: copies of earthmover's props.gd,
+    mesh_kit.gd, track_rig.gd, renamed) and its arm: you steer the bucket's pin (R/F up/down, T/G out/in) and the boom
+    and stick solve for it (elbow up), Z/X swing the house, right mouse curls the bucket in (digging in the ground),
+    left opens it (pours from under the pin: over the truck, into it). 5.6 m boom; breaks stone (not hard rock).
   - Tip truck (`ds_truck.gd`): six wheels, steered (it only turns rolling), 5 m/s, climbs 22 degrees. Any bucket poured
     over its tray fills the tray (2400 blocks); R tips it and it pours out behind (spilling round when a column's
     full). Parked by the site office, L loads concrete supports ($8 each, up to 12); on foot at its back, G takes one

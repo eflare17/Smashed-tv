@@ -96,37 +96,35 @@ func _solo() -> bool:
 				check(b.load_n > 60, "the Bobcat's bucket fills (%d of %d)" % [b.load_n, b.capacity])
 				var x := _m(3) as DsExcavator
 				_on(x)
-				x.boom_cmd = -1.0
-				x.stick_cmd = 1.0
+				x.raise_cmd = -1.0
 				_next(4)
 		4:
 			var x := _m(3) as DsExcavator
 			if t - mark > 3.0:
-				x.boom_cmd = 0.0
-				x.stick_cmd = 0.0
+				x.raise_cmd = 0.0
 				var e := x.edge()
 				v.e_under = ds.terrain.top_at(e.x, e.z) - e.y
 				check(float(v.e_under) > 0.2, "the excavator's bucket down in the ground (%.2f m under)" % v.e_under)
-				x.curl = -0.3
+				x.curl = 1.8
 				x.curl_cmd = 1.0
-				x.stick_cmd = -0.6
+				x.reach_cmd = -0.6
 				_next(5)
 		5:
 			var x := _m(3) as DsExcavator
 			if t - mark > 1.4:
 				x.curl_cmd = 0.0
-				x.stick_cmd = 0.0
+				x.reach_cmd = 0.0
 				check(x.load_n > 40, "curling in, it digs (%d blocks)" % x.load_n)
 				check(x.edge().y < x.global_position.y, "below its own tracks")
-				x.boom_cmd = 1.0
+				x.raise_cmd = 1.0
 				_next(6)
 		6:
 			var x := _m(3) as DsExcavator
 			if t - mark > 2.5:
-				x.boom_cmd = 0.0
+				x.raise_cmd = 0.0
 				# the truck backed up under its bucket
 				var tk := _m(4) as DsTruck
-				var e := x.edge()
+				var e := x.pour_point()
 				var off := tk.global_transform.basis * DsTruck.TRAY_AT
 				tk.global_position = Vector3(e.x - off.x, tk.ground_y(e.x - off.x, e.z - off.z), e.z - off.z)
 				tk._pose_now()
@@ -216,15 +214,14 @@ func _coop() -> bool:
 			if (x.driver == 2 and t - mark > 0.5) or t - mark > 10.0:
 				check(x.driver == 2, "the guest's in the excavator")
 				if role == "guest":
-					x.boom_cmd = -1.0
-					x.stick_cmd = 1.0
+					x.raise_cmd = -1.0
 				_next(4)
 		4:
 			var x := _m(3) as DsExcavator
 			if t - mark > 3.5:
 				if role == "guest":
-					x.boom_cmd = 0.0
-					x.stick_cmd = -0.6
+					x.raise_cmd = 0.0
+					x.reach_cmd = -0.6
 					x.curl_cmd = 1.0
 				_next(5)
 		5:
@@ -232,7 +229,7 @@ func _coop() -> bool:
 			if t - mark > 2.5:
 				if role == "guest":
 					x.curl_cmd = 0.0
-					x.stick_cmd = 0.0
+					x.reach_cmd = 0.0
 				_next(6)
 		6:
 			var x := _m(3) as DsExcavator

@@ -78,7 +78,7 @@ func _build() -> void:
 func over_tray(p: Vector3) -> bool:
 	var l := global_transform.affine_inverse() * p
 	var t := TRAY_AT
-	return absf(l.x - t.x) < TRAY.x * 0.5 + 0.1 and absf(l.z - t.z) < TRAY.z * 0.5 + 0.1 and l.y > t.y - 0.2 and l.y < t.y + TRAY.y + 2.0 and tip < 0.2
+	return absf(l.x - t.x) < TRAY.x * 0.5 + 0.1 and absf(l.z - t.z) < TRAY.z * 0.5 + 0.1 and l.y > t.y - 0.2 and l.y < t.y + TRAY.y + 4.5 and tip < 0.2
 
 ## Blocks of m poured in (a bucket over it): -> how many fitted
 func take(m: int, n: int) -> int:
