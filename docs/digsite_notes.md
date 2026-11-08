@@ -148,6 +148,19 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   triangles. A change now redraws the sections within 2 cells. Machines ride a blended height (the four nearest
   columns) and check the slope just ahead of their leading wheels, so they still won't climb a pit's wall. Tool bites
   aim a few cm in (the surface can sit half a block off the blocks).
+- **Smoother surface (the owner, 8 Nov, after asking about godot_voxel: "give it a go").** Rather than move to Zylann's
+  Voxel Tools (it would have meant rebuilding the dirt, the cutter, cave-ins, supports, dynamite and the co-op sync
+  around it, for level of detail a 64 m site doesn't need), the mesher's surface is relaxed: constrained surface nets.
+  Each vertex moves to the average of the vertices it shares a crossed face with, 4 times (`RELAX`), never out of its
+  own cube, so the surface stays within half a block of the blocks (flat ground exactly on their tops, a one-block
+  roof or wall kept: cubes on a thin wall's two sides aren't neighbours) while rims, walls and tunnel arches come out
+  smooth instead of crinkled. Normals come from the relaxed triangles. Each section works out `PAD` (6) cubes past its
+  sides so its edge vertices match its neighbour's; that also closed the pinhole cracks that showed sky or grass in
+  tunnels. Rows of cubes that are all solid or all air are skipped, so a section meshes in ~1.5 ms (was ~2 ms; the
+  slowest 3 ms, was 9). The cells, digging, dirt, machines and network are unchanged.
+- **The paddock sheet under the site (fixed, 8 Nov):** the far grass was one 1.2 km plane 1 m under ground level,
+  right under the site too, so any hole over a metre deep showed a flat green floor. It's now four strips round the
+  site's grass bands.
 
 - **Driving view and the level (the owner, 8 Nov: "a level type thing ... so you can see what angle it is and
   also like a third person view ... and be able to move the camera around").** Driving now starts seen from behind

@@ -116,14 +116,20 @@ func _build() -> void:
 		_box(body, Vector3(f, 1.0, band), Vector3(0, -0.5, sgn * (SIZE * 0.5 + band * 0.5)), grass)
 		_box(body, Vector3(band, 1.0, SIZE), Vector3(sgn * (SIZE * 0.5 + band * 0.5), -0.5, 0), grass)
 	# the paddock out to the horizon, and pines round the site (none across the gate)
-	var far := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(1200.0, 1200.0)
-	far.mesh = pm
-	far.material_override = _mat(Color(0.29, 0.50, 0.18))
-	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	far.position = AT + Vector3(0, -1.02, 0)
-	add_child(far)
+	# (four strips round the grass bands, not one sheet under everything: under the site it showed through any hole
+	# over a metre deep as a green floor)
+	var reach := 1200.0
+	var strip := (reach - f) * 0.5
+	for side in [[Vector2(reach, strip), Vector3(0, 0, 1)], [Vector2(reach, strip), Vector3(0, 0, -1)],
+			[Vector2(strip, f), Vector3(1, 0, 0)], [Vector2(strip, f), Vector3(-1, 0, 0)]]:
+		var far := MeshInstance3D.new()
+		var pm := PlaneMesh.new()
+		pm.size = side[0]
+		far.mesh = pm
+		far.material_override = _mat(Color(0.29, 0.50, 0.18))
+		far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		far.position = AT + Vector3(0, -1.02, 0) + (side[1] as Vector3) * (f * 0.5 + strip * 0.5)
+		add_child(far)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED * 7 + 3
 	var pines: Array[ArrayMesh] = []
