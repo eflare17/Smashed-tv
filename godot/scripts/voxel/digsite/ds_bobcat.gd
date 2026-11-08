@@ -43,4 +43,4 @@ func _build_body() -> void:
 			_wheels.append([mi, 0.38])
 
 func keys() -> String:
-	return "W/S drive   A/D turn   R/F arms up/down   right mouse: curl the bucket   left mouse: tip it (over the truck: in it)   E get off"
+	return "W/S drive   A/D turn   R/F arms up/down\nright mouse: curl the bucket   left mouse: tip it (over the truck: in it)   V view   wheel zoom   E get off"

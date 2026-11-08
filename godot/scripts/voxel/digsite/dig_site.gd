@@ -268,7 +268,18 @@ func _put_keep(p: Vector3) -> void:
 	arena.player.velocity = Vector3.ZERO
 
 func _unhandled_input(e: InputEvent) -> void:
-	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
+	if not active or arena.phone.is_open():
+		return
+	# driving: V the view, the wheel nearer or further (not the weapons)
+	if driving() and e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		machines.zoom(e.button_index == MOUSE_BUTTON_WHEEL_UP)
+		get_viewport().set_input_as_handled()
+		return
+	if not (e is InputEventKey and e.pressed and not e.echo):
+		return
+	if driving() and (e as InputEventKey).physical_keycode == KEY_V:
+		machines.toggle_view()
+		get_viewport().set_input_as_handled()
 		return
 	var k := (e as InputEventKey).physical_keycode
 	if near_office and k in [KEY_B, KEY_C, KEY_V, KEY_X]:

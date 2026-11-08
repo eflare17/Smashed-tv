@@ -217,7 +217,7 @@ func stop_cmds() -> void:
 	curl_cmd = 0.0
 
 func keys() -> String:
-	return "W/S A/D tracks   Z/X swing   R/F bucket up/down   T/G reach out/in   right mouse: curl in (dig)   left mouse: open (pour; over the truck: in it)   E get off"
+	return "W/S A/D tracks   Z/X swing   R/F bucket up/down   T/G reach out/in\nright mouse: curl in (dig)   left mouse: open (pour)   V view   wheel zoom   E get off"
 
 func status() -> String:
 	return "Bucket %d%%" % int(100.0 * load_n / CAPACITY) + ("   " + blocked if blocked != "" else "")

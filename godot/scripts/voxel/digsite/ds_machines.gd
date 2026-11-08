@@ -18,10 +18,16 @@ var near: DsMachine = null      # the one E would get on
 var _send_t := 0.0
 var _yaw_was := 0.0
 var _asked := 0.0               # (a guest: asked to drive this long ago)
+var third := true               # driving seen from behind (V: from the seat)
+var cam_dist := 6.0             # (the mouse wheel: nearer, further)
+var gauge: DsGauge              # the level while driving
 
 func setup(s: Node3D) -> void:
 	site = s
 	name = "Machines"
+	gauge = DsGauge.new()
+	gauge.visible = false
+	s.arena._hud_layer.add_child(gauge)
 
 ## Every machine parked where it starts (and its net hooks)
 func make() -> void:
@@ -163,6 +169,11 @@ func use() -> bool:
 func _on(m: DsMachine) -> void:
 	driving = m
 	_yaw_was = m.view_yaw()
+	gauge.machine = m
+	cam_dist = clampf(m.length * 1.5 + 3.0, 5.0, 16.0)
+	site.arena.look_yaw = m.view_yaw()
+	site.arena.look_pitch = -0.3 if third else 0.0
+	_show_me(third)
 	m.stop_cmds()
 	site.arena._let_go()
 	site.arena.say(m.keys(), 4.0)
@@ -173,6 +184,9 @@ func get_off() -> void:
 		return
 	driving = null
 	_asked = 99.0                   # (a guest: not straight back on while the host's state still says it's ours)
+	gauge.machine = null
+	site.arena.look_pitch = 0.0
+	_show_me(false)
 	m.stop_cmds()
 	if site.net.runs():
 		m.driver = 0
@@ -233,6 +247,8 @@ func _process(dt: float) -> void:
 		a.look_yaw += wrapf(driving.view_yaw() - _yaw_was, -PI, PI)
 		_yaw_was = driving.view_yaw()
 		a._use_label.text = driving.status()
+		if third:
+			_third_cam(driving, dt)
 	# who's near (on foot)
 	near = null
 	if driving == null:
@@ -252,6 +268,50 @@ func _process(dt: float) -> void:
 				site.net.send_fast(m.id, m.net_state())
 			elif driving == m:
 				site.net.send_fast(m.id + CMD_BASE, m.net_cmds())
+
+## V while driving: from behind it, or from the seat
+func toggle_view() -> void:
+	third = not third
+	site.arena.look_pitch = -0.3 if third else 0.0
+	_show_me(third)
+	site.arena.say("Seen from behind it (V: from the seat; mouse: look round it; wheel: nearer, further)" if third else "From the seat (V: from behind it)", 2.0)
+
+## The mouse wheel while driving, from behind: nearer or further
+func zoom(nearer: bool) -> void:
+	cam_dist = clampf(cam_dist * (0.88 if nearer else 1.14), 3.0, 30.0)
+
+# your own Jared seen on the machine (from behind), or not (from the seat: the arena hides him again)
+func _show_me(on: bool) -> void:
+	var a = site.arena
+	if a.avatar == null:
+		return
+	if on:
+		a._set_layers(a.avatar, 1)
+	a.avatar.visible = on
+
+# the camera behind the machine, round it with the mouse (the arena's look), not through the ground; you on it
+func _third_cam(m: DsMachine, dt: float) -> void:
+	var a = site.arena
+	var target := m.global_position + Vector3(0, 1.0 + m.length * 0.12, 0)
+	var yaw: float = a.look_yaw
+	var p := clampf(float(a.look_pitch), -1.25, 0.3)
+	var dir := Vector3(-sin(yaw) * cos(p), sin(p), -cos(yaw) * cos(p))
+	var pos := target - dir * cam_dist
+	var floor_y: float = m.ground_y(pos.x, pos.z) + 0.5
+	if pos.y < floor_y:
+		pos.y = floor_y
+	a.cam.global_position = pos
+	if pos.distance_to(target) > 0.05:
+		a.cam.look_at(target, Vector3.UP)
+	a.cross.visible = false
+	var av = a.avatar
+	if av:
+		av.visible = true
+		av.global_position = m.seat_world()
+		var f := Vector3(-sin(m.view_yaw()), 0, -cos(m.view_yaw()))
+		av.yaw = atan2(f.x, f.z)
+		av.speed = 0.0
+		av.animate(dt, false)
 
 ## The prompt on foot near one
 func line() -> String:

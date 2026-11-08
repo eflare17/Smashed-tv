@@ -149,6 +149,13 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   columns) and check the slope just ahead of their leading wheels, so they still won't climb a pit's wall. Tool bites
   aim a few cm in (the surface can sit half a block off the blocks).
 
+- **Driving view and the level (the owner, 8 Nov: "a level type thing ... so you can see what angle it is and
+  also like a third person view ... and be able to move the camera around").** Driving now starts seen from behind
+  the machine (DsMachines._third_cam): the mouse swings the camera round it (the arena's look), the wheel brings it
+  nearer or further, V switches to the seat and back; you're shown on it (your Jared). `ds_gauge.gd`: two dials top
+  right, the machine side on tipped by its nose and from behind by its lean, with degrees, white / amber (70% of what
+  it climbs) / red, and red marks at its limit; TOO STEEP when it's stopped for it.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from

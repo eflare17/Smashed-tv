@@ -140,7 +140,7 @@ func stop_cmds() -> void:
 	tip_cmd = 0.0
 
 func keys() -> String:
-	return "W/S drive   A/D steer   R/F tip the tray up/down   L load concrete supports (by the site office)   E get off"
+	return "W/S drive   A/D steer   R/F tip the tray up/down\nL load concrete supports (by the site office)   V view   wheel zoom   E get off"
 
 func status() -> String:
 	var s := "Tray %d%%" % int(100.0 * load_n / CAPACITY)

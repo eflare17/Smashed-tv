@@ -146,7 +146,7 @@ func stop_cmds() -> void:
 	curl_cmd = 0.0
 
 func keys() -> String:
-	return "W/S drive   A/D turn   R/F arms up/down   right mouse: curl the bucket   left mouse: tip it   E get off"
+	return "W/S drive   A/D turn   R/F arms up/down\nright mouse: curl the bucket   left mouse: tip it   V view   wheel zoom   E get off"
 
 func status() -> String:
 	var s := "Bucket %d%%" % int(100.0 * load_n / capacity)
