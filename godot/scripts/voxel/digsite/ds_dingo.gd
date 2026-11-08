@@ -11,9 +11,11 @@ extends DsMachine
 const LIFT_RATE := 0.75         # rad/s, the arms
 const CURL_RATE := 1.3
 const ARM_LOW := -0.95          # rad from level: the bucket's edge just under its tracks ...
-const DIG_MOST := 0.06          # m: arms right down and the bucket level, its edge this far under its wheels at most (the
-                                # owner, 8 Nov: "the bucket's going lower than the tires": 18 cm on the Bobcat, so it cut
-                                # a slot, drove down into it and cut deeper still; a real skid-steer reaches a few cm)
+const DIG_MOST := 0.09          # m: its lip this far under the ground its back wheels stand on at most (the owner, 8 Nov:
+                                # "the bucket's going lower than the tires"): held in the world, not just against the body,
+                                # or its front wheels drop into its own cut, it tips nose down and the lip goes deeper still.
+                                # (one 12.5 cm layer a pass: the cutter takes a block whose middle is over the lip, 6.25 cm
+                                # down for the top one; two would need the lip 18.75 cm down)
 const ARM_HIGH := 0.95          # ... and up high (over a truck's side)
 const CURL_MIN := -0.95         # the bucket's floor against level: tipped right forward ...
 const CURL_MAX := 0.75          # ... curled right back
@@ -24,8 +26,10 @@ const BITE_EVERY := 0.08        # s between bites
 const POUR_RATE := 300.0        # blocks a second, tipped right forward
 const HARDEST := 2              # soil and clay (DsMats.HARD)
 
-var arm := 0.0                  # radians from level
+var arm := 0.0                  # radians from level (where the driver's put the arms)
 var curl := 0.0                 # the bucket's floor against level (up +: holding; tipped forward -: pouring)
+var arm_at := 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST
+var curl_at := 0.0              # the bucket against the body as it is: curl, less the body's pitch (it self-levels)
 var lift_cmd := 0.0
 var curl_cmd := 0.0
 var bucket := {}                # material -> blocks in it
@@ -77,6 +81,8 @@ func _build() -> void:
 	# (the arms' lowest: the bucket's lip, level, no more than DIG_MOST under the wheels)
 	arm_low = maxf(arm_low, asin(clampf((-DIG_MOST - pivot.y) / arm_len, -1.0, 1.0)))
 	arm = maxf(arm, arm_low)
+	arm_at = arm
+	curl_at = curl
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)
@@ -122,12 +128,42 @@ func tip() -> float:
 	return curl
 
 func _pin() -> Vector2:
-	return pivot + Vector2(cos(arm), sin(arm)) * arm_len
+	return pivot + Vector2(cos(arm_at), sin(arm_at)) * arm_len
+
+## The arms and the bucket as they are, from where the driver's put them: the bucket's floor kept at its angle to
+## level however the body tips, and the arms lifted if the lip would go more than DIG_MOST under the ground its back
+## wheels stand on or the ground just ahead of the lip, whichever's lower (so down a slope it follows the slope, but
+## its front wheels dropping into its own cut don't tip it in deeper: that ground ahead isn't cut yet)
+func _hold() -> void:
+	curl_at = clampf(curl - pitch, CURL_MIN, CURL_MAX)
+	arm_at = arm
+	var c := _corners(global_position, yaw)
+	var p := _pin()
+	var ahead := _look.global_transform * Vector3(p.x + bucket_len + 0.3, p.y, 0.0)
+	var lim := minf(maxf(c[2], c[3]), ground_y(ahead.x, ahead.z)) - DIG_MOST
+	if _lip_y(arm) >= lim:
+		return
+	var lo := arm
+	var hi := arm_high
+	if _lip_y(hi) < lim:
+		arm_at = hi
+		return
+	for i in 12:
+		var mid := (lo + hi) * 0.5
+		if _lip_y(mid) < lim:
+			lo = mid
+		else:
+			hi = mid
+	arm_at = hi
+
+func _lip_y(a: float) -> float:
+	var p := pivot + Vector2(cos(a), sin(a)) * arm_len
+	return (_look.global_transform * Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)).y
 
 ## The bucket's lip, its two ends, in the world
 func edge_ends() -> Array:
 	var p := _pin()
-	var l := Vector3(p.x + cos(curl) * bucket_len, p.y + sin(curl) * bucket_len, 0.0)
+	var l := Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)
 	return [_look.global_transform * (l + Vector3(0, 0, -bucket_half)), _look.global_transform * (l + Vector3(0, 0, bucket_half))]
 
 ## From the bucket's lip back to its front wheels (m)
@@ -143,14 +179,14 @@ func _drive(dt: float) -> void:
 ## The bucket's cutting edge in the world
 func edge() -> Vector3:
 	var p := _pin()
-	return _look.global_transform * Vector3(p.x + cos(curl) * bucket_len, p.y + sin(curl) * bucket_len, 0.0)
+	return _look.global_transform * Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)
 
 func _pose_tool() -> void:
 	if _arms == null:
 		return
 	var p := _pin()
-	_arms.transform = Transform3D(Basis(Vector3.BACK, arm), Vector3(pivot.x, pivot.y, 0.0))
-	_bucket.transform = Transform3D(Basis(Vector3.BACK, curl), Vector3(p.x, p.y, 0.0))
+	_arms.transform = Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
+	_bucket.transform = Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
 	var f := float(load_n) / capacity
 	_lump.visible = f > 0.03
 	if _lump.visible:
@@ -192,6 +228,7 @@ func _tool(dt: float) -> void:
 	_spin(dt)
 	arm = clampf(arm + lift_cmd * LIFT_RATE * dt, arm_low, arm_high)
 	curl = clampf(curl + curl_cmd * CURL_RATE * dt, CURL_MIN, CURL_MAX)
+	_hold()
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
 	var e := edge()
@@ -256,13 +293,15 @@ func _most() -> int:
 	return best
 
 func net_more() -> PackedFloat32Array:
-	return PackedFloat32Array([arm, curl, float(load_n)])
+	return PackedFloat32Array([arm, curl, float(load_n), arm_at, curl_at])
 
 func net_take_more(f: PackedFloat32Array) -> void:
 	if f.size() >= 3:
 		arm = lerpf(arm, f[0], 0.5)
 		curl = lerpf(curl, f[1], 0.5)
 		load_n = int(f[2])
+		arm_at = lerpf(arm_at, f[3], 0.5) if f.size() >= 5 else arm
+		curl_at = lerpf(curl_at, f[4], 0.5) if f.size() >= 5 else curl
 
 func _cmds_more() -> PackedFloat32Array:
 	return PackedFloat32Array([lift_cmd, curl_cmd])

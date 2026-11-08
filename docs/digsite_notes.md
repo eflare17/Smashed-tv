@@ -244,10 +244,16 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   far sections keep their own budget, capped by a running average of the build time. Column tops are cached in C++
   (`top_cached`, cleared per column on change, and by network chunks) so the cavity shade and the decor don't rescan
   columns.
-- Loader buckets can't dig below their wheels (the owner, 8 Nov: "the bucket's going lower than the tires"): the
-  Dingo's and Bobcat's lowest arm angle is held so the bucket edge stays at most 6 cm under the wheels' ground
-  (`DsDingo.DIG_MOST`); they dig down by working along, a layer at a time, as a real skid steer does. The Dingo test
-  checks it.
+- Loader buckets can't dig below their wheels (the owner, 8 Nov: "the bucket's going lower than the tires", and again
+  after a first fix): arms right down, the Bobcat's lip was 18 cm under its wheels. Limiting the arms against the body
+  wasn't enough: the front wheels drop into the bucket's own cut, the machine tips nose down, the bucket with it, and
+  it goes in deeper still (measured: 59 cm down in 4 s). Now `DsDingo._hold` works in the world each frame: the
+  bucket self-levels (its floor keeps its angle to level however the body tips), and the arms lift if the lip would
+  go more than 9 cm (`DIG_MOST`) under the lower of the ground the back wheels stand on and the uncut ground just
+  ahead of the lip. Down a slope it follows the slope; on the flat it takes one 12.5 cm layer a pass (the cutter
+  takes a block whose middle is over the lip: 6.25 cm down for the top one, 18.75 for the next) and steps down a
+  layer only once its back wheels reach the cut. The guest is sent the arms and bucket as held. The fleet test
+  checks the lip never goes deeper (`digsite_fleet_test.gd`); its Bobcat, parked facing down a slope, gets 4.5 s.
 
 ## Open questions
 

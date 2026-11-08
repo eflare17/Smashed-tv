@@ -91,9 +91,15 @@ func _solo() -> bool:
 				_next(3)
 		3:
 			var b := _m(2) as DsBobcat
-			if t - mark > 3.0:
+			# (the owner, 8 Nov: "the bucket's going lower than the tires": its lip, under the ground it stands on)
+			var c := b._corners(b.global_position, b.yaw)
+			var e := b.edge()
+			var ah: Vector3 = e + b.forward() * 0.3
+			v.deepest = maxf(float(v.get("deepest", 0.0)), minf(maxf(c[2], c[3]), b.ground_y(ah.x, ah.z)) - e.y)
+			if t - mark > 4.5:          # (parked facing down a slope: the bucket follows it down, a layer at a time)
 				b.throttle = 0.0
 				check(b.load_n > 60, "the Bobcat's bucket fills (%d of %d)" % [b.load_n, b.capacity])
+				check(float(v.deepest) < DsDingo.DIG_MOST + 0.03, "its bucket never more than %.2f m under its wheels' ground (%.3f)" % [DsDingo.DIG_MOST, v.deepest])
 				var x := _m(3) as DsExcavator
 				_on(x)
 				x.raise_cmd = -1.0
