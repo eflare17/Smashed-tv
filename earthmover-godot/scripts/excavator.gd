@@ -211,7 +211,7 @@ func gauge_word() -> Array:
 	var word := "BUCKET %.1f m3" % DirtSim.to_m3(bucket_mm)
 	var at := Vector2(teeth.x, teeth.z)
 	if pad and pad.inside(at):
-		var left := sim.height_at(at) - pad.level
+		var left := sim.height_at(at) - pad.level_at(sim, at)
 		if left > pad.tol_up:
 			return [word + "   %.1f m TO THE FLOOR" % left, Color("#ff9a4a")]
 		if left < -pad.tol_down:

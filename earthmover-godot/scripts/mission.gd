@@ -21,6 +21,12 @@ const HAND_TOL := 0.035          # m: a garden patch is done where it's this nea
 const DAM_TOL := 0.15            # m: a dam floor's done where it's no more than this above the floor
 const DAM_DEEPER_OK := 10.0      # m: and dug deeper counts too: a deeper dam just holds more water, and it's not meant to be fiddly
 const DAM_EDGE := 1.5            # m in from the pegs that counts as floor: the sides slope
+## The farm road: boxed out `road_drop` under the ground as it was, following it over the rises. Forgiving, like the dam: a cell's
+## done from 5 cm too high to 15 cm too deep, and the half metre by each line of pegs doesn't count.
+const ROAD_TOL_UP := 0.05
+const ROAD_TOL_DOWN := 0.15
+const ROAD_EDGE := 0.5
+const ROAD_STEP := 2.0           # m between the points down the middle of the road, and so between pegs on each side
 
 ## The water lying under a dam, hidden till it's dug down to: it shows just where the floor's deep enough to count.
 static func dam_water_y(p: Pad) -> float:
@@ -177,6 +183,32 @@ const LIST := [
 		"digger_dir": Vector2(0.0, -1.0),
 		"patch": Rect2(-11.0, -12.0, 22.0, 14.0),
 		"hint": "Something's buried inside the pegs. The beep speeds up as the bucket gets near it. Then go gently: a hard knock marks it",
+		"done": "FARM ROAD UNLOCKED",
+	},
+	{
+		# The paddock once more: a farm road pegged out from the gate to the shed, curving over the rises, to be boxed out 10 cm
+		# deep following the ground. When it's done, the farmer drives it in the ute.
+		"id": "farm_road",
+		"title": "Farm road",
+		"kind": "road",
+		"site": "big",
+		"machine": "Big dozer",
+		"needs": "buried_find",
+		"rect": Rect2(),
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"start": Vector2(-37.0, 14.0),
+		"dir": Vector2(1.0, 0.0),
+		"digger": Vector2(-10.0, -10.0),
+		"digger_dir": Vector2(0.64, 0.77),
+		"ute": Vector2(-33.0, 23.0),
+		"ute_dir": Vector2(1.0, 0.0),
+		"track": [Vector2(-30.0, 14.0), Vector2(-18.0, 15.0), Vector2(-6.0, 7.0), Vector2(6.0, -3.0), Vector2(18.0, -10.0), Vector2(31.0, -11.0)],
+		"road_half": 4.0,
+		"road_drop": 0.1,
+		"shed": Vector2(38.5, -11.0),
+		"tank": Vector2(36.0, -21.0),
+		"hint": "Box out the road 10 cm deep. Tap CUT and drive along it: on the road it stops at 10 cm. Push the dirt off the sides. Red's still to come off, green's done, blue's too deep",
 		"done": "",
 	},
 ]
@@ -364,7 +396,7 @@ static func house_front(m: Dictionary) -> float:
 	return (m["rect"] as Rect2).position.y - 0.5
 
 static func road(m: Dictionary) -> Rect2:
-	if kind(m) in ["dam", "find"]:
+	if kind(m) in ["dam", "find", "road"]:
 		return Rect2()
 	return Rect2(-80.0, 9.0, 160.0, 6.0)
 
@@ -374,6 +406,9 @@ static func site(m: Dictionary) -> Rect2:
 		return (m["dam"] as Rect2).grow(7.0)
 	if kind(m) == "find":
 		return (m["patch"] as Rect2).grow(7.0)
+	if kind(m) == "road":
+		# Nothing's flattened: the road's to follow the paddock's rises.
+		return Rect2()
 	# A flood job has the backyard as well.
 	var top := house_front(m) - (23.5 if kind(m) == "flood" else 11.0)
 	return Rect2(-14.0, top, 28.0, 16.0 - top)
@@ -455,7 +490,39 @@ static func _sink_patch(sim: DirtSim, m: Dictionary) -> void:
 
 ## Whether the job's done by bringing a pegged-out patch to one height, scored by its Pad.
 static func is_pad_job(m: Dictionary) -> bool:
-	return kind(m) in ["hand", "dam"]
+	return kind(m) in ["hand", "dam", "road"]
+
+## The middle of the farm road, a point every ROAD_STEP m: a smooth curve through the job's points.
+static func track(m: Dictionary) -> PackedVector2Array:
+	var ctrl: Array = m["track"]
+	var out := PackedVector2Array()
+	for k in ctrl.size() - 1:
+		var p0: Vector2 = ctrl[maxi(k - 1, 0)]
+		var p1: Vector2 = ctrl[k]
+		var p2: Vector2 = ctrl[k + 1]
+		var p3: Vector2 = ctrl[mini(k + 2, ctrl.size() - 1)]
+		# Catmull-Rom between p1 and p2, finely, then taken every ROAD_STEP m along it.
+		var steps := 40
+		for s in steps:
+			var t := float(s) / steps
+			var t2 := t * t
+			var t3 := t2 * t
+			var q := 0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+			if out.is_empty() or q.distance_to(out[out.size() - 1]) >= ROAD_STEP:
+				out.append(q)
+	var last: Vector2 = ctrl[ctrl.size() - 1]
+	if out[out.size() - 1].distance_to(last) < ROAD_STEP * 0.5:
+		out[out.size() - 1] = last
+	else:
+		out.append(last)
+	return out
+
+## How far a spot is from the middle of the road, in m.
+static func off_track(points: PackedVector2Array, p: Vector2) -> float:
+	var best := INF
+	for k in points.size() - 1:
+		best = minf(best, p.distance_to(Geometry2D.get_closest_point_to_segment(p, points[k], points[k + 1])))
+	return best
 
 ## The patch of ground the job's to bring to height, pegged out.
 static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
@@ -471,6 +538,11 @@ static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
 		var p := Pad.new(Pad.box(r), level, DAM_TOL, DAM_DEEPER_OK, DAM_EDGE)
 		p.title = String(m["title"]).to_upper()
 		return p
+	if kind(m) == "road":
+		var p := Pad.along(track(m), float(m["road_half"]), ROAD_EDGE, ROAD_TOL_UP, ROAD_TOL_DOWN)
+		p.drop = float(m["road_drop"])
+		p.title = String(m["title"]).to_upper()
+		return p
 	return null
 
 ## Who's on the job, for the menu: one machine each, or what's on site to share.
@@ -482,4 +554,6 @@ static func crew(m: Dictionary) -> String:
 			return "big dozer and big excavator"
 		"find":
 			return "big excavator and big dozer"
+		"road":
+			return "big dozer and big excavator"
 	return "two %ss" % m["machine"]

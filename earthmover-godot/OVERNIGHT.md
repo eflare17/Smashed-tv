@@ -393,3 +393,41 @@ owner then said to work out the rest and set it up; those picks are Claude's and
   hand. A shovelful is now twice what it was (`Worker.SCOOP` 384, 0.024 m3) and it takes 6 cm off firm ground, not 2.4
   (`FIRM_BITE` 60). A barrow's now four shovelfuls. The shovel can't dig into a find and is never a knock; find_test checks three
   shovelfuls take the last 18 cm off a spot on the bones.
+
+## Overnight 8-9 Nov 2026: bigger free play, finds in free play, Farm road
+
+The owner picked these before bed from a few questions (one each): the farm road on the big site with the big machines, the
+farmer's ute driving it at the end (not gravel, a culvert or puddles), three finds hidden per free play map, and free play a
+quarter bigger. The rest are Claude's picks, marked (pick).
+
+- Free play's sites are a quarter bigger each way: the house site 80 m across (was 64), the mine 120 m (was 96). Jobs keep their
+  size (`Game.world_half`). The mine's bund moves out with the edge (`GroundData.MINE_BUND_IN`); the house site gets trees in
+  proportion, 31 not 20 (pick). The extra is more of the same ground, fences moved out. Phone speed on the bigger mine is untested:
+  it's 1.56 times the ground of the big site the owner's already played.
+- Free play finds: one each of the old car, dinosaur bones and gold, somewhere new each start, on open ground clear of the pit,
+  heaps, roads, trees and where the machines start, at least 10 m apart (pick), as deep as on the job under the lowest ground over
+  them. The beep starts 8 m out (pick: no pegs to say where to look) from a bucket, the dozer's blade or the shovel in his hands
+  (the shovel now beeps on the Buried find job too). "FINDS: 0 OF 3" sits under the readout at the top left, with the beep light
+  under it. Uncovered enough to see (6%, as on the job), each is counted and said ("You found gold! 1 of 3 found", and "That's all 3
+  found" for the last, pick). A hard knock marks it and says KNOCK, nothing more. Online, the place id carries the seed ("#1234",
+  "big#1234") so a friend's game has them in the same places. Headless checks go without, so their digging is the same every run,
+  unless they give a seed. `test/freefind_test.gd`.
+- Farm road (`Mission` "farm_road", after Buried find, whose done line now says FARM ROAD UNLOCKED): the green paddock, not
+  flattened, big dozer and big excavator, the ute parked by the start. A 69 m road, 8 m wide, curving from near the west fence to the
+  farm shed (its door facing down the road) and tank (layout pick), going over 3.4 m of rise and fall. Pegs every 4 m down both
+  sides with string on them, open at the ends. It's to be boxed out 10 cm under the ground as it was, following it: done from 5 cm
+  high to 15 cm deep, and the half metre by each line of pegs doesn't count (forgiving picks, like the dam). Red/green/blue tint as
+  on the dam. The dozer's CUT stops at the road's height on the road, so CUT and drive along it does most of it: one pass in the
+  check boxes out 71%. The excavator's readout says how far to the road's floor.
+  - `Pad.drop`: a pad whose height follows the ground as it began, `drop` under it, rather than one level. `Pad.along()` makes a
+    road-shaped pad from a line. `Mission.track()` is the smooth line through the job's points, a point every 2 m.
+  - CUT now follows the land across as well as along (affects CUT everywhere): each end of the blade is held its own depth under
+    where the ground began on its side, the blade tilted to match (`Dozer.cut_tilt`, drawn as `blade_roll`). Before, it cut level
+    across, so on a side slope the high side went up to half a metre too deep. Now about 1% of the road ends up a few cm deeper
+    than allowed, in a dip near the start.
+  - Finished (FINISH on the star card), the dozer and excavator are moved off the road if they're on it, the ute goes to the start
+    and drives the road to the shed with the camera behind it ("The farmer's trying out the new road", pick), about 10 seconds,
+    then the end card. TAP TO SKIP goes straight to the end. A friend's game just shows the end card.
+  - `test/road_test.gd`.
+- The start menu's job list now reaches the bottom of a phone screen with Farm road in it: the next job will need the list to scroll
+  or go into two columns.

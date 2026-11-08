@@ -238,6 +238,12 @@ var free_finds: Array[Find] = []
 var free_found := 0
 var finds_label: Label
 var _free_check := 0.0
+## The farm road's middle, and the farmer's drive down it once it's finished (owner's pick, 8 Nov): how long it's been going, and
+## how long the ute's been held up.
+var road_points := PackedVector2Array()
+var road_show_t := -1.0
+var _road_held := 0.0
+var _road_skip: Control
 ## A word on screen for a few seconds, over the hint: a knock, or what was found.
 var say_text := ""
 var say_time := 0.0
@@ -762,8 +768,9 @@ func _build_props() -> void:
 	barrow.setup(sim, view_data, prop_mat, GroundData.barrow_spot(), Vector2(0.0, 1.0))
 	ute = Ute.new()
 	add_child(ute)
-	var ute_at := MINE_UTE_AT if mine else (BIG_UTE_AT if big_site else GroundData.ute_spot())
-	ute.setup(sim, view_data, prop_mat, ute_at, Vector2(0.0, 1.0) if mine else (Vector2(1.0, 0.25).normalized() if big_site else Vector2(1.0, 0.0)))
+	var ute_at: Vector2 = MINE_UTE_AT if mine else (mission.get("ute", BIG_UTE_AT) if big_site else GroundData.ute_spot())
+	var ute_dir: Vector2 = Vector2(0.0, 1.0) if mine else (mission.get("ute_dir", Vector2(1.0, 0.25).normalized()) if big_site else Vector2(1.0, 0.0))
+	ute.setup(sim, view_data, prop_mat, ute_at, ute_dir)
 	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute]
 	active = dozer
 	for m: Machine in machines:
@@ -923,12 +930,19 @@ func _job_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	var spots: Array[Vector2] = []
 	var keep := Mission.site(mission)
 	var road := Mission.road(mission).grow(1.5)
+	var track := Mission.track(mission) if Mission.kind(mission) == "road" else PackedVector2Array()
 	var tries := 0
 	while spots.size() < 12 and tries < 400:
 		tries += 1
 		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
 		if keep.has_point(p) or road.has_point(p):
 			continue
+		# Clear of the farm road, the shed and tank at its end, and where the machines start.
+		if not track.is_empty():
+			if Mission.off_track(track, p) < float(mission["road_half"]) + 4.0 or p.distance_to(mission["shed"]) < 9.0 or p.distance_to(mission["tank"]) < 5.0:
+				continue
+			if p.distance_to(mission["start"]) < 9.0 or p.distance_to(mission["digger"]) < 9.0 or p.distance_to(mission["ute"]) < 6.0:
+				continue
 		var crowded := false
 		for other: Vector2 in spots:
 			if other.distance_to(p) < 6.0:
@@ -945,6 +959,9 @@ func _add_site(kit: MeshKit) -> void:
 		return
 	if Mission.kind(mission) == "find":
 		_add_find_site(kit)
+		return
+	if Mission.kind(mission) == "road":
+		_add_road_site(kit)
 		return
 	var r: Rect2 = mission["rect"]
 	var peg := Props.c("#efe8d8")
@@ -1057,12 +1074,26 @@ func _add_find_site(kit: MeshKit) -> void:
 
 ## A tank and a shed beside a job on the paddock, so it reads as a farm.
 func _add_farm_bits(kit: MeshKit, r: Rect2) -> void:
-	var tank := Vector2(r.end.x + 9.0, r.position.y - 2.0)
+	_add_farm_buildings(kit, Vector2(r.end.x + 9.0, r.position.y - 2.0), Vector2(r.position.x - 12.0, r.end.y + 8.0), 0.0)
+
+## The farm road: pegged down both sides, the dozer's CUT and the excavator's readout working to it, and the shed at its end with its
+## door facing down the road.
+func _add_road_site(kit: MeshKit) -> void:
+	job_pad = Mission.pad_for(sim, mission)
+	_add_pad(job_pad)
+	dozer.pad = job_pad
+	digger.pad = job_pad
+	road_points = Mission.track(mission)
+	var last := road_points[road_points.size() - 1]
+	var to_road: Vector2 = last - mission["shed"]
+	_add_farm_buildings(kit, mission["tank"], mission["shed"], atan2(to_road.x, to_road.y))
+
+## A water tank, and a shed whose door faces `turn` radians round from +z.
+func _add_farm_buildings(kit: MeshKit, tank: Vector2, shed: Vector2, turn: float) -> void:
 	var g := sim.height_at(tank)
 	kit.cone(Vector3(tank.x, g, tank.y), Vector3(tank.x, g + 2.6, tank.y), 1.8, 1.8, 14, Props.c("#b9c2c6"))
 	kit.cone(Vector3(tank.x, g + 2.6, tank.y), Vector3(tank.x, g + 3.1, tank.y), 1.85, 0.2, 14, Props.c("#9aa4a8"))
 	obstacles.append([tank, tank, 1.9])
-	var shed := Vector2(r.position.x - 12.0, r.end.y + 8.0)
 	g = sim.height_at(shed)
 	var sk := MeshKit.new()
 	sk.box(Vector3(0.0, 1.6, 0.0), Vector3(8.0, 3.2, 6.0), Props.c("#c9cdd0"))
@@ -1072,9 +1103,12 @@ func _add_farm_bits(kit: MeshKit, r: Rect2) -> void:
 	built.mesh = sk.mesh()
 	built.material_override = prop_mat
 	built.position = Vector3(shed.x, g - 0.1, shed.y)
+	built.rotation.y = turn
 	add_child(built)
 	house = built
-	obstacles.append([shed + Vector2(-1.0, 0.0), shed + Vector2(1.0, 0.0), 3.0])
+	# Its long side runs across the way its door faces.
+	var across := Vector2(cos(turn), -sin(turn))
+	obstacles.append([shed - across, shed + across, 3.0])
 
 ## ---------------------------------------------------------------- pads: ground pegged out to be brought to a height
 
@@ -1082,7 +1116,8 @@ func _add_farm_bits(kit: MeshKit, r: Rect2) -> void:
 func _add_pad(p: Pad) -> void:
 	pads.append(p)
 	var kit := MeshKit.new()
-	var deep := p.level < sim.height_at(p.middle()) - 0.25
+	# A road follows the ground, so its string's up on the pegs the same.
+	var deep := p.drop >= 0.0 or p.level < sim.height_at(p.middle()) - 0.25
 	var tops := PackedVector3Array()
 	# A peg at every corner, or every other one round a curve.
 	var every := 2 if p.outline.size() > 8 else 1
@@ -1094,6 +1129,9 @@ func _add_pad(p: Pad) -> void:
 		# The string's at the height wanted, so it shows where the ground's to come to. Below ground, as for a dam, it just runs round.
 		tops.append(Vector3(at.x, g + 0.3 if deep else p.level + 0.07, at.y))
 	for k in tops.size():
+		# A road's open at both ends: no string across it there.
+		if p.open_ends and (k == tops.size() / 2 - 1 or k == tops.size() - 1):
+			continue
 		var a := tops[k]
 		var b := tops[(k + 1) % tops.size()]
 		var along := b - a
@@ -1119,7 +1157,7 @@ func _refresh_pads() -> void:
 	pad_img.fill(Color(0.0, 0.0, 0.0, 0.0))
 	for p: Pad in pads:
 		for n: int in p.shown:
-			pad_img.set_pixel(n % DirtSim.CELLS, n / DirtSim.CELLS, Color(1.0, p.level, p.tol_up, p.tol_down))
+			pad_img.set_pixel(n % DirtSim.CELLS, n / DirtSim.CELLS, Color(1.0, p.want_mm(sim, n) * 0.001, p.tol_up, p.tol_down))
 	pad_tex.update(pad_img)
 	ground_mat.set_shader_parameter("has_pads", not pads.is_empty())
 
@@ -2698,6 +2736,8 @@ func _physics_process(dt: float) -> void:
 		online.run_demo(dt)
 	elif demo != "" and not demo.begins_with("touch") and demo != "ui":
 		_run_demo(dt)
+	elif road_show_t >= 0.0:
+		_road_show_step(dt)
 	elif mode == "Drive" and menu == null:
 		var reach: float = get_viewport().get_visible_rect().size.y * 0.14
 		var stick := Vector2.ZERO
@@ -3905,9 +3945,116 @@ func finish_mission() -> void:
 	active.stop_commands()
 	if shot_path != "":
 		shot_wait = mini(shot_wait, 20)
+	# The farm road's finished with the farmer driving it, and the end comes after. A friend's game just shows the end: the
+	# host's ute is what it sees driving.
+	if Mission.kind(mission) == "road" and not online.is_guest():
+		_start_road_show()
+		return
 	menu_kind = "done"
 	banner.visible = false
 	_build_menu()
+
+## ---------------------------------------------------------------- the farm road's finish: the farmer drives it
+
+## The ute to the start of the road, anything parked on it moved off to the side, and the camera behind the ute.
+func _start_road_show() -> void:
+	road_show_t = 0.0
+	_road_held = 0.0
+	var way := (road_points[1] - road_points[0]).normalized()
+	for m: Machine in machines:
+		if m != ute and m.visible and Mission.off_track(road_points, m.spot) < float(mission["road_half"]) + 6.0:
+			_park_off_road(m)
+	_place_machine(ute, road_points[0] - way * 6.0, way)
+	active = ute
+	_set_view("Chase")
+	chase_yaw = _behind_yaw()
+	_show_buttons()
+	_say("The farmer's trying out the new road", 5.0)
+	# A tap anywhere goes straight to the end.
+	_road_skip = Control.new()
+	_road_skip.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_road_skip.mouse_filter = Control.MOUSE_FILTER_STOP
+	_road_skip.gui_input.connect(_on_road_skip)
+	var h: float = get_viewport().get_visible_rect().size.y
+	var word := Label.new()
+	word.text = "TAP TO SKIP"
+	word.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	word.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	word.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	word.position.y -= h * 0.06
+	word.add_theme_font_size_override("font_size", int(h / 30.0))
+	word.add_theme_color_override("font_outline_color", Color.BLACK)
+	word.add_theme_constant_override("outline_size", 8)
+	_road_skip.add_child(word)
+	ui.add_child(_road_skip)
+	print("ROAD SHOW starts: the ute at %s" % ute.spot)
+
+func _on_road_skip(e: InputEvent) -> void:
+	if (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed):
+		_end_road_show()
+
+## Every tick of the drive: steer for a point a little way along the road, ease off near the end, and stop there. Held up for long
+## (something in the way), or taking too long, it ends anyway.
+func _road_show_step(dt: float) -> void:
+	road_show_t += dt
+	var near_k := 0
+	var best := INF
+	for k in road_points.size():
+		var d := road_points[k].distance_squared_to(ute.spot)
+		if d < best:
+			best = d
+			near_k = k
+	var aim := road_points[mini(near_k + 3, road_points.size() - 1)]
+	var want := aim - ute.spot
+	var turn := wrapf(atan2(-want.y, want.x) - ute.angle, -PI, PI)
+	ute.steer = clampf(-turn * 2.5, -1.0, 1.0)
+	var to_end := ute.spot.distance_to(road_points[road_points.size() - 1])
+	ute.throttle = clampf(to_end / 12.0, 0.15, 0.55)
+	_road_held = _road_held + dt if road_show_t > 2.0 and absf(ute.speed) < 0.3 else 0.0
+	if (near_k >= road_points.size() - 2 and to_end < 2.5) or _road_held > 3.0 or road_show_t > 30.0:
+		print("ROAD SHOW ends after %.1f s, %.1f m from the end%s" % [road_show_t, to_end, ", held up" if _road_held > 3.0 else ""])
+		_end_road_show()
+
+func _end_road_show() -> void:
+	if road_show_t < 0.0:
+		return
+	road_show_t = -1.0
+	ute.stop_commands()
+	if _road_skip != null:
+		_road_skip.queue_free()
+		_road_skip = null
+	menu_kind = "done"
+	banner.visible = false
+	_build_menu()
+
+## Moved off the side of the road, facing along it, out of the ute's way.
+func _park_off_road(m: Machine) -> void:
+	var best := INF
+	var at := Vector2.ZERO
+	var along := Vector2.RIGHT
+	for k in road_points.size() - 1:
+		var q := Geometry2D.get_closest_point_to_segment(m.spot, road_points[k], road_points[k + 1])
+		if q.distance_to(m.spot) < best:
+			best = q.distance_to(m.spot)
+			at = q
+			along = (road_points[k + 1] - road_points[k]).normalized()
+	var side := Vector2(-along.y, along.x)
+	if (m.spot - at).dot(side) < 0.0:
+		side = -side
+	var to := at + side * (float(mission["road_half"]) + 7.0)
+	to = to.clamp(Vector2.ONE * -(Machine.AREA - 3.0), Vector2.ONE * (Machine.AREA - 3.0))
+	_place_machine(m, to, along)
+
+## Put straight down somewhere, still.
+func _place_machine(m: Machine, at: Vector2, dir: Vector2) -> void:
+	m.stop_commands()
+	m.spot = at
+	m.angle = atan2(-dir.y, dir.x)
+	m.speed = 0.0
+	m.drive = 0.0
+	m.y_smooth = sim.track_height_at(at)
+	m.basis_smooth = Basis.IDENTITY
+	m._settle(1.0)
 
 ## Puts the side-on picture away, or brings it back. It stays how it's left, next time as well.
 func _toggle_side() -> void:

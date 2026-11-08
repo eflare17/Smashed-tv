@@ -45,6 +45,12 @@ var level_ease := 0.0
 # CUT: the machine holds the blade this far below where the ground began, so it takes an even layer off and follows the land.
 var cut_on := false
 var cut_cm := 20
+## Across as well as along: with CUT on, each end of the blade follows where the ground began on its own side, the blade tilted to
+## it, so a paddock's side slope comes off as an even layer too (it used to cut level across, too deep on the high side). How much
+## higher the right-hand end is than the left, in m, and the blade's tilt that shows it.
+var cut_tilt := 0.0
+var blade_roll := 0.0
+const TILT_MOST := 0.6          # m between the blade's ends, at the most
 
 ## The pad it's working in, if any: CUT stops at its height.
 var pad: Pad
@@ -119,7 +125,13 @@ func can_shove(tree_down: bool) -> bool:
 func _place_blade() -> void:
 	var swing := asin(clampf((lift + _steady / size) / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
 	var turn := Basis(Vector3.BACK, swing)
-	_pivot.transform = Transform3D(turn, ARM_PIVOT - turn * ARM_PIVOT)
+	var t := Transform3D(turn, ARM_PIVOT - turn * ARM_PIVOT)
+	if absf(blade_roll) > 0.0001:
+		# Tilted about the middle of its cutting edge.
+		var mid := t * Vector3(EDGE_X, 0.0, 0.0)
+		var r := Basis(Vector3.RIGHT, blade_roll)
+		t = Transform3D(r, mid - r * mid) * t
+	_pivot.transform = t
 
 ## Turns LEVEL on or off.
 func set_level(on: bool) -> void:
@@ -151,10 +163,23 @@ func _hold_cut(dt: float) -> void:
 	var began := (sim.start_at(ahead) + sim.start_at(ahead + side) + sim.start_at(ahead - side)) / 3.0
 	var want := began - cut_cm * 0.01
 	# Inside a pegged-out pad it goes no deeper than the pad's height, so it can't dig the floor too low.
+	var floor_y := pad.level_at(sim, ahead) if pad else 0.0
 	if pad and pad.inside(ahead):
-		want = maxf(want, pad.level)
-	at_pad = pad != null and pad.inside(ahead) and want <= pad.level + 0.001
+		want = maxf(want, floor_y)
+	at_pad = pad != null and pad.inside(ahead) and want <= floor_y + 0.001
 	_blade_to(want, dt)
+	# Each end the same depth under where the ground began on its side, and no deeper than a pad there wants.
+	var ends: Array[float] = []
+	for p: Vector2 in [ahead - side, ahead + side]:
+		var end_want := sim.start_at(p) - cut_cm * 0.01
+		if pad and pad.inside(p):
+			end_want = maxf(end_want, pad.level_at(sim, p))
+		ends.append(end_want)
+	cut_tilt = clampf((ends[1] - ends[0]) / 0.8, -TILT_MOST * size, TILT_MOST * size)
+	# The blade drawn tilted to match, less what the machine leaning already does.
+	var leaning := (transform.basis * Vector3(0.0, 0.0, 2.0 * HALF_WIDTH)).y
+	var roll_want := -asin(clampf((cut_tilt - leaning) / (2.0 * HALF_WIDTH * size), -0.3, 0.3))
+	blade_roll = lerpf(blade_roll, roll_want, minf(dt * 6.0, 1.0))
 
 ## Holds the cutting edge just above the firm ground ahead of it. RAISE and LOWER set how far above.
 func _hold_level(dt: float) -> void:
@@ -201,6 +226,9 @@ func step(dt: float) -> void:
 		_hold_cut(dt)
 	else:
 		lift = clampf(lift + lift_cmd * LIFT_SPEED * dt, LIFT_MIN, LIFT_MAX)
+	if not cut_on:
+		cut_tilt = 0.0
+		blade_roll = lerpf(blade_roll, 0.0, minf(dt * 6.0, 1.0))
 	_steady_blade(dt)
 	_place_blade()
 	hyd = absf(lift_cmd)
@@ -228,7 +256,7 @@ func step(dt: float) -> void:
 	if speed > 0.02 or (throttle > 0.05 and speed > -0.05):
 		# It moves what it sweeps through: no travel, no soil moved, so a stalled blade can't pump soil up a pile.
 		var share := clampf(maxf(speed, 0.0) * dt / SWEEP_DEPTH, 0.0, 1.0)
-		var r: Array = sim.blade(a, b, f, edge_mm, ceili(FIRM_RATE * size), share, CUT_CLEAN if cut_on else 2, size)
+		var r: Array = sim.blade(a, b, f, edge_mm, ceili(FIRM_RATE * size), share, CUT_CLEAN if cut_on else 2, size, int(cut_tilt * 1000.0))
 		moved_m3 += DirtSim.to_m3(r[0])
 		moved_tick = r[0]
 		cut = r[1]

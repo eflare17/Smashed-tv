@@ -516,7 +516,8 @@ func _step_air(dt: float) -> void:
 ## [mm moved, mm cut from firm ground, whether rock stopped it].
 ## `rows` over 2 sweep further back as well, for loose soil only: what slid off the heap onto ground already cut.
 ## `scale` is for a big machine's blade: it heaps that much higher and lays its load that much further ahead.
-func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int, share := 1.0, rows := 2, scale := 1.0) -> Array:
+## `tilt_mm`: how much higher the edge is at `b` than at `a`; it's `edge_mm` in the middle.
+func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int, share := 1.0, rows := 2, scale := 1.0, tilt_mm := 0) -> Array:
 	var moved := 0
 	var cut := 0
 	var hit_rock := false
@@ -533,7 +534,8 @@ func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int
 			if at.x < 1 or at.y < 1 or at.x >= CELLS - 1 or at.y >= CELLS - 1:
 				continue
 			var n := at.y * CELLS + at.x
-			var high := bed[n] + soil[n] - edge_mm
+			var edge_here := edge_mm + int(tilt_mm * (float(s) / steps - 0.5))
+			var high := bed[n] + soil[n] - edge_here
 			if high <= 0:
 				continue
 			var got := mini(soil[n], ceili(high * row_share))
@@ -544,7 +546,7 @@ func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int
 			soil[n] -= got
 			var left := ceili(high * row_share) - got
 			# Rock is felt when firm ground itself stands above the edge, not just soil lying on it.
-			if (rock[n] != 0 and bed[n] > edge_mm) or hard[n] > edge_mm:
+			if (rock[n] != 0 and bed[n] > edge_here) or hard[n] > edge_here:
 				hit_rock = true
 			if left > 0 and rock[n] == 0 and row < 2:
 				var firm := mini(mini(left, ceili(bed_rate * row_share)), maxi(bed[n] - hard[n], 0))
@@ -556,7 +558,7 @@ func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int
 				var along := float(s) / steps
 				var out := across * (1.0 if along >= 0.5 else -1.0)
 				var to_end := width * (0.5 - absf(along - 0.5))
-				_spill(p, forward, out, to_end, got, edge_mm + int(HEAP_MM * scale), got_dust, scale)
+				_spill(p, forward, out, to_end, got, edge_here + int(HEAP_MM * scale), got_dust, scale)
 				moved += got
 	return [moved, cut, hit_rock]
 
