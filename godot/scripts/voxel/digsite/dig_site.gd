@@ -24,6 +24,9 @@ var _debris_bound := INF
 var _help_text := ""
 var _hud: Label
 var terrain: DsTerrain                    # the voxel ground (stage 2)
+var tools: DsTools                        # the hand tools' digging and tiers (stage 3)
+var near_office := false
+const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
 func setup(a: Node3D) -> void:
 	arena = a
@@ -42,6 +45,9 @@ func setup(a: Node3D) -> void:
 	_hud.add_theme_constant_override("outline_size", 8)
 	_hud.visible = false
 	a._hud_layer.add_child(_hud)
+	tools = DsTools.new(self)
+	if a.get("stash") != null:
+		tools.load_data(a.stash.ds_tools)
 
 ## The site's place in the world for a point given from its middle
 static func world(local: Vector3) -> Vector3:
@@ -93,6 +99,19 @@ func _build() -> void:
 	# the site office: a portable hut by the gate, its sign
 	_box(body, Vector3(6.0, 2.6, 2.6), Vector3(-10.0, 1.3, half + 3.0), hut)
 	_box(null, Vector3(6.3, 0.15, 2.9), Vector3(-10.0, 2.68, half + 3.0), roof)
+	# its counter: a window on the side facing the gate, a shelf under it, a sign over it
+	var counter := _mat(Color8(150, 104, 58))
+	_box(body, Vector3(0.5, 0.08, 1.6), OFFICE_WINDOW + Vector3(0.25, -0.05, 0), counter)
+	_box(null, Vector3(0.04, 0.8, 1.4), OFFICE_WINDOW + Vector3(-0.38, 0.45, 0), _mat(Color8(40, 50, 60)))
+	var tl := Label3D.new()
+	tl.text = "SITE OFFICE\npicks & hammers"
+	tl.font_size = 40
+	tl.pixel_size = 0.008
+	tl.outline_size = 8
+	tl.modulate = Color("#ffd27a")
+	tl.position = AT + OFFICE_WINDOW + Vector3(-0.35, 1.25, 0)
+	tl.rotation.y = PI * 0.5
+	add_child(tl)
 	var sign := Label3D.new()
 	sign.text = "DIG SITE"
 	sign.font_size = 120
@@ -154,7 +173,7 @@ func go() -> void:
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_help_text = arena.help.text
-	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   mouse look   Shift run   Space jump   V view   Tab backpack"
+	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office (picks, hammers)   Tab backpack"
 	_hud.visible = true
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
@@ -185,6 +204,18 @@ func _process(_dt: float) -> void:
 		return
 	var who := "with your mate" if _linked() else "on your own"
 	_hud.text = "DIG SITE   (%s)   P: the phone takes you home" % who
+	var p: Vector3 = arena.player.global_position
+	var w := AT + OFFICE_WINDOW
+	near_office = Vector2(p.x - w.x, p.z - w.z).length() < 2.2 and absf(p.y - w.y) < 2.5
+	if near_office:
+		arena._use_label.text = tools.office_line()
+
+func _unhandled_input(e: InputEvent) -> void:
+	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
+		return
+	if (e as InputEventKey).physical_keycode == KEY_E and near_office:
+		tools.office_make()
+		get_viewport().set_input_as_handled()
 
 # ---------------------------------------------------------------- co-op: both of you go
 

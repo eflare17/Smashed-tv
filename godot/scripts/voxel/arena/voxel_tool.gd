@@ -45,6 +45,8 @@ func is_shovel() -> bool:
 	return weapon_id == "shovel"
 
 func stats() -> Array:
+	if weapon_id == "pick" and _at_digsite():
+		return arena.digsite.tools.stats("pick")        # (the Dig Site's pick tiers: DsTools)
 	match weapon_id:
 		"shovel":
 			return SHOVEL[clampi(tier, 0, 2)]
@@ -68,9 +70,14 @@ func set_tier(t: int) -> void:
 		c.queue_free()
 	_model(_pivot, 1.0)
 
+## At the Dig Site (its ground's dug by DsTools)
+func _at_digsite() -> bool:
+	var ds = arena.get("digsite") if arena else null
+	return ds != null and ds.active and ds.tools != null
+
 func _paint(m: StandardMaterial3D) -> void:
 	if not is_shovel():
-		m.albedo_color = Color8(120, 122, 128)
+		m.albedo_color = [Color8(120, 122, 128), Color8(84, 108, 150), Color8(120, 230, 240)][clampi(tier, 0, 2)] if weapon_id == "pick" else Color8(120, 122, 128)
 		m.metallic = 0.7
 		m.roughness = 0.4
 		return
@@ -336,6 +343,8 @@ func _pour(dt: float) -> void:
 ## Where the tool meets the ground it digs: [where, its normal, what to dig: the back yard, or a patch of St Kilda's
 ## dirt along Luna Park's wall (VoxelParkDirt)], or [] (out of reach, or not ground that digs).
 func _aim_ground() -> Array:
+	if _at_digsite():
+		return _aim_digsite()
 	var yard = arena.yard
 	var dirt: VoxelParkDirt = null
 	var sk = arena.get("stkilda")
@@ -369,8 +378,34 @@ func _aim_ground() -> Array:
 		return []
 	return [p, hit.normal, yard]
 
+## The Dig Site's ground where the tool meets it: [where, its normal, the DigSite] or []
+func _aim_digsite() -> Array:
+	var from := eye()
+	var dir := look()
+	if top_down():
+		var ray: Array = shooter.mouse_ray()
+		if ray.is_empty():
+			return []
+		from = ray[0]
+		dir = ray[1]
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * (REACH + (14.0 if top_down() else 0.0)))
+	q.exclude = shooter.exclude()
+	var hit := arena.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or not DsTerrain.is_ground(hit.collider):
+		return []
+	var p: Vector3 = hit.position
+	if top_down() and Vector2(p.x - shooter.player.global_position.x, p.z - shooter.player.global_position.z).length() > REACH:
+		return []
+	return [p, hit.normal, arena.digsite]
+
 # the swing lands: dig (or fill) where it points; what comes up into the backpack
 func _bite() -> void:
+	if _at_digsite():
+		if weapon_id in ["shovel", "pick", "hammer_ds"]:
+			var ad := _aim_digsite()
+			if not ad.is_empty():
+				arena.digsite.tools.bite(self, ad[0], ad[1], _filling)
+		return
 	if walls() != null and _st_kilda():
 		return
 	var a := _aim_ground()

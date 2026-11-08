@@ -30,6 +30,7 @@ var list: Array[VoxelStorage] = []
 var by_id := {}
 var save_path := SAVE_PATH      # "" : never saved (tests)
 var _dirty := false
+var ds_tools = {}               # (the Dig Site's tool tiers as loaded: DigSite.setup hands them to DsTools)
 var _save_t := 0.0
 var _send := {}                 # host: storage id -> true (changed: to send)
 var _own_chests = null          # guest: their own chests' data while the host's are shown (null: not a guest)
@@ -429,6 +430,8 @@ func save() -> void:
 		d["barbecue"] = arena.yard.barbecue.save_data()
 	if arena.get("mine"):
 		d["mine"] = arena.mine.save_data()
+	var ds = arena.get("digsite")
+	d["digsite_tools"] = ds.tools.save_data() if ds != null and ds.tools != null else ds_tools
 	VoxelSaveFile.write_text(save_path, JSON.stringify(d))      # (safely, a backup kept now and then)
 
 func load_save() -> void:
@@ -441,6 +444,7 @@ func load_save() -> void:
 		arena.inv.from_data(d.inv)
 	_set_all(d.get("storage"))
 	_set_locks(d.get("locks"))
+	ds_tools = d.get("digsite_tools", {})          # (the Dig Site's pick and hammer: DigSite.setup takes them)
 	if typeof(d.get("tools")) == TYPE_DICTIONARY:
 		arena.set_shovel_tier(int(d.tools.get("shovel", 0)))
 		arena.set_upgrades(d.tools.get("upg", {}))

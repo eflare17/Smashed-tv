@@ -36,6 +36,16 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   boundaries wavy. Pockets: sand, gravel and clay lenses in the soil, coal shallow in the stone, iron deeper, gold
   deeper still, gems right down. A 1 m ring of undiggable EDGE round it so no hole opens onto nothing.
 
+- **Hand tools (stage 3).** The arena's own shovel and pick (VoxelTool) dig the Dig Site's ground when you're there
+  (`DsTools` does the digging: a block a block into the backpack, by DsMats.ITEM). The shovel keeps its yard tiers
+  (the tool bench). New: a Hammer (weapon `hammer_ds`, group 6; the arena's "hammer" is the sledgehammer) that chips a
+  block or two now and builds supports in stage 8. The pick and the hammer have Dig Site tiers (Steel pick, Diamond
+  pick; Framing hammer, Nail gun), made at the site office's counter (E) out of ore dug there. Gems need a steel
+  pick. Tiers are saved in the arena save (`digsite_tools`). New items: sand, gravel, coal, iron ore, gem (gold is the
+  yard's gold nugget).
+- One block = one item, so a rusty shovel scoop is ~14 dirt. Fine for now; may want to divide later if the backpack
+  fills too fast.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -45,3 +55,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 
 1. Scene + phone travel: done.
 2. 3D voxel ground: done (`test/voxel/digsite_ground_test.gd`, 20 checks).
+3. Hand tools: done (`test/voxel/digsite_tools_test.gd`, 15 checks).

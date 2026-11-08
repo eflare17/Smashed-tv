@@ -90,7 +90,8 @@ const MELEE := {"sword": "res://scripts/voxel/arena/voxel_sword.gd", "bat": "res
 	"freezeray": "res://scripts/voxel/arena/voxel_weapon_freezeray.gd", "harpoon": "res://scripts/voxel/arena/voxel_weapon_harpoon.gd",
 	"gravity": "res://scripts/voxel/arena/voxel_weapon_gravity.gd", "grenades": "res://scripts/voxel/arena/voxel_weapon_grenades.gd",
 	"shovel": "res://scripts/voxel/arena/voxel_tool.gd", "pick": "res://scripts/voxel/arena/voxel_tool.gd",
-	"hoe": "res://scripts/voxel/arena/voxel_tool.gd", "can": "res://scripts/voxel/arena/voxel_tool.gd"}
+	"hoe": "res://scripts/voxel/arena/voxel_tool.gd", "can": "res://scripts/voxel/arena/voxel_tool.gd",
+	"hammer_ds": "res://scripts/voxel/digsite/ds_hammer.gd"}
 var loadout := VoxelLoadout.new()   # the weapon slots in their groups: keys 1-5, the wheel, Q the last one
 var sound: VoxelSound           # every sound (VoxelSound)
 var me: VoxelShooter            # the local player, as the weapons see whoever holds them

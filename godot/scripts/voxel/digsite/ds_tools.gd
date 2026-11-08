@@ -1,0 +1,184 @@
+class_name DsTools
+extends RefCounted
+## The hand tools at the Dig Site (stage 3): the shovel, the pick and the hammer (VoxelTool; the hammer's DsHammer)
+## dig its ground (DsTerrain) where you look, what comes up into the backpack, a block a block. Like the back yard's
+## shovel, the tools come in tiers: the shovel's are the yard's (made at the tool bench), the pick's and the hammer's
+## are made at the Dig Site's office (E at its counter) out of what you dig up. Hardness is the yard's scale
+## (DsMats.HARD): the shovel takes soil (a golden one stone), the pick rock, a steel pick gems too; bedrock and the
+## site's edge never. The hammer chips a block or two (it's for building supports: stage 8). Owned by the voxel session.
+
+## The pick by tier: [radius (m), the hardest it breaks, seconds a swing, name] (tier 0 is the yard's pick)
+const PICK := [[0.21, 4, 0.55, "Pick"], [0.27, 5, 0.42, "Steel pick"], [0.36, 5, 0.3, "Diamond pick"]]
+## The hammer by tier: the same (a small chip; later, how quick it builds)
+const HAMMER := [[0.08, 3, 0.4, "Hammer"], [0.1, 4, 0.3, "Framing hammer"], [0.12, 5, 0.2, "Nail gun"]]
+## What the site office makes: the next pick or hammer, out of what the ground gives
+const UPGRADES := [
+	{"tool": "pick", "tier": 1, "name": "Steel pick", "cost": {"iron_ore": 20, "coal": 20, "stone": 60}, "desc": "breaks gems, bigger and quicker"},
+	{"tool": "pick", "tier": 2, "name": "Diamond pick", "cost": {"gem": 6, "gold": 8, "iron_ore": 30}, "desc": "huge bites, very quick"},
+	{"tool": "hammer", "tier": 1, "name": "Framing hammer", "cost": {"iron_ore": 10, "stone": 30}, "desc": "chips rock, builds quicker"},
+	{"tool": "hammer", "tier": 2, "name": "Nail gun", "cost": {"iron_ore": 30, "coal": 10, "gold": 4}, "desc": "builds supports very quickly"},
+]
+
+var site: Node3D                # DigSite
+var pick_tier := 0
+var hammer_tier := 0
+
+## The backpack's Dig Site things (VoxelItems merges these)
+static func items() -> Dictionary:
+	return {
+		"sand": {"name": "Sand", "col": DsMats.COL[DsMats.SAND], "stack": 9999, "desc": "Dug at the Dig Site. Soft and dry."},
+		"gravel": {"name": "Gravel", "col": DsMats.COL[DsMats.GRAVEL], "stack": 9999, "desc": "Little stones from the Dig Site."},
+		"coal": {"name": "Coal", "col": Color8(40, 38, 42), "stack": 9999, "desc": "Black and dusty, from the Dig Site's stone. The site office wants it."},
+		"iron_ore": {"name": "Iron ore", "col": DsMats.COL[DsMats.IRON], "stack": 9999, "desc": "Rusty rock from deep in the Dig Site. Picks and hammers are made of it."},
+		"gem": {"name": "Gem", "col": DsMats.COL[DsMats.GEM], "stack": 999, "desc": "A glittering gem from right down at the Dig Site. Only a steel pick breaks it out."},
+	}
+
+func _init(s: Node3D) -> void:
+	site = s
+
+func arena() -> Node3D:
+	return site.arena
+
+# ---------------------------------------------------------------- tiers
+
+## A tool's stats at the Dig Site ([radius, hardest, seconds, name]), or [] (not one of these)
+func stats(id: String) -> Array:
+	match id:
+		"pick":
+			return PICK[clampi(pick_tier, 0, 2)]
+		"hammer_ds":
+			return HAMMER[clampi(hammer_tier, 0, 2)]
+	return []
+
+func set_tiers(p: int, h: int) -> void:
+	pick_tier = clampi(p, 0, 2)
+	hammer_tier = clampi(h, 0, 2)
+	var m: Dictionary = arena().melee
+	if m.has("pick"):
+		m["pick"].set_tier(pick_tier)
+	if m.has("hammer_ds"):
+		m["hammer_ds"].set_tier(hammer_tier)
+
+func save_data() -> Dictionary:
+	return {"pick": pick_tier, "hammer": hammer_tier}
+
+func load_data(d) -> void:
+	if typeof(d) == TYPE_DICTIONARY:
+		set_tiers(int(d.get("pick", 0)), int(d.get("hammer", 0)))
+
+## The next thing the office makes for a tool (null: as good as it gets)
+func next_upgrade(tool: String):
+	var t := pick_tier if tool == "pick" else hammer_tier
+	for u in UPGRADES:
+		if u.tool == tool and int(u.tier) == t + 1:
+			return u
+	return null
+
+## The office's next offer: the pick's first, then the hammer's (null: both as good as they get)
+func offer():
+	var u = next_upgrade("pick")
+	return u if u != null else next_upgrade("hammer")
+
+func _afford(u) -> bool:
+	for id in u.cost:
+		if arena().inv.count(id) < int(u.cost[id]):
+			return false
+	return true
+
+## What the office counter says
+func office_line() -> String:
+	var u = offer()
+	if u == null:
+		return "Site office: your pick and hammer are as good as they get"
+	var need := []
+	for id in u.cost:
+		need.append("%d %s (%d)" % [int(u.cost[id]), VoxelItems.name_of(id).to_lower(), arena().inv.count(id)])
+	return ("E  make a %s: " % u.name if _afford(u) else "Site office: a %s needs " % u.name) + ", ".join(need)
+
+## E at the office counter: the next tool made if the backpack has what it takes
+func office_make() -> bool:
+	var u = offer()
+	var a := arena()
+	if u == null:
+		return false
+	if not _afford(u):
+		a.say("Not enough: " + office_line().trim_prefix("Site office: "), 2.5)
+		return false
+	for id in u.cost:
+		a.inv.remove(id, int(u.cost[id]))
+	if u.tool == "pick":
+		set_tiers(int(u.tier), hammer_tier)
+	else:
+		set_tiers(pick_tier, int(u.tier))
+	a.sound.play("hammer_hit", Vector3.INF, -6.0)
+	a.say("Made: a %s (%s)" % [u.name, u.desc], 3.0)
+	a.stash._dirty = true
+	return true
+
+# ---------------------------------------------------------------- the swing lands
+
+## A tool (VoxelTool) bites the ground at p (normal n): dug blocks into the backpack, or (the shovel's right click,
+## filling) dirt out of it put back. -> blocks moved
+func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
+	var tr: DsTerrain = site.terrain
+	var a := arena()
+	var st: Array = tool.stats()
+	var r: float = st[0]
+	if filling:
+		var have: int = a.inv.count("dirt")
+		if have <= 0:
+			a.say("No dirt in your backpack to fill with", 1.5)
+			return 0
+		var k := tr.fill(p + n * r * 0.6, r, DsMats.DIRT, have, true)
+		if k > 0:
+			a.inv.remove("dirt", k)
+			tool.sfx("dig_dirt", p, -2.0, 0.85)
+			tool._dust(p, DsMats.COL[DsMats.DIRT])
+		return k
+	if tool.weapon_id == "shovel" and tool.tier == 0 and randf() < 0.25:
+		r *= 0.6                  # (the rusty one slips: half a scoop)
+		tool.sfx("dig_scrape", p, -4.0)
+	var got: Dictionary = tr.dig(p - n * r * 0.45, r, int(st[1]))
+	if VoxelBody.credit and a.get("guide"):
+		a.guide.tried("dig")
+	var counts: PackedInt32Array = got.counts
+	if int(got.n) == 0:
+		tool.sfx("dig_clang", p, -2.0)
+		tool._dust(p, Color8(200, 200, 200))
+		a.say(_too_hard(tool.weapon_id, int(got.refused), String(st[3])), 1.5)
+		return 0
+	var rock := 0
+	var best := DsMats.DIRT
+	var best_n := -1
+	for m in counts.size():
+		var c: int = counts[m]
+		if c <= 0:
+			continue
+		if DsMats.HARD[m] >= 3:
+			rock += c
+		if c > best_n:
+			best = m
+			best_n = c
+		var id: String = DsMats.ITEM[m] if m < DsMats.ITEM.size() else ""
+		if id != "":
+			a.receive({"id": id, "n": c}, "inv")
+	tool.sfx("dig_stone" if rock * 2 > int(got.n) else "dig_dirt", p, -2.0, randf_range(0.9, 1.1))
+	tool._dust(p, DsMats.COL[best])
+	for m in [DsMats.GEM, DsMats.GOLD, DsMats.IRON, DsMats.COAL]:
+		if m < counts.size() and counts[m] > 0:
+			var id: String = DsMats.ITEM[m]
+			tool.sfx("gold_find" if m == DsMats.GEM or m == DsMats.GOLD else "item_pick", p, -2.0 if m >= DsMats.GOLD else -8.0)
+			a.say("%s! (%d in your backpack)" % [VoxelItems.name_of(id), a.inv.count(id)], 2.0)
+			break
+	if int(got.refused) > 0 and int(got.n) < 4:
+		a.say(_too_hard(tool.weapon_id, int(got.refused), String(st[3])), 1.5)
+	return int(got.n)
+
+func _too_hard(id: String, hard: int, tool_name: String) -> String:
+	if hard >= 99:
+		return "Nothing breaks that: it's bedrock (or the site's edge)"
+	if id == "shovel":
+		return "Too hard for the %s: the pick breaks rock" % tool_name.to_lower()
+	if hard >= 5:
+		return "Too hard for the %s: a steel pick breaks gems (the site office makes one)" % tool_name.to_lower()
+	return "Too hard for the %s" % tool_name.to_lower()
