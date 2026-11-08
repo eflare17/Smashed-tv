@@ -13,7 +13,7 @@ const H := 192
 const D := 512
 const SURFACE := 160            # the ground's base level (cell y): 20 m of ground under it, 4 m of air over
 const BUDGET_MS := 4.0          # building sections a frame, at most this long (more waits for the next frame)
-const R_NOW := 14.0             # m: changed sections this near a player are redrawn all together ...
+const R_NOW := 20.0             # m (to a section's nearest side): changed sections this near a player are redrawn all together ...
 const NOW_HZ := 15.0            # ... this often (a heap crossing from one section into the next shows in both at once:
                                 # redrawn one at a time, nearest first, it vanished from one before it showed in the other)
 const NOW_MS := 8.0            # ... but for no longer than this a frame: a huge change (a blast) carries on next frame
@@ -37,6 +37,7 @@ var settle_on := true           # (the dirt runs here: solo or the host; a guest
 var paused := false             # (the tests: the dirt held still)
 var _settle_acc := 0.0
 var _now_at := 0                # (ticks, ms: the near sections last redrawn together)
+var _build_ms := 2.0            # (what a section's redraw costs, on average: none's started that would run past a cap)
 var settle_moves := 0           # (tests: cells the dirt's moved)
 
 func setup(s: Node3D, at: Vector3, seed: int) -> void:
@@ -200,7 +201,7 @@ func step(budget_ms: float) -> int:
 				if dist > R_MESH and s.is_empty():
 					continue
 				var has_col: bool = s.get("body") != null
-				if dist < R_NOW and _dirty.has(i) and not s.is_empty():
+				if dist - SW * CELL * 0.71 < R_NOW and _dirty.has(i) and not s.is_empty():
 					now.append([dist, i, want_col])
 				elif _dirty.has(i) or s.is_empty() or (want_col and not has_col and int(s.get("nf", 0)) > 0) or (not want_col and has_col):
 					due.append([dist, i, want_col])
@@ -210,10 +211,10 @@ func step(budget_ms: float) -> int:
 		now.sort_custom(func(a, b): return a[0] < b[0])
 		var done := true
 		for e in now:
-			if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 > NOW_MS:
+			if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 + _build_ms > NOW_MS:
 				done = false
 				break
-			_build(int(e[1]), bool(e[2]))
+			_timed_build(int(e[1]), bool(e[2]))
 			n += 1
 		if done:
 			_now_at = ms                # (else the rest's built next frame, not a tick later)
@@ -222,13 +223,21 @@ func step(budget_ms: float) -> int:
 	due.sort_custom(func(a, b): return a[0] < b[0])
 	var built_now := n
 	n = 0
+	# (its own time, after the batch: on a slow frame the batch runs every frame, and the rest mustn't starve; at least
+	# one a frame when there was no batch)
+	var t1 := Time.get_ticks_usec()
+	var own_ms := budget_ms if built_now == 0 else budget_ms * 0.5
 	for e in due:
-		# (at least one a frame, so the rest of the site catches up; not on top of a batch near the players)
-		if (n > 0 or built_now > 0) and (Time.get_ticks_usec() - t0) / 1000.0 > budget_ms:
+		if (n > 0 or built_now > 0) and (Time.get_ticks_usec() - t1) / 1000.0 + _build_ms > own_ms:
 			break
-		_build(int(e[1]), bool(e[2]))
+		_timed_build(int(e[1]), bool(e[2]))
 		n += 1
 	return n + built_now
+
+func _timed_build(i: int, want_col: bool) -> void:
+	var t := Time.get_ticks_usec()
+	_build(i, want_col)
+	_build_ms = lerpf(_build_ms, (Time.get_ticks_usec() - t) / 1000.0, 0.2)
 
 func _free(i: int) -> void:
 	var s: Dictionary = _sec.get(i, {})
