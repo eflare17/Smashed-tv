@@ -7,7 +7,7 @@ extends Node3D
 ## [--demo=pour|dig|push|stall]
 
 const MODES := ["Drive", "Dirt"]
-const VIEWS := {"Look": ["Wide", "Pit", "Dozer", "Cab"], "Dirt": ["Wide", "Pit"], "Drive": ["Chase", "High", "Cab"]}
+const VIEWS := {"Look": ["Wide", "Pit", "Dozer", "Cab"], "Dirt": ["Wide", "Pit"], "Drive": ["Chase", "High", "Cab", "Bucket"]}
 const INKS := {"Off": 0.0, "Thin": 1.0, "Medium": 1.5, "Thick": 2.2}
 const INK_NAMES := ["Off", "Thin", "Medium", "Thick"]
 ## Blades a square metre, near the camera.
@@ -140,6 +140,9 @@ var dist := 40.0
 var target := Vector3.ZERO
 var look_off := 0.0
 var chase_yaw := 0.0
+## The Bucket view looks down at the working end of an excavator or loader, following it smoothly: where it's looking.
+var bucket_aim := Vector3.ZERO
+const BUCKET_SIDE := 1.3       # rad further round than the chase view, so it looks down past the arm with the machine off at the top
 
 var fingers: Dictionary = {}    # index -> position
 var pinch := 0.0
@@ -2360,6 +2363,12 @@ func _set_view(v: String) -> void:
 			pitch = deg_to_rad(52.0)
 			dist = 24.0
 			chase_yaw = _behind_yaw()
+		"Bucket":
+			# Above the bucket and off to the side of the arm, looking down at the teeth: where it's digging.
+			pitch = deg_to_rad(70.0)
+			dist = 6.0 + 3.0 * active.size
+			chase_yaw = _behind_yaw()
+			bucket_aim = active.teeth
 	camera.fov = 74.0 if v == "Cab" else 52.0
 	_label("view", "View: " + v)
 	_place_camera()
@@ -2425,7 +2434,7 @@ func _update_fades(delta: float) -> void:
 	if camera == null:
 		return
 	var from := camera.global_position
-	var aim := active.camera_aim()
+	var aim := bucket_aim if view == "Bucket" else active.camera_aim()
 	var points := [aim, aim + Vector3.UP * 1.4]
 	var cab := view == "Cab"
 	for g in fadeables:
@@ -2468,6 +2477,10 @@ func _update_fades(delta: float) -> void:
 			g.remove_meta("fade_mat")
 
 
+## Whether what's being driven has a bucket to look at.
+func _has_bucket() -> bool:
+	return active is Excavator or active is Loader
+
 func _behind_yaw() -> float:
 	var f := active.view_forward()
 	# Straight behind an excavator, its own arm hides the bucket. From the rear right, the arm is seen from the side.
@@ -2476,6 +2489,10 @@ func _behind_yaw() -> float:
 
 func _place_camera() -> void:
 	if camera == null:
+		return
+	# Only something with a bucket has a Bucket view: in anything else it's the usual one behind.
+	if view == "Bucket" and not _has_bucket():
+		_set_view("Chase")
 		return
 	if _tour_t >= 0.0:
 		_tour_camera()
@@ -2490,6 +2507,10 @@ func _place_camera() -> void:
 		if view == "Chase" or view == "High":
 			use_yaw = chase_yaw + look_off
 			aim = active.camera_aim()
+		elif view == "Bucket":
+			use_yaw = chase_yaw + look_off + BUCKET_SIDE
+			bucket_aim = bucket_aim.lerp(active.teeth, 0.2)
+			aim = bucket_aim
 		var off := Vector3(sin(use_yaw) * cos(pitch), sin(pitch), cos(use_yaw) * cos(pitch)) * dist
 		var p := aim + off
 		p.y = maxf(p.y, sim.height_at(Vector2(p.x, p.z)) + 0.6)
@@ -2619,7 +2640,7 @@ func _unhandled_input(e: InputEvent) -> void:
 
 func _look(moved: Vector2) -> void:
 	var k := 1.9 / maxf(get_viewport().get_visible_rect().size.y, 1.0)
-	if view == "Cab" or view == "Chase" or view == "High":
+	if view == "Cab" or view == "Chase" or view == "High" or view == "Bucket":
 		look_off -= moved.x * k
 		var lo := -30.0 if view == "Cab" else 3.0
 		pitch = clampf(pitch + moved.y * k * 0.8, deg_to_rad(lo), deg_to_rad(80.0))
@@ -4075,7 +4096,10 @@ func _pressed(key: String) -> void:
 		"mode":
 			_set_mode(_next(MODES, mode))
 		"view":
-			_set_view(_next(VIEWS[mode], view))
+			var next_view: String = _next(VIEWS[mode], view)
+			if next_view == "Bucket" and not _has_bucket():
+				next_view = _next(VIEWS[mode], next_view)
+			_set_view(next_view)
 		"tool":
 			tool_name = "Remove" if tool_name == "Drop" else "Drop"
 			_label("tool", "Tool: " + tool_name)

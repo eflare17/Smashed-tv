@@ -65,7 +65,9 @@ var _swing_blocked := false
 ## The teeth meeting something buried (a job's find): how fast they were going, in m a second, for the game to read and set back
 ## to -1. Faster than KNOCK_SPEED (times the machine's size) is a knock that marks it.
 var touch_speed := -1.0
-const KNOCK_SPEED := 1.0     # m a second per size: the big one's bucket lowered at about half stick or more
+const KNOCK_SPEED := 1.6     # m a second per size: only a slam, a curl or swing into it near flat out (the owner found half stick too strict)
+const SOFT_LANDING := 0.35   # m per size over something buried that the bucket eases off coming down
+const SOFT_SLOWEST := 0.3    # how fast it's still coming down as it lands, of what was asked
 ## The pegged-out pad it's digging, if any: the readout says how much more there is to take out where the teeth are.
 var pad: Pad
 
@@ -202,6 +204,9 @@ func stop_commands() -> void:
 
 func gauge_word() -> Array:
 	if on_rock:
+		# Resting on something buried, it's no rock: it's what the job's after.
+		if _gap_to_find(teeth) < 0.3:
+			return ["ON IT: GENTLY", Color("#ffd23f")]
 		return ["ROCK: CAN'T DIG", Color("#ff9a4a")]
 	var word := "BUCKET %.1f m3" % DirtSim.to_m3(bucket_mm)
 	var at := Vector2(teeth.x, teeth.z)
@@ -360,7 +365,7 @@ func _move_house(dt: float) -> void:
 	var now := _teeth_now()
 	if _on_find_at(now) and not _on_find_at(teeth):
 		if not on_rock:
-			_touched(now, dt)
+			_touched(now, dt, true)
 		swing = swung_from
 		_v_swing = 0.0
 		_swing_blocked = true
@@ -375,6 +380,11 @@ func _move_arm(dt: float) -> void:
 	var before_boom := _boom_a
 	var before_stick := _stick_a
 	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt
+	# Let down over something buried, it eases off in the last bit, so it lands on it softly.
+	if want.y < wrist.y:
+		var gap := _gap_to_find(teeth)
+		if gap < SOFT_LANDING * size:
+			want.y = wrist.y + (want.y - wrist.y) * lerpf(SOFT_SLOWEST, 1.0, clampf(gap / (SOFT_LANDING * size), 0.0, 1.0))
 	# Pushing down, the teeth only go so far into the ground before there's no pushing any further.
 	var deep := teeth_depth()
 	if deep > STAB_MOST * size and _v_raise < 0.0:
@@ -398,33 +408,50 @@ func _move_arm(dt: float) -> void:
 	stopped_by_rock = _swing_blocked
 	var now := _teeth_now()
 	var into_find := _on_find_at(now) and not (_on_find_at(teeth) and now.y > teeth.y)
-	if into_find or _on_rock_at(now):
+	if _on_rock_at(now):
 		wrist = before
 		curl = before_curl
 		_boom_a = before_boom
 		_stick_a = before_stick
+		_v_reach = 0.0
 		_v_raise = 0.0
-		# On top of something buried it can still be dragged along it, no lower, to scrape the dirt off: tried again without the
-		# lowering or the curl.
-		var slid := false
-		if into_find and not _on_rock_at(now):
-			_solve(Vector2(want.x, before.y))
-			var p := _teeth_now()
-			slid = not _on_find_at(p) and not _on_rock_at(p)
-			if not slid:
-				wrist = before
-				_boom_a = before_boom
-				_stick_a = before_stick
-		if not slid:
-			_v_reach = 0.0
-			_v_curl = 0.0
+		_v_curl = 0.0
 		if not on_rock and not _swing_blocked:
-			if into_find:
-				_touched(now, dt)
-			else:
-				hit_end = 1.0
+			hit_end = 1.0
+		stopped_by_rock = true
+	elif into_find:
+		# Something buried: the teeth can't go into it, but nothing stops dead. Tried again without the lowering (dragged along its
+		# top, to scrape the dirt off it), then without the curl as well, then the curl alone; or, if none of those clear it, held.
+		var wanted_curl := curl
+		var ok := false
+		for tried: Array in [[Vector2(want.x, before.y), wanted_curl], [Vector2(want.x, before.y), before_curl], [before, wanted_curl]]:
+			wrist = before
+			_boom_a = before_boom
+			_stick_a = before_stick
+			_solve(tried[0])
+			curl = tried[1]
+			var p := _teeth_now()
+			if not _on_find_at(p) and not _on_rock_at(p):
+				ok = true
+				break
+		if not ok:
+			wrist = before
+			curl = before_curl
+			_boom_a = before_boom
+			_stick_a = before_stick
+		_v_raise = maxf(_v_raise, 0.0)
+		if not on_rock and not _swing_blocked:
+			_touched(now, dt, false)
 		stopped_by_rock = true
 	on_rock = stopped_by_rock
+
+## How far the teeth at `p` are above something buried right under them, in m, or INF with nothing there.
+func _gap_to_find(p: Vector3) -> float:
+	var at := DirtSim.cell_of(Vector2(p.x, p.z))
+	var n := clampi(at.y, 0, DirtSim.CELLS - 1) * DirtSim.CELLS + clampi(at.x, 0, DirtSim.CELLS - 1)
+	if sim.hard[n] <= DirtSim.BED_FLOOR:
+		return INF
+	return p.y - sim.hard[n] * 0.001
 
 func _on_rock_at(p: Vector3) -> bool:
 	var at := DirtSim.cell_of(Vector2(p.x, p.z))
@@ -437,15 +464,20 @@ func _on_find_at(p: Vector3) -> bool:
 	var n := clampi(at.y, 0, DirtSim.CELLS - 1) * DirtSim.CELLS + clampi(at.x, 0, DirtSim.CELLS - 1)
 	return sim.hard[n] * 0.001 > p.y
 
-## The teeth just met something buried, moving to `now`: how fast, for the game to read, and a clunk to match. Come down onto it,
-## that's how fast they were coming down (dragged along it doesn't count); come at it from the side, how fast they came across.
-func _touched(now: Vector3, dt: float) -> void:
+## The teeth just met something buried, moving to `now`: how fast, for the game to read, and a clunk if that's a knock. Come down
+## onto it, that's how fast they were coming down. Come at it from the side, only a swing of the whole house counts: the arm dragged
+## or curled against its side is just a touch, as that's how it's dug round.
+func _touched(now: Vector3, dt: float, swung: bool) -> void:
 	var move := now - teeth
 	var from_above := not _on_find_at(Vector3(now.x, teeth.y, now.z))
-	touch_speed = (maxf(-move.y, 0.0) if from_above else Vector2(move.x, move.z).length()) / maxf(dt, 0.0001)
+	var speed := 0.0
+	if from_above:
+		speed = maxf(-move.y, 0.0)
+	elif swung:
+		speed = Vector2(move.x, move.z).length()
+	touch_speed = speed / maxf(dt, 0.0001)
 	var hard := touch_speed / (KNOCK_SPEED * size)
-	# A soft touch is quiet.
-	hit_end = clampf(hard, 0.15, 1.0) if hard > 0.3 else 0.0
+	hit_end = clampf(hard * 0.8, 0.5, 1.0) if hard >= 1.0 else 0.0
 
 ## What the teeth cut as they go from p0 to p1.
 func _dig(p0: Vector3, p1: Vector3, dt: float) -> void:

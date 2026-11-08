@@ -161,12 +161,42 @@ func bucket_test() -> void:
 			check(slid > 0.5 and lowest > -0.1, "dragged in along its top, it slides along without going into it")
 			check(worst < knock_at, "and scraping along it isn't a knock")
 		else:
-			check(met > knock_at, "lowered hard, it's a knock")
+			# Flat out, it eases off in the last bit and lands softly: the owner found knocks far too easy to get.
+			check(met < knock_at and met < 0.4 * Excavator.RAISE_SPEED * e.size, "let down flat out, it eases off and lands softly, no knock")
 		for k in int(2.0 / DT):
 			e.raise_cmd = 1.0
 			e.step(DT)
 			s.step(DT, 1000000)
 		e.raise_cmd = 0.0
+	# Dug out round it, the bucket held low beside it, and the whole house swung into its side flat out: that's a slam, a knock.
+	var c := DirtSim.cell_of(f.at)
+	var reach := int((f.radius + 6.0) / DirtSim.CELL_M)
+	for j in range(c.y - reach, c.y + reach + 1):
+		for i in range(c.x - reach, c.x + reach + 1):
+			var n := j * DirtSim.CELLS + i
+			if s.hard[n] == DirtSim.BED_FLOOR:
+				s.bed[n] = int(f.base * 1000.0)
+				s.soil[n] = 0
+	e.dig_mode = true
+	e.swing = 0.6
+	e.curl = 2.0
+	var aim_y := f.base + 0.6
+	for tries in 6:
+		e.wrist = Vector2(8.0 / 1.9, e.wrist.y - (e.teeth.y - aim_y) / e.size)
+		for k in 10:
+			e.step(DT)
+	e.touch_speed = -1.0
+	var hit := -1.0
+	var swung_from := e.swing
+	for k in int(4.0 / DT):
+		e.swing_cmd = 1.0
+		e.step(DT)
+		if e.touch_speed >= 0.0:
+			hit = e.touch_speed
+			break
+	e.swing_cmd = 0.0
+	print("      swung into its side from %.2f rad, teeth %.2f m up (its top %.2f): met it at %.2f m/s" % [swung_from, e.teeth.y, f.top_at(f.at), hit])
+	check(hit > knock_at, "swung into its side flat out, it's a knock")
 	e.queue_free()
 
 ## The big dozer on CUT, a metre down, across the buried car: it strips the dirt off but can't cut into it.
@@ -231,9 +261,9 @@ func _process(_d: float) -> bool:
 		check(g.find_seen and g.banner.text.begins_with("OLD CAR"), "uncovered, the banner names it (%s)" % g.banner.text)
 		check(g.say_text.begins_with("It's an old car!"), "and says so (%s)" % g.say_text)
 		# A hard knock from the bucket counts once, however it bounces.
-		g.digger.touch_speed = 3.0
+		g.digger.touch_speed = 5.0
 		g._find_step(0.016)
-		g.digger.touch_speed = 3.0
+		g.digger.touch_speed = 5.0
 		g._find_step(0.016)
 		g.digger.touch_speed = 0.5
 		g._knock_wait = 0.0
@@ -242,6 +272,19 @@ func _process(_d: float) -> bool:
 		g._show_banner()
 		check(b.knocks == 1 and g.banner.text.begins_with("OLD CAR, 1 KNOCK"), "a hard knock counts once, a soft touch not at all (%s)" % g.banner.text)
 		check(absf(g.find_done - (1.0 - Find.KNOCK_COST)) < 0.01, "and costs %d%% (%d%%)" % [int(Find.KNOCK_COST * 100.0), int(g.find_done * 100.0)])
+		# The Bucket view: on the excavator it looks down at the bucket; the dozer has none, so the View button skips it there.
+		g._set_view("Bucket")
+		check(g.view == "Bucket" and g.camera.global_position.y > g.digger.teeth.y + 5.0, "the Bucket view looks down at the bucket from above (%.1f m over it)" % (g.camera.global_position.y - g.digger.teeth.y))
+		g.active = g.dozer
+		g._place_camera()
+		check(g.view == "Chase", "in the dozer, there being no bucket, it's the chase view (%s)" % g.view)
+		var seen := []
+		for k in 4:
+			g._pressed("view")
+			seen.append(g.view)
+		check(not seen.has("Bucket"), "and the View button skips Bucket in it (%s)" % ", ".join(seen))
+		g.active = g.digger
+		g._set_view("Chase")
 		g.finish_mission()
 	if t == 40:
 		var words := []

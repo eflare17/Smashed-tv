@@ -377,3 +377,14 @@ owner then said to work out the rest and set it up; those picks are Claude's and
   end screen says what it was.
 - Online, the place id carries the seed (buried_find#1234) so a friend's game lays the same find.
 - `test/find_test.gd` covers all of it, in the sim and in the whole game.
+- Owner played it, 8 Nov evening: "really hard to dig it up without knocking it, and then it knocks and then pauses", and you can't
+  see where the bucket is. Asked what Claude thought; all three fixes went in:
+  - No pause: touching the find no longer zeroes the arm's speeds. The bucket just can't go into it; the move's tried again without
+    the lowering, then without the curl, then the curl alone. Only a knock clunks or shakes.
+  - Soft landing: let down over the find, the bucket eases off in the last 0.35 m x size, to 30% of the speed asked
+    (`SOFT_LANDING`, `SOFT_SLOWEST`). Flat out it lands at about 1.1 m/s. A knock is now over 1.6 m/s x size (3 m/s on the big one),
+    and only coming down onto it or swinging the house into its side counts: the arm dragged or curled against its side is a touch.
+    In practice a knock is a curl or swing slam.
+  - Bucket view: a fourth View (Chase, High, Cab, Bucket) for the excavator and loaders, skipped in anything else. Looks down at
+    70 degrees from further round than the chase view (`BUCKET_SIDE`), following the teeth smoothly; drag to look round, pinch to
+    zoom. The readout says ON IT: GENTLY when the bucket's resting on the find, not ROCK: CAN'T DIG.
