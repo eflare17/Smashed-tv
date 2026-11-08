@@ -236,6 +236,18 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Dust and exhaust (`DsMachine._dust_fx`): puffs off the tracks as a machine drives, smoke from its stack while
     it's driven (faster under throttle), dust where a bucket or the tray pours.
   - Nothing in the grid, the dirt or the network changed; the tests are unchanged.
+- Heaps flickering away while digging (the owner, 8 Nov: "it just starts to dig and then it disappears"): the
+  section redraw was starved, so a dug section showed nothing for a few frames. `DsTerrain.step` now redraws the
+  sections near a player (within 20 m of the section's edge) as their own batch, 15 times a second, at most 6 at a
+  time, double-buffered: the meshes, grass, clods and collision are built into new resources over a frame or two
+  (8 ms a frame) and swapped in together in a later frame, so the old mesh stays up until the new one is ready. The
+  far sections keep their own budget, capped by a running average of the build time. Column tops are cached in C++
+  (`top_cached`, cleared per column on change, and by network chunks) so the cavity shade and the decor don't rescan
+  columns.
+- Loader buckets can't dig below their wheels (the owner, 8 Nov: "the bucket's going lower than the tires"): the
+  Dingo's and Bobcat's lowest arm angle is held so the bucket edge stays at most 6 cm under the wheels' ground
+  (`DsDingo.DIG_MOST`); they dig down by working along, a layer at a time, as a real skid steer does. The Dingo test
+  checks it.
 
 ## Open questions
 
