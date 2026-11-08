@@ -11,6 +11,9 @@ extends DsMachine
 const LIFT_RATE := 0.75         # rad/s, the arms
 const CURL_RATE := 1.3
 const ARM_LOW := -0.95          # rad from level: the bucket's edge just under its tracks ...
+const DIG_MOST := 0.06          # m: arms right down and the bucket level, its edge this far under its wheels at most (the
+                                # owner, 8 Nov: "the bucket's going lower than the tires": 18 cm on the Bobcat, so it cut
+                                # a slot, drove down into it and cut deeper still; a real skid-steer reaches a few cm)
 const ARM_HIGH := 0.95          # ... and up high (over a truck's side)
 const CURL_MIN := -0.95         # the bucket's floor against level: tipped right forward ...
 const CURL_MAX := 0.75          # ... curled right back
@@ -71,6 +74,9 @@ func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 
 func _build() -> void:
 	super()
+	# (the arms' lowest: the bucket's lip, level, no more than DIG_MOST under the wheels)
+	arm_low = maxf(arm_low, asin(clampf((-DIG_MOST - pivot.y) / arm_len, -1.0, 1.0)))
+	arm = maxf(arm, arm_low)
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)

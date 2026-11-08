@@ -98,7 +98,7 @@ func _solo() -> bool:
 				d.curl = 0.0                     # (the bucket's floor level)
 				v.total = _total(ds.terrain.grid)
 				v.e0 = d.edge()
-				check(d.arm <= DsDingo.ARM_LOW + 0.01 and d.edge().y < d.ground_y(d.edge().x, d.edge().z), "arms down: the bucket's edge in the ground (%.2f under)" % (d.ground_y(d.edge().x, d.edge().z) - d.edge().y))
+				check(d.arm <= d.arm_low + 0.01 and d.ground_y(d.edge().x, d.edge().z) - d.edge().y < DsDingo.DIG_MOST + 0.05 and d.edge().y < d.ground_y(d.edge().x, d.edge().z), "arms down: the bucket's edge in the ground (%.2f under)" % (d.ground_y(d.edge().x, d.edge().z) - d.edge().y))
 				d.throttle = 0.6
 				_next(5)
 		5:
