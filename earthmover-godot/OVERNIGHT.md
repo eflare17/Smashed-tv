@@ -431,3 +431,21 @@ quarter bigger. The rest are Claude's picks, marked (pick).
   - `test/road_test.gd`.
 - The start menu's job list now reaches the bottom of a phone screen with Farm road in it: the next job will need the list to scroll
   or go into two columns.
+
+## 9 Nov 2026: quiet finds, first person on foot, hold to dig
+
+Owner's asks after trying the overnight build: stop the beep over a find once it's been found in free play (it got annoying), first
+person on foot for shovelling, and the shovel to be more effective. A vacuum truck was their idea and then dropped as too heavy for
+the phone; offered hold-to-dig, an air spade and bigger shovelfuls, they picked hold-to-dig and bigger shovelfuls.
+
+- Free play: a find that's been found (seen) no longer beeps. The Buried find job's still beeps all the way, as there the beep is the
+  guide for going gently.
+- First person on foot was already there (View: Cab). On foot the button now says "View: Eyes", and it starts looking 40 degrees
+  down (pick) so the hole the shovel's making is in view.
+- Hold DIG (or Space on the PC): he keeps going, dig then throw, about two shovelfuls a second (`Worker.ACT_S` 0.25, was 0.4), each
+  off to his right 1.8 m (`ASIDE`, pick) clear of the hole, or into a barrow in front of him or beside him. A tap still digs once and
+  a second tap still throws ahead (or into a barrow), as before. Works for a friend online too (`Worker.dig_hold` goes with the
+  stick's commands).
+- A shovelful is twice as big again: 0.048 m3 (`Worker.SCOOP` 768) and 12 cm off firm ground (`FIRM_BITE` 120). A barrow's now two
+  shovelfuls. In the check, three seconds of held DIG digs six shovelfuls, a hole half a metre deep, with the pile beside him.
+- `test/freefind_test.gd` checks all of it.

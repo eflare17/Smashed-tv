@@ -441,7 +441,7 @@ func _choose_mission() -> void:
 		menu_kind = "start"
 
 func _add_actions() -> void:
-	for pair: Array in [["dz_forward", KEY_W], ["dz_back", KEY_S], ["dz_left", KEY_A], ["dz_right", KEY_D], ["blade_up", KEY_E], ["blade_down", KEY_Q], ["dig_up", KEY_UP], ["dig_down", KEY_DOWN], ["dig_in", KEY_LEFT], ["dig_out", KEY_RIGHT], ["dig_curl", KEY_U], ["dig_dump", KEY_O]]:
+	for pair: Array in [["dz_forward", KEY_W], ["dz_back", KEY_S], ["dz_left", KEY_A], ["dz_right", KEY_D], ["blade_up", KEY_E], ["blade_down", KEY_Q], ["dig_up", KEY_UP], ["dig_down", KEY_DOWN], ["dig_in", KEY_LEFT], ["dig_out", KEY_RIGHT], ["dig_curl", KEY_U], ["dig_dump", KEY_O], ["spade", KEY_SPACE]]:
 		# Reset reloads the scene, and the actions from last time are still there.
 		if InputMap.has_action(pair[0]):
 			continue
@@ -1907,6 +1907,7 @@ func _apply_all() -> void:
 ## Who the right-hand buttons belong to.
 func _show_buttons() -> void:
 	var who := active.machine_name
+	_label("view", "View: " + _view_word(view))
 	# A big one has the same buttons as the small one.
 	# Only the first letter made big: "Big dozer" is a Dozer, but "On foot" has to stay "On foot" to match its buttons.
 	var kind := who.trim_prefix("Big ").trim_prefix("Haul ")
@@ -2314,6 +2315,35 @@ func _spade_for(player: int) -> void:
 			Input.vibrate_handheld(25)
 	_show_tools()
 
+## DIG held down (owner's ask, 9 Nov): he keeps going, dig then throw, about two shovelfuls a second, each one off to his right
+## clear of the hole, or into a barrow if one's in front of him or beside him.
+func _hold_dig(w: Worker) -> void:
+	if not w.dig_hold or not w.ready_for_more():
+		return
+	if w.shovel_mm == 0:
+		w.dig()
+	else:
+		var into := _barrow_for(w)
+		if into == null:
+			into = _barrow_beside(w)
+		if into:
+			w.throw(into.tray_middle())
+		else:
+			w.throw_aside()
+	if w == active:
+		_show_tools()
+
+## A barrow right beside him with room in it, whichever way he's facing: holding DIG at the pile fills it.
+func _barrow_beside(w: Worker) -> Barrow:
+	for m: Machine in machines:
+		if not m is Barrow or not m.visible:
+			continue
+		var b := m as Barrow
+		var mid := b.tray_middle()
+		if b.tray_mm < Barrow.CAPACITY and b.tip <= 0.05 and Vector2(mid.x, mid.z).distance_to(w.spot) < 1.6:
+			return b
+	return null
+
 ## A barrow he's facing, near enough to throw a shovelful in, with room for it.
 func _barrow_for(w: Worker) -> Barrow:
 	var best: Barrow = null
@@ -2418,7 +2448,8 @@ func _set_view(v: String) -> void:
 			pitch = deg_to_rad(11.0)
 			dist = 9.5
 		"Cab":
-			pitch = deg_to_rad(13.0)
+			# On foot it's his own eyes, looking down enough to see where the shovel goes in.
+			pitch = deg_to_rad(40.0 if active is Worker else 13.0)
 		"Chase":
 			# The excavator's work is out ahead and down in the ground, so it wants a higher look from further back.
 			pitch = deg_to_rad(active.view_pitch)
@@ -2435,8 +2466,12 @@ func _set_view(v: String) -> void:
 			chase_yaw = _behind_yaw()
 			bucket_aim = active.teeth
 	camera.fov = 74.0 if v == "Cab" else 52.0
-	_label("view", "View: " + v)
+	_label("view", "View: " + _view_word(v))
 	_place_camera()
+
+## What the View button calls a view: on foot there's no cab, so first person is his eyes.
+func _view_word(v: String) -> String:
+	return "Eyes" if v == "Cab" and active is Worker else v
 
 func _set_ink(i: String) -> void:
 	ink = i
@@ -2769,6 +2804,9 @@ func _physics_process(dt: float) -> void:
 				truck.tip_cmd = 1.0 if Input.is_action_pressed("blade_up") else 0.0
 			elif active is Barrow:
 				(active as Barrow).tip_cmd = 1.0 if Input.is_action_pressed("blade_up") else 0.0
+			elif active is Worker:
+				# DIG held down keeps him digging (a tap still digs once, then throws once).
+				(active as Worker).dig_hold = (spade_button != null and spade_button.visible and spade_button.is_pressed()) or Input.is_action_pressed("spade")
 			elif active is Loader:
 				var small := active as Loader
 				small.lift_cmd = Input.get_axis("blade_down", "blade_up")
@@ -2816,6 +2854,8 @@ func _physics_process(dt: float) -> void:
 			m.step(dt)
 		elif (tick_count + k) % 4 == 0:
 			m.step(dt * 4.0)
+	for w: Worker in workers:
+		_hold_dig(w)
 	_bump_machines(was_spot, was_angle)
 	if friend:
 		_bump_machines(friend_spot, friend_angle, friend)
@@ -4989,6 +5029,9 @@ func _find_step(delta: float) -> void:
 	if tip != Vector3.INF and not mission_done and menu == null:
 		var d := INF
 		for f: Find in _finds():
+			# In free play one that's been found goes quiet: it was getting annoying digging the rest of it out (owner, 9 Nov).
+			if buried == null and f.seen:
+				continue
 			if Vector2(tip.x - f.at.x, tip.z - f.at.y).length() < f.radius + reach:
 				d = minf(d, f.distance(tip))
 		if d < reach and _beep_wait <= 0.0:

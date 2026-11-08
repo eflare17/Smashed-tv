@@ -11,21 +11,24 @@ const EASE := 7.0               # how fast he gets going and stops
 const STRIDE := 1.4             # m a full step of both legs takes
 const SWING := 0.55             # radians the legs swing at a walk
 # The hand tools.
-const SCOOP := 384              # mm on one cell's area a shovelful holds: 0.024 m3 (it was half that; the owner wanted it more use)
+const SCOOP := 768              # mm on one cell's area a shovelful holds: 0.048 m3 (doubled twice: the owner wanted it more use)
 const DIG_AT := 0.75            # m ahead of him the shovel goes in
-const FIRM_BITE := 60           # mm of firm ground a cell gives a shovel, where loose soil comes freely (was 24)
+const FIRM_BITE := 120          # mm of firm ground a cell gives a shovel, where loose soil comes freely (was 24, then 60)
 const THROW_TO := 1.5           # m ahead a shovelful lands, with nothing to throw it into
 const THROW_S := 0.45           # seconds a shovelful's in the air
 const RAKE_AT := 1.05           # m ahead the rake's head is
 const RAKE_HALF := 0.32
 const RAKE_WALK := 0.6          # of his walking speed, raking
-const ACT_S := 0.4              # how long a dig or a throw takes
+const ACT_S := 0.25             # how long a dig or a throw takes: held, DIG goes dig, throw, dig, about two shovelfuls a second
+const ASIDE := 1.8              # m off to his right that a shovelful goes when DIG is held, clear of the hole
 
 var on_foot := false
 var tool := ""                  # "shovel", "rake" or nothing in his hands
 var shovel_mm := 0              # what's on the shovel
 var shovel_dust := 0
 var raked := 0                  # mm moved with the rake, for the checks
+var dig_hold := false           # DIG held down: he keeps digging, a command like the stick
+var digs := 0                   # shovelfuls that came up with something, for the checks
 var _act := ""                  # "dig" or "throw" while he's doing it
 var _act_t := 0.0
 var _tools: Dictionary = {}     # tool -> its mesh, in his right hand
@@ -204,6 +207,8 @@ func dig() -> int:
 		got_dust += r[2]
 	shovel_mm = got
 	shovel_dust = got_dust
+	if got > 0:
+		digs += 1
 	_act = "dig"
 	_act_t = ACT_S
 	hit_end = 0.4 if got > 0 else 0.0
@@ -223,6 +228,26 @@ func throw(target: Variant = null) -> bool:
 	_act_t = ACT_S
 	_hold_pose()
 	return true
+
+## Throws the shovelful off to his right, clear of the hole he's digging, so it doesn't roll back in.
+func throw_aside() -> bool:
+	if not on_foot or shovel_mm <= 0 or _act != "":
+		return false
+	var right := Vector2(sin(angle), cos(angle))
+	var to := spot + forward() * 0.4 + right * ASIDE
+	_throw_at(to, sim.height_at(to))
+	_act = "throw"
+	_act_t = ACT_S
+	_hold_pose()
+	return true
+
+## Whether he's free to dig or throw again.
+func ready_for_more() -> bool:
+	return on_foot and tool == "shovel" and _act == ""
+
+func stop_commands() -> void:
+	super()
+	dig_hold = false
 
 ## Off the blade in a few clods, arcing to land at `to`, `high` up.
 func _throw_at(to: Vector2, high: float) -> void:
@@ -268,6 +293,12 @@ const TOOLS := ["", "shovel", "rake"]
 
 func _net_more() -> PackedFloat32Array:
 	return PackedFloat32Array([TOOLS.find(tool), shovel_mm, shovel_dust, ["", "dig", "throw"].find(_act), _act_t])
+
+func _net_cmds_more() -> PackedFloat32Array:
+	return PackedFloat32Array([1.0 if dig_hold else 0.0])
+
+func _net_take_cmds_more(c: PackedFloat32Array) -> void:
+	dig_hold = c.size() > 2 and c[2] > 0.5
 
 func _net_take_more(s: PackedFloat32Array) -> void:
 	tool = TOOLS[clampi(int(s[NET_BASE]), 0, 2)]
