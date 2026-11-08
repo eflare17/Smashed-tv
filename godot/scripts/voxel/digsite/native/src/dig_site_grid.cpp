@@ -451,6 +451,7 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("take_dirty_sections", "most"), &DigSiteGrid::take_dirty_sections);
 	ClassDB::bind_method(D_METHOD("mark_all_dirty"), &DigSiteGrid::mark_all_dirty);
 	ClassDB::bind_method(D_METHOD("mesh_section", "sx", "sy", "sz"), &DigSiteGrid::mesh_section);
+	ClassDB::bind_method(D_METHOD("decor_section", "sx", "sy", "sz", "blades_per_m2"), &DigSiteGrid::decor_section);
 	ClassDB::bind_method(D_METHOD("section_count"), &DigSiteGrid::section_count);
 	ClassDB::bind_method(D_METHOD("section_dims"), &DigSiteGrid::section_dims);
 }

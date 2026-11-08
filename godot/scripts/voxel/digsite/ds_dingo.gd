@@ -60,6 +60,7 @@ func _init() -> void:
 	max_climb = deg_to_rad(28.0)
 	step_up = 0.26
 	seat = Vector3(0, 0.23, 0.92)
+	pipe = Vector3(0.25, 0.95, 0.5)
 
 func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 	var m := MeshInstance3D.new()

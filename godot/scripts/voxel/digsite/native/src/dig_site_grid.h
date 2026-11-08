@@ -164,6 +164,7 @@ public:
 	PackedInt32Array take_dirty_sections(int most);
 	void mark_all_dirty();
 	Array mesh_section(int sx, int sy, int sz) const;
+	Array decor_section(int sx, int sy, int sz, float blades_per_m2) const;
 	int section_count() const { return scx * scy * scz; }
 	Vector3 section_dims() const { return Vector3(scx, scy, scz); }
 };

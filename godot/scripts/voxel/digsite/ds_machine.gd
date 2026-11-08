@@ -26,6 +26,7 @@ var max_climb := deg_to_rad(30.0)
 var step_up := 0.3              # m: the tallest step it'll climb
 var wall_look := 1.0            # m ahead of its leading wheels a bank's looked for (a dozer: no further than its blade)
 var seat := Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
+var pipe := Vector3(0.3, 1.5, 0.3)   # its exhaust stack's top, from its middle
 var turn_needs_speed := false   # (a truck: steered wheels, it only turns rolling)
 # where it is
 var yaw := 0.0
@@ -122,6 +123,7 @@ func step(dt: float) -> void:
 		_follow(dt)
 	_pose_now()
 	_pour_fx(dt)
+	_dust_fx()
 
 ## Its body solid to the loose dirt (the host's: the dirt runs there): a heap slumping, or soil sliding off a blade,
 ## banks against its tracks and wheels instead of flowing in under it (and lifting it up onto the pile)
@@ -133,6 +135,85 @@ func _block_body() -> void:
 	var r := right() * (width * 0.5)
 	var front := Vector3(global_position.x, global_position.y, global_position.z) + f * (length * 0.5)
 	tr.block(id + 1000, front - r, front + r, f, length, 1.0)
+
+var _dust: CPUParticles3D
+var _exhaust: CPUParticles3D
+var _pour_dust: CPUParticles3D
+
+## A puff emitter (the digger game's): soft balls that grow and fade
+static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
+	var ball := SphereMesh.new()
+	ball.radius = 0.5
+	ball.height = 1.0
+	ball.radial_segments = 6
+	ball.rings = 3
+	var p := CPUParticles3D.new()
+	p.mesh = ball
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = colour
+	p.material_override = m
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.amount = amount
+	p.lifetime = life
+	p.emitting = false
+	p.local_coords = false
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 0.8))
+	fade.set_color(1, Color(1, 1, 1, 0.0))
+	p.color_ramp = fade
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.45))
+	grow.add_point(Vector2(1.0, 1.0))
+	p.scale_amount_curve = grow
+	return p
+
+# dust off the tracks as it drives, exhaust from the stack while it's driven, dust where it pours
+func _dust_fx() -> void:
+	if _dust == null:
+		_dust = puffs(Color("#d6bd98"), 18, 1.0)
+		_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_dust.emission_box_extents = Vector3(width * 0.45, 0.1, length * 0.3)
+		_dust.direction = Vector3(0, 1, 0)
+		_dust.spread = 40.0
+		_dust.initial_velocity_min = 0.2
+		_dust.initial_velocity_max = 0.8
+		_dust.gravity = Vector3.ZERO
+		_dust.scale_amount_min = 0.5
+		_dust.scale_amount_max = 1.1
+		add_child(_dust)
+		_exhaust = puffs(Color("#2b2b2b"), 16, 1.1)
+		_exhaust.direction = Vector3(0, 1, 0)
+		_exhaust.spread = 14.0
+		_exhaust.initial_velocity_min = 1.4
+		_exhaust.initial_velocity_max = 2.4
+		_exhaust.gravity = Vector3(0.3, 0.3, 0.0)
+		_exhaust.scale_amount_min = 0.22
+		_exhaust.scale_amount_max = 0.5
+		add_child(_exhaust)
+		_pour_dust = puffs(Color("#d8c6a4"), 14, 1.2)
+		_pour_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		_pour_dust.emission_sphere_radius = 0.5
+		_pour_dust.direction = Vector3(0, 1, 0)
+		_pour_dust.spread = 60.0
+		_pour_dust.initial_velocity_min = 0.3
+		_pour_dust.initial_velocity_max = 1.0
+		_pour_dust.gravity = Vector3(0, 0.4, 0)
+		_pour_dust.scale_amount_min = 0.8
+		_pour_dust.scale_amount_max = 1.7
+		add_child(_pour_dust)
+	_dust.global_position = global_position + Vector3(0, 0.15, 0)
+	_dust.emitting = absf(speed) > 0.4
+	_exhaust.global_position = global_transform * pipe
+	_exhaust.emitting = driver != 0
+	_exhaust.speed_scale = 0.6 + 0.8 * clampf(absf(throttle), 0.0, 1.0)      # (worked hard, it puffs faster)
+	var pouring := _stream_t > 0.0 and fx_load() >= 0
+	if pouring:
+		var at := fx_pour_at()
+		_pour_dust.global_position = Vector3(at.x, ground_y(at.x, at.z) + 0.3, at.z)
+	_pour_dust.emitting = pouring
 
 ## (a subclass) what it's carrying (blocks; -1: nothing to carry) and where it comes out when it pours
 func fx_load() -> int:
@@ -358,11 +439,7 @@ func _box(parent: Node3D, size: Vector3, at: Vector3, col: Color, metal := 0.2) 
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	var m := StandardMaterial3D.new()
-	m.albedo_color = col
-	m.metallic = metal
-	m.roughness = 0.6
-	mi.material_override = m
+	mi.material_override = DsLook.flat(col)
 	mi.position = at
 	parent.add_child(mi)
 	return mi

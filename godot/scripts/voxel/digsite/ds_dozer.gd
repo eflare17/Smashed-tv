@@ -64,6 +64,7 @@ func _init() -> void:
 	step_up = 0.4
 	wall_look = 0.6
 	seat = Vector3(0, 1.15, 0.8)
+	pipe = Vector3(0.45, 2.15, 1.3)
 
 func _build() -> void:
 	super()

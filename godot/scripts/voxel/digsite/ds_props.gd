@@ -320,3 +320,18 @@ static func dozer_blade(kit: DsKit, mine := false) -> void:
 		for side: float in [-1.0, 1.0]:
 			kit.box(Vector3(2.98, 0.86, side * (w - 0.1)), Vector3(0.62, 1.55, 0.09), body, Basis(Vector3.UP, side * 0.46))
 			kit.box(Vector3(3.0, 0.05, side * (w - 0.1)), Vector3(0.64, 0.1, 0.11), STEEL, Basis(Vector3.UP, side * 0.46))
+
+## A pine (the digger game's): a trunk and tiers of faceted cones, nudged for a hand-cut look. At `at`, `high` m tall.
+static func pine(kit: DsKit, at: Vector3, high: float, rng: RandomNumberGenerator, tiers := 3, sides := 7) -> void:
+	var r := high * 0.22
+	var trunk_h := high * 0.22
+	kit.cone(at, at + Vector3(0, trunk_h + 0.3, 0), high * 0.045, high * 0.03, 6, TRUNK, 0.0, null, false)
+	var greens := [PINE_C, PINE_A, PINE_B]
+	var y := trunk_h
+	var step := (high - trunk_h) / (tiers + 0.5)
+	for i in tiers:
+		var k := 1.0 - float(i) / tiers
+		var bottom := at + Vector3(0, y, 0)
+		var tip := at + Vector3(rng.randf_range(-0.05, 0.05), y + step * 1.75, rng.randf_range(-0.05, 0.05))
+		kit.cone(bottom, tip, r * (0.45 + 0.55 * k), 0.0, sides, greens[i % 3], 0.1, rng)
+		y += step

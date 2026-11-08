@@ -24,7 +24,7 @@ const SH := 64
 var grid: DigSiteGrid
 var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
 var site: Node3D                # DigSite
-var _mat: StandardMaterial3D
+var _mat: Material
 var _sec := {}                  # section index -> {mi: MeshInstance3D or null, body: StaticBody3D or null, faces: PackedVector3Array}
 var _dirty := {}                # section index -> true: changed since it was built
 var _dims := Vector3i.ZERO
@@ -44,10 +44,7 @@ func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	origin = at - Vector3(W * CELL * 0.5, SURFACE * CELL, D * CELL * 0.5)
 	var dv := grid.section_dims()
 	_dims = Vector3i(int(dv.x), int(dv.y), int(dv.z))
-	_mat = StandardMaterial3D.new()
-	_mat.vertex_color_use_as_albedo = true
-	_mat.vertex_color_is_srgb = true
-	_mat.roughness = 0.95
+	_mat = DsLook.ground_mat()
 	for i in grid.take_dirty_sections(100000):
 		_dirty[i] = true
 
@@ -216,6 +213,9 @@ func _free(i: int) -> void:
 		(s.mi as Node).queue_free()
 	if s.get("body") != null:
 		(s.body as Node).queue_free()
+	for k in ["grass", "clods"]:
+		if s.get(k):
+			(s[k] as Node).queue_free()
 	_sec.erase(i)
 	_dirty[i] = true                # (rebuilt when it's near again)
 
@@ -241,15 +241,20 @@ func _build(i: int, want_col: bool) -> void:
 			a[Mesh.ARRAY_VERTEX] = faces
 			a[Mesh.ARRAY_NORMAL] = arr[1]
 			a[Mesh.ARRAY_COLOR] = arr[2]
+			a[Mesh.ARRAY_CUSTOM0] = arr[3]
 			var m := ArrayMesh.new()
-			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a)
+			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 			if mi == null:
 				mi = MeshInstance3D.new()
 				mi.material_override = _mat
 				mi.position = origin
 				add_child(mi)
 			mi.mesh = m
-		s = {"mi": mi, "body": s.get("body"), "faces": faces, "nf": faces.size() / 6}
+		# what stands on it: grass where it's untouched, lumps on the loose dirt
+		var dec: Array = grid.decor_section(sx, sy, sz, DsLook.BLADES_PER_M2) if not faces.is_empty() else [PackedFloat32Array(), PackedFloat32Array()]
+		var grass := _multi(s.get("grass"), dec[0], 12, DsLook.blade_mesh(), DsLook.grass_mat(), false)
+		var clods := _multi(s.get("clods"), dec[1], 16, DsLook.clod_mesh(sx + sz * 3), DsLook.clod_mat(), true)
+		s = {"mi": mi, "body": s.get("body"), "faces": faces, "nf": faces.size() / 6, "grass": grass, "clods": clods}
 		built_n += 1
 	# collision: near a player, from the same faces
 	var body: StaticBody3D = s.get("body")
@@ -273,6 +278,28 @@ func _build(i: int, want_col: bool) -> void:
 		body = null
 	s["body"] = body
 	_sec[i] = s
+
+## A section's grass or clods: the MultiMesh filled from the grid's buffer (made, kept or dropped as there's anything)
+func _multi(mmi: MultiMeshInstance3D, buf: PackedFloat32Array, stride: int, mesh: Mesh, mat: Material, colours: bool) -> MultiMeshInstance3D:
+	var n := buf.size() / stride
+	if n == 0:
+		if mmi:
+			mmi.queue_free()
+		return null
+	if mmi == null:
+		mmi = MultiMeshInstance3D.new()
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = colours
+		mm.mesh = mesh
+		mmi.multimesh = mm
+		mmi.material_override = mat
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.position = origin
+		add_child(mmi)
+	mmi.multimesh.instance_count = n
+	mmi.multimesh.buffer = buf
+	return mmi
 
 ## Everything near the players built now, whatever it takes (arriving: the screen's black anyway)
 func build_now(max_ms := 3000.0) -> void:

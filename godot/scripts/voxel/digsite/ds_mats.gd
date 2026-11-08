@@ -25,9 +25,9 @@ const MASK := 0x1f
 
 const NAME := ["air", "topsoil", "dirt", "clay", "sand", "gravel", "stone", "hard rock", "bedrock", "coal", "iron ore",
 	"gold ore", "gems", "ground", "wood", "concrete"]
-const COL := [Color(0, 0, 0), Color8(92, 66, 42), Color8(122, 86, 52), Color8(170, 104, 64), Color8(214, 190, 128),
+const COL := [Color(0, 0, 0), Color8(104, 58, 38), Color8(120, 64, 44), Color8(176, 104, 62), Color8(214, 190, 128),
 	Color8(132, 126, 118), Color8(128, 126, 122), Color8(82, 80, 86), Color8(36, 34, 40), Color8(46, 44, 48),
-	Color8(150, 98, 72), Color8(232, 188, 56), Color8(90, 210, 220), Color8(122, 86, 52), Color8(168, 120, 70),
+	Color8(150, 98, 72), Color8(232, 188, 56), Color8(90, 210, 220), Color8(120, 64, 44), Color8(168, 120, 70),
 	Color8(176, 176, 170)]
 const GRASS := Color8(86, 124, 56)
 const HARD := [0, 1, 1, 2, 1, 1, 3, 4, 99, 3, 4, 4, 5, 99, 2, 5]

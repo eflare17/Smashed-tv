@@ -208,6 +208,35 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     stalls with a full blade after ~11 m; a shallow blade spreads its heap into the dip ahead and drives on.
   - Not done: the excavator's teeth are as before (firm ground by time, not travel).
 
+- **The look (the owner, 8 Nov: "the web version looks miles ahead of it ... make it look even better than the
+  web version").** Rendered side by side, the first Dig Site was pastel plastic on a plane: the arena's filmic
+  tonemapping and grey sky, flat vertex colours, no grass, no outlines, one smooth beige for every kind of dirt. The
+  digger game's cel-shaded look is brought over (`ds_look.gd`, `shaders/`), applied only while you're at the site
+  (the arena's sky, sun, tonemapping and field of view are swapped on arrival and put back on the way home):
+  - Toon light (`ds_toon.gdshaderinc`: a hard terminator, one band, a crisp shadow edge) on every Dig Site material:
+    the machines and props (`ds_prop.gdshader`, vertex colours), the fence, office and pines (`ds_flat.gdshader`).
+  - Ink: black lines from the depth buffer (`ds_outline.gdshader`, a full-screen quad drawn after everything; the
+    threshold raised from the digger game's 0.03 to 0.05, or the surface-nets ripples in flat grass drew squiggles).
+  - The site's own sky (`ds_sky.gdshader`: saturated blue, painted clouds), a warm sun at the digger game's angle
+    with hard two-split shadows, flat ambient light, linear tonemapping, deeper SSAO, no glow. Camera 52 degrees.
+  - The ground (`ds_ground.gdshader`, on the true 3D surface-nets mesh): the mesher now also gives each vertex, in
+    CUSTOM0, its loose share, a cavity shade, grass and rock flags. Grass in two patchy greens with a crisp ragged
+    border (only on firm topsoil still at the height it was made); soil as lumps with dark gaps where it's loose (the
+    digger game's clods.png, from above, and from the side on a wall), smooth and darker where cut; strata bands on
+    steep firm faces; rock in flat greys; hollows darker and warmer. The cavity shade is the digger game's
+    ring-average height drop (0.75 / 2 / 4.5 m rings) worked out per vertex in C++ from the column tops, so it also
+    darkens a tunnel's inside, which a heightmap can't. Material colours (`DsMats.COL`) warmed to the digger game's
+    red-brown soil.
+  - Grass blades and clods: `decor_section` (C++) lays MultiMesh buffers per section, rebuilt with the section's mesh:
+    36 blades/m2 on untouched topsoil (so digging takes the grass with it), lumps on loose dirt sized by how deep it
+    lies and part sunk in (`ds_grass.gdshader`, `ds_clod.gdshader`, drawn after the ink). ~150k blades over the site,
+    three triangles each.
+  - Round the site: a paddock plane to the horizon and 46 pines (`DsProps.pine`, the digger game's), none across the
+    gate.
+  - Dust and exhaust (`DsMachine._dust_fx`): puffs off the tracks as a machine drives, smoke from its stack while
+    it's driven (faster under throttle), dust where a bucket or the tray pours.
+  - Nothing in the grid, the dirt or the network changed; the tests are unchanged.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from

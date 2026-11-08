@@ -44,6 +44,7 @@ func _init() -> void:
 	max_climb = deg_to_rad(22.0)
 	step_up = 0.36
 	seat = Vector3(0.5, 0.95, -2.4)
+	pipe = Vector3(1.0, 2.6, -2.2)
 	turn_needs_speed = true
 
 func _build() -> void:

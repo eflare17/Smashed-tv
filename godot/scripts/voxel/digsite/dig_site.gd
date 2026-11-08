@@ -31,6 +31,7 @@ var caves: DsCaves                        # cave-ins shown and heard (stage 7)
 var supports: DsSupports                  # props and concrete supports, and the weight on them (stage 8)
 var blasts: DsBlasts                      # dynamite (stage 9)
 var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
+var look: DsLook                          # the site's sky, sun, toon shading and ink
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -74,11 +75,14 @@ func _build() -> void:
 	body.collision_layer = 1
 	body.collision_mask = 0
 	add_child(body)
-	var grass := _mat(Color8(86, 120, 58))
+	var grass := _mat(Color(0.29, 0.50, 0.18))
 	var fence := _mat(Color8(220, 140, 40))
 	var hut := _mat(Color8(214, 218, 222))
 	var roof := _mat(Color8(70, 86, 110))
 	# the voxel ground in the middle (stage 2), the field round it (four slabs: none under the ground)
+	look = DsLook.new()
+	add_child(look)
+	look.setup(self)
 	terrain = DsTerrain.new()
 	add_child(terrain)
 	terrain.setup(self, AT, SEED)
@@ -111,6 +115,35 @@ func _build() -> void:
 	for sgn in [-1.0, 1.0]:
 		_box(body, Vector3(f, 1.0, band), Vector3(0, -0.5, sgn * (SIZE * 0.5 + band * 0.5)), grass)
 		_box(body, Vector3(band, 1.0, SIZE), Vector3(sgn * (SIZE * 0.5 + band * 0.5), -0.5, 0), grass)
+	# the paddock out to the horizon, and pines round the site (none across the gate)
+	var far := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(1200.0, 1200.0)
+	far.mesh = pm
+	far.material_override = _mat(Color(0.29, 0.50, 0.18))
+	far.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	far.position = AT + Vector3(0, -1.02, 0)
+	add_child(far)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = SEED * 7 + 3
+	var pines: Array[ArrayMesh] = []
+	for i in 3:
+		var pk := DsKit.new()
+		DsProps.pine(pk, Vector3.ZERO, 10.0, rng)
+		pines.append(pk.mesh())
+	for i in 46:
+		var ang := rng.randf() * TAU
+		var r := rng.randf_range(SIZE * 0.5 + 6.0, SIZE * 0.5 + 34.0)
+		var at := Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+		if at.z > SIZE * 0.5 and absf(at.x) < 16.0:
+			continue                              # (the gate and the office stay clear)
+		var tree := MeshInstance3D.new()
+		tree.mesh = pines[i % 3]
+		tree.material_override = DsLook.prop_mat()
+		tree.position = AT + at
+		tree.rotation.y = rng.randf() * TAU
+		tree.scale = Vector3.ONE * rng.randf_range(0.7, 1.25)
+		add_child(tree)
 	# the site fence: orange mesh panels on posts round the dirt, a gap at the front
 	var half := SIZE * 0.5 + 1.0
 	for side in 4:
@@ -163,22 +196,24 @@ func _build() -> void:
 	sub.position = AT + Vector3(0.0, 2.4, half + 0.2)
 	add_child(sub)
 
-func _mat(c: Color) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = 0.9
-	return m
+func _mat(c: Color) -> Material:
+	return DsLook.flat(c)
 
-func _box(body: StaticBody3D, size: Vector3, at: Vector3, m: StandardMaterial3D, alpha := 1.0) -> void:
+func _box(body: StaticBody3D, size: Vector3, at: Vector3, m: Material, alpha := 1.0) -> void:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
 	if alpha < 1.0:
-		m = m.duplicate()
-		m.albedo_color.a = alpha
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mi.material_override = m
+		# (see-through: the fence's mesh panels; plain, not toon: the ink would draw their edges anyway)
+		var sm := StandardMaterial3D.new()
+		var c: Vector3 = (m as ShaderMaterial).get_shader_parameter("albedo")
+		sm.albedo_color = Color(c.x, c.y, c.z, alpha)
+		sm.roughness = 1.0
+		sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mi.material_override = sm
+	else:
+		mi.material_override = m
 	mi.position = AT + at
 	add_child(mi)
 	if body:
@@ -210,6 +245,7 @@ func go() -> void:
 	_help_text = arena.help.text
 	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office, E drive a machine   4 dynamite   Tab backpack"
 	_hud.visible = true
+	look.enter()
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
 	terrain.build_now(900.0)                  # (the screen's black: the ground near you there before you see it, the rest streams in)
@@ -231,6 +267,7 @@ func home() -> void:
 	arena.debris.bound = _debris_bound
 	arena.help.text = _help_text
 	_hud.visible = false
+	look.leave()
 	_put(_home_at, _home_yaw, _home_pitch)
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:

@@ -66,7 +66,7 @@ var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
 var _rams: Array[MeshInstance3D] = []
 var _tracks: DsTrackRig
-static var prop_mat: StandardMaterial3D
+static var prop_mat: Material
 
 func _init() -> void:
 	kind = "excavator"
@@ -77,14 +77,10 @@ func _init() -> void:
 	turn_rate = 0.55
 	max_climb = deg_to_rad(30.0)
 	step_up = 0.4
+	pipe = Vector3(-0.8, 2.3, -1.6)
 
-static func mat() -> StandardMaterial3D:
-	if prop_mat == null:
-		prop_mat = StandardMaterial3D.new()
-		prop_mat.vertex_color_use_as_albedo = true
-		prop_mat.vertex_color_is_srgb = true
-		prop_mat.roughness = 0.9
-	return prop_mat
+static func mat() -> Material:
+	return DsLook.prop_mat()
 
 func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 	var m := MeshInstance3D.new()
