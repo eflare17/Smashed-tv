@@ -90,6 +90,7 @@ func _process(dt: float) -> bool:
 				check(put > 0 and put == back, "its right click: dirt back in the hole (%d out of the backpack, %d blocks back)" % [put, back])
 				# a shaft down to the stone (as if dug), the player at its bottom
 				var tr := ds.terrain
+				tr.paused = true              # (the shaft's dirt walls would cave in: stage 4's dirt, not what's tested here)
 				var c := DigSite.AT + Vector3(-6, 0, -6)
 				var top := tr.top_at(c.x, c.z)
 				var y := top

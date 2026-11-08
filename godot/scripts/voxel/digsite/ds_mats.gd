@@ -31,12 +31,16 @@ const COL := [Color(0, 0, 0), Color8(92, 66, 42), Color8(122, 86, 52), Color8(17
 	Color8(176, 176, 170)]
 const GRASS := Color8(86, 124, 56)
 const HARD := [0, 1, 1, 2, 1, 1, 3, 4, 99, 3, 4, 4, 5, 99, 2, 5]
+## How tall a firm wall of it stands straight up before it gives way (cells; 0: never, rock): clay stands best, sand
+## hardly at all (DigSiteGrid's dirt, stage 4: past this, or past ~60 degrees, its rim turns loose and slumps)
+const WALL := [0, 10, 12, 20, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ## What a block dug out is in the backpack ("": nothing)
 const ITEM := ["", "dirt", "dirt", "clay", "sand", "gravel", "stone", "stone", "", "coal", "iron_ore", "gold", "gem", "", "", ""]
 
 ## The grid's materials handed to it (colours, hardness, the grass on top)
 static func apply(g: DigSiteGrid) -> void:
 	g.set_materials(PackedColorArray(COL), PackedInt32Array(HARD), GRASS)
+	g.set_physics(PackedInt32Array(WALL))
 
 static func name_of(m: int) -> String:
 	return NAME[m & MASK] if (m & MASK) < NAME.size() else "?"

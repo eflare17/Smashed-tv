@@ -16,6 +16,8 @@ const BUDGET_MS := 4.0          # building sections a frame, at most this long (
 const R_MESH := 96.0            # metres from a player a section's drawn (the whole 64 m site from anywhere on it: a hole in the far ground shows the sky) ...
 const R_COL := 12.0             # ... and solid
 const R_DROP := 110.0           # (and its drawing let go past this: the site's let go once you're well away)
+const SETTLE_HZ := 20.0         # the dirt's ticks a second (stage 4: loose dirt falls and slumps, tall walls give way)
+const SETTLE_US := 2500         # ... each at most this long (the rest waits for the next)
 const SW := 32                  # a section's cells across (x, z) and up (DigSiteGrid's SW, SH)
 const SH := 64
 
@@ -27,6 +29,10 @@ var _sec := {}                  # section index -> {mi: MeshInstance3D or null, 
 var _dirty := {}                # section index -> true: changed since it was built
 var _dims := Vector3i.ZERO
 var built_n := 0                # (tests: sections built so far)
+var settle_on := true           # (the dirt runs here: solo or the host; a guest's shows the host's)
+var paused := false             # (the tests: the dirt held still)
+var _settle_acc := 0.0
+var settle_moves := 0           # (tests: cells the dirt's moved)
 
 func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	site = s
@@ -107,8 +113,17 @@ func _near_points() -> Array:
 		out.append(n._o_target)
 	return out
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
+	_settle_acc += dt
+	if settle_on and not paused and _settle_acc >= 1.0 / SETTLE_HZ:
+		_settle_acc = 0.0
+		settle_moves += grid.settle(SETTLE_US)
 	step(BUDGET_MS)
+
+## n loose blocks of m dumped at world point p (on the ground's top there; they slump into a pile): -> how many
+func dump(p: Vector3, m: int, n: int) -> int:
+	var c := cell_of(p)
+	return grid.drop_column(c.x, c.z, m, n)
 
 ## Builds what's due near the players for up to budget_ms (nearest first). -> sections built
 func step(budget_ms: float) -> int:

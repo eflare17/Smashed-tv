@@ -64,6 +64,24 @@ func _process(dt: float) -> bool:
 		3:
 			if t - mark > 0.5:
 				_budget_checks(ds.terrain)
+				# stage 4: a scoop's worth dumped again and again in one spot (in the game: the dirt runs each frame)
+				var tr: DsTerrain = ds.terrain
+				v.solid = tr.grid.count_box(0, 0, 0, 512, 192, 512, -1)
+				v.dump = DigSite.AT + Vector3(-4, 0, 8)
+				v.moves = tr.settle_moves
+				var put := 0
+				for k in 20:
+					put += tr.dump(v.dump, DsMats.DIRT, 20)
+				v.put = put
+				v.top0 = tr.top_at(v.dump.x, v.dump.z)
+				_next(4)
+		4:
+			if t - mark > 4.0:
+				var tr: DsTerrain = ds.terrain
+				var top := tr.top_at(v.dump.x, v.dump.z)
+				var side := tr.top_at(v.dump.x + 0.75, v.dump.z)
+				check(tr.settle_moves > int(v.moves) and top < float(v.top0) - 0.5, "dumped dirt slumps in the game (%d moves; its top %.2f -> %.2f m)" % [tr.settle_moves - int(v.moves), v.top0, top])
+				check(side > DigSite.AT.y - 0.5 and tr.grid.count_box(0, 0, 0, 512, 192, 512, -1) == int(v.solid) + int(v.put), "into a pile, nothing made or lost (%d dumped)" % v.put)
 				return _done()
 	return false
 

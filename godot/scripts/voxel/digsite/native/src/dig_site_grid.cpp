@@ -19,6 +19,7 @@ DigSiteGrid::DigSiteGrid() {
 	for (int i = 0; i < NMAT; i++) {
 		col[i][0] = col[i][1] = col[i][2] = 0.5f;
 		hard[i] = 1;
+		wall_h[i] = 0;
 	}
 	top_col[0] = 0.34f;
 	top_col[1] = 0.47f;
@@ -39,6 +40,14 @@ void DigSiteGrid::setup(int p_w, int p_h, int p_d, int p_surface) {
 	scz = (d + SW - 1) / SW;
 	sec_dirty.assign((size_t)scx * scy * scz, 1);
 	chunk_touched.assign((size_t)ccx * ccy * ccz, 0);
+	awake.assign((size_t)ccx * ccy * ccz, 0);
+	chunk_mod.assign((size_t)ccx * ccy * ccz, 0);
+	chunk_hash.assign((size_t)ccx * ccy * ccz, 0);
+	hash_dirty.assign((size_t)ccx * ccy * ccz, 1);
+	moved_bits.assign(((size_t)w * h * d + 63) / 64, 0);
+	moved_list.clear();
+	wake_list.clear();
+	wake_at = 0;
 }
 
 void DigSiteGrid::set_materials(const PackedColorArray &colors, const PackedInt32Array &hardness, const Color &grass) {
@@ -121,6 +130,10 @@ void DigSiteGrid::generate(int seed) {
 	if (rng == 0)
 		rng = 1;
 	std::fill(cells.begin(), cells.end(), 0);
+	std::fill(chunk_mod.begin(), chunk_mod.end(), 0);
+	std::fill(chunk_touched.begin(), chunk_touched.end(), 0);
+	std::fill(hash_dirty.begin(), hash_dirty.end(), 1);
+	std::fill(awake.begin(), awake.end(), 0);
 	const int ring = 8; // 1 m
 	std::vector<int> heights((size_t)w * d);
 	for (int z = 0; z < d; z++)
@@ -190,7 +203,11 @@ void DigSiteGrid::touch(int x, int y, int z) {
 			continue;
 		sec_dirty[((ny / SH) * scz + nz / SW) * scx + nx / SW] = 1;
 	}
-	chunk_touched[((y / CS) * ccz + z / CS) * ccx + x / CS] = 1;
+	int ci = ((y / CS) * ccz + z / CS) * ccx + x / CS;
+	chunk_touched[ci] = 1;
+	chunk_mod[ci] = 1;
+	hash_dirty[ci] = 1;
+	wake_near(x, y, z);
 }
 
 void DigSiteGrid::set_cell(int x, int y, int z, int v) {
@@ -415,6 +432,20 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("count_box", "x0", "y0", "z0", "x1", "y1", "z1", "what"), &DigSiteGrid::count_box);
 	ClassDB::bind_method(D_METHOD("dig_sphere", "c", "r", "hardest"), &DigSiteGrid::dig_sphere);
 	ClassDB::bind_method(D_METHOD("fill_sphere", "c", "r", "m", "most", "loose"), &DigSiteGrid::fill_sphere);
+	ClassDB::bind_method(D_METHOD("take_diff", "most"), &DigSiteGrid::take_diff);
+	ClassDB::bind_method(D_METHOD("pack_chunks", "list"), &DigSiteGrid::pack_chunks);
+	ClassDB::bind_method(D_METHOD("modified_chunks"), &DigSiteGrid::modified_chunks);
+	ClassDB::bind_method(D_METHOD("apply_chunks", "data"), &DigSiteGrid::apply_chunks);
+	ClassDB::bind_method(D_METHOD("section_hashes"), &DigSiteGrid::section_hashes);
+	ClassDB::bind_method(D_METHOD("section_chunks", "s"), &DigSiteGrid::section_chunks);
+	ClassDB::bind_method(D_METHOD("clear_touched"), &DigSiteGrid::clear_touched);
+	ClassDB::bind_method(D_METHOD("chunk_count"), &DigSiteGrid::chunk_count);
+	ClassDB::bind_method(D_METHOD("set_physics", "walls"), &DigSiteGrid::set_physics);
+	ClassDB::bind_method(D_METHOD("settle", "budget_usec"), &DigSiteGrid::settle);
+	ClassDB::bind_method(D_METHOD("awake_count"), &DigSiteGrid::awake_count);
+	ClassDB::bind_method(D_METHOD("wake_all"), &DigSiteGrid::wake_all);
+	ClassDB::bind_method(D_METHOD("drop_column", "x", "z", "m", "n"), &DigSiteGrid::drop_column);
+	ClassDB::bind_method(D_METHOD("get_moves_total"), &DigSiteGrid::get_moves_total);
 	ClassDB::bind_method(D_METHOD("take_dirty_sections", "most"), &DigSiteGrid::take_dirty_sections);
 	ClassDB::bind_method(D_METHOD("mark_all_dirty"), &DigSiteGrid::mark_all_dirty);
 	ClassDB::bind_method(D_METHOD("mesh_section", "sx", "sy", "sz"), &DigSiteGrid::mesh_section);

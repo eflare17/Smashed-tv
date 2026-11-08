@@ -45,6 +45,26 @@ private:
 	int hard[NMAT];
 	float top_col[3];                      // a topsoil cell's top with air over it: grass
 	uint32_t rng = 1;
+	// the dirt (dig_site_dirt.cpp): which chunks are awake, how tall each material's firm wall stands
+	int wall_h[NMAT];                      // cells a firm wall of it stands straight up (0: never gives way: rock)
+	std::vector<uint8_t> awake;            // chunk -> 1: something may move in it
+	std::vector<uint64_t> moved_bits;      // cells moved into this tick (not moved again till the next)
+	std::vector<int> moved_list;
+	std::vector<int> wake_list;            // the awake chunks being worked through (what's left carries over)
+	int wake_at = 0;
+	int tick_n = 0;
+	int moves_total = 0;
+	void wake_near(int x, int y, int z);
+	inline bool air_at(int x, int y, int z) const { return in(x, y, z) && (cells[idx(x, y, z)] & MAT_MASK) == 0; }
+	int drop_at(int x, int y, int z, int limit) const;
+	void move_cell(int from, int x, int y, int z);
+	int settle_chunk(int ci);
+	// the network (dig_site_net.cpp): chunks changed since made (sent to a guest arriving), their checksums
+	std::vector<uint8_t> chunk_mod;
+	std::vector<uint32_t> chunk_hash;
+	std::vector<uint8_t> hash_dirty;
+	void pack_chunk(PackedByteArray &out, int ci) const;
+	uint32_t hash_chunk(int ci) const;
 
 	inline int idx(int x, int y, int z) const { return (y * d + z) * w + x; }
 	inline bool in(int x, int y, int z) const { return x >= 0 && y >= 0 && z >= 0 && x < w && y < h && z < d; }
@@ -78,6 +98,24 @@ public:
 
 	Dictionary dig_sphere(const Vector3 &c, float r, int hardest);
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);
+
+	// the dirt (dig_site_dirt.cpp)
+	void set_physics(const PackedInt32Array &walls);
+	int settle(int budget_usec);
+	int awake_count() const;
+	void wake_all();
+	int drop_column(int x, int z, int m, int n);
+	int get_moves_total() const { return moves_total; }
+
+	// the network (dig_site_net.cpp)
+	PackedByteArray take_diff(int most);
+	PackedByteArray pack_chunks(const PackedInt32Array &list) const;
+	PackedInt32Array modified_chunks() const;
+	int apply_chunks(const PackedByteArray &data);
+	PackedInt32Array section_hashes();
+	PackedInt32Array section_chunks(int s) const;
+	void clear_touched();
+	int chunk_count() const { return ccx * ccy * ccz; }
 
 	PackedInt32Array take_dirty_sections(int most);
 	void mark_all_dirty();

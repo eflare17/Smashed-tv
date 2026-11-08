@@ -46,6 +46,17 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 - One block = one item, so a rusty shovel scoop is ~14 dirt. Fine for now; may want to divide later if the backpack
   fills too fast.
 
+- **Loose dirt (stage 4).** In C++ (`native/src/dig_site_dirt.cpp`), a cellular version of the digger game's
+  dirt_sim. A cell is firm (as made) or loose (dug and dumped: the LOOSE bit). Loose cells fall into air and slump
+  wherever the drop over 1, 2 or 3 cells out is more than ~34 degrees allows (eight ways round), so piles stand at
+  ~31-34 degrees. A firm soil wall stands straight up to its material's height (`DsMats.WALL`: topsoil 1.25 m,
+  dirt 1.5 m, clay 2.5 m, sand 0.4 m, gravel 0.6 m) and gives way past that or past ~60 degrees: its rim turns
+  loose and slumps. Rock never gives way here (cave-ins are stage 7). Cells only swap with air, so nothing is ever
+  made or lost (`test/voxel/digsite_dirt_test.gd` counts every material before and after).
+  Only awake 16^3 chunks are worked on (woken by a change within 4 cells), 20 ticks a second, 2.5 ms a tick at
+  most; the rest waits. Dumped dirt (the shovel's right click, machines' buckets) is loose.
+- The stage 4 commit also carries the C++ for stage 5's sync (chunk diffs, checksums), built in the same library.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -56,3 +67,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 1. Scene + phone travel: done.
 2. 3D voxel ground: done (`test/voxel/digsite_ground_test.gd`, 20 checks).
 3. Hand tools: done (`test/voxel/digsite_tools_test.gd`, 15 checks).
+4. Loose dirt: done (`test/voxel/digsite_dirt_test.gd`, 10 checks; 2 more in the ground test).
