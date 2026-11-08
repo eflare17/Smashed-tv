@@ -123,6 +123,17 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   In co-op a guest's stick is a DsNet action ("dyn"); the host blows it up and lands the chunks; the guest gets
   "dyn" and "boom" events (the stick, the bang, chunks to watch), the ground through the chunks.
 
+- **More machines (stage 10).** On the same DsMachine base, parked by the gate:
+  - Bobcat (`ds_bobcat.gd`): a DsDingo with wheels and a cab, faster, a 520-block bucket 1.5 m wide.
+  - Excavator (`ds_excavator.gd`): tracks, a house that slews (Z/X), boom (R/F), stick (T/G), bucket (right mouse curls
+    in and digs while it's in the ground, left opens and pours). Reaches ~2 m below its tracks; breaks stone (not hard
+    rock). The driver's view slews with the house.
+  - Tip truck (`ds_truck.gd`): six wheels, steered (it only turns rolling), 5 m/s, climbs 22 degrees. Any bucket poured
+    over its tray fills the tray (2400 blocks); R tips it and it pours out behind (spilling round when a column's
+    full). Parked by the site office, L loads concrete supports ($8 each, up to 12); on foot at its back, G takes one
+    into your backpack ("hauls concrete supports down").
+  - Machines don't collide with each other (kinematic, each only against the ground); the player bumps into them.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -139,3 +150,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 7. Tunnels and cave-ins: done (`test/voxel/digsite_cave_test.gd` 9 checks; `digsite_tunnel_test.gd` alone and two copies, with and without lag).
 8. Supports: done (`test/voxel/digsite_support_test.gd`: alone 13 checks; two copies, with and without lag).
 9. Dynamite: done (`test/voxel/digsite_dynamite_test.gd`: alone 12 checks; two copies, with and without lag).
+10. Bobcat, excavator, tip truck: done (`test/voxel/digsite_fleet_test.gd`: alone 15 checks; two copies, with and without lag).

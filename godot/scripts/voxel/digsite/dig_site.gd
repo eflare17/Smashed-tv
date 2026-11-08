@@ -208,7 +208,7 @@ func go() -> void:
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_help_text = arena.help.text
-	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office, E drive the Dingo   Tab backpack"
+	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office, E drive a machine   4 dynamite   Tab backpack"
 	_hud.visible = true
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
@@ -250,7 +250,7 @@ func _process(_dt: float) -> void:
 	near_office = Vector2(p.x - w.x, p.z - w.z).length() < 2.2 and absf(p.y - w.y) < 2.5
 	if near_office:
 		arena._use_label.text = tools.office_line() + "\n" + tools.shop_line()
-	elif machines and machines.near and not driving():
+	elif machines and not driving() and machines.line() != "":
 		arena._use_label.text = machines.line()
 	# the hard hat's lamp: on with solid ground over your head (in a tunnel)
 	if lamp and terrain:
@@ -281,6 +281,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				tools.make_concrete()
 			KEY_V:
 				tools.sell_ore()
+		get_viewport().set_input_as_handled()
+		return
+	if machines and k in [KEY_L, KEY_G] and machines.key(k):
 		get_viewport().set_input_as_handled()
 		return
 	if k != KEY_E:

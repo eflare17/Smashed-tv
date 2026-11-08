@@ -36,6 +36,14 @@ var _pour_acc := 0.0
 var _arms: Node3D
 var _bucket: Node3D
 var _lump: MeshInstance3D
+# (the Bobcat changes these: DsBobcat)
+var capacity := CAPACITY
+var hardest := HARDEST
+var arm_pivot := ARM_PIVOT
+var arm_len := ARM_LEN
+var arm_low := ARM_LOW
+var bucket_w := 0.9
+var colour := Color8(236, 178, 36)
 
 func _init() -> void:
 	kind = "Dingo"
@@ -50,7 +58,11 @@ func _init() -> void:
 
 func _build() -> void:
 	super()
-	var yellow := Color8(236, 178, 36)
+	_build_body()
+	_build_arms()
+
+func _build_body() -> void:
+	var yellow := colour
 	var dark := Color8(40, 40, 44)
 	# tracks either side, the body between, the engine cover, the stand-on platform at the back, the controls
 	for s in [-1.0, 1.0]:
@@ -63,23 +75,25 @@ func _build() -> void:
 	_box(self, Vector3(0.5, 0.35, 0.12), Vector3(0, 1.05, 0.42), dark)
 	for s in [-1.0, 1.0]:
 		_box(self, Vector3(0.04, 0.5, 0.04), Vector3(s * 0.22, 1.2, 0.46), Color8(200, 40, 30))
-	# the arms (from their pivot up the back of the body, to the bucket out front)
+## The arms (from their pivot up the back of the body, to the bucket out front) and the bucket
+func _build_arms() -> void:
+	var half := bucket_w * 0.5
 	_arms = Node3D.new()
-	_arms.position = ARM_PIVOT
+	_arms.position = arm_pivot
 	add_child(_arms)
 	for s in [-1.0, 1.0]:
-		_box(_arms, Vector3(0.08, 0.1, ARM_LEN), Vector3(s * 0.33, 0, -ARM_LEN * 0.5), yellow)
-	_box(_arms, Vector3(0.66, 0.08, 0.08), Vector3(0, 0, -ARM_LEN * 0.55), yellow)
+		_box(_arms, Vector3(0.08, 0.1, arm_len), Vector3(s * (half - 0.12), 0, -arm_len * 0.5), colour)
+	_box(_arms, Vector3(bucket_w - 0.24, 0.08, 0.08), Vector3(0, 0, -arm_len * 0.55), colour)
 	_bucket = Node3D.new()
-	_bucket.position = Vector3(0, 0, -ARM_LEN)
+	_bucket.position = Vector3(0, 0, -arm_len)
 	_arms.add_child(_bucket)
 	# the bucket: a floor going forward from its hinge, a back, two sides
 	var steel := Color8(90, 90, 96)
-	_box(_bucket, Vector3(0.9, 0.04, 0.4), Vector3(0, -0.2, -0.2), steel, 0.6)
-	_box(_bucket, Vector3(0.9, 0.36, 0.04), Vector3(0, -0.02, 0.0), steel, 0.6)
+	_box(_bucket, Vector3(bucket_w, 0.04, 0.4), Vector3(0, -0.2, -0.2), steel, 0.6)
+	_box(_bucket, Vector3(bucket_w, 0.36, 0.04), Vector3(0, -0.02, 0.0), steel, 0.6)
 	for s in [-1.0, 1.0]:
-		_box(_bucket, Vector3(0.04, 0.3, 0.4), Vector3(s * 0.45, -0.05, -0.2), steel, 0.6)
-	_lump = _box(_bucket, Vector3(0.82, 0.3, 0.36), Vector3(0, -0.05, -0.19), Color8(122, 86, 52), 0.0)
+		_box(_bucket, Vector3(0.04, 0.3, 0.4), Vector3(s * half, -0.05, -0.2), steel, 0.6)
+	_lump = _box(_bucket, Vector3(bucket_w - 0.08, 0.3, 0.36), Vector3(0, -0.05, -0.19), Color8(122, 86, 52), 0.0)
 	_lump.visible = false
 
 ## The bucket's floor against level (radians: up +, tipped forward -): it pours below POUR_FROM
@@ -97,7 +111,7 @@ func _pose_tool() -> void:
 	_bucket.rotation.x = curl - arm * 0.6         # (the linkage keeps it roughly level as the arms go up)
 	_lump.visible = load_n > 0
 	if load_n > 0:
-		var k := clampf(float(load_n) / CAPACITY, 0.15, 1.0)
+		var k := clampf(float(load_n) / capacity, 0.15, 1.0)
 		_lump.scale = Vector3(1.0, k, 1.0)
 		_lump.position.y = -0.2 + 0.15 * k
 
@@ -115,11 +129,11 @@ func keys() -> String:
 	return "W/S drive   A/D turn   R/F arms up/down   right mouse: curl the bucket   left mouse: tip it   E get off"
 
 func status() -> String:
-	var s := "Bucket %d%%" % int(100.0 * load_n / CAPACITY)
+	var s := "Bucket %d%%" % int(100.0 * load_n / capacity)
 	return s + ("   " + blocked if blocked != "" else "")
 
 func _tool(dt: float) -> void:
-	arm = clampf(arm + lift_cmd * LIFT_RATE * dt, ARM_LOW, ARM_HIGH)
+	arm = clampf(arm + lift_cmd * LIFT_RATE * dt, arm_low, ARM_HIGH)
 	curl = clampf(curl + curl_cmd * CURL_RATE * dt, CURL_MIN, CURL_MAX)
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
@@ -128,16 +142,16 @@ func _tool(dt: float) -> void:
 	_bite_t += dt
 	if _bite_t >= BITE_EVERY:
 		_bite_t = 0.0
-		if speed > 0.15 and tip() > POUR_FROM and load_n < CAPACITY and tr.contains(e) and e.y < tr.top_at(e.x, e.z) - 0.02:
-			var got: Dictionary = tr.dig(e, BITE_R, HARDEST)
+		if speed > 0.15 and tip() > POUR_FROM and load_n < capacity and tr.contains(e) and e.y < tr.top_at(e.x, e.z) - 0.02:
+			var got: Dictionary = tr.dig(e, BITE_R * bucket_w / 0.9, hardest)
 			var counts: PackedInt32Array = got.counts
 			for m in counts.size():
 				if counts[m] > 0:
 					bucket[m] = int(bucket.get(m, 0)) + counts[m]
 					load_n += counts[m]
-			if int(got.n) == 0 and int(got.refused) > HARDEST:
+			if int(got.n) == 0 and int(got.refused) > hardest:
 				speed = 0.0
-				blocked = "Rock: the Dingo's bucket won't take it"
+				blocked = "Rock: the %s's bucket won't take it" % kind
 				if site.net:
 					site.net.event("fx", ["dig_clang", e, 0])
 	# pouring: tipped forward, it comes out where the edge is, loose (a pile)
@@ -151,7 +165,8 @@ func _tool(dt: float) -> void:
 			while n > 0 and load_n > 0:
 				var m := _most()
 				var take := mini(n, int(bucket[m]))
-				var put := tr.dump(e, m, take)
+				var truck = site.machines.catcher(e, self)
+				var put: int = truck.take(m, take) if truck else tr.dump(e, m, take)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put

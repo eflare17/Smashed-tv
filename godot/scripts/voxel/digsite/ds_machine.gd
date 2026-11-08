@@ -25,6 +25,7 @@ var turn_rate := 1.5            # rad/s, on the spot (less at speed)
 var max_climb := deg_to_rad(30.0)
 var step_up := 0.3              # m: the tallest step it'll climb
 var seat := Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
+var turn_needs_speed := false   # (a truck: steered wheels, it only turns rolling)
 # where it is
 var yaw := 0.0
 var speed := 0.0
@@ -105,6 +106,8 @@ func _drive(dt: float) -> void:
 	var a := accel if absf(want) > absf(speed) and signf(want) == signf(speed) or is_zero_approx(speed) else accel * 2.0
 	speed = move_toward(speed, want, a * dt)
 	var turn_k := 1.0 - 0.5 * clampf(absf(speed) / max_speed, 0.0, 1.0)
+	if turn_needs_speed:
+		turn_k = clampf(absf(speed) / 1.5, 0.0, 1.0) * (1.0 if speed >= 0.0 else -1.0)    # (wheels: it turns as it rolls)
 	var new_yaw := yaw - steer * turn_rate * turn_k * dt
 	var at := global_position
 	var to := at + Vector3(-sin(new_yaw), 0, -cos(new_yaw)) * speed * dt
@@ -165,6 +168,10 @@ func _pose_tool() -> void:
 ## Where its driver's feet go
 func seat_world() -> Vector3:
 	return global_transform * seat
+
+## Which way its driver faces (the view turns with this: an excavator's house slews)
+func view_yaw() -> float:
+	return yaw
 
 # ---------------------------------------------------------------- the network
 

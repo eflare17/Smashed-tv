@@ -29,12 +29,105 @@ func make() -> void:
 	add_child(dingo)
 	dingo.setup(site, 1, site.AT + Vector3(9.0, 0.0, 27.0), 0.0)
 	_add(dingo)
+	var bobcat := DsBobcat.new()
+	add_child(bobcat)
+	bobcat.setup(site, 2, site.AT + Vector3(13.0, 0.0, 27.0), 0.0)
+	_add(bobcat)
+	var digger := DsExcavator.new()
+	add_child(digger)
+	digger.setup(site, 3, site.AT + Vector3(-16.0, 0.0, 25.0), 0.0)
+	_add(digger)
+	var truck := DsTruck.new()
+	add_child(truck)
+	truck.setup(site, 4, site.AT + Vector3(-4.0, 0.0, 26.0), 0.0)
+	_add(truck)
+	var n: DsNet = site.net
+	n.register_event("prop_load", func(a: Array): _prop_load(by_id(int(a[0])), int(a[1])))
+	n.register_event("prop_take", func(a: Array): _prop_take(by_id(int(a[0])), false))
+	n.register_event("prop_give", func(_a: Array): _given())
 
 func _add(m: DsMachine) -> void:
 	list.append(m)
 	var n: DsNet = site.net
 	n.register_fast(m.id, m.net_take)
 	n.register_fast(m.id + CMD_BASE, func(d: PackedByteArray): _cmds_in(m, d))
+
+## The truck whose tray a bucket's pouring over (from: the machine pouring), or null
+func catcher(p: Vector3, from: DsMachine) -> DsTruck:
+	for m in list:
+		if m != from and m is DsTruck and (m as DsTruck).over_tray(p):
+			return m
+	return null
+
+func trucks() -> Array:
+	return list.filter(func(m): return m is DsTruck)
+
+## A key at the Dig Site: L (driving the truck by the office: concrete supports on it), G (on foot at a truck's back:
+## one off it). True if it did something.
+func key(k: int) -> bool:
+	var a = site.arena
+	if k == KEY_L and driving is DsTruck:
+		var t := driving as DsTruck
+		var w: Vector3 = site.AT + site.OFFICE_WINDOW
+		if Vector2(t.global_position.x - w.x, t.global_position.z - w.z).length() > 9.0:
+			a.say("Park by the site office to load concrete supports", 1.5)
+			return true
+		var room := DsTruck.PROPS_MOST - t.props
+		var n := mini(room, a.cash / DsTruck.PROP_COST)
+		if n <= 0:
+			a.say("The truck's full of supports" if room <= 0 else "Not enough cash: $%d a support" % DsTruck.PROP_COST, 1.5)
+			return true
+		a.cash -= n * DsTruck.PROP_COST
+		a.sound.play("hammer_thud_0", Vector3.INF, -6.0)
+		a.say("%d concrete supports loaded ($%d)" % [n, n * DsTruck.PROP_COST], 2.0)
+		if site.net.runs():
+			_prop_load(t, n)
+		else:
+			site.net.event("prop_load", [t.id, n])
+		return true
+	if k == KEY_G and driving == null:
+		var t := near_truck_back()
+		if t == null:
+			return false
+		if t.props <= 0:
+			a.say("No concrete supports on the truck (load them by the site office: L)", 1.5)
+			return true
+		if site.net.runs():
+			_prop_take(t, true)
+		else:
+			site.net.event("prop_take", [t.id])
+		return true
+	return false
+
+## The truck whose back this player's standing at (on foot), or null
+func near_truck_back() -> DsTruck:
+	var p: Vector3 = site.arena.player.global_position
+	for t in trucks():
+		var b: Vector3 = (t as DsTruck).spout()
+		if Vector2(b.x - p.x, b.z - p.z).length() < 2.2:
+			return t
+	return null
+
+func _prop_load(t: DsTruck, n: int) -> void:
+	if t == null or not site.net.runs():
+		return
+	t.props = mini(DsTruck.PROPS_MOST, t.props + n)
+
+# (the host's) a support off the truck: to this player, or (asked by the guest) to the guest
+func _prop_take(t: DsTruck, mine: bool) -> void:
+	if t == null or not site.net.runs() or t.props <= 0:
+		return
+	t.props -= 1
+	if mine:
+		_given()
+	else:
+		site.net.event("prop_give", [])
+
+func _given() -> void:
+	var a = site.arena
+	a.receive({"id": "prop_concrete", "n": 1}, "inv")
+	a.sound.play("item_pick", Vector3.INF, -4.0)
+	a.say("A concrete support off the truck (%d in your backpack)" % a.inv.count("prop_concrete"), 1.5)
 
 func by_id(i: int) -> DsMachine:
 	for m in list:
@@ -69,7 +162,7 @@ func use() -> bool:
 
 func _on(m: DsMachine) -> void:
 	driving = m
-	_yaw_was = m.yaw
+	_yaw_was = m.view_yaw()
 	m.stop_cmds()
 	site.arena._let_go()
 	site.arena.say(m.keys(), 4.0)
@@ -137,8 +230,8 @@ func _process(dt: float) -> void:
 	# the driver stands on it; the view turns with it
 	if driving:
 		site._put_keep(driving.seat_world())
-		a.look_yaw += driving.yaw - _yaw_was
-		_yaw_was = driving.yaw
+		a.look_yaw += wrapf(driving.view_yaw() - _yaw_was, -PI, PI)
+		_yaw_was = driving.view_yaw()
 		a._use_label.text = driving.status()
 	# who's near (on foot)
 	near = null
@@ -163,5 +256,6 @@ func _process(dt: float) -> void:
 ## The prompt on foot near one
 func line() -> String:
 	if near == null:
-		return ""
+		var t := near_truck_back()
+		return "G  take a concrete support off the truck (%d on it)" % t.props if t and t.props > 0 else ""
 	return ("E  drive the %s" % near.kind) if near.driver == 0 else ("Your mate's driving the %s" % near.kind)
