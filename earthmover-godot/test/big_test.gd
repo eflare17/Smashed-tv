@@ -125,9 +125,17 @@ func dam_test() -> void:
 			s.step(DT, 1000000)
 		d.throttle = 0.0
 		for n in pad.cells:
-			if s.bed[n] + s.soil[n] < int((pad.level - pad.tol_down - 0.05) * 1000.0):
+			if s.bed[n] + s.soil[n] < int((pad.level - Mission.DAM_TOL - 0.05) * 1000.0):
 				below += 1
 		print("      pass %d: %d%% of the floor dug, at %.1f m along" % [lap + 1, int(pad.score(s) * 100.0), d.spot.x - r.position.x])
 	check(pad.score(s) > 0.15, "passes with CUT get the floor going (%d%%)" % int(pad.score(s) * 100.0))
 	check(below == 0, "CUT never digs below the floor (%d cells too deep)" % below)
 	check(s.total() == total, "no soil lost digging the dam")
+	# Dug too deep, as with the blade pushed down on LOWER, it still counts: a deeper dam's still a dam.
+	for n in pad.cells:
+		s.bed[n] = int((pad.level - 0.6) * 1000.0)
+		s.soil[n] = 0
+	check(pad.score(s) > 0.99, "a floor dug 0.6 m too deep still counts (%d%%)" % int(pad.score(s) * 100.0))
+	for n in pad.cells:
+		s.bed[n] = int((pad.level + 0.4) * 1000.0)
+	check(pad.score(s) < 0.01, "but one 0.4 m short doesn't (%d%%)" % int(pad.score(s) * 100.0))

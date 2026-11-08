@@ -18,7 +18,8 @@ const SPREAD_MM := 50           # what spreading with the bucket leaves behind
 const PLAN_COVER := 0.3          # m: the planned trench floor is at least this far under the ground
 const PLAN_UNDER_WATER := 0.1    # m: and for a flood, this far under the water where it starts
 const HAND_TOL := 0.035          # m: a garden patch is done where it's this near level, above or below
-const DAM_TOL := 0.15            # m: a dam floor's done where it's this near
+const DAM_TOL := 0.15            # m: a dam floor's done where it's no more than this above the floor
+const DAM_DEEPER_OK := 10.0      # m: and dug deeper counts too: a deeper dam just holds more water, and it's not meant to be fiddly
 const DAM_EDGE := 1.5            # m in from the pegs that counts as floor: the sides slope
 
 const LIST := [
@@ -151,7 +152,7 @@ const LIST := [
 		"digger_dir": Vector2(0.0, -1.0),
 		"dam": Rect2(-12.0, -13.0, 24.0, 14.0),
 		"dam_deep": 1.0,
-		"hint": "Dig the dam out inside the pegs: red's still to come out, green's at the floor. The dozer's CUT stops at the floor",
+		"hint": "Dig the dam out inside the pegs: red's still to come out, green's deep enough. The dozer's CUT stops at the floor",
 		"done": "",
 	},
 ]
@@ -441,7 +442,7 @@ static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
 	if kind(m) == "dam":
 		var r: Rect2 = m["dam"]
 		var level := sim.height_at(r.get_center()) - float(m["dam_deep"])
-		var p := Pad.new(Pad.box(r), level, DAM_TOL, DAM_TOL, DAM_EDGE)
+		var p := Pad.new(Pad.box(r), level, DAM_TOL, DAM_DEEPER_OK, DAM_EDGE)
 		p.title = String(m["title"]).to_upper()
 		return p
 	return null
