@@ -244,16 +244,23 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   far sections keep their own budget, capped by a running average of the build time. Column tops are cached in C++
   (`top_cached`, cleared per column on change, and by network chunks) so the cavity shade and the decor don't rescan
   columns.
-- Loader buckets can't dig below their wheels (the owner, 8 Nov: "the bucket's going lower than the tires", and again
-  after a first fix): arms right down, the Bobcat's lip was 18 cm under its wheels. Limiting the arms against the body
-  wasn't enough: the front wheels drop into the bucket's own cut, the machine tips nose down, the bucket with it, and
-  it goes in deeper still (measured: 59 cm down in 4 s). Now `DsDingo._hold` works in the world each frame: the
-  bucket self-levels (its floor keeps its angle to level however the body tips), and the arms lift if the lip would
-  go more than 9 cm (`DIG_MOST`) under the lower of the ground the back wheels stand on and the uncut ground just
-  ahead of the lip. Down a slope it follows the slope; on the flat it takes one 12.5 cm layer a pass (the cutter
-  takes a block whose middle is over the lip: 6.25 cm down for the top one, 18.75 for the next) and steps down a
-  layer only once its back wheels reach the cut. The guest is sent the arms and bucket as held. The fleet test
-  checks the lip never goes deeper (`digsite_fleet_test.gd`); its Bobcat, parked facing down a slope, gets 4.5 s.
+- Loader buckets can't dig below their wheels, and a pass scrapes off one clean layer, grass and all (the owner, 8 Nov:
+  "the bucket's going lower than the tires", again after a first fix, then "scrape off like the whole layer of
+  grass"). Arms right down, the Bobcat's lip was 18 cm under its wheels; limiting the arms against the body wasn't
+  enough, as the front wheels drop into the bucket's own cut, the machine tips nose down, the bucket with it, and it
+  goes in deeper still (measured: 59 cm down in 4 s). `DsDingo._hold` now works in the world each frame:
+  - the bucket self-levels (its floor keeps its angle to level however the body tips);
+  - arms right down, it floats: the lip rides 6 cm (`DIG_MOST`) under the firm ground 30 cm ahead of it, not yet cut
+    (loose dirt there doesn't count, so into a heap it scoops from the bottom), up or down as the body bobs and rolls;
+    higher, the arms only lift if the lip would go under that;
+  - never more than 18 cm under its wheels (`FLOAT_DOWN`: it doesn't dive into a pit ahead), and never lifted over the
+    higher of where arms-right-down put it and 6 cm under its highest wheel (it cuts into a bank rather than riding up
+    it, and a machine in a pit stays in it: the Dingo test);
+  - it takes any block its lip goes into (the cutter's given the lip half a block lower, `BITE`: it takes blocks whose
+    middle is over the edge), so a pass peels the top 12.5 cm off evenly. Where the site's own terraces cross the
+    bucket at a slant, the last strip of the upper one loses two layers, which leaves the scraped floor flush.
+  The guest is sent the arms and bucket as held. The fleet test checks the lip never goes deeper than that
+  (`digsite_fleet_test.gd`).
 
 ## Open questions
 

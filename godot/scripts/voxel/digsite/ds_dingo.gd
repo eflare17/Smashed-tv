@@ -11,11 +11,17 @@ extends DsMachine
 const LIFT_RATE := 0.75         # rad/s, the arms
 const CURL_RATE := 1.3
 const ARM_LOW := -0.95          # rad from level: the bucket's edge just under its tracks ...
-const DIG_MOST := 0.09          # m: its lip this far under the ground its back wheels stand on at most (the owner, 8 Nov:
-                                # "the bucket's going lower than the tires"): held in the world, not just against the body,
-                                # or its front wheels drop into its own cut, it tips nose down and the lip goes deeper still.
-                                # (one 12.5 cm layer a pass: the cutter takes a block whose middle is over the lip, 6.25 cm
-                                # down for the top one; two would need the lip 18.75 cm down)
+const DIG_MOST := 0.06          # m: arms right down, its lip rides this far under the uncut ground just ahead of it (the
+                                # owner, 8 Nov: "the bucket's going lower than the tires", then "scrape off the whole layer
+                                # of grass"): held in the world, not against the body, or its front wheels drop into its
+                                # own cut, it tips nose down and the lip goes deeper still; and it takes any block its lip
+                                # goes into (BITE), so a pass peels off the top 12.5 cm layer, turf and all, and no more
+const BITE := 0.0625            # m: the cutter takes the blocks whose middle is over the edge it's given: given half a
+                                # block under the lip, it takes every block the lip's in
+const FLOAT_DOWN := 0.18        # m: riding the ground (arms right down), the lip no further under its wheels than this
+                                # (so it doesn't dive into a pit ahead); and never over where the arms right down put it or
+                                # DIG_MOST under its highest wheel, whichever's higher (so it doesn't climb a bank: it cuts
+                                # into it, and a machine down in a pit stays in it)
 const ARM_HIGH := 0.95          # ... and up high (over a truck's side)
 const CURL_MIN := -0.95         # the bucket's floor against level: tipped right forward ...
 const CURL_MAX := 0.75          # ... curled right back
@@ -28,7 +34,9 @@ const HARDEST := 2              # soil and clay (DsMats.HARD)
 
 var arm := 0.0                  # radians from level (where the driver's put the arms)
 var curl := 0.0                 # the bucket's floor against level (up +: holding; tipped forward -: pouring)
-var arm_at := 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST
+var arm_at := 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST; right down,
+                                # they float, the lip riding DIG_MOST under the ground ahead
+var _float_lo := 0.0
 var curl_at := 0.0              # the bucket against the body as it is: curl, less the body's pitch (it self-levels)
 var lift_cmd := 0.0
 var curl_cmd := 0.0
@@ -81,6 +89,7 @@ func _build() -> void:
 	# (the arms' lowest: the bucket's lip, level, no more than DIG_MOST under the wheels)
 	arm_low = maxf(arm_low, asin(clampf((-DIG_MOST - pivot.y) / arm_len, -1.0, 1.0)))
 	arm = maxf(arm, arm_low)
+	_float_lo = asin(clampf((-FLOAT_DOWN - pivot.y) / arm_len, -1.0, 1.0))
 	arm_at = arm
 	curl_at = curl
 	_look = Node3D.new()
@@ -131,30 +140,36 @@ func _pin() -> Vector2:
 	return pivot + Vector2(cos(arm_at), sin(arm_at)) * arm_len
 
 ## The arms and the bucket as they are, from where the driver's put them: the bucket's floor kept at its angle to
-## level however the body tips, and the arms lifted if the lip would go more than DIG_MOST under the ground its back
-## wheels stand on or the ground just ahead of the lip, whichever's lower (so down a slope it follows the slope, but
-## its front wheels dropping into its own cut don't tip it in deeper: that ground ahead isn't cut yet)
+## level however the body tips (it self-levels), and its lip held to DIG_MOST under the firm ground just ahead of it,
+## not yet cut (loose dirt lying there doesn't count: into a heap it scoops from the bottom). Arms right down, it
+## floats there, up or down as the body bobs and rolls over the ground, so a pass peels one even layer and follows a
+## slope; higher, the arms only lift if the lip would go under it. Its front wheels dropping into its own cut don't
+## tip it in deeper: the ground ahead isn't cut yet. Never more than FLOAT_DOWN under its wheels, and never lifted
+## over its lowest or DIG_MOST under its highest wheel, whichever's higher (it cuts into a bank, it doesn't ride it).
 func _hold() -> void:
 	curl_at = clampf(curl - pitch, CURL_MIN, CURL_MAX)
-	arm_at = arm
-	var c := _corners(global_position, yaw)
 	var p := _pin()
 	var ahead := _look.global_transform * Vector3(p.x + bucket_len + 0.3, p.y, 0.0)
-	var lim := minf(maxf(c[2], c[3]), ground_y(ahead.x, ahead.z)) - DIG_MOST
-	if _lip_y(arm) >= lim:
-		return
-	var lo := arm
-	var hi := arm_high
-	if _lip_y(hi) < lim:
-		arm_at = hi
-		return
-	for i in 12:
-		var mid := (lo + hi) * 0.5
-		if _lip_y(mid) < lim:
-			lo = mid
-		else:
-			hi = mid
-	arm_at = hi
+	var ref: float = site.terrain.firm_at(ahead.x, ahead.z)
+	if not is_finite(ref):
+		ref = ground_y(ahead.x, ahead.z)
+	var c := _corners(global_position, yaw)
+	var top := maxf(maxf(c[0], c[1]), maxf(c[2], c[3]))
+	var lim := minf(ref - DIG_MOST, maxf(_lip_y(arm_low), top - DIG_MOST))
+	var lo := _float_lo
+	var hi := maxf(arm_high, lo)
+	var want := lo
+	if _lip_y(hi) <= lim:
+		want = hi
+	elif _lip_y(lo) < lim:
+		for i in 12:
+			var mid := (lo + hi) * 0.5
+			if _lip_y(mid) < lim:
+				lo = mid
+			else:
+				hi = mid
+		want = hi
+	arm_at = want if arm <= arm_low + 0.001 else maxf(arm, want)
 
 func _lip_y(a: float) -> float:
 	var p := pivot + Vector2(cos(a), sin(a)) * arm_len
@@ -239,11 +254,12 @@ func _tool(dt: float) -> void:
 	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
 		var ends := edge_ends()
 		var f := forward()
+		var cut_ends := [ends[0] - Vector3(0, BITE, 0), ends[1] - Vector3(0, BITE, 0)]
 		var share := clampf(maxf(speed, 0.0) * dt / 0.25, 0.0, 1.0)     # (it takes only what it drives through)
 		# (two rows at the lip; behind them, back to its front wheels, loose dirt only: what's slid in under the bucket
 		# goes in it or ahead, never under the wheels to lift it up onto the pile)
 		var rows := 2 + ceili(_gap() / 0.22)
-		var r: Dictionary = tr.blade(ends[0], ends[1], f, rows, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35, share)
+		var r: Dictionary = tr.blade(cut_ends[0], cut_ends[1], f, rows, bucket_high + 0.1 + BITE, firm_rate, hardest, capacity - load_n, bucket_high + 0.35 + BITE, share)
 		var counts: PackedInt32Array = r.counts
 		for m in counts.size():
 			if counts[m] > 0:
