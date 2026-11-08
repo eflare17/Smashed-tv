@@ -35,8 +35,7 @@ const STAB_MOST := 0.8          # m its teeth push into the ground before it has
 # (the Dig Site's)
 const CAPACITY := 620           # blocks (1.2 m3)
 const HARDEST := 3              # soil, clay, stone
-const BITE_R := 0.32
-const BITE_EVERY := 0.1
+const FIRM_RATE := 9.0          # firm blocks a second its teeth cut off a column (loose ones: all at once)
 const POUR_RATE := 520.0
 const SEAT_MODEL := Vector3(0.45, 1.2, -0.8)    # (in the house, the digger game's way round: the cab's floor)
 
@@ -55,7 +54,9 @@ var _v_swing := 0.0
 var _v_reach := 0.0
 var _v_raise := 0.0
 var _v_curl := 0.0
-var _bite_t := 0.0
+var dug := 0                    # (tests: blocks its teeth have taken)
+var bog := 0.0                  # how much the ground's holding the arm back (0 .. 0.85)
+var _firm_acc := 0.0
 var _pour_acc := 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
 var _house: Node3D
@@ -158,9 +159,22 @@ func _solve(want: Vector2) -> void:
 func _teeth_local() -> Vector3:
 	return Vector3(wrist.x + cos(-curl) * BUCKET, wrist.y + sin(-curl) * BUCKET, ARM_Z)
 
+## The teeth's two ends (across the bucket) in the world
+func teeth_ends() -> Array:
+	var t := _teeth_local()
+	var g := _look.global_transform
+	var r := Basis(Vector3.UP, swing)
+	return [g * (r * (t + Vector3(0, 0, -BUCKET_HALF))), g * (r * (t + Vector3(0, 0, BUCKET_HALF)))]
+
 ## The bucket's teeth in the world
 func edge() -> Vector3:
 	return _look.global_transform * (Basis(Vector3.UP, swing) * _teeth_local())
+
+func fx_load() -> int:
+	return load_n
+
+func fx_pour_at() -> Vector3:
+	return pour_point()
 
 ## Where what's in the bucket comes out, opened: under its pin (it doesn't swing away with the teeth)
 func pour_point() -> Vector3:
@@ -233,7 +247,8 @@ func _tool(dt: float) -> void:
 	var tr: DsTerrain = site.terrain
 	var e0 := edge()
 	var deep := tr.top_at(e0.x, e0.z) - e0.y if tr.contains(e0) else 0.0
-	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt
+	var slow := 1.0 - bog                          # (cutting firm ground holds the arm back)
+	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt * slow
 	if deep > STAB_MOST and _v_raise < 0.0:
 		want.y = wrist.y                       # (it won't stab deeper: drag it in)
 	_solve(want)
@@ -241,19 +256,33 @@ func _tool(dt: float) -> void:
 	_tracks.update(speed + steer * 0.8, speed - steer * 0.8, dt)
 	_pose_tool()
 	var e := edge()
-	# digging: the teeth in the ground, being dragged in, pulled down or curled, room in the bucket
-	_bite_t += dt
-	if _bite_t >= BITE_EVERY:
-		_bite_t = 0.0
-		var working := _v_curl > 0.1 or _v_reach < -0.1 or _v_raise < -0.1
-		if working and curl > CURL_EMPTY + 0.4 and load_n < CAPACITY and tr.contains(e) and e.y < tr.top_at(e.x, e.z) - 0.02:
-			var got: Dictionary = tr.dig(e, BITE_R, HARDEST)
-			var counts: PackedInt32Array = got.counts
-			for m in counts.size():
-				if counts[m] > 0:
-					bucket[m] = int(bucket.get(m, 0)) + counts[m]
-					load_n += counts[m]
-			blocked = "Hard rock: too hard for the bucket" if int(got.n) == 0 and int(got.refused) > HARDEST else ""
+	# digging (the digger game's way, DsTerrain.blade): the teeth dragged, pulled down or curled through the ground take
+	# what stands above them in the strip they sweep, into the bucket (firm ground only so fast: in firm ground the arm
+	# bogs down); rock harder than it breaks stops them
+	var working := _v_curl > 0.1 or _v_reach < -0.1 or _v_raise < -0.1
+	if working and curl > CURL_EMPTY + 0.4 and load_n < CAPACITY and tr.contains(e) and e.y < tr.top_at(e.x, e.z) + 0.1:
+		var ends := teeth_ends()
+		var travel := e - e0
+		var fwd := Vector3(travel.x, 0.0, travel.z)
+		if fwd.length() < 0.002:
+			fwd = Vector3.ZERO
+		_firm_acc = minf(_firm_acc + FIRM_RATE * dt, 3.0)
+		var firm := int(_firm_acc)
+		_firm_acc -= firm
+		var rows := 2 + ceili(fwd.length() / 0.22)          # (the whole strip the teeth swept this frame)
+		var r: Dictionary = tr.blade(ends[0], ends[1], fwd, rows, 0.75, firm, HARDEST, CAPACITY - load_n, 0.9)
+		var counts: PackedInt32Array = r.counts
+		for m in counts.size():
+			if counts[m] > 0:
+				bucket[m] = int(bucket.get(m, 0)) + counts[m]
+				load_n += counts[m]
+		dug += int(r.taken) + int(r.moved)
+		# (firm ground being cut, or standing over the teeth uncut, holds the arm back; loose comes easy)
+		var stuck := 0.5 if int(r.taken) == 0 and e.y < tr.top_at(e.x, e.z) - 0.1 else 0.0
+		bog = lerpf(bog, clampf(float(r.cut) / 6.0 + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
+		blocked = "Hard rock: too hard for the bucket" if bool(r.rock) and int(r.taken) == 0 else ""
+	else:
+		bog = 0.0
 	# pouring: opened past where it holds, out it comes at the teeth (over the truck: in its tray)
 	var hold := clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0)
 	if hold < 1.0 and load_n > 0:

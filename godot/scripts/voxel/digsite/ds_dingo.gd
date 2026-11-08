@@ -104,6 +104,12 @@ func _build_arms() -> void:
 	_lump = _add(_bucket, kit)
 	_lump.visible = false
 
+func fx_load() -> int:
+	return load_n
+
+func fx_pour_at() -> Vector3:
+	return edge()
+
 ## The bucket's floor against level (radians: up +, tipped forward -): it pours below POUR_FROM
 func tip() -> float:
 	return curl
@@ -185,7 +191,8 @@ func _tool(dt: float) -> void:
 	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
 		var ends := edge_ends()
 		var f := forward()
-		var r: Dictionary = tr.blade(ends[0], ends[1], f, 2, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35)
+		var rows := 2 + ceili(absf(speed) * dt / 0.22)      # (the whole strip it swept this frame, however slow the frame)
+		var r: Dictionary = tr.blade(ends[0], ends[1], f, rows, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35)
 		var counts: PackedInt32Array = r.counts
 		for m in counts.size():
 			if counts[m] > 0:

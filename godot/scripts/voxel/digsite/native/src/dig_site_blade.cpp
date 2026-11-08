@@ -139,7 +139,8 @@ Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Ve
 					counts.set(m, counts[m] + 1);
 					taken++;
 				} else {
-					spill(px, pz, fx, fz, sx, sz, to_end, v, (int)std::floor(ey + heap));
+					// (banked ahead of the blade's front edge, not of the row it was cut in: a fast blade sweeps several)
+					spill(a.x + wx * t, a.z + wz * t, fx, fz, sx, sz, to_end, v, (int)std::floor(ey + heap));
 					moved++;
 				}
 			}

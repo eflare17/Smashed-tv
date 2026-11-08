@@ -114,6 +114,56 @@ func step(dt: float) -> void:
 	else:
 		_follow(dt)
 	_pose_now()
+	_pour_fx(dt)
+
+## (a subclass) what it's carrying (blocks; -1: nothing to carry) and where it comes out when it pours
+func fx_load() -> int:
+	return -1
+
+func fx_pour_at() -> Vector3:
+	return global_position
+
+var _stream: CPUParticles3D
+var _last_load := -1
+var _stream_t := 0.0
+
+# dirt falling where it pours (a bucket tipping, the excavator opening, the truck's tray up): whenever its load's going
+# down, in both games (the guest's sees the load in the host's state)
+func _pour_fx(dt: float) -> void:
+	var n := fx_load()
+	if n < 0:
+		return
+	if _last_load >= 0 and n < _last_load:
+		_stream_t = 0.25
+	_last_load = n
+	_stream_t -= dt
+	var on := _stream_t > 0.0
+	if on and _stream == null:
+		_stream = CPUParticles3D.new()
+		_stream.amount = 60
+		_stream.lifetime = 0.9
+		_stream.local_coords = false
+		_stream.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_stream.emission_box_extents = Vector3(0.25, 0.05, 0.25)
+		_stream.direction = Vector3.DOWN
+		_stream.spread = 20.0
+		_stream.initial_velocity_min = 0.3
+		_stream.initial_velocity_max = 1.0
+		_stream.gravity = Vector3(0, -9.8, 0)
+		_stream.scale_amount_min = 0.6
+		_stream.scale_amount_max = 1.5
+		var bm := BoxMesh.new()
+		bm.size = Vector3.ONE * 0.08
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color8(122, 86, 52)
+		m.roughness = 1.0
+		bm.material = m
+		_stream.mesh = bm
+		add_child(_stream)
+	if _stream:
+		_stream.emitting = on
+		if on:
+			_stream.global_position = fx_pour_at()
 
 ## (the game that runs it) moves it by its controls over the ground
 func _drive(dt: float) -> void:

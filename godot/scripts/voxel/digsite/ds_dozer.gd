@@ -121,7 +121,8 @@ func _tool(dt: float) -> void:
 	var f := forward()
 	# working only going forward (or trying to): a parked blade doesn't dig
 	if speed > 0.02 or (throttle > 0.05 and speed > -0.05):
-		var r: Dictionary = tr.blade(a, b, f, 2, MOUTH, FIRM, HARDEST, 0, HEAP)
+		var rows := 2 + ceili(absf(speed) * dt / 0.22)      # (the whole strip it swept this frame, however slow the frame)
+		var r: Dictionary = tr.blade(a, b, f, rows, MOUTH, FIRM, HARDEST, 0, HEAP)
 		moved += int(r.moved)
 		if bool(r.rock) and int(r.moved) == 0:
 			speed = minf(speed, 0.0)

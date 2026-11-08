@@ -142,6 +142,24 @@ func dig_at(p: Vector3, r: float, hardest: int) -> Dictionary:
 	var got = site.net.act("dig", [tr.to_cells(p), r / DsTerrain.CELL, hardest])
 	return got if got is Dictionary else {"counts": PackedInt32Array(), "n": 0, "refused": 0}
 
+## A spade's bite (the hand shovel): an edge r*2 wide, across the way you look, a little under where it hit, cutting
+## what stands above it for a scoop's depth along the look into the scoop (through DsNet: a guest's goes to the host's)
+func spade_at(p: Vector3, look: Vector3, r: float, hardest: int) -> Dictionary:
+	var f := Vector3(look.x, 0.0, look.z)
+	f = f.normalized() if f.length() > 0.01 else Vector3.FORWARD
+	var across := Vector3(-f.z, 0.0, f.x) * r
+	var e := p + Vector3(0, -r, 0) - f * r * 0.5
+	var rows := maxi(1, ceili(r * 2.0 / 0.22))
+	var got = site.net.act("cut", [e - across, e + across, f, rows, r * 1.4, 99, hardest, 100000, 0.5])
+	if not got is Dictionary:
+		return {"counts": PackedInt32Array(), "n": 0, "refused": 0}
+	return {"counts": got.counts, "n": int(got.taken), "refused": hardest + 1 if bool(got.rock) else 0}
+
+## A scoop tipped out where you aim: it lands there and spreads round, a pile (through DsNet)
+func tip_at(p: Vector3, m: int, n: int) -> int:
+	var got = site.net.act("pour", [p + Vector3(0, 0.45, 0), m, n])
+	return int(got) if got != null else 0
+
 ## Up to most loose blocks of m put into the air within r of p (lowest first): how many
 func fill_at(p: Vector3, r: float, m: int, most: int) -> int:
 	var tr: DsTerrain = site.terrain
@@ -240,7 +258,8 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		if have <= 0:
 			a.say("No dirt in your backpack to fill with", 1.5)
 			return 0
-		var k := fill_at(p + n * r * 0.6, r, DsMats.DIRT, have)
+		var scoop := maxi(8, roundi(r * r * 300.0))          # (a scoop's worth, as the shovel takes)
+		var k := tip_at(p, DsMats.DIRT, mini(have, scoop))
 		if k > 0:
 			a.inv.remove("dirt", k)
 			tool.sfx("dig_dirt", p, -2.0, 0.85)
@@ -250,7 +269,11 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 	if tool.weapon_id == "shovel" and tool.tier == 0 and randf() < 0.25:
 		r *= 0.6                  # (the rusty one slips: half a scoop)
 		tool.sfx("dig_scrape", p, -4.0)
-	var got: Dictionary = dig_at(p - n * (r * 0.45 + 0.06), r, int(st[1]))     # (a little in: the smooth surface can sit half a block off the blocks)
+	var got: Dictionary
+	if tool.weapon_id == "shovel":
+		got = spade_at(p, tool.look(), r, int(st[1]))          # (a spade's flat bite, not a ball)
+	else:
+		got = dig_at(p - n * (r * 0.45 + 0.06), r, int(st[1]))     # (a little in: the smooth surface can sit half a block off the blocks)
 	if VoxelBody.credit and a.get("guide"):
 		a.guide.tried("dig")
 	var counts: PackedInt32Array = got.counts

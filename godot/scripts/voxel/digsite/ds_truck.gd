@@ -112,6 +112,12 @@ func take(m: int, n: int) -> int:
 	load_n += k
 	return k
 
+func fx_load() -> int:
+	return load_n
+
+func fx_pour_at() -> Vector3:
+	return spout() + Vector3(0, 1.0, 0)
+
 ## Where it pours out, tipped: behind the tray
 func spout() -> Vector3:
 	return global_transform * Vector3(0, 0.5, TRAY_AT.z + TRAY.z * 0.5 + 0.7)

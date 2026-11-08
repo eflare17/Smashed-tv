@@ -118,6 +118,8 @@ func hook(n: DsNet) -> void:
 	n.register_op("dig", func(a: Array, _again: bool): return grid.dig_sphere(a[0], float(a[1]), int(a[2])))
 	n.register_op("fill", func(a: Array, _again: bool): return grid.fill_sphere(a[0], float(a[1]), int(a[2]), int(a[3]), bool(a[4])))
 	n.register_op("drop", func(a: Array, _again: bool): return grid.drop_column(int(a[0]), int(a[1]), int(a[2]), int(a[3])))
+	n.register_op("cut", func(a: Array, _again: bool): return blade(a[0], a[1], a[2], int(a[3]), float(a[4]), int(a[5]), int(a[6]), int(a[7]), float(a[8])))
+	n.register_op("pour", func(a: Array, _again: bool): return pour(a[0], int(a[1]), int(a[2])))
 
 func _process(dt: float) -> void:
 	_settle_acc += dt
