@@ -120,4 +120,4 @@ func load_test() -> void:
 	print("      tipped %.2f m3, the tray has %.2f m3, %.2f m3 on the ground" % [DirtSim.to_m3(had - e.bucket_mm), DirtSim.to_m3(t.tray_mm), DirtSim.to_m3(s.loose_total())])
 	check(t.tray_mm > had * 0.9, "a bucket tipped over the tray lands in it (%.1f of %.1f m3)" % [DirtSim.to_m3(t.tray_mm), DirtSim.to_m3(had)])
 	check(s.total() == total, "loading: no soil lost")
-	check(t.capacity / had >= 4 and t.capacity / had <= 6, "it takes about five full buckets to fill (%.1f)" % (float(t.capacity) / had))
+	check(float(t.capacity) / had >= 2.3 and float(t.capacity) / had <= 3.5, "it takes about three full buckets to fill (%.1f)" % (float(t.capacity) / had))

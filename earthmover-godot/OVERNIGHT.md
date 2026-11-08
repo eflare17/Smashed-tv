@@ -346,3 +346,10 @@ green paddock (only the mine is new).
   4 m/s) and the big dozer climbs it too, a big bucket tipped over the tray all lands in it, no soil lost.
 - `--machine="Big excavator" --demo=mineload`: a full bucket tipped into the haul truck, with a picture as it pours.
 - Online checked: the friend follows onto the mine and gets the haul truck; both games' ground matches.
+
+## Owner's fixes, 7-8 Nov 2026
+
+- On foot the SHOVEL and RAKE buttons never showed (the button check turned "On foot" into "On Foot"). Fixed; `test/onfoot_test.gd` gets out in free play and on the mine and checks them.
+- The barrow: the button that says PUSH BARROW says LET GO BARROW while pushing it (the top bar says Let go), and letting go leaves him a step behind the handles. No engine sound on foot or with the barrow.
+- Farm dam: floor dug deeper than the dam's 1 m counts (`Mission.DAM_DEEPER_OK`); the owner had read 6% on a dug-out dam because blue (too deep) didn't count and wasn't explained. The hint says green is deep enough.
+- Excavator bucket, owner's ask: holds 1.8x (small 2.16 m3, big about 14.8 m3), drawn 20% bigger all round (`BUCKET_GROW`), digs firm ground and tips out faster to match. Same drag in dig_test: loose 1.11 to 2.07 m3, pile 0.81 to 1.48, firm 0.82 to 1.36. Trucks unchanged, so the haul truck fills in about 3 big buckets and the road truck in about 4 small ones.

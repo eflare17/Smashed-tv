@@ -14,8 +14,9 @@ const SHOULDER := Vector2(1.0, 1.85)   # where the boom meets the house: out fro
 const ARM_Z := 0.25             # the arm sits to the right of the middle, with the cab beside it
 const BOOM := 5.6               # m
 const STICK := 2.9
-const BUCKET := 1.35            # pin to teeth
-const BUCKET_HALF := 0.62       # half its width
+const BUCKET_GROW := 1.2        # the bucket's drawn 20% bigger all round than first built, to fit the 1.8x load (owner's ask, 8 Nov)
+const BUCKET := 1.35 * BUCKET_GROW        # pin to teeth
+const BUCKET_HALF := 0.62 * BUCKET_GROW   # half its width
 const BOOM_LOW := -0.87         # radians from level: about 50 degrees below
 const BOOM_HIGH := 1.2
 const ELBOW_MIN := 0.55         # radians between boom and stick, fully folded in
@@ -36,13 +37,14 @@ const CURL_EMPTY := 0.95        # opened this far, it holds nothing
 const CURL_ASSIST := 0.8        # rad a second it curls by itself while being dragged through the soil
 
 const CURL_LIFT := 1.6          # rad a second it curls by itself, lifting a load
-const CAPACITY := 19200         # mm on one cell's area: 1.2 m3 heaped
-const HEAPED := 15000           # over this it's heaped, and a fast move shakes some off
-const POUR_RATE := 16000        # mm a second, tipping out at most
+## The load was 1.2 m3; the owner found that felt like nothing next to the dozer, so it's 1.8x, and it digs and tips that much faster.
+const CAPACITY := 34560         # mm on one cell's area: 2.16 m3 heaped (the big one, 1.9x, about 14.8 m3)
+const HEAPED := 27000           # over this it's heaped, and a fast move shakes some off
+const POUR_RATE := 28800        # mm a second, tipping out at most: a full bucket empties as quick as before
 const CHUNK := 480              # mm a falling chunk carries (0.03 m3)
-const FIRM_RATE := 5           # mm of firm ground the teeth take from a cell in a tick
+const FIRM_RATE := 9           # mm of firm ground the teeth take from a cell in a tick (with the wider bucket, about 1.8x as fast)
 const SWEEP := 0.22             # m the teeth travel to clear what stands in front of them
-const BOG_AT := 1000.0          # mm a tick it takes to slow the arm right down
+const BOG_AT := 1800.0          # mm a tick it takes to slow the arm right down
 const STAB_MOST := 0.8          # m the teeth can be pushed into ground without dragging
 
 var dig_mode := true            # the left thumb swings the house, or drives the tracks
@@ -128,7 +130,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	Props.excavator_stick(kit, STICK, size > 1.0)
 	_stick = _add_mesh(_house, kit, mat)
 	kit = MeshKit.new()
-	Props.excavator_bucket(kit, BUCKET, BUCKET_HALF, size > 1.0)
+	# Built at its first size and drawn BUCKET_GROW bigger (in _pose), so its shape and the soil in it grow together.
+	Props.excavator_bucket(kit, BUCKET / BUCKET_GROW, BUCKET_HALF / BUCKET_GROW, size > 1.0)
 	_bucket = _add_mesh(_house, kit, mat)
 	kit = MeshKit.new()
 	kit.box(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0), Props.DIRT, Basis(Vector3.RIGHT, 0.05))
@@ -265,10 +268,10 @@ func _pose() -> void:
 	var bucket_b := Basis(Vector3.BACK, -curl)
 	_boom.transform = Transform3D(boom_b, shoulder)
 	_stick.transform = Transform3D(stick_b, elbow)
-	_bucket.transform = Transform3D(bucket_b, pin)
+	_bucket.transform = Transform3D(bucket_b * Basis.from_scale(Vector3.ONE * BUCKET_GROW), pin)
 	_ram(0, Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.5, 0.05, 0.0))
 	_ram(1, shoulder + boom_b * Vector3(BOOM * 0.55, 1.02, 0.0), elbow + stick_b * Vector3(-0.58, 0.42, 0.0))
-	_ram(2, elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.0, 0.42, 0.0))
+	_ram(2, elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.0, 0.42 * BUCKET_GROW, 0.0))
 	var f := fill()
 	_lump.visible = f > 0.02
 	if _lump.visible:
@@ -276,7 +279,7 @@ func _pose() -> void:
 		# The soil in the bucket: fills its hollow, then heaps up out of the open side.
 		var deep := 0.3 + 0.62 * minf(f * 1.3, 1.0)
 		var long := 0.5 + 0.55 * minf(f * 1.5, 1.0)
-		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(long, deep, BUCKET_HALF * 1.86)), Vector3(0.58, 0.46 - deep * 0.5, 0.0))
+		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(long, deep, BUCKET_HALF / BUCKET_GROW * 1.86)), Vector3(0.58, 0.46 - deep * 0.5, 0.0))
 
 ## A stretched ram between two points, in the house's own space.
 func _ram(k: int, a: Vector3, b: Vector3) -> void:
@@ -491,7 +494,9 @@ func _rock_machine(dt: float) -> void:
 ## ---------------------------------------------------------------- the side-on picture
 func side_view() -> Dictionary:
 	var elbow := SHOULDER + Vector2(cos(_boom_a), sin(_boom_a)) * BOOM
-	var shape: Array[Vector2] = [Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(BUCKET, -0.02), Vector2(0.15, -0.28)]
+	var shape: Array[Vector2] = []
+	for p: Vector2 in [Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(BUCKET / BUCKET_GROW, -0.02), Vector2(0.15, -0.28)]:
+		shape.append(p * BUCKET_GROW)
 	var tip := _teeth_now()
 	return {
 		"low": -3.0, "high": 5.5, "left": -0.3,
@@ -501,7 +506,7 @@ func side_view() -> Dictionary:
 		"turn": -curl,
 		"shape": shape,
 		"reach": BUCKET,
-		"fill_from": Vector2(0.6, 0.5),
+		"fill_from": Vector2(0.6, 0.5) * BUCKET_GROW,
 		"fill": fill(),
 		"dust": bucket_dust * 2 > bucket_mm,
 		"angle": rad_to_deg(curl),
