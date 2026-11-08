@@ -31,7 +31,9 @@ Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
 	for (int y = cy0; y < cy0 + cny; y++)
 		for (int z = cz0; z < cz0 + cnz; z++)
 			for (int x = cx0; x < cx0 + cnx; x++) {
-				uint8_t v = at(x, y, z);
+				// (past the site's sides the edge column carries on, so the ground runs flat out to the field: treating
+				// it as solid made a wall round the site the player couldn't get through)
+				uint8_t v = at(std::clamp(x, 0, w - 1), y, std::clamp(z, 0, d - 1));
 				bool s = (v & MAT_MASK) != AIR;
 				solid[ci(x, y, z)] = s ? 1 : 0;
 				any_solid |= s;
@@ -106,7 +108,7 @@ Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
 				uint8_t cell = 0;
 				for (int k = 0; k < 8; k++) {
 					int cx = x + corner[k][0], cy = y + corner[k][1], cz = z + corner[k][2];
-					uint8_t c = at(cx, cy, cz);
+					uint8_t c = at(std::clamp(cx, 0, w - 1), cy, std::clamp(cz, 0, d - 1));
 					if ((c & MAT_MASK) == AIR || (c & MAT_MASK) >= NMAT)
 						continue;
 					if (cy > best_y) {
