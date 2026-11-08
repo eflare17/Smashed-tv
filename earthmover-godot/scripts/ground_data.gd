@@ -261,7 +261,7 @@ const MINE_DUMP := Rect2(-41.0, 22.0, 22.0, 19.0)
 const MINE_WINDROWS := [[Vector2(-40.3, -26.0), Vector2(-40.3, 21.0)], [Vector2(-23.7, -1.5), Vector2(-23.7, 21.0)], [Vector2(-23.7, -27.0), Vector2(-23.7, -17.5)], [Vector2(-4.0, -6.0), Vector2(6.0, -6.0)]]
 const MINE_WINDROW_HIGH := 1.0
 const MINE_WINDROW_HALF := 1.6
-const MINE_BUND_AT := 44.6      # m out from the middle, all round
+const MINE_BUND_IN := 3.4       # m in from the edge, all round
 const MINE_BUND_HIGH := 2.2
 
 ## How far a point is outside a rectangle, or 0 inside it.
@@ -301,7 +301,7 @@ func _mine(p: Vector2, lumps: FastNoiseLite, ragged: float, fade: float) -> Arra
 	near = minf(near, _outside(p, mine_ramp_rect()))
 	var rise := (lumps.get_noise_2dv(p * 0.7) * 1.1 + 0.3 * sin(p.x * 0.09) * cos(p.y * 0.07)) * fade * smoothstep(3.0, 12.0, near)
 	var edge: float = maxf(absf(p.x), absf(p.y))
-	var bund := MINE_BUND_HIGH * (0.5 + 0.5 * cos(PI * clampf(absf(edge - MINE_BUND_AT) / 2.7, 0.0, 1.0)))
+	var bund := MINE_BUND_HIGH * (0.5 + 0.5 * cos(PI * clampf(absf(edge - (HALF - MINE_BUND_IN)) / 2.7, 0.0, 1.0)))
 	var lay := 0.0
 	for w: Array in MINE_WINDROWS:
 		var a: Vector2 = w[0]

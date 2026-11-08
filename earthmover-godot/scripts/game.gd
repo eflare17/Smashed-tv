@@ -37,7 +37,11 @@ const POUR_EACH := 320          # mm on one cell a chunk carries (0.02 m3)
 const POUR_HIGH := 5.0
 const SCOOP_RATE := 30          # mm a tick at the middle
 const TOOL_R := 1.6
-const BIG_HALF := 48.0             # m from the middle to the edge of the big site
+const BIG_HALF := 48.0             # m from the middle to the edge of the big site, for its jobs
+const JOB_HALF := 32.0             # m from the middle to the edge of the normal site, for its jobs
+## Free play's sites are a quarter bigger each way than the jobs' (owner's pick, 8 Nov): the house site 80 m across, the mine 120 m.
+const FREE_HALF := 40.0
+const MINE_HALF := 60.0
 const BIG_HEAPS := [[Vector2(16.0, -14.0), 70.0], [Vector2(-18.0, 18.0), 45.0]]   # stockpiles to push about there, m3
 const BIG := 1.9                     # how much bigger the big machines are, every way
 const BIG_DOZER_AT := Vector2(-24.0, -4.0)
@@ -228,6 +232,12 @@ var _knock_wait := 0.0
 var _marks := MeshKit.new()
 var _marks_look: MeshInstance3D
 var beep_light: Label
+## Free play's hidden finds (owner's pick, 8 Nov): one each of an old car, dinosaur bones and gold, somewhere new each time
+## (`find_seed` picks where). The beep finds them, the counter says how many have been seen, and a knock only leaves a mark.
+var free_finds: Array[Find] = []
+var free_found := 0
+var finds_label: Label
+var _free_check := 0.0
 ## A word on screen for a few seconds, over the hint: a knock, or what was found.
 var say_text := ""
 var say_time := 0.0
@@ -286,9 +296,9 @@ func _ready() -> void:
 	_read_args()
 	_choose_mission()
 	big_site = mission.get("site", "") == "big" if not mission.is_empty() else (Engine.has_meta("big_site") or start_machine.begins_with("Big") or start_machine == "Haul truck")
-	DirtSim.set_world(BIG_HALF if big_site else 32.0)
-	sim = DirtSim.new()
 	mine = big_site and mission.is_empty()
+	DirtSim.set_world(world_half(big_site, mission.is_empty()))
+	sim = DirtSim.new()
 	Props.set_dirt(mine)
 	if mine:
 		ground = GroundData.new(Rect2(), Rect2(), Rect2(), false, true)
@@ -327,6 +337,13 @@ func _ready() -> void:
 		var patch: Rect2 = mission["patch"]
 		buried = Find.make(find_seed, patch, sim.height_at(patch.get_center()), Engine.get_meta("find_kind", ""))
 		buried.lay(sim)
+	elif mission.is_empty() and (DisplayServer.get_name() != "headless" or Engine.has_meta("find_seed")):
+		# Free play's finds, somewhere new each time, unless carried over from a friend's game. Headless checks go without, so
+		# their digging is the same every run, unless they ask for them by giving a seed.
+		find_seed = Engine.get_meta("find_seed") if Engine.has_meta("find_seed") else randi() % 1000000
+		if Engine.has_meta("find_seed"):
+			Engine.remove_meta("find_seed")
+		find_seed = maxi(find_seed, 1)
 	sim.store = int(START_STORE_M3 / (DirtSim.CELL_M * DirtSim.CELL_M) * DirtSim.MM)
 	start_total = sim.total()
 	sim.loose_total_cached = sim.loose_total()
@@ -500,6 +517,12 @@ func _pc_extras(sun: DirectionalLight3D, env: Environment, sky: Sky) -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_max_distance = 170.0 if big_site else 120.0
 	get_viewport().msaa_3d = Viewport.MSAA_4X
+
+## How far from the middle to the edge: free play's sites are bigger than the jobs'.
+static func world_half(big: bool, free: bool) -> float:
+	if big:
+		return MINE_HALF if free else BIG_HALF
+	return FREE_HALF if free else JOB_HALF
 
 func _ground_material() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
@@ -815,6 +838,8 @@ func _build_props() -> void:
 	trees.setup(sim, prop_mat, _tree_spots(tr), tr)
 	trees.knocked.connect(_on_tree_knocked)
 	trees.landed.connect(_on_tree_landed)
+	if mission.is_empty() and find_seed > 0:
+		_hide_free_finds()
 	if mine:
 		_add_mine_site(kit, tr)
 	else:
@@ -850,7 +875,9 @@ func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 	var start := GroundData.dozer_spot()
 	var spots: Array[Vector2] = [start + GroundData.dozer_dir() * 8.0]
 	var tries := 0
-	while spots.size() < 20 and tries < 800:
+	# 20 trees on the 64 m site, and more on a bigger one, so it's no barer.
+	var most := int(round(20.0 * pow(GroundData.HALF / JOB_HALF, 2.0)))
+	while spots.size() < most and tries < 40 * most:
 		tries += 1
 		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
 		if ((p - GroundData.PIT) / GroundData.PIT_R).length() < 1.15:
@@ -3249,8 +3276,18 @@ func _build_ui() -> void:
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner.visible = not mission.is_empty()
 	ui.add_child(banner)
+	# Free play's finds counter, under the readout at the top left, so it never sits on it.
+	if not free_finds.is_empty():
+		finds_label = Label.new()
+		finds_label.add_theme_font_size_override("font_size", int(h / 28.0))
+		finds_label.add_theme_color_override("font_color", Color.WHITE)
+		finds_label.add_theme_color_override("font_outline_color", Color.BLACK)
+		finds_label.add_theme_constant_override("outline_size", 8)
+		finds_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		finds_label.text = "FINDS: 0 OF %d" % free_finds.size()
+		col.add_child(finds_label)
 	# The finder's light, flashing with each beep, for playing with the sound down.
-	if buried != null:
+	if buried != null or not free_finds.is_empty():
 		beep_light = Label.new()
 		beep_light.text = "((  •  ))"
 		# Just under the banner, clear of the star card below it.
@@ -3263,7 +3300,12 @@ func _build_ui() -> void:
 		beep_light.add_theme_constant_override("outline_size", 8)
 		beep_light.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		beep_light.visible = false
-		ui.add_child(beep_light)
+		if finds_label != null:
+			# Free play's flashes under its counter.
+			beep_light.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			col.add_child(beep_light)
+		else:
+			ui.add_child(beep_light)
 	_show_banner()
 	_build_star_card(screen, h)
 	if menu_kind != "":
@@ -3558,7 +3600,11 @@ func place_id() -> String:
 		if buried != null:
 			return "%s#%d" % [mission["id"], find_seed]
 		return mission["id"]
-	return "big" if big_site else ""
+	# Free play carries where its finds are, so a friend's are in the same places.
+	var here := "big" if big_site else ""
+	if not free_finds.is_empty():
+		here += "#%d" % find_seed
+	return here
 
 ## The world behind the first menu is free play already, so a host just gets on with it and the room's open while it does.
 ## For the big machines, the host goes there first and the room comes along.
@@ -4207,11 +4253,15 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 		_update_floaters(delta)
 	elif ute_pad != null:
 		_check_ute_pad(delta)
+	if mission.is_empty() and not free_finds.is_empty():
+		_find_step(delta)
 	if _banner_clock > 0.0:
 		_banner_clock -= delta
 		if _banner_clock <= 0.0:
 			banner.visible = not mission.is_empty()
 			_show_banner()
+	if finds_label != null:
+		finds_label.visible = mode == "Drive" and menu == null and not banner.visible
 	if shot_path != "":
 		shot_wait -= 1
 		if shot_wait <= 0:
@@ -4760,21 +4810,43 @@ func _fill_dam() -> void:
 
 const BEEP_FROM := 5.0      # m from the find that the beep starts
 
-## Every frame on the Buried find: the beep, quicker the nearer the bucket's teeth (or the dozer's blade) are to it, and any knock.
-func _find_step(delta: float) -> void:
-	var tip := Vector3.INF
-	if active == digger:
-		tip = digger.teeth
-	elif active == dozer:
+const FREE_BEEP_FROM := 8.0     # m: free play's beep starts further out, as there are no pegs to say where to look
+const FREE_FIND_GAP := 10.0     # m clear between free play's finds
+
+## The finds there are: the job's one, or free play's.
+func _finds() -> Array[Find]:
+	if buried != null:
+		return [buried]
+	return free_finds
+
+## Where the digging end of what's being driven is, for the beep: a bucket's teeth, the dozer's blade, or the shovel in his hands.
+## Anything else doesn't dig, so it doesn't beep.
+func _tool_tip() -> Vector3:
+	if active == dozer:
 		var mid := (dozer.blade_a + dozer.blade_b) * 0.5
-		tip = Vector3(mid.x, sim.height_at(mid) + dozer.edge_gap, mid.y)
+		return Vector3(mid.x, sim.height_at(mid) + dozer.edge_gap, mid.y)
+	if active == digger or active == bobcat or active == dingo:
+		return active.teeth
+	if active is Worker and (active as Worker).tool == "shovel":
+		var w := active as Worker
+		var at := w.spot + w.forward() * Worker.DIG_AT
+		return Vector3(at.x, sim.height_at(at), at.y)
+	return Vector3.INF
+
+## Every frame with something buried: the beep, quicker the nearer the digging end is to it, and any knock.
+func _find_step(delta: float) -> void:
+	var tip := _tool_tip()
+	var reach := BEEP_FROM if buried != null else FREE_BEEP_FROM
 	_beep_wait -= delta
 	_beep_flash = maxf(_beep_flash - delta, 0.0)
 	if tip != Vector3.INF and not mission_done and menu == null:
-		var d := buried.distance(tip)
-		if d < BEEP_FROM and _beep_wait <= 0.0:
-			sfx.beeped(1.0 - d / BEEP_FROM)
-			_beep_wait = lerpf(0.09, 1.1, clampf((d - 0.3) / (BEEP_FROM - 0.3), 0.0, 1.0))
+		var d := INF
+		for f: Find in _finds():
+			if Vector2(tip.x - f.at.x, tip.z - f.at.y).length() < f.radius + reach:
+				d = minf(d, f.distance(tip))
+		if d < reach and _beep_wait <= 0.0:
+			sfx.beeped(1.0 - d / reach)
+			_beep_wait = lerpf(0.09, 1.1, clampf((d - 0.3) / (reach - 0.3), 0.0, 1.0))
 			_beep_flash = 0.07
 	if beep_light != null:
 		beep_light.visible = _beep_flash > 0.0
@@ -4785,14 +4857,33 @@ func _find_step(delta: float) -> void:
 		digger.touch_speed = -1.0
 		if speed > Excavator.KNOCK_SPEED * digger.size and _knock_wait <= 0.0 and not mission_done:
 			_knock(digger.teeth, speed)
+	if buried == null:
+		_free_check -= delta
+		if _free_check <= 0.0:
+			_free_check = 0.25
+			_check_free_finds()
 
-## A hard knock: it's marked where it was hit, and it costs a little.
+## The find nearest a spot.
+func _nearest_find(at: Vector3) -> Find:
+	var best: Find = null
+	var best_d := INF
+	for f: Find in _finds():
+		var d := Vector2(at.x - f.at.x, at.z - f.at.y).length() - f.radius
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
+
+## A hard knock: it's marked where it was hit, and on the job it costs a little.
 func _knock(at: Vector3, speed: float) -> void:
-	buried.knocks += 1
+	var hit := _nearest_find(at)
+	if hit == null:
+		return
+	hit.knocks += 1
 	_knock_wait = 1.0
-	var top := buried.top_at(Vector2(at.x, at.z))
+	var top := hit.top_at(Vector2(at.x, at.z))
 	var y := top + 0.01 if not is_nan(top) else at.y
-	var mark: String = {"car": "#3a2418", "bones": "#5a4a36", "gold": "#8a6a10"}[buried.kind]
+	var mark: String = {"car": "#3a2418", "bones": "#5a4a36", "gold": "#8a6a10"}[hit.kind]
 	_marks.box(Vector3(at.x, y, at.z), Vector3(0.5, 0.03, 0.14), Props.c(mark), Basis(Vector3.UP, randf() * PI))
 	if _marks_look == null:
 		_marks_look = MeshInstance3D.new()
@@ -4801,7 +4892,7 @@ func _knock(at: Vector3, speed: float) -> void:
 	_marks_look.mesh = _marks.mesh()
 	_say("KNOCK! Go gently near it", 2.0)
 	Input.vibrate_handheld(150)
-	print("FIND knocked at %.1f m/s, %d knocks" % [speed, buried.knocks])
+	print("FIND knocked at %.1f m/s, %d knocks" % [speed, hit.knocks])
 
 ## How much of it is uncovered, and the first time it's plain what it is, saying so.
 func _check_find() -> void:
@@ -4824,6 +4915,97 @@ func _find_title() -> String:
 	if buried.knocks > 0:
 		t += ", %d KNOCK%s" % [buried.knocks, "" if buried.knocks == 1 else "S"]
 	return t
+
+## Free play's finds: one of each, each somewhere clear of what's already there and of each other, and sunk under the ground.
+func _hide_free_finds() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = find_seed
+	var kinds: Array = Find.KINDS.duplicate()
+	for k in kinds.size():
+		var other := rng.randi_range(k, kinds.size() - 1)
+		var swap: String = kinds[k]
+		kinds[k] = kinds[other]
+		kinds[other] = swap
+	for k in kinds.size():
+		var f := Find.make(find_seed * 7 + k, Rect2(), 0.0, kinds[k])
+		var room := Machine.AREA - f.radius - 2.0
+		var placed := false
+		for tries in 800:
+			var p := Vector2(rng.randf_range(-room, room), rng.randf_range(-room, room))
+			if _free_find_ok(p, f.radius):
+				f.at = p
+				placed = true
+				break
+		if not placed:
+			continue
+		f.sink_under(sim)
+		f.lay(sim)
+		free_finds.append(f)
+		var look := MeshInstance3D.new()
+		look.mesh = f.mesh()
+		look.material_override = prop_mat
+		look.transform = f.place()
+		add_child(look)
+	print("FREE FINDS seed %d: %s" % [find_seed, ", ".join(free_finds.map(func(f: Find) -> String: return "%s at %.0f,%.0f" % [f.kind, f.at.x, f.at.y]))])
+
+## Whether a find this big can go here in free play: on open ground, clear of the pit, the heaps, the roads, the trees, where the
+## machines start and the other finds.
+func _free_find_ok(p: Vector2, r: float) -> bool:
+	for f: Find in free_finds:
+		if p.distance_to(f.at) < r + f.radius + FREE_FIND_GAP:
+			return false
+	for m: Machine in machines:
+		if p.distance_to(m.spot) < r + 5.0:
+			return false
+	for t in trees.list:
+		if p.distance_to(t.base) < r + 1.5:
+			return false
+	if mine:
+		for rect: Rect2 in [GroundData.MINE_BENCH, GroundData.MINE_ROAD, GroundData.MINE_PARK, GroundData.MINE_DUMP, GroundData.mine_ramp_rect()]:
+			if rect.grow(r + 4.0).has_point(p):
+				return false
+		for heap: Array in MINE_HEAPS:
+			if p.distance_to(heap[0]) < r + 10.0:
+				return false
+		for at: Vector2 in MINE_HUTS:
+			if p.distance_to(at) < r + 7.0:
+				return false
+		for at3: Vector3 in MINE_LIGHTS:
+			if p.distance_to(Vector2(at3.x, at3.z)) < r + 3.0:
+				return false
+		return true
+	var pit_r := GroundData.PIT_R + Vector2.ONE * (r + 3.0)
+	if ((p - GroundData.PIT) / pit_r).length() < 1.0:
+		return false
+	if p.distance_to(GroundData.PILE) < GroundData.PILE_R + r + 3.0 or p.distance_to(FREE_DUST) < r + 5.0:
+		return false
+	if _near_line(p, GroundData.RUN_A, GroundData.RUN_B, GroundData.RUN_W + r + 2.0):
+		return false
+	return not _near_line(p, GroundData.dingo_spot(), GroundData.dingo_spot() + Vector2(-14.0, 0.0), r + 2.0)
+
+## Every so often in free play: any find that's now uncovered enough to see is counted, and said.
+func _check_free_finds() -> void:
+	for f: Find in free_finds:
+		if f.seen or f.uncovered(sim) < Find.SEEN:
+			continue
+		f.seen = true
+		free_found += 1
+		var what := String(Find.NAMES[f.kind]).to_lower()
+		if free_found >= free_finds.size():
+			_say("You found %s! That's all %d found" % [what, free_finds.size()], 6.0)
+		else:
+			_say("You found %s! %d of %d found" % [what, free_found, free_finds.size()], 6.0)
+		sfx.clunked(0.5)
+		Input.vibrate_handheld(120)
+		print("FREE FIND seen: %s, %d of %d" % [f.kind, free_found, free_finds.size()])
+	_show_finds_count()
+
+## The counter at the top in free play.
+func _show_finds_count() -> void:
+	if finds_label == null:
+		return
+	finds_label.text = "FINDS: %d OF %d" % [free_found, free_finds.size()]
+	finds_label.visible = mode == "Drive" and menu == null and not banner.visible
 
 ## Words on screen for a few seconds, over the hint.
 func _say(text: String, seconds: float) -> void:

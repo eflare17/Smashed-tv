@@ -22,6 +22,8 @@ var base := 0.0           # m: the y of its underside
 ## turn about y]. "box", "wheel" (a cylinder across z) or "lump" (a rough rock, round in x and z).
 var parts: Array = []
 var radius := 1.0         # m: it all lies within this of `at`
+var height := 0.0         # m from its underside to its top
+var seen := false         # free play's: uncovered enough to see what it is, and counted
 var cells := PackedInt32Array()   # the cells it lies under
 var tops := PackedInt32Array()    # mm: its top over each of those
 var knocks := 0
@@ -40,17 +42,30 @@ static func make(seed: int, patch: Rect2, ground_y: float, only := "") -> Find:
 			f._bones()
 		_:
 			f._gold(rng)
-	var height := 0.0
 	for p: Array in f.parts:
 		var c: Vector3 = p[0]
 		var s: Vector3 = p[1]
-		height = maxf(height, c.y + s.y * 0.5)
+		f.height = maxf(f.height, c.y + s.y * 0.5)
 		f.radius = maxf(f.radius, Vector2(absf(c.x) + s.x * 0.5, absf(c.z) + s.z * 0.5).length())
 	f.angle = rng.randf() * TAU
 	var room := patch.grow(-(f.radius + 1.0))
 	f.at = Vector2(rng.randf_range(room.position.x, room.end.x), rng.randf_range(room.position.y, room.end.y)) if room.has_area() else patch.get_center()
-	f.base = ground_y - DEEP[f.kind] - height
+	f.base = ground_y - DEEP[f.kind] - f.height
 	return f
+
+## Sets it under the ground where it is now, its top as deep as usual under the lowest ground over it: free play's ground isn't
+## flat, and none of it may show till it's dug down to.
+func sink_under(sim: DirtSim) -> void:
+	var low := INF
+	var x := -radius
+	while x <= radius:
+		var z := -radius
+		while z <= radius:
+			if x * x + z * z <= radius * radius:
+				low = minf(low, sim.height_at(at + Vector2(x, z)))
+			z += 0.5
+		x += 0.5
+	base = low - DEEP[kind] - height
 
 ## Puts it in the ground: the dirt over it can be dug down to its top and no further.
 func lay(sim: DirtSim) -> void:

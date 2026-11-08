@@ -21,7 +21,8 @@ func _init() -> void:
 	quit(fails)
 
 func _world() -> Array:
-	DirtSim.set_world(48.0)
+	# The mine is free play's big site: 120 m across.
+	DirtSim.set_world(60.0)
 	var ground := GroundData.new(Rect2(), Rect2(), Rect2(), false, true)
 	var s := DirtSim.new()
 	ground.fill_sim(s)
@@ -35,8 +36,14 @@ func ground_test() -> void:
 		check(absf(h - float(spot[1])) < 0.25, "%s is at %.2f m (%.2f wanted)" % [spot[2], h, spot[1]])
 	var windrow := DirtSim.to_m3(s.soil[s.cell_of(Vector2(-23.7, 10.0)).y * DirtSim.CELLS + s.cell_of(Vector2(-23.7, 10.0)).x]) / (DirtSim.CELL_M * DirtSim.CELL_M)
 	check(windrow > 0.7, "the road has a windrow of loose dirt along it (%.2f m deep)" % windrow)
-	var rim := s.height_at(Vector2(GroundData.MINE_BUND_AT, 0.0))
+	var rim := s.height_at(Vector2(GroundData.HALF - GroundData.MINE_BUND_IN, 0.0))
 	check(rim > 1.2, "a bund runs round the edge (%.1f m high)" % rim)
+	check(GroundData.HALF - GroundData.MINE_BUND_IN > Machine.AREA, "the bund is past where machines can go (%.1f m out, machines %.0f m)" % [GroundData.HALF - GroundData.MINE_BUND_IN, Machine.AREA])
+	# Every site's size: free play's a quarter bigger each way than the jobs'.
+	var game := load("res://scripts/game.gd")
+	for c: Array in [[false, true, 80.0, "free play's house site"], [true, true, 120.0, "the mine"], [false, false, 64.0, "a house job"], [true, false, 96.0, "a big site job"]]:
+		var across: float = game.world_half(c[0], c[1]) * 2.0
+		check(is_equal_approx(across, c[2]), "%s is %.0f m across (%.0f wanted)" % [c[3], across, c[2]])
 
 ## From the bottom of the ramp to the top, held to the middle of it.
 func ramp_test(which: String) -> void:
