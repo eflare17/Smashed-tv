@@ -129,6 +129,22 @@ func _process(dt: float) -> void:
 			site.caves.poll()
 	step(BUDGET_MS)
 
+## A machine's cutting edge from a to b (world) going fwd: what stands above it (to mouth m over it) cut, firm ground at
+## most firm_most a column, up to take_most into its bucket (the counts), the rest banked ahead up to heap m over the
+## edge (DigSiteGrid.blade_sweep: the digger game's way)
+func blade(a: Vector3, b: Vector3, fwd: Vector3, rows: int, mouth: float, firm_most: int, hardest: int, take_most: int, heap: float) -> Dictionary:
+	return grid.blade_sweep(to_cells(a), to_cells(b), fwd, rows, mouth / CELL, firm_most, hardest, take_most, heap / CELL)
+
+## Loose blocks banked against an edge from a to b going fwd (up to reach m over it): the weight it's pushing
+func load_ahead(a: Vector3, b: Vector3, fwd: Vector3, reach: float) -> int:
+	return grid.load_ahead(to_cells(a), to_cells(b), fwd, reach / CELL)
+
+## n loose blocks of m poured from a bucket at world point p: under it first, then round it, never piled up past the
+## bucket itself (DigSiteGrid.pour_at): -> how many landed
+func pour(p: Vector3, m: int, n: int) -> int:
+	var c := cell_of(p)
+	return grid.pour_at(c.x, c.z, c.y, m, n)
+
 ## n loose blocks of m dumped at world point p (on the ground's top there; they slump into a pile): -> how many
 func dump(p: Vector3, m: int, n: int) -> int:
 	var c := cell_of(p)

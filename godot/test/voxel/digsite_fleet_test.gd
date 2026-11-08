@@ -76,7 +76,7 @@ func _solo() -> bool:
 				_next(1)
 		1:
 			if ds.active and not arena.phone._going and t - mark > 1.0:
-				check(ds.machines.list.size() == 4 and _m(2) is DsBobcat and _m(3) is DsExcavator and _m(4) is DsTruck, "four machines parked: the Dingo, a Bobcat, an excavator, a tip truck")
+				check(ds.machines.list.size() == 5 and _m(2) is DsBobcat and _m(3) is DsExcavator and _m(4) is DsTruck and _m(5) is DsDozer, "five machines parked: the Dingo, a Bobcat, an excavator, a tip truck, a bulldozer")
 				var b := _m(2) as DsBobcat
 				_on(b)
 				check(ds.machines.driving == b, "on the Bobcat")
@@ -184,6 +184,21 @@ func _solo() -> bool:
 				var had: int = arena.inv.count("prop_concrete")
 				check(ds.machines.line().begins_with("G  take a concrete support"), "at its back: '%s'" % ds.machines.line())
 				check(ds.machines.key(KEY_G) and arena.inv.count("prop_concrete") == had + 1 and tk.props == DsTruck.PROPS_MOST - 1, "G takes one off")
+				# the bulldozer: blade into the ground, drive on: it cuts and pushes a heap, nothing made or lost
+				var dz := _m(5) as DsDozer
+				_on(dz)
+				dz.lift = -0.2
+				dz.throttle = 1.0
+				v.dz_at = dz.global_position
+				v.total2 = _ground()
+				_next(12)
+		12:
+			var dz := _m(5) as DsDozer
+			if t - mark > 5.0:
+				dz.throttle = 0.0
+				check(dz.moved > 1000 and dz.push_load > 200, "the bulldozer cuts and pushes a heap (%d blocks moved, %d banked against the blade)" % [dz.moved, dz.push_load])
+				check(dz.global_position.distance_to(v.dz_at) > 4.0 and dz.speed < dz.max_speed, "pushing, it's slowed by the load (%.1f m, %.2f m/s)" % [dz.global_position.distance_to(v.dz_at), dz.speed])
+				check(_ground() == int(v.total2), "not a block made or lost pushing")
 				return _done()
 	return false
 

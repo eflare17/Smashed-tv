@@ -161,7 +161,7 @@ func _tool(dt: float) -> void:
 		var at := spout()
 		while n > 0 and load_n > 0:
 			var m := _most()
-			var put: int = site.blasts._dump_spread(at, m, mini(n, int(tray_load[m])))
+			var put: int = site.terrain.pour(at + Vector3(0, 1.2, 0), m, mini(n, int(tray_load[m])))
 			if put <= 0:
 				break
 			tray_load[m] = int(tray_load[m]) - put

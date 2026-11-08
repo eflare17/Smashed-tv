@@ -69,6 +69,10 @@ private:
 	void check_roof(int x, int y, int z, int m);
 	void cave_tick();
 	int collapse(const Going &g);
+	// blades (dig_site_blade.cpp)
+	int moved_total_blade = 0;
+	bool lay_on(int x, int z, uint8_t v, int top_y);
+	void spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y);
 	// the network (dig_site_net.cpp): chunks changed since made (sent to a guest arriving), their checksums
 	std::vector<uint8_t> chunk_mod;
 	std::vector<uint32_t> chunk_hash;
@@ -109,6 +113,10 @@ public:
 	Dictionary dig_sphere(const Vector3 &c, float r, int hardest);
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);
 	Dictionary blast_sphere(const Vector3 &c, float r, const PackedFloat32Array &reach, float crack);
+	// blades (dig_site_blade.cpp)
+	Dictionary blade_sweep(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, int rows, float mouth, int firm_most, int hardest, int take_most, float heap);
+	int load_ahead(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, float reach) const;
+	int pour_at(int x, int z, int top_y, int m, int n);
 
 	// the dirt (dig_site_dirt.cpp)
 	void set_physics(const PackedInt32Array &walls);

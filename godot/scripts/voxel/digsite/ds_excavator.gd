@@ -266,7 +266,7 @@ func _tool(dt: float) -> void:
 			while n > 0 and load_n > 0:
 				var m := _most()
 				var take := mini(n, int(bucket[m]))
-				var put: int = truck.take(m, take) if truck else site.blasts._dump_spread(pp, m, take)
+				var put: int = truck.take(m, take) if truck else site.terrain.pour(pp, m, take)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put

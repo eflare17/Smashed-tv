@@ -27,7 +27,10 @@ var lift_cmd := 0.0
 var curl_cmd := 0.0
 var bucket := {}                # material -> blocks in it
 var load_n := 0
-var _bite_t := 0.0
+var push_load := 0              # loose blocks banked against the bucket (it slows it)
+var dug := 0                    # (tests: blocks its bucket's taken or pushed)
+var firm_rate := 1              # firm blocks off a column each tick (the Bobcat: 2)
+var bog := 900.0                # banked blocks that bring it nearly to a stop
 var _pour_acc := 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
 var _arms: MeshInstance3D
@@ -108,6 +111,18 @@ func tip() -> float:
 func _pin() -> Vector2:
 	return pivot + Vector2(cos(arm), sin(arm)) * arm_len
 
+## The bucket's lip, its two ends, in the world
+func edge_ends() -> Array:
+	var p := _pin()
+	var l := Vector3(p.x + cos(curl) * bucket_len, p.y + sin(curl) * bucket_len, 0.0)
+	return [_look.global_transform * (l + Vector3(0, 0, -bucket_half)), _look.global_transform * (l + Vector3(0, 0, bucket_half))]
+
+func _drive(dt: float) -> void:
+	var top := max_speed
+	max_speed = top * (1.0 - 0.75 * clampf(float(push_load) / bog, 0.0, 1.0))
+	super(dt)
+	max_speed = top
+
 ## The bucket's cutting edge in the world
 func edge() -> Vector3:
 	var p := _pin()
@@ -163,22 +178,26 @@ func _tool(dt: float) -> void:
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
 	var e := edge()
-	# biting: the edge in the ground, going forward, the bucket not tipped, room in it
-	_bite_t += dt
-	if _bite_t >= BITE_EVERY:
-		_bite_t = 0.0
-		if speed > 0.15 and tip() > POUR_FROM and load_n < capacity and tr.contains(e) and e.y < tr.top_at(e.x, e.z) - 0.02:
-			var got: Dictionary = tr.dig(e, bucket_half * 0.42, hardest)
-			var counts: PackedInt32Array = got.counts
-			for m in counts.size():
-				if counts[m] > 0:
-					bucket[m] = int(bucket.get(m, 0)) + counts[m]
-					load_n += counts[m]
-			if int(got.n) == 0 and int(got.refused) > hardest:
-				speed = 0.0
-				blocked = "Rock: the %s's bucket won't take it" % kind
-				if site.net:
-					site.net.event("fx", ["dig_clang", e, 0])
+	# the bucket's lip through the ground (the digger game's way, DsTerrain.blade): going forward, not tipped, what
+	# stands above the lip goes in (firm ground only so fast), and once it's full the rest banks up ahead of it (it
+	# pushes, like a small dozer); what's banked against it slows it
+	push_load = 0
+	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
+		var ends := edge_ends()
+		var f := forward()
+		var r: Dictionary = tr.blade(ends[0], ends[1], f, 2, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35)
+		var counts: PackedInt32Array = r.counts
+		for m in counts.size():
+			if counts[m] > 0:
+				bucket[m] = int(bucket.get(m, 0)) + counts[m]
+				load_n += counts[m]
+		dug += int(r.taken) + int(r.moved)
+		if bool(r.rock) and int(r.taken) + int(r.moved) == 0 and speed > 0.0:
+			speed = 0.0
+			blocked = "Rock: the %s's bucket won't take it" % kind
+			if site.net:
+				site.net.event("fx", ["dig_clang", e, 0])
+		push_load = tr.load_ahead(ends[0], ends[1], f, bucket_high + 0.3)
 	# pouring: tipped forward, it comes out where the edge is, loose (a pile)
 	if tip() < POUR_FROM and load_n > 0:
 		var k := clampf((POUR_FROM - tip()) / (POUR_FROM - POUR_ALL), 0.0, 1.0)
@@ -191,7 +210,7 @@ func _tool(dt: float) -> void:
 				var m := _most()
 				var take := mini(n, int(bucket[m]))
 				var truck = site.machines.catcher(e, self)
-				var put: int = truck.take(m, take) if truck else tr.dump(e, m, take)
+				var put: int = truck.take(m, take) if truck else tr.pour(e, m, take)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put

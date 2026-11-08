@@ -47,6 +47,10 @@ func make() -> void:
 	add_child(truck)
 	truck.setup(site, 4, site.AT + Vector3(-4.0, 0.0, 26.0), 0.0)
 	_add(truck)
+	var dozer := DsDozer.new()
+	add_child(dozer)
+	dozer.setup(site, 5, site.AT + Vector3(20.0, 0.0, 24.0), 0.0)
+	_add(dozer)
 	var n: DsNet = site.net
 	n.register_event("prop_load", func(a: Array): _prop_load(by_id(int(a[0])), int(a[1])))
 	n.register_event("prop_take", func(a: Array): _prop_take(by_id(int(a[0])), false))

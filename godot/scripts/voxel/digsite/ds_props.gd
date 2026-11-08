@@ -255,3 +255,68 @@ static func excavator_bucket(kit: DsKit, length: float, half_w: float, mine := f
 			kit.box(Vector3(x, 0.58, 0.0), Vector3(0.12, 0.04, half_w * 1.9), STEEL)
 	# The lugs it hangs from.
 	kit.box(Vector3(0.0, 0.12, 0.0), Vector3(0.36, 0.36, 0.34), CHARCOAL if mine else YELLOW_DARK)
+
+## The bulldozer (the digger game's): forward is +x, the ground at y = 0, about 4.5 m long without the blade. Its tracks are
+## built apart from it.
+static func bulldozer(kit: DsKit, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
+	# The body: a deck over the tracks, the sloped engine hood and its grille, the back of the machine.
+	kit.box(Vector3(-0.2, 1.0, 0), Vector3(4.0, 0.45, 2.1), body)
+	kit.prism([Vector2(0.05, 1.2), Vector2(2.2, 1.2), Vector2(2.2, 1.72), Vector2(1.9, 1.85), Vector2(0.05, 2.08)], -0.62, 0.62, body)
+	kit.box(Vector3(2.23, 1.46, 0), Vector3(0.08, 0.42, 1.0), BLACK)
+	for i in 4:
+		kit.box(Vector3(2.28, 1.3 + i * 0.105, 0), Vector3(0.04, 0.045, 1.0), STEEL)
+	for i in 5:
+		kit.box(Vector3(0.5 + i * 0.28, 1.89 - i * 0.03, 0), Vector3(0.14, 0.02, 0.9), dark)
+	kit.cone(Vector3(1.05, 1.95, 0.38), Vector3(1.05, 2.65, 0.38), 0.07, 0.07, 6, BLACK)
+	kit.cone(Vector3(1.05, 2.65, 0.38), Vector3(1.0, 2.75, 0.38), 0.09, 0.09, 6, BLACK)
+	kit.box(Vector3(-1.95, 1.45, 0), Vector3(0.5, 0.75, 1.85), body)
+	kit.box(Vector3(-2.22, 1.45, 0), Vector3(0.05, 0.42, 1.0), BLACK)
+
+	# A floor, seat and levers: under an open canopy on the small one, shut in a cab on the mine's.
+	kit.box(Vector3(-0.8, 1.27, 0), Vector3(1.55, 0.08, 1.6), CHARCOAL)
+	kit.box(Vector3(-0.95, 1.6, 0), Vector3(0.5, 0.58, 0.62), SEAT)
+	kit.box(Vector3(-1.2, 2.05, 0), Vector3(0.14, 0.7, 0.58), SEAT)
+	for z: float in [-0.42, 0.42]:
+		kit.cone(Vector3(-0.3, 1.32, z), Vector3(-0.42, 1.95, z), 0.03, 0.03, 5, BLACK)
+		kit.cone(Vector3(-0.42, 1.95, z), Vector3(-0.42, 2.02, z), 0.06, 0.06, 6, STEEL)
+	if not mine:
+		for side: float in [-1.0, 1.0]:
+			# Canopy posts, and a work lamp up front.
+			kit.box(Vector3(-0.1, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
+			kit.box(Vector3(-1.5, 2.35, side * 0.78), Vector3(0.07, 1.4, 0.07), BLACK)
+			kit.box(Vector3(0.05, 3.0, side * 0.6), Vector3(0.1, 0.12, 0.16), LAMP)
+		kit.prism([Vector2(-1.72, 3.05), Vector2(0.14, 3.05), Vector2(0.14, 3.16), Vector2(-1.72, 3.2)], -1.02, 1.02, body)
+		kit.box(Vector3(-0.8, 3.02, 0), Vector3(1.62, 0.05, 1.62), BLACK)
+		# The ripper on the back.
+		kit.box(Vector3(-2.55, 0.92, 0), Vector3(0.2, 0.2, 1.6), dark)
+		for z: float in [-0.6, 0.6]:
+			kit.box(Vector3(-2.3, 0.95, z), Vector3(0.6, 0.14, 0.12), dark)
+			kit.prism([Vector2(-2.7, 1.0), Vector2(-2.5, 1.0), Vector2(-2.58, 0.05), Vector2(-2.72, 0.05)], z - 0.06, z + 0.06, CHARCOAL)
+		return
+
+## The blade, its push arms and lift rams: separate from the body because it lifts. Same coordinates as the body. The mine's has
+## wings on its ends, the way a big U-blade does.
+static func dozer_blade(kit: DsKit, mine := false) -> void:
+	var body := MINE_WHITE if mine else YELLOW
+	var dark := MINE_GREY if mine else YELLOW_DARK
+	for side: float in [-1.0, 1.0]:
+		kit.box(Vector3(1.85, 0.72, side * 1.58), Vector3(2.0, 0.18, 0.16), dark, Basis(Vector3.BACK, deg_to_rad(-6.0)))
+		kit.cone(Vector3(0.9, 1.65, side * 0.72), Vector3(2.5, 1.0, side * 1.05), 0.075, 0.075, 6, STEEL)
+
+	# Curved, in straight facets, with a dark steel cutting edge and end plates.
+	var w := 2.15
+	var profile := [Vector2(2.82, 0.14), Vector2(2.68, 0.55), Vector2(2.7, 1.1), Vector2(2.9, 1.62), Vector2(3.08, 1.72)]
+	for i in profile.size() - 1:
+		var a: Vector2 = profile[i]
+		var b: Vector2 = profile[i + 1]
+		kit.prism([a, b, b + Vector2(-0.18, 0.0), a + Vector2(-0.18, 0.0)], -w, w, body, dark)
+	kit.prism([Vector2(2.72, 0.0), Vector2(2.98, 0.0), Vector2(2.82, 0.16), Vector2(2.66, 0.16)], -w, w, STEEL)
+	for z: float in [-w, w]:
+		kit.prism([Vector2(2.5, 0.08), Vector2(2.9, 0.08), Vector2(2.72, 1.5), Vector2(2.5, 1.5)], z - 0.05, z + 0.05, dark)
+	kit.box(Vector3(2.48, 0.8, 0), Vector3(0.1, 1.0, 3.5), dark)
+	if mine:
+		for side: float in [-1.0, 1.0]:
+			kit.box(Vector3(2.98, 0.86, side * (w - 0.1)), Vector3(0.62, 1.55, 0.09), body, Basis(Vector3.UP, side * 0.46))
+			kit.box(Vector3(3.0, 0.05, side * (w - 0.1)), Vector3(0.64, 0.1, 0.11), STEEL, Basis(Vector3.UP, side * 0.46))

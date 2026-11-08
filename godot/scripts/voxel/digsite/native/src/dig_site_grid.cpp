@@ -401,6 +401,9 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("dig_sphere", "c", "r", "hardest"), &DigSiteGrid::dig_sphere);
 	ClassDB::bind_method(D_METHOD("fill_sphere", "c", "r", "m", "most", "loose"), &DigSiteGrid::fill_sphere);
 	ClassDB::bind_method(D_METHOD("blast_sphere", "c", "r", "reach", "crack"), &DigSiteGrid::blast_sphere);
+	ClassDB::bind_method(D_METHOD("blade_sweep", "a", "b", "fwd", "rows", "mouth", "firm_most", "hardest", "take_most", "heap"), &DigSiteGrid::blade_sweep);
+	ClassDB::bind_method(D_METHOD("load_ahead", "a", "b", "fwd", "reach"), &DigSiteGrid::load_ahead);
+	ClassDB::bind_method(D_METHOD("pour_at", "x", "z", "top_y", "m", "n"), &DigSiteGrid::pour_at);
 	ClassDB::bind_method(D_METHOD("take_diff", "most"), &DigSiteGrid::take_diff);
 	ClassDB::bind_method(D_METHOD("pack_chunks", "list"), &DigSiteGrid::pack_chunks);
 	ClassDB::bind_method(D_METHOD("modified_chunks"), &DigSiteGrid::modified_chunks);

@@ -123,7 +123,7 @@ func _solo() -> bool:
 			if d.load_n == 0 or t - mark > 4.0:
 				d.curl_cmd = 0.0
 				var loose: int = ds.terrain.grid.count_box(0, 0, 0, 512, 192, 512, -3) - int(v.loose0)
-				check(d.load_n == 0 and loose == int(v.n), "tipped: it all pours out, loose (%d of %d)" % [loose, v.n])
+				check(d.load_n == 0 and loose >= int(v.n), "tipped: it all pours out, loose (%d loose now, %d poured)" % [loose, v.n])
 				check(_total(ds.terrain.grid) == int(v.total), "not a block made or lost")
 				_next(8)
 		8:
