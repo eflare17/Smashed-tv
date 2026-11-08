@@ -250,7 +250,7 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 	if tool.weapon_id == "shovel" and tool.tier == 0 and randf() < 0.25:
 		r *= 0.6                  # (the rusty one slips: half a scoop)
 		tool.sfx("dig_scrape", p, -4.0)
-	var got: Dictionary = dig_at(p - n * r * 0.45, r, int(st[1]))
+	var got: Dictionary = dig_at(p - n * (r * 0.45 + 0.06), r, int(st[1]))     # (a little in: the smooth surface can sit half a block off the blocks)
 	if VoxelBody.credit and a.get("guide"):
 		a.guide.tried("dig")
 	var counts: PackedInt32Array = got.counts

@@ -89,9 +89,9 @@ int DigSiteGrid::apply_chunks(const PackedByteArray &data) {
 		chunk_mod[ci] = 1;
 		hash_dirty[ci] = 1;
 		// the sections it's in, and those beside its faces (their faces against it change too)
-		for (int sy = std::max(0, cy * CS - 1) / SH; sy <= std::min(h - 1, cy * CS + CS) / SH; sy++)
-			for (int sz = std::max(0, cz * CS - 1) / SW; sz <= std::min(d - 1, cz * CS + CS) / SW; sz++)
-				for (int sx = std::max(0, cx * CS - 1) / SW; sx <= std::min(w - 1, cx * CS + CS) / SW; sx++)
+		for (int sy = std::max(0, cy * CS - 2) / SH; sy <= std::min(h - 1, cy * CS + CS + 1) / SH; sy++)
+			for (int sz = std::max(0, cz * CS - 2) / SW; sz <= std::min(d - 1, cz * CS + CS + 1) / SW; sz++)
+				for (int sx = std::max(0, cx * CS - 2) / SW; sx <= std::min(w - 1, cx * CS + CS + 1) / SW; sx++)
 					sec_dirty[(sy * scz + sz) * scx + sx] = 1;
 		n++;
 	}

@@ -150,6 +150,9 @@ func _solo() -> bool:
 			if t - mark > 1.0:
 				check(absf(tk.yaw - float(v.yaw)) < 0.01, "standing still, the truck doesn't turn (steered wheels)")
 				tk.steer = 0.0
+				# (out of the excavator's hole onto open ground first)
+				var o := DigSite.AT + Vector3(-4.0, 0.0, 8.0)
+				tk.global_position = Vector3(o.x, tk.ground_y(o.x, o.z), o.z)
 				v.at = tk.global_position
 				tk.throttle = 1.0
 				_next(9)
@@ -157,7 +160,7 @@ func _solo() -> bool:
 			var tk := _m(4) as DsTruck
 			if t - mark > 2.5:
 				tk.throttle = 0.0
-				check(tk.global_position.distance_to(v.at) > 3.0, "it drives (%.1f m)" % tk.global_position.distance_to(v.at))
+				check(tk.global_position.distance_to(v.at) > 3.0, "it drives (%.1f m%s)" % [tk.global_position.distance_to(v.at), ("; " + tk.blocked) if tk.blocked != "" else ""])
 				tk.tip_cmd = 1.0
 				_next(10)
 		10:

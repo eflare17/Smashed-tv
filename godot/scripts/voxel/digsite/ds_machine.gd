@@ -75,8 +75,23 @@ func right() -> Vector3:
 ## The ground's height at a world x, z: the voxel ground's top on the grid, the field (0) round it
 func ground_y(x: float, z: float) -> float:
 	var tr: DsTerrain = site.terrain
-	var y := tr.top_at(x, z) if tr else 0.0
-	return 0.0 if y == -INF else y
+	if tr == null:
+		return 0.0
+	# (the ground's drawn smooth: the four columns round the point blended, not one column's blocky top)
+	var c := DsTerrain.CELL
+	var fx := (x - tr.origin.x) / c - 0.5
+	var fz := (z - tr.origin.z) / c - 0.5
+	var ix := floorf(fx)
+	var iz := floorf(fz)
+	var tx := fx - ix
+	var tz := fz - iz
+	var h := [0.0, 0.0, 0.0, 0.0]
+	for k in 4:
+		var wx := tr.origin.x + (ix + float(k % 2) + 0.5) * c
+		var wz := tr.origin.z + (iz + float(k / 2) + 0.5) * c
+		var y := tr.top_at(wx, wz)
+		h[k] = 0.0 if y == -INF else y
+	return lerpf(lerpf(h[0], h[1], tx), lerpf(h[2], h[3], tx), tz)
 
 ## The ground under its four corners: [front left, front right, back left, back right]
 func _corners(at: Vector3, yaw_: float) -> PackedFloat32Array:
@@ -128,6 +143,8 @@ func _drive(dt: float) -> void:
 			blocked = "Too big a step: find a ramp"
 		elif uphill > max_climb and uphill > _uphill_now(going):
 			blocked = "Too steep for the %s" % kind
+		elif _wall_ahead(to, new_yaw, signf(going), at.y):
+			blocked = "Too steep for the %s" % kind
 	if blocked != "":
 		speed = 0.0
 		to = at
@@ -149,6 +166,19 @@ func _drive(dt: float) -> void:
 	global_position = to
 	pitch = lerpf(pitch, new_pitch, minf(1.0, dt * 10.0))
 	roll = lerpf(roll, atan2(maxf(c[1], c[3]) - maxf(c[0], c[2]), width), minf(1.0, dt * 10.0))
+
+## The ground just ahead of its leading corners rising steeper than it climbs (a pit's wall, a bank), measured from
+## where it rides (base: its height now; a hole under a corner, its own bucket's bite, doesn't count)
+func _wall_ahead(at: Vector3, yaw_: float, dir: float, base: float) -> bool:
+	var f := Vector3(-sin(yaw_), 0, -cos(yaw_)) * dir
+	var r := Vector3(cos(yaw_), 0, -sin(yaw_)) * (width * 0.5)
+	var lead := at + f * (length * 0.5)
+	var lim := tan(max_climb)
+	for p in [lead - r, lead + r, lead]:
+		var rise := ground_y(p.x + f.x * 0.3, p.z + f.z * 0.3) - maxf(base, ground_y(p.x, p.z))
+		if rise / 0.3 > lim and rise > 0.08:
+			return true
+	return false
 
 func _uphill_now(going: float) -> float:
 	return pitch if going > 0.0 else -pitch

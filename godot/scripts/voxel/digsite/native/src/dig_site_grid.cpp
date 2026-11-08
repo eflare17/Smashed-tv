@@ -198,14 +198,11 @@ int DigSiteGrid::get_cell(int x, int y, int z) const {
 }
 
 void DigSiteGrid::touch(int x, int y, int z) {
-	// the cell's section and any section a neighbour of it is in (its faces there change too)
-	static const int dx[7] = {0, 1, -1, 0, 0, 0, 0}, dy[7] = {0, 0, 0, 1, -1, 0, 0}, dz[7] = {0, 0, 0, 0, 0, 1, -1};
-	for (int k = 0; k < 7; k++) {
-		int nx = x + dx[k], ny = y + dy[k], nz = z + dz[k];
-		if (!in(nx, ny, nz))
-			continue;
-		sec_dirty[((ny / SH) * scz + nz / SW) * scx + nx / SW] = 1;
-	}
+	// every section within 2 cells (the smooth surface there is shaped by this cell: dig_site_mesh.cpp)
+	for (int sy = std::max(0, y - 2) / SH; sy <= std::min(h - 1, y + 2) / SH; sy++)
+		for (int sz = std::max(0, z - 2) / SW; sz <= std::min(d - 1, z + 2) / SW; sz++)
+			for (int sx = std::max(0, x - 2) / SW; sx <= std::min(w - 1, x + 2) / SW; sx++)
+				sec_dirty[(sy * scz + sz) * scx + sx] = 1;
 	int ci = ((y / CS) * ccz + z / CS) * ccx + x / CS;
 	chunk_touched[ci] = 1;
 	chunk_mod[ci] = 1;
@@ -385,81 +382,6 @@ PackedInt32Array DigSiteGrid::take_dirty_sections(int most) {
 
 void DigSiteGrid::mark_all_dirty() {
 	std::fill(sec_dirty.begin(), sec_dirty.end(), 1);
-}
-
-// A section's faces that show (a solid cell beside air), as triangles: [verts (metres from the grid's corner), normals,
-// colours] (no index: the same verts make the collision shape). Each cell's colour is its material's, a shade off
-// cell to cell, darker on the sides and underneath; a topsoil cell with air over it is grass on top; loose is paler.
-Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
-	PackedVector3Array verts, norms;
-	PackedColorArray cols;
-	int x0 = sx * SW, y0 = sy * SH, z0 = sz * SW;
-	int x1 = std::min(w, x0 + SW), y1 = std::min(h, y0 + SH), z1 = std::min(d, z0 + SW);
-	static const int dx[6] = {1, -1, 0, 0, 0, 0}, dy[6] = {0, 0, 1, -1, 0, 0}, dz[6] = {0, 0, 0, 0, 1, -1};
-	static const float shade[6] = {0.84f, 0.8f, 1.0f, 0.55f, 0.9f, 0.76f};
-	// corners of each face, listed anticlockwise seen from outside (cell corner offsets)
-	static const int cn[6][4][3] = {
-		{{1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}},  // +x
-		{{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},  // -x
-		{{0, 1, 1}, {1, 1, 1}, {1, 1, 0}, {0, 1, 0}},  // +y
-		{{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}},  // -y
-		{{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}},  // +z
-		{{1, 0, 0}, {0, 0, 0}, {0, 1, 0}, {1, 1, 0}},  // -z
-	};
-	static const int order[6] = {0, 2, 1, 0, 3, 2};   // (Godot's front faces: clockwise)
-	// count first, then fill (no reallocations)
-	int faces = 0;
-	for (int y = y0; y < y1; y++)
-		for (int z = z0; z < z1; z++)
-			for (int x = x0; x < x1; x++) {
-				if ((cells[idx(x, y, z)] & MAT_MASK) == AIR)
-					continue;
-				for (int k = 0; k < 6; k++)
-					if ((at(x + dx[k], y + dy[k], z + dz[k]) & MAT_MASK) == AIR)
-						faces++;
-			}
-	verts.resize(faces * 6);
-	norms.resize(faces * 6);
-	cols.resize(faces * 6);
-	Vector3 *vp = verts.ptrw();
-	Vector3 *np = norms.ptrw();
-	Color *cp = cols.ptrw();
-	int f = 0;
-	for (int y = y0; y < y1; y++)
-		for (int z = z0; z < z1; z++)
-			for (int x = x0; x < x1; x++) {
-				uint8_t c = cells[idx(x, y, z)];
-				int m = c & MAT_MASK;
-				if (m == AIR)
-					continue;
-				float var = 0.9f + 0.2f * ((hash3(x, y, z) & 255) / 255.0f);
-				for (int k = 0; k < 6; k++) {
-					if ((at(x + dx[k], y + dy[k], z + dz[k]) & MAT_MASK) != AIR)
-						continue;
-					const float *base = (k == 2 && m == TOPSOIL && !(c & LOOSE)) ? top_col : col[m];
-					float s = shade[k] * var;
-					float r = base[0] * s, g = base[1] * s, b = base[2] * s;
-					if (c & LOOSE) {
-						r = r * 0.85f + 0.12f;
-						g = g * 0.85f + 0.1f;
-						b = b * 0.85f + 0.08f;
-					}
-					Color cc(r, g, b);
-					Vector3 nn(dx[k], dy[k], dz[k]);
-					for (int o = 0; o < 6; o++) {
-						const int *q = cn[k][order[o]];
-						vp[f * 6 + o] = Vector3((x + q[0]) * CELL_M, (y + q[1]) * CELL_M, (z + q[2]) * CELL_M);
-						np[f * 6 + o] = nn;
-						cp[f * 6 + o] = cc;
-					}
-					f++;
-				}
-			}
-	Array out;
-	out.push_back(verts);
-	out.push_back(norms);
-	out.push_back(cols);
-	return out;
 }
 
 void DigSiteGrid::_bind_methods() {

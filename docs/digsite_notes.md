@@ -134,6 +134,16 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     into your backpack ("hauls concrete supports down").
   - Machines don't collide with each other (kinematic, each only against the ground); the player bumps into them.
 
+- **Smooth ground (the owner, 8 Nov: "I want the ground to be smooth, not so Minecraft looking").** The brief said
+  "chunky blocky look to match Smashed"; the owner changed that after seeing it. The cells stay 12.5 cm blocks (the
+  digging, the dirt, cave-ins, the network are unchanged); only the drawing (and so the collision) changed:
+  `native/src/dig_site_mesh.cpp` draws each section as a smooth surface (naive surface nets over each cell's 3x3x3
+  share of solid cells: flat ground sits exactly on the blocks' tops, slopes and dug edges come out smooth), with
+  smooth normals and colours blended vertex to vertex (grass on up-facing topsoil). The whole site is ~635k
+  triangles. A change now redraws the sections within 2 cells. Machines ride a blended height (the four nearest
+  columns) and check the slope just ahead of their leading wheels, so they still won't climb a pit's wall. Tool bites
+  aim a few cm in (the surface can sit half a block off the blocks).
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
