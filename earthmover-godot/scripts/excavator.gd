@@ -131,6 +131,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	support_z = 1.25 * size
 	track_z = 1.25 * size
 	track_rear = 1.8 * size
+	rut_half = 0.33 * size
+	rut_mm = 50 if size == 1.0 else 80
 	_speed_cap = TOP_SPEED
 	_rng.seed = 21
 	var carriage := MeshKit.new()

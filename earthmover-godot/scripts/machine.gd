@@ -17,10 +17,8 @@ const ROCK_TURN := 0.05         # radians of lean for each m/s of speed times ra
 const ROCK_LIMIT := 0.06
 const ROCK_SPRING := 42.0
 const ROCK_DAMP := 5.0
-const RUT_EVERY := 0.25         # m of track travel between each print in loose soil
-const RUT_DEEP := 34            # mm squeezed out to the side at a cleat
-const RUT_SHALLOW := 12         # and between cleats
 const RUT_MIN_SOIL := 60        # mm: firm ground takes no print
+const RUT_AGAIN := 1.8          # going over a print again presses it deeper only till it's this many times `rut_mm` below the ground beside it
 
 var sim: DirtSim
 var view: GroundView
@@ -48,6 +46,10 @@ var support_z := 1.15
 var side_lean_most := 1.0      # the steepest it leans side to side, as a slope (rise over run)
 var track_z := 1.15             # middle of each track
 var track_rear := 1.7
+## How deep its weight presses a track or tyre into loose soil at one pass (owner, 9 Nov: heavier machines leave deeper ruts), and
+## half the width of the track or tyre, so how wide the print is.
+var rut_mm := 50
+var rut_half := 0.31
 
 # For the readout, the sound and the tests.
 var load_t := 0.0
@@ -89,8 +91,7 @@ var rock_roll := 0.0
 var _pitch_vel := 0.0
 var _roll_vel := 0.0
 var _speed_cap := 3.2
-var _rut_travel: Array[float] = [0.0, 0.0]
-var _rut_count := 0
+var _rut_cell: Array[Vector2i] = [Vector2i(-1, -1), Vector2i(-1, -1)]   # where each track last printed
 
 func forward() -> Vector2:
 	return Vector2(cos(angle), -sin(angle))
@@ -255,7 +256,7 @@ func _drive(dt: float, drag: float, ignore_loose := false, turn_share := 1.0) ->
 		tracks.update(left / size, right / size, dt)
 	if not wheels.is_empty():
 		_spin_wheels(left, right, dt)
-	_print_ruts(left, right, dt)
+	_print_ruts()
 	_rock(dt, (speed - before) / dt, turning)
 	if absf(speed) > 0.05 or absf(turn_cmd) > 0.1:
 		_wear_tracks()
@@ -362,29 +363,69 @@ func _net_take_cmds_more(_c: PackedFloat32Array) -> void:
 func jolt() -> void:
 	speed *= 0.6
 
-## Tracks leave a print in loose soil: squeezed out to the side, deep at each cleat. Whole mm moved, so the total can't change.
-func _print_ruts(left: float, right: float, dt: float) -> void:
+## Tracks and tyres leave a print in loose soil as wide as they are, pressed `rut_mm` deep by the machine's weight: a Dingo barely
+## marks it, a loaded truck sinks in. The soil is squeezed out to the sides in a low ridge. Going over a print again only presses
+## it a little deeper, so driving back and forth doesn't dig a trench. Firm ground takes none. Whole mm moved, so the total can't change.
+func _print_ruts() -> void:
+	if rut_mm <= 0:
+		return
 	var f := forward()
 	var side := Vector2(sin(angle), cos(angle))
+	var across := maxi(roundi(rut_half * 2.0 / DirtSim.CELL_M), 1)
+	# The soil squeezed out spreads past each edge over as many cells as the print is wide, two at least, so a wide tyre's ridge
+	# is no taller than a narrow one's.
+	var spread := 2 * ceili(across / 2.0)
+	var edge := rut_half + DirtSim.CELL_M * 0.75
 	for k in 2:
-		_rut_travel[k] += absf(left if k == 0 else right) * dt
-		if _rut_travel[k] < RUT_EVERY:
+		var out := side * (-1.0 if k == 0 else 1.0)
+		var mid := spot - f * track_rear + out * track_z
+		# Each time the back of the track rolls onto another cell, so every cell it goes over gets pressed once, none skipped.
+		var here := DirtSim.cell_of(mid)
+		if here == _rut_cell[k]:
 			continue
-		_rut_travel[k] = 0.0
-		_rut_count += 1
-		var deep := RUT_DEEP if _rut_count % 4 < 2 else RUT_SHALLOW
-		var sign_z := -1.0 if k == 0 else 1.0
-		for w: float in [-0.25, 0.0, 0.25]:
-			var at := DirtSim.cell_of(spot - f * track_rear + side * sign_z * (track_z + w))
+		_rut_cell[k] = here
+		if absf(speed) < 0.03 and absf(turn_cmd) < 0.1:
+			continue
+		var outer: Array[Vector2i] = []
+		var inner: Array[Vector2i] = []
+		for c in spread:
+			outer.append(DirtSim.cell_of(mid + out * (edge + c * DirtSim.CELL_M)))
+			inner.append(DirtSim.cell_of(mid - out * (edge + c * DirtSim.CELL_M)))
+		var beside := (sim.height_mm(outer[0].x, outer[0].y) + sim.height_mm(inner[0].x, inner[0].y)) / 2
+		for c in across:
+			var w := (c - (across - 1) * 0.5) * DirtSim.CELL_M
+			var at := DirtSim.cell_of(mid + out * w)
 			if at.x < 1 or at.y < 1 or at.x >= DirtSim.CELLS - 1 or at.y >= DirtSim.CELLS - 1:
 				continue
-			if sim.soil[at.y * DirtSim.CELLS + at.x] < RUT_MIN_SOIL:
+			var n := at.y * DirtSim.CELLS + at.x
+			if sim.soil[n] < RUT_MIN_SOIL:
 				continue
-			var got := sim.take(at.x, at.y, deep)
-			# The outer edge of the track takes what comes from the outer half, the inner edge from the inner half.
-			var off := 0.5 if w >= 0.0 else -0.5
-			var out := DirtSim.cell_of(spot - f * track_rear + side * sign_z * (track_z + off))
-			sim.put(out.x, out.y, got, sim.last_dust)
+			var below := beside - (sim.bed[n] + sim.soil[n])
+			var amt := mini(mini(rut_mm, int(rut_mm * RUT_AGAIN) - below), sim.soil[n])
+			if amt <= 0:
+				if view:
+					view.press(at.x, at.y)
+				continue
+			var got := sim.take(at.x, at.y, amt)
+			var dust := sim.last_dust
+			if view:
+				view.press(at.x, at.y)
+			# The outer half of the print goes out, the inner half in, the middle both ways.
+			if w > 0.01:
+				_spill_rut(got, dust, outer)
+			elif w < -0.01:
+				_spill_rut(got, dust, inner)
+			else:
+				_spill_rut(got / 2, dust / 2, outer)
+				_spill_rut(got - got / 2, dust - dust / 2, inner)
+
+## Shares whole mm out over `cells`, so none is lost.
+func _spill_rut(amt: int, dust: int, cells: Array[Vector2i]) -> void:
+	var count := cells.size()
+	for c in count:
+		var a := amt / count + (1 if c < amt % count else 0)
+		var d := dust / count + (1 if c < dust % count else 0)
+		sim.put(cells[c].x, cells[c].y, a, mini(d, a))
 
 func _wear_tracks() -> void:
 	var f := forward()

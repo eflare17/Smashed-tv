@@ -88,6 +88,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	support_z *= size
 	track_z *= size
 	track_rear *= size
+	rut_half = 0.31 * size
+	rut_mm = 50 if size == 1.0 else 80
 	body_reach *= size
 	view_dist *= sqrt(size) * 1.15 if size > 1.0 else 1.0
 	view_aim *= size

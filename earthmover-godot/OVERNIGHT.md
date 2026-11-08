@@ -485,3 +485,24 @@ for it not to clip, to be less blocky, and once it's filled up for little lumps 
 - Slip on the way, caught by the checks: the new function was first called `_settle`, which hid the machine's own `_settle` (the
   one that sits it on the ground), so the excavator stopped being placed. Renamed `_settle_heap`.
 - `dig_test`: filled right up and held, 91% stays, 17 lumps tumble off, they land, nothing lost, and the heap's drawn.
+
+## 9 Nov 2026: ruts that go with the machine's weight
+
+Owner: the dirt could be formed by driving on it, deeper tracks for heavier machines. Before, every machine pressed the same 34/12 mm
+cleat print into loose soil whatever it weighed, the same 0.75 m wide band; and the lumps drawn on loose dirt hid it.
+
+- Each machine has `rut_mm` (how deep one pass presses into loose soil) and `rut_half` (half its track or tyre width). The depths
+  were put to the owner and agreed: Dingo 10 mm, ute 15, Bobcat 20, dozer and excavator 50, big dozer and big excavator 80, dump
+  truck 50 empty to 100 full (`Truck.EMPTY_RUT`/`FULL_RUT`, going with the load). The mine's haul truck got the same as the dump
+  truck (my pick: not asked). Widths from the drawn tracks and tyres (dozer 0.62 m, excavator 0.66, haul truck's duals 2 m).
+- A print lands each time the back of a track rolls onto another cell, so none get skipped; nothing while standing still.
+- The soil squeezed out goes to the sides, outer half out and inner half in, spread over as many cells as the print is wide, so a
+  wide tyre's ridge isn't a wall. Whole mm, nothing lost.
+- Going over a print again only presses it deeper till it's `RUT_AGAIN` (1.8) x its depth below the ground beside it: a dozer's
+  rut goes 50 mm, then 65, then stays there however many times it's driven. Firm ground still takes none (grass wears bare as before).
+- Pressed cells draw flat: `GroundView.press` remembers the height a track left a cell at; while it's still within 3 cm of that,
+  the cell shows as packed worked ground with no lumps, so a print reads as a smooth band through lumpy dirt. Dirt pushed onto
+  it or dug off it makes it lumpy again. This is only in the picture, on whoever's machine ran it: an online guest sees the dip
+  but not the smooth look.
+- `rut_test` (new): every machine's depth comes out as meant, heavier deeper, bigger wider, low ridges, total unchanged, back and
+  forth eight times stays a rut, a loaded truck on firm ground changes nothing, the print shows pressed, and dirt on it covers it.

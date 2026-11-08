@@ -28,6 +28,11 @@ var base_r := PackedByteArray()
 var base_g := PackedByteArray()
 var base_b := PackedByteArray()
 var first_bed := PackedInt32Array()
+## Where a track or tyre has pressed loose soil flat, the height it left it at; NOT_PRESSED elsewhere. The lumps there are
+## crushed, so a print shows as a smooth packed band through lumpy dirt, until dirt is pushed onto it or dug off it.
+const NOT_PRESSED := -1000000
+const PRESS_KEEP := 30          # mm the ground there can change by and still look pressed
+var pressed_at := PackedInt32Array()
 
 var _shade_queue: Dictionary = {}
 var _heights_changed := false
@@ -44,6 +49,8 @@ func _init(ground: GroundData, s: DirtSim, h_tex: ImageTexture, d_tex: ImageText
 	heights = ground.heights.duplicate()
 	data = ground.data.duplicate()
 	first_bed = s.bed.duplicate()
+	pressed_at.resize(CELLS * CELLS)
+	pressed_at.fill(NOT_PRESSED)
 	# Two to a cell: how the dust looks, and how deep the loose stuff lies, which is what makes it look lumpy.
 	dust_data.resize(CELLS * CELLS * 2)
 	for n in CELLS * CELLS:
@@ -71,6 +78,18 @@ func wear(i: int, j: int) -> void:
 		return
 	base_b[n] = 255 - base_r[n]
 	sim.dirty[(j >> 4) * CHUNKS + (i >> 4)] = true
+
+## A track or tyre has just pressed this cell's loose soil flat.
+func press(i: int, j: int) -> void:
+	if i < 0 or j < 0 or i >= CELLS or j >= CELLS:
+		return
+	var n := j * CELLS + i
+	pressed_at[n] = sim.bed[n] + sim.soil[n]
+	sim.dirty[(j >> 4) * CHUNKS + (i >> 4)] = true
+
+## Whether this cell shows as pressed flat by a track.
+func pressed(n: int) -> bool:
+	return pressed_at[n] != NOT_PRESSED
 
 func sync(delta: float, budget_usec := 2500) -> void:
 	var t0 := Time.get_ticks_usec()
@@ -115,6 +134,14 @@ func _redo_chunk(ci: int, cj: int) -> void:
 			# Solid once there's enough to count as covering the ground, patchy under that, and mixed with dirt it shows as much as it is.
 			var looks := mini(d, Mission.COVERED_MM) * d * 255 / (Mission.COVERED_MM * maxi(s, 1)) if d > 0 else 0
 			var deep := mini((s + d) / DEEP_STEP, 255)
+			# A track print stays pressed till dirt's pushed onto it or dug off it.
+			var flat := false
+			if pressed_at[n] != NOT_PRESSED:
+				flat = s >= 40 and absi(b + s - pressed_at[n]) <= PRESS_KEEP
+				if not flat:
+					pressed_at[n] = NOT_PRESSED
+			if flat:
+				deep = 0
 			if deep >= LOOSE_FROM:
 				any_loose = 1
 			if dust_data[n * 2] != looks or dust_data[n * 2 + 1] != deep:
@@ -128,6 +155,10 @@ func _redo_chunk(ci: int, cj: int) -> void:
 			data[o] = r
 			data[o + 1] = 0 if (s >= 40 or d >= 10) else base_g[n]
 			data[o + 2] = mini(base_b[n], 255 - r)
+			if flat:
+				# Packed down: it looks like worked ground, not loose lumps.
+				data[o] = 0
+				data[o + 2] = 255
 	loose_here[cj * CHUNKS + ci] = any_loose
 	_heights_changed = true
 	_data_changed = true

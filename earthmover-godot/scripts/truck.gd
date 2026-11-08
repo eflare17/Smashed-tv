@@ -25,6 +25,8 @@ const CHUNK := 1600             # mm a falling chunk carries (0.1 m3)
 
 # The haul truck: about 11 m long and 7 wide, the tray's rim 5 m up. It takes five or six of the big excavator's buckets.
 const HAUL_MASS := 65000.0
+const EMPTY_RUT := 50           # mm its tyres press into loose soil empty
+const FULL_RUT := 100           # and full
 const HAUL_TOP := 8.0           # m/s, about 30 km/h empty
 const HAUL_WHEELBASE := 6.2
 const HAUL_STEER := 0.6
@@ -85,6 +87,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	support_z = 1.05
 	track_z = 1.05
 	track_rear = 2.4
+	rut_half = 0.28
 	fp_back = 3.6
 	fp_front = 3.3
 	fp_r = 1.25
@@ -179,6 +182,7 @@ func _make_haul() -> void:
 	support_z = 2.5
 	track_z = 2.5
 	track_rear = 3.2
+	rut_half = 1.0
 	fp_back = 4.7
 	fp_front = 6.3
 	fp_r = 3.4
@@ -244,6 +248,8 @@ func step(dt: float) -> void:
 	_pour(dt)
 	mass = empty_mass + DirtSim.to_m3(tray_mm) * 1500.0
 	load_t = DirtSim.to_m3(tray_mm) * 1.5
+	# Its tyres sink further in loose soil with a load on (owner, 9 Nov): 5 cm empty, 10 cm full.
+	rut_mm = int(lerpf(EMPTY_RUT, FULL_RUT, fill()))
 	# Loaded, it's slower. With the tray up it creeps.
 	top_speed = top_empty * lerpf(1.0, 0.6, fill()) * (0.3 if tip > 0.1 else 1.0)
 	back_speed = back_empty * (0.5 if tip > 0.1 else 1.0)

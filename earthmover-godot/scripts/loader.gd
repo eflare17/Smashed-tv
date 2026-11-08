@@ -130,6 +130,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		support_z = 0.8
 		track_z = 0.8
 		track_rear = 0.6
+		rut_half = 0.16
+		rut_mm = 20
 		pivot = Vector2(-0.82, 1.62)
 		arm_len = 2.3
 		arm_low = -0.82
@@ -169,6 +171,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		side_lean_most = 0.14
 		track_z = 0.44
 		track_rear = 0.55
+		rut_half = 0.115
+		rut_mm = 10
 		pivot = Vector2(-0.1, 0.85)
 		arm_len = 1.15
 		arm_low = -0.85

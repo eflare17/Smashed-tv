@@ -34,6 +34,8 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	side_lean_most = 0.35
 	track_z = 0.78
 	track_rear = 1.45
+	rut_half = 0.13
+	rut_mm = 15
 	view_dist = 11.0
 	view_pitch = 16.0
 	view_aim = 1.3
