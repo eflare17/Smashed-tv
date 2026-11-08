@@ -75,6 +75,19 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Rough edges: the guest's backpack takes its own dig's result, not the host's (a race could differ by a few
     blocks). Joining a session while the host is already at the site: travel again to get there.
 
+- **Machines (stage 6).** `ds_machine.gd` (DsMachine, the base the later machines share), `ds_dingo.gd`,
+  `ds_machines.gd` (parking, getting on and off, driving, the net). Kinematic, not physics bodies: the ground's top
+  under four corners sets height, pitch and roll; it won't climb a slope past `max_climb` (Dingo 28 degrees) or a step
+  over `step_up` (26 cm), stops dead and says so; it drops into holes (gravity) and has to find a ramp out. The
+  Dingo: W/S, A/D (skid steer), R/F arms, right mouse curls the bucket, left tips it. Bucket low and driving forward:
+  it bites soil and clay (not rock) into the bucket (260 blocks); tipped, it pours loose dirt where its edge is.
+  The driver stands on the back plate; the view turns with it. In co-op the host's game moves every machine and
+  sends their state 20 times a second (fast, byte 68 + id); a guest asks to drive ("drive" event, the host says yes in
+  the next state) and sends its controls 20 times a second (id + 128). The guest's view of the machine it drives lags
+  by the round trip (no prediction yet).
+- Ground drawing: the whole site on screen is ~0.6-1.3 M triangles (a face per block side: the chunky look keeps
+  each block's shade). Fine on a PC GPU; greedy meshing would cut it if needed.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -87,3 +100,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 3. Hand tools: done (`test/voxel/digsite_tools_test.gd`, 15 checks).
 4. Loose dirt: done (`test/voxel/digsite_dirt_test.gd`, 10 checks; 2 more in the ground test).
 5. Co-op sync: done (`test/voxel/digsite_sync_test.gd`, two copies, with and without lag).
+6. Dingo: done (`test/voxel/digsite_dingo_test.gd`: alone 14 checks; two copies, with and without lag).

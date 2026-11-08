@@ -1707,7 +1707,7 @@ func _physics_process(dt: float) -> void:
 		player.velocity = Vector3.ZERO
 		player.global_position = house.lie_spot(lying)
 		dir = Vector3.ZERO
-	if games.seated > 0 or mine.active or (stkilda and stkilda.riding()):
+	if games.seated > 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving()):
 		player.velocity = Vector3.ZERO
 		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
@@ -1721,7 +1721,7 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	if lying <= 0 and games.seated == 0 and not mine.active and not (stkilda and stkilda.riding()):
+	if lying <= 0 and games.seated == 0 and not mine.active and not (stkilda and stkilda.riding()) and not (digsite and digsite.driving()):
 		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
@@ -2114,7 +2114,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.riding()):
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.riding()) or (digsite and digsite.driving()):
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -2263,7 +2263,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.riding())     # (in bed, dialling a padlock, on the couch, a game case in your hands, on St Kilda's coaster: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving())     # (in bed, dialling a padlock, on the couch, a game case in your hands, on St Kilda's coaster: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]

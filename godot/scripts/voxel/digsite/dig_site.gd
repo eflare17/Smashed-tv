@@ -26,6 +26,7 @@ var _hud: Label
 var terrain: DsTerrain                    # the voxel ground (stage 2)
 var tools: DsTools                        # the hand tools' digging and tiers (stage 3)
 var net: DsNet                            # co-op: the host's ground, the guest's actions (stage 5)
+var machines: DsMachines                  # the Dingo and the rest (stage 6 on)
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -79,6 +80,12 @@ func _build() -> void:
 	terrain.setup(self, AT, SEED)
 	terrain.hook(net)
 	tools.hook(net)
+	machines = DsMachines.new()
+	add_child(machines)
+	machines.setup(self)
+	machines.make()
+	net.register_event("drive", func(a: Array): machines.on_event("drive", a))
+	net.register_event("off", func(a: Array): machines.on_event("off", a))
 	var f := SIZE + 40.0
 	var band := (f - SIZE) * 0.5
 	for sgn in [-1.0, 1.0]:
@@ -124,6 +131,7 @@ func _build() -> void:
 	sign.pixel_size = 0.01
 	sign.outline_size = 18
 	sign.modulate = Color("#ffd27a")
+	sign.double_sided = false                 # (not mirrored from inside the site)
 	sign.position = AT + Vector3(0.0, 3.2, half + 0.2)
 	add_child(sign)
 	var sub := Label3D.new()
@@ -131,6 +139,7 @@ func _build() -> void:
 	sub.font_size = 48
 	sub.pixel_size = 0.008
 	sub.outline_size = 10
+	sub.double_sided = false
 	sub.position = AT + Vector3(0.0, 2.4, half + 0.2)
 	add_child(sub)
 
@@ -179,7 +188,7 @@ func go() -> void:
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_help_text = arena.help.text
-	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office (picks, hammers)   Tab backpack"
+	arena.help.text = "DIG SITE   P phone (travel home)   WASD walk   6 tools: shovel, pick, hammer   E site office, E drive the Dingo   Tab backpack"
 	_hud.visible = true
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
@@ -190,6 +199,8 @@ func go() -> void:
 func home() -> void:
 	if not active:
 		return
+	if machines and machines.driving:
+		machines.get_off()
 	net.left()
 	active = false
 	visible = false
@@ -217,11 +228,27 @@ func _process(_dt: float) -> void:
 	near_office = Vector2(p.x - w.x, p.z - w.z).length() < 2.2 and absf(p.y - w.y) < 2.5
 	if near_office:
 		arena._use_label.text = tools.office_line()
+	elif machines and machines.near and not driving():
+		arena._use_label.text = machines.line()
+
+## Whether this player's driving a machine here (the arena: no walking, no weapons)
+func driving() -> bool:
+	return active and machines != null and machines.driving != null
+
+## The player put at p, the look left as it is (riding a machine)
+func _put_keep(p: Vector3) -> void:
+	arena.player.global_position = p
+	arena.player.velocity = Vector3.ZERO
 
 func _unhandled_input(e: InputEvent) -> void:
 	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
-	if (e as InputEventKey).physical_keycode == KEY_E and near_office:
+	if (e as InputEventKey).physical_keycode != KEY_E:
+		return
+	if driving() or (machines and machines.near and not near_office):
+		machines.use()
+		get_viewport().set_input_as_handled()
+	elif near_office:
 		tools.office_make()
 		get_viewport().set_input_as_handled()
 
