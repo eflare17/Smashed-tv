@@ -1080,6 +1080,9 @@ func _message(m: Array) -> void:
 			arena.yard.shredder.on_net(m.slice(1))
 		"Q":
 			arena.yard.barbecue.on_net(m.slice(1))
+		"D":
+			if arena.get("digsite"):
+				arena.digsite.on_net(m.slice(1))
 		"N":
 			if arena.mine and arena.mine.net:
 				arena.mine.net.on_net(m.slice(1))
@@ -1161,6 +1164,11 @@ func send_shredder(m: Array) -> void:
 func send_barbecue(m: Array) -> void:
 	if linked:
 		_send(["Q"] + m)
+
+## The Dig Site's (DigSite and what it has), either way, reliable.
+func send_digsite(m: Array) -> void:
+	if linked:
+		_send(["D"] + m)
 
 ## The shared mine's (MineNet), either way, reliable.
 func send_mine(m: Array) -> void:

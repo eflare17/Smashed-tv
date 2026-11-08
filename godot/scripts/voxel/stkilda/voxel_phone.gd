@@ -8,7 +8,8 @@ extends Control
 const W := 270.0
 const H := 600.0
 const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"],
-	["range", "Gun range", "Try every weapon"]]
+	["range", "Gun range", "Try every weapon"], ["digsite", "Dig Site", "Dig, tunnel, drive machines"]]
+const COOP_PLACES := ["home", "digsite"]   # (with a mate: these, the two of you together; the rest not yet)
 
 var arena: VoxelArena
 var stkilda: VoxelStKilda
@@ -95,15 +96,17 @@ func open() -> void:
 		here = "kill12" if stkilda.game and stkilda.game.running else "stkilda"
 	elif arena.gun_range.active:
 		here = "range"
+	elif arena.digsite and arena.digsite.active:
+		here = "digsite"
 	var coop: bool = arena.net != null and arena.net.role != ""
 	for id in _buttons:
 		var b: Button = _buttons[id]
-		b.disabled = id == here or coop
+		b.disabled = id == here or (coop and not COOP_PLACES.has(id))
 		var sub: Label = b.get_node("Sub")
 		sub.text = "You're here" if id == here else String(PLACES.filter(func(pl: Array) -> bool: return pl[0] == id)[0][2])
 		if id == "kill12" and stkilda.game and stkilda.game.over:
 			sub.text = "Play again (best %d kills)" % stkilda.game.best_kills
-	_note.text = "Travel's off while you're playing with a mate (for now)." if coop else ""
+	_note.text = "With a mate: Home and the Dig Site (you both go)." if coop else ""
 	var t := Time.get_time_dict_from_system()
 	_clock.text = "%d:%02d" % [t.hour, t.minute]
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -140,9 +143,13 @@ func _unhandled_input(e: InputEvent) -> void:
 func travel(id: String) -> void:
 	if _going:
 		return
+	if COOP_PLACES.has(id) and arena.digsite and arena.digsite._linked():
+		close()
+		arena.digsite.travel(id == "digsite")     # (with a mate: the host takes you both)
+		return
 	_going = true
 	close()
-	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "range": "To the gun range ..."}.get(id, "Heading home ...")
+	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
@@ -151,6 +158,8 @@ func travel(id: String) -> void:
 	await get_tree().process_frame
 	if id != "range":
 		arena.gun_range.home()                 # (off the range first: back where you were in the arena)
+	if arena.digsite and id != "digsite":
+		arena.digsite.home()
 	match id:
 		"stkilda":
 			if stkilda.active:
@@ -162,8 +171,35 @@ func travel(id: String) -> void:
 		"range":
 			stkilda.home()
 			arena.gun_range.go()
+		"digsite":
+			stkilda.home()
+			arena.digsite.go()
 		_:
 			stkilda.home()
+	await get_tree().create_timer(0.25).timeout
+	tw = create_tween()
+	tw.tween_property(_black, "modulate:a", 0.0, 0.45)
+	await tw.finished
+	_black.visible = false
+	_going = false
+
+## Black, do(), back from black (the Dig Site's travel, together in co-op)
+func arrive(do: Callable, label: String) -> void:
+	if _going:
+		return
+	_going = true
+	if _open:
+		close()
+	_black_label.text = label
+	_black.visible = true
+	var tw := create_tween()
+	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
+	await tw.finished
+	await get_tree().process_frame
+	await get_tree().process_frame
+	arena.gun_range.home()
+	stkilda.home()
+	do.call()
 	await get_tree().create_timer(0.25).timeout
 	tw = create_tween()
 	tw.tween_property(_black, "modulate:a", 0.0, 0.45)

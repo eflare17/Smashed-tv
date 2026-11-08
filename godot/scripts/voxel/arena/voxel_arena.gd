@@ -175,6 +175,7 @@ var stkilda: VoxelStKilda        # St Kilda (Luna Park), down the phone's Travel
 var speed_k := 1.0               # how fast you walk, of your own pace (St Kilda: slower dragging a bush)
 var gun_range: VoxelGunRange    # the gun range (the phone's Travel: every weapon to try)
 var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
+var digsite: DigSite             # the Dig Site (the phone's Travel: dig, tunnel, machines; co-op together; scripts/voxel/digsite)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
 var _dash_t := 0.0
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
@@ -307,6 +308,9 @@ func _ready() -> void:
 	gun_range = VoxelGunRange.new()
 	add_child(gun_range)
 	gun_range.setup(self)
+	digsite = load("res://scenes/voxel/digsite/dig_site.tscn").instantiate()
+	add_child(digsite)
+	digsite.setup(self)
 	phone = VoxelPhone.new()
 	_hud_layer.add_child(phone)
 	phone.setup(self, stkilda)
@@ -352,6 +356,8 @@ func _ready() -> void:
 		stkilda.go()
 		if String(_opts.stkilda) != "1":
 			stkilda.stand(String(_opts.stkilda))
+	if _opts.has("digsite"):         # (tests, pictures: --digsite straight to the Dig Site)
+		digsite.go()
 	if _opts.has("phone"):
 		phone.open()
 	print("VoxelArena: ready (renderer ", RenderingServer.get_current_rendering_method(), ")")
@@ -2486,4 +2492,4 @@ func _finish() -> void:
 
 ## Away from the arena (in St Kilda, at the gun range): its waves wait.
 func elsewhere() -> bool:
-	return (stkilda != null and stkilda.active) or (gun_range != null and gun_range.active)
+	return (stkilda != null and stkilda.active) or (gun_range != null and gun_range.active) or (digsite != null and digsite.active)
