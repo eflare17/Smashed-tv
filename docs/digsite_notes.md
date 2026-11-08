@@ -101,6 +101,17 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 - A single "span" number is a simplification: it ignores roof thickness and depth (stage 8 adds depth pressure for
   supports).
 
+- **Supports (stage 8).** `ds_supports.gd` (DsSupports). The hammer's right click puts a post (2 x 2 blocks) from
+  the floor to the roof where you aim, out of the backpack: a wooden prop (the site office sells 5 for $10) or a
+  concrete support (made at the office from 8 stone, 4 sand, 4 gravel; used first when you're past the wooden
+  depth). Posts are WOOD/CONCRETE blocks of the ground, so stage 7's span is measured to them: a post in a room's
+  middle halves its span. Weight by depth (from the ground's top over the post): wood holds for good to 5 m; past
+  that it creaks, groans (worse as it goes) and gives way in 40 s (8 s at 9 m and deeper); its blocks drop loose and
+  the roof it held is on its own again. Concrete holds to 30 m (the whole site). The office also buys ore now
+  (V: coal $1, iron $2, gold $5, gems $15), so props can be paid for from digging. B/C/V at the office counter.
+  The host keeps the post list and the weight; a guest's post is a DsNet action ("post"); creaks go as "sup" events.
+- Posts can't bend visibly (they're blocks); the warning is the sound and the message.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -115,3 +126,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 5. Co-op sync: done (`test/voxel/digsite_sync_test.gd`, two copies, with and without lag).
 6. Dingo: done (`test/voxel/digsite_dingo_test.gd`: alone 14 checks; two copies, with and without lag).
 7. Tunnels and cave-ins: done (`test/voxel/digsite_cave_test.gd` 9 checks; `digsite_tunnel_test.gd` alone and two copies, with and without lag).
+8. Supports: done (`test/voxel/digsite_support_test.gd`: alone 13 checks; two copies, with and without lag).

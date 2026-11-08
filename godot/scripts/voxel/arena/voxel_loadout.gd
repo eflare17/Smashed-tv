@@ -27,7 +27,7 @@ const ALL := [
 	{"id": "pick", "group": 6, "name": "Pick", "left": "break stone, rock, gold ore", "right": ""},
 	{"id": "hoe", "group": 6, "name": "Hoe", "left": "hoe a row: three planting spots", "right": ""},
 	{"id": "can", "group": 6, "name": "Watering can", "left": "hold: pour (waters the plants it lands on)", "right": ""},
-	{"id": "hammer_ds", "group": 6, "name": "Hammer", "left": "chip a block out (the Dig Site)", "right": ""},
+	{"id": "hammer_ds", "group": 6, "name": "Hammer", "left": "chip a block out (the Dig Site)", "right": "put up a prop (floor or roof)"},
 ]
 const GROUPS := {1: "Melee", 2: "Guns", 3: "Special", 4: "Explosives", 5: "Vacuum", 6: "Tools"}
 const SWITCH_T := 0.25          # seconds a switch takes

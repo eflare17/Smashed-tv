@@ -2,9 +2,9 @@ class_name DsHammer
 extends VoxelTool
 ## The hammer (the Dig Site, stage 3: "Shovel, pick, hammer (hammer used later for supports)"), weapon id "hammer_ds",
 ## group 6 with the other tools (the arena's "hammer" is the sledgehammer). At the Dig Site its left click chips a block
-## or two out where you look (DsTools.HAMMER: a framing hammer chips rock, a nail gun anything a steel pick does); stage
-## 8 gives it supports to build. Anywhere else it just swings. Its tiers are made at the site office. Owned by the voxel
-## session.
+## or two out where you look (DsTools.HAMMER: a framing hammer chips rock, a nail gun anything a steel pick does); its
+## right click puts up a prop or a concrete support where you aim (DsSupports, stage 8). Anywhere else it just swings.
+## Its tiers are made at the site office. Owned by the voxel session.
 
 const HEAD := [Color8(120, 122, 128), Color8(70, 92, 140), Color8(230, 170, 40)]
 
@@ -61,6 +61,28 @@ func _model(parent: Node3D, s: float) -> void:
 
 func bar_text() -> String:
 	return ["", "framing", "nailer"][clampi(tier, 0, 2)]
+
+## Right click at the Dig Site: a post up where you aim (DsSupports)
+func press(button: int) -> void:
+	if button == MOUSE_BUTTON_RIGHT:
+		var ds = arena.get("digsite")
+		if ds == null or not ds.active or _cd > 0.0 or _t >= 0.0:
+			return
+		_cd = float(stats()[2]) * 2.0
+		_t = 0.0
+		_bit = true                 # (a swing, no bite)
+		sfx("swoosh_heavy", Vector3.INF if shooter == arena.me else shooter.player.global_position, -10.0, 1.3)
+		if shooter == arena.me:
+			if not ds.net.can_change():
+				arena.say("Waiting for your mate's ground ...", 1.0)
+				return
+			var ad := _aim_digsite()
+			if ad.is_empty():
+				arena.say("Aim at the floor or the roof, close", 1.5)
+			else:
+				ds.supports.place(ad[0], ad[1])
+		return
+	super(button)
 
 func _bite() -> void:
 	var ds = arena.get("digsite")

@@ -28,6 +28,7 @@ var tools: DsTools                        # the hand tools' digging and tiers (s
 var net: DsNet                            # co-op: the host's ground, the guest's actions (stage 5)
 var machines: DsMachines                  # the Dingo and the rest (stage 6 on)
 var caves: DsCaves                        # cave-ins shown and heard (stage 7)
+var supports: DsSupports                  # props and concrete supports, and the weight on them (stage 8)
 var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
@@ -89,6 +90,9 @@ func _build() -> void:
 	caves = DsCaves.new()
 	add_child(caves)
 	caves.setup(self)
+	supports = DsSupports.new()
+	add_child(supports)
+	supports.setup(self)
 	lamp = SpotLight3D.new()
 	lamp.spot_range = 14.0
 	lamp.spot_angle = 32.0
@@ -241,7 +245,7 @@ func _process(_dt: float) -> void:
 	var w := AT + OFFICE_WINDOW
 	near_office = Vector2(p.x - w.x, p.z - w.z).length() < 2.2 and absf(p.y - w.y) < 2.5
 	if near_office:
-		arena._use_label.text = tools.office_line()
+		arena._use_label.text = tools.office_line() + "\n" + tools.shop_line()
 	elif machines and machines.near and not driving():
 		arena._use_label.text = machines.line()
 	# the hard hat's lamp: on with solid ground over your head (in a tunnel)
@@ -262,7 +266,18 @@ func _put_keep(p: Vector3) -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
-	if (e as InputEventKey).physical_keycode != KEY_E:
+	var k := (e as InputEventKey).physical_keycode
+	if near_office and k in [KEY_B, KEY_C, KEY_V]:
+		match k:
+			KEY_B:
+				tools.buy_props()
+			KEY_C:
+				tools.make_concrete()
+			KEY_V:
+				tools.sell_ore()
+		get_viewport().set_input_as_handled()
+		return
+	if k != KEY_E:
 		return
 	if driving() or (machines and machines.near and not near_office):
 		machines.use()
