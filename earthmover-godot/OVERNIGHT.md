@@ -388,3 +388,8 @@ owner then said to work out the rest and set it up; those picks are Claude's and
   - Bucket view: a fourth View (Chase, High, Cab, Bucket) for the excavator and loaders, skipped in anything else. Looks down at
     70 degrees from further round than the chase view (`BUCKET_SIDE`), following the teeth smoothly; drag to look round, pinch to
     zoom. The readout says ON IT: GENTLY when the bucket's resting on the find, not ROCK: CAN'T DIG.
+- Owner, after the fixes: "much better". Asked whether a knock near 100% fails it (no: nothing fails a job, a knock takes 3% off and
+  100% with one knock is still 97%, three stars), and for the shovel to be more use, to clear the last of the dirt off the bones by
+  hand. A shovelful is now twice what it was (`Worker.SCOOP` 384, 0.024 m3) and it takes 6 cm off firm ground, not 2.4
+  (`FIRM_BITE` 60). A barrow's now four shovelfuls. The shovel can't dig into a find and is never a knock; find_test checks three
+  shovelfuls take the last 18 cm off a spot on the bones.

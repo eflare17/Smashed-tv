@@ -11,9 +11,9 @@ const EASE := 7.0               # how fast he gets going and stops
 const STRIDE := 1.4             # m a full step of both legs takes
 const SWING := 0.55             # radians the legs swing at a walk
 # The hand tools.
-const SCOOP := 192              # mm on one cell's area a shovelful holds: 0.012 m3
+const SCOOP := 384              # mm on one cell's area a shovelful holds: 0.024 m3 (it was half that; the owner wanted it more use)
 const DIG_AT := 0.75            # m ahead of him the shovel goes in
-const FIRM_BITE := 24           # mm of firm ground a cell gives a shovel, where loose soil comes freely
+const FIRM_BITE := 60           # mm of firm ground a cell gives a shovel, where loose soil comes freely (was 24)
 const THROW_TO := 1.5           # m ahead a shovelful lands, with nothing to throw it into
 const THROW_S := 0.45           # seconds a shovelful's in the air
 const RAKE_AT := 1.05           # m ahead the rake's head is

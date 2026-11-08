@@ -22,6 +22,7 @@ func _init() -> void:
 		buried_test(kind)
 	bucket_test()
 	dozer_test()
+	shovel_test()
 	DirtSim.set_world(32.0)
 	Engine.set_meta("mission", "buried_find")
 	Engine.set_meta("find_seed", 4242)
@@ -198,6 +199,51 @@ func bucket_test() -> void:
 	print("      swung into its side from %.2f rad, teeth %.2f m up (its top %.2f): met it at %.2f m/s" % [swung_from, e.teeth.y, f.top_at(f.at), hit])
 	check(hit > knock_at, "swung into its side flat out, it's a knock")
 	e.queue_free()
+
+## On foot with the shovel, on the bones with 30 cm of dirt still over them: the shovel clears it off and can't go into them.
+func shovel_test() -> void:
+	var w := _world()
+	var s: DirtSim = w[1]
+	var patch: Rect2 = w[3]
+	var f := Find.make(7, patch, s.height_at(patch.get_center()), "bones")
+	f.lay(s)
+	# The excavator's been: a wide hole down to 30 cm over the highest of it, and 30 cm over each bit of it.
+	var floor_mm := int((f.base + 0.6) * 1000.0)
+	var c := DirtSim.cell_of(f.at)
+	var reach := int((f.radius + 3.0) / DirtSim.CELL_M)
+	for j in range(c.y - reach, c.y + reach + 1):
+		for i in range(c.x - reach, c.x + reach + 1):
+			s.bed[j * DirtSim.CELLS + i] = floor_mm + 300
+			s.soil[j * DirtSim.CELLS + i] = 0
+	for k in f.cells.size():
+		s.bed[f.cells[k]] = f.tops[k] + 300
+		s.soil[f.cells[k]] = 0
+	var spine := f.cells[f.cells.size() / 2]
+	var at := Vector2(spine % DirtSim.CELLS, spine / DirtSim.CELLS) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M
+	var wk := Worker.new()
+	root.add_child(wk)
+	wk.setup(s, w[2], StandardMaterial3D.new(), at - Vector2(Worker.DIG_AT, 0.0), Vector2(1.0, 0.0))
+	wk.step_off(at - Vector2(Worker.DIG_AT, 0.0), 0.0)
+	wk.take_tool("shovel")
+	var digs := 0
+	for k in 40:
+		if wk.dig() > 0:
+			digs += 1
+		for j in int(0.5 / DT):
+			wk.step(DT)
+		# Thrown off to the side, clear of it, as anyone would.
+		var aside := at + Vector2(0.0, 6.0)
+		wk.throw(Vector3(aside.x, s.height_at(aside), aside.y))
+		for j in int(0.5 / DT):
+			wk.step(DT)
+			s.step(DT, 1000000)
+		if s.bed[spine] + s.soil[spine] <= f.tops[f.cells.find(spine)] + int(Find.COVER * 1000.0):
+			break
+	var left: int = s.bed[spine] + s.soil[spine] - f.tops[f.cells.find(spine)]
+	print("      shovel: %d shovelfuls took 30 cm down to %d mm over the bone" % [digs, left])
+	check(left <= int(Find.COVER * 1000.0) and digs <= 5, "on foot, a few shovelfuls clear the dirt off the bones (%d)" % digs)
+	check(s.bed[spine] >= s.hard[spine], "and the shovel can't go into them")
+	wk.queue_free()
 
 ## The big dozer on CUT, a metre down, across the buried car: it strips the dirt off but can't cut into it.
 func dozer_test() -> void:
