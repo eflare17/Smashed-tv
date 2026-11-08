@@ -173,25 +173,27 @@ static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
 # dust off the tracks as it drives, exhaust from the stack while it's driven, dust where it pours
 func _dust_fx() -> void:
 	if _dust == null:
+		# (sized to the machine: a Dingo's puffs are a third of a truck's)
+		var k := clampf(length / 5.0, 0.35, 1.0)
 		_dust = puffs(Color("#d6bd98"), 18, 1.0)
 		_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-		_dust.emission_box_extents = Vector3(width * 0.45, 0.1, length * 0.3)
+		_dust.emission_box_extents = Vector3(width * 0.45, 0.05, length * 0.2)
 		_dust.direction = Vector3(0, 1, 0)
 		_dust.spread = 40.0
-		_dust.initial_velocity_min = 0.2
-		_dust.initial_velocity_max = 0.8
+		_dust.initial_velocity_min = 0.2 * k
+		_dust.initial_velocity_max = 0.8 * k
 		_dust.gravity = Vector3.ZERO
-		_dust.scale_amount_min = 0.5
-		_dust.scale_amount_max = 1.1
+		_dust.scale_amount_min = 0.5 * k
+		_dust.scale_amount_max = 1.1 * k
 		add_child(_dust)
 		_exhaust = puffs(Color("#2b2b2b"), 16, 1.1)
 		_exhaust.direction = Vector3(0, 1, 0)
 		_exhaust.spread = 14.0
-		_exhaust.initial_velocity_min = 1.4
-		_exhaust.initial_velocity_max = 2.4
+		_exhaust.initial_velocity_min = 1.4 * k
+		_exhaust.initial_velocity_max = 2.4 * k
 		_exhaust.gravity = Vector3(0.3, 0.3, 0.0)
-		_exhaust.scale_amount_min = 0.22
-		_exhaust.scale_amount_max = 0.5
+		_exhaust.scale_amount_min = 0.22 * k
+		_exhaust.scale_amount_max = 0.5 * k
 		add_child(_exhaust)
 		_pour_dust = puffs(Color("#d8c6a4"), 14, 1.2)
 		_pour_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
@@ -204,7 +206,8 @@ func _dust_fx() -> void:
 		_pour_dust.scale_amount_min = 0.8
 		_pour_dust.scale_amount_max = 1.7
 		add_child(_pour_dust)
-	_dust.global_position = global_position + Vector3(0, 0.15, 0)
+	# (dust off the back of the tracks, low down, whichever way it's going)
+	_dust.global_position = global_position - forward() * signf(speed) * (length * 0.4) + Vector3(0, 0.1, 0)
 	_dust.emitting = absf(speed) > 0.4
 	_exhaust.global_position = global_transform * pipe
 	_exhaust.emitting = driver != 0
