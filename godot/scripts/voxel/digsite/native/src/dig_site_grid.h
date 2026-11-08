@@ -83,7 +83,12 @@ private:
 	int collapse(const Going &g);
 	// blades (dig_site_blade.cpp)
 	int moved_total_blade = 0;
-	std::vector<int16_t> start_tops;   // (each column's top cell as made: a dozer's CUT holds its depth under it)
+	std::vector<int16_t> start_tops;
+	// each column's top solid cell (-1: none), worked out again only when something in the column's changed (touch,
+	// apply_chunks, generate mark it): the mesher, the grass and clods, and column_top read it
+	mutable std::vector<int16_t> col_top;
+	mutable std::vector<uint8_t> col_dirty;
+	int top_cached(int x, int z) const;   // (each column's top cell as made: a dozer's CUT holds its depth under it)
 	uint32_t blade_rng = 12345u;
 	int dither(float v);
 	bool lay_on(int x, int z, uint8_t v, int top_y);

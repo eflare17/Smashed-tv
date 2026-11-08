@@ -139,6 +139,8 @@ void DigSiteGrid::generate(int seed) {
 	if (rng == 0)
 		rng = 1;
 	std::fill(cells.begin(), cells.end(), 0);
+	col_top.assign((size_t)w * d, -1);
+	col_dirty.assign((size_t)w * d, 1);
 	std::fill(chunk_mod.begin(), chunk_mod.end(), 0);
 	std::fill(chunk_touched.begin(), chunk_touched.end(), 0);
 	std::fill(hash_dirty.begin(), hash_dirty.end(), 1);
@@ -207,7 +209,30 @@ int DigSiteGrid::get_cell(int x, int y, int z) const {
 	return in(x, y, z) ? cells[idx(x, y, z)] : (y >= h ? 0 : 255);
 }
 
+int DigSiteGrid::top_cached(int x, int z) const {
+	if (x < 0 || z < 0 || x >= w || z >= d)
+		return -1;
+	size_t k = (size_t)z * w + x;
+	if (col_dirty.empty()) {
+		col_top.assign((size_t)w * d, -1);
+		col_dirty.assign((size_t)w * d, 1);
+	}
+	if (col_dirty[k]) {
+		int t = -1;
+		for (int y = h - 1; y >= 0; y--)
+			if ((cells[idx(x, y, z)] & MAT_MASK) != AIR) {
+				t = y;
+				break;
+			}
+		col_top[k] = (int16_t)t;
+		col_dirty[k] = 0;
+	}
+	return col_top[k];
+}
+
 void DigSiteGrid::touch(int x, int y, int z) {
+	if (!col_dirty.empty())
+		col_dirty[(size_t)z * w + x] = 1;
 	// every section within 2 cells (the smooth surface there is shaped by this cell: dig_site_mesh.cpp)
 	for (int sy = std::max(0, y - 2) / SH; sy <= std::min(h - 1, y + 2) / SH; sy++)
 		for (int sz = std::max(0, z - 2) / SW; sz <= std::min(d - 1, z + 2) / SW; sz++)
@@ -245,12 +270,7 @@ int DigSiteGrid::firm_top(int x, int z) const {
 }
 
 int DigSiteGrid::column_top(int x, int z) const {
-	if (x < 0 || z < 0 || x >= w || z >= d)
-		return -1;
-	for (int y = h - 1; y >= 0; y--)
-		if ((cells[idx(x, y, z)] & MAT_MASK) != AIR)
-			return y;
-	return -1;
+	return top_cached(x, z);
 }
 
 int DigSiteGrid::count_mat(int m) const {

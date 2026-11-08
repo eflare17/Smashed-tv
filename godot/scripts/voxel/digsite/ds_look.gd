@@ -8,6 +8,7 @@ extends Node
 ## digger game's 52 degrees. Owned by the voxel session.
 
 const FOV := 52.0
+const SUN_COMPAT := 0.5         # (the digger game's SUN_WEB: the compatibility renderer lights brighter; on it the sun's halved)
 const BLADES_PER_M2 := 36.0     # the digger game's "Medium" grass
 
 static var _noise: ImageTexture
@@ -169,7 +170,7 @@ func enter() -> void:
 			"nbias": sun.shadow_normal_bias, "mode": sun.directional_shadow_mode, "dist": sun.directional_shadow_max_distance, "split": sun.directional_shadow_split_1}
 		sun.rotation_degrees = Vector3(-47.0, -38.0, 0.0)
 		sun.light_color = Color("#fff1d2")
-		sun.light_energy = 0.66
+		sun.light_energy = 0.72 * (SUN_COMPAT if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 1.0)
 		sun.shadow_blur = 0.0
 		sun.shadow_bias = 0.7
 		sun.shadow_normal_bias = 3.5

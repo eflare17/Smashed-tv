@@ -28,22 +28,6 @@ static const float RING_SCALE[3] = {0.45f, 1.2f, 2.4f};
 Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
 	int x0 = sx * SW, y0 = sy * SH, z0 = sz * SW;
 	int x1 = std::min(w, x0 + SW), y1 = std::min(h, y0 + SH), z1 = std::min(d, z0 + SW);
-	// the ground's height (cells) in and round the section, for the cavity shade
-	int tx0 = x0 - RING_R[2] - 1, tz0 = z0 - RING_R[2] - 1;
-	int tnx = (x1 - x0) + 2 * RING_R[2] + 3, tnz = (z1 - z0) + 2 * RING_R[2] + 3;
-	std::vector<int16_t> tops((size_t)tnx * tnz);
-	for (int z = 0; z < tnz; z++)
-		for (int x = 0; x < tnx; x++) {
-			int gx = std::clamp(tx0 + x, 0, w - 1), gz = std::clamp(tz0 + z, 0, d - 1);
-			int t = -1;
-			for (int y = h - 1; y >= 0; y--)
-				if ((cells[idx(gx, y, gz)] & MAT_MASK) != AIR) {
-					t = y;
-					break;
-				}
-			tops[(size_t)z * tnx + x] = (int16_t)t;
-		}
-	auto top_at = [&](int x, int z) { return (int)tops[(size_t)std::clamp(z - tz0, 0, tnz - 1) * tnx + std::clamp(x - tx0, 0, tnx - 1)]; };
 	// cells [x0-2, x1+1] (and so on), solid or not
 	int cx0 = x0 - 2, cy0 = y0 - 2, cz0 = z0 - 2;
 	int cnx = (x1 - x0) + 4, cny = (y1 - y0) + 4, cnz = (z1 - z0) + 4;
@@ -69,20 +53,39 @@ Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
 		out.push_back(PackedFloat32Array());
 		return out;
 	}
+	// the ground's height (cells) in and round the section, for the cavity shade (the grid's column tops, cached)
+	int tx0 = x0 - RING_R[2] - 1, tz0 = z0 - RING_R[2] - 1;
+	int tnx = (x1 - x0) + 2 * RING_R[2] + 3, tnz = (z1 - z0) + 2 * RING_R[2] + 3;
+	std::vector<int16_t> tops((size_t)tnx * tnz);
+	for (int z = 0; z < tnz; z++)
+		for (int x = 0; x < tnx; x++)
+			tops[(size_t)z * tnx + x] = (int16_t)top_cached(std::clamp(tx0 + x, 0, w - 1), std::clamp(tz0 + z, 0, d - 1));
+	auto top_at = [&](int x, int z) { return (int)tops[(size_t)std::clamp(z - tz0, 0, tnz - 1) * tnx + std::clamp(x - tx0, 0, tnx - 1)]; };
 	// samples at the cell middles [x0-1, x1] (and so on): the share of the 27 round each that's solid
 	int sx0 = x0 - 1, sy0 = y0 - 1, sz0 = z0 - 1;
 	int snx = (x1 - x0) + 2, sny = (y1 - y0) + 2, snz = (z1 - z0) + 2;
 	std::vector<float> smp((size_t)snx * sny * snz);
 	auto si = [&](int x, int y, int z) { return ((y - sy0) * snz + (z - sz0)) * snx + (x - sx0); };
+	// (the 27 summed as three passes of three: along x, then z, then y; the same counts, a third of the reads)
+	std::vector<uint8_t> sx_((size_t)cnx * cny * cnz, 0), sz_((size_t)cnx * cny * cnz, 0);
+	for (int y = cy0; y < cy0 + cny; y++)
+		for (int z = cz0; z < cz0 + cnz; z++)
+			for (int x = cx0 + 1; x < cx0 + cnx - 1; x++) {
+				int k = ci(x, y, z);
+				sx_[k] = solid[k - 1] + solid[k] + solid[k + 1];
+			}
+	for (int y = cy0; y < cy0 + cny; y++)
+		for (int z = cz0 + 1; z < cz0 + cnz - 1; z++)
+			for (int x = cx0 + 1; x < cx0 + cnx - 1; x++) {
+				int k = ci(x, y, z);
+				sz_[k] = sx_[k - cnx] + sx_[k] + sx_[k + cnx];
+			}
+	int plane = cnx * cnz;
 	for (int y = sy0; y < sy0 + sny; y++)
 		for (int z = sz0; z < sz0 + snz; z++)
 			for (int x = sx0; x < sx0 + snx; x++) {
-				int n = 0;
-				for (int a = -1; a <= 1; a++)
-					for (int b = -1; b <= 1; b++)
-						for (int c = -1; c <= 1; c++)
-							n += solid[ci(x + c, y + a, z + b)];
-				smp[si(x, y, z)] = n / 27.0f;
+				int k = ci(x, y, z);
+				smp[si(x, y, z)] = (sz_[k - plane] + sz_[k] + sz_[k + plane]) / 27.0f;
 			}
 	// a vertex in each cube (between samples i..i+1) the surface passes through: cubes [x0-1, x1) (and so on)
 	int dnx = snx - 1, dny = sny - 1, dnz = snz - 1;
@@ -265,12 +268,7 @@ Array DigSiteGrid::decor_section(int sx, int sy, int sz, float blades_per_m2) co
 	int ring = 8;
 	for (int z = std::max(z0, ring); z < std::min(z1, d - ring); z++)
 		for (int x = std::max(x0, ring); x < std::min(x1, w - ring); x++) {
-			int top = -1;
-			for (int y = h - 1; y >= 0; y--)
-				if ((cells[idx(x, y, z)] & MAT_MASK) != AIR) {
-					top = y;
-					break;
-				}
+			int top = top_cached(x, z);
 			if (top < y0 || top >= y1)
 				continue;
 			uint8_t c = cells[idx(x, top, z)];

@@ -13,6 +13,10 @@ const H := 192
 const D := 512
 const SURFACE := 160            # the ground's base level (cell y): 20 m of ground under it, 4 m of air over
 const BUDGET_MS := 4.0          # building sections a frame, at most this long (more waits for the next frame)
+const R_NOW := 14.0             # m: changed sections this near a player are redrawn all together ...
+const NOW_HZ := 15.0            # ... this often (a heap crossing from one section into the next shows in both at once:
+                                # redrawn one at a time, nearest first, it vanished from one before it showed in the other)
+const NOW_MS := 8.0            # ... but for no longer than this a frame: a huge change (a blast) carries on next frame
 const R_MESH := 96.0            # metres from a player a section's drawn (the whole 64 m site from anywhere on it: a hole in the far ground shows the sky) ...
 const R_COL := 12.0             # ... and solid
 const R_DROP := 110.0           # (and its drawing let go past this: the site's let go once you're well away)
@@ -32,6 +36,7 @@ var built_n := 0                # (tests: sections built so far)
 var settle_on := true           # (the dirt runs here: solo or the host; a guest's shows the host's)
 var paused := false             # (the tests: the dirt held still)
 var _settle_acc := 0.0
+var _now_at := 0                # (ticks, ms: the near sections last redrawn together)
 var settle_moves := 0           # (tests: cells the dirt's moved)
 
 func setup(s: Node3D, at: Vector3, seed: int) -> void:
@@ -177,6 +182,7 @@ func step(budget_ms: float) -> int:
 		return 0
 	var t0 := Time.get_ticks_usec()
 	var due := []                   # [distance, index, want_col]
+	var now := []                   # (near, built, changed: redrawn together)
 	for sy in _dims.y:
 		for sz in _dims.z:
 			for sx in _dims.x:
@@ -194,18 +200,35 @@ func step(budget_ms: float) -> int:
 				if dist > R_MESH and s.is_empty():
 					continue
 				var has_col: bool = s.get("body") != null
-				if _dirty.has(i) or s.is_empty() or (want_col and not has_col and int(s.get("nf", 0)) > 0) or (not want_col and has_col):
+				if dist < R_NOW and _dirty.has(i) and not s.is_empty():
+					now.append([dist, i, want_col])
+				elif _dirty.has(i) or s.is_empty() or (want_col and not has_col and int(s.get("nf", 0)) > 0) or (not want_col and has_col):
 					due.append([dist, i, want_col])
-	if due.is_empty():
-		return 0
-	due.sort_custom(func(a, b): return a[0] < b[0])
 	var n := 0
+	var ms := Time.get_ticks_msec()
+	if not now.is_empty() and ms - _now_at >= int(1000.0 / NOW_HZ):
+		now.sort_custom(func(a, b): return a[0] < b[0])
+		var done := true
+		for e in now:
+			if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 > NOW_MS:
+				done = false
+				break
+			_build(int(e[1]), bool(e[2]))
+			n += 1
+		if done:
+			_now_at = ms                # (else the rest's built next frame, not a tick later)
+	if due.is_empty():
+		return n
+	due.sort_custom(func(a, b): return a[0] < b[0])
+	var built_now := n
+	n = 0
 	for e in due:
-		if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 > budget_ms:
+		# (at least one a frame, so the rest of the site catches up; not on top of a batch near the players)
+		if (n > 0 or built_now > 0) and (Time.get_ticks_usec() - t0) / 1000.0 > budget_ms:
 			break
 		_build(int(e[1]), bool(e[2]))
 		n += 1
-	return n
+	return n + built_now
 
 func _free(i: int) -> void:
 	var s: Dictionary = _sec.get(i, {})
