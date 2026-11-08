@@ -16,7 +16,8 @@ const BUDGET_MS := 4.0          # building sections a frame, at most this long (
 const R_NOW := 20.0             # m (to a section's nearest side): changed sections this near a player are redrawn all together ...
 const NOW_HZ := 15.0            # ... this often (a heap crossing from one section into the next shows in both at once:
                                 # redrawn one at a time, nearest first, it vanished from one before it showed in the other)
-const NOW_MS := 8.0            # ... but for no longer than this a frame: a huge change (a blast) carries on next frame
+const NOW_MS := 8.0
+const NOW_MOST := 6             # sections in a batch at most (a heap spans a few; a blast's many go in several batches)            # ... but for no longer than this a frame: a huge change (a blast) carries on next frame
 const R_MESH := 96.0            # metres from a player a section's drawn (the whole 64 m site from anywhere on it: a hole in the far ground shows the sky) ...
 const R_COL := 12.0             # ... and solid
 const R_DROP := 110.0           # (and its drawing let go past this: the site's let go once you're well away)
@@ -37,6 +38,8 @@ var settle_on := true           # (the dirt runs here: solo or the host; a guest
 var paused := false             # (the tests: the dirt held still)
 var _settle_acc := 0.0
 var _now_at := 0                # (ticks, ms: the near sections last redrawn together)
+var _batch: Array = []          # (the near batch under way: [[index, want_col]] ...
+var _batch_prep := {}           # ... and what's made of it so far: index -> _prep's; shown together once it's all made)
 var _build_ms := 2.0            # (what a section's redraw costs, on average: none's started that would run past a cap)
 var settle_moves := 0           # (tests: cells the dirt's moved)
 
@@ -207,17 +210,33 @@ func step(budget_ms: float) -> int:
 					due.append([dist, i, want_col])
 	var n := 0
 	var ms := Time.get_ticks_msec()
-	if not now.is_empty() and ms - _now_at >= int(1000.0 / NOW_HZ):
+	if _batch.is_empty() and not now.is_empty() and ms - _now_at >= int(1000.0 / NOW_HZ):
 		now.sort_custom(func(a, b): return a[0] < b[0])
-		var done := true
-		for e in now:
-			if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 + _build_ms > NOW_MS:
-				done = false
-				break
-			_timed_build(int(e[1]), bool(e[2]))
-			n += 1
-		if done:
-			_now_at = ms                # (else the rest's built next frame, not a tick later)
+		_batch = now.slice(0, NOW_MOST)
+		_now_at = ms
+		for e in _batch:
+			_dirty.erase(int(e[1]))       # (changed again while it's being made: it's in the next batch)
+	if not _batch.is_empty():
+		# made a few a frame (up to NOW_MS), shown all in the same frame once they're all made: a heap crossing
+		# from one section into the next is never drawn in neither
+		if _batch_prep.size() >= _batch.size():
+			# (all made last frame or before: shown now, in a frame of their own)
+			for e in _batch:
+				_apply(int(e[1]), _batch_prep[int(e[1])])
+			n += _batch.size()
+			_batch.clear()
+			_batch_prep.clear()
+		else:
+			for e in _batch:
+				var bi := int(e[1])
+				if _batch_prep.has(bi):
+					continue
+				if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 + _build_ms > NOW_MS:
+					break
+				var tb := Time.get_ticks_usec()
+				_batch_prep[bi] = _prep(bi, bool(e[2]), true)
+				_build_ms = lerpf(_build_ms, (Time.get_ticks_usec() - tb) / 1000.0, 0.2)
+				n += 1
 	if due.is_empty():
 		return n
 	due.sort_custom(func(a, b): return a[0] < b[0])
@@ -254,20 +273,22 @@ func _free(i: int) -> void:
 func _build(i: int, want_col: bool) -> void:
 	var s: Dictionary = _sec.get(i, {})
 	var rebuild: bool = _dirty.has(i) or s.is_empty()
+	_dirty.erase(i)
+	_apply(i, _prep(i, want_col, rebuild))
+
+## A section's new drawing made, but not shown: its mesh, grass, clods and collision shape as resources nothing's
+## using yet (the near batch makes its sections' over a few frames, then shows them all at once: _apply)
+func _prep(i: int, want_col: bool, rebuild: bool) -> Dictionary:
+	var s: Dictionary = _sec.get(i, {})
+	var p := {"rebuild": rebuild, "want_col": want_col}
 	var faces: PackedVector3Array = s.get("faces", PackedVector3Array())
 	if rebuild:
-		_dirty.erase(i)
 		var sx := i % _dims.x
 		var sz := (i / _dims.x) % _dims.z
 		var sy := i / (_dims.x * _dims.z)
 		var arr: Array = grid.mesh_section(sx, sy, sz)
 		faces = arr[0]
-		var mi: MeshInstance3D = s.get("mi")
-		if faces.is_empty():
-			if mi:
-				mi.queue_free()
-				mi = null
-		else:
+		if not faces.is_empty():
 			var a := []
 			a.resize(Mesh.ARRAY_MAX)
 			a[Mesh.ARRAY_VERTEX] = faces
@@ -276,21 +297,44 @@ func _build(i: int, want_col: bool) -> void:
 			a[Mesh.ARRAY_CUSTOM0] = arr[3]
 			var m := ArrayMesh.new()
 			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+			p["mesh"] = m
+			# what stands on it: grass where it's untouched, lumps on the loose dirt
+			var dec: Array = grid.decor_section(sx, sy, sz, DsLook.BLADES_PER_M2)
+			p["grass"] = _multimesh(dec[0], 12, DsLook.blade_mesh(), false)
+			p["clods"] = _multimesh(dec[1], 16, DsLook.clod_mesh(sx + sz * 3), true)
+	p["faces"] = faces
+	# collision: near a player, from the same faces
+	var body: StaticBody3D = s.get("body")
+	if want_col and not faces.is_empty() and (rebuild or body == null or (body.get_child(0) as CollisionShape3D).shape == null):
+		var sh := ConcavePolygonShape3D.new()
+		sh.backface_collision = true
+		sh.set_faces(faces)
+		p["shape"] = sh
+	return p
+
+## A section's drawing shown: what _prep made swapped in (quick: it's all made already)
+func _apply(i: int, p: Dictionary) -> void:
+	var s: Dictionary = _sec.get(i, {})
+	var faces: PackedVector3Array = p.faces
+	if p.rebuild:
+		var mi: MeshInstance3D = s.get("mi")
+		if faces.is_empty():
+			if mi:
+				mi.queue_free()
+				mi = null
+		else:
 			if mi == null:
 				mi = MeshInstance3D.new()
 				mi.material_override = _mat
 				mi.position = origin
 				add_child(mi)
-			mi.mesh = m
-		# what stands on it: grass where it's untouched, lumps on the loose dirt
-		var dec: Array = grid.decor_section(sx, sy, sz, DsLook.BLADES_PER_M2) if not faces.is_empty() else [PackedFloat32Array(), PackedFloat32Array()]
-		var grass := _multi(s.get("grass"), dec[0], 12, DsLook.blade_mesh(), DsLook.grass_mat(), false)
-		var clods := _multi(s.get("clods"), dec[1], 16, DsLook.clod_mesh(sx + sz * 3), DsLook.clod_mat(), true)
+			mi.mesh = p.mesh
+		var grass := _show_multi(s.get("grass"), p.get("grass"), DsLook.grass_mat())
+		var clods := _show_multi(s.get("clods"), p.get("clods"), DsLook.clod_mat())
 		s = {"mi": mi, "body": s.get("body"), "faces": faces, "nf": faces.size() / 6, "grass": grass, "clods": clods}
 		built_n += 1
-	# collision: near a player, from the same faces
 	var body: StaticBody3D = s.get("body")
-	if want_col and not faces.is_empty():
+	if p.want_col and not faces.is_empty():
 		if body == null:
 			body = StaticBody3D.new()
 			body.collision_layer = 1
@@ -300,37 +344,40 @@ func _build(i: int, want_col: bool) -> void:
 			add_child(body)
 			var cs := CollisionShape3D.new()
 			body.add_child(cs)
-		if rebuild or (body.get_child(0) as CollisionShape3D).shape == null:
-			var sh := ConcavePolygonShape3D.new()
-			sh.backface_collision = true
-			sh.set_faces(faces)
-			(body.get_child(0) as CollisionShape3D).shape = sh
-	elif body != null and (not want_col or faces.is_empty()):
+		if p.has("shape"):
+			(body.get_child(0) as CollisionShape3D).shape = p.shape
+	elif body != null and (not p.want_col or faces.is_empty()):
 		body.queue_free()
 		body = null
 	s["body"] = body
 	_sec[i] = s
 
-## A section's grass or clods: the MultiMesh filled from the grid's buffer (made, kept or dropped as there's anything)
-func _multi(mmi: MultiMeshInstance3D, buf: PackedFloat32Array, stride: int, mesh: Mesh, mat: Material, colours: bool) -> MultiMeshInstance3D:
+## A grass or clods MultiMesh from the grid's buffer (null: none)
+func _multimesh(buf: PackedFloat32Array, stride: int, mesh: Mesh, colours: bool) -> MultiMesh:
 	var n := buf.size() / stride
 	if n == 0:
+		return null
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = colours
+	mm.mesh = mesh
+	mm.instance_count = n
+	mm.buffer = buf
+	return mm
+
+## A section's grass or clods shown (the node made, kept or dropped as there's anything)
+func _show_multi(mmi: MultiMeshInstance3D, mm: MultiMesh, mat: Material) -> MultiMeshInstance3D:
+	if mm == null:
 		if mmi:
 			mmi.queue_free()
 		return null
 	if mmi == null:
 		mmi = MultiMeshInstance3D.new()
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = colours
-		mm.mesh = mesh
-		mmi.multimesh = mm
 		mmi.material_override = mat
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mmi.position = origin
 		add_child(mmi)
-	mmi.multimesh.instance_count = n
-	mmi.multimesh.buffer = buf
+	mmi.multimesh = mm
 	return mmi
 
 ## Everything near the players built now, whatever it takes (arriving: the screen's black anyway)
