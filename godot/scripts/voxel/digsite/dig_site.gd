@@ -5,12 +5,13 @@ extends Node3D
 ## on the phone's Travel. You dig it, tunnel it and drive machines on it; with a mate, you both go (the host's Dig Site:
 ## its ground, its machines). The arena waits while you're here (VoxelArena.elsewhere).
 ##
-## Stage 1: the site itself, travel there and back, together in co-op. The ground, the tools, the dirt, the machines,
+## Stage 1: the site itself, travel there and back, together in co-op. Stage 2: the voxel ground (DsTerrain). The tools, the dirt, the machines,
 ## the cave-ins and the rest come in later stages (docs/digsite_notes.md). Owned by the voxel session.
 
 const AT := Vector3(3000.0, 0.0, 0.0)     # the site's middle at ground level
 const SIZE := 64.0                        # metres across (x and z)
-const SPAWN := Vector3(0.0, 0.05, 26.0)   # where you arrive: by the site office, looking in across the site
+const SPAWN := Vector3(4.0, 0.05, 36.0)   # where you arrive: at the gate by the site office, looking in across the site
+const SEED := 20261108                    # the ground's (stage 12 keeps a site's own)
 
 var arena: Node3D                         # VoxelArena
 var active := false
@@ -22,6 +23,7 @@ var _was_frozen := false
 var _debris_bound := INF
 var _help_text := ""
 var _hud: Label
+var terrain: DsTerrain                    # the voxel ground (stage 2)
 
 func setup(a: Node3D) -> void:
 	arena = a
@@ -47,7 +49,7 @@ static func world(local: Vector3) -> Vector3:
 
 ## Whether a world point is on the site
 static func on_site(p: Vector3) -> bool:
-	return absf(p.x - AT.x) < SIZE * 0.5 + 4.0 and absf(p.z - AT.z) < SIZE * 0.5 + 4.0
+	return absf(p.x - AT.x) < SIZE * 0.5 + 12.0 and absf(p.z - AT.z) < SIZE * 0.5 + 12.0   # (the gate and the office too)
 
 # ---------------------------------------------------------------- the site
 
@@ -57,14 +59,19 @@ func _build() -> void:
 	body.collision_layer = 1
 	body.collision_mask = 0
 	add_child(body)
-	var dirt := _mat(Color8(122, 86, 52))
 	var grass := _mat(Color8(86, 120, 58))
 	var fence := _mat(Color8(220, 140, 40))
 	var hut := _mat(Color8(214, 218, 222))
 	var roof := _mat(Color8(70, 86, 110))
-	# (stage 1's ground: a flat pad of dirt in a field; stage 2 puts the voxel ground in its place)
-	_box(body, Vector3(SIZE + 40.0, 1.0, SIZE + 40.0), Vector3(0, -0.5, 0), grass)
-	_box(body, Vector3(SIZE, 0.04, SIZE), Vector3(0, 0.02, 0), dirt)
+	# the voxel ground in the middle (stage 2), the field round it (four slabs: none under the ground)
+	terrain = DsTerrain.new()
+	add_child(terrain)
+	terrain.setup(self, AT, SEED)
+	var f := SIZE + 40.0
+	var band := (f - SIZE) * 0.5
+	for sgn in [-1.0, 1.0]:
+		_box(body, Vector3(f, 1.0, band), Vector3(0, -0.5, sgn * (SIZE * 0.5 + band * 0.5)), grass)
+		_box(body, Vector3(band, 1.0, SIZE), Vector3(sgn * (SIZE * 0.5 + band * 0.5), -0.5, 0), grass)
 	# the site fence: orange mesh panels on posts round the dirt, a gap at the front
 	var half := SIZE * 0.5 + 1.0
 	for side in 4:
@@ -151,6 +158,7 @@ func go() -> void:
 	_hud.visible = true
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
+	terrain.build_now(900.0)                  # (the screen's black: the ground near you there before you see it, the rest streams in)
 
 ## Back to the arena, where you were.
 func home() -> void:

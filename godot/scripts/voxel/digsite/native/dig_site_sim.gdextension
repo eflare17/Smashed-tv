@@ -1,0 +1,11 @@
+[configuration]
+
+entry_symbol = "dig_site_sim_init"
+compatibility_minimum = 4.1
+
+[libraries]
+
+linux.debug.x86_64 = "bin/libdig_site_sim.linux.x86_64.so"
+linux.release.x86_64 = "bin/libdig_site_sim.linux.x86_64.so"
+windows.debug.x86_64 = "bin/dig_site_sim.windows.x86_64.dll"
+windows.release.x86_64 = "bin/dig_site_sim.windows.x86_64.dll"
