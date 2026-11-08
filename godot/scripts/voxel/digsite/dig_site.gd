@@ -25,6 +25,7 @@ var _help_text := ""
 var _hud: Label
 var terrain: DsTerrain                    # the voxel ground (stage 2)
 var tools: DsTools                        # the hand tools' digging and tiers (stage 3)
+var net: DsNet                            # co-op: the host's ground, the guest's actions (stage 5)
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -45,6 +46,9 @@ func setup(a: Node3D) -> void:
 	_hud.add_theme_constant_override("outline_size", 8)
 	_hud.visible = false
 	a._hud_layer.add_child(_hud)
+	net = DsNet.new()
+	add_child(net)
+	net.setup(self)
 	tools = DsTools.new(self)
 	if a.get("stash") != null:
 		tools.load_data(a.stash.ds_tools)
@@ -73,6 +77,8 @@ func _build() -> void:
 	terrain = DsTerrain.new()
 	add_child(terrain)
 	terrain.setup(self, AT, SEED)
+	terrain.hook(net)
+	tools.hook(net)
 	var f := SIZE + 40.0
 	var band := (f - SIZE) * 0.5
 	for sgn in [-1.0, 1.0]:
@@ -178,11 +184,13 @@ func go() -> void:
 	var spot := SPAWN + (Vector3(1.5, 0, 0) if _is_guest() else Vector3.ZERO)     # (the two of you side by side)
 	_put(AT + spot, 0.0, -0.1)
 	terrain.build_now(900.0)                  # (the screen's black: the ground near you there before you see it, the rest streams in)
+	net.arrived()                             # (a guest: the host's ground asked for)
 
 ## Back to the arena, where you were.
 func home() -> void:
 	if not active:
 		return
+	net.left()
 	active = false
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
@@ -256,6 +264,9 @@ func _both(there: bool) -> void:
 
 ## Messages from the other game (VoxelNet "D")
 func on_net(m: Array) -> void:
+	if not m.is_empty() and String(m[0]) == "n":
+		net.on_net(m.slice(1))                # (the ground's sync: DsNet)
+		return
 	if m.is_empty():
 		return
 	var n = _net()

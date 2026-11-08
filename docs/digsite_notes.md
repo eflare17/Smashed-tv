@@ -57,6 +57,24 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   most; the rest waits. Dumped dirt (the shovel's right click, machines' buckets) is loose.
 - The stage 4 commit also carries the C++ for stage 5's sync (chunk diffs, checksums), built in the same library.
 
+- **Co-op sync (stage 5).** `ds_net.gd` (DsNet), the layer later stages plug into, after the shared mine's MineNet:
+  - The host owns the ground and runs the dirt. Arriving, the guest says "hello" and gets the host's seed plus every
+    chunk changed since the ground was made (zstd, in 48 KB parts). Its own site is kept aside and put back when it
+    goes home.
+  - The host sends the 16^3 chunks changed since last time, 15 times a second (zstd), with the number of the guest's
+    last action it has done.
+  - Actions (`act(kind, args)`, handlers by `register_op`): "dig", "fill", "drop" now; later stages add theirs. The
+    guest does each at once on its own copy (instant, and its backpack gets what came up) and sends it; until the
+    host's chunks confirm it, the guest re-does it on top of each update.
+  - Every 2 s the host sends its sections' checksums (each chunk's hashed only when changed); the guest (with nothing
+    of its own pending) compares and asks for any section that's drifted, and gets its chunks back.
+  - Events (`event`, `register_event`): one-off fx, e.g. the other player's tool dust and sound. Fast states
+    (`send_fast`, first byte 68, `register_fast` by id): unreliable, for machines from stage 6.
+  - Players and tool swings were already synced by the arena's net. Tested with two copies, also at 150 ms lag and
+    10% loss (`test/voxel/digsite_sync_test.gd`).
+  - Rough edges: the guest's backpack takes its own dig's result, not the host's (a race could differ by a few
+    blocks). Joining a session while the host is already at the site: travel again to get there.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -68,3 +86,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 2. 3D voxel ground: done (`test/voxel/digsite_ground_test.gd`, 20 checks).
 3. Hand tools: done (`test/voxel/digsite_tools_test.gd`, 15 checks).
 4. Loose dirt: done (`test/voxel/digsite_dirt_test.gd`, 10 checks; 2 more in the ground test).
+5. Co-op sync: done (`test/voxel/digsite_sync_test.gd`, two copies, with and without lag).

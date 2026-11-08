@@ -113,8 +113,15 @@ func _near_points() -> Array:
 		out.append(n._o_target)
 	return out
 
+## The ground's changes as DsNet actions (done here, and on the host's ground for a guest)
+func hook(n: DsNet) -> void:
+	n.register_op("dig", func(a: Array, _again: bool): return grid.dig_sphere(a[0], float(a[1]), int(a[2])))
+	n.register_op("fill", func(a: Array, _again: bool): return grid.fill_sphere(a[0], float(a[1]), int(a[2]), int(a[3]), bool(a[4])))
+	n.register_op("drop", func(a: Array, _again: bool): return grid.drop_column(int(a[0]), int(a[1]), int(a[2]), int(a[3])))
+
 func _process(dt: float) -> void:
 	_settle_acc += dt
+	settle_on = site.net == null or site.net.runs()
 	if settle_on and not paused and _settle_acc >= 1.0 / SETTLE_HZ:
 		_settle_acc = 0.0
 		settle_moves += grid.settle(SETTLE_US)

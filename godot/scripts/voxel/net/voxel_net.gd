@@ -1008,6 +1008,9 @@ func _got(d: PackedByteArray) -> void:
 		77:
 			if arena.mine and arena.mine.net:
 				arena.mine.net.on_fast(d)                # (the other's Mole down the shared mine)
+		68:
+			if arena.get("digsite") and arena.digsite.net:
+				arena.digsite.net.on_fast(d)             # (a Dig Site machine's state, or its driver's controls)
 		82:
 			var msg = bytes_to_var(d.slice(1))
 			if typeof(msg) == TYPE_ARRAY:
@@ -1169,6 +1172,11 @@ func send_barbecue(m: Array) -> void:
 func send_digsite(m: Array) -> void:
 	if linked:
 		_send(["D"] + m)
+
+## The Dig Site's fast states (DsNet: its first byte 68), either way, unreliable.
+func send_digsite_fast(d: PackedByteArray) -> void:
+	if linked:
+		_send_fast(d)
 
 ## The shared mine's (MineNet), either way, reliable.
 func send_mine(m: Array) -> void:

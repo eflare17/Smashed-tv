@@ -39,6 +39,37 @@ func _init(s: Node3D) -> void:
 func arena() -> Node3D:
 	return site.arena
 
+## The other game's tool bit: its dust and its sound shown here too
+func hook(n: DsNet) -> void:
+	n.register_event("fx", _fx_in)
+
+func _fx_in(a: Array) -> void:
+	if a.size() < 3 or not site.active:
+		return
+	var p: Vector3 = a[1]
+	var m := int(a[2])
+	var snd := String(a[0])
+	site.arena.sound.play(snd, p, -4.0, randf_range(0.9, 1.1))
+	if snd != "dig_clang":
+		_dust_at(p, DsMats.COL[clampi(m, 0, DsMats.COL.size() - 1)])
+
+func _dust_at(p: Vector3, col: Color) -> void:
+	var tool = site.arena.melee.get("shovel")
+	if tool:
+		tool._dust(p, col)
+
+## Blocks within r of p (no harder than hardest) dug out (through DsNet: a guest's goes to the host's too)
+func dig_at(p: Vector3, r: float, hardest: int) -> Dictionary:
+	var tr: DsTerrain = site.terrain
+	var got = site.net.act("dig", [tr.to_cells(p), r / DsTerrain.CELL, hardest])
+	return got if got is Dictionary else {"counts": PackedInt32Array(), "n": 0, "refused": 0}
+
+## Up to most loose blocks of m put into the air within r of p (lowest first): how many
+func fill_at(p: Vector3, r: float, m: int, most: int) -> int:
+	var tr: DsTerrain = site.terrain
+	var got = site.net.act("fill", [tr.to_cells(p), r / DsTerrain.CELL, m, most, true])
+	return int(got) if got != null else 0
+
 # ---------------------------------------------------------------- tiers
 
 ## A tool's stats at the Dig Site ([radius, hardest, seconds, name]), or [] (not one of these)
@@ -120,8 +151,10 @@ func office_make() -> bool:
 ## A tool (VoxelTool) bites the ground at p (normal n): dug blocks into the backpack, or (the shovel's right click,
 ## filling) dirt out of it put back. -> blocks moved
 func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
-	var tr: DsTerrain = site.terrain
 	var a := arena()
+	if not site.net.can_change():
+		a.say("Waiting for your mate's ground ...", 1.0)
+		return 0
 	var st: Array = tool.stats()
 	var r: float = st[0]
 	if filling:
@@ -129,22 +162,24 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		if have <= 0:
 			a.say("No dirt in your backpack to fill with", 1.5)
 			return 0
-		var k := tr.fill(p + n * r * 0.6, r, DsMats.DIRT, have, true)
+		var k := fill_at(p + n * r * 0.6, r, DsMats.DIRT, have)
 		if k > 0:
 			a.inv.remove("dirt", k)
 			tool.sfx("dig_dirt", p, -2.0, 0.85)
 			tool._dust(p, DsMats.COL[DsMats.DIRT])
+			site.net.event("fx", ["dig_dirt", p, DsMats.DIRT])
 		return k
 	if tool.weapon_id == "shovel" and tool.tier == 0 and randf() < 0.25:
 		r *= 0.6                  # (the rusty one slips: half a scoop)
 		tool.sfx("dig_scrape", p, -4.0)
-	var got: Dictionary = tr.dig(p - n * r * 0.45, r, int(st[1]))
+	var got: Dictionary = dig_at(p - n * r * 0.45, r, int(st[1]))
 	if VoxelBody.credit and a.get("guide"):
 		a.guide.tried("dig")
 	var counts: PackedInt32Array = got.counts
 	if int(got.n) == 0:
 		tool.sfx("dig_clang", p, -2.0)
 		tool._dust(p, Color8(200, 200, 200))
+		site.net.event("fx", ["dig_clang", p, 0])
 		a.say(_too_hard(tool.weapon_id, int(got.refused), String(st[3])), 1.5)
 		return 0
 	var rock := 0
@@ -162,8 +197,10 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		var id: String = DsMats.ITEM[m] if m < DsMats.ITEM.size() else ""
 		if id != "":
 			a.receive({"id": id, "n": c}, "inv")
-	tool.sfx("dig_stone" if rock * 2 > int(got.n) else "dig_dirt", p, -2.0, randf_range(0.9, 1.1))
+	var snd := "dig_stone" if rock * 2 > int(got.n) else "dig_dirt"
+	tool.sfx(snd, p, -2.0, randf_range(0.9, 1.1))
 	tool._dust(p, DsMats.COL[best])
+	site.net.event("fx", [snd, p, best])
 	for m in [DsMats.GEM, DsMats.GOLD, DsMats.IRON, DsMats.COAL]:
 		if m < counts.size() and counts[m] > 0:
 			var id: String = DsMats.ITEM[m]
