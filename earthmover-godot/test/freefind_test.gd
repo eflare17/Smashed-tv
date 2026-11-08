@@ -13,6 +13,8 @@ var hold_from := 0
 var hold_spot := Vector2.ZERO
 var hold_h := []
 var hold_total := 0
+var drag_at := Vector2.ZERO
+var look_was := []
 
 func check(ok: bool, what: String) -> void:
 	print(("pass  " if ok else "FAIL  ") + what)
@@ -38,6 +40,8 @@ func _start(big: bool, seed: int) -> void:
 
 func _process(_d: float) -> bool:
 	t += 1
+	if stage == 1 and t >= 40 and t <= 56:
+		_drag_look(t - 40)
 	if stage == 1 and t > 20 and Time.get_ticks_msec() - hold_from >= 3000:
 		_hold_dig_check()
 		stage = 2
@@ -133,6 +137,37 @@ func _hold_dig_start() -> void:
 	check(g.active == w, "he's out and on foot")
 	Input.action_press("spade")
 	hold_from = Time.get_ticks_msec()
+
+## While DIG's held, a thumb on the screen dragged sideways: it should look round, not walk him.
+func _drag_look(i: int) -> void:
+	var size: Vector2 = g.get_viewport().get_visible_rect().size
+	if i == 0:
+		for k: Vector2 in [Vector2(0.35, 0.6), Vector2(0.5, 0.5), Vector2(0.25, 0.4), Vector2(0.6, 0.35)]:
+			drag_at = size * k
+			if not g._on_touch_button(drag_at):
+				break
+		look_was = [g.look_off, g.workers[0].spot, g.workers[0].angle]
+		var down := InputEventScreenTouch.new()
+		down.index = 3
+		down.position = drag_at
+		down.pressed = true
+		Input.parse_input_event(down)
+		return
+	var e := InputEventScreenDrag.new()
+	e.index = 3
+	e.position = drag_at + Vector2(i * size.x * 0.01, 0.0)
+	e.relative = Vector2(size.x * 0.01, 0.0)
+	Input.parse_input_event(e)
+	if i == 16:
+		var up := InputEventScreenTouch.new()
+		up.index = 3
+		up.position = e.position
+		up.pressed = false
+		Input.parse_input_event(up)
+		var w: Worker = g.workers[0]
+		print("      dragged a thumb while holding DIG: camera turned %.2f rad, he moved %.2f m and turned %.2f rad" % [g.look_off - look_was[0], w.spot.distance_to(look_was[1]), absf(w.angle - look_was[2])])
+		check(absf(g.look_off - look_was[0]) > 0.05, "holding DIG, the other thumb looks round")
+		check(w.spot.distance_to(look_was[1]) < 0.01 and absf(w.angle - look_was[2]) < 0.01, "and doesn't walk or turn him")
 
 func _hold_dig_check() -> void:
 	var w: Worker = g.workers[0]

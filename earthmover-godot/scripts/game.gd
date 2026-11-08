@@ -2719,7 +2719,14 @@ func _unhandled_input(e: InputEvent) -> void:
 		# Each finger's own position, not `relative`, which goes wrong with two fingers on some phones (Kev's game).
 		var moved: Vector2 = e.position - fingers[e.index]
 		fingers[e.index] = e.position
-		if e.index == stick_finger:
+		if e.index == stick_finger and _dig_looking():
+			# Holding DIG he stands to dig, so the other thumb looks round instead (owner's pick, 9 Nov). The stick's middle comes
+			# along with the finger, so letting go of DIG doesn't set him off walking.
+			_look(moved)
+			stick_from = e.position
+			stick_at = e.position
+			stick_ui.queue_redraw()
+		elif e.index == stick_finger:
 			stick_at = e.position
 			stick_ui.queue_redraw()
 		elif e.index == stick2_finger:
@@ -2737,6 +2744,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			_look(moved * 0.5)
 		else:
 			_look(moved)
+
+## On foot with DIG held: a thumb on the screen looks round rather than walking.
+func _dig_looking() -> bool:
+	return mode == "Drive" and active is Worker and (active as Worker).dig_hold
 
 func _look(moved: Vector2) -> void:
 	var k := 1.9 / maxf(get_viewport().get_visible_rect().size.y, 1.0)
@@ -2776,7 +2787,10 @@ func _physics_process(dt: float) -> void:
 	elif mode == "Drive" and menu == null:
 		var reach: float = get_viewport().get_visible_rect().size.y * 0.14
 		var stick := Vector2.ZERO
-		if stick_finger >= 0:
+		if stick_finger >= 0 and _dig_looking():
+			# Digging, the thumb that was walking him only looks: he stands still.
+			stick_from = stick_at
+		elif stick_finger >= 0:
 			stick = ((stick_at - stick_from) / reach).limit_length(1.0)
 		var moved := Vector2(Input.get_axis("dz_left", "dz_right"), Input.get_axis("dz_forward", "dz_back")) + stick
 		if active == digger:

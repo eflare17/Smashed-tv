@@ -22,6 +22,7 @@ func _init() -> void:
 		buried_test(kind)
 	bucket_test()
 	dozer_test()
+	ride_test()
 	shovel_test()
 	DirtSim.set_world(32.0)
 	Engine.set_meta("mission", "buried_find")
@@ -273,6 +274,101 @@ func dozer_test() -> void:
 			through += 1
 	print("      dozer: %d%% of it uncovered, at %.1f m along" % [int(f.uncovered(s) * 100.0), d.spot.x - f.at.x])
 	check(through == 0, "the dozer's CUT strips over it without cutting into it (%d cells)" % through)
+	check(s.total() == total, "no soil lost")
+	d.queue_free()
+
+## Riding over (owner, 9 Nov: "getting stuck on it"): the excavator's bucket dragged in low across the car, dug out round it, goes
+## up and over it rather than stopping at its side; and the dozer, blade down into the dirt over it, keeps going over it.
+func ride_test() -> void:
+	var w := _world()
+	var s: DirtSim = w[1]
+	var patch: Rect2 = w[3]
+	var f := Find.make(7, patch, s.height_at(patch.get_center()), "car")
+	f.lay(s)
+	var c := DirtSim.cell_of(f.at)
+	var reach := int((f.radius + 6.0) / DirtSim.CELL_M)
+	for j in range(c.y - reach, c.y + reach + 1):
+		for i in range(c.x - reach, c.x + reach + 1):
+			var n := j * DirtSim.CELLS + i
+			s.bed[n] = maxi(int(f.base * 1000.0), s.hard[n])
+			s.soil[n] = 0
+	var e := Excavator.new()
+	e.make_big(1.9)
+	root.add_child(e)
+	var dir := Vector2(1.0, 0.3).normalized()
+	e.setup(s, w[2], StandardMaterial3D.new(), f.at - dir * 13.0, dir)
+	e.curl = 1.2
+	# The teeth out past the far side of it, low.
+	for tries in 12:
+		var along := (Vector2(e.teeth.x, e.teeth.z) - e.spot).dot(dir)
+		e.wrist = Vector2(e.wrist.x + (13.0 + f.radius + 1.0 - along) / e.size, e.wrist.y - (e.teeth.y - (f.base + 0.25)) / e.size)
+		for k in 10:
+			e.step(DT)
+	var start := (Vector2(e.teeth.x, e.teeth.z) - f.at).dot(dir)
+	var deepest := 0.0
+	for k in int(5.0 / DT):
+		e.reach_cmd = -0.6
+		e.step(DT)
+		s.step(DT, 1000000)
+		# Measured on the grid, as the game holds it: its drawn edge can run up to half a cell past that.
+		var top: float = e._find_top_at(e.teeth)
+		if top > -INF:
+			deepest = maxf(deepest, top - e.teeth.y)
+	e.reach_cmd = 0.0
+	var finish := (Vector2(e.teeth.x, e.teeth.z) - f.at).dot(dir)
+	print("      bucket dragged in low across it: from %.1f m past its middle to %.1f m, never more than %.2f m into it" % [start, finish, deepest])
+	check(start > 1.5 and finish < -1.0, "the bucket dragged in across it rides up and over it, not stuck at its side")
+	check(deepest < 0.1, "and never goes into it")
+	e.queue_free()
+	# The dozer: the car back under 30 cm of dirt, the blade let right down, driven at it.
+	w = _world()
+	s = w[1]
+	f = Find.make(7, patch, s.height_at(patch.get_center()), "car")
+	f.lay(s)
+	# Dug down all round to a flat floor 10 cm over its roof, and the dozer's CUT taking 20 cm off it: so its blade's set below the roof.
+	var roof := 0
+	for top_mm in f.tops:
+		roof = maxi(roof, top_mm) if roof != 0 else top_mm
+	var c2 := DirtSim.cell_of(f.at)
+	var reach2 := int(18.0 / DirtSim.CELL_M)
+	for j in range(c2.y - reach2 / 2, c2.y + reach2 / 2 + 1):
+		for i in range(c2.x - reach2, c2.x + reach2 + 1):
+			var n := j * DirtSim.CELLS + i
+			s.bed[n] = roof + 100
+			s.soil[n] = 0
+	s.mark_start_ground()
+	var total := s.total()
+	var d := Dozer.new()
+	d.make_big(1.9)
+	root.add_child(d)
+	d.setup(s, w[2], StandardMaterial3D.new(), f.at - Vector2(14.0, 0.0), Vector2(1.0, 0.0))
+	var stopped := 0.0
+	var lowest_edge := INF
+	for k in int(14.0 / DT):
+		d.throttle = 1.0
+		if k == 0:
+			d.set_cut(true)
+		d.step(DT)
+		s.step(DT, 1000000)
+		if k == 179:
+			# Where CUT has the blade, before it's anywhere near the car.
+			lowest_edge = (d.transform * (d._pivot.transform * Vector3(Dozer.EDGE_X, 0.0, 0.0))).y
+		if absf(d.spot.x - f.at.x) < f.radius and d.speed < 0.05:
+			stopped += DT
+	var through := 0
+	for n in f.cells:
+		if s.bed[n] < s.hard[n]:
+			through += 1
+	print("      dozer with CUT driven at it: got to %.1f m past its middle, stood still on it %.1f s, %d%% uncovered" % [d.spot.x - f.at.x, stopped, int(f.uncovered(s) * 100.0)])
+	var firm_over := 0
+	var loose_over := 0
+	for k in f.cells.size():
+		firm_over += s.bed[f.cells[k]] - f.tops[k]
+		loose_over += s.soil[f.cells[k]]
+	print("      over it now: firm %d mm, loose %d mm, on average; roof %d, floor was %d" % [firm_over / f.cells.size(), loose_over / f.cells.size(), roof, roof + 100])
+	check(d.spot.x > f.at.x + f.radius and stopped < 1.0, "the dozer's blade rides up over it and the dozer keeps going")
+	check(lowest_edge < roof * 0.001, "(its blade was set lower than its roof, so it had to ride over it)")
+	check(through == 0, "without cutting into it (%d cells)" % through)
 	check(s.total() == total, "no soil lost")
 	d.queue_free()
 

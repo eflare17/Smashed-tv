@@ -68,6 +68,11 @@ var touch_speed := -1.0
 const KNOCK_SPEED := 1.6     # m a second per size: only a slam, a curl or swing into it near flat out (the owner found half stick too strict)
 const SOFT_LANDING := 0.35   # m per size over something buried that the bucket eases off coming down
 const SOFT_SLOWEST := 0.3    # how fast it's still coming down as it lands, of what was asked
+## Riding over something buried (owner's pick, 9 Nov): a step up onto it this high (in the arm's own metres) is taken in one go, a
+## taller side is climbed at RIDE_SPEED, and the teeth sit this far above its top.
+const RIDE_STEP := 0.3
+const RIDE_SPEED := 1.5
+const RIDE_CLEAR := 0.02
 ## The pegged-out pad it's digging, if any: the readout says how much more there is to take out where the teeth are.
 var pad: Pad
 
@@ -366,7 +371,24 @@ func _move_house(dt: float) -> void:
 	if _on_find_at(now) and not _on_find_at(teeth):
 		if not on_rock:
 			_touched(now, dt, true)
+		# A low part it can ride up over (owner's pick, 9 Nov). A tall side holds the swing, and the arm lifts a bit each tick
+		# till it clears.
+		var lift := (_find_top_at(now) + RIDE_CLEAR * size - now.y) / size
+		var held_wrist := wrist
+		var held_boom := _boom_a
+		var held_stick := _stick_a
+		_solve(Vector2(wrist.x, wrist.y + lift))
+		if lift <= RIDE_STEP and not _on_find_at(_teeth_now()) and not _on_rock_at(_teeth_now()):
+			return
 		swing = swung_from
+		wrist = held_wrist
+		_boom_a = held_boom
+		_stick_a = held_stick
+		_solve(Vector2(wrist.x, wrist.y + minf(lift, RIDE_SPEED * dt)))
+		if _on_find_at(_teeth_now()) or _on_rock_at(_teeth_now()):
+			wrist = held_wrist
+			_boom_a = held_boom
+			_stick_a = held_stick
 		_v_swing = 0.0
 		_swing_blocked = true
 
@@ -421,10 +443,28 @@ func _move_arm(dt: float) -> void:
 		stopped_by_rock = true
 	elif into_find:
 		# Something buried: the teeth can't go into it, but nothing stops dead. Tried again without the lowering (dragged along its
-		# top, to scrape the dirt off it), then without the curl as well, then the curl alone; or, if none of those clear it, held.
+		# top, to scrape the dirt off it); then lifted up onto it where it stands higher, riding over it (owner's pick, 9 Nov: it
+		# kept getting stuck on the bones), or for a tall side climbing it a bit each tick; then without the curl, then the curl
+		# alone; or, if none of those clear it, held.
 		var wanted_curl := curl
 		var ok := false
-		for tried: Array in [[Vector2(want.x, before.y), wanted_curl], [Vector2(want.x, before.y), before_curl], [before, wanted_curl]]:
+		var tries: Array = [[Vector2(want.x, before.y), wanted_curl]]
+		wrist = before
+		_boom_a = before_boom
+		_stick_a = before_stick
+		_solve(Vector2(want.x, before.y))
+		var over := _teeth_now()
+		var lift := (_find_top_at(over) + RIDE_CLEAR * size - over.y) / size
+		if lift > 0.0:
+			if lift <= RIDE_STEP:
+				tries.append([Vector2(want.x, before.y + lift), wanted_curl])
+			# Climbing its side: lifting the arm swings the teeth round a little too, so it may ease back off the side as it goes up.
+			var up := minf(lift, RIDE_SPEED * dt)
+			var away := -signf(want.x - before.x) if absf(want.x - before.x) > 0.0001 else 1.0
+			for back: float in [0.0, 0.02, 0.05, 0.1]:
+				tries.append([Vector2(before.x + away * back, before.y + up), wanted_curl])
+		tries.append_array([[Vector2(want.x, before.y), before_curl], [before, wanted_curl]])
+		for tried: Array in tries:
 			wrist = before
 			_boom_a = before_boom
 			_stick_a = before_stick
@@ -444,6 +484,14 @@ func _move_arm(dt: float) -> void:
 			_touched(now, dt, false)
 		stopped_by_rock = true
 	on_rock = stopped_by_rock
+
+## The top of something buried under `p`, in m, or -INF with nothing there.
+func _find_top_at(p: Vector3) -> float:
+	var at := DirtSim.cell_of(Vector2(p.x, p.z))
+	var n := clampi(at.y, 0, DirtSim.CELLS - 1) * DirtSim.CELLS + clampi(at.x, 0, DirtSim.CELLS - 1)
+	if sim.hard[n] <= DirtSim.BED_FLOOR:
+		return -INF
+	return sim.hard[n] * 0.001
 
 ## How far the teeth at `p` are above something buried right under them, in m, or INF with nothing there.
 func _gap_to_find(p: Vector3) -> float:

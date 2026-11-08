@@ -47,6 +47,7 @@ var soil := PackedInt32Array()
 var rock := PackedByteArray()   # 1: this cell's bed is rock, which never gives way
 ## mm: firm ground can't be dug or worn below this. Something buried (a job's find) has its top here; elsewhere it's BED_FLOOR.
 var hard := PackedInt32Array()
+var finds_laid := false          # anything buried at all: if not, nothing need look for it
 var store := 0                  # mm of soil on one cell's area, held by the player
 var in_air := 0
 var held := 0                   # mm of soil on one cell's area, in a machine's bucket
@@ -516,6 +517,23 @@ func _step_air(dt: float) -> void:
 ## [mm moved, mm cut from firm ground, whether rock stopped it].
 ## `rows` over 2 sweep further back as well, for loose soil only: what slid off the heap onto ground already cut.
 ## `scale` is for a big machine's blade: it heaps that much higher and lays its load that much further ahead.
+## The highest top of anything buried along the line from `a` to `b` and up to `ahead` m in front of it, in m, or -INF if there's
+## nothing: so a blade can ride up over it.
+func find_top_along(a: Vector2, b: Vector2, forward: Vector2, ahead: float) -> float:
+	if not finds_laid:
+		return -INF
+	var top := BED_FLOOR
+	var steps := int(a.distance_to(b) / (CELL_M * 0.5)) + 1
+	var rows := int(ceil(ahead / CELL_M)) + 1
+	for row in rows:
+		var off := forward * minf(row * CELL_M, ahead)
+		for s in steps + 1:
+			var at := cell_of(a.lerp(b, float(s) / steps) + off)
+			if at.x < 0 or at.y < 0 or at.x >= CELLS or at.y >= CELLS:
+				continue
+			top = maxi(top, hard[at.y * CELLS + at.x])
+	return -INF if top <= BED_FLOOR else top * 0.001
+
 ## `tilt_mm`: how much higher the edge is at `b` than at `a`; it's `edge_mm` in the middle.
 func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int, share := 1.0, rows := 2, scale := 1.0, tilt_mm := 0) -> Array:
 	var moved := 0

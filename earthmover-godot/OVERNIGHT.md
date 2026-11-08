@@ -449,3 +449,22 @@ the phone; offered hold-to-dig, an air spade and bigger shovelfuls, they picked 
 - A shovelful is twice as big again: 0.048 m3 (`Worker.SCOOP` 768) and 12 cm off firm ground (`FIRM_BITE` 120). A barrow's now two
   shovelfuls. In the check, three seconds of held DIG digs six shovelfuls, a hole half a metre deep, with the pile beside him.
 - `test/freefind_test.gd` checks all of it.
+
+## 9 Nov 2026 later: look round while digging, bucket and blade ride over finds
+
+The owner couldn't find first person (View until it says Eyes) or hold-to-dig (keep a finger on DIG) on the phone, wanted to move
+the camera while digging, and found the bones hard to dig out: the bucket, the blade and the shovel all "getting stuck on it". They
+picked from options: while DIG is held, the other thumb looks round; and machines ride up over a find rather than stopping dead.
+Not picked: a LOOK pad, look buttons, dirt falling off a find once it's found, burying them shallower.
+
+- Holding DIG (button or Space), a thumb on the screen drags the camera instead of walking him (`_dig_looking`). He stands still to
+  dig anyway; the stick's middle follows the thumb, so letting go of DIG doesn't set him walking.
+- The excavator's bucket meeting a find: after trying to slide along its top as before, it lifts up onto it where it stands higher.
+  A step of up to 0.3 m (arm metres, `RIDE_STEP`) goes in one go; a taller side is climbed at `RIDE_SPEED` 1.5, easing back off
+  the side a touch as the arm lifts. The same for swinging the house into it. Knocks are still told the same way.
+- The dozer's blade: it looks along the edge and 0.6 m x size ahead (`DirtSim.find_top_along`) and lifts to clear the highest find
+  top there by 3 cm (`Dozer._ride`, added to the lift), settling back at 1 m/s once past. So the dozer no longer stops dead on one;
+  with CUT it scrapes down to just over the find's highest bit.
+- `find_test.ride_test`: the bucket dragged in low across the dug-out car goes up and over it, never into it; the dozer with CUT
+  set below the car's roof keeps going over it (44% of the car uncovered in one pass, not cut into). `freefind_test` checks the
+  thumb looks round while DIG's held and he doesn't move.

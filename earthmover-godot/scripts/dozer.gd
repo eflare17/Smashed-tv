@@ -50,6 +50,12 @@ var cut_cm := 20
 ## higher the right-hand end is than the left, in m, and the blade's tilt that shows it.
 var cut_tilt := 0.0
 var blade_roll := 0.0
+## Riding over something buried (owner's pick, 9 Nov: it kept stopping dead on the bones): the blade's lifted this much (in its own
+## metres) on top of where it's set, to clear the find just ahead, and settles back once past it.
+var _ride := 0.0
+const RIDE_AHEAD := 0.6         # m ahead of the edge it reads for something buried
+const RIDE_CLEAR := 0.03        # m the edge clears its top by
+const RIDE_DROP := 1.0          # m a second it settles back once clear
 const TILT_MOST := 0.6          # m between the blade's ends, at the most
 
 ## The pad it's working in, if any: CUT stops at its height.
@@ -123,7 +129,7 @@ func can_shove(tree_down: bool) -> bool:
 	return not (tree_down and lift > 0.9)
 
 func _place_blade() -> void:
-	var swing := asin(clampf((lift + _steady / size) / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
+	var swing := asin(clampf((lift + _steady / size + _ride) / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
 	var turn := Basis(Vector3.BACK, swing)
 	var t := Transform3D(turn, ARM_PIVOT - turn * ARM_PIVOT)
 	if absf(blade_roll) > 0.0001:
@@ -181,6 +187,24 @@ func _hold_cut(dt: float) -> void:
 	var roll_want := -asin(clampf((cut_tilt - leaning) / (2.0 * HALF_WIDTH * size), -0.3, 0.3))
 	blade_roll = lerpf(blade_roll, roll_want, minf(dt * 6.0, 1.0))
 
+## Something buried under the blade or just ahead of it: the blade's lifted to ride up and over its top rather than the machine
+## stopping dead against it, and settles back to where it was set once it's past.
+func _ride_over(dt: float) -> void:
+	var lowest := INF
+	for z: float in [-HALF_WIDTH, HALF_WIDTH]:
+		lowest = minf(lowest, (transform * (_pivot.transform * Vector3(EDGE_X, 0.0, z))).y)
+	var a3 := transform * (_pivot.transform * Vector3(EDGE_X, 0.0, -HALF_WIDTH))
+	var b3 := transform * (_pivot.transform * Vector3(EDGE_X, 0.0, HALF_WIDTH))
+	var top := sim.find_top_along(Vector2(a3.x, a3.z), Vector2(b3.x, b3.z), forward(), RIDE_AHEAD * size)
+	# The edge's height goes up one for one with the lift, so this is how much lift it wants on top of where it's set, if any.
+	var wanted := 0.0
+	if top > -INF:
+		wanted = maxf((top + RIDE_CLEAR - (lowest - _ride * size)) / size, 0.0)
+	var was := _ride
+	_ride = wanted if wanted > _ride else maxf(wanted, _ride - RIDE_DROP * dt)
+	if _ride != was:
+		_place_blade()
+
 ## Holds the cutting edge just above the firm ground ahead of it. RAISE and LOWER set how far above.
 func _hold_level(dt: float) -> void:
 	level_trim += lift_cmd * LIFT_SPEED * 0.5 * dt
@@ -231,6 +255,7 @@ func step(dt: float) -> void:
 		blade_roll = lerpf(blade_roll, 0.0, minf(dt * 6.0, 1.0))
 	_steady_blade(dt)
 	_place_blade()
+	_ride_over(dt)
 	hyd = absf(lift_cmd)
 
 	# Where the cutting edge really is, with the machine tipped as it is.

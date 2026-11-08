@@ -69,6 +69,7 @@ func sink_under(sim: DirtSim) -> void:
 
 ## Puts it in the ground: the dirt over it can be dug down to its top and no further.
 func lay(sim: DirtSim) -> void:
+	sim.finds_laid = true
 	cells.clear()
 	tops.clear()
 	_index.clear()
