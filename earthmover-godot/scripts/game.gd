@@ -1903,6 +1903,13 @@ func _get_out_for(player: int) -> void:
 			tries.append(mid + f * cos(a) * (half + out) - side * sin(a) * (m.fp_r + out))
 	var chosen := tries[0]
 	var roomiest := -INF
+	# Letting go of a barrow, he stays where he stood pushing it, a step back from the handles, unless that's somehow in the way.
+	if m is Barrow:
+		var hands := m.spot - f * (Barrow.HANDS + 0.2)
+		w.step_off(hands, m.angle)
+		if absf(hands.x) < Machine.AREA and absf(hands.y) < Machine.AREA and _machine_gap(w) > 0.05:
+			tries.clear()
+			chosen = hands
 	for p: Vector2 in tries:
 		w.step_off(p, m.angle)
 		if absf(p.x) >= Machine.AREA or absf(p.y) >= Machine.AREA:
@@ -1959,15 +1966,26 @@ func _get_in_for(player: int) -> void:
 		_take_machine(m)
 	_sync_people()
 
-## GET IN shows only when there's something to get into, and says what.
+## The same button lets go of a barrow he's pushing, right where PUSH BARROW was.
+func _get_in_or_let_go() -> void:
+	if active is Barrow:
+		_get_out()
+	else:
+		_get_in()
+
+## GET IN shows only when there's something to get into, and says what. Pushing a barrow, it's LET GO.
 func _show_get_in() -> void:
 	if get_in_button == null:
 		return
 	var m: Machine = _near_machine(active as Worker) if active is Worker else null
-	get_in_button.visible = m != null and mode == "Drive" and menu == null
-	if m != null:
+	var pushing := active is Barrow
+	get_in_button.visible = (m != null or pushing) and mode == "Drive" and menu == null
+	if pushing:
+		get_in_word.text = "LET GO\nBARROW"
+	elif m != null:
 		get_in_word.text = ("PUSH\nBARROW" if m is Barrow else "GET IN\n" + m.machine_name.to_upper())
 	buttons["out"].visible = not active is Worker and mode == "Drive"
+	buttons["out"].text = "Let go" if pushing else "Get out"
 
 ## ---------------------------------------------------------------- the ute's pegs
 
@@ -3114,7 +3132,7 @@ func _build_ui() -> void:
 	get_in_word = in_made[1]
 	get_in_word.position = get_in_button.position + Vector2(size * 0.08, size * 0.28)
 	get_in_word.add_theme_font_size_override("font_size", int(size * 0.14))
-	get_in_button.pressed.connect(_get_in)
+	get_in_button.pressed.connect(_get_in_or_let_go)
 	# The hand tools: pick one up, put it down, and the shovel's one button that digs and throws.
 	var tool_made := _touch_button("", "", Vector2(screen.x - size - pad, h - size * 2.0 - pad * 1.5), size, "On foot")
 	shovel_button = tool_made[0]

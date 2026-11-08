@@ -155,7 +155,9 @@ func update(dt: float, d: Machine) -> void:
 	var rev := 0.8 + 0.3 * push + 0.3 * absf(d.speed) / d.top_speed
 	var labour := clampf(d.load_t / 18.0, 0.0, 1.0) * push
 	engine.pitch_scale = lerpf(engine.pitch_scale, rev - labour * 0.14, minf(dt * 5.0, 1.0))
-	engine.volume_db = lerpf(engine.volume_db, -17.0 + 6.0 * push + 3.0 * labour, minf(dt * 5.0, 1.0))
+	# On foot or pushing a barrow there's no motor: it fades out, and starts up again in the next machine.
+	var motor := not (d is Worker or d is Barrow)
+	engine.volume_db = lerpf(engine.volume_db, (-17.0 + 6.0 * push + 3.0 * labour) if motor else -80.0, minf(dt * 5.0, 1.0))
 	var want := 0.0
 	if d.moved_tick > 0 and (absf(d.speed) > 0.1 or d.hyd > 0.05):
 		want = clampf(0.25 + d.load_t / 14.0, 0.0, 1.0)
