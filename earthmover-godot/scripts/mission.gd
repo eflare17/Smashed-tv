@@ -157,6 +157,26 @@ const LIST := [
 		"dam": Rect2(-12.0, -13.0, 24.0, 14.0),
 		"dam_deep": 1.0,
 		"hint": "Dig the dam out inside the pegs until you hit water: that's deep enough. Red's still to come out. The dozer's CUT stops at the floor",
+		"done": "BURIED FIND UNLOCKED",
+	},
+	{
+		# Back on the paddock: something's buried inside the pegs, and what's a surprise each time (Find). A beep speeds up as the
+		# bucket nears it; dig it out and uncover it, gently, as a hard knock marks it and costs a little.
+		"id": "buried_find",
+		"title": "Buried find",
+		"kind": "find",
+		"site": "big",
+		"machine": "Big excavator",
+		"needs": "farm_dam",
+		"rect": Rect2(),
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"start": Vector2(-24.0, -5.0),
+		"dir": Vector2(1.0, 0.0),
+		"digger": Vector2(0.0, 8.0),
+		"digger_dir": Vector2(0.0, -1.0),
+		"patch": Rect2(-11.0, -12.0, 22.0, 14.0),
+		"hint": "Something's buried inside the pegs. The beep speeds up as the bucket gets near it. Then go gently: a hard knock marks it",
 		"done": "",
 	},
 ]
@@ -344,7 +364,7 @@ static func house_front(m: Dictionary) -> float:
 	return (m["rect"] as Rect2).position.y - 0.5
 
 static func road(m: Dictionary) -> Rect2:
-	if kind(m) == "dam":
+	if kind(m) in ["dam", "find"]:
 		return Rect2()
 	return Rect2(-80.0, 9.0, 160.0, 6.0)
 
@@ -352,6 +372,8 @@ static func road(m: Dictionary) -> Rect2:
 static func site(m: Dictionary) -> Rect2:
 	if kind(m) == "dam":
 		return (m["dam"] as Rect2).grow(7.0)
+	if kind(m) == "find":
+		return (m["patch"] as Rect2).grow(7.0)
 	# A flood job has the backyard as well.
 	var top := house_front(m) - (23.5 if kind(m) == "flood" else 11.0)
 	return Rect2(-14.0, top, 28.0, 16.0 - top)
@@ -458,4 +480,6 @@ static func crew(m: Dictionary) -> String:
 			return "both on foot"
 		"dam":
 			return "big dozer and big excavator"
+		"find":
+			return "big excavator and big dozer"
 	return "two %ss" % m["machine"]

@@ -45,6 +45,8 @@ const GRAVITY := 9.8
 var bed := PackedInt32Array()
 var soil := PackedInt32Array()
 var rock := PackedByteArray()   # 1: this cell's bed is rock, which never gives way
+## mm: firm ground can't be dug or worn below this. Something buried (a job's find) has its top here; elsewhere it's BED_FLOOR.
+var hard := PackedInt32Array()
 var store := 0                  # mm of soil on one cell's area, held by the player
 var in_air := 0
 var held := 0                   # mm of soil on one cell's area, in a machine's bucket
@@ -99,6 +101,8 @@ func _init() -> void:
 	bed.resize(CELLS * CELLS)
 	soil.resize(CELLS * CELLS)
 	rock.resize(CELLS * CELLS)
+	hard.resize(CELLS * CELLS)
+	hard.fill(BED_FLOOR)
 	clean_cut.resize(CELLS * CELLS)
 	dust.resize(CELLS * CELLS)
 	_awake.resize(CHUNKS * CHUNKS)
@@ -271,7 +275,7 @@ func take(i: int, j: int, amt: int) -> int:
 		dust[n] -= last_dust
 	soil[n] -= got
 	if got < amt and rock[n] == 0:
-		var from_bed := mini(amt - got, maxi(bed[n] - BED_FLOOR, 0))
+		var from_bed := mini(amt - got, maxi(bed[n] - hard[n], 0))
 		bed[n] -= from_bed
 		got += from_bed
 	if got > 0:
@@ -292,7 +296,7 @@ func bite(i: int, j: int, amt: int, firm_rate: int) -> Array:
 	soil[n] -= got
 	var firm := 0
 	if got < amt and rock[n] == 0:
-		firm = mini(mini(amt - got, firm_rate), maxi(bed[n] - BED_FLOOR, 0))
+		firm = mini(mini(amt - got, firm_rate), maxi(bed[n] - hard[n], 0))
 		bed[n] -= firm
 		got += firm
 	if got > 0:
@@ -540,10 +544,10 @@ func blade(a: Vector2, b: Vector2, forward: Vector2, edge_mm: int, bed_rate: int
 			soil[n] -= got
 			var left := ceili(high * row_share) - got
 			# Rock is felt when firm ground itself stands above the edge, not just soil lying on it.
-			if rock[n] != 0 and bed[n] > edge_mm:
+			if (rock[n] != 0 and bed[n] > edge_mm) or hard[n] > edge_mm:
 				hit_rock = true
 			if left > 0 and rock[n] == 0 and row < 2:
-				var firm := mini(mini(left, ceili(bed_rate * row_share)), maxi(bed[n] - BED_FLOOR, 0))
+				var firm := mini(mini(left, ceili(bed_rate * row_share)), maxi(bed[n] - hard[n], 0))
 				bed[n] -= firm
 				got += firm
 				cut += firm
@@ -741,9 +745,9 @@ func _slump_chunk(ci: int, cj: int, diagonals: bool) -> bool:
 					var mj := m / cells
 					if (mi >> 4) != ci or (mj >> 4) != cj:
 						wake(mi, mj)
-				elif d > bed_limit and rock[n] == 0 and bed[n] > BED_FLOOR and not (clean_cut[m] != 0 and d <= CUT_WALL_MM):
+				elif d > bed_limit and rock[n] == 0 and bed[n] > hard[n] and not (clean_cut[m] != 0 and d <= CUT_WALL_MM):
 					# A firm wall too steep to stand: a slice of it comes loose.
-					var slice := mini((d - bed_limit) / 2 + 1, bed[n] - BED_FLOOR)
+					var slice := mini((d - bed_limit) / 2 + 1, bed[n] - hard[n])
 					bed[n] -= slice
 					s += slice
 					acted = true

@@ -213,6 +213,22 @@ var stop_flag: Node3D
 var water_y0 := 0.07
 ## The farm dam's water, lying under the ground at the floor's depth, so it shows wherever it's been dug deep enough.
 var dam_sheet: MeshInstance3D
+## The Buried find job: what's buried (picked by `find_seed`, a surprise each time), how it's drawn and its knocks marked, how much
+## is uncovered less the knocks, whether it's been seen yet, and the beep.
+var buried: Find
+var find_seed := 0
+var find_look: MeshInstance3D
+var find_done := 0.0
+var find_seen := false
+var _beep_wait := 0.0
+var _knock_wait := 0.0
+var _marks := MeshKit.new()
+var _marks_look: MeshInstance3D
+var beep_light: Label
+## A word on screen for a few seconds, over the hint: a knock, or what was found.
+var say_text := ""
+var say_time := 0.0
+var _beep_flash := 0.0
 ## The rings and words at each end of a pipe job, and whether a pipe's reached each.
 var end_marks: Array = []
 var end_reached := [false, false]
@@ -300,6 +316,14 @@ func _ready() -> void:
 		sim.add_dust_pile(FREE_DUST, FREE_DUST_M3)
 	else:
 		Mission.lay_out(sim, mission)
+	if Mission.kind(mission) == "find":
+		# A surprise each time, unless it's carried over: a friend's game follows the host's, and checks can pick it.
+		find_seed = Engine.get_meta("find_seed") if Engine.has_meta("find_seed") else randi() % 1000000
+		if Engine.has_meta("find_seed"):
+			Engine.remove_meta("find_seed")
+		var patch: Rect2 = mission["patch"]
+		buried = Find.make(find_seed, patch, sim.height_at(patch.get_center()), Engine.get_meta("find_kind", ""))
+		buried.lay(sim)
 	sim.store = int(START_STORE_M3 / (DirtSim.CELL_M * DirtSim.CELL_M) * DirtSim.MM)
 	start_total = sim.total()
 	sim.loose_total_cached = sim.loose_total()
@@ -889,6 +913,9 @@ func _add_site(kit: MeshKit) -> void:
 	if Mission.kind(mission) == "dam":
 		_add_dam_site(kit)
 		return
+	if Mission.kind(mission) == "find":
+		_add_find_site(kit)
+		return
 	var r: Rect2 = mission["rect"]
 	var peg := Props.c("#efe8d8")
 	var line := Props.c("#ff4fa3")
@@ -980,7 +1007,27 @@ func _add_dam_site(kit: MeshKit) -> void:
 	var r: Rect2 = mission["dam"]
 	# Only inside the pegs: it's the floor in there that's to come down to it.
 	dam_sheet = _water_sheet(r, Mission.dam_water_y(job_pad))
-	var tank :=Vector2(r.end.x + 9.0, r.position.y - 2.0)
+	_add_farm_bits(kit, r)
+
+## Something buried on the paddock: pegs and string round where it is, and the farm beside it. It's under the ground, drawn where
+## it lies, so it shows as it's dug down to.
+func _add_find_site(kit: MeshKit) -> void:
+	var r: Rect2 = mission["patch"]
+	var p := Pad.new(Pad.box(r), sim.height_at(r.get_center()) - 5.0, 0.0, 0.0)
+	p.shown.clear()
+	p.cells.clear()
+	_add_pad(p)
+	var look := MeshInstance3D.new()
+	look.mesh = buried.mesh()
+	look.material_override = prop_mat
+	look.transform = buried.place()
+	add_child(look)
+	find_look = look
+	_add_farm_bits(kit, r)
+
+## A tank and a shed beside a job on the paddock, so it reads as a farm.
+func _add_farm_bits(kit: MeshKit, r: Rect2) -> void:
+	var tank := Vector2(r.end.x + 9.0, r.position.y - 2.0)
 	var g := sim.height_at(tank)
 	kit.cone(Vector3(tank.x, g, tank.y), Vector3(tank.x, g + 2.6, tank.y), 1.8, 1.8, 14, Props.c("#b9c2c6"))
 	kit.cone(Vector3(tank.x, g + 2.6, tank.y), Vector3(tank.x, g + 3.1, tank.y), 1.85, 0.2, 14, Props.c("#9aa4a8"))
@@ -3181,6 +3228,21 @@ func _build_ui() -> void:
 	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	banner.visible = not mission.is_empty()
 	ui.add_child(banner)
+	# The finder's light, flashing with each beep, for playing with the sound down.
+	if buried != null:
+		beep_light = Label.new()
+		beep_light.text = "((  •  ))"
+		# Just under the banner, clear of the star card below it.
+		beep_light.position = Vector2(0.0, top_bar_h + h * 0.068)
+		beep_light.size = Vector2(screen.x, h * 0.05)
+		beep_light.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		beep_light.add_theme_font_size_override("font_size", int(h / 24.0))
+		beep_light.add_theme_color_override("font_color", Color("#ffb020"))
+		beep_light.add_theme_color_override("font_outline_color", Color.BLACK)
+		beep_light.add_theme_constant_override("outline_size", 8)
+		beep_light.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		beep_light.visible = false
+		ui.add_child(beep_light)
 	_show_banner()
 	_build_star_card(screen, h)
 	if menu_kind != "":
@@ -3200,6 +3262,9 @@ func _show_banner() -> void:
 		return
 	if Mission.is_pad_job(mission):
 		banner.text = _star_words(job_pad.title, pad_done)
+		return
+	if buried != null:
+		banner.text = _star_words(_find_title(), find_done)
 		return
 	if Mission.kind(mission) != "driveway":
 		var flood := Mission.kind(mission) == "flood"
@@ -3230,11 +3295,13 @@ func _star_words(title: String, done: float) -> String:
 func _score() -> float:
 	if Mission.is_pad_job(mission):
 		return pad_done
+	if buried != null:
+		return find_done
 	return covered if Mission.kind(mission) == "driveway" else filled
 
 ## Whether the stars can be earned yet: a pipe job needs the water through first.
 func _can_score() -> bool:
-	return Mission.kind(mission) == "driveway" or Mission.is_pad_job(mission) or (pipe_joined and water_left <= 0.0)
+	return Mission.kind(mission) in ["driveway", "find"] or Mission.is_pad_job(mission) or (pipe_joined and water_left <= 0.0)
 
 ## A whole-screen menu over the site: the jobs and free play at the start, or how a job went at the end of it.
 func _build_menu() -> void:
@@ -3333,6 +3400,8 @@ func _build_menu() -> void:
 	else:
 		heading.call("%s DONE" % String(mission["title"]).to_upper(), 0.085, Color("#ffd23f"))
 		heading.call("%d STAR%s OF 3" % [stars_got, "" if stars_got == 1 else "S"], 0.06, Color.WHITE)
+		if buried != null:
+			heading.call("IT WAS %s%s" % [Find.NAMES[buried.kind], "" if buried.knocks == 0 else ", %d KNOCK%s" % [buried.knocks, "" if buried.knocks == 1 else "S"]], 0.05, Color.WHITE)
 		if mission["done"] != "":
 			heading.call(mission["done"], 0.055, Color("#a8f07a"))
 		var next := Mission.after(mission)
@@ -3443,6 +3512,9 @@ func _host_job(id: String) -> void:
 
 ## The host's in another job now, so this game goes there too.
 func online_go_to(id: String) -> void:
+	if "#" in id:
+		Engine.set_meta("find_seed", int(id.get_slice("#", 1)))
+		id = id.get_slice("#", 0)
 	# Sent straight on to the job this one unlocks: this one's done, even if the word never got here.
 	if demo == "" and not mission.is_empty() and Mission.find(id).get("needs", "") == mission["id"]:
 		Mission.mark_done(mission["id"])
@@ -3461,6 +3533,9 @@ func online_go_to(id: String) -> void:
 ## Where this game is, for a friend's game to follow: the job, "big" for the big machines' free play, or nothing for free play.
 func place_id() -> String:
 	if not mission.is_empty():
+		# A find job carries which find, so a friend gets the same one.
+		if buried != null:
+			return "%s#%d" % [mission["id"], find_seed]
 		return mission["id"]
 	return "big" if big_site else ""
 
@@ -3622,6 +3697,8 @@ func _check_mission(delta: float) -> void:
 	mission_clock = 0.25
 	if Mission.is_pad_job(mission):
 		pad_done = job_pad.score(sim)
+	elif buried != null:
+		_check_find()
 	elif Mission.kind(mission) != "driveway":
 		pipes.settle(sim)
 		if not pipe_joined:
@@ -4078,6 +4155,10 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 	if mode == "Drive" and hint_time > 0.0:
 		alert.text = active.hint
 		alert.visible = true
+	say_time = maxf(say_time - delta, 0.0)
+	if mode == "Drive" and say_time > 0.0:
+		alert.text = say_text
+		alert.visible = true
 	if mode == "Drive":
 		gauge_ground = lerpf(gauge_ground, dozer.lift - dozer.edge_gap, minf(delta * 8.0, 1.0))
 		gauge.queue_redraw()
@@ -4096,6 +4177,8 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 		_wave_end_marks(delta)
 	if not mission.is_empty():
 		_check_mission(delta)
+		if buried != null:
+			_find_step(delta)
 		_drain_flood(delta)
 		_update_floaters(delta)
 	elif ute_pad != null:
@@ -4648,3 +4731,77 @@ func _fill_dam() -> void:
 		dam_sheet = null
 	var dam_water := _water_sheet((mission["dam"] as Rect2).grow(1.5), y)
 	create_tween().tween_property(dam_water, "position:y", job_pad.level + 0.7, 8.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+## ---------------------------------------------------------------- the Buried find
+
+const BEEP_FROM := 5.0      # m from the find that the beep starts
+
+## Every frame on the Buried find: the beep, quicker the nearer the bucket's teeth (or the dozer's blade) are to it, and any knock.
+func _find_step(delta: float) -> void:
+	var tip := Vector3.INF
+	if active == digger:
+		tip = digger.teeth
+	elif active == dozer:
+		var mid := (dozer.blade_a + dozer.blade_b) * 0.5
+		tip = Vector3(mid.x, sim.height_at(mid) + dozer.edge_gap, mid.y)
+	_beep_wait -= delta
+	_beep_flash = maxf(_beep_flash - delta, 0.0)
+	if tip != Vector3.INF and not mission_done and menu == null:
+		var d := buried.distance(tip)
+		if d < BEEP_FROM and _beep_wait <= 0.0:
+			sfx.beeped(1.0 - d / BEEP_FROM)
+			_beep_wait = lerpf(0.09, 1.1, clampf((d - 0.3) / (BEEP_FROM - 0.3), 0.0, 1.0))
+			_beep_flash = 0.07
+	if beep_light != null:
+		beep_light.visible = _beep_flash > 0.0
+	# The teeth met it: gently's fine, faster is a knock. One knock at a time, however it bounces.
+	_knock_wait -= delta
+	if digger.touch_speed >= 0.0:
+		var speed := digger.touch_speed
+		digger.touch_speed = -1.0
+		if speed > Excavator.KNOCK_SPEED * digger.size and _knock_wait <= 0.0 and not mission_done:
+			_knock(digger.teeth, speed)
+
+## A hard knock: it's marked where it was hit, and it costs a little.
+func _knock(at: Vector3, speed: float) -> void:
+	buried.knocks += 1
+	_knock_wait = 1.0
+	var top := buried.top_at(Vector2(at.x, at.z))
+	var y := top + 0.01 if not is_nan(top) else at.y
+	var mark: String = {"car": "#3a2418", "bones": "#5a4a36", "gold": "#8a6a10"}[buried.kind]
+	_marks.box(Vector3(at.x, y, at.z), Vector3(0.5, 0.03, 0.14), Props.c(mark), Basis(Vector3.UP, randf() * PI))
+	if _marks_look == null:
+		_marks_look = MeshInstance3D.new()
+		_marks_look.material_override = prop_mat
+		add_child(_marks_look)
+	_marks_look.mesh = _marks.mesh()
+	_say("KNOCK! Go gently near it", 2.0)
+	Input.vibrate_handheld(150)
+	print("FIND knocked at %.1f m/s, %d knocks" % [speed, buried.knocks])
+
+## How much of it is uncovered, and the first time it's plain what it is, saying so.
+func _check_find() -> void:
+	var clear := buried.uncovered(sim)
+	find_done = maxf(clear - buried.knocks * Find.KNOCK_COST, 0.0)
+	if not find_seen and clear >= Find.SEEN:
+		find_seen = true
+		var words := "It's %s! Uncover the rest of it, gently" % String(Find.NAMES[buried.kind]).to_lower()
+		dozer.hint = words
+		digger.hint = words
+		_say(words, 6.0)
+		sfx.clunked(0.5)
+		Input.vibrate_handheld(120)
+
+## The banner's name for it: a mystery till it's seen, and the knocks it's had.
+func _find_title() -> String:
+	if not find_seen:
+		return "BURIED FIND"
+	var t: String = Find.TITLES[buried.kind]
+	if buried.knocks > 0:
+		t += ", %d KNOCK%s" % [buried.knocks, "" if buried.knocks == 1 else "S"]
+	return t
+
+## Words on screen for a few seconds, over the hint.
+func _say(text: String, seconds: float) -> void:
+	say_text = text
+	say_time = seconds

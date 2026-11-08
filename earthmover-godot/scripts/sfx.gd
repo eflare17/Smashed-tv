@@ -15,6 +15,7 @@ var clank: AudioStreamPlayer
 var whine: AudioStreamPlayer
 var pour: AudioStreamPlayer
 var clunk: AudioStreamPlayer
+var beep: AudioStreamPlayer
 var _scrape_level := 0.0
 var _roll_level := 0.0
 var _clank_level := 0.0
@@ -33,6 +34,7 @@ func _ready() -> void:
 	whine = _player(_wav(hydraulic(), true), -60.0)
 	pour = _player(_wav(lumps(0.3, 500)), -60.0)
 	clunk = _player(_wav(clunk_sound()), -4.0)
+	beep = _player(_wav(beep_sound()), -10.0)
 	for looped: AudioStreamPlayer in [roll, pour]:
 		var w: AudioStreamWAV = looped.stream
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -252,3 +254,18 @@ func tree_knocked() -> void:
 func tree_landed() -> void:
 	thud.pitch_scale = _rng.randf_range(0.85, 1.1)
 	thud.play()
+
+## The finder's beep: short and bright, a little higher the nearer it is.
+func beeped(close: float) -> void:
+	beep.pitch_scale = 1.0 + 0.3 * clampf(close, 0.0, 1.0)
+	beep.play()
+
+func beep_sound() -> PackedFloat32Array:
+	var n := int(RATE * 0.06)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var fade := minf(minf(t / 0.004, (0.06 - t) / 0.01), 1.0)
+		out[i] = sin(TAU * 1480.0 * t) * 0.55 * fade
+	return out

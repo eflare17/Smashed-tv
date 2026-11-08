@@ -19,7 +19,8 @@ func _init() -> void:
 	for job: Dictionary in Mission.LIST:
 		if Mission.kind(job) == "pipe":
 			pipe_job_test(job)
-		elif Mission.is_pad_job(job):
+		elif Mission.is_pad_job(job) or Mission.kind(job) == "find":
+			# Their own checks: big_test, hand_test, find_test.
 			continue
 		elif Mission.kind(job) == "flood":
 			flood_job_test(job)

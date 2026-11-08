@@ -354,3 +354,26 @@ green paddock (only the mine is new).
 - Farm dam: floor dug deeper than the dam's 1 m counts (`Mission.DAM_DEEPER_OK`); the owner had read 6% on a dug-out dam because blue (too deep) didn't count and wasn't explained. The hint says green is deep enough.
 - Excavator bucket, owner's ask: holds 1.8x (small 2.16 m3, big about 14.8 m3), drawn 20% bigger all round (`BUCKET_GROW`), digs firm ground and tips out faster to match. Same drag in dig_test: loose 1.11 to 2.07 m3, pile 0.81 to 1.48, firm 0.82 to 1.36. Trucks unchanged, so the haul truck fills in about 3 big buckets and the road truck in about 4 small ones.
 - Farm dam water, owner's ask: they'd used the old blue "too deep" tint as water to dig down to, and it went when deeper started counting. Now a sheet of water lies hidden under the dam inside the pegs at the floor's depth plus `DAM_TOL` (`Mission.dam_water_y`), so it shows just where the floor counts; dug deeper, the water's deeper. When it's done the fill rises from that sheet. Hint: "dig until you hit water". `big_test` checks it's hidden to start with and that where it shows matches the score.
+
+## Buried find job, 8 Nov 2026
+
+Talked through with the owner one step at a time: a surprise each time, found with pegs and a beep, and knocks cost a little. The
+owner then said to work out the rest and set it up; those picks are Claude's and are marked (pick) below.
+
+- `Mission` "buried_find" after Farm dam (its done line now says BURIED FIND UNLOCKED), on the paddock (pick), starting in the big
+  excavator with the big dozer there too (pick). A 22 x 14 m pegged patch with the farm's tank and shed beside it.
+- `Find` (scripts/find.gd): an old car, dinosaur bones or gold (a big nugget in quartz with small ones round it), picked from a seed,
+  at a random spot and angle inside the pegs, its top 1 m down for the car and 0.8 m for the others (pick). Built from boxes, wheels
+  and rough lumps, drawn where it lies, so it shows as it's dug down to.
+- `DirtSim.hard`: per cell, the lowest the firm ground can be dug or slump to (BED_FLOOR everywhere else). A find sets it to its top
+  less 4 cm, one cell early where it steps down inside itself so the drawn ground's slope stays hidden in the taller part.
+- The excavator's teeth stop on it like rock, and can still be dragged along its top to scrape it clean. `touch_speed` is how fast
+  they came down onto it (or across into its side): over `Excavator.KNOCK_SPEED` x size (about half stick on the big one) is a knock,
+  at most one a second. Each knock is marked on it and costs 3% (pick). A soft touch makes no clunk.
+- The beep starts 5 m off and goes from about one a second to ten a second (pick), from the bucket's teeth or the dozer's blade, with
+  an orange light under the banner for playing with the sound down.
+- The score is how much of its top has no more than 12 cm of dirt on it (pick), less the knocks; stars at 70/80/90% as usual. The
+  banner says BURIED FIND till 6% of it is uncovered, then names it ("It's an old car!" on screen too) and counts the knocks. The
+  end screen says what it was.
+- Online, the place id carries the seed (buried_find#1234) so a friend's game lays the same find.
+- `test/find_test.gd` covers all of it, in the sim and in the whole game.
