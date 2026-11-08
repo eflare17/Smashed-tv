@@ -20,6 +20,7 @@ DigSiteGrid::DigSiteGrid() {
 		col[i][0] = col[i][1] = col[i][2] = 0.5f;
 		hard[i] = 1;
 		wall_h[i] = 0;
+		span_max[i] = 0;
 	}
 	top_col[0] = 0.34f;
 	top_col[1] = 0.47f;
@@ -134,6 +135,8 @@ void DigSiteGrid::generate(int seed) {
 	std::fill(chunk_touched.begin(), chunk_touched.end(), 0);
 	std::fill(hash_dirty.begin(), hash_dirty.end(), 1);
 	std::fill(awake.begin(), awake.end(), 0);
+	going.clear();
+	cave_events.clear();
 	const int ring = 8; // 1 m
 	std::vector<int> heights((size_t)w * d);
 	for (int z = 0; z < d; z++)
@@ -441,6 +444,11 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_touched"), &DigSiteGrid::clear_touched);
 	ClassDB::bind_method(D_METHOD("chunk_count"), &DigSiteGrid::chunk_count);
 	ClassDB::bind_method(D_METHOD("set_physics", "walls"), &DigSiteGrid::set_physics);
+	ClassDB::bind_method(D_METHOD("set_spans", "spans"), &DigSiteGrid::set_spans);
+	ClassDB::bind_method(D_METHOD("set_cave_ticks", "ticks"), &DigSiteGrid::set_cave_ticks);
+	ClassDB::bind_method(D_METHOD("take_cave_events"), &DigSiteGrid::take_cave_events);
+	ClassDB::bind_method(D_METHOD("going_count"), &DigSiteGrid::going_count);
+	ClassDB::bind_method(D_METHOD("roof_span_at", "x", "y", "z"), &DigSiteGrid::roof_span_at);
 	ClassDB::bind_method(D_METHOD("settle", "budget_usec"), &DigSiteGrid::settle);
 	ClassDB::bind_method(D_METHOD("awake_count"), &DigSiteGrid::awake_count);
 	ClassDB::bind_method(D_METHOD("wake_all"), &DigSiteGrid::wake_all);

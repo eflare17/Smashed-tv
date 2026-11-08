@@ -139,6 +139,9 @@ int DigSiteGrid::settle_chunk(int ci) {
 					}
 					continue;
 				}
+				// a roof (air under it) wider than its material spans: it's going (dig_site_cave.cpp)
+				if (span_max[m] > 0 && air_at(x, y - 1, z))
+					check_roof(x, y, z, m);
 				// a firm wall's rim (soil with air over it): too tall or too steep, it gives way (turns loose)
 				int wh = wall_h[m];
 				if (wh <= 0 || !(y + 1 >= h || air_at(x, y + 1, z)))
@@ -193,6 +196,7 @@ int DigSiteGrid::settle(int budget_usec) {
 			moved_bits[b >> 6] = 0;
 		moved_list.clear();
 		tick_n++;
+		cave_tick();
 	}
 	int n = 0;
 	while (wake_at < (int)wake_list.size()) {

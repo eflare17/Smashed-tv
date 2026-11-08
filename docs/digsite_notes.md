@@ -88,6 +88,19 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 - Ground drawing: the whole site on screen is ~0.6-1.3 M triangles (a face per block side: the chunky look keeps
   each block's shade). Fine on a PC GPU; greedy meshing would cut it if needed.
 
+- **Tunnels and cave-ins (stage 7).** Tunnels are just the voxel ground dug sideways (the tools and machines dig
+  anywhere; collision is the ground's own faces, so you walk in them). Under the ground the hard hat's lamp comes on
+  (a spotlight on the camera). Cave-ins are in C++ (`native/src/dig_site_cave.cpp`): a roof is a firm cell with air
+  under it; its span is twice the distance (in the air under it, any way round) to the nearest solid thing holding
+  it up. Each material's limit is `DsMats.SPAN` (topsoil 1.5 m, dirt 2 m, clay 2.5 m, sand 0.75 m, gravel 1 m,
+  stone 6 m, hard rock 8 m; bedrock, the edge, wood and concrete never). Too wide: a warning event (DsCaves: groan,
+  crumble, dust trickling), then 3 s later (60 dirt ticks) the roof cells round it that are also too wide, and two
+  over each, turn loose and fall; the dirt slumps them, and a roof above can go next (a sinkhole if it's shallow).
+  Held up meanwhile (a post: stage 8), it settles instead. A fall hurts players under it (30 at most, once per 2 s).
+  The host decides; the guest gets "cave" events for the sound and dust, and the ground through the usual chunks.
+- A single "span" number is a simplification: it ignores roof thickness and depth (stage 8 adds depth pressure for
+  supports).
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -101,3 +114,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 4. Loose dirt: done (`test/voxel/digsite_dirt_test.gd`, 10 checks; 2 more in the ground test).
 5. Co-op sync: done (`test/voxel/digsite_sync_test.gd`, two copies, with and without lag).
 6. Dingo: done (`test/voxel/digsite_dingo_test.gd`: alone 14 checks; two copies, with and without lag).
+7. Tunnels and cave-ins: done (`test/voxel/digsite_cave_test.gd` 9 checks; `digsite_tunnel_test.gd` alone and two copies, with and without lag).

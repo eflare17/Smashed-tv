@@ -125,6 +125,8 @@ func _process(dt: float) -> void:
 	if settle_on and not paused and _settle_acc >= 1.0 / SETTLE_HZ:
 		_settle_acc = 0.0
 		settle_moves += grid.settle(SETTLE_US)
+		if site.get("caves") != null:
+			site.caves.poll()
 	step(BUDGET_MS)
 
 ## n loose blocks of m dumped at world point p (on the ground's top there; they slump into a pile): -> how many

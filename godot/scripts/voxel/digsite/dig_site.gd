@@ -27,6 +27,8 @@ var terrain: DsTerrain                    # the voxel ground (stage 2)
 var tools: DsTools                        # the hand tools' digging and tiers (stage 3)
 var net: DsNet                            # co-op: the host's ground, the guest's actions (stage 5)
 var machines: DsMachines                  # the Dingo and the rest (stage 6 on)
+var caves: DsCaves                        # cave-ins shown and heard (stage 7)
+var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -84,6 +86,16 @@ func _build() -> void:
 	add_child(machines)
 	machines.setup(self)
 	machines.make()
+	caves = DsCaves.new()
+	add_child(caves)
+	caves.setup(self)
+	lamp = SpotLight3D.new()
+	lamp.spot_range = 14.0
+	lamp.spot_angle = 32.0
+	lamp.light_energy = 2.2
+	lamp.light_color = Color(1.0, 0.95, 0.82)
+	lamp.visible = false
+	arena.cam.add_child(lamp)
 	net.register_event("drive", func(a: Array): machines.on_event("drive", a))
 	net.register_event("off", func(a: Array): machines.on_event("off", a))
 	var f := SIZE + 40.0
@@ -201,6 +213,8 @@ func home() -> void:
 		return
 	if machines and machines.driving:
 		machines.get_off()
+	if lamp:
+		lamp.visible = false
 	net.left()
 	active = false
 	visible = false
@@ -230,6 +244,11 @@ func _process(_dt: float) -> void:
 		arena._use_label.text = tools.office_line()
 	elif machines and machines.near and not driving():
 		arena._use_label.text = machines.line()
+	# the hard hat's lamp: on with solid ground over your head (in a tunnel)
+	if lamp and terrain:
+		var c := terrain.cell_of(p + Vector3(0, 1.7, 0))
+		var top := terrain.grid.column_top(c.x, c.z)
+		lamp.visible = terrain.contains(p) and top > c.y + 1
 
 ## Whether this player's driving a machine here (the arena: no walking, no weapons)
 func driving() -> bool:

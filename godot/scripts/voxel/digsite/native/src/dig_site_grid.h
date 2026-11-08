@@ -59,6 +59,16 @@ private:
 	int drop_at(int x, int y, int z, int limit) const;
 	void move_cell(int from, int x, int y, int z);
 	int settle_chunk(int ci);
+	// cave-ins (dig_site_cave.cpp): how wide a roof of each material spans unheld, the roofs that are going
+	int span_max[NMAT];                    // cells (0: never caves: bedrock, the edge, supports)
+	struct Going { int x, y, z, ticks, m; };
+	std::vector<Going> going;
+	std::vector<int> cave_events;          // [kind (1 warning, 2 collapse), x, y, z, n] ...
+	int cave_ticks = 60;                   // ticks from the warning to the fall
+	int roof_span(int x, int y, int z, int limit) const;
+	void check_roof(int x, int y, int z, int m);
+	void cave_tick();
+	int collapse(const Going &g);
 	// the network (dig_site_net.cpp): chunks changed since made (sent to a guest arriving), their checksums
 	std::vector<uint8_t> chunk_mod;
 	std::vector<uint32_t> chunk_hash;
@@ -106,6 +116,12 @@ public:
 	void wake_all();
 	int drop_column(int x, int z, int m, int n);
 	int get_moves_total() const { return moves_total; }
+	// cave-ins (dig_site_cave.cpp)
+	void set_spans(const PackedInt32Array &spans);
+	void set_cave_ticks(int t) { cave_ticks = std::max(1, t); }
+	PackedInt32Array take_cave_events();
+	int going_count() const { return (int)going.size(); }
+	int roof_span_at(int x, int y, int z) const { return roof_span(x, y, z, 200); }
 
 	// the network (dig_site_net.cpp)
 	PackedByteArray take_diff(int most);
