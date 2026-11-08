@@ -118,7 +118,13 @@ Array DigSiteGrid::mesh_section(int sx, int sy, int sz) const {
 					}
 				}
 				int m = best >= 0 ? (cell & MAT_MASK) : DIRT_MAT;
-				const float *base = (m == TOPSOIL_MAT && !(cell & LOOSE) && nn.y > 0.55f) ? top_col : col[m];
+				// (grass only on ground still standing as it was made: a blade's cut or a bucket's scrape shows soil)
+				bool grass = m == TOPSOIL_MAT && !(cell & LOOSE) && nn.y > 0.55f;
+				if (grass && best >= 0 && !start_tops.empty()) {
+					int gx = std::clamp(x + corner[best][0], 0, w - 1), gz = std::clamp(z + corner[best][2], 0, d - 1);
+					grass = best_y >= start_tops[(size_t)gz * w + gx];
+				}
+				const float *base = grass ? top_col : col[m];
 				float var = 0.92f + 0.16f * ((hash3(x >> 1, y >> 1, z >> 1) & 255) / 255.0f);
 				float r = base[0] * var, g = base[1] * var, b = base[2] * var;
 				if (cell & LOOSE) {

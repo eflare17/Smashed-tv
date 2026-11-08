@@ -132,7 +132,6 @@ func _pose_tool() -> void:
 		var up := TRAY_HIGH * (0.25 + 0.9 * f)
 		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(TRAY_LONG * 0.92, up, TRAY_HALF * 1.85)), Vector3(TRAY_LONG * 0.5, 0.08, 0.0))
 	_props_mesh.visible = props > 0 and load_n == 0
-	_roll += speed * get_process_delta_time()
 	for w in _wheels:
 		var r: float = w[1]
 		(w[0] as Node3D).basis = Basis(Vector3.BACK, -_roll / r).scaled(Vector3(r, r, 1.0))
@@ -154,7 +153,12 @@ func status() -> String:
 		s += "   %d concrete supports on it" % props
 	return s + ("   " + blocked if blocked != "" else "")
 
+func _follow(dt: float) -> void:
+	super(dt)
+	_roll += speed * dt
+
 func _tool(dt: float) -> void:
+	_roll += speed * dt
 	tip = clampf(tip + tip_cmd * TIP_RATE * dt, 0.0, 1.0)
 	_pose_tool()
 	if tip > POUR_FROM and load_n > 0:

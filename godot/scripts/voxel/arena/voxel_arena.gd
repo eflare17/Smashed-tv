@@ -1353,6 +1353,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode in [KEY_E, KEY_ESCAPE]:
 				games.get_up()          # (the rest of the keys are the console's controller)
 			return
+		if digsite and digsite.driving() and e.physical_keycode in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_C, KEY_F, KEY_Q, KEY_R]:
+			return                       # (driving a Dig Site machine: these are its controls, not the weapons')
 		match e.physical_keycode:
 			KEY_TAB, KEY_I:
 				open_inventory(null)

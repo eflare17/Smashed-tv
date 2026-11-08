@@ -40,7 +40,8 @@ bool DigSiteGrid::lay_on(int x, int z, uint8_t v, int top_y) {
 }
 
 // A cut cell laid ahead of the edge: just ahead up to top_y, then further, then off past the end, then the lowest seen
-void DigSiteGrid::spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y) {
+// (if that's not far over the heap's top: else there's no room, the blade's full, and it's left where it was) -> laid
+bool DigSiteGrid::spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y) {
 	int lx = -1, lz = -1, low = 1 << 30;
 	int na = sizeof(SPILL_AHEAD) / sizeof(float), ns = sizeof(SPILL_SIDE) / sizeof(float);
 	for (int k = 0; k < na + ns; k++) {
@@ -64,25 +65,40 @@ void DigSiteGrid::spill(float px, float pz, float fx, float fz, float ox, float 
 			lz = cz;
 		}
 		if (lay_on(x, z, v, top))
-			return;
+			return true;
 	}
-	if (lx >= 0)
-		lay_on(lx, lz, v, h - 1);       // (everything round's higher: the lowest seen takes it)
+	// (everything round's higher: the lowest seen takes it, a little over the heap at most)
+	return lx >= 0 && lay_on(lx, lz, v, top_y + 4);
 }
 
-// The edge from a to b (cells), going fwd (flat, unit), rows deep (the second row catches what slides under it).
-// Cuts what stands above the edge in the columns it covers, up to mouth cells over it; firm cells at most firm_most a
-// column (and only those no harder than hardest). Up to take_most go in the bucket (counts); the rest are spilled
-// ahead, heaped up to heap cells over the edge. -> {counts: taken by material, taken, moved (spilled), cut (firm),
-// rock: hard ground stood in its way}
+// v rounded up or down at random, in proportion (a blade that moves a tenth of a cell takes a whole cell one tick in ten)
+int DigSiteGrid::dither(float v) {
+	if (v <= 0.0f)
+		return 0;
+	int n = (int)v;
+	blade_rng = blade_rng * 1664525u + 1013904223u;
+	if ((float)(blade_rng >> 8) / 16777216.0f < v - n)
+		n++;
+	return n;
+}
+
+// The edge from a to b (cells), going fwd (flat, unit), rows deep (1.75 cells apart: the back rows catch what slides
+// under it). As the digger game's DirtSim.blade: it moves what it sweeps through, share of the way across a column this
+// call (its travel over the 2 cells it takes to clear what stands in front of it): no travel, nothing moved, so a
+// stalled blade can't pump soil up a heap. Each column it covers loses share of what stands above the edge (up to mouth
+// cells over it), from the top down (the back rows five times as much, so nothing leaks past); firm cells at most
+// firm_most a column at full share, none harder than hardest (rock: felt, and nothing under it is reached). Up to
+// take_most go in the bucket (counts); the rest are spilled ahead, heaped up to heap cells over the edge. -> {counts:
+// taken by material, taken, moved (spilled), cut (firm), rock: hard ground stood in its way}
 Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, int rows, float mouth,
-		int firm_most, int hardest, int take_most, float heap) {
+		int firm_most, int hardest, int take_most, float heap, float share) {
 	PackedInt32Array counts;
 	counts.resize(NMAT);
 	for (int i = 0; i < NMAT; i++)
 		counts.set(i, 0);
-	int taken = 0, moved = 0, cut = 0;
+	int taken = 0, moved = 0, cut = 0, jammed = 0;
 	bool rock = false;
+	share = std::clamp(share, 0.0f, 1.0f);
 	float fx = fwd.x, fz = fwd.z;
 	float fl = std::sqrt(fx * fx + fz * fz);
 	if (fl > 1e-4f) {
@@ -99,6 +115,9 @@ Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Ve
 	std::vector<int> seen;                       // (a column's cut once a call, however many samples land in it)
 	for (int row = 0; row < rows; row++) {
 		float back = -1.75f * row;
+		float row_share = row == 0 ? share : std::min(share * 5.0f, 1.0f);
+		if (row_share <= 0.0f)
+			continue;
 		for (int s = 0; s <= steps; s++) {
 			float t = (float)s / steps;
 			float px = a.x + wx * t + fx * back, pz = a.z + wz * t + fz * back;
@@ -112,26 +131,47 @@ Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Ve
 			seen.push_back(key);
 			int y0 = std::max(0, (int)std::ceil(ey - 0.5f));   // (cells whose middle's above the edge)
 			int y1 = std::min(h - 1, (int)std::floor(ey + mouth));
-			int firm_left = firm_most;
+			// what stands above the edge, down to the first rock
+			int high = 0;
+			for (int y = y1; y >= y0; y--) {
+				uint8_t c = cells[idx(x, y, z)];
+				int m = c & MAT_MASK;
+				if (m == 0 || m >= NMAT)
+					continue;
+				if (!(c & LOOSE) && hard[m] > hardest) {
+					rock = true;
+					break;
+				}
+				high++;
+			}
+			if (high == 0)
+				continue;
+			int take = row_share >= 1.0f ? high : std::min(high, dither(high * row_share));
+			// (rows past the second only sweep up loose dirt that's slid back under the blade: the blade's a wall to it,
+			// and the firm ground there is what the machine stands on)
+			// (the face row cuts firm ground only so fast; the row behind clears what's left of it to the edge, so no
+			// step of firm ground is left behind a moving blade for the tracks to meet)
+			// (firm_most 999 and over: everything above the edge, every row: what a blade's already swept through)
+			// (an edge working by its travel, share under 1: a dozer's blade, a loader's bucket. An excavator's teeth,
+			// often going straight down, keep their firm limit in every row)
+			int firm_left = firm_most >= 999 ? high : row >= 2 ? 0 : (row == 1 && share < 1.0f) ? high : row_share >= 1.0f ? firm_most : dither(firm_most * row_share);
 			float to_end = width * (0.5f - std::fabs(t - 0.5f));
 			float sx = t >= 0.5f ? ox : -ox, sz = t >= 0.5f ? oz : -oz;
-			for (int y = y0; y <= y1; y++) {
+			for (int y = y1; y >= y0 && take > 0; y--) {
 				uint8_t &c = cells[idx(x, y, z)];
 				int m = c & MAT_MASK;
 				if (m == 0 || m >= NMAT)
 					continue;
 				bool loose = (c & LOOSE) != 0;
-				int hd = loose ? 1 : hard[m];
-				if (hd > hardest) {
-					rock = true;
-					continue;
-				}
+				if (!loose && hard[m] > hardest)
+					break;
 				if (!loose) {
 					if (firm_left <= 0)
-						continue;
+						break;                  // (firm ground comes off from the top: none under it till it's cut)
 					firm_left--;
 					cut++;
 				}
+				take--;
 				uint8_t v = c;
 				c = 0;
 				touch(x, y, z);
@@ -139,8 +179,14 @@ Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Ve
 					counts.set(m, counts[m] + 1);
 					taken++;
 				} else {
-					// (banked ahead of the blade's front edge, not of the row it was cut in: a fast blade sweeps several)
-					spill(a.x + wx * t, a.z + wz * t, fx, fz, sx, sz, to_end, v, (int)std::floor(ey + heap));
+					// (banked ahead of the blade's front edge, not of the row it was cut in; no room: it stays put)
+					if (!spill(a.x + wx * t, a.z + wz * t, fx, fz, sx, sz, to_end, v, (int)std::floor(ey + heap))) {
+						c = v;
+						if (!loose)
+							cut--;
+						jammed++;
+						break;
+					}
 					moved++;
 				}
 			}
@@ -153,6 +199,7 @@ Dictionary DigSiteGrid::blade_sweep(const Vector3 &a, const Vector3 &b, const Ve
 	out["moved"] = moved;
 	out["cut"] = cut;
 	out["rock"] = rock;
+	out["jammed"] = jammed;
 	return out;
 }
 
@@ -212,4 +259,52 @@ int DigSiteGrid::pour_at(int x, int z, int top_y, int m, int n) {
 		}
 	}
 	return put;
+}
+
+// The cells a blade (or a bucket) fills, solid to the loose dirt: from its edge a to b (cells) back thick cells
+// (against fwd) and up high cells over the edge. owner's last ones cleared first.
+void DigSiteGrid::block_blade(int owner, const Vector3 &a, const Vector3 &b, const Vector3 &fwd, float thick, float high) {
+	unblock(owner);
+	if (blocked_bits.empty())
+		blocked_bits.assign(((size_t)w * h * d + 63) / 64, 0ull);
+	std::vector<int> &mine = blocked_by[owner];
+	float fx = fwd.x, fz = fwd.z;
+	float fl = std::sqrt(fx * fx + fz * fz);
+	if (fl < 1e-4f)
+		return;
+	fx /= fl;
+	fz /= fl;
+	float wx = b.x - a.x, wz = b.z - a.z;
+	float width = std::sqrt(wx * wx + wz * wz);
+	int steps = std::max(1, (int)std::ceil(width / 0.5f));
+	int deep = std::max(1, (int)std::ceil(thick / 0.5f));
+	for (int s = 0; s <= steps; s++) {
+		float t = (float)s / steps;
+		float ey = a.y + (b.y - a.y) * t;
+		int y0 = std::max(0, (int)std::floor(ey));
+		int y1 = std::min(h - 1, (int)std::floor(ey + high));
+		for (int k = 0; k <= deep; k++) {
+			float back = -thick * k / deep;
+			int x = (int)std::floor(a.x + wx * t + fx * back), z = (int)std::floor(a.z + wz * t + fz * back);
+			if (x < 0 || z < 0 || x >= w || z >= d)
+				continue;
+			for (int y = y0; y <= y1; y++) {
+				int i = idx(x, y, z);
+				uint64_t bit = 1ull << (i & 63);
+				if (blocked_bits[i >> 6] & bit)
+					continue;
+				blocked_bits[i >> 6] |= bit;
+				mine.push_back(i);
+			}
+		}
+	}
+}
+
+void DigSiteGrid::unblock(int owner) {
+	auto it = blocked_by.find(owner);
+	if (it == blocked_by.end())
+		return;
+	for (int i : it->second)
+		blocked_bits[i >> 6] &= ~(1ull << (i & 63));
+	it->second.clear();
 }

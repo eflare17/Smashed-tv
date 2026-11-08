@@ -59,7 +59,8 @@ int DigSiteGrid::drop_at(int x, int y, int z, int limit) const {
 		return 0;
 	int n = 0;
 	for (int yy = y; yy >= 0 && n < limit; yy--) {
-		if ((cells[idx(x, yy, z)] & MAT_MASK) != 0)
+		int i = idx(x, yy, z);
+		if ((cells[i] & MAT_MASK) != 0 || blocked(i))
 			break;
 		n++;
 	}
@@ -101,6 +102,8 @@ int DigSiteGrid::settle_chunk(int ci) {
 					continue;
 				if (c & LOOSE) {
 					// falling: down through air, up to 3 cells a tick
+					// (a blade or a machine doesn't hold dirt up: it stops it sliding in sideways, but what's over it
+					// falls through, behind the blade, where the blade's back rows sweep it on again)
 					if (air_at(x, y - 1, z)) {
 						int ny = y - 1;
 						while (ny - 1 >= 0 && air_at(x, ny - 1, z) && y - ny < 3)
@@ -113,7 +116,7 @@ int DigSiteGrid::settle_chunk(int ci) {
 					int best = -1, best_ex = 0, ties = 0;
 					for (int k = 0; k < 8; k++) {
 						int corner = k >= 4 ? 1 : 0;
-						if (corner && !air_at(x + DX[k], y, z) && !air_at(x, y, z + DZ[k]))
+						if (corner && !free_at(x + DX[k], y, z) && !free_at(x, y, z + DZ[k]))
 							continue;      // (no squeezing between two cells' corners)
 						int ex = 0;
 						for (int r = 1; r <= 3; r++) {
@@ -134,17 +137,17 @@ int DigSiteGrid::settle_chunk(int ci) {
 					}
 					if (best >= 0) {
 						int nx = x + DX[best], nz = z + DZ[best];
-						move_cell(i, nx, air_at(nx, y - 1, nz) ? y - 1 : y, nz);
+						move_cell(i, nx, free_at(nx, y - 1, nz) ? y - 1 : y, nz);
 						n++;
 					}
 					continue;
 				}
 				// a roof (air under it) wider than its material spans: it's going (dig_site_cave.cpp)
-				if (span_max[m] > 0 && air_at(x, y - 1, z))
+				if (span_max[m] > 0 && free_at(x, y - 1, z))
 					check_roof(x, y, z, m);
 				// a firm wall's rim (soil with air over it): too tall or too steep, it gives way (turns loose)
 				int wh = wall_h[m];
-				if (wh <= 0 || !(y + 1 >= h || air_at(x, y + 1, z)))
+				if (wh <= 0 || !(y + 1 >= h || free_at(x, y + 1, z)))
 					continue;
 				bool give = false;
 				for (int k = 0; k < 4 && !give; k++) {

@@ -76,6 +76,12 @@ func cell_at(p: Vector3) -> int:
 	return grid.get_cell(c.x, c.y, c.z)
 
 ## The ground's top at a world x, z (its highest solid cell's top), or -INF off the grid
+## The firm ground's top at (x, z), under any loose dirt lying on it
+func firm_at(x: float, z: float) -> float:
+	var c := cell_of(Vector3(x, 0, z))
+	var y := grid.firm_top(c.x, c.z)
+	return -INF if y < 0 else origin.y + (y + 1) * CELL
+
 func top_at(x: float, z: float) -> float:
 	var c := cell_of(Vector3(x, 0, z))
 	var y := grid.column_top(c.x, c.z)
@@ -134,8 +140,21 @@ func _process(dt: float) -> void:
 ## A machine's cutting edge from a to b (world) going fwd: what stands above it (to mouth m over it) cut, firm ground at
 ## most firm_most a column, up to take_most into its bucket (the counts), the rest banked ahead up to heap m over the
 ## edge (DigSiteGrid.blade_sweep: the digger game's way)
-func blade(a: Vector3, b: Vector3, fwd: Vector3, rows: int, mouth: float, firm_most: int, hardest: int, take_most: int, heap: float) -> Dictionary:
-	return grid.blade_sweep(to_cells(a), to_cells(b), fwd, rows, mouth / CELL, firm_most, hardest, take_most, heap / CELL)
+func blade(a: Vector3, b: Vector3, fwd: Vector3, rows: int, mouth: float, firm_most: int, hardest: int, take_most: int, heap: float, share := 1.0) -> Dictionary:
+	return grid.blade_sweep(to_cells(a), to_cells(b), fwd, rows, mouth / CELL, firm_most, hardest, take_most, heap / CELL, share)
+
+## A machine's blade (or bucket) solid to the loose dirt: from its edge a to b, back thick m against fwd and up high m
+## (owner: the machine's id; its last ones cleared)
+func block(owner: int, a: Vector3, b: Vector3, fwd: Vector3, thick: float, high: float) -> void:
+	grid.block_blade(owner, to_cells(a), to_cells(b), fwd, thick / CELL, high / CELL)
+
+func unblock(owner: int) -> void:
+	grid.unblock(owner)
+
+## The ground's height at (x, z) as the site was made (before anyone dug): a dozer's CUT holds its depth under it
+func start_at(x: float, z: float) -> float:
+	var c := cell_of(Vector3(x, 0, z))
+	return origin.y + (grid.start_top(c.x, c.z) + 1) * CELL
 
 ## Loose blocks banked against an edge from a to b going fwd (up to reach m over it): the weight it's pushing
 func load_ahead(a: Vector3, b: Vector3, fwd: Vector3, reach: float) -> int:

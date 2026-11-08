@@ -27,6 +27,14 @@ DigSiteGrid::DigSiteGrid() {
 	top_col[2] = 0.23f;
 }
 
+int DigSiteGrid::start_top(int x, int z) const {
+	if (start_tops.empty())
+		return surface - 1;
+	x = std::clamp(x, 0, w - 1);
+	z = std::clamp(z, 0, d - 1);
+	return start_tops[(size_t)z * w + x];
+}
+
 void DigSiteGrid::setup(int p_w, int p_h, int p_d, int p_surface) {
 	w = std::max(CS, p_w / CS * CS);
 	h = std::max(CS, p_h / CS * CS);
@@ -139,6 +147,7 @@ void DigSiteGrid::generate(int seed) {
 	cave_events.clear();
 	const int ring = 8; // 1 m
 	std::vector<int> heights((size_t)w * d);
+	start_tops.assign((size_t)w * d, (int16_t)(surface - 1));
 	for (int z = 0; z < d; z++)
 		for (int x = 0; x < w; x++) {
 			float e = std::min(std::min(x, w - 1 - x), std::min(z, d - 1 - z)) / 48.0f;   // 0 at the edge .. 1, 6 m in
@@ -146,6 +155,7 @@ void DigSiteGrid::generate(int seed) {
 			float n = noise2(x, z, 96) * 6.0f + noise2(x, z, 32) * 2.0f;
 			int top = surface - 1 + (int)std::lround(n * e);
 			heights[z * w + x] = top;
+			start_tops[(size_t)z * w + x] = (int16_t)top;
 			int dirt_d = 22 + (int)(noise2(x, z, 40) * 6.0f);       // ~3 m of dirt
 			int clay_d = 52 + (int)(noise2(x + 999, z, 56) * 10.0f);  // the clay band to ~6.5 m
 			int stone_d = 112 + (int)(noise2(x, z + 555, 64) * 14.0f); // hard rock from ~14 m
@@ -221,6 +231,17 @@ void DigSiteGrid::set_cell(int x, int y, int z, int v) {
 		return;
 	c = nv;
 	touch(x, y, z);
+}
+
+int DigSiteGrid::firm_top(int x, int z) const {
+	if (x < 0 || z < 0 || x >= w || z >= d)
+		return -1;
+	for (int y = h - 1; y >= 0; y--) {
+		uint8_t c = cells[idx(x, y, z)];
+		if ((c & MAT_MASK) != AIR && !(c & LOOSE))
+			return y;
+	}
+	return -1;
 }
 
 int DigSiteGrid::column_top(int x, int z) const {
@@ -393,17 +414,21 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_h"), &DigSiteGrid::get_h);
 	ClassDB::bind_method(D_METHOD("get_d"), &DigSiteGrid::get_d);
 	ClassDB::bind_method(D_METHOD("get_surface"), &DigSiteGrid::get_surface);
+	ClassDB::bind_method(D_METHOD("start_top", "x", "z"), &DigSiteGrid::start_top);
 	ClassDB::bind_method(D_METHOD("get_cell", "x", "y", "z"), &DigSiteGrid::get_cell);
 	ClassDB::bind_method(D_METHOD("set_cell", "x", "y", "z", "v"), &DigSiteGrid::set_cell);
 	ClassDB::bind_method(D_METHOD("column_top", "x", "z"), &DigSiteGrid::column_top);
+	ClassDB::bind_method(D_METHOD("firm_top", "x", "z"), &DigSiteGrid::firm_top);
 	ClassDB::bind_method(D_METHOD("count_mat", "m"), &DigSiteGrid::count_mat);
 	ClassDB::bind_method(D_METHOD("count_box", "x0", "y0", "z0", "x1", "y1", "z1", "what"), &DigSiteGrid::count_box);
 	ClassDB::bind_method(D_METHOD("dig_sphere", "c", "r", "hardest"), &DigSiteGrid::dig_sphere);
 	ClassDB::bind_method(D_METHOD("fill_sphere", "c", "r", "m", "most", "loose"), &DigSiteGrid::fill_sphere);
 	ClassDB::bind_method(D_METHOD("blast_sphere", "c", "r", "reach", "crack"), &DigSiteGrid::blast_sphere);
-	ClassDB::bind_method(D_METHOD("blade_sweep", "a", "b", "fwd", "rows", "mouth", "firm_most", "hardest", "take_most", "heap"), &DigSiteGrid::blade_sweep);
+	ClassDB::bind_method(D_METHOD("blade_sweep", "a", "b", "fwd", "rows", "mouth", "firm_most", "hardest", "take_most", "heap", "share"), &DigSiteGrid::blade_sweep, DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("load_ahead", "a", "b", "fwd", "reach"), &DigSiteGrid::load_ahead);
 	ClassDB::bind_method(D_METHOD("pour_at", "x", "z", "top_y", "m", "n"), &DigSiteGrid::pour_at);
+	ClassDB::bind_method(D_METHOD("block_blade", "owner", "a", "b", "fwd", "thick", "high"), &DigSiteGrid::block_blade);
+	ClassDB::bind_method(D_METHOD("unblock", "owner"), &DigSiteGrid::unblock);
 	ClassDB::bind_method(D_METHOD("take_diff", "most"), &DigSiteGrid::take_diff);
 	ClassDB::bind_method(D_METHOD("pack_chunks", "list"), &DigSiteGrid::pack_chunks);
 	ClassDB::bind_method(D_METHOD("modified_chunks"), &DigSiteGrid::modified_chunks);

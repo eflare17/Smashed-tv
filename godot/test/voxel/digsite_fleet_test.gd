@@ -4,7 +4,7 @@ extends SceneTree
 ## into the truck's tray; the truck only turns rolling, drives, tips its load out behind (not a block made or lost);
 ## parked by the office it's loaded with concrete supports, and one's taken off its back. With --host=CODE /
 ## --join=CODE: the guest digs with the excavator (the host's game runs it), and takes a support off the truck. Owned
-## by the voxel session.
+## by the voxel session. The bulldozer: blade down it cuts and pushes a heap; Q's CUT takes an even layer off.
 
 var arena: Node
 var role := ""
@@ -199,6 +199,27 @@ func _solo() -> bool:
 				check(dz.moved > 1000 and dz.push_load > 200, "the bulldozer cuts and pushes a heap (%d blocks moved, %d banked against the blade)" % [dz.moved, dz.push_load])
 				check(dz.global_position.distance_to(v.dz_at) > 4.0 and dz.speed < dz.max_speed, "pushing, it's slowed by the load (%.1f m, %.2f m/s)" % [dz.global_position.distance_to(v.dz_at), dz.speed])
 				check(_ground() == int(v.total2), "not a block made or lost pushing")
+				# Q: CUT holds the blade 20 cm under where the ground began, and takes an even layer off
+				dz.lift_cmd = 0.0
+				dz.set_cut(true)
+				dz.cut_cm = 20
+				v.cut_from = dz.edge()
+				dz.throttle = 0.8
+				_next(13)
+		13:
+			var dz := _m(5) as DsDozer
+			if t - mark > 4.0:
+				dz.throttle = 0.0
+				var e: Vector3 = dz.edge()
+				var tr := ds.terrain
+				var worst := 0.0
+				var n := 0
+				for k in [0.35, 0.5, 0.65]:
+					var p: Vector3 = (v.cut_from as Vector3).lerp(e, k)
+					var under := tr.start_at(p.x, p.z) - tr.top_at(p.x, p.z)
+					worst = maxf(worst, absf(under - 0.2))
+					n += 1
+				check(dz.cut_on and dz.global_position.distance_to(v.dz_at) > 6.0 and worst < 0.2, "CUT: an even layer off, 20 cm under where the ground began (off by %.2f m at worst)" % worst)
 				return _done()
 	return false
 

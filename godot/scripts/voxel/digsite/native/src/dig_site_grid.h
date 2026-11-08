@@ -16,6 +16,7 @@
 #include <godot_cpp/variant/vector3.hpp>
 #include <cstdint>
 #include <vector>
+#include <map>
 
 namespace godot {
 
@@ -56,6 +57,17 @@ private:
 	int moves_total = 0;
 	void wake_near(int x, int y, int z);
 	inline bool air_at(int x, int y, int z) const { return in(x, y, z) && (cells[idx(x, y, z)] & MAT_MASK) == 0; }
+	// machines' blades and buckets, solid to the loose dirt (dig_site_blade.cpp): cells marked here are as good as
+	// ground to it (it banks against them and rests on them), cleared and marked again as each one moves
+	std::vector<uint64_t> blocked_bits;
+	std::map<int, std::vector<int>> blocked_by;
+	inline bool blocked(int i) const { return !blocked_bits.empty() && ((blocked_bits[i >> 6] >> (i & 63)) & 1ull); }
+	inline bool free_at(int x, int y, int z) const {
+		if (!in(x, y, z))
+			return false;
+		int i = idx(x, y, z);
+		return (cells[i] & MAT_MASK) == 0 && !blocked(i);
+	}
 	int drop_at(int x, int y, int z, int limit) const;
 	void move_cell(int from, int x, int y, int z);
 	int settle_chunk(int ci);
@@ -71,8 +83,11 @@ private:
 	int collapse(const Going &g);
 	// blades (dig_site_blade.cpp)
 	int moved_total_blade = 0;
+	std::vector<int16_t> start_tops;   // (each column's top cell as made: a dozer's CUT holds its depth under it)
+	uint32_t blade_rng = 12345u;
+	int dither(float v);
 	bool lay_on(int x, int z, uint8_t v, int top_y);
-	void spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y);
+	bool spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y);
 	// the network (dig_site_net.cpp): chunks changed since made (sent to a guest arriving), their checksums
 	std::vector<uint8_t> chunk_mod;
 	std::vector<uint32_t> chunk_hash;
@@ -103,9 +118,11 @@ public:
 	int get_h() const { return h; }
 	int get_d() const { return d; }
 	int get_surface() const { return surface; }
+	int start_top(int x, int z) const;
 
 	int get_cell(int x, int y, int z) const;
 	void set_cell(int x, int y, int z, int v);
+	int firm_top(int x, int z) const;
 	int column_top(int x, int z) const;
 	int count_mat(int m) const;
 	int count_box(int x0, int y0, int z0, int x1, int y1, int z1, int what) const;
@@ -114,9 +131,11 @@ public:
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);
 	Dictionary blast_sphere(const Vector3 &c, float r, const PackedFloat32Array &reach, float crack);
 	// blades (dig_site_blade.cpp)
-	Dictionary blade_sweep(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, int rows, float mouth, int firm_most, int hardest, int take_most, float heap);
+	Dictionary blade_sweep(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, int rows, float mouth, int firm_most, int hardest, int take_most, float heap, float share = 1.0f);
 	int load_ahead(const Vector3 &a, const Vector3 &b, const Vector3 &fwd, float reach) const;
 	int pour_at(int x, int z, int top_y, int m, int n);
+	void block_blade(int owner, const Vector3 &a, const Vector3 &b, const Vector3 &fwd, float thick, float high);
+	void unblock(int owner);
 
 	// the dirt (dig_site_dirt.cpp)
 	void set_physics(const PackedInt32Array &walls);

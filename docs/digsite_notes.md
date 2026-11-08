@@ -177,6 +177,37 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Tests: the fleet test drives the bulldozer (blocks moved and banked, slowed by the load, none made or lost); the
     other machine and tool tests pass unchanged, alone and in co-op with lag.
 
+- **Second pass on the digging, after looking it over myself (8 Nov, later).** Measuring the bulldozer headless at
+  60, 20 and 5 fps turned up real faults in the first pass: the blade re-cut everything above its edge every frame,
+  so a stalled blade pumped a heap taller than itself and the results changed with frame rate; the machine dived
+  into its own cut; loose dirt slumped back through the blade and in under the tracks, and the machine rode up onto
+  its own heap; a slow frame left steps it then couldn't climb. Fixed, mostly by porting more of the digger game:
+  - The cutter moves only what the edge sweeps through: each column loses `share` of what stands above the edge
+    (its travel this step over 0.25 m), from the top down, with random rounding (`blade_sweep(..., share)`). No
+    travel, nothing moved. The row behind the face clears what's left (so no firm step is left behind a moving
+    blade); further rows sweep loose dirt only.
+  - Machines step in slices of at most ~1/45 s, so a slow frame drives and digs the same as quick ones.
+  - Blades, buckets and machine bodies are solid to loose dirt (`block_blade`, `free_at` in the dirt sim): it banks
+    against them instead of slumping through, but isn't held up by them (what tumbles over a blade falls behind it,
+    where the strip back to the tracks is swept clear every step).
+  - Steady blade (the digger game's): while working, the blade keeps to its height averaged over the last 2.5 m, so
+    the machine pitching under it doesn't cut waves; never lifted much past the tracks' bottoms.
+  - CUT (Q; T/G deeper/shallower in 5 cm steps; R turns it off): holds the edge a set depth under where the ground
+    began (`start_top`, kept from when the site was made), so it takes an even layer off and follows the land.
+  - Drag: cutting firm ground slows it (CUT_BOG), on top of the heap's weight; a cell is only cut if there's room
+    for it in front (up to 0.5 m over the heap), so an overloaded blade stalls ("The blade's full") instead of
+    stacking a tower or passing through what it can't shift.
+  - Slope check: loose dirt isn't a wall, and a lip it can step up isn't either; only a bank rising past its step is.
+  - Loaders: the same share and solid bucket; extra loose-only rows back to the front wheels, so a Dingo scoops a
+    loose heap to a full bucket instead of riding up it.
+  - Grass only on ground still at its starting height: a scrape or cut shows soil (it used to stay green until the
+    cut went past the 0.5 m of topsoil).
+  - Keys: while driving, 1-6, C, F, Q, R no longer also reach the weapons.
+  - Measured (headless, 15 s, blade held down the whole time): CUT 20 cm pushes at ~1.3 m/s with a 1.6-2 m heap and
+    leaves the ground 12-25 cm under where it began, the same at 60 and 5 fps (the fleet test checks it); a deep cut
+    stalls with a full blade after ~11 m; a shallow blade spreads its heap into the dip ahead and drives on.
+  - Not done: the excavator's teeth are as before (firm ground by time, not travel).
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from

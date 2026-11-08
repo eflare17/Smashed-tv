@@ -24,6 +24,7 @@ var accel := 1.8                # m/s2, getting going (stopping: twice that)
 var turn_rate := 1.5            # rad/s, on the spot (less at speed)
 var max_climb := deg_to_rad(30.0)
 var step_up := 0.3              # m: the tallest step it'll climb
+var wall_look := 1.0            # m ahead of its leading wheels a bank's looked for (a dozer: no further than its blade)
 var seat := Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
 var turn_needs_speed := false   # (a truck: steered wheels, it only turns rolling)
 # where it is
@@ -109,12 +110,29 @@ func runs() -> bool:
 
 func step(dt: float) -> void:
 	if runs():
-		_drive(dt)
-		_tool(dt)
+		# (in steps of no more than ~1/45 s: a slow frame drives and digs the same as quick ones)
+		var n := clampi(ceili(dt * 45.0), 1, 6)
+		for i in n:
+			_drive(dt / n)
+			if n > 1:
+				_pose_now()
+			_tool(dt / n)
+		_block_body()
 	else:
 		_follow(dt)
 	_pose_now()
 	_pour_fx(dt)
+
+## Its body solid to the loose dirt (the host's: the dirt runs there): a heap slumping, or soil sliding off a blade,
+## banks against its tracks and wheels instead of flowing in under it (and lifting it up onto the pile)
+func _block_body() -> void:
+	var tr: DsTerrain = site.terrain
+	if tr == null:
+		return
+	var f := forward()
+	var r := right() * (width * 0.5)
+	var front := Vector3(global_position.x, global_position.y, global_position.z) + f * (length * 0.5)
+	tr.block(id + 1000, front - r, front + r, f, length, 1.0)
 
 ## (a subclass) what it's carrying (blocks; -1: nothing to carry) and where it comes out when it pours
 func fx_load() -> int:
@@ -225,9 +243,15 @@ func _wall_ahead(at: Vector3, yaw_: float, dir: float, base: float) -> bool:
 	var lead := at + f * (length * 0.5)
 	var lim := tan(max_climb)
 	for p in [lead - r, lead + r, lead]:
-		var rise := ground_y(p.x + f.x * 0.3, p.z + f.z * 0.3) - maxf(base, ground_y(p.x, p.z))
+		# (loose dirt isn't a wall: tracks and wheels climb it or shove through it; a bank of firm ground is)
+		var q: Vector3 = p + f * 0.3
+		var from := maxf(base, ground_y(p.x, p.z))
+		var rise := minf(ground_y(q.x, q.z), site.terrain.firm_at(q.x, q.z)) - from
 		if rise / 0.3 > lim and rise > 0.08:
-			return true
+			# (a lip it steps up onto isn't a wall: a bank is, rising on past what it steps up)
+			var q2: Vector3 = p + f * wall_look
+			if minf(ground_y(q2.x, q2.z), site.terrain.firm_at(q2.x, q2.z)) - from > step_up:
+				return true
 	return false
 
 func _uphill_now(going: float) -> float:

@@ -24,7 +24,7 @@ func _init() -> void:
 	bucket_len = 0.72
 	bucket_half = 0.92
 	bucket_high = 0.62
-	firm_rate = 2
+	firm_rate = 3
 	bog = 2000.0
 
 func _build_body() -> void:

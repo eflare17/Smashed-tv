@@ -29,7 +29,7 @@ var bucket := {}                # material -> blocks in it
 var load_n := 0
 var push_load := 0              # loose blocks banked against the bucket (it slows it)
 var dug := 0                    # (tests: blocks its bucket's taken or pushed)
-var firm_rate := 1              # firm blocks off a column each tick (the Bobcat: 2)
+var firm_rate := 2              # firm blocks off a column at full sweep (the Bobcat: 3)
 var bog := 900.0                # banked blocks that bring it nearly to a stop
 var _pour_acc := 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
@@ -123,6 +123,10 @@ func edge_ends() -> Array:
 	var l := Vector3(p.x + cos(curl) * bucket_len, p.y + sin(curl) * bucket_len, 0.0)
 	return [_look.global_transform * (l + Vector3(0, 0, -bucket_half)), _look.global_transform * (l + Vector3(0, 0, bucket_half))]
 
+## From the bucket's lip back to its front wheels (m)
+func _gap() -> float:
+	return maxf((edge() - global_position).dot(forward()) - length * 0.5, bucket_len)
+
 func _drive(dt: float) -> void:
 	var top := max_speed
 	max_speed = top * (1.0 - 0.75 * clampf(float(push_load) / bog, 0.0, 1.0))
@@ -191,8 +195,11 @@ func _tool(dt: float) -> void:
 	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
 		var ends := edge_ends()
 		var f := forward()
-		var rows := 2 + ceili(absf(speed) * dt / 0.22)      # (the whole strip it swept this frame, however slow the frame)
-		var r: Dictionary = tr.blade(ends[0], ends[1], f, rows, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35)
+		var share := clampf(maxf(speed, 0.0) * dt / 0.25, 0.0, 1.0)     # (it takes only what it drives through)
+		# (two rows at the lip; behind them, back to its front wheels, loose dirt only: what's slid in under the bucket
+		# goes in it or ahead, never under the wheels to lift it up onto the pile)
+		var rows := 2 + ceili(_gap() / 0.22)
+		var r: Dictionary = tr.blade(ends[0], ends[1], f, rows, bucket_high + 0.1, firm_rate, hardest, capacity - load_n, bucket_high + 0.35, share)
 		var counts: PackedInt32Array = r.counts
 		for m in counts.size():
 			if counts[m] > 0:
@@ -205,6 +212,12 @@ func _tool(dt: float) -> void:
 			if site.net:
 				site.net.event("fx", ["dig_clang", e, 0])
 		push_load = tr.load_ahead(ends[0], ends[1], f, bucket_high + 0.3)
+	# (the bucket's a wall to loose dirt while it's held level, so what's banked against it stays in front)
+	if tip() > POUR_FROM:
+		var be := edge_ends()
+		tr.block(id, be[0], be[1], forward(), _gap() + 0.1, bucket_high)
+	else:
+		tr.unblock(id)
 	# pouring: tipped forward, it comes out where the edge is, loose (a pile)
 	if tip() < POUR_FROM and load_n > 0:
 		var k := clampf((POUR_FROM - tip()) / (POUR_FROM - POUR_ALL), 0.0, 1.0)
