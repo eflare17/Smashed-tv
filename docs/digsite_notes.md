@@ -124,7 +124,10 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   "dyn" and "boom" events (the stick, the bang, chunks to watch), the ground through the chunks.
 
 - **More machines (stage 10).** On the same DsMachine base, parked by the gate:
-  - Bobcat (`ds_bobcat.gd`): a DsDingo with wheels and a cab, faster, a 520-block bucket 1.5 m wide.
+  - Bobcat (`ds_bobcat.gd`): a DsDingo with wheels and a cab, faster, a 520-block bucket 1.8 m wide.
+  - All four machines now use the digger game's models (DsProps: the Dingo with its little tracks, the Bobcat, the
+    8 m tip truck with its tray hinged at the back, the excavator) and its loader arm geometry (pivot, arm length,
+    bucket on the pin, its floor's angle the curl).
   - Excavator (`ds_excavator.gd`): the digger game's own, after the owner said the first one "looks trash compared to
     the other one". Its model (`ds_props.gd`, `ds_kit.gd`, `ds_track_rig.gd`: copies of earthmover's props.gd,
     mesh_kit.gd, track_rig.gd, renamed) and its arm: you steer the bucket's pin (R/F up/down, T/G out/in) and the boom

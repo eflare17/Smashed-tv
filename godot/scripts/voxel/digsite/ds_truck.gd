@@ -7,14 +7,19 @@ extends DsMachine
 ## (paid for, $8 each); on foot at its back, G takes one into your backpack. In co-op the host's game runs it, as every
 ## machine; a guest's loading and taking go to the host as events and come back. Owned by the voxel session.
 
-const CAPACITY := 2400          # blocks in the tray (4.7 m3)
+const CAPACITY := 4000          # blocks in the tray (8 m3)
 const TIP_RATE := 0.45          # of the way up a second
 const POUR_FROM := 0.45         # tipped this far, it pours ...
 const POUR_RATE := 500.0        # ... this fast (blocks a second), at full tip
 const PROPS_MOST := 12
 const PROP_COST := 8
-const TRAY := Vector3(1.8, 0.6, 2.0)     # the tray's size ...
-const TRAY_AT := Vector3(0, 1.0, 0.75)   # ... its floor's middle, from the truck's middle
+const TRAY := Vector3(2.4, 0.95, 4.6)    # the tray's size (across, high, long) ...
+const TRAY_AT := Vector3(0, 1.28, 1.25)  # ... its floor's middle, from the truck's middle
+# (the digger game's Truck: its tray hinged at its back, in its frame: x forward, y up)
+const HINGE := Vector3(-3.55, 1.28, 0.0)
+const TRAY_LONG := 4.6
+const TRAY_HALF := 1.2
+const TRAY_HIGH := 0.95
 
 var tip := 0.0                  # the tray, 0 down .. 1 right up
 var tip_cmd := 0.0
@@ -25,54 +30,72 @@ var _pour_acc := 0.0
 var _tray: Node3D
 var _lump: MeshInstance3D
 var _props_mesh: MeshInstance3D
+var _look: Node3D
+var _wheels := []
+var _roll := 0.0
 
 func _init() -> void:
 	kind = "tip truck"
-	length = 4.6
-	width = 2.0
+	length = 7.6
+	width = 2.5
 	max_speed = 5.0
 	accel = 2.2
 	turn_rate = 0.9
 	max_climb = deg_to_rad(22.0)
 	step_up = 0.36
-	seat = Vector3(-0.45, 0.85, -1.45)
+	seat = Vector3(0.5, 0.95, -2.4)
 	turn_needs_speed = true
 
 func _build() -> void:
 	super()
-	var red := Color8(196, 40, 36)
-	var dark := Color8(36, 36, 40)
-	for z in [-1.6, 0.55, 1.5]:
-		for sx in [-1.0, 1.0]:
-			var w := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 0.48
-			cm.bottom_radius = 0.48
-			cm.height = 0.36
-			w.mesh = cm
-			var m := StandardMaterial3D.new()
-			m.albedo_color = dark
-			w.material_override = m
-			w.rotation.z = PI * 0.5
-			w.position = Vector3(sx * 0.85, 0.48, z)
-			add_child(w)
-	_box(self, Vector3(1.4, 0.3, 4.4), Vector3(0, 0.8, 0), Color8(60, 60, 64), 0.5)
-	# the cab at the front: windows, the seat on the left
-	_box(self, Vector3(2.0, 1.4, 1.3), Vector3(0, 1.65, -1.55), red)
-	_box(self, Vector3(1.9, 0.6, 0.04), Vector3(0, 2.0, -2.21), Color8(120, 160, 190), 0.8)
-	# the tray: hinged at its back
+	(_body.get_child(0) as CollisionShape3D).position.y = 1.0
+	_look = Node3D.new()
+	_look.rotation.y = PI * 0.5
+	add_child(_look)
+	var kit := DsKit.new()
+	DsProps.truck_body(kit)
+	_mesh(_look, kit)
+	var wk := DsKit.new()
+	DsProps.wheel(wk, 0.34)
+	var wide := DsKit.new()
+	DsProps.wheel(wide, 0.56)
+	var tyre := wk.mesh()
+	var tyre2 := wide.mesh()
+	for side in [-1.0, 1.0]:
+		_wheel(tyre, Vector3(2.3, 0.6, side * 1.08), 0.6)
+		_wheel(tyre2, Vector3(-1.5, 0.6, side * 0.98), 0.6)
+		_wheel(tyre2, Vector3(-2.75, 0.6, side * 0.98), 0.6)
 	_tray = Node3D.new()
-	_tray.position = Vector3(0, TRAY_AT.y, TRAY_AT.z + TRAY.z * 0.5)
-	add_child(_tray)
-	var grey := Color8(150, 150, 150)
-	_box(_tray, Vector3(TRAY.x, 0.08, TRAY.z), Vector3(0, 0, -TRAY.z * 0.5), grey, 0.5)
-	for sx in [-1.0, 1.0]:
-		_box(_tray, Vector3(0.06, TRAY.y, TRAY.z), Vector3(sx * TRAY.x * 0.5, TRAY.y * 0.5, -TRAY.z * 0.5), grey, 0.5)
-	_box(_tray, Vector3(TRAY.x, TRAY.y + 0.2, 0.06), Vector3(0, TRAY.y * 0.5 + 0.1, -TRAY.z), grey, 0.5)
-	_lump = _box(_tray, Vector3(TRAY.x - 0.12, 0.5, TRAY.z - 0.1), Vector3(0, 0.25, -TRAY.z * 0.5), Color8(122, 86, 52), 0.0)
+	_tray.position = HINGE
+	_look.add_child(_tray)
+	kit = DsKit.new()
+	DsProps.truck_tray(kit, TRAY_LONG, TRAY_HALF, TRAY_HIGH)
+	_mesh(_tray, kit)
+	kit = DsKit.new()
+	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.32, 0.65), Vector2(0.0, 1.0), Vector2(-0.32, 0.65)], -0.5, 0.5, DsProps.DIRT)
+	_lump = _mesh(_tray, kit)
 	_lump.visible = false
-	_props_mesh = _box(_tray, Vector3(0.9, 0.3, 1.6), Vector3(0, 0.2, -TRAY.z * 0.5), DsMats.COL[DsMats.CONCRETE], 0.0)
+	kit = DsKit.new()
+	for k in 4:
+		kit.box(Vector3(1.0 + k * 0.7, 0.3, 0.0), Vector3(0.3, 0.3, 1.8), DsProps.c("#b0b0aa"))
+	_props_mesh = _mesh(_tray, kit)
 	_props_mesh.visible = false
+
+func _mesh(parent: Node3D, kit: DsKit) -> MeshInstance3D:
+	var m := MeshInstance3D.new()
+	m.mesh = kit.mesh()
+	m.material_override = DsExcavator.mat()
+	parent.add_child(m)
+	return m
+
+func _wheel(mesh: Mesh, at: Vector3, r: float) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = DsExcavator.mat()
+	mi.position = at
+	mi.basis = Basis.IDENTITY.scaled(Vector3(r, r, 1.0))
+	_look.add_child(mi)
+	_wheels.append([mi, r])
 
 ## Whether a point's over the tray (a bucket pouring there fills it)
 func over_tray(p: Vector3) -> bool:
@@ -91,18 +114,22 @@ func take(m: int, n: int) -> int:
 
 ## Where it pours out, tipped: behind the tray
 func spout() -> Vector3:
-	return global_transform * Vector3(0, 0.5, TRAY_AT.z + TRAY.z * 0.5 + 0.5)
+	return global_transform * Vector3(0, 0.5, TRAY_AT.z + TRAY.z * 0.5 + 0.7)
 
 func _pose_tool() -> void:
 	if _tray == null:
 		return
-	_tray.rotation.x = tip * 0.9
-	_lump.visible = load_n > 0
-	if load_n > 0:
-		var k := clampf(float(load_n) / CAPACITY, 0.1, 1.0)
-		_lump.scale = Vector3(1.0, k, 1.0)
-		_lump.position.y = 0.25 * k
+	_tray.transform = Transform3D(Basis(Vector3.BACK, tip * 0.95), HINGE)
+	var f := float(load_n) / CAPACITY
+	_lump.visible = f > 0.01
+	if _lump.visible:
+		var up := TRAY_HIGH * (0.25 + 0.9 * f)
+		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(TRAY_LONG * 0.92, up, TRAY_HALF * 1.85)), Vector3(TRAY_LONG * 0.5, 0.08, 0.0))
 	_props_mesh.visible = props > 0 and load_n == 0
+	_roll += speed * get_process_delta_time()
+	for w in _wheels:
+		var r: float = w[1]
+		(w[0] as Node3D).basis = Basis(Vector3.BACK, -_roll / r).scaled(Vector3(r, r, 1.0))
 
 func read_input() -> void:
 	super()

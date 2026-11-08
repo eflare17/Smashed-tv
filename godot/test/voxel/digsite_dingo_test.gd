@@ -95,7 +95,7 @@ func _solo() -> bool:
 			var d := _dingo()
 			if t - mark > 2.0:
 				d.lift_cmd = 0.0
-				d.curl = 0.3 - 0.4 * d.arm + 0.0        # (the bucket's floor level)
+				d.curl = 0.0                     # (the bucket's floor level)
 				v.total = _total(ds.terrain.grid)
 				v.e0 = d.edge()
 				check(d.arm <= DsDingo.ARM_LOW + 0.01 and d.edge().y < d.ground_y(d.edge().x, d.edge().z), "arms down: the bucket's edge in the ground (%.2f under)" % (d.ground_y(d.edge().x, d.edge().z) - d.edge().y))
@@ -220,7 +220,7 @@ func _coop() -> bool:
 			if t - mark > 2.5:
 				if role == "host":
 					d.lift_cmd = 0.0
-					d.curl = 0.3 - 0.4 * d.arm
+					d.curl = 0.0
 					d.throttle = 0.6
 				v.ground = _total(ds.terrain.grid)
 				_next(8)

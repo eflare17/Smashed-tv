@@ -86,7 +86,7 @@ func _solo() -> bool:
 			var b := _m(2) as DsBobcat
 			if t - mark > 2.5:
 				b.lift_cmd = 0.0
-				b.curl = 0.3 - 0.4 * b.arm
+				b.curl = 0.0
 				b.throttle = 0.6
 				_next(3)
 		3:
@@ -120,7 +120,7 @@ func _solo() -> bool:
 				_next(6)
 		6:
 			var x := _m(3) as DsExcavator
-			if t - mark > 2.5:
+			if t - mark > 4.0:
 				x.raise_cmd = 0.0
 				# the truck backed up under its bucket
 				var tk := _m(4) as DsTruck
