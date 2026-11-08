@@ -156,6 +156,27 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   right, the machine side on tipped by its nose and from behind by its lean, with degrees, white / amber (70% of what
   it climbs) / red, and red marks at its limit; TOO STEEP when it's stopped for it.
 
+- **Digging feel and the bulldozer (the owner, 8 Nov: "the digging currently feels really terrible ... it's so much
+  better already on the web version ... put a bulldozer in there and just the physics of the dirt and the
+  digging").** The machines now dig the way the web digger game's DirtSim.blade does, ported to C++
+  (`native/src/dig_site_blade.cpp`): a blade or bucket edge is swept as a line of rows; every cell above the edge
+  (up to its mouth) is cut: loose dirt at once, firm ground only a few cells a column a frame (so firm ground bites
+  slowly and loose piles scoop easily), rock stops it. What's cut goes into the bucket while there's room; the rest
+  is banked just ahead of the edge, up to the heap's height, then rolls off the ends, then into the lowest spot
+  near. Cutting through that heap again is what pushing is. `load_ahead` counts the loose dirt banked against the
+  edge and slows the machine (it bogs down pushing a big heap). Rows are swept by distance travelled (at 3 fps a
+  blade still cuts every cell it passed) and spill ahead of the front edge.
+  - Bulldozer (`ds_dozer.gd`, the digger game's dozer model and tracks): R/F lift and drop the blade, drive to cut
+    and push. Nothing goes in a bucket: all of it is banked and pushed.
+  - Dingo and Bobcat: their buckets fill as they drive in (loose first, firm slowly), and once full they push.
+  - Excavator: the teeth cut the same way, firm ground at a set rate (9 cells a second), and the arm slows in it.
+  - Pouring (every bucket and the truck): `pour_at` spreads a load ring by ring round where it falls, capped at the
+    bucket's height (it used to stack one tower per column), with a stream of falling dirt drawn while it pours.
+  - Shovel: a spade-shaped slice (the cutter, aimed where you look) instead of a sphere; right click tips the scoop
+    in a heap. Both are DsNet ops ("cut", "pour"), so a guest's are predicted and checked like digs.
+  - Tests: the fleet test drives the bulldozer (blocks moved and banked, slowed by the load, none made or lost); the
+    other machine and tool tests pass unchanged, alone and in co-op with lag.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
