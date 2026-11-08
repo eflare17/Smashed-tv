@@ -40,6 +40,15 @@ const CURL_LIFT := 1.6          # rad a second it curls by itself, lifting a loa
 ## The load was 1.2 m3; the owner found that felt like nothing next to the dozer, so it's 1.8x, and it digs and tips that much faster.
 const CAPACITY := 34560         # mm on one cell's area: 2.16 m3 heaped (the big one, 1.9x, about 14.8 m3)
 const HEAPED := 27000           # over this it's heaped, and a fast move shakes some off
+## Filled right up, the top of the heap won't stay (owner, 9 Nov): over this it tumbles off the edges in little lumps, about
+## SETTLE_S seconds' worth, till it settles to a rounded heap, not flat.
+const SETTLED := HEAPED + (CAPACITY - HEAPED) * 6 / 10
+const SETTLE_S := 1.2
+const SPILL_CHUNK := 160        # mm a tumbling lump carries: a third of a poured chunk
+## The soil in the bucket's drawn from these many levels, filled into its hollow, then this many heaped above it.
+const LOAD_LEVELS := 12
+const HEAP_LEVELS := 6
+const HEAP_TALL := 0.3          # m (the bucket's own) the heap stands at its fullest, in the middle
 const POUR_RATE := 28800        # mm a second, tipping out at most: a full bucket empties as quick as before
 const CHUNK := 480              # mm a falling chunk carries (0.03 m3)
 const FIRM_RATE := 9           # mm of firm ground the teeth take from a cell in a tick (with the wider bucket, about 1.8x as fast)
@@ -87,6 +96,9 @@ var _boom: MeshInstance3D
 var _stick: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
+var _loads: Array[ArrayMesh] = []
+var _settle_store := 0
+var _settle_dust := 0
 var _rams: Array[MeshInstance3D] = []
 var _bucket_speed := 0.0
 var _bucket_dir := Vector2.ZERO
@@ -145,9 +157,10 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	# Built at its first size and drawn BUCKET_GROW bigger (in _pose), so its shape and the soil in it grow together.
 	Props.excavator_bucket(kit, BUCKET / BUCKET_GROW, BUCKET_HALF / BUCKET_GROW, size > 1.0)
 	_bucket = _add_mesh(_house, kit, mat)
-	kit = MeshKit.new()
-	kit.box(Vector3(0.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0), Props.DIRT, Basis(Vector3.RIGHT, 0.05))
-	_lump = _add_mesh(_bucket, kit, mat)
+	_build_loads()
+	_lump = MeshInstance3D.new()
+	_lump.material_override = mat
+	_bucket.add_child(_lump)
 	_lump.visible = false
 	_mat = mat
 	for k in 3:
@@ -291,10 +304,120 @@ func _pose() -> void:
 	_lump.visible = f > 0.02
 	if _lump.visible:
 		_lump.material_override = Props.dust_mat() if bucket_dust * 2 > bucket_mm else _mat
-		# The soil in the bucket: fills its hollow, then heaps up out of the open side.
-		var deep := 0.3 + 0.62 * minf(f * 1.3, 1.0)
-		var long := 0.5 + 0.55 * minf(f * 1.5, 1.0)
-		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(long, deep, BUCKET_HALF / BUCKET_GROW * 1.86)), Vector3(0.58, 0.46 - deep * 0.5, 0.0))
+		# The soil in the bucket: fills its hollow from the back, then heaps up out of the open side.
+		var heaped := float(HEAPED) / CAPACITY
+		var k := 0
+		if f <= heaped:
+			k = clampi(int(ceil(f / heaped * LOAD_LEVELS)) - 1, 0, LOAD_LEVELS - 1)
+		else:
+			k = LOAD_LEVELS - 1 + clampi(int(ceil((f - heaped) / (1.0 - heaped) * HEAP_LEVELS)), 0, HEAP_LEVELS)
+		_lump.mesh = _loads[k]
+
+## The soil in the bucket at each level, built once (owner, 9 Nov: the old block poked out through the bucket and looked blocky).
+## It fills the bucket's own hollow, in from its shell and side plates, from the back towards the open side, its top lumpy; past
+## HEAPED a rounded heap of lumps stands out of the open side, inside the side plates.
+func _build_loads() -> void:
+	var length := BUCKET / BUCKET_GROW
+	var half := BUCKET_HALF / BUCKET_GROW - 0.06
+	# The hollow, as Props.excavator_bucket shapes it: the shell round the back, and the open side from the teeth to the heel.
+	var hollow := PackedVector2Array([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length - 0.12, 0.14), Vector2(length, -0.02), Vector2(0.15, -0.28)])
+	var mid := Vector2.ZERO
+	for p in hollow:
+		mid += p / hollow.size()
+	for i in hollow.size():
+		hollow[i] = mid + (hollow[i] - mid) * 0.9
+	var lip := hollow[4]
+	var heel := hollow[5]
+	var along := (heel - lip).normalized()
+	var into := Vector2(-along.y, along.x)
+	if into.dot(hollow[2] - lip) < 0.0:
+		into = -into
+	var deepest := 0.0
+	for p in hollow:
+		deepest = maxf(deepest, (p - lip).dot(into))
+	var whole := _area(hollow)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 19
+	var dark := Props.DIRT.darkened(0.15)
+	_loads.clear()
+	for k in LOAD_LEVELS + HEAP_LEVELS:
+		var kit := MeshKit.new()
+		var share := minf(float(k + 1) / LOAD_LEVELS, 1.0)
+		var heap := maxf(float(k + 1 - LOAD_LEVELS) / HEAP_LEVELS, 0.0)
+		# Where its top is, measured in from the open side, found so it holds the right share of the hollow.
+		var lo := 0.0
+		var hi := deepest
+		for i in 18:
+			var try_at := (lo + hi) * 0.5
+			if _area(_clip(hollow, lip, into, try_at)) > share * whole:
+				lo = try_at
+			else:
+				hi = try_at
+		var cut := (lo + hi) * 0.5
+		var body := _clip(hollow, lip, into, cut)
+		if body.size() >= 3:
+			kit.prism(Array(body), -half, half, Props.DIRT)
+		# Lumps along its top, or the heap out of the open side: a grid of rough lumps, taller in the middle.
+		var top_a := lip + into * cut
+		var top_b := heel + into * cut
+		if heap <= 0.0:
+			# Where the top meets the shell at each end, kept a little in so no lump pokes through it.
+			var ends := _top_ends(body, lip, into, cut)
+			top_a = ends[0]
+			top_b = ends[1]
+		var out := Vector3(-into.x, -into.y, 0.0)
+		# Low, rounded and close together, so they read as one heap of clods, not a row of rocks.
+		var rows := 6 if heap > 0.0 else 4
+		var cols := 5 if heap > 0.0 else 3
+		for i in rows:
+			for j in cols:
+				var t := lerpf(0.16, 0.84, (i + rng.randf_range(-0.3, 0.3)) / (rows - 1))
+				var r := (0.13 if heap > 0.0 else 0.09) * rng.randf_range(0.8, 1.2)
+				# Kept clear of the side plates, rough edges and all.
+				var z := clampf(lerpf(-half + r * 1.5, half - r * 1.5, (j + rng.randf_range(-0.25, 0.25)) / (cols - 1)), -half + r * 1.5, half - r * 1.5)
+				var base2 := top_a.lerp(top_b, t)
+				var dome := (1.0 - pow(2.0 * t - 1.0, 2.0)) * (1.0 - pow(z / half, 2.0))
+				var tall := heap * HEAP_TALL * dome + r * rng.randf_range(0.25, 0.5)
+				var base := Vector3(base2.x, base2.y, z) - out * r * 0.5
+				var waist := base + out * (tall * 0.6 + r * 0.25)
+				var col := Props.DIRT if rng.randf() < 0.6 else dark
+				kit.cone(base, waist, r, r * 1.1, 7, col, 0.2, rng)
+				kit.cone(waist, base + out * (tall + r * 0.5), r * 1.1, r * 0.5, 7, col, 0.2, rng)
+		_loads.append(kit.mesh())
+
+## The part of a convex shape at least `cut` in from the line through `at` (measured along `into`).
+static func _clip(shape: PackedVector2Array, at: Vector2, into: Vector2, cut: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in shape.size():
+		var a := shape[i]
+		var b := shape[(i + 1) % shape.size()]
+		var da := (a - at).dot(into) - cut
+		var db := (b - at).dot(into) - cut
+		if da >= 0.0:
+			out.append(a)
+		if (da >= 0.0) != (db >= 0.0):
+			out.append(a.lerp(b, da / (da - db)))
+	return out
+
+## The two ends of a clipped shape's cut edge, each pulled in a little.
+static func _top_ends(shape: PackedVector2Array, at: Vector2, into: Vector2, cut: float) -> Array:
+	var on: Array[Vector2] = []
+	for p in shape:
+		if absf((p - at).dot(into) - cut) < 0.0005:
+			on.append(p)
+	if on.size() < 2:
+		return [at + into * cut, at + into * cut]
+	var a: Vector2 = on[0]
+	var b: Vector2 = on[on.size() - 1]
+	return [a.lerp(b, 0.08), b.lerp(a, 0.08)]
+
+static func _area(shape: PackedVector2Array) -> float:
+	var sum := 0.0
+	for i in shape.size():
+		var a := shape[i]
+		var b := shape[(i + 1) % shape.size()]
+		sum += a.x * b.y - b.x * a.y
+	return absf(sum) * 0.5
 
 ## A stretched ram between two points, in the house's own space.
 func _ram(k: int, a: Vector3, b: Vector3) -> void:
@@ -342,6 +465,7 @@ func step(dt: float) -> void:
 	teeth = _teeth_now()
 	_dig(was, teeth, dt)
 	_pour(dt)
+	_settle_heap(dt)
 	_pose()
 
 	var moved := (teeth - was) / dt
@@ -603,6 +727,45 @@ func _pour(dt: float) -> void:
 		var f := house_forward()
 		var at := pour_spot + side3 * _rng.randf_range(-BUCKET_HALF, BUCKET_HALF)
 		sim.launch(at, Vector3(f.x * _rng.randf_range(0.2, 0.7), -0.4, f.y * _rng.randf_range(0.2, 0.7)), amt, chunk_dust)
+
+## Filled right up, held level in the bucket: the top of the heap tumbles off over its sides and lip in little lumps till it's
+## settled to a rounded heap. Real soil, so it lands where it falls.
+func _settle_heap(dt: float) -> void:
+	var settled := int(SETTLED * size * size * size)
+	var out := 0
+	# Only while it's holding it: tipped, it's pouring out anyway.
+	if bucket_mm > settled and bucket_mm <= _holds():
+		out = mini(bucket_mm - settled, ceili(float(capacity() - settled) / SETTLE_S * dt))
+	if out > 0:
+		var out_dust := bucket_dust * out / bucket_mm
+		bucket_mm -= out
+		bucket_dust -= out_dust
+		_settle_store += out
+		_settle_dust += out_dust
+	if _settle_store <= 0:
+		return
+	var chunk := int(SPILL_CHUNK * size * size)
+	# Put together by hand: works whether or not it's in a scene yet.
+	var place := transform * _house.transform * _bucket.transform
+	var length := BUCKET / BUCKET_GROW
+	var half := BUCKET_HALF / BUCKET_GROW
+	# What's come off goes in lumps; the last of it goes once it's stopped coming.
+	while _settle_store >= chunk or (out == 0 or bucket_mm <= settled) and _settle_store > 0:
+		var amt := mini(chunk, _settle_store)
+		var amt_dust := _settle_dust * amt / _settle_store
+		_settle_store -= amt
+		_settle_dust -= amt_dust
+		# Off one side or over the lip, from near the top of the heap.
+		var t := _rng.randf_range(0.2, 0.9)
+		var edge := Vector2(length, -0.02).lerp(Vector2(0.15, -0.28), t)
+		var side := _rng.randf_range(-1.0, 1.0)
+		var over_side := absf(side) > 0.35
+		var local := Vector3(edge.x, edge.y - 0.12, (signf(side) * half if over_side else side * half))
+		var at := place * local
+		var push := (place.basis * Vector3(0.0, 0.0, signf(side))).normalized() if over_side else (place.basis * Vector3(1.0, 0.0, 0.0)).normalized()
+		var v := push * _rng.randf_range(0.4, 0.9) * sqrt(size) + Vector3(0.0, 0.3, 0.0)
+		sim.held -= amt
+		sim.launch(at, v, amt, amt_dust)
 
 ## It rocks on its tracks: forward with a load held far out, back as the teeth bite, and over as the house swings.
 func _rock_machine(dt: float) -> void:

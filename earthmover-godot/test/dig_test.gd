@@ -157,5 +157,35 @@ func _init() -> void:
 	check(DirtSim.to_m3(dug) > 2.0, "it moved real soil (%.1f m3 in 4 bites)" % DirtSim.to_m3(dug))
 	print("      each bite carried about %.2f m3" % (DirtSim.to_m3(dug) / 4.0))
 
+	# Filled right up and held curled (owner, 9 Nov): the top of the heap tumbles off in little lumps till it's settled, real soil
+	# that lands on the ground, and none lost. The soil in it is drawn inside the bucket.
+	var u := DirtSim.new()
+	ground.fill_sim(u)
+	var x := new_digger(u, Vector2(-10.0, 10.0), Vector2(1, 0))
+	x.wrist = Vector2(6.0, 2.5)
+	x.curl = 3.2
+	hold(u, x, 0.2)
+	x.bucket_mm = x.capacity()
+	u.held += x.capacity()
+	var u_total := u.total()
+	var flew := 0
+	var lumps := 0
+	var was_air := 0
+	var u_same := true
+	for k in int(3.0 / DT):
+		x.step(DT)
+		u.step(DT, 1000000)
+		flew = maxi(flew, u.in_air)
+		if u.air_amt.size() > was_air:
+			lumps += u.air_amt.size() - was_air
+		was_air = u.air_amt.size()
+		u_same = u_same and u.total() == u_total
+	var kept := x.fill()
+	print("      filled right up: kept %d%% of it, %d lumps tumbled off, at most %.2f m3 in the air at once" % [int(kept * 100.0), lumps, DirtSim.to_m3(flew)])
+	check(kept > 0.85 and kept < 0.95, "a full bucket settles: a little tumbles off, most stays (%d%%)" % int(kept * 100.0))
+	check(lumps >= 5 and flew > 0, "it comes off as little lumps falling, not all at once")
+	check(u_same and u.in_air == 0, "they land, and the total never changes")
+	check(x._lump.visible and x._loads.find(x._lump.mesh) >= Excavator.LOAD_LEVELS, "the soil in it is drawn as a heap above the bucket's rim")
+
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(fails)

@@ -468,3 +468,20 @@ Not picked: a LOOK pad, look buttons, dirt falling off a find once it's found, b
 - `find_test.ride_test`: the bucket dragged in low across the dug-out car goes up and over it, never into it; the dozer with CUT
   set below the car's roof keeps going over it (44% of the car uncovered in one pass, not cut into). `freefind_test` checks the
   thumb looks round while DIG's held and he doesn't move.
+
+## 9 Nov 2026: the soil in the excavator's bucket
+
+Owner's screenshot: the load was a stretched box that poked out through the bucket's side and back, and looked blocky. They asked
+for it not to clip, to be less blocky, and once it's filled up for little lumps to fall over the edge so it levels out a bit.
+
+- The load's now built from the bucket's own hollow (`Excavator._build_loads`): 12 levels filling it from the back towards the open
+  side, kept in from the shell and side plates, with rough lumps on its top; then 6 levels of a rounded heap of lumps standing out
+  of the open side, inside the side plates, up to 0.3 m (bucket's own metres) in the middle. Built once at setup; the right one's
+  shown each frame (no cost while digging).
+- Filled right up and held, the top of the heap tumbles off over the sides and lip in little lumps (a third of a pour chunk) over
+  about 1.2 s, till it's settled at `SETTLED`, 91% of what it holds (pick). Real soil, landing where it falls. A fast swing still
+  sheds the heap down to `HEAPED` as before.
+- The loaders' buckets (Bobcat, Dingo) still draw their load as a box: not changed, not asked.
+- Slip on the way, caught by the checks: the new function was first called `_settle`, which hid the machine's own `_settle` (the
+  one that sits it on the ground), so the excavator stopped being placed. Renamed `_settle_heap`.
+- `dig_test`: filled right up and held, 91% stays, 17 lumps tumble off, they land, nothing lost, and the heap's drawn.
