@@ -297,6 +297,49 @@ Dictionary DigSiteGrid::dig_sphere(const Vector3 &c, float r, int hardest) {
 	return out;
 }
 
+// A blast at c (cells), r (cells) for the softest ground: a cell of m within r x reach[m] is blown out (reach 0:
+// never: bedrock, the edge), one within crack times that turned loose (it slumps). -> {counts: blown out by material,
+// n, cracked}
+Dictionary DigSiteGrid::blast_sphere(const Vector3 &c, float r, const PackedFloat32Array &reach, float crack) {
+	PackedInt32Array counts;
+	counts.resize(NMAT);
+	for (int i = 0; i < NMAT; i++)
+		counts.set(i, 0);
+	int n = 0, cracked = 0;
+	float far = r * std::max(1.0f, crack);
+	int x0 = (int)std::floor(c.x - far), x1 = (int)std::floor(c.x + far);
+	int y0 = (int)std::floor(c.y - far), y1 = (int)std::floor(c.y + far);
+	int z0 = (int)std::floor(c.z - far), z1 = (int)std::floor(c.z + far);
+	for (int y = std::max(0, y0); y <= std::min(h - 1, y1); y++)
+		for (int z = std::max(0, z0); z <= std::min(d - 1, z1); z++)
+			for (int x = std::max(0, x0); x <= std::min(w - 1, x1); x++) {
+				uint8_t &cell = cells[idx(x, y, z)];
+				int m = cell & MAT_MASK;
+				if (m == AIR)
+					continue;
+				float k = m < reach.size() ? reach[m] : 0.0f;
+				if (k <= 0.0f)
+					continue;
+				float ex = x + 0.5f - c.x, ey = y + 0.5f - c.y, ez = z + 0.5f - c.z;
+				float dd = std::sqrt(ex * ex + ey * ey + ez * ez);
+				if (dd <= r * k) {
+					counts.set(m, counts[m] + 1);
+					cell = AIR;
+					touch(x, y, z);
+					n++;
+				} else if (dd <= r * k * crack && !(cell & LOOSE)) {
+					cell |= LOOSE;
+					touch(x, y, z);
+					cracked++;
+				}
+			}
+	Dictionary out;
+	out["counts"] = counts;
+	out["n"] = n;
+	out["cracked"] = cracked;
+	return out;
+}
+
 // Up to `most` cells of m put into the empty cells within r of c, the lowest first. -> how many
 int DigSiteGrid::fill_sphere(const Vector3 &c, float r, int m, int most, bool loose) {
 	if (most <= 0 || m <= 0 || m >= NMAT)
@@ -435,6 +478,7 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("count_box", "x0", "y0", "z0", "x1", "y1", "z1", "what"), &DigSiteGrid::count_box);
 	ClassDB::bind_method(D_METHOD("dig_sphere", "c", "r", "hardest"), &DigSiteGrid::dig_sphere);
 	ClassDB::bind_method(D_METHOD("fill_sphere", "c", "r", "m", "most", "loose"), &DigSiteGrid::fill_sphere);
+	ClassDB::bind_method(D_METHOD("blast_sphere", "c", "r", "reach", "crack"), &DigSiteGrid::blast_sphere);
 	ClassDB::bind_method(D_METHOD("take_diff", "most"), &DigSiteGrid::take_diff);
 	ClassDB::bind_method(D_METHOD("pack_chunks", "list"), &DigSiteGrid::pack_chunks);
 	ClassDB::bind_method(D_METHOD("modified_chunks"), &DigSiteGrid::modified_chunks);

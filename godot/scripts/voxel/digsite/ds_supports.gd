@@ -139,8 +139,11 @@ func _process(dt: float) -> void:
 	var g := _grid()
 	for i in range(posts.size() - 1, -1, -1):
 		var pp: Dictionary = posts[i]
-		# gone (dug out, fallen): off the list
-		if g.get_cell(int(pp.x), int(pp.y0), int(pp.z)) & DsMats.MASK != int(pp.m):
+		# its foot gone (dug out, blown away): what's left of it gives way (it doesn't hang from the roof); all gone: off
+		# the list
+		if g.get_cell(int(pp.x), int(pp.y0), int(pp.z)) & DsMats.MASK != int(pp.m) or g.get_cell(int(pp.x), int(pp.y0), int(pp.z)) & DsMats.LOOSE:
+			if g.get_cell(int(pp.x), int(pp.y1) - 1, int(pp.z)) & DsMats.MASK == int(pp.m):
+				_break(pp)
 			posts.remove_at(i)
 			continue
 		var d := depth_of(pp)

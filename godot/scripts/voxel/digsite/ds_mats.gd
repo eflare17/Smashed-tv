@@ -37,6 +37,9 @@ const WALL := [0, 10, 12, 20, 3, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ## How wide a roof of it spans with nothing holding it up (cells; 0: never caves: bedrock, the edge, supports):
 ## dirt 2 m, clay 2.5 m, sand 0.75 m, stone 6 m, hard rock 8 m (DigSiteGrid's cave-ins, stage 7)
 const SPAN := [0, 12, 16, 20, 6, 8, 48, 64, 0, 32, 48, 48, 64, 0, 0, 0]
+## How far a blast reaches into it, of its full radius (0: never: bedrock, the edge): soft ground all of it, stone
+## 60%, hard rock less (DsBlasts, stage 9)
+const BLAST := [0.0, 1.0, 1.0, 0.85, 1.1, 1.0, 0.6, 0.45, 0.0, 0.65, 0.55, 0.55, 0.5, 0.0, 0.9, 0.4]
 ## What a block dug out is in the backpack ("": nothing)
 const ITEM := ["", "dirt", "dirt", "clay", "sand", "gravel", "stone", "stone", "", "coal", "iron_ore", "gold", "gem", "", "", ""]
 

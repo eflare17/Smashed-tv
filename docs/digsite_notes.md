@@ -112,6 +112,17 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   The host keeps the post list and the weight; a guest's post is a DsNet action ("post"); creaks go as "sup" events.
 - Posts can't bend visibly (they're blocks); the warning is the sound and the message.
 
+- **Dynamite (stage 9).** `ds_blasts.gd` (DsBlasts) and the Dynamite weapon (`dynamite_ds`, key 4 with the
+  explosives; sold at the office: X, 3 sticks for $15). Left click lights a stick where you aim (or at your feet); 4 s
+  fuse with sparks. The blast is C++ (`blast_sphere`): blocks within 1.3 m x the material's `DsMats.BLAST` (soil
+  1.0, clay 0.85, stone 0.6, hard rock 0.45, wood 0.9, concrete 0.4; bedrock and edge never) blown out, a shell to
+  1.35 times that cracked loose. What's blown out flies as ~22 chunks (their share of each material) that land as
+  loose blocks round the crater, so nothing's made or lost and blasted ore lies there to shovel up. Hurts players
+  within 4.5 m (70 at the middle), shakes the view. Anything it wakes is checked for cave-ins; a prop whose foot is
+  blown away gives way (so the roof it held can fall).
+  In co-op a guest's stick is a DsNet action ("dyn"); the host blows it up and lands the chunks; the guest gets
+  "dyn" and "boom" events (the stick, the bang, chunks to watch), the ground through the chunks.
+
 ## Open questions
 
 - Pre-existing, not from the Dig Site: St Kilda's own test prints thousands of "Out of bounds set index" errors from
@@ -127,3 +138,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 6. Dingo: done (`test/voxel/digsite_dingo_test.gd`: alone 14 checks; two copies, with and without lag).
 7. Tunnels and cave-ins: done (`test/voxel/digsite_cave_test.gd` 9 checks; `digsite_tunnel_test.gd` alone and two copies, with and without lag).
 8. Supports: done (`test/voxel/digsite_support_test.gd`: alone 13 checks; two copies, with and without lag).
+9. Dynamite: done (`test/voxel/digsite_dynamite_test.gd`: alone 12 checks; two copies, with and without lag).

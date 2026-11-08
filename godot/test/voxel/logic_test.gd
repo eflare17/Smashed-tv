@@ -194,7 +194,7 @@ func _vacuum() -> void:
 
 func _loadout() -> void:
 	var l := VoxelLoadout.new()
-	check(l.slots.size() == 19 and l.id() == "sword", "nineteen weapons in six groups (the tools the sixth, the Dig Site's hammer last), the sword first")
+	check(l.slots.size() == 20 and l.id() == "sword", "twenty weapons in six groups (the Dig Site's dynamite with the explosives, its hammer last), the sword first")
 	check(l.select_group(2) and l.id() == "pistol" and not l.usable(), "2 takes out the guns' first, the pistol; it comes up for a moment first")
 	l.step(VoxelLoadout.SWITCH_T + 0.01)
 	check(l.usable(), "then it's up")
@@ -211,7 +211,7 @@ func _loadout() -> void:
 	l.select(0)
 	l.cycle(-1)
 	check(l.id() == "hammer_ds", "the wheel goes round the end (%s)" % l.id())
-	check(not l.select(18) and not l.select(99) and not l.select_group(9), "the one out, or no such slot or group: nothing happens")
+	check(not l.select(19) and not l.select(99) and not l.select_group(9), "the one out, or no such slot or group: nothing happens")
 	l.cool("shotgun", 1.0)
 	l.step(0.5)
 	check(not l.ready_to("shotgun") and absf(l.cooling("shotgun") - 0.5) < 0.01 and l.ready_to("pistol"), "cooldowns kept per weapon")

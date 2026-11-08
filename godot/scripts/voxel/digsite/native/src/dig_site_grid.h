@@ -108,6 +108,7 @@ public:
 
 	Dictionary dig_sphere(const Vector3 &c, float r, int hardest);
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);
+	Dictionary blast_sphere(const Vector3 &c, float r, const PackedFloat32Array &reach, float crack);
 
 	// the dirt (dig_site_dirt.cpp)
 	void set_physics(const PackedInt32Array &walls);

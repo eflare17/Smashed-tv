@@ -22,6 +22,7 @@ const ALL := [
 	{"id": "harpoon", "group": 3, "name": "Harpoon gun", "left": "harpoon them, drag them to you", "right": "harpoon a limb, yank it off"},
 	{"id": "gravity", "group": 3, "name": "Gravity gun", "left": "grab a body or bit, click again: launch it", "right": "black hole: pulls everything in and crushes it (holding: drop it)"},
 	{"id": "grenades", "group": 4, "name": "Grenade launcher", "left": "bouncing grenade", "right": "sticky bomb (R: set them off)"},
+	{"id": "dynamite_ds", "group": 4, "name": "Dynamite", "left": "light a stick where you aim (the Dig Site): run", "right": ""},
 	{"id": "vacuum", "group": 5, "name": "Vacuum", "left": "suck up (hold)", "right": "hold + wheel: brush size"},
 	{"id": "shovel", "group": 6, "name": "Shovel", "left": "dig a scoop (dirt, clay)", "right": "fill: a scoop of dirt back in"},
 	{"id": "pick", "group": 6, "name": "Pick", "left": "break stone, rock, gold ore", "right": ""},

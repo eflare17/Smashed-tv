@@ -32,6 +32,7 @@ static func items() -> Dictionary:
 		"iron_ore": {"name": "Iron ore", "col": DsMats.COL[DsMats.IRON], "stack": 9999, "desc": "Rusty rock from deep in the Dig Site. Picks and hammers are made of it."},
 		"gem": {"name": "Gem", "col": DsMats.COL[DsMats.GEM], "stack": 999, "desc": "A glittering gem from right down at the Dig Site. Only a steel pick breaks it out."},
 		"prop_wood": {"name": "Wooden prop", "col": DsMats.COL[DsMats.WOOD], "stack": 99, "desc": "Holds a tunnel's roof up (the hammer's right click). Not deep down: too much weight."},
+		"dynamite": {"name": "Dynamite", "col": Color8(200, 30, 30), "stack": 50, "desc": "Light it, run (the Dynamite's left click at the Dig Site)."},
 		"prop_concrete": {"name": "Concrete support", "col": DsMats.COL[DsMats.CONCRETE], "stack": 99, "desc": "Holds a roof up however deep (the hammer's right click)."},
 	}
 
@@ -40,13 +41,15 @@ const PROPS := 5                # wooden props for ...
 const PROPS_COST := 10          # ... this much cash
 const CONCRETE := {"stone": 8, "sand": 4, "gravel": 4}
 const PRICES := {"coal": 1, "iron_ore": 2, "gold": 5, "gem": 15}
+const DYNAMITE := 3             # sticks for ...
+const DYNAMITE_COST := 15
 
 func shop_line() -> String:
 	var a := arena()
 	var c := []
 	for id in CONCRETE:
 		c.append("%d %s" % [int(CONCRETE[id]), VoxelItems.name_of(id).to_lower()])
-	return "B  %d wooden props ($%d, you've $%d)     C  a concrete support (%s)     V  sell your ore ($%d)" % [PROPS, PROPS_COST, a.cash, ", ".join(c), ore_value()]
+	return "B  %d wooden props ($%d)     X  %d sticks of dynamite ($%d)     C  a concrete support (%s)     V  sell your ore ($%d; you've $%d)" % [PROPS, PROPS_COST, DYNAMITE, DYNAMITE_COST, ", ".join(c), ore_value(), a.cash]
 
 func ore_value() -> int:
 	var v := 0
@@ -63,6 +66,18 @@ func buy_props() -> bool:
 	a.receive({"id": "prop_wood", "n": PROPS}, "inv")
 	a.sound.play("item_pick", Vector3.INF, -4.0)
 	a.say("%d wooden props in your backpack (%d)" % [PROPS, a.inv.count("prop_wood")], 2.0)
+	a.stash._dirty = true
+	return true
+
+func buy_dynamite() -> bool:
+	var a := arena()
+	if a.cash < DYNAMITE_COST:
+		a.say("Not enough cash: $%d for %d sticks (V sells your ore)" % [DYNAMITE_COST, DYNAMITE], 2.0)
+		return false
+	a.cash -= DYNAMITE_COST
+	a.receive({"id": "dynamite", "n": DYNAMITE}, "inv")
+	a.sound.play("item_pick", Vector3.INF, -4.0)
+	a.say("%d sticks of dynamite (%d): press 4 for it" % [DYNAMITE, a.inv.count("dynamite")], 2.0)
 	a.stash._dirty = true
 	return true
 

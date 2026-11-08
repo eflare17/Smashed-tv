@@ -29,6 +29,7 @@ var net: DsNet                            # co-op: the host's ground, the guest'
 var machines: DsMachines                  # the Dingo and the rest (stage 6 on)
 var caves: DsCaves                        # cave-ins shown and heard (stage 7)
 var supports: DsSupports                  # props and concrete supports, and the weight on them (stage 8)
+var blasts: DsBlasts                      # dynamite (stage 9)
 var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
@@ -93,6 +94,9 @@ func _build() -> void:
 	supports = DsSupports.new()
 	add_child(supports)
 	supports.setup(self)
+	blasts = DsBlasts.new()
+	add_child(blasts)
+	blasts.setup(self)
 	lamp = SpotLight3D.new()
 	lamp.spot_range = 14.0
 	lamp.spot_angle = 32.0
@@ -267,10 +271,12 @@ func _unhandled_input(e: InputEvent) -> void:
 	if not active or arena.phone.is_open() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
 	var k := (e as InputEventKey).physical_keycode
-	if near_office and k in [KEY_B, KEY_C, KEY_V]:
+	if near_office and k in [KEY_B, KEY_C, KEY_V, KEY_X]:
 		match k:
 			KEY_B:
 				tools.buy_props()
+			KEY_X:
+				tools.buy_dynamite()
 			KEY_C:
 				tools.make_concrete()
 			KEY_V:
