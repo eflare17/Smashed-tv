@@ -420,3 +420,17 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Only the body, blade and cylinders shake (a `_shake` node). The tracks and frames stay on the ground. The blade's cutting edge is still worked out without the shake, so digging isn't affected.
   - Vertical shake is 2.2 mm idling, rising to 7.7 mm at full speed (the web's is 6 mm rising to 20 mm). Pitch shake is 0.8 mrad, and the dozer leans back slightly when loaded.
   - It only runs with someone driving. It uses speed and driver, which are already synced, so the guest sees the same shake.
+
+### All machines (9 Nov, "do all three")
+
+- **DsRam** (ds_ram.gd) is the shared part. It has a painted barrel with hoses at one pin and a chrome rod at the other, and `aim(a, b)` sets it each pose. A truck's ram has stages, each sliding out of the one before by the same amount.
+- **Where each machine's rams go:**
+  - **Dozer:** two lift rams.
+  - **Excavator:** boom, stick and bucket rams. Before, each was one stretched piece. Now they have charcoal barrels sized at 56% of their length as built, with chrome rods.
+  - **Dingo and Bobcat:** a lift ram each side, from the body to the underside of the arm. Tilt rams run from the arms' cross bar to the back of the bucket: one on the Dingo, two on the Bobcat. The pin positions are vars set in each machine's `_init`.
+  - **Tip truck:** a 4-stage telescopic ram from the chassis behind the cab to the top of the tray's front. It's 1.35 m folded and 5.6 m fully tipped.
+- **Shake:**
+  - Moved into DsMachine (`shake_node`, `shake_idle`, `shake_work`, `shake_pitch`, `shake_hz`). Each machine shakes a node holding its body and tools, never its wheels or tracks.
+  - Machines don't all buzz in step: each runs at its own rate and phase.
+  - `shake_effort()` adds to the shake while the machine works: arms or tray moving, the excavator's arm or slew. `shake_lean()` leans it under load.
+  - It's all drawn on top of the sim: no machine's digging reads the shaken node. The shaken node's transform is read only by the clod keep-out boxes, which are off by a few mm at most.

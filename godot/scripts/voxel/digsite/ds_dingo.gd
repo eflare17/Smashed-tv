@@ -49,6 +49,18 @@ var firm_rate := 2              # firm blocks off a column at full sweep (the Bo
 var bog := 900.0                # banked blocks that bring it nearly to a stop
 var _pour_acc := 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
+var _shake: Node3D              # (its body, arms and bucket: what its engine shakes; the tracks or wheels aren't on it)
+var _rams: Array[DsRam] = []
+# its rams (the owner, 9 Nov): a lift ram each side, from its body (z: each side, flipped) to under its arm (along it,
+# up from it), and the bucket's tilt rams, from its arms' cross bar to the bucket's back (z: each one's)
+var lift_body := Vector3(-0.42, 0.62, 0.37)
+var lift_arm := Vector2(0.45, -0.04)
+var lift_len := 0.4
+var lift_r := 0.045
+var tilt_arm := Vector2(0.8, 0.06)
+var tilt_z: Array[float] = [0.0]
+var tilt_r := 0.04
+var _arm_was := 0.0
 var _arms: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
@@ -78,6 +90,9 @@ func _init() -> void:
 	step_up = 0.26
 	seat = Vector3(0, 0.23, 0.92)
 	pipe = Vector3(0.25, 0.95, 0.5)
+	shake_idle = 0.0014
+	shake_work = 0.0035
+	shake_hz = 66.0
 
 func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 	var m := MeshInstance3D.new()
@@ -97,14 +112,25 @@ func _build() -> void:
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)
+	_shake = Node3D.new()
+	_look.add_child(_shake)
+	shake_node = _shake
 	_build_body()
 	_build_arms()
+	for k in 2:
+		_rams.append(DsRam.make(_shake, lift_len, lift_r, lift_r * 0.5, DsProps.YELLOW_DARK))
+	_pose_tool()
+	var ends := _ram_ends()
+	for k in tilt_z.size():
+		var e: Array = ends[2 + k]
+		_rams.append(DsRam.make(_shake, (e[0] as Vector3).distance_to(e[1]) * 0.55, tilt_r, tilt_r * 0.5, DsProps.YELLOW_DARK))
+	_pose_tool()
 
 ## (the digger game's Dingo: its body, its tracks)
 func _build_body() -> void:
 	var kit := DsKit.new()
 	DsProps.dingo_body(kit)
-	_add(_look, kit)
+	_add(_shake, kit)
 	var frames := DsKit.new()
 	DsProps.track_frames(frames, 0.44, 0.1, 0.56, 0.72, 0.6)
 	var frame := _add(_look, frames)
@@ -119,10 +145,10 @@ func _build_body() -> void:
 func _build_arms() -> void:
 	var kit := DsKit.new()
 	DsProps.loader_arms(kit, arm_len, 0.84 if kind == "Bobcat" else 0.3, 0.16 if kind == "Bobcat" else 0.07)
-	_arms = _add(_look, kit)
+	_arms = _add(_shake, kit)
 	kit = DsKit.new()
 	DsProps.loader_bucket(kit, bucket_len, bucket_half, bucket_high)
-	_bucket = _add(_look, kit)
+	_bucket = _add(_shake, kit)
 	# the soil in it (owner, 9 Nov: "the dirt clips through the bucket"): built to its hollow, the triangle between its
 	# floor, its back and its side plates' slope, from the back out to the open side, lumps on top, then heaped
 	var hb := bucket_high
@@ -216,6 +242,9 @@ func _pose_tool() -> void:
 	var p := _pin()
 	_arms.transform = Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
 	_bucket.transform = Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
+	var ends := _ram_ends()
+	for k in mini(_rams.size(), ends.size()):
+		_rams[k].aim(ends[k][0], ends[k][1])
 	var f := float(load_n) / capacity
 	_lump.visible = f > 0.03
 	if _lump.visible:
@@ -223,6 +252,27 @@ func _pose_tool() -> void:
 		var k := clampi(int(ceil(f / hp * DsExcavator.LOAD_LEVELS)) - 1, 0, DsExcavator.LOAD_LEVELS - 1) if f <= hp else \
 				DsExcavator.LOAD_LEVELS - 1 + clampi(int(ceil((f - hp) / (1.0 - hp) * DsExcavator.HEAP_LEVELS)), 0, DsExcavator.HEAP_LEVELS)
 		_lump.mesh = _loads[k]
+
+## Each ram's pins in the model's frame: the two lift rams, then the tilt rams
+func _ram_ends() -> Array:
+	var arm_t := Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
+	var p := _pin()
+	var bucket_t := Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
+	var out := []
+	for side: float in [-1.0, 1.0]:
+		out.append([Vector3(lift_body.x, lift_body.y, lift_body.z * side), arm_t * Vector3(lift_arm.x, lift_arm.y, lift_body.z * side)])
+	for z in tilt_z:
+		out.append([arm_t * Vector3(tilt_arm.x, tilt_arm.y, z), bucket_t * Vector3(0.03, bucket_high * 0.85, z)])
+	return out
+
+# (the arms going up or down: it works harder)
+func shake_effort() -> float:
+	var moving := absf(arm_at - _arm_was) / maxf(get_process_delta_time(), 0.001)
+	_arm_was = arm_at
+	return clampf(moving, 0.0, 1.0) * 0.6
+
+func shake_lean() -> float:
+	return -clampf(float(load_n) / capacity, 0.0, 1.0) * 0.003
 
 ## Tracks and wheels turning with how it goes
 func _spin(dt: float) -> void:

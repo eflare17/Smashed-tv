@@ -69,7 +69,8 @@ var _stick: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
 var _loads: Array[ArrayMesh] = []
-var _rams: Array[MeshInstance3D] = []
+var _rams: Array[DsRam] = []
+var _shake: Node3D
 var _tracks: DsTrackRig
 static var prop_mat: Material
 
@@ -107,8 +108,14 @@ func _build() -> void:
 	_tracks = DsTrackRig.new()
 	_look.add_child(_tracks)
 	_tracks.setup(mat(), DsProps.track_path(1.9, 2.43, 2.07), 1.25, 0.66, 1.59, DsProps.excavator_wheels())
+	_shake = Node3D.new()
+	_look.add_child(_shake)
+	shake_node = _shake
+	shake_idle = 0.0018
+	shake_work = 0.004
+	shake_hz = 52.0
 	_house = Node3D.new()
-	_look.add_child(_house)
+	_shake.add_child(_house)
 	var hk := DsKit.new()
 	DsProps.excavator_house(hk, false)
 	_add(_house, hk)
@@ -126,12 +133,13 @@ func _build() -> void:
 	_lump.material_override = mat()
 	_bucket.add_child(_lump)
 	_lump.visible = false
-	for k in 3:
-		kit = DsKit.new()
-		kit.cone(Vector3.ZERO, Vector3(0.62, 0.0, 0.0), 0.1, 0.1, 6, DsProps.CHARCOAL)
-		kit.cone(Vector3(0.62, 0.0, 0.0), Vector3(1.0, 0.0, 0.0), 0.05, 0.05, 6, DsProps.STEEL)
-		_rams.append(_add(_house, kit))
 	_solve(wrist)
+	# the boom's, the stick's and the bucket's rams: barrels a little over half their length as built
+	var ends := _ram_ends()
+	for k in 3:
+		var d := (ends[k][0] as Vector3).distance_to(ends[k][1])
+		_rams.append(DsRam.make(_house, d * 0.56, 0.11 if k == 0 else 0.095, 0.05, DsProps.CHARCOAL))
+	_pose_tool()
 
 ## Sets the boom and stick to bring the pin as near to want as they can reach (the digger game's, as it is)
 func _solve(want: Vector2) -> void:
@@ -201,9 +209,9 @@ func _pose_tool() -> void:
 	_boom.transform = Transform3D(boom_b, shoulder)
 	_stick.transform = Transform3D(stick_b, elbow)
 	_bucket.transform = Transform3D(bucket_b, pin)
-	_ram(0, Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.5, 0.05, 0.0))
-	_ram(1, shoulder + boom_b * Vector3(BOOM * 0.55, 1.02, 0.0), elbow + stick_b * Vector3(-0.58, 0.42, 0.0))
-	_ram(2, elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.0, 0.42, 0.0))
+	var ends := _ram_ends()
+	for k in _rams.size():
+		_rams[k].aim(ends[k][0], ends[k][1])
 	var f := float(load_n) / CAPACITY
 	_lump.visible = f > 0.02
 	if _lump.visible:
@@ -222,12 +230,28 @@ func keepout_boxes() -> Array:
 		return []
 	return [[_bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(0.64, 0.12, 0.0)), Vector3(0.76, 0.44, BUCKET_HALF + 0.04)]]
 
-func _ram(k: int, a: Vector3, b: Vector3) -> void:
-	var along := b - a
-	var x := along.normalized()
-	var z := Vector3.BACK
-	var y := z.cross(x).normalized()
-	_rams[k].transform = Transform3D(Basis(x * along.length(), y, z), a)
+var _wrist_was := Vector2.ZERO
+var _swing_was := 0.0
+
+# (the arm and the house moving: it works harder)
+func shake_effort() -> float:
+	var dt := maxf(get_process_delta_time(), 0.001)
+	var moving := (wrist - _wrist_was).length() / dt + absf(swing - _swing_was) / dt * 2.0
+	_wrist_was = wrist
+	_swing_was = swing
+	return clampf(moving / 1.5, 0.0, 1.0) * 0.7
+
+## Each ram's pins (the boom's, the stick's, the bucket's), in the house's frame, as the arm is
+func _ram_ends() -> Array:
+	var shoulder := Vector3(SHOULDER.x, SHOULDER.y, ARM_Z)
+	var elbow := Vector3(SHOULDER.x + cos(_boom_a) * BOOM, SHOULDER.y + sin(_boom_a) * BOOM, ARM_Z)
+	var pin := Vector3(wrist.x, wrist.y, ARM_Z)
+	var boom_b := Basis(Vector3.BACK, _boom_a)
+	var stick_b := Basis(Vector3.BACK, _stick_a)
+	var bucket_b := Basis(Vector3.BACK, -curl)
+	return [[Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.5, 0.05, 0.0)],
+			[shoulder + boom_b * Vector3(BOOM * 0.55, 1.02, 0.0), elbow + stick_b * Vector3(-0.58, 0.42, 0.0)],
+			[elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.0, 0.42, 0.0)]]
 
 func read_input() -> void:
 	super()

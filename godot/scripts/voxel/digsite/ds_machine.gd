@@ -46,6 +46,15 @@ var _to_pos := Vector3.INF
 var _to := {}
 var _state_t := 0.0
 var _body: AnimatableBody3D
+# Its engine shaking it a little (the web game's _shake_body, about a third as much; the owner, 9 Nov): shake_node's
+# what shakes (its body and what's on it, not its wheels or tracks: a subclass sets it), a few mm ticking over, more
+# the harder it works. Seen alike on both games (speed and driver come over the wire); its digging doesn't feel it.
+var shake_node: Node3D
+var shake_idle := 0.0018        # m up and down, ticking over
+var shake_work := 0.0045        # more at full speed
+var shake_pitch := 0.0007       # rad
+var shake_hz := 58.0            # (rad a second: its main buzz)
+var _shake_clock := 0.0
 
 func setup(s: Node3D, id_: int, at: Vector3, yaw_: float) -> void:
 	site = s
@@ -112,6 +121,29 @@ func step(dt: float) -> void:
 	_pose_now()
 	_pour_fx(dt)
 	_dust_fx()
+	_shake_body(dt)
+
+func _shake_body(dt: float) -> void:
+	if shake_node == null:
+		return
+	if driver == 0:
+		shake_node.transform = Transform3D.IDENTITY
+		return
+	if _shake_clock == 0.0:
+		_shake_clock = id * 1.7         # (not all in step)
+	_shake_clock += dt
+	var c := _shake_clock
+	var work := clampf(absf(speed) / max_speed + shake_effort(), 0.0, 1.0)
+	shake_node.position.y = sin(c * shake_hz) * (shake_idle + shake_work * work) + sin(c * shake_hz * 0.64) * shake_work * 0.3 * work
+	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean()
+
+## (a subclass) how hard it's working besides driving (0 .. 1: an arm swinging, a tray going up)
+func shake_effort() -> float:
+	return 0.0
+
+## (a subclass) how far it leans back under load (rad)
+func shake_lean() -> float:
+	return 0.0
 
 ## Its body solid to the loose dirt (the host's: the dirt runs there): a heap slumping, or soil sliding off a blade,
 ## banks against its tracks and wheels instead of flowing in under it (and lifting it up onto the pile)

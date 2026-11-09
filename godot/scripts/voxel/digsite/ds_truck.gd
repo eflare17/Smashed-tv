@@ -32,6 +32,13 @@ var _lump: MeshInstance3D
 var _props_mesh: MeshInstance3D
 var _look: Node3D
 var _wheels := []
+var _shake: Node3D              # (its body and tray: what its engine shakes; not its wheels)
+var _ram: DsRam
+var _tip_was := 0.0
+# its tipping ram (the owner, 9 Nov): stages sliding out of each other, from its chassis behind the cab to the top of
+# the tray's front, as a real tipper's
+const RAM_BASE := Vector3(1.38, 0.86, 0.0)
+const RAM_TOP := Vector3(4.8, 0.92, 0.0)     # (in the tray's frame)
 var _roll := 0.0
 
 func _init() -> void:
@@ -53,9 +60,15 @@ func _build() -> void:
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)
+	_shake = Node3D.new()
+	_look.add_child(_shake)
+	shake_node = _shake
+	shake_idle = 0.0013
+	shake_work = 0.0025
+	shake_hz = 53.0
 	var kit := DsKit.new()
 	DsProps.truck_body(kit)
-	_mesh(_look, kit)
+	_mesh(_shake, kit)
 	var wk := DsKit.new()
 	DsProps.wheel(wk, 0.34)
 	var wide := DsKit.new()
@@ -68,7 +81,8 @@ func _build() -> void:
 		_wheel(tyre2, Vector3(-2.75, 0.6, side * 0.98), 0.6)
 	_tray = Node3D.new()
 	_tray.position = HINGE
-	_look.add_child(_tray)
+	_shake.add_child(_tray)
+	_ram = DsRam.make(_shake, 1.22, 0.16, 0.05, DsProps.CHARCOAL, 4, false)
 	kit = DsKit.new()
 	DsProps.truck_tray(kit, TRAY_LONG, TRAY_HALF, TRAY_HIGH)
 	_mesh(_tray, kit)
@@ -127,6 +141,8 @@ func _pose_tool() -> void:
 	if _tray == null:
 		return
 	_tray.transform = Transform3D(Basis(Vector3.BACK, tip * 0.95), HINGE)
+	if _ram:
+		_ram.aim(RAM_BASE, _tray.transform * RAM_TOP)
 	var f := float(load_n) / CAPACITY
 	_lump.visible = f > 0.01
 	if _lump.visible:
@@ -136,6 +152,12 @@ func _pose_tool() -> void:
 	for w in _wheels:
 		var r: float = w[1]
 		(w[0] as Node3D).basis = Basis(Vector3.BACK, -_roll / r).scaled(Vector3(r, r, 1.0))
+
+# (the tray going up or down: its pump's working)
+func shake_effort() -> float:
+	var moving := absf(tip - _tip_was) / maxf(get_process_delta_time(), 0.001)
+	_tip_was = tip
+	return 0.6 if moving > 0.01 else 0.0
 
 func read_input() -> void:
 	super()

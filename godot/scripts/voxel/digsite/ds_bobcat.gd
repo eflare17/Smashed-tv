@@ -27,11 +27,21 @@ func _init() -> void:
 	bucket_high = 0.62
 	firm_rate = 3
 	bog = 2000.0
+	lift_body = Vector3(-1.1, 0.95, 0.72)
+	lift_arm = Vector2(1.1, -0.1)
+	lift_len = 0.72
+	lift_r = 0.075
+	tilt_arm = Vector2(1.55, 0.13)
+	tilt_z = [-0.35, 0.35]
+	tilt_r = 0.065
+	shake_idle = 0.0022
+	shake_work = 0.005
+	shake_hz = 61.0
 
 func _build_body() -> void:
 	var kit := DsKit.new()
 	DsProps.bobcat_body(kit)
-	_add(_look, kit)
+	_add(_shake, kit)
 	var w := DsKit.new()
 	DsProps.wheel(w, 0.32)
 	var tyre := w.mesh()
