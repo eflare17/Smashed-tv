@@ -45,8 +45,9 @@ func _ds() -> DigSite:
 func _dingo() -> DsDingo:
 	return _ds().machines.list[0] as DsDingo
 
+# everything solid, in mm over a column (every block's 125 and the loose layer); the bucket's load is mm too
 func _total(g: DigSiteGrid) -> int:
-	return g.count_box(0, 0, 0, 512, 192, 512, -1)
+	return g.ground_mm()
 
 func _beside() -> void:
 	var d := _dingo()
@@ -106,9 +107,9 @@ func _solo() -> bool:
 			if t - mark > 3.0 or d.load_n >= DsDingo.CAPACITY:
 				d.throttle = 0.0
 				var tot := _total(ds.terrain.grid)
-				check(d.load_n > 30, "driving in, the bucket fills (%d blocks)" % d.load_n)
-				check(tot + d.load_n == int(v.total), "every block out of the ground is in the bucket (%d + %d = %d)" % [tot, d.load_n, v.total])
-				v.loose0 = ds.terrain.grid.count_box(0, 0, 0, 512, 192, 512, -3)
+				check(d.load_n > 30 * DsTerrain.MM, "driving in, the bucket fills (%d mm)" % d.load_n)
+				check(tot + d.load_n == int(v.total), "every mm out of the ground is in the bucket (%d + %d = %d)" % [tot, d.load_n, v.total])
+				v.loose0 = ds.terrain.grid.loose_mm()
 				v.n = d.load_n
 				d.lift_cmd = 1.0
 				_next(6)
@@ -122,8 +123,8 @@ func _solo() -> bool:
 			var d := _dingo()
 			if d.load_n == 0 or t - mark > 4.0:
 				d.curl_cmd = 0.0
-				var loose: int = ds.terrain.grid.count_box(0, 0, 0, 512, 192, 512, -3) - int(v.loose0)
-				check(d.load_n == 0 and loose >= int(v.n), "tipped: it all pours out, loose (%d loose now, %d poured)" % [loose, v.n])
+				var loose: int = ds.terrain.grid.loose_mm() - int(v.loose0)
+				check(d.load_n == 0 and loose >= int(v.n), "tipped: it all pours out, loose (%d mm loose now, %d poured)" % [loose, v.n])
 				check(_total(ds.terrain.grid) == int(v.total), "not a block made or lost")
 				_next(8)
 		8:
@@ -132,7 +133,8 @@ func _solo() -> bool:
 				var c := ds.terrain.cell_of(_dingo().global_position + Vector3(0, -0.05, 0))
 				var p := ds.terrain.cell_of(Vector3(c.x, c.y, c.z))
 				var _u := p
-				check(ds.terrain.settle_moves > 0, "the pile slumps (%d moves)" % ds.terrain.settle_moves)
+				var slid: int = ds.terrain.settle_moves + ds.terrain.grid.get_layer_moved()
+				check(slid > 0, "the pile slumps (%d mm slid)" % slid)
 				# a pit with straight sides round it: down in, it can't climb out
 				ds.terrain.paused = true        # (its dirt walls would cave in under it: right, but not what's tested)
 				var d := _dingo()
@@ -229,14 +231,14 @@ func _coop() -> bool:
 			if t - mark > 3.0:
 				d.throttle = 0.0
 				if role == "host":
-					check(d.load_n > 30, "the host digs with it (%d blocks in the bucket)" % d.load_n)
+					check(d.load_n > 30 * DsTerrain.MM, "the host digs with it (%d mm in the bucket)" % d.load_n)
 				_next(9)
 		9:
 			if t - mark > 2.0:
 				var d := _dingo()
-				check(d.load_n > 30, "%s: the bucket's load shown (%d)" % [role, d.load_n])
+				check(d.load_n > 30 * DsTerrain.MM, "%s: the bucket's load shown (%d mm)" % [role, d.load_n])
 				if role == "guest":
-					check(_total(ds.terrain.grid) < int(v.ground) - 30 or ds.net.last_match, "the guest sees the hole it dug")
+					check(_total(ds.terrain.grid) < int(v.ground) - 30 * DsTerrain.MM or ds.net.last_match, "the guest sees the hole it dug")
 				_next(10)
 		10:
 			if t - mark > 2.0:

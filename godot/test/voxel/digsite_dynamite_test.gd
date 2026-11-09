@@ -44,7 +44,7 @@ func _ds() -> DigSite:
 	return arena.digsite
 
 func _total() -> int:
-	return _ds().terrain.grid.count_box(0, 0, 0, 512, 192, 512, -1)
+	return _ds().terrain.grid.ground_mm()      # (mm over a column: every block's 125 and the loose layer)
 
 func _top(local: Vector3) -> Vector3:
 	var p := DigSite.AT + local
@@ -95,10 +95,11 @@ func _solo() -> bool:
 		2:
 			if ds.blasts.booms > 0 and not ds.blasts.busy() and t - mark > DsBlasts.FUSE + 1.0:
 				var at: Vector3 = v.at
-				var top := ds.terrain.top_at(at.x, at.z)
+				# (its loose lining slides in at the angle of repose, filling it part way: the loose layer, since 9 Nov)
+				var top := ds.terrain.surface_at(at.x, at.z)
 				var last: Dictionary = ds.blasts.last
 				check(int(last.n) > 1000, "it goes off in the dirt: %d blocks blown out, %d cracked loose" % [last.n, last.cracked])
-				check(top < at.y - 0.8, "a crater (%.2f m deep)" % (at.y - top))
+				check(top < at.y - 0.6, "a crater (%.2f m deep)" % (at.y - top))
 				check(_total() == int(v.total), "the chunks land as loose blocks: not one made or lost (%d, %d)" % [_total(), v.total])
 				check(arena.player_hp >= float(v.hp) - 0.01, "14 m off, you're not hurt")
 				v.soft = int(last.n)
@@ -179,7 +180,7 @@ func _coop() -> bool:
 		4:
 			if (role == "host" or ds.net.last_match) and t - mark > 4.0 or t - mark > 15.0:
 				var at: Vector3 = v.at
-				check(ds.terrain.top_at(at.x, at.z) < at.y - 0.8, "%s sees the crater" % role)
+				check(ds.terrain.surface_at(at.x, at.z) < at.y - 0.6, "%s sees the crater" % role)
 				if role == "guest":
 					check(ds.net.last_match, "the grounds match")
 				return _done()

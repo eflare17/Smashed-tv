@@ -17,7 +17,7 @@ func _init() -> void:
 	step_up = 0.3
 	seat = Vector3(0, 0.05, -0.1)
 	pipe = Vector3(0.5, 1.9, 0.6)
-	capacity = 520
+	capacity = 520 * DsTerrain.MM
 	pivot = Vector2(-0.82, 1.62)
 	arm_len = 2.3
 	arm_low = -0.9

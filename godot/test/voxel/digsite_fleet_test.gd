@@ -46,8 +46,9 @@ func _ds() -> DigSite:
 func _m(i: int) -> DsMachine:
 	return _ds().machines.by_id(i)
 
+# everything solid, in mm over a column (every block's 125 and the loose layer: DigSiteGrid.ground_mm); loads are mm too
 func _ground() -> int:
-	return _ds().terrain.grid.count_box(0, 0, 0, 512, 192, 512, -1)
+	return _ds().terrain.grid.ground_mm()
 
 func _on(m: DsMachine) -> void:
 	var ds := _ds()
@@ -95,7 +96,7 @@ func _solo() -> bool:
 			v.deepest = maxf(float(v.get("deepest", 0.0)), b.ride_ref - b.edge().y)
 			if t - mark > 3.0:          # (not much further: its scrape runs on to where the excavator digs next)
 				b.throttle = 0.0
-				check(b.load_n > 60, "the Bobcat's bucket fills (%d of %d)" % [b.load_n, b.capacity])
+				check(b.load_n > 60 * DsTerrain.MM, "the Bobcat's bucket fills (%d of %d mm)" % [b.load_n, b.capacity])
 				check(float(v.deepest) < DsDingo.DIG_MOST + 0.03, "its bucket never more than %.2f m under the ground it rides on (its highest wheel's, or the firm ground just ahead) (%.3f)" % [DsDingo.DIG_MOST, v.deepest])
 				var x := _m(3) as DsExcavator
 				_on(x)
@@ -106,7 +107,8 @@ func _solo() -> bool:
 			if t - mark > 3.0:
 				x.raise_cmd = 0.0
 				var e := x.edge()
-				v.e_under = ds.terrain.top_at(e.x, e.z) - e.y
+				# (under the ground as made: its teeth cut the ground they're in exactly to them now)
+				v.e_under = ds.terrain.start_at(e.x, e.z) - e.y
 				check(float(v.e_under) > 0.2, "the excavator's bucket down in the ground (%.2f m under)" % v.e_under)
 				x.curl = 1.8
 				x.curl_cmd = 1.0
@@ -117,7 +119,7 @@ func _solo() -> bool:
 			if t - mark > 1.4:
 				x.curl_cmd = 0.0
 				x.reach_cmd = 0.0
-				check(x.load_n > 40, "curling in, it digs (%d blocks)" % x.load_n)
+				check(x.load_n > 40 * DsTerrain.MM, "curling in, it digs (%d mm)" % x.load_n)
 				check(x.edge().y < x.global_position.y, "below its own tracks")
 				x.raise_cmd = 1.0
 				_next(6)
@@ -141,7 +143,7 @@ func _solo() -> bool:
 			var tk := _m(4) as DsTruck
 			if x.load_n == 0 or t - mark > 4.0:
 				x.curl_cmd = 0.0
-				check(x.load_n == 0 and tk.load_n == int(v.x_load), "opened, it pours into the truck (%d in the tray)" % tk.load_n)
+				check(x.load_n == 0 and tk.load_n == int(v.x_load), "opened, it pours into the truck (%d mm in the tray)" % tk.load_n)
 				_on(tk)
 				v.yaw = tk.yaw
 				tk.steer = 1.0
@@ -199,7 +201,7 @@ func _solo() -> bool:
 			var dz := _m(5) as DsDozer
 			if t - mark > 5.0:
 				dz.throttle = 0.0
-				check(dz.moved > 1000 and dz.push_load > 200, "the bulldozer cuts and pushes a heap (%d blocks moved, %d banked against the blade)" % [dz.moved, dz.push_load])
+				check(dz.moved > 1000 * DsTerrain.MM and dz.push_load > 200, "the bulldozer cuts and pushes a heap (%d blocks' worth moved, %d banked against the blade)" % [dz.moved / DsTerrain.MM, dz.push_load])
 				check(dz.global_position.distance_to(v.dz_at) > 4.0 and dz.speed < dz.max_speed, "pushing, it's slowed by the load (%.1f m, %.2f m/s)" % [dz.global_position.distance_to(v.dz_at), dz.speed])
 				check(_ground() == int(v.total2), "not a block made or lost pushing")
 				# Q: CUT holds the blade 20 cm under where the ground began, and takes an even layer off
@@ -272,8 +274,8 @@ func _coop() -> bool:
 				_next(6)
 		6:
 			var x := _m(3) as DsExcavator
-			if (x.load_n > 20 and t - mark > 1.0) or t - mark > 6.0:
-				check(x.load_n > 20, "%s: the guest dug with it (%d in its bucket)" % [role, x.load_n])
+			if (x.load_n > 20 * DsTerrain.MM and t - mark > 1.0) or t - mark > 6.0:
+				check(x.load_n > 20 * DsTerrain.MM, "%s: the guest dug with it (%d mm in its bucket)" % [role, x.load_n])
 				if role == "guest":
 					ds.machines.get_off()
 					var tk := _m(4) as DsTruck

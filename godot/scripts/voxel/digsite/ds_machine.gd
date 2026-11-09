@@ -76,26 +76,13 @@ func forward() -> Vector3:
 func right() -> Vector3:
 	return Vector3(cos(yaw), 0, -sin(yaw))
 
-## The ground's height at a world x, z: the voxel ground's top on the grid, the field (0) round it
+## The ground's height at a world x, z: the voxel ground's surface on the grid (the loose layer and all, blended between
+## the four columns round the point, so it's smooth: DsTerrain.height_at), its edge carrying on round it
 func ground_y(x: float, z: float) -> float:
 	var tr: DsTerrain = site.terrain
 	if tr == null:
 		return 0.0
-	# (the ground's drawn smooth: the four columns round the point blended, not one column's blocky top)
-	var c := DsTerrain.CELL
-	var fx := (x - tr.origin.x) / c - 0.5
-	var fz := (z - tr.origin.z) / c - 0.5
-	var ix := floorf(fx)
-	var iz := floorf(fz)
-	var tx := fx - ix
-	var tz := fz - iz
-	var h := [0.0, 0.0, 0.0, 0.0]
-	for k in 4:
-		var wx := tr.origin.x + (ix + float(k % 2) + 0.5) * c
-		var wz := tr.origin.z + (iz + float(k / 2) + 0.5) * c
-		var y := tr.top_at(wx, wz)
-		h[k] = 0.0 if y == -INF else y
-	return lerpf(lerpf(h[0], h[1], tx), lerpf(h[2], h[3], tx), tz)
+	return tr.height_at(x, z)
 
 ## The ground under its four corners: [front left, front right, back left, back right]
 func _corners(at: Vector3, yaw_: float) -> PackedFloat32Array:

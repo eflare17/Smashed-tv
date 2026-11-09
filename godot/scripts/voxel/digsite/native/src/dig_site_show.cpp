@@ -1,12 +1,12 @@
-// DigSiteGrid's ground as drawn, gliding (the owner, 9 Nov: "it's really jumpy ... have a look at the web one"). The
-// cells are 12.5 cm blocks, so a heap grows, slumps and gets pushed a block at a time, and redrawn it jumped a block at
-// a time. The digger game's ground is millimetres and glides. So: each column keeps its top as its shown mesh has it
-// (meshed_top, from a snapshot taken when the section's mesh was made, committed when it's shown), and when that top
-// moves, how far the surface there is still drawn off it (show_off, in cells: it starts where the old surface was) and
-// eases away: quickly where dirt's gone (a blade or a bucket took it: the surface mustn't hang up into the steel) and
-// gently where it's arrived. The ground's and the lumps' shaders read it (DsTerrain uploads show_offsets and
-// show_topo_bytes as textures) and lift or drop the surface by it. Only the drawing glides: the cells, the digging,
-// the dirt and the network are as they were. Owned by the voxel session.
+// DigSiteGrid's ground as drawn (the owner, 9 Nov: "it's really jumpy ... have a look at the web one"). A section's
+// mesh is made from the cells now and then; the surface moves every frame (the loose layer, dig_site_layer.cpp, moves
+// mm at a time). So each column keeps its top as its shown mesh has it (meshed_top, from a snapshot taken when the
+// section's mesh was made, committed when it's shown), and how far the true surface stands off that (show_off, in
+// cells: the cells changed since, and the layer's mm). The ground's, the lumps' and the grass's shaders read it
+// (DsTerrain uploads show_offsets, half floats, and show_topo_bytes, RGBA8: meshed top, loose depth in 1/8 cells,
+// the surface's material) and draw each column's top there. The host's is exact every frame; a guest's (the host's
+// ground arrives 15 times a second) eases to it. A change too big to draw that way (a blast, a cave-in) shows when
+// the mesh is made again. Owned by the voxel session.
 #include "dig_site_grid.h"
 
 #include <algorithm>
@@ -15,22 +15,56 @@
 
 using namespace godot;
 
-static const float BIGGEST_GLIDE = 3.0f;   // cells: a bigger change (a blast, a cave-in) just shows
+// cells: a bigger change just shows when its section's redrawn (a blast, a cave-in). It was 3 (the gliding's limit),
+// but a blade heaps dirt up and cuts it away faster than the near redraw keeps up: past 3 the surface stood where the
+// mesh had it, half a metre into the blade or under the heap, for a frame or ten (the telemetry, 9 Nov). A flat mesh
+// drawn 2 m off is still the right shape (the offsets are a smooth field over it)
+static const float BIGGEST_OFF = 16.0f;
+
+// float -> IEEE half (round to nearest; offsets are small, normal numbers)
+static uint16_t to_half(float f) {
+	uint32_t x;
+	std::memcpy(&x, &f, 4);
+	uint32_t sign = (x >> 16) & 0x8000u;
+	int32_t e = (int32_t)((x >> 23) & 0xff) - 127 + 15;
+	uint32_t mant = x & 0x7fffffu;
+	if (e <= 0)
+		return (uint16_t)sign;                 // (tiny: zero)
+	if (e >= 31)
+		return (uint16_t)(sign | 0x7bffu);     // (huge: the biggest)
+	uint32_t hm = mant >> 13;
+	if (mant & 0x1000u) {                      // round
+		hm++;
+		if (hm == 0x400u) {
+			hm = 0;
+			e++;
+			if (e >= 31)
+				return (uint16_t)(sign | 0x7bffu);
+		}
+	}
+	return (uint16_t)(sign | ((uint32_t)e << 10) | hm);
+}
 
 void DigSiteGrid::show_reset() {
 	size_t n = (size_t)w * d;
 	meshed_top.assign(n, -1);
 	show_off.assign(n, 0.0f);
+	show_tgt.assign(n, 0.0f);
+	show_half.assign(n, 0);
 	show_topo.assign(n * 4, 0);
 	easing.clear();
 	easing_on.assign(n, 0);
+	col_loose.assign(n, 0);
 	int cw = (w + SW - 1) / SW, cd = (d + SW - 1) / SW;
 	loose_cols.assign((size_t)cw * cd, 0);
+	col_seen.assign(n, 0);
+	col_list.clear();
 	topo_dirty = true;
+	off_dirty = true;
 }
 
-// A section column's tops as they are now, when its mesh is made: [top cell | loose depth << 8 | top material << 16]
-// for each of its SW x SW columns, x fastest (top 255: none)
+// A section column's tops as they are now, when its mesh is made (each of its SW x SW columns' top cell, x fastest;
+// -1: none)
 PackedInt32Array DigSiteGrid::section_tops(int sx, int sz) const {
 	PackedInt32Array out;
 	out.resize(SW * SW);
@@ -38,23 +72,55 @@ PackedInt32Array DigSiteGrid::section_tops(int sx, int sz) const {
 	for (int z = 0; z < SW; z++)
 		for (int x = 0; x < SW; x++) {
 			int gx = sx * SW + x, gz = sz * SW + z;
-			int v = 255;
-			if (gx < w && gz < d) {
-				int t = top_cached(gx, gz);
-				if (t >= 0) {
-					int deep = 0;
-					for (int y = t; y >= 0 && deep < 255 && (cells[idx(gx, y, gz)] & LOOSE); y--)
-						deep++;
-					v = t | (deep << 8) | ((cells[idx(gx, t, gz)] & MAT_MASK) << 16);
-				}
-			}
-			o[z * SW + x] = v;
+			o[z * SW + x] = (gx < w && gz < d) ? top_cached(gx, gz) : -1;
 		}
 	return out;
 }
 
+// Where column i's surface truly stands off its meshed top (cells), and its loose depth and material for the shaders
+void DigSiteGrid::show_target(size_t i) {
+	int x = (int)(i % w), z = (int)(i / w);
+	int t = top_cached(x, z);
+	int mt = meshed_top[i];
+	float tgt = 0.0f;
+	if (mt >= 0 && t >= 0) {
+		tgt = (float)(t - mt) + (fr.empty() ? 0.0f : fr[i] / (float)MM);
+		if (std::fabs(tgt) > BIGGEST_OFF)
+			tgt = 0.0f;
+	}
+	show_tgt[i] = tgt;
+	if (show_off[i] != tgt && !easing_on[i]) {
+		easing_on[i] = 1;
+		easing.push_back((int)i);
+	}
+	// its loose depth (eighths of a cell) and the material on top
+	int deep = loose_depth_mm(x, z, 255 * MM / 8);
+	int m = 0;
+	if (!fr.empty() && fr[i] > 0)
+		m = fm[i] & MAT_MASK;
+	else if (t >= 0)
+		m = cells[idx(x, t, z)] & MAT_MASK;
+	uint8_t *q = &show_topo[i * 4];
+	uint8_t g = (uint8_t)std::min(255, (deep * 8 + MM / 2) / MM);
+	if (q[1] != g || q[2] != (uint8_t)m) {
+		q[1] = g;
+		q[2] = (uint8_t)m;
+		topo_dirty = true;
+	}
+	// (lumps are drawn over a section column with any loose dirt on top)
+	uint8_t lo = deep >= 20 ? 1 : 0;
+	if (lo != col_loose[i]) {
+		col_loose[i] = lo;
+		int cw = (w + SW - 1) / SW;
+		uint16_t &lc = loose_cols[(size_t)(z / SW) * cw + x / SW];
+		lc = (uint16_t)(lo ? lc + 1 : (lc > 0 ? lc - 1 : 0));
+		topo_dirty = true;
+	}
+}
+
 // That section's mesh shown: its columns' tops are what it draws now. A column's taken on if its top (now or as it
-// was drawn) is in this section's height (sy), so a deep section shown doesn't move a surface another section draws
+// was drawn) is in this section's height (sy), so a deep section shown doesn't move a surface another section draws.
+// What's drawn stays where it was (the offset takes up the difference), then goes where it should.
 void DigSiteGrid::commit_tops(int sx, int sy, int sz, const PackedInt32Array &snap) {
 	if (meshed_top.empty())
 		show_reset();
@@ -62,84 +128,81 @@ void DigSiteGrid::commit_tops(int sx, int sy, int sz, const PackedInt32Array &sn
 		return;
 	const int32_t *p = snap.ptr();
 	int y0 = sy * SH, y1 = y0 + SH;
-	int loose = 0;
 	for (int z = 0; z < SW; z++)
 		for (int x = 0; x < SW; x++) {
 			int gx = sx * SW + x, gz = sz * SW + z;
 			if (gx >= w || gz >= d)
 				continue;
 			size_t i = (size_t)gz * w + gx;
-			int v = p[z * SW + x];
-			int t = v & 255;
-			int deep = (v >> 8) & 255, m = (v >> 16) & 255;
-			if (t == 255) {
-				t = 0;
-				deep = 0;
-			}
-			if (deep > 0)
-				loose++;
+			int t = p[z * SW + x];
 			int old = meshed_top[i];
 			bool mine = (t >= y0 && t < y1) || (old >= y0 && old < y1) || old < 0;
-			if (!mine)
+			if (!mine || t < 0)
 				continue;
-			if (old < 0) {
-				show_off[i] = 0.0f;
-			} else if (t != old) {
+			if (old >= 0 && t != old) {
 				float off = show_off[i] + (float)(old - t);
-				show_off[i] = std::fabs(off) > BIGGEST_GLIDE ? 0.0f : off;
-				if (show_off[i] != 0.0f && !easing_on[i]) {
-					easing_on[i] = 1;
-					easing.push_back((int)i);
-				}
+				show_off[i] = std::fabs(off) > BIGGEST_OFF ? 0.0f : off;
+				show_half[i] = to_half(show_off[i]);
+				off_dirty = true;
 			}
 			meshed_top[i] = (int16_t)t;
 			uint8_t *q = &show_topo[i * 4];
-			q[0] = (uint8_t)t;
-			q[1] = (uint8_t)deep;
-			q[2] = (uint8_t)m;
+			q[0] = (uint8_t)std::clamp(t, 0, 255);
 			q[3] = 255;
+			show_target(i);
 		}
-	int cw = (w + SW - 1) / SW;
-	loose_cols[(size_t)sz * cw + sx] = (uint16_t)loose;
 	topo_dirty = true;
+	topo_urgent = true;
 }
 
-// Each frame: the columns still drawn off their tops eased back (up_rate where dirt's arrived and the surface is
-// still below it, down_rate where it's gone and the surface still hangs over), per second. -> anything moved
-bool DigSiteGrid::ease_tops(float dt, float up_rate, float down_rate) {
-	if (easing.empty())
+// Each frame: the columns changed since looked at again, and the drawn surface brought to the true one (at once, or
+// eased at ease_rate a second: a guest's). -> the offsets changed (upload them)
+bool DigSiteGrid::show_update(float dt, float ease_rate) {
+	if (meshed_top.empty())
 		return false;
-	float ku = std::exp(-up_rate * dt), kd = std::exp(-down_rate * dt);
+	for (int k : col_list) {
+		col_seen[k] = 0;
+		show_target((size_t)k);
+	}
+	col_list.clear();
+	if (easing.empty()) {
+		bool was = off_dirty;
+		off_dirty = false;
+		return was;
+	}
+	float kk = ease_rate <= 0.0f ? 1.0f : 1.0f - std::exp(-ease_rate * dt);
 	size_t keep = 0;
-	for (size_t k = 0; k < easing.size(); k++) {
-		int i = easing[k];
-		float o = show_off[i];
-		o *= o > 0.0f ? kd : ku;
-		if (std::fabs(o) < 0.01f) {
-			o = 0.0f;
+	for (size_t e = 0; e < easing.size(); e++) {
+		int i = easing[e];
+		float tgt = show_tgt[i];
+		float o = show_off[i] + (tgt - show_off[i]) * kk;
+		if (std::fabs(tgt - o) < 0.004f) {
+			o = tgt;
 			easing_on[i] = 0;
 		} else {
 			easing[keep++] = i;
 		}
 		show_off[i] = o;
+		show_half[i] = to_half(o);
 	}
 	easing.resize(keep);
+	off_dirty = false;
 	return true;
 }
 
-// How far each column's surface is drawn off its top (cells), float32s, x fastest: an RF texture's bytes
+// How far each column's surface is drawn off its meshed top (cells), half floats, x fastest: an RH texture's bytes
 PackedByteArray DigSiteGrid::show_offsets() const {
 	PackedByteArray out;
 	size_t n = (size_t)w * d;
-	out.resize(n * 4);
-	if (show_off.size() == n)
-		std::memcpy(out.ptrw(), show_off.data(), n * 4);
+	out.resize(n * 2);
+	if (show_half.size() == n)
+		std::memcpy(out.ptrw(), show_half.data(), n * 2);
 	else
-		std::memset(out.ptrw(), 0, n * 4);
+		std::memset(out.ptrw(), 0, n * 2);
 	return out;
 }
 
-// Each column's top cell, loose depth and top material (RGBA8: an image's bytes)
+// Each column's meshed top cell, loose depth (eighths of a cell) and surface material (RGBA8: an image's bytes)
 PackedByteArray DigSiteGrid::show_topo_bytes() const {
 	PackedByteArray out;
 	size_t n = (size_t)w * d * 4;
@@ -160,8 +223,13 @@ PackedInt32Array DigSiteGrid::loose_columns() const {
 	return out;
 }
 
-bool DigSiteGrid::take_topo_dirty() {
-	bool t = topo_dirty;
+// Whether the tops/loose depth/material texture needs uploading (and it's taken as done): when a section's mesh was
+// just shown (its meshed tops changed: always), or anything changed and any is set (the loose depth and material can
+// wait a frame: DsTerrain asks with any 30 times a second)
+bool DigSiteGrid::take_topo_dirty(bool any) {
+	if (!topo_dirty || (!any && !topo_urgent))
+		return false;
 	topo_dirty = false;
-	return t;
+	topo_urgent = false;
+	return true;
 }

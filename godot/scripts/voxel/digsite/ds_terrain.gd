@@ -23,23 +23,25 @@ const R_COL := 12.0             # ... and solid
 const R_DROP := 110.0           # (and its drawing let go past this: the site's let go once you're well away)
 const SETTLE_HZ := 20.0         # the dirt's ticks a second (stage 4: loose dirt falls and slumps, tall walls give way)
 const SETTLE_US := 2500         # ... each at most this long (the rest waits for the next)
+const LAYER_HZ := 60.0          # the loose layer's slump ticks a second (the digger game's: every frame) ...
+const LAYER_US := 1500          # ... each at most this long
+const MM := 125                 # a block's height in mm: loose dirt is counted in mm over a column's area (DigSiteGrid.MM)
 const SW := 32                  # a section's cells across (x, z) and up (DigSiteGrid's SW, SH)
 const SH := 64
 
 var grid: DigSiteGrid
 var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
-# the ground as drawn, gliding (the owner, 9 Nov: "really jumpy"): what the grid's cells did snaps a block at a time;
-# the shaders draw each column's surface off its block top by an amount that eases away (DigSiteGrid.ease_tops), so a
-# heap grows and slumps smoothly. Two textures: how far it's off (cells, float), and each column's top, loose depth
-# and material (RGBA8). Uploaded at most GLIDE_HZ.
-const GLIDE_UP := 9.0           # per second: dirt arrived, the surface rises to it ...
-const GLIDE_DOWN := 24.0        # ... dirt gone, it drops to it (quickly: it mustn't hang up into a blade or a bucket)
-const GLIDE_HZ := 30.0
+# the ground as drawn (the owner, 9 Nov: "its still so jumpy"): the loose dirt moves mm at a time every frame (the
+# grid's loose layer), but a section's mesh is made from the cells now and then. So the shaders draw each column's
+# surface where it truly stands, off its mesh's top (DigSiteGrid.show_update: the host's exact, a guest's eased to
+# what the host sends). Two textures: how far it's off (cells, half floats), and each column's meshed top, loose depth
+# and material (RGBA8). Uploaded every frame anything's moved.
+const GUEST_EASE := 14.0        # per second: a guest's surface eases to the host's (it arrives 15 times a second)
 var show_off_tex: ImageTexture
 var topo_tex: ImageTexture
-var _glide_at := 0.0
-var _glide_due := false
-var _topo_due := false
+var _layer_acc := 0.0
+const TOPO_HZ := 30.0           # (the loose depth and material texture: this often, or at once when a section's redrawn)
+var _topo_at := 0.0
 signal loose_changed(per_section_column: PackedInt32Array)   # (DsClods: which section columns have loose dirt on top)
 var site: Node3D                # DigSite
 var _mat: Material
@@ -55,10 +57,14 @@ var _batch: Array = []          # (the near batch under way: [[index, want_col]]
 var _batch_prep := {}           # ... and what's made of it so far: index -> _prep's; shown together once it's all made)
 var _build_ms := 2.0            # (what a section's redraw costs, on average: none's started that would run past a cap)
 var settle_moves := 0           # (tests: cells the dirt's moved)
+var layer_us := 0               # (tests, telemetry: this frame's loose layer ticks, and its drawing brought up to date, us)
+var show_us := 0
 
 func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	site = s
 	name = "Ground"
+	# (after the machines each frame: what their blades and buckets moved is slumped and drawn in the same frame)
+	process_priority = 10
 	grid = DigSiteGrid.new()
 	grid.setup(W, H, D, SURFACE)
 	DsMats.apply(grid)
@@ -67,14 +73,21 @@ func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	var dv := grid.section_dims()
 	_dims = Vector3i(int(dv.x), int(dv.y), int(dv.z))
 	_mat = DsLook.ground_mat()
-	show_off_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RF, grid.show_offsets()))
+	show_off_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RH, grid.show_offsets()))
 	topo_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
-	for m: ShaderMaterial in [_mat, DsLook.clod_mat()]:
+	var cols := PackedVector3Array()
+	for c: Color in DsMats.COL:
+		cols.append(Vector3(c.r, c.g, c.b))
+	while cols.size() < 16:
+		cols.append(Vector3(0.45, 0.25, 0.16))
+	for m: ShaderMaterial in [_mat, DsLook.clod_mat(), DsLook.grass_mat()]:
 		m.set_shader_parameter("show_off_tex", show_off_tex)
 		m.set_shader_parameter("topo_tex", topo_tex)
+		m.set_shader_parameter("topo_lin", topo_tex)
 		m.set_shader_parameter("grid_size", Vector2(W, D))
 		m.set_shader_parameter("cell", CELL)
 		m.set_shader_parameter("grid_origin", origin)
+	_mat.set_shader_parameter("soil_cols", cols)
 	for i in grid.take_dirty_sections(100000):
 		_dirty[i] = true
 
@@ -107,12 +120,31 @@ func cell_at(p: Vector3) -> int:
 func firm_at(x: float, z: float) -> float:
 	var c := cell_of(Vector3(x, 0, z))
 	var y := grid.firm_top(c.x, c.z)
-	return -INF if y < 0 else origin.y + (y + 1) * CELL
+	if y < 0:
+		return -INF
+	var top := origin.y + (y + 1) * CELL
+	# (and a firm layer on it: what's left of a block a blade cut part way into, DigSiteGrid.FIRM_LAYER)
+	if grid.column_top(c.x, c.z) == y:
+		var l := grid.get_layer(c.x, c.z)
+		if (l >> 8) & 0x80:
+			top += float(l & 255) / MM * CELL
+	return top
 
 func top_at(x: float, z: float) -> float:
 	var c := cell_of(Vector3(x, 0, z))
 	var y := grid.column_top(c.x, c.z)
 	return -INF if y < 0 else origin.y + (y + 1) * CELL
+
+## The ground's surface at (x, z): its top cell's top and the loose layer on it (that column's, not blended), or -INF
+func surface_at(x: float, z: float) -> float:
+	var c := cell_of(Vector3(x, 0, z))
+	var y := grid.column_top(c.x, c.z)
+	return -INF if y < 0 else origin.y + (y + 1) * CELL + float(grid.get_layer(c.x, c.z) & 255) / MM * CELL
+
+## The ground's surface at a world x, z, smooth: blended between the four columns round it, the loose layer and all
+## (what machines ride on; off the grid its edge carries on)
+func height_at(x: float, z: float) -> float:
+	return origin.y + grid.height_at((x - origin.x) / CELL, (z - origin.z) / CELL) * CELL
 
 # ---------------------------------------------------------------- digging (the tools use these, stage 3)
 
@@ -162,29 +194,33 @@ func _process(dt: float) -> void:
 		settle_moves += grid.settle(SETTLE_US)
 		if site.get("caves") != null:
 			site.caves.poll()
+	# the loose layer slumps a little every tick, LAYER_HZ of them a second whatever the frame rate (two at most a
+	# frame: a long stall doesn't make it catch up all at once)
+	_layer_acc = minf(_layer_acc + dt, 2.0 / LAYER_HZ)
+	var t0 := Time.get_ticks_usec()
+	if settle_on and not paused:
+		while _layer_acc >= 1.0 / LAYER_HZ:
+			_layer_acc -= 1.0 / LAYER_HZ
+			grid.layer_step(LAYER_US)
+	layer_us = Time.get_ticks_usec() - t0
 	step(BUDGET_MS)
+	t0 = Time.get_ticks_usec()
 	_glide(dt)
+	show_us = Time.get_ticks_usec() - t0
 
-## The surface easing to the blocks' tops, and the shaders' textures brought up to date (at most GLIDE_HZ)
+## The surface drawn where it truly stands (a guest's eased to it), and the shaders' textures brought up to date
 func _glide(dt: float) -> void:
-	if grid.ease_tops(dt, GLIDE_UP, GLIDE_DOWN):
-		_glide_due = true
-	if grid.take_topo_dirty():
-		_topo_due = true
-	_glide_at += dt
-	if (_glide_due or _topo_due) and _glide_at >= 1.0 / GLIDE_HZ:
-		_glide_at = 0.0
-		if _glide_due:
-			show_off_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RF, grid.show_offsets()))
-			_glide_due = false
-		if _topo_due:
-			topo_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
-			_topo_due = false
-			loose_changed.emit(grid.loose_columns())
+	if grid.show_update(dt, 0.0 if settle_on else GUEST_EASE):
+		show_off_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RH, grid.show_offsets()))
+	_topo_at += dt
+	if grid.take_topo_dirty(_topo_at >= 1.0 / TOPO_HZ):
+		_topo_at = 0.0
+		topo_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
+		loose_changed.emit(grid.loose_columns())
 
 ## A machine's cutting edge from a to b (world) going fwd: what stands above it (to mouth m over it) cut, firm ground at
-## most firm_most a column, up to take_most into its bucket (the counts), the rest banked ahead up to heap m over the
-## edge (DigSiteGrid.blade_sweep: the digger game's way)
+## most firm_most blocks a column, up to take_most mm into its bucket (the counts, mm by material), the rest banked ahead
+## up to heap m over the edge (DigSiteGrid.blade_sweep: the digger game's way, in mm). The result's in mm.
 func blade(a: Vector3, b: Vector3, fwd: Vector3, rows: int, mouth: float, firm_most: int, hardest: int, take_most: int, heap: float, share := 1.0) -> Dictionary:
 	return grid.blade_sweep(to_cells(a), to_cells(b), fwd, rows, mouth / CELL, firm_most, hardest, take_most, heap / CELL, share)
 
@@ -201,12 +237,13 @@ func start_at(x: float, z: float) -> float:
 	var c := cell_of(Vector3(x, 0, z))
 	return origin.y + (grid.start_top(c.x, c.z) + 1) * CELL
 
-## Loose blocks banked against an edge from a to b going fwd (up to reach m over it): the weight it's pushing
-func load_ahead(a: Vector3, b: Vector3, fwd: Vector3, reach: float) -> int:
-	return grid.load_ahead(to_cells(a), to_cells(b), fwd, reach / CELL)
+## Loose dirt banked against an edge from a to b going fwd (up to reach m over it), in blocks (125 mm over a column):
+## the weight it's pushing
+func load_ahead(a: Vector3, b: Vector3, fwd: Vector3, reach: float) -> float:
+	return float(grid.load_ahead(to_cells(a), to_cells(b), fwd, reach / CELL)) / MM
 
-## n loose blocks of m poured from a bucket at world point p: under it first, then round it, never piled up past the
-## bucket itself (DigSiteGrid.pour_at): -> how many landed
+## n mm of loose m poured from a bucket at world point p: under it first, then round it, never piled up past the
+## bucket itself (DigSiteGrid.pour_at): -> mm that landed
 func pour(p: Vector3, m: int, n: int) -> int:
 	var c := cell_of(p)
 	return grid.pour_at(c.x, c.z, c.y, m, n)

@@ -30,6 +30,10 @@ public:
 	static const int SW = 32;     // a drawn section's width (x, z) ...
 	static const int SH = 64;     // ... and height
 	static const int NMAT = 32;
+	static const int MM = 125;     // a cell's height in mm: the loose layer's unit (mm of dirt over one column's area)
+	static const int FR_OVER = 188;// a column's layer this deep: 125 mm of it becomes a loose cell on its top
+	static const int LRIM = 8;     // columns this near the site's side take no loose dirt (the edge ring)
+	static const int FIRM_LAYER = 0x80;   // (in fm) the layer's firm ground: what's left of a firm cell a blade cut part way into
 
 private:
 	int w = 0, h = 0, d = 0;      // cells x, y, z
@@ -93,17 +97,49 @@ private:
 	// surface there is still drawn off that (cells), easing to nothing; RGBA8 per column for the shaders (top cell,
 	// loose depth, top material); loose columns per section column
 	std::vector<int16_t> meshed_top;
-	std::vector<float> show_off;
+	std::vector<float> show_off;           // drawn (cells off the meshed top)
+	std::vector<float> show_tgt;           // where it's going (the true surface; a guest eases to it)
+	std::vector<uint16_t> show_half;       // show_off as half floats (the texture's bytes)
 	std::vector<uint8_t> show_topo;
 	std::vector<int> easing;
 	std::vector<uint8_t> easing_on;
+	std::vector<uint8_t> col_loose;        // 1: loose dirt on its top (counted in loose_cols)
 	std::vector<uint16_t> loose_cols;
 	bool topo_dirty = false;
+	bool topo_urgent = false;              // (a section's mesh shown: the meshed tops must go up this frame)
+	bool off_dirty = false;
 	void show_reset();
+	void show_target(size_t i);
 	uint32_t blade_rng = 12345u;
 	int dither(float v);
-	bool lay_on(int x, int z, uint8_t v, int top_y);
-	bool spill(float px, float pz, float fx, float fz, float ox, float oz, float to_end, uint8_t v, int top_y);
+	// the loose layer (dig_site_layer.cpp, the owner, 9 Nov: "its still so jumpy"): each column's loose dirt lying
+	// on its top cell in mm, less than a cell (fr: 0 .. FR_OVER-1, fm: its material), slumped a little every frame the
+	// digger game's way. Blades, buckets and pours move mm, so the ground moves smoothly, not a block at a time
+	std::vector<uint8_t> fr, fm;
+	std::vector<uint8_t> lay_awake;        // 2D block (CS x CS columns) -> 1: queued
+	std::vector<int> lay_queue;
+	size_t lay_at = 0;
+	int lay_tick_n = 0;
+	int64_t lay_moved = 0;
+	int lcx = 0, lcz = 0;                  // 2D blocks across
+	std::vector<uint8_t> lay_touched, lay_mod, lay_hash_dirty;   // per 2D block: the layer changed (the network)
+	std::vector<uint32_t> lay_hash;
+	std::vector<uint8_t> col_seen;         // columns changed since the drawing last looked
+	std::vector<int> col_list;
+	inline size_t colk(int x, int z) const { return (size_t)z * w + x; }
+	int height_mm(int x, int z) const;
+	int loose_depth_mm(int x, int z, int most) const;
+	bool lay_owns(int x, int y, int z) const;
+	void lay_wake(int x, int z);
+	void lay_mark(int x, int z);
+	void lay_changed(int x, int z);
+	int lay_take(int x, int z, int amt, int floor_mm, int &firm_mm, int hardest, int &m, int &cut, bool &rock);
+	void lay_put(int x, int z, int amt, int m);
+	void lay_restore(int x, int z, int amt, int m, bool firm);
+	bool lay_slump_chunk(int ci, bool diag);
+	int spill_mm(float px, float pz, float fx, float fz, float ox, float oz, float to_end, int amt, int m, int top_mm);
+	void pack_layer(PackedByteArray &out, int bi) const;
+	uint32_t hash_layer(int bi) const;
 	// the network (dig_site_net.cpp): chunks changed since made (sent to a guest arriving), their checksums
 	std::vector<uint8_t> chunk_mod;
 	std::vector<uint32_t> chunk_hash;
@@ -143,14 +179,27 @@ public:
 	int count_mat(int m) const;
 	int count_box(int x0, int y0, int z0, int x1, int y1, int z1, int what) const;
 
-	// the ground as drawn, gliding (dig_site_show.cpp)
+	// the loose layer (dig_site_layer.cpp)
+	int layer_step(int budget_usec);
+	int layer_awake() const { return (int)(lay_queue.size() - lay_at); }
+	void layer_wake_all();
+	float height_at(float x, float z) const;
+	int get_layer(int x, int z) const;
+	void set_layer(int x, int z, int mm, int m);
+	int put_layer(int x, int z, int mm, int m);
+	int64_t ground_mm() const;
+	int64_t loose_mm() const;
+	int64_t mat_mm(int m) const;
+	int64_t get_layer_moved() const { return lay_moved; }
+
+	// the ground as drawn (dig_site_show.cpp)
 	PackedInt32Array section_tops(int sx, int sz) const;
 	void commit_tops(int sx, int sy, int sz, const PackedInt32Array &snap);
-	bool ease_tops(float dt, float up_rate, float down_rate);
+	bool show_update(float dt, float ease_rate);
 	PackedByteArray show_offsets() const;
 	PackedByteArray show_topo_bytes() const;
 	PackedInt32Array loose_columns() const;
-	bool take_topo_dirty();
+	bool take_topo_dirty(bool any = true);
 
 	Dictionary dig_sphere(const Vector3 &c, float r, int hardest);
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);

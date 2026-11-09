@@ -33,14 +33,14 @@ const CURL_HOLDS := 2.3         # curled this far it keeps it all ...
 const CURL_EMPTY := 0.95        # ... opened this far, nothing
 const STAB_MOST := 0.8          # m its teeth push into the ground before it has to drag
 # (the Dig Site's)
-const CAPACITY := 620           # blocks (1.2 m3)
+const CAPACITY := 620 * DsTerrain.MM   # mm (620 blocks of 125 mm over a column: 1.2 m3)
 const HEAPED := 0.78            # of CAPACITY: past this it's heaped up out of the bucket's open side (the digger game's 27000/34560)
 const LOAD_LEVELS := 12         # the soil in the bucket drawn at so many levels filling its hollow ...
 const HEAP_LEVELS := 6          # ... and so many heaped
 const HEAP_TALL := 0.3          # m the heap stands at its fullest, in the middle
 const HARDEST := 3              # soil, clay, stone
 const FIRM_RATE := 9.0          # firm blocks a second its teeth cut off a column (loose ones: all at once)
-const POUR_RATE := 520.0
+const POUR_RATE := 520.0 * DsTerrain.MM
 const SEAT_MODEL := Vector3(0.45, 1.2, -0.8)    # (in the house, the digger game's way round: the cab's floor)
 
 var swing := 0.0
@@ -58,7 +58,7 @@ var _v_swing := 0.0
 var _v_reach := 0.0
 var _v_raise := 0.0
 var _v_curl := 0.0
-var dug := 0                    # (tests: blocks its teeth have taken)
+var dug := 0                    # (tests: mm its teeth have taken)
 var bog := 0.0                  # how much the ground's holding the arm back (0 .. 0.85)
 var _firm_acc := 0.0
 var _pour_acc := 0.0
@@ -259,7 +259,14 @@ func _tool(dt: float) -> void:
 	_v_curl = move_toward(_v_curl, curl_cmd, ARM_EASE * 1.4 * dt)
 	var tr: DsTerrain = site.terrain
 	var e0 := edge()
-	var deep := tr.top_at(e0.x, e0.z) - e0.y if tr.contains(e0) else 0.0
+	# (how far its teeth are under the ground round them, the lower side of the bucket (a heap beside it isn't ground
+	# to push into): the strip they've just cut doesn't count, or with the ground cut exactly to them it never read
+	# deep, and the bucket went on down 1.8 m and couldn't lift out to pour)
+	var deep := 0.0
+	if tr.contains(e0):
+		var across: Vector3 = _look.global_transform.basis * (Basis(Vector3.UP, swing) * Vector3(0, 0, BUCKET_HALF + 0.35))
+		var side := minf(tr.surface_at(e0.x + across.x, e0.z + across.z), tr.surface_at(e0.x - across.x, e0.z - across.z))
+		deep = maxf(tr.surface_at(e0.x, e0.z), side) - e0.y
 	var slow := 1.0 - bog                          # (cutting firm ground holds the arm back)
 	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt * slow
 	if deep > STAB_MOST and _v_raise < 0.0:
@@ -273,7 +280,7 @@ func _tool(dt: float) -> void:
 	# what stands above them in the strip they sweep, into the bucket (firm ground only so fast: in firm ground the arm
 	# bogs down); rock harder than it breaks stops them
 	var working := _v_curl > 0.1 or _v_reach < -0.1 or _v_raise < -0.1
-	if working and curl > CURL_EMPTY + 0.4 and load_n < CAPACITY and tr.contains(e) and e.y < tr.top_at(e.x, e.z) + 0.1:
+	if working and curl > CURL_EMPTY + 0.4 and load_n < CAPACITY and tr.contains(e) and e.y < tr.surface_at(e.x, e.z) + 0.1:
 		var ends := teeth_ends()
 		var travel := e - e0
 		var fwd := Vector3(travel.x, 0.0, travel.z)
@@ -291,8 +298,8 @@ func _tool(dt: float) -> void:
 				load_n += counts[m]
 		dug += int(r.taken) + int(r.moved)
 		# (firm ground being cut, or standing over the teeth uncut, holds the arm back; loose comes easy)
-		var stuck := 0.5 if int(r.taken) == 0 and e.y < tr.top_at(e.x, e.z) - 0.1 else 0.0
-		bog = lerpf(bog, clampf(float(r.cut) / 6.0 + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
+		var stuck := 0.5 if int(r.taken) == 0 and e.y < tr.surface_at(e.x, e.z) - 0.1 else 0.0
+		bog = lerpf(bog, clampf(float(r.cut) / DsTerrain.MM / 6.0 + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
 		blocked = "Hard rock: too hard for the bucket" if bool(r.rock) and int(r.taken) == 0 else ""
 	else:
 		bog = 0.0

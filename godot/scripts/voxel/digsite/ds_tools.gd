@@ -136,6 +136,18 @@ func _dust_at(p: Vector3, col: Color) -> void:
 	if tool:
 		tool._dust(p, col)
 
+var _carry := {}                # material -> mm the spade's dug (or tipped short) not yet a whole block in the backpack
+
+## The spade's mm by material as whole blocks for the backpack (what's left over carried to the next bite)
+func _blocks_of(counts_mm: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(counts_mm.size())
+	for m in counts_mm.size():
+		var v: int = counts_mm[m] + int(_carry.get(m, 0))
+		out[m] = v / DsTerrain.MM
+		_carry[m] = v % DsTerrain.MM
+	return out
+
 ## Blocks within r of p (no harder than hardest) dug out (through DsNet: a guest's goes to the host's too)
 func dig_at(p: Vector3, r: float, hardest: int) -> Dictionary:
 	var tr: DsTerrain = site.terrain
@@ -150,15 +162,26 @@ func spade_at(p: Vector3, look: Vector3, r: float, hardest: int) -> Dictionary:
 	var across := Vector3(-f.z, 0.0, f.x) * r
 	var e := p + Vector3(0, -r, 0) - f * r * 0.5
 	var rows := maxi(1, ceili(r * 2.0 / 0.22))
-	var got = site.net.act("cut", [e - across, e + across, f, rows, r * 1.4, 99, hardest, 100000, 0.5])
+	var got = site.net.act("cut", [e - across, e + across, f, rows, r * 1.4, 99, hardest, 100000000, 0.5])
 	if not got is Dictionary:
-		return {"counts": PackedInt32Array(), "n": 0, "refused": 0}
-	return {"counts": got.counts, "n": int(got.taken), "refused": hardest + 1 if bool(got.rock) else 0}
+		return {"counts": PackedInt32Array(), "n": 0, "mm": 0, "refused": 0}
+	# (the cut's in mm: whole blocks go in the backpack, the rest's carried)
+	var blocks := _blocks_of(got.counts)
+	var n := 0
+	for c in blocks:
+		n += c
+	return {"counts": blocks, "n": n, "mm": int(got.taken), "refused": hardest + 1 if bool(got.rock) else 0}
 
-## A scoop tipped out where you aim: it lands there and spreads round, a pile (through DsNet)
+## A scoop of n blocks tipped out where you aim: it lands there and spreads round, a pile (through DsNet): -> blocks
+## out of the backpack (a part block that didn't land is carried, not lost)
 func tip_at(p: Vector3, m: int, n: int) -> int:
-	var got = site.net.act("pour", [p + Vector3(0, 0.45, 0), m, n])
-	return int(got) if got != null else 0
+	var got = site.net.act("pour", [p + Vector3(0, 0.45, 0), m, n * DsTerrain.MM])
+	var mm := int(got) if got != null else 0
+	if mm <= 0:
+		return 0
+	var k := ceili(float(mm) / DsTerrain.MM)
+	_carry[m] = int(_carry.get(m, 0)) + k * DsTerrain.MM - mm
+	return k
 
 ## Up to most loose blocks of m put into the air within r of p (lowest first): how many
 func fill_at(p: Vector3, r: float, m: int, most: int) -> int:
@@ -277,7 +300,7 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 	if VoxelBody.credit and a.get("guide"):
 		a.guide.tried("dig")
 	var counts: PackedInt32Array = got.counts
-	if int(got.n) == 0:
+	if int(got.get("mm", got.n)) == 0:
 		tool.sfx("dig_clang", p, -2.0)
 		tool._dust(p, Color8(200, 200, 200))
 		site.net.event("fx", ["dig_clang", p, 0])

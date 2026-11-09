@@ -57,6 +57,18 @@ void DigSiteGrid::setup(int p_w, int p_h, int p_d, int p_surface) {
 	moved_list.clear();
 	wake_list.clear();
 	wake_at = 0;
+	// the loose layer (dig_site_layer.cpp): blocks of CS x CS columns, as the chunks' footprints
+	lcx = ccx;
+	lcz = ccz;
+	fr.assign((size_t)w * d, 0);
+	fm.assign((size_t)w * d, 0);
+	lay_awake.assign((size_t)lcx * lcz, 0);
+	lay_queue.clear();
+	lay_at = 0;
+	lay_touched.assign((size_t)lcx * lcz, 0);
+	lay_mod.assign((size_t)lcx * lcz, 0);
+	lay_hash.assign((size_t)lcx * lcz, 0);
+	lay_hash_dirty.assign((size_t)lcx * lcz, 1);
 }
 
 void DigSiteGrid::set_materials(const PackedColorArray &colors, const PackedInt32Array &hardness, const Color &grass) {
@@ -146,6 +158,15 @@ void DigSiteGrid::generate(int seed) {
 	std::fill(chunk_touched.begin(), chunk_touched.end(), 0);
 	std::fill(hash_dirty.begin(), hash_dirty.end(), 1);
 	std::fill(awake.begin(), awake.end(), 0);
+	std::fill(fr.begin(), fr.end(), 0);
+	std::fill(fm.begin(), fm.end(), 0);
+	std::fill(lay_awake.begin(), lay_awake.end(), 0);
+	lay_queue.clear();
+	lay_at = 0;
+	lay_moved = 0;
+	std::fill(lay_touched.begin(), lay_touched.end(), 0);
+	std::fill(lay_mod.begin(), lay_mod.end(), 0);
+	std::fill(lay_hash_dirty.begin(), lay_hash_dirty.end(), 1);
 	going.clear();
 	cave_events.clear();
 	const int ring = 8; // 1 m
@@ -244,6 +265,9 @@ void DigSiteGrid::touch(int x, int y, int z) {
 	chunk_mod[ci] = 1;
 	hash_dirty[ci] = 1;
 	wake_near(x, y, z);
+	// (the column's surface may have moved: drawn again; its loose dirt may slide now)
+	lay_changed(x, z);
+	lay_wake(x, z);
 }
 
 void DigSiteGrid::set_cell(int x, int y, int z, int v) {
@@ -475,11 +499,22 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("decor_section", "sx", "sy", "sz", "blades_per_m2"), &DigSiteGrid::decor_section);
 	ClassDB::bind_method(D_METHOD("section_tops", "sx", "sz"), &DigSiteGrid::section_tops);
 	ClassDB::bind_method(D_METHOD("commit_tops", "sx", "sy", "sz", "snap"), &DigSiteGrid::commit_tops);
-	ClassDB::bind_method(D_METHOD("ease_tops", "dt", "up_rate", "down_rate"), &DigSiteGrid::ease_tops);
+	ClassDB::bind_method(D_METHOD("show_update", "dt", "ease_rate"), &DigSiteGrid::show_update);
+	ClassDB::bind_method(D_METHOD("layer_step", "budget_usec"), &DigSiteGrid::layer_step);
+	ClassDB::bind_method(D_METHOD("layer_awake"), &DigSiteGrid::layer_awake);
+	ClassDB::bind_method(D_METHOD("layer_wake_all"), &DigSiteGrid::layer_wake_all);
+	ClassDB::bind_method(D_METHOD("height_at", "x", "z"), &DigSiteGrid::height_at);
+	ClassDB::bind_method(D_METHOD("get_layer", "x", "z"), &DigSiteGrid::get_layer);
+	ClassDB::bind_method(D_METHOD("set_layer", "x", "z", "mm", "m"), &DigSiteGrid::set_layer);
+	ClassDB::bind_method(D_METHOD("put_layer", "x", "z", "mm", "m"), &DigSiteGrid::put_layer);
+	ClassDB::bind_method(D_METHOD("ground_mm"), &DigSiteGrid::ground_mm);
+	ClassDB::bind_method(D_METHOD("loose_mm"), &DigSiteGrid::loose_mm);
+	ClassDB::bind_method(D_METHOD("mat_mm", "m"), &DigSiteGrid::mat_mm);
+	ClassDB::bind_method(D_METHOD("get_layer_moved"), &DigSiteGrid::get_layer_moved);
 	ClassDB::bind_method(D_METHOD("show_offsets"), &DigSiteGrid::show_offsets);
 	ClassDB::bind_method(D_METHOD("show_topo_bytes"), &DigSiteGrid::show_topo_bytes);
 	ClassDB::bind_method(D_METHOD("loose_columns"), &DigSiteGrid::loose_columns);
-	ClassDB::bind_method(D_METHOD("take_topo_dirty"), &DigSiteGrid::take_topo_dirty);
+	ClassDB::bind_method(D_METHOD("take_topo_dirty", "any"), &DigSiteGrid::take_topo_dirty, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("section_count"), &DigSiteGrid::section_count);
 	ClassDB::bind_method(D_METHOD("section_dims"), &DigSiteGrid::section_dims);
 }

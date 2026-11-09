@@ -309,8 +309,69 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Each step now poses the machine before its tool works (it used to only when the frame was split into several
     steps), so the Bobcat's depth hold works out "the ground ahead" from where it is now. The fleet test checks its
     lip against the ground the hold used (the firm ground ahead, or its highest wheel).
-  - The ground itself still changes a block at a time (dirt settles every other frame, a section's redrawn every third
-    or so, up to 15 blocks a frame). That's the next stage: the loose dirt as millimetres.
+  - The ground itself still changed a block at a time (dirt settled every other frame, a section was redrawn every
+    third or so, up to 15 blocks a frame). So, the next stage:
+- **The loose layer (9 Nov, the digger game's dirt in mm on our blocks):** `native/src/dig_site_layer.cpp`. Each
+  column also keeps the loose dirt lying on its top cell in mm (`fr`, 0 to 187, and `fm`, its material); its surface
+  stands at (top + 1) x 125 mm + fr. Putting dirt on a column adds to its layer, 125 mm of it becoming a loose cell on
+  top once it's 188 deep (so a layer going up and down by a few mm doesn't make and unmake cells); taking it off takes
+  the layer first, then turns the top cell into layer (a loose one always, a firm one only for a blade or bucket at its
+  firm rate, never rock). The cells keep everything solid, so tunnels, cave-ins, supports, blasts and the network work
+  as before; the layer is the fine part on top.
+  - Slumping: DirtSim._slump_chunk ported, in blocks of 16 x 16 columns that are awake: a quarter of how far a column
+    stands past the angle of repose (84 mm over a column's 125, 119 to a corner: 34 degrees) slides to its neighbour,
+    straight and corner neighbours each tick, 60 ticks a second (`DsTerrain.LAYER_HZ`, 1.5 ms budget a tick). Not
+    into a column a blade, bucket or machine body stands over. The cell sim (`dig_site_dirt.cpp`) leaves loose cells
+    with nothing but solid over them to the layer; it still drops dirt through air, slumps it in tunnels and lets firm
+    walls give way. A heap of 1800 blocks dropped in one spot settles in 2.2 s to a 34-degree cone; no surface moves
+    more than a few mm a tick doing it (`digsite_dirt_test.gd`).
+  - Blades and buckets (`blade_sweep`, `load_ahead`, `pour_at`): DirtSim.blade/_spill/load_ahead in mm. A column
+    loses share of what stands above the edge off its top (so a blade moving a tenth of a column moves a tenth of
+    what's there, not a whole block one time in ten); what's cut goes in the bucket or is laid ahead up to the heap's
+    top, then further, then off the ends, all in mm. Firm ground is cut at the machine's rate in mm (the digger
+    game's bed_rate: firm_most blocks' worth at full sweep), and what's left of a firm block under the edge stays
+    firm: the layer can be firm ground (`FIRM_LAYER` in its material byte), so a cut floor stands exactly where the
+    edge went. (First go: a cut block turned wholly loose and only the part over the edge went, which left a skin of
+    loose lumps all down the cut; cutting whole blocks instead left 12.5 cm steps the tracks bumped over, 3.1 cm a
+    frame. The firm layer: 2.0 cm.) A firm layer doesn't slump; loose dirt landing on it loosens it. Firm ground over
+    a blade's mouth is still cut from under (cells). A full blade's dirt that has nowhere to go goes back where it
+    came from as it was (`lay_restore`: firm stays firm): put back loose, it was left in the cut under the tracks and
+    the bulldozer drove off leaving a trail of lumps.
+    Results are mm: buckets, trays and pours count mm (`load_n`, capacities x 125), the spade turns mm into whole
+    blocks for the backpack and carries the rest (`DsTools._carry`), the bulldozer's load is in blocks again
+    (`load_ahead` / 125).
+  - What machines ride on: `DsTerrain.height_at` (C++ `height_at`, the four columns' surfaces blended, layer and all).
+  - Drawing (`dig_site_show.cpp`): a section's mesh is still made from the cells now and then; each column's offset is
+    how far its true surface stands off its meshed top (cells changed since, and the layer), exact every frame on the
+    host (a guest eases to the host's at 14/s). Half-float offsets (RH) and RGBA8 meshed top / loose depth (eighths of
+    a cell) / surface material, uploaded every frame anything moved. The ground shader leans the lit normal by the
+    offsets' slope, and draws loose dirt on top (even a thin layer the mesh doesn't have yet) in its own colour; grass
+    under it shrinks away; the lumps ride the true surface. Offsets up to 2 m are drawn (3 cells was too few: a blade
+    heaps and cuts faster than the near redraw, and past 3 the surface stood where the mesh had it, half a metre into
+    the blade). The terrain runs after the machines each frame, so what they moved is drawn that frame: telemetry,
+    drawn top against true top, worst point a frame, 0.5 mm.
+  - Network: the layer goes in the same diffs, a 16 x 16 block of columns at a time (index with the top bit set, 256
+    mm + 256 materials), with a guest's arrival and in the drifted-section fixes; section checksums take in the layer.
+  - Conservation: `ground_mm()` (every solid cell's 125 and all the layer), `loose_mm()`, `mat_mm(m)`. The tests count
+    mm now (a layer can take another material's dirt, so per-material counts can shift where two meet; the total
+    never does).
+  - Known: the player walks on the cells' collision, so their feet sink into the loose layer by up to 18 cm (loose
+    dirt; machines ride the true surface).
+  - The excavator's "won't stab deeper than 0.8 m" read the ground in its teeth's own column, which is cut exactly to
+    them now, so it never read deep: the bucket went on down 1.8 m and couldn't lift out to pour. It reads the ground
+    beside the bucket too, the lower side (the Bobcat's spoil heap beside it in the fleet test stopped it at 7 cm when
+    it took the higher). A bucket's pour is spread over the columns under its mouth (filling the one under it first
+    stood a 2 m spike up for half a second before it slumped).
+  - The tops / loose depth / material texture (1 MB) goes up 30 times a second while dirt moves, at once when a
+    section's mesh is shown (the meshed tops must match the mesh that frame); the offsets every frame anything moved.
+  - Proof (fixed camera beside the path, blade 0.2 m down, flat out 12 s, both games at 30 frames a second;
+    `ds_fixed`/`web_fixed` scripts, telemetry every frame, the ground as 41 x 41 points 0.5 m apart round the dozer):
+    the body moves at most 2.00 cm a frame (95% under 0.71 cm, none over 2 cm; the digger game's: 1.78, 0.88, none);
+    the ground moves every frame in both (360 of 360), the most any point moves in a frame a median 60 mm, 95% under
+    129, at most 175 (the digger game's: 97, 319, 650); what's drawn is within 0.5 mm of the simulated surface every
+    frame. Before all this: body hops to 6 cm, camera jolts to 9 cm, the ground in whole blocks every second or third
+    frame. Costs a frame: the layer 0.34 ms (95%: 0.58), its drawing brought up to date and uploaded 0.85 ms (95%:
+    1.15, software renderer; less on a real GPU).
 
 ## Open questions
 

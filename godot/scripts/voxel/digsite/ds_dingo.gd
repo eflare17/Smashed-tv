@@ -27,9 +27,9 @@ const CURL_MIN := -0.95         # the bucket's floor against level: tipped right
 const CURL_MAX := 0.75          # ... curled right back
 const POUR_FROM := -0.2         # tipped this far it starts to pour ...
 const POUR_ALL := -0.7          # ... and by here it all comes out fast
-const CAPACITY := 260           # blocks the bucket holds (0.5 m3)
+const CAPACITY := 260 * DsTerrain.MM   # mm the bucket holds (260 blocks of 125 mm over a column: 0.5 m3)
 const BITE_EVERY := 0.08        # s between bites
-const POUR_RATE := 300.0        # blocks a second, tipped right forward
+const POUR_RATE := 300.0 * DsTerrain.MM   # mm a second, tipped right forward
 const HARDEST := 2              # soil and clay (DsMats.HARD)
 
 var arm := 0.0                  # radians from level (where the driver's put the arms)
@@ -43,8 +43,8 @@ var lift_cmd := 0.0
 var curl_cmd := 0.0
 var bucket := {}                # material -> blocks in it
 var load_n := 0
-var push_load := 0              # loose blocks banked against the bucket (it slows it)
-var dug := 0                    # (tests: blocks its bucket's taken or pushed)
+var push_load := 0.0            # loose dirt banked against the bucket, in blocks (it slows it)
+var dug := 0                    # (tests: mm its bucket's taken or pushed)
 var firm_rate := 2              # firm blocks off a column at full sweep (the Bobcat: 3)
 var bog := 900.0                # banked blocks that bring it nearly to a stop
 var _pour_acc := 0.0
@@ -265,7 +265,7 @@ func _tool(dt: float) -> void:
 	# the bucket's lip through the ground (the digger game's way, DsTerrain.blade): going forward, not tipped, what
 	# stands above the lip goes in (firm ground only so fast), and once it's full the rest banks up ahead of it (it
 	# pushes, like a small dozer); what's banked against it slows it
-	push_load = 0
+	push_load = 0.0
 	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
 		var ends := edge_ends()
 		var f := forward()

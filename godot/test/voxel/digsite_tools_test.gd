@@ -35,8 +35,16 @@ func _next(s: int) -> void:
 func _ds() -> DigSite:
 	return arena.digsite
 
+# everything solid, in mm over a column (every block's 125 and the loose layer)
 func _count_solid(tr: DsTerrain) -> int:
-	return tr.grid.count_box(0, 0, 0, 512, 192, 512, -1)
+	return tr.grid.ground_mm()
+
+# the mm the spade's dug (or a scoop tipped short) that isn't yet a whole block in the backpack
+func _carried() -> int:
+	var n := 0
+	for m in arena.digsite.tools._carry:
+		n += int(arena.digsite.tools._carry[m])
+	return n
 
 # the player at a spot on the site, looking straight down
 func _stand(local: Vector3) -> void:
@@ -69,6 +77,7 @@ func _process(dt: float) -> bool:
 				_stand(Vector3(6, 0, 6))
 				v.dirt = arena.inv.count("dirt")
 				v.solid = _count_solid(ds.terrain)
+				v.carry = _carried()
 				_next(2)
 		2:
 			if t - mark > 0.6:
@@ -78,16 +87,19 @@ func _process(dt: float) -> bool:
 			if t - mark > 0.6:
 				var got: int = arena.inv.count("dirt") - int(v.dirt)
 				var gone: int = int(v.solid) - _count_solid(ds.terrain)
-				check(got > 0 and got == gone, "the shovel: a scoop of soil into the backpack (%d dirt, %d blocks gone)" % [got, gone])
+				var kept: int = _carried() - int(v.carry)
+				check(got > 0 and got * DsTerrain.MM + kept == gone, "the shovel: a scoop of soil into the backpack (%d dirt, %d mm gone, %d mm carried)" % [got, gone, kept])
 				v.dirt = arena.inv.count("dirt")
 				v.solid = _count_solid(ds.terrain)
+				v.carry = _carried()
 				_swing("shovel", MOUSE_BUTTON_RIGHT)
 				_next(4)
 		4:
 			if t - mark > 0.6:
 				var put: int = int(v.dirt) - arena.inv.count("dirt")
 				var back: int = _count_solid(ds.terrain) - int(v.solid)
-				check(put > 0 and put == back, "its right click: dirt back in the hole (%d out of the backpack, %d blocks back)" % [put, back])
+				var kept: int = _carried() - int(v.carry)
+				check(put > 0 and put * DsTerrain.MM == back + kept, "its right click: dirt back in the hole (%d out of the backpack, %d mm back)" % [put, back])
 				# a shaft down to the stone (as if dug), the player at its bottom
 				var tr := ds.terrain
 				tr.paused = true              # (the shaft's dirt walls would cave in: stage 4's dirt, not what's tested here)
@@ -125,7 +137,7 @@ func _process(dt: float) -> bool:
 		8:
 			if t - mark > 0.7:
 				var chipped: int = int(v.solid) - _count_solid(ds.terrain)
-				check(chipped > 0 and chipped < 20, "the hammer chips a little out (%d blocks)" % chipped)
+				check(chipped > 0 and chipped < 20 * DsTerrain.MM, "the hammer chips a little out (%d blocks)" % (chipped / DsTerrain.MM))
 				_office_checks(ds)
 				return _done()
 	return false

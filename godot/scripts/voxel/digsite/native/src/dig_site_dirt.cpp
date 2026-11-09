@@ -1,4 +1,6 @@
-// DigSiteGrid's dirt (stage 4): loose and firm ground, like the digger game's dirt_sim.gd but in 3D cells. A cell is
+// DigSiteGrid's dirt (stage 4): loose and firm ground, like the digger game's dirt_sim.gd but in 3D cells. (Since 9
+// Nov the loose dirt on the ground's top slumps in the loose layer instead, in mm: dig_site_layer.cpp. This still drops
+// dirt through air, slumps it in tunnels and lets firm walls give way.) A cell is
 // firm (as the ground was made) or loose (dug and dumped, or a firm wall that gave way). Loose cells fall into air and
 // slump down any slope steeper than ~34 degrees (the angle of repose); a firm wall of soil stands straight up to its
 // material's height (wall_h: clay higher than dirt, sand hardly at all) and gives way past that or past ~60 degrees,
@@ -112,6 +114,10 @@ int DigSiteGrid::settle_chunk(int ci) {
 						n++;
 						continue;
 					}
+					// (loose dirt on its column's top, nothing but solid over it: the loose layer slumps that, mm at a
+					// time, every frame: dig_site_layer.cpp. Here only what's in a tunnel or under an overhang)
+					if (lay_owns(x, y, z))
+						continue;
 					// slumping: the way it's steepest past the angle of repose (a random one of the steepest)
 					int best = -1, best_ex = 0, ties = 0;
 					for (int k = 0; k < 8; k++) {

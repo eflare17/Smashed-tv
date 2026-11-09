@@ -43,8 +43,9 @@ void vertex() {
 	vec2 at = root.xz - grid_origin.xz;
 	ivec2 col = clamp(ivec2(floor(at / cell)), ivec2(0), ivec2(grid_size) - 1);
 	vec4 t = texelFetch(topo_tex, col, 0);
-	// how deep the loose dirt lies here (m): a lump only stands where there's enough to hold one its size
-	float deep = t.g * 255.0 * cell;
+	// how deep the loose dirt lies here (m; the texture has eighths of a cell): a lump only stands where there's enough
+	// to hold one its size
+	float deep = t.g * 255.0 / 8.0 * cell;
 	float size = length(MODEL_MATRIX[1].xyz);
 	float keep = smoothstep(size * 0.12, size * 0.8, deep);
 	float seed = fract(root.x * 12.9898 + root.z * 78.233);

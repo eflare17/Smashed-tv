@@ -7,10 +7,10 @@ extends DsMachine
 ## (paid for, $8 each); on foot at its back, G takes one into your backpack. In co-op the host's game runs it, as every
 ## machine; a guest's loading and taking go to the host as events and come back. Owned by the voxel session.
 
-const CAPACITY := 4000          # blocks in the tray (8 m3)
+const CAPACITY := 4000 * DsTerrain.MM  # mm in the tray (4000 blocks of 125 mm over a column: 8 m3)
 const TIP_RATE := 0.45          # of the way up a second
 const POUR_FROM := 0.45         # tipped this far, it pours ...
-const POUR_RATE := 500.0        # ... this fast (blocks a second), at full tip
+const POUR_RATE := 500.0 * DsTerrain.MM   # ... this fast (mm a second), at full tip
 const PROPS_MOST := 12
 const PROP_COST := 8
 const TRAY := Vector3(2.4, 0.95, 4.6)    # the tray's size (across, high, long) ...
@@ -23,7 +23,7 @@ const TRAY_HIGH := 0.95
 
 var tip := 0.0                  # the tray, 0 down .. 1 right up
 var tip_cmd := 0.0
-var tray_load := {}             # material -> blocks in the tray
+var tray_load := {}             # material -> mm in the tray
 var load_n := 0
 var props := 0                  # concrete supports on it
 var _pour_acc := 0.0

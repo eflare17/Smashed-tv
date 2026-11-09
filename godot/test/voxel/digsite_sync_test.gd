@@ -106,12 +106,15 @@ func _process(dt: float) -> bool:
 				var tr: DsTerrain = ds.terrain
 				var g: DigSiteGrid = tr.grid
 				var c := tr.cell_of(_w(C))
+				# (loose dirt on a column's top: a loose block, or 3 cm or more of the loose layer, since 9 Nov)
 				var spread := 0
 				for k in range(1, 12):
-					if g.get_cell(c.x + k, g.column_top(c.x + k, c.z), c.z) & DsMats.LOOSE != 0:
+					var x := c.x + k
+					var lay := g.get_layer(x, c.z)
+					if g.get_cell(x, g.column_top(x, c.z), c.z) & DsMats.LOOSE != 0 or ((lay & 255) >= 30 and (lay >> 8) & 0x80 == 0):
 						spread = k
-				var loose := g.count_box(c.x - 30, 0, c.z - 30, c.x + 30, 191, c.z + 30, -3)
-				check(spread >= 2 and loose >= 20, "%s: the heap slumped out to a pile (%d cells out, %d loose)" % ["the host's" if role == "host" else "the guest sees it", spread, loose])
+				var loose: int = g.loose_mm() / DsTerrain.MM
+				check(spread >= 2 and loose >= 20, "%s: the heap slumped out to a pile (%d cells out, %d blocks' worth loose)" % ["the host's" if role == "host" else "the guest sees it", spread, loose])
 				if role == "guest":
 					# the guest's copy goes wrong somewhere (as if a message were lost)
 					var p := tr.cell_of(DigSite.AT + Vector3(-20, 0, -20))

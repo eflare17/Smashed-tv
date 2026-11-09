@@ -14,10 +14,15 @@ uniform vec3 under_a : source_color = vec3(0.29, 0.15, 0.10);
 uniform vec3 rock_a : source_color = vec3(0.56, 0.56, 0.55);
 uniform vec3 rock_b : source_color = vec3(0.50, 0.50, 0.50);
 const float CLOD_M = 3.6;       // metres one copy of the lumps' picture covers
-// the ground gliding (DsTerrain._glide): each column's surface drawn off its block top by an amount that eases away,
-// so dirt arriving or going shows as a smooth rise or fall, not a block's jump. Only vertices at a column's top move.
-uniform sampler2D show_off_tex : filter_linear, repeat_disable;   // R: cells the surface is still drawn off its top
-uniform sampler2D topo_tex : filter_nearest, repeat_disable;      // R: the column's top cell /255
+// the ground where it truly stands (DsTerrain._glide): the loose dirt moves mm at a time every frame, the mesh is
+// made from the blocks now and then, so each column's top is drawn off its mesh's by how far the true surface stands
+// off it (the cells changed since, and the loose layer's mm). Only vertices at a column's top move; the lit normal
+// leans with the slope of that, so a heap growing between redraws is lit as it stands. Where loose dirt lies on top
+// (even a thin layer the mesh doesn't have yet) it's drawn as loose dirt of its own colour, not the grass under it.
+uniform sampler2D show_off_tex : filter_linear, repeat_disable;   // R: cells the surface stands off its meshed top
+uniform sampler2D topo_tex : filter_nearest, repeat_disable;      // R: meshed top cell, G: loose depth (1/8 cells), B: material (/255)
+uniform sampler2D topo_lin : filter_linear, repeat_disable;       // (the same, blended: the loose depth)
+uniform vec3 soil_cols[16];
 uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
 
@@ -31,13 +36,32 @@ void vertex() {
 	// (VERTEX: metres from the grid's corner; a column's middle at (i + 0.5) cells)
 	vec2 uv = VERTEX.xz / cell / grid_size;
 	float off = textureLod(show_off_tex, uv, 0.0).r;
-	float top = textureLod(topo_tex, uv, 0.0).r * 255.0 + 1.0;
+	vec4 topo = textureLod(topo_tex, uv, 0.0);
+	float top = topo.r * 255.0 + 1.0;
 	float near_top = 1.0 - smoothstep(1.2, 2.6, abs(VERTEX.y / cell - top));
 	VERTEX.y += off * cell * near_top;
+	// (the surface's slope as it stands: the mesh's, leaned by the offset's slope)
+	vec3 nrm = NORMAL;
+	if (near_top > 0.0 && nrm.y > 0.2) {
+		vec2 px = vec2(1.0 / grid_size.x, 0.0);
+		vec2 pz = vec2(0.0, 1.0 / grid_size.y);
+		float ox = (textureLod(show_off_tex, uv + px, 0.0).r - textureLod(show_off_tex, uv - px, 0.0).r) * 0.5 * near_top;
+		float oz = (textureLod(show_off_tex, uv + pz, 0.0).r - textureLod(show_off_tex, uv - pz, 0.0).r) * 0.5 * near_top;
+		vec3 leaned = normalize(vec3(nrm.x / nrm.y - ox, 1.0, nrm.z / nrm.y - oz));
+		nrm = normalize(mix(nrm, leaned, smoothstep(0.2, 0.5, nrm.y)));
+	}
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	v_normal = normalize(mat3(MODEL_MATRIX) * NORMAL);
+	v_normal = normalize(mat3(MODEL_MATRIX) * nrm);
 	v_info = CUSTOM0;
 	v_col = COLOR.rgb;
+	// loose dirt lying on top: drawn as loose dirt, its own colour, over grass or cut ground
+	float deep = textureLod(topo_lin, uv, 0.0).g * 255.0 / 8.0;
+	float lay = smoothstep(0.04, 0.3, deep) * near_top * smoothstep(0.3, 0.6, nrm.y);
+	int m = int(topo.b * 255.0 + 0.5);
+	v_info.r = max(v_info.r, lay);
+	v_info.b *= 1.0 - lay;
+	v_info.a *= 1.0 - lay;
+	v_col = mix(v_col, soil_cols[clamp(m, 0, 15)], lay * step(0.5, float(m)));
 }
 
 void fragment() {

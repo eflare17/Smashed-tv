@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 G="$GODOT_CPP"
 INC="-I$G/include -I$G/gen/include -I$G/gdextension -Isrc"
 # (built beside them, then moved over them: a game running with the old one keeps it)
-SRC="src/dig_site_grid.cpp src/dig_site_dirt.cpp src/dig_site_net.cpp src/dig_site_cave.cpp src/dig_site_mesh.cpp src/dig_site_blade.cpp src/dig_site_show.cpp src/register_types.cpp"
+SRC="src/dig_site_grid.cpp src/dig_site_dirt.cpp src/dig_site_net.cpp src/dig_site_cave.cpp src/dig_site_mesh.cpp src/dig_site_blade.cpp src/dig_site_show.cpp src/dig_site_layer.cpp src/register_types.cpp"
 g++ -std=c++17 -O2 -fPIC -shared $INC $SRC \
 	"$G/bin/libgodot-cpp.linux.template_release.x86_64.a" -o bin/.new.so
 x86_64-w64-mingw32-g++ -std=c++17 -O2 -shared $INC $SRC \

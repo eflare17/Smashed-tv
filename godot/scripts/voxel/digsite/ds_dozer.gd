@@ -40,8 +40,8 @@ const HOLD_LIFT_SPEED := 1.1
 
 var lift := START_LIFT
 var lift_cmd := 0.0
-var push_load := 0              # loose blocks banked against the blade
-var moved := 0                  # (tests: blocks it's moved)
+var push_load := 0.0            # loose dirt banked against the blade (blocks: 125 mm over a column)
+var moved := 0                  # (tests: mm it's moved)
 var cut_on := false
 var cut_cm := 20
 var edge_gap := 0.0             # m from the edge down to the ground under it (negative: in it)
@@ -204,7 +204,7 @@ func _tool(dt: float) -> void:
 			_jam_t = 1.0
 			speed = minf(speed, 0.0)
 			blocked = "The blade's full: back up, or raise it"
-		cut_rate = lerpf(cut_rate, float(r.cut) / maxf(dt, 0.001), minf(1.0, dt * 4.0))
+		cut_rate = lerpf(cut_rate, float(r.cut) / DsTerrain.MM / maxf(dt, 0.001), minf(1.0, dt * 4.0))
 		if bool(r.rock) and int(r.moved) == 0 and throttle > 0.05:
 			speed = minf(speed, 0.0)
 			blocked = "Rock: the blade won't cut it (dynamite, or the excavator)"
@@ -264,7 +264,7 @@ func net_more() -> PackedFloat32Array:
 func net_take_more(f: PackedFloat32Array) -> void:
 	if f.size() >= 6:
 		lift = lerpf(lift, f[0], 0.5)
-		push_load = int(f[1])
+		push_load = f[1]
 		_steady = lerpf(_steady, f[2], 0.5)
 		edge_gap = f[3]
 		if site.machines.driving != self:       # (the driver's own toggles stand: the host's echo lags)
