@@ -538,3 +538,17 @@ culvert under the driveway, or both), then said "sounds good" to the whole plan.
   trencher (three cells wide, 2 m deep, walls standing, dirt past the wheels) and the big pipe on the floor. In a real window at
   normal speed the job ran start to finish. (Run at 4x speed it digs shallow: the chain cuts a set amount a tick. Players run at 1x.)
 - Online: big pipe goes to the guest as its own PIPE message (a third item, 1).
+
+## 9 Nov, later: the Bobcat along its trench, digging speed, GRADE by itself
+
+The owner played Street drain: kept getting stuck driving along the pipe, the trencher dug slow, and tapping the depth was
+boring. I tested it: the big trench is 75 cm wide and the Bobcat's wheels sit only about 30 cm outside it, so drifting off the
+line dropped a wheel in (up to 45 degrees of lean, nearly stopped). The owner said yes to all my picks:
+- The Bobcat's wheels ride over a trench (`Loader._over_slot`): with higher ground on both sides within 1 m (across or along the
+  machine) a wheel rests on the lower of the two. Even ground, slopes and crests are unchanged; ruts under 4 cm still sink.
+- With the pipe on, the layer follows the trench by itself (`Loader._guide`, Bobcat and Dingo): it finds the trench's middle
+  1.4 m ahead (behind, backing up) and steers onto it. Steering harder than half lock pulls away. Hands off from 35 cm off and
+  angled, it was on the line in under 5 s; a wandering driver now leans 10 degrees at most, was 45.
+- The big trencher crawls twice as fast (`BIG_CHAIN_SPEED` 1.5 m/s, was 0.75): the 40 m dig takes 39 s, was 77. The Dingo's the same.
+- On a job, GRADE comes on with the trencher. RAISE takes over as before; LOWER does nothing while GRADE's on (as before: GRADE's
+  already as deep as the job wants). Tap GRADE to turn it off for digging by hand. Free play is unchanged. Pipe job hints say so.

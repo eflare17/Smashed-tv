@@ -49,6 +49,19 @@ const BIG_CHAIN_MOST := 2.0
 const BIG_CHAIN_X := 1.45       # where it cuts, ahead of the middle: out past the front wheels
 const BIG_CHAIN_LEN := 2.6
 const BIG_MOUNT_ARM := -0.55    # the arms hold the chain's head down at the front
+const BIG_CHAIN_SPEED := 1.5    # m/s at the top, slower the deeper: twice what it was (owner, 9 Nov: it dug too slow)
+# The Bobcat's wheels ride over a trench instead of dropping in (owner, 9 Nov). The big trench is 75 cm wide, and full depth to
+# full ground across it is about a metre with the grid's smoothing, so a wheel looks that far either way for ground to rest on.
+const BRIDGE := 1.0
+const BRIDGE_STEP := 0.25
+const BRIDGE_DIP_FROM := 0.04   # m: a dip shallower than this, like a rut, it still sinks into
+const BRIDGE_DIP_TO := 0.18     # and one this deep or more it bridges right over
+# Laying pipe, it follows the trench by itself: the player only drives (owner, 9 Nov). It looks this far ahead, or behind backing
+# up, for the trench's middle, and steers onto it. Steering harder than GUIDE_LET_GO pulls away from it.
+const GUIDE_AHEAD := 1.4
+const GUIDE_REACH := 0.9        # m either side it looks
+const GUIDE_MOST := 0.6         # the most of full lock it steers with
+const GUIDE_LET_GO := 0.5
 
 var kind := BOBCAT
 var lift_cmd := 0.0
@@ -181,8 +194,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		chain_cuts = [-0.25, 0.0, 0.25]
 		chain_beside = 0.9
 		chain_cut = 60
-		# A touch quicker than the Dingo's, so 40 m of street isn't a long crawl.
-		chain_speed = 0.75
+		chain_speed = BIG_CHAIN_SPEED
 		# Thrown clear of the right-hand wheels.
 		throw_near = 1.3
 		throw_far = 2.0
@@ -363,12 +375,15 @@ func gauge_word() -> Array:
 ## Goes round the attachments: bucket, trencher, pipe layer. What's in the bucket gets tipped out first. The Bobcat's are the big
 ## ones, held on its arms.
 func toggle_attachment() -> void:
+	var grade_now := false
 	if not trencher_on and not pipe_on:
 		trencher_on = true
 		curl = CURL_MIN
 		_pour_all_now()
 		if kind == BOBCAT:
 			arm = BIG_MOUNT_ARM
+		# On a job, GRADE comes on with it, so there's no setting the depth by hand (owner, 9 Nov). RAISE takes over, as before.
+		grade_now = not plan.is_empty()
 	elif trencher_on:
 		trencher_on = false
 		pipe_on = true
@@ -383,7 +398,8 @@ func toggle_attachment() -> void:
 	back_speed = _full_back
 	spreading = false
 	spread_on = false
-	grade_on = false
+	grade_on = grade_now
+	_grade_from = Vector2.INF
 	_show_attachment()
 	_pose()
 	hit_end = 0.6
@@ -419,12 +435,35 @@ func _pour_all_now() -> void:
 	_pour_dust = 0
 
 ## The Dingo's tracks are long for its size and bridge a slot: each corner rests on the highest ground along that stretch of track.
+## The Bobcat's wheels ride over one (owner, 9 Nov: it kept dropping a wheel in its own trench and getting stuck).
 func _ground_at(local_x: float, local_z: float) -> float:
+	if kind == BOBCAT:
+		return _over_slot(local_x, local_z)
 	if kind != DINGO:
 		return super(local_x, local_z)
 	var most := super(local_x, local_z)
 	most = maxf(most, super(local_x * 0.4, local_z))
 	return maxf(most, super(local_x * 0.4, local_z * 1.2))
+
+## Where a Bobcat wheel rests: over a slot, with higher ground on both sides of it within BRIDGE (across the machine or along it),
+## on the lower of the two, as if it bridged it. On even ground, a slope or a crest that's just the ground. A dip of a few cm,
+## like a rut, it still sinks into; a deep one it eases up out of, so there's no jolt at a trench's edge.
+func _over_slot(local_x: float, local_z: float) -> float:
+	var f := forward()
+	var side := Vector2(sin(angle), cos(angle))
+	var at := spot + f * local_x + side * local_z
+	var here := sim.track_height_at(at)
+	var lift := 0.0
+	for axis: Vector2 in [side, f]:
+		var one := -INF
+		var other := -INF
+		var d := BRIDGE_STEP
+		while d <= BRIDGE + 0.001:
+			one = maxf(one, sim.track_height_at(at + axis * d))
+			other = maxf(other, sim.track_height_at(at - axis * d))
+			d += BRIDGE_STEP
+		lift = maxf(lift, minf(one, other) - here)
+	return here + lift * smoothstep(BRIDGE_DIP_FROM, BRIDGE_DIP_TO, lift)
 
 func _pin() -> Vector2:
 	return pivot + Vector2(cos(arm), sin(arm)) * arm_len
@@ -470,7 +509,12 @@ func step(dt: float) -> void:
 	# With the chain down it can only be eased round, as the slot it's in holds it to a line.
 	if trencher_on and chain_depth > 0.02:
 		share = 0.3
+	# Laying pipe, it keeps to the trench by itself. Only for this tick: the stick's own steer stays as the player left it.
+	var own_steer := steer
+	if pipe_on:
+		steer = clampf(steer + _guide(), -1.0, 1.0)
 	_drive(dt, _drag(), false, share)
+	steer = own_steer
 	# Eased onto the ground, so lumps and clods rock it rather than jolt it.
 	_settle(minf(dt * (7.0 if kind == DINGO else 12.0), 1.0))
 
@@ -781,6 +825,38 @@ func _work_pipe() -> void:
 	elif (end as Vector3).distance_to(at) >= PIPE_EVERY:
 		if pipes.lay_to(at):
 			hit_end = 0.12
+
+## The steering that keeps the pipe layer on a trench: it finds the trench's middle a little ahead (behind, backing up) and steers
+## that point onto it. Nothing with no trench there, standing still, or the player steering hard away.
+func _guide() -> float:
+	if absf(steer) > GUIDE_LET_GO or absf(throttle) < 0.05:
+		return 0.0
+	var way := signf(throttle)
+	var side := Vector2(sin(angle), cos(angle))
+	var ahead := spot + forward() * GUIDE_AHEAD * way
+	# The trench floor there: the lowest firm ground across, and its middle, all of it within a few cm of the lowest.
+	var low := INF
+	var ys: Array[float] = []
+	var s := -GUIDE_REACH
+	while s <= GUIDE_REACH + 0.001:
+		var y := sim.firm_at(ahead + side * s)
+		ys.append(y)
+		low = minf(low, y)
+		s += 0.125
+	var mid := 0.0
+	var n := 0
+	for k in ys.size():
+		if ys[k] < low + 0.03:
+			mid += -GUIDE_REACH + 0.125 * k
+			n += 1
+	mid /= n
+	# A trench: the ground either side of it well above its floor.
+	var edge := minf(sim.height_at(ahead + side * (mid + pipe_beside)), sim.height_at(ahead + side * (mid - pipe_beside)))
+	if edge - low < TRENCH_LOW:
+		return 0.0
+	# Steering the point ahead onto the middle: the turn that curves it there, over the distance ahead.
+	var turn := 2.0 * maxf(absf(speed), 0.3) * mid / (GUIDE_AHEAD * GUIDE_AHEAD)
+	return clampf(turn / turn_rate * way, -GUIDE_MOST, GUIDE_MOST)
 
 var _net_arm := 0.0
 var _net_curl := 0.25

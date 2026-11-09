@@ -79,7 +79,7 @@ const LIST := [
 		"drain": Vector2(6.6, 8.45),
 		"flood": Vector2(5.6, 2.2),
 		"flood_r": Vector2(3.0, 2.3),
-		"hint": "ATTACH the trencher, LOWER it and dig from the downpipe to the drain. ATTACH again to lay pipe along it. Then SPREAD along the trench to fill it",
+		"hint": "ATTACH the trencher and drive from the downpipe to the drain: GRADE comes on and sets the depth. ATTACH again for pipe: it follows the trench. Then SPREAD along the trench to fill it",
 		"done": "BACKYARD FLOOD UNLOCKED",
 	},
 	{
@@ -116,7 +116,7 @@ const LIST := [
 		"trampoline": Vector2(-5.5, -17.9),
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
-		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and SPREAD along the trench to fill it",
+		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. GRADE comes on with the trencher and does that for you. Then lay pipe (it follows the trench) and SPREAD along the trench to fill it",
 		"done": "STREET DRAIN UNLOCKED",
 	},
 	{
@@ -149,7 +149,7 @@ const LIST := [
 		"fall": 0.02,
 		"fill": Vector2(6.5, 6.0),
 		"fill_m3": 2.0,
-		"hint": "ATTACH the big trencher, tap GRADE and drive from the pit to the big drain: GRADE keeps it going DOWN. ATTACH again to lay pipe along it. Then SPREAD along the trench to fill it",
+		"hint": "ATTACH the big trencher and drive from the pit to the big drain: GRADE comes on and keeps it going DOWN. ATTACH again for pipe: it follows the trench. Then SPREAD along the trench to fill it",
 		"done": "GARDEN PATCH UNLOCKED",
 	},
 	{

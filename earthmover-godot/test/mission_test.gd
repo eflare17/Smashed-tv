@@ -381,8 +381,16 @@ func grade_test(job: Dictionary) -> void:
 	var b: Vector2 = job["drain"]
 	var way := (b - a).normalized()
 	d.toggle_attachment()
+	check(d.grade_on, "on a job, GRADE comes on with the trencher")
 	d.toggle_spread()
-	check(d.grade_on, "with the trencher on, SPREAD is GRADE")
+	check(not d.grade_on, "with the trencher on, SPREAD is GRADE: off")
+	d.toggle_spread()
+	check(d.grade_on, "and on again")
+	d.lift_cmd = 1.0
+	_run(d, s, 0.1)
+	check(not d.grade_on, "RAISE takes over from it")
+	d.lift_cmd = 0.0
+	d.toggle_spread()
 	d.reposition(a - way * 0.75, way)
 	d.throttle = 1.0
 	var t := 0.0
@@ -433,6 +441,8 @@ func words_test(job: Dictionary) -> void:
 	var c: Vector2 = job["drain"]
 	var way := (c - a).normalized()
 	d.toggle_attachment()
+	# GRADE comes on with it on a job: off, by hand.
+	d.toggle_spread()
 	d.reposition(a - way * 0.75, way)
 	d.throttle = 1.0
 	var t := 0.0
@@ -467,6 +477,8 @@ func words_test(job: Dictionary) -> void:
 	d.toggle_attachment()
 	while not d.trencher_on:
 		d.toggle_attachment()
+	# GRADE off, by hand.
+	d.toggle_spread()
 	# Beside the first, on the side clear of the road.
 	var a2 := a + Vector2(0.0, -2.5 if Mission.kind(job) == "street" else 2.0)
 	d.reposition(a2 - way * 0.75, way)
@@ -514,8 +526,7 @@ func street_job_test(job: Dictionary) -> void:
 	check(d.chain_most == Loader.BIG_CHAIN_MOST, "it's the Bobcat with the big trencher")
 	# Off from where it starts.
 	d.toggle_attachment()
-	d.toggle_spread()
-	check(d.trencher_on and d.grade_on, "ATTACH, then GRADE")
+	check(d.trencher_on and d.grade_on, "ATTACH: the big trencher, with GRADE on by itself")
 	d.throttle = 1.0
 	var t := 0.0
 	var short := false
@@ -607,6 +618,9 @@ func _trench_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2, floor_at: Call
 	if not d.trencher_on:
 		while not d.trencher_on:
 			d.toggle_attachment()
+	# By hand: GRADE off, if it came on with the trencher.
+	if d.grade_on:
+		d.toggle_spread()
 	d.reposition(a - way * 0.75, way)
 	var length := a.distance_to(b)
 	var t := 0.0
@@ -735,6 +749,8 @@ func too_deep_test(job: Dictionary) -> void:
 	var c: Vector2 = job["drain"]
 	var way := (c - a).normalized()
 	d.toggle_attachment()
+	# GRADE comes on with it on a job: off, by hand.
+	d.toggle_spread()
 	d.reposition(a - way * 0.75, way)
 	d.lift_cmd = -1.0
 	_run(d, s, 6.0)
