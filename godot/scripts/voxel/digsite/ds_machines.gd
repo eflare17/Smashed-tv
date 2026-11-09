@@ -20,6 +20,11 @@ var _yaw_was := 0.0
 var _asked := 0.0               # (a guest: asked to drive this long ago)
 var third := true               # driving seen from behind (V: from the seat)
 var cam_dist := 6.0             # (the mouse wheel: nearer, further)
+const CAM_FOLLOW := 9.0         # per second: the view's aim follows the machine along the ground ...
+const CAM_FOLLOW_UP := 4.0      # ... and up and down, more softly
+var _cam_m: DsMachine
+var _cam_at := Vector3.ZERO
+var _cam_floor := -INF
 var gauge: DsGauge              # the level while driving
 
 func setup(s: Node3D) -> void:
@@ -296,14 +301,25 @@ func _show_me(on: bool) -> void:
 # the camera behind the machine, round it with the mouse (the arena's look), not through the ground; you on it
 func _third_cam(m: DsMachine, dt: float) -> void:
 	var a = site.arena
-	var target := m.global_position + Vector3(0, 1.0 + m.length * 0.12, 0)
+	# what it looks at follows the machine softly (a quick follow along the ground, a slower one up and down), so a bump
+	# under the tracks doesn't jolt the view (the owner, 9 Nov: "it's still so jumpy")
+	var raw := m.global_position + Vector3(0, 1.0 + m.length * 0.12, 0)
+	if _cam_m != m or _cam_at.distance_to(raw) > 6.0:
+		_cam_m = m
+		_cam_at = raw
+		_cam_floor = -INF
+	var kh := 1.0 - exp(-CAM_FOLLOW * dt)
+	var kv := 1.0 - exp(-CAM_FOLLOW_UP * dt)
+	_cam_at = Vector3(lerpf(_cam_at.x, raw.x, kh), lerpf(_cam_at.y, raw.y, kv), lerpf(_cam_at.z, raw.z, kh))
+	var target := _cam_at
 	var yaw: float = a.look_yaw
 	var p := clampf(float(a.look_pitch), -1.25, 0.3)
 	var dir := Vector3(-sin(yaw) * cos(p), sin(p), -cos(yaw) * cos(p))
 	var pos := target - dir * cam_dist
+	# kept out of the ground, the lift eased too (a heap passing under it doesn't pop it up), never let into it
 	var floor_y: float = m.ground_y(pos.x, pos.z) + 0.5
-	if pos.y < floor_y:
-		pos.y = floor_y
+	_cam_floor = floor_y if _cam_floor == -INF else lerpf(_cam_floor, floor_y, kv)
+	pos.y = maxf(pos.y, maxf(_cam_floor, floor_y - 0.35))
 	a.cam.global_position = pos
 	if pos.distance_to(target) > 0.05:
 		a.cam.look_at(target, Vector3.UP)

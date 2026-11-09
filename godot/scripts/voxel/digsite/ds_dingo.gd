@@ -37,6 +37,7 @@ var curl := 0.0                 # the bucket's floor against level (up +: holdin
 var arm_at := 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST; right down,
                                 # they float, the lip riding DIG_MOST under the ground ahead
 var _float_lo := 0.0
+var ride_ref := 0.0             # (tests: the ground the bucket's lip was last held under, the lower of the firm ground ahead and its highest wheel)
 var curl_at := 0.0              # the bucket against the body as it is: curl, less the body's pitch (it self-levels)
 var lift_cmd := 0.0
 var curl_cmd := 0.0
@@ -168,6 +169,7 @@ func _hold() -> void:
 	var c := _corners(global_position, yaw)
 	var top := maxf(maxf(c[0], c[1]), maxf(c[2], c[3]))
 	var lim := minf(ref - DIG_MOST, maxf(_lip_y(arm_low), top - DIG_MOST))
+	ride_ref = minf(ref, top)
 	var lo := _float_lo
 	var hi := maxf(arm_high, lo)
 	var want := lo

@@ -297,6 +297,20 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     Now it stops dead when what's between the blade and the tracks can't be cleared. The blocked cells start 0.2 m
     ahead of the edge (the blade's top curls out that far) and go up to the sky (dirt that spilled over used to rest
     on top of them, floating over the blade); its heap's 1.25 m over the edge (was 1.6, level with the blade's top).
+- **9 Nov ("honestly this looks trash its still so jumpy ... analise the video and tell me what you will do"):**
+  telemetry from a fixed-rate run (every frame: camera, machine, ground) against the digger game's own:
+  - The machine climbed each 12.5 cm block in one frame (it rode the highest of its four corners) and the camera was
+    bolted to it: body hops of up to 6 cm a frame, camera jolts up to 9 cm. Now (`DsMachine._drive`) it rests where
+    the digger game's do, on its corners' average or a crest between its tracks if that's higher, eased to at 10/s,
+    with pitch and roll from the corners' averages; off a real drop (over 0.3 m) it still falls. The camera
+    (`DsMachines._third_cam`) follows on a spring (9/s along the ground, 4/s up and down) and its keep-out-of-the-
+    ground lift is eased too. Measured on the bulldozer clip: body change a frame, 95th percentile 4.0 -> 1.6 cm,
+    frames over 2 cm 98 -> 15; camera jolt 95th percentile 3.7 -> 0.3 cm, frames over 1 cm 139 -> 1.
+  - Each step now poses the machine before its tool works (it used to only when the frame was split into several
+    steps), so the Bobcat's depth hold works out "the ground ahead" from where it is now. The fleet test checks its
+    lip against the ground the hold used (the firm ground ahead, or its highest wheel).
+  - The ground itself still changes a block at a time (dirt settles every other frame, a section's redrawn every third
+    or so, up to 15 blocks a frame). That's the next stage: the loose dirt as millimetres.
 
 ## Open questions
 

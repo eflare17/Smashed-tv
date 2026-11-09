@@ -11,6 +11,8 @@ extends Node3D
 
 const STATE_HZ := 20.0
 const GRAVITY := 9.8
+const RIDE_EASE := 10.0         # per second: its height and lean ease to the ground under it (the digger game's)
+const FALL_FROM := 0.3          # m: further under it than this, the ground's a drop and it falls
 
 var site: Node3D                # DigSite
 var id := 0                     # 1 .. 99 (its fast messages' id; its driver's controls go as id + 128)
@@ -115,8 +117,7 @@ func step(dt: float) -> void:
 		var n := clampi(ceili(dt * 45.0), 1, 6)
 		for i in n:
 			_drive(dt / n)
-			if n > 1:
-				_pose_now()
+			_pose_now()             # (its tool's worked out from where it is now, not where it was last frame)
 			_tool(dt / n)
 		_block_body()
 	else:
@@ -306,18 +307,25 @@ func _drive(dt: float) -> void:
 		hb = maxf(c[2], c[3])
 		new_pitch = atan2(hf - hb, length)
 	yaw = new_yaw
-	# down it drops (falling), up it climbs (at once)
-	if top >= at.y:
-		to.y = top
-		_vy = 0.0
-	else:
+	# where it rests (the digger game's: on its corners' average, or a crest between its tracks if that's higher),
+	# eased to, as are its pitch and roll (the owner, 9 Nov: "it's still so jumpy": it climbed each block's 12.5 cm
+	# step in one frame, and the camera behind it jolted with it). Off a real drop it falls.
+	var ml := ground_y(to.x - right().x * width * 0.5, to.z - right().z * width * 0.5)
+	var mr := ground_y(to.x + right().x * width * 0.5, to.z + right().z * width * 0.5)
+	var rest := maxf((c[0] + c[1] + c[2] + c[3]) * 0.25, maxf(ml, mr))
+	var k := 1.0 - exp(-RIDE_EASE * dt)
+	if rest < at.y - FALL_FROM or _vy < 0.0:
 		_vy -= GRAVITY * dt
-		to.y = maxf(top, at.y + _vy * dt)
-		if to.y <= top:
+		to.y = maxf(rest, at.y + _vy * dt)
+		if to.y <= rest:
 			_vy = 0.0
+	else:
+		to.y = lerpf(at.y, rest, k)
 	global_position = to
-	pitch = lerpf(pitch, new_pitch, minf(1.0, dt * 10.0))
-	roll = lerpf(roll, atan2(maxf(c[1], c[3]) - maxf(c[0], c[2]), width), minf(1.0, dt * 10.0))
+	var lean_f := (c[0] + c[1] - c[2] - c[3]) * 0.5
+	var lean_r := (c[1] + c[3] - c[0] - c[2]) * 0.5
+	pitch = lerpf(pitch, atan2(lean_f, length), k)
+	roll = lerpf(roll, atan2(lean_r, width), k)
 
 ## The ground just ahead of its leading corners rising steeper than it climbs (a pit's wall, a bank), measured from
 ## where it rides (base: its height now; a hole under a corner, its own bucket's bite, doesn't count)
