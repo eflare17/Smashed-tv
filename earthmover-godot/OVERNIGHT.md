@@ -577,3 +577,21 @@ only the bike's built so far, in free play.
   off a 1.5 m lip, comes off leaned right back or forward, takes a 2.5 m drop, no dirt lost); `--demo=touchbike --machine="Dirt
   bike"` rides it in the real game at the dirt pile (40 km/h, 1.3 s in the air, JUMP 10.8 m), then off and back on.
 - Online: its pose, springs, rider and crash go to the guest; the guest's thumb goes to the host for the lean.
+
+## 10 Nov: the bike faster and lighter, and MONO
+
+The owner rode the bike ("pretty cool") and asked for it a bit faster and lighter, so speed gets bigger jumps, and a button for
+monos (wheelies). Amounts and how MONO behaves are my picks.
+- Faster: 75 km/h top (was 61), 0 to 60 km/h in 2.4 s (was about 3.6). Pulling, the back tyre now grips with most of the front's
+  load too (`DRIVE_SHIFT`): before, grip, not the engine, was holding it back.
+- Lighter: 160 kg with the rider (was 200), quicker end over end. It rides a touch higher on its springs and pops harder off a
+  lip: hands off a 1.5 m lip, 11.2/15.1/19.9 m at 10/12/14 m/s (was 10.6/14.7/17.7), 31 m at full speed. At the dirt pile in the
+  real game: 48 km/h, JUMP 17.8 m (was 40 km/h, 10.8 m). Drops of up to 6 m onto the flat at up to 72 km/h land.
+- MONO (bottom right, Space on a PC), held: on the back wheel and going, the front comes up in about half a second and the rider
+  holds it at 32 degrees nose up from level (at least 11 degrees above an uphill slope), however long it's held. It steers. It
+  can't be looped out. Let go (or under walking pace) and the front's set back down in under half a second. Held off a jump, it
+  jumps as normal; after landing the front comes back up. The readout counts "MONO 15.6 m" while it's up and for 3 s after (a
+  jump just landed shows first for 1.5 s). The chase view swings 40 degrees round to the side while the front's up, so it's seen.
+- Checks: `test/bike_test.gd` now also holds MONO standing (nothing), at 8 m/s (up, held 31-32 degrees 3 s, counts, steers, set
+  down in 0.43 s), up a 20 degree slope at full throttle, off a jump; MONO from a guest to the host and the readout to the copy.
+  `--demo=touchbike` taps the real MONO button: 31 degrees, front off, MONO 8.5 m, rider on.

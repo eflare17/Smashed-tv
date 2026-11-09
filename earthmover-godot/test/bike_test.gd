@@ -174,6 +174,75 @@ func _init() -> void:
 	ride(p, parked, 2.0, 5.0)
 	check(parked.spot.distance_to(put) > 1.5, "someone gets on and it rides off up the slope (%.1f m)" % parked.spot.distance_to(put))
 
+	# MONO: held while going, the front comes up and stays up, it still steers, and let go it's set down gently.
+	var mw := DirtSim.new()
+	var mb := new_bike(mw, Vector2(-24.0, 0.0), Vector2(1.0, 0.0))
+	mb.mono = true
+	ride(mw, mb, 0.5, 0.0)
+	check(mb.touching[1] and absf(mb.pitch) < 0.05, "MONO held standing still, the front stays down")
+	ride(mw, mb, 1.5, 8.0)
+	check(not mb.touching[1] and mb.touching[0] and not mb.airborne, "MONO held at 8 m/s, the front comes up off the ground on the back wheel")
+	var low_pitch := 99.0
+	var high_pitch := 0.0
+	var front_down := false
+	var gone := mb.spot.x
+	for n in 180:
+		ride(mw, mb, DT, 8.0)
+		low_pitch = minf(low_pitch, rad_to_deg(mb.pitch))
+		high_pitch = maxf(high_pitch, rad_to_deg(mb.pitch))
+		front_down = front_down or mb.touching[1]
+	gone = mb.spot.x - gone
+	check(not front_down and absf(low_pitch - rad_to_deg(Bike.MONO_ANGLE)) < 3.0 and absf(high_pitch - rad_to_deg(Bike.MONO_ANGLE)) < 3.0, "and holds it there, %.0f to %.0f degrees, for 3 s" % [low_pitch, high_pitch])
+	var word: String = mb.gauge_word()[0]
+	check(word.begins_with("MONO") and mb.mono_m > gone, "the readout counts it: %s" % word)
+	check(mb.crash_t < 0.0, "with the rider on")
+	var mono_heading := mb.angle
+	mb.steer = 1.0
+	ride(mw, mb, 0.5, 8.0)
+	mb.steer = 0.0
+	check(absf(mb.angle - mono_heading) > 0.15 and not mb.touching[1], "it steers on the back wheel (%.0f degrees in half a second)" % rad_to_deg(absf(mb.angle - mono_heading)))
+	mb.mono = false
+	var hit_front := 0.0
+	var tdown := 0.0
+	while not mb.touching[1] and tdown < 3.0:
+		ride(mw, mb, DT, 8.0)
+		tdown += DT
+	check(tdown < 1.0 and mb.crash_t < 0.0, "let go, the front's set back down in %.2f s" % tdown)
+	ride(mw, mb, 1.0, 8.0)
+	check(absf(mb.pitch) < 0.05 and mb.touching[1] and mb.gauge_word()[0].begins_with("MONO"), "it rides on on both wheels, the readout still saying how far it went")
+	ride(mw, mb, 3.0, 8.0)
+	check(not mb.gauge_word()[0].begins_with("MONO"), "and soon goes back to the speed")
+	# Up a 20 degree slope on MONO, and full throttle on it.
+	var ms := DirtSim.new()
+	shape(ms, -6.0, 14.0, func(x: float) -> float: return (x + 6.0) * 0.36)
+	shape(ms, 14.0, 30.0, func(_x: float) -> float: return 7.2)
+	var up := new_bike(ms, Vector2(-22.0, 0.0), Vector2(1.0, 0.0))
+	ride(ms, up, 2.0, 9.0)
+	up.mono = true
+	var on_slope_lift := 0.0
+	var dropped := false
+	for n in 150:
+		ride(ms, up, DT, 14.0)
+		if up.spot.x > 2.0 and up.spot.x < 10.0:
+			on_slope_lift = maxf(on_slope_lift, absf(rad_to_deg(up.pitch - Bike.MONO_ANGLE)))
+		if up.spot.x > -2.0 and up.spot.x < 12.0:
+			dropped = dropped or up.touching[1]
+	check(not dropped and on_slope_lift < 3.0 and up.crash_t < 0.0, "MONO up a 20 degree slope at full throttle, it holds the front up off the slope, as high as on the flat (within %.0f degrees)" % on_slope_lift)
+	# MONO held off a jump: it flies and lands like any jump, then the front comes back up.
+	var mj := jump_site(0.0, 7.0, 30.0)
+	var mjb := new_bike(mj, Vector2(-25.0, 0.0), Vector2(1.0, 0.0))
+	mjb.mono = true
+	var mr := fresh()
+	var mt := 0.0
+	while mr["jump"] == 0.0 and mt < 6.0:
+		ride(mj, mjb, DT, 11.0, 0.0, mr)
+		mt += DT
+	ride(mj, mjb, 0.3, 11.0, 0.0, mr)
+	check(not mr["crashed"] and mr["jump"] > 6.0, "MONO held off a jump at 11 m/s, it jumps %.1f m and lands, the rider on" % mr["jump"])
+	check(mjb.gauge_word()[0].begins_with("JUMP"), "the readout shows the jump first (%s)" % mjb.gauge_word()[0])
+	ride(mj, mjb, 1.0, 11.0, 0.0, mr)
+	check(not mjb.touching[1] and mjb.mono_up and not mr["crashed"], "and the front comes back up after (%.0f degrees)" % rad_to_deg(mjb.pitch))
+
 	# Online: a copy fed what the host sends follows it through a jump, the rider coming off and all; the guest's thumb gets to
 	# the host for the lean.
 	var host_sim := jump_site(0.0, 7.0, 30.0)
@@ -205,6 +274,17 @@ func _init() -> void:
 	guest.thumb_y = NAN
 	host.net_take_cmds(guest.net_cmds())
 	check(is_nan(host.thumb_y), "and so does no thumb at all")
+	guest.mono = true
+	host.net_take_cmds(guest.net_cmds())
+	check(host.mono, "and MONO held")
+	guest.mono = false
+	host.net_take_cmds(guest.net_cmds())
+	check(not host.mono, "and let go")
+	host.mono_m = 12.5
+	host.mono_show = 2.0
+	copy.net_take(host.net_state())
+	copy.net_follow(DT)
+	check(copy.gauge_word()[0] == "MONO 12.5 m", "the copy's readout shows the wheelie too (%s)" % copy.gauge_word()[0])
 
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)

@@ -2916,6 +2916,7 @@ func _physics_process(dt: float) -> void:
 				var bk := active as Bike
 				bk.thumb_y = (stick_at - stick_from).y / reach if stick_finger >= 0 and not _dig_looking() else NAN
 				bk.key_y = Input.get_axis("dz_forward", "dz_back")
+				bk.mono = Input.is_action_pressed("spade")
 	else:
 		for m: Machine in machines:
 			if m != online.guest_machine():
@@ -3451,6 +3452,8 @@ func _build_ui() -> void:
 		word.add_theme_font_size_override("font_size", int(size * 0.15))
 	_ute_ui = ""
 	_show_ute()
+	# The bike's: MONO where the right thumb rests, held for a wheelie. It's Space on the keys.
+	_touch_button("MONO", "spade", Vector2(screen.x - size - pad, h - size - pad), size, "Dirt bike")
 
 	# How the job's going, big enough to read while driving.
 	banner = Label.new()
@@ -4573,6 +4576,8 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 				lines += "\nA D swing (T: W A S D drive)   arrows move the arm   U curl   O dump   M swap machine"
 			elif active == truck:
 				lines += "\nW A S D drive   E hold to tip   M swap machine"
+			elif active is Bike:
+				lines += "\nW A S D ride   Space hold for MONO   M swap machine"
 			elif active != dozer:
 				lines += "\nW A S D drive   E raise   Q lower   U curl   O dump   G attachment   M swap machine"
 			else:
@@ -4641,6 +4646,12 @@ func _take_shot() -> void:
 ## ---------------------------------------------------------------- input checks
 
 var _touch_tick := 0
+
+func _mono_button() -> TouchScreenButton:
+	for b in touch_buttons:
+		if b.get_meta("label") == "MONO":
+			return b
+	return null
 
 func _touch(index: int, at: Vector2, down: bool) -> void:
 	var e := InputEventScreenTouch.new()
@@ -5006,11 +5017,27 @@ func _run_touch_demo() -> void:
 				_get_in()
 			elif _touch_tick == 540:
 				print("BIKE back on: now %s, rider shown %s" % [active.machine_name, bike._rider.visible])
+				# Then a wheelie: half throttle on the stick, MONO held with the other thumb, then let go.
+				_place_machine(bike, GroundData.PILE + Vector2(-1.5, 23.0), Vector2(0.0, -1.0))
+				_touch(0, thumb, true)
+			elif _touch_tick == 542:
+				_drag(0, thumb + Vector2(0.0, -reach * 0.5))
+			elif _touch_tick == 560:
+				print("BIKE before MONO: %.0f km/h, MONO button shown %s" % [bike.speed * 3.6, _mono_button().visible])
+				_touch(1, _mono_button().position + Vector2.ONE * float(_mono_button().get_meta("size")) * 0.5, true)
+			elif _touch_tick == 640:
+				print("BIKE on MONO: held %s, nose up %.0f deg, front tyre down %s, back tyre down %s, %.0f km/h, readout says %s, came off %s" % [bike.mono, rad_to_deg(bike.pitch), bike.touching[1], bike.touching[0], bike.speed * 3.6, bike.gauge_word()[0], bike.crash_t >= 0.0])
+				_demo_shot("mono")
+				_touch(1, _mono_button().position + Vector2.ONE * float(_mono_button().get_meta("size")) * 0.5, false)
+			elif _touch_tick == 700:
+				print("BIKE let go of MONO: held %s, nose up %.0f deg, front tyre down %s, readout says %s, came off %s" % [bike.mono, rad_to_deg(bike.pitch), bike.touching[1], bike.gauge_word()[0], bike.crash_t >= 0.0])
+				_touch(0, thumb, false)
+			elif _touch_tick == 760:
 				# With --shot, a picture of it from the side, stood with him on it.
 				_set_view("Dozer")
 				dist = 4.0
 				target = bike.position + Vector3(0.0, 0.8, 0.0)
-			elif _touch_tick == 560:
+			elif _touch_tick == 780:
 				_demo_shot("side")
 				get_tree().quit()
 		"touchute":

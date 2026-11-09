@@ -4,13 +4,14 @@ extends Machine
 ## pushed off the ground along the ground's own slope, so a lip throws it up and the slope of a landing catches it. Off the lip it
 ## keeps turning end over end the way the lip left it, and the rider eases it to follow its flight, as riders do. Sliding the
 ## thumb further up from where it was at take-off leans it forward, down leans it back. Land it roughly along the ground and it
-## rides away; land it way off and the rider comes off, and the bike's put back a little before that jump.
+## rides away; land it way off and the rider comes off, and the bike's put back a little before that jump. Hold MONO on the ground
+## and the front comes up and stays up, the rider holding it there, till it's let go and he sets it back down.
 
 signal crashed
 signal landed(length: float, hit: float)
 
-const MASS := 200.0              # kg: the bike and its rider
-const SPIN_MASS := 42.0          # kg m2: how hard it is to turn end over end
+const MASS := 160.0              # kg: the bike and its rider (200 till the owner asked for it lighter, 10 Nov)
+const SPIN_MASS := 34.0          # kg m2: how hard it is to turn end over end
 const COM_UP := 0.78             # m: the middle of its weight above the ground, sitting on its springs
 const MOUNT_DOWN := 0.2          # m: the tops of the springs below that
 const REAR_X := -0.74
@@ -26,16 +27,17 @@ const DAMP_OUT := 2600.0         # and coming back out: slowly, so a big landing
 const RATE_MOST := 12.0          # m/s: the fastest a spring is taken to squash, so a sharp lump can't fire it off
 const PUSH_MOST := 30000.0       # N: the most a wheel takes, about fifteen times the bike's weight
 const TYRE_SAMPLES := 11         # points along under each tyre where it's found to touch
-const TOP := 17.0                # m/s, about 60 km/h
+const TOP := 21.0                # m/s, about 75 km/h (17 till the owner asked for it faster, 10 Nov)
 const BACK := 1.5                # m/s: walked backwards with the feet
-const PULL := 8.0                # m/s2 the engine gives at most
+const PULL := 10.0               # m/s2 the engine gives at most
 const BRAKE := 7.5               # m/s2
 const TYRE_GRIP := 0.9                # how much of the weight on a tyre it can push or brake with, on firm dirt
 const TYRE_LOOSE := 0.75         # of that, on deep loose soil
 const ROLL_DRAG := 0.02          # of the weight on the tyres
 const AIR_DRAG := 0.4            # N for each (m/s)2
 const SHIFT := 0.2               # the rider moves his weight about, so speeding up and braking tip it this much of what they would
-const STEER_MOST := 0.55         # radians at the bars at walking pace, less as it goes faster
+const DRIVE_SHIFT := 0.6         # of the front tyre's load, that the back tyre grips with too when it's pulling
+const STEER_MOST := 0.55        # radians at the bars at walking pace, less as it goes faster
 const SIDE_MOST := 7.5           # m/s2: the most it turns hard, as tyres on dirt hold
 const FOLLOW := 1.3              # each second, how much of the gap between where it points and where it's flying the rider takes up
 const LEAN_RATE := 2.2           # rad/s end over end the rider can lean it at, full lean
@@ -45,6 +47,14 @@ const CRASH_ANGLE := 0.96        # radians, 55 degrees: landed this far off the 
 const CRASH_HIT := 13.0          # m/s straight into the ground: far too hard, even landed square
 const CRASH_TIME := 2.2          # s on the ground before the bike's put back
 const STEPS_A_SECOND := 240.0    # the springs are worked out this often
+const MONO_ANGLE := 0.55         # radians, about 32 degrees nose up from level: how high MONO holds the front up, as a rider
+                                 # holds it short of where it'd tip over backwards, whatever the slope
+const MONO_CLEAR := 0.2          # radians, about 11 degrees: the least it's held above an uphill slope, so the front stays off it
+const MONO_FOLLOW := 5.0         # each second, how much of the gap to that the rider takes up
+const MONO_RATE := 2.5           # rad/s at most, lifting the front or setting it back down
+const MONO_EASE := 14.0          # rad/s2: how quickly he changes how fast it's coming up or down
+const MONO_FROM := 1.0           # m/s: slower than this the front stays down
+const MONO_LOOK := 0.7           # radians round from straight behind the chase view swings to on a wheelie, so it's seen
 
 var y := 0.0                     # height of the middle of its weight
 var vy := 0.0                    # m/s up
@@ -63,6 +73,10 @@ var jump_m := 0.0                # how far the last jump went, shown for a bit
 var jump_show := 0.0
 var ridden := false
 var roll_vis := 0.0              # the lean into a turn, or onto the stand
+var mono := false                # MONO held
+var mono_up := false             # the front's up on MONO, or being set back down
+var mono_m := 0.0                # how far the wheelie's gone, shown while it goes and a bit after
+var mono_show := 0.0
 
 var _sample_gap := WHEEL_R * 1.9 / (TYRE_SAMPLES - 1)
 var _squash: Array[float] = [0.0, 0.0]
@@ -90,6 +104,7 @@ var _rider: Node3D
 var _stand: MeshInstance3D
 var _rear_roll := 0.0
 var _front_roll := 0.0
+var _mono_aim := NAN             # radians nose up the rider's holding it at, NAN when it's left to itself
 
 const PIVOT := Vector3(-0.02, 0.5, 0.0)    # where the swingarm hangs off the frame
 
@@ -99,7 +114,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2) 
 	spot = at
 	angle = atan2(-dir.y, dir.x)
 	machine_name = "Dirt bike"
-	hint = "Thumb up to ride. In the air, slide your thumb further up to lean forward, down to lean back: land along the slope"
+	hint = "Thumb up to ride, hold MONO for a wheelie. In the air, slide your thumb further up to lean forward, down to lean back: land along the slope"
 	stuck_word = "STUCK: back out and go round"
 	mass = MASS
 	top_speed = TOP
@@ -180,6 +195,8 @@ func show_driver(on: bool) -> void:
 func gauge_word() -> Array:
 	if crash_t >= 0.0:
 		return ["OFF!", Color("#ff9a4a")]
+	if mono_show > 0.0:
+		return ["MONO %.1f m" % mono_m, Color("#ffd23f")]
 	if jump_show > 0.0:
 		return ["JUMP %.1f m" % jump_m, Color("#ffd23f")]
 	return ["%d km/h" % roundi(Vector2(speed, vy).length() * 3.6), Color("#a8f07a")]
@@ -193,6 +210,10 @@ func effort() -> float:
 
 func hit_speed() -> float:
 	return absf(speed)
+
+func stop_commands() -> void:
+	super.stop_commands()
+	mono = false
 
 ## Hit a tree: going at any lick, he's off.
 func jolt() -> void:
@@ -211,6 +232,7 @@ func footprint() -> Array:
 
 func step(dt: float) -> void:
 	jump_show = maxf(jump_show - dt, 0.0)
+	mono_show = maxf(mono_show - dt, 0.0)
 	if crash_t >= 0.0:
 		_crash_step(dt)
 		_place()
@@ -218,6 +240,7 @@ func step(dt: float) -> void:
 	if not ridden:
 		throttle = 0.0
 		steer = 0.0
+		mono = false
 		# Parked and still, it rests till the ground under it changes or someone gets on.
 		if _resting(dt):
 			return
@@ -228,6 +251,8 @@ func step(dt: float) -> void:
 		lean = _air_lean()
 	else:
 		lean = 0.0
+	_mono_step(dt)
+	view_side = MONO_LOOK if mono_up else 0.0
 	var n := maxi(ceili(dt * STEPS_A_SECOND), 1)
 	var h := dt / n
 	var hit := 0.0
@@ -258,7 +283,7 @@ func step(dt: float) -> void:
 	var want_roll := clampf(atan2(speed * _yaw_rate, 9.8), -0.8, 0.8) if ridden else -0.24
 	roll_vis = lerpf(roll_vis, want_roll, minf(dt * 6.0, 1.0))
 	_stand.visible = not ridden and absf(speed) < 0.2
-	_rider_shift = lerpf(_rider_shift, lean * 0.16 + clampf(-(speed - _last_speed) / dt * 0.01, -0.06, 0.06), minf(dt * 8.0, 1.0))
+	_rider_shift = lerpf(_rider_shift, lean * 0.16 + (-0.07 if mono_up else 0.0) + clampf(-(speed - _last_speed) / dt * 0.01, -0.06, 0.06), minf(dt * 8.0, 1.0))
 	_last_speed = speed
 	_spin_my_wheels(dt)
 	_place()
@@ -384,7 +409,9 @@ func _sub_step(h: float) -> float:
 		else:
 			# Off the throttle it slows on the engine, and stops in a few seconds.
 			want = -signf(v) * 2.0 * MASS
-		var most := grip * (_push[0] + (0.0 if on_back_only else _push[1]))
+		# Pulling, the rider's weight and the pull itself shift most of the front's load onto the back tyre (more than the bike's
+		# shown tipping back, which SHIFT keeps small), so it grips with that too.
+		var most := grip * (_push[0] + (DRIVE_SHIFT * _push[1] if on_back_only else _push[1]))
 		var got := clampf(want, -most, most)
 		var drag := -signf(v) * ROLL_DRAG * (_push[0] + _push[1])
 		for w in 2:
@@ -398,7 +425,11 @@ func _sub_step(h: float) -> float:
 	force -= vel * vel.length() * AIR_DRAG
 	speed += force.x / MASS * h
 	vy += force.y / MASS * h
-	if touching[0] or touching[1]:
+	if not is_nan(_mono_aim) and touching[0]:
+		# On MONO the rider holds the front up where he wants it with the throttle and his weight, or sets it back down.
+		var want_up := clampf((_mono_aim - pitch) * MONO_FOLLOW, -MONO_RATE, MONO_RATE)
+		spin = move_toward(spin, want_up, MONO_EASE * h)
+	elif touching[0] or touching[1]:
 		spin += torque / SPIN_MASS * h
 	else:
 		# In the air: the rider eases it to follow its flight, and leans it on top of that.
@@ -426,7 +457,7 @@ func _steer(dt: float) -> void:
 	var most := STEER_MOST * lerpf(1.0, 0.3, clampf(absf(speed) / TOP, 0.0, 1.0))
 	var turning := speed / WHEELBASE * tan(turn_cmd * most)
 	var cap := SIDE_MOST / maxf(absf(speed), 0.5)
-	_yaw_rate = clampf(turning, -cap, cap) if touching[1] else 0.0
+	_yaw_rate = clampf(turning, -cap, cap) if touching[1] or mono_up else 0.0
 	angle -= _yaw_rate * dt
 
 ## The thumb slid up from where it was as it left the ground leans it forward, down leans it back. A thumb put down in the air
@@ -446,6 +477,7 @@ func _air_lean() -> float:
 	return clampf(l, -1.0, 1.0)
 
 func _took_off() -> void:
+	_mono_end()
 	airborne = true
 	air_t = 0.0
 	_from = spot
@@ -468,6 +500,7 @@ func _landed(hit: float) -> void:
 	if length > 2.0:
 		jump_m = length
 		jump_show = 3.0
+		mono_show = 0.0
 	landed.emit(length, hit)
 
 ## The slope of the ground under it, along the way it's heading, in radians.
@@ -481,7 +514,7 @@ func _ground_angle() -> float:
 func _check_upset() -> void:
 	if crash_t >= 0.0:
 		return
-	var off := absf(wrapf(pitch - _ground_angle(), -PI, PI))
+	var off := absf(wrapf(pitch - (_rear_slope() if mono_up else _ground_angle()), -PI, PI))
 	if off > 1.4 or y < sim.height_at(spot) + 0.3:
 		_crash("went over")
 
@@ -498,6 +531,7 @@ func _remember(dt: float) -> void:
 ## ---------------------------------------------------------------- coming off
 
 func _crash(why: String) -> void:
+	_mono_end()
 	crash_why = why
 	crash_t = 0.0
 	airborne = false
@@ -566,6 +600,7 @@ func _put_back() -> void:
 	airborne = false
 	air_t = 0.0
 	roll_vis = 0.0
+	_mono_end()
 	_rider.top_level = false
 	_rider.transform = Transform3D.IDENTITY
 	_rider.visible = ridden
@@ -583,6 +618,7 @@ func _settle(_k: float) -> void:
 	spin = 0.0
 	airborne = false
 	air_t = 0.0
+	_mono_end()
 	_back_to = []
 	_trail.clear()
 	_settle_on_ground()
@@ -591,12 +627,56 @@ func _settle(_k: float) -> void:
 ## Straight onto its wheels where it stands, sitting on its springs.
 func _settle_on_ground() -> void:
 	pitch = _ground_angle()
-	y = maxf(sim.height_at(spot + forward() * REAR_X), sim.height_at(spot + forward() * FRONT_X)) + COM_UP
+	var sag := _sag()
+	y = maxf(sim.height_at(spot + forward() * REAR_X), sim.height_at(spot + forward() * FRONT_X)) + MOUNT_DOWN + TRAVEL - sag + WHEEL_R
 	_aim_y = y - COM_UP
 	for w in 2:
-		stretch[w] = TRAVEL - 0.087
-		_squash[w] = 0.087
+		stretch[w] = TRAVEL - sag
+		_squash[w] = sag
 		touching[w] = true
+
+## How far each spring's squashed with the bike standing still on flat ground, each wheel taking half its weight.
+static func _sag() -> float:
+	var c := 0.08
+	for k in 8:
+		c -= (SPRING * c + SPRING_RISE * c * c * c - MASS * 4.9) / (SPRING + 3.0 * SPRING_RISE * c * c)
+	return c
+
+## ---------------------------------------------------------------- the wheelie
+
+## MONO held, on the back wheel and going: the front comes up to MONO_ANGLE and stays there. Let go (or too slow) and it's set
+## back down till the front tyre touches. How far it went is counted while the front's off the ground.
+func _mono_step(dt: float) -> void:
+	var on_back := touching[0] and not airborne
+	var ground := _ground_angle()
+	if mono and on_back and speed > MONO_FROM:
+		if not mono_up:
+			mono_up = true
+			mono_m = 0.0
+		_mono_aim = maxf(MONO_ANGLE, _rear_slope() + MONO_CLEAR)
+	elif mono_up and on_back and not touching[1] and pitch - ground > 0.03:
+		_mono_aim = ground
+	else:
+		_mono_end()
+		return
+	if not touching[1]:
+		mono_m += absf(speed) * dt
+		# A jump just landed is shown for a moment first.
+		if mono_m > 1.0 and jump_show < 1.5:
+			mono_show = 3.0
+			jump_show = 0.0
+
+## The slope of the ground under the back tyre alone, along the way it's heading: on a wheelie the front's nowhere near the
+## ground, so the ground under it says nothing.
+func _rear_slope() -> float:
+	var f := forward()
+	var x := REAR_X * cos(pitch) + (MOUNT_DOWN + stretch[0]) * sin(pitch)
+	return atan2(sim.height_at(spot + f * (x + 0.3)) - sim.height_at(spot + f * (x - 0.3)), 0.6)
+
+## Back to the bike left to itself. What it went is still shown for a bit.
+func _mono_end() -> void:
+	mono_up = false
+	_mono_aim = NAN
 
 ## ---------------------------------------------------------------- placing it
 
@@ -639,16 +719,16 @@ func _place_bumper() -> void:
 
 func _net_more() -> PackedFloat32Array:
 	var r := _rider.transform.origin if _rider.top_level else (transform * _all.transform * _rider.transform).origin
-	return PackedFloat32Array([y, pitch, roll_vis, stretch[0], stretch[1], _rider_shift, crash_t, r.x, r.y, r.z, _rider_turn, jump_m, jump_show, float(airborne), float(ridden)])
+	return PackedFloat32Array([y, pitch, roll_vis, stretch[0], stretch[1], _rider_shift, crash_t, r.x, r.y, r.z, _rider_turn, jump_m, jump_show, float(airborne), float(ridden), mono_m, mono_show, float(mono_up)])
 
 func _net_take_more(s: PackedFloat32Array) -> void:
 	var k := NET_BASE
-	_net_bike = s.slice(k, k + 15)
+	_net_bike = s.slice(k, k + 18)
 
 var _net_bike := PackedFloat32Array()
 
 func _net_pose(dt: float, k: float) -> void:
-	if _net_bike.size() < 15:
+	if _net_bike.size() < 18:
 		return
 	var b := _net_bike
 	y = lerpf(y, b[0], k)
@@ -662,6 +742,10 @@ func _net_pose(dt: float, k: float) -> void:
 	jump_m = b[11]
 	jump_show = b[12]
 	airborne = b[13] > 0.5
+	mono_m = b[15]
+	mono_show = b[16]
+	mono_up = b[17] > 0.5
+	view_side = MONO_LOOK if mono_up else 0.0
 	if crash_t >= 0.0:
 		if not was_crash:
 			_rider.top_level = true
@@ -676,10 +760,11 @@ func _net_pose(dt: float, k: float) -> void:
 	_place()
 
 func _net_cmds_more() -> PackedFloat32Array:
-	return PackedFloat32Array([99.0 if is_nan(thumb_y) else thumb_y, key_y])
+	return PackedFloat32Array([99.0 if is_nan(thumb_y) else thumb_y, key_y, 1.0 if mono else 0.0])
 
 func _net_take_cmds_more(c: PackedFloat32Array) -> void:
 	if c.size() < 4:
 		return
 	thumb_y = NAN if c[2] > 98.0 else c[2]
 	key_y = c[3]
+	mono = c.size() > 4 and c[4] > 0.5
