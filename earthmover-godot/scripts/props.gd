@@ -494,6 +494,11 @@ static func survey_peg(kit: MeshKit, at: Vector3) -> void:
 	kit.box(at + Vector3(0.0, 0.82, 0.0), Vector3(0.075, 0.08, 0.075), c("#ff4fa3"))
 	kit.box(at + Vector3(0.06, 0.74, 0.0), Vector3(0.12, 0.16, 0.012), c("#ff4fa3"))
 
+## A stake as tall as a jump's to be built here, its top marked pink like a survey peg's.
+static func height_stake(kit: MeshKit, at: Vector3, high: float) -> void:
+	kit.box(at + Vector3(0.0, high * 0.5, 0.0), Vector3(0.07, high, 0.07), c("#efe8d8"))
+	kit.box(at + Vector3(0.0, high - 0.06, 0.0), Vector3(0.085, 0.12, 0.085), c("#ff4fa3"))
+
 ## The scout ute, without its wheels: a white single cab with a steel tray, a bull bar, a hi-vis stripe and a bundle of pegs in the
 ## back. Forward is +x, ground at y = 0, about 5 m long.
 ## The dirt bike without its wheels, swingarm or fork legs: forward is +x, ground at y = 0 sitting on its springs, the axles at

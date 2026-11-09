@@ -232,6 +232,13 @@ func gauge_word() -> Array:
 	var at := Vector2(teeth.x, teeth.z)
 	if pad and pad.inside(at):
 		var left := sim.height_at(at) - pad.level_at(sim, at)
+		# A jump's built up, not dug down to.
+		if not pad.raise_mm.is_empty():
+			if left > pad.tol_up:
+				return [word + "   %.1f m TOO HIGH" % left, Color("#ff9a4a")]
+			if left < -pad.tol_down:
+				return [word + "   BUILD UP %.1f m" % -left, Color("#7ab8ff")]
+			return [word + "   AT HEIGHT", Color("#a8f07a")]
 		if left > pad.tol_up:
 			return [word + "   %.1f m TO THE FLOOR" % left, Color("#ff9a4a")]
 		if left < -pad.tol_down:

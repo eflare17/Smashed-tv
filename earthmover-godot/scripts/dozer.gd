@@ -172,6 +172,16 @@ func _hold_cut(dt: float) -> void:
 	var want := began - cut_cm * 0.01
 	# Inside a pegged-out pad it goes no deeper than the pad's height, so it can't dig the floor too low.
 	var floor_y := pad.level_at(sim, ahead) if pad else 0.0
+	# A jump's shape climbs and falls under the blade, and CUT clears the rows just behind the edge down to it as well (0.66 m): it's
+	# held at the highest the shape wants anywhere over that, to a touch ahead of the edge. Then nothing's cut below the shape, on
+	# the way up a face or down a landing, and each spot ends at its own height as the last row passes over it.
+	if pad and not pad.raise_mm.is_empty():
+		var f := forward()
+		var edge_at := spot + f * EDGE_X * size
+		for d: float in [-0.66, -0.5, -0.33, -0.16, 0.0, 0.1]:
+			var q := edge_at + f * d
+			if pad.inside(q):
+				floor_y = maxf(floor_y, pad.level_at(sim, q))
 	if pad and pad.inside(ahead):
 		want = maxf(want, floor_y)
 	at_pad = pad != null and pad.inside(ahead) and want <= floor_y + 0.001

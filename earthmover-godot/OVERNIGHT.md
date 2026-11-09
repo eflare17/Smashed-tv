@@ -595,3 +595,35 @@ monos (wheelies). Amounts and how MONO behaves are my picks.
 - Checks: `test/bike_test.gd` now also holds MONO standing (nothing), at 8 m/s (up, held 31-32 degrees 3 s, counts, steers, set
   down in 0.43 s), up a 20 degree slope at full throttle, off a jump; MONO from a guest to the host and the readout to the copy.
   `--demo=touchbike` taps the real MONO button: 31 degrees, front off, MONO 8.5 m, rider on.
+
+## 10 Nov: the Bike jumps job
+
+The owner took my picks for the jump job's layout (three tabletops in a row getting bigger, about 1, 1.5 and 2 m; dirt from a
+stockpile beside the track). Everything below the layout is my pick too.
+- After the Farm road, on the paddock, with the normal dozer and excavator (not the big ones) and the dirt bike on site at the
+  start of the track. Menu: "Bike jumps: Dozer", crew "dozer, excavator and dirt bike".
+- A straight track 4 m wide, pegged down both sides. The three tabletops: 1 m tall (6.5 m long: 2 m face, 2 m top, 2.5 m landing),
+  1.5 m (9 m: 3, 2.5, 3.5) and 2 m (11 m: 4, 2.5, 4.5). Faces about 27 degrees, landings 22 to 24. 13 m run-up to the first, 11 m
+  and 13 m flat between them, 18 m past the last before the fence. The jumps take about 158 m3.
+- The pegs along a jump are stakes as tall as it's to be, and the string runs along their tops, so the shape is drawn in string
+  down each side. The ground on the track is tinted: blue to build up, red too high, green right. The flat between the jumps is
+  tinted too (dirt left on the run-up shows red) but doesn't count.
+- Dirt: a long heap beside the track by each jump, holding what that jump takes plus a third (213 m3 in all), 1.2 m clear of the
+  pegs, at 32 degrees so it stands.
+- Scored like the other jobs (70/80/90%, FINISH / KEEP GOING): a spot on a jump counts within 20 cm either way of the shape, not the
+  40 cm by each line of pegs, and only where the jump is at least 30 cm tall (lower, untouched ground would already be near
+  enough).
+- CUT on a jump holds the blade at the jump's shape ("CUT TO THE JUMP'S SHAPE: DRIVE") and can climb the faces. It's held at the
+  highest the shape wants from 0.66 m behind the edge to just ahead of it, since CUT also clears the rows behind the blade: so it
+  doesn't cut a landing too low. One pass along jumps heaped 45 cm too high takes them from 0% to 74%.
+- The excavator's readout on the track: "BUILD UP 0.8 m", "0.3 m TOO HIGH", "AT HEIGHT".
+- Checks: `test/jumps_test.gd` (layout, heaps stand and hold enough, scoring, the dozer's CUT over all three, the bike over all
+  three built at 32, 47 and 58 km/h without coming off, and the whole game); `--mission=bike_jumps --demo=touchjumps` taps the
+  Get out to the bike, builds the jumps as if done and rides them on the stick; with --shot, pictures.
+- No machine button on a job, as on the others: Get out, walk to the bike (parked at the start of the track, about 20 m from the
+  dozer) and GET IN. The hint says so.
+- Ridden in the real game on the stick at about 40 km/h: 12.3, 10.1 and 12.7 m, no coming off. At that speed it clears each jump
+  and lands on the flat past it; to land on a landing slope it's nearer 30 km/h (the tabletops are short, to keep the dirt down).
+- The heaps are drawn from the start: as steep as they are they never slump, which is what had been getting piles redrawn.
+- How long it takes to build is unknown: a simple bot pushing with the dozer moved about 50 m3 in 6.5 minutes onto one jump, so it's
+  a long job for one dozer. The excavator and a friend help.

@@ -27,6 +27,14 @@ const ROAD_TOL_UP := 0.05
 const ROAD_TOL_DOWN := 0.15
 const ROAD_EDGE := 0.5
 const ROAD_STEP := 2.0           # m between the points down the middle of the road, and so between pegs on each side
+## Bike jumps: tabletops built up on the paddock. Forgiving: a cell's right within 20 cm either way of the shape, the 40 cm by each
+## line of pegs doesn't count, and nor does the flat between the jumps (it's tinted, so dirt left on the run-up shows).
+const JUMP_TOL := 0.2
+const JUMP_EDGE := 0.4
+const JUMP_COUNTS_MM := 300     # a cell counts only where the jump's at least this high: lower, untouched ground would already be near enough
+const HEAP_SLOPE := 0.62        # the heaps beside the track stand at this rise over run: about 32 degrees, so they don't slump
+const HEAP_SPARE := 1.35        # the heaps hold this much more than the jumps take
+const HEAP_GAP := 1.2           # m between the pegs and the foot of the heaps
 
 ## The water lying under a dam, hidden till it's dug down to: it shows just where the floor's deep enough to count.
 static func dam_water_y(p: Pad) -> float:
@@ -242,6 +250,37 @@ const LIST := [
 		"shed": Vector2(38.5, -11.0),
 		"tank": Vector2(36.0, -21.0),
 		"hint": "Box out the road 10 cm deep. Tap CUT and drive along it: on the road it stops at 10 cm. Push the dirt off the sides. Red's still to come off, green's done, blue's too deep",
+		"done": "BIKE JUMPS UNLOCKED",
+	},
+	{
+		# The owner's (9-10 Nov): a dirt bike track on the paddock, built with the normal dozer and excavator from heaps beside it,
+		# then ridden. Three tabletops in a row, getting bigger: a face up, a flat top to land short on, and a landing down. Each is
+		# [where its face starts along the track, its height, face, top and landing lengths], in m.
+		"id": "bike_jumps",
+		"title": "Bike jumps",
+		"kind": "jumps",
+		"site": "big",
+		"normal_size": true,
+		"machine": "Dozer",
+		"needs": "farm_road",
+		"rect": Rect2(),
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"line_from": Vector2(-40.0, -6.0),
+		"line_dir": Vector2(1.0, 0.0),
+		"jumps": [[14.0, 1.0, 2.0, 2.0, 2.5], [31.5, 1.5, 3.0, 2.5, 3.5], [53.5, 2.0, 4.0, 2.5, 4.5]],
+		"jump_half": 2.0,
+		"start": Vector2(-23.0, 8.5),
+		"dir": Vector2(0.0, -1.0),
+		"digger": Vector2(30.0, 4.0),
+		"digger_dir": Vector2(-1.0, 0.0),
+		"ute": Vector2(-38.0, 8.0),
+		"ute_dir": Vector2(1.0, 0.0),
+		"bike": Vector2(-38.5, -6.0),
+		"bike_dir": Vector2(1.0, 0.0),
+		"shed": Vector2(33.0, 18.0),
+		"tank": Vector2(24.0, 21.0),
+		"hint": "Push the dirt from the heaps onto the pegged jumps. Blue needs more, red's too high, green's right. Tap CUT and drive along a jump: it shapes it to the pegs. Then Get out, walk to the bike at the start of the track and ride them",
 		"done": "",
 	},
 ]
@@ -315,6 +354,8 @@ static func lay_out(sim: DirtSim, m: Dictionary) -> int:
 		_shape(sim, m)
 	elif kind(m) == "hand":
 		_sink_patch(sim, m)
+	elif kind(m) == "jumps":
+		lay_heaps(sim, m)
 	if m.has("fill"):
 		sim.add_pile(m["fill"], m["fill_m3"], false)
 	if m["pile_m3"] > 0.0:
@@ -437,7 +478,7 @@ static func house_front(m: Dictionary) -> float:
 	return (m["rect"] as Rect2).position.y - 0.5
 
 static func road(m: Dictionary) -> Rect2:
-	if kind(m) in ["dam", "find", "road"]:
+	if kind(m) in ["dam", "find", "road", "jumps"]:
 		return Rect2()
 	return Rect2(-80.0, float(m.get("road_z", 9.0)), 160.0, 6.0)
 
@@ -454,6 +495,10 @@ static func site(m: Dictionary) -> Rect2:
 	if kind(m) == "road":
 		# Nothing's flattened: the road's to follow the paddock's rises.
 		return Rect2()
+	if kind(m) == "jumps":
+		# Flat for the whole track and the heaps beside it.
+		var from: Vector2 = m["line_from"]
+		return Rect2(-44.0, from.y - 5.0, 88.0, 21.0)
 	# A flood job has the backyard as well.
 	var top := house_front(m) - (23.5 if kind(m) == "flood" else 11.0)
 	return Rect2(-14.0, top, 28.0, 16.0 - top)
@@ -538,7 +583,7 @@ static func _sink_patch(sim: DirtSim, m: Dictionary) -> void:
 
 ## Whether the job's done by bringing a pegged-out patch to one height, scored by its Pad.
 static func is_pad_job(m: Dictionary) -> bool:
-	return kind(m) in ["hand", "dam", "road"]
+	return kind(m) in ["hand", "dam", "road", "jumps"]
 
 ## The middle of the farm road, a point every ROAD_STEP m: a smooth curve through the job's points.
 static func track(m: Dictionary) -> PackedVector2Array:
@@ -591,7 +636,165 @@ static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
 		p.drop = float(m["road_drop"])
 		p.title = String(m["title"]).to_upper()
 		return p
+	if kind(m) == "jumps":
+		return _jumps_pad(m)
 	return null
+
+## ---------------------------------------------------------------- bike jumps
+
+## How high a tabletop wants to be `u` m along from the foot of its face: up the face, along the top, down the landing.
+static func tabletop(j: Array, u: float) -> float:
+	var h: float = j[1]
+	var face: float = j[2]
+	var top: float = j[3]
+	var land: float = j[4]
+	if u <= 0.0 or u >= face + top + land:
+		return 0.0
+	if u < face:
+		return h * u / face
+	if u <= face + top:
+		return h
+	return h * (1.0 - (u - face - top) / land)
+
+## How far along the track a spot is, in m from its start.
+static func along_line(m: Dictionary, p: Vector2) -> float:
+	return (p - (m["line_from"] as Vector2)).dot(m["line_dir"])
+
+## How high the jumps want the ground built up at a spot, in m: nothing between jumps. Across the track it's the same all the way to
+## the pegs.
+static func jump_raise(m: Dictionary, p: Vector2) -> float:
+	var u := along_line(m, p)
+	var best := 0.0
+	for j: Array in m["jumps"]:
+		best = maxf(best, tabletop(j, u - float(j[0])))
+	return best
+
+## Where along the track a jump starts and ends, in m.
+static func jump_span(j: Array) -> Vector2:
+	return Vector2(float(j[0]), float(j[0]) + float(j[2]) + float(j[3]) + float(j[4]))
+
+## Where a jump's lip is: the top of its face, along the track in m.
+static func jump_lip(j: Array) -> float:
+	return float(j[0]) + float(j[2])
+
+## The middle of the track, a point every ROAD_STEP m from just before the first jump to just past the last, and at every bend in
+## the jumps' shape too, so the string along the pegs follows it.
+static func jump_line(m: Dictionary) -> PackedVector2Array:
+	var from: Vector2 = m["line_from"]
+	var dir: Vector2 = m["line_dir"]
+	var jumps: Array = m["jumps"]
+	var first := jump_span(jumps[0]).x - 1.0
+	var last := jump_span(jumps[jumps.size() - 1]).y + 1.0
+	var at: Array[float] = []
+	var u := first
+	while u < last:
+		at.append(u)
+		u += ROAD_STEP
+	at.append(last)
+	for j: Array in jumps:
+		var u0 := float(j[0])
+		for b: float in [u0, u0 + float(j[2]), u0 + float(j[2]) + float(j[3]), jump_span(j).y]:
+			at.append(b)
+	at.sort()
+	var out := PackedVector2Array()
+	var prev := -INF
+	for a in at:
+		if a - prev >= 0.4:
+			out.append(from + dir * a)
+			prev = a
+	return out
+
+## The jumps, pegged down both sides as one strip: the shape's built up on the ground as it began. Only the jumps count.
+static func _jumps_pad(m: Dictionary) -> Pad:
+	var p := Pad.along(jump_line(m), float(m["jump_half"]), JUMP_EDGE, JUMP_TOL, JUMP_TOL)
+	p.title = String(m["title"]).to_upper()
+	for n in p.shown:
+		p.raise_mm[n] = int(jump_raise(m, _cell_spot(n)) * 1000.0)
+	var counting := PackedInt32Array()
+	for n in p.cells:
+		if int(p.raise_mm[n]) >= JUMP_COUNTS_MM:
+			counting.append(n)
+	p.cells = counting
+	return p
+
+static func _cell_spot(n: int) -> Vector2:
+	return Vector2(n % DirtSim.CELLS, n / DirtSim.CELLS) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M
+
+## The jumps as if they'd been built, in loose dirt, `extra` m higher than wanted: the shape across the pegs, and past them sloping
+## down as loose dirt stands. For checks and demos.
+static func build_jumps(sim: DirtSim, m: Dictionary, extra := 0.0) -> void:
+	if sim.start_ground.size() != sim.bed.size():
+		sim.mark_start_ground()
+	var from: Vector2 = m["line_from"]
+	var dir: Vector2 = m["line_dir"]
+	var side := Vector2(-dir.y, dir.x)
+	var half: float = m["jump_half"]
+	for n in sim.bed.size():
+		var p := _cell_spot(n)
+		var across := absf((p - from).dot(side))
+		if across > half + 6.0:
+			continue
+		var up := jump_raise(m, p)
+		if up <= 0.0:
+			continue
+		up += extra
+		up -= maxf(across - half, 0.0) * HEAP_SLOPE
+		if up <= 0.0:
+			continue
+		sim.soil[n] = maxi(sim.start_ground[n] + int(up * 1000.0) - sim.bed[n], 0)
+		sim.wake(n % DirtSim.CELLS, n / DirtSim.CELLS)
+		sim.dirty[((n / DirtSim.CELLS) >> 4) * DirtSim.CHUNKS + ((n % DirtSim.CELLS) >> 4)] = true
+
+## How much dirt a jump takes, m3: its shape across the pegs, and what slumps off each side of it at the angle loose soil stands.
+static func jump_m3(m: Dictionary, j: Array) -> float:
+	var span := jump_span(j)
+	var wide := 2.0 * float(m["jump_half"])
+	var total := 0.0
+	var step := 0.05
+	var u := span.x
+	while u < span.y:
+		var h := tabletop(j, u - span.x + step * 0.5)
+		total += (wide * h + h * h / 0.675) * step
+		u += step
+	return total
+
+## The heaps beside the track: one by each jump, as long as it, holding what it takes and some to spare. Each is a long ridge as
+## steep as HEAP_SLOPE with rounded ends, set just clear of the pegs. Returns the dirt put down, in mm over cells as DirtSim counts.
+static func lay_heaps(sim: DirtSim, m: Dictionary) -> int:
+	var put := 0
+	var heaps := heap_lines(m)
+	for jn in range(1, DirtSim.CELLS - 1):
+		for i in range(1, DirtSim.CELLS - 1):
+			var p := Vector2(i, jn) * DirtSim.CELL_M - Vector2.ONE * DirtSim.HALF_M
+			var mm := 0
+			for h: Array in heaps:
+				var d := p.distance_to(Geometry2D.get_closest_point_to_segment(p, h[0], h[1]))
+				mm = maxi(mm, int((float(h[2]) - d * HEAP_SLOPE) * 1000.0))
+			if mm > 0:
+				sim.put(i, jn, mm)
+				# Drawn from the start: as steep as they are, they don't slump, which is what would otherwise get them redrawn.
+				sim.dirty[(jn >> 4) * DirtSim.CHUNKS + (i >> 4)] = true
+				put += mm
+	return put
+
+## Each heap's ridge line, ends and height: [a, b, high].
+static func heap_lines(m: Dictionary) -> Array:
+	var from: Vector2 = m["line_from"]
+	var dir: Vector2 = m["line_dir"]
+	var side := Vector2(-dir.y, dir.x)
+	var out: Array = []
+	for j: Array in m["jumps"]:
+		var span := jump_span(j)
+		var length := span.y - span.x + 2.0
+		var need := jump_m3(m, j) * HEAP_SPARE
+		# A ridge of length L, H high, with cone ends, holds L * H^2 / s + (pi / 3) * H^3 / s^2. Worked out for H a few times over.
+		var high := 1.0
+		for k in 30:
+			var held := length * high * high / HEAP_SLOPE + PI / 3.0 * pow(high, 3.0) / (HEAP_SLOPE * HEAP_SLOPE)
+			high *= pow(need / held, 1.0 / 3.0)
+		var off := float(m["jump_half"]) + HEAP_GAP + high / HEAP_SLOPE
+		out.append([from + dir * (span.x - 1.0) + side * off, from + dir * (span.y + 1.0) + side * off, high])
+	return out
 
 ## Who's on the job, for the menu: one machine each, or what's on site to share.
 static func crew(m: Dictionary) -> String:
@@ -604,4 +807,6 @@ static func crew(m: Dictionary) -> String:
 			return "big excavator and big dozer"
 		"road":
 			return "big dozer and big excavator"
+		"jumps":
+			return "dozer, excavator and dirt bike"
 	return "two %ss" % m["machine"]

@@ -744,15 +744,17 @@ func _build_props() -> void:
 		dz_dir = Vector2(0.0, 1.0)
 		dg_at = MINE_DIGGER_AT
 		dg_dir = (MINE_HEAPS[0][0] - MINE_DIGGER_AT).normalized()
+	# The bike jumps are built with the normal dozer and excavator, out on the paddock.
+	var big_machines: bool = big_site and not mission.get("normal_size", false)
 	dozer = Dozer.new()
-	if big_site:
+	if big_machines:
 		dozer.make_big(BIG)
 	add_child(dozer)
 	dozer.setup(sim, view_data, prop_mat, dz_at, dz_dir)
 	if not is_nan(start_lift):
 		dozer.lift = start_lift
 	digger = Excavator.new()
-	if big_site:
+	if big_machines:
 		digger.make_big(BIG)
 	add_child(digger)
 	digger.setup(sim, view_data, prop_mat, dg_at, dg_dir)
@@ -785,7 +787,8 @@ func _build_props() -> void:
 	# The dirt bike, parked beside the ute.
 	bike = Bike.new()
 	add_child(bike)
-	bike.setup(sim, view_data, prop_mat, ute_at + Vector2(sin(ute.angle), cos(ute.angle)) * BIKE_BESIDE_UTE, ute_dir)
+	var bike_at: Vector2 = mission.get("bike", ute_at + Vector2(sin(ute.angle), cos(ute.angle)) * BIKE_BESIDE_UTE)
+	bike.setup(sim, view_data, prop_mat, bike_at, mission.get("bike_dir", ute_dir))
 	bike.crashed.connect(_on_bike_crashed)
 	bike.landed.connect(_on_bike_landed)
 	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute, bike]
@@ -799,7 +802,7 @@ func _build_props() -> void:
 		var on_site: Array[Machine] = [dozer, digger, ute]
 		if mine:
 			on_site.insert(2, truck)
-		if mission.is_empty():
+		if mission.is_empty() or Mission.kind(mission) == "jumps":
 			on_site.append(bike)
 		for m: Machine in machines:
 			m.visible = on_site.has(m)
@@ -956,6 +959,8 @@ func _job_tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 		var p := Vector2(tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0), tr.randf_range(-GroundData.HALF + 4.0, GroundData.HALF - 4.0))
 		if keep.has_point(p) or road.has_point(p):
 			continue
+		if Mission.kind(mission) == "jumps" and (keep.grow(5.0).has_point(p) or p.distance_to(mission["shed"]) < 9.0 or p.distance_to(mission["tank"]) < 5.0):
+			continue
 		# Clear of the farm road, the shed and tank at its end, and where the machines start.
 		if not track.is_empty():
 			if Mission.off_track(track, p) < float(mission["road_half"]) + 4.0 or p.distance_to(mission["shed"]) < 9.0 or p.distance_to(mission["tank"]) < 5.0:
@@ -981,6 +986,9 @@ func _add_site(kit: MeshKit) -> void:
 		return
 	if Mission.kind(mission) == "road":
 		_add_road_site(kit)
+		return
+	if Mission.kind(mission) == "jumps":
+		_add_jumps_site(kit)
 		return
 	var r: Rect2 = mission["rect"]
 	var peg := Props.c("#efe8d8")
@@ -1110,6 +1118,15 @@ func _add_road_site(kit: MeshKit) -> void:
 	var to_road: Vector2 = last - mission["shed"]
 	_add_farm_buildings(kit, mission["tank"], mission["shed"], atan2(to_road.x, to_road.y))
 
+## The bike jumps: pegged down both sides, with stakes up to the height wanted, the dozer's CUT and the excavator's readout working
+## to their shape, and the farm's shed and tank across the paddock, the shed's door facing the track.
+func _add_jumps_site(kit: MeshKit) -> void:
+	job_pad = Mission.pad_for(sim, mission)
+	_add_pad(job_pad)
+	dozer.pad = job_pad
+	digger.pad = job_pad
+	_add_farm_buildings(kit, mission["tank"], mission["shed"], PI)
+
 ## A water tank, and a shed whose door faces `turn` radians round from +z.
 func _add_farm_buildings(kit: MeshKit, tank: Vector2, shed: Vector2, turn: float) -> void:
 	var g := sim.height_at(tank)
@@ -1140,16 +1157,24 @@ func _add_pad(p: Pad) -> void:
 	var kit := MeshKit.new()
 	# A road follows the ground, so its string's up on the pegs the same.
 	var deep := p.drop >= 0.0 or p.level < sim.height_at(p.middle()) - 0.25
+	var jumps := not p.raise_mm.is_empty() and Mission.kind(mission) == "jumps"
 	var tops := PackedVector3Array()
 	# A peg at every corner, or every other one round a curve.
 	var every := 2 if p.outline.size() > 8 else 1
 	for k in p.outline.size():
 		var at := p.outline[k]
 		var g := sim.height_at(at)
-		if k % every == 0:
+		# A jump's pegs are stakes as tall as it's to be built, with the string along their tops: it draws the jump's shape.
+		var up := Mission.jump_raise(mission, at) if jumps else 0.0
+		if up > 0.25:
+			Props.height_stake(kit, Vector3(at.x, g, at.y), up + 0.05)
+		elif k % every == 0:
 			Props.survey_peg(kit, Vector3(at.x, g, at.y))
 		# The string's at the height wanted, so it shows where the ground's to come to. Below ground, as for a dam, it just runs round.
-		tops.append(Vector3(at.x, g + 0.3 if deep else p.level + 0.07, at.y))
+		if jumps:
+			tops.append(Vector3(at.x, g + maxf(up + 0.05, 0.3), at.y))
+		else:
+			tops.append(Vector3(at.x, g + 0.3 if deep else p.level + 0.07, at.y))
 	for k in tops.size():
 		# A road's open at both ends: no string across it there.
 		if p.open_ends and (k == tops.size() / 2 - 1 or k == tops.size() - 1):
@@ -4409,7 +4434,10 @@ func _draw_gauge() -> void:
 		word = "BLADE IN DIRT %.2f m" % -gap
 		colour = Color("#ff9a4a")
 	if dozer.cut_on:
-		word = "CUT TO THE PEGS' LEVEL: DRIVE" if dozer.at_pad else "CUT %d cm: DRIVE" % dozer.cut_cm
+		if dozer.at_pad:
+			word = "CUT TO THE JUMP'S SHAPE: DRIVE" if not dozer.pad.raise_mm.is_empty() else "CUT TO THE PEGS' LEVEL: DRIVE"
+		else:
+			word = "CUT %d cm: DRIVE" % dozer.cut_cm
 	var font := ThemeDB.fallback_font
 	gauge.draw_string_outline(font, Vector2(0.0, text_h * 0.72), word, HORIZONTAL_ALIGNMENT_RIGHT, gauge.size.x, font_size, 8, Color.BLACK)
 	gauge.draw_string(font, Vector2(0.0, text_h * 0.72), word, HORIZONTAL_ALIGNMENT_RIGHT, gauge.size.x, font_size, colour)
@@ -5039,6 +5067,97 @@ func _run_touch_demo() -> void:
 				target = bike.position + Vector3(0.0, 0.8, 0.0)
 			elif _touch_tick == 780:
 				_demo_shot("side")
+				get_tree().quit()
+		"touchjumps":
+			# The Bike jumps job (--mission=bike_jumps): the site as it starts, then the machine button tapped till it's the bike, the
+			# jumps built as if done, and ridden on the stick at about 47 km/h over all three. With --shot, pictures of each.
+			var thumb := s * Vector2(0.3, 0.7)
+			var reach := s.y * 0.14
+			var line_z: float = (mission["line_from"] as Vector2).y
+			if _touch_tick == 5 and not has_meta("site_shot"):
+				set_meta("site_shot", true)
+				print("JUMPS start: in the %s (size %.1f), excavator size %.1f, on site %s, banner: %s" % [active.machine_name, dozer.size, digger.size, machines.map(func(m: Machine) -> String: return m.machine_name), banner.text])
+				# With --shot, the site as it starts, looking along the track from behind the dozer once it's drawn.
+				_touch_tick = 2000
+			elif _touch_tick > 2000 and _touch_tick < 2060:
+				if _touch_tick == 2015:
+					hint_time = 0.0
+				if _touch_tick == 2030:
+					_demo_shot("site")
+				if _touch_tick == 2059:
+					_touch_tick = 5
+			elif _touch_tick == 6:
+				# On a job it's Get out, walk to the bike and GET IN: the walk's skipped, it's 20 m.
+				print("JUMPS Get out shown %s" % buttons["out"].visible)
+				_get_out()
+				workers[0].step_off(bike.spot + Vector2(sin(bike.angle), cos(bike.angle)) * 0.9, bike.angle)
+			elif _touch_tick == 8:
+				print("JUMPS got out: now %s" % active.machine_name)
+			elif _touch_tick == 10:
+				print("JUMPS by the bike: GET IN shown %s saying %s" % [get_in_button.visible, get_in_word.text.replace("
+", " ")])
+			elif _touch_tick == 12:
+				if active != bike:
+					_get_in()
+				print("JUMPS on the %s, at %s" % [active.machine_name, bike.spot])
+				Mission.build_jumps(sim, mission)
+				_check_mission(1.0)
+				print("JUMPS built as if done: %d%%, star card up %s" % [int(_score() * 100.0), star_card.visible])
+				# KEEP GOING, to ride them.
+				_on_star_keep()
+				hint_time = 0.0
+				set_meta("jumps", [])
+				set_meta("was_air", false)
+				set_meta("most_air", 0.0)
+				set_meta("off", false)
+				_touch(0, thumb, true)
+			elif _touch_tick > 12 and _touch_tick < 900:
+				var u := Mission.along_line(mission, bike.spot)
+				if _touch_tick == 899:
+					print("JUMPS didn't get past the last jump: %.0f m along" % u)
+					get_tree().quit()
+				if not bike.airborne:
+					var off := bike.spot.y - line_z
+					var push := clampf((13.0 - bike.speed) * 0.3 + 0.75, 0.0, 1.0)
+					_drag(0, thumb + Vector2(clampf(-off * 1.5, -1.0, 1.0) * reach * 0.4, -reach * push))
+				if get_meta("was_air") and not bike.airborne:
+					var got: Array = get_meta("jumps")
+					got.append("%.1f m at %.0f m along" % [bike.jump_m, u])
+				set_meta("was_air", bike.airborne)
+				set_meta("most_air", maxf(get_meta("most_air"), bike.air_t))
+				if bike.crash_t >= 0.0 and not get_meta("off"):
+					set_meta("off", true)
+					print("JUMPS came off at %.0f m along: %s" % [u, bike.crash_why])
+				var big: Array = mission["jumps"][2]
+				# With --shot, a look from the side at the big one as the bike comes up to it.
+				var dir: Vector2 = mission["line_dir"]
+				if shot_path != "" and u > Mission.jump_span(big).x - 10.0 and not has_meta("side_cam"):
+					set_meta("side_cam", true)
+					var lip: Vector2 = (mission["line_from"] as Vector2) + dir * (Mission.jump_lip(big) + 3.0)
+					_set_view("Dozer")
+					target = Vector3(lip.x, 1.6, lip.y)
+					# From the side away from the heaps.
+					yaw = atan2(dir.y, -dir.x)
+					pitch = deg_to_rad(8.0)
+					dist = 15.0
+				if bike.airborne and bike.air_t > 0.3 and u > Mission.jump_lip(big) and not has_meta("air_shot"):
+					set_meta("air_shot", true)
+					print("JUMPS in the air off the big one: %.0f km/h, %.1f m over the ground" % [bike.speed * 3.6, bike.y - sim.height_at(bike.spot)])
+					_demo_shot("air")
+				if u > Mission.jump_span(big).y + 10.0 and not bike.airborne:
+					print("JUMPS rode them: landings %s, %.1f s in the air at most, came off %s, now %.0f km/h, %.1f m off the line, readout %s" % [get_meta("jumps"), get_meta("most_air"), get_meta("off"), bike.speed * 3.6, bike.spot.y - line_z, bike.gauge_word()[0]])
+					_touch(0, thumb, false)
+					_touch_tick = 900
+			elif _touch_tick == 901:
+				# A look along all three from the side, up high.
+				var mid: Vector2 = (mission["line_from"] as Vector2) + (mission["line_dir"] as Vector2) * 40.0
+				_set_view("Dozer")
+				target = Vector3(mid.x, 0.5, mid.y)
+				yaw = atan2((mission["line_dir"] as Vector2).y, -(mission["line_dir"] as Vector2).x) + 0.35
+				pitch = deg_to_rad(24.0)
+				dist = 46.0
+			elif _touch_tick == 940:
+				_demo_shot("built")
 				get_tree().quit()
 		"touchute":
 			# The scout ute: driven on the stick, four pegs in with PEG, CLOSE IT UP, the ground made level as the machines would,

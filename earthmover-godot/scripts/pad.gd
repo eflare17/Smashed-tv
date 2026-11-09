@@ -9,6 +9,8 @@ var outline := PackedVector2Array()    # the pegs, in order round it
 var level := 0.0                        # m
 ## A road's: the height wanted follows the ground as it began, this many m under it, rather than being one `level`. -1: off.
 var drop := -1.0
+## Jumps': the height wanted is built up this many mm on the ground as it began, cell by cell. Empty: off.
+var raise_mm := {}
 ## A road's ends are open: no string across them.
 var open_ends := false
 var tol_up := 0.03
@@ -59,10 +61,17 @@ func middle() -> Vector2:
 
 ## The height wanted at a spot, in m.
 func level_at(sim: DirtSim, p: Vector2) -> float:
+	if not raise_mm.is_empty():
+		var c := DirtSim.cell_of(p)
+		return sim.start_at(p) + int(raise_mm.get(c.y * DirtSim.CELLS + c.x, 0)) * 0.001
 	return sim.start_at(p) - drop if drop >= 0.0 else level
 
 ## The height wanted on a cell, in mm.
 func want_mm(sim: DirtSim, n: int) -> int:
+	if not raise_mm.is_empty():
+		if sim.start_ground.size() != sim.bed.size():
+			sim.mark_start_ground()
+		return sim.start_ground[n] + int(raise_mm.get(n, 0))
 	if drop >= 0.0:
 		if sim.start_ground.size() != sim.bed.size():
 			sim.mark_start_ground()
