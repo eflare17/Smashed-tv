@@ -76,6 +76,9 @@ static func truck_tray(kit: DsKit, length: float, half: float, high: float) -> v
 			kit.box(Vector3(x, high * 0.45, z * 1.04), Vector3(0.09, high * 0.8, 0.05), CHARCOAL)
 	kit.box(Vector3(length, high * 0.55, 0), Vector3(0.1, high * 1.1, half * 2.0), RED)
 	kit.box(Vector3(length + 0.35, high + 0.05, 0), Vector3(0.8, 0.07, half * 2.0), RED)
+	# the bracket out front its tipping ram's pinned to (DsTruck.RAM_TOP), clear of the front wall as it tips
+	kit.box(Vector3(length + 0.26, 0.5, 0), Vector3(0.44, 0.14, 0.32), CHARCOAL)
+	kit.cone(Vector3(length + 0.45, 0.5, -0.17), Vector3(length + 0.45, 0.5, 0.17), 0.04, 0.04, 6, STEEL)
 	kit.box(Vector3(0.0, high * 0.35, 0), Vector3(0.08, high * 0.6, half * 2.0), CHARCOAL)
 	kit.box(Vector3(length * 0.5, -0.1, 0), Vector3(length, 0.14, 1.0), CHARCOAL)
 
@@ -227,6 +230,9 @@ static func excavator_boom(kit: DsKit, length: float, mine := false) -> void:
 	var m := length * 0.5
 	kit.prism([Vector2(-0.22, -0.2), Vector2(m, 0.32), Vector2(m, 0.98), Vector2(-0.22, 0.24)], -0.23, 0.23, body, dark)
 	kit.prism([Vector2(m, 0.32), Vector2(length + 0.14, -0.14), Vector2(length + 0.14, 0.2), Vector2(m, 0.98)], -0.23, 0.23, body, dark)
+	# the lug under it its ram's rod is pinned to (DsExcavator._ram_ends)
+	kit.box(Vector3(2.45, 0.19, 0.0), Vector3(0.32, 0.22, 0.2), dark)
+	kit.cone(Vector3(2.45, 0.12, -0.14), Vector3(2.45, 0.12, 0.14), 0.035, 0.035, 6, STEEL)
 
 ## From the elbow along +x to the bucket's pin, with a stub behind the elbow for the ram to push on.
 static func excavator_stick(kit: DsKit, length: float, mine := false) -> void:

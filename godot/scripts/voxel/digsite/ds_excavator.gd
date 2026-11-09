@@ -249,9 +249,9 @@ func _ram_ends() -> Array:
 	var boom_b := Basis(Vector3.BACK, _boom_a)
 	var stick_b := Basis(Vector3.BACK, _stick_a)
 	var bucket_b := Basis(Vector3.BACK, -curl)
-	return [[Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.5, 0.05, 0.0)],
+	return [[Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.45, 0.12, 0.0)],
 			[shoulder + boom_b * Vector3(BOOM * 0.55, 1.02, 0.0), elbow + stick_b * Vector3(-0.58, 0.42, 0.0)],
-			[elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.0, 0.42, 0.0)]]
+			[elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.12, 0.33, 0.0)]]
 
 func read_input() -> void:
 	super()

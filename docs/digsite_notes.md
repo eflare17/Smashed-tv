@@ -428,7 +428,8 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - **Dozer:** two lift rams.
   - **Excavator:** boom, stick and bucket rams. Before, each was one stretched piece. Now they have charcoal barrels sized at 56% of their length as built, with chrome rods.
   - **Dingo and Bobcat:** a lift ram each side, from the body to the underside of the arm. Tilt rams run from the arms' cross bar to the back of the bucket: one on the Dingo, two on the Bobcat. The pin positions are vars set in each machine's `_init`.
-  - **Tip truck:** a 4-stage telescopic ram from the chassis behind the cab to the top of the tray's front. It's 1.35 m folded and 5.6 m fully tipped.
+  - **Tip truck:** a 6-stage telescopic ram from the chassis behind the cab to a bracket out in front of the tray's front wall, so it stays clear of the wall when the tray is fully tipped (a pin on the wall's top clipped through it).
+  - **Pin fixes:** the excavator boom ram's top pin was 22 cm below the curved boom, so it now has a lug under the boom. The bucket ram's pin was 20 cm above the bucket and is now on its back plate.
 - **Shake:**
   - Moved into DsMachine (`shake_node`, `shake_idle`, `shake_work`, `shake_pitch`, `shake_hz`). Each machine shakes a node holding its body and tools, never its wheels or tracks.
   - Machines don't all buzz in step: each runs at its own rate and phase.

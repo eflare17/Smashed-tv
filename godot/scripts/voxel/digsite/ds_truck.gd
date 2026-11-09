@@ -37,8 +37,9 @@ var _ram: DsRam
 var _tip_was := 0.0
 # its tipping ram (the owner, 9 Nov): stages sliding out of each other, from its chassis behind the cab to the top of
 # the tray's front, as a real tipper's
-const RAM_BASE := Vector3(1.38, 0.86, 0.0)
-const RAM_TOP := Vector3(4.8, 0.92, 0.0)     # (in the tray's frame)
+const RAM_BASE := Vector3(1.38, 0.84, 0.0)
+const RAM_TOP := Vector3(5.05, 0.5, 0.0)     # (in the tray's frame: out in front of its front wall, so tipped right
+                                              # up the ram stays clear of it)
 var _roll := 0.0
 
 func _init() -> void:
@@ -82,7 +83,7 @@ func _build() -> void:
 	_tray = Node3D.new()
 	_tray.position = HINGE
 	_shake.add_child(_tray)
-	_ram = DsRam.make(_shake, 1.22, 0.16, 0.05, DsProps.CHARCOAL, 4, false)
+	_ram = DsRam.make(_shake, 0.84, 0.16, 0.05, DsProps.CHARCOAL, 6, false)
 	kit = DsKit.new()
 	DsProps.truck_tray(kit, TRAY_LONG, TRAY_HALF, TRAY_HIGH)
 	_mesh(_tray, kit)
