@@ -112,7 +112,8 @@ var _fill_step := -1
 var get_in_button: TouchScreenButton
 var get_in_word: Label
 var _hinted := {}                 # machines whose hint's been said once already
-var pipes: Pipes
+var pipes: Pipes                  # the Dingo's
+var big_pipes: Pipes              # the Bobcat's 40 cm pipe, from its big trencher
 var tick_count := 0
 var active: Machine
 var start_machine := "Dozer"
@@ -276,6 +277,10 @@ var fadeables: Array[GeometryInstance3D] = []
 var obstacles: Array = []       # solid things that aren't machines, as machine footprints are: [a, b, radius]
 var menu: Control
 var menu_kind := ""             # "start" or "done", or nothing with no menu up
+var menu_scroll: ScrollContainer  # the job list, which scrolls
+var menu_dragged := false       # the finger now down has been dragged to scroll the list
+var _drag_from := Vector2.INF
+var _drag_scroll0 := 0
 var bot: RefCounted
 var game_speed := 1.0
 
@@ -763,6 +768,10 @@ func _build_props() -> void:
 	add_child(pipes)
 	pipes.setup(prop_mat)
 	dingo.pipes = pipes
+	big_pipes = Pipes.new()
+	add_child(big_pipes)
+	big_pipes.setup(prop_mat, Pipes.BIG_RADIUS)
+	bobcat.pipes = big_pipes
 	barrow = Barrow.new()
 	add_child(barrow)
 	barrow.setup(sim, view_data, prop_mat, GroundData.barrow_spot(), Vector2(0.0, 1.0))
@@ -818,7 +827,7 @@ func _build_props() -> void:
 				var second := Loader.new()
 				add_child(second)
 				second.setup(sim, view_data, prop_mat, mission.get("friend", mission["start"] + Vector2(-3.0, 0.0)), mission["dir"], active.machine_name)
-				second.pipes = pipes
+				second.pipes = big_pipes if second.kind == Loader.BOBCAT else pipes
 				second.hint = mission["hint"]
 				machines.append(second)
 	# One for each player, on foot. In the list last, so every machine keeps its number, and parked out of sight till wanted.
@@ -993,9 +1002,12 @@ func _add_site(kit: MeshKit) -> void:
 	house.material_override = prop_mat
 	add_child(house)
 	obstacles.append([Vector2(-WIDE * 0.5 + DEEP * 0.5, mid), Vector2(WIDE * 0.5 - DEEP * 0.5, mid), DEEP * 0.5])
-	var piped := Mission.kind(mission) in ["pipe", "flood"]
+	var piped := Mission.is_pipe_job(mission)
 	if piped:
-		_add_drain(kit)
+		if Mission.kind(mission) == "street":
+			_add_street_pits(kit)
+		else:
+			_add_drain(kit)
 		_add_flood()
 	if Mission.kind(mission) == "flood":
 		_add_back_fence(kit)
@@ -1317,7 +1329,7 @@ func _wave_end_marks(delta: float) -> void:
 
 ## The look round: the camera goes to where the pipe starts, then to the drain, then back to the machine. Any tap ends it.
 func _start_tour() -> void:
-	if mission.is_empty() or not Mission.kind(mission) in ["pipe", "flood"] or demo != "" or shot_path != "" or camera == null:
+	if mission.is_empty() or not Mission.is_pipe_job(mission) or demo != "" or shot_path != "" or camera == null:
 		return
 	_tour_t = 0.0
 	_tour_from = camera.global_transform
@@ -1366,6 +1378,8 @@ func _tour_words() -> String:
 	return ("THE PIPE STARTS HERE" if _tour_t < 3.2 else "AND ENDS HERE, AT THE DRAIN") + "   (TAP TO SKIP)"
 
 func _input(e: InputEvent) -> void:
+	if menu != null and menu_scroll != null and is_instance_valid(menu_scroll):
+		_menu_drag(e)
 	if _tour_t < 0.0:
 		return
 	var pressed: bool = (e is InputEventScreenTouch and e.pressed) or (e is InputEventMouseButton and e.pressed) or (e is InputEventKey and e.pressed and not e.echo)
@@ -1389,13 +1403,21 @@ func _add_joins(run: PackedVector3Array) -> void:
 		return
 	var kit := MeshKit.new()
 	var white := Props.c("#e9e6dc")
+	var r := job_pipes().radius
 	var d: Vector2 = mission["drain"]
-	kit.cone(run[run.size() - 1], Vector3(d.x, sim.height_at(d) - 0.25, d.y), Pipes.RADIUS, Pipes.RADIUS, 8, white)
+	var end := run[run.size() - 1]
+	# Into the drain: down into a little one, straight through the wall of the street's big one.
+	var drain_y := end.y if Mission.kind(mission) == "street" else sim.height_at(d) - 0.25
+	kit.cone(end, Vector3(d.x, drain_y, d.y), r, r, 8, white)
 	if Mission.kind(mission) == "pipe":
 		var dp: Vector2 = mission["downpipe"]
 		var foot := Vector3(dp.x, 0.1, dp.y + 0.36)
-		kit.cone(foot, run[0], Pipes.RADIUS, Pipes.RADIUS, 8, white)
-		kit.cone(foot + Vector3(0.0, 0.0, -0.36), foot, Pipes.RADIUS, Pipes.RADIUS, 8, white)
+		kit.cone(foot, run[0], r, r, 8, white)
+		kit.cone(foot + Vector3(0.0, 0.0, -0.36), foot, r, r, 8, white)
+	elif Mission.kind(mission) == "street":
+		# Out through the wall of the new pit and into the start of the pipe.
+		var pit: Vector2 = mission["inlet"]
+		kit.cone(Vector3(pit.x, run[0].y, pit.y), run[0], r, r, 8, white)
 	var joins := MeshInstance3D.new()
 	joins.mesh = kit.mesh()
 	joins.material_override = prop_mat
@@ -1441,6 +1463,33 @@ func _add_drain(kit: MeshKit) -> void:
 		kit.box(Vector3(at.x - 0.27 + k * 0.18, 0.065, at.y), Vector3(0.05, 0.03, 0.72), Props.c("#7c8085"))
 	kit.box(Vector3(at.x, 0.065, at.y - 0.38), Vector3(0.8, 0.03, 0.05), Props.c("#7c8085"))
 	kit.box(Vector3(at.x, 0.065, at.y + 0.38), Vector3(0.8, 0.03, 0.05), Props.c("#7c8085"))
+
+## The street drain's two pits: the new one the water's lying round in the gutter, where the pipe starts, and the big drain at
+## the other end. Concrete boxes sunk into the ground down past where the pipe comes in, dark inside, with grates over them: the
+## trench is cut right up to them, so their walls stand in it.
+func _add_street_pits(kit: MeshKit) -> void:
+	var concrete := Props.c("#b9b4a8")
+	var hole := Props.c("#2f3134")
+	var steel := Props.c("#7c8085")
+	for spot: Array in [[mission["inlet"], 0.9, 0.75], [mission["drain"], 1.5, 1.95]]:
+		var at: Vector2 = spot[0]
+		var wide: float = spot[1]
+		var deep: float = spot[2]
+		var y := sim.height_at(at)
+		var tall := deep + 0.08
+		var mid := y + 0.08 - tall * 0.5
+		for side: float in [-1.0, 1.0]:
+			kit.box(Vector3(at.x + side * wide * 0.45, mid, at.y), Vector3(wide * 0.1, tall, wide), concrete)
+			kit.box(Vector3(at.x, mid, at.y + side * wide * 0.45), Vector3(wide, tall, wide * 0.1), concrete)
+		kit.box(Vector3(at.x, y - deep, at.y), Vector3(wide, 0.1, wide), concrete)
+		kit.box(Vector3(at.x, y - 0.15, at.y), Vector3(wide * 0.82, 0.3, wide * 0.82), hole)
+		var bars := int(round(wide / 0.18))
+		for k in bars:
+			kit.box(Vector3(at.x - wide * 0.36 + k * wide * 0.72 / maxf(bars - 1, 1), y + 0.1, at.y), Vector3(0.05, 0.04, wide * 0.78), steel)
+
+## Which pipe the job's checked by: the Bobcat's big pipe on its job, the Dingo's on the rest.
+func job_pipes() -> Pipes:
+	return big_pipes if not mission.is_empty() and mission["machine"] == Loader.BOBCAT else pipes
 
 ## The flooded lawn: a sheet of water lying round the foot of the downpipe. It's only for looks: the dirt knows nothing of it.
 func _add_flood() -> void:
@@ -2669,7 +2718,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		if e.physical_keycode == KEY_T and active == digger:
 			_toggle_left()
 			return
-		if e.physical_keycode == KEY_G and active.machine_name == Loader.DINGO:
+		if e.physical_keycode == KEY_G and active is Loader:
 			_on_attach()
 			return
 	if e is InputEventMouseButton and e.pressed:
@@ -3301,7 +3350,7 @@ func _build_ui() -> void:
 	_touch_button("CURL", "dig_curl", Vector2(col2, h - size * 2.0 - pad * 1.5), size, "Bobcat,Dingo")
 	_touch_button("DUMP", "dig_dump", Vector2(col2, h - size - pad), size, "Bobcat,Dingo")
 	_touch_button("TIP", "blade_up", Vector2(screen.x - size - pad, h - size * 1.5 - pad), size, "Truck,Barrow")
-	var attach_made := _touch_button("ATTACH", "", Vector2(left - size - pad * 0.5, h - size - pad), size, "Dingo")
+	var attach_made := _touch_button("ATTACH", "", Vector2(left - size - pad * 0.5, h - size - pad), size, "Bobcat,Dingo")
 	attach_button = attach_made[0]
 	attach_word = attach_made[1]
 	attach_word.position = attach_button.position + Vector2(size * 0.06, size * 0.3)
@@ -3424,16 +3473,20 @@ func _show_banner() -> void:
 		banner.text = _star_words(_find_title(), find_done)
 		return
 	if Mission.kind(mission) != "driveway":
-		var flood := Mission.kind(mission) == "flood"
+		var flood := Mission.downhill(mission)
+		var street := Mission.kind(mission) == "street"
 		if not pipe_joined and flood and pipe_connected:
 			banner.text = "START THE PIPE DEEPER, UNDER THE WATER" if stop_dry else "DIG DEEPER FROM THE FLAG TO THE DRAIN"
 		elif not pipe_joined and not pipe_laid:
-			banner.text = "PIPE THE FLOOD DOWNHILL TO THE DRAIN" if flood else "PIPE THE DOWNPIPE TO THE DRAIN"
+			if street:
+				banner.text = "PIPE THE PIT DOWNHILL TO THE BIG DRAIN"
+			else:
+				banner.text = "PIPE THE FLOOD DOWNHILL TO THE DRAIN" if flood else "PIPE THE DOWNPIPE TO THE DRAIN"
 		elif not pipe_joined:
 			# Which end is still to reach, in the hoop's own words.
-			banner.text = "PIPE: %s %s   DRAIN %s" % ["WATER" if flood else "DOWNPIPE", "JOINED" if end_reached[0] else "NOT YET", "JOINED" if end_reached[1] else "NOT YET"]
+			banner.text = "PIPE: %s %s   DRAIN %s" % ["PIT" if street else ("WATER" if flood else "DOWNPIPE"), "JOINED" if end_reached[0] else "NOT YET", "JOINED" if end_reached[1] else "NOT YET"]
 		elif water_left > 0.0:
-			banner.text = "JOINED UP! THE LAWN'S DRAINING..."
+			banner.text = "JOINED UP! THE GUTTER'S DRAINING..." if street else "JOINED UP! THE LAWN'S DRAINING..."
 		else:
 			banner.text = _star_words("SPREAD ALONG THE TRENCH", filled)
 		return
@@ -3497,7 +3550,10 @@ func _build_menu() -> void:
 		else:
 			b.custom_minimum_size = Vector2(h * 1.15, h * (0.115 if snug else 0.14))
 			b.add_theme_font_size_override("font_size", int(h * 0.05))
-		b.pressed.connect(what)
+		# A finger dragged to scroll the job list isn't a tap on the job it started on.
+		b.pressed.connect(func() -> void:
+			if not menu_dragged:
+				what.call())
 		into[0].add_child(b)
 	var split := func() -> void:
 		var row := HBoxContainer.new()
@@ -3507,9 +3563,21 @@ func _build_menu() -> void:
 		for k in 2:
 			var c := VBoxContainer.new()
 			c.add_theme_constant_override("separation", int(h * 0.014))
-			row.add_child(c)
+			if k == 0:
+				# The job list scrolls, by dragging it or the mouse wheel: there are more jobs than fit down a phone's screen.
+				var scroll := ScrollContainer.new()
+				scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+				scroll.custom_minimum_size = Vector2(h * 0.97, h * 0.72)
+				# Its dragging is done in _menu_drag, as the jobs on it would take the touch first.
+				scroll.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				row.add_child(scroll)
+				scroll.add_child(c)
+				menu_scroll = scroll
+			else:
+				row.add_child(c)
 			cols.append(c)
 		into[0] = cols[0]
+	var next_row: Control = null
 	if menu_kind == "start":
 		heading.call("DOZER DRIVE", 0.09, Color("#ffd23f"))
 		split.call()
@@ -3526,6 +3594,8 @@ func _build_menu() -> void:
 					_skip_row(cols[0], h, word, String(m["id"]), snug)
 				else:
 					choice.call(word, true, _start_mission.bind(m["id"]))
+				if next_row == null and not Mission.is_done(m["id"]):
+					next_row = cols[0].get_child(cols[0].get_child_count() - 1)
 			else:
 				choice.call("%s: after %s" % [m["title"], Mission.find(m["needs"])["title"]], false, _close_menu)
 		into[0] = cols[1]
@@ -3573,6 +3643,46 @@ func _build_menu() -> void:
 		choice.call("Menu", true, _pressed.bind("menu"))
 	_show_buttons()
 	stick_ui.queue_redraw()
+	# The list opens scrolled to the next job to do.
+	if next_row != null:
+		_scroll_menu_to(next_row)
+
+func _scroll_menu_to(c: Control) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if is_instance_valid(c) and menu_scroll != null and is_instance_valid(menu_scroll):
+		menu_scroll.ensure_control_visible(c)
+
+## Dragging the job list up and down, and the mouse wheel over it. A drag past a little way is a scroll, not a tap: the job it
+## started on isn't started, and a HOLD TO SKIP under it lets go.
+func _menu_drag(e: InputEvent) -> void:
+	var h: float = get_viewport().get_visible_rect().size.y
+	if e is InputEventMouseButton:
+		var mb := e as InputEventMouseButton
+		var over := menu_scroll.get_global_rect().has_point(mb.position)
+		if mb.button_index == MOUSE_BUTTON_WHEEL_UP or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if mb.pressed and over:
+				menu_scroll.scroll_vertical += int(h * 0.1) * (1 if mb.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1)
+				get_viewport().set_input_as_handled()
+			return
+		if mb.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if mb.pressed:
+			menu_dragged = false
+			var on_bar := menu_scroll.get_v_scroll_bar().visible and menu_scroll.get_v_scroll_bar().get_global_rect().has_point(mb.position)
+			_drag_from = mb.position if over and not on_bar else Vector2.INF
+			_drag_scroll0 = menu_scroll.scroll_vertical
+		else:
+			_drag_from = Vector2.INF
+	elif e is InputEventMouseMotion and _drag_from != Vector2.INF:
+		var dy: float = (e as InputEventMouseMotion).position.y - _drag_from.y
+		if not menu_dragged and absf(dy) > h * 0.025:
+			menu_dragged = true
+			_skip_held = -1.0
+			if _skip_button != null and is_instance_valid(_skip_button):
+				_skip_button.text = "HOLD TO SKIP"
+		if menu_dragged:
+			menu_scroll.scroll_vertical = _drag_scroll0 - int(dy)
 
 ## A job in the list with a SKIP beside it, which has to be held down.
 func _skip_row(box: VBoxContainer, h: float, word: String, id: String, snug: bool) -> void:
@@ -3586,7 +3696,9 @@ func _skip_row(box: VBoxContainer, h: float, word: String, id: String, snug: boo
 	go.focus_mode = Control.FOCUS_NONE
 	go.custom_minimum_size = Vector2(h * 0.75, tall)
 	go.add_theme_font_size_override("font_size", int(h * 0.04))
-	go.pressed.connect(_start_mission.bind(id))
+	go.pressed.connect(func() -> void:
+		if not menu_dragged:
+			_start_mission(id))
 	row.add_child(go)
 	var skip := Button.new()
 	skip.text = "HOLD TO SKIP"
@@ -3794,7 +3906,7 @@ func online_action(player: int, what: String, arg: int) -> void:
 			if m is Loader:
 				(m as Loader).toggle_spread()
 		"attach":
-			if m is Loader and m.machine_name == Loader.DINGO:
+			if m is Loader:
 				(m as Loader).toggle_attachment()
 		"left":
 			if m == digger:
@@ -3861,12 +3973,13 @@ func _check_mission(delta: float) -> void:
 	elif buried != null:
 		_check_find()
 	elif Mission.kind(mission) != "driveway":
-		pipes.settle(sim)
+		var laid := job_pipes()
+		laid.settle(sim)
 		if not pipe_joined:
-			var run := Mission.pipe_run(pipes.points(), mission)
+			var run := Mission.pipe_run(laid.points(), mission)
 			pipe_connected = not run.is_empty()
-			pipe_laid = pipes.segments() > 0
-			end_reached = Mission.ends_reached(pipes.points(), mission)
+			pipe_laid = laid.segments() > 0
+			end_reached = Mission.ends_reached(laid.points(), mission)
 			var stops := Mission.water_stops_at(run, mission)
 			stop_at = stops
 			# Stopped where it goes in, as that's above the water, rather than at a rise further on.
@@ -4160,9 +4273,9 @@ func _on_attach() -> void:
 	_my_dingo().toggle_attachment()
 	_show_attach()
 
-## The Dingo this player's in. On a job with a friend there are two.
+## The Bobcat or Dingo this player's in, or the Dingo. On a job with a friend there are two.
 func _my_dingo() -> Loader:
-	return active as Loader if active is Loader and active.machine_name == Loader.DINGO else dingo
+	return active as Loader if active is Loader else dingo
 
 func _show_attach() -> void:
 	if attach_word:

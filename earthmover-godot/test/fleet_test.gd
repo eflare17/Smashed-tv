@@ -287,12 +287,58 @@ func dingo_tests() -> void:
 	check(not l.pipe_on and not l.trencher_on and l._bucket.visible, "and back to the bucket")
 	l.queue_free()
 
-	# The Bobcat has no trencher.
+	# The Bobcat's big trencher (owner, 9 Nov): a wider, deeper slot than the Dingo's, and the big pipe down it.
 	var b0 := DirtSim.new()
-	var bc := new_loader(b0, Vector2.ZERO, Vector2(1, 0), Loader.BOBCAT)
+	var b0_total := b0.total()
+	var bc := new_loader(b0, Vector2(-10, 0), Vector2(1, 0), Loader.BOBCAT)
 	bc.toggle_attachment()
-	check(not bc.trencher_on, "the Bobcat doesn't take the trencher")
+	check(bc.trencher_on and bc._chain.visible and not bc._bucket.visible and bc._arms.visible, "the Bobcat takes its big trencher, on the end of its arms")
+	bc.lift_cmd = -1.0
+	run(b0, [bc], 3.0)
+	bc.lift_cmd = 0.0
+	check(bc.chain_depth >= 1.95, "LOWER takes its chain down to 2 m (%.2f m)" % bc.chain_depth)
+	bc.throttle = 1.0
+	var b_same := run(b0, [bc], 20.0)
+	bc.stop_commands()
+	check(b_same and b0.total() == b0_total, "cutting the big trench: the total never changes")
+	var mid_c := DirtSim.cell_of(Vector2(bc.spot.x - 0.6, 0.0))
+	var wide_cells := 0
+	var deepest_b := 0
+	for j in range(mid_c.y - 4, mid_c.y + 5):
+		var hb := b0.bed[j * DirtSim.CELLS + mid_c.x]
+		if hb < -1000:
+			wide_cells += 1
+		deepest_b = mini(deepest_b, hb)
+	var at_wheel := b0.soil[DirtSim.cell_of(Vector2(bc.spot.x - 0.6, 0.84)).y * DirtSim.CELLS + mid_c.x]
+	var heap_b := 0
+	for j in range(mid_c.y + 4, mid_c.y + 12):
+		heap_b = maxi(heap_b, b0.soil[j * DirtSim.CELLS + mid_c.x])
+	print("      big trench: %d cells wide, floor %d mm, went %.1f m; dirt %d mm under the right wheels, %d mm at most further out" % [wide_cells, deepest_b, bc.spot.x + 10.0, at_wheel, heap_b])
+	check(wide_cells == 3, "its slot is three cells wide, half as wide again as the Dingo's two (%d)" % wide_cells)
+	check(deepest_b < -1850 and deepest_b > -2150, "and as deep as it's set, 2 m, its walls standing (%d mm)" % deepest_b)
+	check(heap_b > at_wheel * 2, "the dirt's thrown out past its right-hand wheels (%d mm under them, %d further out)" % [at_wheel, heap_b])
+	var bp := Pipes.new()
+	root.add_child(bp)
+	bp.setup(StandardMaterial3D.new(), Pipes.BIG_RADIUS)
+	bc.pipes = bp
+	bc.lift_cmd = 1.0
+	run(b0, [bc], 3.0)
+	bc.lift_cmd = 0.0
+	bc.toggle_attachment()
+	check(bc.pipe_on and bc._spool.visible and not bc._chain.visible, "next, the big pipe")
+	bc.throttle = -1.0
+	run(b0, [bc], 12.0)
+	bc.stop_commands()
+	print("      big pipe: %.1f m in %d lengths" % [bp.length_m, bp.segments()])
+	check(bp.length_m > 2.0, "backing along the trench lays it (%.1f m)" % bp.length_m)
+	var mid_b: Vector3 = bp._points[bp._points.size() / 2]
+	var sits := b0.firm_at(Vector2(mid_b.x, mid_b.z)) + Pipes.BIG_RADIUS + 0.02
+	check(absf(mid_b.y - sits) < 0.06, "it lies on the trench floor, all 40 cm of it (%.2f m off)" % absf(mid_b.y - sits))
+	bc.toggle_attachment()
+	check(not bc.pipe_on and not bc.trencher_on and bc._bucket.visible, "and round to the bucket again")
+	check(bc.top_speed > 3.0, "at full speed again with it (%.1f m/s)" % bc.top_speed)
 	bc.queue_free()
+	bp.queue_free()
 
 	# A straight trench through firm ground.
 	var t := DirtSim.new()

@@ -41,6 +41,7 @@ var _dirt_t := 0.0
 var _heard_ms := 0
 var _cmd_ms := 0
 var _pipes_sent := 0
+var _big_pipes_sent := 0
 var _pegs_sent := -1
 var _demo_t := 0.0
 var _say_t := 0.0
@@ -139,6 +140,7 @@ func _send_everything() -> void:
 	for c in DirtSim.CHUNKS * DirtSim.CHUNKS:
 		view.changed[c] = true
 	_pipes_sent = 0
+	_big_pipes_sent = 0
 	_pegs_sent = -1
 
 ## Starting a job reloads the whole game. This comes out of the old game first, so the connection carries on into the new one.
@@ -252,13 +254,20 @@ func _air_state() -> PackedFloat32Array:
 		out[k * 4 + 3] = -sim.air_amt[k] if sim.air_dust[k] * 2 > sim.air_amt[k] else sim.air_amt[k]
 	return out
 
+## New pipe laid, the Dingo's and the Bobcat's big pipe (the third item says which: 1 for the big).
 func _send_pipes() -> void:
 	var pipes: Pipes = game.pipes
 	var all := pipes.points()
-	if all.size() <= _pipes_sent:
+	if all.size() > _pipes_sent:
+		_send([PIPE, all.slice(_pipes_sent), 0])
+		_pipes_sent = all.size()
+	var big: Pipes = game.big_pipes
+	if big == null:
 		return
-	_send([PIPE, all.slice(_pipes_sent)])
-	_pipes_sent = all.size()
+	var all_big := big.points()
+	if all_big.size() > _big_pipes_sent:
+		_send([PIPE, all_big.slice(_big_pipes_sent), 1])
+		_big_pipes_sent = all_big.size()
 
 func _send_dirt() -> void:
 	var view: GroundView = game.view_data
@@ -361,8 +370,9 @@ func _on_received(data: PackedByteArray) -> void:
 			DIRT:
 				_load_chunks(msg[1], msg[2], msg[3])
 			PIPE:
+				var into: Pipes = game.big_pipes if msg.size() > 2 and int(msg[2]) == 1 else game.pipes
 				for p: Vector3 in msg[1]:
-					game.pipes.lay_to(p)
+					into.lay_to(p)
 			PEGS:
 				game.net_pegs(msg[1], msg[2], msg[3])
 			LOADING:

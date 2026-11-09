@@ -147,7 +147,7 @@ func _draw() -> void:
 func _draw_trench(l: Loader) -> void:
 	var t := trench_line(l)
 	var f := l.forward()
-	var chain := l.spot + f * Loader.CHAIN_X
+	var chain := l.spot + f * l.chain_x
 	var at_chain: float = t["at_chain"]
 	var top: float = at_chain + TRENCH_ABOVE
 	var strip := size.y * 0.14
@@ -167,7 +167,7 @@ func _draw_trench(l: Loader) -> void:
 	for k in n:
 		if cut[k]:
 			deepest = maxf(deepest, at_chain - floors[k])
-	_below = lerpf(_below, clampf(deepest + 0.35, TRENCH_BELOW_LEAST, TRENCH_BELOW), 0.08)
+	_below = lerpf(_below, clampf(deepest + 0.35, TRENCH_BELOW_LEAST, maxf(TRENCH_BELOW, l.chain_most + 0.35)), 0.08)
 	var to_px := func(x: float, y: float) -> Vector2:
 		return Vector2((x + TRENCH_BEHIND) / span * size.x, strip + clampf((top - y) / (TRENCH_ABOVE + _below), -0.05, 1.05) * tall)
 	var bottom := size.y - strip
@@ -262,9 +262,9 @@ func trench_line(l: Loader) -> Dictionary:
 	var sim := l.sim
 	var f := l.forward()
 	var side := Vector2(sin(l.angle), cos(l.angle))
-	var chain := l.spot + f * Loader.CHAIN_X
+	var chain := l.spot + f * l.chain_x
 	var ground := func(p: Vector2) -> float:
-		return minf(sim.height_at(p + side * 0.65), sim.height_at(p - side * 0.65))
+		return minf(sim.height_at(p + side * l.chain_beside), sim.height_at(p - side * l.chain_beside))
 	var step := 0.25
 	var xs: Array[float] = []
 	var tops: Array[float] = []

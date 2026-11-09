@@ -117,6 +117,39 @@ const LIST := [
 		"floaters": [["table", Vector2(-3.4, -14.6)], ["chair", Vector2(-2.5, -13.8)], ["chair", Vector2(-4.4, -15.4)], ["chair", Vector2(-2.2, -15.6)], ["chair", Vector2(-4.7, -13.7)]],
 		"fence_z": -22.7,
 		"hint": "Trench from the ring in the water to the drain pit, going DOWN all the way. With the trencher on, tap GRADE and it does that for you. Then lay pipe and SPREAD along the trench to fill it",
+		"done": "STREET DRAIN UNLOCKED",
+	},
+	{
+		# The owner's (9 Nov): the Bobcat's big trencher and 40 cm pipe. A new stormwater line along the street edge in front of the
+		# house, about 40 m from a new pit with water lying round it in the gutter to a big drain at the other end. It has to fall
+		# all the way, like the backyard, which over that far takes it down to about 1.5 m at the drain. The street's set further
+		# out than in the other jobs, so there's room for the trench between it and the driveway.
+		"id": "street_drain",
+		"title": "Street drain",
+		"kind": "street",
+		"machine": Loader.BOBCAT,
+		"needs": "backyard",
+		"rect": Rect2(-1.5, 0.0, 3.0, 8.0),
+		"laid": true,
+		"pile": Vector2.ZERO,
+		"pile_m3": 0.0,
+		"start": Vector2(-22.0, 9.0),
+		"dir": Vector2(1.0, 0.0),
+		"friend": Vector2(-22.0, 6.0),
+		"inlet": Vector2(-20.0, 9.0),
+		"drain": Vector2(20.0, 9.0),
+		# The water lying round the new pit, from the gutter up onto the verge: the house side stays clear of what the trencher throws
+		# out, so it can still be seen going once the pipe's in.
+		"flood": Vector2(-20.3, 9.0),
+		"flood_r": Vector2(3.4, 1.7),
+		"road_z": 10.5,
+		# The big pipe's 40 cm across: the trench starts deeper so it's buried from the pit on, and falls a little less, 2 cm a metre
+		# (the Dingo's jobs fall 3), so it's about 1.4 m down at the big drain.
+		"cover": 0.6,
+		"fall": 0.02,
+		"fill": Vector2(6.5, 6.0),
+		"fill_m3": 2.0,
+		"hint": "ATTACH the big trencher, tap GRADE and drive from the pit to the big drain: GRADE keeps it going DOWN. ATTACH again to lay pipe along it. Then SPREAD along the trench to fill it",
 		"done": "GARDEN PATCH UNLOCKED",
 	},
 	{
@@ -126,7 +159,7 @@ const LIST := [
 		"title": "Garden patch",
 		"kind": "hand",
 		"machine": "On foot",
-		"needs": "backyard",
+		"needs": "street_drain",
 		"rect": Rect2(-1.5, 0.0, 3.0, 8.0),
 		"laid": true,
 		"pile": Vector2.ZERO,
@@ -215,6 +248,14 @@ const LIST := [
 
 static func kind(m: Dictionary) -> String:
 	return m.get("kind", "driveway")
+
+## A job that's a trench and a pipe from where the water is to a drain.
+static func is_pipe_job(m: Dictionary) -> bool:
+	return kind(m) in ["pipe", "flood", "street"]
+
+## A pipe job whose water only runs downhill, so the pipe has to fall all the way.
+static func downhill(m: Dictionary) -> bool:
+	return kind(m) in ["flood", "street"]
 
 ## How many stars this much of a driveway done is worth.
 static func stars_for(cover: float) -> int:
@@ -338,7 +379,7 @@ static func joined(points: PackedVector3Array, m: Dictionary) -> bool:
 ## Where along the run the water stops, as an index into it, or -1 if it gets all the way. A downpipe's water runs down any
 ## pipe; a flood's only goes in below its surface and only runs downhill.
 static func water_stops_at(run: PackedVector3Array, m: Dictionary) -> int:
-	if kind(m) != "flood" or run.is_empty():
+	if not downhill(m) or run.is_empty():
 		return -1
 	# The water goes in at the last of the pipe inside the start's ring, and is at the drain at the first inside the drain's:
 	# what the pipe does outside that stretch doesn't matter.
@@ -398,10 +439,14 @@ static func house_front(m: Dictionary) -> float:
 static func road(m: Dictionary) -> Rect2:
 	if kind(m) in ["dam", "find", "road"]:
 		return Rect2()
-	return Rect2(-80.0, 9.0, 160.0, 6.0)
+	return Rect2(-80.0, float(m.get("road_z", 9.0)), 160.0, 6.0)
 
 ## The ground kept flat for the job: the house, the driveway, the pile and the street out front, and a flood job's backyard.
+## The street drain's is wider, for its 40 m along the street.
 static func site(m: Dictionary) -> Rect2:
+	if kind(m) == "street":
+		var front := house_front(m) - 11.0
+		return Rect2(-25.0, front, 50.0, road(m).end.y + 2.0 - front)
 	if kind(m) == "dam":
 		return (m["dam"] as Rect2).grow(7.0)
 	if kind(m) == "find":
@@ -449,28 +494,31 @@ static func stars(id: String) -> int:
 		return 0
 	return int(f.get_value("stars", id, 3))
 
+## Open once the job before it's done; and one done already stays open, even if a job's been put in before it since.
 static func open(m: Dictionary) -> bool:
-	return not m.has("needs") or is_done(m["needs"])
+	return not m.has("needs") or is_done(m["needs"]) or is_done(m["id"])
 
 ## The trench floor this job wants: a straight line from where the water comes from to the drain, falling Loader.GRADE_FALL each
-## metre, low enough to be at least PLAN_COVER under the ground everywhere along it (so under the rise too), and for a flood
-## under the water where it starts. Worked out once from the ground as it was, so it doesn't move about with the digging.
-## {from, way, length, y0}: the floor's y at `from`, in m.
+## metre (or the job's own "fall"), low enough to be at least PLAN_COVER (or its own "cover") under the ground everywhere along it
+## (so under the rise too), and for a flood under the water where it starts. Worked out once from the ground as it was, so it
+## doesn't move about with the digging. {from, way, length, y0, fall}: the floor's y at `from`, in m, and its fall per m.
 static func trench_plan(sim: DirtSim, m: Dictionary) -> Dictionary:
 	var from: Vector2 = source(m)[0]
 	var to: Vector2 = m["drain"]
 	var length := from.distance_to(to)
 	var way := (to - from) / length
+	var cover: float = m.get("cover", PLAN_COVER)
+	var fall: float = m.get("fall", Loader.GRADE_FALL)
 	var y0 := INF
 	var d := 0.0
 	while d <= length + 0.001:
 		var at := DirtSim.cell_of(from + way * d)
 		var ground := float(sim.start_ground[at.y * DirtSim.CELLS + at.x]) / 1000.0
-		y0 = minf(y0, ground - PLAN_COVER + Loader.GRADE_FALL * d)
+		y0 = minf(y0, ground - cover + fall * d)
 		d += 0.25
 	if kind(m) == "flood":
 		y0 = minf(y0, water_y(m) - PLAN_UNDER_WATER)
-	return {"from": from, "way": way, "length": length, "y0": y0}
+	return {"from": from, "way": way, "length": length, "y0": y0, "fall": fall}
 
 ## The garden patch: a dip in the lawn, flat across the bottom and rising to the lawn at its edge.
 static func _sink_patch(sim: DirtSim, m: Dictionary) -> void:

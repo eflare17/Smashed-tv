@@ -27,6 +27,9 @@ func _init() -> void:
 			grade_test(job)
 			words_test(job)
 			too_deep_test(job)
+		elif Mission.kind(job) == "street":
+			street_job_test(job)
+			words_test(job)
 		else:
 			job_test(job)
 	print("ALL PASSED" if fails == 0 else "%d FAILED" % fails)
@@ -416,7 +419,7 @@ func words_test(job: Dictionary) -> void:
 	Mission.lay_out(s, job)
 	var pipes := Pipes.new()
 	root.add_child(pipes)
-	pipes.setup(StandardMaterial3D.new())
+	pipes.setup(StandardMaterial3D.new(), Pipes.BIG_RADIUS if job["machine"] == Loader.BOBCAT else Pipes.RADIUS)
 	var d := Loader.new()
 	root.add_child(d)
 	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
@@ -436,7 +439,7 @@ func words_test(job: Dictionary) -> void:
 	var said_red := false
 	var lowered := 0.0
 	var words := {}
-	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < a.distance_to(c) - 0.1 and t < 120.0:
+	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < a.distance_to(c) - 0.1 and t < 200.0:
 		var line := b.trench_line(d)
 		var word: String = b.trench_word(d, line["any_uphill"])[0]
 		words[word.get_slice(" ", 0)] = true
@@ -464,7 +467,8 @@ func words_test(job: Dictionary) -> void:
 	d.toggle_attachment()
 	while not d.trencher_on:
 		d.toggle_attachment()
-	var a2 := a + Vector2(0.0, 2.0)
+	# Beside the first, on the side clear of the road.
+	var a2 := a + Vector2(0.0, -2.5 if Mission.kind(job) == "street" else 2.0)
 	d.reposition(a2 - way * 0.75, way)
 	d.throttle = 1.0
 	d.lift_cmd = -1.0
@@ -480,6 +484,123 @@ func words_test(job: Dictionary) -> void:
 	print("      lifted the chain partway: it says %s" % b.trench_word(d, after["any_uphill"])[0])
 	check(after["any_uphill"], "lifting the chain partway along shows a red stretch")
 	b.queue_free()
+
+## The street drain (owner, 9 Nov), the whole job as the hint says: from where the Bobcat starts, ATTACH, GRADE and drive to the
+## big drain; ATTACH to the big pipe and drive back along it; then SPREAD along the trench, there and back, from the side the
+## dirt went. Says it can be done with a player's controls and how long each part takes, not whether it's fun.
+func street_job_test(job: Dictionary) -> void:
+	print("--- %s, the whole job" % job["title"])
+	var ground := GroundData.new(Mission.site(job), job["rect"], Mission.road(job))
+	var s := DirtSim.new()
+	ground.fill_sim(s)
+	Mission.lay_out(s, job)
+	var total := s.total()
+	var pipes := Pipes.new()
+	root.add_child(pipes)
+	pipes.setup(StandardMaterial3D.new(), Pipes.BIG_RADIUS)
+	var d := Loader.new()
+	root.add_child(d)
+	d.setup(s, GroundView.new(ground, s, ground.height_texture(), ground.data_texture()), StandardMaterial3D.new(), job["start"], job["dir"], job["machine"])
+	d.pipes = pipes
+	d.grade_toward = job["drain"]
+	d.plan = Mission.trench_plan(s, job)
+	var a: Vector2 = Mission.source(job)[0]
+	var b: Vector2 = job["drain"]
+	var way := (b - a).normalized()
+	var length := a.distance_to(b)
+	check(length > 38.0 and length < 42.0, "about 40 m from the new pit to the big drain (%.0f m)" % length)
+	var deep_end := s.firm_at(b) - d.aim_floor(b)
+	check(deep_end > 1.3 and deep_end < Loader.BIG_CHAIN_MOST, "falling all the way takes it about 1.5 m down at the big drain, in the big trencher's reach (%.2f m)" % deep_end)
+	check(d.chain_most == Loader.BIG_CHAIN_MOST, "it's the Bobcat with the big trencher")
+	# Off from where it starts.
+	d.toggle_attachment()
+	d.toggle_spread()
+	check(d.trencher_on and d.grade_on, "ATTACH, then GRADE")
+	d.throttle = 1.0
+	var t := 0.0
+	var short := false
+	var rock := false
+	while (Vector2(d.teeth.x, d.teeth.z) - a).dot(way) < length + 0.3 and t < 200.0:
+		_keep_on(d, a, way)
+		_run(d, s, 0.1)
+		t += 0.1
+		short = short or d.grade_short
+		rock = rock or d.on_rock
+	d.stop_commands()
+	print("      dug with GRADE in %.0f s, the chain at %.2f m at the big drain" % [t, d.chain_depth])
+	check((Vector2(d.teeth.x, d.teeth.z) - a).dot(way) >= length, "it got to the big drain")
+	check(not short and not rock, "GRADE never ran out of depth, and it never hit the road")
+	check(t < 120.0, "in under two minutes (%.0f s)" % t)
+	# The chain up, then the pipe, driving back from the drain end to the pit.
+	d.lift_cmd = 1.0
+	_run(d, s, 3.0)
+	d.stop_commands()
+	d.toggle_attachment()
+	check(d.pipe_on and not d.grade_on, "ATTACH again: the big pipe")
+	d.reposition(Vector2(d.spot.x, a.y), -way)
+	d.throttle = 1.0
+	t = 0.0
+	while (d.spot - a).dot(way) > -2.5 and t < 120.0:
+		_keep_on(d, a, -way)
+		_run(d, s, 0.1)
+		t += 0.1
+	d.stop_commands()
+	pipes.settle(s)
+	var run := Mission.pipe_run(pipes.points(), job)
+	print("      laid %.1f m of big pipe in %.0f s, in %d lengths" % [pipes.length_m, t, pipes.segments()])
+	check(not run.is_empty() and Mission.water_stops_at(run, job) == -1, "joined pit to drain, and the water gets through first time")
+	# Between the pits, the top of the 40 cm pipe is under the ground, so filling in buries it.
+	var poke := -9.0
+	for p: Vector3 in run:
+		var along := (Vector2(p.x, p.z) - a).dot(way)
+		if along < 0.5 or along > length - 0.5:
+			continue
+		var c := DirtSim.cell_of(Vector2(p.x, p.z))
+		poke = maxf(poke, p.y + Pipes.BIG_RADIUS - float(s.start_ground[c.y * DirtSim.CELLS + c.x]) / 1000.0)
+	check(poke < -0.1, "the big pipe's buried from pit to drain, its top at least 10 cm down (%.2f m)" % poke)
+	# Filling in: SPREAD along it from the side the dirt went, there and back.
+	while d.trencher_on or d.pipe_on:
+		d.toggle_attachment()
+	var across := Vector2(-way.y, way.x)
+	var heap := 0
+	var other := 0
+	for k in range(2, int(length) - 1):
+		var c := DirtSim.cell_of(a + way * k + across * 1.6)
+		heap += s.soil[c.y * DirtSim.CELLS + c.x]
+		c = DirtSim.cell_of(a + way * k - across * 1.6)
+		other += s.soil[c.y * DirtSim.CELLS + c.x]
+	var side := 1.0 if heap > other else -1.0
+	print("      the dirt went to the %s side; filled after trench and pipe: %.0f%%" % ["road" if (across * side).y > 0.0 else "house", Mission.filled_in(s, job) * 100.0])
+	var passes := 0
+	while passes < 4 and Mission.filled_in(s, job) < Mission.FILL_PASS:
+		var back := passes % 2 == 1
+		var from := b + way * 1.0 if back else a - way * 1.0
+		var dir := -way if back else way
+		d.reposition(from + across * side * 0.3, dir)
+		if not d.spread_on:
+			d.toggle_spread()
+		_run(d, s, 1.0)
+		d.throttle = 0.7
+		t = 0.0
+		while (d.spot - from).dot(dir) < length + 2.0 and t < 60.0:
+			_keep_on(d, a + across * side * 0.3, dir)
+			_run(d, s, 0.1)
+			t += 0.1
+		d.stop_commands()
+		passes += 1
+		print("      SPREAD along it, pass %d: filled %.0f%% (%.0f s)" % [passes, Mission.filled_in(s, job) * 100.0, t])
+	check(Mission.filled_in(s, job) >= Mission.FILL_PASS, "SPREAD along it fills it for three stars, in %d passes (%.0f%%)" % [passes, Mission.filled_in(s, job) * 100.0])
+	check(passes <= 3, "in three passes or fewer (%d)" % passes)
+	check(s.total() == total, "the total never changes")
+	d.queue_free()
+	pipes.queue_free()
+
+## Steers along the line through `a` the way `dir` goes, as a player keeping on it would.
+func _keep_on(d: Loader, a: Vector2, dir: Vector2) -> void:
+	var left := Vector2(-dir.y, dir.x)
+	var away := (d.spot - a).dot(left)
+	var heading := Vector2(cos(d.angle), -sin(d.angle))
+	d.steer = clampf(-away * 2.0 * signf(heading.dot(dir)) + heading.cross(dir) * 3.0, -1.0, 1.0)
 
 func _trench_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2, floor_at: Callable) -> void:
 	var way := (b - a).normalized()
@@ -516,7 +637,7 @@ func _lay_along(d: Loader, s: DirtSim, a: Vector2, b: Vector2) -> void:
 	d.reposition(a - way * 0.2, way)
 	d.throttle = 1.0
 	var t := 0.0
-	while (d.spot - a).dot(way) < a.distance_to(b) + 0.9 and t < 60.0:
+	while (d.spot - a).dot(way) < a.distance_to(b) + 0.9 and t < 90.0:
 		_run(d, s, 0.1)
 		t += 0.1
 	d.stop_commands()

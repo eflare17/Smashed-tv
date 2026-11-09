@@ -34,7 +34,7 @@ const SOIL_LIMIT_CORNER := 238  # the same angles over a corner neighbour, 1.41 
 const DUST_LIMIT := 250         # about 45 degrees: cracker dust is coarse and stands steeper than soil
 const DUST_LIMIT_CORNER := 354
 const BED_LIMIT_CORNER := 612
-const CUT_WALL_MM := 1700        # how high a firm wall beside a clean cut stands before it gives way
+const CUT_WALL_MM := 2300        # how high a firm wall beside a clean cut stands before it gives way: past the Bobcat's 2 m trench
 const BED_FLOOR := -7000        # nothing digs below this, 7 m down
 const TOP := 9000               # soil stops piling up here, 9 m up (the drawn ground's limit)
 

@@ -506,3 +506,35 @@ cleat print into loose soil whatever it weighed, the same 0.75 m wide band; and 
   but not the smooth look.
 - `rut_test` (new): every machine's depth comes out as meant, heavier deeper, bigger wider, low ridges, total unchanged, back and
   forth eight times stays a rut, a loaded truck on firm ground changes nothing, the print shows pressed, and dirt on it covers it.
+
+## 9 Nov 2026: the Bobcat's big trencher and the Street drain job
+
+Owner's idea: missions for the Bobcat, with a bigger trench attachment for bigger pipes. Talked through one step at a time: the
+owner picked a bigger chain trencher (over a backhoe arm or an auger), with my suggested sizes, then the Street drain job (over a
+culvert under the driveway, or both), then said "sounds good" to the whole plan.
+
+- The Bobcat's ATTACH now goes bucket, big trencher, big pipe, as the Dingo's does. The chain hangs off the end of its arms
+  (arms stay on; the bucket comes off). Its slot is three cells of the dirt grid wide to the Dingo's two (half as wide again),
+  down to 2 m (`BIG_CHAIN_MOST`), thrown clear of its right-hand wheels, and it crawls a little quicker than the Dingo's
+  (`chain_speed` 0.75 to 0.6). The pipe is 40 cm across (`Pipes.BIG_RADIUS`), its own `big_pipes`, white with blue collars like
+  the Dingo's. In free play too. GRADE, the depth stop and the trench picture all work the same.
+- The trencher's numbers are now per machine (`chain_most`, `chain_x`, `chain_cuts`, `chain_beside`, `chain_cut`, `throw_near/far`,
+  `pipe_beside`); the Dingo's are what they were.
+- A cut wall now stands to 2.3 m (`CUT_WALL_MM`, was 1.7): a 2 m trench's walls were giving way and the chain followed them down.
+- SPREAD's rake into a low trench now looks at every cell across the bucket (was five points): on the Bobcat's wide bucket over
+  a three-cell trench the middle row was never raked and filling stuck at 67%.
+- Street drain (after Backyard flood, before Garden patch; two Bobcats with a friend): a 40 m stormwater line along the front of
+  the block, from a new pit with water lying round it to a big drain. The street's moved out to 10.5 m for this job so the line
+  (at 9 m) has room between it and the driveway. It has to fall all the way like the backyard; the job's own plan starts 60 cm
+  down (so the 40 cm pipe's buried from the pit) and falls 2 cm a metre (the Dingo jobs fall 3), so it's 1.4 m down at the big
+  drain. Both pits are concrete boxes sunk past the pipe, so a trench cut up to them shows their walls. Stars on the fill, as
+  the other pipe jobs. All the layout is my pick, within what was agreed.
+- A job already done stays open in the menu even if a job is put in before it (`Mission.open`), so Garden patch and the rest stay
+  open for anyone who's past them.
+- The menu's job list scrolls (drag it, or the mouse wheel), as it no longer fits a phone's screen; a drag isn't a tap, and lets
+  go of a HOLD TO SKIP. It opens scrolled to the next job.
+- Checks: `mission_test` does the whole job with a player's controls: GRADE from the start dug 40 m in 77 s, 40 m of big pipe in
+  53 s, the water through first time, the pipe buried all the way, one SPREAD run along it filled 96%. `fleet_test` checks the big
+  trencher (three cells wide, 2 m deep, walls standing, dirt past the wheels) and the big pipe on the floor. In a real window at
+  normal speed the job ran start to finish. (Run at 4x speed it digs shallow: the chain cuts a set amount a tick. Players run at 1x.)
+- Online: big pipe goes to the guest as its own PIPE message (a third item, 1).

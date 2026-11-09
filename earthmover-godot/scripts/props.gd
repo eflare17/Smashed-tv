@@ -159,14 +159,17 @@ static func dingo_driver(kit: MeshKit) -> void:
 	kit.box(Vector3(-0.94, 1.54, 0), Vector3(0.2, 0.2, 0.19), SKIN)
 	kit.box(Vector3(-0.94, 1.67, 0), Vector3(0.28, 0.09, 0.26), YELLOW)
 
-## The trencher: a chain boom pointing down and forward from the pivot, along +x.
-static func trencher(kit: MeshKit, length: float) -> void:
-	kit.box(Vector3(length * 0.5, 0, 0), Vector3(length, 0.16, 0.08), CHARCOAL)
-	for i in 10:
-		var x := length * (i + 0.5) / 10.0
-		kit.box(Vector3(x, 0.1, 0), Vector3(0.06, 0.05, 0.14), STEEL)
-		kit.box(Vector3(x, -0.1, 0), Vector3(0.06, 0.05, 0.14), STEEL)
-	kit.box(Vector3(0.05, 0.0, 0), Vector3(0.3, 0.3, 0.26), RED)
+## The trencher: a chain boom pointing down and forward from the pivot, along +x. `wide` scales it across, for the Bobcat's
+## bigger one.
+static func trencher(kit: MeshKit, length: float, wide := 1.0) -> void:
+	var deep := sqrt(wide)
+	kit.box(Vector3(length * 0.5, 0, 0), Vector3(length, 0.16 * deep, 0.08 * wide), CHARCOAL)
+	var teeth := int(round(length / 0.115))
+	for i in teeth:
+		var x := length * (i + 0.5) / teeth
+		kit.box(Vector3(x, 0.1 * deep, 0), Vector3(0.06, 0.05, 0.14 * wide), STEEL)
+		kit.box(Vector3(x, -0.1 * deep, 0), Vector3(0.06, 0.05, 0.14 * wide), STEEL)
+	kit.box(Vector3(0.05, 0.0, 0), Vector3(0.3, 0.3, 0.26) * deep, RED)
 
 ## The pipe layer on the Dingo's front: a frame with a drum of pipe on it.
 static func pipe_spool(kit: MeshKit) -> void:

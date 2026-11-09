@@ -16,7 +16,7 @@ const CURL_MAX := 0.75
 const FRICTION := 0.22          # how hard soil drags, per its weight: less than a dozer's, as most of it's going in the bucket
 const SWEEP := 0.25             # m the edge travels to clear what's in front of it
 const CHUNK := 240              # mm a falling chunk carries (0.015 m3)
-# The trencher, Dingo only.
+# The Dingo's trencher. The Bobcat's big one (owner, 9 Nov) has its own numbers, set in setup().
 const CHAIN_MOST := 1.5         # m below the tracks
 const CHAIN_RATE := 0.9         # m a second, lowering or raising it
 const CHAIN_X := 0.72           # how far ahead of the middle it cuts
@@ -43,6 +43,12 @@ const REACH_BELOW := 0.03       # m: spreading, the edge reaches no lower than t
 const DRAG_LOW := 0.22          # m above the firm ground the edge has to be to spread
 const SPREAD_CURL := 0.15        # where the SPREAD button holds the bucket: flat, edge just off the ground
 const POUR_WIDTH := 0.5          # how much of the bucket's width a load comes out of: the middle, so it lands in a heap
+# The Bobcat's big trencher, for 40 cm pipe: a slot half as wide again as the Dingo's (three cells of the dirt grid to its two),
+# down to 2 m, the chain on the arms' ends.
+const BIG_CHAIN_MOST := 2.0
+const BIG_CHAIN_X := 1.45       # where it cuts, ahead of the middle: out past the front wheels
+const BIG_CHAIN_LEN := 2.6
+const BIG_MOUNT_ARM := -0.55    # the arms hold the chain's head down at the front
 
 var kind := BOBCAT
 var lift_cmd := 0.0
@@ -73,6 +79,16 @@ var trench_m := 0.0             # m of trench cut, for the readout and tests
 var pipe_on := false
 var pipes: Pipes                # where pipe it lays goes
 var in_trench := false          # the pipe layer is over a trench
+## The trencher this one has: the Dingo's, or the Bobcat's big one.
+var chain_most := CHAIN_MOST
+var chain_x := CHAIN_X
+var chain_cuts: Array[float] = [-CHAIN_HALF, CHAIN_HALF]   # m either side of the middle it cuts at, a cell apart: the slot's width
+var chain_beside := 0.65        # m out from the middle that the ground either side is looked for, clear of the slot
+var chain_cut := CHAIN_CUT
+var chain_speed := CHAIN_SPEED
+var throw_near := THROW_NEAR
+var throw_far := THROW_FAR
+var pipe_beside := 0.45         # m out from the pipe layer that the ground either side of a trench is looked for
 
 var pivot := Vector2.ZERO
 var arm_len := 1.0
@@ -121,7 +137,7 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 	add_child(_body)
 	var kit := MeshKit.new()
 	if which == BOBCAT:
-		hint = "Bucket low, drive into the dirt, then RAISE and DUMP. Tap SPREAD and drive over a heap to flatten it. Tap again for the next machine"
+		hint = "Bucket low, drive into the dirt, then RAISE and DUMP. SPREAD flattens a heap. ATTACH for the big trencher, then pipe. Tap again for the next machine"
 		mass = 3600.0
 		top_speed = 3.4
 		back_speed = 3.0
@@ -160,6 +176,27 @@ func setup(s: DirtSim, v: GroundView, mat: Material, at: Vector2, dir: Vector2, 
 		for side: float in [-1.0, 1.0]:
 			for x: float in [-0.62, 0.62]:
 				_add_wheel(tyre, mat, Vector3(x, 0.38, side * 0.84), 0.38)
+		chain_most = BIG_CHAIN_MOST
+		chain_x = BIG_CHAIN_X
+		chain_cuts = [-0.25, 0.0, 0.25]
+		chain_beside = 0.9
+		chain_cut = 60
+		# A touch quicker than the Dingo's, so 40 m of street isn't a long crawl.
+		chain_speed = 0.75
+		# Thrown clear of the right-hand wheels.
+		throw_near = 1.3
+		throw_far = 2.0
+		pipe_beside = 0.65
+		kit = MeshKit.new()
+		Props.trencher(kit, BIG_CHAIN_LEN, 2.2)
+		_chain = _add_mesh(_body, kit, mat)
+		_chain.visible = false
+		kit = MeshKit.new()
+		Props.pipe_spool(kit)
+		_spool = _add_mesh(_body, kit, mat)
+		_spool.visible = false
+		_spool.scale = Vector3.ONE * 1.6
+		_spool.position = Vector3(0.3, -0.45, 0.0)
 	else:
 		hint = "Tap SPREAD and drive over a heap to flatten it. Tap ATTACH for the trencher: LOWER it and drive. Tap again for pipe: drive along the trench"
 		mass = 1400.0
@@ -272,7 +309,7 @@ func fill() -> float:
 func aim_floor(p: Vector2) -> float:
 	if not plan.is_empty():
 		var d := clampf((p - (plan["from"] as Vector2)).dot(plan["way"]), 0.0, plan["length"])
-		return float(plan["y0"]) - GRADE_FALL * d
+		return float(plan["y0"]) - float(plan.get("fall", GRADE_FALL)) * d
 	if _grade_from == Vector2.INF:
 		return NAN
 	var nearer := grade_toward.distance_to(_grade_from) - grade_toward.distance_to(p) if grade_toward != Vector2.INF else _grade_from.distance_to(p)
@@ -323,14 +360,15 @@ func gauge_word() -> Array:
 		return [word + "   LOW: BACK UP TO SPREAD", Color("#ffd23f")]
 	return [word, Color("#a8f07a")]
 
-## Goes round the Dingo's attachments: bucket, trencher, pipe layer. What's in the bucket gets tipped out first.
+## Goes round the attachments: bucket, trencher, pipe layer. What's in the bucket gets tipped out first. The Bobcat's are the big
+## ones, held on its arms.
 func toggle_attachment() -> void:
-	if kind != DINGO:
-		return
 	if not trencher_on and not pipe_on:
 		trencher_on = true
 		curl = CURL_MIN
 		_pour_all_now()
+		if kind == BOBCAT:
+			arm = BIG_MOUNT_ARM
 	elif trencher_on:
 		trencher_on = false
 		pipe_on = true
@@ -341,21 +379,21 @@ func toggle_attachment() -> void:
 	on_rock = false
 	in_trench = false
 	digging = false
-	top_speed = 1.7
-	back_speed = 1.7
+	top_speed = _full_top
+	back_speed = _full_back
 	spreading = false
 	spread_on = false
 	grade_on = false
 	_show_attachment()
+	_pose()
 	hit_end = 0.6
 
 func _show_attachment() -> void:
-	if kind != DINGO:
-		return
 	_chain.visible = trencher_on
 	_spool.visible = pipe_on
 	var has_bucket := not trencher_on and not pipe_on
-	_arms.visible = has_bucket
+	# The Dingo's go on in place of its arms; the Bobcat's on the end of them.
+	_arms.visible = has_bucket or kind == BOBCAT
 	_bucket.visible = has_bucket
 
 ## The SPREAD button. RAISE, CURL or DUMP also turn it off.
@@ -406,6 +444,8 @@ func _pose() -> void:
 		# Slanted down and forward: the lower it's set, the steeper it digs.
 		var slant := lerpf(0.15, -1.15, clampf(chain_depth / 0.5, 0.0, 1.0))
 		_chain.rotation.z = slant
+		if kind == BOBCAT:
+			_chain.position = Vector3(p.x, p.y, 0.0)
 	var f := fill()
 	_lump.visible = f > 0.03
 	if _lump.visible:
@@ -552,8 +592,10 @@ func _back_drag(dt: float) -> void:
 			stands = maxf(stands, sim.firm_at(p + f * along))
 	var moved := sim.drag(blade_a, blade_b, forward() * signf(speed), SPREAD_MM, clampf(absf(speed) * dt / 0.12, 0.0, 1.0), int((stands - REACH_BELOW) * 1000.0))
 	# Over a trench that's still low after backfilling, it rakes the leftover soil round about in, so the trench can be finished flat.
-	for k in 5:
-		var at := DirtSim.cell_of(blade_a.lerp(blade_b, k / 4.0) - f * 0.2)
+	# Every cell across the bucket, so none of a wide trench is missed.
+	var spans := maxi(int(ceil(bucket_half * 2.0 / DirtSim.CELL_M)), 4)
+	for k in spans + 1:
+		var at := DirtSim.cell_of(blade_a.lerp(blade_b, float(k) / spans) - f * 0.2)
 		if at.x < 1 or at.y < 1 or at.x >= DirtSim.CELLS - 1 or at.y >= DirtSim.CELLS - 1:
 			continue
 		if sim.clean_cut[at.y * DirtSim.CELLS + at.x] == 1:
@@ -603,16 +645,16 @@ func _work_chain(dt: float) -> void:
 	if grade_on and lift_cmd > 0.05:
 		grade_on = false
 	if not grade_on:
-		chain_depth = clampf(chain_depth - lift_cmd * CHAIN_RATE * dt, 0.0, CHAIN_MOST)
+		chain_depth = clampf(chain_depth - lift_cmd * CHAIN_RATE * dt, 0.0, chain_most)
 	hyd = clampf(absf(chain_depth - was) / dt / CHAIN_RATE, 0.0, 1.0)
-	if chain_depth >= CHAIN_MOST and was < CHAIN_MOST:
+	if chain_depth >= chain_most and was < chain_most:
 		hit_end = 0.5
 	_pose()
 	var f := forward()
 	var side := Vector2(sin(angle), cos(angle))
-	var here := spot + f * CHAIN_X
+	var here := spot + f * chain_x
 	# Where the floor ought to be here, for a pipe that runs downhill: falling from where this cut began, nearer the drain.
-	var beside := minf(sim.firm_at(here + side * 0.65), sim.firm_at(here - side * 0.65))
+	var beside := minf(sim.firm_at(here + side * chain_beside), sim.firm_at(here - side * chain_beside))
 	if chain_depth <= 0.02 and not grade_on:
 		_grade_from = Vector2.INF
 	elif _grade_from == Vector2.INF and chain_depth >= (GRADE_START - 0.02 if grade_on else 0.2):
@@ -640,12 +682,12 @@ func _work_chain(dt: float) -> void:
 		at_stop = true
 	if grade_on:
 		var want := aim_depth if aim_depth > 0.0 else GRADE_START
-		grade_short = want > CHAIN_MOST
-		chain_depth = move_toward(chain_depth, clampf(want, 0.05, CHAIN_MOST), CHAIN_RATE * dt)
+		grade_short = want > chain_most
+		chain_depth = move_toward(chain_depth, clampf(want, 0.05, chain_most), CHAIN_RATE * dt)
 		hyd = clampf(absf(chain_depth - was) / dt / CHAIN_RATE, 0.0, 1.0)
 	# Measured from the firm ground either side of the slot, not from the machine, or a machine dipping into its own cut would dig
 	# deeper, dip further, and end up in a crater.
-	var floor_y := minf(sim.firm_at(here + side * 0.65), sim.firm_at(here - side * 0.65)) - chain_depth
+	var floor_y := beside - chain_depth
 	teeth = Vector3(here.x, floor_y, here.y)
 	blade_a = here
 	blade_b = here
@@ -673,7 +715,7 @@ func _work_chain(dt: float) -> void:
 			was_cut = here
 		for k in steps + 1:
 			var p := was_cut.lerp(here, float(k) / steps)
-			for w: float in [-CHAIN_HALF, CHAIN_HALF]:
+			for w: float in chain_cuts:
 				var at := DirtSim.cell_of(p + side * w)
 				if at.x < 1 or at.y < 1 or at.x >= DirtSim.CELLS - 1 or at.y >= DirtSim.CELLS - 1:
 					continue
@@ -682,8 +724,8 @@ func _work_chain(dt: float) -> void:
 					on_rock = true
 					continue
 				var throw := chain_depth * THROW_DEEP
-				var to := DirtSim.cell_of(p + side * _rng.randf_range(THROW_NEAR + throw, THROW_FAR + throw))
-				worked += sim.trench(at, floor_mm, CHAIN_CUT, to)
+				var to := DirtSim.cell_of(p + side * _rng.randf_range(throw_near + throw, throw_far + throw))
+				worked += sim.trench(at, floor_mm, chain_cut, to)
 		moved_tick = worked
 		if worked > 0:
 			trench_m += absf(speed) * dt
@@ -694,11 +736,11 @@ func _work_chain(dt: float) -> void:
 	pouring = 0.0
 	# With the chain in the ground it crawls, whatever the stick says, and the deeper the slower.
 	if chain_depth > 0.02:
-		top_speed = CHAIN_SPEED * lerpf(1.0, 0.45, chain_depth / CHAIN_MOST)
+		top_speed = chain_speed * lerpf(1.0, 0.45, chain_depth / chain_most)
 		back_speed = 0.3
 	else:
-		top_speed = 1.7
-		back_speed = 1.7
+		top_speed = minf(_full_top, 1.7)
+		back_speed = minf(_full_back, 1.7)
 	_speed_cap = minf(_speed_cap, top_speed)
 
 ## The pipe layer: driving along a trench lays joined pipe down onto its floor, out behind the machine.
@@ -725,14 +767,14 @@ func _work_pipe() -> void:
 			here = p
 		s += 0.125
 	# A trench is ground lower than what's either side of it. The ridge beside it only makes that more so.
-	var low := minf(sim.height_at(here + side * 0.45), sim.height_at(here - side * 0.45)) - floor_y
+	var low := minf(sim.height_at(here + side * pipe_beside), sim.height_at(here - side * pipe_beside)) - floor_y
 	in_trench = low > TRENCH_LOW
 	teeth = Vector3(here.x, floor_y, here.y)
 	blade_a = here
 	blade_b = here
 	if not in_trench or pipes == null or absf(speed) < 0.02:
 		return
-	var at := Vector3(here.x, floor_y + Pipes.RADIUS + 0.02, here.y)
+	var at := Vector3(here.x, floor_y + pipes.radius + 0.02, here.y)
 	var end: Variant = pipes.last_end()
 	if end == null or (end as Vector3).distance_to(at) > Pipes.JOIN_WITHIN:
 		pipes.lay_to(at)

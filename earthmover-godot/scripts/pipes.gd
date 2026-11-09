@@ -5,21 +5,24 @@ extends Node3D
 
 const MOST := 500
 const JOIN_WITHIN := 1.3        # m: a new point this close to the end of the last run carries on from it
-const RADIUS := 0.11
+const RADIUS := 0.11            # the Dingo's pipe
+const BIG_RADIUS := 0.2         # the Bobcat's, out of its big trencher: 40 cm stormwater pipe (owner, 9 Nov)
 
+var radius := RADIUS
 var length_m := 0.0
 var _mesh: MultiMesh
 var _points := PackedVector3Array()   # the last point of the run being laid is the last in here
 var _used := 0
 var _seg_from := PackedInt32Array()   # for each length laid, the point it starts from
 
-func setup(mat: Material) -> void:
+func setup(mat: Material, r := RADIUS) -> void:
+	radius = r
 	var kit := MeshKit.new()
 	var white := Props.c("#e9e6dc")
 	var collar := Props.c("#3f7fbf")
 	# Along +x from 0 to 1, stretched to length when it's placed. A coloured collar at the joint.
-	kit.cone(Vector3.ZERO, Vector3(1.0, 0.0, 0.0), RADIUS, RADIUS, 8, white)
-	kit.cone(Vector3(-0.03, 0.0, 0.0), Vector3(0.09, 0.0, 0.0), RADIUS * 1.3, RADIUS * 1.3, 8, collar)
+	kit.cone(Vector3.ZERO, Vector3(1.0, 0.0, 0.0), radius, radius, 8, white)
+	kit.cone(Vector3(-0.03, 0.0, 0.0), Vector3(0.09, 0.0, 0.0), radius * 1.3, radius * 1.3, 8, collar)
 	_mesh = MultiMesh.new()
 	_mesh.transform_format = MultiMesh.TRANSFORM_3D
 	_mesh.mesh = kit.mesh()
@@ -68,7 +71,7 @@ func settle(sim: DirtSim) -> bool:
 	var moved := false
 	for k in _points.size():
 		var p := _points[k]
-		var floor_y := sim.firm_at(Vector2(p.x, p.z)) + RADIUS + 0.02
+		var floor_y := sim.firm_at(Vector2(p.x, p.z)) + radius + 0.02
 		if p.y > floor_y + 0.005:
 			p.y = floor_y
 			_points[k] = p
