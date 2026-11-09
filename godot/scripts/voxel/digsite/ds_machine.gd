@@ -127,6 +127,84 @@ func _block_body() -> void:
 var _dust: CPUParticles3D
 var _exhaust: CPUParticles3D
 var _pour_dust: CPUParticles3D
+var _work_dust: CPUParticles3D         # (the digger game's: dust and flying lumps where a blade or bucket is moving dirt)
+var _work_clods: CPUParticles3D
+static var _lump_mesh: ArrayMesh
+static var _lump_mat: StandardMaterial3D
+
+## Where its exhaust comes out (the top of its stack; a subclass whose stack moves, the excavator's on its house, says)
+func exhaust_at() -> Vector3:
+	return global_transform * pipe
+
+## Flying lumps of dirt (the digger game's _chunks with its _flying_lump): a lumpy little rock in two browns, lit
+static func chunks(amount: int) -> CPUParticles3D:
+	if _lump_mesh == null:
+		var src := DsLook.clod_mesh(1).surface_get_arrays(0)
+		var pts: PackedVector3Array = src[Mesh.ARRAY_VERTEX]
+		var order: PackedInt32Array = src[Mesh.ARRAY_INDEX]
+		var at := PackedVector3Array()
+		var nrm := PackedVector3Array()
+		var tint := PackedColorArray()
+		var browns := [DsMats.COL[DsMats.DIRT], DsMats.COL[DsMats.DIRT].darkened(0.25), DsMats.COL[DsMats.TOPSOIL]]
+		for k in range(0, order.size(), 3):
+			var a := pts[order[k]] * 0.5
+			var b := pts[order[k + 1]] * 0.5
+			var c := pts[order[k + 2]] * 0.5
+			var n := (c - a).cross(b - a).normalized()
+			for p: Vector3 in [a, b, c]:
+				at.append(p)
+				nrm.append(n)
+				tint.append(browns[(k / 3) % browns.size()])
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = at
+		arrays[Mesh.ARRAY_NORMAL] = nrm
+		arrays[Mesh.ARRAY_COLOR] = tint
+		_lump_mesh = ArrayMesh.new()
+		_lump_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		_lump_mat = StandardMaterial3D.new()
+		_lump_mat.vertex_color_use_as_albedo = true
+		_lump_mat.roughness = 1.0
+	var p := CPUParticles3D.new()
+	p.mesh = _lump_mesh
+	p.material_override = _lump_mat
+	p.amount = amount
+	p.lifetime = 0.9
+	p.emitting = false
+	p.local_coords = false
+	p.gravity = Vector3(0.0, -13.0, 0.0)
+	p.angular_velocity_min = -280.0
+	p.angular_velocity_max = 280.0
+	return p
+
+## Dust and flying lumps where its blade or bucket is moving dirt (the digger game's clods and dust): at `at`, along
+## the edge `across` m either side, thrown forward and up; on while it's working
+func work_fx(at: Vector3, across: float, on: bool) -> void:
+	if _work_dust == null:
+		var k := clampf(length / 4.0, 0.4, 1.0)
+		_work_dust = puffs(Color("#c9a77c"), 26, 1.3)
+		_work_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_work_dust.direction = Vector3(0, 1, 0)
+		_work_dust.spread = 50.0
+		_work_dust.initial_velocity_min = 0.4
+		_work_dust.initial_velocity_max = 1.3
+		_work_dust.gravity = Vector3(0, 0.2, 0)
+		_work_dust.scale_amount_min = 0.8 * k
+		_work_dust.scale_amount_max = 1.7 * k
+		add_child(_work_dust)
+		_work_clods = chunks(26)
+		_work_clods.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_work_clods.direction = Vector3(0.0, 1.0, -0.5)      # (up, and ahead: its forward's -z)
+		_work_clods.spread = 42.0
+		_work_clods.initial_velocity_min = 1.8 * k
+		_work_clods.initial_velocity_max = 4.2 * k
+		_work_clods.scale_amount_min = 0.2 * k
+		_work_clods.scale_amount_max = 0.5 * k
+		add_child(_work_clods)
+	for p: CPUParticles3D in [_work_dust, _work_clods]:
+		p.global_transform = Transform3D(Basis(Vector3.UP, yaw), at)
+		p.emission_box_extents = Vector3(across, 0.2, 0.2)
+		p.emitting = on
 
 ## A puff emitter (the digger game's): soft balls that grow and fade
 static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
@@ -142,6 +220,10 @@ static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.vertex_color_use_as_albedo = true
 	m.albedo_color = colour
+	# (after the grass and the lumps: they're in the see-through pass too, drawn later, and with nothing behind a puff
+	# but grass the grass painted over it, so smoke and dust only showed against the sky: the owner, 9 Nov, "the
+	# smoke's not coming out of the stack")
+	m.render_priority = 2
 	p.material_override = m
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.amount = amount
@@ -174,14 +256,17 @@ func _dust_fx() -> void:
 		_dust.scale_amount_min = 0.5 * k
 		_dust.scale_amount_max = 1.1 * k
 		add_child(_dust)
-		_exhaust = puffs(Color("#2b2b2b"), 16, 1.1)
+		# (bigger and slower off the stack than the digger game's, which seen from a camera beside it only showed once
+		# they'd risen 2 m clear: the owner, 9 Nov, "the smoke's not coming out of the stack")
+		var ke := maxf(k, 0.8)
+		_exhaust = puffs(Color("#2f2f2f"), 24, 1.5)
 		_exhaust.direction = Vector3(0, 1, 0)
-		_exhaust.spread = 14.0
-		_exhaust.initial_velocity_min = 1.4 * k
-		_exhaust.initial_velocity_max = 2.4 * k
-		_exhaust.gravity = Vector3(0.3, 0.3, 0.0)
-		_exhaust.scale_amount_min = 0.22 * k
-		_exhaust.scale_amount_max = 0.5 * k
+		_exhaust.spread = 12.0
+		_exhaust.initial_velocity_min = 0.8 * ke
+		_exhaust.initial_velocity_max = 1.5 * ke
+		_exhaust.gravity = Vector3(0.25, 0.25, 0.0)
+		_exhaust.scale_amount_min = 0.38 * ke
+		_exhaust.scale_amount_max = 0.7 * ke
 		add_child(_exhaust)
 		_pour_dust = puffs(Color("#d8c6a4"), 14, 1.2)
 		_pour_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
@@ -197,8 +282,11 @@ func _dust_fx() -> void:
 	# (dust off the back of the tracks, low down, whichever way it's going)
 	_dust.global_position = global_position - forward() * signf(speed) * (length * 0.4) + Vector3(0, 0.1, 0)
 	_dust.emitting = absf(speed) > 0.4
-	_exhaust.global_position = global_transform * pipe
+	_exhaust.global_position = exhaust_at()
 	_exhaust.emitting = driver != 0
+	# (its tracks or tyres wear the grass bare where they go: the digger game's track marks)
+	if absf(speed) > 0.05 and site.terrain:
+		site.terrain.wear_tracks(self)
 	_exhaust.speed_scale = 0.6 + 0.8 * clampf(absf(throttle), 0.0, 1.0)      # (worked hard, it puffs faster)
 	var pouring := _stream_t > 0.0 and fx_load() >= 0
 	if pouring:

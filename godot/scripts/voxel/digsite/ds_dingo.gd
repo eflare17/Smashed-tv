@@ -314,6 +314,16 @@ func _tool(dt: float) -> void:
 				load_n -= put
 				n -= put
 
+var _dug_was := 0
+
+# dirt flying and dust at the bucket's lip while it's cutting (the digger game's loaders')
+func _dust_fx() -> void:
+	super()
+	var cutting: bool = dug != _dug_was and speed > 0.05
+	_dug_was = dug
+	var e := edge()
+	work_fx(Vector3(e.x, maxf(e.y, ground_y(e.x, e.z)) + 0.1, e.z), bucket_half * 0.85, cutting)
+
 func _most() -> int:
 	var best := DsMats.DIRT
 	var bn := -1

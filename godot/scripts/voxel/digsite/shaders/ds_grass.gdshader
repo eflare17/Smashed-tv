@@ -14,6 +14,7 @@ uniform sampler2D topo_lin : filter_linear, repeat_disable;
 uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
 uniform vec3 grid_origin = vec3(0.0);
+uniform sampler2D wear_tex : filter_linear, repeat_disable;   // (worn bare by tracks: no grass there)
 
 varying float v_t;
 varying float v_patch;
@@ -24,8 +25,9 @@ void vertex() {
 	v_up = normalize(mat3(VIEW_MATRIX) * vec3(0.0, 1.0, 0.0));
 	v_t = UV.y;
 	v_patch = textureLod(noise_tex, root.xz * 0.045, 0.0).r;
-	float deep = textureLod(topo_lin, (root.xz - grid_origin.xz) / cell / grid_size, 0.0).g * 255.0 / 8.0;
-	float keep = 1.0 - smoothstep(0.04, 0.3, deep);
+	vec2 guv = (root.xz - grid_origin.xz) / cell / grid_size;
+	float deep = textureLod(topo_lin, guv, 0.0).g * 255.0 / 8.0;
+	float keep = (1.0 - smoothstep(0.04, 0.3, deep)) * (1.0 - smoothstep(0.25, 0.6, textureLod(wear_tex, guv, 0.0).r));
 	VERTEX *= keep;
 }
 

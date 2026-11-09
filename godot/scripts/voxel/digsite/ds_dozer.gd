@@ -66,7 +66,7 @@ func _init() -> void:
 	step_up = 0.4
 	wall_look = 0.6
 	seat = Vector3(0, 1.15, 0.8)
-	pipe = Vector3(0.45, 2.15, 1.3)
+	pipe = Vector3(0.38, 2.8, -1.0)     # (the stack's top: DsProps.bulldozer's (1.0, 2.75, 0.38), turned as _look turns it)
 
 func _build() -> void:
 	super()
@@ -257,6 +257,39 @@ func _steady_blade(dt: float) -> void:
 func _follow(dt: float) -> void:
 	super(dt)
 	_tracks.update(speed, speed, dt)
+
+var _moved_was := 0
+var _tumble: CPUParticles3D
+
+# (the digger game's _update_blade_fx) while it's pushing dirt: dust and flying lumps at the blade, and lumps tumbling
+# down the front of the heap, more of them the more it's carrying
+func _dust_fx() -> void:
+	super()
+	var pushing: bool = speed > 0.15 and (moved != _moved_was or (not runs() and push_load > 20.0))
+	_moved_was = moved
+	var e: Array = edge_ends()
+	var mid: Vector3 = ((e[0] as Vector3) + (e[1] as Vector3)) * 0.5
+	work_fx(Vector3(mid.x, ground_y(mid.x, mid.z) + 0.25, mid.z), HALF_WIDTH * 0.93, pushing)
+	if _tumble == null:
+		_tumble = DsMachine.chunks(40)
+		_tumble.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_tumble.emission_box_extents = Vector3(HALF_WIDTH * 0.88, 0.1, 0.15)
+		_tumble.direction = Vector3(0.0, 0.15, -1.0)
+		_tumble.spread = 16.0
+		_tumble.initial_velocity_min = 0.7
+		_tumble.initial_velocity_max = 1.6
+		_tumble.gravity = Vector3(0.0, -7.0, 0.0)
+		_tumble.lifetime = 0.7
+		_tumble.scale_amount_min = 0.25
+		_tumble.scale_amount_max = 0.7
+		_tumble.angular_velocity_min = -420.0
+		_tumble.angular_velocity_max = 420.0
+		add_child(_tumble)
+	var tonnes := push_load * 0.0031
+	var top := mid + forward() * 0.45
+	_tumble.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(top.x, ground_y(top.x, top.z) + 0.2, top.z))
+	_tumble.emitting = pushing and tonnes > 0.6
+	_tumble.scale_amount_max = lerpf(0.45, 0.9, clampf(tonnes / 10.0, 0.0, 1.0))
 
 func net_more() -> PackedFloat32Array:
 	return PackedFloat32Array([lift, float(push_load), _steady, edge_gap, float(cut_on), float(cut_cm)])

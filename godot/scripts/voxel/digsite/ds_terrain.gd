@@ -39,6 +39,13 @@ var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the worl
 const GUEST_EASE := 14.0        # per second: a guest's surface eases to the host's (it arrives 15 times a second)
 var show_off_tex: ImageTexture
 var topo_tex: ImageTexture
+# where tracks and tyres have worn the grass bare (the digger game's track marks): a byte a column, a texture the
+# ground and grass shaders read; each game wears its own from the machines' poses (nothing to send)
+const WEAR_HZ := 10.0
+var wear := PackedByteArray()
+var wear_tex: ImageTexture
+var _wear_due := false
+var _wear_at := 0.0
 var _layer_acc := 0.0
 const TOPO_HZ := 30.0           # (the loose depth and material texture: this often, or at once when a section's redrawn)
 var _topo_at := 0.0
@@ -88,6 +95,11 @@ func setup(s: Node3D, at: Vector3, seed: int) -> void:
 		m.set_shader_parameter("cell", CELL)
 		m.set_shader_parameter("grid_origin", origin)
 	_mat.set_shader_parameter("soil_cols", cols)
+	wear.resize(W * D)
+	wear.fill(0)
+	wear_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_R8, wear))
+	for m: ShaderMaterial in [_mat, DsLook.grass_mat()]:
+		m.set_shader_parameter("wear_tex", wear_tex)
 	for i in grid.take_dirty_sections(100000):
 		_dirty[i] = true
 
@@ -208,8 +220,31 @@ func _process(dt: float) -> void:
 	_glide(dt)
 	show_us = Time.get_ticks_usec() - t0
 
+## A machine's tracks (or tyres) wearing the grass bare under them, at their front, middle and back
+func wear_tracks(m: DsMachine) -> void:
+	var f := m.forward()
+	var r := m.right()
+	var p := m.global_position
+	var gauge := maxf(m.width * 0.5 - 0.3, 0.2)
+	for side: float in [-1.0, 1.0]:
+		for along: float in [-0.42, 0.0, 0.42]:
+			for w: float in [-0.18, 0.0, 0.18]:
+				var q := p + f * (along * m.length) + r * (side * gauge + w)
+				var c := cell_of(q)
+				if c.x < 0 or c.z < 0 or c.x >= W or c.z >= D:
+					continue
+				var k := c.z * W + c.x
+				if wear[k] != 255:
+					wear[k] = 255
+					_wear_due = true
+
 ## The surface drawn where it truly stands (a guest's eased to it), and the shaders' textures brought up to date
 func _glide(dt: float) -> void:
+	_wear_at += dt
+	if _wear_due and _wear_at >= 1.0 / WEAR_HZ:
+		_wear_at = 0.0
+		_wear_due = false
+		wear_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_R8, wear))
 	if grid.show_update(dt, 0.0 if settle_on else GUEST_EASE):
 		show_off_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RH, grid.show_offsets()))
 	_topo_at += dt

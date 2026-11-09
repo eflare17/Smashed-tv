@@ -9,7 +9,7 @@ extends Node
 
 const FOV := 52.0
 const SUN_COMPAT := 0.5         # (the digger game's SUN_WEB: the compatibility renderer lights brighter; on it the sun's halved)
-const BLADES_PER_M2 := 36.0     # the digger game's "Medium" grass
+const BLADES_PER_M2 := 64.0     # the digger game's "High" grass (its most: a PC has room for it)
 
 static var _noise: ImageTexture
 static var _prop: ShaderMaterial
@@ -137,6 +137,12 @@ func setup(s: Node3D) -> void:
 	env.ssao_power = 1.3
 	env.ssao_light_affect = 0.15
 	env.glow_enabled = false
+	# a light haze with distance (the trees and the far fence go a little blue): what a browser doesn't get
+	env.fog_enabled = true
+	env.fog_light_color = Color("#c4d3e8")
+	env.fog_density = 0.0035
+	env.fog_aerial_perspective = 0.35
+	env.fog_sky_affect = 0.0
 	# the ink: a quad over the whole view, drawn last, that paints only the lines
 	var om := ShaderMaterial.new()
 	om.shader = load("res://scripts/voxel/digsite/shaders/ds_outline.gdshader")

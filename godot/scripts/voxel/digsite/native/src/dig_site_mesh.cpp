@@ -399,10 +399,14 @@ Array DigSiteGrid::decor_section(int sx, int sy, int sz, float blades_per_m2) co
 				for (int k = 0; k < n; k++) {
 					uint32_t hk = hash3(x * 3 + k, top + 77 * k, z * 5 + 13 * k);
 					Vector3 at((x + hf(hk, 0)) * CELL_M, base_y - 0.03f, (z + hf(hk, 1)) * CELL_M);
-					float tall = 0.55f + 0.4f * hf(hk, 2);
+					// (the digger game's blade sizes: 0.72 to 1.3 wide, as tall again times 0.8 to 1.25, so up to 0.4 m:
+					// ours were barely half its height, and it's the long grass that makes its paddock look lush)
+					uint32_t hk2 = hk * 2654435761u + 977u;
+					float s = 0.72f + 0.58f * hf(hk, 2);
+					float tall = s * (0.8f + 0.45f * hf(hk2, 1));
 					int o = grass.size();
 					grass.resize(o + 12);
-					lay_instance(grass.ptrw() + o, hk, at, Vector3(0.85f, tall, 0.85f), true, hf(hk, 3) * 6.2831853f);
+					lay_instance(grass.ptrw() + o, hk, at, Vector3(s, tall, s), true, hf(hk, 3) * 6.2831853f);
 				}
 			} else if (c & LOOSE) {
 				// clods: how deep the loose dirt lies here decides how big a lump it holds

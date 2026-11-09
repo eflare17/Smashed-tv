@@ -10,7 +10,7 @@ extends Node3D
 ## Near a machine's blade or bucket (each machine's keepout_boxes()) a lump's kept smaller than its distance from the
 ## steel, so none pokes through. Only patches with loose dirt on top are drawn; fewer far off. Owned by the voxel session.
 
-const CLODS_PER_M2 := 28.0
+const CLODS_PER_M2 := 40.0      # (the digger game's 28: a PC has room for more)
 const KEEP_MOST := 8            # blade and bucket boxes the shader keeps lumps out of
 
 var site: Node3D

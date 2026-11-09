@@ -372,6 +372,20 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     frame. Before all this: body hops to 6 cm, camera jolts to 9 cm, the ground in whole blocks every second or third
     frame. Costs a frame: the layer 0.34 ms (95%: 0.58), its drawing brought up to date and uploaded 0.85 ms (95%:
     1.15, software renderer; less on a real GPU).
+- **9 Nov, the capped look pass ("I want this to be better than the web version"):** the web game is the same
+  engine, so its pieces were copied, not invented:
+  - Exhaust: the bulldozer's came out 2 m behind its stack (the excavator's didn't slew with its house), and the
+    puffs were drawn before the grass, which is in the see-through pass too, so the grass painted over every puff with
+    nothing but grass behind it: smoke and dust only ever showed against the sky. Puffs now draw after the grass and
+    lumps (render priority 2), come out of the stack's top (`exhaust_at()`), bigger and slower than the digger game's.
+  - Work dust (`DsMachine.work_fx`, the digger game's clods and dust): flying lumps and dust at a working blade or
+    bucket; on the bulldozer, lumps tumbling down the heap's face too, more the more it carries (`_tumble`).
+  - Track marks: tracks and tyres wear the grass bare where they go (`DsTerrain.wear_tracks`, the digger game's
+    `_wear_tracks`), a byte a column uploaded as a texture 10 times a second; the ground shows packed topsoil there
+    and the grass shrinks away. Each game wears its own from the machines' poses (nothing to send).
+  - Grass: the digger game's blade sizes (0.72 to 1.3 wide, up to 0.4 m tall: ours were about half) at its "High"
+    density, 64 a square metre.
+  - PC extras: 40 lumps a square metre (28), a light distance haze; ambient occlusion was already on.
 
 ## Open questions
 

@@ -23,6 +23,7 @@ uniform sampler2D show_off_tex : filter_linear, repeat_disable;   // R: cells th
 uniform sampler2D topo_tex : filter_nearest, repeat_disable;      // R: meshed top cell, G: loose depth (1/8 cells), B: material (/255)
 uniform sampler2D topo_lin : filter_linear, repeat_disable;       // (the same, blended: the loose depth)
 uniform vec3 soil_cols[16];
+uniform sampler2D wear_tex : filter_linear, repeat_disable;       // R: worn bare by tracks (the digger game's track marks)
 uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
 
@@ -62,6 +63,10 @@ void vertex() {
 	v_info.b *= 1.0 - lay;
 	v_info.a *= 1.0 - lay;
 	v_col = mix(v_col, soil_cols[clamp(m, 0, 15)], lay * step(0.5, float(m)));
+	// tracks have worn the grass bare here: packed topsoil, a shade darker (only where it was grass)
+	float worn = textureLod(wear_tex, uv, 0.0).r * near_top * CUSTOM0.b;
+	v_info.b *= 1.0 - worn;
+	v_col = mix(v_col, soil_cols[1] * 0.92, worn);
 }
 
 void fragment() {

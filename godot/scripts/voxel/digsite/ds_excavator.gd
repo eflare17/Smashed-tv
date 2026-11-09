@@ -328,6 +328,21 @@ func _follow(dt: float) -> void:
 	super(dt)
 	_tracks.update(speed, speed, dt)
 
+## Its stack's top, on the house (DsProps.excavator_house's), slewing with it
+func exhaust_at() -> Vector3:
+	return _look.global_transform * (Basis(Vector3.UP, swing) * Vector3(-1.75, 3.1, 0.8))
+
+var _dug_was := 0
+
+# (the digger game's _update_dig_fx) dirt flying and dust where its teeth are cutting, at the ground
+func _dust_fx() -> void:
+	super()
+	var cutting: bool = dug != _dug_was or (not runs() and _v_curl > 0.1 and curl > CURL_EMPTY + 0.4 and edge().y < site.terrain.surface_at(edge().x, edge().z))
+	_dug_was = dug
+	var at := edge()
+	at.y = maxf(at.y, ground_y(at.x, at.z) + 0.05)
+	work_fx(at, BUCKET_HALF * 0.8, cutting)
+
 func _most() -> int:
 	var best := DsMats.DIRT
 	var bn := -1
