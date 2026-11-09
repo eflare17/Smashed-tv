@@ -137,12 +137,12 @@ func setup(s: Node3D) -> void:
 	env.ssao_power = 1.3
 	env.ssao_light_affect = 0.15
 	env.glow_enabled = false
-	# a light haze with distance (the trees and the far fence go a little blue): what a browser doesn't get
-	env.fog_enabled = true
-	env.fog_light_color = Color("#c4d3e8")
-	env.fog_density = 0.0035
-	env.fog_aerial_perspective = 0.35
-	env.fog_sky_affect = 0.0
+	# (no haze: the owner, 9 Nov, liked the digger game's clear, vibrant cartoon look better, "the other one's got like
+	# kind of a fog". A touch more colour instead: the same colours come out a shade duller here than in its browser
+	# renderer)
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.18
+	env.adjustment_contrast = 1.04
 	# the ink: a quad over the whole view, drawn last, that paints only the lines
 	var om := ShaderMaterial.new()
 	om.shader = load("res://scripts/voxel/digsite/shaders/ds_outline.gdshader")

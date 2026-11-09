@@ -6,9 +6,9 @@ render_mode cull_disabled, depth_draw_always;
 #include "ds_toon.gdshaderinc"
 
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
-uniform vec3 root_a : source_color = vec3(0.22, 0.42, 0.15);
-uniform vec3 tip_a : source_color = vec3(0.38, 0.61, 0.22);
-uniform vec3 tip_b : source_color = vec3(0.45, 0.66, 0.24);
+uniform vec3 root_a : source_color = vec3(0.24, 0.45, 0.16);     // (the digger game's own greens)
+uniform vec3 tip_a : source_color = vec3(0.42, 0.66, 0.24);
+uniform vec3 tip_b : source_color = vec3(0.50, 0.72, 0.26);
 // (loose dirt lying over a blade's root buries it: DsTerrain's ground textures, G the loose depth in eighths of a cell)
 uniform sampler2D topo_lin : filter_linear, repeat_disable;
 uniform vec2 grid_size = vec2(512.0, 512.0);

@@ -8,8 +8,8 @@ shader_type spatial;
 // read from the world position (top and side projections), so a pit wall doesn't stretch. Toon lit, soft on heaps.
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform sampler2D clods_tex : filter_linear_mipmap, repeat_enable;
-uniform vec3 grass_a : source_color = vec3(0.29, 0.50, 0.18);
-uniform vec3 grass_b : source_color = vec3(0.34, 0.56, 0.20);
+uniform vec3 grass_a : source_color = vec3(0.33, 0.56, 0.20);   // (the digger game's own greens)
+uniform vec3 grass_b : source_color = vec3(0.39, 0.62, 0.22);
 uniform vec3 under_a : source_color = vec3(0.29, 0.15, 0.10);
 uniform vec3 rock_a : source_color = vec3(0.56, 0.56, 0.55);
 uniform vec3 rock_b : source_color = vec3(0.50, 0.50, 0.50);

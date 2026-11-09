@@ -385,7 +385,11 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     and the grass shrinks away. Each game wears its own from the machines' poses (nothing to send).
   - Grass: the digger game's blade sizes (0.72 to 1.3 wide, up to 0.4 m tall: ours were about half) at its "High"
     density, 64 a square metre.
-  - PC extras: 40 lumps a square metre (28), a light distance haze; ambient occlusion was already on.
+  - PC extras: 40 lumps a square metre (28); ambient occlusion was already on. (A light distance haze came out again
+    at once: the owner, "the web one's got this cartoonish charm ... nice vibrant green. The other one's got like
+    kind of a fog". The ground's and grass's greens are the digger game's own now (ours were about 10% darker), with
+    the colour turned up a touch (saturation 1.18, contrast 1.04): the same colours come out a shade duller in the
+    PC renderer than in its browser one. Sun, sky and ambient light were already its.)
 
 ## Open questions
 
