@@ -54,6 +54,7 @@ const MINE_DOZER_AT := Vector2(-34.0, -22.0)
 const MINE_DIGGER_AT := Vector2(22.0, 4.0)
 const MINE_TRUCK_AT := Vector2(10.0, 6.0)
 const MINE_UTE_AT := Vector2(-28.5, -25.0)
+const BIKE_BESIDE_UTE := -2.6        # m out from the ute's middle, on its left, that the dirt bike's parked
 const MINE_HUTS := [Vector2(-35.0, -38.3), Vector2(-21.5, -38.3)]
 const MINE_LIGHTS := [Vector3(-21.5, 0.0, -19.5), Vector3(38.5, 0.0, 8.0), Vector3(8.0, 0.0, 33.5), Vector3(-16.0, 0.0, 30.0)]
 const MOST_PEGS := 12
@@ -73,6 +74,7 @@ var bobcat: Loader
 var dingo: Loader
 var barrow: Barrow
 var ute: Ute
+var bike: Bike
 var peg_spots := PackedVector2Array()   # the ute's pegs going in, before they're closed up into a pad
 var peg_version := 0                    # goes up each time the pegs change, so a friend's game hears of it
 var ute_pad: Pad                        # the pad the ute pegged out, in free play
@@ -780,17 +782,25 @@ func _build_props() -> void:
 	var ute_at: Vector2 = MINE_UTE_AT if mine else (mission.get("ute", BIG_UTE_AT) if big_site else GroundData.ute_spot())
 	var ute_dir: Vector2 = Vector2(0.0, 1.0) if mine else (mission.get("ute_dir", Vector2(1.0, 0.25).normalized()) if big_site else Vector2(1.0, 0.0))
 	ute.setup(sim, view_data, prop_mat, ute_at, ute_dir)
-	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute]
+	# The dirt bike, parked beside the ute.
+	bike = Bike.new()
+	add_child(bike)
+	bike.setup(sim, view_data, prop_mat, ute_at + Vector2(sin(ute.angle), cos(ute.angle)) * BIKE_BESIDE_UTE, ute_dir)
+	bike.crashed.connect(_on_bike_crashed)
+	bike.landed.connect(_on_bike_landed)
+	machines = [dozer, digger, truck, bobcat, dingo, barrow, ute, bike]
 	active = dozer
 	for m: Machine in machines:
 		if m.machine_name == start_machine:
 			active = m
 	var hand := Mission.kind(mission) == "hand"
 	if big_site:
-		# The big machines only. The rest are kept out of sight, as for a job.
+		# The big machines only. The rest are kept out of sight, as for a job. The bike's there in free play.
 		var on_site: Array[Machine] = [dozer, digger, ute]
 		if mine:
 			on_site.insert(2, truck)
+		if mission.is_empty():
+			on_site.append(bike)
 		for m: Machine in machines:
 			m.visible = on_site.has(m)
 			if not on_site.has(m):
@@ -900,7 +910,7 @@ func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 			continue
 		if p.distance_to(GroundData.PILE) < GroundData.PILE_R + 1.5:
 			continue
-		if p.distance_to(FREE_DUST) < 5.0 or p.distance_to(GroundData.barrow_spot()) < 3.5 or p.distance_to(GroundData.ute_spot()) < 6.0:
+		if p.distance_to(FREE_DUST) < 5.0 or p.distance_to(GroundData.barrow_spot()) < 3.5 or p.distance_to(GroundData.ute_spot()) < 6.0 or p.distance_to(bike.spot) < 5.0:
 			continue
 		if p.distance_to(GroundData.digger_spot()) < 5.0 or p.distance_to(GroundData.truck_spot()) < 6.0 or p.distance_to(GroundData.bobcat_spot()) < 4.0:
 			continue
@@ -1774,6 +1784,27 @@ func _on_tree_landed(at: Vector3) -> void:
 	sfx.tree_landed()
 	Input.vibrate_handheld(160)
 
+## The rider's come off the bike: felt and heard, and said, as it's put back in a moment.
+func _on_bike_crashed() -> void:
+	slam.position = bike.position + Vector3(0.0, 0.3, 0.0)
+	slam.restart()
+	if bike != active:
+		return
+	shake = maxf(shake, 0.9)
+	sfx.tree_landed()
+	sfx.clunked(1.0)
+	Input.vibrate_handheld(200)
+	_say("Came off: %s. Back before the jump in a moment" % bike.crash_why, 2.5)
+
+## Back on the ground off a jump: the harder it came down, the more it's felt.
+func _on_bike_landed(_length: float, hit: float) -> void:
+	if bike != active or hit < 2.0:
+		return
+	var k := clampf((hit - 2.0) / 7.0, 0.0, 1.0)
+	shake = maxf(shake, 0.2 + 0.6 * k)
+	sfx.clunked(0.3 + 0.7 * k)
+	Input.vibrate_handheld(int(30.0 + 120.0 * k))
+
 ## Each tick: dirt flies while the blade's moving soil, the tracks raise dust, the stack smokes, and the work is felt.
 func _update_fx(dt: float) -> void:
 	sfx.update(dt, active)
@@ -1789,6 +1820,12 @@ func _update_fx(dt: float) -> void:
 	track_dust.position = active.to_global(Vector3(-2.2, 0.15, 0.0))
 	track_dust.rotation = turn.get_euler()
 	track_dust.emitting = absf(active.speed) > 0.8 or active.slipping
+	if active is Bike:
+		# Thrown up off the back tyre, while it's on the ground.
+		var bk := active as Bike
+		track_dust.position = Vector3(bk.spot.x, 0.0, bk.spot.y) + Vector3(bk.forward().x, 0.0, bk.forward().y) * Bike.REAR_X * 1.2
+		track_dust.position.y = sim.height_at(Vector2(track_dust.position.x, track_dust.position.z)) + 0.15
+		track_dust.emitting = bk.touching[0] and absf(bk.speed) > 2.0 and bk.crash_t < 0.0
 	exhaust.position = active.exhaust_point()
 	exhaust.emitting = active.effort() > 0.1
 	if active == dozer:
@@ -1974,7 +2011,7 @@ func _show_buttons() -> void:
 	if alert:
 		alert.size.x = maxf(clear_to - alert.position.x * 2.0, screen_w * 0.4)
 	gauge.visible = mode == "Drive" and menu == null and not active is Worker
-	bucket_view.visible = gauge.visible and side_shown and not active is Barrow and not active is Ute
+	bucket_view.visible = gauge.visible and side_shown and not active is Barrow and not active is Ute and not active is Bike
 	# Pegging out is for free play: on a job the ute just gets about.
 	if peg_button and not mission.is_empty():
 		peg_button.visible = false
@@ -2874,6 +2911,11 @@ func _physics_process(dt: float) -> void:
 				var small := active as Loader
 				small.lift_cmd = Input.get_axis("blade_down", "blade_up")
 				small.curl_cmd = Input.get_axis("dig_dump", "dig_curl")
+			elif active is Bike:
+				# In the air the bike leans with the thumb slid on from where it was: so it's told where the thumb is, past the ring too.
+				var bk := active as Bike
+				bk.thumb_y = (stick_at - stick_from).y / reach if stick_finger >= 0 and not _dig_looking() else NAN
+				bk.key_y = Input.get_axis("dz_forward", "dz_back")
 	else:
 		for m: Machine in machines:
 			if m != online.guest_machine():
@@ -2988,6 +3030,9 @@ func _bump_machines(was_spot: Vector2, was_angle: float, who: Machine = null) ->
 		shake = maxf(shake, 0.5)
 		sfx.clunked(1.0)
 		Input.vibrate_handheld(90)
+	# Riding into one at any lick, he comes off.
+	if who is Bike:
+		(who as Bike).jolt()
 	who.speed = 0.0
 	who.drive = 0.0
 
@@ -4919,6 +4964,54 @@ func _run_touch_demo() -> void:
 				_touch(0, thumb, false)
 				print("HAND raked %d mm, patch now %d%% level, banner: %s, he's at %s (patch %s)" % [w.raked, int(job_pad.score(sim) * 100.0), banner.text, w.spot, mission["patch"]])
 			elif _touch_tick == 1460:
+				get_tree().quit()
+		"touchbike":
+			# The dirt bike: where it's parked, ridden flat out on the stick at the dirt pile, let go, then off it and back on.
+			var thumb := s * Vector2(0.3, 0.7)
+			var reach := s.y * 0.14
+			# With --shot, a picture of it from behind in the air.
+			if _touch_tick > 7 and bike.air_t > 0.45 and not has_meta("bike_shot"):
+				set_meta("bike_shot", true)
+				_demo_shot("air")
+			if _touch_tick == 5:
+				print("BIKE start: in the %s, on site %s, %.1f m clear of the nearest machine, ground under it tips %.0f deg, rider shown %s" % [active.machine_name, machines.has(bike), _machine_gap(bike), rad_to_deg(bike._ground_angle()), bike._rider.visible])
+				var from := GroundData.PILE + Vector2(-1.5, 23.0)
+				_place_machine(bike, from, Vector2(0.0, -1.0))
+				set_meta("bike_air", 0.0)
+				set_meta("bike_fast", 0.0)
+				set_meta("bike_off", false)
+				_touch(0, thumb, true)
+			elif _touch_tick == 7:
+				_drag(0, thumb + Vector2(0.0, -reach))
+			elif _touch_tick > 7 and _touch_tick < 300:
+				set_meta("bike_air", maxf(get_meta("bike_air"), bike.air_t))
+				set_meta("bike_fast", maxf(get_meta("bike_fast"), bike.speed))
+				if bike.crash_t >= 0.0:
+					if not get_meta("bike_off"):
+						var near_tree := 99.0
+						for t: Trees.Pine in trees.list:
+							near_tree = minf(near_tree, t.base.distance_to(bike.spot))
+						print("BIKE came off at %s: %s, nearest tree %.1f m, nearest machine %.1f m" % [bike.spot, bike.crash_why, near_tree, _machine_gap(bike)])
+					set_meta("bike_off", true)
+			elif _touch_tick == 300:
+				print("BIKE rode at the pile: throttle %.2f, up to %.0f km/h, %.2f s in the air at most, came off %s (%s), readout says %s, now %.1f m past the pile" % [bike.throttle, float(get_meta("bike_fast")) * 3.6, get_meta("bike_air"), get_meta("bike_off"), bike.crash_why, bike.gauge_word()[0], GroundData.PILE.y - bike.spot.y])
+				_touch(0, thumb, false)
+			elif _touch_tick == 520:
+				print("BIKE let go: %.1f km/h, throttle %.2f, on its wheels %s" % [absf(bike.speed) * 3.6, bike.throttle, bike.crash_t < 0.0])
+				_place_machine(bike, Vector2(-10.0, 12.0), Vector2(1.0, 0.0))
+				_get_out()
+				workers[0].step_off(bike.spot + Vector2(sin(bike.angle), cos(bike.angle)) * 0.9, bike.angle)
+			elif _touch_tick == 530:
+				print("BIKE got off: now %s, rider on the bike shown %s, GET IN shown %s saying %s" % [active.machine_name, bike._rider.visible, get_in_button.visible, get_in_word.text.replace("\n", " ")])
+				_get_in()
+			elif _touch_tick == 540:
+				print("BIKE back on: now %s, rider shown %s" % [active.machine_name, bike._rider.visible])
+				# With --shot, a picture of it from the side, stood with him on it.
+				_set_view("Dozer")
+				dist = 4.0
+				target = bike.position + Vector3(0.0, 0.8, 0.0)
+			elif _touch_tick == 560:
+				_demo_shot("side")
 				get_tree().quit()
 		"touchute":
 			# The scout ute: driven on the stick, four pegs in with PEG, CLOSE IT UP, the ground made level as the machines would,

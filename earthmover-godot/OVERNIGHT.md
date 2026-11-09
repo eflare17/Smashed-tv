@@ -552,3 +552,28 @@ line dropped a wheel in (up to 45 degrees of lean, nearly stopped). The owner sa
 - The big trencher crawls twice as fast (`BIG_CHAIN_SPEED` 1.5 m/s, was 0.75): the 40 m dig takes 39 s, was 77. The Dingo's the same.
 - On a job, GRADE comes on with the trencher. RAISE takes over as before; LOWER does nothing while GRADE's on (as before: GRADE's
   already as deep as the job wants). Tap GRADE to turn it off for digging by hand. Free play is unchanged. Pipe job hints say so.
+
+## 9 Nov, night: the dirt bike (first step of the jump level)
+
+The owner asked for a level where you build motorbike jumps, and a bike to jump them, "with the physics right". They took my
+picks: the job on the farm paddock with the normal dozer and excavator, pegged jumps scored like the other jobs, lean the bike
+in the air or come off, and the bike in free play on every map. The job's layout (how many jumps, how big) is still to agree, so
+only the bike's built so far, in free play.
+- `scripts/bike.gd` (`Bike`, "Dirt bike"): worked out side-on along its heading. Two wheels on springs (30 cm travel, firmer the
+  further in, slow to come back so a big landing doesn't bounce it back up). Each tyre is a circle resting on the ground under it
+  (11 points along it, narrowed between), pushing along the ground's own slope, so a lip throws it and a landing's slope catches
+  it; off a sharp edge it rolls over the edge. The back tyre drives, both brake, each as hard as its weight on the dirt lets it.
+  60 km/h top, 90% of that in 3.3 s on the flat. Turns road-style, gentler the faster, leaning into it.
+- In the air it keeps turning end over end the way the lip left it, and the rider eases it to follow its flight (`FOLLOW`). Slide
+  the thumb further up from where it was at take-off to lean forward, down to lean back (a whole stick's reach is full lean; keys:
+  W or S once let go and pressed again). Lands within 55 degrees of the ground's slope and it rides away; past that, or 13 m/s
+  straight into the ground, or into a tree or machine at any lick, the rider comes off: the bike goes over and slides, he tumbles,
+  "Came off: landed nose first" (or what it was), and 2.2 s later it's put back where it was about 2 s before that jump, stopped.
+- Readout: km/h, "JUMP 10.8 m" for 3 s after a jump, "OFF!" when he's come off. Landings shake and buzz the phone by how hard.
+  Its own engine sound (a single cylinder, made in code), screaming off the ground. Dust off the back tyre. 1 cm ruts, one line.
+- Parked by the ute (house site and mine), leaning on its stand; GET IN / Get out and the machine swap as any machine. Not on jobs.
+- Look (my pick): site-yellow plastics, black frame, white plates, the hi-vis worker on it in a white helmet.
+- Checks: `test/bike_test.gd` (speed, stop, turn and lean, holds on a slope, jumps of 10.6/14.7/17.7 m hands off at 10/12/14 m/s
+  off a 1.5 m lip, comes off leaned right back or forward, takes a 2.5 m drop, no dirt lost); `--demo=touchbike --machine="Dirt
+  bike"` rides it in the real game at the dirt pile (40 km/h, 1.3 s in the air, JUMP 10.8 m), then off and back on.
+- Online: its pose, springs, rider and crash go to the guest; the guest's thumb goes to the host for the lean.

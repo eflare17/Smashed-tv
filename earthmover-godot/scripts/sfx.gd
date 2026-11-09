@@ -16,6 +16,7 @@ var whine: AudioStreamPlayer
 var pour: AudioStreamPlayer
 var clunk: AudioStreamPlayer
 var beep: AudioStreamPlayer
+var bike_motor: AudioStreamPlayer
 var _scrape_level := 0.0
 var _roll_level := 0.0
 var _clank_level := 0.0
@@ -35,6 +36,7 @@ func _ready() -> void:
 	pour = _player(_wav(lumps(0.3, 500)), -60.0)
 	clunk = _player(_wav(clunk_sound()), -4.0)
 	beep = _player(_wav(beep_sound()), -10.0)
+	bike_motor = _player(_wav(two_stroke(), true), -80.0)
 	for looped: AudioStreamPlayer in [roll, pour]:
 		var w: AudioStreamWAV = looped.stream
 		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -45,6 +47,7 @@ func _ready() -> void:
 	clank.play()
 	whine.play()
 	pour.play()
+	bike_motor.play()
 
 func _player(stream: AudioStreamWAV, db: float) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
@@ -82,6 +85,26 @@ func diesel() -> PackedFloat32Array:
 		# The chug of the cylinders.
 		v *= 0.65 + 0.35 * sin(TAU * 8.0 * t)
 		out[i] = v * 0.36
+	return out
+
+## The dirt bike's single cylinder: one second that loops cleanly, 30 sharp firings in it, each a short buzzing crack, rough
+## from one to the next as a real one is. Played faster as it revs.
+func two_stroke() -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(RATE)
+	var firings := 30
+	var each := RATE / firings
+	var rough: Array[float] = []
+	for k in firings:
+		rough.append(_rng.randf_range(0.75, 1.0))
+	var low := 0.0
+	for i in RATE:
+		var k := i / each
+		var t := float(i - k * each) / RATE
+		low = lerpf(low, _rng.randf_range(-1.0, 1.0), 0.35)
+		var crack := exp(-t * 90.0) * (sin(TAU * 150.0 * t) + 0.6 * sin(TAU * 310.0 * t) + 0.5 * low)
+		var hum := 0.25 * sin(TAU * float(firings) * float(i) / RATE)
+		out[i] = (crack * rough[k % firings] + hum) * 0.5
 	return out
 
 ## Rough low noise, with its ends blended so the loop doesn't click.
@@ -158,8 +181,15 @@ func update(dt: float, d: Machine) -> void:
 	var labour := clampf(d.load_t / 18.0, 0.0, 1.0) * push
 	engine.pitch_scale = lerpf(engine.pitch_scale, rev - labour * 0.14, minf(dt * 5.0, 1.0))
 	# On foot or pushing a barrow there's no motor: it fades out, and starts up again in the next machine.
-	var motor := not (d is Worker or d is Barrow)
+	var motor := not (d is Worker or d is Barrow or d is Bike)
 	engine.volume_db = lerpf(engine.volume_db, (-17.0 + 6.0 * push + 3.0 * labour) if motor else -80.0, minf(dt * 5.0, 1.0))
+	# The bike's own engine instead of the diesel: it revs with the throttle and the speed, and screams off the ground.
+	var on_bike := d is Bike and (d as Bike).crash_t < 0.0
+	if on_bike:
+		var b := d as Bike
+		var revs := 0.75 + 1.1 * clampf(absf(b.speed) / Bike.TOP, 0.0, 1.0) + 0.55 * absf(b.throttle) + (0.5 * absf(b.throttle) if b.airborne else 0.0)
+		bike_motor.pitch_scale = lerpf(bike_motor.pitch_scale, revs, minf(dt * (9.0 if b.airborne else 5.0), 1.0))
+	bike_motor.volume_db = lerpf(bike_motor.volume_db, (-19.0 + 8.0 * push) if on_bike else -80.0, minf(dt * 6.0, 1.0))
 	var want := 0.0
 	if d.moved_tick > 0 and (absf(d.speed) > 0.1 or d.hyd > 0.05):
 		want = clampf(0.25 + d.load_t / 14.0, 0.0, 1.0)

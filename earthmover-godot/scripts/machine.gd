@@ -50,6 +50,7 @@ var track_rear := 1.7
 ## half the width of the track or tyre, so how wide the print is.
 var rut_mm := 50
 var rut_half := 0.31
+var rut_lines := 2              # tracks or tyres side by side that print: a bike makes one line
 
 # For the readout, the sound and the tests.
 var load_t := 0.0
@@ -376,7 +377,7 @@ func _print_ruts() -> void:
 	# is no taller than a narrow one's.
 	var spread := 2 * ceili(across / 2.0)
 	var edge := rut_half + DirtSim.CELL_M * 0.75
-	for k in 2:
+	for k in rut_lines:
 		var out := side * (-1.0 if k == 0 else 1.0)
 		var mid := spot - f * track_rear + out * track_z
 		# Each time the back of the track rolls onto another cell, so every cell it goes over gets pressed once, none skipped.

@@ -496,6 +496,84 @@ static func survey_peg(kit: MeshKit, at: Vector3) -> void:
 
 ## The scout ute, without its wheels: a white single cab with a steel tray, a bull bar, a hi-vis stripe and a bundle of pegs in the
 ## back. Forward is +x, ground at y = 0, about 5 m long.
+## The dirt bike without its wheels, swingarm or fork legs: forward is +x, ground at y = 0 sitting on its springs, the axles at
+## x -0.74 and 0.71. Site yellow plastics on a black frame.
+static func bike_body(kit: MeshKit) -> void:
+	# Engine and frame.
+	kit.box(Vector3(0.02, 0.47, 0), Vector3(0.42, 0.32, 0.24), CHARCOAL)
+	kit.box(Vector3(0.12, 0.68, 0), Vector3(0.2, 0.2, 0.2), STEEL, Basis(Vector3.BACK, deg_to_rad(-15.0)))
+	kit.box(Vector3(-0.02, 0.3, 0), Vector3(0.3, 0.06, 0.16), BLACK)
+	for z: float in [-0.08, 0.08]:
+		kit.cone(Vector3(0.48, 1.03, z), Vector3(0.2, 0.42, z), 0.025, 0.025, 4, BLACK)
+		kit.cone(Vector3(0.46, 1.0, z), Vector3(-0.08, 0.84, z), 0.025, 0.025, 4, BLACK)
+		kit.cone(Vector3(-0.08, 0.84, z), Vector3(-0.05, 0.4, z), 0.025, 0.025, 4, BLACK)
+		kit.cone(Vector3(-0.08, 0.84, z), Vector3(-0.62, 0.92, z), 0.02, 0.02, 4, BLACK)
+	# Tank and radiator shrouds.
+	kit.prism([Vector2(0.48, 1.05), Vector2(0.05, 1.0), Vector2(0.02, 0.86), Vector2(0.3, 0.74), Vector2(0.5, 0.88)], -0.15, 0.15, YELLOW)
+	kit.prism([Vector2(0.44, 1.0), Vector2(0.2, 0.95), Vector2(0.16, 0.7), Vector2(0.36, 0.66), Vector2(0.48, 0.82)], -0.21, 0.21, YELLOW_DARK)
+	kit.box(Vector3(0.3, 0.72, 0), Vector3(0.12, 0.26, 0.36), CHARCOAL)
+	# Seat, side panels and the back mudguard sweeping up.
+	kit.box(Vector3(-0.2, 0.99, 0), Vector3(0.74, 0.08, 0.24), BLACK, Basis(Vector3.BACK, deg_to_rad(-3.0)))
+	kit.prism([Vector2(-0.05, 0.94), Vector2(-0.55, 0.96), Vector2(-0.5, 0.78), Vector2(-0.1, 0.74)], -0.15, 0.15, YELLOW)
+	kit.prism([Vector2(-0.45, 0.97), Vector2(-1.02, 1.07), Vector2(-1.02, 1.03), Vector2(-0.45, 0.9)], -0.11, 0.11, YELLOW)
+	# The front mudguard, high up clear of the wheel, the plate on the front and its lamp.
+	kit.prism([Vector2(0.4, 0.98), Vector2(0.98, 0.93), Vector2(1.02, 0.89), Vector2(0.42, 0.93)], -0.08, 0.08, YELLOW)
+	kit.box(Vector3(0.6, 1.08, 0), Vector3(0.04, 0.26, 0.3), WHITE_PAINT, Basis(Vector3.BACK, deg_to_rad(18.0)))
+	kit.box(Vector3(0.62, 1.04, 0), Vector3(0.04, 0.06, 0.1), LAMP, Basis(Vector3.BACK, deg_to_rad(18.0)))
+	# The top of the forks, the clamps and the bars.
+	for z: float in [-0.09, 0.09]:
+		kit.cone(Vector3(0.48, 1.1, z), Vector3(0.62, 0.66, z), 0.035, 0.035, 6, STEEL)
+	kit.box(Vector3(0.48, 1.1, 0), Vector3(0.1, 0.05, 0.28), CHARCOAL)
+	kit.cone(Vector3(0.44, 1.18, -0.38), Vector3(0.44, 1.18, 0.38), 0.016, 0.016, 5, BLACK)
+	kit.cone(Vector3(0.47, 1.12, 0), Vector3(0.44, 1.18, 0), 0.02, 0.02, 4, BLACK)
+	for z: float in [-0.33, 0.33]:
+		kit.cone(Vector3(0.44, 1.18, z * 0.85), Vector3(0.44, 1.18, z * 1.15), 0.024, 0.024, 6, CHARCOAL)
+	# Foot pegs and the pipe out to the right, back to the silencer under the mudguard.
+	for z: float in [-0.21, 0.21]:
+		kit.box(Vector3(0.02, 0.44, z), Vector3(0.08, 0.03, 0.1), STEEL)
+	kit.cone(Vector3(0.22, 0.62, 0.12), Vector3(0.05, 0.5, 0.17), 0.03, 0.03, 5, STEEL)
+	kit.cone(Vector3(0.05, 0.5, 0.17), Vector3(-0.35, 0.82, 0.17), 0.03, 0.03, 5, STEEL)
+	kit.cone(Vector3(-0.3, 0.84, 0.17), Vector3(-0.78, 0.94, 0.17), 0.055, 0.045, 7, STEEL)
+	# Number boards on the side panels.
+	for z: float in [-0.155, 0.155]:
+		kit.box(Vector3(-0.32, 0.86, z), Vector3(0.3, 0.13, 0.01), WHITE_PAINT)
+
+## The swingarm from its pivot back along -x, 1 m long: stretched to reach the back axle as the spring moves.
+static func bike_swingarm(kit: MeshKit) -> void:
+	for z: float in [-0.08, 0.08]:
+		kit.box(Vector3(-0.5, 0.0, z), Vector3(1.0, 0.07, 0.035), CHARCOAL)
+	kit.box(Vector3(-0.15, 0.0, 0), Vector3(0.06, 0.06, 0.16), CHARCOAL)
+
+## The bottoms of the forks, from the front axle at 0 up along the forks' rake.
+static func bike_fork_legs(kit: MeshKit) -> void:
+	for z: float in [-0.09, 0.09]:
+		kit.cone(Vector3(0.0, 0.0, z), Vector3(-0.13, 0.38, z), 0.045, 0.045, 6, CHARCOAL)
+
+## The rider, up on the pegs ready for the bumps: boots on the pegs, hands on the bars, in the site's hi-vis and a white helmet.
+## Apart from the bike, so he can come off it.
+static func bike_rider(kit: MeshKit) -> void:
+	for z: float in [-1.0, 1.0]:
+		var boot := Vector3(0.04, 0.48, 0.21 * z)
+		var knee := Vector3(0.22, 0.84, 0.19 * z)
+		var hip := Vector3(-0.12, 1.06, 0.11 * z)
+		kit.box(boot, Vector3(0.28, 0.1, 0.12), BLACK)
+		kit.cone(boot + Vector3(0.0, 0.04, 0.0), knee, 0.07, 0.065, 5, DENIM)
+		kit.cone(knee, hip, 0.075, 0.08, 5, DENIM)
+		var shoulder := Vector3(0.12, 1.47, 0.19 * z)
+		var elbow := Vector3(0.24, 1.3, 0.33 * z)
+		var hand := Vector3(0.44, 1.2, 0.34 * z)
+		kit.cone(shoulder, elbow, 0.055, 0.05, 5, HI_VIS)
+		kit.cone(elbow, hand, 0.05, 0.045, 5, HI_VIS)
+		kit.box(hand, Vector3(0.08, 0.08, 0.08), BLACK)
+	# Body leaning forward over the tank.
+	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.24, 0.5, 0.38), HI_VIS, Basis(Vector3.BACK, deg_to_rad(-28.0)))
+	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.25, 0.04, 0.39), LAMP, Basis(Vector3.BACK, deg_to_rad(-28.0)))
+	# Helmet with its peak and goggles.
+	kit.box(Vector3(0.18, 1.67, 0), Vector3(0.3, 0.28, 0.27), WHITE_PAINT)
+	kit.box(Vector3(0.3, 1.78, 0), Vector3(0.16, 0.03, 0.25), YELLOW, Basis(Vector3.BACK, deg_to_rad(-12.0)))
+	kit.box(Vector3(0.33, 1.68, 0), Vector3(0.03, 0.09, 0.22), GLASS)
+	kit.box(Vector3(0.34, 1.57, 0), Vector3(0.1, 0.1, 0.14), CHARCOAL)
+
 static func ute_body(kit: MeshKit) -> void:
 	var white := c("#f2f0ea")
 	kit.box(Vector3(0.0, 0.58, 0), Vector3(4.9, 0.24, 1.4), CHARCOAL)
