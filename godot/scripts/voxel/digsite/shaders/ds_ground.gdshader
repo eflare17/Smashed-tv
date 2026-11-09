@@ -14,6 +14,12 @@ uniform vec3 under_a : source_color = vec3(0.29, 0.15, 0.10);
 uniform vec3 rock_a : source_color = vec3(0.56, 0.56, 0.55);
 uniform vec3 rock_b : source_color = vec3(0.50, 0.50, 0.50);
 const float CLOD_M = 3.6;       // metres one copy of the lumps' picture covers
+// the ground gliding (DsTerrain._glide): each column's surface drawn off its block top by an amount that eases away,
+// so dirt arriving or going shows as a smooth rise or fall, not a block's jump. Only vertices at a column's top move.
+uniform sampler2D show_off_tex : filter_linear, repeat_disable;   // R: cells the surface is still drawn off its top
+uniform sampler2D topo_tex : filter_nearest, repeat_disable;      // R: the column's top cell /255
+uniform vec2 grid_size = vec2(512.0, 512.0);
+uniform float cell = 0.125;
 
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -22,6 +28,12 @@ varying vec3 v_col;
 varying float v_soft;
 
 void vertex() {
+	// (VERTEX: metres from the grid's corner; a column's middle at (i + 0.5) cells)
+	vec2 uv = VERTEX.xz / cell / grid_size;
+	float off = textureLod(show_off_tex, uv, 0.0).r;
+	float top = textureLod(topo_tex, uv, 0.0).r * 255.0 + 1.0;
+	float near_top = 1.0 - smoothstep(1.2, 2.6, abs(VERTEX.y / cell - top));
+	VERTEX.y += off * cell * near_top;
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_normal = normalize(mat3(MODEL_MATRIX) * NORMAL);
 	v_info = CUSTOM0;

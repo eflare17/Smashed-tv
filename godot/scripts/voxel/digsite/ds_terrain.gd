@@ -14,7 +14,7 @@ const D := 512
 const SURFACE := 160            # the ground's base level (cell y): 20 m of ground under it, 4 m of air over
 const BUDGET_MS := 4.0          # building sections a frame, at most this long (more waits for the next frame)
 const R_NOW := 20.0             # m (to a section's nearest side): changed sections this near a player are redrawn all together ...
-const NOW_HZ := 15.0            # ... this often (a heap crossing from one section into the next shows in both at once:
+const NOW_HZ := 30.0            # ... this often (a heap crossing from one section into the next shows in both at once:
                                 # redrawn one at a time, nearest first, it vanished from one before it showed in the other)
 const NOW_MS := 8.0
 const NOW_MOST := 6             # sections in a batch at most (a heap spans a few; a blast's many go in several batches)            # ... but for no longer than this a frame: a huge change (a blast) carries on next frame
@@ -28,6 +28,19 @@ const SH := 64
 
 var grid: DigSiteGrid
 var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
+# the ground as drawn, gliding (the owner, 9 Nov: "really jumpy"): what the grid's cells did snaps a block at a time;
+# the shaders draw each column's surface off its block top by an amount that eases away (DigSiteGrid.ease_tops), so a
+# heap grows and slumps smoothly. Two textures: how far it's off (cells, float), and each column's top, loose depth
+# and material (RGBA8). Uploaded at most GLIDE_HZ.
+const GLIDE_UP := 9.0           # per second: dirt arrived, the surface rises to it ...
+const GLIDE_DOWN := 24.0        # ... dirt gone, it drops to it (quickly: it mustn't hang up into a blade or a bucket)
+const GLIDE_HZ := 30.0
+var show_off_tex: ImageTexture
+var topo_tex: ImageTexture
+var _glide_at := 0.0
+var _glide_due := false
+var _topo_due := false
+signal loose_changed(per_section_column: PackedInt32Array)   # (DsClods: which section columns have loose dirt on top)
 var site: Node3D                # DigSite
 var _mat: Material
 var _sec := {}                  # section index -> {mi: MeshInstance3D or null, body: StaticBody3D or null, faces: PackedVector3Array}
@@ -54,6 +67,14 @@ func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	var dv := grid.section_dims()
 	_dims = Vector3i(int(dv.x), int(dv.y), int(dv.z))
 	_mat = DsLook.ground_mat()
+	show_off_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RF, grid.show_offsets()))
+	topo_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
+	for m: ShaderMaterial in [_mat, DsLook.clod_mat()]:
+		m.set_shader_parameter("show_off_tex", show_off_tex)
+		m.set_shader_parameter("topo_tex", topo_tex)
+		m.set_shader_parameter("grid_size", Vector2(W, D))
+		m.set_shader_parameter("cell", CELL)
+		m.set_shader_parameter("grid_origin", origin)
 	for i in grid.take_dirty_sections(100000):
 		_dirty[i] = true
 
@@ -142,6 +163,24 @@ func _process(dt: float) -> void:
 		if site.get("caves") != null:
 			site.caves.poll()
 	step(BUDGET_MS)
+	_glide(dt)
+
+## The surface easing to the blocks' tops, and the shaders' textures brought up to date (at most GLIDE_HZ)
+func _glide(dt: float) -> void:
+	if grid.ease_tops(dt, GLIDE_UP, GLIDE_DOWN):
+		_glide_due = true
+	if grid.take_topo_dirty():
+		_topo_due = true
+	_glide_at += dt
+	if (_glide_due or _topo_due) and _glide_at >= 1.0 / GLIDE_HZ:
+		_glide_at = 0.0
+		if _glide_due:
+			show_off_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RF, grid.show_offsets()))
+			_glide_due = false
+		if _topo_due:
+			topo_tex.update(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
+			_topo_due = false
+			loose_changed.emit(grid.loose_columns())
 
 ## A machine's cutting edge from a to b (world) going fwd: what stands above it (to mouth m over it) cut, firm ground at
 ## most firm_most a column, up to take_most into its bucket (the counts), the rest banked ahead up to heap m over the
@@ -287,6 +326,7 @@ func _prep(i: int, want_col: bool, rebuild: bool) -> Dictionary:
 		var sz := (i / _dims.x) % _dims.z
 		var sy := i / (_dims.x * _dims.z)
 		var arr: Array = grid.mesh_section(sx, sy, sz)
+		p["tops"] = grid.section_tops(sx, sz)
 		faces = arr[0]
 		if not faces.is_empty():
 			var a := []
@@ -301,7 +341,7 @@ func _prep(i: int, want_col: bool, rebuild: bool) -> Dictionary:
 			# what stands on it: grass where it's untouched, lumps on the loose dirt
 			var dec: Array = grid.decor_section(sx, sy, sz, DsLook.BLADES_PER_M2)
 			p["grass"] = _multimesh(dec[0], 12, DsLook.blade_mesh(), false)
-			p["clods"] = _multimesh(dec[1], 16, DsLook.clod_mesh(sx + sz * 3), true)
+			# (the lumps on loose dirt aren't made here now: DsClods, fixed in place, rides the gliding surface)
 	p["faces"] = faces
 	# collision: near a player, from the same faces
 	var body: StaticBody3D = s.get("body")
@@ -317,6 +357,8 @@ func _apply(i: int, p: Dictionary) -> void:
 	var s: Dictionary = _sec.get(i, {})
 	var faces: PackedVector3Array = p.faces
 	if p.rebuild:
+		if p.has("tops"):
+			grid.commit_tops(i % _dims.x, i / (_dims.x * _dims.z), (i / _dims.x) % _dims.z, p.tops)
 		var mi: MeshInstance3D = s.get("mi")
 		if faces.is_empty():
 			if mi:

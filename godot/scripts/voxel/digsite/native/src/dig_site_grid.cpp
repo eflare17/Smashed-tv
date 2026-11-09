@@ -140,6 +140,7 @@ void DigSiteGrid::generate(int seed) {
 		rng = 1;
 	std::fill(cells.begin(), cells.end(), 0);
 	col_top.assign((size_t)w * d, -1);
+	show_reset();
 	col_dirty.assign((size_t)w * d, 1);
 	std::fill(chunk_mod.begin(), chunk_mod.end(), 0);
 	std::fill(chunk_touched.begin(), chunk_touched.end(), 0);
@@ -472,6 +473,13 @@ void DigSiteGrid::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("mark_all_dirty"), &DigSiteGrid::mark_all_dirty);
 	ClassDB::bind_method(D_METHOD("mesh_section", "sx", "sy", "sz"), &DigSiteGrid::mesh_section);
 	ClassDB::bind_method(D_METHOD("decor_section", "sx", "sy", "sz", "blades_per_m2"), &DigSiteGrid::decor_section);
+	ClassDB::bind_method(D_METHOD("section_tops", "sx", "sz"), &DigSiteGrid::section_tops);
+	ClassDB::bind_method(D_METHOD("commit_tops", "sx", "sy", "sz", "snap"), &DigSiteGrid::commit_tops);
+	ClassDB::bind_method(D_METHOD("ease_tops", "dt", "up_rate", "down_rate"), &DigSiteGrid::ease_tops);
+	ClassDB::bind_method(D_METHOD("show_offsets"), &DigSiteGrid::show_offsets);
+	ClassDB::bind_method(D_METHOD("show_topo_bytes"), &DigSiteGrid::show_topo_bytes);
+	ClassDB::bind_method(D_METHOD("loose_columns"), &DigSiteGrid::loose_columns);
+	ClassDB::bind_method(D_METHOD("take_topo_dirty"), &DigSiteGrid::take_topo_dirty);
 	ClassDB::bind_method(D_METHOD("section_count"), &DigSiteGrid::section_count);
 	ClassDB::bind_method(D_METHOD("section_dims"), &DigSiteGrid::section_dims);
 }

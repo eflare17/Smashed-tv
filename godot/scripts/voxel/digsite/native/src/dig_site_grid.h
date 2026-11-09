@@ -89,6 +89,17 @@ private:
 	mutable std::vector<int16_t> col_top;
 	mutable std::vector<uint8_t> col_dirty;
 	int top_cached(int x, int z) const;   // (each column's top cell as made: a dozer's CUT holds its depth under it)
+	// the ground as drawn, gliding (dig_site_show.cpp): each column's top as its shown mesh has it, and how far the
+	// surface there is still drawn off that (cells), easing to nothing; RGBA8 per column for the shaders (top cell,
+	// loose depth, top material); loose columns per section column
+	std::vector<int16_t> meshed_top;
+	std::vector<float> show_off;
+	std::vector<uint8_t> show_topo;
+	std::vector<int> easing;
+	std::vector<uint8_t> easing_on;
+	std::vector<uint16_t> loose_cols;
+	bool topo_dirty = false;
+	void show_reset();
 	uint32_t blade_rng = 12345u;
 	int dither(float v);
 	bool lay_on(int x, int z, uint8_t v, int top_y);
@@ -131,6 +142,15 @@ public:
 	int column_top(int x, int z) const;
 	int count_mat(int m) const;
 	int count_box(int x0, int y0, int z0, int x1, int y1, int z1, int what) const;
+
+	// the ground as drawn, gliding (dig_site_show.cpp)
+	PackedInt32Array section_tops(int sx, int sz) const;
+	void commit_tops(int sx, int sy, int sz, const PackedInt32Array &snap);
+	bool ease_tops(float dt, float up_rate, float down_rate);
+	PackedByteArray show_offsets() const;
+	PackedByteArray show_topo_bytes() const;
+	PackedInt32Array loose_columns() const;
+	bool take_topo_dirty();
 
 	Dictionary dig_sphere(const Vector3 &c, float r, int hardest);
 	int fill_sphere(const Vector3 &c, float r, int m, int most, bool loose);

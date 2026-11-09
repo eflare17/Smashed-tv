@@ -34,6 +34,10 @@ const CURL_EMPTY := 0.95        # ... opened this far, nothing
 const STAB_MOST := 0.8          # m its teeth push into the ground before it has to drag
 # (the Dig Site's)
 const CAPACITY := 620           # blocks (1.2 m3)
+const HEAPED := 0.78            # of CAPACITY: past this it's heaped up out of the bucket's open side (the digger game's 27000/34560)
+const LOAD_LEVELS := 12         # the soil in the bucket drawn at so many levels filling its hollow ...
+const HEAP_LEVELS := 6          # ... and so many heaped
+const HEAP_TALL := 0.3          # m the heap stands at its fullest, in the middle
 const HARDEST := 3              # soil, clay, stone
 const FIRM_RATE := 9.0          # firm blocks a second its teeth cut off a column (loose ones: all at once)
 const POUR_RATE := 520.0
@@ -64,6 +68,7 @@ var _boom: MeshInstance3D
 var _stick: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
+var _loads: Array[ArrayMesh] = []
 var _rams: Array[MeshInstance3D] = []
 var _tracks: DsTrackRig
 static var prop_mat: Material
@@ -116,9 +121,10 @@ func _build() -> void:
 	kit = DsKit.new()
 	DsProps.excavator_bucket(kit, BUCKET, BUCKET_HALF, false)
 	_bucket = _add(_house, kit)
-	kit = DsKit.new()
-	kit.box(Vector3.ZERO, Vector3.ONE, DsProps.DIRT, Basis(Vector3.RIGHT, 0.05))
-	_lump = _add(_bucket, kit)
+	_build_loads()
+	_lump = MeshInstance3D.new()
+	_lump.material_override = mat()
+	_bucket.add_child(_lump)
 	_lump.visible = false
 	for k in 3:
 		kit = DsKit.new()
@@ -201,9 +207,20 @@ func _pose_tool() -> void:
 	var f := float(load_n) / CAPACITY
 	_lump.visible = f > 0.02
 	if _lump.visible:
-		var deep := 0.3 + 0.62 * minf(f * 1.3, 1.0)
-		var long := 0.5 + 0.55 * minf(f * 1.5, 1.0)
-		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(long, deep, BUCKET_HALF * 1.86)), Vector3(0.58, 0.46 - deep * 0.5, 0.0))
+		# the soil in the bucket: fills its hollow from the back, then heaps up out of the open side
+		var k := 0
+		if f <= HEAPED:
+			k = clampi(int(ceil(f / HEAPED * LOAD_LEVELS)) - 1, 0, LOAD_LEVELS - 1)
+		else:
+			k = LOAD_LEVELS - 1 + clampi(int(ceil((f - HEAPED) / (1.0 - HEAPED) * HEAP_LEVELS)), 0, HEAP_LEVELS)
+		_lump.mesh = _loads[k]
+
+## The bucket as a box (world, half sizes), for DsClods to keep lumps out of (its hollow: -0.08 to 1.35 along, -0.28 to
+## 0.52 up, in its own frame)
+func keepout_boxes() -> Array:
+	if _bucket == null:
+		return []
+	return [[_bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(0.64, 0.12, 0.0)), Vector3(0.76, 0.44, BUCKET_HALF + 0.04)]]
 
 func _ram(k: int, a: Vector3, b: Vector3) -> void:
 	var along := b - a
@@ -332,3 +349,115 @@ func _take_cmds_more(f: PackedFloat32Array) -> void:
 		reach_cmd = clampf(f[1], -1.0, 1.0)
 		raise_cmd = clampf(f[2], -1.0, 1.0)
 		curl_cmd = clampf(f[3], -1.0, 1.0)
+
+## The soil in the bucket at each level, built once (the digger game's, owner 9 Nov: "the dirt clips through the bucket": the
+## old block poked out through it). It fills the bucket's own hollow, in from its shell and side plates, from the back
+## towards the open side, its top lumpy; past HEAPED a rounded heap of lumps stands out of the open side, inside the plates.
+func _build_loads() -> void:
+	var length := BUCKET
+	# the hollow, as DsProps.excavator_bucket shapes it: the shell round the back, the open side from the teeth to the heel
+	var hollow := PackedVector2Array([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length - 0.12, 0.14), Vector2(length, -0.02), Vector2(0.15, -0.28)])
+	_loads = load_meshes(hollow, 4, 5, BUCKET_HALF - 0.06, 1.0)
+
+## A bucket's load at each of LOAD_LEVELS + HEAP_LEVELS levels: `hollow` its inside (in its own x-y plane, shrunk a
+## little here), the open side from hollow[lip_i] to hollow[heel_i], `half` its inside half width, `scale` the lumps'
+## size against the excavator's (the loaders' buckets are smaller). Shared with DsDingo.
+static func load_meshes(hollow_in: PackedVector2Array, lip_i: int, heel_i: int, half: float, scale: float) -> Array[ArrayMesh]:
+	var hollow := hollow_in.duplicate()
+	var mid := Vector2.ZERO
+	for p in hollow:
+		mid += p / hollow.size()
+	for i in hollow.size():
+		hollow[i] = mid + (hollow[i] - mid) * 0.9
+	var lip := hollow[lip_i]
+	var heel := hollow[heel_i]
+	var along := (heel - lip).normalized()
+	var into := Vector2(-along.y, along.x)
+	if into.dot(mid - lip) < 0.0:
+		into = -into
+	var deepest := 0.0
+	for p in hollow:
+		deepest = maxf(deepest, (p - lip).dot(into))
+	var whole := _area(hollow)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 19
+	var dark := DsProps.DIRT.darkened(0.15)
+	var loads: Array[ArrayMesh] = []
+	for k in LOAD_LEVELS + HEAP_LEVELS:
+		var kit := DsKit.new()
+		var share := minf(float(k + 1) / LOAD_LEVELS, 1.0)
+		var heap := maxf(float(k + 1 - LOAD_LEVELS) / HEAP_LEVELS, 0.0)
+		# where its top is, measured in from the open side, found so it holds the right share of the hollow
+		var lo := 0.0
+		var hi := deepest
+		for i in 18:
+			var try_at := (lo + hi) * 0.5
+			if _area(_clip(hollow, lip, into, try_at)) > share * whole:
+				lo = try_at
+			else:
+				hi = try_at
+		var cut := (lo + hi) * 0.5
+		var body := _clip(hollow, lip, into, cut)
+		if body.size() >= 3:
+			kit.prism(Array(body), -half, half, DsProps.DIRT)
+		var top_a := lip + into * cut
+		var top_b := heel + into * cut
+		if heap <= 0.0:
+			# where the top meets the shell at each end, kept a little in so no lump pokes through it
+			var ends := _top_ends(body, lip, into, cut)
+			top_a = ends[0]
+			top_b = ends[1]
+		var out := Vector3(-into.x, -into.y, 0.0)
+		# low, rounded and close together, so they read as one heap of clods, not a row of rocks
+		var rows := 6 if heap > 0.0 else 4
+		var cols := 5 if heap > 0.0 else 3
+		for i in rows:
+			for j in cols:
+				var t := lerpf(0.16, 0.84, (i + rng.randf_range(-0.3, 0.3)) / (rows - 1))
+				var r := (0.13 if heap > 0.0 else 0.09) * scale * rng.randf_range(0.8, 1.2)
+				# kept clear of the side plates, rough edges and all
+				var z := clampf(lerpf(-half + r * 1.5, half - r * 1.5, (j + rng.randf_range(-0.25, 0.25)) / (cols - 1)), -half + r * 1.5, half - r * 1.5)
+				var base2 := top_a.lerp(top_b, t)
+				var dome := (1.0 - pow(2.0 * t - 1.0, 2.0)) * (1.0 - pow(z / half, 2.0))
+				var tall := heap * HEAP_TALL * scale * dome + r * rng.randf_range(0.25, 0.5)
+				var base := Vector3(base2.x, base2.y, z) - out * r * 0.5
+				var waist := base + out * (tall * 0.6 + r * 0.25)
+				var col := DsProps.DIRT if rng.randf() < 0.6 else dark
+				kit.cone(base, waist, r, r * 1.1, 7, col, 0.2, rng)
+				kit.cone(waist, base + out * (tall + r * 0.5), r * 1.1, r * 0.5, 7, col, 0.2, rng)
+		loads.append(kit.mesh())
+	return loads
+
+## The part of a convex shape at least `cut` in from the line through `at` (measured along `into`)
+static func _clip(shape: PackedVector2Array, at: Vector2, into: Vector2, cut: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	for i in shape.size():
+		var a := shape[i]
+		var b := shape[(i + 1) % shape.size()]
+		var da := (a - at).dot(into) - cut
+		var db := (b - at).dot(into) - cut
+		if da >= 0.0:
+			out.append(a)
+		if (da >= 0.0) != (db >= 0.0):
+			out.append(a.lerp(b, da / (da - db)))
+	return out
+
+## The two ends of a clipped shape's cut edge, each pulled in a little
+static func _top_ends(shape: PackedVector2Array, at: Vector2, into: Vector2, cut: float) -> Array:
+	var on: Array[Vector2] = []
+	for p in shape:
+		if absf((p - at).dot(into) - cut) < 0.0005:
+			on.append(p)
+	if on.size() < 2:
+		return [at + into * cut, at + into * cut]
+	var a: Vector2 = on[0]
+	var b: Vector2 = on[on.size() - 1]
+	return [a.lerp(b, 0.08), b.lerp(a, 0.08)]
+
+static func _area(shape: PackedVector2Array) -> float:
+	var sum := 0.0
+	for i in shape.size():
+		var a := shape[i]
+		var b := shape[(i + 1) % shape.size()]
+		sum += a.x * b.y - b.x * a.y
+	return absf(sum) * 0.5

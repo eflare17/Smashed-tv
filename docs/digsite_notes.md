@@ -274,6 +274,29 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
     bucket at a slant, the last strip of the upper one loses two layers, which leaves the scraped floor flush.
   The guest is sent the arms and bucket as held. The fleet test checks the lip never goes deeper than that
   (`digsite_fleet_test.gd`).
+- **Dirt through the blade and bucket, and jumpy heaps (the owner, 9 Nov: "The dirt clips through the bucket and the
+  blade. Also it's really jumpy. Have a look at the web one").** Recorded the digger game's own push and excavate
+  demos (Dozer Drive, the earthmover branch) and went frame by frame against ours:
+  - Bucket loads: the excavator's was a box that poked out through the bucket. Ported the digger game's newest load
+    (fc0f290): built from the bucket's own hollow, inside the shell and side plates, lumpy on top, heaped out of the
+    open side past 78%, at 18 levels (`DsExcavator.load_meshes`). The Dingo and Bobcat use the same builder on their
+    buckets' triangle (floor, back, side plates' slope), lumps scaled to the bucket; the digger game's loaders still
+    have the box.
+  - Lumps: they were laid again from scratch every time a section was redrawn, so they shuffled about every heap 15
+    times a second, and big ones beside a blade poked through it. Now `DsClods` lays them once at fixed spots (28 a
+    m2, a 4 m patch per section column) and `ds_clod.gdshader` (the digger game's clod.gdshader on our grid) finds
+    each one's height, size and soil from the ground's textures: dirt arriving brings lumps up, scraping takes them
+    away, moving ground turns them over. Near a blade or bucket (`keepout_boxes()` on the bulldozer, loaders and
+    excavator) a lump's kept smaller than its distance from the steel.
+  - Gliding ground: each column's top as its shown mesh has it, and how far the surface is still drawn off it, easing
+    to nothing (`dig_site_show.cpp`: snapshot when a section's mesh is made, committed when it's shown, so it always
+    matches the mesh on screen). Down at 24/s (dirt gone: the surface mustn't hang up into a blade), up at 9/s. The
+    ground shader lifts or drops a column's top vertices by it; two textures (offsets RF, tops/loose depth/material
+    RGBA8) uploaded at most 30 times a second. The near redraw went from 15 to 30 a second (the mesher's faster now).
+  - The bulldozer: with the heap full it reported "jammed" but crept on, so firm ground stood up through the blade.
+    Now it stops dead when what's between the blade and the tracks can't be cleared. The blocked cells start 0.2 m
+    ahead of the edge (the blade's top curls out that far) and go up to the sky (dirt that spilled over used to rest
+    on top of them, floating over the blade); its heap's 1.25 m over the edge (was 1.6, level with the blade's top).
 
 ## Open questions
 

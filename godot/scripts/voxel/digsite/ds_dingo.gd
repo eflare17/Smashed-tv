@@ -51,6 +51,7 @@ var _look: Node3D               # the model, turned to face -z (the digger game'
 var _arms: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
+var _loads: Array[ArrayMesh] = []
 var _tracks: DsTrackRig
 var _wheels := []               # (the Bobcat's) [node, radius]
 var _roll := 0.0
@@ -121,10 +122,21 @@ func _build_arms() -> void:
 	kit = DsKit.new()
 	DsProps.loader_bucket(kit, bucket_len, bucket_half, bucket_high)
 	_bucket = _add(_look, kit)
-	kit = DsKit.new()
-	kit.prism([Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.28, 0.72), Vector2(-0.4, 1.0)], -0.5, 0.5, DsProps.DIRT)
-	_lump = _add(_bucket, kit)
+	# the soil in it (owner, 9 Nov: "the dirt clips through the bucket"): built to its hollow, the triangle between its
+	# floor, its back and its side plates' slope, from the back out to the open side, lumps on top, then heaped
+	var hb := bucket_high
+	var hollow := PackedVector2Array([Vector2(hb * 0.1 + 0.01, hb * 0.05), Vector2(bucket_len - 0.02, hb * 0.05), Vector2(hb * 0.1 + 0.01, hb - 0.02)])
+	_loads = DsExcavator.load_meshes(hollow, 1, 2, bucket_half - 0.05, bucket_len / DsExcavator.BUCKET * 1.3)
+	_lump = MeshInstance3D.new()
+	_lump.material_override = DsExcavator.mat()
+	_bucket.add_child(_lump)
 	_lump.visible = false
+
+## The bucket as a box (world, half sizes), for DsClods to keep lumps out of
+func keepout_boxes() -> Array:
+	if _bucket == null:
+		return []
+	return [[_bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(bucket_len * 0.5, bucket_high * 0.5, 0.0)), Vector3(bucket_len * 0.5 + 0.04, bucket_high * 0.5 + 0.04, bucket_half + 0.04)]]
 
 func fx_load() -> int:
 	return load_n
@@ -205,9 +217,10 @@ func _pose_tool() -> void:
 	var f := float(load_n) / capacity
 	_lump.visible = f > 0.03
 	if _lump.visible:
-		var up := bucket_high * (0.35 + 0.95 * f)
-		var along := bucket_len * (0.5 + 0.45 * minf(f * 1.4, 1.0))
-		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(along, up, bucket_half * 1.9)), Vector3(along * 0.5 + 0.04, 0.02, 0.0))
+		var hp := DsExcavator.HEAPED
+		var k := clampi(int(ceil(f / hp * DsExcavator.LOAD_LEVELS)) - 1, 0, DsExcavator.LOAD_LEVELS - 1) if f <= hp else \
+				DsExcavator.LOAD_LEVELS - 1 + clampi(int(ceil((f - hp) / (1.0 - hp) * DsExcavator.HEAP_LEVELS)), 0, DsExcavator.HEAP_LEVELS)
+		_lump.mesh = _loads[k]
 
 ## Tracks and wheels turning with how it goes
 func _spin(dt: float) -> void:

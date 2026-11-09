@@ -31,7 +31,8 @@ var caves: DsCaves                        # cave-ins shown and heard (stage 7)
 var supports: DsSupports                  # props and concrete supports, and the weight on them (stage 8)
 var blasts: DsBlasts                      # dynamite (stage 9)
 var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
-var look: DsLook                          # the site's sky, sun, toon shading and ink
+var look: DsLook                            # the site's sky, sun, toon shading and ink
+var clods: DsClods                          # the lumps on the loose dirt, fixed in place, riding the gliding surface
 var near_office := false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -86,6 +87,9 @@ func _build() -> void:
 	terrain = DsTerrain.new()
 	add_child(terrain)
 	terrain.setup(self, AT, SEED)
+	clods = DsClods.new()
+	add_child(clods)
+	clods.setup(self)
 	terrain.hook(net)
 	tools.hook(net)
 	machines = DsMachines.new()

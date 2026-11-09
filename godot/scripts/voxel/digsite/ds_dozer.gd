@@ -19,7 +19,9 @@ const LIFT_MIN := -0.3          # the edge this far under the tracks' bottoms (m
 const LIFT_MAX := 1.15          # ... up to this
 const LIFT_SPEED := 0.55
 const START_LIFT := 0.35
-const HEAP := 1.6               # m over the edge it banks soil up against the blade
+const HEAP := 1.25              # m over the edge it banks soil up against the blade (1.6 stood level with the blade's top,
+                                # so the heap showed over and through its curled top edge: the owner, 9 Nov)
+const LIP := 0.2                # m the blade's top curls out ahead of its edge: the soil's kept off that too
 const MOUTH := 1.7              # m over the edge the blade reaches
 const FIRM := 3                 # firm blocks it cuts off a column at full sweep
 const HARDEST := 2              # soil and clay: stone stops it
@@ -115,6 +117,13 @@ func edge() -> Vector3:
 	var e: Array = edge_ends()
 	return ((e[0] as Vector3) + (e[1] as Vector3)) * 0.5
 
+## The blade's steel as a box (world, half sizes), for DsClods to keep lumps out of (the blade's profile: x 2.68 to 3.08
+## forward, up to 1.75, 2.15 each side, in its pivot's frame)
+func keepout_boxes() -> Array:
+	if _pivot == null:
+		return []
+	return [[_pivot.global_transform * Transform3D(Basis.IDENTITY, Vector3(2.88, 0.86, 0.0)), Vector3(0.26, 0.92, 2.2)]]
+
 func read_input() -> void:
 	super()
 	lift_cmd = float(Input.is_physical_key_pressed(KEY_R)) - float(Input.is_physical_key_pressed(KEY_F))
@@ -190,7 +199,11 @@ func _tool(dt: float) -> void:
 		var r2: Dictionary = tr.blade(Vector3(a.x, maxf(a.y, base), a.z), Vector3(b.x, maxf(b.y, base), b.z), f, rows, MOUTH, 999, HARDEST, 0, HEAP, 1.0)
 		moved += int(r2.moved)
 		if int(r2.jammed) > 0:
+			# (what's between the blade and the tracks couldn't be cleared: the heap in front has no more room. It
+			# stops dead rather than creeping on with the ground standing up through the blade: the owner, 9 Nov)
 			_jam_t = 1.0
+			speed = minf(speed, 0.0)
+			blocked = "The blade's full: back up, or raise it"
 		cut_rate = lerpf(cut_rate, float(r.cut) / maxf(dt, 0.001), minf(1.0, dt * 4.0))
 		if bool(r.rock) and int(r.moved) == 0 and throttle > 0.05:
 			speed = minf(speed, 0.0)
@@ -199,7 +212,9 @@ func _tool(dt: float) -> void:
 		cut_rate = lerpf(cut_rate, 0.0, minf(1.0, dt * 4.0))
 	push_load = tr.load_ahead(a, b, f, HEAP + 0.3)
 	# (the blade's a wall, and its push arms and the gap back to the tracks closed: the heap can't slump back through)
-	tr.block(id, a, b, f, EDGE_X - length * 0.5 + 0.15, MOUTH + 0.3)
+	# (and up to the sky: a heap grown over the blade's top used to come to rest on top of the blocked cells, a shelf
+	# floating over the blade and the bonnet; now what spills over slides off ahead or to the sides)
+	tr.block(id, a + f * LIP, b + f * LIP, f, EDGE_X - length * 0.5 + 0.15 + LIP, MOUTH + 6.0)
 
 ## What it couldn't move (no room left in front: the heap's as high as it'll go) holds it back, so the blade doesn't
 ## pass through what it can't shift: it stalls against a full blade
