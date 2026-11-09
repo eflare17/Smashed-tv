@@ -13,6 +13,7 @@ static var YELLOW_DARK := c("#d18f06")
 static var CHARCOAL := c("#34363a")
 static var BLACK := c("#1c1d20")
 static var STEEL := c("#7d8287")
+static var CHROME := c("#d6dade")
 static var SEAT := c("#4a3226")
 static var LAMP := c("#fff3b8")
 static var TRUNK := c("#6e4a2d")
@@ -273,6 +274,11 @@ static func bulldozer(kit: DsKit, mine := false) -> void:
 	kit.cone(Vector3(1.05, 2.65, 0.38), Vector3(1.0, 2.75, 0.38), 0.09, 0.09, 6, BLACK)
 	kit.box(Vector3(-1.95, 1.45, 0), Vector3(0.5, 0.75, 1.85), body)
 	kit.box(Vector3(-2.22, 1.45, 0), Vector3(0.05, 0.42, 1.0), BLACK)
+	# The lift cylinders' brackets on the hood's sides, their pins (the cylinders: DsDozer, they move with the blade)
+	for side: float in [-1.0, 1.0]:
+		kit.box(Vector3(1.2, 1.74, side * 0.68), Vector3(0.26, 0.3, 0.14), dark)
+		kit.cone(Vector3(1.2, 1.78, side * 0.6), Vector3(1.2, 1.78, side * 0.9), 0.035, 0.035, 6, STEEL)
+		kit.cone(Vector3(1.05, 1.62, side * 0.63), Vector3(1.05, 1.3, side * 0.63), 0.025, 0.025, 5, BLACK)
 
 	# A floor, seat and levers: under an open canopy on the small one, shut in a cab on the mine's.
 	kit.box(Vector3(-0.8, 1.27, 0), Vector3(1.55, 0.08, 1.6), CHARCOAL)
@@ -296,14 +302,18 @@ static func bulldozer(kit: DsKit, mine := false) -> void:
 			kit.prism([Vector2(-2.7, 1.0), Vector2(-2.5, 1.0), Vector2(-2.58, 0.05), Vector2(-2.72, 0.05)], z - 0.06, z + 0.06, CHARCOAL)
 		return
 
-## The blade, its push arms and lift rams: separate from the body because it lifts. Same coordinates as the body. The mine's has
+## The blade, its push arms and the lift rods' brackets: separate from the body because it lifts. Same coordinates as the body. The mine's has
 ## wings on its ends, the way a big U-blade does.
 static func dozer_blade(kit: DsKit, mine := false) -> void:
 	var body := MINE_WHITE if mine else YELLOW
 	var dark := MINE_GREY if mine else YELLOW_DARK
 	for side: float in [-1.0, 1.0]:
 		kit.box(Vector3(1.85, 0.72, side * 1.58), Vector3(2.0, 0.18, 0.16), dark, Basis(Vector3.BACK, deg_to_rad(-6.0)))
-		kit.cone(Vector3(0.9, 1.65, side * 0.72), Vector3(2.5, 1.0, side * 1.05), 0.075, 0.075, 6, STEEL)
+		# the lift cylinders' rods' brackets on its back, and their pins (DsDozer.LIFT_AT)
+		for dz: float in [-0.085, 0.085]:
+			kit.box(Vector3(2.33, 1.15, side * 0.84 + dz), Vector3(0.22, 0.26, 0.04), dark)
+		kit.cone(Vector3(2.36, 1.15, side * 0.72), Vector3(2.36, 1.15, side * 0.96), 0.035, 0.035, 6, STEEL)
+		kit.box(Vector3(2.36, 1.15, side * 0.84), Vector3(0.12, 0.12, 0.11), STEEL)
 
 	# Curved, in straight facets, with a dark steel cutting edge and end plates.
 	var w := 2.15

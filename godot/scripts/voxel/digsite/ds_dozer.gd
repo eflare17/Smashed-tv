@@ -37,6 +37,16 @@ const CUT_MOST := 50
 const CUT_TOP := 2.0            # m/s with CUT on: taking a layer off is a steady job
 const HOLD_LIFT_MIN := -0.9     # CUT may reach further down (the machine riding on a heap)
 const HOLD_LIFT_SPEED := 1.1
+# The lift cylinders (the owner, 9 Nov: "so you can actually see the hydraulics"): each a barrel pinned to the hood's
+# side and a chrome rod pinned to the blade's back, the rod sliding in and out of it as the blade goes up and down
+const BODY_PIN := Vector3(1.2, 1.78, 0.76)    # (each side: z flipped; DsProps.bulldozer's brackets)
+const BLADE_PIN := Vector3(2.36, 1.15, 0.84)  # (in the blade's frame: DsProps.dozer_blade's brackets)
+const BARREL_LEN := 0.62
+# Its engine shaking it a little (the web game's _shake_body, about a third as much): the body and blade only, not the
+# tracks
+const SHAKE_IDLE := 0.0022      # m up and down, ticking over
+const SHAKE_WORK := 0.0055      # more at full speed
+const SHAKE_PITCH := 0.0008     # rad
 
 var lift := START_LIFT
 var lift_cmd := 0.0
@@ -54,6 +64,10 @@ var _look: Node3D
 var _pivot: MeshInstance3D
 var _tracks: DsTrackRig
 var _was := Vector3.INF
+var _shake: Node3D
+var _barrels: Array[MeshInstance3D] = []
+var _rods: Array[MeshInstance3D] = []
+var _clock := 0.0
 
 func _init() -> void:
 	kind = "bulldozer"
@@ -77,12 +91,19 @@ func _build() -> void:
 	var frame := DsKit.new()
 	DsProps.track_frames(frame, 1.15, 0.3, 1.8, 2.3, 1.95, false)
 	_mesh(_look, frame)
+	_shake = Node3D.new()
+	_look.add_child(_shake)
 	var body := DsKit.new()
 	DsProps.bulldozer(body, false)
-	_mesh(_look, body)
+	_mesh(_shake, body)
 	var bk := DsKit.new()
 	DsProps.dozer_blade(bk, false)
-	_pivot = _mesh(_look, bk)
+	_pivot = _mesh(_shake, bk)
+	for side: float in [-1.0, 1.0]:
+		_barrels.append(_mesh(_shake, _barrel_kit(side)))
+		var rod := DsKit.new()
+		rod.cone(Vector3.ZERO, Vector3(1.0, 0.0, 0.0), 0.048, 0.048, 8, DsProps.CHROME)
+		_rods.append(_mesh(_shake, rod))
 	_tracks = DsTrackRig.new()
 	_look.add_child(_tracks)
 	_tracks.setup(DsExcavator.mat(), DsProps.track_path(1.8, 2.33, 1.97), 1.15, 0.62, 1.47, DsProps.dozer_wheels())
@@ -94,10 +115,40 @@ func _mesh(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 	parent.add_child(m)
 	return m
 
+# a lift cylinder's barrel, along +x from its pin: the clevis, the tube, the gland the rod comes out of, its hoses
+func _barrel_kit(side: float) -> DsKit:
+	var k := DsKit.new()
+	var dark := DsProps.YELLOW_DARK
+	k.box(Vector3(0.0, 0.0, 0.0), Vector3(0.16, 0.13, 0.11), DsProps.CHARCOAL)
+	k.cone(Vector3(0.05, 0.0, 0.0), Vector3(BARREL_LEN - 0.06, 0.0, 0.0), 0.1, 0.1, 10, DsProps.YELLOW)
+	k.cone(Vector3(BARREL_LEN - 0.07, 0.0, 0.0), Vector3(BARREL_LEN, 0.0, 0.0), 0.112, 0.085, 10, dark)
+	k.cone(Vector3(0.05, 0.0, 0.0), Vector3(0.11, 0.0, 0.0), 0.112, 0.112, 10, dark)
+	# a hose along its top to the gland end, one into its foot from the hood
+	var z := -side * 0.06
+	k.cone(Vector3(0.14, 0.1, z), Vector3(BARREL_LEN - 0.1, 0.1, z), 0.022, 0.022, 5, DsProps.BLACK)
+	k.cone(Vector3(BARREL_LEN - 0.1, 0.1, z), Vector3(BARREL_LEN - 0.1, 0.06, z), 0.03, 0.03, 6, DsProps.STEEL)
+	k.cone(Vector3(0.14, 0.1, z), Vector3(0.14, 0.06, z), 0.03, 0.03, 6, DsProps.STEEL)
+	k.cone(Vector3(0.08, 0.08, -side * 0.08), Vector3(-0.1, 0.2, -side * 0.12), 0.022, 0.022, 5, DsProps.BLACK)
+	return k
+
 func _pose_tool() -> void:
 	if _pivot == null:
 		return
-	_pivot.transform = _blade_pose(lift + _steady)
+	var bp := _blade_pose(lift + _steady)
+	_pivot.transform = bp
+	for i in _barrels.size():
+		var side := -1.0 if i == 0 else 1.0
+		var a := Vector3(BODY_PIN.x, BODY_PIN.y, BODY_PIN.z * side)
+		var b := bp * Vector3(BLADE_PIN.x, BLADE_PIN.y, BLADE_PIN.z * side)
+		var d := a.distance_to(b)
+		var x := (b - a) / maxf(d, 0.001)
+		var z := x.cross(Vector3.UP).normalized()
+		var bas := Basis(x, z.cross(x), z)
+		# (raised right up the rod's nearly all in: the barrel's kept short of the blade's pin)
+		var fit := minf(1.0, (d - 0.12) / BARREL_LEN)
+		_barrels[i].transform = Transform3D(bas * Basis.from_scale(Vector3(fit, 1.0, 1.0)), a)
+		var rod := maxf(0.05, d - BARREL_LEN * fit + 0.12)
+		_rods[i].transform = Transform3D(Basis(-x, z.cross(x), -z) * Basis.from_scale(Vector3(rod, 1.0, 1.0)), b)
 
 func _blade_pose(l: float) -> Transform3D:
 	var swing := asin(clampf(l / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
@@ -265,6 +316,7 @@ var _tumble: CPUParticles3D
 # down the front of the heap, more of them the more it's carrying
 func _dust_fx() -> void:
 	super()
+	_shake_body()
 	var pushing: bool = speed > 0.15 and (moved != _moved_was or (not runs() and push_load > 20.0))
 	_moved_was = moved
 	var e: Array = edge_ends()
@@ -290,6 +342,20 @@ func _dust_fx() -> void:
 	_tumble.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(top.x, ground_y(top.x, top.z) + 0.2, top.z))
 	_tumble.emitting = pushing and tonnes > 0.6
 	_tumble.scale_amount_max = lerpf(0.45, 0.9, clampf(tonnes / 10.0, 0.0, 1.0))
+
+# (the digger game's _shake_body, gentler) its engine running: the body and blade jiggle a few mm, more the harder it
+# works, leaning back a touch with a load on (on both games: speed and driver come over the wire)
+func _shake_body() -> void:
+	if _shake == null:
+		return
+	if driver == 0:
+		_shake.transform = Transform3D.IDENTITY
+		return
+	_clock += get_process_delta_time()
+	var work := clampf(absf(speed) / max_speed, 0.0, 1.0)
+	var load_k := clampf(push_load / BOG, 0.0, 1.0)
+	_shake.position.y = sin(_clock * 58.0) * (SHAKE_IDLE + SHAKE_WORK * work) + sin(_clock * 37.0) * 0.0015 * work
+	_shake.rotation.z = sin(_clock * 23.0) * SHAKE_PITCH * work + load_k * 0.004 * work
 
 func net_more() -> PackedFloat32Array:
 	return PackedFloat32Array([lift, float(push_load), _steady, edge_gap, float(cut_on), float(cut_cm)])

@@ -408,3 +408,15 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
 8. Supports: done (`test/voxel/digsite_support_test.gd`: alone 13 checks; two copies, with and without lag).
 9. Dynamite: done (`test/voxel/digsite_dynamite_test.gd`: alone 12 checks; two copies, with and without lag).
 10. Bobcat, excavator, tip truck: done (`test/voxel/digsite_fleet_test.gd`: alone 15 checks; two copies, with and without lag).
+
+## Dozer hydraulics and engine shake (9 Nov)
+
+- The owner asked to "actually see the hydraulics" and for a small shake like the web game's, but gentler.
+- **Lift cylinders (DsDozer):**
+  - Each side has a yellow barrel (0.62 m) pinned to a bracket on the hood's side, with hoses, and a chrome rod pinned to a bracket on the blade's back.
+  - Every pose re-aims both along the pin-to-pin line. The rod's length is the gap minus the barrel, so it slides out as the blade drops (about 0.2 m showing with the blade raised, 1.2 m at full down).
+  - The old fixed steel rams in DsProps.dozer_blade are gone.
+- **Shake:**
+  - Only the body, blade and cylinders shake (a `_shake` node). The tracks and frames stay on the ground. The blade's cutting edge is still worked out without the shake, so digging isn't affected.
+  - Vertical shake is 2.2 mm idling, rising to 7.7 mm at full speed (the web's is 6 mm rising to 20 mm). Pitch shake is 0.8 mrad, and the dozer leans back slightly when loaded.
+  - It only runs with someone driving. It uses speed and driver, which are already synced, so the guest sees the same shake.
