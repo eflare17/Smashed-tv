@@ -120,6 +120,12 @@ func over_tray(p: Vector3) -> bool:
 	return absf(l.x - t.x) < TRAY.x * 0.5 + 0.1 and absf(l.z - t.z) < TRAY.z * 0.5 + 0.1 and l.y > t.y - 0.2 and l.y < t.y + TRAY.y + 4.5 and tip < 0.2
 
 ## Blocks of m poured in (a bucket over it): -> how many fitted
+var incoming := 0               # blocks falling into its tray from a bucket, not landed yet (DsMachine.let_go)
+
+## Room in its tray, less what's already falling into it
+func room() -> int:
+	return maxi(0, CAPACITY - load_n - incoming)
+
 func take(m: int, n: int) -> int:
 	var k := mini(n, CAPACITY - load_n)
 	if k <= 0:
@@ -195,7 +201,7 @@ func _tool(dt: float) -> void:
 		var at := spout()
 		while n > 0 and load_n > 0:
 			var m := _most()
-			var put: int = site.terrain.pour(at + Vector3(0, 1.2, 0), m, mini(n, int(tray_load[m])))
+			var put: int = let_go(at + Vector3(0, 1.2, 0), m, mini(n, int(tray_load[m])), null)
 			if put <= 0:
 				break
 			tray_load[m] = int(tray_load[m]) - put

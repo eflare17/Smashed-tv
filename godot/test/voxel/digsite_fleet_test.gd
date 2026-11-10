@@ -144,7 +144,7 @@ func _solo() -> bool:
 		7:
 			var x := _m(3) as DsExcavator
 			var tk := _m(4) as DsTruck
-			if x.load_n == 0 or t - mark > 4.0:
+			if (x.load_n == 0 and x.falling_n() == 0) or t - mark > 4.0:      # (and landed: it falls a moment)
 				x.curl_cmd = 0.0
 				check(x.load_n == 0 and tk.load_n == int(v.x_load), "opened, it pours into the truck (%d mm in the tray)" % tk.load_n)
 				_on(tk)
@@ -171,7 +171,7 @@ func _solo() -> bool:
 				_next(10)
 		10:
 			var tk := _m(4) as DsTruck
-			if tk.load_n == 0 or t - mark > 8.0:
+			if (tk.load_n == 0 and tk.falling_n() == 0) or t - mark > 8.0:
 				tk.tip_cmd = -1.0
 				var now := _ground() + (_m(3) as DsExcavator).load_n + (_m(2) as DsBobcat).load_n + tk.load_n
 				check(tk.load_n == 0, "R tips it: the load pours out behind")

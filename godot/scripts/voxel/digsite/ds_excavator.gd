@@ -225,7 +225,7 @@ func _pose_tool() -> void:
 	var ends := _ram_ends()
 	for k in _rams.size():
 		_rams[k].aim(ends[k][0], ends[k][1])
-	var f := float(load_n) / CAPACITY
+	var f := _shown / CAPACITY
 	_lump.visible = f > 0.02
 	if _lump.visible:
 		# the soil in the bucket: fills its hollow from the back, then heaps up out of the open side
@@ -364,7 +364,7 @@ func _tool(dt: float) -> void:
 			while n > 0 and load_n > 0:
 				var m := _most()
 				var take := mini(n, int(bucket[m]))
-				var put: int = truck.take(m, take) if truck else site.terrain.pour(pp, m, take)
+				var put: int = let_go(pp, m, take, truck)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put
@@ -411,15 +411,52 @@ func exhaust_at() -> Vector3:
 	return _look.global_transform * (Basis(Vector3.UP, swing) * Vector3(-1.75, 3.1, 0.8))
 
 var _dug_was := 0
+var _load_was := 0
+var _shown := 0.0               # the load as the bucket draws it: it comes up as the soil tumbles in, not all at once
+var _inflow: CPUParticles3D
+var _inflow_left := 0.0
 
-# (the digger game's _update_dig_fx) dirt flying and dust where its teeth are cutting, at the ground
+# (the digger game's _update_dig_fx) dirt flying and dust where its teeth are cutting, at the ground; and the soil
+# they cut rolling up over them into the bucket (the owner, 10 Nov: "it drags it and then just appears in the
+# bucket"), seen on both games (the guest's sees its load going up)
 func _dust_fx() -> void:
 	super()
-	var cutting: bool = dug != _dug_was or (not runs() and _v_curl > 0.1 and curl > CURL_EMPTY + 0.4 and edge().y < site.terrain.surface_at(edge().x, edge().z))
+	var dt := get_process_delta_time()
+	var filling := load_n > _load_was
+	var cutting: bool = dug != _dug_was or (not runs() and filling)
 	_dug_was = dug
+	_load_was = load_n
+	_shown = move_toward(_shown, float(load_n), CAPACITY * 1.3 * dt)
 	var at := edge()
 	at.y = maxf(at.y, ground_y(at.x, at.z) + 0.05)
-	work_fx(at, BUCKET_HALF * 0.8, cutting)
+	# (thrown up and back towards the machine, the way the bucket's dragged, not the way its tracks face)
+	work_fx(at, BUCKET_HALF * 0.8, cutting, yaw + swing + PI)
+	if filling:
+		_inflow_left = 0.15
+	_inflow_left -= dt
+	if _inflow == null:
+		_inflow = DsMachine.chunks(70)
+		_inflow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_inflow.spread = 14.0
+		_inflow.initial_velocity_min = 1.6
+		_inflow.initial_velocity_max = 2.8
+		_inflow.gravity = Vector3(0.0, -9.8, 0.0)
+		_inflow.lifetime = 0.42
+		_inflow.scale_amount_min = 0.35
+		_inflow.scale_amount_max = 0.8
+		add_child(_inflow)
+	# along the teeth, aimed from them up into the bucket's mouth (towards its back, over its floor)
+	var ends := teeth_ends()
+	var across := ((ends[1] as Vector3) - (ends[0] as Vector3)).normalized()
+	var house := _look.global_transform.basis * Basis(Vector3.UP, swing)
+	var bb := house * Basis(Vector3.BACK, -curl)
+	var mouth := (bb * Vector3(-0.8, 0.3, 0.0)).normalized()        # (DsProps.excavator_bucket: its hollow lies back from the teeth, over the open side)
+	var up := across.cross(mouth).normalized()
+	var b := Basis(across, up, across.cross(up))
+	_inflow.global_transform = Transform3D(b, edge())
+	_inflow.emission_box_extents = Vector3(BUCKET_HALF * 0.8, 0.05, 0.05)
+	_inflow.direction = b.inverse() * (mouth + Vector3(0.0, 0.25, 0.0)).normalized()
+	_inflow.emitting = _inflow_left > 0.0
 
 func _most() -> int:
 	var best := DsMats.DIRT

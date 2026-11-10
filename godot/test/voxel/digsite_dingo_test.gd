@@ -121,7 +121,7 @@ func _solo() -> bool:
 				_next(7)
 		7:
 			var d := _dingo()
-			if d.load_n == 0 or t - mark > 4.0:
+			if (d.load_n == 0 and d.falling_n() == 0) or t - mark > 4.0:      # (and landed: it falls a moment)
 				d.curl_cmd = 0.0
 				var loose: int = ds.terrain.grid.loose_mm() - int(v.loose0)
 				check(d.load_n == 0 and loose >= int(v.n), "tipped: it all pours out, loose (%d mm loose now, %d poured)" % [loose, v.n])

@@ -446,3 +446,18 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - It starts cutting from more open (curl over CURL_EMPTY + 0.1, was + 0.4), so a scoop from open takes the whole arc.
   - FIRM_RATE went from 9 to 120 firm blocks a second per column. At 9, the teeth skated over each column in about a tenth of a second, so a dragged bite was a 9 cm scrape. Now the effort holds the arm back instead (BOG_AT 40 blocks a tick for full bog). A drag in and down fills the bucket heaped (1.2 m³) in under a second and leaves a pit.
 - The fleet test now opens the bucket before letting it down (alone and as the guest). It checks the bucket rests at no more than BITE, then digs by dragging in and down while curling.
+
+## Soil into the bucket, and landing when it lands (10 Nov)
+
+- The owner: "it drags it and then just appears in the bucket", and pouring, "the dust appears before it's even dropped".
+- **Into the bucket (DsExcavator._dust_fx):**
+  - While its load is going up, lumps tumble off the teeth up and back into the bucket's hollow.
+  - The bucket draws its load as `_shown`, which rises at 1.3 bucketfuls a second. So the soil builds up as it rolls in instead of popping in.
+  - The cutting clods and dust are now thrown towards the cab, the way the bucket's dragged. `work_fx` takes a facing; it used to throw them the way the tracks faced.
+  - All of this is driven by the load the guest receives too, so it looks the same on both games.
+- **Landing when it lands (DsMachine.let_go):**
+  - Poured soil is held in the air for the time it takes to fall, sqrt(2h/g), then lands in the ground or the truck's tray: `_land_falling`, on the host.
+  - A truck counts what's falling into it (`incoming`, `room()`) so it isn't overfilled.
+  - The pour dust waits the same fall time and appears where the soil lands, on both games.
+  - The excavator, Dingo, Bobcat and the truck's tipping all pour this way. If the ground won't take it all (the heap is already as high as the pour point), the rest goes on top of the heap (`dump`), so nothing is lost.
+  - Tests that count the soil wait for `falling_n()` to reach 0 first.

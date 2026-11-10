@@ -119,9 +119,59 @@ func step(dt: float) -> void:
 	else:
 		_follow(dt)
 	_pose_now()
+	_fx_clock += dt
+	if runs():
+		_land_falling()
 	_pour_fx(dt)
 	_dust_fx()
 	_shake_body(dt)
+
+# Dirt let go of, falling (the owner, 10 Nov: "the dust appears before it's even dropped"): it lands, in the ground or a
+# truck's tray, when it's fallen there, with the stream of lumps falling from the bucket; until then it's in the air.
+# [lands at (_fx_clock), where it was let go, material, blocks, the truck it falls in or null]
+var _falling := []
+var _fx_clock := 0.0
+
+## Lets n blocks of m go at p, over the truck (DsMachines.catcher) or the ground: they land when they've fallen. -> how
+## many it let go (no more than a truck has room for)
+func let_go(p: Vector3, m: int, n: int, truck) -> int:
+	var floor := ground_y(p.x, p.z)
+	if truck:
+		n = mini(n, truck.room())
+		if n <= 0:
+			return 0
+		truck.incoming += n
+		floor = (truck.global_transform * DsTruck.TRAY_AT).y + 0.3
+	_falling.append([_fx_clock + fall_time(p.y - floor), p, m, n, truck])
+	return n
+
+## How long dirt takes to fall h m (from standing)
+static func fall_time(h: float) -> float:
+	return sqrt(2.0 * maxf(h, 0.0) / 9.8)
+
+## What it's let go of that hasn't landed yet (blocks)
+func falling_n() -> int:
+	var k := 0
+	for f in _falling:
+		k += int(f[3])
+	return k
+
+func _land_falling() -> void:
+	while not _falling.is_empty() and float(_falling[0][0]) <= _fx_clock:
+		var f: Array = _falling.pop_front()
+		var p: Vector3 = f[1]
+		var m: int = f[2]
+		var n: int = f[3]
+		var truck = f[4]
+		if truck and is_instance_valid(truck):
+			truck.incoming = maxi(0, truck.incoming - n)
+			if truck.over_tray(p):
+				n -= truck.take(m, n)
+		if n > 0:
+			# (a pour stops at the height it came from; what's left, if the heap's already that high, goes on top of it)
+			n -= site.terrain.pour(p, m, n)
+			if n > 0:
+				site.terrain.dump(p, m, n)
 
 func _shake_body(dt: float) -> void:
 	if shake_node == null:
@@ -211,7 +261,7 @@ static func chunks(amount: int) -> CPUParticles3D:
 
 ## Dust and flying lumps where its blade or bucket is moving dirt (the digger game's clods and dust): at `at`, along
 ## the edge `across` m either side, thrown forward and up; on while it's working
-func work_fx(at: Vector3, across: float, on: bool) -> void:
+func work_fx(at: Vector3, across: float, on: bool, face := NAN) -> void:
 	if _work_dust == null:
 		var k := clampf(length / 4.0, 0.4, 1.0)
 		_work_dust = puffs(Color("#c9a77c"), 26, 1.3)
@@ -234,7 +284,7 @@ func work_fx(at: Vector3, across: float, on: bool) -> void:
 		_work_clods.scale_amount_max = 0.5 * k
 		add_child(_work_clods)
 	for p: CPUParticles3D in [_work_dust, _work_clods]:
-		p.global_transform = Transform3D(Basis(Vector3.UP, yaw), at)
+		p.global_transform = Transform3D(Basis(Vector3.UP, yaw if is_nan(face) else face), at)
 		p.emission_box_extents = Vector3(across, 0.2, 0.2)
 		p.emitting = on
 
@@ -320,11 +370,13 @@ func _dust_fx() -> void:
 	if absf(speed) > 0.05 and site.terrain:
 		site.terrain.wear_tracks(self)
 	_exhaust.speed_scale = 0.6 + 0.8 * clampf(absf(throttle), 0.0, 1.0)      # (worked hard, it puffs faster)
-	var pouring := _stream_t > 0.0 and fx_load() >= 0
-	if pouring:
-		var at := fx_pour_at()
-		_pour_dust.global_position = Vector3(at.x, ground_y(at.x, at.z) + 0.3, at.z)
-	_pour_dust.emitting = pouring
+	# (the dust where it lands, once it's landed: as long after it starts pouring as it takes to fall, on both games)
+	while not _dust_due.is_empty() and float(_dust_due[0][0]) <= _fx_clock:
+		var d: Array = _dust_due.pop_front()
+		_dust_left = 0.25
+		_pour_dust.global_position = d[1]
+	_dust_left -= get_process_delta_time()
+	_pour_dust.emitting = _dust_left > 0.0
 
 ## (a subclass) what it's carrying (blocks; -1: nothing to carry) and where it comes out when it pours
 func fx_load() -> int:
@@ -332,6 +384,16 @@ func fx_load() -> int:
 
 func fx_pour_at() -> Vector3:
 	return global_position
+
+## Where what it pours lands under at (the ground; a truck's tray under it)
+func fx_pour_floor(at: Vector3) -> float:
+	var truck = site.machines.catcher(at, self) if site and site.machines else null
+	if truck:
+		return (truck.global_transform * DsTruck.TRAY_AT).y + 0.3
+	return ground_y(at.x, at.z)
+
+var _dust_due := []             # [when, where]: pour dust due where it lands
+var _dust_left := 0.0
 
 var _stream: CPUParticles3D
 var _last_load := -1
@@ -345,6 +407,9 @@ func _pour_fx(dt: float) -> void:
 		return
 	if _last_load >= 0 and n < _last_load:
 		_stream_t = 0.25
+		var at := fx_pour_at()
+		var floor := fx_pour_floor(at)
+		_dust_due.append([_fx_clock + fall_time(at.y - floor), Vector3(at.x, floor + 0.3, at.z)])
 	_last_load = n
 	_stream_t -= dt
 	var on := _stream_t > 0.0

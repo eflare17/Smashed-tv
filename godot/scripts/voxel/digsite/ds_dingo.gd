@@ -355,7 +355,7 @@ func _tool(dt: float) -> void:
 				var m := _most()
 				var take := mini(n, int(bucket[m]))
 				var truck = site.machines.catcher(e, self)
-				var put: int = truck.take(m, take) if truck else tr.pour(e, m, take)
+				var put: int = let_go(e, m, take, truck)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put
