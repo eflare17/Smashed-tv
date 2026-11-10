@@ -34,7 +34,10 @@ void vertex() {
 	vec4 m = textureLod(data_tex, uv, 0.0);
 	float grass = 1.0 - min(m.r + m.g + m.b, 1.0);
 	float edge = max(abs(root.x), abs(root.z));
-	float keep = smoothstep(0.55, 0.8, grass) * (1.0 - smoothstep(25.0, 31.5, edge) * 0.8);
+	// Toward dug ground the grass gets shorter and thinner, rather than stopping at a line.
+	float near_dirt = smoothstep(0.45, 0.97, grass);
+	float seed = fract(sin(dot(floor(root.xz * 8.0), vec2(12.9898, 78.233))) * 43758.5453);
+	float keep = near_dirt * step(seed, near_dirt * 1.4 - 0.2) * (1.0 - smoothstep(25.0, 31.5, edge) * 0.8);
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX * vec3(1.0, keep, 1.0), 1.0)).xyz;
 	w.y += hgt(root.xz);
 	VERTEX = (VIEW_MATRIX * vec4(w, 1.0)).xyz;

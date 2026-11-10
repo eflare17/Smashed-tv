@@ -28,6 +28,8 @@ var base_r := PackedByteArray()
 var base_g := PackedByteArray()
 var base_b := PackedByteArray()
 var first_bed := PackedInt32Array()
+## The firm ground's first height in metres, for the ground shader: how deep a cut has gone, so its walls show the soil's layers.
+var first_tex: ImageTexture
 ## Where a track or tyre has pressed loose soil flat, the height it left it at; NOT_PRESSED elsewhere. The lumps there are
 ## crushed, so a print shows as a smooth packed band through lumpy dirt, until dirt is pushed onto it or dug off it.
 const NOT_PRESSED := -1000000
@@ -49,6 +51,13 @@ func _init(ground: GroundData, s: DirtSim, h_tex: ImageTexture, d_tex: ImageText
 	heights = ground.heights.duplicate()
 	data = ground.data.duplicate()
 	first_bed = s.bed.duplicate()
+	var first_m := PackedFloat32Array()
+	first_m.resize(CELLS * CELLS)
+	for n in CELLS * CELLS:
+		# Where the made-up ground starts dug (the free play pit, the mine), count from before it was dug.
+		var was := ground.natural[n] if n < ground.natural.size() else 0.0
+		first_m[n] = was if was - first_bed[n] * 0.001 > 0.08 else first_bed[n] * 0.001
+	first_tex = ImageTexture.create_from_image(Image.create_from_data(CELLS, CELLS, false, Image.FORMAT_RF, first_m.to_byte_array()))
 	pressed_at.resize(CELLS * CELLS)
 	pressed_at.fill(NOT_PRESSED)
 	# Two to a cell: how the dust looks, and how deep the loose stuff lies, which is what makes it look lumpy.

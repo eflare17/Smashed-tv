@@ -20,6 +20,8 @@ const RUN_B := Vector2(8.0, 4.5)
 const RUN_W := 2.9              # half the width
 
 var heights := PackedFloat32Array()
+## Where the ground stood before the made-up pit or mine was dug, in m: what the drawn soil layers count down from.
+var natural := PackedFloat32Array()
 var loose_depth := PackedFloat32Array()
 var data := PackedByteArray()   # RGBA per corner: loose soil, rock, packed soil, shading in hollows
 
@@ -39,6 +41,7 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false,
 	rag.frequency = 0.18
 	rag.fractal_octaves = 2
 	heights.resize(SIDE * SIDE)
+	natural.resize(SIDE * SIDE)
 	loose_depth.resize(SIDE * SIDE)
 	data.resize(SIDE * SIDE * 4)
 	var loose := PackedFloat32Array()
@@ -61,6 +64,7 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false,
 				var n_m := at(i, j)
 				var got := _mine(p, lumps, ragged, fade)
 				heights[n_m] = got[0]
+				natural[n_m] = h
 				loose_depth[n_m] = got[1]
 				loose[n_m] = got[2]
 				packed[n_m] = got[3]
@@ -72,11 +76,13 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false,
 					var off_p := Vector2(maxf(maxf(site.position.x - p.x, p.x - site.end.x), 0.0), maxf(maxf(site.position.y - p.y, p.y - site.end.y), 0.0)).length()
 					hp *= smoothstep(2.0, 14.0, off_p)
 				heights[at(i, j)] = hp
+				natural[at(i, j)] = hp
 				continue
 			if site.has_area():
 				var off := Vector2(maxf(maxf(site.position.x - p.x, p.x - site.end.x), 0.0), maxf(maxf(site.position.y - p.y, p.y - site.end.y), 0.0)).length()
 				var at_n := at(i, j)
 				heights[at_n] = h * smoothstep(2.0, 12.0, off)
+				natural[at_n] = heights[at_n]
 				packed[at_n] = 1.0 if paint.has_point(p) else 0.0
 				rock[at_n] = 1.0 if road.has_point(p + Vector2(0.0, ragged * 0.3)) else 0.0
 				continue
@@ -84,6 +90,7 @@ func _init(site := Rect2(), paint := Rect2(), road := Rect2(), paddock := false,
 			var stone := 0.0
 			var pack := 0.0
 			var lay := 0.0      # how much of this height is loose soil on top
+			natural[at(i, j)] = h
 
 			# The pit: distance in from an ellipse's edge, ragged, walls at the angle soil holds.
 			var q := (p - PIT) / PIT_R

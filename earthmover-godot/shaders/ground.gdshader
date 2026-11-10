@@ -8,6 +8,12 @@ uniform sampler2D data_tex : filter_linear, repeat_disable;
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform sampler2D dust_tex : filter_linear, repeat_disable;
 uniform sampler2D clods_tex : filter_linear_mipmap, repeat_enable;
+// The firm ground's first height, in m: how deep a cut has gone, so it shows the soil's layers.
+uniform sampler2D first_tex : filter_nearest, repeat_disable;
+uniform vec3 topsoil_a : source_color = vec3(0.25, 0.16, 0.12);
+uniform vec3 deep_a : source_color = vec3(0.53, 0.33, 0.2);
+// How dark the torn rim is where dug ground meets the grass.
+uniform float rim_strength = 0.85;
 uniform vec3 dust_a : source_color = vec3(0.80, 0.78, 0.70);
 uniform vec3 dust_b : source_color = vec3(0.74, 0.72, 0.64);
 // The flat grass out past the grid. It must not read the grid, or what lies on the grid's edge smears out to the horizon.
@@ -33,6 +39,7 @@ const float CLOD_M = 3.6;       // metres one copy of the lumps' picture covers
 varying vec3 v_world;
 varying vec3 v_normal;
 varying float v_soft;
+varying float v_depth;
 
 float hgt(ivec2 c) {
 	return texelFetch(height_tex, clamp(c, ivec2(0), ivec2(LAST)), 0).r;
@@ -52,6 +59,16 @@ void vertex() {
 	float drop = max(max(abs(near_a - here), abs(near_b - here)), max(abs(near_c - here), abs(near_d - here)));
 	float h = outside ? 0.0 : mix(smoothed, here, smoothstep(0.2, 0.35, drop));
 	VERTEX.y += h;
+	// How far below where the firm ground began: what layer of the soil shows here.
+	v_depth = outside ? 0.0 : texelFetch(first_tex, clamp(c, ivec2(0), ivec2(LAST)), 0).r - h;
+	// A dug wall shouldn't run dead straight along the grid: its corners are nudged a little sideways, the same for a cell
+	// every time. Only the drawing moves; what it reads from stays put.
+	if (!outside) {
+		float wobble = smoothstep(0.2, 0.35, drop);
+		ivec2 k = (c * ivec2(37, 53) + ivec2(11, 101)) % ivec2(256);
+		vec2 jig = vec2(texelFetch(noise_tex, k, 0).r, texelFetch(noise_tex, k.yx, 0).r) - 0.5;
+		VERTEX.xz += jig * 0.3 * wobble;
+	}
 	NORMAL = outside ? vec3(0.0, 1.0, 0.0) : normalize(vec3(hgt(c - ivec2(1, 0)) - hgt(c + ivec2(1, 0)), 2.0 * CELL, hgt(c - ivec2(0, 1)) - hgt(c + ivec2(0, 1))));
 	v_normal = NORMAL;
 	v_world = vec3(w.x, h, w.z);
@@ -68,6 +85,13 @@ void fragment() {
 	float fine_top = texture(noise_tex, v_world.xz * 0.17).r;
 	float fine_side = texture(noise_tex, vec2(v_world.x + v_world.z, v_world.y * 2.6) * 0.3).r;
 	float fine = mix(fine_side, fine_top, top);
+	// Grit: small, low-contrast specks of light and dark, from above and on walls, instead of big two-tone patches.
+	float across = abs(n.x) > abs(n.z) ? v_world.z : v_world.x;
+	vec2 side_xy = vec2(across, v_world.y);
+	float grit_top = texture(noise_tex, v_world.xz * 1.3).r * 0.6 + texture(noise_tex, v_world.xz * 3.7).r * 0.4;
+	float grit_side = texture(noise_tex, side_xy * 1.3).r * 0.6 + texture(noise_tex, side_xy * 3.7).r * 0.4;
+	float grit = clamp((mix(grit_side, grit_top, top) - 0.5) * 2.5 + 0.5, 0.0, 1.0);
+	float stones = smoothstep(0.62, 0.66, mix(texture(noise_tex, side_xy * 5.3 + 0.37).r, texture(noise_tex, v_world.xz * 5.3 + 0.37).r, top));
 
 	// Crisp, slightly ragged borders between materials: this is toon, so no long soft blends.
 	// Loose and packed soil add up to how bare the ground is; the split between them says which it looks like.
@@ -92,7 +116,16 @@ void fragment() {
 	float gap = mix(1.0, smoothstep(0.08, 0.62, clod.b), lumpy);
 	// Where the deep stuff lies the real lumps cover it, and this only shows in the cracks between them.
 	float heap = smoothstep(0.3, 0.7, lumpy);
-	vec3 soil = mix(cut_a * mix(0.9, 1.06, smoothstep(0.42, 0.58, fine)), mix(soil_b, soil_a, (clod.a - 0.5) * 2.0), smoothstep(0.22, 0.8, lumpy));
+	// Cut ground shows the layer it's been dug down to: dark topsoil just under the grass, clay under that, paler deeper down.
+	float layer_at = v_depth + (fine - 0.5) * 0.12 + (grit - 0.5) * 0.04;
+	float in_top = smoothstep(0.02, 0.04, v_depth) * (1.0 - smoothstep(0.22, 0.26, layer_at));
+	vec3 layer = mix(mix(cut_a, deep_a, smoothstep(1.15, 1.25, layer_at + (fine - 0.5) * 0.1)), topsoil_a, in_top);
+	// Teeth drag lines down a dug wall.
+	float groove = smoothstep(0.72, 0.86, fract(across / 0.18 + grit * 0.35)) * wall;
+	float rough = mix(0.86, 1.12, grit) * mix(1.0, 0.72, stones) * (1.0 - 0.16 * groove);
+	// A thin skin of loose dirt in a cut is the same stuff as the layer it came off, so it takes that layer's colour too.
+	vec3 lumps = mix(soil_b, soil_a, (clod.a - 0.5) * 2.0) * layer / cut_a;
+	vec3 soil = mix(layer * rough, lumps * mix(1.0, rough, 0.5), smoothstep(0.22, 0.8, lumpy));
 	soil = mix(soil, under_a, heap);
 	soil *= mix(0.42, 1.0, gap);
 	soil = mix(soil * mix(0.82, 1.0, strata), soil, max(top, lumpy));
@@ -104,14 +137,27 @@ void fragment() {
 	} else {
 		n = normalize(n + vec3(lean.x, lean.y, lean.x) * 0.9);
 	}
-	vec3 worked = packed_a * mix(0.92, 1.05, step(0.5, fine));
+	vec3 worked = packed_a * mix(0.93, 1.05, grit) * mix(1.0, 0.85, stones);
 	col = mix(col, mix(soil, worked, split), bare);
 	col = mix(col, mix(rock_a, rock_b, smoothstep(0.45, 0.55, fine)), rock);
+
+	// A torn rim of dark, crumbly topsoil where the dug ground meets the grass, ragged with the grit.
+	if (!outside && rim_strength > 0.0) {
+		float reach = 0.3 + (fine - 0.5) * 0.3;
+		vec2 step_uv = vec2(reach / (HALF * 2.0 + CELL), 0.0);
+		vec4 a = texture(data_tex, uv + step_uv);
+		vec4 b = texture(data_tex, uv - step_uv);
+		vec4 c2 = texture(data_tex, uv + step_uv.yx);
+		vec4 d = texture(data_tex, uv - step_uv.yx);
+		float nearest_grass = min(min(a.r + a.b + a.g, b.r + b.b + b.g), min(c2.r + c2.b + c2.g, d.r + d.b + d.g));
+		float rim = bare * (1.0 - smoothstep(0.45, 0.7, nearest_grass + (grit - 0.5) * 0.5)) * (1.0 - rock);
+		col = mix(col, topsoil_a * mix(0.75, 0.95, grit), rim * rim_strength);
+	}
 
 	// Cracker dust lies over whatever's under it.
 	if (!outside) {
 		float dusty = smoothstep(0.44, 0.56, dust_look.r + (fine - 0.5) * 0.45);
-		col = mix(col, mix(dust_a, dust_b, smoothstep(0.42, 0.58, fine)), dusty);
+		col = mix(col, mix(dust_a, dust_b, grit) * mix(1.0, 0.85, stones), dusty);
 	}
 
 	// Hollows go darker and warmer: this is what lets you judge a hole's depth.

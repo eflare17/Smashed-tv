@@ -546,11 +546,16 @@ func _ground_material() -> ShaderMaterial:
 	m.set_shader_parameter("data_tex", data_tex)
 	m.set_shader_parameter("noise_tex", noise_tex)
 	m.set_shader_parameter("dust_tex", view_data.dust_tex)
+	m.set_shader_parameter("first_tex", view_data.first_tex)
 	m.set_shader_parameter("clods_tex", preload("res://textures/clods.png"))
 	if mine:
 		# Pilbara red: the untouched ground orange-red, cut ground darker, the roads pale and dusty, and dark iron rock.
 		for pair: Array in [["grass_a", Color(0.63, 0.37, 0.25)], ["grass_b", Color(0.59, 0.34, 0.23)], ["soil_a", Color(0.6, 0.3, 0.19)], ["soil_b", Color(0.47, 0.22, 0.13)], ["under_a", Color(0.36, 0.16, 0.1)], ["cut_a", Color(0.52, 0.26, 0.17)], ["packed_a", Color(0.7, 0.5, 0.39)], ["rock_a", Color(0.46, 0.33, 0.3)], ["rock_b", Color(0.4, 0.29, 0.27)]]:
 			m.set_shader_parameter(pair[0], pair[1])
+		# No turf on the mine: its top layer only a touch darker, and no dark rim where the cut meets the untouched ground.
+		m.set_shader_parameter("topsoil_a", Color(0.46, 0.23, 0.15))
+		m.set_shader_parameter("deep_a", Color(0.6, 0.36, 0.23))
+		m.set_shader_parameter("rim_strength", 0.0)
 	return m
 
 func _build_ground() -> void:
@@ -1631,10 +1636,10 @@ func _puff_material(colour: Color) -> StandardMaterial3D:
 	m.albedo_color = colour
 	return m
 
-func _puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
+func _puffs(colour: Color, amount: int, life: float, radius := 0.5, opacity := 0.8) -> CPUParticles3D:
 	var ball := SphereMesh.new()
-	ball.radius = 0.5
-	ball.height = 1.0
+	ball.radius = radius
+	ball.height = radius * 2.0
 	ball.radial_segments = 6
 	ball.rings = 3
 	var p := CPUParticles3D.new()
@@ -1645,7 +1650,7 @@ func _puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
 	p.lifetime = life
 	p.emitting = false
 	var fade := Gradient.new()
-	fade.set_color(0, Color(1, 1, 1, 0.8))
+	fade.set_color(0, Color(1, 1, 1, opacity))
 	fade.set_color(1, Color(1, 1, 1, 0.0))
 	p.color_ramp = fade
 	var grow := Curve.new()
@@ -1712,7 +1717,8 @@ func _build_fx() -> void:
 	clods.scale_amount_min = 0.5
 	clods.scale_amount_max = 1.3
 
-	dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 26, 1.3)
+	# The dirt's dust is small and thin, so the dirt moving shows through it.
+	dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 18, 1.3, 0.27, 0.45)
 	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	dust.emission_box_extents = Vector3(0.5, 0.2, 2.2)
 	dust.direction = Vector3(0.0, 1.0, 0.0)
@@ -1723,7 +1729,7 @@ func _build_fx() -> void:
 	dust.scale_amount_min = 0.8
 	dust.scale_amount_max = 1.7
 
-	track_dust = _puffs(Color("#d89a72") if mine else Color("#d6bd98"), 18, 1.0)
+	track_dust = _puffs(Color("#d89a72") if mine else Color("#d6bd98"), 13, 1.0, 0.3, 0.45)
 	track_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	track_dust.emission_box_extents = Vector3(0.3, 0.1, 1.2)
 	track_dust.direction = Vector3(0.0, 1.0, 0.0)
@@ -1784,7 +1790,7 @@ func _build_fx() -> void:
 	tumble.angular_velocity_min = -420.0
 	tumble.angular_velocity_max = 420.0
 
-	pour_dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 22, 1.4)
+	pour_dust = _puffs(Color("#cf8a62") if mine else Color("#c9a77c"), 16, 1.4, 0.3, 0.5)
 	pour_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	pour_dust.emission_box_extents = Vector3(0.9, 0.15, 0.9)
 	pour_dust.direction = Vector3(0.0, 1.0, 0.0)

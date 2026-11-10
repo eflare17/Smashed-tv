@@ -627,3 +627,19 @@ stockpile beside the track). Everything below the layout is my pick too.
 - The heaps are drawn from the start: as steep as they are they never slump, which is what had been getting piles redrawn.
 - How long it takes to build is unknown: a simple bot pushing with the dozer moved about 50 m3 in 6.5 minutes onto one jump, so it's
   a long job for one dozer. The excavator and a friend help.
+
+## 10 Nov: the dirt looks better (looks only)
+
+Fable 5.2 looked the game over and wrote a plan; the owner picked items 1 to 4 and Opus 5.5 built them. Nothing that moves
+dirt or scores a job changed.
+
+- Soil layers: dug ground shows dark topsoil to about 25 cm down, clay under that, and a paler tone past about 1.2 m.
+  Counted from GroundView.first_tex: the firm ground's first height, or for the made-up free play pit and the mine, the
+  ground before they were dug (GroundData.natural). Thin loose dirt in a cut takes its layer's colour.
+- Rougher cut ground: the two-tone camouflage on cut and packed ground is fine grit with small stones instead. Tooth
+  lines down dug walls, and dug walls nudged up to about 4 cm sideways so they don't run dead straight along the grid.
+- Torn edge: a dark rim on the dirt side where dug ground meets grass (not on the mine), and the grass thins and
+  shortens toward the dirt.
+- Dust puffs from the blade, bucket, tracks and pouring about half the size and more see-through.
+- Left as it was: cracker dust's blotches (that's how a thin layer of it shows).
+- PC frame time about the same (about 10 ms). Phone speed not known until the owner tries it.
