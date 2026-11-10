@@ -18,8 +18,8 @@ uniform vec3 dust_a : source_color = vec3(0.80, 0.78, 0.70);
 uniform vec3 dust_b : source_color = vec3(0.74, 0.72, 0.64);
 // The flat grass out past the grid. It must not read the grid, or what lies on the grid's edge smears out to the horizon.
 uniform bool outside = false;
-uniform vec3 grass_a : source_color = vec3(0.33, 0.56, 0.20);
-uniform vec3 grass_b : source_color = vec3(0.39, 0.62, 0.22);
+uniform vec3 grass_a : source_color = vec3(0.31, 0.50, 0.19);
+uniform vec3 grass_b : source_color = vec3(0.44, 0.56, 0.24);
 uniform vec3 soil_a : source_color = vec3(0.47, 0.25, 0.17);
 uniform vec3 soil_b : source_color = vec3(0.36, 0.18, 0.12);
 uniform vec3 under_a : source_color = vec3(0.29, 0.15, 0.10);

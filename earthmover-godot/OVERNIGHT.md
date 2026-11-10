@@ -658,3 +658,10 @@ dirt or scores a job changed.
   came off (was 1.5 to 2.3), ending 4.5 to 6.5 m away (was 5 to 10).
 - bike_test checks he stays above the dirt, his limbs keep their length, his joints bend, and he ends lying still.
 - `--mission=bike_jumps --demo=touchjumps --crash --noui` leans right back off the first jump twice, filmed from the side.
+
+## 10 Nov: review fixes (Opus 5.5)
+- Screen: the job title fits left of the side picture and shrinks when long; the hint sits above the buttons and stick and shrinks to fit (the bike jumps hint ran off the bottom); buttons are see-through rounded squares; the pipe signs sit low under their arrows; the menu hides the top row and readout.
+- Free play: no tree between the dozer and the camera at the start; the test readout is hidden (F3 shows it, or --stats); the top row narrows to fit.
+- Garden patch: only the dip counts, not its rim, so it starts at 0% not 26%.
+- Look: lighter shade, a haze from 30 m out, less neon grass, off-white paint on the white machines, a mix of tree shapes and widths, a door, step, window frames and garage panels on the house, bluer water on PC.
+- Not done: the driveway's blotchy look, grass at path edges, the street drain start (moving it put the camera behind the fence), the farm road fence wire.

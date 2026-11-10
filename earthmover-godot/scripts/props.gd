@@ -35,7 +35,7 @@ static var WHITE_PAINT := c("#efe8d8")
 static var RED := c("#c9402c")
 static var HI_VIS := c("#ff7a1a")
 # The mine's big machines: fleet white, grey for the shaded parts, safety yellow for what you hold on to.
-static var MINE_WHITE := c("#eeece6")
+static var MINE_WHITE := c("#dcd8cd")
 static var MINE_GREY := c("#b9bbb7")
 static var SAFETY := c("#ffd21f")
 # Dirt off the ground: in a bucket or tray, or flying. Red on the mine.
@@ -603,7 +603,7 @@ static func rider_body(kit: MeshKit) -> void:
 	kit.box(Vector3(0.34, 1.57, 0), Vector3(0.1, 0.1, 0.14), CHARCOAL)
 
 static func ute_body(kit: MeshKit) -> void:
-	var white := c("#f2f0ea")
+	var white := c("#e2ded4")
 	kit.box(Vector3(0.0, 0.58, 0), Vector3(4.9, 0.24, 1.4), CHARCOAL)
 	kit.box(Vector3(0.95, 0.95, 0), Vector3(2.9, 0.62, 1.8), white)
 	kit.box(Vector3(1.9, 1.3, 0), Vector3(1.1, 0.12, 1.74), white)

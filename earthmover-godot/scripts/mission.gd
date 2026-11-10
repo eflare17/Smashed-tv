@@ -18,6 +18,7 @@ const SPREAD_MM := 50           # what spreading with the bucket leaves behind
 const PLAN_COVER := 0.3          # m: the planned trench floor is at least this far under the ground
 const PLAN_UNDER_WATER := 0.1    # m: and for a flood, this far under the water where it starts
 const HAND_TOL := 0.035          # m: a garden patch is done where it's this near level, above or below
+const HAND_RIM := 0.15          # m in from the garden pegs before a cell counts
 const DAM_TOL := 0.15            # m: a dam floor's done where it's no more than this above the floor
 const DAM_DEEPER_OK := 10.0      # m: and dug deeper counts too: a deeper dam just holds more water, and it's not meant to be fiddly
 const DAM_EDGE := 1.5            # m in from the pegs that counts as floor: the sides slope
@@ -622,7 +623,8 @@ static func pad_for(sim: DirtSim, m: Dictionary) -> Pad:
 	if kind(m) == "hand":
 		var c: Vector2 = m["patch"]
 		var r: float = m["patch_r"]
-		var p := Pad.new(Pad.ring(c, Vector2(r, r), 14), sim.height_at(c + Vector2(r + 1.0, 0.0)), HAND_TOL, HAND_TOL)
+		# Only the dip counts, not its rim: the rim starts near enough level already, so the job began at 26% (review, 10 Nov).
+		var p := Pad.new(Pad.ring(c, Vector2(r, r), 14), sim.height_at(c + Vector2(r + 1.0, 0.0)), HAND_TOL, HAND_TOL, HAND_RIM)
 		p.title = String(m["title"]).to_upper()
 		return p
 	if kind(m) == "dam":

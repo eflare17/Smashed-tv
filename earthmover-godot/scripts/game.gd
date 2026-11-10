@@ -10,6 +10,9 @@ const MODES := ["Drive", "Dirt"]
 const VIEWS := {"Look": ["Wide", "Pit", "Dozer", "Cab"], "Dirt": ["Wide", "Pit"], "Drive": ["Chase", "High", "Cab", "Bucket"]}
 const INKS := {"Off": 0.0, "Thin": 1.0, "Medium": 1.5, "Thick": 2.2}
 const INK_NAMES := ["Off", "Thin", "Medium", "Thick"]
+## The on-screen buttons: see-through, with rounded corners and a light edge, so the machine shows through them (review, 10 Nov).
+const IDLE_PAD := Color(0.06, 0.08, 0.1, 0.36)
+const PAD_TEX := 64
 ## Blades a square metre, near the camera.
 const GRASSES := {"Off": 0.0, "Low": 18.0, "Medium": 36.0, "High": 64.0}
 const GRASS_NAMES := ["Off", "Low", "Medium", "High"]
@@ -288,6 +291,12 @@ var game_speed := 1.0
 
 var ui: CanvasLayer
 var stats: Label
+## The top row of buttons and the readout under it, hidden behind a menu.
+var top_bar: Control
+var _pad_texs := {}
+var _banner_fit := ""
+var _alert_fit := ""
+var show_stats := false
 var buttons: Dictionary = {}
 var touch_buttons: Array[Node2D] = []
 var top_bar_h := 0.0
@@ -487,8 +496,20 @@ func _build_world() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("#a8b8d8")
-	env.ambient_light_energy = 0.5
+	# Shade lit enough to see into: at 0.5 anything in shadow went near black (review, 10 Nov).
+	env.ambient_light_color = Color("#b2c0da")
+	env.ambient_light_energy = 0.72
+	# A light haze, the sky's own colour, so the far trees sit back and the near ones stand out.
+	env.fog_enabled = true
+	env.fog_light_color = Color(0.66, 0.8, 0.92)
+	env.fog_light_energy = 1.0
+	# Only from 30 m out, and never more than a third: the near site stays sharp.
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_depth_begin = 30.0
+	env.fog_depth_end = 220.0
+	env.fog_depth_curve = 1.0
+	env.fog_density = 0.33
+	env.fog_sky_affect = 0.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 	var world_env := WorldEnvironment.new()
@@ -523,7 +544,7 @@ func _water_look() -> Material:
 func _pc_extras(sun: DirectionalLight3D, env: Environment, sky: Sky) -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 1.4
-	env.ssao_intensity = 1.6
+	env.ssao_intensity = 1.1
 	env.ssao_power = 1.3
 	env.ssao_light_affect = 0.15
 	env.ssr_enabled = true
@@ -930,6 +951,9 @@ func _tree_spots(tr: RandomNumberGenerator) -> Array[Vector2]:
 			continue
 		if _near_line(p, GroundData.RUN_A, GroundData.RUN_B, GroundData.RUN_W + 1.5) or _near_line(p, start, GroundData.PILE, 3.5):
 			continue
+		# Nor between the dozer and the camera behind it, where one hid half the dozer at the start (review, 10 Nov).
+		if _near_line(p, start, start - GroundData.dozer_dir() * 16.0, 5.0):
+			continue
 		var crowded := false
 		for other: Vector2 in spots:
 			if other.distance_to(p) < 6.0:
@@ -1019,8 +1043,22 @@ func _add_site(kit: MeshKit) -> void:
 	hk.prism(roof, front - DEEP - 0.5, front + 0.5, Props.c("#a8553a"))
 	# The garage door faces straight down the driveway, as wide as it is.
 	hk.box(Vector3(r.get_center().x, 1.1, front + 0.03), Vector3(r.size.x, 2.2, 0.08), Props.c("#8a8f94"))
+	# Lines across the garage door, its panels.
+	for k in 4:
+		hk.box(Vector3(r.get_center().x, 0.44 + k * 0.48, front + 0.08), Vector3(r.size.x - 0.12, 0.04, 0.02), Props.c("#6f747a"))
 	for side: float in [-1.0, 1.0]:
-		hk.box(Vector3(side * 5.0, 1.6, front + 0.03), Vector3(2.0, 1.2, 0.08), Props.c("#5f8fb5"))
+		# A white frame and a sill round each window (review, 10 Nov: the house was a plain box).
+		hk.box(Vector3(side * 5.0, 1.6, front + 0.02), Vector3(2.24, 1.44, 0.06), Props.c("#f4f1ea"))
+		hk.box(Vector3(side * 5.0, 1.6, front + 0.06), Vector3(2.0, 1.2, 0.04), Props.c("#5f8fb5"))
+		hk.box(Vector3(side * 5.0, 1.6, front + 0.09), Vector3(0.06, 1.2, 0.02), Props.c("#f4f1ea"))
+		hk.box(Vector3(side * 5.0, 0.86, front + 0.1), Vector3(2.4, 0.07, 0.16), Props.c("#f4f1ea"))
+	# The front door beside the garage, with a step up to it, and a dark board along the edge of the roof.
+	var door_x := r.end.x + 1.3
+	hk.box(Vector3(door_x, 1.12, front + 0.02), Vector3(1.1, 2.24, 0.06), Props.c("#f4f1ea"))
+	hk.box(Vector3(door_x, 1.05, front + 0.06), Vector3(0.9, 2.05, 0.04), Props.c("#7a3b2e"))
+	hk.box(Vector3(door_x + 0.3, 1.0, front + 0.1), Vector3(0.07, 0.07, 0.05), Props.c("#d8b24a"))
+	hk.box(Vector3(door_x, 0.08, front + 0.3), Vector3(1.4, 0.16, 0.6), Props.c("#b9b4aa"))
+	hk.box(Vector3(0.0, WALL - 0.04, front + 0.52), Vector3(WIDE + 1.0, 0.16, 0.05), Props.c("#4a3a33"))
 	if Mission.kind(mission) == "pipe":
 		_add_downpipe(hk, front, WIDE, WALL)
 	house = MeshInstance3D.new()
@@ -1345,7 +1383,8 @@ func _add_end_marks() -> void:
 		word.outline_size = 14
 		word.pixel_size = 0.0008
 		word.modulate = Color("#ffd23f")
-		word.position.y = 3.6
+		# Low, under the arrow, so it's still on screen up close rather than up behind the top buttons (review, 10 Nov).
+		word.position.y = 1.15
 		mark.add_child(word)
 		# A big arrow over it, bobbing and flashing, so it can be found from anywhere on the site.
 		var arrow_kit := MeshKit.new()
@@ -1421,6 +1460,9 @@ func _tour_words() -> String:
 	return ("THE PIPE STARTS HERE" if _tour_t < 3.2 else "AND ENDS HERE, AT THE DRAIN") + "   (TAP TO SKIP)"
 
 func _input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_F3 and mission.is_empty():
+		show_stats = not show_stats
+		stats.visible = show_stats
 	if menu != null and menu_scroll != null and is_instance_valid(menu_scroll):
 		_menu_drag(e)
 	if _tour_t < 0.0:
@@ -2023,6 +2065,31 @@ func _apply_all() -> void:
 		for key: String in ["machine", "mode", "tool", "ink", "grass", "res"]:
 			buttons[key].visible = false
 		stats.visible = false
+	else:
+		# The test readout's only for checking: F3 brings it up (review, 10 Nov).
+		stats.visible = show_stats or OS.get_cmdline_user_args().has("--stats")
+	_fit_top_row.call_deferred()
+
+## The top row of buttons, narrowed to fit across the screen: free play's ran off the right edge (review, 10 Nov).
+func _fit_top_row() -> void:
+	if buttons.is_empty():
+		return
+	var screen := get_viewport().get_visible_rect().size
+	var h := screen.y
+	var row: HBoxContainer = buttons["menu"].get_parent()
+	var shown := 0
+	for b: Button in buttons.values():
+		if b.visible:
+			shown += 1
+	if shown == 0:
+		return
+	var gap := float(row.get_theme_constant("separation"))
+	var room := screen.x - h * 0.1 - gap * (shown - 1)
+	var w := minf(h * 0.19, room / shown)
+	var font := int(clampf(h / 38.0, 14.0, 36.0) * minf(1.0, w / (h * 0.19) * 1.08))
+	for b: Button in buttons.values():
+		b.custom_minimum_size.x = w
+		b.add_theme_font_size_override("font_size", font)
 
 ## Who the right-hand buttons belong to.
 func _show_buttons() -> void:
@@ -2036,14 +2103,8 @@ func _show_buttons() -> void:
 		b.visible = mode == "Drive" and menu == null and String(b.get_meta("for")).contains(kind)
 	if spade_button and spade_button.visible:
 		spade_button.visible = active is Worker and (active as Worker).tool == "shovel"
-	# Hints run clear of whichever buttons are showing down the right.
-	var screen_w: float = get_viewport().get_visible_rect().size.x
-	var clear_to := screen_w
-	for b in touch_buttons:
-		if b.visible and b.position.y > get_viewport().get_visible_rect().size.y * 0.45:
-			clear_to = minf(clear_to, b.position.x)
-	if alert:
-		alert.size.x = maxf(clear_to - alert.position.x * 2.0, screen_w * 0.4)
+	# The hint is placed again clear of whichever buttons are showing, the next time it shows.
+	_alert_fit = ""
 	gauge.visible = mode == "Drive" and menu == null and not active is Worker
 	bucket_view.visible = gauge.visible and side_shown and not active is Barrow and not active is Ute and not active is Bike
 	# Pegging out is for free play: on a job the ute just gets about.
@@ -2054,6 +2115,7 @@ func _show_buttons() -> void:
 		peg2_button.visible = not peg_spots.is_empty() or ute_pad != null
 	_label("machine", "Now: " + who)
 	_show_get_in()
+	_fit_banner()
 
 ## Swaps which machine the player is in. The other stays parked where it is, and its work stays done.
 func _swap_machine() -> void:
@@ -2504,9 +2566,7 @@ func _show_tools() -> void:
 	rake_word.text = "PUT DOWN\nRAKE" if tool == "rake" else "RAKE"
 	spade_word.text = spade
 	for pair: Array in [[shovel_button, tool == "shovel"], [rake_button, tool == "rake"]]:
-		var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0.1, 0.55, 0.15, 0.85) if pair[1] else Color(0.1, 0.1, 0.1, 0.55))
-		(pair[0] as TouchScreenButton).texture_normal = ImageTexture.create_from_image(img)
+		(pair[0] as TouchScreenButton).texture_normal = _pad_tex(Color(0.1, 0.55, 0.15, 0.85) if pair[1] else IDLE_PAD)
 	_show_buttons()
 
 ## Whether the two thumbs work apart: the excavator's left thumb swings the house and the right moves the arm.
@@ -3302,6 +3362,7 @@ func _build_ui() -> void:
 	var h: float = screen.y
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	top_bar = margin
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(margin)
 	var col := VBoxContainer.new()
@@ -3540,6 +3601,84 @@ func _build_ui() -> void:
 		_start_tour.call_deferred()
 
 func _show_banner() -> void:
+	_banner_text()
+	_fit_banner()
+
+## The job's title line kept clear of the side picture and its HIDE button, and made smaller when it's long, so it's never written
+## over them (review, 10 Nov). Off to the left when the side picture's there; across the middle when it isn't.
+func _fit_banner() -> void:
+	if banner == null or not banner.visible:
+		return
+	var screen := get_viewport().get_visible_rect().size
+	var h := screen.y
+	var pad := h * 0.05
+	var right := screen.x
+	if side_button != null and side_button.visible:
+		right = minf(side_button.position.x, bucket_view.position.x) - pad * 0.3 if side_shown else side_button.position.x - pad * 0.3
+	var key := "%s|%d" % [banner.text, int(right)]
+	if key == _banner_fit:
+		return
+	_banner_fit = key
+	var left := 0.0 if right >= screen.x else pad
+	banner.position = Vector2(left, top_bar_h)
+	banner.size = Vector2(right - left, h * 0.09)
+	if beep_light != null and beep_light.get_parent() == ui:
+		beep_light.position.x = left
+		beep_light.size.x = right - left
+	var font := banner.get_theme_font("font")
+	var size := int(h / 20.0)
+	while size > int(h / 34.0) and font.get_string_size(banner.text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + 16.0 > right - left:
+		size -= 1
+	banner.add_theme_font_size_override("font_size", size)
+
+## The yellow hint, in the clear space above the buttons and the stick, made smaller till it fits there (review, 10 Nov: it ran
+## over the stick, under the buttons, and off the bottom of the screen).
+func _place_alert() -> void:
+	var key := "%s|%s|%s" % [alert.text, active.get_class() + str(active.get_instance_id()), side_shown]
+	if key == _alert_fit:
+		return
+	_alert_fit = key
+	var screen := get_viewport().get_visible_rect().size
+	var h := screen.y
+	var pad := h * 0.05
+	var size := h * 0.2
+	var bottom := h - size * 2.0 - pad * 2.0
+	var top := top_bar_h + h * 0.1
+	if beep_light != null and beep_light.get_parent() == ui:
+		top += h * 0.05
+	var left := pad
+	var right := screen.x - pad
+	for b: TouchScreenButton in touch_buttons:
+		if not b.visible:
+			continue
+		var at := b.position
+		var bs: float = b.get_meta("size")
+		if at.y + bs < top or at.y > bottom + pad:
+			# Beside the hint's space rather than under it: the excavator's left-hand button.
+			if at.y < bottom and at.x < screen.x * 0.3:
+				left = maxf(left, at.x + bs + pad * 0.5)
+			elif at.y < bottom and at.x > screen.x * 0.5 and at.y + bs > top:
+				right = minf(right, at.x - pad * 0.5)
+			continue
+		if at.x > screen.x * 0.3:
+			right = minf(right, at.x - pad * 0.5)
+		else:
+			left = maxf(left, at.x + bs + pad * 0.5)
+	if bucket_view.visible and side_shown:
+		right = minf(right, bucket_view.position.x - pad * 0.5)
+	alert.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	var font := alert.get_theme_font("font")
+	var fs := int(h / 22.0)
+	while fs > int(h / 40.0) and font.get_multiline_string_size(alert.text, HORIZONTAL_ALIGNMENT_CENTER, right - left - 12.0, fs).y > bottom - top:
+		fs -= 1
+	alert.add_theme_font_size_override("font_size", fs)
+	# Sat on the bottom of the space: as tall as its lines, so it can't be stretched down over the stick.
+	var tall := font.get_multiline_string_size(alert.text, HORIZONTAL_ALIGNMENT_CENTER, right - left - 12.0, fs).y + h * 0.02
+	alert.custom_minimum_size = Vector2.ZERO
+	alert.position = Vector2(left, bottom - tall)
+	alert.size = Vector2(right - left, tall)
+
+func _banner_text() -> void:
 	# The room code, or who's just joined, isn't to be written over.
 	if online and online.is_online() and (_banner_clock > 0.0 or (online.is_host() and not online.live)):
 		return
@@ -3599,7 +3738,8 @@ func _can_score() -> bool:
 func _build_menu() -> void:
 	var h: float = get_viewport().get_visible_rect().size.y
 	menu = ColorRect.new()
-	(menu as ColorRect).color = Color(0.0, 0.0, 0.0, 0.62)
+	(menu as ColorRect).color = Color(0.03, 0.05, 0.08, 0.8)
+	top_bar.visible = false
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(menu)
 	var box := VBoxContainer.new()
@@ -4017,6 +4157,7 @@ func _guest_buttons() -> void:
 
 func _close_menu() -> void:
 	menu_kind = ""
+	top_bar.visible = true
 	banner.visible = not mission.is_empty()
 	if menu != null:
 		menu.queue_free()
@@ -4322,6 +4463,7 @@ func _show_side() -> void:
 	side_button.position = Vector2(bucket_view.position.x - size - size * 0.08, bucket_view.position.y) if side_shown else Vector2(right - size, bucket_view.position.y)
 	side_word.text = "HIDE" if side_shown else "SHOW"
 	side_word.position = side_button.position + Vector2(size * 0.12, size * 0.32)
+	_fit_banner()
 
 func _on_spread() -> void:
 	if online.is_guest():
@@ -4343,9 +4485,7 @@ func _spread_label() -> String:
 func _show_spread() -> void:
 	var word := _spread_label()
 	_spread_shown = word.ends_with(" ON")
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.1, 0.55, 0.15, 0.85) if _spread_shown else Color(0.1, 0.1, 0.1, 0.55))
-	spread_button.texture_normal = ImageTexture.create_from_image(img)
+	spread_button.texture_normal = _pad_tex(Color(0.1, 0.55, 0.15, 0.85) if _spread_shown else IDLE_PAD)
 	spread_word.text = word
 
 func _on_attach() -> void:
@@ -4363,16 +4503,37 @@ func _show_attach() -> void:
 	if attach_word:
 		var small := _my_dingo()
 		attach_word.text = "NOW: TRENCH\ntap for PIPE" if small.trencher_on else ("NOW: PIPE\ntap for BUCKET" if small.pipe_on else "NOW: BUCKET\ntap for TRENCH")
-		var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-		img.fill(Color(0.75, 0.3, 0.1, 0.85) if small.trencher_on else (Color(0.15, 0.4, 0.7, 0.85) if small.pipe_on else Color(0.1, 0.1, 0.1, 0.55)))
-		attach_button.texture_normal = ImageTexture.create_from_image(img)
+		attach_button.texture_normal = _pad_tex(Color(0.75, 0.3, 0.1, 0.85) if small.trencher_on else (Color(0.15, 0.4, 0.7, 0.85) if small.pipe_on else IDLE_PAD))
+
+## A button's look in `fill`: a rounded square with a light edge. Made once a colour.
+func _pad_tex(fill: Color) -> ImageTexture:
+	if _pad_texs.has(fill):
+		return _pad_texs[fill]
+	var n := PAD_TEX
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var round_r := n * 0.18
+	var edge := n * 0.045
+	var rim := Color(1.0, 1.0, 1.0, 0.42)
+	for y in n:
+		for x in n:
+			# How far in from the rounded edge this pixel is.
+			var q := Vector2(absf(x + 0.5 - n * 0.5), absf(y + 0.5 - n * 0.5)) - Vector2.ONE * (n * 0.5 - round_r)
+			var inside := round_r - (Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0))
+			if inside <= 0.0:
+				img.set_pixel(x, y, Color(0, 0, 0, 0))
+				continue
+			var c := fill.lerp(rim, clampf(edge + 1.0 - inside, 0.0, 1.0)) if inside < edge + 1.0 else fill
+			c.a *= clampf(inside, 0.0, 1.0)
+			img.set_pixel(x, y, c)
+	var tex := ImageTexture.create_from_image(img)
+	_pad_texs[fill] = tex
+	return tex
 
 func _touch_button(text: String, action: String, at: Vector2, size: float, for_who := "Dozer") -> Array:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.1, 0.1, 0.1, 0.55))
 	var b := TouchScreenButton.new()
-	b.texture_normal = ImageTexture.create_from_image(img)
-	b.scale = Vector2.ONE * (size / 16.0)
+	b.texture_normal = _pad_tex(IDLE_PAD)
+	b.texture_pressed = _pad_tex(Color(0.35, 0.35, 0.35, 0.7))
+	b.scale = Vector2.ONE * (size / float(PAD_TEX))
 	b.position = at
 	b.action = action
 	b.set_meta("size", size)
@@ -4383,6 +4544,8 @@ func _touch_button(text: String, action: String, at: Vector2, size: float, for_w
 	word.text = text
 	word.position = at + Vector2(size * 0.14, size * 0.36)
 	word.add_theme_font_size_override("font_size", int(size * 0.17))
+	word.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.85))
+	word.add_theme_constant_override("outline_size", maxi(int(size * 0.035), 3))
 	word.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(word)
 	b.visibility_changed.connect(func(): word.visible = b.visible)
@@ -4414,15 +4577,11 @@ func _change_cut(steps: int) -> void:
 
 func _show_cut() -> void:
 	_cut_shown = dozer.cut_on
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.1, 0.55, 0.15, 0.85) if dozer.cut_on else Color(0.1, 0.1, 0.1, 0.55))
-	cut_button.texture_normal = ImageTexture.create_from_image(img)
+	cut_button.texture_normal = _pad_tex(Color(0.1, 0.55, 0.15, 0.85) if dozer.cut_on else IDLE_PAD)
 	cut_word.text = "CUT %s\n%d cm" % ["ON" if dozer.cut_on else "OFF", dozer.cut_cm]
 
 func _show_level() -> void:
-	var img := Image.create(16, 16, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.1, 0.55, 0.15, 0.85) if dozer.level_on else Color(0.1, 0.1, 0.1, 0.55))
-	level_button.texture_normal = ImageTexture.create_from_image(img)
+	level_button.texture_normal = _pad_tex(Color(0.1, 0.55, 0.15, 0.85) if dozer.level_on else IDLE_PAD)
 	level_word.text = "LEVEL ON" if dozer.level_on else "LEVEL OFF"
 
 ## A side-on picture: the blade against the ground under its edge, so a pile rising over it shows too.
@@ -4630,6 +4789,8 @@ Dirt code: %.1f ms a tick, %.1f ms redrawing" % [sim.awake_count(), cost_physics
 	if mode == "Drive" and say_time > 0.0:
 		alert.text = say_text
 		alert.visible = true
+	if alert.visible:
+		_place_alert()
 	if mode == "Drive":
 		gauge_ground = lerpf(gauge_ground, dozer.lift - dozer.edge_gap, minf(delta * 8.0, 1.0))
 		gauge.queue_redraw()

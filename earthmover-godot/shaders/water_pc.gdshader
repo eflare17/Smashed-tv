@@ -7,12 +7,12 @@ render_mode blend_mix, cull_disabled, depth_draw_always, specular_schlick_ggx;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable;
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
-uniform vec3 shallow : source_color = vec3(0.36, 0.62, 0.66);
+uniform vec3 shallow : source_color = vec3(0.30, 0.58, 0.68);
 uniform vec3 deep : source_color = vec3(0.08, 0.24, 0.34);
 uniform vec3 muddy : source_color = vec3(0.42, 0.33, 0.2);
 uniform vec3 foam_col : source_color = vec3(0.94, 0.95, 0.92);
 uniform float clear_m = 0.45;       // m of water before it's all its own colour
-uniform float mud = 0.35;           // how brown it is: fresh flood water carries dirt
+uniform float mud = 0.26;           // how brown it is: fresh flood water carries dirt
 
 varying vec3 v_world;
 

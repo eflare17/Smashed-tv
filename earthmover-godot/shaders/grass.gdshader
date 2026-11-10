@@ -8,9 +8,9 @@ render_mode cull_disabled, depth_draw_always, skip_vertex_transform;
 uniform sampler2D height_tex : filter_nearest, repeat_disable;
 uniform sampler2D data_tex : filter_linear, repeat_disable;
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
-uniform vec3 root_a : source_color = vec3(0.24, 0.45, 0.16);
-uniform vec3 tip_a : source_color = vec3(0.42, 0.66, 0.24);
-uniform vec3 tip_b : source_color = vec3(0.50, 0.72, 0.26);
+uniform vec3 root_a : source_color = vec3(0.22, 0.40, 0.15);
+uniform vec3 tip_a : source_color = vec3(0.40, 0.60, 0.23);
+uniform vec3 tip_b : source_color = vec3(0.55, 0.64, 0.29);
 
 const float CELL = 0.25;
 uniform float HALF = 32.0;

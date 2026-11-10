@@ -18,6 +18,7 @@ class Pine:
 	var base := Vector2.ZERO
 	var high := 10.0
 	var yaw := 0.0
+	var wide := 1.0          # how much wider or slimmer than usual
 	var state := 0
 	var dir := Vector2.ZERO
 	var angle := 0.0
@@ -35,11 +36,20 @@ func setup(s: DirtSim, mat: Material, spots: Array[Vector2], rng: RandomNumberGe
 		var kit := MeshKit.new()
 		Props.pine(kit, Vector3.ZERO, 10.0, rng)
 		meshes.append(kit.mesh())
+	# And some taller and slimmer, with four tiers, so they're not all one cone (review, 10 Nov). Their own dice, so the rest of
+	# the site comes out as it did.
+	var vary := RandomNumberGenerator.new()
+	vary.seed = 4417
+	for i in 2:
+		var kit := MeshKit.new()
+		Props.pine(kit, Vector3.ZERO, 10.0, vary, 4, 8)
+		meshes.append(kit.mesh())
 	for at: Vector2 in spots:
 		var t := Pine.new()
 		t.base = at
 		t.high = rng.randf_range(6.5, 11.0)
 		t.yaw = rng.randf() * TAU
+		t.wide = vary.randf_range(0.8, 1.2)
 		t.node = MeshInstance3D.new()
 		t.node.mesh = meshes[rng.randi() % meshes.size()]
 		t.node.material_override = mat
@@ -48,7 +58,7 @@ func setup(s: DirtSim, mat: Material, spots: Array[Vector2], rng: RandomNumberGe
 		_place(t)
 
 func _place(t: Pine) -> void:
-	var look := Basis(Vector3.UP, t.yaw).scaled(Vector3.ONE * t.high / 10.0)
+	var look := Basis(Vector3.UP, t.yaw).scaled(Vector3(t.wide, 1.0, t.wide) * t.high / 10.0)
 	if t.angle > 0.0:
 		# Its up axis tipped towards dir. It rests on its branches, so it rises a little as it goes over.
 		look = Basis(Vector3(t.dir.y, 0.0, -t.dir.x), t.angle) * look
