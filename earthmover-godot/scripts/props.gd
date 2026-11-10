@@ -593,9 +593,25 @@ static func rider_forearm(kit: MeshKit, z: float) -> void:
 
 ## His body and helmet.
 static func rider_body(kit: MeshKit) -> void:
-	# Body leaning forward over the tank.
-	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.24, 0.5, 0.38), HI_VIS, Basis(Vector3.BACK, deg_to_rad(-28.0)))
-	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.25, 0.04, 0.39), LAMP, Basis(Vector3.BACK, deg_to_rad(-28.0)))
+	rider_pelvis(kit)
+	rider_chest(kit)
+	rider_head(kit)
+
+## His body's in two halves, so he can fold at the waist coming off: leaning forward over the tank, sitting on it.
+static func rider_chest(kit: MeshKit) -> void:
+	var lean := Basis(Vector3.BACK, deg_to_rad(-28.0))
+	kit.box(Vector3(0.0, 1.27, 0) + lean * Vector3(0.0, 0.13, 0.0), Vector3(0.24, 0.26, 0.38), HI_VIS, lean)
+	kit.box(Vector3(0.0, 1.27, 0) + lean * Vector3(0.0, 0.04, 0.0), Vector3(0.25, 0.04, 0.39), LAMP, lean)
+
+static func rider_pelvis(kit: MeshKit) -> void:
+	var lean := Basis(Vector3.BACK, deg_to_rad(-28.0))
+	kit.box(Vector3(0.0, 1.27, 0) + lean * Vector3(0.0, -0.13, 0.0), Vector3(0.23, 0.26, 0.37), HI_VIS, lean)
+	# A roll across his waist, that fills the gap as he folds.
+	kit.cone(Vector3(0.0, 1.27, -0.18), Vector3(0.0, 1.27, 0.18), 0.118, 0.118, 8, HI_VIS)
+
+static func rider_head(kit: MeshKit) -> void:
+	# His neck.
+	kit.box(Vector3(0.15, 1.54, 0), Vector3(0.13, 0.16, 0.15), CHARCOAL, Basis(Vector3.BACK, deg_to_rad(-17.0)))
 	# Helmet with its peak and goggles.
 	kit.box(Vector3(0.18, 1.67, 0), Vector3(0.3, 0.28, 0.27), WHITE_PAINT)
 	kit.box(Vector3(0.3, 1.78, 0), Vector3(0.16, 0.03, 0.25), YELLOW, Basis(Vector3.BACK, deg_to_rad(-12.0)))

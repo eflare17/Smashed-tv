@@ -71,6 +71,17 @@ func body_basis(d: Ragdoll) -> Basis:
 	return Basis(fw, up, fw.cross(up))
 
 ## How bent each elbow and knee is, in degrees, and each shoulder and hip against his body.
+## Degrees he's folded at the waist, and degrees his head's off in line with his chest.
+func waist_bend(d: Ragdoll) -> float:
+	var p := d.points
+	var waist := (p[Ragdoll.WAIST_L] + p[Ragdoll.WAIST_R]) * 0.5
+	return rad_to_deg(((p[Ragdoll.SH_L] + p[Ragdoll.SH_R]) * 0.5 - waist).angle_to(waist - (p[Ragdoll.HIP_L] + p[Ragdoll.HIP_R]) * 0.5))
+
+func neck_bend(d: Ragdoll) -> float:
+	var p := d.points
+	var sh := (p[Ragdoll.SH_L] + p[Ragdoll.SH_R]) * 0.5
+	return rad_to_deg((p[Ragdoll.HEAD] - sh).angle_to(sh - (p[Ragdoll.WAIST_L] + p[Ragdoll.WAIST_R]) * 0.5))
+
 func bends(d: Ragdoll) -> Array[float]:
 	var p := d.points
 	var up := (p[Ragdoll.SH_L] + p[Ragdoll.SH_R] - p[Ragdoll.HIP_L] - p[Ragdoll.HIP_R]).normalized()
@@ -284,6 +295,11 @@ func _init() -> void:
 	var still := 99.0
 	var turned := 0.0
 	var body_was := body_basis(doll)
+	var off_for := 0.0
+	var fold := 0.0
+	var nod := 0.0
+	var stood_hips := 0.0
+	var stood_head := 0.0
 	while fb.crash_t >= 0.0:
 		var was := doll.points.duplicate()
 		fb.step(DT)
@@ -300,20 +316,73 @@ func _init() -> void:
 		var now := bends(doll)
 		for n in now.size():
 			most_bend = maxf(most_bend, absf(now[n] - bend0[n]))
-		if fb.crash_t > Bike.CRASH_TIME - 0.1:
-			var hips := (doll.points[Ragdoll.HIP_L] + doll.points[Ragdoll.HIP_R]) * 0.5
-			hips_up = minf(hips_up, hips.y - fj.height_at(Vector2(hips.x, hips.z)))
-			var fastest := 0.0
+		off_for = fb.crash_t
+		var hips := (doll.points[Ragdoll.HIP_L] + doll.points[Ragdoll.HIP_R]) * 0.5
+		var hips_now := hips.y - fj.height_at(Vector2(hips.x, hips.z))
+		if doll.rising < 0.0:
+			# Lying where he fell: how he is the moment before he starts getting up.
+			hips_up = hips_now
+			still = 0.0
 			for n in Ragdoll.COUNT:
-				fastest = maxf(fastest, doll.points[n].distance_to(was[n]) / DT)
-			still = minf(still, fastest)
-	print("   deepest under the dirt %.3f m, sticks off length %.0f%%, joints bent up to %.0f degrees from on the bike, hips %.2f m up at the end, quickest bit of him then %.2f m/s" % [under, stretched * 100.0, most_bend, hips_up, still])
+				still = maxf(still, doll.points[n].distance_to(was[n]) / DT)
+			fold = maxf(fold, waist_bend(doll))
+			nod = maxf(nod, neck_bend(doll))
+		elif doll.stood() >= 0.0:
+			stood_hips = hips_now
+			stood_head = doll.points[Ragdoll.HEAD].y - fj.height_at(Vector2(hips.x, hips.z))
+	print("   deepest under the dirt %.3f m, sticks off length %.0f%%, joints bent up to %.0f degrees from on the bike, hips %.2f m up lying there, quickest bit of him then %.2f m/s" % [under, stretched * 100.0, most_bend, hips_up, still])
+	print("   folded up to %.0f degrees at the waist, his head nodding up to %.0f; on his feet his hips are %.2f m up and his head %.2f; off the bike %.1f s" % [fold, nod, stood_hips, stood_head, off_for])
+	check(nod > 10.0 and nod < 60.0, "and his head nods on his neck")
+	check(stood_hips > 0.75 and stood_head > 1.4, "stopped, he gets himself up onto his feet")
+	check(off_for < Bike.CRASH_TIME + Ragdoll.RISE + Bike.STOOD + 0.2, "and it never takes long")
 	check(not broken and under < 0.03, "no bit of him goes under the dirt")
 	check(stretched < 0.08, "his arms and legs keep their length")
 	check(most_bend > 25.0, "his arms and legs flop about at the joints")
 	check(turned > 270.0, "he tumbles and rolls, not just slides (his body turned over %.0f degrees in all)" % turned)
 	check(hips_up < 0.45 and still < 0.6, "and he ends up lying still on the ground")
 	check(not doll.visible and fb._rider.visible, "then he's back on the bike")
+
+	# Thrown at things: a shed wall, a tree, and the bike lying in his way.
+	var yard := DirtSim.new()
+	var yb := new_bike(yard, Vector2(-20.0, -20.0), Vector2(1.0, 0.0))
+	var yd := yb._doll
+	var thrown_at := Transform3D(Basis.IDENTITY, Vector3(0.0, yard.height_at(Vector2.ZERO), 0.0))
+	yd.edge = 30.0
+	yd.walls = [[Vector2(6.0, -8.0), Vector2(6.0, 8.0), 0.05, 3.0]]
+	yd.throw(thrown_at, Vector3(12.0, 1.0, 0.0), Vector3.BACK, 0.0)
+	fold = 0.0
+	var furthest := -99.0
+	for i in 180:
+		yd.step(DT)
+		fold = maxf(fold, waist_bend(yd))
+		for dp in yd.points:
+			furthest = maxf(furthest, dp.x)
+	check(furthest < 6.0, "thrown at a wall at 12 m/s, no bit of him goes through it (furthest %.2f m, the wall at 6)" % furthest)
+	check(yd.settled(), "and he ends up stopped in front of it")
+	check(fold > 20.0 and fold < 100.0, "hitting it he folds at the waist, and no further than a body does (%.0f degrees)" % fold)
+	yd.walls = [[Vector2(5.0, 0.1), Vector2(5.0, 0.1), 0.3, 8.0]]
+	yd.throw(thrown_at, Vector3(12.0, 1.0, 0.0), Vector3.BACK, 0.0)
+	var closest := 99.0
+	for i in 180:
+		yd.step(DT)
+		for dp in yd.points:
+			closest = minf(closest, Vector2(dp.x - 5.0, dp.z - 0.1).length())
+	check(closest > 0.29, "thrown at a tree, he goes round it or stops, never through the trunk (closest %.2f m to its middle, 0.3 thick)" % closest)
+	yd.walls = []
+	yd.bike_a = Vector3(3.0, thrown_at.origin.y + 0.3, -1.0)
+	yd.bike_b = Vector3(3.0, thrown_at.origin.y + 0.3, 1.0)
+	yd.bike_vel = Vector3.ZERO
+	yd.bike_solid = true
+	yd.throw(thrown_at, Vector3(6.0, 0.5, 0.0), Vector3.BACK, 0.0)
+	var inside := 99.0
+	for i in 180:
+		yd.step(DT)
+		if yd._bike_on:
+			for dp in yd.points:
+				inside = minf(inside, Geometry3D.get_closest_point_to_segment(dp, yd.bike_a, yd.bike_b).distance_to(dp))
+	check(inside > Ragdoll.BIKE_R and inside < 1.0, "thrown onto the bike lying there, he lands on it and not through it (closest %.2f m to its middle)" % inside)
+	check(yd.shoved.x > 1.0, "and it's shoved along by him (%.0f kg m/s)" % yd.shoved.x)
+	yb.queue_free()
 
 	# Online: a copy fed what the host sends follows it through a jump, the rider coming off and all; the guest's thumb gets to
 	# the host for the lean.

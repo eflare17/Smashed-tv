@@ -280,6 +280,7 @@ var house: MeshInstance3D
 ## Things that go see-through while they stand between the camera and the machine being driven.
 var fadeables: Array[GeometryInstance3D] = []
 var obstacles: Array = []       # solid things that aren't machines, as machine footprints are: [a, b, radius]
+var rider_walls: Array = []     # fences a thrown rider hits but machines never reach: [a, b, radius, how high]
 var menu: Control
 var menu_kind := ""             # "start" or "done", or nothing with no menu up
 var menu_scroll: ScrollContainer  # the job list, which scrolls
@@ -304,6 +305,7 @@ var worst := 999.0
 var worst_clock := 0.0
 var shot_path := ""
 var shot_wait := 60
+var strip_path := ""             # --strip=: pictures through a crash in the jumps demo go here, name_c1_00.png and on
 var demo := ""
 var demo_clock := 0.0
 var start_total := 0
@@ -419,7 +421,11 @@ func _read_args() -> void:
 			grass = a.substr(8)
 		elif a.begins_with("--wait="):
 			shot_wait = int(a.substr(7))
-		elif a == "--crash":
+		elif a.begins_with("--strip="):
+			strip_path = a.substr(8)
+		elif a == "--crash" or a == "--crash=chase":
+			if a == "--crash=chase":
+				set_meta("crash_chase", true)
 			# The jumps demo leans right back off the first jump, twice, and watches him come off from the side.
 			set_meta("crash_demo", true)
 		elif a.begins_with("--lift="):
@@ -1102,7 +1108,7 @@ func _add_mine_site(kit: MeshKit, tr: RandomNumberGenerator) -> void:
 		# Each faces in, toward the middle of the pit.
 		var to_pit := Vector2(12.0, 7.0) - spot2
 		Props.light_tower(kit, Vector3(at.x, sim.height_at(spot2), at.z), atan2(-to_pit.y, to_pit.x))
-		obstacles.append([spot2, spot2, 1.4])
+		obstacles.append([spot2, spot2, 1.4, 1.5])
 	var huts := MeshInstance3D.new()
 	huts.mesh = built.mesh()
 	huts.material_override = prop_mat
@@ -1266,6 +1272,7 @@ func _add_downpipe(hk: MeshKit, front: float, wide: float, wall: float) -> void:
 ## A paling fence along the back of the yard, with the drain pit in front of it.
 func _add_back_fence(kit: MeshKit) -> void:
 	var z: float = mission["fence_z"]
+	rider_walls.append([Vector2(-13.6, z), Vector2(13.6, z), 0.08, 1.8])
 	var wood := Props.c("#9a7650")
 	var x := -13.5
 	while x < 13.6:
@@ -1292,7 +1299,7 @@ func _add_backyard_things(kit: MeshKit) -> void:
 		kit.box(base + Vector3(cos(a) * R, 0.84, sin(a) * R), Vector3(0.5, 0.07, 0.07), Props.c("#7d8288"), turn)
 		kit.box(base + Vector3(cos(a) * (R - 0.16), 0.875, sin(a) * (R - 0.16)), Vector3(0.5, 0.05, 0.34), Props.c("#2f7fd6"), turn)
 	kit.cone(base + Vector3(0.0, 0.85, 0.0), base + Vector3(0.0, 0.87, 0.0), R - 0.32, R - 0.32, 22, Props.c("#1d1f22"))
-	obstacles.append([at, at, R + 0.15])
+	obstacles.append([at, at, R + 0.15, 0.9])
 	var white := Props.c("#ecece4")
 	for spec: Array in mission["floaters"]:
 		var piece := MeshKit.new()
@@ -1659,6 +1666,9 @@ func _near_line(p: Vector2, a: Vector2, b: Vector2, within: float) -> bool:
 ## Posts and tape round the site, so the limit of the work can be seen, just past where the blade can reach.
 func _add_fence(kit: MeshKit) -> void:
 	var AT := Machine.AREA + 4.5
+	for side: float in [-AT, AT]:
+		rider_walls.append([Vector2(-AT, side), Vector2(AT, side), 0.05, 1.25])
+		rider_walls.append([Vector2(side, -AT), Vector2(side, AT), 0.05, 1.25])
 	var post := Color("#efe8d8")
 	var tape := Color("#ff7a1a")
 	var posts := int(round(AT * 2.0 / 6.1))
@@ -1861,7 +1871,24 @@ func _on_tree_landed(at: Vector3) -> void:
 	Input.vibrate_handheld(160)
 
 ## The rider's come off the bike: felt and heard, and said, as it's put back in a moment.
+## Everything solid a rider thrown off the bike can run into: the other machines, buildings, standing trees and the fences.
+func _crash_walls() -> Array:
+	var walls: Array = rider_walls.duplicate()
+	for m: Machine in machines:
+		if m == bike or m is Worker or not m.visible:
+			continue
+		var fp: Array = m.footprint()
+		walls.append([fp[0], fp[1], fp[2], maxf(m.eye.y - 0.3, 1.0)])
+	for o: Array in obstacles:
+		walls.append([o[0], o[1], o[2], o[3] if o.size() > 3 else 3.0])
+	for t: Trees.Pine in trees.list:
+		if t.state == Trees.STANDING:
+			walls.append([t.base, t.base, t.high * 0.038 * t.wide, t.high])
+	return walls
+
 func _on_bike_crashed() -> void:
+	# He can go on past where machines stop, as far as the site fence.
+	bike.crash_site(_crash_walls(), Machine.AREA + 5.5)
 	slam.position = bike.position + Vector3(0.0, 0.3, 0.0)
 	slam.restart()
 	if bike != active:
@@ -5299,17 +5326,26 @@ func _run_touch_demo() -> void:
 						set_meta("back_t", int(get_meta("back_t")) + 1)
 						if int(get_meta("back_t")) > 20:
 							get_tree().quit()
+					# With --strip, a strip of pictures through each time he comes off.
+					if bike.crash_t >= 0.0 and strip_path != "":
+						var strip := [0.1, 0.3, 0.55, 0.85, 1.2, 1.7, 2.3, 2.9, 3.3, 3.7, 4.1, 4.6]
+						var nth := int(get_meta("crashes", 0))
+						var got_s := int(get_meta("strip_%d" % nth, 0))
+						if got_s < strip.size() and bike.crash_t >= strip[got_s]:
+							set_meta("strip_%d" % nth, got_s + 1)
+							get_viewport().get_texture().get_image().save_png("%s_c%d_%02d.png" % [strip_path.get_basename(), nth, got_s])
 					var d := bike._doll
 					var look := (d.points[Ragdoll.HIP_L] + d.points[Ragdoll.HIP_R]) * 0.5 if bike.crash_t >= 0.0 else bike.position + Vector3(0.0, 0.8, 0.0)
-					if not has_meta("crash_cam"):
-						set_meta("crash_cam", true)
-						_set_view("Dozer")
-						target = look
-					target = target.lerp(look, 0.12)
-					var cdir: Vector2 = mission["line_dir"]
-					yaw = atan2(cdir.y, -cdir.x) + (0.0 if int(get_meta("crashes", 0)) < 1 or bike.crash_t >= 0.0 and int(get_meta("crashes", 0)) == 1 else 0.6)
-					pitch = deg_to_rad(24.0)
-					dist = 5.5 if bike.crash_t >= 0.0 else 8.0
+					if not has_meta("crash_chase"):
+						if not has_meta("crash_cam"):
+							set_meta("crash_cam", true)
+							_set_view("Dozer")
+							target = look
+						target = target.lerp(look, 0.12)
+						var cdir: Vector2 = mission["line_dir"]
+						yaw = atan2(cdir.y, -cdir.x) + (0.0 if int(get_meta("crashes", 0)) < 1 or bike.crash_t >= 0.0 and int(get_meta("crashes", 0)) == 1 else 0.6)
+						pitch = deg_to_rad(24.0)
+						dist = 5.5 if bike.crash_t >= 0.0 else 8.0
 				if not bike.airborne:
 					var off := bike.spot.y - line_z
 					var push := clampf((13.0 - bike.speed) * 0.3 + 0.75, 0.0, 1.0)

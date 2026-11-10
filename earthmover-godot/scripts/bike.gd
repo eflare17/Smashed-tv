@@ -45,7 +45,11 @@ const AIR_EASE := 6.0            # rad/s2: how quickly the rider can change how 
 const LEAN_REACH := 1.0          # of the stick's reach, the thumb slid from where it was at take-off for full lean
 const CRASH_ANGLE := 0.96        # radians, 55 degrees: landed this far off the ground's slope, the rider comes off
 const CRASH_HIT := 13.0          # m/s straight into the ground: far too hard, even landed square
-const CRASH_TIME := 3.0          # s after he comes off till the bike's put back (2.2 till the owner asked for 3, 10 Nov)
+const CRASH_TIME := 3.0          # s after he comes off that he gets up, if he hasn't stopped and got up before (2.2 till the owner asked for 3, 10 Nov)
+const UP_AFTER := 1.3            # s after he comes off before he'll get up, once he's stopped
+const STOOD := 0.5               # s he stands there before he's back on the bike
+const LIE_UP := 0.18             # m the bike's lifted lying on its side, so it's on the dirt and not in it
+const BIKE_KG := 100.0           # the bike on its own, for when he lands on it
 const THROW := 0.8               # of the bike's speed the rider's thrown off at: the rest is lost hitting the bars and the ground (1 sent him flying)
 const STEPS_A_SECOND := 240.0    # the springs are worked out this often
 const MONO_ANGLE := 0.55         # radians, about 32 degrees nose up from level: how high MONO holds the front up, as a rider
@@ -101,6 +105,8 @@ var _front_wheel: MeshInstance3D
 var _arm: MeshInstance3D
 var _rider: Node3D
 var _doll: Ragdoll               # the rider gone floppy, thrown off
+var _crash_aim := Vector3.ZERO  # where the camera looks while he's off: him, not the bike
+var _aim_back := 1.0             # 0 to 1: the camera on its way back to the bike once he's on it again
 var _stand: MeshInstance3D
 var _rear_roll := 0.0
 var _front_roll := 0.0
@@ -204,8 +210,19 @@ func gauge_word() -> Array:
 		return ["JUMP %.1f m" % jump_m, Color("#ffd23f")]
 	return ["%d km/h" % roundi(Vector2(speed, vy).length() * 3.6), Color("#a8f07a")]
 
+## Where the camera looks: the bike, or the rider while he's off it, and gliding back once he's on again.
 func camera_aim() -> Vector3:
-	return Vector3(position.x, _aim_y + view_aim, position.z)
+	var at := Vector3(position.x, _aim_y + view_aim, position.z)
+	if crash_t >= 0.0:
+		return _crash_aim
+	if _aim_back < 1.0:
+		return _crash_aim.lerp(at, smoothstep(0.0, 1.0, _aim_back))
+	return at
+
+## What's solid on the site for him to run into once he's off: `walls` as [a, b, radius, how high], and how far out he can go.
+func crash_site(walls: Array, edge: float) -> void:
+	_doll.walls = walls
+	_doll.edge = edge
 
 func effort() -> float:
 	# Off the ground the throttle's still open and the engine screams.
@@ -235,6 +252,8 @@ func footprint() -> Array:
 
 func step(dt: float) -> void:
 	jump_show = maxf(jump_show - dt, 0.0)
+	if crash_t < 0.0:
+		_aim_back = minf(_aim_back + dt * 2.0, 1.0)
 	mono_show = maxf(mono_show - dt, 0.0)
 	if crash_t >= 0.0:
 		_crash_step(dt)
@@ -535,6 +554,8 @@ func _remember(dt: float) -> void:
 ## ---------------------------------------------------------------- coming off
 
 func _crash(why: String) -> void:
+	_crash_aim = camera_aim()
+	_aim_back = 1.0
 	_mono_end()
 	crash_why = why
 	crash_t = 0.0
@@ -558,19 +579,35 @@ func _crash_step(dt: float) -> void:
 	spot = next
 	var ground := sim.height_at(spot)
 	vy -= 9.8 * dt
-	y = maxf(y + vy * dt, ground + 0.28)
-	if y <= ground + 0.28:
+	# Lying over, it rests on its side on the dirt.
+	var lying := ground + COM_UP + LIE_UP * clampf(roll_vis / 1.35, 0.0, 1.0)
+	y = maxf(y + vy * dt, lying)
+	if y <= lying:
 		vy = 0.0
 	pitch = lerp_angle(pitch, _ground_angle(), minf(dt * 5.0, 1.0))
 	roll_vis = lerpf(roll_vis, 1.35, minf(dt * 5.0, 1.0))
 	# The rider: thrown, flopping and sliding, then lying where he ends up.
+	# He can land on the bike, or it can slide into him: either way each shoves the other.
+	var f := forward()
+	_doll.bike_a = transform * Vector3(REAR_X, 0.55, 0.0)
+	_doll.bike_b = transform * Vector3(FRONT_X, 0.55, 0.0)
+	_doll.bike_vel = Vector3(f.x * speed, 0.0, f.y * speed)
+	_doll.bike_solid = true
 	_doll.step(dt)
-	if crash_t > CRASH_TIME:
+	speed += _doll.shoved.dot(Vector3(f.x, 0.0, f.y)) / BIKE_KG
+	_doll.shoved = Vector3.ZERO
+	var hips := (_doll.points[Ragdoll.HIP_L] + _doll.points[Ragdoll.HIP_R]) * 0.5
+	_crash_aim = _crash_aim.lerp(hips + Vector3(0.0, 0.45, 0.0), minf(dt * 5.0, 1.0))
+	# Once he's stopped he gets up, and a moment after he's on his feet he's back on it.
+	if (crash_t > UP_AFTER and _doll.settled()) or crash_t > CRASH_TIME:
+		_doll.get_up()
+	if _doll.stood() > STOOD:
 		_put_back()
 
 ## Back on it, stopped, a little before the jump that threw him.
 func _put_back() -> void:
 	crash_t = -1.0
+	_aim_back = 0.0
 	spot = _back_to[0]
 	angle = _back_to[1]
 	_back_to = []
@@ -589,6 +626,7 @@ func _put_back() -> void:
 ## The game's put it somewhere (a job's start, out of the way): set straight down there, stopped, the rider on it if he's riding.
 func _settle(_k: float) -> void:
 	_rest_t = 0.0
+	_aim_back = 1.0
 	if crash_t >= 0.0:
 		crash_t = -1.0
 		_doll.visible = false

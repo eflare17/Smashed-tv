@@ -665,3 +665,10 @@ dirt or scores a job changed.
 - Garden patch: only the dip counts, not its rim, so it starts at 0% not 26%.
 - Look: lighter shade, a haze from 30 m out, less neon grass, off-white paint on the white machines, a mix of tree shapes and widths, a door, step, window frames and garage panels on the house, bluer water on PC.
 - Not done: the driveway's blotchy look, grass at path edges, the street drain start (moving it put the camera behind the fence), the farm road fence wire.
+
+## Rider physics (10 Nov, Fable 5.2)
+- The rider bends at the waist and nods at the neck (waist and neck drawn in), with limits so he folds no further than a body does.
+- Off the bike he hits the lying bike (and shoves it), the fences, sheds, other machines and standing trees, and can land on low things. He can go out as far as the site fence.
+- Once stopped (1.3 s at the soonest, 3 s at the latest) he gets up through a crouch, stands half a second, then is back on the bike.
+- The camera follows him while he is off, then glides back to the bike. The lying bike rests on the dirt, not half in it.
+- Not done: the drive test "no tower ahead of the blade" fails about 2 runs in 5 (4.3 to 4.4 m against 4.0); not looked into.
