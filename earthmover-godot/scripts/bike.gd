@@ -293,6 +293,7 @@ func step(dt: float) -> void:
 
 
 var _rest_t := 0.0
+var _offs := 0                   # times he's come off
 var _rest_ground := Vector2.ZERO
 
 ## Parked: once it's been still a second it stops working anything out, until the ground under a wheel moves (a blade went by).
@@ -542,7 +543,10 @@ func _crash(why: String) -> void:
 	# The rider goes on without it, floppy, turning end over end as the bike was.
 	var side := Vector3(sin(angle), 0.0, cos(angle))
 	_rider.visible = false
-	_doll.throw(transform * _all.transform * _rider.transform, Vector3(forward().x * speed, vy + 1.5, forward().y * speed), side, spin)
+	# He rolls the way it was turning, or one way then the other.
+	_offs += 1
+	var roll_way := signf(turn_cmd) if absf(turn_cmd) > 0.1 else (1.0 if _offs % 2 == 0 else -1.0)
+	_doll.throw(transform * _all.transform * _rider.transform, Vector3(forward().x * speed, vy + 1.5, forward().y * speed), side, spin, roll_way)
 	crashed.emit()
 
 func _crash_step(dt: float) -> void:

@@ -650,5 +650,8 @@ dirt or scores a job changed.
   joints, knees only bending forward. He leaves at the bike's speed and turn, bounces a little, drags to a stop on the dirt and
   lies how he lands. The pieces of the rider's model (props.gd, now split into parts) hang off those points.
 - He lies there for 3 s in all before the bike's put back (was 2.2), as the owner asked. Online, his points are sent while he's off.
+- Owner: "he just kind of slides", wanted him to roll and slide. Now thrown turning head over heels (0.7 rad/s for each m/s) and
+  rolling sideways, bouncing more (0.3), and his hands, boots, head, knees and elbows dig in harder (36 m/s2, body 16) so they
+  tip him over: about a full roll or more, a 3 to 8 m slide. bike_test checks he turns over 270 degrees or more.
 - bike_test checks he stays above the dirt, his limbs keep their length, his joints bend, and he ends lying still.
 - `--mission=bike_jumps --demo=touchjumps --crash --noui` leans right back off the first jump twice, filmed from the side.

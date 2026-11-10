@@ -63,6 +63,13 @@ func ride(s: DirtSim, b: Bike, seconds: float, want_speed: float, thumb := 0.0, 
 				record["jump"] = b.jump_m
 			record["most_pitch"] = maxf(record["most_pitch"], absf(rad_to_deg(b.pitch)))
 
+## Which way his body faces.
+func body_basis(d: Ragdoll) -> Basis:
+	var p := d.points
+	var up := (p[Ragdoll.SH_L] + p[Ragdoll.SH_R] - p[Ragdoll.HIP_L] - p[Ragdoll.HIP_R]).normalized()
+	var fw := up.cross(p[Ragdoll.SH_R] - p[Ragdoll.SH_L]).normalized()
+	return Basis(fw, up, fw.cross(up))
+
 ## How bent each elbow and knee is, in degrees, and each shoulder and hip against his body.
 func bends(d: Ragdoll) -> Array[float]:
 	var p := d.points
@@ -275,6 +282,8 @@ func _init() -> void:
 	var broken := false
 	var hips_up := 9.0
 	var still := 99.0
+	var turned := 0.0
+	var body_was := body_basis(doll)
 	while fb.crash_t >= 0.0:
 		var was := doll.points.duplicate()
 		fb.step(DT)
@@ -285,6 +294,9 @@ func _init() -> void:
 			broken = broken or not dp.is_finite()
 			under = maxf(under, fj.height_at(Vector2(dp.x, dp.z)) - dp.y)
 		stretched = maxf(stretched, doll.worst_stretch())
+		var body := body_basis(doll)
+		turned += rad_to_deg((body_was.inverse() * body).get_rotation_quaternion().get_angle())
+		body_was = body
 		var now := bends(doll)
 		for n in now.size():
 			most_bend = maxf(most_bend, absf(now[n] - bend0[n]))
@@ -299,6 +311,7 @@ func _init() -> void:
 	check(not broken and under < 0.03, "no bit of him goes under the dirt")
 	check(stretched < 0.08, "his arms and legs keep their length")
 	check(most_bend > 25.0, "his arms and legs flop about at the joints")
+	check(turned > 270.0, "he tumbles and rolls, not just slides (his body turned over %.0f degrees in all)" % turned)
 	check(hips_up < 0.45 and still < 0.6, "and he ends up lying still on the ground")
 	check(not doll.visible and fb._rider.visible, "then he's back on the bike")
 

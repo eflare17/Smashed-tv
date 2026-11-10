@@ -8,8 +8,11 @@ extends Node3D
 const STEP := 1.0 / 120.0
 const ROUNDS := 8                # times a step the sticks are pulled back to length
 const THICK := 0.07              # m: how far each point stays off the ground, about a limb's thickness
-const BOUNCE := 0.15             # of the speed into the ground, back out of it
-const SCRAPE := 8.0              # m/s2: how hard the dirt slows a point dragging on it
+const BOUNCE := 0.3              # of the speed into the ground, back out of it (0.15 slid more than it tumbled)
+const SCRAPE := 16.0             # m/s2: how hard the dirt slows his body dragging on it (8 till the owner asked for less slide, 10 Nov)
+const CATCH := 36.0              # m/s2: and his hands, boots, head, knees and elbows, that dig in and tip him over
+const TUMBLE := 0.7              # rad/s head over heels he's thrown off turning, for each m/s the bike was going
+const SIDE_ROLL := 2.5           # rad/s he's thrown off rolling sideways, and a bit more the faster it was going
 const AIR_KEEP := 0.999          # of a point's speed kept each step in the air
 const KNEE_FRONT := 0.03         # m: a knee stays at least this far in front of the line from hip to boot, so it can't bend backwards
 
@@ -105,16 +108,21 @@ func _part(kit: MeshKit, mat: Material, a: int, b: int) -> void:
 	add_child(m)
 	_parts.append([m, a, b, _frame(_rest, a, b)])
 
-## Thrown off: `at` is where the rider was on the bike, going at `vel` and turning at `spin` rad/s about `axis`.
-func throw(at: Transform3D, vel: Vector3, axis: Vector3, spin: float) -> void:
+## Thrown off: `at` is where the rider was on the bike, going at `vel` and turning at `spin` rad/s about `axis`. On top of that
+## he goes head over heels the faster it was going, and rolls a little sideways, `roll_way` (-1 or 1).
+func throw(at: Transform3D, vel: Vector3, axis: Vector3, spin: float, roll_way := 1.0) -> void:
 	points.resize(COUNT)
 	_was.resize(COUNT)
 	var mid := at * ((_rest[SH_L] + _rest[SH_R] + _rest[HIP_L] + _rest[HIP_R]) * 0.25)
 	var up := at.basis.y.normalized()
 	var side := at.basis.z.normalized()
+	var flat := Vector3(vel.x, 0.0, vel.z)
+	var going := flat.length()
+	var ahead := flat / going if going > 0.1 else at.basis.x.normalized()
+	var turning := axis * spin + Vector3.UP.cross(ahead) * going * TUMBLE + ahead * roll_way * (SIDE_ROLL + going * 0.1)
 	for n in COUNT:
 		var p := at * _rest[n]
-		var v := vel + (axis * spin).cross(p - mid)
+		var v := vel + turning.cross(p - mid)
 		# His arms fly up and out, and his boots come off the pegs.
 		var out := -1.0 if n in [ELB_L, HAND_L, BOOT_L, KNEE_L] else 1.0
 		if n == HAND_L or n == HAND_R:
@@ -185,8 +193,9 @@ func _ground(landing: bool) -> void:
 				var vy := p.y - w.y
 				var flat := Vector2(p.x - w.x, p.z - w.z)
 				var l := flat.length()
+				var grip := SCRAPE if k in [SH_L, SH_R, HIP_L, HIP_R] else CATCH
 				if l > 0.0:
-					flat *= maxf(l - SCRAPE * STEP * STEP, 0.0) / l
+					flat *= maxf(l - grip * STEP * STEP, 0.0) / l
 				p.y = floor_y
 				w = Vector3(p.x - flat.x, p.y + minf(vy, 0.0) * BOUNCE, p.z - flat.y)
 				_was[k] = w
