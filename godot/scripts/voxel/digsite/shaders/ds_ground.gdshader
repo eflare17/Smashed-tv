@@ -26,6 +26,11 @@ uniform vec3 soil_cols[16];
 uniform sampler2D wear_tex : filter_linear, repeat_disable;       // R: worn bare by tracks (the digger game's track marks)
 uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
+uniform float cavity_k = 0.45;
+uniform vec3 soil_tint = vec3(1.0);
+// (cut ground against the digger game's, from the same camera: ours came out (119, 62, 33) to its (137, 81, 50), a
+// dark red where its is a lighter, browner earth)
+uniform vec3 cut_tint = vec3(1.15, 1.29, 1.38);
 
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -80,7 +85,8 @@ void fragment() {
 	// crisp, slightly ragged borders between what's here: this is toon, so no long soft blends
 	float grass = smoothstep(0.44, 0.56, v_info.b + (fine - 0.5) * 0.45);
 	float rock = smoothstep(0.44, 0.56, v_info.a + (fine - 0.5) * 0.45);
-	float lumpy = smoothstep(0.1, 0.6, v_info.r);
+	// (even cut ground has some grit to it, or it looks like plastic: the digger game's, 0.22 of a heap's lumpiness)
+	float lumpy = max(0.22, smoothstep(0.1, 0.6, v_info.r));
 
 	// soil: the material's own colour, in lumps with dark gaps where it's loose, smooth and a shade darker where cut
 	vec4 clod = texture(clods_tex, v_world.xz / CLOD_M);
@@ -91,13 +97,14 @@ void fragment() {
 	}
 	float gap = mix(1.0, smoothstep(0.08, 0.62, clod.b), lumpy);
 	vec3 base = v_col;
-	vec3 cut = base * 0.82 * mix(0.92, 1.06, smoothstep(0.42, 0.58, fine));
+	// (cut ground 0.89 of the loose soil's colour, as its cut_a is to its soil: at 0.82 ours was a flat dark red)
+	vec3 cut = base * 0.89 * cut_tint * mix(0.9, 1.06, smoothstep(0.42, 0.58, fine));
 	vec3 lumps = base * mix(0.8, 1.15, (clod.a - 0.5) * 2.0 * 0.5 + 0.5);
-	vec3 soil = mix(cut, lumps, lumpy);
+	vec3 soil = mix(cut, lumps, smoothstep(0.22, 0.8, lumpy));
 	// deep in a heap the real lumps cover it, and the ground only shows in the cracks between them
 	float heap = smoothstep(0.5, 0.9, v_info.r);
 	soil = mix(soil, under_a, heap * 0.6);
-	soil *= mix(0.42, 1.0, gap);
+	soil *= mix(0.42, 1.0, gap) * soil_tint;
 	// dark bands across steep faces, so a wall's height reads at a glance (not on loose slopes: they're lumps)
 	float strata = smoothstep(0.46, 0.5, fract(v_world.y * 0.9 + fine * 0.35));
 	soil = mix(soil * mix(0.82, 1.0, strata), soil, max(top, lumpy));
@@ -114,7 +121,7 @@ void fragment() {
 	col = mix(col, mix(rock_a, rock_b, smoothstep(0.45, 0.55, fine)) * (0.7 + 0.6 * v_col.r), rock);
 
 	// hollows go darker and warmer
-	col *= mix(vec3(1.0), vec3(0.42, 0.36, 0.40), v_info.g * 0.62);
+	col *= mix(vec3(1.0), vec3(0.55, 0.50, 0.50), v_info.g * cavity_k);
 
 	ALBEDO = col;
 	NORMAL = (VIEW_MATRIX * vec4(n, 0.0)).xyz;

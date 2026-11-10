@@ -238,6 +238,22 @@ func wear_tracks(m: DsMachine) -> void:
 					wear[k] = 255
 					_wear_due = true
 
+## A blade's or a bucket's cutting edge scraping the grass off, from a to b (the owner's dig, 10 Nov: patches of grass
+## were left green in a cut where the edge only shaved the top): bare along it, and a step behind it
+func wear_edge(a: Vector3, b: Vector3, fwd: Vector3) -> void:
+	var n := maxi(1, ceili(a.distance_to(b) / (CELL * 0.8)))
+	var back := Vector3(fwd.x, 0.0, fwd.z).normalized() * CELL
+	for i in n + 1:
+		var q := a.lerp(b, float(i) / n)
+		for k2 in 3:
+			var c := cell_of(q - back * float(k2))
+			if c.x < 0 or c.z < 0 or c.x >= W or c.z >= D:
+				continue
+			var k := c.z * W + c.x
+			if wear[k] != 255:
+				wear[k] = 255
+				_wear_due = true
+
 ## The surface drawn where it truly stands (a guest's eased to it), and the shaders' textures brought up to date
 func _glide(dt: float) -> void:
 	_wear_at += dt

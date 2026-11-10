@@ -8,8 +8,11 @@ extends Node
 ## digger game's 52 degrees. Owned by the voxel session.
 
 const FOV := 52.0
+const SUN := 0.68               # (the digger game's 0.72, less the little this renderer lights brighter: grass 206 green as its)
 const SUN_COMPAT := 0.5         # (the digger game's SUN_WEB: the compatibility renderer lights brighter; on it the sun's halved)
-const BLADES_PER_M2 := 64.0     # the digger game's "High" grass (its most: a PC has room for it)
+const BLADES_PER_M2 := 36.0     # the digger game's own grass (its "Medium", what it starts on), thinned further off as
+                                # it thins it (shaders/ds_grass.gdshader). At its "High", 64, everywhere, ours was a
+                                # bright static of tips: its softer look is the darker ground showing between them
 
 static var _noise: ImageTexture
 static var _prop: ShaderMaterial
@@ -140,9 +143,11 @@ func setup(s: Node3D) -> void:
 	# (no haze: the owner, 9 Nov, liked the digger game's clear, vibrant cartoon look better, "the other one's got like
 	# kind of a fog". A touch more colour instead: the same colours come out a shade duller here than in its browser
 	# renderer)
+	# (10 Nov, measured against its picture from the same camera: with the colour turned up to 1.18 our grass came
+	# out 237 green to its 206, neon; left alone it's the same)
+	# and a touch darker: this renderer draws the same scene some 5% brighter than its own does (sky 203 to its 192)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.18
-	env.adjustment_contrast = 1.04
+	env.adjustment_brightness = 0.95
 	# the ink: a quad over the whole view, drawn last, that paints only the lines
 	var om := ShaderMaterial.new()
 	om.shader = load("res://scripts/voxel/digsite/shaders/ds_outline.gdshader")
@@ -176,7 +181,7 @@ func enter() -> void:
 			"nbias": sun.shadow_normal_bias, "mode": sun.directional_shadow_mode, "dist": sun.directional_shadow_max_distance, "split": sun.directional_shadow_split_1}
 		sun.rotation_degrees = Vector3(-47.0, -38.0, 0.0)
 		sun.light_color = Color("#fff1d2")
-		sun.light_energy = 0.72 * (SUN_COMPAT if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 1.0)
+		sun.light_energy = SUN * (SUN_COMPAT if RenderingServer.get_current_rendering_method() == "gl_compatibility" else 1.0)
 		sun.shadow_blur = 0.0
 		sun.shadow_bias = 0.7
 		sun.shadow_normal_bias = 3.5

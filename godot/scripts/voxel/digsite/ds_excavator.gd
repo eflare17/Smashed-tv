@@ -431,6 +431,9 @@ func _dust_fx() -> void:
 	at.y = maxf(at.y, ground_y(at.x, at.z) + 0.05)
 	# (thrown up and back towards the machine, the way the bucket's dragged, not the way its tracks face)
 	work_fx(at, BUCKET_HALF * 0.8, cutting, yaw + swing + PI)
+	if cutting and site.terrain:
+		var te := teeth_ends()
+		site.terrain.wear_edge(te[0], te[1], (te[0] as Vector3) - _look.global_position)
 	if filling:
 		_inflow_left = 0.15
 	_inflow_left -= dt

@@ -8,8 +8,8 @@ uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable
 uniform float line_px = 1.5;
 uniform float threshold = 0.05;
 uniform vec3 ink : source_color = vec3(0.05, 0.04, 0.035);
-uniform float fade_from = 28.0;     // m: past this the ink thins out, gone by fade_to (far off, the ground's gentle rises
-uniform float fade_to = 55.0;       // drew lines across the paddock like scratches)
+uniform float fade_from = 70.0;     // m: past this the ink thins out, gone by fade_to (far off, the ground's gentle rises
+uniform float fade_to = 140.0;      // drew lines across the paddock like scratches; nearer than that the trees want their ink)
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);

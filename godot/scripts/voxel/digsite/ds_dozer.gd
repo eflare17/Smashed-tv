@@ -289,6 +289,9 @@ func _dust_fx() -> void:
 	var e: Array = edge_ends()
 	var mid: Vector3 = ((e[0] as Vector3) + (e[1] as Vector3)) * 0.5
 	work_fx(Vector3(mid.x, ground_y(mid.x, mid.z) + 0.25, mid.z), HALF_WIDTH * 0.93, pushing)
+	# (its edge in the ground and going forward scrapes the grass off, however little it cuts)
+	if speed > 0.1 and edge_gap < 0.03 and site.terrain:
+		site.terrain.wear_edge(e[0], e[1], forward())
 	if _tumble == null:
 		_tumble = DsMachine.chunks(40)
 		_tumble.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX

@@ -373,6 +373,9 @@ func _dust_fx() -> void:
 	_dug_was = dug
 	var e := edge()
 	work_fx(Vector3(e.x, maxf(e.y, ground_y(e.x, e.z)) + 0.1, e.z), bucket_half * 0.85, cutting)
+	if cutting and site.terrain:
+		var ends := edge_ends()
+		site.terrain.wear_edge(ends[0], ends[1], forward())
 
 func _most() -> int:
 	var best := DsMats.DIRT

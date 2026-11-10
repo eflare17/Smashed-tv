@@ -15,6 +15,7 @@ uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
 uniform vec3 grid_origin = vec3(0.0);
 uniform sampler2D wear_tex : filter_linear, repeat_disable;   // (worn bare by tracks: no grass there)
+uniform sampler2D show_off_tex : filter_linear, repeat_disable;   // (cells the surface stands off the mesh it was laid on)
 
 varying float v_t;
 varying float v_patch;
@@ -28,6 +29,16 @@ void vertex() {
 	vec2 guv = (root.xz - grid_origin.xz) / cell / grid_size;
 	float deep = textureLod(topo_lin, guv, 0.0).g * 255.0 / 8.0;
 	float keep = (1.0 - smoothstep(0.04, 0.3, deep)) * (1.0 - smoothstep(0.25, 0.6, textureLod(wear_tex, guv, 0.0).r));
+	// cut away under it since its blades were laid out (a blade's scrape, a bucket's bite): gone with the ground, not
+	// left standing in the cut till that patch is next drawn
+	keep *= smoothstep(-0.3, -0.12, textureLod(show_off_tex, guv, 0.0).r);
+	// thinner further off, as the digger game draws it (all of them to 20 m, half to 38 m, a quarter past that): each
+	// blade has its own rank, and is there while the share at its distance covers it (eased over a few metres, so
+	// there's no line where they stop)
+	float dist = distance(root, CAMERA_POSITION_WORLD);
+	float share = mix(mix(1.0, 0.5, smoothstep(17.0, 23.0, dist)), 0.25, smoothstep(34.0, 42.0, dist));
+	float rank = fract(sin(dot(root.xz, vec2(12.9898, 78.233))) * 43758.5453);
+	keep *= step(rank, share);
 	VERTEX *= keep;
 }
 

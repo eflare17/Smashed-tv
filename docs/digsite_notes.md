@@ -461,3 +461,30 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - The pour dust waits the same fall time and appears where the soil lands, on both games.
   - The excavator, Dingo, Bobcat and the truck's tipping all pour this way. If the ground won't take it all (the heap is already as high as the pour point), the rest goes on top of the heap (`dump`), so nothing is lost.
   - Tests that count the soil wait for `falling_n()` to reach 0 first.
+
+## Look matched to the web game from the same camera (10 Nov)
+
+- The owner said the web version still looks better and that describing a look in words wasn't working. So each item here was done against a still of both games from the same fixed camera (dozer pushing), measured in pixels, one item at a time.
+- **Grass:**
+  - The colours were already identical. The difference was density. The web draws 36 blades/m² (its "Medium", the default) and thins them to a half past 20 m and a quarter past 38 m. Ours drew 64 everywhere, which looked like bright static.
+  - `BLADES_PER_M2` is now 36. The thinning is done in `ds_grass.gdshader`: each blade has a rank from its position and drops out where the share at its distance no longer covers it, eased over a few metres.
+- **Overall colour:**
+  - The saturation 1.18 / contrast 1.04 boost from 9 Nov overshot: our near grass measured (137, 237, 57) against the web's (133, 206, 69). It's removed.
+  - This renderer also draws the same scene about 5% brighter, so `adjustment_brightness` is 0.95 and the sun is 0.68 (`DsLook.SUN`, was 0.72).
+  - After: grass (129, 211, 68), sky (137, 193, 232) against the web's (135, 192, 240).
+- **Dirt (`ds_ground.gdshader`):**
+  - Cut ground now has the web's grit (lumpiness at least 0.22). That part of its shader had been left out of the port, so cut ground was perfectly smooth.
+  - Cut ground is 0.89 of the soil colour (was 0.82), with a `cut_tint` of (1.15, 1.29, 1.38). After: (136, 82, 51) against the web's (137, 81, 50). Before: (119, 62, 33).
+  - The hollow darkening is eased from 0.62 with a red tint to 0.45, neutral (`cavity_k`). It was turning shallow cuts dark red. Lumps after: (124, 69, 41) against the web's (130, 68, 42).
+- **Grass in the cut:**
+  - Patches of grass-coloured ground were left where an edge only shaved the top.
+  - `DsTerrain.wear_edge` now marks the wear map along a cutting edge: the dozer's whenever it's in the ground and moving, the loaders' and the excavator's while cutting. The ground and the blades both already read that map, so the grass goes at once.
+  - Blades also drop out where the surface has gone below the mesh they were laid on.
+- **Surroundings (`DigSite._build`):**
+  - Trees were 46 small pines far off, with a bare band behind. Now there are 96 big ones (7.5 to 13.5 m), a third of them within 8 m of the fence, baked into four meshes. Behind them is the web's far treeline: 170 plainer pines, one mesh, no shadows.
+  - The ink now reaches them: the outline fades from 70 to 140 m (was 28 to 55 m).
+  - The fence is the web's: cream posts every 6 m and a strip of orange tape. The old see-through orange mesh panels read as a muddy olive wall.
+- **Props (`DigSite._props`):**
+  - All outside the gate, off the dug ground, so nothing is left standing on air: a parked ute, a barrow, sand and gravel heaps, drums, a pallet of bags, a stack of concrete pipes, witches' hats, survey pegs and a light tower.
+  - The ute, barrow, peg and light tower models are the web's, ported into DsProps.
+- **Machine shadow sides:** left alone. The machines use the same shader and the same lights as the web, so once the brightness matched there was nothing left to change.
