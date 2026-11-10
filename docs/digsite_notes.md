@@ -435,3 +435,14 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Machines don't all buzz in step: each runs at its own rate and phase.
   - `shake_effort()` adds to the shake while the machine works: arms or tray moving, the excavator's arm or slew. `shake_lean()` leans it under load.
   - It's all drawn on top of the sim: no machine's digging reads the shaken node. The shaken node's transform is read only by the clod keep-out boxes, which are off by a few mm at most.
+
+## Excavator digs with a curl, not a stab (10 Nov)
+
+- The owner asked for it to "actually need a curl and dig into it. At the moment, it just goes straight into the ground."
+- **Before:** lowering the bucket cut the ground under it, so F alone sank it 0.8 m straight down.
+- **Now (DsExcavator):**
+  - Only a curl in (yours or its own) or a drag towards the machine cuts. Lowering, pushing out and opening don't cut. For those, `_keep_out` keeps every part of the bucket's shell (back, floor, heel, teeth: `SHELL`) within BITE = 0.35 m of the ground. It rides the arm up to stay there, or stays put if the arm can't lift it. So let down, it bites in and rests on the ground. Curled in while it's lowered, it lands on its back.
+  - Like the web game, it curls by itself while dragged through the ground (CURL_ASSIST 0.8 rad/s), and while lifting a load (CURL_LIFT 1.6 rad/s), unless you're tipping it.
+  - It starts cutting from more open (curl over CURL_EMPTY + 0.1, was + 0.4), so a scoop from open takes the whole arc.
+  - FIRM_RATE went from 9 to 120 firm blocks a second per column. At 9, the teeth skated over each column in about a tenth of a second, so a dragged bite was a 9 cm scrape. Now the effort holds the arm back instead (BOG_AT 40 blocks a tick for full bog). A drag in and down fills the bucket heaped (1.2 m³) in under a second and leaves a pit.
+- The fleet test now opens the bucket before letting it down (alone and as the guest). It checks the bucket rests at no more than BITE, then digs by dragging in and down while curling.

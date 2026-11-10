@@ -4,7 +4,8 @@ extends DsMachine
 ## its arm worked out the same way): a 20-tonne machine on tracks, its house (the cab, the engine, the boom) slewing
 ## round on top. You move the bucket's pin, not the joints: R/F raise and lower it, T/G reach it out and pull it in,
 ## and the boom and stick work out how to get it there (elbow up, as an excavator's always is). Z/X slew the house,
-## the right mouse button curls the bucket in (holding; it digs as it goes through the ground), the left opens it
+## the right mouse button curls the bucket in (holding; it digs as it goes through the ground: let down, it only
+## bites in and rests there; it's curled or dragged in that it digs, curling as it fills), the left opens it
 ## (it pours out: over the tip truck's tray, into the truck). W/S and A/D drive its tracks. Its teeth bite the voxel
 ## ground below its own tracks too; stronger than the loaders (it breaks stone, not hard rock). You sit in its cab;
 ## your view slews with the house. In co-op the host's game runs it. Owned by the voxel session.
@@ -32,6 +33,15 @@ const CURL_MAX := 3.5           # curled right in, open side up
 const CURL_HOLDS := 2.3         # curled this far it keeps it all ...
 const CURL_EMPTY := 0.95        # ... opened this far, nothing
 const STAB_MOST := 0.8          # m its teeth push into the ground before it has to drag
+# (the owner, 10 Nov: "it actually needs a curl and dig into it. At the moment, it just goes straight into the
+# ground"): let down, or pushed out, or opened, the bucket's teeth bite only so far into the ground and it rests on it,
+# riding up over it; only dragged in towards the machine or curled does it cut, and dragged it curls by itself as it
+# fills, the digger game's way
+const BITE := 0.35              # m any part of the bucket goes into ground it isn't cutting
+const CURL_ASSIST := 0.8        # rad a second it curls by itself dragged through the ground
+const CURL_LIFT := 1.6          # ... and lifting a load (unless it's being tipped out)
+# its shell (DsProps.excavator_bucket's: the back, the floor, the heel, the teeth), in its own frame, for how deep it's in
+const SHELL: Array[Vector2] = [Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(1.23, 0.14), Vector2(1.35, -0.02), Vector2(0.15, -0.28), Vector2(0.75, -0.15)]
 # (the Dig Site's)
 const CAPACITY := 620 * DsTerrain.MM   # mm (620 blocks of 125 mm over a column: 1.2 m3)
 const HEAPED := 0.78            # of CAPACITY: past this it's heaped up out of the bucket's open side (the digger game's 27000/34560)
@@ -39,7 +49,10 @@ const LOAD_LEVELS := 12         # the soil in the bucket drawn at so many levels
 const HEAP_LEVELS := 6          # ... and so many heaped
 const HEAP_TALL := 0.3          # m the heap stands at its fullest, in the middle
 const HARDEST := 3              # soil, clay, stone
-const FIRM_RATE := 9.0          # firm blocks a second its teeth cut off a column (loose ones: all at once)
+const FIRM_RATE := 120.0        # firm blocks a second its teeth cut off a column (loose ones: all at once): a 20-tonne
+                                # machine; it's the work that slows the arm (BOG_AT), not its teeth skating over
+                                # (at 9 a dragged bite was a 9 cm scrape: the owner, 10 Nov)
+const BOG_AT := 40.0            # firm blocks cut in a tick that hold the arm right back
 const POUR_RATE := 520.0 * DsTerrain.MM
 const SEAT_MODEL := Vector3(0.45, 1.2, -0.8)    # (in the house, the digger game's way round: the cab's floor)
 
@@ -295,16 +308,28 @@ func _tool(dt: float) -> void:
 	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt * slow
 	if deep > STAB_MOST and _v_raise < 0.0:
 		want.y = wrist.y                       # (it won't stab deeper: drag it in)
+	var before := wrist
+	var before_curl := curl
+	var b0 := _bury()
 	_solve(want)
-	curl = clampf(curl + _v_curl * CURL_SPEED * dt, CURL_MIN, CURL_MAX)
+	var spin := _v_curl * CURL_SPEED
+	if deep > 0.05 and _v_reach < -0.1:
+		spin += CURL_ASSIST
+	if load_n > 0 and _v_raise > 0.1 and curl < CURL_HOLDS and curl_cmd >= 0.0:
+		spin += CURL_LIFT
+	curl = clampf(curl + spin * dt, CURL_MIN, CURL_MAX)
+	# cutting: curled in, or dragged in, the bucket open enough to take it and room in it; anything else, it rests on
+	# the ground
+	var working := (spin > 0.1 or _v_reach < -0.1) and curl > CURL_EMPTY + 0.1 and load_n < CAPACITY
+	if not working:
+		_keep_out(b0, before, before_curl)
 	_tracks.update(speed + steer * 0.8, speed - steer * 0.8, dt)
 	_pose_tool()
 	var e := edge()
 	# digging (the digger game's way, DsTerrain.blade): the teeth dragged, pulled down or curled through the ground take
 	# what stands above them in the strip they sweep, into the bucket (firm ground only so fast: in firm ground the arm
 	# bogs down); rock harder than it breaks stops them
-	var working := _v_curl > 0.1 or _v_reach < -0.1 or _v_raise < -0.1
-	if working and curl > CURL_EMPTY + 0.4 and load_n < CAPACITY and tr.contains(e) and e.y < tr.surface_at(e.x, e.z) + 0.1:
+	if working and tr.contains(e) and e.y < tr.surface_at(e.x, e.z) + 0.1:
 		var ends := teeth_ends()
 		var travel := e - e0
 		var fwd := Vector3(travel.x, 0.0, travel.z)
@@ -323,7 +348,7 @@ func _tool(dt: float) -> void:
 		dug += int(r.taken) + int(r.moved)
 		# (firm ground being cut, or standing over the teeth uncut, holds the arm back; loose comes easy)
 		var stuck := 0.5 if int(r.taken) == 0 and e.y < tr.surface_at(e.x, e.z) - 0.1 else 0.0
-		bog = lerpf(bog, clampf(float(r.cut) / DsTerrain.MM / 6.0 + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
+		bog = lerpf(bog, clampf(float(r.cut) / DsTerrain.MM / BOG_AT + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
 		blocked = "Hard rock: too hard for the bucket" if bool(r.rock) and int(r.taken) == 0 else ""
 	else:
 		bog = 0.0
@@ -347,6 +372,35 @@ func _tool(dt: float) -> void:
 					bucket.erase(m)
 				load_n -= put
 				n -= put
+
+## How deep the deepest part of the bucket is under the ground (m; under nothing: -INF)
+func _bury() -> float:
+	var tr: DsTerrain = site.terrain
+	var g := _look.global_transform * Transform3D(Basis(Vector3.UP, swing), Vector3.ZERO)
+	var bb := Basis(Vector3.BACK, -curl)
+	var pin := Vector3(wrist.x, wrist.y, ARM_Z)
+	var most := -INF
+	for p in SHELL:
+		var w := g * (pin + bb * Vector3(p.x, p.y, 0.0))
+		if tr.contains(w):
+			most = maxf(most, tr.surface_at(w.x, w.z) - w.y)
+	return most
+
+## Not cutting, the bucket's kept to BITE in the ground (or as deep as it was): it rides up out of it, or, if the arm
+## can't lift it so, stays where it was
+func _keep_out(b0: float, before: Vector2, before_curl: float) -> void:
+	var limit := maxf(BITE, b0)
+	for i in 3:
+		var over := _bury() - limit
+		if over <= 0.003:
+			if wrist.y > before.y + 0.0001 and _v_raise < 0.0:
+				_v_raise = 0.0
+			return
+		_solve(wrist + Vector2(0.0, over))
+	if _bury() > limit + 0.003:
+		_solve(before)
+		curl = before_curl
+		_v_raise = maxf(_v_raise, 0.0)
 
 func _follow(dt: float) -> void:
 	super(dt)

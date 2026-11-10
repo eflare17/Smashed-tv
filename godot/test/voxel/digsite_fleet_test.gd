@@ -100,6 +100,7 @@ func _solo() -> bool:
 				check(float(v.deepest) < DsDingo.DIG_MOST + 0.03, "its bucket never more than %.2f m under the ground it rides on (its highest wheel's, or the firm ground just ahead) (%.3f)" % [DsDingo.DIG_MOST, v.deepest])
 				var x := _m(3) as DsExcavator
 				_on(x)
+				x.curl = 1.2                # (opened, before it's let down: curled in it lands on its back)
 				x.raise_cmd = -1.0
 				_next(4)
 		4:
@@ -109,18 +110,20 @@ func _solo() -> bool:
 				var e := x.edge()
 				# (under the ground as made: its teeth cut the ground they're in exactly to them now)
 				v.e_under = ds.terrain.start_at(e.x, e.z) - e.y
-				check(float(v.e_under) > 0.2, "the excavator's bucket down in the ground (%.2f m under)" % v.e_under)
-				x.curl = 1.8
-				x.curl_cmd = 1.0
+				check(float(v.e_under) > 0.2 and float(v.e_under) < DsExcavator.BITE + 0.05, "let down, the excavator's bucket bites into the ground and rests there (%.2f m under)" % v.e_under)
+				x.curl_cmd = 1.0            # (dragged in and down, curling: how a bite's dug)
 				x.reach_cmd = -0.6
+				x.raise_cmd = -0.4
 				_next(5)
 		5:
 			var x := _m(3) as DsExcavator
+			v.low = minf(float(v.get("low", INF)), x.edge().y)
 			if t - mark > 1.4:
 				x.curl_cmd = 0.0
 				x.reach_cmd = 0.0
+				x.raise_cmd = 0.0
 				check(x.load_n > 40 * DsTerrain.MM, "curling in, it digs (%d mm)" % x.load_n)
-				check(x.edge().y < x.global_position.y, "below its own tracks")
+				check(float(v.low) < x.global_position.y - 0.3, "its teeth down below its own tracks as it dug (%.2f m)" % (x.global_position.y - float(v.low)))
 				x.raise_cmd = 1.0
 				_next(6)
 		6:
@@ -256,6 +259,7 @@ func _coop() -> bool:
 				check(x.driver == 2, "the guest's in the excavator")
 				if role == "guest":
 					x.raise_cmd = -1.0
+					x.curl_cmd = -0.25      # (opening it as it goes down: curled in it lands on its back)
 				_next(4)
 		4:
 			var x := _m(3) as DsExcavator
