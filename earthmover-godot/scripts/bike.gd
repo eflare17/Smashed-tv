@@ -46,6 +46,7 @@ const LEAN_REACH := 1.0          # of the stick's reach, the thumb slid from whe
 const CRASH_ANGLE := 0.96        # radians, 55 degrees: landed this far off the ground's slope, the rider comes off
 const CRASH_HIT := 13.0          # m/s straight into the ground: far too hard, even landed square
 const CRASH_TIME := 3.0          # s after he comes off till the bike's put back (2.2 till the owner asked for 3, 10 Nov)
+const THROW := 0.8               # of the bike's speed the rider's thrown off at: the rest is lost hitting the bars and the ground (1 sent him flying)
 const STEPS_A_SECOND := 240.0    # the springs are worked out this often
 const MONO_ANGLE := 0.55         # radians, about 32 degrees nose up from level: how high MONO holds the front up, as a rider
                                  # holds it short of where it'd tip over backwards, whatever the slope
@@ -546,7 +547,7 @@ func _crash(why: String) -> void:
 	# He rolls the way it was turning, or one way then the other.
 	_offs += 1
 	var roll_way := signf(turn_cmd) if absf(turn_cmd) > 0.1 else (1.0 if _offs % 2 == 0 else -1.0)
-	_doll.throw(transform * _all.transform * _rider.transform, Vector3(forward().x * speed, vy + 1.5, forward().y * speed), side, spin, roll_way)
+	_doll.throw(transform * _all.transform * _rider.transform, Vector3(forward().x * speed * THROW, vy + 0.4, forward().y * speed * THROW), side, spin, roll_way)
 	crashed.emit()
 
 func _crash_step(dt: float) -> void:

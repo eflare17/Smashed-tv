@@ -653,5 +653,8 @@ dirt or scores a job changed.
 - Owner: "he just kind of slides", wanted him to roll and slide. Now thrown turning head over heels (0.7 rad/s for each m/s) and
   rolling sideways, bouncing more (0.3), and his hands, boots, head, knees and elbows dig in harder (36 m/s2, body 16) so they
   tip him over: about a full roll or more, a 3 to 8 m slide. bike_test checks he turns over 270 degrees or more.
+- Owner: "he goes flying after he comes off", tone it down. Thrown at 0.8 of the bike's speed (THROW) with a 0.4 m/s kick up (was
+  1.5), bounce 0.18 (was 0.3), and the head-over-heels turn up to 0.95 to keep the roll: first down about 1 m from where he
+  came off (was 1.5 to 2.3), ending 4.5 to 6.5 m away (was 5 to 10).
 - bike_test checks he stays above the dirt, his limbs keep their length, his joints bend, and he ends lying still.
 - `--mission=bike_jumps --demo=touchjumps --crash --noui` leans right back off the first jump twice, filmed from the side.

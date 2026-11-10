@@ -8,10 +8,10 @@ extends Node3D
 const STEP := 1.0 / 120.0
 const ROUNDS := 8                # times a step the sticks are pulled back to length
 const THICK := 0.07              # m: how far each point stays off the ground, about a limb's thickness
-const BOUNCE := 0.3              # of the speed into the ground, back out of it (0.15 slid more than it tumbled)
+const BOUNCE := 0.18             # of the speed into the ground, back out of it (0.15 slid, 0.3 sent him flying)
 const SCRAPE := 16.0             # m/s2: how hard the dirt slows his body dragging on it (8 till the owner asked for less slide, 10 Nov)
 const CATCH := 36.0              # m/s2: and his hands, boots, head, knees and elbows, that dig in and tip him over
-const TUMBLE := 0.7              # rad/s head over heels he's thrown off turning, for each m/s the bike was going
+const TUMBLE := 0.95            # rad/s head over heels he's thrown off turning, for each m/s the bike was going
 const SIDE_ROLL := 2.5           # rad/s he's thrown off rolling sideways, and a bit more the faster it was going
 const AIR_KEEP := 0.999          # of a point's speed kept each step in the air
 const KNEE_FRONT := 0.03         # m: a knee stays at least this far in front of the line from hip to boot, so it can't bend backwards
