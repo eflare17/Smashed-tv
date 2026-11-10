@@ -558,18 +558,41 @@ static func bike_fork_legs(kit: MeshKit) -> void:
 ## Apart from the bike, so he can come off it.
 static func bike_rider(kit: MeshKit) -> void:
 	for z: float in [-1.0, 1.0]:
-		var boot := Vector3(0.04, 0.48, 0.21 * z)
-		var knee := Vector3(0.22, 0.84, 0.19 * z)
-		var hip := Vector3(-0.12, 1.06, 0.11 * z)
-		kit.box(boot, Vector3(0.28, 0.1, 0.12), BLACK)
-		kit.cone(boot + Vector3(0.0, 0.04, 0.0), knee, 0.07, 0.065, 5, DENIM)
-		kit.cone(knee, hip, 0.075, 0.08, 5, DENIM)
-		var shoulder := Vector3(0.12, 1.47, 0.19 * z)
-		var elbow := Vector3(0.24, 1.3, 0.33 * z)
-		var hand := Vector3(0.44, 1.2, 0.34 * z)
-		kit.cone(shoulder, elbow, 0.055, 0.05, 5, HI_VIS)
-		kit.cone(elbow, hand, 0.05, 0.045, 5, HI_VIS)
-		kit.box(hand, Vector3(0.08, 0.08, 0.08), BLACK)
+		rider_shin(kit, z)
+		rider_thigh(kit, z)
+		rider_upper_arm(kit, z)
+		rider_forearm(kit, z)
+	rider_body(kit)
+
+## Where the rider's joints are, sitting on the bike: forward is +x. `z` is -1 for one side, 1 for the other.
+static func rider_joint(part: String, z := 0.0) -> Vector3:
+	match part:
+		"head": return Vector3(0.18, 1.67, 0.0)
+		"shoulder": return Vector3(0.12, 1.47, 0.19 * z)
+		"elbow": return Vector3(0.24, 1.3, 0.33 * z)
+		"hand": return Vector3(0.44, 1.2, 0.34 * z)
+		"hip": return Vector3(-0.12, 1.06, 0.11 * z)
+		"knee": return Vector3(0.22, 0.84, 0.19 * z)
+		_: return Vector3(0.04, 0.48, 0.21 * z)     # the boot
+
+static func rider_shin(kit: MeshKit, z: float) -> void:
+	var boot := rider_joint("boot", z)
+	kit.box(boot, Vector3(0.28, 0.1, 0.12), BLACK)
+	kit.cone(boot + Vector3(0.0, 0.04, 0.0), rider_joint("knee", z), 0.07, 0.065, 5, DENIM)
+
+static func rider_thigh(kit: MeshKit, z: float) -> void:
+	kit.cone(rider_joint("knee", z), rider_joint("hip", z), 0.075, 0.08, 5, DENIM)
+
+static func rider_upper_arm(kit: MeshKit, z: float) -> void:
+	kit.cone(rider_joint("shoulder", z), rider_joint("elbow", z), 0.055, 0.05, 5, HI_VIS)
+
+static func rider_forearm(kit: MeshKit, z: float) -> void:
+	var hand := rider_joint("hand", z)
+	kit.cone(rider_joint("elbow", z), hand, 0.05, 0.045, 5, HI_VIS)
+	kit.box(hand, Vector3(0.08, 0.08, 0.08), BLACK)
+
+## His body and helmet.
+static func rider_body(kit: MeshKit) -> void:
 	# Body leaning forward over the tank.
 	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.24, 0.5, 0.38), HI_VIS, Basis(Vector3.BACK, deg_to_rad(-28.0)))
 	kit.box(Vector3(0.0, 1.27, 0), Vector3(0.25, 0.04, 0.39), LAMP, Basis(Vector3.BACK, deg_to_rad(-28.0)))

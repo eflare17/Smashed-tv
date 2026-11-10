@@ -643,3 +643,12 @@ dirt or scores a job changed.
 - Dust puffs from the blade, bucket, tracks and pouring about half the size and more see-through.
 - Left as it was: cracker dust's blotches (that's how a thin layer of it shows).
 - PC frame time about the same (about 10 ms). Phone speed not known until the owner tries it.
+
+## 10 Nov: the rider goes floppy coming off the bike
+- Asked for: a ragdoll in place of the set head-over-heels tumble. Thrown off, the rider is now 13 points (head, shoulders,
+  hips, elbows, hands, knees, boots) joined by sticks (scripts/ragdoll.gd): body and head stiff, arms and legs swinging at the
+  joints, knees only bending forward. He leaves at the bike's speed and turn, bounces a little, drags to a stop on the dirt and
+  lies how he lands. The pieces of the rider's model (props.gd, now split into parts) hang off those points.
+- He lies there for 3 s in all before the bike's put back (was 2.2), as the owner asked. Online, his points are sent while he's off.
+- bike_test checks he stays above the dirt, his limbs keep their length, his joints bend, and he ends lying still.
+- `--mission=bike_jumps --demo=touchjumps --crash --noui` leans right back off the first jump twice, filmed from the side.

@@ -63,6 +63,22 @@ func ride(s: DirtSim, b: Bike, seconds: float, want_speed: float, thumb := 0.0, 
 				record["jump"] = b.jump_m
 			record["most_pitch"] = maxf(record["most_pitch"], absf(rad_to_deg(b.pitch)))
 
+## How bent each elbow and knee is, in degrees, and each shoulder and hip against his body.
+func bends(d: Ragdoll) -> Array[float]:
+	var p := d.points
+	var up := (p[Ragdoll.SH_L] + p[Ragdoll.SH_R] - p[Ragdoll.HIP_L] - p[Ragdoll.HIP_R]).normalized()
+	var out: Array[float] = []
+	for k in 2:
+		var sh := p[Ragdoll.SH_L + k]
+		var el := p[Ragdoll.ELB_L + k]
+		var hip := p[Ragdoll.HIP_L + k]
+		var kn := p[Ragdoll.KNEE_L + k]
+		out.append(rad_to_deg((el - sh).angle_to(p[Ragdoll.HAND_L + k] - el)))
+		out.append(rad_to_deg((kn - hip).angle_to(p[Ragdoll.BOOT_L + k] - kn)))
+		out.append(rad_to_deg((el - sh).angle_to(-up)))
+		out.append(rad_to_deg((kn - hip).angle_to(-up)))
+	return out
+
 func fresh() -> Dictionary:
 	return {"air": 0.0, "high": 0.0, "least": 9.0, "crashed": false, "jump": 0.0, "most_pitch": 0.0}
 
@@ -242,6 +258,49 @@ func _init() -> void:
 	check(mjb.gauge_word()[0].begins_with("JUMP"), "the readout shows the jump first (%s)" % mjb.gauge_word()[0])
 	ride(mj, mjb, 1.0, 11.0, 0.0, mr)
 	check(not mjb.touching[1] and mjb.mono_up and not mr["crashed"], "and the front comes back up after (%.0f degrees)" % rad_to_deg(mjb.pitch))
+
+	print("Coming off, he goes floppy:")
+	var fj := jump_site(0.0, 7.0, 30.0)
+	var fb := new_bike(fj, Vector2(-25.0, 0.0), Vector2(1.0, 0.0))
+	var ft := 0.0
+	while fb.crash_t < 0.0 and ft < 8.0:
+		ride(fj, fb, DT * 0.5, 11.0, 1.0)
+		ft += DT
+	var doll := fb._doll
+	check(fb.crash_t >= 0.0 and doll.visible and not fb._rider.visible, "leaned back through a jump, he comes off, the floppy rider shown in place of the one on the bike")
+	var bend0 := bends(doll)
+	var under := 0.0
+	var stretched := 0.0
+	var most_bend := 0.0
+	var broken := false
+	var hips_up := 9.0
+	var still := 99.0
+	while fb.crash_t >= 0.0:
+		var was := doll.points.duplicate()
+		fb.step(DT)
+		fj.step(DT, 1000000)
+		if fb.crash_t < 0.0:
+			break
+		for dp in doll.points:
+			broken = broken or not dp.is_finite()
+			under = maxf(under, fj.height_at(Vector2(dp.x, dp.z)) - dp.y)
+		stretched = maxf(stretched, doll.worst_stretch())
+		var now := bends(doll)
+		for n in now.size():
+			most_bend = maxf(most_bend, absf(now[n] - bend0[n]))
+		if fb.crash_t > Bike.CRASH_TIME - 0.1:
+			var hips := (doll.points[Ragdoll.HIP_L] + doll.points[Ragdoll.HIP_R]) * 0.5
+			hips_up = minf(hips_up, hips.y - fj.height_at(Vector2(hips.x, hips.z)))
+			var fastest := 0.0
+			for n in Ragdoll.COUNT:
+				fastest = maxf(fastest, doll.points[n].distance_to(was[n]) / DT)
+			still = minf(still, fastest)
+	print("   deepest under the dirt %.3f m, sticks off length %.0f%%, joints bent up to %.0f degrees from on the bike, hips %.2f m up at the end, quickest bit of him then %.2f m/s" % [under, stretched * 100.0, most_bend, hips_up, still])
+	check(not broken and under < 0.03, "no bit of him goes under the dirt")
+	check(stretched < 0.08, "his arms and legs keep their length")
+	check(most_bend > 25.0, "his arms and legs flop about at the joints")
+	check(hips_up < 0.45 and still < 0.6, "and he ends up lying still on the ground")
+	check(not doll.visible and fb._rider.visible, "then he's back on the bike")
 
 	# Online: a copy fed what the host sends follows it through a jump, the rider coming off and all; the guest's thumb gets to
 	# the host for the lean.

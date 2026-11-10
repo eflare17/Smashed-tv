@@ -45,7 +45,7 @@ const AIR_EASE := 6.0            # rad/s2: how quickly the rider can change how 
 const LEAN_REACH := 1.0          # of the stick's reach, the thumb slid from where it was at take-off for full lean
 const CRASH_ANGLE := 0.96        # radians, 55 degrees: landed this far off the ground's slope, the rider comes off
 const CRASH_HIT := 13.0          # m/s straight into the ground: far too hard, even landed square
-const CRASH_TIME := 2.2          # s on the ground before the bike's put back
+const CRASH_TIME := 3.0          # s after he comes off till the bike's put back (2.2 till the owner asked for 3, 10 Nov)
 const STEPS_A_SECOND := 240.0    # the springs are worked out this often
 const MONO_ANGLE := 0.55         # radians, about 32 degrees nose up from level: how high MONO holds the front up, as a rider
                                  # holds it short of where it'd tip over backwards, whatever the slope
@@ -91,8 +91,6 @@ var _back_to: Array = []         # where it's put back if he comes off
 var _aim_y := 0.0
 var _yaw_rate := 0.0
 var _rider_shift := 0.0
-var _rider_vel := Vector3.ZERO
-var _rider_turn := 0.0
 
 var _all: Node3D                 # everything, set down so the ground's at 0 sitting on its springs
 var _rear: Node3D
@@ -101,6 +99,7 @@ var _front: Node3D
 var _front_wheel: MeshInstance3D
 var _arm: MeshInstance3D
 var _rider: Node3D
+var _doll: Ragdoll               # the rider gone floppy, thrown off
 var _stand: MeshInstance3D
 var _rear_roll := 0.0
 var _front_roll := 0.0
@@ -175,6 +174,9 @@ func _build(mat: Material) -> void:
 	kit = MeshKit.new()
 	Props.bike_rider(kit)
 	_add_mesh(_rider, kit, mat)
+	_doll = Ragdoll.new()
+	add_child(_doll)
+	_doll.setup(sim, mat)
 	kit = MeshKit.new()
 	kit.cone(Vector3(-0.1, 0.42, -0.16), Vector3(-0.22, 0.0, -0.42), 0.02, 0.02, 4, Props.BLACK)
 	_stand = _add_mesh(_all, kit, mat)
@@ -537,12 +539,10 @@ func _crash(why: String) -> void:
 	airborne = false
 	if _back_to.is_empty():
 		_back_to = _trail[maxi(_trail.size() - 10, 0)] if not _trail.is_empty() else [spot, angle]
-	# The rider goes on without it, tumbling.
-	var at := transform * _all.transform * _rider.transform
-	_rider.top_level = true
-	_rider.transform = at
-	_rider_vel = Vector3(forward().x * speed, vy + 2.0, forward().y * speed)
-	_rider_turn = 0.0
+	# The rider goes on without it, floppy, turning end over end as the bike was.
+	var side := Vector3(sin(angle), 0.0, cos(angle))
+	_rider.visible = false
+	_doll.throw(transform * _all.transform * _rider.transform, Vector3(forward().x * speed, vy + 1.5, forward().y * speed), side, spin)
 	crashed.emit()
 
 func _crash_step(dt: float) -> void:
@@ -558,34 +558,10 @@ func _crash_step(dt: float) -> void:
 		vy = 0.0
 	pitch = lerp_angle(pitch, _ground_angle(), minf(dt * 5.0, 1.0))
 	roll_vis = lerpf(roll_vis, 1.35, minf(dt * 5.0, 1.0))
-	# The rider: thrown, then tumbling and sliding.
-	var p := _rider.transform.origin
-	_rider_vel.y -= 9.8 * dt
-	p += _rider_vel * dt
-	var under := sim.height_at(Vector2(p.x, p.z))
-	if p.y < under:
-		p.y = under
-		_rider_vel.y = maxf(-_rider_vel.y * 0.3, 0.0)
-		var flat := Vector2(_rider_vel.x, _rider_vel.z)
-		flat = flat.move_toward(Vector2.ZERO, 6.0 * dt)
-		_rider_vel.x = flat.x
-		_rider_vel.z = flat.y
-	p = Vector3(clampf(p.x, -AREA, AREA), p.y, clampf(p.z, -AREA, AREA))
-	# He tumbles head over heels while he's going, then ends up lying on his front.
-	var flat_speed := Vector2(_rider_vel.x, _rider_vel.z).length()
-	if crash_t < 1.0:
-		_rider_turn += dt * (2.0 + flat_speed * 1.2)
-	else:
-		var lie := roundf((_rider_turn - PI * 0.5) / TAU) * TAU + PI * 0.5
-		_rider_turn = lerpf(_rider_turn, lie, minf(dt * 5.0, 1.0))
-	_rider.transform = _rider_pose(p)
+	# The rider: thrown, flopping and sliding, then lying where he ends up.
+	_doll.step(dt)
 	if crash_t > CRASH_TIME:
 		_put_back()
-
-## The rider thrown off, at `p`: turned head over heels by `_rider_turn` about the bike's side.
-func _rider_pose(p: Vector3) -> Transform3D:
-	var side := Vector3(sin(angle), 0.0, cos(angle))
-	return Transform3D(Basis(side, -_rider_turn) * Basis(Vector3.UP, angle), p)
 
 ## Back on it, stopped, a little before the jump that threw him.
 func _put_back() -> void:
@@ -601,8 +577,7 @@ func _put_back() -> void:
 	air_t = 0.0
 	roll_vis = 0.0
 	_mono_end()
-	_rider.top_level = false
-	_rider.transform = Transform3D.IDENTITY
+	_doll.visible = false
 	_rider.visible = ridden
 	_settle_on_ground()
 
@@ -611,8 +586,7 @@ func _settle(_k: float) -> void:
 	_rest_t = 0.0
 	if crash_t >= 0.0:
 		crash_t = -1.0
-		_rider.top_level = false
-		_rider.transform = Transform3D.IDENTITY
+		_doll.visible = false
 		_rider.visible = ridden
 	vy = 0.0
 	spin = 0.0
@@ -718,12 +692,15 @@ func _place_bumper() -> void:
 ## ---------------------------------------------------------------- online
 
 func _net_more() -> PackedFloat32Array:
-	var r := _rider.transform.origin if _rider.top_level else (transform * _all.transform * _rider.transform).origin
-	return PackedFloat32Array([y, pitch, roll_vis, stretch[0], stretch[1], _rider_shift, crash_t, r.x, r.y, r.z, _rider_turn, jump_m, jump_show, float(airborne), float(ridden), mono_m, mono_show, float(mono_up)])
+	var s := PackedFloat32Array([y, pitch, roll_vis, stretch[0], stretch[1], _rider_shift, crash_t, 0.0, 0.0, 0.0, 0.0, jump_m, jump_show, float(airborne), float(ridden), mono_m, mono_show, float(mono_up)])
+	# Thrown off, where each bit of him is.
+	if crash_t >= 0.0:
+		s.append_array(_doll.net_points())
+	return s
 
 func _net_take_more(s: PackedFloat32Array) -> void:
 	var k := NET_BASE
-	_net_bike = s.slice(k, k + 18)
+	_net_bike = s.slice(k, k + 18 + Ragdoll.COUNT * 3)
 
 var _net_bike := PackedFloat32Array()
 
@@ -747,14 +724,10 @@ func _net_pose(dt: float, k: float) -> void:
 	mono_up = b[17] > 0.5
 	view_side = MONO_LOOK if mono_up else 0.0
 	if crash_t >= 0.0:
-		if not was_crash:
-			_rider.top_level = true
-		_rider.visible = true
-		_rider_turn = b[10]
-		_rider.transform = _rider_pose(Vector3(b[7], b[8], b[9]))
+		_rider.visible = false
+		_doll.net_take(b.slice(18), k if was_crash else 1.0)
 	elif was_crash:
-		_rider.top_level = false
-		_rider.transform = Transform3D.IDENTITY
+		_doll.visible = false
 		_rider.visible = ridden
 	_spin_my_wheels(dt)
 	_place()

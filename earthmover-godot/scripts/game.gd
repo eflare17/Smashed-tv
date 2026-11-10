@@ -410,6 +410,9 @@ func _read_args() -> void:
 			grass = a.substr(8)
 		elif a.begins_with("--wait="):
 			shot_wait = int(a.substr(7))
+		elif a == "--crash":
+			# The jumps demo leans right back off the first jump, twice, and watches him come off from the side.
+			set_meta("crash_demo", true)
 		elif a.begins_with("--lift="):
 			start_lift = float(a.substr(7))
 		elif a.begins_with("--machine="):
@@ -5122,6 +5125,30 @@ func _run_touch_demo() -> void:
 				if _touch_tick == 899:
 					print("JUMPS didn't get past the last jump: %.0f m along" % u)
 					get_tree().quit()
+				if has_meta("crash_demo"):
+					# Off the first jump, the thumb right down: he comes off. Watched from the side, following him.
+					if bike.airborne:
+						_drag(0, thumb + Vector2(0.0, reach))
+					var was_off: bool = get_meta("was_off", false)
+					if bike.crash_t >= 0.0 and not was_off:
+						set_meta("crashes", int(get_meta("crashes", 0)) + 1)
+						set_meta("back_t", 0)
+					set_meta("was_off", bike.crash_t >= 0.0)
+					if int(get_meta("crashes", 0)) >= 2 and bike.crash_t < 0.0:
+						set_meta("back_t", int(get_meta("back_t")) + 1)
+						if int(get_meta("back_t")) > 20:
+							get_tree().quit()
+					var d := bike._doll
+					var look := (d.points[Ragdoll.HIP_L] + d.points[Ragdoll.HIP_R]) * 0.5 if bike.crash_t >= 0.0 else bike.position + Vector3(0.0, 0.8, 0.0)
+					if not has_meta("crash_cam"):
+						set_meta("crash_cam", true)
+						_set_view("Dozer")
+						target = look
+					target = target.lerp(look, 0.12)
+					var cdir: Vector2 = mission["line_dir"]
+					yaw = atan2(cdir.y, -cdir.x) + (0.0 if int(get_meta("crashes", 0)) < 1 or bike.crash_t >= 0.0 and int(get_meta("crashes", 0)) == 1 else 0.6)
+					pitch = deg_to_rad(24.0)
+					dist = 5.5 if bike.crash_t >= 0.0 else 8.0
 				if not bike.airborne:
 					var off := bike.spot.y - line_z
 					var push := clampf((13.0 - bike.speed) * 0.3 + 0.75, 0.0, 1.0)
