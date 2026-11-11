@@ -265,6 +265,10 @@ func _ram_ends() -> Array:
 		out.append([arm_t * Vector3(tilt_arm.x, tilt_arm.y, z), bucket_t * Vector3(0.03, bucket_high * 0.85, z)])
 	return out
 
+# (its arms right down or right up)
+func at_stop() -> bool:
+	return arm_at < arm_low + 0.01 or arm_at > arm_high - 0.01
+
 # (the arms going up or down: it works harder)
 func shake_effort() -> float:
 	var moving := absf(arm_at - _arm_was) / maxf(get_process_delta_time(), 0.001)

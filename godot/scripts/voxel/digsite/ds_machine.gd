@@ -51,6 +51,9 @@ var _body: AnimatableBody3D
 # the harder it works. Seen alike on both games (speed and driver come over the wire); its digging doesn't feel it.
 var effort_now := 0.0           # how hard it's working besides driving, this frame (0 .. 1: shake_effort(), once a frame)
 var cut_now := 0.0              # how much dirt its blade or bucket is cutting or pushing, this frame (0 .. 1: a subclass's)
+var clunk_weight := 0.8
+var _stop_was := true
+var _clunk_wait := 0.0
 var tracked := true             # (on tracks: they clatter)
 var sfx: DsSfx
 var shake_node: Node3D
@@ -137,6 +140,13 @@ func step(dt: float) -> void:
 		sfx.setup(length / 4.0)
 	if sfx:
 		sfx.update(dt, self, tracked, _stream_t > 0.0 and fx_load() >= 0)
+		# (a clunk when its tool comes to the end of its travel or lands: at_stop() going true)
+		var stop := at_stop()
+		_clunk_wait -= dt
+		if stop and not _stop_was and driver != 0 and _clunk_wait <= 0.0:
+			sfx.clunked(clunk_weight)
+			_clunk_wait = 0.7           # (a blade skimming the ground doesn't rattle them off)
+		_stop_was = stop
 
 # Dirt let go of, falling (the owner, 10 Nov: "the dust appears before it's even dropped"): it lands, in the ground or a
 # truck's tray, when it's fallen there, with the stream of lumps falling from the bucket; until then it's in the air.
@@ -198,6 +208,10 @@ func _shake_body(dt: float) -> void:
 	var work := clampf(absf(speed) / max_speed + effort_now, 0.0, 1.0)
 	shake_node.position.y = sin(c * shake_hz) * (shake_idle + shake_work * work) + sin(c * shake_hz * 0.64) * shake_work * 0.3 * work
 	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean()
+
+## (a subclass) its tool at the end of its travel or resting on the ground, by what both games know of it
+func at_stop() -> bool:
+	return false
 
 ## (a subclass) how hard it's working besides driving (0 .. 1: an arm swinging, a tray going up)
 func shake_effort() -> float:

@@ -504,3 +504,4 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Loops only play while they're audible. Levels are the web's plus 7 dB (`GAIN`): from a camera 12 m off, the web's levels averaged -31 dB.
   - Not done: clunks (blade touching down, bucket at the end of its travel).
 - **Loaders (DsDingo._dust_fx, so the Bobcat too):** the same treatment as the excavator. Lumps roll back over the lip into the bucket while its load goes up, and the load it draws (`_shown`) rises smoothly instead of in steps. Seen on both games.
+- **Clunks (11 Nov, later):** done. A machine clunks when `at_stop()` goes true: the dozer's blade touching down or right up, the excavator's bucket curled right in or out, a loader's arms at either end, the truck's tray landing or right up. It reads only what both games know, and waits 0.7 s between clunks so a blade skimming the ground doesn't rattle.

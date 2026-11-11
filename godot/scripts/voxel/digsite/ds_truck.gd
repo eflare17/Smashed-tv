@@ -161,6 +161,10 @@ func _pose_tool() -> void:
 		var r: float = w[1]
 		(w[0] as Node3D).basis = Basis(Vector3.BACK, -_roll / r).scaled(Vector3(r, r, 1.0))
 
+# (its tray down on the chassis, or right up)
+func at_stop() -> bool:
+	return tip < 0.005 or tip > 0.995
+
 # (the tray going up or down: its pump's working)
 func shake_effort() -> float:
 	var moving := absf(tip - _tip_was) / maxf(get_process_delta_time(), 0.001)

@@ -17,6 +17,7 @@ var clank: AudioStreamPlayer3D
 var scrape: AudioStreamPlayer3D
 var pour: AudioStreamPlayer3D
 var beep: AudioStreamPlayer3D
+var clunk: AudioStreamPlayer3D
 var _eng := 0.0
 var _hyd := 0.0
 var _clk := 0.0
@@ -32,6 +33,7 @@ func setup(size_k: float) -> void:
 	scrape = _player("scrape", 1.0)
 	pour = _player("pour", 1.0)
 	beep = _player("beep", 1.0)
+	clunk = _player("clunk", 1.0 / clampf(size_k, 0.6, 1.3))
 
 func _player(what: String, pitch: float) -> AudioStreamPlayer3D:
 	var p := AudioStreamPlayer3D.new()
@@ -53,6 +55,13 @@ func _level(p: AudioStreamPlayer3D, level: float, db: float) -> void:
 			p.play()
 	elif p.playing:
 		p.stop()
+
+## Steel meeting something: a blade touching down, a bucket or an arm at the end of its travel, a tray landing
+func clunked(weight := 1.0) -> void:
+	var base: float = clunk.get_meta("pitch")
+	clunk.volume_db = linear_to_db(clampf(weight, 0.05, 1.0)) - 4.0 + GAIN
+	clunk.pitch_scale = base * randf_range(0.9, 1.15)
+	clunk.play()
 
 ## Each frame: m as it is now
 func update(dt: float, m: DsMachine, tracked: bool, pouring: bool) -> void:
@@ -97,6 +106,7 @@ static func _make() -> void:
 	_streams["scrape"] = _wav(_noise(rng, 0.18, 700, 1.6), true)
 	_streams["pour"] = _wav(_noise(rng, 0.3, 500, 2.2), true)
 	_streams["beep"] = _wav(_beep(), false)
+	_streams["clunk"] = _wav(_clunk(rng), false)
 
 static func _wav(samples: PackedFloat32Array, looped: bool) -> AudioStreamWAV:
 	var bytes := PackedByteArray()
@@ -182,4 +192,16 @@ static func _beep() -> PackedFloat32Array:
 		var t := float(i) / RATE
 		var env := minf(1.0, t * 200.0) * minf(1.0, (0.22 - t) * 200.0)
 		out[i] = sin(TAU * 1250.0 * t) * 0.5 * env
+	return out
+
+# a deep thump with a ring of steel in it
+static func _clunk(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n := int(RATE * 0.3)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var low := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		low = lerpf(low, rng.randf_range(-1.0, 1.0), 0.25)
+		out[i] = sin(TAU * 92.0 * t) * 0.8 * exp(-t * 20.0) + sin(TAU * 610.0 * t) * 0.14 * exp(-t * 30.0) + low * 0.5 * exp(-t * 32.0)
 	return out

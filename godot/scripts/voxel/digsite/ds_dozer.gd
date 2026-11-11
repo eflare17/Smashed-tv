@@ -315,6 +315,10 @@ func _dust_fx() -> void:
 	_tumble.scale_amount_max = lerpf(0.45, 0.9, clampf(tonnes / 10.0, 0.0, 1.0))
 
 # (the digger game's lean: back a touch with a heap on the blade)
+# (its blade down on the ground, or right up)
+func at_stop() -> bool:
+	return edge_gap < 0.02 or lift > LIFT_MAX - 0.01
+
 var _lift_was := 0.0
 
 # (the blade going up or down: its pump's working)

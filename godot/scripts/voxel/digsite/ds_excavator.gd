@@ -243,6 +243,10 @@ func keepout_boxes() -> Array:
 		return []
 	return [[_bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(0.64, 0.12, 0.0)), Vector3(0.76, 0.44, BUCKET_HALF + 0.04)]]
 
+# (its bucket curled right in or opened right out)
+func at_stop() -> bool:
+	return curl > CURL_MAX - 0.01 or curl < CURL_MIN + 0.01
+
 var _wrist_was := Vector2.ZERO
 var _swing_was := 0.0
 
