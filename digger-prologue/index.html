@@ -374,7 +374,7 @@ const scene=new THREE.Scene();
 scene.fog=new THREE.FogExp2(0x9a8a7a,0.003);
 const camera=new THREE.PerspectiveCamera(45,16/9,0.1,4000);
 const U={uTime:{value:0},uRegrow:{value:0},uCut:{value:100},uSway:{value:0.15},uWindA:{value:WIND_A},uWindB:{value:WIND_B},uWindT:{value:WIND_T},
-  uFogColor:{value:new THREE.Color()},uFogDensity:{value:0.003},uPixel:{value:0.001},uCamPos:{value:V3()},uAsh:{value:0},uSmokeAlpha:{value:1}};
+  uFogColor:{value:new THREE.Color()},uFogDensity:{value:0.003},uFlameGain:{value:0.72},uPixel:{value:0.001},uCamPos:{value:V3()},uAsh:{value:0},uSmokeAlpha:{value:1}};
 
 const NOISE_GLSL=`
 float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*0.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}
@@ -469,12 +469,12 @@ function patchBurn(mat,opt){
     sh.vertexShader=sh.vertexShader.replace('#include <common>',`#include <common>
       attribute float aIgnite; attribute float aDur; attribute vec2 aMisc;
       uniform float uTime; uniform float uSway; uniform float uRegrow;
-      varying float vBurn; varying float vSeed; varying float vH; varying float vType;`)
+      varying float vBurn; varying float vSeed; varying float vH; varying float vType; varying vec3 vLoc; varying float vAge;`)
     .replace('#include <begin_vertex>',`#include <begin_vertex>
       float bt=(uTime-aIgnite)/aDur; vBurn=clamp(bt,0.0,1.0);
       vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
       vSeed=fract(sin(dot(ip.xz,vec2(12.9898,78.233)))*43758.5453);
-      vH=position.y; vType=aMisc.x;
+      vH=position.y; vType=aMisc.x; vLoc=position; vAge=uTime-aIgnite;
       ${opt.crown?`
         float burnt=step(aIgnite,60.0);
         float shrink=mix(1.0,${opt.shrub?'0.22':'0.5'},smoothstep(0.15,0.9,vBurn));
@@ -488,7 +488,8 @@ function patchBurn(mat,opt){
     `);
     if(opt.depth) return;
     sh.fragmentShader=sh.fragmentShader.replace('#include <common>',`#include <common>
-      uniform float uTime; uniform float uRegrow; varying float vBurn; varying float vSeed; varying float vH; varying float vType;`)
+      uniform float uTime; uniform float uRegrow; varying float vBurn; varying float vSeed; varying float vH; varying float vType; varying vec3 vLoc; varying float vAge;
+      ${NOISE_GLSL}`)
     .replace('#include <color_fragment>',`#include <color_fragment>
       ${opt.trunk?`diffuseColor.rgb*=mix(vec3(0.42,0.36,0.3),vec3(1.0),smoothstep(0.12,0.3,vH)*(1.0-vType*0.6));`:''}
       float charA=smoothstep(0.08,0.7,vBurn);
@@ -504,7 +505,12 @@ function patchBurn(mat,opt){
     .replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
       float glow=smoothstep(0.0,0.06,vBurn)*(1.0-smoothstep(0.3,0.85,vBurn))*(1.0-uRegrow);
       float fl=0.65+0.35*sin(uTime*17.0+vSeed*40.0)*sin(uTime*7.3+vSeed*9.0);
-      totalEmissiveRadiance+=vec3(4.0,1.1,0.25)*glow*fl*${opt.crown?'0.8':'(1.0-smoothstep(0.0,0.45,vH))*0.9'};`);
+      totalEmissiveRadiance+=vec3(4.0,1.1,0.25)*glow*fl*${opt.crown?'0.8':'(1.0-smoothstep(0.0,0.45,vH))*0.9'};
+      ${opt.trunk?`
+        float cn=vnoise2(vec2(atan(vLoc.z,vLoc.x)*4.0+vSeed*9.0,vLoc.y*190.0))+0.35*vnoise2(vec2(atan(vLoc.z,vLoc.x)*11.0,vLoc.y*520.0));
+        float crack=1.0-smoothstep(0.0,0.07,abs(cn-0.68));
+        float smoulder=step(0.0,vAge)*exp(-max(vAge,0.0)*0.09)*(1.0-smoothstep(0.01,0.13,vH))*(1.0-uRegrow);
+        totalEmissiveRadiance+=vec3(1.9,0.32,0.04)*crack*smoulder*(0.7+0.3*sin(uTime*2.7+vSeed*20.0));`:''}`);
   };
   mat.customProgramCacheKey=()=>JSON.stringify(opt);
   return mat;
@@ -908,45 +914,76 @@ vec3 windAt(float t){return mix(uWindA,uWindB,smoothstep(uWindT,uWindT+4.0,t));}
 ${NOISE_GLSL}`;
 function flameSystem(emitters){
   const n=emitters.length;const o=new Float32Array(n*3),p=new Float32Array(n*4),q=new Float32Array(n*4);
-  emitters.forEach((e,i)=>{o.set([e.x,e.y,e.z],i*3);p.set([e.ign,e.dur,e.seed,e.size],i*4);q.set([e.life,e.rise,e.spread,0],i*4);});
+  emitters.forEach((e,i)=>{o.set([e.x,e.y,e.z],i*3);p.set([e.ign,e.dur,e.seed,e.size],i*4);q.set([e.life,e.rise,e.spread,e.stretch??1.4],i*4);});
   const g=billboardQuad();g.setAttribute('aOrigin',new THREE.InstancedBufferAttribute(o,3));g.setAttribute('aP',new THREE.InstancedBufferAttribute(p,4));g.setAttribute('aQ',new THREE.InstancedBufferAttribute(q,4));g.instanceCount=n;
   const m=new THREE.ShaderMaterial({uniforms:U,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
     vertexShader:`${PCOMMON}
       attribute vec3 aOrigin; attribute vec4 aP; attribute vec4 aQ;
-      varying vec2 vUv; varying float vA; varying float vHeat; varying float vSeed; varying float vFog;
+      varying vec2 vUv; varying float vEnv; varying float vPh; varying float vSeed; varying float vFog;
       void main(){
         float life=aQ.x; float cyc=uTime/life+aP.z*7.13; float ph=fract(cyc); float birth=uTime-ph*life;
-        float env=smoothstep(aP.x-0.3,aP.x+1.0,birth)*(1.0-smoothstep(aP.x+aP.y*0.55,aP.x+aP.y,birth));
-        if(env<0.01){gl_Position=vec4(2.0,2.0,2.0,1.0);return;}
+        float env=smoothstep(aP.x-0.2,aP.x+1.2,birth)*(1.0-smoothstep(aP.x+aP.y*0.6,aP.x+aP.y,birth));
+        if(env<0.02){gl_Position=vec4(2.0,2.0,2.0,1.0);return;}
         vec3 r=hash31(floor(cyc)*1.7+aP.z*113.0);
-        vec3 w=windAt(birth);
+        vec3 w=windAt(uTime);
         vec3 p=aOrigin+vec3((r.x-0.5)*aQ.z,0.0,(r.y-0.5)*aQ.z);
-        p.y+=aQ.y*(0.6+0.6*r.z)*ph; p+=w*ph*life*0.3;
-        float s=aP.w*(0.6+0.6*r.z)*(0.55+0.45*env)*(1.0-ph*0.55);
+        p.y+=aQ.y*(0.25+0.6*r.z)*(1.0-(1.0-ph)*(1.0-ph));
+        p+=w*ph*life*0.22;
+        float grow=smoothstep(0.0,0.22,ph)*(1.0-0.45*smoothstep(0.5,1.0,ph));
+        float s=aP.w*(0.7+0.5*r.z)*(0.5+0.5*env)*(0.55+0.45*grow);
         vec4 mv=modelViewMatrix*vec4(p,1.0);
         s=max(s,-mv.z*uPixel*3.0);
-        mv.xy+=position.xy*vec2(s*1.0,s*1.05); mv.y+=s*0.42;
+        vec2 lean=(viewMatrix*vec4(w,0.0)).xy*0.055;
+        float yq=position.y+0.5;
+        mv.xy+=vec2(position.x*s*0.85,position.y*s*aQ.w);
+        mv.y+=s*aQ.w*0.36;
+        mv.xy+=lean*yq*s;
         gl_Position=projectionMatrix*mv;
-        vUv=uv; vA=env*smoothstep(0.0,0.1,ph)*(1.0-smoothstep(0.6,1.0,ph)); vHeat=1.0-ph; vSeed=r.x+aP.z;
-        float fd=uFogDensity*0.55*length(mv.xyz); vFog=exp(-fd*fd);
+        vUv=uv; vEnv=env*smoothstep(0.0,0.12,ph)*(1.0-smoothstep(0.72,1.0,ph)); vPh=ph; vSeed=r.x*3.0+aP.z*7.0;
+        float fd=uFogDensity*0.45*length(mv.xyz); vFog=exp(-fd*fd);
       }`,
     fragmentShader:`${PCOMMON}
-      varying vec2 vUv; varying float vA; varying float vHeat; varying float vSeed; varying float vFog;
+      uniform float uFlameGain;
+      varying vec2 vUv; varying float vEnv; varying float vPh; varying float vSeed; varying float vFog;
       void main(){
-        float y=vUv.y; float x=vUv.x*2.0-1.0; float tt=uTime*2.2+vSeed*11.0;
-        float n=fbm2(vec2(x*1.6+vSeed*7.0,y*2.0-tt));
-        float n2=vnoise2(vec2(x*5.0-vSeed*3.0,y*5.0-tt*1.7));
-        float peaks=0.3+0.55*vnoise2(vec2(x*2.6+vSeed*13.0,tt*0.35))+0.15*n2;
-        float w=mix(0.92,0.32,y);
-        float side=1.0-smoothstep(w*0.45,w,abs(x+(n-0.5)*0.45*y));
-        float body=side*(1.0-smoothstep(peaks-0.3,peaks,y+(n-0.5)*0.28));
-        body*=smoothstep(0.0,0.24,y+(n2-0.5)*0.12);
-        float a=body*vA; if(a<0.02) discard;
-        float core=body*(1.0-y)*vHeat;
-        vec3 col=mix(vec3(0.9,0.12,0.015),vec3(1.0,0.42,0.07),smoothstep(0.05,0.5,core));
-        col=mix(col,vec3(1.0,0.8,0.45),smoothstep(0.55,0.95,core));
-        gl_FragColor=vec4(col*(0.55+1.15*core)*vFog,a*0.72);
+        float y=vUv.y; float x=vUv.x*2.0-1.0;
+        float t=uTime*1.7+vSeed*31.0;
+        vec2 p=vec2(x*0.9,y*1.3);
+        float n1=fbm2(p*2.0+vec2(vSeed*9.0,-t*1.2));
+        float n2=fbm2(p*3.6+vec2(-vSeed*5.0,-t*2.2)+n1*1.4);
+        float sway=(n1-0.5)*0.95*y;
+        float w=mix(0.95,0.16,smoothstep(0.0,1.0,y));
+        float d=abs(x+sway)/w;
+        float mask=(1.0-smoothstep(0.3,1.0,d))*smoothstep(0.0,0.14+0.32*x*x,y+(n2-0.5)*0.12);
+        float heat=mask*(1.2-y*1.15)*(0.42+1.05*n2)-0.2;
+        heat=clamp(heat*1.8,0.0,1.0)*vEnv*(1.0-vPh*0.45);
+        if(heat<0.015) discard;
+        vec3 col=vec3(1.5*heat,1.5*heat*heat*heat,heat*heat*heat*heat*heat*heat)*vec3(1.0,0.82,0.62);
+        gl_FragColor=vec4(col*uFlameGain*vFog,1.0);
       }`});
+  const mesh=new THREE.Mesh(g,m);mesh.frustumCulled=false;mesh.renderOrder=3;return mesh;
+}
+// soft orange light in the smoky air around anything burning
+function glowSystem(emitters){
+  const n=emitters.length;const o=new Float32Array(n*3),p=new Float32Array(n*4);
+  emitters.forEach((e,i)=>{o.set([e.x,e.y,e.z],i*3);p.set([e.ign,e.dur,e.seed,e.size],i*4);});
+  const g=billboardQuad();g.setAttribute('aOrigin',new THREE.InstancedBufferAttribute(o,3));g.setAttribute('aP',new THREE.InstancedBufferAttribute(p,4));g.instanceCount=n;
+  const m=new THREE.ShaderMaterial({uniforms:U,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,
+    vertexShader:`${PCOMMON}
+      attribute vec3 aOrigin; attribute vec4 aP; varying vec2 vUv; varying float vI; varying float vFog;
+      void main(){
+        float env=smoothstep(aP.x-0.5,aP.x+1.5,uTime)*(1.0-smoothstep(aP.x+aP.y*0.7,aP.x+aP.y+1.5,uTime));
+        if(env<0.01){gl_Position=vec4(2.0,2.0,2.0,1.0);return;}
+        float fl=0.72+0.28*sin(uTime*9.0+aP.z*30.0)*sin(uTime*5.3+aP.z*11.0);
+        vec4 mv=modelViewMatrix*vec4(aOrigin,1.0);
+        float s=aP.w*(0.92+0.08*sin(uTime*3.0+aP.z*6.0));
+        mv.xy+=position.xy*s; mv.z+=min(s*0.45,-mv.z*0.5);
+        gl_Position=projectionMatrix*mv; vUv=uv; vI=env*fl;
+        float fd=uFogDensity*0.4*length(mv.xyz); vFog=exp(-fd*fd);
+      }`,
+    fragmentShader:`uniform float uFlameGain; varying vec2 vUv; varying float vI; varying float vFog;
+      void main(){ float d=length(vUv-0.5)*2.0; float a=pow(max(1.0-d,0.0),2.2)*vI; if(a<0.004) discard;
+        gl_FragColor=vec4(vec3(1.0,0.3,0.06)*a*0.13*uFlameGain*vFog,1.0); }`});
   const mesh=new THREE.Mesh(g,m);mesh.frustumCulled=false;mesh.renderOrder=3;return mesh;
 }
 function smokeSystem(emitters,opts={}){
@@ -1133,18 +1170,24 @@ for(const sx of [-0.55,0.55]){const bg=new THREE.CylinderGeometry(0.06,2.4,14,20
 const fireL1=new THREE.PointLight(0xff7a2a,0,0,2),fireL2=new THREE.PointLight(0xff6a20,0,0,2);scene.add(fireL1,fireL2);
 
 /* ---------------------------------------------------------------- emitters */
-const flameEm=[],smokeEm=[],emberEm=[];
+const flameEm=[],smokeEm=[],emberEm=[],fireSmokeEm=[],glowEm=[];
 (function(){
   const R=mulberry32(9090);
   const ground=(x,z,step)=>{const ign=igniteAt(x,z);if(ign>78||ign<-40)return;const dur=(ign>30?5.5:3.2)+R()*2.2;if(ign+dur<0)return;const y=baseH(x,z);
-    const cnt=step<3?2:3;for(let k=0;k<cnt;k++) flameEm.push({x:x+(R()-.5)*step,y,z:z+(R()-.5)*step,ign:ign+R()*0.8,dur,seed:R(),size:(1.4+R()*2.6)*(R()<0.15?1.8:1),life:0.6+R()*0.7,rise:1.4+R()*2.4,spread:step*0.9});
+    const fine=step<3,cnt=fine?4:3;for(let k=0;k<cnt;k++) flameEm.push({x:x+(R()-.5)*step*1.2,y,z:z+(R()-.5)*step*1.2,ign:ign+R()*0.8,dur,seed:R(),size:(fine?0.8+R()*1.3:1.5+R()*2.4)*(R()<0.18?1.7:1),life:0.9+R()*0.7,rise:fine?0.6+R()*1.2:1.2+R()*2.0,spread:step*1.1,stretch:1.25+R()*0.4});
+    if(R()<0.14) flameEm.push({x:x+(R()-.5)*step,y:y-0.15,z:z+(R()-.5)*step,ign:ign+2+R()*3,dur:10+R()*14,seed:R(),size:0.7+R()*0.8,life:0.8+R()*0.5,rise:0.2+R()*0.3,spread:1.6,stretch:0.85});
+    if(R()<0.33) fireSmokeEm.push({x,y:y+2.5,z,ign,dur:dur+5,seed:R(),size:4+R()*4,life:5+R()*3,rise:10+R()*10,spread:3,dark:0.6+R()*0.4});
+    if(R()<0.25) glowEm.push({x,y:y+1.8,z,ign,dur,seed:R(),size:8+R()*7});
     if(R()<0.3) emberEm.push({x,y,z,t0:ign,t1:ign+dur+5,seed:R(),size:0.11+R()*0.1});};
   for(let x=-240;x<=60;x+=4.5)for(let z=-150;z<=110;z+=4.5) ground(x+(R()-.5)*3,z+(R()-.5)*3,4.5);
   for(let x=-30;x<=36;x+=2.2)for(let z=-96;z<=-30;z+=2.2){if(x<xb(z)+5)continue;ground(x+(R()-.5)*1.5,z+(R()-.5)*1.5,2.2);}
   for(const t of forest){if(t.ign>78||t.ign+t.dur<0)continue;const cy=t.y+t.H*CROWN_Y[t.type];
-    const cd=2.8+R()*2.2;for(let k=0;k<5;k++) flameEm.push({x:t.x,y:cy-t.H*0.14,z:t.z,ign:t.ign+0.4+R()*1.4,dur:cd,seed:R(),size:t.H*(0.13+R()*0.12),life:0.8+R()*0.8,rise:t.H*0.3,spread:t.H*0.26});
+    const cd=3.0+R()*2.4;for(let k=0;k<4;k++) flameEm.push({x:t.x,y:cy-t.H*0.16,z:t.z,ign:t.ign+0.4+R()*1.4,dur:cd,seed:R(),size:t.H*(0.2+R()*0.16),life:1.0+R()*0.8,rise:t.H*0.38,spread:t.H*0.24,stretch:1.5+R()*0.3});
+    if(R()<0.4) flameEm.push({x:t.x,y:cy-t.H*0.05,z:t.z,ign:t.ign+0.8+R(),dur:cd*0.65,seed:R(),size:t.H*(0.38+R()*0.14),life:1.3+R()*0.7,rise:t.H*0.55,spread:t.H*0.1,stretch:1.8});
+    for(let k=0;k<3;k++) fireSmokeEm.push({x:t.x,y:cy+t.H*0.1,z:t.z,ign:t.ign+0.8,dur:cd+8,seed:R(),size:t.H*(0.2+R()*0.12),life:8+R()*4,rise:t.H*2.0,spread:t.H*0.18,dark:0.75+R()*0.25});
+    glowEm.push({x:t.x,y:cy-t.H*0.05,z:t.z,ign:t.ign+0.5,dur:cd,seed:R(),size:t.H*0.75});
     if(R()<0.5) emberEm.push({x:t.x,y:cy,z:t.z,t0:t.ign,t1:t.ign+t.dur+6,seed:R(),size:0.13+R()*0.12});}
-  for(const s of shrubKeep){if(s.ign>78||s.ign+s.dur<0)continue;flameEm.push({x:s.x,y:s.y+s.s*0.3,z:s.z,ign:s.ign,dur:s.dur,seed:R(),size:s.s*1.8,life:0.8,rise:s.s*1.4,spread:s.s});}
+  for(const s of shrubKeep){if(s.ign>78||s.ign+s.dur<0)continue;for(let k=0;k<3;k++) flameEm.push({x:s.x,y:s.y+s.s*0.15,z:s.z,ign:s.ign+R()*0.6,dur:s.dur,seed:R(),size:s.s*(0.9+R()*0.6),life:0.8+R()*0.6,rise:s.s*0.8,spread:s.s*1.4,stretch:1.35});}
   // low smoke drifting through the trees, and columns above the front
   for(let x=-250;x<=60;x+=17)for(let z=-160;z<=120;z+=17){const xx=x+(R()-.5)*12,zz=z+(R()-.5)*12;const ign=igniteAt(xx,zz);if(ign>78||ign+60<-2)continue;
     const y=baseH(xx,zz);for(let k=0;k<2;k++) smokeEm.push({x:xx,y:y+2,z:zz,ign:ign-0.5+R()*2,dur:60,seed:R(),size:11+R()*12,life:13+R()*8,rise:9+R()*14,spread:14,dark:R()});}
@@ -1156,7 +1199,8 @@ const flameEm=[],smokeEm=[],emberEm=[];
   for(let i=0;i<1100;i++){const z=-100+R()*80;const x=xb(z)-12-R()*30;emberEm.push({x,y:baseH(x,z)+2,z,t0:30.5+R()*2,t1:52,seed:R(),size:0.12+R()*0.12});}
 })();
 const flames=flameSystem(flameEm),smoke=smokeSystem(smokeEm,{alpha:0.58,base:[0.11,0.095,0.085],fogScale:0.6}),embers=emberSystem(emberEm),ash=ashSystem(1800);
-scene.add(flames,smoke,embers,ash);
+const fireSmoke=smokeSystem(fireSmokeEm,{alpha:0.72,base:[0.05,0.044,0.04],fogScale:0.7,lit:1.25,windMul:0.9}),glow=glowSystem(glowEm);fireSmoke.renderOrder=4;
+scene.add(flames,smoke,embers,ash,fireSmoke,glow);
 // the big plume behind the western ranges
 const plumeEm=[];(function(){const R=mulberry32(4);for(let i=0;i<70;i++){const x=-560+R()*160,z=-260+R()*300;plumeEm.push({x,y:baseH(x,z)+20,z,ign:-1000,dur:1e6,seed:R(),size:140+R()*150,life:45+R()*25,rise:520+R()*260,spread:120,dark:R()*0.7});}})();
 const plume=smokeSystem(plumeEm,{fogScale:0.32,lit:0.55,base:[0.36,0.3,0.27],alpha:0.75,windMul:1.6});scene.add(plume);
@@ -1225,12 +1269,12 @@ const SUN2=(()=>{const d=V3(SON.dir.x,0,SON.dir.z);d.applyAxisAngle(V3(0,1,0),0.
 const ENV=[
   [0,   {sunCol:[1,.72,.46],sunI:2.6,zen:[.3,.4,.55],hor:[.86,.62,.42],smoke:.3,smokeCol:[.42,.3,.22],fogCol:[.58,.5,.44],fog:.0026,hs:[.55,.55,.58],hg:[.22,.18,.13],hi:.95,ash:0,sway:.15,tint:[1,.97,.92],exp:1.0}],
   [12,  {sunCol:[1,.62,.34],sunI:2.2,zen:[.27,.33,.42],hor:[.9,.56,.32],smoke:.45,smokeCol:[.4,.27,.18],fogCol:[.6,.46,.34],fog:.0034,hs:[.58,.5,.44],hg:[.22,.16,.1],hi:.9,ash:0,sway:.15,tint:[1,.96,.9],exp:1.0}],
-  [18,  {sunCol:[1,.42,.16],sunI:1.4,zen:[.2,.14,.12],hor:[.95,.45,.17],smoke:.78,smokeCol:[.34,.19,.11],fogCol:[.52,.3,.16],fog:.0058,hs:[.62,.38,.22],hg:[.22,.11,.05],hi:.75,ash:0,sway:.2,tint:[1,.93,.85],exp:1.05}],
-  [29.5,{sunCol:[1,.4,.15],sunI:1.15,zen:[.18,.12,.1],hor:[.9,.4,.15],smoke:.82,smokeCol:[.32,.17,.1],fogCol:[.5,.28,.14],fog:.0068,hs:[.6,.36,.2],hg:[.2,.1,.05],hi:.7,ash:.05,sway:.25,tint:[1,.93,.85],exp:1.05}],
-  [33.5,{sunCol:[1,.34,.1],sunI:.7,zen:[.1,.06,.045],hor:[.78,.3,.1],smoke:.96,smokeCol:[.26,.12,.06],fogCol:[.46,.22,.09],fog:.013,hs:[.55,.3,.15],hg:[.2,.09,.04],hi:.6,ash:.5,sway:1.0,tint:[1,.9,.8],exp:.98}],
-  [40,  {sunCol:[1,.3,.08],sunI:.45,zen:[.08,.045,.03],hor:[.7,.25,.08],smoke:1,smokeCol:[.24,.1,.05],fogCol:[.44,.19,.07],fog:.022,hs:[.5,.26,.12],hg:[.2,.08,.03],hi:.55,ash:.9,sway:1.0,tint:[1,.88,.78],exp:.95}],
-  [46,  {sunCol:[1,.28,.08],sunI:.3,zen:[.06,.03,.02],hor:[.62,.2,.06],smoke:1,smokeCol:[.22,.09,.04],fogCol:[.4,.16,.06],fog:.034,hs:[.48,.22,.1],hg:[.2,.07,.03],hi:.5,ash:1,sway:.9,tint:[1,.87,.76],exp:.95}],
-  [52.4,{sunCol:[1,.28,.08],sunI:.25,zen:[.05,.03,.02],hor:[.55,.18,.05],smoke:1,smokeCol:[.2,.08,.04],fogCol:[.36,.14,.05],fog:.045,hs:[.45,.2,.1],hg:[.2,.07,.03],hi:.45,ash:1,sway:.9,tint:[1,.87,.76],exp:.95}],
+  [18,  {sunCol:[1,.42,.16],sunI:1.1,zen:[.16,.11,.09],hor:[.8,.36,.13],smoke:.82,smokeCol:[.28,.15,.08],fogCol:[.42,.23,.11],fog:.0058,hs:[.52,.3,.17],hg:[.2,.1,.04],hi:.6,ash:0,sway:.2,tint:[1,.93,.85],exp:1.05}],
+  [29.5,{sunCol:[1,.4,.15],sunI:.9,zen:[.14,.09,.07],hor:[.76,.33,.12],smoke:.86,smokeCol:[.26,.13,.07],fogCol:[.39,.21,.1],fog:.0068,hs:[.5,.29,.16],hg:[.19,.09,.04],hi:.55,ash:.05,sway:.25,tint:[1,.93,.85],exp:1.05}],
+  [33.5,{sunCol:[1,.34,.1],sunI:.55,zen:[.08,.05,.035],hor:[.62,.24,.08],smoke:.96,smokeCol:[.21,.1,.05],fogCol:[.34,.16,.065],fog:.013,hs:[.46,.25,.12],hg:[.19,.08,.035],hi:.5,ash:.5,sway:1.0,tint:[1,.9,.8],exp:.98}],
+  [40,  {sunCol:[1,.3,.08],sunI:.35,zen:[.06,.035,.025],hor:[.55,.2,.06],smoke:1,smokeCol:[.19,.08,.04],fogCol:[.31,.13,.05],fog:.022,hs:[.42,.21,.1],hg:[.19,.07,.03],hi:.46,ash:.9,sway:1.0,tint:[1,.88,.78],exp:.95}],
+  [46,  {sunCol:[1,.28,.08],sunI:.25,zen:[.05,.025,.018],hor:[.5,.17,.05],smoke:1,smokeCol:[.18,.075,.035],fogCol:[.29,.115,.045],fog:.034,hs:[.4,.19,.09],hg:[.19,.065,.03],hi:.44,ash:1,sway:.9,tint:[1,.87,.76],exp:.95}],
+  [52.4,{sunCol:[1,.28,.08],sunI:.2,zen:[.04,.02,.015],hor:[.45,.15,.04],smoke:1,smokeCol:[.16,.065,.03],fogCol:[.27,.1,.04],fog:.045,hs:[.38,.17,.08],hg:[.19,.06,.03],hi:.4,ash:1,sway:.9,tint:[1,.87,.76],exp:.95}],
   [52.5,{sunCol:[1,.84,.64],sunI:2.1,zen:[.34,.45,.58],hor:[.72,.75,.76],smoke:0,smokeCol:[.5,.5,.5],fogCol:[.6,.65,.67],fog:.02,hs:[.5,.58,.66],hg:[.16,.2,.12],hi:.8,ash:0,sway:.12,tint:[.96,1,1.02],exp:.85}],
   [80,  {sunCol:[1,.86,.68],sunI:2.4,zen:[.36,.48,.62],hor:[.74,.77,.78],smoke:0,smokeCol:[.5,.5,.5],fogCol:[.62,.67,.69],fog:.015,hs:[.52,.6,.68],hg:[.16,.2,.12],hi:.85,ash:0,sway:.12,tint:[.96,1,1.02],exp:.85}],
 ];
@@ -1279,7 +1323,7 @@ function update(t){
   U.uAsh.value=E.ash;U.uSway.value=E.sway;renderer.toneMappingExposure=E.exp;
   grade.uniforms.uTint.value.setRGB(...E.tint);
   // what exists in which era
-  for(const o of [flames,smoke,embers,ash,plume,exhaust.mesh,dust.mesh,dozer,pushTrunks,pushCrowns,logMesh]) o.visible=!s2;
+  for(const o of [flames,smoke,embers,ash,fireSmoke,glow,plume,exhaust.mesh,dust.mesh,dozer,pushTrunks,pushCrowns,logMesh]) o.visible=!s2;
   regrowth.visible=s2;
   // camera
   const cam=cameraAt(t);camera.position.copy(cam.pos);camera.lookAt(cam.look);camera.fov=cam.fov;camera.updateProjectionMatrix();
@@ -1507,7 +1551,7 @@ if(!CAPTURE) requestAnimationFrame(loop);
 
 /* ---------------------------------------------------------------- capture hooks (used to record the video file) */
 let capN=0,capShot='';
-window.prologue={DUR,debug:{scene,smoke,plume,flames,embers,ash,renderer,composer,bloom,sun,terrain,regrowth,cameraAt,dozerState,dozerPose,Q0,Q_END,SON,YAW0,TURN,YAW_TRACK,sonState,envAt,camera},
+window.prologue={DUR,debug:{scene,smoke,plume,flames,glow,fireSmoke,embers,ash,renderer,composer,bloom,sun,terrain,regrowth,cameraAt,dozerState,dozerPose,Q0,Q_END,SON,YAW0,TURN,YAW_TRACK,sonState,envAt,camera},
   renderAt(tt){const sh=shotAt(tt).name;renderer.shadowMap.autoUpdate=false;renderer.shadowMap.needsUpdate=(capN++%2===0)||sh!==capShot;capShot=sh;update(tt);composer.render();},
   async renderAudioWav(){
     const sr=44100;const ctx=new OfflineAudioContext(2,Math.ceil(sr*DUR),sr);buildSound(ctx,ctx.destination,0,0);
