@@ -424,6 +424,7 @@ func _dust_fx() -> void:
 	var dt := get_process_delta_time()
 	var filling := load_n > _load_was
 	var cutting: bool = dug != _dug_was or (not runs() and filling)
+	cut_now = clampf(0.4 + bog, 0.0, 1.0) if cutting else 0.0
 	_dug_was = dug
 	_load_was = load_n
 	_shown = move_toward(_shown, float(load_n), CAPACITY * 1.3 * dt)

@@ -49,6 +49,10 @@ var _body: AnimatableBody3D
 # Its engine shaking it a little (the web game's _shake_body, about a third as much; the owner, 9 Nov): shake_node's
 # what shakes (its body and what's on it, not its wheels or tracks: a subclass sets it), a few mm ticking over, more
 # the harder it works. Seen alike on both games (speed and driver come over the wire); its digging doesn't feel it.
+var effort_now := 0.0           # how hard it's working besides driving, this frame (0 .. 1: shake_effort(), once a frame)
+var cut_now := 0.0              # how much dirt its blade or bucket is cutting or pushing, this frame (0 .. 1: a subclass's)
+var tracked := true             # (on tracks: they clatter)
+var sfx: DsSfx
 var shake_node: Node3D
 var shake_idle := 0.0018        # m up and down, ticking over
 var shake_work := 0.0045        # more at full speed
@@ -123,8 +127,16 @@ func step(dt: float) -> void:
 	if runs():
 		_land_falling()
 	_pour_fx(dt)
+	effort_now = shake_effort()
 	_dust_fx()
 	_shake_body(dt)
+	if sfx == null and driver != 0:
+		sfx = DsSfx.new()
+		add_child(sfx)
+		sfx.position = Vector3(0, 1.0, 0)
+		sfx.setup(length / 4.0)
+	if sfx:
+		sfx.update(dt, self, tracked, _stream_t > 0.0 and fx_load() >= 0)
 
 # Dirt let go of, falling (the owner, 10 Nov: "the dust appears before it's even dropped"): it lands, in the ground or a
 # truck's tray, when it's fallen there, with the stream of lumps falling from the bucket; until then it's in the air.
@@ -183,7 +195,7 @@ func _shake_body(dt: float) -> void:
 		_shake_clock = id * 1.7         # (not all in step)
 	_shake_clock += dt
 	var c := _shake_clock
-	var work := clampf(absf(speed) / max_speed + shake_effort(), 0.0, 1.0)
+	var work := clampf(absf(speed) / max_speed + effort_now, 0.0, 1.0)
 	shake_node.position.y = sin(c * shake_hz) * (shake_idle + shake_work * work) + sin(c * shake_hz * 0.64) * shake_work * 0.3 * work
 	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean()
 

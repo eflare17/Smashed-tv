@@ -488,3 +488,19 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - All outside the gate, off the dug ground, so nothing is left standing on air: a parked ute, a barrow, sand and gravel heaps, drums, a pallet of bags, a stack of concrete pipes, witches' hats, survey pegs and a light tower.
   - The ute, barrow, peg and light tower models are the web's, ported into DsProps.
 - **Machine shadow sides:** left alone. The machines use the same shader and the same lights as the web, so once the brightness matched there was nothing left to change.
+
+## Machine sound, and soil into the loaders' buckets (11 Nov)
+
+- **Sound (DsSfx, ds_sfx.gd):** the machines were silent. This is the web game's sfx.gd brought over.
+  - Every sound is made in code, once, with no sound files: a diesel loop, a hydraulic whine, track clatter, soil scraping, soil falling and a reversing beep.
+  - Each machine gets its own set the first time someone drives it, as 3D sounds heard from where it stands. So you hear a mate's machine too.
+  - What drives it is known on both games:
+    - Engine: on while it has a driver; revs with speed and work, labours while cutting. Smaller machines pitch higher.
+    - Whine: `effort_now`, which is `shake_effort()` taken once a frame. The dozer now has one too (blade moving).
+    - Clatter: speed, tracked machines only (`tracked`; the Bobcat and truck are on wheels).
+    - Scrape: `cut_now`, set where each machine works out it's cutting.
+    - Pour: while its load is going down.
+    - Beep: while reversing.
+  - Loops only play while they're audible. Levels are the web's plus 7 dB (`GAIN`): from a camera 12 m off, the web's levels averaged -31 dB.
+  - Not done: clunks (blade touching down, bucket at the end of its travel).
+- **Loaders (DsDingo._dust_fx, so the Bobcat too):** the same treatment as the excavator. Lumps roll back over the lip into the bucket while its load goes up, and the load it draws (`_shown`) rises smoothly instead of in steps. Seen on both games.

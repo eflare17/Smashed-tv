@@ -245,7 +245,7 @@ func _pose_tool() -> void:
 	var ends := _ram_ends()
 	for k in mini(_rams.size(), ends.size()):
 		_rams[k].aim(ends[k][0], ends[k][1])
-	var f := float(load_n) / capacity
+	var f := _shown / capacity
 	_lump.visible = f > 0.03
 	if _lump.visible:
 		var hp := DsExcavator.HEAPED
@@ -367,9 +367,45 @@ func _tool(dt: float) -> void:
 var _dug_was := 0
 
 # dirt flying and dust at the bucket's lip while it's cutting (the digger game's loaders')
+var _load_was := 0
+var _shown := 0.0               # the load as the bucket draws it: it comes up as the soil rolls in, not in jumps
+var _inflow: CPUParticles3D
+var _inflow_left := 0.0
+
+# (and, as the excavator's: the soil its lip cuts rolling back over it into the bucket while its load goes up, on both
+# games; the owner, 10 Nov, "it drags it and then just appears in the bucket")
 func _dust_fx() -> void:
 	super()
-	var cutting: bool = dug != _dug_was and speed > 0.05
+	var dt := get_process_delta_time()
+	var filling := load_n > _load_was
+	_load_was = load_n
+	_shown = move_toward(_shown, float(load_n), capacity * 1.3 * dt)
+	if filling:
+		_inflow_left = 0.15
+	_inflow_left -= dt
+	if _inflow == null:
+		var k := bucket_len / 0.72
+		_inflow = DsMachine.chunks(50)
+		_inflow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_inflow.spread = 16.0
+		_inflow.initial_velocity_min = 1.1 * k
+		_inflow.initial_velocity_max = 2.0 * k
+		_inflow.gravity = Vector3(0.0, -9.8, 0.0)
+		_inflow.lifetime = 0.34
+		_inflow.scale_amount_min = 0.22 * k
+		_inflow.scale_amount_max = 0.5 * k
+		add_child(_inflow)
+	var le := edge_ends()
+	var across := ((le[1] as Vector3) - (le[0] as Vector3)).normalized()
+	var back: Vector3 = (_look.global_transform.basis * Vector3(-cos(curl_at), -sin(curl_at) + 0.45, 0.0)).normalized()
+	var up := across.cross(back).normalized()
+	var ib := Basis(across, up, across.cross(up))
+	_inflow.global_transform = Transform3D(ib, edge() + Vector3(0, 0.05, 0))
+	_inflow.emission_box_extents = Vector3(bucket_half * 0.85, 0.04, 0.04)
+	_inflow.direction = ib.inverse() * back
+	_inflow.emitting = _inflow_left > 0.0
+	var cutting: bool = (dug != _dug_was and speed > 0.05) or (not runs() and filling)
+	cut_now = clampf(0.35 + float(load_n) / capacity * 0.5, 0.0, 1.0) if cutting else 0.0
 	_dug_was = dug
 	var e := edge()
 	work_fx(Vector3(e.x, maxf(e.y, ground_y(e.x, e.z)) + 0.1, e.z), bucket_half * 0.85, cutting)

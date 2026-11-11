@@ -44,6 +44,7 @@ var _roll := 0.0
 
 func _init() -> void:
 	kind = "tip truck"
+	tracked = false
 	length = 7.6
 	width = 2.5
 	max_speed = 5.0

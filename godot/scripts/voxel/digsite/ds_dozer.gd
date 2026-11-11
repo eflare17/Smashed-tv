@@ -285,6 +285,7 @@ var _tumble: CPUParticles3D
 func _dust_fx() -> void:
 	super()
 	var pushing: bool = speed > 0.15 and (moved != _moved_was or (not runs() and push_load > 20.0))
+	cut_now = clampf(0.3 + push_load / BOG, 0.0, 1.0) if pushing else 0.0
 	_moved_was = moved
 	var e: Array = edge_ends()
 	var mid: Vector3 = ((e[0] as Vector3) + (e[1] as Vector3)) * 0.5
@@ -314,6 +315,14 @@ func _dust_fx() -> void:
 	_tumble.scale_amount_max = lerpf(0.45, 0.9, clampf(tonnes / 10.0, 0.0, 1.0))
 
 # (the digger game's lean: back a touch with a heap on the blade)
+var _lift_was := 0.0
+
+# (the blade going up or down: its pump's working)
+func shake_effort() -> float:
+	var moving := absf(lift - _lift_was) / maxf(get_process_delta_time(), 0.001)
+	_lift_was = lift
+	return clampf(moving / LIFT_SPEED, 0.0, 1.0) * 0.6
+
 func shake_lean() -> float:
 	return clampf(push_load / BOG, 0.0, 1.0) * 0.004 * clampf(absf(speed) / max_speed, 0.0, 1.0)
 

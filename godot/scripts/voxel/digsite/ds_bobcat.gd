@@ -8,6 +8,7 @@ extends DsDingo
 func _init() -> void:
 	super()
 	kind = "Bobcat"
+	tracked = false
 	length = 2.2
 	width = 1.8
 	max_speed = 3.0
