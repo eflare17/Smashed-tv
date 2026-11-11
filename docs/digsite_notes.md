@@ -505,3 +505,12 @@ Travel app, co-op from the start. Code lives in `godot/scripts/voxel/digsite/`, 
   - Not done: clunks (blade touching down, bucket at the end of its travel).
 - **Loaders (DsDingo._dust_fx, so the Bobcat too):** the same treatment as the excavator. Lumps roll back over the lip into the bucket while its load goes up, and the load it draws (`_shown`) rises smoothly instead of in steps. Seen on both games.
 - **Clunks (11 Nov, later):** done. A machine clunks when `at_stop()` goes true: the dozer's blade touching down or right up, the excavator's bucket curled right in or out, a loader's arms at either end, the truck's tray landing or right up. It reads only what both games know, and waits 0.7 s between clunks so a blade skimming the ground doesn't rattle.
+
+## The site's kept between games (11 Nov; stage 12, the ground part)
+
+- **What's saved (DsSave, ds_save.gd):** the ground as changed from how it's made, with its loose dirt (`pack_chunks(modified_chunks())`, the same pack a joining mate is sent, zstd'd), the grass-worn map, and each machine's position and heading.
+- **Where:** beside the game's own save, at `stash.save_path + ".digsite"`. So there's none in the tests or with `--nosave`, and `--save=path` moves it too. It's written to a `.tmp` file and renamed over.
+- **When:** on going home, every minute while you're there, and on closing the window from the site. It's loaded at the end of `DigSite._build`.
+- **Whose:** your own site only. A guest at a mate's site doesn't save.
+- **Not saved yet:** what's in a bucket or the truck's tray, supports you've placed, and dynamite. The save is refused if the ground's seed differs.
+- **Test:** `test/voxel/digsite_save_test.gd`, run twice with the same `--save=` and `--phase=1` then `--phase=2`. The dozer cuts and pushes a heap and goes home. In a new game the ground is the same to the millimetre, the cut's heights, the dozer and the worn grass are where they were, and the changed chunks are still marked changed (so they save again). A save here was 8 KB and 1.1 ms.

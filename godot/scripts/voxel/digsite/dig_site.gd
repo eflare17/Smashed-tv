@@ -233,6 +233,7 @@ func _build() -> void:
 	sub.position = AT + Vector3(0.0, 2.4, half + 0.2)
 	add_child(sub)
 	_props(body, half)
+	DsSave.load_into(self)                    # (your site as you left it)
 
 ## What stands about outside the gate (the digger game's site has a barrow, a sand heap, a ute; ours was bare but
 ## for its machines): all past the fence, off the ground that's dug, so nothing's left standing on air
@@ -398,6 +399,7 @@ func home() -> void:
 	if lamp:
 		lamp.visible = false
 	net.left()
+	DsSave.save(self)
 	active = false
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
@@ -415,9 +417,21 @@ func _put(at: Vector3, yaw: float, pitch: float) -> void:
 	arena.look_yaw = yaw
 	arena.look_pitch = pitch
 
+var _save_in := 60.0
+
+## (quitting from the site: it's kept)
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and active:
+		DsSave.save(self)
+
 func _process(_dt: float) -> void:
 	if not active:
 		return
+	# (kept every minute you're here, as well as when you leave: a crash loses a minute)
+	_save_in -= _dt
+	if _save_in <= 0.0:
+		_save_in = 60.0
+		DsSave.save(self)
 	var who := "with your mate" if _linked() else "on your own"
 	_hud.text = "DIG SITE   (%s)   P: the phone takes you home" % who
 	var p: Vector3 = arena.player.global_position
