@@ -30,6 +30,27 @@ public partial class VoxelWorld : MonoBehaviour
     public const float RoadX = -4f, RoadHalfWidth = 5.5f;   // the way out to the south
     public const float RockPadX = 16f, RockPadZ = -8f;      // a bare rock patch on the floor, for ripping
 
+    // Where the three dozer parts lie buried in the cave-in (see Finds.cs): across from the tunnel's middle, along from its mouth.
+    const float Find0X = -0.7f, Find0Z = 4.6f, Find1X = 0.6f, Find1Z = 6.4f, Find2X = -0.4f, Find2Z = 8.6f;
+    const float FindHalf = 0.34f, FindTall = 0.5f;
+
+    public static Vector3 FindSpot(int k)
+    {
+        return k == 0 ? new Vector3(PortalX + Find0X, 0f, PortalZ + Find0Z)
+             : k == 1 ? new Vector3(PortalX + Find1X, 0f, PortalZ + Find1Z)
+             : new Vector3(PortalX + Find2X, 0f, PortalZ + Find2Z);
+    }
+
+    /// True inside the little hollow each find sits in.  wy is height above the tunnel floor.
+    static bool InFindHole(float wx, float wy, float wz)
+    {
+        if (wy < 0f || wy >= FindTall) return false;
+        float x = wx - PortalX, z = wz - PortalZ;
+        return (math.abs(x - Find0X) < FindHalf && math.abs(z - Find0Z) < FindHalf)
+            || (math.abs(x - Find1X) < FindHalf && math.abs(z - Find1Z) < FindHalf)
+            || (math.abs(x - Find2X) < FindHalf && math.abs(z - Find2Z) < FindHalf);
+    }
+
     public static VoxelWorld Instance { get; private set; }
 
     public Material material;
@@ -464,7 +485,7 @@ public partial class VoxelWorld : MonoBehaviour
                     float fillTo = along < 2.6f ? 0f : along < 4.4f ? (along - 2.6f) / 1.8f : along < 8.2f ? 1.2f : along < 9.8f ? (9.8f - along) / 1.6f * 1.2f : 0f;
                     fillTo *= 0.9f + 0.14f * n3;
                     float up = (y - Ground + 0.5f) * Voxel / TunnelHeight;
-                    if (up >= fillTo) m = Air;
+                    if (up >= fillTo || InFindHole(wx, (y - Ground) * Voxel, wz)) m = Air;
                     else
                     {
                         float wy2 = (y - Ground) * Voxel;

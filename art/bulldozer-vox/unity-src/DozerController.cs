@@ -31,6 +31,11 @@ public class DozerController : MonoBehaviour
     // Not saved with the prefab on purpose: Unity kept an old stored "dead" and ignored the value written here.
     [System.NonSerialized] public bool dead = false;     // true = it has sat for years and nothing works until repaired (off for now: F9 switches it)
     [System.NonSerialized] public bool driven;           // someone is in the seat
+
+    // What works.  A working dozer (not dead) can do everything.  A dead one gets each back as its part is fitted.
+    public bool CanDrive { get { return !dead || Finds.IsInstalled(0); } }
+    public bool CanBlade { get { return !dead || Finds.IsInstalled(1); } }
+    public bool CanRip { get { return !dead || Finds.IsInstalled(2); } }
     [Header("Driven by script instead of the keyboard (tests, touch buttons, AI)")]
     public bool useOverride;
     public float overrideThrottle, overrideSteer, overrideBlade, overrideRipper, overrideAngle, overrideTilt;
@@ -142,19 +147,23 @@ public class DozerController : MonoBehaviour
 
     void Update()
     {
-        if (!driven || dead) { throttleIn = steerIn = 0f; ApplyAttachments(); return; }
+        if (!driven) { throttleIn = steerIn = 0f; ApplyAttachments(); return; }
         throttleIn = useOverride ? overrideThrottle : Input.GetAxisRaw("Vertical");
         steerIn = useOverride ? overrideSteer : Input.GetAxisRaw("Horizontal");
+        if (!CanDrive) throttleIn = steerIn = 0f;
 
         float bladeIn = useOverride ? overrideBlade : (Input.GetKey(KeyCode.R) ? 1f : 0f) - (Input.GetKey(KeyCode.F) ? 1f : 0f);
         float ripperIn = useOverride ? overrideRipper : (Input.GetKey(KeyCode.T) ? 1f : 0f) - (Input.GetKey(KeyCode.G) ? 1f : 0f);
+        if (!CanBlade) bladeIn = 0f;
+        if (!CanRip) ripperIn = 0f;
         if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Time.deltaTime);
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
         float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) ? 1f : 0f) - (Input.GetKey(KeyCode.Q) ? 1f : 0f);
         float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) ? 1f : 0f) - (Input.GetKey(KeyCode.Z) ? 1f : 0f);
+        if (!CanBlade) angleIn = tiltIn = 0f;
         BladeYaw = Mathf.Clamp(BladeYaw + angleIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxAngle, bladeMaxAngle);
         BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * 0.5f * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
-        if (!useOverride && Input.GetKey(KeyCode.X))
+        if (!useOverride && CanBlade && Input.GetKey(KeyCode.X))
         {
             BladeYaw = Mathf.MoveTowards(BladeYaw, 0f, bladeTurnSpeed * 2f * Time.deltaTime);
             BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
@@ -167,7 +176,7 @@ public class DozerController : MonoBehaviour
     void FixedUpdate()
     {
         float dt = Time.fixedDeltaTime;
-        if (!driven || dead)
+        if (!driven)
         {
             // parked.  The blade is still a solid thing for loose dirt to pile against.
             Speed = 0f; turn = 0f;

@@ -28,7 +28,7 @@ Shader "Voxel/Terrain"
 
         // 0 air, 1 soil, 2 clay, 3 rock, 4 quartz, 5 gold, 6 loose soil, 7 loose clay, 8 loose rock, 9 loose quartz, 10 loose gold
         // 11 timber, 12 dark timber, 13 steel, 14 gum leaves, 15 gum bark: used by the scenery, not by ground
-        // 16 hi-vis shirt, 17 navy, 18 skin, 19 hard hat, 20 boots: the worker
+        // 16 hi-vis shirt, 17 navy, 18 skin, 19 hard hat, 20 boots: the worker.  21 rust, 22 old yellow paint, 23 steel: the finds
         static const float3 MATS[24] =
         {
             float3(1.00, 0.00, 1.00),
@@ -52,9 +52,9 @@ Shader "Voxel/Terrain"
             float3(0.80, 0.60, 0.46),
             float3(0.96, 0.92, 0.80),
             float3(0.20, 0.16, 0.13),
-            float3(1.0, 0.0, 1.0),
-            float3(1.0, 0.0, 1.0),
-            float3(1.0, 0.0, 1.0)
+            float3(0.46, 0.22, 0.10),
+            float3(0.74, 0.58, 0.16),
+            float3(0.50, 0.49, 0.48)
         };
 
         sampler2D _GrassTex;

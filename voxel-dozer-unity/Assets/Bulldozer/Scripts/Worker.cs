@@ -6,6 +6,7 @@
 //   1 / 2            pick / shovel
 //   Left mouse or Space   use the tool (hold to keep going)
 //   Enter            get into the dozer, or out of it
+//   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer)
 //
 // The tool works exactly where you aim.  The cross in the middle of the screen is the aim, and a small
 // marker sits on the ground at the spot the tool will hit: yellow when it is in reach, red when it is not.
@@ -276,6 +277,9 @@ public class Worker : MonoBehaviour
 
     public void Say(string text, float seconds = 4f) { say = text; sayTimer = seconds; }
 
+    /// Sets how far up or down he is looking (tests and recordings).
+    public void Look(float pitch) { lookPitch = pitch; if (cam != null) cam.lookPitch = pitch; }
+
     public void GetIn()
     {
         if (dozer == null) return;
@@ -309,7 +313,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.F9) && dozer != null)
             {
                 dozer.dead = !dozer.dead;
-                Say(dozer.dead ? "Dozer set to dead (test key)." : "Dozer repaired (test key).  Walk up to it and press Enter.");
+                Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) TryDozer();
         }
@@ -324,6 +328,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
+            if (Input.GetKeyDown(KeyCode.E)) UsePart();
             if (Input.GetKeyDown(KeyCode.T) && MineCart.Instance != null && MineCart.Instance.Near(transform.position, 3f)) MineCart.Instance.Tip();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
@@ -499,6 +504,29 @@ public class Worker : MonoBehaviour
         arm.localRotation = Quaternion.FromToRotation(Vector3.down, local.normalized);
     }
 
+    /// E on foot: fit a carried part when at the dozer, otherwise pick up a part that has been dug out.
+    /// Returns what happened, for tests.
+    public string UsePart()
+    {
+        var finds = Finds.Instance;
+        if (finds == null || InDozer) return "none";
+        int carried = finds.FirstCarried();
+        if (carried >= 0 && NearDozer())
+        {
+            finds.Install(carried);
+            Say("Fitted the " + Finds.Names[carried] + "." + (dozer.dead ? "" : "  (The dozer already works.  F9 makes it dead, to try repairs.)"), 4f);
+            return "installed " + carried;
+        }
+        int here = finds.Collectable(transform.position);
+        if (here >= 0)
+        {
+            finds.Collect(here);
+            Say("Picked up a " + Finds.Names[here] + ".  Take it to the dozer and press E to fit it.", 4f);
+            return "collected " + here;
+        }
+        return "none";
+    }
+
     /// Close enough to the dozer to climb in.
     public bool NearDozer() { return dozer != null && !InDozer && Vector3.Distance(transform.position, dozer.transform.position) <= 5.5f; }
 
@@ -507,7 +535,7 @@ public class Worker : MonoBehaviour
         if (dozer == null) return;
         if (InDozer) { GetOut(); return; }
         if (!NearDozer()) { Say("Walk up to the dozer first.", 2f); return; }
-        if (dozer.dead) { Say("The dozer is dead.  It has sat here for years and needs parts.", 4f); return; }
+        if (dozer.dead && !dozer.CanDrive) { Say("The dozer is dead.  It has sat here for years.  Its tracks part is somewhere in the mine.", 4f); return; }
         GetIn();
     }
 
@@ -538,8 +566,21 @@ public class Worker : MonoBehaviour
         if (NearDozer())
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            string what = dozer.dead ? "The dozer is dead (it needs parts)" : "Press ENTER to get in the dozer";
+            string what = dozer.dead && !dozer.CanDrive ? "The dozer is dead (it needs parts)" : "Press ENTER to get in the dozer";
             GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.62f, 420, 40), what, prompt);
+        }
+        var finds = Finds.Instance;
+        if (finds != null)
+        {
+            var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            int carried = finds.FirstCarried(), here = finds.Collectable(transform.position);
+            string partLine = null;
+            if (carried >= 0 && NearDozer()) partLine = "Press E to fit the " + Finds.Names[carried];
+            else if (here >= 0) partLine = "Press E to pick up the " + Finds.Names[here];
+            if (partLine != null) GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.70f, 420, 40), partLine, prompt);
+            string carrying = "";
+            for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
+            if (carrying.Length > 0) GUI.Box(new Rect(10, 132, 540, 24), "Carrying: " + carrying);
         }
         // the cross you aim with
         GUI.Box(new Rect(Screen.width / 2 - 1, Screen.height / 2 - 8, 2, 16), GUIContent.none);

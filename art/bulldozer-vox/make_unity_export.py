@@ -502,6 +502,159 @@ public static class BulldozerBuilder
         System.IO.File.WriteAllBytes(Application.dataPath + "/../Logs/" + file, tex.EncodeToPNG());
     }
 
+    // Finds and repairs:  -executeMethod BulldozerBuilder.FindsTest
+    // Digs the first part out of the cave-in by script, picks it up and fits it, then checks each part brings back
+    // its one job on a dead dozer.  Prints BULLDOZER_FINDS_RESULT and BULLDOZER_REPAIR_RESULT.
+    static int fPhase, fTarget;
+    static float fNext, fPhaseStart, fExposedAt;
+    static long fVolume0;
+    static string fLog;
+    static Vector3 fDozerPos;
+    static float fBlade0, fRip0;
+
+    public static void FindsTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        fPhase = 0; fLog = ""; fExposedAt = -1f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += FindsTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void FindsFinish(int code)
+    {
+        EditorApplication.update -= FindsTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void FindsTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_FINDS_FAILED timed out in phase " + fPhase + " " + fLog); FindsFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var finds = Finds.Instance;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (w == null || wk == null || finds == null || d == null) return;
+        float t = Time.time;
+        if (fPhase == 0)
+        {
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            fVolume0 = w.CountSolid() + w.LoadVoxels;
+            fLog += "exposedAtStart=" + finds.Exposed(0);
+            fPhase = 1; fPhaseStart = t; fNext = t; fTarget = 0;
+            return;
+        }
+        if (fPhase == 1)
+        {
+            // dig it out: break up and shovel away the rubble over and in front of part 0, a bit at a time,
+            // throwing each load well outside the mine
+            if (finds.Exposed(0)) { fExposedAt = t - fPhaseStart; fPhase = 2; return; }
+            if (t - fPhaseStart > 60f) { fLog += " neverExposed"; fPhase = 2; return; }
+            if (t < fNext) return;
+            fNext = t + 0.05f;
+            Vector3 c = finds.Spot[0];
+            int n = fTarget++;
+            float h = 0.6f + (n % 7) * 0.3f, x = -0.45f + ((n / 7) % 4) * 0.3f, z = -1.5f + ((n / 28) % 6) * 0.35f;
+            Vector3 at = c + new Vector3(x, h, z);
+            w.Pick(at, 0.3f, Vector3.zero);
+            w.Scoop(at, 0.55f, 4000);
+            if (w.ShovelVoxels >= VoxelVorldClod())
+                w.Throw(new Vector3(VoxelWorld.PortalX + 5f, 2f, VoxelWorld.PortalZ - 9f), Vector3.zero, 1f, 0.2f);
+            return;
+        }
+        if (fPhase == 2)
+        {
+            // walk up to it (placed there by script), look at it, pick it up
+            wk.Teleport(finds.Spot[0] + new Vector3(0f, 0f, -1.6f), 0f);
+            fPhase = 21; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 21)
+        {
+            if (t - fPhaseStart < 0.6f) return;
+            TestCapture("finds_exposed.png");
+            wk.SetEyes(true); wk.Look(42f);
+            fPhase = 22; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 22)
+        {
+            if (t - fPhaseStart < 0.4f) return;
+            TestCapture("finds_eyes.png");
+            wk.SetEyes(false); wk.Look(14f);
+            wk.Teleport(finds.Spot[0] + new Vector3(0f, 0f, -1.1f), 0f);
+            bool could = finds.CanCollect(0, wk.transform.position);
+            string r = wk.UsePart();
+            fLog += " exposedAfter=" + (fExposedAt < 0f ? "never" : fExposedAt.ToString("F1") + "s") + " couldPickUp=" + could + " pickUp=[" + r + "] carrying=" + finds.Carrying(0);
+            // the other two parts must still be buried
+            fLog += " part1Buried=" + !finds.Exposed(1) + " part2Buried=" + !finds.Exposed(2);
+            Debug.Log("BULLDOZER_FINDS_RESULT " + fLog);
+            fLog = "";
+            fPhase = 3; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 3)
+        {
+            // a dead dozer, driven with nothing fitted: it must not move
+            d.dead = true;
+            wk.GetIn();
+            d.useOverride = true; d.overrideThrottle = 1f;
+            fDozerPos = d.transform.position;
+            fBlade0 = d.BladeHeight01; fRip0 = d.RipperHeight01;
+            d.overrideBlade = 1f; d.overrideRipper = 1f;
+            fPhase = 4; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 4)
+        {
+            if (t - fPhaseStart < 1.6f) return;
+            float moved = Vector3.Distance(d.transform.position, fDozerPos);
+            fLog += "deadMoved=" + moved.ToString("F2") + "m deadBladeMoved=" + (d.BladeHeight01 != fBlade0) + " deadRipperMoved=" + (d.RipperHeight01 != fRip0);
+            // fit the tracks part the way a player does: get out by the dozer and press E
+            d.overrideThrottle = 0f; d.overrideBlade = 0f; d.overrideRipper = 0f;
+            wk.GetOut();
+            string r = wk.UsePart();
+            fLog += " fit=[" + r + "] canDrive=" + d.CanDrive + " canBlade=" + d.CanBlade + " canRip=" + d.CanRip;
+            wk.GetIn();
+            d.overrideThrottle = 1f; d.overrideBlade = 1f; d.overrideRipper = 1f;
+            fDozerPos = d.transform.position; fBlade0 = d.BladeHeight01; fRip0 = d.RipperHeight01;
+            fPhase = 5; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 5)
+        {
+            if (t - fPhaseStart < 1.6f) return;
+            fLog += " tracksMoved=" + Vector3.Distance(d.transform.position, fDozerPos).ToString("F2") + "m bladeStillStuck=" + (d.BladeHeight01 == fBlade0) + " ripperStillStuck=" + (d.RipperHeight01 == fRip0);
+            finds.Install(1); finds.Install(2);                                    // the other two, as if dug out too
+            fBlade0 = d.BladeHeight01; fRip0 = d.RipperHeight01;
+            d.overrideThrottle = 0f;
+            fPhase = 6; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 6)
+        {
+            if (t - fPhaseStart < 1.2f) return;
+            fLog += " bladeWorksWithPart=" + (d.BladeHeight01 != fBlade0) + " ripperWorksWithPart=" + (d.RipperHeight01 != fRip0);
+            d.overrideBlade = 0f; d.overrideRipper = 0f;
+            d.dead = false;
+            fLog += " notDeadCanAll=" + (d.CanDrive && d.CanBlade && d.CanRip);
+            fPhase = 7; fPhaseStart = t;
+            return;
+        }
+        if (fPhase == 7)
+        {
+            if (t - fPhaseStart < 5f) return;                                    // let loose dirt settle before counting
+            fLog += " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - fVolume0);
+            Debug.Log("BULLDOZER_REPAIR_RESULT " + fLog);
+            FindsFinish(0);
+        }
+    }
+
+    static int VoxelVorldClod() { return VoxelWorld.ClodVoxels; }
+
     static void TestFinish(int code)
     {
         EditorApplication.update -= TestTick;

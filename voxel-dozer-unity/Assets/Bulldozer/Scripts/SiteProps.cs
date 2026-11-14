@@ -107,6 +107,7 @@ public class SiteProps : MonoBehaviour
         MineEntrance();
         Rails();
         if (MineCart.Instance == null) new GameObject("Mine cart").AddComponent<MineCart>();
+        if (Finds.Instance == null) new GameObject("Finds").AddComponent<Finds>();
         Clutter();
         Trees();
         FarHills();
