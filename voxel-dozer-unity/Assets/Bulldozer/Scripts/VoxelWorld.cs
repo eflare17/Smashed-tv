@@ -1,5 +1,6 @@
 // Diggable ground made of 6.25 cm voxels, the same size as the bulldozer's.
-// A 96 m x 96 m patch, 10 m deep (6 m of ground, 4 m of air for heaps), drawn in 2 m chunks.
+// A 96 m x 96 m site, 14 m tall (4 m below the work floor, 10 m above for the hill and heaps), drawn in 2 m chunks.
+// The ground is shaped as a quarry cut into a hillside: see GenerateJob.
 // Only chunks that change get rebuilt.  The heavy loops are Burst jobs.
 using System.Runtime.InteropServices;
 using Unity.Burst;
@@ -11,9 +12,9 @@ using UnityEngine.Rendering;
 
 public partial class VoxelWorld : MonoBehaviour
 {
-    public const int NX = 1536, NY = 160, NZ = 1536;        // voxels
+    public const int NX = 1536, NY = 224, NZ = 1536;        // voxels
     public const int CS = 32, CX = NX / CS, CY = NY / CS, CZ = NZ / CS;
-    public const int Ground = 96;                           // voxel layer that sits at world height 0
+    public const int Ground = 64;                           // voxel layer that sits at world height 0 (4 m to dig down, 10 m of hill and air above)
     public const float Voxel = 0.0625f;
     public const int Rim = 2;                               // untouchable border, so you can't dig out of the patch
     /// How far from the middle a machine may drive (metres), keeping its blade and its dirt inside the patch.
@@ -22,6 +23,12 @@ public partial class VoxelWorld : MonoBehaviour
     // materials.  6 and up are loose: they can be pushed, and they slump into heaps
     public const byte Air = 0, Soil = 1, Clay = 2, Rock = 3, Quartz = 4, Gold = 5,
                       LooseSoil = 6, LooseClay = 7, LooseRock = 8, LooseQuartz = 9, LooseGold = 10;
+
+    // Landmarks of the quarry, in metres (x right, z ahead of where the dozer starts facing).
+    public const float PortalX = 9f, PortalZ = 11.6f;       // the mine entrance in the north face
+    public const float TunnelLength = 15f, TunnelHalfWidth = 1.6f, TunnelHeight = 2.6f;
+    public const float RoadX = -4f, RoadHalfWidth = 5.5f;   // the way out to the south
+    public const float RockPadX = 16f, RockPadZ = -8f;      // a bare rock patch on the floor, for ripping
 
     public static VoxelWorld Instance { get; private set; }
 
@@ -68,6 +75,9 @@ public partial class VoxelWorld : MonoBehaviour
     NativeArray<byte> dirty;                                 // per chunk
     NativeArray<int> dxs, dzs;                               // neighbour offsets, for the jobs
     NativeArray<int> bladeLoad;                              // cut dirt on the blade, counted per material
+    NativeArray<byte> grass;                                 // per column: how grassy the untouched surface is (0 = bare or worked)
+    Texture2D grassTex;
+    float grassTimer;
     MeshFilter[] chunkFilters;
     Vector3 origin;                                          // world position of the corner of voxel (0, 0, 0)
     int frame;
@@ -90,9 +100,16 @@ public partial class VoxelWorld : MonoBehaviour
         dxs = new NativeArray<int>(DXs, Allocator.Persistent);
         dzs = new NativeArray<int>(DZs, Allocator.Persistent);
         bladeLoad = new NativeArray<int>(16, Allocator.Persistent);
+        grass = new NativeArray<byte>(NX * NZ, Allocator.Persistent);
         InitDirt();
+        InitHand();
 
-        new GenerateJob { vox = vox, top = top }.Schedule(NX * NZ, 256).Complete();
+        new GenerateJob { vox = vox, top = top, grass = grass }.Schedule(NX * NZ, 256).Complete();
+        grassTex = new Texture2D(NX, NZ, TextureFormat.R8, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        grassTex.LoadRawTextureData(grass);
+        grassTex.Apply(false);
+        Shader.SetGlobalTexture("_GrassTex", grassTex);
+        Shader.SetGlobalVector("_SiteRect", new Vector4(origin.x, origin.z, 1f / (NX * Voxel), 1f / (NZ * Voxel)));
         for (int i = 0; i < dirty.Length; i++) dirty[i] = 1;
         for (int pass = 0; pass < 200; pass++)               // draw the whole patch once, a batch of chunks at a time
         {
@@ -113,7 +130,9 @@ public partial class VoxelWorld : MonoBehaviour
         if (dxs.IsCreated) dxs.Dispose();
         if (dzs.IsCreated) dzs.Dispose();
         if (bladeLoad.IsCreated) bladeLoad.Dispose();
+        if (grass.IsCreated) grass.Dispose();
         DisposeDirt();
+        DisposeHand();
         if (Instance == this) Instance = null;
     }
 
@@ -121,6 +140,13 @@ public partial class VoxelWorld : MonoBehaviour
     {
         frame++;
         Tic(); Remesh(maxRemeshPerFrame); Toc(3);
+        grassTimer -= Time.unscaledDeltaTime;
+        if (grassTimer <= 0f && grassTex != null)             // show where the grass has been worn off, a few times a second
+        {
+            grassTimer = 0.15f;
+            grassTex.LoadRawTextureData(grass);
+            grassTex.Apply(false);
+        }
         Tic(); DrawDirt(); Toc(4);
     }
 
@@ -176,7 +202,7 @@ public partial class VoxelWorld : MonoBehaviour
         var result = new NativeArray<int>(8, Allocator.TempJob);
         new BladeSweepJob
         {
-            vox = vox, top = top, dirty = dirty, load = bladeLoad, result = result,
+            vox = vox, top = top, dirty = dirty, load = bladeLoad, result = result, grass = grass,
             bladeToWorld = bladeToWorld, worldToBlade = bladeToWorld.inverse,
             boxMin = boxMin, boxMax = boxMax, origin = origin, seed = frame,
             bladeVel = travel / Mathf.Max(dt, 1e-4f),
@@ -191,7 +217,7 @@ public partial class VoxelWorld : MonoBehaviour
         for (int i = 0; i < bladeLoad.Length; i++) carried += bladeLoad[i];
         carriedOnBlade = carried;
         ClodCount = cCount[0];
-        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels;
+        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels + ShovelVoxels;
         Toc(0);
         return r;
     }
@@ -208,7 +234,7 @@ public partial class VoxelWorld : MonoBehaviour
         var result = new NativeArray<int>(1, Allocator.TempJob);
         new RipJob
         {
-            vox = vox, top = top, dirty = dirty, load = bladeLoad, points = pts, radius = radius, origin = origin,
+            vox = vox, top = top, dirty = dirty, load = bladeLoad, grass = grass, points = pts, radius = radius, origin = origin,
             result = result, seed = frame, machineVel = machineVelocity,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
@@ -233,7 +259,7 @@ public partial class VoxelWorld : MonoBehaviour
         int edge = Rim + 3;                                   // the job looks three columns out
         new SlumpJob
         {
-            vox = vox, top = top, dirty = dirty, iterations = iterations, seed = frame, DX = dxs, DZ = dzs,
+            vox = vox, top = top, dirty = dirty, grass = grass, iterations = iterations, seed = frame, DX = dxs, DZ = dzs,
             x0 = Mathf.Clamp(x0, edge, NX - 1 - edge), x1 = Mathf.Clamp(x1, edge, NX - 1 - edge),
             z0 = Mathf.Clamp(z0, edge, NZ - 1 - edge), z1 = Mathf.Clamp(z1, edge, NZ - 1 - edge),
         }.Run();
@@ -353,49 +379,126 @@ public partial class VoxelWorld : MonoBehaviour
         }
     }
 
-    /// Builds the starting ground one column at a time: topsoil over clay over rock, a rock outcrop
-    /// to one side, and a quartz seam with gold flecks running through the rock.
+    /// Builds the starting ground one column at a time, as a quarry cut into a hillside:
+    ///  - a hill about 4.5 m high over the northern part of the site, fading to flat ground in the south
+    ///    and at the edges (so it meets the plain ground outside);
+    ///  - an oval work floor cut into it, with the cut stepping up in benches so each bench shows the layer
+    ///    it was cut through: grassed topsoil on top, orange clay under it, grey rock under that;
+    ///  - a sheer face where the mine entrance is, with a tunnel running in behind it;
+    ///  - a road cut out through the south side;
+    ///  - dust and clay laid over the work floor so there is something to push, one bare rock patch for
+    ///    ripping, and rock spires standing on the floor;
+    ///  - a quartz seam with gold flecks through the rock.
     [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
     struct GenerateJob : IJobParallelFor
     {
         [NativeDisableParallelForRestriction] public NativeArray<byte> vox;
         public NativeArray<ushort> top;
+        public NativeArray<byte> grass;
+
+        static float Spire(float2 p, float cx, float cz, float r, float h)
+        {
+            float d = math.distance(p, new float2(cx, cz)) / r;
+            return d >= 1f ? 0f : h * math.pow(1f - d, 1.3f);
+        }
 
         public void Execute(int i)
         {
             int x = i % NX, z = i / NX;
             float wx = (x - NX / 2) * Voxel, wz = (z - NZ / 2) * Voxel;
             float2 p = new float2(wx, wz);
-            float bump = noise.snoise(p * 0.06f) * 3f + noise.snoise(p * 0.21f) * 1.2f;         // gentle rises, in voxels
-            float flat = math.smoothstep(5f, 11f, math.distance(p, new float2(0f, -16f)));       // level where the dozer starts
-            float toRock = math.distance(p, new float2(22f, 6f)) + noise.snoise(p * 0.11f) * 2.5f;
-            float outcrop = 1f - math.smoothstep(8f, 14f, toRock);                                // a rock outcrop to the right of the start
-            // level off towards the edges, so the patch meets the plain ground round it with no step
+            float n1 = noise.snoise(p * 0.035f), n2 = noise.snoise(p * 0.11f), n3 = noise.snoise(p * 0.5f);
+
+            // the hill as it was before anyone dug it
             float inside = math.min(NX / 2 * Voxel - math.abs(wx), NZ / 2 * Voxel - math.abs(wz));
-            float fade = math.smoothstep(0.5f, 5f, inside);
-            int surf = Ground + (int)math.round((bump * flat + outcrop * (4f + 3f * noise.snoise(p * 0.3f))) * fade);
-            surf = math.clamp(surf, 8, NY - 28);
-            float soil = 7f + noise.snoise(p * 0.5f) * 3f;
+            float fade = math.smoothstep(1.5f, 9f, inside);
+            float south = math.smoothstep(-36f, -19f, wz);
+            float hill = math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * south * fade);
+
+            // the quarry cut
+            float d = (math.length((p - new float2(0f, -6f)) / new float2(24f, 19f)) - 1f) * 20f + n2 * 1.1f;   // metres outside the floor's edge
+            bool road = wz < -18f && math.abs(wx - RoadX) < RoadHalfWidth + n2 * 0.5f;
+            bool portalFace = math.abs(wx - PortalX) < 3.4f && wz > 0f;
+            float cut;
+            if (d <= 0f || road) cut = 0f;
+            else if (portalFace) cut = 1000f;                                    // a sheer face for the mine entrance
+            else cut = (math.floor(d / 3.2f) + 1f) * 1.5f;                       // benches: 1.5 m up, 3.2 m wide
+            bool floor = (d <= 0f || road) && hill > 0.05f;
+            float ground = math.min(hill, cut) + (floor ? 0.05f * n3 : 0f);
+
+            // rock spires standing on the floor and at the foot of the face
+            float spire = 0f;
+            spire = math.max(spire, Spire(p, -9f, 8.5f, 2.4f, 3.4f));
+            spire = math.max(spire, Spire(p, -3.5f, 10.5f, 1.8f, 2.4f));
+            spire = math.max(spire, Spire(p, 2.5f, 9.5f, 2.0f, 2.9f));
+            spire = math.max(spire, Spire(p, -17f, 1f, 2.2f, 2.6f));
+            spire = math.max(spire, Spire(p, 17.5f, 3f, 1.7f, 1.9f));
+            spire = math.max(spire, Spire(p, -13.5f, -13f, 1.5f, 1.3f));
+            spire = math.max(spire, Spire(p, 20f, -17f, 1.6f, 1.5f));
+            spire *= 0.8f + 0.35f * n3;
+            if (spire < 0.12f) spire = 0f;
+
+            int nat = Ground + (int)math.round(hill / Voxel);                    // where the surface was, for the layers
+            int baseSurf = math.clamp(Ground + (int)math.round(ground / Voxel), 8, NY - 48);
+            int surf = math.clamp(baseSurf + (int)math.round(spire / Voxel), 8, NY - 44);
+            float soil = 7f + n3 * 3f;
             float clay = 30f + noise.snoise(p * 0.17f) * 7f;
-            float rockTop = math.lerp(surf - soil - clay, surf + 2f, outcrop);
+            bool rockPad = floor && math.distance(p, new float2(RockPadX, RockPadZ)) < 5.5f + n2 * 1.2f;
+            bool fill = floor && hill > 0.5f && !rockPad;                         // dust and clay over the cut floor
+
+            // the tunnel behind the mine entrance
+            bool tunnel = math.abs(wx - PortalX) < TunnelHalfWidth && wz > PortalZ - 1.2f && wz < PortalZ + TunnelLength;
+            int tunnelTop = Ground + (int)(TunnelHeight / Voxel);
+
             int b = i * NY;
             for (int y = 0; y < NY; y++)
             {
                 byte m;
                 if (y >= surf) m = Air;
-                else if (y < rockTop)
+                else if (tunnel && y >= Ground && y < tunnelTop && surf - tunnelTop >= 6)
                 {
-                    m = Rock;
-                    float wy = (y - Ground) * Voxel;
-                    float seam = wx * 0.55f - wy * 0.8f - wz * 0.2f - 8.5f + noise.snoise(new float3(wx, wy, wz) * 0.4f) * 0.25f;
-                    if (math.abs(seam) < 0.13f)
-                        m = (math.hash(new int3(x, y, z)) % 1000u) < 45u ? Gold : Quartz;
+                    // The cave-in.  A few metres in, the roof came down years ago: rubble slopes up from the floor,
+                    // fills the tunnel to the roof for a stretch, and slopes away again on the far side.
+                    // It is loose rock and dirt with solid boulders through it.
+                    float along = wz - PortalZ;
+                    float fillTo = along < 2.6f ? 0f : along < 4.4f ? (along - 2.6f) / 1.8f : along < 8.2f ? 1.2f : along < 9.8f ? (9.8f - along) / 1.6f * 1.2f : 0f;
+                    fillTo *= 0.9f + 0.14f * n3;
+                    float up = (y - Ground + 0.5f) * Voxel / TunnelHeight;
+                    if (up >= fillTo) m = Air;
+                    else
+                    {
+                        float wy2 = (y - Ground) * Voxel;
+                        float boulder = noise.snoise(new float3(wx, wy2, wz) * 1.1f);
+                        uint r = math.hash(new int3(x >> 1, y >> 1, z >> 1)) % 100u;
+                        m = boulder > 0.5f ? Rock : r < 60u ? LooseRock : r < 84u ? LooseClay : LooseSoil;
+                    }
                 }
-                else if (y >= surf - soil) m = Soil;
-                else m = Clay;
+                else
+                {
+                    int dn = nat - y;                                            // how far under the old surface
+                    m = dn <= soil ? Soil : dn <= soil + clay ? Clay : Rock;
+                    if (y >= baseSurf || rockPad) m = Rock;                      // spires, and the bare rock patch
+                    else if (fill)
+                    {
+                        int dc = baseSurf - y;
+                        if (dc <= 6) m = Soil; else if (dc <= 22 && m == Rock) m = Clay;
+                    }
+                    if (m == Rock)
+                    {
+                        float wy = (y - Ground) * Voxel;
+                        float seam = wx * 0.55f - wy * 0.8f - wz * 0.2f - 8.5f + noise.snoise(new float3(wx, wy, wz) * 0.4f) * 0.25f;
+                        if (math.abs(seam) < 0.13f)
+                            m = (math.hash(new int3(x, y, z)) % 1000u) < 45u ? Gold : Quartz;
+                    }
+                }
                 vox[b + y] = m;
             }
             top[i] = (ushort)surf;
+
+            // grass grows where the old surface is still there: the hilltop, the top bench and the open ground to the south
+            bool untouched = spire == 0f && !floor && baseSurf >= nat - 1;
+            bool patchy = noise.snoise(p * 0.07f) > -0.45f || hill > 1f;
+            grass[i] = (byte)(untouched && patchy ? 150 + (int)(math.hash(new int2(x >> 1, z >> 1)) % 100u) : 0);
         }
     }
 
@@ -485,6 +588,7 @@ public partial class VoxelWorld : MonoBehaviour
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<int> load;                        // cut voxels not yet made into a clod, per material
+        public NativeArray<byte> grass;
         public NativeArray<int> result;                      // cut, hard, clods made
         public float4x4 bladeToWorld, worldToBlade;
         public float3 boxMin, boxMax, origin, bladeVel;
@@ -552,6 +656,7 @@ public partial class VoxelWorld : MonoBehaviour
                         changed = true; cut++;
                     }
                     if (!changed) continue;
+                    grass[col] = 0;
                     // Whatever sat above the cut is undermined, so it breaks loose too and becomes clods where it is.
                     // Solid rock stays put and holds up what rests on it.
                     for (int y = lastCut + 1; y < colTop; y++)
@@ -590,6 +695,7 @@ public partial class VoxelWorld : MonoBehaviour
     struct SlumpJob : IJob
     {
         [ReadOnly] public NativeArray<int> DX, DZ;
+        public NativeArray<byte> grass;
         public NativeArray<byte> vox;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
@@ -634,6 +740,7 @@ public partial class VoxelWorld : MonoBehaviour
                         if (!move) continue;
                         if ((math.hash(new int3(x, z, it * 31 + seed)) % 10u) == 0u) continue;   // the odd clod hangs on a moment
                         int nc = bestX + NX * bestZ;
+                        grass[nc] = 0;                                         // dirt has rolled onto it
                         int count = math.clamp((t - bestT) / 3, 1, 2);         // a little at a time, so it flows and doesn't jump
                         for (int n = 0; n < count; n++)
                         {
@@ -663,6 +770,7 @@ public partial class VoxelWorld : MonoBehaviour
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<int> load;
+        public NativeArray<byte> grass;
         [ReadOnly] public NativeArray<float3> points;
         public NativeArray<int> result;
         public float3 origin, machineVel;
@@ -717,6 +825,7 @@ public partial class VoxelWorld : MonoBehaviour
                             if (first < 0) first = y;
                         }
                         if (first < 0) continue;
+                        grass[col] = 0;
                         // whatever was left hanging over the furrow is broken too, and drops into it as rubble
                         int wy = first;
                         for (int y = first; y < colTop; y++)

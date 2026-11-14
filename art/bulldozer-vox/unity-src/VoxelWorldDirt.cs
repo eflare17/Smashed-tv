@@ -39,12 +39,13 @@ public partial class VoxelWorld
 
     static readonly Color[] ClodColours =
     {
-        new Color(0.60f, 0.46f, 0.30f), new Color(0.70f, 0.38f, 0.13f), new Color(0.63f, 0.61f, 0.57f),
+        new Color(0.74f, 0.60f, 0.42f), new Color(0.82f, 0.52f, 0.24f), new Color(0.74f, 0.72f, 0.68f),
         new Color(0.80f, 0.80f, 0.78f), new Color(0.92f, 0.68f, 0.10f),
     };
 
     void InitDirt()
     {
+        if (GetComponent<SiteProps>() == null) gameObject.AddComponent<SiteProps>();   // the scenery: mine entrance, rails, trees
         cPos = new NativeArray<float3>(MaxClods, Allocator.Persistent);
         cVel = new NativeArray<float3>(MaxClods, Allocator.Persistent);
         cPrev = new NativeArray<float3>(MaxClods, Allocator.Persistent);
@@ -91,7 +92,7 @@ public partial class VoxelWorld
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new DirtStepJob
         {
-            vox = vox, top = top, dirty = dirty,
+            vox = vox, top = top, dirty = dirty, grass = grass,
             pos = cPos, vel = cVel, prev = cPrev, delta = cDelta, rot = cRot, mat = cMat, cnt = cCnt, ground = cGround,
             rest = cRest, age = cAge, contacts = cContacts, count = cCount, cellStart = cellStart, cellFill = cellFill, sorted = cSorted,
             bladeToWorld = bladeToWorld, worldToBlade = bladeToWorld.inverse, plateMin = plateMin, plateMax = plateMax,
@@ -101,9 +102,54 @@ public partial class VoxelWorld
         ClodVoxelsInFlight = result[1];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels;
         result.Dispose();
         Toc(1);
+    }
+
+    // colours for the blade-view pictures: air is handled separately, then soil, clay, rock, quartz, gold and their loose forms
+    static readonly Color32[] SliceColours =
+    {
+        new Color32(0, 0, 0, 255),
+        new Color32(189, 153, 107, 255), new Color32(204, 120, 41, 255), new Color32(112, 115, 122, 255),
+        new Color32(230, 230, 224, 255), new Color32(250, 194, 31, 255),
+        new Color32(153, 117, 77, 255), new Color32(179, 97, 33, 255), new Color32(161, 156, 145, 255),
+        new Color32(204, 204, 199, 255), new Color32(235, 173, 26, 255),
+    };
+
+    /// Paints a flat slice through the ground into a picture, one voxel per pixel: what material is at each
+    /// point of a plane (centre, with axisU across the picture and axisV up it), then the loose clods that
+    /// lie within clodDepth either side of that plane.  Used by the blade view.
+    public void RenderSlice(Color32[] px, int w, int h, Vector3 centre, Vector3 axisU, Vector3 axisV, float mpp, Vector3 normal, float clodDepth)
+    {
+        for (int j = 0; j < h; j++)
+        {
+            float t = j / (float)h;
+            var sky = new Color32((byte)(70 + 60 * t), (byte)(100 + 60 * t), (byte)(140 + 60 * t), 255);
+            for (int i = 0; i < w; i++)
+            {
+                Vector3 p = centre + axisU * ((i - w * 0.5f + 0.5f) * mpp) + axisV * ((j - h * 0.5f + 0.5f) * mpp);
+                int x = Mathf.FloorToInt((p.x - origin.x) / Voxel), y = Mathf.FloorToInt((p.y - origin.y) / Voxel), z = Mathf.FloorToInt((p.z - origin.z) / Voxel);
+                byte m;
+                if (y >= NY) m = Air;
+                else if (x < 0 || z < 0 || x >= NX || z >= NZ || y < 0) m = y < Ground ? Soil : Air;       // plain ground outside the site
+                else m = vox[y + NY * (x + NX * z)];
+                Color32 c = m == Air ? sky : SliceColours[m];
+                if (m != Air && ((x * 7 + y * 13 + z * 5) & 3) == 0) { c.r = (byte)(c.r * 0.88f); c.g = (byte)(c.g * 0.88f); c.b = (byte)(c.b * 0.88f); }
+                px[i + j * w] = c;
+            }
+        }
+        int n = cCount[0];
+        for (int k = 0; k < n; k++)
+        {
+            Vector3 d = (Vector3)cPos[k] - centre;
+            if (Mathf.Abs(Vector3.Dot(d, normal)) > clodDepth) continue;
+            int u = Mathf.RoundToInt(Vector3.Dot(d, axisU) / mpp + w * 0.5f - 1f), v = Mathf.RoundToInt(Vector3.Dot(d, axisV) / mpp + h * 0.5f - 1f);
+            Color32 c = SliceColours[Mathf.Clamp(cMat[k], LooseSoil, LooseGold)];
+            for (int dv = 0; dv < 2; dv++)
+                for (int du = 0; du < 2; du++)
+                    if (u + du >= 0 && v + dv >= 0 && u + du < w && v + dv < h) px[u + du + (v + dv) * w] = c;
+        }
     }
 
     void DrawDirt()
@@ -151,6 +197,7 @@ public partial class VoxelWorld
         public NativeArray<byte> vox;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
+        public NativeArray<byte> grass;
         public NativeArray<float3> pos, vel, prev, delta;
         public NativeArray<quaternion> rot;
         public NativeArray<byte> mat, cnt, ground;
@@ -175,12 +222,27 @@ public partial class VoxelWorld
         const float SettleAfter = 2.5f;                       // seconds since the blade last touched it: then it settles, moving or not                        // seconds at rest before a clod becomes ground again
         const int Lo = Rim + 6;
 
-        float Height(float x, float z)
+        /// The voxel layer a clod at p would come to rest on: the top of the first solid ground at or below it.
+        /// Under open sky that is just the column's top.  Under a roof (in the mine) it looks down from the clod.
+        int FloorIndex(float3 p)
         {
-            int ix = (int)math.floor((x - origin.x) / Voxel), iz = (int)math.floor((z - origin.z) / Voxel);
-            if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return origin.y + Ground * Voxel;
-            return origin.y + top[ix + NX * iz] * Voxel;
+            int ix = (int)math.floor((p.x - origin.x) / Voxel), iz = (int)math.floor((p.z - origin.z) / Voxel);
+            if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return Ground;
+            int col = ix + NX * iz;
+            int t = top[col];
+            int y = (int)math.floor((p.y - origin.y) / Voxel) + 1;
+            if (y >= t) return t;
+            if (y < 1) y = 1;
+            if (vox[y + NY * col] != Air)
+            {
+                for (int k = 0; k < 10 && y < NY - 1 && vox[y + NY * col] != Air; k++) y++;   // inside the ground: up to free space
+                return y;
+            }
+            while (y > 0 && vox[y - 1 + NY * col] == Air) y--;
+            return y;
         }
+
+        float Floor(float3 p) { return origin.y + FloorIndex(p) * Voxel; }
 
         int Key(int3 c) { return (int)(math.hash(c) & (HashSize - 1)); }
 
@@ -270,12 +332,12 @@ public partial class VoxelWorld
 
                             // the ground: rest on it, and treat a tall rise as a wall
                             p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);
-                            float h = Height(p.x, p.z);
+                            float h = Floor(p);
                             if (p.y - R < h)
                             {
                                 if (h + R - p.y > WallStep)
                                 {
-                                    float hp = Height(prev[i].x, prev[i].z);
+                                    float hp = Floor(new float3(prev[i].x, p.y, prev[i].z));
                                     if (hp < h) { p.x = prev[i].x; p.z = prev[i].z; h = hp; }
                                 }
                                 if (p.y - R < h) { p.y = h + R; ground[i] = 1; }
@@ -290,9 +352,10 @@ public partial class VoxelWorld
                         float3 v = (pos[i] - prev[i]) / sdt;
                         // Being shoved out of the blade or out of another clod moves a clod, but must not fling it:
                         // nothing here goes faster than a brisk shove, and nothing is thrown upwards.
-                        float sp = math.length(v);
-                        if (sp > MaxSpeed) v *= MaxSpeed / sp;
-                        if (v.y > MaxRise) v.y = MaxRise;
+                        bool thrown = age[i] < 0f;                                  // just thrown from a shovel
+                        float sp = math.length(v), most = thrown ? 11f : MaxSpeed;
+                        if (sp > most) v *= most / sp;
+                        if (v.y > (thrown ? 6f : MaxRise)) v.y = thrown ? 6f : MaxRise;
                         bool held = ground[i] != 0 || contacts[i] >= 2 * passes;
                         if (ground[i] != 0) { v.x *= GroundFriction; v.z *= GroundFriction; }
                         else if (contacts[i] > 0) { v *= ClodFriction; }
@@ -334,10 +397,11 @@ public partial class VoxelWorld
                         int k = (start + q) & 3;
                         int x = cx + (k & 1), z = cz + (k >> 1);
                         int col = x + NX * z;
-                        int t = top[col];
-                        if (t >= NY - 1) continue;
+                        // it lands on the floor under it, which in the mine is not the top of the hill above
+                        int t = FloorIndex(new float3(origin.x + (x + 0.5f) * Voxel, pos[i].y, origin.z + (z + 0.5f) * Voxel));
+                        if (t >= NY - 1 || vox[t + NY * col] != Air) continue;
                         vox[t + NY * col] = mat[i];
-                        top[col] = (ushort)(t + 1);
+                        if (t >= top[col]) { top[col] = (ushort)(t + 1); grass[col] = 0; }
                         Mark(ref dirty, x, t, z);
                         left--; placed++;
                     }

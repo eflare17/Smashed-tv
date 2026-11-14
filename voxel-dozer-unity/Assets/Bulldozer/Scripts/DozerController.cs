@@ -27,6 +27,9 @@ public class DozerController : MonoBehaviour
     public float ripRadius = 0.36f;          // how wide each shank tears
     public int hardRockStops = 60;           // this many hard blocks in the blade's way stops the machine
     public bool showHelp = true;
+    [Header("State")]
+    public bool dead = false;                // true = it has sat for years and nothing works until it is repaired (off for now: F9 switches it)
+    public bool driven;                      // someone is in the seat
     [Header("Driven by script instead of the keyboard (tests, touch buttons, AI)")]
     public bool useOverride;
     public float overrideThrottle, overrideSteer, overrideBlade, overrideRipper, overrideAngle, overrideTilt;
@@ -36,6 +39,7 @@ public class DozerController : MonoBehaviour
     public float RipperHeight01 { get; private set; }
     public bool BlockedByRock { get; private set; }
     public bool AtFence { get; private set; }            // pushing against the edge of the work site
+    public bool AtCliff { get; private set; }            // up against a face too steep to climb
     public int LastCut { get; private set; }             // blocks the blade moved in the last step
     public float BladeYaw { get; private set; }          // degrees; + swings the right-hand end back
     public float BladeTilt { get; private set; }         // degrees; + drops the right-hand end
@@ -59,7 +63,7 @@ public class DozerController : MonoBehaviour
         new Vector3(-1.4f, 0f, -2.0f), new Vector3(1.4f, 0f, -2.0f),
     };
 
-    Transform bladeMount, rearMount, blade, ripper, bladeHinge;
+    Transform bladeMount, rearMount, blade, ripper, bladeHinge, lights;
     Vector3 lastBladePos;
     bool haveLastBladePos;
     TrackAnimator trackLeft, trackRight;
@@ -77,21 +81,22 @@ public class DozerController : MonoBehaviour
         rearMount = FindDeep(transform, "Mount_Rear");
         blade = FindDeep(transform, "Blade");
         bladeHinge = FindDeep(transform, "Mount_Blade");
+        lights = FindDeep(transform, "Lights");
         ripper = FindDeep(transform, "Ripper");
         body = GetComponent<Rigidbody>();
         var tl = FindDeep(transform, "Track_Left"); if (tl != null) trackLeft = tl.GetComponent<TrackAnimator>();
         var tr = FindDeep(transform, "Track_Right"); if (tr != null) trackRight = tr.GetComponent<TrackAnimator>();
         yaw = transform.eulerAngles.y;
         height = transform.position.y;
-        bladeAngle = Mathf.Lerp(0f, bladeUpAngle, 0.35f);                 // start with the blade just off the ground
-        ripperAngle = ripperUpAngle;                                      // and the ripper up
+        bladeAngle = 0f;                                                  // parked: blade and ripper resting on the ground
+        ripperAngle = 0f;
         ApplyAttachments();
     }
 
     void Start()
     {
         world = VoxelWorld.Instance;
-        // (the old "spray" of fake clods is not used any more: the loose dirt is real clods now)
+        if (world != null && GetComponent<BladeView>() == null) gameObject.AddComponent<BladeView>();
     }
 
     // Clods tumbling off the top of the heap while the blade is cutting.  Looks only: they are not counted as dirt.
@@ -136,6 +141,7 @@ public class DozerController : MonoBehaviour
 
     void Update()
     {
+        if (!driven || dead) { throttleIn = steerIn = 0f; ApplyAttachments(); return; }
         throttleIn = useOverride ? overrideThrottle : Input.GetAxisRaw("Vertical");
         steerIn = useOverride ? overrideSteer : Input.GetAxisRaw("Horizontal");
 
@@ -153,12 +159,22 @@ public class DozerController : MonoBehaviour
             BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
         }
         ApplyAttachments();
+        if (lights != null && !useOverride && Input.GetKeyDown(KeyCode.L)) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
         fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.05f);
     }
 
     void FixedUpdate()
     {
         float dt = Time.fixedDeltaTime;
+        if (!driven || dead)
+        {
+            // parked.  The blade is still a solid thing for loose dirt to pile against.
+            Speed = 0f; turn = 0f;
+            if (trackLeft != null) trackLeft.speed = 0f;
+            if (trackRight != null) trackRight.speed = 0f;
+            if (world != null && blade != null) world.SetBlade(blade.localToWorldMatrix, BladePlateMin, BladePlateMax);
+            return;
+        }
         float want = throttleIn > 0f ? throttleIn * maxSpeed : throttleIn * reverseSpeed;
         want *= 1f - 0.35f * Mathf.Abs(steerIn);                         // tracks lose a little speed in a turn
         if (blockedTimer > 0f) { blockedTimer -= dt; if (want > 0f) want = 0f; }
@@ -174,6 +190,7 @@ public class DozerController : MonoBehaviour
         yaw += turn * dt;
         Quaternion yawRot = Quaternion.Euler(0f, yaw, 0f);
         Vector3 pos = body != null ? body.position : transform.position;
+        Vector3 before = pos;
         pos += yawRot * Vector3.forward * (Speed * dt);
 
         if (world != null)
@@ -182,6 +199,8 @@ public class DozerController : MonoBehaviour
             float lim = VoxelWorld.DriveLimit;
             AtFence = Mathf.Abs(pos.x) > lim || Mathf.Abs(pos.z) > lim;
             pos.x = Mathf.Clamp(pos.x, -lim, lim); pos.z = Mathf.Clamp(pos.z, -lim, lim);
+            // the scenery: trees, crates and the mine entrance are solid
+            if (SiteProps.Blocks(pos, 2.3f)) { pos = before; Speed = 0f; }
             // sit on the ground under the tracks, and lean with it
             float front = 0f, rear = 0f, left = 0f, right = 0f, all = 0f;
             for (int i = 0; i < TrackPoints.Length; i++)
@@ -191,6 +210,25 @@ public class DozerController : MonoBehaviour
                 all += h;
                 if (i < 2) front += h; else if (i >= 4) rear += h;
                 if (i % 2 == 0) left += h; else right += h;
+            }
+            // A dozer cannot climb a wall.  If the ground under the leading end of the tracks is much higher
+            // than under the middle, it is up against a face: stop there.  (The blade can still cut into it.)
+            float mid = (all - front - rear) / 2f;
+            float lead = Speed >= 0f ? front / 2f : rear / 2f;
+            AtCliff = lead - mid > 0.8f;
+            if (AtCliff)
+            {
+                pos.x = before.x; pos.z = before.z;
+                Speed = 0f;
+                front = rear = left = right = all = 0f;
+                for (int i = 0; i < TrackPoints.Length; i++)
+                {
+                    Vector3 p = pos + yawRot * TrackPoints[i];
+                    float h = world.HeightAt(p.x, p.z);
+                    all += h;
+                    if (i < 2) front += h; else if (i >= 4) rear += h;
+                    if (i % 2 == 0) left += h; else right += h;
+                }
             }
             float k = 1f - Mathf.Exp(-9f * dt);
             height = Mathf.Lerp(height, all / 6f, k);
@@ -223,10 +261,10 @@ public class DozerController : MonoBehaviour
             Vector3 travel = haveLastBladePos ? bladePos - lastBladePos : Vector3.zero;
             lastBladePos = bladePos; haveLastBladePos = true;
             var r = world.BladeSweep(bladeToWorld, BladeBoxMin, BladeBoxMax, travel, Time.fixedDeltaTime);
-            world.StepDirt(bladeToWorld, BladePlateMin, BladePlateMax, true, Time.fixedDeltaTime);
+            world.SetBlade(bladeToWorld, BladePlateMin, BladePlateMax);
+            world.SlumpCentre = bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, -1.5f));
             LastCut = r.cut;
             if (r.hard >= hardRockStops && Speed > 0f) { Speed = 0f; blockedTimer = 0.6f; }
-            world.Slump(bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, -1.5f)), 9f, 4);
         }
         if (ripper != null && ripperAngle < 4f)
         {
@@ -266,12 +304,12 @@ public class DozerController : MonoBehaviour
 
     void OnGUI()
     {
-        if (!showHelp) return;
+        if (!showHelp || !driven) return;
         string text =
             "W / S   drive          A / D   steer\n" +
             "R / F   blade up / down     (lower it into the ground to dig)\n" +
             "T / G   ripper up / down    (breaks up hard rock)\n" +
-            "Q / E   angle blade    Z / C   tilt blade    X   straighten\n" +
+            "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
             "Right mouse drag: look round    Scroll: zoom\n" +
             "Speed " + (Speed * 3.6f).ToString("F1") + " km/h     " + Mathf.RoundToInt(fps) + " frames a second";
         int lines = 0;
@@ -291,7 +329,8 @@ public class DozerController : MonoBehaviour
         }
         if (BlockedByRock) text += "\nHARD ROCK: back up and rip it first (G)";
         if (AtFence) text += "\nEdge of the work site: turn round";
-        int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0);
+        if (AtCliff) text += "\nToo steep to climb: cut into it with the blade, or go round";
+        int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0);
         GUI.Box(new Rect(10, 10, 470, 104 + 17 * extra), text);
     }
 }

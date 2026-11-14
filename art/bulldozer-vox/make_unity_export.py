@@ -148,6 +148,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.PostProcessing;
 
 public class BulldozerImportSettings : AssetPostprocessor
 {
@@ -261,6 +262,15 @@ public static class BulldozerBuilder
             meshes++; verts += mesh.vertexCount;
         }
 
+        // work lights: two headlights low at the front, two on the back of the cab roof.  L switches them on.
+        var lights = new GameObject("Lights");
+        lights.transform.SetParent(root.transform, false);
+        MakeSpot(lights.transform, new Vector3(-1.05f, 2.85f, 2.35f), new Vector3(14f, -4f, 0f), true);
+        MakeSpot(lights.transform, new Vector3(1.05f, 2.85f, 2.35f), new Vector3(14f, 4f, 0f), false);
+        MakeSpot(lights.transform, new Vector3(-0.8f, 4.25f, -1.75f), new Vector3(28f, 176f, 0f), false);
+        MakeSpot(lights.transform, new Vector3(0.8f, 4.25f, -1.75f), new Vector3(28f, 184f, 0f), false);
+        lights.SetActive(false);
+
         // driven by DozerController: a kinematic body, moved by the script, that pushes loose objects
         var body = root.AddComponent<Rigidbody>();
         body.isKinematic = true;
@@ -316,7 +326,41 @@ public static class BulldozerBuilder
                         alongX ? new Vector3(half * 2f - 3f, 0.07f, 0.05f) : new Vector3(0.05f, 0.07f, half * 2f - 3f));
         }
 
+        // ---- the look: a low warm sun, hazy air, soft shadows, a gentle colour grade ----
+        worldGo.AddComponent<SceneLook>();
+        var sunGo = GameObject.Find("Directional Light");
+        Light sun = sunGo != null ? sunGo.GetComponent<Light>() : null;
+        if (sun != null)
+        {
+            sunGo.transform.rotation = Quaternion.Euler(33f, -40f, 0f);        // late afternoon
+            sun.color = new Color(1f, 0.95f, 0.85f);
+            sun.intensity = 1.3f;
+            sun.shadows = LightShadows.Soft;
+            sun.shadowStrength = 0.85f;
+            sun.shadowBias = 0.03f;
+            sun.shadowNormalBias = 0.5f;
+        }
+        AssetDatabase.DeleteAsset(Dir + "/DemoSky.mat");
+        var sky = new Material(Shader.Find("Skybox/Procedural"));
+        sky.SetFloat("_SunSize", 0.045f);
+        sky.SetFloat("_AtmosphereThickness", 0.95f);
+        sky.SetFloat("_Exposure", 1.15f);
+        sky.SetColor("_SkyTint", new Color(0.40f, 0.50f, 0.66f));
+        sky.SetColor("_GroundColor", new Color(0.55f, 0.46f, 0.36f));
+        AssetDatabase.CreateAsset(sky, Dir + "/DemoSky.mat");
+        RenderSettings.skybox = sky;
+        RenderSettings.sun = sun;
+        RenderSettings.ambientMode = AmbientMode.Trilight;
+        RenderSettings.ambientSkyColor = new Color(0.62f, 0.70f, 0.84f);
+        RenderSettings.ambientEquatorColor = new Color(0.60f, 0.56f, 0.50f);
+        RenderSettings.ambientGroundColor = new Color(0.36f, 0.31f, 0.26f);
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.ExponentialSquared;
+        RenderSettings.fogColor = new Color(0.82f, 0.78f, 0.70f);
+        RenderSettings.fogDensity = 0.0065f;                                  // dusty air: far ground fades into the haze
+
         var cam = Camera.main;
+        SetUpPostProcessing(cam);
         if (cam != null)
         {
             var follow = cam.gameObject.AddComponent<FollowCamera>();
@@ -362,9 +406,13 @@ public static class BulldozerBuilder
         var w = VoxelWorld.Instance;
         if (d == null || w == null) return;
         float t = Time.time;
+        if (Worker.Instance == null) return;
         if (testPhase == 0)
         {
             testPhase = 1;
+            d.dead = false;
+            Worker.Instance.useOverride = true;
+            Worker.Instance.GetIn();
             d.useOverride = true;
             testPos0 = d.transform.position;
             testSolid0 = w.CountSolid();
@@ -456,6 +504,7 @@ public static class BulldozerBuilder
     // Records a short clip of the dozer digging:  -executeMethod BulldozerBuilder.RecordClip
     // Frames go to the project's Logs/clip folder at 30 a second; ffmpeg turns them into a video.
     static int clipFrame, clipLastGameFrame;
+    static long clipSolid0;
     static float clipStart;
     static RenderTexture clipRT;
     static Texture2D clipTex;
@@ -464,6 +513,9 @@ public static class BulldozerBuilder
 
     // The same, but on the rock outcrop with the ripper down:  -executeMethod BulldozerBuilder.RecordRipClip
     public static void RecordRipClip() { clipMode = 1; StartClip(); }
+
+    // On foot at the mine: walk in, pick at the cave-in, shovel it out:  -executeMethod BulldozerBuilder.RecordWalkClip
+    public static void RecordWalkClip() { clipMode = 2; StartClip(); }
 
     public static void RecordClip() { clipMode = 0; StartClip(); }
 
@@ -490,8 +542,11 @@ public static class BulldozerBuilder
         if (d == null || cam == null || VoxelWorld.Instance == null) return;
         if (Time.frameCount == clipLastGameFrame) return;                 // one picture per game frame
         clipLastGameFrame = Time.frameCount;
+        if (Worker.Instance == null) return;
         if (clipFrame == 0)
         {
+            Worker.Instance.useOverride = true;
+            if (clipMode != 2) { d.dead = false; Worker.Instance.GetIn(); }
             Time.captureFramerate = 30;                                    // game time steps 1/30 s a frame, however long drawing takes
             clipStart = Time.time;
             d.useOverride = true;
@@ -501,12 +556,36 @@ public static class BulldozerBuilder
         float t = Time.time - clipStart;
 
         var follow = cam.GetComponent<FollowCamera>();
-        if (clipMode == 1)
+        if (clipMode == 2)
+        {
+            var wk = Worker.Instance;
+            var vw = VoxelWorld.Instance;
+            if (clipFrame == 0)
+            {
+                clipSolid0 = vw.SolidCount + vw.LoadVoxels;
+                wk.Teleport(new Vector3(VoxelWorld.PortalX - 0.3f, 0f, VoxelWorld.PortalZ - 7f), 0f);
+            }
+            wk.overrideTurn = 0f;
+            if (t < 3.6f) { wk.overrideWalk = 1f; wk.overrideUse = false; }                    // walk up and into the mine, seen from behind
+            else if (t < 6f) { wk.overrideWalk = 0f; if (wk.Tool != 0) wk.SetTool(0); wk.overrideUse = true; }      // pick at the rubble
+            else if (t < 6.3f) { wk.overrideUse = false; if (wk.Tool != 1) wk.SetTool(1); }
+            else if (t < 10.5f) { wk.overrideUse = true; if (follow != null) { follow.shoulder = false; follow.yawOffset = 62f; follow.distance = 3.6f; follow.pitch = 14f; follow.lookHeight = 1.2f; } }   // shovel, seen from his side
+            else if (t < 10.8f) { wk.overrideUse = false; if (!wk.Eyes) wk.SetEyes(true); }                        // then through his eyes
+            else if (t < 15f) { wk.overrideWalk = 0f; wk.overrideUse = true; wk.overrideTurn = Mathf.Sin(t * 2.2f) * 0.25f; }
+            else
+            {
+                Debug.Log("BULLDOZER_WALK_OK frames=" + clipFrame + " walkedTo=" + wk.transform.position.ToString("F1")
+                    + " pickHits=" + wk.PickHits + " scoops=" + wk.Scoops + " throws=" + wk.Throws + " clods=" + vw.ClodCount
+                    + " volumeChange=" + ((vw.CountSolid() + vw.LoadVoxels) - clipSolid0));
+                ClipFinish(0); return;
+            }
+        }
+        else if (clipMode == 1)
         {
             // on the grey rock: ripper down, a slow pass, then stop and let the rubble settle
             if (clipFrame == 0)
             {
-                var start = new Vector3(21f, 0.4f, -6f);
+                var start = new Vector3(16f, 0.2f, -13f);
                 d.transform.position = start;
                 var rb = d.GetComponent<Rigidbody>();
                 if (rb != null) rb.position = start;
@@ -542,6 +621,8 @@ public static class BulldozerBuilder
         cam.targetTexture = clipRT;
         cam.Render();
         RenderTexture.active = clipRT;
+        var bv = d.GetComponent<BladeView>();
+        if (bv != null) bv.DrawInto(1280, 720);                                // the blade view is normally drawn straight to the screen
         clipTex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
         clipTex.Apply();
         cam.targetTexture = null;
@@ -556,6 +637,69 @@ public static class BulldozerBuilder
         Time.captureFramerate = 0;
         EditorSettings.enterPlayModeOptionsEnabled = false;
         EditorApplication.Exit(code);
+    }
+
+    static void MakeSpot(Transform parent, Vector3 pos, Vector3 euler, bool shadows)
+    {
+        var go = new GameObject("Work light");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = pos;
+        go.transform.localRotation = Quaternion.Euler(euler);
+        var l = go.AddComponent<Light>();
+        l.type = LightType.Spot;
+        l.color = new Color(1f, 0.93f, 0.78f);
+        l.intensity = 3.2f;
+        l.range = 32f;
+        l.spotAngle = 78f;
+        l.shadows = shadows ? LightShadows.Soft : LightShadows.None;
+        l.renderMode = LightRenderMode.ForcePixel;
+    }
+
+    // Bloom on bright things, soft shading in corners and crevices, film-style tone mapping and a slight warm grade.
+    static void SetUpPostProcessing(Camera cam)
+    {
+        if (cam == null) return;
+        cam.allowHDR = true;
+        cam.allowMSAA = false;
+        var layer = cam.gameObject.AddComponent<PostProcessLayer>();
+        string[] found = AssetDatabase.FindAssets("t:PostProcessResources");
+        if (found.Length == 0) { Debug.LogError("BULLDOZER_BUILD_FAILED post-processing resources not found"); return; }
+        layer.Init(AssetDatabase.LoadAssetAtPath<PostProcessResources>(AssetDatabase.GUIDToAssetPath(found[0])));
+        layer.volumeLayer = 1;                                                 // the Default layer
+        layer.volumeTrigger = cam.transform;
+        layer.antialiasingMode = PostProcessLayer.Antialiasing.SubpixelMorphologicalAntialiasing;
+
+        const string path = Dir + "/DemoLook.asset";
+        AssetDatabase.DeleteAsset(path);
+        var profile = ScriptableObject.CreateInstance<PostProcessProfile>();
+        AssetDatabase.CreateAsset(profile, path);
+        var ao = profile.AddSettings<AmbientOcclusion>();
+        ao.enabled.Override(true);
+        ao.mode.Override(AmbientOcclusionMode.MultiScaleVolumetricObscurance);
+        ao.intensity.Override(0.6f);
+        ao.thicknessModifier.Override(1.3f);
+        var bloom = profile.AddSettings<Bloom>();
+        bloom.enabled.Override(true);
+        bloom.intensity.Override(1.3f);
+        bloom.threshold.Override(1.1f);
+        bloom.softKnee.Override(0.6f);
+        var grade = profile.AddSettings<ColorGrading>();
+        grade.enabled.Override(true);
+        grade.tonemapper.Override(Tonemapper.ACES);
+        grade.postExposure.Override(0.6f);
+        grade.temperature.Override(2f);
+        grade.contrast.Override(8f);
+        grade.saturation.Override(-6f);
+        var vignette = profile.AddSettings<Vignette>();
+        vignette.enabled.Override(true);
+        vignette.intensity.Override(0.2f);
+        vignette.smoothness.Override(0.5f);
+        foreach (var setting in profile.settings) AssetDatabase.AddObjectToAsset(setting, profile);
+        EditorUtility.SetDirty(profile);
+
+        var volume = new GameObject("Look").AddComponent<PostProcessVolume>();
+        volume.isGlobal = true;
+        volume.sharedProfile = profile;
     }
 
     static void MakeBox(Transform parent, Material mat, Vector3 pos, Vector3 size)
@@ -714,8 +858,7 @@ def main():
     src = os.path.join(here, "unity-src")                 # hand-written scripts and shaders
     for name in sorted(os.listdir(src)):
         shutil.copyfile(os.path.join(src, name), os.path.join(out, "Scripts", name))
-    with open(os.path.join(out, "Scripts", "FollowCamera.cs"), "w", newline="\n") as f:
-        f.write(CAMERA_CS)
+    # (FollowCamera.cs now lives in unity-src with the other hand-written scripts)
 
     size = [dozer.W * VOXEL, dozer.H * VOXEL, dozer.L * VOXEL]
     print("Wrote %s  (%d faces; machine is %.2f m wide, %.2f m tall, %.2f m long)" % (out, total, *size))
