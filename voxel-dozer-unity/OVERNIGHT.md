@@ -227,7 +227,10 @@ Progress should survive closing the game.
 In the dozer: W/S drive, A/D steer, R/F blade, T/G ripper, Q/E angle blade, Z/C tilt blade,
 X straighten, L lights, V blade view, Enter get out.
 On foot: mouse look and aim, W/A/S/D walk, Tab switch view, 1 pick, 2 shovel, left mouse or Space use,
-T tip the cart, Enter get in the dozer, Esc free the mouse. F9 test switch for the dead dozer.
+T tip the cart, E pick up or fit a dozer part, Enter get in the dozer, Esc free the mouse.
+F5 save, F6 load. F9 test switch for the dead dozer.
+
+Tests (all print one or two result lines): SelfTest, RecordWalkClip, FindsTest, CartTest, SaveTest.
 
 ## Questions for the owner
 
@@ -239,7 +242,62 @@ Add to this list as you go. Do not answer them yourself.
 - Where should a full cart be tipped? Is there a tip point, or anywhere?
 - Should the game save by itself, or only when you press a key?
 
-## Morning report
+## Morning report (night of 15 to 16 Nov, run on Opus 5.5)
 
-(Fill this in at the end. For each task: done or not, the test line it printed, any clip made, and
-anything that was not checked.)
+All four tasks are done, each saved and pushed to `voxel-dozer` as it finished. Every test passes, and
+every one shows volume change 0. Nothing about feel or looks was changed.
+
+**New keys on foot:** E picks up a dozer part you have dug out, or fits one at the dozer.
+F5 saves, F6 loads. F9 still makes the dozer dead, to try repairs.
+
+### 1. Finds in the mine: done (commit d025e6a)
+
+Three placeholder parts lie in hollows in the cave-in: tracks part, blade part, ripper part. Tools never
+touch them. Once the dirt round one is cleared, a prompt says "Press E to pick up the ...".
+
+`BULLDOZER_FINDS_RESULT exposedAtStart=False exposedAfter=4.2s couldPickUp=True pickUp=[collected 0]
+carrying=True part1Buried=True part2Buried=True`
+
+Not checked: what a part looks like in the game. My test pictures were taken while the scripted digging
+still had clods raining round it, and the part could not be made out. They are plain placeholder shapes in
+rust, old yellow paint and steel.
+
+### 2. Repairs: done (commit d025e6a)
+
+The dozer has three switches: drive, blade, ripper. A working dozer (the normal start) does everything,
+exactly as before. A dead one (F9) gets each job back when its part is fitted. A dead dozer with no
+tracks part will not let you in.
+
+`BULLDOZER_REPAIR_RESULT deadMoved=0.01m deadBladeMoved=False deadRipperMoved=False fit=[installed 0]
+canDrive=True canBlade=False canRip=False tracksMoved=3.02m bladeStillStuck=True ripperStillStuck=True
+bladeWorksWithPart=True ripperWorksWithPart=True notDeadCanAll=True volumeChange=0`
+
+### 3. The cart: done (commit 24d2a72)
+
+Pushing and tipping now have their own test. One fault found and fixed: walking into the cart pushed it
+up to three times per step. The cart's numbers (capacity, push, tip time, pour rate) now sit together in
+`CartSpec`, ready for upgrades. No upgrades or motor were built.
+
+`BULLDOZER_CART_RESULT spec=hand cart/4096 startAlong=13.4m pushedIn=5.50m stoppedFor=4.7s
+stopsAtRubble=True ... atEndOfLine=True neverPast=True beforeTip=777L tipTook=1.6s leftInCart=0voxels
+clodsStillLoose=0 volumeChange=0`
+
+### 4. Save and load: done (this commit)
+
+F5 saves, F6 loads, one save slot. Only the parts of the ground that have changed are saved; the rest is
+remade the same way as at the start. A save after a dig was 0.5 MB and took about 0.1 seconds; loading
+took about 0.6 seconds.
+
+`BULLDOZER_SAVE_RESULT save=[Game saved (0.5 MB).] bytes=511254 saveMs=90 touchedChunks=94
+clodsAtSave=6908 changedBeforeLoad=True loadMs=643 solidSame=True looseSame=True groundSame=True
+clodsSame=True touchedSame=True dozerBack=True cartBack=True findsBack=True stillInDozer=True
+volumeChangeOverall=0`
+
+Not checked: saving and loading while on foot (the test saves from the dozer); a save after a very long
+session (more changed ground means a bigger file and a slower load); loading a save made by an older
+version of the game (it refuses, with a message).
+
+### Final check, all tests in a row
+
+SelfTest (dig, enter test), RecordWalkClip, FindsTest, CartTest and SaveTest all passed, each with volume
+change 0. No clips were made tonight.

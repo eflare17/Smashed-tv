@@ -24,7 +24,7 @@ public partial class VoxelWorld
     public const float ClodRadius = Voxel;                  // so its radius is one voxel
 
     public int ClodCount { get; private set; }
-    public int ClodVoxelsInFlight { get; private set; }
+    public int ClodVoxelsInFlight { get; private set; }     // (set by StepDirt, and by a load)
 
     NativeArray<float3> cPos, cVel, cPrev, cDelta;
     NativeArray<quaternion> cRot;

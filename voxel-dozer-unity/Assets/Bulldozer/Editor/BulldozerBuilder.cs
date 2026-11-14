@@ -541,6 +541,96 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // Save and load:  -executeMethod BulldozerBuilder.SaveTest
+    // Digs, saves, digs more and changes things, loads, and checks everything came back exactly as saved.
+    // Prints BULLDOZER_SAVE_RESULT.
+    static int sPhase;
+    static float sPhaseStart, sAlongSaved;
+    static long sVolume0, sSolidSaved, sLooseSaved;
+    static ulong sTopSaved;
+    static int sClodsSaved, sTouchedSaved;
+    static Vector3 sDozerSaved;
+    static string sLog;
+
+    public static void SaveTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        sPhase = 0; sLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += SaveTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void SaveFinish(int code)
+    {
+        EditorApplication.update -= SaveTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void SaveTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_SAVE_FAILED timed out in phase " + sPhase + " " + sLog); SaveFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var finds = Finds.Instance; var sg = SaveGame.Instance;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (w == null || wk == null || cart == null || finds == null || sg == null || d == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (sPhase == 0)
+        {
+            wk.useOverride = true;
+            if (!wk.InDozer) wk.GetIn();
+            sVolume0 = w.CountSolid() + w.LooseTotal();
+            d.useOverride = true; d.overrideBlade = -1f; d.overrideThrottle = 1f;      // dig a pass
+            sPhase = 1; sPhaseStart = t;
+            return;
+        }
+        if (sPhase == 1)
+        {
+            if (t - sPhaseStart < 5f) return;
+            d.overrideThrottle = 0f;                                               // stop, with loose dirt still moving
+            cart.SetAlong(cart.Along - 2f);
+            finds.Collect(1);
+            string msg = sg.Save();
+            sSolidSaved = w.CountSolid(); sLooseSaved = w.LooseTotal(); sTopSaved = w.TopHash();
+            sClodsSaved = w.ClodCount; sTouchedSaved = w.TouchedChunks();
+            sDozerSaved = d.transform.position; sAlongSaved = cart.Along;
+            sLog += "save=[" + msg + "] bytes=" + sg.LastBytes + " saveMs=" + sg.LastMs.ToString("F0") + " touchedChunks=" + sTouchedSaved + " clodsAtSave=" + sClodsSaved;
+            // now change everything: dig on, turn, move the cart, fit a part
+            d.overrideThrottle = 1f; d.overrideSteer = 0.6f; d.overrideAngle = 1f;
+            cart.SetAlong(cart.Along + 6f);
+            finds.Install(2);
+            sPhase = 2; sPhaseStart = t;
+            return;
+        }
+        if (sPhase == 2)
+        {
+            if (t - sPhaseStart < 4f) return;
+            d.overrideThrottle = 0f; d.overrideSteer = 0f; d.overrideAngle = 0f;
+            sLog += " changedBeforeLoad=" + (w.TopHash() != sTopSaved);
+            string msg = sg.Load();
+            sLog += " load=[" + msg + "] loadMs=" + sg.LastMs.ToString("F0")
+                  + " solidSame=" + (w.CountSolid() == sSolidSaved) + " looseSame=" + (w.LooseTotal() == sLooseSaved)
+                  + " groundSame=" + (w.TopHash() == sTopSaved) + " clodsSame=" + (w.ClodCount == sClodsSaved)
+                  + " touchedSame=" + (w.TouchedChunks() == sTouchedSaved)
+                  + " dozerBack=" + (Vector3.Distance(d.transform.position, sDozerSaved) < 0.01f)
+                  + " cartBack=" + (Mathf.Abs(cart.Along - sAlongSaved) < 0.001f)
+                  + " findsBack=" + (finds.Collected[1] && !finds.Installed[1] && !finds.Collected[2] && !finds.Installed[2])
+                  + " stillInDozer=" + wk.InDozer;
+            sPhase = 3; sPhaseStart = t;
+            return;
+        }
+        if (sPhase == 3)
+        {
+            if (t - sPhaseStart < 5f) return;                                    // play on a little after the load
+            sLog += " volumeChangeOverall=" + ((w.CountSolid() + w.LooseTotal()) - sVolume0);
+            Debug.Log("BULLDOZER_SAVE_RESULT " + sLog);
+            SaveFinish(0);
+        }
+    }
+
     /// Puts the worker just off one end of the cart, facing along the track, walking into it.
     static void StandAtEnd(Worker wk, MineCart cart, bool front)
     {

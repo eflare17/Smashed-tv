@@ -68,6 +68,7 @@ public partial class VoxelWorld : MonoBehaviour
     public int LoadVoxels { get; private set; }              // dirt that is not ground right now: moving clods plus the blade's small tally
     public int BermVoxels { get; private set; }              // the moving clods on their own
     int carriedOnBlade;                                      // the tally: cut voxels not yet enough to make a whole clod
+    // dirty[] per chunk: bit 1 = needs redrawing, bit 2 = changed since the ground was made (so it goes in a save)
     public const float VoxelVolume = Voxel * Voxel * Voxel;
     /// Roughly what the blade can push: a wedge as tall and wide as the blade, sloping away at 35 degrees.
     public const int BladeCapacityVoxels = 70 * 28 * 40 / 2;
@@ -292,7 +293,7 @@ public partial class VoxelWorld : MonoBehaviour
     {
         var list = new NativeList<int>(64, Allocator.Temp);
         for (int i = 0; i < dirty.Length && list.Length < budget; i++)
-            if (dirty[i] != 0) { list.Add(i); dirty[i] = 0; }
+            if ((dirty[i] & 1) != 0) { list.Add(i); dirty[i] = (byte)(dirty[i] & 2); }   // bit 1: redraw it.  Bit 2 (touched) stays, for saving
         LastRemeshChunks = list.Length;
         if (list.Length == 0) { LastRemeshMs = 0f; list.Dispose(); return; }
 
@@ -368,14 +369,14 @@ public partial class VoxelWorld : MonoBehaviour
     static void Mark(ref NativeArray<byte> dirty, int x, int y, int z)
     {
         int cx = x >> 5, cy = y >> 5, cz = z >> 5;
-        dirty[cx + CX * (cy + CY * cz)] = 1;
+        dirty[cx + CX * (cy + CY * cz)] = 3;
         int lx = x & 31, ly = y & 31, lz = z & 31;
-        if (lx == 0 && cx > 0) dirty[cx - 1 + CX * (cy + CY * cz)] = 1;
-        if (lx == 31 && cx < CX - 1) dirty[cx + 1 + CX * (cy + CY * cz)] = 1;
-        if (ly == 0 && cy > 0) dirty[cx + CX * (cy - 1 + CY * cz)] = 1;
-        if (ly == 31 && cy < CY - 1) dirty[cx + CX * (cy + 1 + CY * cz)] = 1;
-        if (lz == 0 && cz > 0) dirty[cx + CX * (cy + CY * (cz - 1))] = 1;
-        if (lz == 31 && cz < CZ - 1) dirty[cx + CX * (cy + CY * (cz + 1))] = 1;
+        if (lx == 0 && cx > 0) dirty[cx - 1 + CX * (cy + CY * cz)] = 3;
+        if (lx == 31 && cx < CX - 1) dirty[cx + 1 + CX * (cy + CY * cz)] = 3;
+        if (ly == 0 && cy > 0) dirty[cx + CX * (cy - 1 + CY * cz)] = 3;
+        if (ly == 31 && cy < CY - 1) dirty[cx + CX * (cy + 1 + CY * cz)] = 3;
+        if (lz == 0 && cz > 0) dirty[cx + CX * (cy + CY * (cz - 1))] = 3;
+        if (lz == 31 && cz < CZ - 1) dirty[cx + CX * (cy + CY * (cz + 1))] = 3;
     }
 
     /// How much a column "resists" being piled on, in voxels: clumps of a few blocks share a value,

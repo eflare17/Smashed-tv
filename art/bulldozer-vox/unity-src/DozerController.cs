@@ -288,6 +288,31 @@ public class DozerController : MonoBehaviour
         }
     }
 
+    public void WriteState(System.IO.BinaryWriter w)
+    {
+        Vector3 p = transform.position;
+        w.Write(p.x); w.Write(p.y); w.Write(p.z);
+        w.Write(yaw); w.Write(pitch); w.Write(roll); w.Write(height);
+        w.Write(bladeAngle); w.Write(ripperAngle); w.Write(BladeYaw); w.Write(BladeTilt);
+        w.Write(dead);
+        w.Write(lights != null && lights.gameObject.activeSelf);
+    }
+
+    public void ReadState(System.IO.BinaryReader r)
+    {
+        Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+        yaw = r.ReadSingle(); pitch = r.ReadSingle(); roll = r.ReadSingle(); height = r.ReadSingle();
+        bladeAngle = r.ReadSingle(); ripperAngle = r.ReadSingle(); BladeYaw = r.ReadSingle(); BladeTilt = r.ReadSingle();
+        dead = r.ReadBoolean();
+        bool lightsOn = r.ReadBoolean();
+        if (lights != null) lights.gameObject.SetActive(lightsOn);
+        Speed = 0f; turn = 0f; blockedTimer = 0f; haveLastBladePos = false;
+        Quaternion rot = Quaternion.Euler(0f, yaw, 0f) * Quaternion.Euler(pitch, 0f, roll);
+        transform.SetPositionAndRotation(p, rot);
+        if (body != null) { body.position = p; body.rotation = rot; }
+        ApplyAttachments();
+    }
+
     void ApplyAttachments()
     {
         // The blade holds its depth below the tracks even when the machine tips into its own cut:

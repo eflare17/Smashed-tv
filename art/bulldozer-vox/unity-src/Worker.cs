@@ -7,6 +7,7 @@
 //   Left mouse or Space   use the tool (hold to keep going)
 //   Enter            get into the dozer, or out of it
 //   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer)
+//   F5 / F6          save the game / load it
 //
 // The tool works exactly where you aim.  The cross in the middle of the screen is the aim, and a small
 // marker sits on the ground at the spot the tool will hit: yellow when it is in reach, red when it is not.
@@ -277,6 +278,44 @@ public class Worker : MonoBehaviour
     }
 
     public void Say(string text, float seconds = 4f) { say = text; sayTimer = seconds; }
+
+    public void WriteState(System.IO.BinaryWriter w)
+    {
+        Vector3 p = transform.position;
+        w.Write(p.x); w.Write(p.y); w.Write(p.z);
+        w.Write(yaw); w.Write(lookPitch);
+        w.Write(Tool); w.Write(Eyes); w.Write(InDozer);
+    }
+
+    public void ReadState(System.IO.BinaryReader r)
+    {
+        Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+        float y = r.ReadSingle(), pitch = r.ReadSingle();
+        int tool = r.ReadInt32();
+        bool eyes = r.ReadBoolean(), inDozer = r.ReadBoolean();
+        swing = Swing.None;
+        SetTool(tool);
+        if (inDozer)
+        {
+            if (!InDozer) GetIn();
+        }
+        else
+        {
+            if (InDozer)
+            {
+                InDozer = false;
+                if (dozer != null) dozer.driven = false;
+                hold.gameObject.SetActive(true);
+                OnFootCamera();
+            }
+            transform.position = p;
+            yaw = y;
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            SetEyes(eyes);
+            Look(pitch);
+        }
+        Eyes = eyes;
+    }
 
     /// Sets how far up or down he is looking (tests and recordings).
     public void Look(float pitch) { lookPitch = pitch; if (cam != null) cam.lookPitch = pitch; }
@@ -558,7 +597,7 @@ public class Worker : MonoBehaviour
         string text =
             "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
             "1   pick        2   shovel        Left mouse or Space   use it where you aim (hold)\n" +
-            "Esc   free the mouse        Enter   get in the dozer\n" +
+            "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
             "Tool: " + tool + load;
         GUI.Box(new Rect(10, 10, 540, 86), text);
         var cart = MineCart.Instance;
