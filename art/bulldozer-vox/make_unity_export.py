@@ -655,6 +655,130 @@ public static class BulldozerBuilder
 
     static int VoxelVorldClod() { return VoxelWorld.ClodVoxels; }
 
+    // The cart:  -executeMethod BulldozerBuilder.CartTest
+    // Pushes it into the mine until the cave-in stops it, pushes it to the far end of the line, fills it, tips it.
+    // Prints BULLDOZER_CART_RESULT.
+    static int cPhase, cFillSteps;
+    static float cPhaseStart, cNext, cAlong0, cLastAlong, cStillFor;
+    static long cVolume0;
+    static string cLog;
+
+    public static void CartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        cPhase = 0; cLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += CartTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void CartFinish(int code)
+    {
+        EditorApplication.update -= CartTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
+
+    /// Puts the worker just off one end of the cart, facing along the track, walking into it.
+    static void StandAtEnd(Worker wk, MineCart cart, bool front)
+    {
+        Vector3 f = cart.transform.forward; f.y = 0f; f.Normalize();
+        Vector3 at = cart.transform.position + f * (front ? 1.45f : -1.45f);
+        wk.Teleport(at, Facing(front ? -f : f));
+        wk.overrideWalk = 1f;
+    }
+
+    static void CartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_CART_FAILED timed out in phase " + cPhase + " " + cLog); CartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance;
+        if (w == null || wk == null || cart == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (cPhase == 0)
+        {
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            cVolume0 = w.CountSolid() + w.LoadVoxels;
+            cAlong0 = cart.Along;
+            cLog += "spec=" + cart.spec.name + "/" + cart.capacity + " startAlong=" + cAlong0.ToString("F1") + "m";
+            StandAtEnd(wk, cart, true);                         // the front end faces out of the mine: push it back in
+            cLastAlong = cart.Along; cStillFor = 0f;
+            cPhase = 1; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 1)
+        {
+            // pushed into the mine: it should roll in, then stop at the cave-in and stay stopped
+            float dt = Time.deltaTime;
+            if (Mathf.Abs(cart.Along - cLastAlong) < 0.001f) cStillFor += dt; else cStillFor = 0f;
+            cLastAlong = cart.Along;
+            if (t - cPhaseStart < 9f) return;
+            Vector3 front = cart.transform.position - cart.transform.forward * 1.05f + Vector3.up * 0.55f;
+            cLog += " pushedIn=" + (cAlong0 - cart.Along).ToString("F2") + "m stoppedFor=" + cStillFor.ToString("F1") + "s"
+                  + " stopsAtRubble=" + (w.MaterialAt(front - cart.transform.forward * 0.15f) != VoxelWorld.Air)
+                  + " cartZ=" + cart.transform.position.z.ToString("F1") + " caveInStartsZ=" + (VoxelWorld.PortalZ + 2.6f).ToString("F1");
+            wk.overrideWalk = 0f;
+            // now the far end of the line
+            cart.SetAlong(cart.EndLimit - 3f);
+            StandAtEnd(wk, cart, false);
+            cPhase = 2; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 2)
+        {
+            if (t - cPhaseStart < 6f) return;
+            cLog += " atEndOfLine=" + (Mathf.Abs(cart.Along - cart.EndLimit) < 0.02f) + " neverPast=" + (cart.Along <= cart.EndLimit + 0.001f);
+            wk.overrideWalk = 0f;
+            // back by the mine entrance, then fill it
+            cart.SetAlong(cAlong0);
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            cFillSteps = 0; cNext = t;
+            cPhase = 3; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 3)
+        {
+            // dig the ground beside it and drop each load into the tub
+            if (w.CartVoxels >= 2400 || t - cPhaseStart > 15f) { cLog += " filled=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L"; cPhase = 4; cPhaseStart = t; return; }
+            if (t < cNext) return;
+            cNext = t + 0.08f;
+            Vector3 side = cart.transform.right;
+            Vector3 at = cart.transform.position + side * 2.4f + cart.transform.forward * (-1f + (cFillSteps % 9) * 0.25f) + Vector3.up * (0.1f - (cFillSteps / 9) * 0.12f);
+            cFillSteps++;
+            w.Pick(at, 0.35f, Vector3.zero);
+            w.Scoop(at, 0.5f, 4000);
+            if (w.ShovelVoxels >= VoxelWorld.ClodVoxels) w.Throw(cart.Mouth + Vector3.up * 0.7f, Vector3.zero, 0.25f, 0.4f);
+            return;
+        }
+        if (cPhase == 4)
+        {
+            if (t - cPhaseStart < 2f) return;                                  // let the last of it land
+            cLog += " beforeTip=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L";
+            cart.Tip();
+            cPhase = 5; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 5)
+        {
+            if (cart.Tipping && t - cPhaseStart < 15f) return;
+            cLog += " tipTook=" + (t - cPhaseStart).ToString("F1") + "s leftInCart=" + w.CartVoxels + "voxels";
+            cPhase = 6; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 6)
+        {
+            if (t - cPhaseStart < 7f) return;                                  // let it all settle into ground
+            cLog += " clodsStillLoose=" + w.ClodCount + " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - cVolume0);
+            Debug.Log("BULLDOZER_CART_RESULT " + cLog);
+            CartFinish(0);
+        }
+    }
+
     static void TestFinish(int code)
     {
         EditorApplication.update -= TestTick;

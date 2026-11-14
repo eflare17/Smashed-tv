@@ -66,6 +66,7 @@ public class Worker : MonoBehaviour
     bool throwBehind;                                    // this throw goes back over his shoulder
     Vector3 throwAt;                                     // where this throw is meant to land
     bool throwIntoCart;
+    bool hitCart;                                        // the last step bumped into the cart
 
     // ---------------------------------------------------------------- the swings
     // A pose is where the tool is held, relative to his chest (or his eyes): position, then tilt / swing / roll in degrees.
@@ -352,7 +353,11 @@ public class Worker : MonoBehaviour
         if (move.sqrMagnitude > 0.0001f)
         {
             Vector3 step = move * dt;
-            if (!TryStep(ref pos, step) && !TryStep(ref pos, new Vector3(step.x, 0f, 0f))) TryStep(ref pos, new Vector3(0f, 0f, step.z));
+            // if the full step is blocked, try sliding along x or z alone, but not when it was the cart that stopped
+            // him: he has just pushed it, and pushing it again on each slide would shove it three times as far
+            hitCart = false;
+            if (!TryStep(ref pos, step) && !hitCart && !TryStep(ref pos, new Vector3(step.x, 0f, 0f)) && !hitCart)
+                TryStep(ref pos, new Vector3(0f, 0f, step.z));
             stride += move.magnitude * dt;
         }
         float floor = world.FloorAt(pos + Vector3.up * 0.45f);
@@ -388,7 +393,7 @@ public class Worker : MonoBehaviour
         float lim = VoxelWorld.NX / 2 * VoxelWorld.Voxel - 1.2f;
         if (Mathf.Abs(next.x) > lim || Mathf.Abs(next.z) > lim) return false;
         if (SiteProps.Blocks(next, 0.3f, true)) return false;
-        if (MineCart.Instance != null && MineCart.Instance.PushedBy(next, step)) return false;    // walking into the cart pushes it
+        if (MineCart.Instance != null && MineCart.Instance.PushedBy(next, step)) { hitCart = true; return false; }   // walking into the cart pushes it
         // look a little ahead as well, so he stops at a wall instead of walking his nose into it
         Vector3 ahead = next + step.normalized * 0.22f;
         float floor = Mathf.Max(world.FloorAt(next + Vector3.up * 0.45f), world.FloorAt(ahead + Vector3.up * 0.45f));

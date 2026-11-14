@@ -7,11 +7,29 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// Everything an upgrade might change about a cart.  Upgrades are not designed yet: when they are, they
+/// swap in a different CartSpec (a bigger tub, a motor, and so on) and nothing else needs to change.
+[System.Serializable]
+public struct CartSpec
+{
+    public string name;
+    public int capacity;            // voxels it holds (4096 is one cubic metre)
+    public float pushFactor;        // how far it rolls for each metre it is pushed (1 = keeps pace with the worker)
+    public float tipSeconds;        // the longest a tip takes
+    public int pourPerStep;         // clods that leave per physics step while tipping
+
+    public static CartSpec HandCart
+    {
+        get { return new CartSpec { name = "hand cart", capacity = 4096, pushFactor = 1f, tipSeconds = 6f, pourPerStep = 6 }; }
+    }
+}
+
 public class MineCart : MonoBehaviour
 {
     public static MineCart Instance { get; private set; }
 
-    public int capacity = 4096;                           // voxels: one cubic metre
+    [System.NonSerialized] public CartSpec spec = CartSpec.HandCart;
+    public int capacity { get { return spec.capacity; } }
     public float Along { get; private set; }             // metres along the track from its start, deep in the tunnel
 
     const float HalfLength = 0.85f, HalfWidth = 0.55f, FloorHeight = 0.42f, TubTop = 1.1f;
@@ -131,7 +149,7 @@ public class MineCart : MonoBehaviour
         {
             // pour out over the left side, a bit at a time
             Vector3 lip = transform.TransformPoint(new Vector3(-HalfWidth - 0.25f, TubTop - 0.1f, Random.Range(-0.6f, 0.6f)));
-            for (int k = 0; k < 6; k++)
+            for (int k = 0; k < spec.pourPerStep; k++)
                 if (!world.CartPour(lip + Random.insideUnitSphere * 0.15f, -transform.right * Random.Range(1.2f, 2.4f) + Vector3.up * 0.4f)) { tipping = false; break; }
             tipLeft -= Time.fixedDeltaTime;
             if (tipLeft <= 0f || world.CartVoxels < VoxelWorld.ClodVoxels) tipping = false;
@@ -141,7 +159,14 @@ public class MineCart : MonoBehaviour
 
     public bool Near(Vector3 pos, float within) { return Vector3.Distance(new Vector3(pos.x, transform.position.y, pos.z), transform.position) <= within; }
 
-    public void Tip() { if (world.CartVoxels >= VoxelWorld.ClodVoxels) { tipping = true; tipLeft = 6f; } }
+    public void Tip() { if (world.CartVoxels >= VoxelWorld.ClodVoxels) { tipping = true; tipLeft = spec.tipSeconds; } }
+    public bool Tipping { get { return tipping; } }
+
+    // for tests and saved games
+    public float Length { get { return length; } }
+    public float EndLimit { get { return length - HalfLength; } }
+    public float StartLimit { get { return HalfLength; } }
+    public void SetAlong(float s) { Along = Mathf.Clamp(s, HalfLength, length - HalfLength); if (world != null) Place(); }
 
     /// Called as the worker tries to step to `next`.  If that would put him inside the cart he is stopped,
     /// and the cart is shoved along the track by however much of his step was along it.  True = he is blocked.
@@ -154,7 +179,7 @@ public class MineCart : MonoBehaviour
         bool onEnd = Mathf.Abs(local.z) > HalfLength - 0.05f;
         if (onEnd && Mathf.Abs(along) > 1e-5f && Mathf.Sign(along) == -Mathf.Sign(local.z))
         {
-            float to = Mathf.Clamp(Along + along, HalfLength, length - HalfLength);
+            float to = Mathf.Clamp(Along + along * spec.pushFactor, HalfLength, length - HalfLength);
             Vector3 lead, dir;
             Sample(to + Mathf.Sign(along) * (HalfLength + 0.12f), out lead, out dir);
             lead.y = transform.position.y + 0.55f;
