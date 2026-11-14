@@ -1,0 +1,725 @@
+#!/usr/bin/env python3
+"""
+Exports the clean bulldozer for Unity: one mesh per part plus a colour strip,
+a part list, and an editor script that assembles the Bulldozer prefab.
+
+    python make_unity_export.py                      -> unity-export/Bulldozer
+    python make_unity_export.py "<project>/Assets"   -> <project>/Assets/Bulldozer
+
+What lands in the Bulldozer folder:
+    Models/<part>.obj          one mesh per part, in metres, pivot at its mount
+    bulldozer_palette.png      colour strip the meshes look their colours up in
+    bulldozer_parts.json       the parts, their parents and where each one sits
+    Editor/BulldozerBuilder.cs builds Bulldozer.prefab and a demo scene in Unity
+    Scripts/DozerController.cs driving, blade and ripper controls, digging (from unity-src/)
+    Scripts/VoxelWorld.cs      diggable voxel ground (from unity-src/)
+    Scripts/VoxelTerrain.shader draws the voxel ground (from unity-src/)
+    Scripts/FollowCamera.cs    chase camera for the demo scene
+
+Unity axes: X right, Y up, Z forward (the blade end), metres, ground at Y = 0.
+"""
+
+import json
+import os
+import shutil
+import sys
+
+import make_bulldozer_vox as dozer
+
+VOXEL = 0.0625                      # metres per voxel (16 voxels to the metre)
+CX, CY = dozer.W / 2.0, dozer.L / 2.0
+PAL_CELLS, PAL_CELL_PX = 32, 8      # palette strip: 32 colours, 8 px each
+
+DIRS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
+QUAD = (                            # corners of each face, anticlockwise seen from outside
+    ((1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)),
+    ((0, 0, 1), (0, 1, 1), (0, 1, 0), (0, 0, 0)),
+    ((0, 1, 1), (1, 1, 1), (1, 1, 0), (0, 1, 0)),
+    ((0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)),
+    ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)),
+    ((0, 1, 0), (1, 1, 0), (1, 0, 0), (0, 0, 0)),
+)
+
+t, r = dozer.TRUNNION, dozer.REAR_PLATE
+TRUNNION_Y = (t["y0"] + t["y1"] + 1) / 2.0
+TRUNNION_Z = (t["z0"] + t["z1"] + 1) / 2.0
+(rx0, rx1) = dozer.TRACK_R_X
+TRACK_Y = (dozer.IDLER[0] + dozer.SPROCKET[0]) / 2.0 + 0.5
+TRACK_Z = 13.0
+TRACK_XR = (rx0 + rx1 + 1) / 2.0
+TRACK_XL = dozer.W - TRACK_XR
+SPROCKET_C = (dozer.SPROCKET[0] + 0.5, dozer.SPROCKET[1] + 0.5)     # axle centres (length, height)
+IDLER_C = (dozer.IDLER[0] + 0.5, dozer.IDLER[1] + 0.5)
+
+# name, mesh (part name or ""), parent, pivot in voxel-grid coordinates
+NODES = [
+    ("Body", "body", "", (CX, CY, 0.0)),
+    ("Cab", "cab", "", (CX, (dozer.CAB["y0"] + dozer.CAB["y1"] + 1) / 2.0, float(dozer.CAB["z0"]))),
+    ("Exhaust", "exhaust", "", (dozer.EXHAUST["cx"] + 0.5, dozer.EXHAUST["cy"] + 0.5, dozer.HOOD["z1"] + 1.0)),
+    # Each track is a fixed frame plus a spinning sprocket and idler, and one pad that
+    # TrackAnimator copies round the loop.
+    ("Track_Left", "track_left_frame", "", (TRACK_XL, TRACK_Y, TRACK_Z)),
+    ("Sprocket_Left", "track_sprocket", "Track_Left", (TRACK_XL, SPROCKET_C[0], SPROCKET_C[1])),
+    ("Idler_Left", "track_idler", "Track_Left", (TRACK_XL, IDLER_C[0], IDLER_C[1])),
+    ("Pad_Left", "track_pad", "Track_Left", (TRACK_XL, TRACK_Y, TRACK_Z)),
+    ("Track_Right", "track_right_frame", "", (TRACK_XR, TRACK_Y, TRACK_Z)),
+    ("Sprocket_Right", "track_sprocket", "Track_Right", (TRACK_XR, SPROCKET_C[0], SPROCKET_C[1])),
+    ("Idler_Right", "track_idler", "Track_Right", (TRACK_XR, IDLER_C[0], IDLER_C[1])),
+    ("Pad_Right", "track_pad", "Track_Right", (TRACK_XR, TRACK_Y, TRACK_Z)),
+    # the lift arms pivot on the trunnion bar: turn Mount_BladeLift about X to raise the blade
+    ("Mount_BladeLift", "", "", (CX, TRUNNION_Y, TRUNNION_Z)),
+    ("BladeLift", "blade_lift", "Mount_BladeLift", (CX, TRUNNION_Y, TRUNNION_Z)),
+    ("Mount_Blade", "", "BladeLift", (CX, dozer.BLADE_LUG_Y[1] + 1.0, 12.0)),
+    ("Blade", "blade", "Mount_Blade", (CX, dozer.BLADE_LUG_Y[1] + 1.0, 12.0)),
+    ("Mount_Rear", "", "", (CX, r["y1"] + 1.0, (r["z0"] + r["z1"] + 1) / 2.0)),
+    ("Ripper", "ripper", "Mount_Rear", (CX, r["y1"] + 1.0, (r["z0"] + r["z1"] + 1) / 2.0)),
+]
+
+
+def to_unity(x, y, z):
+    """Voxel-grid position -> Unity metres (X right, Y up, Z forward)."""
+    return (-(x - CX) * VOXEL, z * VOXEL, -(y - CY) * VOXEL)
+
+
+def split_track(track, name):
+    """Splits a solid track into its fixed frame, drive sprocket and front idler.
+    The outer belt is dropped: in Unity it is made of moving pads instead."""
+    import math
+    (fy, fz, fr), (ry, rz, rr) = dozer.IDLER, dozer.SPROCKET
+    seg2 = (ry - fy) ** 2 + (rz - fz) ** 2
+    frame, sprocket, idler = dozer.Part(name + "_frame"), dozer.Part("track_sprocket"), dozer.Part("track_idler")
+    for (x, y, z), c in track.v.items():
+        t = min(1.0, max(0.0, ((y - fy) * (ry - fy) + (z - fz) * (rz - fz)) / seg2))
+        depth = fr + t * (rr - fr) - math.hypot(y - (fy + t * (ry - fy)), z - (fz + t * (rz - fz)))
+        if depth < 3.2:
+            continue                                      # belt and grousers
+        if math.hypot(y - ry, z - rz) <= 9.6:
+            sprocket.v[(x, y, z)] = c
+        elif math.hypot(y - fy, z - fz) <= 8.6 and y < 40:
+            idler.v[(x, y, z)] = c
+        else:
+            frame.v[(x, y, z)] = c
+    return frame, sprocket, idler
+
+
+def make_pad():
+    """One track pad: a plate 4 long, the full width of the track, with a grouser bar on the outside.
+    Grid x = across the track, y = along the travel, z = outwards."""
+    p = dozer.Part("track_pad")
+    p.box(0, 14, 0, 3, 0, 1, dozer.DGR)
+    p.box(0, 14, 0, 0, 0, 1, dozer.BLK)                   # joint between pads
+    p.box(0, 14, 1, 2, 2, 2, dozer.DGR)                   # grouser
+    for x in (0, 14):
+        p.box(x, x, 1, 2, 2, 2, dozer.DGR2)
+    return p
+
+
+PAD_PIVOT = (7.5, 2.0, 2.0)                               # middle of the pad, on the plate's outer face
+
+
+def write_obj(path, part, pivot):
+    """Unity's OBJ importer mirrors X on import, so X is written mirrored here."""
+    px, py, pz = to_unity(*pivot)
+    lines = ["# %s  (voxel bulldozer part, metres)" % part.name, "o " + part.name]
+    for i in range(PAL_CELLS):
+        lines.append("vt %.5f 0.5" % ((i + 0.5) / PAL_CELLS))
+    for dx, dy, dz in DIRS:
+        lines.append("vn %d %d %d" % (dx, dz, -dy))
+    faces, nv = [], 0
+    for (x, y, z), c in sorted(part.v.items()):
+        for d, (dx, dy, dz) in enumerate(DIRS):
+            if (x + dx, y + dy, z + dz) in part.v:
+                continue                                # hidden inside this part
+            for ox, oy, oz in QUAD[d]:
+                ux, uy, uz = to_unity(x + ox, y + oy, z + oz)
+                lines.append("v %.4f %.4f %.4f" % (-(ux - px), uy - py, uz - pz))
+            faces.append("f " + " ".join("%d/%d/%d" % (nv + k, c + 1, d + 1) for k in (1, 2, 3, 4)))
+            nv += 4
+    with open(path, "w") as f:
+        f.write("\n".join(lines + faces) + "\n")
+    return len(faces)
+
+
+BUILDER_CS = r'''// Generated by make_unity_export.py.  Builds Assets/Bulldozer/Bulldozer.prefab from the part meshes.
+// It runs by itself the first time the folder is imported; after that use Tools > Bulldozer > Rebuild prefab.
+using System;
+using System.Collections.Generic;
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+public class BulldozerImportSettings : AssetPostprocessor
+{
+    void OnPreprocessTexture()
+    {
+        if (!assetPath.EndsWith("Bulldozer/bulldozer_palette.png")) return;
+        var ti = (TextureImporter)assetImporter;
+        ti.filterMode = FilterMode.Point;
+        ti.mipmapEnabled = false;
+        ti.textureCompression = TextureImporterCompression.Uncompressed;
+        ti.wrapMode = TextureWrapMode.Clamp;
+    }
+
+    void OnPreprocessModel()
+    {
+        if (!assetPath.Contains("Bulldozer/Models/")) return;
+        var mi = (ModelImporter)assetImporter;
+        mi.globalScale = 1f;
+        mi.useFileScale = false;
+        mi.materialImportMode = ModelImporterMaterialImportMode.None;
+        mi.importNormals = ModelImporterNormals.Import;
+        mi.meshCompression = ModelImporterMeshCompression.Off;
+        mi.isReadable = true;            // so game code can read the mesh later (dirt, wash)
+        mi.weldVertices = true;
+    }
+}
+
+[InitializeOnLoad]
+public static class BulldozerBuilder
+{
+    const string Dir = "Assets/Bulldozer";
+    const string PrefabPath = Dir + "/Bulldozer.prefab";
+    const string ScenePath = Dir + "/BulldozerDemo.unity";
+
+    [Serializable] class Node { public string name; public string mesh; public string parent; public float[] pos; }
+    [Serializable] class PartList { public float voxelSize; public Node[] nodes; }
+
+    static BulldozerBuilder()
+    {
+        EditorApplication.delayCall += () =>
+        {
+            if (!Application.isBatchMode && AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null) Build();
+        };
+    }
+
+    // Used from the command line:  -executeMethod BulldozerBuilder.BuildFromCommandLine
+    public static void BuildFromCommandLine()
+    {
+        AssetDatabase.Refresh();
+        Build();
+    }
+
+    // Used from the command line:  -executeMethod BulldozerBuilder.OpenDemoScene
+    [MenuItem("Tools/Bulldozer/Open demo scene")]
+    public static void OpenDemoScene()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        var dozer = GameObject.Find("Bulldozer");
+        if (dozer != null) { Selection.activeGameObject = dozer; EditorApplication.delayCall += () => SceneView.FrameLastActiveSceneView(); }
+    }
+
+    // Opens the demo scene and presses Play:  -executeMethod BulldozerBuilder.PlayDemo
+    [MenuItem("Tools/Bulldozer/Play demo")]
+    public static void PlayDemo()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorApplication.delayCall += () =>
+        {
+            EditorApplication.ExecuteMenuItem("Window/General/Game");
+            EditorApplication.EnterPlaymode();
+        };
+    }
+
+    [MenuItem("Tools/Bulldozer/Rebuild prefab")]
+    public static void Build()
+    {
+        var json = AssetDatabase.LoadAssetAtPath<TextAsset>(Dir + "/bulldozer_parts.json");
+        if (json == null) { Debug.LogError("BULLDOZER_BUILD_FAILED bulldozer_parts.json not found"); return; }
+        var list = JsonUtility.FromJson<PartList>(json.text);
+
+        bool srp = GraphicsSettings.currentRenderPipeline != null;
+        var shader = Shader.Find(srp ? "Universal Render Pipeline/Lit" : "Standard");
+        var palette = AssetDatabase.LoadAssetAtPath<Texture2D>(Dir + "/bulldozer_palette.png");
+
+        var paint = MakeMaterial(Dir + "/BulldozerPaint.mat", shader, palette, Color.white);
+        var ground = MakeMaterial(Dir + "/DemoGround.mat", shader, null, new Color(0.74f, 0.60f, 0.42f));
+
+        var root = new GameObject("Bulldozer");
+        var made = new Dictionary<string, Transform>();
+        int meshes = 0, verts = 0;
+        foreach (var n in list.nodes)
+        {
+            var go = new GameObject(n.name);
+            Transform parent = root.transform;
+            if (!string.IsNullOrEmpty(n.parent) && made.ContainsKey(n.parent)) parent = made[n.parent];
+            go.transform.SetParent(parent, false);
+            go.transform.position = root.transform.TransformPoint(new Vector3(n.pos[0], n.pos[1], n.pos[2]));
+            made[n.name] = go.transform;
+            if (string.IsNullOrEmpty(n.mesh)) continue;
+
+            Mesh mesh = null;
+            foreach (var o in AssetDatabase.LoadAllAssetsAtPath(Dir + "/Models/" + n.mesh + ".obj"))
+                if (o is Mesh m) { mesh = m; break; }
+            if (mesh == null) { Debug.LogError("BULLDOZER_BUILD_FAILED no mesh for " + n.mesh); continue; }
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = paint;
+            // simple box colliders so the machine can shove things; the arms and exhaust don't need one
+            if (n.mesh == "body" || n.mesh == "cab" || n.mesh == "blade" || n.mesh == "ripper" || n.mesh.EndsWith("_frame"))
+                go.AddComponent<BoxCollider>();
+            if (n.name.StartsWith("Track_")) go.AddComponent<TrackAnimator>();
+            meshes++; verts += mesh.vertexCount;
+        }
+
+        // driven by DozerController: a kinematic body, moved by the script, that pushes loose objects
+        var body = root.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.interpolation = RigidbodyInterpolation.Interpolate;
+        root.AddComponent<DozerController>();
+
+        var b = new Bounds(Vector3.zero, Vector3.zero);
+        bool first = true;
+        foreach (var r in root.GetComponentsInChildren<MeshRenderer>())
+        {
+            if (first) { b = r.bounds; first = false; } else b.Encapsulate(r.bounds);
+        }
+
+        PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        UnityEngine.Object.DestroyImmediate(root);
+
+        // a small scene to look at it in
+        var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var dozer = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath));
+        dozer.transform.position = Vector3.zero;
+        dozer.transform.position = new Vector3(0f, 0f, -16f);
+
+        // diggable voxel ground: a 48 m square patch centred on the origin
+        var voxelShader = Shader.Find("Voxel/Terrain");
+        if (voxelShader == null) { Debug.LogError("BULLDOZER_BUILD_FAILED Voxel/Terrain shader not found"); return; }
+        var voxelMat = MakeMaterial(Dir + "/VoxelGround.mat", voxelShader, null, Color.white);
+        voxelMat.SetFloat("_FixedMat", -1f);
+        var worldGo = new GameObject("VoxelWorld");
+        worldGo.AddComponent<VoxelWorld>().material = voxelMat;
+
+        // plain ground round the patch, drawn with the same blocky topsoil
+        ground.shader = voxelShader;
+        ground.SetFloat("_FixedMat", 1f);
+        EditorUtility.SetDirty(ground);
+        var surround = new GameObject("Surround").transform;
+        float half = VoxelWorld.NX * VoxelWorld.Voxel * 0.5f, far = 150f;
+        MakeGroundPlane(surround, ground, -far, far, half, far);            // north
+        MakeGroundPlane(surround, ground, -far, far, -far, -half);          // south
+        MakeGroundPlane(surround, ground, half, far, -half, half);          // east
+        MakeGroundPlane(surround, ground, -far, -half, -half, half);        // west
+
+        // a fence round the work site, so the edge of the diggable ground is plain to see
+        var fenceMat = MakeMaterial(Dir + "/DemoFence.mat", shader, null, new Color(0.93f, 0.45f, 0.10f));
+        var fence = new GameObject("Site fence").transform;
+        for (int side = 0; side < 4; side++)
+        {
+            bool alongX = side < 2;
+            float at = (side % 2 == 0) ? half - 1.5f : -(half - 1.5f);   // just inside the edge of the diggable ground
+            for (float t = -(half - 1.5f); t <= half - 1.49f; t += 4.5f)
+                MakeBox(fence, fenceMat, alongX ? new Vector3(t, 0.6f, at) : new Vector3(at, 0.6f, t), new Vector3(0.14f, 1.2f, 0.14f));
+            foreach (float h in new[] { 1.05f, 0.6f })
+                MakeBox(fence, fenceMat, alongX ? new Vector3(0f, h, at) : new Vector3(at, h, 0f),
+                        alongX ? new Vector3(half * 2f - 3f, 0.07f, 0.05f) : new Vector3(0.05f, 0.07f, half * 2f - 3f));
+        }
+
+        var cam = Camera.main;
+        if (cam != null)
+        {
+            var follow = cam.gameObject.AddComponent<FollowCamera>();
+            follow.target = dozer.transform;
+            cam.transform.position = new Vector3(-5f, 6f, -28f);
+            cam.transform.LookAt(new Vector3(0f, 1.8f, -16f));
+            cam.farClipPlane = 400f;
+        }
+        EditorSceneManager.SaveScene(scene, ScenePath);
+        AssetDatabase.SaveAssets();
+
+        Debug.Log("BULLDOZER_BUILD_OK meshes=" + meshes + " verts=" + verts + " size=" + b.size.ToString("F2")
+                  + " min=" + b.min.ToString("F2") + " pipeline=" + (srp ? "URP" : "built-in"));
+    }
+
+    // Scripted dig test:  -executeMethod BulldozerBuilder.SelfTest
+    // Presses Play, drives forward with the blade down, then with the ripper down, and logs what happened.
+    static double testStart;
+    static int testPhase, testFrames;
+    static long testSolid0;
+    static float testFrameSum, testFrameMax;
+    static Vector3 testPos0;
+    static float testEdgeZ, testLostAt;
+    static int testMaxLoad, testMaxCarried;
+    static float testSettledAt;
+
+    public static void SelfTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        testPhase = 0; testFrames = 0; testFrameSum = 0f; testFrameMax = 0f; testLostAt = -1f; testMaxLoad = 0; testMaxCarried = 0; testSettledAt = -1f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TestTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void TestTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_DIG_FAILED timed out"); TestFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance;
+        if (d == null || w == null) return;
+        float t = Time.time;
+        if (testPhase == 0)
+        {
+            testPhase = 1;
+            d.useOverride = true;
+            testPos0 = d.transform.position;
+            testSolid0 = w.CountSolid();
+        }
+        if (t > 1f && t < 1.1f) w.ResetTimings();                                          // ignore start-up
+        testMaxLoad = Mathf.Max(testMaxLoad, w.LoadVoxels);
+        testMaxCarried = Mathf.Max(testMaxCarried, w.ClodCount);
+        if (t < 1f) { d.overrideBlade = -1f; }                                             // lower the blade
+        else if (t < 7f)                                                                    // dig forward, angling the blade part way
+        {
+            d.overrideThrottle = 1f; d.overrideBlade = -1f; d.overrideRipper = 0f;
+            d.overrideAngle = (t > 3.5f && t < 5f) ? 1f : 0f;
+            testFrames++; testFrameSum += Time.unscaledDeltaTime; testFrameMax = Mathf.Max(testFrameMax, Time.unscaledDeltaTime);
+            if (t > 6.5f && testPhase == 1) { testPhase = 2; TestCapture("dig_test_digging.png"); }
+        }
+        else if (t < 10f) { d.overrideThrottle = 1f; d.overrideBlade = 1f; d.overrideRipper = -1f; }
+        else if (t < 19f) { d.overrideThrottle = 1f; d.overrideBlade = -1f; d.overrideRipper = 1f; testEdgeZ = d.transform.position.z; }   // on into the fence, digging   // blade up, rip
+        else if (t < 25f)                                                                   // park, blade up, and wait for the dirt to settle
+        {
+            d.overrideThrottle = 0f; d.overrideBlade = 1f; d.overrideRipper = 1f; d.overrideAngle = 0f;
+            if (testSettledAt < 0f && w.ClodCount == 0) testSettledAt = t - 19f;
+        }
+        else
+        {
+            Vector3 p = d.transform.position;
+            long solid1 = w.CountSolid();
+            float heap = w.MaxHeightIn(p.x - 3f, testPos0.z, p.x + 3f, p.z + 8f);
+            float cutFloor = w.HeightAt(testPos0.x, testPos0.z + 6f);
+            Debug.Log("BULLDOZER_DIG_RESULT drove=" + (p.z - testPos0.z).ToString("F1") + "m"
+                + " bladeMoved=" + w.TotalCut + " ripped=" + w.TotalRipped
+                + " notGroundNow=" + w.LoadVoxels + " trackedGround=" + w.SolidCount
+                + " volumeChange=" + ((solid1 + w.LoadVoxels) - testSolid0) + " trackingError=" + (w.SolidCount - solid1)
+                + " bladeAngle=" + d.BladeYaw.ToString("F0")
+                + " maxLooseMoving=" + (testMaxLoad * VoxelWorld.VoxelVolume).ToString("F2") + "m3"
+                + " maxClods=" + testMaxCarried + " clodsLeftAfterParking=" + w.ClodCount
+                + " allSettledAfter=" + (testSettledAt < 0f ? "never" : testSettledAt.ToString("F1") + "s")
+                + " solidBefore=" + testSolid0 + " solidAfter=" + solid1
+                + " heapHeight=" + heap.ToString("F2") + "m cutFloor=" + cutFloor.ToString("F2") + "m"
+                + " machineHeight=" + p.y.ToString("F2") + "m"
+                + " stoppedAtZ=" + testEdgeZ.ToString("F1") + "m (fence at " + (VoxelWorld.NZ / 2 * VoxelWorld.Voxel - 1.5f).ToString("F1") + "m)"
+                + " trackPads=" + (d.GetComponentInChildren<TrackAnimator>() != null ? d.GetComponentInChildren<TrackAnimator>().PadCount : 0)
+                + " trackRan=" + (d.GetComponentInChildren<TrackAnimator>() != null ? d.GetComponentInChildren<TrackAnimator>().Travel : 0f).ToString("F1") + "m"
+                + " ms(avg/max) cut=" + w.MsAvg[0].ToString("F2") + "/" + w.MsMax[0].ToString("F1")
+                + " clods=" + w.MsAvg[1].ToString("F2") + "/" + w.MsMax[1].ToString("F1")
+                + " slump=" + w.MsAvg[2].ToString("F2") + "/" + w.MsMax[2].ToString("F1")
+                + " ground=" + w.MsAvg[3].ToString("F2") + "/" + w.MsMax[3].ToString("F1")
+                + " draw=" + w.MsAvg[4].ToString("F2") + "/" + w.MsMax[4].ToString("F1")
+                + " avgFrameMs=" + (testFrameSum / Mathf.Max(1, testFrames) * 1000f).ToString("F1")
+                + " worstFrameMs=" + (testFrameMax * 1000f).ToString("F1")
+                + " worstRemeshMs=" + w.MaxRemeshMs.ToString("F1") + " worstRemeshChunks=" + w.MaxRemeshChunks);
+            TestCapture("dig_test_after.png");
+            // a close look at one track from the side
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                cam.transform.position = d.transform.position + d.transform.right * 6.5f + Vector3.up * 1.6f;
+                cam.transform.LookAt(d.transform.position + Vector3.up * 0.9f);
+                TestCapture("dig_test_track.png");
+            }
+            TestFinish(0);
+        }
+    }
+
+    // saves what the game camera sees to the project's Logs folder, so the look can be checked without the editor window
+    static void TestCapture(string file)
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+        var rt = new RenderTexture(1280, 720, 24);
+        cam.targetTexture = rt;
+        cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(1280, 720, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
+        tex.Apply();
+        cam.targetTexture = null;
+        RenderTexture.active = null;
+        System.IO.Directory.CreateDirectory(Application.dataPath + "/../Logs");
+        System.IO.File.WriteAllBytes(Application.dataPath + "/../Logs/" + file, tex.EncodeToPNG());
+    }
+
+    static void TestFinish(int code)
+    {
+        EditorApplication.update -= TestTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    // Records a short clip of the dozer digging:  -executeMethod BulldozerBuilder.RecordClip
+    // Frames go to the project's Logs/clip folder at 30 a second; ffmpeg turns them into a video.
+    static int clipFrame, clipLastGameFrame;
+    static float clipStart;
+    static RenderTexture clipRT;
+    static Texture2D clipTex;
+
+    static int clipMode;                                    // 0 = blade digging, 1 = ripping the rock
+
+    // The same, but on the rock outcrop with the ripper down:  -executeMethod BulldozerBuilder.RecordRipClip
+    public static void RecordRipClip() { clipMode = 1; StartClip(); }
+
+    public static void RecordClip() { clipMode = 0; StartClip(); }
+
+    static void StartClip()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        clipFrame = 0; clipLastGameFrame = -1;
+        testStart = EditorApplication.timeSinceStartup;
+        string dir = Application.dataPath + "/../Logs/clip";
+        if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+        System.IO.Directory.CreateDirectory(dir);
+        EditorApplication.update += ClipTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void ClipTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 500) { Debug.LogError("BULLDOZER_CLIP_FAILED timed out"); ClipFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var cam = Camera.main;
+        if (d == null || cam == null || VoxelWorld.Instance == null) return;
+        if (Time.frameCount == clipLastGameFrame) return;                 // one picture per game frame
+        clipLastGameFrame = Time.frameCount;
+        if (clipFrame == 0)
+        {
+            Time.captureFramerate = 30;                                    // game time steps 1/30 s a frame, however long drawing takes
+            clipStart = Time.time;
+            d.useOverride = true;
+            clipRT = new RenderTexture(1280, 720, 24);
+            clipTex = new Texture2D(1280, 720, TextureFormat.RGB24, false);
+        }
+        float t = Time.time - clipStart;
+
+        var follow = cam.GetComponent<FollowCamera>();
+        if (clipMode == 1)
+        {
+            // on the grey rock: ripper down, a slow pass, then stop and let the rubble settle
+            if (clipFrame == 0)
+            {
+                var start = new Vector3(21f, 0.4f, -6f);
+                d.transform.position = start;
+                var rb = d.GetComponent<Rigidbody>();
+                if (rb != null) rb.position = start;
+            }
+            if (t < 1.4f) { d.overrideThrottle = 0f; d.overrideBlade = 1f; d.overrideRipper = -1f; }
+            else if (t < 9f) { d.overrideThrottle = 0.7f; d.overrideBlade = 1f; d.overrideRipper = -1f; }
+            else if (t < 12f) { d.overrideThrottle = 0f; d.overrideRipper = 1f; }
+            else { Debug.Log("BULLDOZER_CLIP_OK frames=" + clipFrame + " ripped=" + VoxelWorld.Instance.TotalRipped); ClipFinish(0); return; }
+            if (follow != null)
+            {
+                follow.yawOffset = Mathf.Lerp(35f, -45f, Mathf.SmoothStep(0f, 1f, t / 11f));
+                follow.distance = 10f;
+                follow.pitch = 30f;
+            }
+        }
+        else
+        {
+            // the drive: lower the blade, cut a long pass, then lift the blade and swing away
+            if (t < 1.2f) { d.overrideThrottle = 0f; d.overrideSteer = 0f; d.overrideBlade = -1f; }
+            else if (t < 9.5f) { d.overrideThrottle = 1f; d.overrideSteer = 0f; d.overrideBlade = -1f; d.overrideAngle = t > 5f ? 1f : 0f; }   // angle the blade half way along
+            else if (t < 13f) { d.overrideThrottle = 1f; d.overrideSteer = -1f; d.overrideBlade = 1f; }
+            else { Debug.Log("BULLDOZER_CLIP_OK frames=" + clipFrame); ClipFinish(0); return; }
+
+            // the camera swings from behind round to the side as it goes
+            if (follow != null)
+            {
+                follow.yawOffset = Mathf.Lerp(20f, 118f, Mathf.SmoothStep(0f, 1f, t / 11f));
+                follow.distance = Mathf.Lerp(13f, 9.5f, Mathf.Clamp01(t / 11f));
+                follow.pitch = 19f;
+            }
+        }
+
+        cam.targetTexture = clipRT;
+        cam.Render();
+        RenderTexture.active = clipRT;
+        clipTex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
+        clipTex.Apply();
+        cam.targetTexture = null;
+        RenderTexture.active = null;
+        System.IO.File.WriteAllBytes(Application.dataPath + "/../Logs/clip/frame_" + clipFrame.ToString("D4") + ".jpg", clipTex.EncodeToJPG(93));
+        clipFrame++;
+    }
+
+    static void ClipFinish(int code)
+    {
+        EditorApplication.update -= ClipTick;
+        Time.captureFramerate = 0;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void MakeBox(Transform parent, Material mat, Vector3 pos, Vector3 size)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = "Fence";
+        go.transform.SetParent(parent, false);
+        go.transform.position = pos;
+        go.transform.localScale = size;
+        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        UnityEngine.Object.DestroyImmediate(go.GetComponent<Collider>());
+    }
+
+    static void MakeGroundPlane(Transform parent, Material mat, float x0, float x1, float z0, float z1)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Plane);                 // a plane is 10 x 10
+        go.name = "Ground";
+        go.transform.SetParent(parent, false);
+        go.transform.position = new Vector3((x0 + x1) * 0.5f, 0f, (z0 + z1) * 0.5f);
+        go.transform.localScale = new Vector3((x1 - x0) / 10f, 1f, (z1 - z0) / 10f);
+        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+    }
+
+    static void MakeProp(Transform parent, Material mat, Vector3 pos, float size, float turn)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = "Loose";
+        go.transform.SetParent(parent, false);
+        go.transform.position = pos;
+        go.transform.rotation = Quaternion.Euler(0f, turn, 0f);
+        go.transform.localScale = Vector3.one * size;
+        go.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        go.AddComponent<Rigidbody>().mass = 600f * size * size * size;
+    }
+
+    // blocky dusty ground, so you can see the machine moving over it
+    static Texture2D MakeGroundTexture()
+    {
+        const string path = Dir + "/DemoGroundTex.asset";
+        AssetDatabase.DeleteAsset(path);
+        var tex = new Texture2D(64, 64, TextureFormat.RGB24, false);
+        tex.filterMode = FilterMode.Point;
+        tex.wrapMode = TextureWrapMode.Repeat;
+        var rng = new System.Random(3);
+        for (int y = 0; y < 64; y++)
+            for (int x = 0; x < 64; x++)
+            {
+                float v = 0.86f + (float)rng.NextDouble() * 0.2f;
+                if (rng.Next(40) == 0) v *= 0.8f;                       // the odd darker stone
+                tex.SetPixel(x, y, new Color(0.74f * v, 0.60f * v, 0.42f * v));
+            }
+        tex.Apply();
+        AssetDatabase.CreateAsset(tex, path);
+        return tex;
+    }
+
+    static Material MakeMaterial(string path, Shader shader, Texture2D tex, Color colour)
+    {
+        var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (mat == null) { mat = new Material(shader); AssetDatabase.CreateAsset(mat, path); }
+        mat.shader = shader;
+        if (tex != null) { mat.mainTexture = tex; if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex); }
+        mat.color = colour;
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
+        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.15f);
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.15f);
+        EditorUtility.SetDirty(mat);
+        return mat;
+    }
+}
+'''
+
+
+CAMERA_CS = r'''// Generated by make_unity_export.py.  Chase camera: follows behind the target and swings round with it.
+// Hold the right mouse button and drag to look round; scroll to zoom.
+using UnityEngine;
+
+public class FollowCamera : MonoBehaviour
+{
+    public Transform target;
+    public float distance = 13f;
+    public float lookHeight = 1.8f;
+    public float pitch = 22f;
+    public float yawOffset = 25f;            // a little to one side, so the blade is in view
+    public float turnFollow = 2f;
+
+    float heading;
+
+    void Start() { if (target != null) heading = target.eulerAngles.y; }
+
+    void LateUpdate()
+    {
+        if (target == null) return;
+        if (Input.GetMouseButton(1))
+        {
+            yawOffset += Input.GetAxis("Mouse X") * 4f;
+            pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f, 5f, 75f);
+        }
+        distance = Mathf.Clamp(distance * (1f - Input.GetAxis("Mouse ScrollWheel")), 6f, 40f);
+        heading = Mathf.LerpAngle(heading, target.eulerAngles.y, turnFollow * Time.deltaTime);
+
+        Vector3 focus = target.position + Vector3.up * lookHeight;
+        Quaternion rot = Quaternion.Euler(pitch, heading + yawOffset, 0f);
+        transform.position = focus - rot * Vector3.forward * distance;
+        transform.rotation = rot;
+    }
+}
+'''
+
+
+def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    base = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "unity-export")
+    out = os.path.join(base, "Bulldozer")
+    os.makedirs(os.path.join(out, "Models"), exist_ok=True)
+    os.makedirs(os.path.join(out, "Editor"), exist_ok=True)
+    os.makedirs(os.path.join(out, "Scripts"), exist_ok=True)
+
+    parts = {p.name: p for p in dozer.build_all()}       # clean machine
+    for side in ("track_left", "track_right"):
+        frame, sprocket, idler = split_track(parts[side], side)
+        parts[frame.name] = frame
+        if side == "track_left":                          # both sides are the same shape, so one mesh each
+            # (taken from the left track, because the left nodes come first and set the mesh's pivot)
+            parts["track_sprocket"], parts["track_idler"] = sprocket, idler
+    parts["track_pad"] = make_pad()
+    for old in ("track_left.obj", "track_right.obj"):     # from before the tracks were split up
+        for stale in (old, old + ".meta"):
+            if os.path.exists(os.path.join(out, "Models", stale)):
+                os.remove(os.path.join(out, "Models", stale))
+
+    total = 0
+    written = set()
+    for name, mesh, parent, pivot in NODES:
+        if mesh and mesh not in written:
+            written.add(mesh)
+            if mesh == "track_pad":
+                pivot = PAD_PIVOT                         # the pad is modelled in its own little grid
+            n = write_obj(os.path.join(out, "Models", mesh + ".obj"), parts[mesh], pivot)
+            total += n
+            print("  %-12s %6d faces" % (mesh, n))
+
+    # palette strip
+    width, height = PAL_CELLS * PAL_CELL_PX, PAL_CELL_PX
+    row = bytearray()
+    for i in range(PAL_CELLS):
+        row += bytes(dozer.PALETTE.get(i, (255, 0, 255))) * PAL_CELL_PX
+    dozer._write_png(os.path.join(out, "bulldozer_palette.png"), width, height, bytearray(bytes(row) * height))
+
+    nodes = [{"name": n, "mesh": m, "parent": p, "pos": [round(v, 5) for v in to_unity(*piv)]}
+             for n, m, p, piv in NODES]
+    with open(os.path.join(out, "bulldozer_parts.json"), "w") as f:
+        json.dump({"voxelSize": VOXEL, "nodes": nodes}, f, indent=2)
+    with open(os.path.join(out, "Editor", "BulldozerBuilder.cs"), "w", newline="\n") as f:
+        f.write(BUILDER_CS)
+    src = os.path.join(here, "unity-src")                 # hand-written scripts and shaders
+    for name in sorted(os.listdir(src)):
+        shutil.copyfile(os.path.join(src, name), os.path.join(out, "Scripts", name))
+    with open(os.path.join(out, "Scripts", "FollowCamera.cs"), "w", newline="\n") as f:
+        f.write(CAMERA_CS)
+
+    size = [dozer.W * VOXEL, dozer.H * VOXEL, dozer.L * VOXEL]
+    print("Wrote %s  (%d faces; machine is %.2f m wide, %.2f m tall, %.2f m long)" % (out, total, *size))
+
+
+if __name__ == "__main__":
+    main()

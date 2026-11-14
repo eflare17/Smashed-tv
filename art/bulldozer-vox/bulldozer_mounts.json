@@ -1,0 +1,231 @@
+{
+  "axes": "x = width (machine's left is high x), y = length (front is low y), z = up; units are voxels",
+  "grid_size": [
+    72,
+    126,
+    72
+  ],
+  "world_offset_in_vox_file": [
+    -36,
+    -63,
+    0
+  ],
+  "parts": {
+    "body": {
+      "min": [
+        5,
+        24,
+        6
+      ],
+      "size": [
+        62,
+        81,
+        57
+      ],
+      "voxels": 111384
+    },
+    "cab": {
+      "min": [
+        16,
+        55,
+        31
+      ],
+      "size": [
+        40,
+        39,
+        41
+      ],
+      "voxels": 45740
+    },
+    "exhaust": {
+      "min": [
+        26,
+        39,
+        54
+      ],
+      "size": [
+        6,
+        6,
+        17
+      ],
+      "voxels": 436
+    },
+    "track_left": {
+      "min": [
+        51,
+        21,
+        0
+      ],
+      "size": [
+        15,
+        81,
+        27
+      ],
+      "voxels": 20638
+    },
+    "track_right": {
+      "min": [
+        6,
+        21,
+        0
+      ],
+      "size": [
+        15,
+        81,
+        27
+      ],
+      "voxels": 20638
+    },
+    "blade": {
+      "min": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        72,
+        18,
+        33
+      ],
+      "voxels": 13646
+    },
+    "blade_lift": {
+      "min": [
+        0,
+        18,
+        5
+      ],
+      "size": [
+        72,
+        49,
+        47
+      ],
+      "voxels": 4072
+    },
+    "ripper": {
+      "min": [
+        6,
+        105,
+        0
+      ],
+      "size": [
+        60,
+        21,
+        31
+      ],
+      "voxels": 11424
+    }
+  },
+  "mounts": {
+    "push_arm_pivot_right": {
+      "on": "body",
+      "takes": "blade_lift",
+      "at": [
+        5.0,
+        60.0,
+        12.0
+      ],
+      "note": "end of the trunnion bar; push arms pivot here"
+    },
+    "push_arm_pivot_left": {
+      "on": "body",
+      "takes": "blade_lift",
+      "at": [
+        67.0,
+        60.0,
+        12.0
+      ],
+      "note": "end of the trunnion bar; push arms pivot here"
+    },
+    "lift_ram_right": {
+      "on": "body",
+      "takes": "blade_lift",
+      "at": [
+        15.0,
+        39.0,
+        51.0
+      ],
+      "note": "front face of the ram bracket"
+    },
+    "lift_ram_left": {
+      "on": "body",
+      "takes": "blade_lift",
+      "at": [
+        57.0,
+        39.0,
+        51.0
+      ],
+      "note": "front face of the ram bracket"
+    },
+    "rear_hitch": {
+      "on": "body",
+      "takes": "ripper",
+      "at": [
+        36.0,
+        105.0,
+        19.5
+      ],
+      "note": "rear face of the attachment plate, 24 wide x 21 tall"
+    },
+    "exhaust_socket": {
+      "on": "body",
+      "takes": "exhaust",
+      "at": [
+        29.0,
+        42.0,
+        54.0
+      ],
+      "note": "top of the hood"
+    },
+    "cab_seat": {
+      "on": "body",
+      "takes": "cab",
+      "at": [
+        36.0,
+        74.5,
+        31.0
+      ],
+      "note": "deck top under the cab, 36 wide x 31 long"
+    },
+    "blade_push_right": {
+      "on": "blade",
+      "takes": "blade_lift",
+      "at": [
+        3.0,
+        18.0,
+        12.0
+      ],
+      "note": "back of the blade's lower lug"
+    },
+    "blade_push_left": {
+      "on": "blade",
+      "takes": "blade_lift",
+      "at": [
+        69.0,
+        18.0,
+        12.0
+      ],
+      "note": "back of the blade's lower lug"
+    },
+    "blade_ram_right": {
+      "on": "blade",
+      "takes": "blade_lift",
+      "at": [
+        15.0,
+        18.0,
+        21.5
+      ],
+      "note": "back of the blade's upper lug"
+    },
+    "blade_ram_left": {
+      "on": "blade",
+      "takes": "blade_lift",
+      "at": [
+        57.0,
+        18.0,
+        21.5
+      ],
+      "note": "back of the blade's upper lug"
+    }
+  }
+}

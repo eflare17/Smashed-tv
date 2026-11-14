@@ -1,0 +1,4 @@
+# videos and the generated Unity copy are rebuilt by the scripts
+clips/
+unity-export/
+__pycache__/

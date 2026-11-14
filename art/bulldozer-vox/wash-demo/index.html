@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Dozer wash test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #cfd8dc; overflow: hidden;
+               font-family: system-ui, Segoe UI, Arial, sans-serif; color: #1c2226; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  #bar { position: fixed; left: 0; right: 0; top: 0; display: flex; flex-wrap: wrap; gap: 8px;
+         padding: 10px 12px; align-items: center; background: rgba(255,255,255,.82); }
+  button { font: inherit; font-weight: 600; padding: 9px 14px; border-radius: 8px; border: 2px solid #37474f;
+           background: #fff; color: #1c2226; cursor: pointer; }
+  button.on { background: #f6ba06; }
+  #dirty { border-color: #8e6236; }
+  #pct { font-weight: 700; margin-left: auto; min-width: 7.5em; text-align: right; }
+  #hint { position: fixed; left: 12px; right: 12px; bottom: 10px; text-align: center; font-size: 14px;
+          background: rgba(255,255,255,.82); padding: 8px 10px; border-radius: 8px; }
+  #zoom { position: fixed; right: 12px; bottom: 60px; display: flex; flex-direction: column; gap: 6px; }
+  #zoom button { width: 44px; padding: 8px 0; }
+  #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+         padding: 24px; text-align: center; background: #fff; font-size: 18px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <button class="mode on" data-mode="0">1 Dirty voxels</button>
+  <button class="mode" data-mode="1">2 Smooth film</button>
+  <button class="mode" data-mode="2">3 Mud lumps</button>
+  <button class="mode" data-mode="3">4 Film + lumps</button>
+  <button id="dirty">Make it dirty</button>
+  <button id="drive">Drive</button>
+  <button id="water">Water</button>
+  <span id="pct"></span>
+</div>
+<div id="zoom"><button id="zin">+</button><button id="zout">&minus;</button></div>
+<div id="hint">Hold and sweep on the dozer to pressure wash. Drag on the background to spin. Scroll or use + and &minus; to zoom.
+  Drive shakes loose mud off. Water rinses what is under it. Both leave the packed mud and a thin film for the washer.</div>
+<div id="err"></div>
+<script src="dozer-data.js"></script>
+<script>
+"use strict";
+(function () {
+  function fail(msg) { var e = document.getElementById("err"); e.textContent = msg; e.style.display = "flex"; }
+  if (!window.DOZER) { fail("dozer-data.js is missing. Run make_wash_demo.py first."); return; }
+  var canvas = document.getElementById("c");
+  var gl = canvas.getContext("webgl2", { antialias: true });
+  if (!gl) { fail("This browser cannot show the example (it needs WebGL 2)."); return; }
+
+  // ---------------------------------------------------------------- data
+  var D = window.DOZER, N = D.count;
+  var raw = Uint8Array.from(atob(D.b64), function (ch) { return ch.charCodeAt(0); });
+  var GW = D.size[0], GL_ = D.size[1], GH = D.size[2];
+  var M = 4;                                        // empty margin round the grid, for mud lumps
+  var EX = GW + 2 * M, EY = GL_ + 2 * M, EZ = GH + 2 * M;
+  function cell(x, y, z) { return ((z + M) * EY + (y + M)) * EX + (x + M); }
+  var vid = new Int32Array(EX * EY * EZ).fill(-1);  // outside-voxel id in each cell
+  var mudGrid = new Int32Array(EX * EY * EZ).fill(-1);
+  var vx = new Uint8Array(N), vy = new Uint8Array(N), vz = new Uint8Array(N), vpart = new Uint8Array(N), vmask = new Uint8Array(N);
+  var faces = 0, i, b;
+  for (i = 0; i < N; i++) {
+    vx[i] = raw[i * 6]; vy[i] = raw[i * 6 + 1]; vz[i] = raw[i * 6 + 2];
+    vpart[i] = raw[i * 6 + 4]; vmask[i] = raw[i * 6 + 5];
+    vid[cell(vx[i], vy[i], vz[i])] = i;
+    for (b = 0; b < 6; b++) if (vmask[i] & (1 << b)) faces++;
+  }
+  var DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  var QUAD = [
+    [[1,0,0],[1,1,0],[1,1,1],[1,0,1]], [[0,0,0],[0,1,0],[0,1,1],[0,0,1]],
+    [[0,1,0],[1,1,0],[1,1,1],[0,1,1]], [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],
+    [[0,0,1],[1,0,1],[1,1,1],[0,1,1]], [[0,0,0],[1,0,0],[1,1,0],[0,1,0]]];
+
+  var posN = new Uint8Array(faces * 16), col = new Uint8Array(faces * 16), ids = new Float32Array(faces * 4);
+  var index = new Uint32Array(faces * 6), f = 0, k;
+  for (i = 0; i < N; i++) {
+    var p = D.palette[raw[i * 6 + 3]];
+    for (b = 0; b < 6; b++) {
+      if (!(vmask[i] & (1 << b))) continue;
+      for (k = 0; k < 4; k++) {
+        var o = (f * 4 + k) * 4, q = QUAD[b][k];
+        posN[o] = vx[i] + q[0]; posN[o + 1] = vy[i] + q[1]; posN[o + 2] = vz[i] + q[2]; posN[o + 3] = b;
+        col[o] = p[0]; col[o + 1] = p[1]; col[o + 2] = p[2];
+        ids[f * 4 + k] = i;
+      }
+      index.set([f * 4, f * 4 + 1, f * 4 + 2, f * 4, f * 4 + 2, f * 4 + 3], f * 6);
+      f++;
+    }
+  }
+
+  // ---------------------------------------------------------------- noise
+  function hash3(x, y, z) {
+    var n = Math.imul(x, 73856093) ^ Math.imul(y, 19349663) ^ Math.imul(z, 83492791);
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) & 0xffff) / 65536;
+  }
+  function noise3(x, y, z) {
+    var ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+    var fx = x - ix, fy = y - iy, fz = z - iz;
+    fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy); fz = fz * fz * (3 - 2 * fz);
+    function L(a, c, t) { return a + (c - a) * t; }
+    return L(L(L(hash3(ix, iy, iz), hash3(ix + 1, iy, iz), fx), L(hash3(ix, iy + 1, iz), hash3(ix + 1, iy + 1, iz), fx), fy),
+             L(L(hash3(ix, iy, iz + 1), hash3(ix + 1, iy, iz + 1), fx), L(hash3(ix, iy + 1, iz + 1), hash3(ix + 1, iy + 1, iz + 1), fx), fy), fz);
+  }
+  // how dirty a spot starts: heavy low down, patchy dust higher up
+  function startDirt(x, y, z) {
+    var low = Math.pow(Math.max(0, 1 - z / 74), 1.4);
+    var v = 0.12 + 0.95 * low + (noise3(x * 0.09, y * 0.09, z * 0.09) - 0.5) * 0.9;
+    return Math.max(0, Math.min(1, v));
+  }
+
+  // ---------------------------------------------------------------- GL helpers
+  function shader(type, src) {
+    var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+  function program(vs, fs) {
+    var pr = gl.createProgram();
+    gl.attachShader(pr, shader(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, shader(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    return pr;
+  }
+  var LIGHT = "const vec3 SUN = normalize(vec3(0.45, -0.6, 0.75));\n" +
+              "float light(vec3 n) { return 0.52 + 0.5 * max(dot(n, SUN), 0.0) + 0.06 * n.z; }\n";
+
+  var meshProg = program(
+    "#version 300 es\n" +
+    "in vec4 a_pn; in vec4 a_col; in float a_id;\n" +
+    "uniform mat4 u_vp; uniform sampler2D u_dirt;\n" +
+    "out vec3 v_col; out vec3 v_w; flat out float v_d; flat out float v_h; flat out vec3 v_n;\n" +
+    "const vec3 NRM[6] = vec3[6](vec3(1,0,0),vec3(-1,0,0),vec3(0,1,0),vec3(0,-1,0),vec3(0,0,1),vec3(0,0,-1));\n" +
+    "void main() {\n" +
+    "  int id = int(a_id + 0.5);\n" +
+    "  v_d = texelFetch(u_dirt, ivec2(id & 255, id >> 8), 0).r;\n" +
+    "  v_h = fract(sin(a_id * 12.9898) * 43758.5453);\n" +
+    "  v_col = a_col.rgb; v_w = a_pn.xyz; v_n = NRM[int(a_pn.w + 0.5)];\n" +
+    "  gl_Position = u_vp * vec4(a_pn.xyz, 1.0);\n" +
+    "}\n",
+    "#version 300 es\n" +
+    "precision highp float; precision highp sampler3D;\n" +
+    "in vec3 v_col; in vec3 v_w; flat in float v_d; flat in float v_h; flat in vec3 v_n;\n" +
+    "uniform int u_mode; uniform sampler3D u_vol; uniform vec3 u_volScale;\n" +
+    "out vec4 o;\n" + LIGHT +
+    "const vec3 DUST = vec3(0.70, 0.51, 0.29); const vec3 MUD = vec3(0.45, 0.31, 0.17);\n" +
+    "float h3(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\n" +
+    "float n3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);\n" +
+    "  return mix(mix(mix(h3(i), h3(i + vec3(1,0,0)), f.x), mix(h3(i + vec3(0,1,0)), h3(i + vec3(1,1,0)), f.x), f.y),\n" +
+    "             mix(mix(h3(i + vec3(0,0,1)), h3(i + vec3(1,0,1)), f.x), mix(h3(i + vec3(0,1,1)), h3(i + vec3(1,1,1)), f.x), f.y), f.z); }\n" +
+    "void main() {\n" +
+    "  vec3 c = v_col;\n" +
+    "  if (u_mode == 0) {\n" +                     // whole voxels change colour in steps
+    "    if (v_d > 0.62) c = mix(MUD, DUST, v_h * 0.7);\n" +
+    "    else if (v_d > 0.34) c = mix(v_col, mix(DUST, MUD, v_h * 0.5), 0.62);\n" +
+    "    else if (v_d > 0.10) c = mix(v_col, DUST, 0.28);\n" +
+    "  } else if (u_mode == 1) {\n" +              // smooth film, finer than the voxels
+    "    vec3 p = v_w + v_n * 0.3;\n" +
+    "    float d = texture(u_vol, (p + 4.0) * u_volScale).r;\n" +
+    "    d *= 0.8 + 0.4 * n3(v_w * 2.3);\n" +
+    "    float a = smoothstep(0.10, 0.62, d);\n" +
+    "    c = mix(v_col, mix(DUST, MUD, smoothstep(0.45, 0.95, d)), a * 0.96);\n" +
+    "  }\n" +
+    "  o = vec4(c * light(v_n), 1.0);\n" +
+    "}\n");
+
+  var cubeProg = program(
+    "#version 300 es\n" +
+    "in vec3 a_p; in vec3 a_n; in vec3 i_off; in vec3 i_size; in vec3 i_col;\n" +
+    "uniform mat4 u_vp; out vec3 v_col; out vec3 v_n;\n" +
+    "void main() { v_col = i_col; v_n = a_n; gl_Position = u_vp * vec4(i_off + a_p * i_size, 1.0); }\n",
+    "#version 300 es\n" +
+    "precision highp float; in vec3 v_col; in vec3 v_n; uniform float u_alpha; out vec4 o;\n" + LIGHT +
+    "void main() { o = vec4(v_col * light(v_n), u_alpha); }\n");
+
+  function attrib(prog, name, buf, size, type, norm, stride, offset, divisor) {
+    var loc = gl.getAttribLocation(prog, name);
+    if (loc < 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, type, norm, stride, offset);
+    if (divisor) gl.vertexAttribDivisor(loc, divisor);
+  }
+  function staticBuf(data) { var bf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bf); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); return bf; }
+
+  // dozer mesh
+  var meshVao = gl.createVertexArray(); gl.bindVertexArray(meshVao);
+  attrib(meshProg, "a_pn", staticBuf(posN), 4, gl.UNSIGNED_BYTE, false, 0, 0);
+  attrib(meshProg, "a_col", staticBuf(col), 4, gl.UNSIGNED_BYTE, true, 0, 0);
+  attrib(meshProg, "a_id", staticBuf(ids), 1, gl.FLOAT, false, 0, 0);
+  var ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, index, gl.STATIC_DRAW);
+
+  // unit cube for the ground, mud lumps and spray
+  var cv = [], cn = [];
+  for (b = 0; b < 6; b++) { var qd = QUAD[b]; [0, 1, 2, 0, 2, 3].forEach(function (j) { cv.push.apply(cv, qd[j]); cn.push.apply(cn, DIRS[b]); }); }
+  var cubeVao = gl.createVertexArray(); gl.bindVertexArray(cubeVao);
+  attrib(cubeProg, "a_p", staticBuf(new Float32Array(cv)), 3, gl.FLOAT, false, 0, 0);
+  attrib(cubeProg, "a_n", staticBuf(new Float32Array(cn)), 3, gl.FLOAT, false, 0, 0);
+  var MAXI = 40000, inst = new Float32Array(MAXI * 9), instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf); gl.bufferData(gl.ARRAY_BUFFER, inst.byteLength, gl.DYNAMIC_DRAW);
+  attrib(cubeProg, "i_off", instBuf, 3, gl.FLOAT, false, 36, 0, 1);
+  attrib(cubeProg, "i_size", instBuf, 3, gl.FLOAT, false, 36, 12, 1);
+  attrib(cubeProg, "i_col", instBuf, 3, gl.FLOAT, false, 36, 24, 1);
+  gl.bindVertexArray(null);
+
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  // mode 1: one dirt value per outside voxel
+  var DW = 256, DH = Math.ceil(N / DW), dirt = new Uint8Array(DW * DH), dirtChanged = true;
+  var dirtTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, dirtTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, DW, DH, 0, gl.RED, gl.UNSIGNED_BYTE, dirt);
+  // mode 2: a smooth dirt volume at twice the voxel detail
+  var VS = 2, VW = EX * VS, VH = EY * VS, VD = EZ * VS, vol = new Uint8Array(VW * VH * VD);
+  var volTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, volTex);
+  [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach(function (pn) { gl.texParameteri(gl.TEXTURE_3D, pn, gl.LINEAR); });
+  [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R].forEach(function (pn) { gl.texParameteri(gl.TEXTURE_3D, pn, gl.CLAMP_TO_EDGE); });
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, VW, VH, VD, 0, gl.RED, gl.UNSIGNED_BYTE, vol);
+
+  // ---------------------------------------------------------------- dirt state
+  var mode = 0, startTotal = [1, 1, 1];
+  var lumps = [];                                   // mode 3: {x,y,z,r,g,b,alive}
+  var bits = [];                                    // falling mud and spray: {x,y,z,vx,vy,vz,r,g,b,s,life,mud}
+
+  function dirtyVoxels() {
+    var t = 0;
+    for (var n = 0; n < N; n++) {
+      var v = startDirt(vx[n], vy[n], vz[n]) + (hash3(vx[n], vy[n], vz[n]) - 0.5) * 0.25;
+      dirt[n] = Math.max(0, Math.min(255, Math.round(v * 255))); t += dirt[n];
+    }
+    startTotal[0] = t || 1; dirtChanged = true;
+  }
+  function dirtyFilm() {
+    var o = 0;
+    for (var z = 0; z < VD; z++) for (var y = 0; y < VH; y++) for (var x = 0; x < VW; x++)
+      vol[o++] = Math.round(startDirt(x / VS - M, y / VS - M, z / VS - M) * 255);
+    gl.bindTexture(gl.TEXTURE_3D, volTex);
+    gl.texSubImage3D(gl.TEXTURE_3D, 0, 0, 0, 0, VW, VH, VD, gl.RED, gl.UNSIGNED_BYTE, vol);
+    startTotal[1] = filmTotal() || 1;
+  }
+  function filmAt(x, y, z) {
+    return vol[(Math.floor((z + M) * VS) * VH + Math.floor((y + M) * VS)) * VW + Math.floor((x + M) * VS)];
+  }
+  function filmTotal() {
+    var t = 0;
+    for (var n = 0; n < N; n += 3) t += filmAt(vx[n] + 0.5, vy[n] + 0.5, vz[n] + 0.5);
+    return t;
+  }
+  // layer 1 is packed against the metal; 2 and 3 are looser mud stacked on it
+  function addLump(x, y, z, layer, part, under) {
+    if (z < 0 || x < -M || y < -M || x >= GW + M || y >= GL_ + M || z >= GH + M) return -1;
+    var c = cell(x, y, z);
+    if (vid[c] >= 0 || mudGrid[c] >= 0) return -1;
+    var h = hash3(x + 7, y + 3, z + 11), s = 0.36 + h * 0.2 - (layer === 1 ? 0.05 : 0);
+    var li = lumps.length;
+    mudGrid[c] = li;
+    lumps.push({ x: x, y: y, z: z, r: s * 1.25, g: s * 0.86, b: s * 0.48, alive: true, layer: layer, part: part, outer: -1 });
+    if (under >= 0) lumps[under].outer = li;
+    return li;
+  }
+  // knock a lump off, along with anything stacked on it
+  function detach(li, vx_, vy_, vz_) {
+    var l = lumps[li];
+    if (!l.alive) return;
+    l.alive = false; mudGrid[cell(l.x, l.y, l.z)] = -1;
+    bits.push({ x: l.x, y: l.y, z: l.z, vx: vx_ + (Math.random() - 0.5) * 8, vy: vy_ + (Math.random() - 0.5) * 8, vz: vz_,
+                r: l.r, g: l.g, b: l.b, s: 1, life: 4, mud: true });
+    if (l.outer >= 0) detach(l.outer, vx_, vy_, vz_);
+  }
+  function dirtyLumps() {
+    lumps.forEach(function (l) { if (l.alive) mudGrid[cell(l.x, l.y, l.z)] = -1; });
+    lumps = []; bits = [];
+    for (var n = 0; n < N; n++) {
+      if (vpart[n] < 3 || vz[n] > 25) continue;     // tracks, blade, lift arms and ripper only
+      var low = 1 - vz[n] / 26;
+      for (var d = 0; d < 5; d++) {                 // not the underside
+        if (!(vmask[n] & (1 << d))) continue;
+        var dx = DIRS[d][0], dy = DIRS[d][1], dz = DIRS[d][2];
+        var nz = noise3((vx[n] + dx) * 0.2, (vy[n] + dy) * 0.2, (vz[n] + dz) * 0.2);
+        if (nz > 0.70 - 0.42 * low) {
+          var l1 = addLump(vx[n] + dx, vy[n] + dy, vz[n] + dz, 1, vpart[n], -1), l2 = -1;
+          if (l1 >= 0 && nz > 0.80 - 0.40 * low) l2 = addLump(vx[n] + 2 * dx, vy[n] + 2 * dy, vz[n] + 2 * dz, 2, vpart[n], l1);
+          if (l2 >= 0 && nz > 0.88 - 0.36 * low) addLump(vx[n] + 3 * dx, vy[n] + 3 * dy, vz[n] + 3 * dz, 3, vpart[n], l2);
+        }
+      }
+    }
+    startTotal[2] = lumps.length || 1;
+  }
+  // type 4 (film + lumps) shares the film of type 2 and the lumps of type 3
+  function makeDirty(m) {
+    if (m === 0) dirtyVoxels(); else if (m === 1) dirtyFilm(); else if (m === 2) dirtyLumps(); else { dirtyFilm(); dirtyLumps(); }
+    pctDue = true;
+  }
+
+  // ---------------------------------------------------------------- camera
+  var yaw = -0.85, pitch = 0.52, dist = 235, target = [GW / 2, GL_ / 2, 26], FOV = 0.62;
+  var eye = [0, 0, 0], fwd = [0, 0, 0], right = [0, 0, 0], up = [0, 0, 0], vp = new Float32Array(16);
+  function norm(v) { var l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
+  function cross(a, c) { return [a[1] * c[2] - a[2] * c[1], a[2] * c[0] - a[0] * c[2], a[0] * c[1] - a[1] * c[0]]; }
+  function dot(a, c) { return a[0] * c[0] + a[1] * c[1] + a[2] * c[2]; }
+  function camera() {
+    var cp = Math.cos(pitch), aspect = canvas.width / canvas.height;
+    eye = [target[0] + dist * cp * Math.sin(yaw), target[1] - dist * cp * Math.cos(yaw), target[2] + dist * Math.sin(pitch)];
+    fwd = norm([target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]]);
+    right = norm(cross(fwd, [0, 0, 1])); up = cross(right, fwd);
+    var fl = 1 / Math.tan(FOV / 2), near = 5, far = 1500;
+    var view = [right[0], up[0], -fwd[0], 0, right[1], up[1], -fwd[1], 0, right[2], up[2], -fwd[2], 0,
+                -dot(right, eye), -dot(up, eye), dot(fwd, eye), 1];
+    var proj = [fl / aspect, 0, 0, 0, 0, fl, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+    for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
+      var s = 0; for (var j = 0; j < 4; j++) s += proj[j * 4 + r] * view[c * 4 + j];
+      vp[c * 4 + r] = s;
+    }
+  }
+  function rayFrom(px, py) {
+    var rect = canvas.getBoundingClientRect();
+    var nx = ((px - rect.left) / rect.width) * 2 - 1, ny = 1 - ((py - rect.top) / rect.height) * 2;
+    var t = Math.tan(FOV / 2), a = canvas.width / canvas.height;
+    return norm([fwd[0] + right[0] * nx * t * a + up[0] * ny * t, fwd[1] + right[1] * nx * t * a + up[1] * ny * t,
+                 fwd[2] + right[2] * nx * t * a + up[2] * ny * t]);
+  }
+  // walk the ray through the grid until it meets the dozer (or a mud lump in mode 3)
+  function raycast(dir) {
+    var o = [eye[0] + M, eye[1] + M, eye[2] + M], lim = [EX, EY, EZ], t0 = 0, t1 = 1e9, a;
+    for (a = 0; a < 3; a++) {
+      if (Math.abs(dir[a]) < 1e-9) { if (o[a] < 0 || o[a] >= lim[a]) return null; continue; }
+      var ta = (0 - o[a]) / dir[a], tb = (lim[a] - o[a]) / dir[a];
+      t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb));
+    }
+    if (t0 >= t1) return null;
+    var t = t0 + 1e-4, c = [0, 0, 0], step = [0, 0, 0], tMax = [0, 0, 0], tDel = [0, 0, 0];
+    for (a = 0; a < 3; a++) {
+      var pos = o[a] + dir[a] * t;
+      c[a] = Math.min(lim[a] - 1, Math.max(0, Math.floor(pos)));
+      step[a] = dir[a] > 0 ? 1 : -1;
+      tDel[a] = Math.abs(1 / (dir[a] || 1e-9));
+      tMax[a] = t + ((dir[a] > 0 ? c[a] + 1 - pos : pos - c[a]) * tDel[a]);
+    }
+    for (var guard = 0; guard < 600; guard++) {
+      var ci = (c[2] * EY + c[1]) * EX + c[0];
+      if (vid[ci] >= 0 || (mode >= 2 && mudGrid[ci] >= 0))
+        return { x: eye[0] + dir[0] * t, y: eye[1] + dir[1] * t, z: eye[2] + dir[2] * t, mud: vid[ci] < 0 };
+      a = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : (tMax[1] < tMax[2] ? 1 : 2);
+      t = tMax[a]; tMax[a] += tDel[a]; c[a] += step[a];
+      if (c[a] < 0 || c[a] >= lim[a]) return null;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- washing
+  var R = 5.5;                                      // spray size in voxels
+  function wash(hit, dir, dt) {
+    var power = dt * 60, x, y, z, d, c;
+    var x0 = Math.floor(hit.x - R), x1 = Math.ceil(hit.x + R), y0 = Math.floor(hit.y - R), y1 = Math.ceil(hit.y + R);
+    var z0 = Math.max(0, Math.floor(hit.z - R)), z1 = Math.ceil(hit.z + R);
+    // type 4: the spray has to knock the mud off a spot before it reaches the film under it
+    if (mode === 0 || mode === 2 || (mode === 3 && hit.mud)) {
+      for (z = z0; z <= z1; z++) for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
+        if (x < -M || y < -M || x >= GW + M || y >= GL_ + M || z >= GH + M) continue;
+        d = Math.hypot(x + 0.5 - hit.x, y + 0.5 - hit.y, z + 0.5 - hit.z);
+        if (d > R) continue;
+        c = cell(x, y, z);
+        if (mode === 0) {
+          var id = vid[c];
+          if (id >= 0 && dirt[id] > 0) { dirt[id] = Math.max(0, dirt[id] - 46 * power * (1 - d / R)); dirtChanged = true; }
+        } else {
+          var li = mudGrid[c];
+          if (li >= 0 && Math.random() < 0.45 * power * (1.15 - d / R))
+            detach(li, -dir[0] * 12 + (Math.random() - 0.5) * 18, -dir[1] * 12 + (Math.random() - 0.5) * 18, 6 + Math.random() * 22);
+        }
+      }
+    } else {
+      var r2 = R * VS, cx = (hit.x + M) * VS, cy = (hit.y + M) * VS, cz = (hit.z + M) * VS;
+      var ax = Math.max(0, Math.floor(cx - r2)), bx = Math.min(VW - 1, Math.ceil(cx + r2));
+      var ay = Math.max(0, Math.floor(cy - r2)), by = Math.min(VH - 1, Math.ceil(cy + r2));
+      var az = Math.max(0, Math.floor(cz - r2)), bz = Math.min(VD - 1, Math.ceil(cz + r2));
+      var w = bx - ax + 1, h = by - ay + 1, dp = bz - az + 1, sub = new Uint8Array(w * h * dp), so = 0;
+      for (z = az; z <= bz; z++) for (y = ay; y <= by; y++) {
+        var row = (z * VH + y) * VW;
+        for (x = ax; x <= bx; x++) {
+          d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy, z + 0.5 - cz);
+          if (d < r2) vol[row + x] = Math.max(0, vol[row + x] - 52 * power * (1 - d / r2));
+          sub[so++] = vol[row + x];
+        }
+      }
+      gl.bindTexture(gl.TEXTURE_3D, volTex);
+      gl.texSubImage3D(gl.TEXTURE_3D, 0, ax, ay, az, w, h, dp, gl.RED, gl.UNSIGNED_BYTE, sub);
+    }
+    for (var n = 0; n < 5; n++) {                   // spray splash
+      bits.push({ x: hit.x, y: hit.y, z: hit.z, vx: -dir[0] * 30 + (Math.random() - 0.5) * 60, vy: -dir[1] * 30 + (Math.random() - 0.5) * 60,
+                  vz: -dir[2] * 30 + (Math.random() - 0.2) * 50, r: 0.82, g: 0.93, b: 1.0, s: 0.7, life: 0.35 + Math.random() * 0.25, mud: false });
+    }
+    pctDue = true;
+  }
+
+  // ---------------------------------------------------------------- driving and water
+  // Both only take the loose mud and the thick film. The packed layer and a thin film stay for the washer.
+  var driving = false, water = false, WATER_Z = 13, THIN_FILM = 70, soak = 0;
+  function shedAndRinse(dt) {
+    var j, l, rate, fast = driving ? 2 : 1;
+    if (mode >= 2 && (driving || water)) {
+      for (j = 0; j < lumps.length; j++) {
+        l = lumps[j];
+        if (!l.alive || l.layer < 2) continue;
+        rate = 0;
+        if (driving) rate += (l.layer === 3 ? 0.09 : 0.035) * (l.part === 3 || l.part === 4 ? 2 : 1);   // tracks shed most
+        if (water && l.z < WATER_Z) rate += 0.9 * fast;
+        if (Math.random() < rate * dt) {
+          if (driving && (l.part === 3 || l.part === 4)) detach(j, 0, 14 + Math.random() * 18, 8 + Math.random() * 18);  // flung off the back
+          else detach(j, 0, 0, 2 + Math.random() * 6);
+        }
+      }
+      pctDue = true;
+    }
+    soak += dt;
+    if (water && (mode === 1 || mode === 3) && soak >= 0.1) {
+      var top = Math.round((WATER_Z + M) * VS), end = VW * VH * top, drop = 255 * 0.3 * soak * fast;
+      for (j = 0; j < end; j++) if (vol[j] > THIN_FILM) vol[j] = Math.max(THIN_FILM, vol[j] - drop);
+      gl.bindTexture(gl.TEXTURE_3D, volTex);
+      gl.texSubImage3D(gl.TEXTURE_3D, 0, 0, 0, 0, VW, VH, top, gl.RED, gl.UNSIGNED_BYTE, vol.subarray(0, end));
+      pctDue = true;
+    }
+    if (soak >= 0.1) soak = 0;
+  }
+  function toggle(id, set) {
+    var bt = document.getElementById(id);
+    bt.onclick = function () { bt.classList.toggle("on", set()); };
+  }
+  toggle("drive", function () { driving = !driving; return driving; });
+  toggle("water", function () { water = !water; return water; });
+
+  // ---------------------------------------------------------------- input
+  var washing = false, orbiting = false, px = 0, py = 0;
+  canvas.addEventListener("pointerdown", function (e) {
+    canvas.setPointerCapture(e.pointerId); px = e.clientX; py = e.clientY;
+    camera();
+    if (raycast(rayFrom(px, py))) washing = true; else orbiting = true;
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (orbiting) {
+      yaw -= (e.clientX - px) * 0.008;
+      pitch = Math.max(0.06, Math.min(1.45, pitch + (e.clientY - py) * 0.006));
+    }
+    px = e.clientX; py = e.clientY;
+  });
+  function release() { washing = false; orbiting = false; }
+  canvas.addEventListener("pointerup", release); canvas.addEventListener("pointercancel", release);
+  function zoom(k) { dist = Math.max(90, Math.min(480, dist * k)); }
+  canvas.addEventListener("wheel", function (e) { e.preventDefault(); zoom(e.deltaY > 0 ? 1.1 : 0.9); }, { passive: false });
+  document.getElementById("zin").onclick = function () { zoom(0.85); };
+  document.getElementById("zout").onclick = function () { zoom(1.18); };
+  var modeButtons = Array.prototype.slice.call(document.querySelectorAll("button.mode"));
+  modeButtons.forEach(function (bt) {
+    bt.onclick = function () {
+      mode = +bt.dataset.mode; bits = [];
+      modeButtons.forEach(function (o2) { o2.classList.toggle("on", o2 === bt); });
+      pctDue = true;
+    };
+  });
+  document.getElementById("dirty").onclick = function () { makeDirty(mode); };
+
+  // ---------------------------------------------------------------- frame
+  var pctEl = document.getElementById("pct"), pctDue = true, pctWait = 0;
+  function cleanPercent() {
+    var left;
+    var left, alive = 0, j;
+    if (mode >= 2) for (j = 0; j < lumps.length; j++) if (lumps[j].alive) alive++;
+    if (mode === 0) { left = 0; for (var n = 0; n < N; n++) left += dirt[n]; left /= startTotal[0]; }
+    else if (mode === 1) left = filmTotal() / startTotal[1];
+    else if (mode === 2) left = alive / startTotal[2];
+    else left = (filmTotal() / startTotal[1] + alive / startTotal[2]) / 2;
+    return Math.round(100 * (1 - Math.min(1, left)));
+  }
+  function resize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    resize(); camera();
+    target[2] = 26 + (driving ? Math.sin(now * 0.03) * 0.5 : 0);     // engine rumble
+    if (washing) { var dir = rayFrom(px, py), hit = raycast(dir); if (hit) wash(hit, dir, dt); }
+    shedAndRinse(dt);
+
+    // falling mud and spray
+    var keep = [];
+    for (var j = 0; j < bits.length; j++) {
+      var p = bits[j]; p.life -= dt;
+      if (p.life <= 0) continue;
+      if (!(p.mud && p.z <= 0)) {
+        p.vz -= 120 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+        if (p.z <= 0) { if (p.mud) { p.z = 0; p.life = Math.min(p.life, 2.5); } else continue; }
+      }
+      keep.push(p);
+    }
+    bits = keep;
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0.81, 0.85, 0.86, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+
+    gl.useProgram(meshProg);
+    gl.uniformMatrix4fv(gl.getUniformLocation(meshProg, "u_vp"), false, vp);
+    gl.uniform1i(gl.getUniformLocation(meshProg, "u_mode"), mode === 3 ? 1 : mode);
+    gl.uniform3f(gl.getUniformLocation(meshProg, "u_volScale"), 1 / EX, 1 / EY, 1 / EZ);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dirtTex);
+    if (dirtChanged) { gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, DW, DH, gl.RED, gl.UNSIGNED_BYTE, dirt); dirtChanged = false; }
+    gl.uniform1i(gl.getUniformLocation(meshProg, "u_dirt"), 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_3D, volTex);
+    gl.uniform1i(gl.getUniformLocation(meshProg, "u_vol"), 1);
+    gl.bindVertexArray(meshVao);
+    gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_INT, 0);
+
+    // ground, lumps, falling bits
+    var n = 0;
+    function put(x, y, z, sx, sy, sz, r, g, b2) {
+      if (n >= MAXI) return;
+      inst.set([x, y, z, sx, sy, sz, r, g, b2], n * 9); n++;
+    }
+    put(-300, -300, -2, 600 + GW, 600 + GL_, 2, 0.74, 0.60, 0.42);
+    if (mode >= 2) for (j = 0; j < lumps.length; j++) { var l = lumps[j]; if (l.alive) put(l.x, l.y, l.z, 1, 1, 1, l.r, l.g, l.b); }
+    for (j = 0; j < bits.length; j++) { p = bits[j]; put(p.x, p.y, p.z, p.s, p.s, p.s, p.r, p.g, p.b); }
+    gl.useProgram(cubeProg);
+    gl.uniformMatrix4fv(gl.getUniformLocation(cubeProg, "u_vp"), false, vp);
+    gl.bindVertexArray(cubeVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst.subarray(0, n * 9));
+    gl.uniform1f(gl.getUniformLocation(cubeProg, "u_alpha"), 1);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, n);
+    if (water) {
+      inst.set([-300, -300, 0, 600 + GW, 600 + GL_, WATER_Z, 0.30, 0.52, 0.62], 0);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, inst.subarray(0, 9));
+      gl.uniform1f(gl.getUniformLocation(cubeProg, "u_alpha"), 0.5);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, 1);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+    }
+    gl.bindVertexArray(null);
+
+    pctWait -= dt;
+    if (pctDue && pctWait <= 0) { pctEl.textContent = cleanPercent() + "% clean"; pctDue = false; pctWait = 0.2; }
+    requestAnimationFrame(frame);
+  }
+
+  try {
+    resize();
+    makeDirty(0); makeDirty(1); makeDirty(2);
+    // exposed for checking the page from the console
+    window.washTest = { state: function () {
+                          var a = [0, 0, 0, 0];
+                          lumps.forEach(function (l) { if (l.alive) { a[0]++; a[l.layer]++; } });
+                          return { mode: mode, voxels: N, faces: faces, lumps: lumps.length, alive: a[0], packed: a[1], loose: a[2] + a[3],
+                                   bits: bits.length, filmLow: filmAt(36, 2, 6), filmHigh: filmAt(36, 2, 25) };
+                        },
+                        percent: cleanPercent };
+    requestAnimationFrame(frame);
+  } catch (e) { fail("Could not start the example: " + e.message); }
+})();
+</script>
+</body>
+</html>

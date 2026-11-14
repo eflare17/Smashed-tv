@@ -1,0 +1,175 @@
+{
+  "voxelSize": 0.0625,
+  "nodes": [
+    {
+      "name": "Body",
+      "mesh": "body",
+      "parent": "",
+      "pos": [
+        -0.0,
+        0.0,
+        -0.0
+      ]
+    },
+    {
+      "name": "Cab",
+      "mesh": "cab",
+      "parent": "",
+      "pos": [
+        -0.0,
+        1.9375,
+        -0.71875
+      ]
+    },
+    {
+      "name": "Exhaust",
+      "mesh": "exhaust",
+      "parent": "",
+      "pos": [
+        0.4375,
+        3.375,
+        1.3125
+      ]
+    },
+    {
+      "name": "Track_Left",
+      "mesh": "track_left_frame",
+      "parent": "",
+      "pos": [
+        -1.40625,
+        0.8125,
+        0.125
+      ]
+    },
+    {
+      "name": "Sprocket_Left",
+      "mesh": "track_sprocket",
+      "parent": "Track_Left",
+      "pos": [
+        -1.40625,
+        0.84375,
+        -1.59375
+      ]
+    },
+    {
+      "name": "Idler_Left",
+      "mesh": "track_idler",
+      "parent": "Track_Left",
+      "pos": [
+        -1.40625,
+        0.78125,
+        1.84375
+      ]
+    },
+    {
+      "name": "Pad_Left",
+      "mesh": "track_pad",
+      "parent": "Track_Left",
+      "pos": [
+        -1.40625,
+        0.8125,
+        0.125
+      ]
+    },
+    {
+      "name": "Track_Right",
+      "mesh": "track_right_frame",
+      "parent": "",
+      "pos": [
+        1.40625,
+        0.8125,
+        0.125
+      ]
+    },
+    {
+      "name": "Sprocket_Right",
+      "mesh": "track_sprocket",
+      "parent": "Track_Right",
+      "pos": [
+        1.40625,
+        0.84375,
+        -1.59375
+      ]
+    },
+    {
+      "name": "Idler_Right",
+      "mesh": "track_idler",
+      "parent": "Track_Right",
+      "pos": [
+        1.40625,
+        0.78125,
+        1.84375
+      ]
+    },
+    {
+      "name": "Pad_Right",
+      "mesh": "track_pad",
+      "parent": "Track_Right",
+      "pos": [
+        1.40625,
+        0.8125,
+        0.125
+      ]
+    },
+    {
+      "name": "Mount_BladeLift",
+      "mesh": "",
+      "parent": "",
+      "pos": [
+        -0.0,
+        0.75,
+        0.1875
+      ]
+    },
+    {
+      "name": "BladeLift",
+      "mesh": "blade_lift",
+      "parent": "Mount_BladeLift",
+      "pos": [
+        -0.0,
+        0.75,
+        0.1875
+      ]
+    },
+    {
+      "name": "Mount_Blade",
+      "mesh": "",
+      "parent": "BladeLift",
+      "pos": [
+        -0.0,
+        0.75,
+        2.8125
+      ]
+    },
+    {
+      "name": "Blade",
+      "mesh": "blade",
+      "parent": "Mount_Blade",
+      "pos": [
+        -0.0,
+        0.75,
+        2.8125
+      ]
+    },
+    {
+      "name": "Mount_Rear",
+      "mesh": "",
+      "parent": "",
+      "pos": [
+        -0.0,
+        1.21875,
+        -2.625
+      ]
+    },
+    {
+      "name": "Ripper",
+      "mesh": "ripper",
+      "parent": "Mount_Rear",
+      "pos": [
+        -0.0,
+        1.21875,
+        -2.625
+      ]
+    }
+  ]
+}
