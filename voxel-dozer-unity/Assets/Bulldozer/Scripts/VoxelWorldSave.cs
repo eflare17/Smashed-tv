@@ -15,7 +15,7 @@ using UnityEngine;
 
 public partial class VoxelWorld
 {
-    const int SaveVersion = 1;
+    const int SaveVersion = 2;                             // 2: parts remember being found
     const int ChunkBytes = CS * CS * CS;
 
     /// Dirt that is not ground right now, counted afresh: tallies, shovel, cart and clods.

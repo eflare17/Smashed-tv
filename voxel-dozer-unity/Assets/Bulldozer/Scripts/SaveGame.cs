@@ -55,7 +55,7 @@ public class SaveGame : MonoBehaviour
                 }
                 var finds = Finds.Instance;
                 w.Write(finds != null ? Finds.Count : 0);
-                if (finds != null) for (int k = 0; k < Finds.Count; k++) { w.Write(finds.Collected[k]); w.Write(finds.Installed[k]); }
+                if (finds != null) for (int k = 0; k < Finds.Count; k++) { w.Write(finds.Collected[k]); w.Write(finds.Installed[k]); w.Write(finds.Found[k]); }
                 var worker = Worker.Instance;
                 w.Write(worker != null);
                 if (worker != null) worker.WriteState(w);
@@ -99,8 +99,8 @@ public class SaveGame : MonoBehaviour
                 int count = r.ReadInt32();
                 for (int k = 0; k < count; k++)
                 {
-                    bool collected = r.ReadBoolean(), installed = r.ReadBoolean();
-                    if (finds != null && k < Finds.Count) finds.SetState(k, collected, installed);
+                    bool collected = r.ReadBoolean(), installed = r.ReadBoolean(), found = r.ReadBoolean();
+                    if (finds != null && k < Finds.Count) finds.SetState(k, collected, installed, found);
                 }
                 var worker = Worker.Instance;
                 if (r.ReadBoolean() && worker != null) worker.ReadState(r);

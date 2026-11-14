@@ -574,7 +574,7 @@ public static class BulldozerBuilder
         }
         if (fPhase == 21)
         {
-            if (t - fPhaseStart < 0.6f) return;
+            if (t - fPhaseStart < 6f) return;                                    // long enough for loose rubble to slide back
             TestCapture("finds_exposed.png");
             wk.SetEyes(true); wk.Look(42f);
             fPhase = 22; fPhaseStart = t;
@@ -584,11 +584,15 @@ public static class BulldozerBuilder
         {
             if (t - fPhaseStart < 0.4f) return;
             TestCapture("finds_eyes.png");
+            finds.testGlintPhase = 0.22f;                                          // every glint at its brightest
+            finds.SendMessage("Update");
+            TestCapture("finds_glint.png");
+            finds.testGlintPhase = -1f;
             wk.SetEyes(false); wk.Look(14f);
             wk.Teleport(finds.Spot[0] + new Vector3(0f, 0f, -1.1f), 0f);
             bool could = finds.CanCollect(0, wk.transform.position);
             string r = wk.UsePart();
-            fLog += " exposedAfter=" + (fExposedAt < 0f ? "never" : fExposedAt.ToString("F1") + "s") + " couldPickUp=" + could + " pickUp=[" + r + "] carrying=" + finds.Carrying(0);
+            fLog += " exposedAfter=" + (fExposedAt < 0f ? "never" : fExposedAt.ToString("F1") + "s") + " stillExposedAfter6s=" + finds.Exposed(0) + " found=" + finds.Found[0] + " couldPickUp=" + could + " pickUp=[" + r + "] carrying=" + finds.Carrying(0);
             // the other two parts must still be buried
             fLog += " part1Buried=" + !finds.Exposed(1) + " part2Buried=" + !finds.Exposed(2);
             Debug.Log("BULLDOZER_FINDS_RESULT " + fLog);
@@ -894,6 +898,14 @@ public static class BulldozerBuilder
 
     public static void RecordClip() { clipMode = 0; StartClip(); }
 
+    // What the overnight work added: dig a part out, the dead dozer and a repair, the cart, save and load.
+    //   -executeMethod BulldozerBuilder.RecordNightClip      Prints BULLDOZER_NIGHT_OK with the frame each part starts at.
+    public static void RecordNightClip() { clipMode = 3; nPhase = 0; nGlint = nVisible = nCheck = 0; nMarks = ""; StartClip(); }
+    static int nPhase, nStep, nGlint, nVisible, nCheck;
+    static float nT0, nNext;
+    static string nMarks;
+    static void NightMark(string name) { nMarks += " " + name + "=" + clipFrame; }
+
     static void StartClip()
     {
         EditorSceneManager.OpenScene(ScenePath);
@@ -931,7 +943,8 @@ public static class BulldozerBuilder
         float t = Time.time - clipStart;
 
         var follow = cam.GetComponent<FollowCamera>();
-        if (clipMode == 2)
+        if (clipMode == 3) { if (!NightStep(d, t)) return; }
+        else if (clipMode == 2)
         {
             var wk = Worker.Instance;
             var vw = VoxelWorld.Instance;
@@ -1007,6 +1020,144 @@ public static class BulldozerBuilder
         RenderTexture.active = null;
         System.IO.File.WriteAllBytes(Application.dataPath + "/../Logs/clip/frame_" + clipFrame.ToString("D4") + ".jpg", clipTex.EncodeToJPG(93));
         clipFrame++;
+    }
+
+    // One step of the overnight clip.  Returns false when it has finished.
+    static bool NightStep(DozerController d, float t)
+    {
+        var wk = Worker.Instance; var w = VoxelWorld.Instance; var finds = Finds.Instance; var cart = MineCart.Instance; var sg = SaveGame.Instance;
+        if (finds == null || cart == null || sg == null) return true;
+        string save = SaveGame.FilePath, keep = SaveGame.FilePath + ".clipkeep";
+        if (nPhase == 0)
+        {
+            if (System.IO.File.Exists(save)) System.IO.File.Copy(save, keep, true);     // the owner's own save is put back afterwards
+            if (wk.InDozer) wk.GetOut();
+            wk.Teleport(finds.Spot[0] + new Vector3(0.9f, 0f, -2.6f), -18f);   // off to one side, so he does not hide the part
+            wk.Look(22f);
+            wk.SetTool(0);
+            nPhase = 1; nT0 = t; nNext = t; nStep = 0; NightMark("dig");
+        }
+        if (nPhase >= 1 && nPhase <= 2) { if (finds.GlintShowing(0)) nGlint++; if (finds.Visible(0)) nVisible++; nCheck++; }
+        if (nPhase == 1)
+        {
+            // he swings at the rubble while it is cleared from round the part; each load is thrown out of the mine
+            wk.overrideUse = true;
+            if (t - nT0 > 3f && wk.Tool != 1) wk.SetTool(1);
+            if (finds.Exposed(0) || t - nT0 > 30f) { wk.overrideUse = false; nPhase = 2; nT0 = t; NightMark("exposed"); }
+            else if (t >= nNext)
+            {
+                nNext = t + 0.05f;
+                Vector3 c = finds.Spot[0];
+                int n = nStep++;
+                Vector3 at = c + new Vector3(-0.45f + ((n / 7) % 4) * 0.3f, 0.6f + (n % 7) * 0.3f, -1.5f + ((n / 28) % 6) * 0.35f);
+                w.Pick(at, 0.3f, Vector3.zero);
+                w.Scoop(at, 0.55f, 4000);
+                if (w.ShovelVoxels >= VoxelWorld.ClodVoxels)
+                    w.Throw(new Vector3(VoxelWorld.PortalX + 5f, 2f, VoxelWorld.PortalZ - 9f), Vector3.zero, 1f, 0.2f);
+            }
+        }
+        else if (nPhase == 2)
+        {
+            // walk up to it and look down at it, then pick it up
+            if (t - nT0 < 0.1f) { wk.Teleport(finds.Spot[0] + new Vector3(0f, 0f, -1.4f), 0f); wk.SetEyes(true); wk.Look(40f); }
+            if (t - nT0 > 3.5f)
+            {
+                wk.SetEyes(false); wk.Look(14f);
+                wk.Teleport(finds.Spot[0] + new Vector3(0f, 0f, -1.1f), 0f);
+                nMarks += " workerAt=" + wk.transform.position.ToString("F2") + " spot=" + finds.Spot[0].ToString("F2") + " exposedNow=" + finds.Exposed(0) + " found=" + finds.Found[0] + " use=[" + wk.UsePart() + "]";
+                NightMark("pickedUp"); nPhase = 3; nT0 = t;
+            }
+        }
+        else if (nPhase == 3)
+        {
+            if (t - nT0 < 1.5f) return true;
+            // the dozer, dead: full throttle and it does not move
+            d.dead = true;
+            wk.GetIn();
+            d.useOverride = true; d.overrideThrottle = 1f; d.overrideBlade = 0f;
+            nPhase = 4; nT0 = t; NightMark("dead");
+        }
+        else if (nPhase == 4)
+        {
+            if (t - nT0 < 3.5f) return true;
+            d.overrideThrottle = 0f;
+            wk.GetOut();
+            nMarks += " fit=[" + wk.UsePart() + "] canDrive=" + d.CanDrive;         // fit the tracks part
+            wk.GetIn();
+            d.overrideThrottle = 1f; d.overrideSteer = 0.35f;
+            nPhase = 5; nT0 = t; NightMark("fitted");
+        }
+        else if (nPhase == 5)
+        {
+            if (t - nT0 < 5f) return true;
+            d.overrideThrottle = 0f; d.overrideSteer = 0f;
+            d.dead = false;
+            // the cart, by the mine entrance: dig beside it and throw each shovelful in
+            wk.GetOut();
+            wk.SetTool(1);
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.4f - cart.transform.forward * 1.2f, Facing(-cart.transform.right) - 25f);
+            wk.Look(18f);
+            nPhase = 6; nT0 = t; nNext = t; nStep = 0; NightMark("cart");
+        }
+        else if (nPhase == 6)
+        {
+            wk.overrideUse = true;
+            if (w.CartVoxels >= 2600 || t - nT0 > 9f) { wk.overrideUse = false; nPhase = 7; nT0 = t; }
+            else if (t >= nNext)
+            {
+                nNext = t + 0.12f;
+                Vector3 at = cart.transform.position + cart.transform.right * 2.4f + cart.transform.forward * (-1f + (nStep % 9) * 0.25f) + Vector3.up * (0.1f - (nStep / 9) * 0.12f);
+                nStep++;
+                w.Pick(at, 0.35f, Vector3.zero);
+                w.Scoop(at, 0.5f, 4000);
+                if (w.ShovelVoxels >= VoxelWorld.ClodVoxels) w.Throw(cart.Mouth + Vector3.up * 0.7f, Vector3.zero, 0.25f, 0.4f);
+            }
+        }
+        else if (nPhase == 7)
+        {
+            if (t - nT0 < 1.5f) return true;
+            cart.Tip();
+            nPhase = 8; nT0 = t; NightMark("tip");
+        }
+        else if (nPhase == 8)
+        {
+            if (t - nT0 < 5f) return true;
+            // save, dig a fresh cut, then load: the cut is gone and everything is back where it was saved
+            wk.GetIn();
+            d.overrideThrottle = 0f; d.overrideBlade = -1f;
+            nPhase = 9; nT0 = t;
+        }
+        else if (nPhase == 9)
+        {
+            if (t - nT0 < 1.2f) return true;
+            sg.Save();
+            d.overrideThrottle = 1f; d.overrideSteer = -0.3f;
+            nPhase = 10; nT0 = t; NightMark("saved");
+        }
+        else if (nPhase == 10)
+        {
+            if (t - nT0 < 4.5f) return true;
+            d.overrideThrottle = 0f; d.overrideSteer = 0f;
+            nPhase = 11; nT0 = t; NightMark("beforeLoad");
+        }
+        else if (nPhase == 11)
+        {
+            if (t - nT0 < 1.2f) return true;
+            sg.Load();
+            d.overrideBlade = 0f;
+            nPhase = 12; nT0 = t; NightMark("loaded");
+        }
+        else if (nPhase == 12)
+        {
+            if (t - nT0 < 3f) return true;
+            if (System.IO.File.Exists(keep)) { System.IO.File.Copy(keep, save, true); System.IO.File.Delete(keep); }
+            else if (System.IO.File.Exists(save)) System.IO.File.Delete(save);
+            Debug.Log("BULLDOZER_NIGHT_OK frames=" + clipFrame + nMarks + " glintFrames=" + nGlint + " visibleFrames=" + nVisible + "/" + nCheck + " partCarried=" + finds.Carrying(0) + " installed0=" + finds.Installed[0]
+                + " cartLeft=" + w.CartVoxels);
+            ClipFinish(0);
+            return false;
+        }
+        return true;
     }
 
     static void ClipFinish(int code)

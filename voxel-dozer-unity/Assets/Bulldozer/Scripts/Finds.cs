@@ -9,6 +9,10 @@
 //
 // A find is an object, not ground.  It sits in a small hollow left in the rubble when the ground is made
 // (VoxelWorld.InFindHole), so picks and shovels never touch it: they only clear the dirt round it.
+//
+// Once a part has been uncovered it stays found: loose rubble sliding back over it does not bury it again, you can
+// still reach in and pick it up.  While any of it can be seen from the camera it glints now and then, so it can be
+// spotted while digging.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -21,7 +25,13 @@ public class Finds : MonoBehaviour
     public readonly Vector3[] Spot = new Vector3[Count];
     public readonly bool[] Collected = new bool[Count];
     public readonly bool[] Installed = new bool[Count];
+    public readonly bool[] Found = new bool[Count];          // uncovered at some point: stays pick-up-able for good
     readonly Transform[] objects = new Transform[Count];
+    readonly Transform[] glints = new Transform[Count];
+    // where each part's glint sits, on its steel bit
+    static readonly Vector3[] GlintAt = { new Vector3(0f, 0.3f, 0f), new Vector3(0f, 0.17f, 0.3f), new Vector3(0f, 0.12f, 0.32f) };
+    const float GlintEvery = 2.4f, GlintFor = 0.45f, GlintSeen = 16f;
+    [System.NonSerialized] public float testGlintPhase = -1f;   // tests: hold every glint at this point of its flash, seen or not
     VoxelWorld world;
 
     public static bool IsInstalled(int k) { return Instance != null && Instance.Installed[k]; }
@@ -49,7 +59,71 @@ public class Finds : MonoBehaviour
             Spot[k] = VoxelWorld.FindSpot(k);
             objects[k] = Build(k);
             objects[k].position = Spot[k];
+            glints[k] = BuildGlint(k);
         }
+    }
+
+    void Update()
+    {
+        if (world == null) return;
+        var cam = Camera.main;
+        for (int k = 0; k < Count; k++)
+        {
+            if (Collected[k]) { glints[k].gameObject.SetActive(false); continue; }
+            if (!Found[k] && Exposed(k)) Found[k] = true;
+            // a short star-shaped flash every couple of seconds, only if the camera can see that bit of it
+            float phase = (Time.time + k * 0.8f) % GlintEvery;
+            bool show = cam != null && phase < GlintFor && CanSee(cam.transform.position, Spot[k] + GlintAt[k]);
+            if (testGlintPhase >= 0f) { phase = testGlintPhase; show = cam != null; }
+            glints[k].gameObject.SetActive(show);
+            if (show)
+            {
+                Transform g = glints[k];
+                g.rotation = Quaternion.LookRotation(g.position - cam.transform.position) * Quaternion.Euler(0f, 0f, 45f + phase * 60f);
+                float d = Vector3.Distance(cam.transform.position, g.position);
+                g.localScale = Vector3.one * Mathf.Sin(phase / GlintFor * Mathf.PI) * Mathf.Clamp(d * 0.12f, 0.8f, 2f);
+            }
+        }
+    }
+
+    public bool GlintShowing(int k) { return glints[k] != null && glints[k].gameObject.activeSelf; }
+    public bool Visible(int k) { var cam = Camera.main; return cam != null && CanSee(cam.transform.position, Spot[k] + GlintAt[k]); }
+
+    bool CanSee(Vector3 eye, Vector3 at)
+    {
+        Vector3 d = at - eye;
+        float dist = d.magnitude;
+        if (dist > GlintSeen || dist < 0.01f) return false;
+        if (!world.Raycast(eye, d / dist, dist, out Vector3 hit, out byte mat)) return true;
+        return Vector3.Distance(hit, eye) >= dist - 0.12f;                     // nothing solid before the glint itself
+    }
+
+    static Material glintMat;
+
+    Transform BuildGlint(int k)
+    {
+        if (glintMat == null)
+        {
+            var sh = Shader.Find("Unlit/Color");
+            glintMat = new Material(sh != null ? sh : Shader.Find("Sprites/Default"));
+            glintMat.color = new Color(5f, 4.4f, 3.2f);                        // brighter than white, so the bloom catches it
+        }
+        var g = new GameObject("Glint").transform;
+        g.SetParent(objects[k], false);
+        g.localPosition = GlintAt[k];
+        for (int i = 0; i < 2; i++)
+        {
+            var bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Destroy(bar.GetComponent<Collider>());
+            bar.transform.SetParent(g, false);
+            bar.transform.localScale = i == 0 ? new Vector3(0.5f, 0.035f, 0.01f) : new Vector3(0.035f, 0.5f, 0.01f);
+            var r = bar.GetComponent<MeshRenderer>();
+            r.sharedMaterial = glintMat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+        }
+        g.gameObject.SetActive(false);
+        return g;
     }
 
     // ---------------------------------------------------------------- placeholders, built from boxes
@@ -131,7 +205,7 @@ public class Finds : MonoBehaviour
     {
         if (Collected[k]) return false;
         Vector3 d = Spot[k] - worker;
-        return new Vector2(d.x, d.z).magnitude < 1.7f && Mathf.Abs(d.y) < 1.5f && Exposed(k);
+        return new Vector2(d.x, d.z).magnitude < 1.7f && Mathf.Abs(d.y) < 1.5f && (Found[k] || Exposed(k));
     }
 
     /// The find the worker could pick up from where he stands, or -1.
@@ -154,8 +228,9 @@ public class Finds : MonoBehaviour
     }
 
     /// For loading a saved game.
-    public void SetState(int k, bool collected, bool installed)
+    public void SetState(int k, bool collected, bool installed, bool found)
     {
+        Found[k] = found;
         Collected[k] = collected || installed;
         Installed[k] = installed;
         objects[k].gameObject.SetActive(!Collected[k]);
