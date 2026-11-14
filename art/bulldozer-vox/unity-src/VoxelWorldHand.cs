@@ -16,7 +16,8 @@ using UnityEngine;
 public partial class VoxelWorld
 {
     public int ShovelVoxels { get; private set; }           // what the shovel is holding
-    NativeArray<int> shovelLoad;                             // per material
+    public int CartVoxels { get; private set; }             // what the mine cart is holding
+    NativeArray<int> shovelLoad, cartLoad;                   // per material
 
     // the blade as a solid plate for the clods, and where loose dirt is being smoothed; set by whoever is working
     Matrix4x4 plateToWorld = Matrix4x4.identity;
@@ -26,8 +27,47 @@ public partial class VoxelWorld
 
     public void SetBlade(Matrix4x4 bladeToWorld, Vector3 min, Vector3 max) { plateToWorld = bladeToWorld; plateMin = min; plateMax = max; havePlate = true; }
 
-    void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); }
-    void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); }
+    void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); cartLoad = new NativeArray<int>(16, Allocator.Persistent); }
+    void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); }
+
+    /// Loose clods inside the cart's tub (a box in the cart's own space) go into its load, while there is room.
+    public void CartCollect(Matrix4x4 worldToCart, Vector3 min, Vector3 max, int capacity)
+    {
+        int n = cCount[0], held = CartVoxels;
+        bool took = false;
+        for (int i = n - 1; i >= 0 && held + cCnt[i] <= capacity; i--)
+        {
+            Vector3 l = worldToCart.MultiplyPoint3x4(cPos[i]);
+            if (l.x < min.x || l.x > max.x || l.y < min.y || l.y > max.y || l.z < min.z || l.z > max.z) continue;
+            cartLoad[cMat[i]] += cCnt[i];
+            held += cCnt[i];
+            n--;
+            cPos[i] = cPos[n]; cVel[i] = cVel[n]; cRot[i] = cRot[n]; cMat[i] = cMat[n]; cCnt[i] = cCnt[n]; cRest[i] = cRest[n]; cAge[i] = cAge[n];
+            took = true;
+        }
+        if (!took) return;
+        cCount[0] = n;
+        Recount();
+    }
+
+    /// One clod's worth leaves the cart at `at` with `velocity`.  False when the cart is empty (or no clod can be made).
+    public bool CartPour(Vector3 at, Vector3 velocity)
+    {
+        for (int m = LooseSoil; m <= LooseGold; m++)
+        {
+            if (cartLoad[m] < ClodVoxels || cCount[0] >= MaxClods) continue;
+            cartLoad[m] -= ClodVoxels;
+            int n = cCount[0]++;
+            cPos[n] = at; cVel[n] = velocity; cRot[n] = quaternion.identity;
+            cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = 0f;
+            Recount();
+            return true;
+        }
+        // only crumbs left (less than one clod of any material): they join the general tally
+        for (int m = LooseSoil; m <= LooseGold; m++) { bladeLoad[m] += cartLoad[m]; cartLoad[m] = 0; }
+        Recount();
+        return false;
+    }
 
     void FixedUpdate()
     {
@@ -86,11 +126,13 @@ public partial class VoxelWorld
 
     void Recount()
     {
-        int carried = 0, onShovel = 0;
+        int carried = 0, onShovel = 0, inCart = 0;
         for (int i = 0; i < bladeLoad.Length; i++) carried += bladeLoad[i];
         for (int i = 0; i < shovelLoad.Length; i++) onShovel += shovelLoad[i];
+        for (int i = 0; i < cartLoad.Length; i++) inCart += cartLoad[i];
         carriedOnBlade = carried;
         ShovelVoxels = onShovel;
+        CartVoxels = inCart;
         ClodCount = cCount[0];
     }
 
@@ -132,7 +174,8 @@ public partial class VoxelWorld
     }
 
     /// Throws what is on the shovel: it leaves as clods from `from` at `velocity`.
-    public int Throw(Vector3 from, Vector3 velocity)
+    /// `flight` is roughly how long the load is in the air: for that long its clods fly together as one bunch.
+    public int Throw(Vector3 from, Vector3 velocity, float spread = 1f, float flight = 0.7f)
     {
         int thrown = 0;
         var rng = new Unity.Mathematics.Random((uint)(frame * 7919 + 17));
@@ -144,10 +187,10 @@ public partial class VoxelWorld
                 int n = cCount[0]++;
                 // the load leaves the blade as a loose bunch that strings out a little along the throw
                 float3 jitter = rng.NextFloat3() - 0.5f;
-                cPos[n] = (float3)from + jitter * new float3(0.26f, 0.12f, 0.3f);
-                cVel[n] = (float3)velocity * (0.82f + 0.36f * rng.NextFloat()) + jitter * new float3(1.3f, 0.7f, 1.3f);
+                cPos[n] = (float3)from + jitter * new float3(0.26f, 0.12f, 0.3f) * math.max(spread, 0.5f);
+                cVel[n] = (float3)velocity * (1f + (rng.NextFloat() - 0.5f) * 0.36f * spread) + jitter * new float3(1.3f, 0.7f, 1.3f) * spread;
                 cRot[n] = rng.NextQuaternionRotation();
-                cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = -0.7f;       // negative: in free flight
+                cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = -flight;     // negative: in free flight
                 thrown += ClodVoxels;
             }
             bladeLoad[m] += shovelLoad[m];                   // the crumbs (less than one clod) join the general tally

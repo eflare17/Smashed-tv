@@ -410,9 +410,17 @@ public static class BulldozerBuilder
         if (testPhase == 0)
         {
             testPhase = 1;
+            // getting out of the dozer and back in, the way the Enter key does it
+            var wk0 = Worker.Instance;
+            string log = "startedInDozer=" + wk0.InDozer + " dead=" + d.dead;
+            if (wk0.InDozer) wk0.TryDozer();
+            log += " afterOut:inDozer=" + wk0.InDozer + " near=" + wk0.NearDozer() + " dist=" + Vector3.Distance(wk0.transform.position, d.transform.position).ToString("F2");
+            wk0.TryDozer();
+            log += " afterIn:inDozer=" + wk0.InDozer + " driven=" + d.driven;
+            Debug.Log("BULLDOZER_ENTER_TEST " + log);
             d.dead = false;
             Worker.Instance.useOverride = true;
-            Worker.Instance.GetIn();
+            if (!Worker.Instance.InDozer) Worker.Instance.GetIn();
             d.useOverride = true;
             testPos0 = d.transform.position;
             testSolid0 = w.CountSolid();
@@ -563,19 +571,22 @@ public static class BulldozerBuilder
             if (clipFrame == 0)
             {
                 clipSolid0 = vw.SolidCount + vw.LoadVoxels;
-                wk.Teleport(new Vector3(VoxelWorld.PortalX - 0.3f, 0f, VoxelWorld.PortalZ - 7f), 0f);
+                if (wk.InDozer) wk.GetOut();                                        // the game starts in the dozer
+                wk.Teleport(new Vector3(VoxelWorld.PortalX - 1.15f, 0f, VoxelWorld.PortalZ - 7f), 0f);   // beside the track, so he walks past the cart
             }
             wk.overrideTurn = 0f;
             if (t < 3.6f) { wk.overrideWalk = 1f; wk.overrideUse = false; }                    // walk up and into the mine, seen from behind
             else if (t < 6f) { wk.overrideWalk = 0f; if (wk.Tool != 0) wk.SetTool(0); wk.overrideUse = true; }      // pick at the rubble
             else if (t < 6.3f) { wk.overrideUse = false; if (wk.Tool != 1) wk.SetTool(1); }
-            else if (t < 10.5f) { wk.overrideUse = true; if (follow != null) { follow.shoulder = false; follow.yawOffset = 62f; follow.distance = 3.6f; follow.pitch = 14f; follow.lookHeight = 1.2f; } }   // shovel, seen from his side
+            else if (t < 10.5f) { wk.overrideUse = true; }                                                           // shovel, over his shoulder
             else if (t < 10.8f) { wk.overrideUse = false; if (!wk.Eyes) wk.SetEyes(true); }                        // then through his eyes
             else if (t < 15f) { wk.overrideWalk = 0f; wk.overrideUse = true; wk.overrideTurn = Mathf.Sin(t * 2.2f) * 0.25f; }
             else
             {
                 Debug.Log("BULLDOZER_WALK_OK frames=" + clipFrame + " walkedTo=" + wk.transform.position.ToString("F1")
                     + " pickHits=" + wk.PickHits + " scoops=" + wk.Scoops + " throws=" + wk.Throws + " clods=" + vw.ClodCount
+                    + " inCartLitres=" + (vw.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0")
+                    + " cartAt=" + (MineCart.Instance != null ? MineCart.Instance.transform.position.ToString("F1") : "none")
                     + " volumeChange=" + ((vw.CountSolid() + vw.LoadVoxels) - clipSolid0));
                 ClipFinish(0); return;
             }

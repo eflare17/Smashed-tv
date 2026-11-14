@@ -15,6 +15,9 @@ public class SiteProps : MonoBehaviour
     struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
     static readonly List<Solid> solids = new List<Solid>();
 
+    /// The middle of the track, point by point, from deep in the tunnel out to the end of the line.
+    public static readonly List<Vector3> RailPath = new List<Vector3>();
+
     /// True if a machine of the given radius at this spot would be inside something solid.
     /// A person on foot is not stopped by things that only keep machines out (the mine tunnel).
     public static bool Blocks(Vector3 pos, float radius, bool onFoot = false)
@@ -103,6 +106,7 @@ public class SiteProps : MonoBehaviour
         if (Worker.Instance == null) new GameObject("Worker").AddComponent<Worker>();   // the person you play as
         MineEntrance();
         Rails();
+        if (MineCart.Instance == null) new GameObject("Mine cart").AddComponent<MineCart>();
         Clutter();
         Trees();
         FarHills();
@@ -184,6 +188,8 @@ public class SiteProps : MonoBehaviour
             }
         }
         pts.Add(way[way.Length - 1]);
+        RailPath.Clear();
+        RailPath.AddRange(pts);
         float sinceSleeper = 1f;
         for (int i = 0; i < pts.Count - 1; i++)
         {

@@ -28,8 +28,9 @@ public class DozerController : MonoBehaviour
     public int hardRockStops = 60;           // this many hard blocks in the blade's way stops the machine
     public bool showHelp = true;
     [Header("State")]
-    public bool dead = false;                // true = it has sat for years and nothing works until it is repaired (off for now: F9 switches it)
-    public bool driven;                      // someone is in the seat
+    // Not saved with the prefab on purpose: Unity kept an old stored "dead" and ignored the value written here.
+    [System.NonSerialized] public bool dead = false;     // true = it has sat for years and nothing works until repaired (off for now: F9 switches it)
+    [System.NonSerialized] public bool driven;           // someone is in the seat
     [Header("Driven by script instead of the keyboard (tests, touch buttons, AI)")]
     public bool useOverride;
     public float overrideThrottle, overrideSteer, overrideBlade, overrideRipper, overrideAngle, overrideTilt;

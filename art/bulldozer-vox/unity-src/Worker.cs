@@ -62,6 +62,9 @@ public class Worker : MonoBehaviour
     Swing swing = Swing.None;
     float swingT;
     bool swingDone;
+    bool throwBehind;                                    // this throw goes back over his shoulder
+    Vector3 throwAt;                                     // where this throw is meant to land
+    bool throwIntoCart;
 
     // ---------------------------------------------------------------- the swings
     // A pose is where the tool is held, relative to his chest (or his eyes): position, then tilt / swing / roll in degrees.
@@ -81,7 +84,8 @@ public class Worker : MonoBehaviour
     static readonly Pose ShovelThrust = new Pose(0.20f, -0.58f, 0.50f, 58f, 0f, 0f);     // driven down into the dirt
     static readonly Pose ShovelLoaded = new Pose(0.24f, -0.46f, 0.22f, 6f, -6f, 0f);     // levered up, blade flat, carrying
     static readonly Pose ShovelBack = new Pose(0.40f, -0.50f, -0.08f, 16f, 42f, -18f);   // wound back to his right
-    static readonly Pose ShovelFling = new Pose(0.02f, -0.22f, 0.62f, -38f, -22f, 10f);  // flicked up and out
+    static readonly Pose ShovelFling = new Pose(0.02f, -0.22f, 0.62f, -38f, -22f, 10f);  // flicked up and out in front
+    static readonly Pose ShovelOver = new Pose(-0.12f, 0.20f, -0.02f, -128f, 18f, 0f);   // swung up and back over his shoulder
     const float DigBite = 0.15f, DigTime = 0.36f, ThrowWind = 0.13f, ThrowRelease = 0.22f, ThrowTime = 0.42f;
     // pick
     static readonly Pose PickCarry = new Pose(0.26f, -0.40f, 0.10f, -35f, 0f, 0f);       // head up by his shoulder
@@ -99,8 +103,9 @@ public class Worker : MonoBehaviour
                 return Pose.Mix(ShovelThrust, ShovelLoaded, (swingT - DigBite) / (DigTime - DigBite));
             case Swing.Throw:
                 if (swingT < ThrowWind) return Pose.Mix(ShovelLoaded, ShovelBack, swingT / ThrowWind);
-                if (swingT < ThrowRelease) return Pose.Mix(ShovelBack, ShovelFling, (swingT - ThrowWind) / (ThrowRelease - ThrowWind));
-                return Pose.Mix(ShovelFling, ShovelCarry, (swingT - ThrowRelease) / (ThrowTime - ThrowRelease));
+                Pose end = throwBehind ? ShovelOver : ShovelFling;
+                if (swingT < ThrowRelease) return Pose.Mix(throwBehind ? ShovelLoaded : ShovelBack, end, (swingT - ThrowWind) / (ThrowRelease - ThrowWind));
+                return Pose.Mix(end, ShovelCarry, (swingT - ThrowRelease) / (ThrowTime - ThrowRelease));
             case Swing.Pick:
                 if (swingT < PickRaise) return Pose.Mix(PickCarry, PickHigh, swingT / PickRaise);
                 if (swingT < PickBite) return Pose.Mix(PickHigh, PickStrike, (swingT - PickRaise) / (PickBite - PickRaise));
@@ -319,6 +324,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
+            if (Input.GetKeyDown(KeyCode.T) && MineCart.Instance != null && MineCart.Instance.Near(transform.position, 3f)) MineCart.Instance.Tip();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
             {
@@ -357,6 +363,7 @@ public class Worker : MonoBehaviour
         {
             swing = Tool == 0 ? Swing.Pick : (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? Swing.Throw : Swing.Dig);
             swingT = 0f; swingDone = false;
+            if (swing == Swing.Throw) PlanThrow();
         }
         if (swing != Swing.None)
         {
@@ -376,6 +383,7 @@ public class Worker : MonoBehaviour
         float lim = VoxelWorld.NX / 2 * VoxelWorld.Voxel - 1.2f;
         if (Mathf.Abs(next.x) > lim || Mathf.Abs(next.z) > lim) return false;
         if (SiteProps.Blocks(next, 0.3f, true)) return false;
+        if (MineCart.Instance != null && MineCart.Instance.PushedBy(next, step)) return false;    // walking into the cart pushes it
         // look a little ahead as well, so he stops at a wall instead of walking his nose into it
         Vector3 ahead = next + step.normalized * 0.22f;
         float floor = Mathf.Max(world.FloorAt(next + Vector3.up * 0.45f), world.FloorAt(ahead + Vector3.up * 0.45f));
@@ -411,6 +419,17 @@ public class Worker : MonoBehaviour
         }
     }
 
+    /// Decides where a shovelful goes.  Into the cart if one is close and has room; otherwise onto a pile a
+    /// couple of metres behind him, out of the way of what he is digging.
+    void PlanThrow()
+    {
+        Vector3 back = Quaternion.Euler(0f, yaw, 0f) * Vector3.back;
+        var cart = MineCart.Instance;
+        throwIntoCart = cart != null && cart.HasRoom && cart.Near(transform.position, 7.5f);
+        throwAt = throwIntoCart ? cart.Mouth : transform.position + back * 2.6f + Quaternion.Euler(0f, yaw, 0f) * Vector3.right * 0.5f;
+        throwBehind = Vector3.Dot(throwAt - transform.position, back) > 0f;
+    }
+
     /// The moment in a swing when the tool does its job, at the spot being aimed at.
     void Work()
     {
@@ -428,12 +447,14 @@ public class Worker : MonoBehaviour
         }
         else if (swing == Swing.Throw)
         {
-            // it leaves from the blade, where the blade is at this point in the swing, the way he is looking:
-            // look up to lob it further, look down to drop it close
-            Vector3 flat = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-            Vector3 from = shovel.TransformPoint(new Vector3(0f, 0.08f, 1.02f));
-            float lift = Mathf.Clamp01(0.55f - lookPitch / 70f);
-            world.Throw(from, flat * throwForward + Vector3.up * (throwUp * Mathf.Lerp(0.45f, 1.3f, lift)));
+            // It leaves from above his shoulder and is lobbed to land where PlanThrow chose: into the cart,
+            // or onto the pile behind him.  The speed is worked out from where it has to come down.
+            Vector3 from = transform.position + Vector3.up * 1.75f + Quaternion.Euler(0f, yaw, 0f) * (throwBehind ? new Vector3(-0.1f, 0f, -0.35f) : new Vector3(0.1f, 0f, 0.6f));
+            Vector3 gap = throwAt - from;
+            // a flat, quick throw: in the mine a high lob would hit the roof
+            float time = Mathf.Clamp(new Vector2(gap.x, gap.z).magnitude / 6.8f, 0.5f, 0.95f);
+            Vector3 velocity = gap / time + Vector3.up * (0.5f * 9.81f * time);
+            world.Throw(from, velocity, throwIntoCart ? 0.3f : 0.8f, time + 0.08f);
             Throws++;
         }
     }
@@ -478,11 +499,14 @@ public class Worker : MonoBehaviour
         arm.localRotation = Quaternion.FromToRotation(Vector3.down, local.normalized);
     }
 
-    void TryDozer()
+    /// Close enough to the dozer to climb in.
+    public bool NearDozer() { return dozer != null && !InDozer && Vector3.Distance(transform.position, dozer.transform.position) <= 5.5f; }
+
+    public void TryDozer()
     {
         if (dozer == null) return;
         if (InDozer) { GetOut(); return; }
-        if (Vector3.Distance(transform.position, dozer.transform.position) > 5.5f) return;
+        if (!NearDozer()) { Say("Walk up to the dozer first.", 2f); return; }
         if (dozer.dead) { Say("The dozer is dead.  It has sat here for years and needs parts.", 4f); return; }
         GetIn();
     }
@@ -504,6 +528,19 @@ public class Worker : MonoBehaviour
             "Esc   free the mouse        Enter   get in the dozer\n" +
             "Tool: " + tool + load;
         GUI.Box(new Rect(10, 10, 540, 86), text);
+        var cart = MineCart.Instance;
+        if (cart != null && cart.Near(transform.position, 7.5f))
+        {
+            float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
+            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   Shovelfuls go in it.   Walk into an end to push it.   T tips it.");
+        }
+        // close enough to climb in: say so, in the middle of the screen where it can't be missed
+        if (NearDozer())
+        {
+            var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            string what = dozer.dead ? "The dozer is dead (it needs parts)" : "Press ENTER to get in the dozer";
+            GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.62f, 420, 40), what, prompt);
+        }
         // the cross you aim with
         GUI.Box(new Rect(Screen.width / 2 - 1, Screen.height / 2 - 8, 2, 16), GUIContent.none);
         GUI.Box(new Rect(Screen.width / 2 - 8, Screen.height / 2 - 1, 16, 2), GUIContent.none);

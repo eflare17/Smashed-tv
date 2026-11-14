@@ -102,7 +102,7 @@ public partial class VoxelWorld
         ClodVoxelsInFlight = result[1];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels;
         result.Dispose();
         Toc(1);
     }
@@ -300,7 +300,7 @@ public partial class VoxelWorld
                                         for (int a = cellStart[key]; a < cellStart[key + 1]; a++)
                                         {
                                             int j = sorted[a];
-                                            if (j <= i) continue;
+                                            if (j <= i || age[i] < 0f || age[j] < 0f) continue;   // a thrown load flies as a bunch: its clods don't shove each other apart in the air
                                             float3 d = pos[j] - p;
                                             float d2 = math.lengthsq(d);
                                             if (d2 >= 4f * R * R || d2 < 1e-10f) continue;
