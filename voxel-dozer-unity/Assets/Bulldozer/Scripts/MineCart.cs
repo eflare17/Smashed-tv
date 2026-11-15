@@ -2,8 +2,9 @@
 //   - It catches whatever is thrown or falls into it, up to its capacity.
 //   - E at either end takes hold of it (Worker.cs); then W pushes it along the track and S pulls it back.  It stops at the end of the rails and where
 //     the rubble on the track is as high as its tub (the cave-in face).  Lower spill it rolls over.
-//   - T, standing beside it, tips the load out over its left side.  At the dump (the last few metres of the
-//     rails, out by the road) what pours out is paid for, into the shared pot (Money.cs).
+//   - T, standing beside it, tips the load out over its left side.  At the dump (the end of the rails, out by
+//     the road) E does it too, and the load pours into the hopper beside the track: what goes down it is sorted,
+//     sold and paid for, into the shared pot (Money.cs).
 // What is in the cart is still counted with the dirt, so volume stays exact.
 using System.Collections.Generic;
 using UnityEngine;
@@ -42,10 +43,10 @@ public class MineCart : MonoBehaviour
     float length, tipLeft;
     Transform dirtLevel;
     bool tipping;
-    readonly int[] loadBefore = new int[16], pouredOut = new int[16];
+    readonly int[] sold = new int[16];
 
-    /// How far back from the end of the rails the dump reaches.
-    public const float DumpLength = 3.5f;
+    /// How far back from the end of the line the cart still counts as at the dump (beside the hopper).
+    public const float DumpLength = 0.45f;
     /// True when the cart is at the dump, where tipping it pays.
     public bool AtDump { get { return length > 0f && Along >= EndLimit - DumpLength; } }
 
@@ -206,20 +207,19 @@ public class MineCart : MonoBehaviour
         if (!tipping) world.CartCollect(transform.worldToLocalMatrix, new Vector3(-HalfWidth, 0.05f, -HalfLength), new Vector3(HalfWidth, catchAt, HalfLength), capacity);   // down to near the rails, so a fast clod cannot drop straight through
         if (tipping)
         {
-            for (int m = 0; m < 16; m++) loadBefore[m] = world.CartLoadOf(m);
             // pour out over the left side, a bit at a time
             Vector3 lip = transform.TransformPoint(new Vector3(-HalfWidth - 0.25f, TubTop - 0.1f, Random.Range(-0.6f, 0.6f)));
             for (int k = 0; k < spec.pourPerStep; k++)
-                if (!world.CartPour(lip + Random.insideUnitSphere * 0.15f, -transform.right * Random.Range(1.2f, 2.4f) + Vector3.up * 0.4f)) { tipping = false; break; }
-            // at the dump, whatever left the cart this step is paid for
-            if (AtDump && Money.Instance != null)
-            {
-                bool any = false;
-                for (int m = 0; m < 16; m++) { pouredOut[m] = Mathf.Max(0, loadBefore[m] - world.CartLoadOf(m)); any |= pouredOut[m] > 0; }
-                if (any) Money.Instance.Pay(pouredOut);
-            }
+                if (!world.CartPour(lip + Random.insideUnitSphere * 0.15f, -transform.right * Random.Range(2.2f, 3.1f) + Vector3.up * 0.9f)) { tipping = false; break; }
             tipLeft -= Time.fixedDeltaTime;
             if (tipLeft <= 0f || world.CartVoxels < VoxelWorld.ClodVoxels) tipping = false;
+        }
+        if (SiteProps.HopperToWorld.m33 != 0f)
+        {
+            var half = SiteProps.HopperHalf;
+            System.Array.Clear(sold, 0, sold.Length);
+            if (world.HopperCollect(SiteProps.HopperToWorld.inverse, new Vector3(-half.x - 0.1f, -1f, -half.z - 0.1f), new Vector3(half.x + 0.1f, half.y + 0.05f, half.z + 0.1f), sold) > 0 && Money.Instance != null)
+                Money.Instance.Pay(sold);
         }
         Place();
     }

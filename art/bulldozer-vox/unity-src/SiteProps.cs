@@ -10,7 +10,7 @@ using UnityEngine;
 public class SiteProps : MonoBehaviour
 {
     // material ids understood by the ground shader
-    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16;
+    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20;
 
     struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
     static readonly List<Solid> solids = new List<Solid>();
@@ -210,8 +210,8 @@ public class SiteProps : MonoBehaviour
         Finish("Rails");
     }
 
-    /// The dump at the end of the rails: a timber buffer stop across the track, and a sign on posts beside it
-    /// (on the cart's right, away from the side it tips to), with an orange board.
+    /// The dump at the end of the rails: a timber buffer stop across the track, the hopper beside it on the side
+    /// the cart tips to (a timber-walled pit with a steel grate over a dark hole), and a sign on the other side.
     void Dump()
     {
         int n = RailPath.Count;
@@ -227,22 +227,45 @@ public class SiteProps : MonoBehaviour
             Box(stop + right * sd + Vector3.up * (g + 0.35f), new Vector3(0.22f, 0.7f, 0.22f), rot, DarkTimber);
         Box(stop + Vector3.up * (g + 0.55f), new Vector3(1.6f, 0.26f, 0.26f), rot, Timber);
         Box(stop + Vector3.up * (g + 0.55f) - dir * 0.15f, new Vector3(1.2f, 0.12f, 0.05f), rot, HiVis);   // bright face
-        // the sign, a little back along the line on the cart's right
-        Vector3 sign = end - dir * 1.6f + right * 1.6f;
+        // the hopper, on the cart's left (it tips over its left side), level with where the cart stops
+        Vector3 cartStop = end - dir * 0.85f;
+        Vector3 hop = cartStop - right * (HopperAway + HopperHalf.x);
+        float gh = Ground(hop.x, hop.z);
+        hop.y = gh;
+        Box(hop + Vector3.up * 0.015f, new Vector3(HopperHalf.x * 2f, 0.03f, HopperHalf.z * 2f), rot, Dark);   // the hole
+        Vector3 hx = rot * Vector3.right, hz = rot * Vector3.forward;
+        foreach (float sd in new[] { -1f, 1f })
+        {
+            Box(hop + hx * sd * (HopperHalf.x + 0.07f) + Vector3.up * 0.25f, new Vector3(0.14f, 0.5f, HopperHalf.z * 2f + 0.28f), rot, Timber);
+            Box(hop + hz * sd * (HopperHalf.z + 0.07f) + Vector3.up * 0.25f, new Vector3(HopperHalf.x * 2f, 0.5f, 0.14f), rot, DarkTimber);
+        }
+        for (float k = -HopperHalf.z + 0.2f; k < HopperHalf.z; k += 0.32f)                        // the grate
+            Box(hop + hz * k + Vector3.up * 0.46f, new Vector3(HopperHalf.x * 2f, 0.04f, 0.05f), rot, Steel);
+        Box(hop + Vector3.up * 0.46f, new Vector3(0.05f, 0.04f, HopperHalf.z * 2f), rot, Steel);
+        HopperToWorld = Matrix4x4.TRS(hop, rot, Vector3.one);
+        // the sign, just past the end of the line, facing back up the track so you see it as you push the cart out
+        Vector3 sign = end + dir * 2.2f + right * 0.6f;
         float gs = Ground(sign.x, sign.z);
-        var face = Quaternion.LookRotation(-right);
+        var face = Quaternion.LookRotation(-dir);
+        right = Vector3.Cross(Vector3.up, -dir);
         foreach (float sd in new[] { -0.6f, 0.6f })
-            Box(sign + dir * sd + Vector3.up * (gs + 0.9f), new Vector3(0.14f, 1.8f, 0.14f), face, DarkTimber);
+            Box(sign + right * sd + Vector3.up * (gs + 0.9f), new Vector3(0.14f, 1.8f, 0.14f), face, DarkTimber);
         Box(sign + Vector3.up * (gs + 1.55f), new Vector3(1.5f, 0.6f, 0.08f), face, HiVis);
-        Box(sign + Vector3.up * (gs + 1.55f) - right * 0.05f, new Vector3(1.1f, 0.12f, 0.04f), face, DarkTimber);   // a stripe across it
+        Box(sign + Vector3.up * (gs + 1.55f) - dir * 0.05f, new Vector3(1.1f, 0.12f, 0.04f), face, DarkTimber);   // a stripe across it
         Finish("Dump");
         Solidify(sign.x, sign.z, 0.8f);
         Solidify(stop.x, stop.z, 0.8f);
+        Solidify(hop.x, hop.z, 0.9f);
         DumpSign = sign + Vector3.up * (gs + 2.1f);
     }
 
     /// Where the dump's sign is (for the "DUMP" label over it).
     public static Vector3 DumpSign;
+    /// The hopper: its middle at ground level, turned to the track.  HopperHalf is half its opening (x across
+    /// the track, z along it); HopperAway is the gap from the middle of the track to its near side.
+    public static Matrix4x4 HopperToWorld = Matrix4x4.zero;
+    public static readonly Vector3 HopperHalf = new Vector3(0.7f, 0.5f, 1.1f);
+    public const float HopperAway = 0.95f;
 
     void Crate(Vector3 at, float size, float turn)
     {

@@ -20,6 +20,7 @@ public partial class VoxelWorld
     public int ShovelVoxels { get; private set; }           // what the shovel is holding
     public int CartVoxels { get; private set; }             // what the mine cart is holding
     public int PackVoxels { get; private set; }             // what the worker's backpack is holding
+    public int SoldVoxels { get; private set; }             // what has gone down the hopper and been sold (it has left the site)
     NativeArray<int> shovelLoad, cartLoad, packLoad;         // per material
 
     // the blade as a solid plate for the clods, and where loose dirt is being smoothed; set by whoever is working
@@ -36,6 +37,8 @@ public partial class VoxelWorld
     void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); if (packLoad.IsCreated) packLoad.Dispose(); }
 
     /// How much of one material the cart holds (voxels), so its load can be drawn in the right colours.
+    public Vector3 ClodPosition(int i) { return cPos[i]; }                // (tests)
+    [System.NonSerialized] public long PouredFromCart;                      // (tests)
     public int CartLoadOf(int m) { return m >= 0 && m < cartLoad.Length ? cartLoad[m] : 0; }
     public int PackLoadOf(int m) { return m >= 0 && m < packLoad.Length ? packLoad[m] : 0; }
 
@@ -144,6 +147,28 @@ public partial class VoxelWorld
         Recount();
     }
 
+    /// Loose clods inside a box (in the box's own space) go down the hopper: they leave the site and are sold.
+    /// `byMaterial[m]` gets how much of each went.  Returns the voxels taken.
+    public int HopperCollect(Matrix4x4 worldToBox, Vector3 min, Vector3 max, int[] byMaterial)
+    {
+        int n = cCount[0], took = 0;
+        for (int i = n - 1; i >= 0; i--)
+        {
+            Vector3 l = worldToBox.MultiplyPoint3x4(cPos[i]);
+            if (l.x < min.x || l.x > max.x || l.y < min.y || l.y > max.y || l.z < min.z || l.z > max.z) continue;
+            byMaterial[cMat[i]] += cCnt[i];
+            took += cCnt[i];
+            n--;
+            cPos[i] = cPos[n]; cVel[i] = cVel[n]; cRot[i] = cRot[n]; cMat[i] = cMat[n]; cCnt[i] = cCnt[n]; cRest[i] = cRest[n]; cAge[i] = cAge[n];
+        }
+        if (took == 0) return 0;
+        cCount[0] = n;
+        SoldVoxels += took;
+        ClodVoxelsInFlight -= took;                             // (StepDirt recounts these each step anyway)
+        Recount();
+        return took;
+    }
+
     /// One clod's worth leaves the cart at `at` with `velocity`.  False when the cart is empty (or no clod can be made).
     public bool CartPour(Vector3 at, Vector3 velocity)
     {
@@ -153,7 +178,8 @@ public partial class VoxelWorld
             cartLoad[m] -= ClodVoxels;
             int n = cCount[0]++;
             cPos[n] = at; cVel[n] = velocity; cRot[n] = quaternion.identity;
-            cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = 0f;
+            cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = -0.6f;   // pours out as one stream: clods don't shove each other apart in the air
+            PouredFromCart += ClodVoxels;
             Recount();
             return true;
         }

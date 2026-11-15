@@ -130,7 +130,7 @@ public partial class VoxelWorld
         ClodVoxelsInFlight = result[1];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels;
         result.Dispose();
         Toc(1);
     }

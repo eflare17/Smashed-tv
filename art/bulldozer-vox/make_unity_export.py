@@ -697,6 +697,9 @@ public static class BulldozerBuilder
     static int dPhase, dSteps;
     static float dPhaseStart, dNext;
     static long dVolume0, dCoins0;
+    static int dSold0, dCartV0;
+    static long dPoured0;
+    static float dTipEnd;
     static double dExpected;
     static string dLog;
 
@@ -788,20 +791,31 @@ public static class BulldozerBuilder
             dLog += " loaded=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L worth=" + dExpected.ToString("F1");
             cart.SetAlong(cart.EndLimit);
             dLog += " atDumpNow=" + cart.AtDump;
-            wk.Teleport(cart.transform.position - cart.transform.right * 1.6f - cart.transform.forward * 2.5f, Facing(cart.transform.forward * 0.6f + cart.transform.right));
-            wk.Look(18f);
-            dCoins0 = money.Coins;
-            wk.TipCart();
+            wk.Teleport(cart.transform.position + cart.transform.right * 1.5f - cart.transform.forward * 1.2f, Facing(-cart.transform.right * 0.8f + cart.transform.forward * 0.6f));
+            wk.Look(22f);
+            dCoins0 = money.Coins; dSold0 = w.SoldVoxels; dPoured0 = w.PouredFromCart; dCartV0 = w.CartVoxels;
+            wk.PressE();                                                      // E at the dump: into the hopper
+            dLog += " tippingAfterE=" + cart.Tipping;
             dPhase = 4; dPhaseStart = t;
             return;
         }
         if (dPhase == 4)
         {
-            if (t - dPhaseStart > 0.6f && dLog.IndexOf("tipPic") < 0) { TestCapture("dump_tip.png"); dLog += " tipPic"; }
-            if (cart.Tipping && t - dPhaseStart < 12f) return;
-            if (t - dPhaseStart < 1f) return;
+            if (t - dPhaseStart > 0.5f && dLog.IndexOf("tipPic") < 0)
+            {
+                // over his shoulder from behind the cart, looking along the track at the hopper
+                Vector3 back = cart.transform.position - cart.transform.forward * 3.4f + cart.transform.right * 0.9f;
+                wk.Teleport(back, Facing(cart.transform.forward - cart.transform.right * 0.45f));
+                wk.Look(30f);
+                dLog += " tipPicWait";
+            }
+            if (t - dPhaseStart > 0.9f && dLog.IndexOf("tipPic ") < 0 && dLog.IndexOf("tipPicWait") >= 0) { TestCapture("dump_tip.png"); dLog += " tipPic "; }
+            if (cart.Tipping && t - dPhaseStart < 12f) { dTipEnd = t; return; }
+            if (t - dTipEnd < 3.5f) return;                                    // the last of the stream is still falling in
+            dLog += " cartVoxelsAtTip=" + dCartV0 + " pouredAsClods=" + (w.PouredFromCart - dPoured0) + " soldVoxels=" + (w.SoldVoxels - dSold0);
             long paid = money.Coins - dCoins0;
-            dLog += " paid=" + paid + " matches=" + (System.Math.Abs(paid - dExpected) < 1.01) + " leftInCart=" + w.CartVoxels;
+            dLog += " paid=" + paid + " matches=" + (System.Math.Abs(paid - dExpected) < 1.01) + " intoHopper=" + ((w.SoldVoxels - dSold0) * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L"
+                  + " paidShare=" + (paid / System.Math.Max(1e-6, dExpected) * 100).ToString("F0") + "%" + " leftInCart=" + w.CartVoxels;
             // the coins in a save and back
             var ms = new System.IO.MemoryStream();
             var bw = new System.IO.BinaryWriter(ms);

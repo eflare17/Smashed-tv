@@ -15,7 +15,7 @@ using UnityEngine;
 
 public partial class VoxelWorld
 {
-    const int SaveVersion = 3;                             // 2: parts remember being found; 3: the backpack's load
+    const int SaveVersion = 4;                             // 2: parts remember being found; 3: the backpack's load; 4: dirt sold down the hopper
     const int ChunkBytes = CS * CS * CS;
 
     /// Dirt that is not ground right now, counted afresh: tallies, shovel, cart and clods.
@@ -23,6 +23,7 @@ public partial class VoxelWorld
     {
         long sum = 0;
         for (int i = 0; i < bladeLoad.Length; i++) sum += bladeLoad[i] + shovelLoad[i] + cartLoad[i] + packLoad[i];
+        sum += SoldVoxels;
         int n = cCount[0];
         for (int i = 0; i < n; i++) sum += cCnt[i];
         return sum;
@@ -76,6 +77,7 @@ public partial class VoxelWorld
         WriteBytes(w, top.Reinterpret<byte>(sizeof(ushort)).ToArray());
         WriteBytes(w, grass.ToArray());
         WriteInts(w, bladeLoad); WriteInts(w, shovelLoad); WriteInts(w, cartLoad); WriteInts(w, packLoad);
+        w.Write(SoldVoxels);
 
         int n = cCount[0];
         w.Write(n);
@@ -92,7 +94,7 @@ public partial class VoxelWorld
     public void ReadSave(BinaryReader r)
     {
         int version = r.ReadInt32();
-        if (version != SaveVersion && version != 2) throw new IOException("This save was made by a different version of the game.");
+        if (version < 2 || version > SaveVersion) throw new IOException("This save was made by a different version of the game.");
         if (r.ReadInt32() != NX || r.ReadInt32() != NY || r.ReadInt32() != NZ) throw new IOException("This save is for a different size of site.");
         long solid = r.ReadInt64(), startTotal = r.ReadInt64();
 
@@ -126,6 +128,7 @@ public partial class VoxelWorld
         ReadInts(r, bladeLoad); ReadInts(r, shovelLoad); ReadInts(r, cartLoad);
         for (int i = 0; i < packLoad.Length; i++) packLoad[i] = 0;
         if (version >= 3) ReadInts(r, packLoad);                 // older saves had no backpack: it comes back empty
+        SoldVoxels = version >= 4 ? r.ReadInt32() : 0;
 
         int n = r.ReadInt32();
         if (n > MaxClods) n = MaxClods;
@@ -145,7 +148,7 @@ public partial class VoxelWorld
         for (int i = 0; i < n; i++) inFlight += cCnt[i];
         ClodVoxelsInFlight = inFlight;
         BermVoxels = inFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels;
 
         // redraw what changed, and the grass
         for (int c = 0; c < dirty.Length; c++) if (redraw[c]) dirty[c] |= 1;

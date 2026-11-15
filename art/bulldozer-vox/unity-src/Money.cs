@@ -1,8 +1,8 @@
 // Money: the team's one shared pot of coins.
 //
-// A cart tipped at the dump (the end of the rails, out by the road) pays for what pours out of it:
+// Dirt that goes down the hopper at the dump (the end of the rails, out by the road) is sorted and sold:
 //   1 coin for every 10 litres of soil, clay, rock or quartz, and 50 times that for gold ore.
-// Tipping anywhere else pays nothing.
+// A panel shows what the load was sorted into and what it fetched.  Tipping anywhere else pays nothing.
 //
 // Every change to the pot goes through Pay and Spend here, and nowhere else, so that when multiplayer comes
 // the host can make each change and send it to the other players.
@@ -22,6 +22,8 @@ public class Money : MonoBehaviour
     // the "+87 coins" that pops up while a load is being paid for
     long popCoins, popGold;
     float popTimer;
+    readonly double[] popLitres = new double[16];       // what the load being paid for was sorted into
+    static readonly string[] SortNames = { "", "", "", "", "", "", "Soil", "Clay", "Rock", "Quartz", "Gold" };
 
     void Awake() { Instance = this; }
     void OnDestroy() { if (Instance == this) Instance = null; }
@@ -52,10 +54,12 @@ public class Money : MonoBehaviour
         fraction -= whole;
         Coins += whole;
         Earned += whole;
-        if (popTimer <= 0f) { popCoins = 0; popGold = 0; }
+        if (popTimer <= 0f) { popCoins = 0; popGold = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
+        for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
+            popLitres[m] += voxelsByMaterial[m] * VoxelWorld.VoxelVolume * 1000.0;
         popCoins += whole;
         popGold += (long)System.Math.Round(gold);
-        popTimer = 3f;
+        popTimer = 4f;
         return whole;
     }
 
@@ -77,11 +81,17 @@ public class Money : MonoBehaviour
     {
         var big = new GUIStyle(GUI.skin.box) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
         GUI.Box(new Rect(Screen.width - 230, 10, 220, 40), "Coins: " + Coins.ToString("N0"), big);
-        if (popTimer > 0f && popCoins > 0)
+        if (popTimer > 0f && (popCoins > 0 || popLitres[VoxelWorld.LooseSoil] + popLitres[VoxelWorld.LooseRock] > 0))
         {
             var pop = new GUIStyle(big) { fontSize = 20 };
             pop.normal.textColor = new Color(1f, 0.85f, 0.25f);
             GUI.Box(new Rect(Screen.width - 230, 54, 220, 34), "+" + popCoins.ToString("N0") + (popGold > 0 ? "   (gold +" + popGold.ToString("N0") + ")" : ""), pop);
+            // the hopper's sorting: what the load was, in litres
+            string sorted = "";
+            for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold; m++)
+                if (popLitres[m] >= 0.5) sorted += (sorted.Length > 0 ? "     " : "") + SortNames[m] + " " + popLitres[m].ToString("F0") + " L";
+            var panel = new GUIStyle(GUI.skin.box) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
+            GUI.Box(new Rect(Screen.width / 2 - 330, 104, 660, 58), "Hopper sorted it:\n" + sorted + "     =  +" + popCoins.ToString("N0") + " coins", panel);
         }
     }
 }
