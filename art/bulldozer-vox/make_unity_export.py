@@ -924,6 +924,17 @@ public static class BulldozerBuilder
         if (cPhase == 4)
         {
             if (t - cPhaseStart < 2f) return;                                  // let the last of it land
+            if (cPhase == 4 && cNext >= 0f)
+            {
+                // a close look down into the full cart, in daylight
+                wk.Teleport(cart.transform.position + cart.transform.right * 1.6f - cart.transform.forward * 1.6f, Facing(cart.transform.position - wk.transform.position));
+                wk.Look(38f);
+                cNext = -1f; cPhaseStart = t - 1f;
+                return;
+            }
+            TestCapture("cart_full.png");
+            cLog += " loadShown=" + (cart.transform.Find("Load") != null && cart.transform.Find("Load").gameObject.activeSelf)
+                  + " loadTop=" + (cart.transform.Find("Load").localPosition.y + cart.transform.Find("Load").localScale.y * 0.5f).ToString("F2") + "m";
             cLog += " beforeTip=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L";
             cart.Tip();
             cPhase = 5; cPhaseStart = t;

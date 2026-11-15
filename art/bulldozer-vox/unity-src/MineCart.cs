@@ -108,8 +108,7 @@ public class MineCart : MonoBehaviour
         }
         Box(new Vector3(0f, TubTop + 0.02f, -HalfLength - 0.12f), new Vector3(0.8f, 0.05f, 0.05f), Steel);   // push bar
         Part("Tub");
-        Box(Vector3.zero, new Vector3(HalfWidth * 2f - 0.1f, 1f, HalfLength * 2f - 0.1f), Dirt);
-        dirtLevel = Part("Load");
+        dirtLevel = Part("Load");                                       // its mesh is the heap, built in DrawLoad
 
         // parked just outside the mine entrance
         Along = 0f;
@@ -134,17 +133,69 @@ public class MineCart : MonoBehaviour
         at.y = world.FloorAt(at + Vector3.up * 0.5f);
         dir.y = 0f;
         transform.SetPositionAndRotation(at, Quaternion.LookRotation(dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.forward));
-        float fill = Mathf.Clamp01(world.CartVoxels / (float)capacity);
-        float depth = Mathf.Max(0.02f, fill * (TubTop - FloorHeight - 0.08f));
-        dirtLevel.gameObject.SetActive(world.CartVoxels > 0);
-        dirtLevel.localPosition = new Vector3(0f, FloorHeight + 0.04f + depth * 0.5f, 0f);
-        dirtLevel.localScale = new Vector3(1f, depth, 1f);
+        DrawLoad();
+    }
+
+    // ---- the load: a lumpy heap of rubble in the tub, in the colours of what went in, rising as it fills
+    const int LoadCellsX = 6, LoadCellsZ = 10;
+    int drawnVoxels = -1;
+    float loadTop;                                       // height of the heap's middle above the cart's base
+
+    /// The depth of dirt (averaged over the tub floor) for what the cart holds.
+    float LoadDepth { get { return Mathf.Clamp01(world.CartVoxels / (float)capacity) * (TubTop - FloorHeight - 0.08f); } }
+
+    static float CellNoise(int x, int z, int salt)
+    {
+        uint h = (uint)(x * 73856093) ^ (uint)(z * 19349663) ^ (uint)(salt * 83492791);
+        h ^= h >> 13; h *= 0x5bd1e995; h ^= h >> 15;
+        return (h & 0xffff) / 65535f;
+    }
+
+    void DrawLoad()
+    {
+        int have = world.CartVoxels;
+        if (Mathf.Abs(have - drawnVoxels) < 24 && !(have == 0 && drawnVoxels != 0)) return;   // only when it has changed enough to see
+        drawnVoxels = have;
+        dirtLevel.gameObject.SetActive(have > 0);
+        float depth = LoadDepth;
+        loadTop = FloorHeight + 0.04f + depth * 1.25f;
+        if (have <= 0) return;
+        // which colours: each cell picks a material in proportion to what the cart holds
+        int[] mats = { VoxelWorld.LooseSoil, VoxelWorld.LooseClay, VoxelWorld.LooseRock, VoxelWorld.LooseQuartz, VoxelWorld.LooseGold };
+        float total = 0f;
+        foreach (int m in mats) total += world.CartLoadOf(m);
+        float sx = (HalfWidth * 2f - 0.1f) / LoadCellsX, sz = (HalfLength * 2f - 0.1f) / LoadCellsZ;
+        for (int x = 0; x < LoadCellsX; x++)
+            for (int z = 0; z < LoadCellsZ; z++)
+            {
+                // heaped up in the middle, lower at the sides, with a lump or dip in each cell
+                float u = (x + 0.5f) / LoadCellsX * 2f - 1f, v = (z + 0.5f) / LoadCellsZ * 2f - 1f;
+                float mound = 1.25f - 0.55f * (u * u * 0.8f + v * v);
+                float h = depth * mound + (CellNoise(x, z, 1) - 0.5f) * Mathf.Min(0.12f, depth * 0.8f + 0.03f);
+                h = Mathf.Clamp(h, 0.025f, TubTop - FloorHeight + 0.1f);
+                float pick = CellNoise(x, z, 2) * total, acc = 0f;
+                byte mat = (byte)VoxelWorld.LooseSoil;
+                foreach (int m in mats) { acc += world.CartLoadOf(m); if (pick <= acc && world.CartLoadOf(m) > 0) { mat = (byte)m; break; } }
+                Vector3 c = new Vector3(-HalfWidth + 0.05f + (x + 0.5f) * sx, FloorHeight + 0.04f + h * 0.5f, -HalfLength + 0.05f + (z + 0.5f) * sz);
+                Box(c, new Vector3(sx, h, sz), mat);
+                // the odd clod sitting on top
+                if (CellNoise(x, z, 3) > 0.7f) Box(c + new Vector3((CellNoise(x, z, 4) - 0.5f) * sx * 0.5f, h * 0.5f + 0.04f, (CellNoise(x, z, 5) - 0.5f) * sz * 0.5f), new Vector3(0.09f, 0.08f, 0.1f), mat);
+            }
+        var mesh = dirtLevel.GetComponent<MeshFilter>().sharedMesh;
+        mesh.Clear();
+        mesh.SetVertices(verts); mesh.SetNormals(normals); mesh.SetColors(colours); mesh.SetTriangles(tris, 0);
+        mesh.RecalculateBounds();
+        verts.Clear(); normals.Clear(); colours.Clear(); tris.Clear();
+        dirtLevel.localPosition = Vector3.zero;
+        dirtLevel.localScale = Vector3.one;
     }
 
     void FixedUpdate()
     {
         // whatever loose dirt is inside the tub joins the load
-        world.CartCollect(transform.worldToLocalMatrix, new Vector3(-HalfWidth, FloorHeight, -HalfLength), new Vector3(HalfWidth, TubTop + 0.25f, HalfLength), capacity);
+        // (only once it has dropped in and reached the heap, so you see each shovelful land in the tub)
+        float catchAt = Mathf.Min(TubTop + 0.05f, Mathf.Max(FloorHeight + 0.12f, FloorHeight + 0.04f + LoadDepth * 1.25f + 0.1f));
+        world.CartCollect(transform.worldToLocalMatrix, new Vector3(-HalfWidth, 0.05f, -HalfLength), new Vector3(HalfWidth, catchAt, HalfLength), capacity);   // down to near the rails, so a fast clod cannot drop straight through
         if (tipping)
         {
             // pour out over the left side, a bit at a time

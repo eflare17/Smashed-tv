@@ -30,6 +30,9 @@ public partial class VoxelWorld
     void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); cartLoad = new NativeArray<int>(16, Allocator.Persistent); }
     void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); }
 
+    /// How much of one material the cart holds (voxels), so its load can be drawn in the right colours.
+    public int CartLoadOf(int m) { return m >= 0 && m < cartLoad.Length ? cartLoad[m] : 0; }
+
     /// Loose clods inside the cart's tub (a box in the cart's own space) go into its load, while there is room.
     public void CartCollect(Matrix4x4 worldToCart, Vector3 min, Vector3 max, int capacity)
     {
