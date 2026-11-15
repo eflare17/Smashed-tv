@@ -833,6 +833,37 @@ public static class BulldozerBuilder
         if (dPhase == 5)
         {
             if (t - dPhaseStart < 1.5f) return;
+            // gold: the hopper keeps it in the gold store and pays only for the dirt; the shed buys the gold
+            int store0 = money.GoldStore; long c0 = money.Coins;
+            var load = new int[16]; load[VoxelWorld.LooseSoil] = 400; load[VoxelWorld.LooseGold] = 80;
+            money.Pay(load);
+            dLog += " goldKept=" + (money.GoldStore - store0 == 80) + " dirtPaid=" + (money.Coins - c0) + "(want~" + Money.ValueOf(VoxelWorld.LooseSoil, 400).ToString("F1") + ")";
+            var gm = new System.IO.MemoryStream(); var gw = new System.IO.BinaryWriter(gm); money.WriteState(gw); gw.Flush();
+            int storeHad = money.GoldStore; money.Clear(); gm.Position = 0; money.ReadState(new System.IO.BinaryReader(gm));
+            dLog += " goldAfterLoad=" + (money.GoldStore == storeHad);
+            Vector3 front = SiteProps.GoldShedFront;
+            wk.Teleport(front, Facing(Vector3.right));
+            long worth = money.GoldWorth; c0 = money.Coins;
+            dLog += " atShed=" + wk.AtGoldShed() + " shedAt=(" + front.x.ToString("F1") + "," + front.y.ToString("F2") + "," + front.z.ToString("F1") + ")";
+            wk.PressE();
+            dLog += " goldSoldFor=" + (money.Coins - c0) + "(worth " + worth + ") goldLeft=" + money.GoldStore;
+            wk.PressE();                                                       // nothing left: sells nothing
+            dLog += " secondSellAdded=" + (money.Coins - c0 - worth);
+            // a look at the shed from out by the rails
+            wk.Teleport(front + new Vector3(-6.5f, 0f, -3.5f), Facing(new Vector3(6.5f, 0f, 3.5f)));
+            wk.Look(8f);
+            dPhase = 8; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 8)
+        {
+            if (t - dPhaseStart < 1.5f) return;
+            TestCapture("gold_shed.png");
+            dPhase = 9; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 9)
+        {
             Vector3 sign = SiteProps.DumpSign;
             wk.Teleport(sign + new Vector3(0f, 0f, 0f) - Vector3.up * 2f + (cart.transform.position - sign).normalized * 9f, Facing(sign - cart.transform.position) );
             wk.Look(10f);

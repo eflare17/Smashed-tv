@@ -112,6 +112,7 @@ public class SiteProps : MonoBehaviour
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
         Dump();
         Clutter();
+        GoldShed();                                          // after the crates and logs, so it can keep clear of them
         Trees();
         FarHills();
     }
@@ -258,6 +259,59 @@ public class SiteProps : MonoBehaviour
         Solidify(hop.x, hop.z, 0.9f);
         DumpSign = sign + Vector3.up * (gs + 2.1f);
     }
+
+    /// The gold buyer's shed, east of the mine entrance past the crates: a small timber shed on a plank floor,
+    /// open at the front with a counter (orange band, a few gold nuggets on it), a sloping roof, and a sign board.
+    /// It faces west, towards the rails.
+    void GoldShed()
+    {
+        // On the quarry floor east of the entrance: the first spot, nearest first, that is level with the rails
+        // where they leave the mine, flat across the whole shed, and clear of the crates and log piles.
+        float floorY = Ground(VoxelWorld.PortalX, VoxelWorld.PortalZ - 3f);
+        Vector3 want = new Vector3(VoxelWorld.PortalX + 6f, 0f, VoxelWorld.PortalZ - 5f), at = want;
+        bool found = false;
+        for (float r = 0f; r <= 8f && !found; r += 0.5f)
+            for (int k = 0; k < 16 && !found; k++)
+            {
+                float a = k * Mathf.PI / 8f;
+                Vector3 c = want + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+                if (c.x < VoxelWorld.PortalX + 3.5f) continue;              // keep it off the rails and the entrance
+                float lo = 99f, hi = -99f;
+                for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) { float h = Ground(c.x + i * 1.6f, c.z + j * 1.4f); lo = Mathf.Min(lo, h); hi = Mathf.Max(hi, h); }
+                if (hi - lo > 0.25f || Mathf.Abs(lo - floorY) > 0.3f || Blocks(c, 2.0f)) continue;
+                at = c; found = true;
+            }
+        at.y = Ground(at.x, at.z);
+        var rot = Quaternion.LookRotation(Vector3.left);            // its front faces west
+        Vector3 fw = rot * Vector3.forward, rt = rot * Vector3.right;
+        const float W = 2.6f, D = 2.0f, H = 2.3f;                    // width (across the front), depth, wall height
+        Box(at + Vector3.up * 0.08f, new Vector3(W + 0.3f, 0.16f, D + 0.3f), rot, DarkTimber);                     // floor
+        Box(at - fw * (D * 0.5f) + Vector3.up * (H * 0.5f + 0.16f), new Vector3(W, H, 0.12f), rot, Timber);       // back wall
+        foreach (float sd in new[] { -1f, 1f })
+            Box(at + rt * (sd * W * 0.5f) + Vector3.up * (H * 0.5f + 0.16f), new Vector3(0.12f, H, D), rot, Timber);   // side walls
+        foreach (float sd in new[] { -1f, 1f })                                                                  // front posts
+            Box(at + fw * (D * 0.5f) + rt * (sd * W * 0.5f) + Vector3.up * (H * 0.5f + 0.16f), new Vector3(0.16f, H, 0.16f), rot, DarkTimber);
+        // the roof, sloping down to the back, overhanging the front
+        Quaternion roofTilt = rot * Quaternion.Euler(-12f, 0f, 0f);
+        Box(at + fw * 0.2f + Vector3.up * (H + 0.32f), new Vector3(W + 0.6f, 0.12f, D + 0.9f), roofTilt, DarkTimber);
+        // the counter across the front, with its bright band and a few nuggets on top
+        Box(at + fw * (D * 0.5f - 0.05f) + Vector3.up * 0.62f, new Vector3(W - 0.2f, 0.92f, 0.36f), rot, Timber);
+        Box(at + fw * (D * 0.5f + 0.14f) + Vector3.up * 0.82f, new Vector3(W - 0.3f, 0.14f, 0.04f), rot, HiVis);
+        Box(at + fw * (D * 0.5f) + Vector3.up * 1.12f + rt * -0.5f, new Vector3(0.16f, 0.1f, 0.13f), rot, Gold);
+        Box(at + fw * (D * 0.5f) + Vector3.up * 1.12f + rt * -0.25f, new Vector3(0.11f, 0.08f, 0.1f), rot, Gold);
+        Box(at + fw * (D * 0.5f) + Vector3.up * 1.12f + rt * 0.45f, new Vector3(0.3f, 0.06f, 0.2f), rot, Steel);    // the scales
+        Box(at + fw * (D * 0.5f) + Vector3.up * 1.25f + rt * 0.45f, new Vector3(0.05f, 0.2f, 0.05f), rot, Steel);
+        // the sign board over the front
+        Box(at + fw * (D * 0.5f + 0.15f) + Vector3.up * (H + 0.75f), new Vector3(W - 0.2f, 0.55f, 0.08f), rot, HiVis);
+        Box(at + fw * (D * 0.5f + 0.2f) + Vector3.up * (H + 0.75f), new Vector3(W - 0.7f, 0.14f, 0.04f), rot, Gold);
+        Finish("Gold buyer's shed");
+        Solidify(at.x, at.z, 1.55f);
+        GoldShedFront = at + fw * (D * 0.5f + 0.9f);
+        GoldShedSign = at + fw * (D * 0.5f) + Vector3.up * (H + 1.3f);
+    }
+
+    /// Where you stand to sell gold (in front of the counter), and where its label floats.
+    public static Vector3 GoldShedFront, GoldShedSign;
 
     /// Where the dump's sign is (for the "DUMP" label over it).
     public static Vector3 DumpSign;

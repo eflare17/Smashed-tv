@@ -24,8 +24,12 @@ takes a bit longer. Every upgrade should make a difference you can feel at once.
 
 ## Money and gold
 
-- **Everything pays** when a cart is tipped at the dump: **1 coin per 10 litres** of soil, clay or rock,
-  and **gold about 50 times that**. A full starting cart of dirt is about 100 coins.
+- **The hopper** at the end of the rails: E tips the cart into it, and it sorts the load. Soil, clay,
+  rock and quartz are **sold on the spot**: **1 coin per 10 litres**. A full starting cart of dirt is
+  about 100 coins.
+- **Gold is kept** in the team's **gold store**. The **gold buyer's shed** by the mine entrance buys it
+  (E at the counter sells all of it), at **about 50 times** the price of dirt. Gold you don't sell is
+  what machinery costs.
 - Gold is rare at first (flecks in the quartz seam in the rock), so dirt pays for the early upgrades
   and gold takes over deeper in.
 - **Levels cost money.** **New machinery costs money plus gold**, so the more gold you find, the more

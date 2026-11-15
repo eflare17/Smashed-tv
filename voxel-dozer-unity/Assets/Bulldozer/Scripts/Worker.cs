@@ -612,6 +612,22 @@ public class Worker : MonoBehaviour
         Sucked += took;
     }
 
+    /// Standing at the gold buyer's counter.
+    public bool AtGoldShed()
+    {
+        return !InDozer && SiteProps.GoldShedFront != Vector3.zero
+            && Vector3.Distance(new Vector3(transform.position.x, 0f, transform.position.z), new Vector3(SiteProps.GoldShedFront.x, 0f, SiteProps.GoldShedFront.z)) <= 1.8f;
+    }
+
+    /// E at the counter: the gold buyer takes all your gold for coins.
+    public long SellGold()
+    {
+        var money = Money.Instance;
+        if (money == null) return 0;
+        if (money.GoldStore <= 0) { Say("You have no gold to sell.  Gold you dig out is kept when the hopper sorts it.", 3f); return 0; }
+        return money.SellGold();
+    }
+
     /// T beside the cart: tip it out.  At the dump that gets paid; anywhere else it is just emptied.
     public void TipCart()
     {
@@ -751,6 +767,7 @@ public class Worker : MonoBehaviour
             return;
         }
         if (HoldingCart != 0) { LetGo(); return; }
+        if (AtGoldShed()) { SellGold(); return; }
         if (UsePart() != "none") return;
         if (GrabCart()) return;
         var cart = MineCart.Instance;
@@ -897,7 +914,24 @@ public class Worker : MonoBehaviour
             for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
             if (carrying.Length > 0) GUI.Box(new Rect(10, 132, 540, 24), "Carrying: " + carrying);
         }
-        // a label over the dump's sign, so you can find it
+        // at the gold buyer's counter: what E does here
+        if (AtGoldShed() && Money.Instance != null)
+        {
+            var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            var m = Money.Instance;
+            string what = m.GoldStore > 0 ? "Press E to sell your gold:  " + m.GoldLitres.ToString("F0") + " L for " + m.GoldWorth.ToString("N0") + " coins" : "Gold buyer: you have no gold to sell yet";
+            GUI.Box(new Rect(Screen.width / 2 - 280, Screen.height * 0.62f, 560, 40), what, prompt);
+        }
+        // a label over the gold buyer's shed, and over the dump's sign, so you can find them
+        if (Camera.main != null && SiteProps.GoldShedSign != Vector3.zero)
+        {
+            Vector3 gp = Camera.main.WorldToScreenPoint(SiteProps.GoldShedSign);
+            if (gp.z > 0f && Vector3.Distance(Camera.main.transform.position, SiteProps.GoldShedSign) < 70f)
+            {
+                var tag = new GUIStyle(GUI.skin.box) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                GUI.Box(new Rect(gp.x - 70, Screen.height - gp.y - 14, 140, 28), "GOLD BUYER", tag);
+            }
+        }
         if (Camera.main != null && SiteProps.DumpSign != Vector3.zero)
         {
             Vector3 sp = Camera.main.WorldToScreenPoint(SiteProps.DumpSign);
