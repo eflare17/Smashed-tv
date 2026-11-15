@@ -1,7 +1,7 @@
 // A hand cart on the mine rails.
 //   - It catches whatever is thrown or falls into it, up to its capacity.
-//   - Walk into either end of it and you push it along the track.  It stops at the end of the rails and at
-//     anything solid on the track (the cave-in, say).
+//   - Walk into either end of it and you push it along the track.  It stops at the end of the rails and where
+//     the rubble on the track is as high as its tub (the cave-in face).  Lower spill it rolls over.
 //   - T, standing beside it, tips the load out over its left side.
 // What is in the cart is still counted with the dirt, so volume stays exact.
 using System.Collections.Generic;
@@ -180,12 +180,35 @@ public class MineCart : MonoBehaviour
         if (onEnd && Mathf.Abs(along) > 1e-5f && Mathf.Sign(along) == -Mathf.Sign(local.z))
         {
             float to = Mathf.Clamp(Along + along * spec.pushFactor, HalfLength, length - HalfLength);
-            Vector3 lead, dir;
-            Sample(to + Mathf.Sign(along) * (HalfLength + 0.12f), out lead, out dir);
-            lead.y = transform.position.y + 0.55f;
-            if (world.MaterialAt(lead) == VoxelWorld.Air) Along = to;
+            if (!Blocked(to, Mathf.Sign(along))) Along = to;
         }
         return true;
+    }
+
+    /// Would the cart, standing at `s`, have its leading end in something?  It rolls over low spill on the
+    /// rails and only stops where the rubble is about as high as its tub (0.75 m), right at its end: so it
+    /// goes all the way up to the cave-in face.
+    public bool Blocked(float s, float way)
+    {
+        Vector3 lead, dir;
+        Sample(s + way * (HalfLength + 0.04f), out lead, out dir);
+        Vector3 here, d2;
+        Sample(s, out here, out d2);
+        lead.y = world.FloorAt(here + Vector3.up * 0.5f) + 0.75f;
+        return world.MaterialAt(lead) != VoxelWorld.Air;
+    }
+
+    /// How far the cart could still roll that way before it stops (tests).
+    public float RoomAhead(float way)
+    {
+        float s = Along;
+        for (int i = 0; i < 400; i++)
+        {
+            float next = s + way * 0.02f;
+            if (next < HalfLength || next > length - HalfLength || Blocked(next, way)) break;
+            s = next;
+        }
+        return Mathf.Abs(s - Along);
     }
 
     public Vector3 Mouth { get { return transform.position + Vector3.up * (TubTop - 0.15f); } }

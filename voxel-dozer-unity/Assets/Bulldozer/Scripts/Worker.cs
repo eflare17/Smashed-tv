@@ -118,7 +118,9 @@ public class Worker : MonoBehaviour
     }
 
     // ---------------------------------------------------------------- building him out of boxes
-    const byte HiVis = 16, Navy = 17, Skin = 18, Hat = 19, Boot = 20, Timber = 11, Steel = 13, Dirt = 6;
+    // The tools use their own wood (24) and the finds' steel (23), not the scenery's timber and steel (11, 13):
+    // scenery colours are cut away between the camera and him, which used to make the tools vanish.
+    const byte HiVis = 16, Navy = 17, Skin = 18, Hat = 19, Boot = 20, Timber = 24, Steel = 23, Dirt = 6;
     readonly List<Vector3> verts = new List<Vector3>();
     readonly List<Vector3> normals = new List<Vector3>();
     readonly List<Color32> colours = new List<Color32>();

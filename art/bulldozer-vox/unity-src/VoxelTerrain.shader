@@ -29,7 +29,8 @@ Shader "Voxel/Terrain"
         // 0 air, 1 soil, 2 clay, 3 rock, 4 quartz, 5 gold, 6 loose soil, 7 loose clay, 8 loose rock, 9 loose quartz, 10 loose gold
         // 11 timber, 12 dark timber, 13 steel, 14 gum leaves, 15 gum bark: used by the scenery, not by ground
         // 16 hi-vis shirt, 17 navy, 18 skin, 19 hard hat, 20 boots: the worker.  21 rust, 22 old yellow paint, 23 steel: the finds
-        static const float3 MATS[24] =
+        // 24 tool handle wood: the worker's pick and shovel (its own colour so the see-through cut never hides them)
+        static const float3 MATS[25] =
         {
             float3(1.00, 0.00, 1.00),
             float3(0.74, 0.60, 0.42),
@@ -54,7 +55,8 @@ Shader "Voxel/Terrain"
             float3(0.20, 0.16, 0.13),
             float3(0.46, 0.22, 0.10),
             float3(0.74, 0.58, 0.16),
-            float3(0.50, 0.49, 0.48)
+            float3(0.50, 0.49, 0.48),
+            float3(0.56, 0.38, 0.22)
         };
 
         sampler2D _GrassTex;
@@ -73,7 +75,7 @@ Shader "Voxel/Terrain"
         void surf(Input IN, inout SurfaceOutput o)
         {
             int m = _FixedMat >= 0 ? (int)_FixedMat : (int)round(IN.color.r * 255.0);
-            m = clamp(m, 0, 23);
+            m = clamp(m, 0, 24);
             if (m >= 11 && m <= 15 && _CutRadius > 0.0)
             {
                 // how far this point is from the line between the camera and its subject

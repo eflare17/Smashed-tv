@@ -664,6 +664,7 @@ public static class BulldozerBuilder
     // Prints BULLDOZER_CART_RESULT.
     static int cPhase, cFillSteps;
     static float cPhaseStart, cNext, cAlong0, cLastAlong, cStillFor;
+    static int cThrows0, cScoops0, cCart0;
     static long cVolume0;
     static string cLog;
 
@@ -814,9 +815,37 @@ public static class BulldozerBuilder
             if (t - cPhaseStart < 9f) return;
             Vector3 front = cart.transform.position - cart.transform.forward * 1.05f + Vector3.up * 0.55f;
             cLog += " pushedIn=" + (cAlong0 - cart.Along).ToString("F2") + "m stoppedFor=" + cStillFor.ToString("F1") + "s"
-                  + " stopsAtRubble=" + (w.MaterialAt(front - cart.transform.forward * 0.15f) != VoxelWorld.Air)
-                  + " cartZ=" + cart.transform.position.z.ToString("F1") + " caveInStartsZ=" + (VoxelWorld.PortalZ + 2.6f).ToString("F1");
+                  + " stopsAtRubble=" + cart.Blocked(cart.Along - 0.03f, -1f)
+                  + " cartZ=" + cart.transform.position.z.ToString("F1") + " caveInStartsZ=" + (VoxelWorld.PortalZ + 2.6f).ToString("F1")
+                  + " gapToFace=" + cart.RoomAhead(-1f).ToString("F2") + "m";
             wk.overrideWalk = 0f;
+            // stand beside the cart at the face and dig it with real shovel swings: each load should go in the cart
+            Vector3 inward = -cart.transform.forward;
+            wk.Teleport(cart.transform.position + cart.transform.right * 1.0f + inward * 0.7f, Facing(inward));
+            wk.Look(28f);
+            wk.SetTool(1);
+            cThrows0 = wk.Throws; cScoops0 = wk.Scoops; cCart0 = w.CartVoxels;
+            wk.overrideUse = true;
+            cPhase = 10; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 10)
+        {
+            // swap to the pick now and then, to loosen the face
+            float k = t - cPhaseStart;
+            int want = (k % 4f) < 0.9f ? 0 : 1;
+            if (wk.Tool != want) wk.SetTool(want);
+            if (k < 14f) return;
+            wk.overrideUse = false;
+            cLog += " faceScoops=" + (wk.Scoops - cScoops0) + " faceThrows=" + (wk.Throws - cThrows0)
+                  + " intoCart=" + ((w.CartVoxels - cCart0) * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L"
+                  + " workerAt=" + (wk.transform.position - cart.transform.position).magnitude.ToString("F2") + "m";
+            cPhase = 11; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 11)
+        {
+            if (t - cPhaseStart < 2f) return;
             // now the far end of the line
             cart.SetAlong(cart.EndLimit - 3f);
             StandAtEnd(wk, cart, false);
