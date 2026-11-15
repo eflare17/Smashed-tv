@@ -3,8 +3,9 @@
 //   Mouse            look about (both views).  Esc frees the mouse; click to take it back.
 //   W / S / A / D    walk: forward, back, and step sideways, relative to where you are looking
 //   Tab              switch between the view over his shoulder and the view through his eyes
-//   1 / 2            pick / shovel
-//   Left mouse or Space   use the tool (hold to keep going)
+//   1 / 2 / 3        pick / shovel / backpack nozzle
+//   Left mouse or Space   use the tool (hold to keep going; the nozzle sucks while you hold it)
+//   Q                squirt the backpack's load into the cart (stand near it)
 //   Enter            get into the dozer, or out of it
 //   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer);
 //                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
@@ -14,6 +15,8 @@
 // marker sits on the ground at the spot the tool will hit: yellow when it is in reach, red when it is not.
 //
 // The pick breaks ground into loose rubble.  The shovel digs a load and, used again, throws it.
+// The backpack (on his back all the time) sucks up loose dirt and rubble through its nozzle, up to 500 litres,
+// and squirts it back out into the cart.  It never takes firm ground or rock: those need the pick first.
 // Each use is a real swing: the tool moves through a set of poses, and the dirt comes out of the ground
 // (or leaves the shovel) at the moment in the swing when it should.  The tool is held in front of him in
 // both views, so you see it working through his eyes as well.
@@ -35,6 +38,11 @@ public class Worker : MonoBehaviour
     public int shovelHolds = 480;            // voxels: about 0.12 cubic metres
     public float throwForward = 5.2f;        // metres a second: how hard a shovelful is thrown
     public float throwUp = 2.8f;
+    public int packHolds = 2048;             // voxels: 500 litres, half the hand cart
+    public float suckReach = 1.5f;           // metres out from the nozzle
+    public float suckRate = 260f;            // voxels a second it lifts off the ground (about 63 litres)
+    public float suckSpeed = 7f;             // metres a second the bits fly into the nozzle
+    public float pourRate = 900f;            // voxels a second it squirts out (about 220 litres)
 
     [Header("Driven by script instead of the keyboard (tests and recordings)")]
     public bool useOverride;
@@ -49,11 +57,16 @@ public class Worker : MonoBehaviour
     public int PickHits { get; private set; }
     public int Scoops { get; private set; }
     public int Throws { get; private set; }
+    public int Sucked { get; private set; }              // voxels that have gone into the backpack, all told
+    public bool Pouring { get; private set; }            // squirting the backpack into the cart
 
     VoxelWorld world;
     DozerController dozer;
     FollowCamera cam;
-    Transform model, legL, legR, armL, armR, hold, pick, shovel, shovelDirt, marker;
+    Transform model, legL, legR, armL, armR, hold, pick, shovel, shovelDirt, marker, nozzle, hose;
+    readonly Transform[] hoseBits = new Transform[12];
+    float suckAcc, pourAcc, hintTimer;
+    int pourCartStart, poured;
     Material markerMat;
     float yaw, lookPitch = 14f, stride, sayTimer;
     string say = "";
@@ -99,6 +112,9 @@ public class Worker : MonoBehaviour
     static readonly Pose PickHigh = new Pose(0.24f, -0.02f, -0.12f, -118f, 0f, 0f);      // raised over his head
     static readonly Pose PickStrike = new Pose(0.18f, -0.52f, 0.46f, 44f, 0f, 0f);       // driven into the face
     const float PickRaise = 0.16f, PickBite = 0.25f, PickTime = 0.44f;
+    // the backpack's nozzle: held low in front, two hands; it is then turned to point where you aim
+    static readonly Pose NozzleHold = new Pose(0.2f, -0.42f, 0.2f, 22f, -6f, 0f);
+    static readonly Vector3 NozzleTip = new Vector3(0f, 0f, 0.95f);
 
     Pose CurrentPose()
     {
@@ -118,6 +134,7 @@ public class Worker : MonoBehaviour
                 if (swingT < PickBite) return Pose.Mix(PickHigh, PickStrike, (swingT - PickRaise) / (PickBite - PickRaise));
                 return Pose.Mix(PickStrike, PickCarry, (swingT - PickBite) / (PickTime - PickBite));
         }
+        if (Tool == 2) return NozzleHold;
         return Tool == 0 ? PickCarry : (loaded ? ShovelLoaded : ShovelCarry);
     }
 
@@ -176,6 +193,12 @@ public class Worker : MonoBehaviour
         Box(new Vector3(0f, 1.74f, 0f), new Vector3(0.3f, 0.1f, 0.3f), Hat);
         Box(new Vector3(0f, 1.7f, 0.1f), new Vector3(0.3f, 0.04f, 0.38f), Hat);          // brim
         Part("Body", model, Vector3.zero);
+        // the backpack: a dark tank on his back with a steel cap, and the hose outlet low on its right
+        Box(new Vector3(0f, 1.18f, -0.25f), new Vector3(0.38f, 0.52f, 0.22f), Boot);
+        Box(new Vector3(0f, 1.47f, -0.25f), new Vector3(0.18f, 0.06f, 0.16f), Steel);
+        Box(new Vector3(0f, 1.18f, -0.365f), new Vector3(0.3f, 0.06f, 0.02f), HiVis);    // a bright band round it
+        Box(new Vector3(0.14f, 0.96f, -0.3f), new Vector3(0.09f, 0.09f, 0.09f), Steel);  // outlet
+        Part("Backpack", model, Vector3.zero);
         for (int side = -1; side <= 1; side += 2)
         {
             Box(new Vector3(0f, -0.3f, 0f), new Vector3(0.18f, 0.6f, 0.2f), Navy);
@@ -210,6 +233,22 @@ public class Worker : MonoBehaviour
         shovelDirt = Part("Shovel load", shovel, Vector3.zero);
         shovelDirt.gameObject.SetActive(false);
         shovel.gameObject.SetActive(false);
+        // the nozzle: a steel tube with a grip, and a wider mouth at the end
+        Box(new Vector3(0f, 0f, 0.46f), new Vector3(0.07f, 0.07f, 0.84f), Steel);
+        Box(new Vector3(0f, -0.07f, 0.16f), new Vector3(0.05f, 0.14f, 0.05f), Timber);    // grip
+        Box(new Vector3(0f, 0f, 0.9f), new Vector3(0.17f, 0.12f, 0.1f), Steel);
+        Box(new Vector3(0f, 0f, 0.06f), new Vector3(0.1f, 0.1f, 0.1f), Steel);            // where the hose joins
+        nozzle = Part("Nozzle", hold, Vector3.zero);
+        nozzle.gameObject.SetActive(false);
+        // the hose from the backpack to the nozzle, in short pieces laid along a sagging curve each frame
+        hose = new GameObject("Hose").transform;
+        hose.SetParent(transform, false);
+        for (int i = 0; i < hoseBits.Length; i++)
+        {
+            Box(Vector3.zero, new Vector3(0.05f, 0.05f, 1f), Boot);
+            hoseBits[i] = Part("Hose " + i, hose, Vector3.zero);
+        }
+        hose.gameObject.SetActive(false);
 
         // the aim marker: a small bright block that sits on whatever the tool will hit
         var m = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -281,6 +320,7 @@ public class Worker : MonoBehaviour
         swing = Swing.None;
         pick.gameObject.SetActive(tool == 0);
         shovel.gameObject.SetActive(tool == 1);
+        nozzle.gameObject.SetActive(tool == 2);
     }
 
     public void Say(string text, float seconds = 4f) { say = text; sayTimer = seconds; }
@@ -301,6 +341,7 @@ public class Worker : MonoBehaviour
         bool eyes = r.ReadBoolean(), inDozer = r.ReadBoolean();
         swing = Swing.None;
         LetGo();
+        Pouring = false;
         SetTool(tool);
         if (inDozer)
         {
@@ -376,6 +417,8 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
+            if (Input.GetKeyDown(KeyCode.Alpha3)) SetTool(2);
+            if (Input.GetKeyDown(KeyCode.Q)) StartPour();
             if (Input.GetKeyDown(KeyCode.E)) PressE();
             if (Input.GetKeyDown(KeyCode.T) && MineCart.Instance != null && MineCart.Instance.Near(transform.position, 3f)) MineCart.Instance.Tip();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
@@ -392,6 +435,7 @@ public class Worker : MonoBehaviour
         }
         else yaw += overrideTurn * turnSpeed * dt;
 
+        if (hintTimer > 0f) hintTimer -= dt;
         if (HoldingCart != 0) { PushCart(dt, walk); return; }
 
         // ---- moving: he faces where you look, and walks relative to that
@@ -416,6 +460,17 @@ public class Worker : MonoBehaviour
         if (cam != null) { cam.lookYaw = yaw; cam.lookPitch = lookPitch; }
 
         TakeAim();
+
+        // ---- the backpack: it sucks while you hold the button, and squirts into the cart after Q
+        if (Tool == 2)
+        {
+            if (Pouring) Pour(dt);
+            else if (use) Suck(dt);
+            else suckAcc = 0f;
+            Animate(move.magnitude);
+            return;
+        }
+        Pouring = false;
 
         // ---- the tools: start a swing, then let it run; the work happens part way through it
         if (swing == Swing.None && use)
@@ -518,6 +573,88 @@ public class Worker : MonoBehaviour
         }
     }
 
+    /// Where the nozzle's mouth is now.
+    public Vector3 NozzleMouth { get { return nozzle.TransformPoint(NozzleTip); } }
+
+    void Hint(string text)
+    {
+        if (hintTimer > 0f) return;
+        Say(text, 2.5f);
+        hintTimer = 3f;
+    }
+
+    /// One frame of sucking: loose dirt where you aim lets go and flies into the nozzle, along with any loose
+    /// clods near the line of the nozzle, until the backpack is full.
+    void Suck(float dt)
+    {
+        int room = packHolds - world.PackVoxels;
+        if (room < VoxelWorld.ClodVoxels) { suckAcc = 0f; Hint("The backpack is full.  Stand by the cart and press Q to squirt it in."); return; }
+        Vector3 mouth = NozzleMouth;
+        Vector3 reachTo = aimFound ? aimPoint : mouth + aimDir * suckReach;
+        bool inReach = aimFound && Vector3.Distance(aimPoint, mouth) <= suckReach;
+        if (inReach)
+        {
+            suckAcc += suckRate * dt;
+            int most = Mathf.Min((int)suckAcc, room);
+            if (most >= VoxelWorld.ClodVoxels)
+            {
+                suckAcc -= most;
+                int got = world.SuckLoose(aimPoint + aimDir * 0.05f, 0.3f, most, (mouth - aimPoint).normalized * 3f);
+                if (got == 0 && aimMat < VoxelWorld.LooseSoil) Hint("It only sucks up loose dirt.  Break the ground up with the pick (1) first.");
+            }
+        }
+        else
+        {
+            suckAcc = 0f;
+            if (aimFound) Hint("Too far away for the nozzle.  Get closer.");
+        }
+        int took = world.SuckPull(mouth, reachTo, 0.45f, suckSpeed, dt, room);
+        Sucked += took;
+    }
+
+    /// Q: start squirting the backpack into the cart, if he is near enough to it.
+    public void StartPour()
+    {
+        if (InDozer) return;
+        var cart = MineCart.Instance;
+        if (world.PackVoxels < VoxelWorld.ClodVoxels) { Say("The backpack is empty.", 2f); return; }
+        if (HoldingCart != 0) { Say("Let go of the cart first (E).", 2f); return; }
+        if (cart == null || !cart.Near(transform.position, 3.5f)) { Say("Get closer to the cart to squirt the backpack into it.", 2.5f); return; }
+        if (!cart.HasRoom) { Say("The cart is full.  T tips it out.", 2.5f); return; }
+        SetTool(2);
+        Pouring = true;
+        pourAcc = 0f; poured = 0; pourCartStart = world.CartVoxels;
+        Say("Squirting the backpack into the cart.", 2f);
+    }
+
+    /// One frame of squirting: clods leave the nozzle and are lobbed into the cart's tub, where it catches them.
+    void Pour(float dt)
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || !cart.Near(transform.position, 4f)) { Pouring = false; Say("Moved away from the cart: stopped.", 2f); return; }
+        pourAcc += pourRate * dt;
+        Vector3 from = NozzleMouth;
+        while (pourAcc >= VoxelWorld.ClodVoxels)
+        {
+            if (pourCartStart + poured + VoxelWorld.ClodVoxels > cart.capacity) { Pouring = false; Say("The cart is full.  T tips it out.", 2.5f); return; }
+            pourAcc -= VoxelWorld.ClodVoxels;
+            // somewhere over the middle of the tub, lobbed high enough to clear its rim
+            // (aimed at the tub's floor, so it does not keep drifting on past the far side as it drops in)
+            Vector3 target = cart.Mouth + Vector3.down * 0.45f + cart.transform.right * Random.Range(-0.22f, 0.22f) + cart.transform.forward * Random.Range(-0.4f, 0.4f);
+            Vector3 gap = target - from;
+            float time = Mathf.Clamp(new Vector2(gap.x, gap.z).magnitude / 4f, 0.45f, 0.7f);
+            Vector3 velocity = gap / time + Vector3.up * (0.5f * 9.81f * time);
+            if (!world.PackPour(from, velocity))
+            {
+                world.PackCrumbsToCart(cart.capacity);
+                Pouring = false;
+                Say("The backpack is empty.", 2f);
+                return;
+            }
+            poured += VoxelWorld.ClodVoxels;
+        }
+    }
+
     void Animate(float speed)
     {
         // where the tool is held: his chest from behind, his eyes in the eyes view; either way it tips with where he looks
@@ -533,9 +670,20 @@ public class Worker : MonoBehaviour
             hold.localPosition = new Vector3(0f, 1.42f, 0.02f);
             hold.localRotation = Quaternion.Euler((lookPitch - 14f) * 0.5f, 0f, 0f);
         }
-        Transform tool = Tool == 0 ? pick : shovel;
+        Transform tool = Tool == 0 ? pick : Tool == 1 ? shovel : nozzle;
         tool.localPosition = p.at;
         tool.localRotation = Quaternion.Euler(p.turn);
+        if (Tool == 2)
+        {
+            // the nozzle points at what you aim at (or into the cart while it squirts), and shakes a little while it works
+            var cart = MineCart.Instance;
+            Vector3 target = Pouring && cart != null ? cart.Mouth : aimFound ? aimPoint : tool.position + aimDir * 2f;
+            Vector3 look = target - tool.position;
+            if (look.sqrMagnitude > 0.01f) tool.rotation = Quaternion.LookRotation(look, Vector3.up);
+            bool working = Pouring || (useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space)));
+            if (working) tool.localPosition += new Vector3(Mathf.Sin(Time.time * 71f), Mathf.Sin(Time.time * 53f), 0f) * 0.004f;
+        }
+        LayHose();
         if (shovelDirt != null) shovelDirt.gameObject.SetActive(Tool == 1 && world.ShovelVoxels >= VoxelWorld.ClodVoxels);
 
         if (model == null || Eyes) return;
@@ -548,6 +696,30 @@ public class Worker : MonoBehaviour
         // both hands on the handle: right hand low near the head of the tool, left hand at the top
         Reach(armR, tool.TransformPoint(new Vector3(0f, 0f, 0.56f)));
         Reach(armL, tool.TransformPoint(new Vector3(0f, 0f, 0.06f)));
+    }
+
+    /// Lays the hose from the backpack's outlet to the back of the nozzle, sagging a little in between.
+    void LayHose()
+    {
+        bool show = Tool == 2 && !Eyes && !InDozer && HoldingCart == 0 && model != null && model.gameObject.activeSelf;
+        if (hose.gameObject.activeSelf != show) hose.gameObject.SetActive(show);
+        if (!show) return;
+        Vector3 a = model.TransformPoint(new Vector3(0.14f, 0.96f, -0.3f)), b = nozzle.TransformPoint(new Vector3(0f, 0f, 0.02f));
+        Vector3 c = (a + b) * 0.5f + Vector3.down * 0.35f + transform.right * 0.12f;
+        Vector3 last = a;
+        for (int i = 0; i < hoseBits.Length; i++)
+        {
+            float t = (i + 1f) / hoseBits.Length;
+            Vector3 next = (1f - t) * (1f - t) * a + 2f * (1f - t) * t * c + t * t * b;
+            Vector3 d = next - last;
+            float len = d.magnitude;
+            if (len > 1e-4f)
+            {
+                hoseBits[i].SetPositionAndRotation((last + next) * 0.5f, Quaternion.LookRotation(d / len, Vector3.up));
+                hoseBits[i].localScale = new Vector3(1f, 1f, len + 0.02f);
+            }
+            last = next;
+        }
     }
 
     /// Points an arm (which hangs straight down from its shoulder) at a spot.
@@ -660,19 +832,24 @@ public class Worker : MonoBehaviour
             GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height - 110, 660, 44), say, style);
         }
         if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), "Enter   get out"); return; }
-        string tool = Tool == 0 ? "PICK" : "SHOVEL";
+        string tool = Tool == 0 ? "PICK" : Tool == 1 ? "SHOVEL" : "BACKPACK";
         string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
         string text =
             "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
-            "1   pick        2   shovel        Left mouse or Space   use it where you aim (hold)\n" +
+            "1   pick     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
             "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
             "Tool: " + tool + load;
         GUI.Box(new Rect(10, 10, 540, 86), text);
+        // the backpack gauge, always: a bar that fills, and the litres
+        float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
+        GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\nQ by the cart squirts it in");
+        GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
+        GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))
         {
             float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + (HoldingCart != 0 ? "W push   S pull back   E let go   T tip" : "Shovelfuls go in it.   E at an end holds it.   T tips it."));
+            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + (HoldingCart != 0 ? "W push   S pull back   E let go   T tip" : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it."));
         }
         // close enough to climb in: say so, in the middle of the screen where it can't be missed
         if (NearDozer())

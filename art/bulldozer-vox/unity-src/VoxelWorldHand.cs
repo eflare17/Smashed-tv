@@ -6,7 +6,9 @@
 //   - the shovel takes loose dirt (and a little firm soil) onto its load, and takes loose clods lying there;
 //   - anything loose that was resting on what got removed lets go and falls as clods;
 //   - a throw turns the shovel's load back into clods, in the air.
-// Volume is conserved through all of it: what is on the shovel is counted with the dirt in motion.
+//   - the backpack sucks up loose dirt: it lets go of the ground as clods that fly into the nozzle, and
+//     squirts its load back out as clods (into the cart).
+// Volume is conserved through all of it: what is on the shovel or in the backpack is counted with the dirt in motion.
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -17,7 +19,8 @@ public partial class VoxelWorld
 {
     public int ShovelVoxels { get; private set; }           // what the shovel is holding
     public int CartVoxels { get; private set; }             // what the mine cart is holding
-    NativeArray<int> shovelLoad, cartLoad;                   // per material
+    public int PackVoxels { get; private set; }             // what the worker's backpack is holding
+    NativeArray<int> shovelLoad, cartLoad, packLoad;         // per material
 
     // the blade as a solid plate for the clods, and where loose dirt is being smoothed; set by whoever is working
     Matrix4x4 plateToWorld = Matrix4x4.identity;
@@ -27,11 +30,97 @@ public partial class VoxelWorld
 
     public void SetBlade(Matrix4x4 bladeToWorld, Vector3 min, Vector3 max) { plateToWorld = bladeToWorld; plateMin = min; plateMax = max; havePlate = true; }
 
-    void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); cartLoad = new NativeArray<int>(16, Allocator.Persistent); }
-    void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); }
+    void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); cartLoad = new NativeArray<int>(16, Allocator.Persistent); packLoad = new NativeArray<int>(16, Allocator.Persistent); }
+    void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); if (packLoad.IsCreated) packLoad.Dispose(); }
 
     /// How much of one material the cart holds (voxels), so its load can be drawn in the right colours.
     public int CartLoadOf(int m) { return m >= 0 && m < cartLoad.Length ? cartLoad[m] : 0; }
+    public int PackLoadOf(int m) { return m >= 0 && m < packLoad.Length ? packLoad[m] : 0; }
+
+    /// The backpack's nozzle at work on the ground: loose dirt in a ball at `at` (never firm ground or rock)
+    /// lets go as clods, flying off with `kick`, at most `most` voxels of it.  SuckPull then draws them in.
+    /// Returns how many voxels came loose.
+    public int SuckLoose(Vector3 at, float radius, int most, Vector3 kick)
+    {
+        if (most <= 0) return 0;
+        var result = new NativeArray<int>(2, Allocator.TempJob);
+        new HandJob
+        {
+            vox = vox, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
+            centre = (at - origin) / Voxel, radius = radius / Voxel, kick = kick, origin = origin, seed = frame, mode = 2, most = most,
+            cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
+        }.Run();
+        int outOfGround = result[0];
+        result.Dispose();
+        SolidCount -= outOfGround;
+        Recount();
+        return outOfGround;
+    }
+
+    /// The suction: clods near the line from the nozzle out to `aim` (and just past it) are drawn to the
+    /// nozzle at `speed`; those that reach it go into the backpack while it has room (`room` voxels).
+    /// When it is full nothing more is drawn in.  Returns how many voxels went in.
+    public int SuckPull(Vector3 nozzle, Vector3 aim, float width, float speed, float dt, int room)
+    {
+        int n = cCount[0], took = 0;
+        if (n == 0 || room < ClodVoxels) return 0;
+        float3 a = nozzle, seg = (float3)aim - a;
+        float segLen2 = math.max(math.lengthsq(seg), 1e-6f);
+        float step = speed * dt;
+        for (int i = n - 1; i >= 0; i--)
+        {
+            float3 p = cPos[i];
+            float k = math.clamp(math.dot(p - a, seg) / segLen2, 0f, 1.15f);
+            float3 near = a + seg * k;
+            if (math.distancesq(p, near) > width * width) continue;
+            float3 toNozzle = a - p;
+            float d = math.length(toNozzle);
+            if (d < 0.16f)
+            {
+                if (took + cCnt[i] > room) continue;                 // full: it stays where it is and drops
+                packLoad[cMat[i]] += cCnt[i];
+                took += cCnt[i];
+                n--;
+                cPos[i] = cPos[n]; cVel[i] = cVel[n]; cRot[i] = cRot[n]; cMat[i] = cMat[n]; cCnt[i] = cCnt[n]; cRest[i] = cRest[n]; cAge[i] = cAge[n];
+                continue;
+            }
+            float3 dir = toNozzle / d;
+            cPos[i] = p + dir * math.min(step, d - 0.1f);
+            cVel[i] = dir * speed + new float3(0f, 9.81f * Time.fixedDeltaTime, 0f);   // gravity is cancelled while it is being sucked
+            cRest[i] = 0f;
+            cAge[i] = -0.15f;                                         // flying: it does not jostle the other clods
+        }
+        cCount[0] = n;
+        if (took > 0) Recount();
+        return took;
+    }
+
+    /// One clod's worth squirts out of the backpack at `at` with `velocity`.  False when the backpack has
+    /// less than a clod of anything left (or no clod can be made).
+    public bool PackPour(Vector3 at, Vector3 velocity)
+    {
+        for (int m = LooseSoil; m <= LooseGold; m++)
+        {
+            if (packLoad[m] < ClodVoxels || cCount[0] >= MaxClods) continue;
+            packLoad[m] -= ClodVoxels;
+            int n = cCount[0]++;
+            cPos[n] = at; cVel[n] = velocity; cRot[n] = quaternion.identity;
+            cMat[n] = (byte)m; cCnt[n] = ClodVoxels; cRest[n] = 0f; cAge[n] = -0.4f;
+            Recount();
+            return true;
+        }
+        return false;
+    }
+
+    /// The last crumbs in the backpack (less than a clod of each material) go straight into the cart, if it has room.
+    public void PackCrumbsToCart(int capacity)
+    {
+        int crumbs = 0;
+        for (int m = LooseSoil; m <= LooseGold; m++) crumbs += packLoad[m];
+        if (crumbs == 0 || CartVoxels + crumbs > capacity) return;
+        for (int m = LooseSoil; m <= LooseGold; m++) { cartLoad[m] += packLoad[m]; packLoad[m] = 0; }
+        Recount();
+    }
 
     /// Loose clods inside the cart's tub (a box in the cart's own space) go into its load, while there is room.
     public void CartCollect(Matrix4x4 worldToCart, Vector3 min, Vector3 max, int capacity)
@@ -129,13 +218,15 @@ public partial class VoxelWorld
 
     void Recount()
     {
-        int carried = 0, onShovel = 0, inCart = 0;
+        int carried = 0, onShovel = 0, inCart = 0, inPack = 0;
         for (int i = 0; i < bladeLoad.Length; i++) carried += bladeLoad[i];
         for (int i = 0; i < shovelLoad.Length; i++) onShovel += shovelLoad[i];
         for (int i = 0; i < cartLoad.Length; i++) inCart += cartLoad[i];
+        for (int i = 0; i < packLoad.Length; i++) inPack += packLoad[i];
         carriedOnBlade = carried;
         ShovelVoxels = onShovel;
         CartVoxels = inCart;
+        PackVoxels = inPack;
         ClodCount = cCount[0];
     }
 
@@ -203,7 +294,7 @@ public partial class VoxelWorld
         return thrown;
     }
 
-    /// mode 0 = pick, mode 1 = shovel.
+    /// mode 0 = pick, mode 1 = shovel, mode 2 = the backpack's nozzle (loose dirt only, `most` at a time, as clods).
     [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
     struct HandJob : IJob
     {
@@ -253,8 +344,9 @@ public partial class VoxelWorld
                         byte m = vox[y + NY * col];
                         if (m == Air) continue;
                         bool hard = m >= Rock && m <= Gold;
-                        if (mode == 0)
+                        if (mode != 1)
                         {
+                            if (mode == 2 && (m < LooseSoil || outOfGround >= most)) continue;   // the nozzle only lifts loose dirt
                             if (hard && d2 > radius * radius * 0.42f) continue;      // rock only breaks near the point of the pick
                             vox[y + NY * col] = Air;
                             Mark(ref dirty, x, y, z);

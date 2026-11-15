@@ -548,6 +548,159 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
+    // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
+    // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
+    // Volume must not change.  Prints BULLDOZER_PACK_RESULT.
+    static int bPhase, bAimStep, bMaxPack, bPackSaved, bCart0;
+    static float bPhaseStart, bNext;
+    static long bVolume0;
+    static string bLog;
+    static Vector3 bStand, bSide, bPatch;
+
+    public static void BackpackTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bPhase = 0; bLog = ""; bMaxPack = 0;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BackpackTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void BackpackFinish(int code)
+    {
+        EditorApplication.update -= BackpackTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    /// Turns him (standing at bStand) to aim at a spot on the ground.
+    static void AimAt(Worker wk, Vector3 target)
+    {
+        Vector3 eye = bStand + Vector3.up * 1.6f, d = target - eye;
+        Vector3 flat = new Vector3(d.x, 0f, d.z);
+        wk.Teleport(bStand, Facing(flat));
+        wk.Look(Mathf.Atan2(-d.y, flat.magnitude) * Mathf.Rad2Deg);
+    }
+
+    static float Litres(int voxels) { return voxels * VoxelWorld.VoxelVolume * 1000f; }
+
+    static void BackpackTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_PACK_FAILED timed out in phase " + bPhase + " " + bLog); BackpackFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance;
+        if (w == null || wk == null || cart == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (w.PackVoxels > bMaxPack) bMaxPack = w.PackVoxels;
+        if (bPhase == 0)
+        {
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            bSide = cart.transform.right; bSide.y = 0f; bSide.Normalize();
+            bStand = cart.transform.position + bSide * 1.5f;
+            bPatch = cart.transform.position + bSide * 2.8f;
+            bVolume0 = w.CountSolid() + w.LoadVoxels;
+            wk.SetTool(2);
+            AimAt(wk, new Vector3(bPatch.x, w.FloorAt(bPatch + Vector3.up), bPatch.z));
+            wk.overrideUse = true;                               // suck at firm ground: nothing should come
+            bPhase = 1; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 1)
+        {
+            if (t - bPhaseStart < 2.5f) return;
+            wk.overrideUse = false;
+            bLog += "firmGroundTaken=" + w.PackVoxels + "voxels";
+            // break a patch of ground loose with the pick, as he would, and let it settle into loose rubble
+            for (int i = 0; i < 12; i++)
+            {
+                Vector3 at = bPatch + cart.transform.forward * (-0.8f + (i % 3) * 0.8f) + bSide * (((i / 3) % 2) * 0.6f);
+                at.y = w.FloorAt(at + Vector3.up) + (i < 6 ? 0.05f : -0.3f);
+                w.Pick(at, 0.42f, Vector3.up * 0.3f);
+            }
+            bPhase = 2; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 2)
+        {
+            if (t - bPhaseStart < 5f) return;
+            bLog += " looseMade=" + (w.ClodCount) + "clodsStillMoving";
+            wk.overrideUse = true;
+            bAimStep = 0; bNext = t;
+            bPhase = 3; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 3)
+        {
+            // sweep the nozzle over the loose patch until the backpack is full
+            if (t >= bNext)
+            {
+                bNext = t + 0.6f;
+                Vector3 at = bPatch + cart.transform.forward * (-0.9f + (bAimStep % 4) * 0.6f) + bSide * (((bAimStep / 4) % 3) * 0.35f);
+                at.y = w.FloorAt(at + Vector3.up);
+                AimAt(wk, at);
+                bAimStep++;
+            }
+            if (t - bPhaseStart > 3f && bLog.IndexOf("suckPic") < 0) { TestCapture("backpack_suck.png"); bLog += " suckPic"; }
+            bool full = w.PackVoxels >= wk.packHolds - VoxelWorld.ClodVoxels;
+            if (!full && t - bPhaseStart < 25f) return;
+            wk.overrideUse = false;
+            bLog += " packFull=" + full + " packLitres=" + Litres(w.PackVoxels).ToString("F0") + " suckTook=" + (t - bPhaseStart).ToString("F1") + "s"
+                  + " sucked=" + Litres(wk.Sucked).ToString("F0") + "L";
+            // keep sucking a while longer: nothing more may go in
+            wk.overrideUse = true;
+            bPhase = 4; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 4)
+        {
+            if (t - bPhaseStart < 2f) return;
+            wk.overrideUse = false;
+            bLog += " maxPack=" + bMaxPack + "/" + wk.packHolds + " neverOver=" + (bMaxPack <= wk.packHolds);
+            // save and load: the backpack's load must come back
+            bPackSaved = w.PackVoxels;
+            var ms = new System.IO.MemoryStream();
+            var bw = new System.IO.BinaryWriter(ms);
+            w.WriteSave(bw); bw.Flush();
+            ms.Position = 0;
+            w.ReadSave(new System.IO.BinaryReader(ms));
+            bLog += " packAfterLoad=" + (w.PackVoxels == bPackSaved);
+            // to the cart, and Q
+            bCart0 = w.CartVoxels;
+            AimAt(wk, cart.Mouth);
+            wk.StartPour();
+            bLog += " pourStarted=" + wk.Pouring;
+            bPhase = 5; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 5)
+        {
+            if (t - bPhaseStart > 0.8f && bLog.IndexOf("pourPic") < 0) { TestCapture("backpack_pour.png"); bLog += " pourPic"; }
+            if (wk.Pouring && t - bPhaseStart < 15f) return;
+            bLog += " pourTook=" + (t - bPhaseStart).ToString("F1") + "s";
+            bPhase = 6; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 6)
+        {
+            if (t - bPhaseStart < 3f) return;                       // let the last of it land in the tub
+            bLog += " packLeft=" + Litres(w.PackVoxels).ToString("F0") + "L intoCart=" + Litres(w.CartVoxels - bCart0).ToString("F0") + "L of " + Litres(bPackSaved).ToString("F0") + "L"
+                  + " missedCart=" + Litres(bPackSaved - (w.CartVoxels - bCart0) - w.PackVoxels).ToString("F0") + "L";
+            bPhase = 7; bPhaseStart = t;
+            return;
+        }
+        if (bPhase == 7)
+        {
+            if (t - bPhaseStart < 7f) return;
+            bLog += " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - bVolume0);
+            Debug.Log("BULLDOZER_PACK_RESULT " + bLog);
+            BackpackFinish(0);
+        }
+    }
+
     // Save and load:  -executeMethod BulldozerBuilder.SaveTest
     // Digs, saves, digs more and changes things, loads, and checks everything came back exactly as saved.
     // Prints BULLDOZER_SAVE_RESULT.
