@@ -90,14 +90,42 @@ public partial class VoxelWorld
     {
         Tic();
         var result = new NativeArray<int>(2, Allocator.TempJob);
-        new DirtStepJob
+        // The small steps run on all the CPU's cores: each clod works out its own push from its neighbours, so
+        // no two workers ever write to the same clod.  Then one job lets clods that have come to rest turn back
+        // into ground (that part writes the ground, so it stays on one core).
+        int n = cCount[0];
+        JobHandle h = default;
+        if (n > 0)
+        {
+            int subs = n > 6000 ? DirtSub - 1 : DirtSub;              // a very big heap gets coarser steps to keep the game smooth
+            int passes = n > 7000 ? DirtIter - 1 : DirtIter;
+            float sdt = dt / subs;
+            float4x4 b2w = bladeToWorld, w2b = bladeToWorld.inverse;
+            for (int sub = 0; sub < subs; sub++)
+            {
+                h = new ClodMoveJob { pos = cPos, vel = cVel, prev = cPrev, contacts = cContacts, ground = cGround, origin = origin, sdt = sdt }.Schedule(n, 256, h);
+                h = new ClodGridJob { pos = cPos, cellStart = cellStart, cellFill = cellFill, sorted = cSorted, n = n }.Schedule(h);
+                for (int it = 0; it < passes; it++)
+                {
+                    h = new ClodPushJob { pos = cPos, age = cAge, cellStart = cellStart, sorted = cSorted, delta = cDelta, contacts = cContacts }.Schedule(n, 128, h);
+                    h = new ClodSolveJob
+                    {
+                        vox = vox, top = top, pos = cPos, prev = cPrev, delta = cDelta, age = cAge, contacts = cContacts, ground = cGround,
+                        bladeToWorld = b2w, worldToBlade = w2b, plateMin = plateMin, plateMax = plateMax, hasBlade = hasBlade,
+                        bladeMoving = plateMoving, origin = origin,
+                    }.Schedule(n, 256, h);
+                }
+                h = new ClodSpeedJob { pos = cPos, prev = cPrev, vel = cVel, age = cAge, contacts = cContacts, ground = cGround, sdt = sdt, passes = passes }.Schedule(n, 256, h);
+            }
+        }
+        h = new DirtStepJob
         {
             vox = vox, top = top, dirty = dirty, grass = grass,
-            pos = cPos, vel = cVel, prev = cPrev, delta = cDelta, rot = cRot, mat = cMat, cnt = cCnt, ground = cGround,
-            rest = cRest, age = cAge, contacts = cContacts, count = cCount, cellStart = cellStart, cellFill = cellFill, sorted = cSorted,
-            bladeToWorld = bladeToWorld, worldToBlade = bladeToWorld.inverse, plateMin = plateMin, plateMax = plateMax,
-            hasBlade = hasBlade, origin = origin, dt = dt, result = result, seed = frame,
-        }.Run();
+            pos = cPos, vel = cVel, rot = cRot, mat = cMat, cnt = cCnt, ground = cGround,
+            rest = cRest, age = cAge, contacts = cContacts, count = cCount,
+            origin = origin, dt = dt, result = result, seed = frame,
+        }.Schedule(h);
+        h.Complete();
         SolidCount += result[0];
         ClodVoxelsInFlight = result[1];
         ClodCount = cCount[0];
@@ -191,6 +219,204 @@ public partial class VoxelWorld
         }
     }
 
+    // ---- the clods' small steps, each spread over the CPU's cores
+    const int DirtSub = 3;                                   // small steps keep a pushed heap from squashing
+    const int DirtIter = 3;
+    const float WallStep = 0.2f;                             // a rise taller than this is a wall, not a bump
+    const float GroundFriction = 0.72f;                      // sideways speed kept each small step while on the ground
+    const float ClodFriction = 0.93f;                        // and while rubbing against other clods
+    const float StickSpeed = 0.11f;                          // slower than this while held up, and it stays put (this sets how steep a heap stands)
+    const float MaxSpeed = 4.2f;                             // metres a second (the dozer does 3)
+    const float MaxRise = 1.2f;
+    const int DirtLo = Rim + 6;
+
+    static int CellKey(int3 c) { return (int)(math.hash(c) & (HashSize - 1)); }
+
+    /// The voxel layer a clod at p would come to rest on: the top of the first solid ground at or below it.
+    /// Under open sky that is just the column's top.  Under a roof (in the mine) it looks down from the clod.
+    static int FloorIndexOf(NativeArray<byte> vox, NativeArray<ushort> top, float3 origin, float3 p)
+    {
+        int ix = (int)math.floor((p.x - origin.x) / Voxel), iz = (int)math.floor((p.z - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return Ground;
+        int col = ix + NX * iz;
+        int t = top[col];
+        int y = (int)math.floor((p.y - origin.y) / Voxel) + 1;
+        if (y >= t) return t;
+        if (y < 1) y = 1;
+        if (vox[y + NY * col] != Air)
+        {
+            for (int k = 0; k < 10 && y < NY - 1 && vox[y + NY * col] != Air; k++) y++;   // inside the ground: up to free space
+            return y;
+        }
+        while (y > 0 && vox[y - 1 + NY * col] == Air) y--;
+        return y;
+    }
+
+
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct ClodMoveJob : IJobParallelFor
+    {
+        public NativeArray<float3> pos, vel, prev;
+        public NativeArray<int> contacts;
+        public NativeArray<byte> ground;
+        public float3 origin;
+        public float sdt;
+        public void Execute(int i)
+        {
+            float xMin = origin.x + DirtLo * Voxel, xMax = origin.x + (NX - DirtLo) * Voxel;
+            float zMin = origin.z + DirtLo * Voxel, zMax = origin.z + (NZ - DirtLo) * Voxel;
+            prev[i] = pos[i];
+            float3 v = vel[i];
+            v.y -= 9.81f * sdt;
+            float3 p = pos[i] + v * sdt;
+            p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);   // clods stay on the work site
+            pos[i] = p;
+            contacts[i] = 0; ground[i] = 0;
+        }
+    }
+
+    /// Sorts the clods into a grid so each only looks at its neighbours.
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct ClodGridJob : IJob
+    {
+        [ReadOnly] public NativeArray<float3> pos;
+        public NativeArray<int> cellStart, cellFill, sorted;
+        public int n;
+        public unsafe void Execute()
+        {
+            float inv = 1f / (2f * ClodRadius);
+            Unity.Collections.LowLevel.Unsafe.UnsafeUtility.MemClear(
+                Unity.Collections.LowLevel.Unsafe.NativeArrayUnsafeUtility.GetUnsafePtr(cellStart), (long)cellStart.Length * 4);
+            for (int i = 0; i < n; i++) cellStart[CellKey((int3)math.floor(pos[i] * inv)) + 1]++;
+            for (int k = 0; k < HashSize; k++) { cellStart[k + 1] += cellStart[k]; cellFill[k] = cellStart[k]; }
+            for (int i = 0; i < n; i++) sorted[cellFill[CellKey((int3)math.floor(pos[i] * inv))]++] = i;
+        }
+    }
+
+    /// Clods push each other apart: each clod adds up its own share of the push from every clod it overlaps.
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct ClodPushJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<float3> pos;
+        [ReadOnly] public NativeArray<float> age;
+        [ReadOnly] public NativeArray<int> cellStart, sorted;
+        public NativeArray<float3> delta;
+        public NativeArray<int> contacts;
+        public void Execute(int i)
+        {
+            const float R = ClodRadius;
+            float inv = 1f / (2f * R);
+            float3 p = pos[i], push = float3.zero;
+            int touching = 0;
+            if (age[i] >= 0f)                                        // a thrown load flies as a bunch: its clods don't shove each other apart in the air
+            {
+                int3 c = (int3)math.floor(p * inv);
+                int budget = 28;                                     // touching neighbours handled per clod per pass
+                for (int dz = -1; dz <= 1 && budget > 0; dz++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int key = CellKey(c + new int3(dx, dy, dz));
+                            for (int a = cellStart[key]; a < cellStart[key + 1]; a++)
+                            {
+                                int j = sorted[a];
+                                if (j == i || age[j] < 0f) continue;
+                                float3 d = pos[j] - p;
+                                float d2 = math.lengthsq(d);
+                                if (d2 >= 4f * R * R || d2 < 1e-10f) continue;
+                                float dist = math.sqrt(d2);
+                                push -= d / dist * ((2f * R - dist) * 0.5f);
+                                touching++;
+                                if (--budget <= 0) break;
+                            }
+                        }
+            }
+            delta[i] = push;
+            contacts[i] = contacts[i] + touching;
+        }
+    }
+
+    /// Each clod takes its push, is shoved out of the blade, and rests on the ground (a tall rise is a wall).
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct ClodSolveJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<ushort> top;
+        [ReadOnly] public NativeArray<float3> prev, delta;
+        public NativeArray<float3> pos;
+        public NativeArray<float> age;
+        public NativeArray<int> contacts;
+        public NativeArray<byte> ground;
+        public float4x4 bladeToWorld, worldToBlade;
+        public float3 plateMin, plateMax, origin;
+        public bool hasBlade, bladeMoving;
+        public void Execute(int i)
+        {
+            const float R = ClodRadius;
+            float xMin = origin.x + DirtLo * Voxel, xMax = origin.x + (NX - DirtLo) * Voxel;
+            float zMin = origin.z + DirtLo * Voxel, zMax = origin.z + (NZ - DirtLo) * Voxel;
+            float3 p = pos[i] + delta[i] * 0.7f;
+            // the blade is a solid plate: anything inside it is shoved out of its front face
+            if (hasBlade)
+            {
+                float3 l = math.transform(worldToBlade, p);
+                if (l.x > plateMin.x - R && l.x < plateMax.x + R && l.y > plateMin.y - R && l.y < plateMax.y + R
+                    && l.z > plateMin.z - R && l.z < plateMax.z + R)
+                {
+                    l.z = plateMax.z + R;
+                    p = math.transform(bladeToWorld, l);
+                    contacts[i] = contacts[i] + 1;
+                    if (bladeMoving) age[i] = 0f;                    // touched by a moving blade: live again (a still one lets it settle)
+                }
+            }
+            // the ground: rest on it, and treat a tall rise as a wall
+            p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);
+            float h = origin.y + FloorIndexOf(vox, top, origin, p) * Voxel;
+            if (p.y - R < h)
+            {
+                if (h + R - p.y > WallStep)
+                {
+                    float hp = origin.y + FloorIndexOf(vox, top, origin, new float3(prev[i].x, p.y, prev[i].z)) * Voxel;
+                    if (hp < h) { p.x = prev[i].x; p.z = prev[i].z; h = hp; }
+                }
+                if (p.y - R < h) { p.y = h + R; ground[i] = 1; }
+            }
+            pos[i] = p;
+        }
+    }
+
+    /// Speeds from how far each clod actually got, then friction.
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct ClodSpeedJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<float3> prev;
+        [ReadOnly] public NativeArray<float> age;
+        [ReadOnly] public NativeArray<int> contacts;
+        [ReadOnly] public NativeArray<byte> ground;
+        public NativeArray<float3> pos, vel;
+        public float sdt;
+        public int passes;
+        public void Execute(int i)
+        {
+            float3 v = (pos[i] - prev[i]) / sdt;
+            // Being shoved out of the blade or out of another clod moves a clod, but must not fling it:
+            // nothing here goes faster than a brisk shove, and nothing is thrown upwards.
+            bool thrown = age[i] < 0f;                                  // just thrown from a shovel
+            float sp = math.length(v), most = thrown ? 11f : MaxSpeed;
+            if (sp > most) v *= most / sp;
+            if (v.y > (thrown ? 6f : MaxRise)) v.y = thrown ? 6f : MaxRise;
+            bool held = ground[i] != 0 || contacts[i] >= 2 * passes;
+            if (ground[i] != 0) { v.x *= GroundFriction; v.z *= GroundFriction; }
+            else if (contacts[i] > 0) { v *= ClodFriction; }
+            if (held && math.lengthsq(v) < StickSpeed * StickSpeed)
+            {
+                v = float3.zero;
+                pos[i] = new float3(prev[i].x, pos[i].y, prev[i].z);
+            }
+            vel[i] = v;
+        }
+    }
+
     [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
     struct DirtStepJob : IJob
     {
@@ -198,59 +424,21 @@ public partial class VoxelWorld
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<byte> grass;
-        public NativeArray<float3> pos, vel, prev, delta;
+        public NativeArray<float3> pos, vel;
         public NativeArray<quaternion> rot;
         public NativeArray<byte> mat, cnt, ground;
         public NativeArray<float> rest, age;
-        public NativeArray<int> contacts, count, cellStart, cellFill, sorted, result;
-        public float4x4 bladeToWorld, worldToBlade;
-        public float3 plateMin, plateMax, origin;
-        public bool hasBlade;
+        public NativeArray<int> contacts, count, result;
+        public float3 origin;
         public float dt;
         public int seed;
 
-        const int Sub = 3;                                   // small steps keep a pushed heap from squashing
-        const int Iter = 3;
         const float R = ClodRadius;
-        const float WallStep = 0.2f;                         // a rise taller than this is a wall, not a bump
-        const float GroundFriction = 0.72f;                  // sideways speed kept each small step while on the ground
-        const float ClodFriction = 0.93f;                    // and while rubbing against other clods
-        const float StickSpeed = 0.11f;                      // slower than this while held up, and it stays put (this sets how steep a heap stands)
-        const float MaxSpeed = 4.2f;                          // metres a second (the dozer does 3)
-        const float MaxRise = 1.2f;
         const float RestTime = 0.35f;
         const float SettleAfter = 2.5f;                       // seconds since the blade last touched it: then it settles, moving or not                        // seconds at rest before a clod becomes ground again
         const int Lo = Rim + 6;
 
-        /// The voxel layer a clod at p would come to rest on: the top of the first solid ground at or below it.
-        /// Under open sky that is just the column's top.  Under a roof (in the mine) it looks down from the clod.
-        int FloorIndex(float3 p)
-        {
-            int ix = (int)math.floor((p.x - origin.x) / Voxel), iz = (int)math.floor((p.z - origin.z) / Voxel);
-            if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return Ground;
-            int col = ix + NX * iz;
-            int t = top[col];
-            int y = (int)math.floor((p.y - origin.y) / Voxel) + 1;
-            if (y >= t) return t;
-            if (y < 1) y = 1;
-            if (vox[y + NY * col] != Air)
-            {
-                for (int k = 0; k < 10 && y < NY - 1 && vox[y + NY * col] != Air; k++) y++;   // inside the ground: up to free space
-                return y;
-            }
-            while (y > 0 && vox[y - 1 + NY * col] == Air) y--;
-            return y;
-        }
-
-        float Floor(float3 p) { return origin.y + FloorIndex(p) * Voxel; }
-
-        int Key(int3 c) { return (int)(math.hash(c) & (HashSize - 1)); }
-
-        static unsafe void UnsafeClear(NativeArray<int> a)
-        {
-            Unity.Collections.LowLevel.Unsafe.UnsafeUtility.MemClear(
-                Unity.Collections.LowLevel.Unsafe.NativeArrayUnsafeUtility.GetUnsafePtr(a), (long)a.Length * 4);
-        }
+        int FloorIndex(float3 p) { return FloorIndexOf(vox, top, origin, p); }
 
         public void Execute()
         {
@@ -258,116 +446,6 @@ public partial class VoxelWorld
             int placed = 0;
             if (n > 0)
             {
-                int subs = n > 6000 ? Sub - 1 : Sub;                  // a very big heap gets coarser steps to keep the game smooth
-                float sdt = dt / subs;
-                float inv = 1f / (2f * R);
-                float xMin = origin.x + Lo * Voxel, xMax = origin.x + (NX - Lo) * Voxel;
-                float zMin = origin.z + Lo * Voxel, zMax = origin.z + (NZ - Lo) * Voxel;
-                for (int s = 0; s < subs; s++)
-                {
-                    // fall and move
-                    for (int i = 0; i < n; i++)
-                    {
-                        prev[i] = pos[i];
-                        float3 v = vel[i];
-                        v.y -= 9.81f * sdt;
-                        float3 p = pos[i] + v * sdt;
-                        p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);   // clods stay on the work site
-                        pos[i] = p;
-                        contacts[i] = 0; ground[i] = 0;
-                    }
-                    // sort the clods into a grid so each only looks at its neighbours
-                    UnsafeClear(cellStart);
-                    for (int i = 0; i < n; i++) cellStart[Key((int3)math.floor(pos[i] * inv)) + 1]++;
-                    for (int k = 0; k < HashSize; k++) { cellStart[k + 1] += cellStart[k]; cellFill[k] = cellStart[k]; }
-                    for (int i = 0; i < n; i++) sorted[cellFill[Key((int3)math.floor(pos[i] * inv))]++] = i;
-
-                    int passes = n > 7000 ? Iter - 1 : Iter;
-                    for (int it = 0; it < passes; it++)
-                    {
-                        // clods push each other apart
-                        for (int i = 0; i < n; i++) delta[i] = float3.zero;
-                        for (int i = 0; i < n; i++)
-                        {
-                            float3 p = pos[i];
-                            int3 c = (int3)math.floor(p * inv);
-                            int budget = 14;                              // touching neighbours handled per clod per pass
-                            for (int dz = -1; dz <= 1 && budget > 0; dz++)
-                                for (int dy = -1; dy <= 1; dy++)
-                                    for (int dx = -1; dx <= 1; dx++)
-                                    {
-                                        int key = Key(c + new int3(dx, dy, dz));
-                                        for (int a = cellStart[key]; a < cellStart[key + 1]; a++)
-                                        {
-                                            int j = sorted[a];
-                                            if (j <= i || age[i] < 0f || age[j] < 0f) continue;   // a thrown load flies as a bunch: its clods don't shove each other apart in the air
-                                            float3 d = pos[j] - p;
-                                            float d2 = math.lengthsq(d);
-                                            if (d2 >= 4f * R * R || d2 < 1e-10f) continue;
-                                            float dist = math.sqrt(d2);
-                                            float3 corr = d / dist * ((2f * R - dist) * 0.5f);
-                                            delta[i] -= corr; delta[j] += corr;
-                                            contacts[i]++; contacts[j]++;
-                                            if (--budget <= 0) break;
-                                        }
-                                    }
-                        }
-                        for (int i = 0; i < n; i++)
-                        {
-                            float3 p = pos[i] + delta[i] * 0.7f;
-
-                            // the blade is a solid plate: anything inside it is shoved out of its front face
-                            if (hasBlade)
-                            {
-                                float3 l = math.transform(worldToBlade, p);
-                                if (l.x > plateMin.x - R && l.x < plateMax.x + R && l.y > plateMin.y - R && l.y < plateMax.y + R
-                                    && l.z > plateMin.z - R && l.z < plateMax.z + R)
-                                {
-                                    l.z = plateMax.z + R;
-                                    p = math.transform(bladeToWorld, l);
-                                    contacts[i]++;
-                                    age[i] = 0f;                          // touched by the blade: live again
-                                }
-                            }
-
-                            // the ground: rest on it, and treat a tall rise as a wall
-                            p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);
-                            float h = Floor(p);
-                            if (p.y - R < h)
-                            {
-                                if (h + R - p.y > WallStep)
-                                {
-                                    float hp = Floor(new float3(prev[i].x, p.y, prev[i].z));
-                                    if (hp < h) { p.x = prev[i].x; p.z = prev[i].z; h = hp; }
-                                }
-                                if (p.y - R < h) { p.y = h + R; ground[i] = 1; }
-                            }
-                            pos[i] = p;
-                        }
-                    }
-
-                    // work out speeds from how far each clod actually got, then friction
-                    for (int i = 0; i < n; i++)
-                    {
-                        float3 v = (pos[i] - prev[i]) / sdt;
-                        // Being shoved out of the blade or out of another clod moves a clod, but must not fling it:
-                        // nothing here goes faster than a brisk shove, and nothing is thrown upwards.
-                        bool thrown = age[i] < 0f;                                  // just thrown from a shovel
-                        float sp = math.length(v), most = thrown ? 11f : MaxSpeed;
-                        if (sp > most) v *= most / sp;
-                        if (v.y > (thrown ? 6f : MaxRise)) v.y = thrown ? 6f : MaxRise;
-                        bool held = ground[i] != 0 || contacts[i] >= 2 * passes;
-                        if (ground[i] != 0) { v.x *= GroundFriction; v.z *= GroundFriction; }
-                        else if (contacts[i] > 0) { v *= ClodFriction; }
-                        if (held && math.lengthsq(v) < StickSpeed * StickSpeed)
-                        {
-                            v = float3.zero;
-                            pos[i] = new float3(prev[i].x, pos[i].y, prev[i].z);
-                        }
-                        vel[i] = v;
-                    }
-                }
-
                 // tumble, and turn clods that have come to rest back into ground
                 for (int i = n - 1; i >= 0; i--)
                 {

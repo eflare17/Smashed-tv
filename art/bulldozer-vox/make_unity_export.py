@@ -690,6 +690,92 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // How smooth pushing a big heap is:  -executeMethod BulldozerBuilder.PushPerfTest
+    // Drives the dozer forward with the blade dug in for 14 seconds, building and pushing a heap, and logs the
+    // frame times (median, 95th, 99th, worst) and where the time goes.  Prints BULLDOZER_PERF_RESULT.
+    static int pPhase, pPeakClods;
+    static float pStart;
+    static readonly List<float> pFrames = new List<float>();
+    static long pVolume0;
+
+    public static void PushPerfTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        pPhase = 0; pPeakClods = 0; pFrames.Clear();
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += PerfTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void PerfFinish(int code)
+    {
+        EditorApplication.update -= PerfTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static float Pct(List<float> sorted, float q) { return sorted.Count == 0 ? 0f : sorted[Mathf.Clamp(Mathf.RoundToInt(q * (sorted.Count - 1)), 0, sorted.Count - 1)]; }
+
+    static void PerfTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_PERF_FAILED timed out"); PerfFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance;
+        if (d == null || w == null || Worker.Instance == null) return;
+        float t = Time.time;
+        if (pPhase == 0)
+        {
+            d.dead = false;
+            Worker.Instance.useOverride = true;
+            if (!Worker.Instance.InDozer) Worker.Instance.GetIn();
+            d.useOverride = true;
+            pVolume0 = w.CountSolid() + w.LoadVoxels;
+            pStart = t; pPhase = 1;
+            return;
+        }
+        float k = t - pStart;
+        if (k < 1.2f) { d.overrideBlade = -1f; d.overrideThrottle = 0f; return; }       // blade down
+        if (pPhase == 1) { w.ResetTimings(); pPhase = 2; }
+        if (k < 15.2f)
+        {
+            // push on, the blade held well down so the heap keeps growing; ease it up a little part way
+            d.overrideThrottle = 1f; d.overrideBlade = (k > 6f && k < 6.6f) ? 1f : (k < 3.5f ? -1f : 0f); d.overrideRipper = 0f;
+            pFrames.Add(Time.unscaledDeltaTime * 1000f);
+            pPeakClods = Mathf.Max(pPeakClods, w.ClodCount);
+            if (pPhase == 2 && k > 10f) { pPhase = 3; TestCapture("push_heap.png"); }
+            return;
+        }
+        if (pPhase < 4)
+        {
+            d.overrideThrottle = 0f;
+            int n = pFrames.Count;
+            float sum = 0f; foreach (var f in pFrames) sum += f;
+            var sorted = new List<float>(pFrames); sorted.Sort();
+            string parts = "";
+            for (int i = 0; i < 5; i++)
+                parts += " " + VoxelWorld.MsNames[i] + "=" + (w.MsTotal[i] / Mathf.Max(1, n)).ToString("F2") + "ms/frame(" + (w.Calls[i] > 0 ? (w.MsTotal[i] / w.Calls[i]).ToString("F2") : "0") + "x" + w.Calls[i] + ")";
+            Debug.Log("BULLDOZER_PERF_RESULT frames=" + n + " avgMs=" + (sum / Mathf.Max(1, n)).ToString("F1")
+                + " p50=" + Pct(sorted, 0.5f).ToString("F1") + " p95=" + Pct(sorted, 0.95f).ToString("F1") + " p99=" + Pct(sorted, 0.99f).ToString("F1")
+                + " worst=" + Pct(sorted, 1f).ToString("F1") + " peakClods=" + pPeakClods + " drove=" + (d.transform.position - testPos0).magnitude.ToString("F1")
+                + parts + " worstRemeshMs=" + w.MaxRemeshMs.ToString("F1") + "/" + w.MaxRemeshChunks + "chunks"
+                + " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - pVolume0));
+            pPhase = 4;
+            return;
+        }
+        // stopped, blade still down against the heap: the clods should settle and go still
+        if (pPhase == 4 && k > 17.2f) { int f; float sp = w.ClodMeanSpeed(0.05f, out f); Debug.Log("BULLDOZER_STOP_A clods=" + w.ClodCount + " meanSpeed=" + sp.ToString("F3") + " moving=" + f); pPhase = 5; }
+        if (pPhase == 5 && k > 21.2f)
+        {
+            int f; float sp = w.ClodMeanSpeed(0.05f, out f);
+            Debug.Log("BULLDOZER_STOP_RESULT after6s clods=" + w.ClodCount + " meanSpeed=" + sp.ToString("F3") + " moving=" + f + " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - pVolume0));
+            pPhase = 6;
+            PerfFinish(0);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.

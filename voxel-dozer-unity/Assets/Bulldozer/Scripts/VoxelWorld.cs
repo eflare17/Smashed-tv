@@ -80,6 +80,8 @@ public partial class VoxelWorld : MonoBehaviour
     // How long each part of the dirt work takes, in milliseconds: [0] blade cut, [1] clods, [2] slump, [3] redraw ground, [4] draw clods.
     // Avg is smoothed, Max is the worst seen.
     public readonly float[] MsAvg = new float[5], MsMax = new float[5];
+    public readonly double[] MsTotal = new double[5];        // all the time spent in each, for timing tests
+    public readonly int[] Calls = new int[5];
     public static readonly string[] MsNames = { "cut", "clods", "slump", "ground", "draw" };
     readonly System.Diagnostics.Stopwatch watch = new System.Diagnostics.Stopwatch();
 
@@ -89,8 +91,19 @@ public partial class VoxelWorld : MonoBehaviour
         float ms = (float)watch.Elapsed.TotalMilliseconds;
         MsAvg[i] = Mathf.Lerp(MsAvg[i], ms, 0.05f);
         if (ms > MsMax[i]) MsMax[i] = ms;
+        MsTotal[i] += ms; Calls[i]++;
     }
-    public void ResetTimings() { for (int i = 0; i < 5; i++) { MsAvg[i] = 0f; MsMax[i] = 0f; } }
+    /// How fast the loose clods are moving on average, and how many are moving faster than `over` (for tests).
+    public float ClodMeanSpeed(float over, out int fast)
+    {
+        int n = cCount[0]; fast = 0;
+        if (n == 0) return 0f;
+        float sum = 0f;
+        for (int i = 0; i < n; i++) { float s = Unity.Mathematics.math.length(cVel[i]); sum += s; if (s > over) fast++; }
+        return sum / n;
+    }
+
+    public void ResetTimings() { for (int i = 0; i < 5; i++) { MsAvg[i] = 0f; MsMax[i] = 0f; MsTotal[i] = 0; Calls[i] = 0; } }
 
     NativeArray<byte> vox;                                   // index = y + NY * (x + NX * z)
     NativeArray<ushort> top;                                 // per column: highest solid voxel + 1

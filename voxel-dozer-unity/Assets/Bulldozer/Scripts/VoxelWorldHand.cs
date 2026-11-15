@@ -25,10 +25,12 @@ public partial class VoxelWorld
     // the blade as a solid plate for the clods, and where loose dirt is being smoothed; set by whoever is working
     Matrix4x4 plateToWorld = Matrix4x4.identity;
     Vector3 plateMin, plateMax;
-    bool havePlate;
+    bool havePlate, plateMoving;
     [System.NonSerialized] public Vector3 SlumpCentre;
 
-    public void SetBlade(Matrix4x4 bladeToWorld, Vector3 min, Vector3 max) { plateToWorld = bladeToWorld; plateMin = min; plateMax = max; havePlate = true; }
+    /// The blade as a solid plate for the clods.  `moving`: whether it moved this step.  Only a moving blade
+    /// keeps the clods it touches stirred up; against a still one they settle into ground like any other.
+    public void SetBlade(Matrix4x4 bladeToWorld, Vector3 min, Vector3 max, bool moving = true) { plateToWorld = bladeToWorld; plateMin = min; plateMax = max; havePlate = true; plateMoving = moving; }
 
     void InitHand() { shovelLoad = new NativeArray<int>(16, Allocator.Persistent); cartLoad = new NativeArray<int>(16, Allocator.Persistent); packLoad = new NativeArray<int>(16, Allocator.Persistent); }
     void DisposeHand() { if (shovelLoad.IsCreated) shovelLoad.Dispose(); if (cartLoad.IsCreated) cartLoad.Dispose(); if (packLoad.IsCreated) packLoad.Dispose(); }
@@ -164,7 +166,7 @@ public partial class VoxelWorld
     void FixedUpdate()
     {
         StepDirt(plateToWorld, plateMin, plateMax, havePlate, Time.fixedDeltaTime);
-        Slump(SlumpCentre, 9f, 4);
+        Slump(SlumpCentre, 6.5f, 4);
     }
 
     bool Cell(Vector3 p, out int x, out int y, out int z)

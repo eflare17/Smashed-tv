@@ -182,7 +182,7 @@ public class DozerController : MonoBehaviour
             Speed = 0f; turn = 0f;
             if (trackLeft != null) trackLeft.speed = 0f;
             if (trackRight != null) trackRight.speed = 0f;
-            if (world != null && blade != null) world.SetBlade(blade.localToWorldMatrix, BladePlateMin, BladePlateMax);
+            if (world != null && blade != null) world.SetBlade(blade.localToWorldMatrix, BladePlateMin, BladePlateMax, false);
             return;
         }
         float want = throttleIn > 0f ? throttleIn * maxSpeed : throttleIn * reverseSpeed;
@@ -270,8 +270,11 @@ public class DozerController : MonoBehaviour
             Vector3 bladePos = bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, 1f));
             Vector3 travel = haveLastBladePos ? bladePos - lastBladePos : Vector3.zero;
             lastBladePos = bladePos; haveLastBladePos = true;
-            var r = world.BladeSweep(bladeToWorld, BladeBoxMin, BladeBoxMax, travel, Time.fixedDeltaTime);
-            world.SetBlade(bladeToWorld, BladePlateMin, BladePlateMax);
+            // A blade that has not moved (parked, or stopped against a heap) cuts nothing new, so dirt that has
+            // come to rest against it stays put instead of being cut up and stirred again every step.
+            bool moved = travel.sqrMagnitude > 0.0015f * 0.0015f;
+            var r = moved ? world.BladeSweep(bladeToWorld, BladeBoxMin, BladeBoxMax, travel, Time.fixedDeltaTime) : default(VoxelWorld.SweepResult);
+            world.SetBlade(bladeToWorld, BladePlateMin, BladePlateMax, moved);
             world.SlumpCentre = bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, -1.5f));
             LastCut = r.cut;
             if (r.hard >= hardRockStops && Speed > 0f) { Speed = 0f; blockedTimer = 0.6f; }
