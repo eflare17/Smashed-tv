@@ -2,7 +2,8 @@
 // (Application.persistentDataPath).  Everything is gzipped into one file.
 //
 // What is kept: the ground (only what has changed since the start, see VoxelWorldSave.cs), grass, every dirt
-// tally and loose clod, the cart's place and load, the dozer and the worker, and which parts are found and fitted.
+// tally and loose clod, the cart's place and load, the dozer and the worker, which parts are found and fitted,
+// and the coins in the pot.
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -59,6 +60,9 @@ public class SaveGame : MonoBehaviour
                 var worker = Worker.Instance;
                 w.Write(worker != null);
                 if (worker != null) worker.WriteState(w);
+                var money = Money.Instance;
+                w.Write(money != null);
+                if (money != null) money.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -104,6 +108,11 @@ public class SaveGame : MonoBehaviour
                 }
                 var worker = Worker.Instance;
                 if (r.ReadBoolean() && worker != null) worker.ReadState(r);
+                var money = Money.Instance;
+                bool hasMoney;
+                try { hasMoney = r.ReadBoolean(); } catch (EndOfStreamException) { hasMoney = false; }   // saved before there was money
+                if (hasMoney) { if (money != null) money.ReadState(r); else { r.ReadInt64(); r.ReadInt64(); r.ReadDouble(); } }
+                else if (money != null) money.Clear();
             }
         }
         catch (System.Exception e)

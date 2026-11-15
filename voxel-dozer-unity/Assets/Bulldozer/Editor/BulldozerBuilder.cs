@@ -548,6 +548,157 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // The dump and money:  -executeMethod BulldozerBuilder.DumpTest
+    // Fills the cart and tips it by the mine (must pay nothing), fills it again, takes it to the dump and tips it
+    // (must pay what the load was worth), checks the coins survive a save and load, and that no dirt was lost.
+    // Prints BULLDOZER_DUMP_RESULT.
+    static int dPhase, dSteps;
+    static float dPhaseStart, dNext;
+    static long dVolume0, dCoins0;
+    static double dExpected;
+    static string dLog;
+
+    public static void DumpTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        dPhase = 0; dLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += DumpTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void DumpFinish(int code)
+    {
+        EditorApplication.update -= DumpTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    /// Digs the ground beside the cart and drops each load into its tub, as CartTest does.  True when done.
+    static bool FillCart(VoxelWorld w, MineCart cart, float t, int want)
+    {
+        if (w.CartVoxels >= want) return true;
+        if (t < dNext) return false;
+        dNext = t + 0.08f;
+        Vector3 side = cart.transform.right;
+        Vector3 at = cart.transform.position + side * 2.4f + cart.transform.forward * (-1f + (dSteps % 9) * 0.25f) + Vector3.up * (0.1f - (dSteps / 9) * 0.12f);
+        dSteps++;
+        w.Pick(at, 0.35f, Vector3.zero);
+        w.Scoop(at, 0.5f, 4000);
+        if (w.ShovelVoxels >= VoxelWorld.ClodVoxels) w.Throw(cart.Mouth + Vector3.up * 0.7f, Vector3.zero, 0.25f, 0.4f);
+        return false;
+    }
+
+    static double CartWorth(VoxelWorld w)
+    {
+        double v = 0;
+        for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold; m++) v += Money.ValueOf(m, w.CartLoadOf(m));
+        return v;
+    }
+
+    static void DumpTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_DUMP_FAILED timed out in phase " + dPhase + " " + dLog); DumpFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance;
+        if (w == null || wk == null || cart == null || money == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (dPhase == 0)
+        {
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            dVolume0 = w.CountSolid() + w.LoadVoxels;
+            dCoins0 = money.Coins;
+            dLog += "coinsAtStart=" + dCoins0 + " cartAtDumpAtStart=" + cart.AtDump;
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            dSteps = 0; dNext = t;
+            dPhase = 1; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 1)
+        {
+            // fill it a little by the mine and tip it there: no pay
+            if (!FillCart(w, cart, t, 1200) && t - dPhaseStart < 15f) return;
+            if (t - dPhaseStart < 1.5f) return;
+            wk.Teleport(cart.transform.position - cart.transform.right * 1.6f, Facing(cart.transform.right));
+            wk.TipCart();
+            dPhase = 2; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 2)
+        {
+            if (cart.Tipping && t - dPhaseStart < 12f) return;
+            if (t - dPhaseStart < 1f) return;
+            dLog += " tippedByMine=" + (money.Earned - 0) + "coinsPaid(wantZero) leftInCart=" + w.CartVoxels;
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            dSteps = 0; dNext = t;
+            dPhase = 3; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 3)
+        {
+            // fill it properly, then roll it to the end of the line
+            if (!FillCart(w, cart, t, 3000) && t - dPhaseStart < 20f) return;
+            if (t - dPhaseStart < 2f) return;                                   // let the last clods land in it
+            dExpected = CartWorth(w);
+            dLog += " loaded=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L worth=" + dExpected.ToString("F1");
+            cart.SetAlong(cart.EndLimit);
+            dLog += " atDumpNow=" + cart.AtDump;
+            wk.Teleport(cart.transform.position - cart.transform.right * 1.6f - cart.transform.forward * 2.5f, Facing(cart.transform.forward * 0.6f + cart.transform.right));
+            wk.Look(18f);
+            dCoins0 = money.Coins;
+            wk.TipCart();
+            dPhase = 4; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 4)
+        {
+            if (t - dPhaseStart > 0.6f && dLog.IndexOf("tipPic") < 0) { TestCapture("dump_tip.png"); dLog += " tipPic"; }
+            if (cart.Tipping && t - dPhaseStart < 12f) return;
+            if (t - dPhaseStart < 1f) return;
+            long paid = money.Coins - dCoins0;
+            dLog += " paid=" + paid + " matches=" + (System.Math.Abs(paid - dExpected) < 1.01) + " leftInCart=" + w.CartVoxels;
+            // the coins in a save and back
+            var ms = new System.IO.MemoryStream();
+            var bw = new System.IO.BinaryWriter(ms);
+            money.WriteState(bw); bw.Flush();
+            long had = money.Coins;
+            money.Clear();
+            ms.Position = 0;
+            money.ReadState(new System.IO.BinaryReader(ms));
+            dLog += " coinsAfterLoad=" + (money.Coins == had);
+            // spending: too much is refused, a little is taken
+            dLog += " overspendRefused=" + !money.Spend(money.Coins + 1) + " spendOk=" + money.Spend(1) + " coinsNow=" + money.Coins;
+            dPhase = 5; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 5)
+        {
+            if (t - dPhaseStart < 1.5f) return;
+            Vector3 sign = SiteProps.DumpSign;
+            wk.Teleport(sign + new Vector3(0f, 0f, 0f) - Vector3.up * 2f + (cart.transform.position - sign).normalized * 9f, Facing(sign - cart.transform.position) );
+            wk.Look(10f);
+            dPhase = 6; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 6)
+        {
+            if (t - dPhaseStart < 1.5f) return;
+            TestCapture("dump_sign.png");
+            dPhase = 7; dPhaseStart = t;
+            return;
+        }
+        if (dPhase == 7)
+        {
+            if (t - dPhaseStart < 6f) return;                                      // let the tipped dirt settle
+            dLog += " clodsStillLoose=" + w.ClodCount + " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - dVolume0);
+            Debug.Log("BULLDOZER_DUMP_RESULT " + dLog);
+            DumpFinish(0);
+        }
+    }
+
     // How smooth pushing a big heap is:  -executeMethod BulldozerBuilder.PushPerfTest
     // Drives the dozer forward with the blade dug in for 14 seconds, building and pushing a heap, and logs the
     // frame times (median, 95th, 99th, worst) and where the time goes.  Prints BULLDOZER_PERF_RESULT.

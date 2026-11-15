@@ -10,7 +10,7 @@ using UnityEngine;
 public class SiteProps : MonoBehaviour
 {
     // material ids understood by the ground shader
-    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5;
+    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16;
 
     struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
     static readonly List<Solid> solids = new List<Solid>();
@@ -109,6 +109,8 @@ public class SiteProps : MonoBehaviour
         if (MineCart.Instance == null) new GameObject("Mine cart").AddComponent<MineCart>();
         if (Finds.Instance == null) new GameObject("Finds").AddComponent<Finds>();
         if (SaveGame.Instance == null) new GameObject("Save game").AddComponent<SaveGame>();
+        if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
+        Dump();
         Clutter();
         Trees();
         FarHills();
@@ -207,6 +209,40 @@ public class SiteProps : MonoBehaviour
         }
         Finish("Rails");
     }
+
+    /// The dump at the end of the rails: a timber buffer stop across the track, and a sign on posts beside it
+    /// (on the cart's right, away from the side it tips to), with an orange board.
+    void Dump()
+    {
+        int n = RailPath.Count;
+        if (n < 2) return;
+        Vector3 end = RailPath[n - 1], before = RailPath[n - 2];
+        Vector3 dir = (end - before); dir.y = 0f; dir.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, dir);           // the cart's right as it reaches the end
+        float g = Ground(end.x, end.z);
+        var rot = Quaternion.LookRotation(dir);
+        // buffer stop: two posts and a heavy beam across the rails, just past their end
+        Vector3 stop = end + dir * 0.35f;
+        foreach (float sd in new[] { -0.55f, 0.55f })
+            Box(stop + right * sd + Vector3.up * (g + 0.35f), new Vector3(0.22f, 0.7f, 0.22f), rot, DarkTimber);
+        Box(stop + Vector3.up * (g + 0.55f), new Vector3(1.6f, 0.26f, 0.26f), rot, Timber);
+        Box(stop + Vector3.up * (g + 0.55f) - dir * 0.15f, new Vector3(1.2f, 0.12f, 0.05f), rot, HiVis);   // bright face
+        // the sign, a little back along the line on the cart's right
+        Vector3 sign = end - dir * 1.6f + right * 1.6f;
+        float gs = Ground(sign.x, sign.z);
+        var face = Quaternion.LookRotation(-right);
+        foreach (float sd in new[] { -0.6f, 0.6f })
+            Box(sign + dir * sd + Vector3.up * (gs + 0.9f), new Vector3(0.14f, 1.8f, 0.14f), face, DarkTimber);
+        Box(sign + Vector3.up * (gs + 1.55f), new Vector3(1.5f, 0.6f, 0.08f), face, HiVis);
+        Box(sign + Vector3.up * (gs + 1.55f) - right * 0.05f, new Vector3(1.1f, 0.12f, 0.04f), face, DarkTimber);   // a stripe across it
+        Finish("Dump");
+        Solidify(sign.x, sign.z, 0.8f);
+        Solidify(stop.x, stop.z, 0.8f);
+        DumpSign = sign + Vector3.up * (gs + 2.1f);
+    }
+
+    /// Where the dump's sign is (for the "DUMP" label over it).
+    public static Vector3 DumpSign;
 
     void Crate(Vector3 at, float size, float turn)
     {

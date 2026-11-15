@@ -420,7 +420,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Alpha3)) SetTool(2);
             if (Input.GetKeyDown(KeyCode.Q)) StartPour();
             if (Input.GetKeyDown(KeyCode.E)) PressE();
-            if (Input.GetKeyDown(KeyCode.T) && MineCart.Instance != null && MineCart.Instance.Near(transform.position, 3f)) MineCart.Instance.Tip();
+            if (Input.GetKeyDown(KeyCode.T)) TipCart();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
             {
@@ -610,6 +610,16 @@ public class Worker : MonoBehaviour
         }
         int took = world.SuckPull(mouth, reachTo, 0.45f, suckSpeed, dt, room);
         Sucked += took;
+    }
+
+    /// T beside the cart: tip it out.  At the dump that gets paid; anywhere else it is just emptied.
+    public void TipCart()
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || InDozer || !cart.Near(transform.position, 3f)) return;
+        if (world.CartVoxels < VoxelWorld.ClodVoxels) { Say("The cart is empty.", 2f); return; }
+        cart.Tip();
+        Say(cart.AtDump ? "Tipping at the dump: you get paid for what pours out." : "Tipped here, so no pay.  Push the cart to the dump at the end of the rails to get paid.", 3.5f);
     }
 
     /// Q: start squirting the backpack into the cart, if he is near enough to it.
@@ -849,7 +859,10 @@ public class Worker : MonoBehaviour
         if (cart != null && cart.Near(transform.position, 7.5f))
         {
             float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + (HoldingCart != 0 ? "W push   S pull back   E let go   T tip" : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it."));
+            string what = cart.AtDump ? "AT THE DUMP: T tips it and you get paid."
+                        : HoldingCart != 0 ? "W push   S pull back   E let go   T tip   (the dump is at the end of the rails)"
+                        : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it.";
+            GUI.Box(new Rect(10, 102, 640, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + what);
         }
         // close enough to climb in: say so, in the middle of the screen where it can't be missed
         if (NearDozer())
@@ -870,6 +883,17 @@ public class Worker : MonoBehaviour
             string carrying = "";
             for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
             if (carrying.Length > 0) GUI.Box(new Rect(10, 132, 540, 24), "Carrying: " + carrying);
+        }
+        // a label over the dump's sign, so you can find it
+        if (Camera.main != null && SiteProps.DumpSign != Vector3.zero)
+        {
+            Vector3 sp = Camera.main.WorldToScreenPoint(SiteProps.DumpSign);
+            float far = Vector3.Distance(Camera.main.transform.position, SiteProps.DumpSign);
+            if (sp.z > 0f && far < 70f)
+            {
+                var tag = new GUIStyle(GUI.skin.box) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+                GUI.Box(new Rect(sp.x - 50, Screen.height - sp.y - 14, 100, 28), "DUMP", tag);
+            }
         }
         // the cross you aim with
         GUI.Box(new Rect(Screen.width / 2 - 1, Screen.height / 2 - 8, 2, 16), GUIContent.none);
