@@ -119,15 +119,13 @@ public class SiteProps : MonoBehaviour
     void MineEntrance()
     {
         float px = VoxelWorld.PortalX, pz = VoxelWorld.PortalZ - 0.6f, hw = VoxelWorld.TunnelHalfWidth + 0.25f, h = VoxelWorld.TunnelHeight + 0.15f;
-        // two heavy frames, one at the mouth and one a little way out, with a plank roof between and angled braces
+        // two heavy frames, one at the mouth and one a little way out, with a plank roof between
         for (int f = 0; f < 2; f++)
         {
             float z = pz - f * 1.5f;
             Box(new Vector3(px - hw, h * 0.5f, z), new Vector3(0.36f, h, 0.36f), Timber);
             Box(new Vector3(px + hw, h * 0.5f, z), new Vector3(0.36f, h, 0.36f), Timber);
             Box(new Vector3(px, h + 0.2f, z), new Vector3(hw * 2f + 0.9f, 0.4f, 0.42f), DarkTimber);
-            Beam(new Vector3(px - hw, h * 0.55f, z), new Vector3(px - hw + 0.95f, h, z), 0.2f, Timber);
-            Beam(new Vector3(px + hw, h * 0.55f, z), new Vector3(px + hw - 0.95f, h, z), 0.2f, Timber);
         }
         for (float x = px - hw - 0.3f; x <= px + hw + 0.31f; x += 0.42f)
             Box(new Vector3(x, h + 0.5f, pz - 0.75f), new Vector3(0.36f, 0.14f, 2.3f), (int)(x * 7f) % 2 == 0 ? Timber : DarkTimber);

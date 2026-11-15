@@ -6,7 +6,8 @@
 //   1 / 2            pick / shovel
 //   Left mouse or Space   use the tool (hold to keep going)
 //   Enter            get into the dozer, or out of it
-//   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer)
+//   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer);
+//                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
 //   F5 / F6          save the game / load it
 //
 // The tool works exactly where you aim.  The cross in the middle of the screen is the aim, and a small
@@ -25,6 +26,7 @@ public class Worker : MonoBehaviour
 
     public float walkSpeed = 2.6f;           // metres a second
     public float backSpeed = 1.6f;
+    public float pushSpeed = 2.0f;           // pushing the cart
     public float turnSpeed = 170f;           // degrees a second, for scripted turning only
     public float mouseSpeed = 2.4f;
     public float reach = 2.4f;               // how far from his chest the tools reach
@@ -40,6 +42,8 @@ public class Worker : MonoBehaviour
     public bool overrideUse;
 
     public bool InDozer { get; private set; }
+    public int HoldingCart { get; private set; }         // 0, or which end of the cart he has hold of (+1 / -1)
+    float leanIn;                                        // 0..1: how hard he is leaning into the cart
     public int Tool { get; private set; }                // 0 pick, 1 shovel
     public bool Eyes { get; private set; }               // looking through his eyes
     public int PickHits { get; private set; }
@@ -296,6 +300,7 @@ public class Worker : MonoBehaviour
         int tool = r.ReadInt32();
         bool eyes = r.ReadBoolean(), inDozer = r.ReadBoolean();
         swing = Swing.None;
+        LetGo();
         SetTool(tool);
         if (inDozer)
         {
@@ -325,6 +330,7 @@ public class Worker : MonoBehaviour
     public void GetIn()
     {
         if (dozer == null) return;
+        LetGo();
         InDozer = true;
         dozer.driven = true;
         model.gameObject.SetActive(false);
@@ -357,7 +363,7 @@ public class Worker : MonoBehaviour
                 dozer.dead = !dozer.dead;
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) TryDozer();
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) { LetGo(); TryDozer(); }
         }
         if (InDozer) { transform.position = dozer.transform.position; return; }
 
@@ -370,7 +376,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
-            if (Input.GetKeyDown(KeyCode.E)) UsePart();
+            if (Input.GetKeyDown(KeyCode.E)) PressE();
             if (Input.GetKeyDown(KeyCode.T) && MineCart.Instance != null && MineCart.Instance.Near(transform.position, 3f)) MineCart.Instance.Tip();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
@@ -385,6 +391,8 @@ public class Worker : MonoBehaviour
             }
         }
         else yaw += overrideTurn * turnSpeed * dt;
+
+        if (HoldingCart != 0) { PushCart(dt, walk); return; }
 
         // ---- moving: he faces where you look, and walks relative to that
         Vector3 move = Quaternion.Euler(0f, yaw, 0f) * new Vector3(side * 0.85f, 0f, walk);
@@ -434,7 +442,7 @@ public class Worker : MonoBehaviour
         float lim = VoxelWorld.NX / 2 * VoxelWorld.Voxel - 1.2f;
         if (Mathf.Abs(next.x) > lim || Mathf.Abs(next.z) > lim) return false;
         if (SiteProps.Blocks(next, 0.3f, true)) return false;
-        if (MineCart.Instance != null && MineCart.Instance.PushedBy(next, step)) { hitCart = true; return false; }   // walking into the cart pushes it
+        if (MineCart.Instance != null && MineCart.Instance.BlocksWalker(next)) return false;   // the cart is in the way (E at an end takes hold of it)
         // look a little ahead as well, so he stops at a wall instead of walking his nose into it
         Vector3 ahead = next + step.normalized * 0.22f;
         float floor = Mathf.Max(world.FloorAt(next + Vector3.up * 0.45f), world.FloorAt(ahead + Vector3.up * 0.45f));
@@ -550,6 +558,64 @@ public class Worker : MonoBehaviour
         arm.localRotation = Quaternion.FromToRotation(Vector3.down, local.normalized);
     }
 
+    /// E on foot: let go of the cart if holding it; otherwise fit or pick up a part; otherwise take hold of the cart.
+    public void PressE()
+    {
+        if (HoldingCart != 0) { LetGo(); return; }
+        if (UsePart() != "none") return;
+        if (GrabCart()) return;
+        var cart = MineCart.Instance;
+        if (cart != null && cart.Near(transform.position, 2.6f)) Say("Stand at an end of the cart and press E to take hold of it.", 2.5f);
+    }
+
+    /// Takes hold of the nearer end of the cart, if he is standing at one.  True if he did.
+    public bool GrabCart()
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || InDozer) return false;
+        int end = cart.EndNear(transform.position);
+        if (end == 0) return false;
+        HoldingCart = end;
+        swing = Swing.None;
+        leanIn = 0f;
+        hold.gameObject.SetActive(false);                                                // tools away: both hands on the cart
+        if (marker != null) marker.gameObject.SetActive(false);
+        Say("Holding the cart.  W pushes it, S pulls it back.  E lets go.", 3f);
+        return true;
+    }
+
+    public void LetGo()
+    {
+        if (HoldingCart == 0) return;
+        HoldingCart = 0;
+        if (hold != null) hold.gameObject.SetActive(!InDozer);
+    }
+
+    /// One frame of holding the cart: W rolls it away from him, S pulls it back.  He stays at its end,
+    /// facing along the track, leaning into it with both hands on the top of the end.
+    void PushCart(float dt, float walk)
+    {
+        var cart = MineCart.Instance;
+        if (cart == null) { LetGo(); return; }
+        float went = cart.Roll(-HoldingCart * walk * (walk >= 0f ? pushSpeed : backSpeed) * dt);
+        leanIn = Mathf.MoveTowards(leanIn, Mathf.Abs(walk) > 0.1f ? 1f : 0.35f, dt * 3f);
+        Vector3 at, facing;
+        cart.HoldPlace(HoldingCart, out at, out facing);
+        yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
+        transform.SetPositionAndRotation(at, Quaternion.Euler(0f, yaw, 0f));
+        world.SlumpCentre = at;
+        if (cam != null) { cam.lookYaw = yaw; cam.lookPitch = lookPitch; }
+        stride += Mathf.Abs(went) * 1.3f;                                                // short, heavy steps
+        if (model == null || Eyes) return;
+        float s = Mathf.Sin(stride * 4.4f) * 30f * (Mathf.Abs(went) > 1e-5f ? 1f : 0f);
+        legL.localRotation = Quaternion.Euler(s - 8f * leanIn, 0f, 0f);
+        legR.localRotation = Quaternion.Euler(-s - 8f * leanIn, 0f, 0f);
+        model.localRotation = Quaternion.Euler(8f + 16f * leanIn, 0f, 0f);             // leans forward into it
+        // his right hand on his right of the end, his left on his left
+        Reach(armR, cart.HandHold(HoldingCart, -HoldingCart));
+        Reach(armL, cart.HandHold(HoldingCart, HoldingCart));
+    }
+
     /// E on foot: fit a carried part when at the dozer, otherwise pick up a part that has been dug out.
     /// Returns what happened, for tests.
     public string UsePart()
@@ -606,7 +672,7 @@ public class Worker : MonoBehaviour
         if (cart != null && cart.Near(transform.position, 7.5f))
         {
             float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   Shovelfuls go in it.   Walk into an end to push it.   T tips it.");
+            GUI.Box(new Rect(10, 102, 540, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + (HoldingCart != 0 ? "W push   S pull back   E let go   T tip" : "Shovelfuls go in it.   E at an end holds it.   T tips it."));
         }
         // close enough to climb in: say so, in the middle of the screen where it can't be missed
         if (NearDozer())

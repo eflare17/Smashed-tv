@@ -523,6 +523,8 @@ public static class BulldozerBuilder
     static int cPhase, cFillSteps;
     static float cPhaseStart, cNext, cAlong0, cLastAlong, cStillFor;
     static int cThrows0, cScoops0, cCart0;
+    static bool cGrabbed;
+    static float cNoGrabFrom;
     static long cVolume0;
     static string cLog;
 
@@ -642,6 +644,7 @@ public static class BulldozerBuilder
         Vector3 f = cart.transform.forward; f.y = 0f; f.Normalize();
         Vector3 at = cart.transform.position + f * (front ? 1.45f : -1.45f);
         wk.Teleport(at, Facing(front ? -f : f));
+        cGrabbed = wk.GrabCart();
         wk.overrideWalk = 1f;
     }
 
@@ -654,8 +657,29 @@ public static class BulldozerBuilder
         float t = Time.time;
         if (cPhase == 0)
         {
+            // first a picture of the mine entrance from beside the cart, as the owner sees it on foot
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
+            Vector3 inward = -cart.transform.forward; inward.y = 0f; inward.Normalize();
+            wk.Teleport(cart.transform.position + cart.transform.right * 1.3f - inward * 1.2f, Facing(inward));
+            wk.Look(8f);
+            cPhase = 20; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 20)
+        {
+            if (t - cPhaseStart < 1.5f) return;
+            TestCapture("entrance.png");
+            wk.transform.Find("Model").gameObject.SetActive(false);
+            wk.transform.Find("Hold").gameObject.SetActive(false);
+            TestCapture("entrance_nobody.png");
+            wk.transform.Find("Model").gameObject.SetActive(true);
+            wk.transform.Find("Hold").gameObject.SetActive(true);
+            cPhase = 21;
+            return;
+        }
+        if (cPhase == 21)
+        {
             cVolume0 = w.CountSolid() + w.LoadVoxels;
             cAlong0 = cart.Along;
             cLog += "spec=" + cart.spec.name + "/" + cart.capacity + " startAlong=" + cAlong0.ToString("F1") + "m";
@@ -672,11 +696,13 @@ public static class BulldozerBuilder
             cLastAlong = cart.Along;
             if (t - cPhaseStart < 9f) return;
             Vector3 front = cart.transform.position - cart.transform.forward * 1.05f + Vector3.up * 0.55f;
-            cLog += " pushedIn=" + (cAlong0 - cart.Along).ToString("F2") + "m stoppedFor=" + cStillFor.ToString("F1") + "s"
+            cLog += " grabbed=" + cGrabbed + " leaning=" + (wk.HoldingCart != 0) + " pushedIn=" + (cAlong0 - cart.Along).ToString("F2") + "m stoppedFor=" + cStillFor.ToString("F1") + "s"
                   + " stopsAtRubble=" + cart.Blocked(cart.Along - 0.03f, -1f)
                   + " cartZ=" + cart.transform.position.z.ToString("F1") + " caveInStartsZ=" + (VoxelWorld.PortalZ + 2.6f).ToString("F1")
                   + " gapToFace=" + cart.RoomAhead(-1f).ToString("F2") + "m";
+            TestCapture("cart_push.png");
             wk.overrideWalk = 0f;
+            wk.LetGo();
             // stand beside the cart at the face and dig it with real shovel swings: each load should go in the cart
             Vector3 inward = -cart.transform.forward;
             wk.Teleport(cart.transform.position + cart.transform.right * 1.0f + inward * 0.7f, Facing(inward));
@@ -698,12 +724,17 @@ public static class BulldozerBuilder
             cLog += " faceScoops=" + (wk.Scoops - cScoops0) + " faceThrows=" + (wk.Throws - cThrows0)
                   + " intoCart=" + ((w.CartVoxels - cCart0) * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L"
                   + " workerAt=" + (wk.transform.position - cart.transform.position).magnitude.ToString("F2") + "m";
+            // step back out of the face, beside the cart and a little behind it, to picture the load in it
+            wk.SetTool(1);
+            wk.Teleport(cart.transform.position + cart.transform.right * 1.0f + cart.transform.forward * 2.2f, Facing(-cart.transform.forward) - 15f);
+            wk.Look(35f);
             cPhase = 11; cPhaseStart = t;
             return;
         }
         if (cPhase == 11)
         {
             if (t - cPhaseStart < 2f) return;
+            TestCapture("cart_load.png");
             // now the far end of the line
             cart.SetAlong(cart.EndLimit - 3f);
             StandAtEnd(wk, cart, false);
@@ -713,7 +744,19 @@ public static class BulldozerBuilder
         if (cPhase == 2)
         {
             if (t - cPhaseStart < 6f) return;
-            cLog += " atEndOfLine=" + (Mathf.Abs(cart.Along - cart.EndLimit) < 0.02f) + " neverPast=" + (cart.Along <= cart.EndLimit + 0.001f);
+            cLog += " grabbed2=" + cGrabbed + " atEndOfLine=" + (Mathf.Abs(cart.Along - cart.EndLimit) < 0.02f) + " neverPast=" + (cart.Along <= cart.EndLimit + 0.001f);
+            wk.overrideWalk = 0f;
+            wk.LetGo();
+            // walking into it without holding it: it must not move
+            cNoGrabFrom = cart.Along;
+            StandAtEnd(wk, cart, true); wk.LetGo(); wk.overrideWalk = 1f;
+            cPhase = 12; cPhaseStart = t;
+            return;
+        }
+        if (cPhase == 12)
+        {
+            if (t - cPhaseStart < 2f) return;
+            cLog += " walkIntoItMoved=" + Mathf.Abs(cart.Along - cNoGrabFrom).ToString("F2") + "m";
             wk.overrideWalk = 0f;
             // back by the mine entrance, then fill it
             cart.SetAlong(cAlong0);

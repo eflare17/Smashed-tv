@@ -62,6 +62,7 @@ Shader "Voxel/Terrain"
         sampler2D _GrassTex;
         float4 _SiteRect;
         // scenery is cut away where it stands between the camera and what the camera is following
+        // (but not things that carry vertex colour green: the cart, which you need to see into)
         float4 _CutFrom, _CutTo;
         float _CutRadius;
 
@@ -76,7 +77,7 @@ Shader "Voxel/Terrain"
         {
             int m = _FixedMat >= 0 ? (int)_FixedMat : (int)round(IN.color.r * 255.0);
             m = clamp(m, 0, 24);
-            if (m >= 11 && m <= 15 && _CutRadius > 0.0)
+            if (m >= 11 && m <= 15 && _CutRadius > 0.0 && IN.color.g < 0.5)   // green set = never cut (the cart)
             {
                 // how far this point is from the line between the camera and its subject
                 float3 ab = _CutTo.xyz - _CutFrom.xyz;

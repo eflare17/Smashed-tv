@@ -1,6 +1,6 @@
 // A hand cart on the mine rails.
 //   - It catches whatever is thrown or falls into it, up to its capacity.
-//   - Walk into either end of it and you push it along the track.  It stops at the end of the rails and where
+//   - E at either end takes hold of it (Worker.cs); then W pushes it along the track and S pulls it back.  It stops at the end of the rails and where
 //     the rubble on the track is as high as its tub (the cave-in face).  Lower spill it rolls over.
 //   - T, standing beside it, tips the load out over its left side.
 // What is in the cart is still counted with the dirt, so volume stays exact.
@@ -51,7 +51,7 @@ public class MineCart : MonoBehaviour
 
     void Box(Vector3 centre, Vector3 size, byte mat)
     {
-        var col = new Color32(mat, 0, 0, 255);
+        var col = new Color32(mat, 255, 0, 255);           // green 255: the see-through cut never hides the cart
         for (int f = 0; f < 6; f++)
         {
             Vector3 n = FaceN[f], u = FaceU[f], v = Vector3.Cross(n, u);
@@ -168,21 +168,50 @@ public class MineCart : MonoBehaviour
     public float StartLimit { get { return HalfLength; } }
     public void SetAlong(float s) { Along = Mathf.Clamp(s, HalfLength, length - HalfLength); if (world != null) Place(); }
 
-    /// Called as the worker tries to step to `next`.  If that would put him inside the cart he is stopped,
-    /// and the cart is shoved along the track by however much of his step was along it.  True = he is blocked.
-    public bool PushedBy(Vector3 next, Vector3 step)
+    /// True if a step to `next` would put the worker inside the cart.  Walking into it no longer moves it:
+    /// he has to take hold of an end (E) and push.
+    public bool BlocksWalker(Vector3 next)
     {
         Vector3 local = transform.InverseTransformPoint(next);
-        if (Mathf.Abs(local.x) > HalfWidth + 0.32f || Mathf.Abs(local.z) > HalfLength + 0.34f) return false;
-        float along = Vector3.Dot(step, transform.forward);
-        // only a push on an end moves it: from behind it goes forward, from in front it goes back
-        bool onEnd = Mathf.Abs(local.z) > HalfLength - 0.05f;
-        if (onEnd && Mathf.Abs(along) > 1e-5f && Mathf.Sign(along) == -Mathf.Sign(local.z))
-        {
-            float to = Mathf.Clamp(Along + along * spec.pushFactor, HalfLength, length - HalfLength);
-            if (!Blocked(to, Mathf.Sign(along))) Along = to;
-        }
-        return true;
+        return Mathf.Abs(local.x) <= HalfWidth + 0.32f && Mathf.Abs(local.z) <= HalfLength + 0.34f;
+    }
+
+    // ---- being held and pushed.  An end is +1 (the end facing out of the mine) or -1 (the end facing in).
+    const float StandOff = 0.85f;                      // how far off the end he stands, from the end, while holding it
+
+    /// The end of the cart he could take hold of from here, or 0 if he is not close to either end.
+    public int EndNear(Vector3 pos)
+    {
+        Vector3 local = transform.InverseTransformPoint(pos);
+        if (Mathf.Abs(local.x) > HalfWidth + 0.6f) return 0;
+        if (Mathf.Abs(local.z) < HalfLength - 0.1f || Mathf.Abs(local.z) > HalfLength + 1.6f) return 0;
+        return local.z > 0f ? 1 : -1;
+    }
+
+    /// Where he stands to hold an end, and which way he then faces (towards the cart, along the track).
+    public void HoldPlace(int end, out Vector3 at, out Vector3 facing)
+    {
+        Vector3 dir;
+        Sample(Along + end * (HalfLength + StandOff), out at, out dir);
+        dir.y = 0f;
+        facing = -end * dir.normalized;
+        at.y = world.FloorAt(at + Vector3.up * 0.5f);
+    }
+
+    /// The top of the end he is holding, where his hands go.
+    public Vector3 HandHold(int end, float side) { return transform.TransformPoint(new Vector3(side * 0.3f, TubTop - 0.02f, end * (HalfLength + 0.03f))); }
+
+    /// Rolls the cart along the track by up to `metres` (positive = more along the line, out of the mine).
+    /// Returns how far it really went: it stops at the ends of the rails and at the cave-in face.
+    public float Roll(float metres)
+    {
+        if (Mathf.Abs(metres) < 1e-6f) return 0f;
+        float to = Mathf.Clamp(Along + metres * spec.pushFactor, HalfLength, length - HalfLength);
+        if (Blocked(to, Mathf.Sign(metres))) return 0f;
+        float went = to - Along;
+        Along = to;
+        Place();
+        return went;
     }
 
     /// Would the cart, standing at `s`, have its leading end in something?  It rolls over low spill on the
