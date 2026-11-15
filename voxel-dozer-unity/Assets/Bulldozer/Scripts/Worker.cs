@@ -36,6 +36,10 @@ public class Worker : MonoBehaviour
     public float pickRadius = 0.26f;
     public float scoopRadius = 0.38f;
     public int shovelHolds = 480;            // voxels: about 0.12 cubic metres
+    // set by the upgrade tree (Upgrades.cs)
+    [System.NonSerialized] public float pickRockFactor = 0.8f;   // how much of the pick's chunk breaks on rock
+    [System.NonSerialized] public float shovelSpeed = 1f;        // shovel swings run this much faster
+    [System.NonSerialized] public bool backpackOwned = true;      // until the tree says otherwise
     public float throwForward = 5.2f;        // metres a second: how hard a shovelful is thrown
     public float throwUp = 2.8f;
     public int packHolds = 2048;             // voxels: 500 litres, half the hand cart
@@ -316,6 +320,7 @@ public class Worker : MonoBehaviour
 
     public void SetTool(int tool)
     {
+        if (tool == 2 && !backpackOwned) tool = 1;
         Tool = tool;
         swing = Swing.None;
         pick.gameObject.SetActive(tool == 0);
@@ -412,13 +417,15 @@ public class Worker : MonoBehaviour
         float walk = useOverride ? overrideWalk : Input.GetAxisRaw("Vertical");
         float side = useOverride ? 0f : Input.GetAxisRaw("Horizontal");
         bool use = useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space));
-        if (!useOverride)
+        bool treeOpen = !useOverride && Upgrades.Instance != null && Upgrades.Instance.Open;
+        if (treeOpen) { walk = 0f; side = 0f; use = false; }
+        if (!useOverride && !treeOpen)
         {
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
-            if (Input.GetKeyDown(KeyCode.Alpha3)) SetTool(2);
-            if (Input.GetKeyDown(KeyCode.Q)) StartPour();
+            if (Input.GetKeyDown(KeyCode.Alpha3)) { if (backpackOwned) SetTool(2); else Say("No backpack yet.  Max out the shovel, then buy it in the upgrades (U).", 3f); }
+            if (Input.GetKeyDown(KeyCode.Q)) { if (backpackOwned) StartPour(); }
             if (Input.GetKeyDown(KeyCode.E)) PressE();
             if (Input.GetKeyDown(KeyCode.T)) TipCart();
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
@@ -481,7 +488,7 @@ public class Worker : MonoBehaviour
         }
         if (swing != Swing.None)
         {
-            swingT += dt;
+            swingT += dt * (swing == Swing.Pick ? 1f : shovelSpeed);
             float bite = swing == Swing.Dig ? DigBite : swing == Swing.Throw ? ThrowRelease : PickBite;
             float length = swing == Swing.Dig ? DigTime : swing == Swing.Throw ? ThrowTime : PickTime;
             if (!swingDone && swingT >= bite) { swingDone = true; Work(); }
@@ -550,7 +557,7 @@ public class Worker : MonoBehaviour
         bool rock = aimMat >= VoxelWorld.Rock && aimMat <= VoxelWorld.Gold;
         if (swing == Swing.Pick)
         {
-            if (aimInReach && world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * 0.8f : pickRadius, -aimDir * 1.3f + Vector3.up * 0.9f) > 0) PickHits++;
+            if (aimInReach && world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, -aimDir * 1.3f + Vector3.up * 0.9f) > 0) PickHits++;
             else if (aimFound && !aimInReach) Say("Too far away.  Get closer.", 1.5f);
         }
         else if (swing == Swing.Dig)
@@ -866,6 +873,7 @@ public class Worker : MonoBehaviour
             GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height - 110, 660, 44), say, style);
         }
         if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), "Enter   get out"); return; }
+        if (Tool == 2 && !backpackOwned) SetTool(1);
         string tool = Tool == 0 ? "PICK" : Tool == 1 ? "SHOVEL" : "BACKPACK";
         string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
         string text =
@@ -876,9 +884,12 @@ public class Worker : MonoBehaviour
         GUI.Box(new Rect(10, 10, 540, 86), text);
         // the backpack gauge, always: a bar that fills, and the litres
         float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
-        GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\nQ by the cart squirts it in");
-        GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
-        GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
+        if (backpackOwned) GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\nQ by the cart squirts it in");
+        if (backpackOwned)
+        {
+            GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
+            GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
+        }
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))
         {

@@ -110,6 +110,7 @@ public class SiteProps : MonoBehaviour
         if (Finds.Instance == null) new GameObject("Finds").AddComponent<Finds>();
         if (SaveGame.Instance == null) new GameObject("Save game").AddComponent<SaveGame>();
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
+        if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
         Dump();
         Clutter();
         GoldShed();                                          // after the crates and logs, so it can keep clear of them

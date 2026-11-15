@@ -3,7 +3,7 @@
 //
 // What is kept: the ground (only what has changed since the start, see VoxelWorldSave.cs), grass, every dirt
 // tally and loose clod, the cart's place and load, the dozer and the worker, which parts are found and fitted,
-// and the coins in the pot.
+// the coins and gold in the pot, and the upgrades bought.
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -63,6 +63,9 @@ public class SaveGame : MonoBehaviour
                 var money = Money.Instance;
                 w.Write(money != null);
                 if (money != null) money.WriteState(w);
+                var upgrades = Upgrades.Instance;
+                w.Write(upgrades != null);
+                if (upgrades != null) upgrades.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -113,6 +116,11 @@ public class SaveGame : MonoBehaviour
                 try { hasMoney = r.ReadBoolean(); } catch (EndOfStreamException) { hasMoney = false; }   // saved before there was money
                 if (hasMoney) { if (money != null) money.ReadState(r); else { r.ReadInt64(); r.ReadInt64(); r.ReadDouble(); } }
                 else if (money != null) money.Clear();
+                var upgrades = Upgrades.Instance;
+                bool hasUpgrades;
+                try { hasUpgrades = hasMoney && r.ReadBoolean(); } catch (EndOfStreamException) { hasUpgrades = false; }   // saved before upgrades
+                if (hasUpgrades) { if (upgrades != null) upgrades.ReadState(r); }
+                else if (upgrades != null) upgrades.Reset();
             }
         }
         catch (System.Exception e)

@@ -83,6 +83,12 @@ public class Money : MonoBehaviour
         return whole;
     }
 
+    /// Gives back what an upgrade cost, when it is sold back.  (Not counted as earned.)
+    public void Refund(long coins, int goldVoxels) { if (coins > 0) Coins += coins; if (goldVoxels > 0) GoldStore += goldVoxels; }
+
+    /// The F8 test key: free coins and gold, to try upgrades without digging for them.
+    public void TestGrant(long coins, int goldVoxels) { Coins += coins; GoldStore += goldVoxels; }
+
     /// Takes gold out of the store (machinery).  False, and nothing taken, if there is not enough.
     public bool SpendGold(int voxels)
     {

@@ -548,6 +548,105 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // The upgrade tree:  -executeMethod BulldozerBuilder.UpgradeTest      Prints BULLDOZER_UPGRADE_RESULT.
+    static int uPhase, uMaxShovel;
+    static float uPhaseStart;
+    static string uLog;
+    static Vector3 uStand;
+
+    public static void UpgradeTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        uPhase = 0; uLog = ""; uMaxShovel = 0;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += UpgradeTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void UpgradeFinish(int code)
+    {
+        EditorApplication.update -= UpgradeTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void UpgradeTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_UPGRADE_FAILED timed out in phase " + uPhase + " " + uLog); UpgradeFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (uPhase == 0)
+        {
+            if (t < 1f) return;                                                  // let everything start
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            uLog += "start=P" + up.Level(Upgrades.Branch.Pick) + "/S" + up.Level(Upgrades.Branch.Shovel) + "/B" + up.Level(Upgrades.Branch.Backpack) + "/C" + up.Level(Upgrades.Branch.Cart);
+            wk.SetTool(2);
+            uLog += " backpackLocked=" + (!wk.backpackOwned && wk.Tool != 2) + " shovelHolds=" + wk.shovelHolds + " cartHolds=" + cart.capacity;
+            uLog += " buyBroke=" + up.Buy(Upgrades.Branch.Shovel) + "(" + up.CantBuy(Upgrades.Branch.Shovel) + ")";
+            money.TestGrant(10000, Mathf.CeilToInt(50f / (VoxelWorld.VoxelVolume * 1000f)));
+            long c0 = money.Coins;
+            uLog += " backpackBeforeShovel6=" + up.Buy(Upgrades.Branch.Backpack) + "(" + up.CantBuy(Upgrades.Branch.Backpack) + ")";
+            for (int k = 0; k < 5; k++) up.Buy(Upgrades.Branch.Shovel);
+            uLog += " shovel=" + up.Level(Upgrades.Branch.Shovel) + " holds=" + wk.shovelHolds + " speed=" + wk.shovelSpeed.ToString("F2") + " paid=" + (c0 - money.Coins) + "(want 632)";
+            int g0 = money.GoldStore; c0 = money.Coins;
+            uLog += " buyBackpack=" + up.Buy(Upgrades.Branch.Backpack) + " owned=" + wk.backpackOwned + " packHolds=" + wk.packHolds + " goldTaken=" + (g0 - money.GoldStore) + " coinsTaken=" + (c0 - money.Coins);
+            uLog += " sellShovel6WithPack=" + up.SellBack(Upgrades.Branch.Shovel) + "(" + up.CantSellBack(Upgrades.Branch.Shovel) + ")";
+            uLog += " sellBackpack=" + up.SellBack(Upgrades.Branch.Backpack) + " refunded=" + (money.Coins == c0 && money.GoldStore == g0) + " ownedAfter=" + wk.backpackOwned;
+            up.Buy(Upgrades.Branch.Backpack);
+            for (int k = 0; k < 7; k++) up.Buy(Upgrades.Branch.Backpack);
+            uLog += " backpackMax=" + up.Level(Upgrades.Branch.Backpack) + " packHolds=" + wk.packHolds + " suck=" + wk.suckRate.ToString("F0");
+            up.Buy(Upgrades.Branch.Cart);
+            uLog += " cart2Holds=" + cart.capacity;
+            for (int k = 0; k < 4; k++) up.Buy(Upgrades.Branch.Pick);
+            uLog += " pick=" + up.Level(Upgrades.Branch.Pick) + " radius=" + wk.pickRadius.ToString("F2") + " maxedRefused=" + !up.Buy(Upgrades.Branch.Pick);
+            // keep and bring back
+            var ms = new System.IO.MemoryStream(); var bw = new System.IO.BinaryWriter(ms); up.WriteState(bw); bw.Flush();
+            up.Reset();
+            bool resetOk = up.Level(Upgrades.Branch.Shovel) == 1 && wk.shovelHolds == 480;
+            ms.Position = 0; up.ReadState(new System.IO.BinaryReader(ms));
+            uLog += " resetOk=" + resetOk + " afterLoad=P" + up.Level(Upgrades.Branch.Pick) + "/S" + up.Level(Upgrades.Branch.Shovel) + "/B" + up.Level(Upgrades.Branch.Backpack) + "/C" + up.Level(Upgrades.Branch.Cart) + " holdsBack=" + wk.shovelHolds;
+            // a real shovelful with Shovel 6: break up a patch beside the cart, then dig it
+            Vector3 side = cart.transform.right; side.y = 0f; side.Normalize();
+            uStand = cart.transform.position + side * 1.5f;
+            Vector3 patch = cart.transform.position + side * 2.8f;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 at = patch + cart.transform.forward * (-0.6f + (i % 3) * 0.6f) + side * ((i / 3) * 0.4f);
+                at.y = w.FloorAt(at + Vector3.up) + 0.05f;
+                w.Pick(at, 0.45f, Vector3.zero);
+            }
+            Vector3 aim = patch; aim.y = w.FloorAt(aim + Vector3.up);
+            Vector3 eye = uStand + Vector3.up * 1.6f, dd = aim - eye, flat = new Vector3(dd.x, 0f, dd.z);
+            wk.Teleport(uStand, Facing(flat));
+            wk.Look(Mathf.Atan2(-dd.y, flat.magnitude) * Mathf.Rad2Deg);
+            wk.SetTool(1);
+            uPhase = 1; uPhaseStart = t;
+            return;
+        }
+        if (uPhase == 1)
+        {
+            if (t - uPhaseStart < 4f) return;                                    // let the broken ground settle
+            wk.overrideUse = true;
+            uPhase = 2; uPhaseStart = t;
+            return;
+        }
+        if (uPhase == 2)
+        {
+            uMaxShovel = Mathf.Max(uMaxShovel, w.ShovelVoxels);
+            if (t - uPhaseStart < 0.8f) return;
+            wk.overrideUse = false;
+            uLog += " realScoop=" + (uMaxShovel * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L(level1 max 117L)";
+            Debug.Log("BULLDOZER_UPGRADE_RESULT " + uLog);
+            UpgradeFinish(0);
+        }
+    }
+
     // The dump and money:  -executeMethod BulldozerBuilder.DumpTest
     // Fills the cart and tips it by the mine (must pay nothing), fills it again, takes it to the dump and tips it
     // (must pay what the load was worth), checks the coins survive a save and load, and that no dirt was lost.
@@ -885,6 +984,7 @@ public static class BulldozerBuilder
             bStand = cart.transform.position + bSide * 1.5f;
             bPatch = cart.transform.position + bSide * 2.8f;
             bVolume0 = w.CountSolid() + w.LoadVoxels;
+            if (Upgrades.Instance != null) Upgrades.Instance.SetLevel(Upgrades.Branch.Backpack, 4);   // 500 litres
             wk.SetTool(2);
             AimAt(wk, new Vector3(bPatch.x, w.FloorAt(bPatch + Vector3.up), bPatch.z));
             wk.overrideUse = true;                               // suck at firm ground: nothing should come
@@ -1274,6 +1374,18 @@ public static class BulldozerBuilder
 
     public static void RecordClip() { clipMode = 0; StartClip(); }
 
+    // A showcase: pushing a big heap (with the real frame time on screen), then the backpack, the hopper and the
+    // gold buyer.  -executeMethod BulldozerBuilder.RecordShowcase   Frames and overlay.ass go to Logs/clip.
+    public static void RecordShowcase() { clipMode = 4; sPh = 0; sOverlay.Clear(); sCaptureMs = 0f; sWorst = 0f; sSum = 0f; sN = 0; StartClip(); }
+    static int sPh, sStep, sN, sCoins0;
+    static float sT0, sNext, sCaptureMs, sWorst, sSum, sRealSmooth;
+    static double sDirt0;
+    static Vector3 sStand, sPatch, sSide;
+    static string sCaption = "", sPop = "", sTitle = "";
+    static float sPopUntil;
+    static readonly List<string> sOverlay = new List<string>();
+    static readonly double[] sLoadL = new double[16];
+
     // What the overnight work added: dig a part out, the dead dozer and a repair, the cart, save and load.
     //   -executeMethod BulldozerBuilder.RecordNightClip      Prints BULLDOZER_NIGHT_OK with the frame each part starts at.
     public static void RecordNightClip() { clipMode = 3; nPhase = 0; nGlint = nVisible = nCheck = 0; nMarks = ""; StartClip(); }
@@ -1320,6 +1432,15 @@ public static class BulldozerBuilder
 
         var follow = cam.GetComponent<FollowCamera>();
         if (clipMode == 3) { if (!NightStep(d, t)) return; }
+        else if (clipMode == 4)
+        {
+            if (!ShowStep(d, t, follow))
+            {
+                WriteOverlay();
+                Debug.Log("BULLDOZER_SHOW_OK frames=" + clipFrame + " avgRealMs=" + (sSum / Mathf.Max(1, sN)).ToString("F1") + " worstRealMs=" + sWorst.ToString("F1") + " coins=" + Money.Instance.Coins);
+                ClipFinish(0); return;
+            }
+        }
         else if (clipMode == 2)
         {
             var wk = Worker.Instance;
@@ -1385,6 +1506,17 @@ public static class BulldozerBuilder
             }
         }
 
+        if (clipMode == 4)
+        {
+            float realMs = Mathf.Max(0f, Time.unscaledDeltaTime * 1000f - sCaptureMs);
+            var vw = VoxelWorld.Instance;
+            double dirt = vw.MsTotal[1] + vw.MsTotal[2];
+            double dirtMs = clipFrame == 0 ? 0 : dirt - sDirt0;
+            sDirt0 = dirt;
+            if (clipFrame > 5) { sSum += realMs; sN++; sWorst = Mathf.Max(sWorst, realMs); }
+            ShowOverlay(realMs, dirtMs);
+        }
+        var capWatch = System.Diagnostics.Stopwatch.StartNew();
         cam.targetTexture = clipRT;
         cam.Render();
         RenderTexture.active = clipRT;
@@ -1396,6 +1528,192 @@ public static class BulldozerBuilder
         RenderTexture.active = null;
         System.IO.File.WriteAllBytes(Application.dataPath + "/../Logs/clip/frame_" + clipFrame.ToString("D4") + ".jpg", clipTex.EncodeToJPG(93));
         clipFrame++;
+        sCaptureMs = (float)capWatch.Elapsed.TotalMilliseconds;
+    }
+
+    static void ShowAim(Worker wk, Vector3 target)
+    {
+        Vector3 eye = sStand + Vector3.up * 1.6f, d = target - eye;
+        Vector3 flat = new Vector3(d.x, 0f, d.z);
+        wk.Teleport(sStand, Facing(flat));
+        wk.Look(Mathf.Atan2(-d.y, flat.magnitude) * Mathf.Rad2Deg);
+    }
+
+    /// One step of the showcase.  Returns false when it has finished.
+    static bool ShowStep(DozerController d, float t, FollowCamera follow)
+    {
+        var wk = Worker.Instance; var w = VoxelWorld.Instance; var cart = MineCart.Instance; var money = Money.Instance;
+        if (cart == null || money == null) return true;
+        if (sPh == 0)
+        {
+            if (Upgrades.Instance != null) Upgrades.Instance.SetLevel(Upgrades.Branch.Backpack, 4);
+            sTitle = "1.  Pushing a big heap"; sCaption = "Blade dug in, pushing: thousands of loose clods, each one simulated";
+            sT0 = t; sPh = 1;
+        }
+        float k = t - sT0;
+        if (sPh == 1)
+        {
+            // lower the blade, then push on with it dug in so the heap keeps growing
+            if (k < 1.2f) { d.overrideThrottle = 0f; d.overrideBlade = -1f; }
+            else if (k < 15f) { d.overrideThrottle = 1f; d.overrideBlade = k < 4f ? -1f : 0f; d.overrideSteer = (k > 9f && k < 11f) ? 0.4f : 0f; }
+            else { sPh = 2; sT0 = t; d.overrideThrottle = 0f; sCaption = "Stopped: the loose dirt settles back into ground within a couple of seconds"; }
+            if (follow != null) { follow.yawOffset = Mathf.Lerp(25f, 110f, Mathf.SmoothStep(0f, 1f, k / 15f)); follow.distance = Mathf.Lerp(12f, 9f, Mathf.Clamp01(k / 15f)); follow.pitch = 22f; }
+            return true;
+        }
+        if (sPh == 2)
+        {
+            if (follow != null) { follow.yawOffset = 110f; follow.distance = 9f; follow.pitch = 26f; }
+            if (k < 4f) return true;
+            // out of the dozer, beside the cart by the mine entrance
+            d.overrideThrottle = 0f;
+            wk.GetOut();
+            if (follow != null) follow.yawOffset = 0f;                         // back to the view over his shoulder
+            sSide = cart.transform.right; sSide.y = 0f; sSide.Normalize();
+            sStand = cart.transform.position + sSide * 1.5f;
+            sPatch = cart.transform.position + sSide * 2.8f;
+            wk.SetTool(0);
+            Vector3 aim = sPatch; aim.y = w.FloorAt(aim + Vector3.up);
+            ShowAim(wk, aim);
+            wk.overrideUse = true;
+            sTitle = "2.  The suction backpack"; sCaption = "Break the ground up with the pick (1)...";
+            sStep = 0; sNext = t; sPh = 3; sT0 = t;
+            return true;
+        }
+        if (sPh == 3)
+        {
+            // he swings the pick at the patch, and the patch breaks up around where he hits
+            if (t >= sNext && sStep < 12)
+            {
+                sNext = t + 0.35f;
+                Vector3 at = sPatch + cart.transform.forward * (-0.8f + (sStep % 3) * 0.8f) + sSide * (((sStep / 3) % 2) * 0.6f);
+                at.y = w.FloorAt(at + Vector3.up) + (sStep < 6 ? 0.05f : -0.3f);
+                w.Pick(at, 0.42f, Vector3.up * 0.3f);
+                sStep++;
+            }
+            if (k < 4.5f) return true;
+            wk.overrideUse = false;
+            wk.SetTool(2);
+            sCaption = "...then 3 for the backpack: hold the button and loose dirt flies into the nozzle (500 litres)";
+            sStep = 0; sNext = t; sPh = 4; sT0 = t;
+            wk.overrideUse = true;
+            return true;
+        }
+        if (sPh == 4)
+        {
+            if (t >= sNext)
+            {
+                sNext = t + 0.6f;
+                Vector3 at = sPatch + cart.transform.forward * (-0.9f + (sStep % 4) * 0.6f) + sSide * (((sStep / 4) % 3) * 0.35f);
+                at.y = w.FloorAt(at + Vector3.up);
+                ShowAim(wk, at);
+                sStep++;
+            }
+            if (k < 7f && w.PackVoxels < wk.packHolds - VoxelWorld.ClodVoxels) return true;
+            wk.overrideUse = false;
+            ShowAim(wk, cart.Mouth);
+            wk.StartPour();
+            sCaption = "Q by the cart squirts the backpack into it";
+            sPh = 5; sT0 = t;
+            return true;
+        }
+        if (sPh == 5)
+        {
+            if (k < 3.5f) return true;
+            // to the dump.  (The 50 m push is skipped.)
+            cart.SetAlong(cart.EndLimit);
+            wk.Teleport(cart.transform.position - cart.transform.forward * 2.6f + cart.transform.right * 0.9f, Facing(cart.transform.forward - cart.transform.right * 0.45f));
+            wk.Look(30f);
+            sTitle = "3.  The hopper at the dump"; sCaption = "(skipping the 50 m push out to the end of the rails)";
+            sPh = 6; sT0 = t;
+            return true;
+        }
+        if (sPh == 6)
+        {
+            if (k < 2f) return true;
+            for (int m = 0; m < 16; m++) sLoadL[m] = w.CartLoadOf(m) * VoxelWorld.VoxelVolume * 1000.0;
+            sCoins0 = (int)money.Coins;
+            wk.PressE();
+            if (!cart.Tipping) Debug.LogError("BULLDOZER_SHOW_FAILED the cart did not tip at the dump");
+            sCaption = "E at the end of the rails tips the cart into the hopper: it's sorted and sold as it goes down";
+            sPh = 7; sT0 = t;
+            return true;
+        }
+        if (sPh == 7)
+        {
+            if (k < 3.5f) return true;
+            string sorted = "";
+            string[] names = { "", "", "", "", "", "", "Soil", "Clay", "Rock", "Quartz", "Gold" };
+            for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold; m++) if (sLoadL[m] >= 0.5) sorted += (sorted.Length > 0 ? "   " : "") + names[m] + " " + sLoadL[m].ToString("F0") + " L";
+            sPop = "Hopper sorted it:  " + sorted + "   =  +" + (money.Coins - sCoins0) + " coins"; sPopUntil = Time.time + 4.5f;
+            if (k < 7.5f) return true;
+            // gold: real gold is rare flecks in the quartz, so some is added for the demo
+            var demo = new int[16]; demo[VoxelWorld.LooseGold] = 120;
+            money.Pay(demo);
+            Vector3 front = SiteProps.GoldShedFront;
+            sStand = front + new Vector3(-2.6f, 0f, 0.9f);
+            wk.Teleport(sStand, Facing(Vector3.right * 0.9f - Vector3.forward * 0.3f));
+            wk.Look(12f);
+            sTitle = "4.  The gold buyer's shed"; sCaption = "Gold isn't sold at the hopper: it goes to your gold store  (" + money.GoldLitres.ToString("F0") + " L added for this demo)";
+            sPh = 8; sT0 = t;
+            return true;
+        }
+        if (sPh == 8)
+        {
+            // walk up to the counter
+            wk.overrideWalk = k < 1.6f ? 1f : 0f;
+            if (k < 3f) return true;
+            wk.Teleport(SiteProps.GoldShedFront, Facing(Vector3.right));
+            wk.Look(14f);
+            long c0 = money.Coins; float litres = money.GoldLitres;
+            wk.PressE();
+            sPop = "Sold " + litres.ToString("F0") + " L of gold:  +" + (money.Coins - c0).ToString("N0") + " coins"; sPopUntil = Time.time + 5f;
+            sCaption = "E at the counter sells all your gold.  Gold you keep is for buying machinery later.";
+            sPh = 9; sT0 = t;
+            return true;
+        }
+        if (sPh == 9)
+        {
+            if (k < 5f) return true;
+            return false;
+        }
+        return true;
+    }
+
+    static string AssTime(float sec) { int cs = Mathf.RoundToInt(sec * 100f); return (cs / 360000) + ":" + ((cs / 6000) % 60).ToString("D2") + ":" + ((cs / 100) % 60).ToString("D2") + "." + (cs % 100).ToString("D2"); }
+    static string AssEsc(string x) { return x.Replace("{", "(").Replace("}", ")"); }
+
+    /// What goes on screen over this frame (written as one subtitle event per frame).
+    static void ShowOverlay(float realMs, double dirtMs)
+    {
+        var w = VoxelWorld.Instance; var money = Money.Instance;
+        float a = clipFrame / 30f, b = (clipFrame + 1) / 30f;
+        string at = AssTime(a) + "," + AssTime(b);
+        sRealSmooth = sRealSmooth <= 0f ? realMs : Mathf.Lerp(sRealSmooth, realMs, 0.25f);
+        string perf = "Frame time " + sRealSmooth.ToString("F1") + " ms  (" + (1000f / Mathf.Max(0.1f, sRealSmooth)).ToString("F0") + " fps)\\N"
+                    + "Dirt work " + dirtMs.ToString("F2") + " ms     Clods moving " + w.ClodCount.ToString("N0");
+        sOverlay.Add("Dialogue: 0," + at + ",Perf,,0,0,0,," + perf);
+        sOverlay.Add("Dialogue: 0," + at + ",Hud,,0,0,0,,Coins " + money.Coins.ToString("N0") + "\\NGold " + money.GoldLitres.ToString("F0") + " L");
+        if (sTitle.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(sTitle));
+        if (sCaption.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(sCaption));
+        if (sPop.Length > 0 && Time.time < sPopUntil) sOverlay.Add("Dialogue: 0," + at + ",Pop,,0,0,0,," + AssEsc(sPop));
+    }
+
+    static void WriteOverlay()
+    {
+        var head = new List<string>
+        {
+            "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1280", "PlayResY: 720", "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Perf,Consolas,22,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,6,0,7,18,18,16,1",
+            "Style: Hud,Arial,26,&H0040D8FF,&H000000FF,&H00000000,&H90000000,1,0,0,0,100,100,0,0,3,6,0,9,18,18,16,1",
+            "Style: Title,Arial,34,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,3,1,8,20,20,78,1",
+            "Style: Caption,Arial,26,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,3,6,0,2,30,30,28,1",
+            "Style: Pop,Arial,28,&H0040D8FF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,3,8,0,5,30,30,0,1",
+            "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        };
+        head.AddRange(sOverlay);
+        System.IO.File.WriteAllLines(Application.dataPath + "/../Logs/clip/overlay.ass", head.ToArray());
     }
 
     // One step of the overnight clip.  Returns false when it has finished.
