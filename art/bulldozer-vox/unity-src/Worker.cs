@@ -329,6 +329,8 @@ public class Worker : MonoBehaviour
     }
 
     public void Say(string text, float seconds = 4f) { say = text; sayTimer = seconds; }
+    public string LastSaid { get { return say; } }                       // (tests)
+    public string SwingNow { get { return swing.ToString(); } }          // (tests)
 
     public void WriteState(System.IO.BinaryWriter w)
     {

@@ -208,6 +208,21 @@ public class Upgrades : MonoBehaviour
         Apply();
     }
 
+    /// The tree as plain text, one line per upgrade (for videos, where the screen itself isn't recorded).
+    public string Describe(Branch b)
+    {
+        int i = (int)b;
+        var sb = new System.Text.StringBuilder();
+        for (int k = 0; k < Steps[i].Length; k++)
+        {
+            var st = Steps[i][k];
+            string mark = k < level[i] ? "[x]" : k == level[i] ? "[ ]" : "   ";
+            string price = k < level[i] ? "" : "  " + st.coins.ToString("N0") + "c" + (st.goldLitres > 0f ? " + " + st.goldLitres.ToString("F0") + " L gold" : "");
+            sb.Append(mark + " " + st.name + ":  " + st.effect + price + "\n");
+        }
+        return sb.ToString();
+    }
+
     /// Sets a branch's level directly (tests).
     public void SetLevel(Branch b, int lv) { level[(int)b] = lv; Apply(); }
 
