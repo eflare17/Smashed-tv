@@ -548,6 +548,89 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // The bushfire:  -executeMethod BulldozerBuilder.FireTest   A line of fire high on the hillside, the wind blowing
+    // it down towards the mine, a firebreak strip past the fence that holds until the wind changes and strengthens.
+    // Pictures as it burns.  Prints BULLDOZER_FIRE_RESULT.
+    static int frPhase, frShot, frFrames;
+    static float frRealStart, frMaxMs, frSumMs;
+    static string frLog;
+    static readonly float[] FrShots = { 12f, 30f, 50f, 70f, 90f, 120f };
+    const float FrBreakZ0 = 54f, FrBreakZ1 = 60f, FrChange = 60f;
+
+    public static void FireTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        frPhase = 0; frShot = 0; frLog = ""; frFrames = 0; frMaxMs = 0f; frSumMs = 0f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += FireTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void FireFinish(int code)
+    {
+        EditorApplication.update -= FireTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static int FrBurntBelow(float z)
+    {
+        int n = 0;
+        for (float x = -100f; x < 100f; x += 2f) for (float zz = 49f; zz < z; zz += 2f) if (FireSim.Instance.CellBurnt(new Vector3(x, 0f, zz))) n++;
+        return n;
+    }
+
+    static void FireTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { Debug.LogError("BULLDOZER_FIRE_FAILED timed out in phase " + frPhase + " " + frLog); FireFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var fire = FireSim.Instance; var wk = Worker.Instance;
+        if (fire == null || wk == null || Camera.main == null || FireSim.Trees.Count == 0) return;
+        if (frPhase == 0)
+        {
+            if (Time.time < 2f) return;
+            wk.useOverride = true;
+            var follow = Camera.main.GetComponent<FollowCamera>(); if (follow != null) follow.enabled = false;
+            fire.SetWind(new Vector2(0.6f, -5f), new Vector2(2.5f, -11f), FrChange);
+            fire.ClearFuel(-110f, FrBreakZ0, 110f, FrBreakZ1);
+            fire.speedUp = 3f;
+            fire.Begin();
+            fire.Ignite(new Vector3(-100f, 0f, 160f), new Vector3(100f, 0f, 160f));
+            frLog += "trees=" + FireSim.Trees.Count;
+            frPhase = 1; frRealStart = Time.realtimeSinceStartup;
+            return;
+        }
+        float ms = Time.unscaledDeltaTime * 1000f;
+        frFrames++; frSumMs += ms; if (frFrames > 10) frMaxMs = Mathf.Max(frMaxMs, ms);
+        float t = fire.Now;
+        if (frPhase == 1 && t > FrChange - 0.5f)
+        {
+            frLog += " beforeChange:cells=" + fire.CellsBurnt + " trees=" + fire.TreesBurnt + " crossedBreak=" + FrBurntBelow(FrBreakZ0);
+            frPhase = 2;
+        }
+        if (frShot < FrShots.Length && t >= FrShots[frShot])
+        {
+            var cam = Camera.main;
+            // wide, from high over the quarry, looking up the hill; and the last two from inside the forest
+            if (frShot < 4) cam.transform.SetPositionAndRotation(new Vector3(-14f, 26f, -26f), Quaternion.LookRotation(new Vector3(VoxelWorld.TrackX + 6f, 12f, 90f) - new Vector3(-14f, 26f, -26f)));
+            else
+            {
+                Vector3 at = new Vector3(VoxelWorld.TrackCentreX(36f) - 1f, 5.9f, 36f), look = new Vector3(VoxelWorld.TrackCentreX(70f), 12f, 70f);
+                cam.transform.SetPositionAndRotation(at, Quaternion.LookRotation(look - at));
+            }
+            TestCapture("fire_" + frShot + "_" + Mathf.RoundToInt(FrShots[frShot]) + "s.png");
+            frShot++;
+            return;
+        }
+        if (frShot < FrShots.Length) return;
+        frLog += " end:cells=" + fire.CellsBurnt + " trees=" + fire.TreesBurnt + " crossedBreakAfterChange=" + FrBurntBelow(FrBreakZ0)
+              + " reachedHilltop=" + fire.CellBurnt(new Vector3(-20f, 0f, 30f)) + " avgMs=" + (frSumMs / Mathf.Max(1, frFrames)).ToString("F1") + " worstMs=" + frMaxMs.ToString("F1");
+        Debug.Log("BULLDOZER_FIRE_RESULT " + frLog);
+        FireFinish(0);
+    }
+
     // The hill behind the mine:  -executeMethod BulldozerBuilder.HillTest   Pictures, and the dozer driving up the ramp
     // onto the hilltop track.  Prints BULLDOZER_HILL_RESULT.
     static int hPhase;

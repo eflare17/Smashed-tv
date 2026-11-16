@@ -202,6 +202,14 @@ public partial class VoxelWorld : MonoBehaviour
         return (sum / 9f - Ground) * Voxel;
     }
 
+    /// How grassy the untouched surface is here (0 = bare: worked, dug or scraped).  0 outside the site.
+    public byte GrassAt(float wx, float wz)
+    {
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return 0;
+        return grass[ix + NX * iz];
+    }
+
     /// Highest ground in a box of columns, in metres.  Used by tests to find the heap.
     public float MaxHeightIn(float wx0, float wz0, float wx1, float wz1)
     {

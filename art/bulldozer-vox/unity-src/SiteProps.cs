@@ -42,9 +42,19 @@ public class SiteProps : MonoBehaviour
 
     void Box(Vector3 centre, Vector3 size, byte mat) { Box(centre, size, Quaternion.identity, mat); }
 
+    // the tree being built, if any: its id goes in the blocks' colours (blue, alpha) so the fire can burn it alone
+    int curTree = -1;
+
+    int BeginTree(Vector3 at, float height)
+    {
+        FireSim.Trees.Add(new FireSim.FireTree { at = at, height = height });
+        curTree = FireSim.Trees.Count - 1;
+        return curTree;
+    }
+
     void Box(Vector3 centre, Vector3 size, Quaternion rot, byte mat)
     {
-        var col = new Color32(mat, 0, 0, 255);
+        var col = curTree >= 0 ? new Color32(mat, 0, (byte)(curTree & 255), (byte)(curTree >> 8)) : new Color32(mat, 0, 0, 255);
         Vector3 half = size * 0.5f;
         for (int f = 0; f < 6; f++)
         {
@@ -99,6 +109,7 @@ public class SiteProps : MonoBehaviour
         world = VoxelWorld.Instance;
         if (world == null) return;
         solids.Clear();
+        FireSim.Trees.Clear();
         rng = new System.Random(11);
         var cam = Camera.main;
         if (cam != null) cam.farClipPlane = 900f;
@@ -112,6 +123,7 @@ public class SiteProps : MonoBehaviour
         if (SaveGame.Instance == null) new GameObject("Save game").AddComponent<SaveGame>();
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
         if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
+        if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
         Dump();
         Clutter();
         Hillside();
@@ -382,7 +394,9 @@ public class SiteProps : MonoBehaviour
         Finish("Crates and logs");
     }
 
-    void Tree(Vector3 at, float height)
+    void Tree(Vector3 at, float height) { BeginTree(at, height); TreeShape(at, height); curTree = -1; }
+
+    void TreeShape(Vector3 at, float height)
     {
         // a gum tree: a pale leaning trunk that forks, with loose clumps of leaves at the ends of the branches
         Vector3 p = at;
@@ -523,7 +537,9 @@ public class SiteProps : MonoBehaviour
 
     /// A tall gum (mountain ash): a long, straight, pale trunk, bare for most of its height, with its leaves in
     /// loose clumps right at the top.  The kind of forest the prologue is set in.
-    void TallGum(Vector3 at, float height)
+    void TallGum(Vector3 at, float height) { BeginTree(at, height); TallGumShape(at, height); curTree = -1; }
+
+    void TallGumShape(Vector3 at, float height)
     {
         Vector3 p = at;
         float lean = Rand(-0.04f, 0.04f), leanZ = Rand(-0.04f, 0.04f);
@@ -583,7 +599,9 @@ public class SiteProps : MonoBehaviour
 
     /// A gum seen from a distance: a straight pale trunk and a few big clumps of leaves at the top.  About a tenth of
     /// the blocks of a TallGum, so the whole hillside can be covered.
-    void FarGum(Vector3 at, float height)
+    void FarGum(Vector3 at, float height) { BeginTree(at, height); FarGumShape(at, height); curTree = -1; }
+
+    void FarGumShape(Vector3 at, float height)
     {
         float thick = Rand(0.5f, 0.75f);
         Vector3 top = at + new Vector3(Rand(-0.4f, 0.4f), height * 0.78f, Rand(-0.4f, 0.4f));

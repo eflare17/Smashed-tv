@@ -67,6 +67,10 @@ Shader "Voxel/Terrain"
         // (but not things that carry vertex colour green: the cart, which you need to see into)
         float4 _CutFrom, _CutTo;
         float _CutRadius;
+        // the bushfire (FireSim): seconds since it started, and when each tree and each 2 m square caught
+        float _FireTime;
+        sampler2D _TreeFire, _GroundFire;
+        float4 _TreeFireSize, _GroundFireRect;
 
         float hash3(float3 p)
         {
@@ -117,10 +121,60 @@ Shader "Voxel/Terrain"
             }
             if (m == 14) c *= 0.7 + 0.6 * hash3(floor(v / 4.0) + 9.1);          // leaves: clumps of light and shade
             if (m == 15 && h2 > 0.7) c = float3(0.62, 0.42, 0.30) * (0.8 + 0.3 * h);   // bark: patches where it has peeled
+
+            // ---- the bushfire
+            float3 glow = 0;
+            if (_FireTime > -1000.0)
+            {
+                bool isTree = IN.color.a < 0.99 && (m == 14 || m == 15);
+                if (isTree)
+                {
+                    float tid = round(IN.color.b * 255.0) + round(IN.color.a * 255.0) * 256.0;
+                    float2 tuv = float2((fmod(tid, 256.0) + 0.5) * _TreeFireSize.z, (floor(tid / 256.0) + 0.5) * _TreeFireSize.w);
+                    float2 tf = tex2Dlod(_TreeFire, float4(tuv, 0, 0)).rg;
+                    float tb = _FireTime - tf.r;                                              // seconds this tree has been burning
+                    float above = IN.worldPos.y - tf.g;                                       // metres up the trunk
+                    if (tb > 0.0)
+                    {
+                        float flick = 0.6 + 0.4 * sin(_Time.y * 13.0 + h * 40.0) * sin(_Time.y * 5.3 + h2 * 20.0);
+                        if (m == 14)
+                        {
+                            float scorch = smoothstep(0.0, 2.5, tb), charL = smoothstep(5.0, 18.0, tb);
+                            c = lerp(c, float3(0.52, 0.19, 0.05), scorch * (1.0 - charL));
+                            c = lerp(c, float3(0.05, 0.04, 0.035), charL);
+                            clip((1.0 - smoothstep(4.0, 24.0, tb) * 0.88) - hash3(floor(v / 3.0) + 5.5));   // the leaves burn away
+                            glow = float3(1.5, 0.45, 0.08) * (1.0 - smoothstep(5.0, 13.0, tb)) * smoothstep(0.0, 1.0, tb) * flick * step(0.35, h);
+                        }
+                        else
+                        {
+                            c = lerp(c, float3(0.045, 0.04, 0.035), smoothstep(2.0, 14.0, tb) * 0.93);
+                            // embers: patches near the foot of the trunk, a few higher up, dying down over half a minute
+                            float low = 1.0 - smoothstep(0.5, 3.0, above), high = 1.0 - smoothstep(3.0, 9.0, above);
+                            float patch = step(1.0 - (0.35 * low + 0.06 * high), hash3(floor(v / 3.0) + 2.2));
+                            glow = float3(1.6, 0.3, 0.05) * patch * smoothstep(1.0, 4.0, tb) * (1.0 - smoothstep(10.0, 40.0, tb)) * flick;
+                        }
+                    }
+                }
+                else if (m <= 10 || m >= 25)
+                {
+                    float2 guv = (IN.worldPos.xz - _GroundFireRect.xy) * _GroundFireRect.zw;
+                    if (guv.x > 0.0 && guv.y > 0.0 && guv.x < 1.0 && guv.y < 1.0)
+                    {
+                        float tg = _FireTime - tex2Dlod(_GroundFire, float4(guv, 0, 0)).r + (h - 0.5) * 3.0;   // ragged edges
+                        if (tg > 0.0)
+                        {
+                            c = lerp(c, float3(0.05, 0.045, 0.04) * (0.8 + 0.4 * h), smoothstep(0.0, 6.0, tg));
+                            if (h2 > 0.72) c = lerp(c, float3(0.30, 0.29, 0.27), smoothstep(12.0, 40.0, tg));   // white ash
+                            glow = float3(2.4, 0.5, 0.06) * (1.0 - smoothstep(1.5, 9.0, tg)) * step(0.55, h) * (0.6 + 0.4 * sin(_Time.y * 9.0 + h2 * 30.0));
+                        }
+                    }
+                }
+            }
             #ifndef UNITY_COLORSPACE_GAMMA
             c = GammaToLinearSpace(c);
             #endif
             o.Albedo = c;
+            o.Emission = glow;
         }
         ENDCG
     }
