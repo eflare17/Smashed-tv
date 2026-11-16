@@ -28,6 +28,10 @@ public partial class VoxelWorld : MonoBehaviour
     public const float PortalX = 9f, PortalZ = 11.6f;       // the mine entrance in the north face
     public const float TunnelLength = 15f, TunnelHalfWidth = 1.6f, TunnelHeight = 2.6f;
     public const float RoadX = -4f, RoadHalfWidth = 5.5f;   // the way out to the south
+    // The escape track: a ramp up through the benches just east of the mine, then over the hilltop to the north fence
+    // and on up the hillside beyond it (SiteProps.Hillside).  It wanders a little either side of TrackX.
+    public const float TrackX = 16f, TrackHalf = 2.2f, TrackZ0 = 7f, TrackRampLen = 18f, TrackTop = 4.6f;
+    public static float TrackCentreX(float wz) { return TrackX + 1.2f * Mathf.Sin(wz * 0.09f); }
     public const float RockPadX = 16f, RockPadZ = -8f;      // a bare rock patch on the floor, for ripping
 
     // Where the three dozer parts lie buried in the cave-in (see Finds.cs): across from the tunnel's middle, along from its mouth.
@@ -445,7 +449,8 @@ public partial class VoxelWorld : MonoBehaviour
             float n1 = noise.snoise(p * 0.035f), n2 = noise.snoise(p * 0.11f), n3 = noise.snoise(p * 0.5f);
 
             // the hill as it was before anyone dug it
-            float inside = math.min(NX / 2 * Voxel - math.abs(wx), NZ / 2 * Voxel - math.abs(wz));
+            // (it does not fade away at the north fence: the hillside carries on past it, as scenery)
+            float inside = math.min(NX / 2 * Voxel - math.abs(wx), wz > 0f ? 99f : NZ / 2 * Voxel - math.abs(wz));
             float fade = math.smoothstep(1.5f, 9f, inside);
             float south = math.smoothstep(-36f, -19f, wz);
             float hill = math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * south * fade);
@@ -458,6 +463,14 @@ public partial class VoxelWorld : MonoBehaviour
             if (d <= 0f || road) cut = 0f;
             else if (portalFace) cut = 1000f;                                    // a sheer face for the mine entrance
             else cut = (math.floor(d / 3.2f) + 1f) * 1.5f;                       // benches: 1.5 m up, 3.2 m wide
+            // the escape track: a ramp up through the benches, then level along the hilltop
+            float trackOff = math.abs(wx - (TrackX + 1.2f * math.sin(wz * 0.09f)));
+            bool onTrack = trackOff < TrackHalf + 1.4f && wz > TrackZ0 - 1f;
+            if (onTrack)
+            {
+                float ramp = math.saturate((wz - TrackZ0) / TrackRampLen) * TrackTop;
+                cut = math.lerp(ramp, math.min(cut, 50f), math.smoothstep(TrackHalf, TrackHalf + 1.4f, trackOff));
+            }
             bool floor = (d <= 0f || road) && hill > 0.05f;
             float ground = math.min(hill, cut) + (floor ? 0.05f * n3 : 0f);
 
@@ -467,7 +480,6 @@ public partial class VoxelWorld : MonoBehaviour
             spire = math.max(spire, Spire(p, -3.5f, 10.5f, 1.8f, 2.4f));
             spire = math.max(spire, Spire(p, 2.5f, 9.5f, 2.0f, 2.9f));
             spire = math.max(spire, Spire(p, -17f, 1f, 2.2f, 2.6f));
-            spire = math.max(spire, Spire(p, 17.5f, 3f, 1.7f, 1.9f));
             spire = math.max(spire, Spire(p, -13.5f, -13f, 1.5f, 1.3f));
             spire = math.max(spire, Spire(p, 20f, -17f, 1.6f, 1.5f));
             spire *= 0.8f + 0.35f * n3;
@@ -479,7 +491,7 @@ public partial class VoxelWorld : MonoBehaviour
             float soil = 7f + n3 * 3f;
             float clay = 30f + noise.snoise(p * 0.17f) * 7f;
             bool rockPad = floor && math.distance(p, new float2(RockPadX, RockPadZ)) < 5.5f + n2 * 1.2f;
-            bool fill = floor && hill > 0.5f && !rockPad;                         // dust and clay over the cut floor
+            bool fill = (floor || (onTrack && trackOff < TrackHalf + 0.6f)) && hill > 0.5f && !rockPad;   // dust and clay over the cut floor, and the track
 
             // the tunnel behind the mine entrance
             bool tunnel = math.abs(wx - PortalX) < TunnelHalfWidth && wz > PortalZ - 1.2f && wz < PortalZ + TunnelLength;
@@ -533,7 +545,8 @@ public partial class VoxelWorld : MonoBehaviour
             // grass grows where the old surface is still there: the hilltop, the top bench and the open ground to the south
             bool untouched = spire == 0f && !floor && baseSurf >= nat - 1;
             bool patchy = noise.snoise(p * 0.07f) > -0.45f || hill > 1f;
-            grass[i] = (byte)(untouched && patchy ? 150 + (int)(math.hash(new int2(x >> 1, z >> 1)) % 100u) : 0);
+            bool bareTrack = trackOff < TrackHalf + 0.3f && wz > TrackZ0;          // the track is bare dirt
+            grass[i] = (byte)(untouched && patchy && !bareTrack ? 150 + (int)(math.hash(new int2(x >> 1, z >> 1)) % 100u) : 0);
         }
     }
 

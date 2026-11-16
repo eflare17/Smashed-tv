@@ -548,6 +548,99 @@ public static class BulldozerBuilder
 
     static float Facing(Vector3 dir) { return Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg; }
 
+    // The hill behind the mine:  -executeMethod BulldozerBuilder.HillTest   Pictures, and the dozer driving up the ramp
+    // onto the hilltop track.  Prints BULLDOZER_HILL_RESULT.
+    static int hPhase;
+    static float hT0, hMaxY, hMaxZ;
+    static string hLog;
+    static Camera hCam;
+
+    public static void HillTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        hPhase = 0; hLog = ""; hMaxY = -9f; hMaxZ = -99f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += HillTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void HillFinish(int code)
+    {
+        EditorApplication.update -= HillTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void HillShot(Vector3 pos, Vector3 look, string file)
+    {
+        var cam = Camera.main;
+        var follow = cam.GetComponent<FollowCamera>();
+        if (follow != null) follow.enabled = false;
+        cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos));
+        TestCapture(file);
+    }
+
+    static void HillTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_HILL_FAILED timed out in phase " + hPhase + " " + hLog); HillFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || Camera.main == null) return;
+        float t = Time.time;
+        float tx = VoxelWorld.TrackX;
+        if (hPhase == 0)
+        {
+            if (t < 2f) return;
+            hLog += "gums=" + SiteProps.TrackGumCount + "/" + SiteProps.HillGumCount + "/" + SiteProps.FarGumCount + " rampFoot=" + w.HeightAt(tx, VoxelWorld.TrackZ0).ToString("F2") + " rampTop=" + w.HeightAt(VoxelWorld.TrackCentreX(22f), 22f).ToString("F2")
+                  + " hilltopTrack=" + w.HeightAt(VoxelWorld.TrackCentreX(40f), 40f).ToString("F2") + " pastFence=" + SiteProps.HillY(VoxelWorld.TrackCentreX(80f), 80f).ToString("F1");
+            // 1. from the quarry floor, looking up the ramp and the hill behind the mine
+            HillShot(new Vector3(tx - 4f, 2.2f, -8f), new Vector3(tx + 1f, 4f, 22f), "hill_from_floor.png");
+            hPhase = 1; hT0 = t;
+            return;
+        }
+        if (hPhase == 1)
+        {
+            if (t - hT0 < 0.5f) return;
+            // 2. high, from the quarry, the whole hillside
+            HillShot(new Vector3(-10f, 22f, -30f), new Vector3(tx, 8f, 45f), "hill_wide.png");
+            // 3. on the hilltop track, looking up into the forest
+            HillShot(new Vector3(VoxelWorld.TrackCentreX(30f), 6.6f, 30f), new Vector3(VoxelWorld.TrackCentreX(70f), 14f, 70f), "hill_track.png");
+            Camera.main.GetComponent<FollowCamera>().enabled = true;
+            // the dozer at the foot of the ramp, facing up it, driven
+            wk.useOverride = true;
+            d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            Vector3 start = new Vector3(VoxelWorld.TrackCentreX(1f), 0.2f, 1f);
+            hLog += " startBlocked=" + SiteProps.Blocks(start, 2.3f) + " rampBlocked=" + SiteProps.Blocks(new Vector3(VoxelWorld.TrackCentreX(12f), 2f, 12f), 2.3f)
+                  + " shedFront=" + SiteProps.GoldShedFront.ToString("F1") + " dozerWas=" + d.transform.position.ToString("F1");
+            d.transform.position = start;
+            var rb = d.GetComponent<Rigidbody>(); if (rb != null) rb.position = start;
+            hPhase = 2; hT0 = t;
+            return;
+        }
+        if (hPhase == 2)
+        {
+            float k = t - hT0;
+            d.overrideBlade = 1f; d.overrideRipper = 1f;
+            d.overrideThrottle = k < 1f ? 0f : 1f;
+            // keep it on the track
+            float want = VoxelWorld.TrackCentreX(d.transform.position.z + 3f) - d.transform.position.x;
+            d.overrideSteer = Mathf.Clamp(want * 0.6f, -1f, 1f);
+            hMaxY = Mathf.Max(hMaxY, d.transform.position.y); hMaxZ = Mathf.Max(hMaxZ, d.transform.position.z);
+            if (k > 6f && hLog.IndexOf("climbPic") < 0) { TestCapture("hill_dozer_climb.png"); hLog += " climbPic"; }
+            if (k > 3f && hLog.IndexOf("at3s") < 0) hLog += " at3s=" + d.transform.position.ToString("F1") + " speed=" + d.Speed.ToString("F2") + " driven=" + d.driven;
+            if (k < 16f) return;
+            d.overrideThrottle = 0f;
+            hLog += " dozerReachedZ=" + hMaxZ.ToString("F1") + " dozerMaxY=" + hMaxY.ToString("F2") + " onHilltop=" + (hMaxY > 3.5f) + " atCliff=" + d.AtCliff;
+            Debug.Log("BULLDOZER_HILL_RESULT " + hLog);
+            HillFinish(0);
+        }
+    }
+
     // The upgrade tree:  -executeMethod BulldozerBuilder.UpgradeTest      Prints BULLDOZER_UPGRADE_RESULT.
     static int uPhase, uMaxShovel;
     static float uPhaseStart;

@@ -5,12 +5,13 @@
 // shader, so each box picks up the same small-block texture as the ground.  None of it can be dug.
 // The bigger things are solid to the dozer (see Blocks).
 using System.Collections.Generic;
+using Unity.Mathematics;
 using UnityEngine;
 
 public class SiteProps : MonoBehaviour
 {
     // material ids understood by the ground shader
-    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20;
+    const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20, ForestFloor = 25, TrackDirt = 26;
 
     struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
     static readonly List<Solid> solids = new List<Solid>();
@@ -91,7 +92,7 @@ public class SiteProps : MonoBehaviour
     VoxelWorld world;
     System.Random rng;
     float Rand(float a, float b) { return a + (float)rng.NextDouble() * (b - a); }
-    float Ground(float x, float z) { return world.HeightAt(x, z); }
+    float Ground(float x, float z) { return HillY(x, z); }
 
     void Start()
     {
@@ -113,6 +114,8 @@ public class SiteProps : MonoBehaviour
         if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
         Dump();
         Clutter();
+        Hillside();
+        TrackGums();
         GoldShed();                                          // after the crates and logs, so it can keep clear of them
         Trees();
         FarHills();
@@ -269,14 +272,18 @@ public class SiteProps : MonoBehaviour
         // On the quarry floor east of the entrance: the first spot, nearest first, that is level with the rails
         // where they leave the mine, flat across the whole shed, and clear of the crates and log piles.
         float floorY = Ground(VoxelWorld.PortalX, VoxelWorld.PortalZ - 3f);
-        Vector3 want = new Vector3(VoxelWorld.PortalX + 6f, 0f, VoxelWorld.PortalZ - 5f), at = want;
+        Vector3 want = new Vector3(-13f, 0f, 2f), at = want;          // on the west side of the floor, out of the dozer's way
         bool found = false;
-        for (float r = 0f; r <= 8f && !found; r += 0.5f)
+        for (float r = 0f; r <= 14f && !found; r += 0.5f)
             for (int k = 0; k < 16 && !found; k++)
             {
                 float a = k * Mathf.PI / 8f;
                 Vector3 c = want + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
-                if (c.x < VoxelWorld.PortalX + 3.5f) continue;              // keep it off the rails and the entrance
+                bool nearRails = false;                                      // keep it off the rails and the entrance
+                foreach (var rp in RailPath) if ((new Vector2(rp.x - c.x, rp.z - c.z)).sqrMagnitude < 4.5f * 4.5f) { nearRails = true; break; }
+                if (nearRails) continue;
+                if (Mathf.Abs(c.x) < 7f) continue;                          // the middle of the floor is where the dozer works
+                if (Mathf.Abs(c.x - VoxelWorld.TrackX) < 6f && c.z > VoxelWorld.TrackZ0 - 22f) continue;   // and off the way up to the track
                 float lo = 99f, hi = -99f;
                 for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) { float h = Ground(c.x + i * 1.6f, c.z + j * 1.4f); lo = Mathf.Min(lo, h); hi = Mathf.Max(hi, h); }
                 if (hi - lo > 0.25f || Mathf.Abs(lo - floorY) > 0.3f || Blocks(c, 2.0f)) continue;
@@ -355,7 +362,7 @@ public class SiteProps : MonoBehaviour
         (float x, float z, float size, float turn)[] crates =
         {
             (px - 4.6f, pz - 2.6f, 1.0f, 12f), (px - 5.5f, pz - 3.3f, 0.8f, 40f), (px - 4.7f, pz - 2.7f, 0.0f, 0f),
-            (px + 4.4f, pz - 3.2f, 1.1f, -8f), (-10f, -22f, 1.0f, 25f), (-11.2f, -21.4f, 0.8f, 70f),
+            (-10f, -22f, 1.0f, 25f), (-11.2f, -21.4f, 0.8f, 70f),
         };
         foreach (var c in crates)
         {
@@ -365,7 +372,7 @@ public class SiteProps : MonoBehaviour
         }
         (float x, float z, float turn, int count, float len)[] piles =
         {
-            (px + 5.2f, pz - 6.2f, 70f, 4, 3.4f), (px - 7f, pz - 6.5f, -20f, 3, 3.0f), (3f, -27f, 85f, 4, 3.6f),
+            (px + 12f, pz - 13.6f, 70f, 4, 3.4f), (px - 7f, pz - 6.5f, -20f, 3, 3.0f), (3f, -27f, 85f, 4, 3.6f),
         };
         foreach (var l in piles)
         {
@@ -412,7 +419,7 @@ public class SiteProps : MonoBehaviour
         // on the hill round the quarry, and out on the open ground: never on the work floor or the road
         (float x, float z, float h)[] spots =
         {
-            (-27f, 14f, 8.5f), (-20f, 22f, 7.5f), (-8f, 27f, 9f), (2f, 30f, 7f), (17f, 27f, 8.5f), (27f, 17f, 9f), (33f, 4f, 7.5f),
+            (-27f, 14f, 8.5f), (-20f, 22f, 7.5f), (-8f, 27f, 9f), (2f, 30f, 7f), (27f, 17f, 9f), (33f, 4f, 7.5f),
             (31f, -12f, 8f), (-33f, 2f, 9f), (-31f, -14f, 7.5f), (24f, -30f, 8f), (-22f, -33f, 8.5f), (13f, -37f, 7f),
             (-38f, 24f, 8f), (38f, 30f, 8.5f), (-12f, 38f, 7.5f), (24f, 38f, 8f), (-36f, -34f, 7.5f), (36f, -36f, 8f),
         };
@@ -435,6 +442,202 @@ public class SiteProps : MonoBehaviour
         }
         Finish("Scrub");
     }
+
+    // ---------------------------------------------------------------- the hillside behind the mine
+    // Past the north fence the hill keeps climbing, as scenery you can't dig: from the height of the site's own hill at
+    // the fence, up about 26 m over the next 100 m.  The escape track carries on up it as bare dirt.
+    const float HalfSite = VoxelWorld.NX / 2 * VoxelWorld.Voxel;           // 48 m
+
+    /// The site's own hill height at the north fence (the same recipe as VoxelWorld's GenerateJob, without the quarry).
+    static float SiteHillAtEdge(float x)
+    {
+        float2 p = new float2(x, HalfSite);
+        float n1 = noise.snoise(p * 0.035f), n2 = noise.snoise(p * 0.11f);
+        float fade = math.smoothstep(1.5f, 9f, HalfSite - math.abs(x));
+        return math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * fade);
+    }
+
+    /// The hillside past the north fence.
+    public static float HillsideY(float x, float z)
+    {
+        float dz = Mathf.Max(0f, z - HalfSite);
+        float2 p = new float2(x, z);
+        float rise = 26f * math.smoothstep(0f, 100f, dz) + (2.6f * noise.snoise(p * 0.03f) + 0.6f * noise.snoise(p * 0.12f)) * math.smoothstep(0f, 14f, dz);
+        float y = SiteHillAtEdge(x) + rise;
+        // the track: the ground across it is eased level
+        float off = Mathf.Abs(x - VoxelWorld.TrackCentreX(z));
+        if (off < VoxelWorld.TrackHalf + 2f)
+        {
+            float level = SiteHillAtEdge(VoxelWorld.TrackCentreX(z)) + 26f * math.smoothstep(0f, 100f, dz);
+            y = Mathf.Lerp(level, y, math.smoothstep(VoxelWorld.TrackHalf, VoxelWorld.TrackHalf + 2f, off));
+        }
+        return y;
+    }
+
+    /// Ground height anywhere: the site's voxels inside the fence, the hillside past the north fence, flat elsewhere.
+    public static float HillY(float x, float z)
+    {
+        if (z > HalfSite - 0.5f && Mathf.Abs(x) < 140f) return HillsideY(x, z);
+        var w = VoxelWorld.Instance;
+        return w != null ? w.HeightAt(x, z) : 0f;
+    }
+
+    void Hillside()
+    {
+        const float x0 = -140f, x1 = 140f, z0 = 47.6f, z1 = 190f, step = 2f;
+        int nx = Mathf.RoundToInt((x1 - x0) / step) + 1, nz = Mathf.RoundToInt((z1 - z0) / step) + 1;
+        var hs = new float[nx * nz];
+        for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) hs[i + nx * j] = HillsideY(x0 + i * step, z0 + j * step);
+        for (int j = 0; j < nz; j++)
+            for (int i = 0; i < nx; i++)
+            {
+                float x = x0 + i * step, z = z0 + j * step;
+                float hx = hs[Mathf.Min(i + 1, nx - 1) + nx * j] - hs[Mathf.Max(i - 1, 0) + nx * j];
+                float hz = hs[i + nx * Mathf.Min(j + 1, nz - 1)] - hs[i + nx * Mathf.Max(j - 1, 0)];
+                verts.Add(new Vector3(x, hs[i + nx * j], z));
+                normals.Add(new Vector3(-hx, 4f * step / 2f, -hz).normalized);
+                colours.Add(new Color32(ForestFloor, 0, 0, 255));   // one material: ids must not blend across a triangle
+            }
+        for (int j = 0; j < nz - 1; j++)
+            for (int i = 0; i < nx - 1; i++)
+            {
+                int a = i + nx * j, b = a + 1, c = a + nx, d = c + 1;
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+            }
+        Finish("Hillside");
+        // the track up it: a strip of dirt laid just over the ground
+        for (float z = z0; z < z1 - 1f; z += 1f)
+        {
+            float cx = VoxelWorld.TrackCentreX(z);
+            int start = verts.Count;
+            for (int k = -1; k <= 1; k += 2)
+            {
+                float x = cx + k * VoxelWorld.TrackHalf;
+                verts.Add(new Vector3(x, HillsideY(x, z) + 0.04f, z)); normals.Add(Vector3.up); colours.Add(new Color32(TrackDirt, 0, 0, 255));
+            }
+            if (z > z0) { int a = start - 2; tris.Add(a); tris.Add(start); tris.Add(a + 1); tris.Add(a + 1); tris.Add(start); tris.Add(start + 1); }
+        }
+        Finish("Hillside track");
+    }
+
+    /// A tall gum (mountain ash): a long, straight, pale trunk, bare for most of its height, with its leaves in
+    /// loose clumps right at the top.  The kind of forest the prologue is set in.
+    void TallGum(Vector3 at, float height)
+    {
+        Vector3 p = at;
+        float lean = Rand(-0.04f, 0.04f), leanZ = Rand(-0.04f, 0.04f);
+        float thick = Rand(0.55f, 0.75f);
+        int segs = Mathf.RoundToInt(height * 0.72f / 1.2f);
+        for (int s = 0; s < segs; s++)
+        {
+            Vector3 q = p + new Vector3(lean, 1.2f, leanZ);
+            Beam(p - Vector3.up * 0.05f, q, thick, Bark);
+            p = q; thick = Mathf.Max(0.26f, thick - 0.025f);
+        }
+        int branches = rng.Next(3, 6);
+        for (int b = 0; b < branches; b++)
+        {
+            float ang = (b + Rand(0f, 0.7f)) * Mathf.PI * 2f / branches, reach = height * Rand(0.1f, 0.18f);
+            Vector3 tip = p + new Vector3(Mathf.Cos(ang) * reach, height * Rand(0.12f, 0.24f), Mathf.Sin(ang) * reach);
+            Beam(p, tip, thick * 0.6f, Bark);
+            int leaves = rng.Next(16, 26);
+            float spread = height * 0.11f;
+            for (int k = 0; k < leaves; k++)
+            {
+                Vector3 off = new Vector3(Rand(-1f, 1f), Rand(-0.45f, 0.5f), Rand(-1f, 1f));
+                float size = Rand(0.8f, 1.5f);
+                Box(tip + off * spread, new Vector3(size, size * Rand(0.55f, 0.9f), size), Quaternion.Euler(0f, Rand(0f, 90f), 0f), Leaves);
+            }
+        }
+    }
+
+    /// Dense tall gums on both sides of the escape track, from the hilltop behind the mine up the hillside.
+    void TrackGums()
+    {
+        int n = 0, inMesh = 0;
+        for (float z = 15f; z < 175f; z += 3.4f)
+            for (int side = -1; side <= 1; side += 2)
+                for (float o = VoxelWorld.TrackHalf + 2.2f; o < 34f; o += (z < 110f ? 3.4f : 5.5f) * (o > 18f ? 1.5f : 1f))
+                {
+                    if (o > 18f && Rand(0f, 1f) < (o - 18f) / 22f) continue;          // thinning out at the edges
+                    float x = VoxelWorld.TrackCentreX(z) + side * (o + Rand(-0.9f, 0.9f)), zz = z + Rand(-1.3f, 1.3f);
+                    if (z > 110f && Rand(0f, 1f) < 0.35f) continue;
+                    bool inSite = zz < HalfSite - 1f;
+                    if (inSite)
+                    {
+                        // inside the fence only on the untouched hilltop: not on the quarry's benches or over the mine
+                        if (world.HeightAt(x, zz) < 3.4f || Mathf.Abs(x) > HalfSite - 3f) continue;
+                        if (Mathf.Abs(x - VoxelWorld.PortalX) < 4.5f && zz < VoxelWorld.PortalZ + 4f) continue;
+                    }
+                    float h = Rand(16f, 24f) * (z > 120f ? 0.85f : 1f);
+                    TallGum(new Vector3(x, HillY(x, zz) - 0.15f, zz), h);
+                    if (inSite) Solidify(x, zz, 0.5f);
+                    n++;
+                    if (++inMesh >= 14) { Finish("Track gums " + n); inMesh = 0; }
+                }
+        if (inMesh > 0) Finish("Track gums " + n);
+        TrackGumCount = n;
+        HillGums();
+    }
+
+    /// A gum seen from a distance: a straight pale trunk and a few big clumps of leaves at the top.  About a tenth of
+    /// the blocks of a TallGum, so the whole hillside can be covered.
+    void FarGum(Vector3 at, float height)
+    {
+        float thick = Rand(0.5f, 0.75f);
+        Vector3 top = at + new Vector3(Rand(-0.4f, 0.4f), height * 0.78f, Rand(-0.4f, 0.4f));
+        Beam(at - Vector3.up * 0.1f, top, thick, Bark);
+        int clumps = rng.Next(3, 6);
+        for (int k = 0; k < clumps; k++)
+        {
+            Vector3 off = new Vector3(Rand(-1f, 1f), Rand(-0.2f, 0.6f), Rand(-1f, 1f)) * height * 0.13f;
+            float size = height * Rand(0.12f, 0.2f);
+            Box(top + off, new Vector3(size, size * Rand(0.45f, 0.7f), size), Quaternion.Euler(0f, Rand(0f, 90f), 0f), Leaves);
+        }
+    }
+
+    /// The rest of the hill: the hilltop round the mine gets detailed gums (you walk among them), the hillside past
+    /// the fence gets far gums all over it, in clumps and gaps so it looks like bush and not a plantation.
+    void HillGums()
+    {
+        int n = 0, inMesh = 0;
+        // the hilltop inside the fence, away from the track's own band of trees
+        for (float z = 14f; z < HalfSite - 1.5f; z += 4.6f)
+            for (float x = -HalfSite + 3f; x < HalfSite - 3f; x += 4.6f)
+            {
+                float px = x + Rand(-1.6f, 1.6f), pz = z + Rand(-1.6f, 1.6f);
+                if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 36f) continue;            // the track's trees cover that
+                if (world.HeightAt(px, pz) < 3.4f || Blocks(new Vector3(px, 0f, pz), 1.2f)) continue;
+                if (noise.snoise(new float2(px, pz) * 0.06f) < -0.35f) continue;               // a clearing
+                TallGum(new Vector3(px, HillY(px, pz) - 0.15f, pz), Rand(13f, 20f));
+                Solidify(px, pz, 0.5f);
+                n++;
+                if (++inMesh >= 14) { Finish("Hilltop gums " + n); inMesh = 0; }
+            }
+        if (inMesh > 0) Finish("Hilltop gums " + n);
+        HillGumCount = n;
+        // the hillside past the fence: far gums everywhere except right along the track (it has its own)
+        int far = 0; inMesh = 0;
+        for (float z = HalfSite + 1f; z < 186f; z += 5.2f)
+            for (float x = -136f; x < 136f; x += 5.2f)
+            {
+                float px = x + Rand(-2f, 2f), pz = z + Rand(-2f, 2f);
+                if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 30f && pz < 172f) continue;
+                float clump = noise.snoise(new float2(px, pz) * 0.025f);
+                if (clump < -0.45f || Rand(0f, 1f) < 0.12f + Mathf.Max(0f, -clump) * 0.4f) continue;   // clumps and gaps
+                float h = Rand(14f, 22f) * (1f - 0.25f * Mathf.InverseLerp(60f, 186f, pz));
+                FarGum(new Vector3(px, HillsideY(px, pz) - 0.2f, pz), h);
+                far++;
+                if (++inMesh >= 120) { Finish("Hillside gums " + far, false); inMesh = 0; }
+            }
+        if (inMesh > 0) Finish("Hillside gums " + far, false);
+        FarGumCount = far;
+    }
+
+    public static int HillGumCount, FarGumCount;
+
+    public static int TrackGumCount;
 
     void FarHills()
     {
