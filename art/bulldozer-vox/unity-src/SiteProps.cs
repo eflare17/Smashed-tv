@@ -60,6 +60,14 @@ public class SiteProps : MonoBehaviour
     // the tree being built, if any: its id goes in the blocks' colours (blue, alpha) so the fire can burn it alone
     int curTree = -1;
 
+    void SetCrown(Vector3 top, List<Vector3> clumps)
+    {
+        if (curTree < 0) return;
+        var ft = FireSim.Trees[curTree];
+        ft.top = top; ft.clumps = clumps.ToArray();
+        FireSim.Trees[curTree] = ft;
+    }
+
     int BeginTree(Vector3 at, float height)
     {
         FireSim.Trees.Add(new FireSim.FireTree { at = at, height = height });
@@ -425,10 +433,12 @@ public class SiteProps : MonoBehaviour
             p = q; thick = Mathf.Max(0.22f, thick - 0.05f);
         }
         int branches = rng.Next(3, 5);
+        var clumpsT = new List<Vector3>();
         for (int b = 0; b < branches; b++)
         {
             float ang = (b + Rand(0f, 0.6f)) * Mathf.PI * 2f / branches, reach = height * Rand(0.22f, 0.36f);
             Vector3 tip = p + new Vector3(Mathf.Cos(ang) * reach, height * Rand(0.2f, 0.38f), Mathf.Sin(ang) * reach);
+            clumpsT.Add(tip);
             Vector3 mid = Vector3.Lerp(p, tip, 0.55f) + Vector3.up * 0.25f;
             Beam(p, mid, thick * 0.75f, Bark);
             Beam(mid, tip, thick * 0.5f, Bark);
@@ -442,6 +452,7 @@ public class SiteProps : MonoBehaviour
                 Box(tip + off * spread, new Vector3(size, size * Rand(0.6f, 1f), size), Quaternion.Euler(0f, Rand(0f, 90f), 0f), Leaves);
             }
         }
+        SetCrown(p, clumpsT);
     }
 
     void Trees()
@@ -569,10 +580,12 @@ public class SiteProps : MonoBehaviour
             p = q; thick = Mathf.Max(0.26f, thick - 0.025f);
         }
         int branches = rng.Next(3, 6);
+        var clumpsG = new List<Vector3>();
         for (int b = 0; b < branches; b++)
         {
             float ang = (b + Rand(0f, 0.7f)) * Mathf.PI * 2f / branches, reach = height * Rand(0.1f, 0.18f);
             Vector3 tip = p + new Vector3(Mathf.Cos(ang) * reach, height * Rand(0.12f, 0.24f), Mathf.Sin(ang) * reach);
+            clumpsG.Add(tip);
             Beam(p, tip, thick * 0.6f, Bark);
             int leaves = rng.Next(16, 26);
             float spread = height * 0.11f;
@@ -583,6 +596,7 @@ public class SiteProps : MonoBehaviour
                 Box(tip + off * spread, new Vector3(size, size * Rand(0.55f, 0.9f), size), Quaternion.Euler(0f, Rand(0f, 90f), 0f), Leaves);
             }
         }
+        SetCrown(p, clumpsG);
     }
 
     /// Dense tall gums on both sides of the escape track, from the hilltop behind the mine up the hillside.
@@ -624,12 +638,15 @@ public class SiteProps : MonoBehaviour
         Vector3 top = at + new Vector3(Rand(-0.4f, 0.4f), height * 0.78f, Rand(-0.4f, 0.4f));
         Beam(at - Vector3.up * 0.1f, top, thick, Bark);
         int clumps = rng.Next(3, 6);
+        var clumpsF = new List<Vector3>();
         for (int k = 0; k < clumps; k++)
         {
             Vector3 off = new Vector3(Rand(-1f, 1f), Rand(-0.2f, 0.6f), Rand(-1f, 1f)) * height * 0.13f;
             float size = height * Rand(0.12f, 0.2f);
             Box(top + off, new Vector3(size, size * Rand(0.45f, 0.7f), size), Quaternion.Euler(0f, Rand(0f, 90f), 0f), Leaves);
+            clumpsF.Add(top + off);
         }
+        SetCrown(top, clumpsF);
     }
 
     /// The rest of the hill: the hilltop round the mine gets detailed gums (you walk among them), the hillside past

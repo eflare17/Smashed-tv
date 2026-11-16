@@ -23,7 +23,15 @@ public class FireSim : MonoBehaviour
     public const int W = 110, H = 96;                              // x -110..110, z -2..190
 
     // the trees, registered by SiteProps as it builds them (their id is in their blocks' vertex colours)
-    public struct FireTree { public Vector3 at; public float height; }
+    public struct FireTree
+    {
+        public Vector3 at; public float height;
+        public Vector3 top;                                        // where the trunk ends and the branches start
+        public Vector3[] clumps;                                   // the leaf clumps, where the crown burns
+    }
+    /// For each tree, the burning tree whose crown lit it (-1: it caught from the ground).  For FireFX.
+    public int LitFrom(int t) { return litFrom != null && t < litFrom.Length ? litFrom[t] : -1; }
+    int[] litFrom; float[] litFromAt;
     public static readonly List<FireTree> Trees = new List<FireTree>();
 
     public bool Running { get; private set; }
@@ -98,6 +106,8 @@ public class FireSim : MonoBehaviour
         }
         int nt = Trees.Count;
         treeIgnite = new float[nt]; treeFallAt = new float[nt]; treeFallAngle = new float[nt];
+        litFrom = new int[nt]; litFromAt = new float[nt];
+        for (int t = 0; t < nt; t++) { litFrom[t] = -1; litFromAt[t] = Never; }
         for (int t = 0; t < nt; t++)
         {
             treeIgnite[t] = Never; treeFallAt[t] = Never;
@@ -262,6 +272,7 @@ public class FireSim : MonoBehaviour
     {
         if (treeIgnite[tr] < Never) return;                         // already alight
         treeIgnite[tr] = t;
+        if (litFromAt[tr] > t + 0.01f) litFrom[tr] = -1;
         newTrees.Add(tr); TreesBurnt++; ActiveTrees.Add(tr);
         Vector2 wind = WindAt(t);
         float ws = wind.magnitude;
@@ -285,7 +296,9 @@ public class FireSim : MonoBehaviour
             float dist = new Vector2(d.x, d.z).magnitude;
             float along = Vector2.Dot(new Vector2(d.x, d.z) / Mathf.Max(dist, 0.01f), wind / ws);
             if (along < 0.25f) continue;
-            Push(t + dist / (0.8f + 2.5f * along) * (0.8f + 0.4f * (float)rng.NextDouble()), o + TreeFlag);
+            float arrive = t + dist / (0.8f + 2.5f * along) * (0.8f + 0.4f * (float)rng.NextDouble());
+            if (arrive < litFromAt[o]) { litFromAt[o] = arrive; litFrom[o] = tr; }
+            Push(arrive, o + TreeFlag);
         }
     }
 

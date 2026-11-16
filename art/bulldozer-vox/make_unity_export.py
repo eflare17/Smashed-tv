@@ -696,6 +696,7 @@ public static class BulldozerBuilder
     static int frPhase, frShot, frFrames;
     static float frRealStart, frMaxMs, frSumMs;
     static string frLog;
+    static bool frClose;
     static readonly float[] FrShots = { 12f, 30f, 50f, 70f, 90f, 120f, 150f };
     const float FrBreakZ0 = 54f, FrBreakZ1 = 60f, FrChange = 60f;
 
@@ -704,7 +705,7 @@ public static class BulldozerBuilder
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        frPhase = 0; frShot = 0; frLog = ""; frFrames = 0; frMaxMs = 0f; frSumMs = 0f;
+        frPhase = 0; frShot = 0; frLog = ""; frClose = false; frFrames = 0; frMaxMs = 0f; frSumMs = 0f;
         testStart = EditorApplication.timeSinceStartup;
         EditorApplication.update += FireTick;
         EditorApplication.EnterPlaymode();
@@ -751,6 +752,16 @@ public static class BulldozerBuilder
         {
             frLog += " beforeChange:cells=" + fire.CellsBurnt + " trees=" + fire.TreesBurnt + " crossedBreak=" + FrBurntBelow(FrBreakZ0);
             frPhase = 2;
+        }
+        if (!frClose && t >= 56f)
+        {
+            // close, on the track past the fence, as the front comes down through the trees
+            frClose = true;
+            Vector3 at = new Vector3(VoxelWorld.TrackCentreX(52f) - 1f, SiteProps.HillY(VoxelWorld.TrackCentreX(52f), 52f) + 2.4f, 52f);
+            Vector3 look = new Vector3(VoxelWorld.TrackCentreX(72f), SiteProps.HillY(VoxelWorld.TrackCentreX(72f), 72f) + 7f, 72f);
+            Camera.main.transform.SetPositionAndRotation(at, Quaternion.LookRotation(look - at));
+            TestCapture("fire_close.png");
+            return;
         }
         if (frShot < FrShots.Length && t >= FrShots[frShot])
         {

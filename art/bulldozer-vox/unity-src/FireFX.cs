@@ -1,7 +1,9 @@
 // What the bushfire looks like in the air: flames, smoke, flying embers, and the sky going red.
 // FireSim decides what is burning; this draws it.  Three particle systems, fed by hand each frame from the trees
 // and ground squares alight right now, so the fire's look follows the spread exactly:
-//   flames  glowing cubes bursting up from burning crowns and along the ground front, gone in about a second
+//   flames  soft upright quads whose fire is drawn live by Voxel/FireFlame (noise streaming upward, warped, so
+//           it ripples and licks like real fire), clustered in burning crowns and along the ground front.
+//           (The glowing cubes are kept for coals and embers.)
 //   smoke   big soft dark puffs rising and drifting with the wind, lingering for 15-20 s
 //   embers  tiny glowing specks blown downwind and swirling
 // While the fire is big the sun goes red and dim, the haze thickens and browns, and the sky takes an orange tint;
@@ -20,7 +22,7 @@ public class FireFX : MonoBehaviour
     Color fogColour, ambSky, ambEq, ambGround; float fogDensity;
     Material skyOriginal, sky;
     float intensity;                                               // 0..1: how big the fire is, smoothed
-    float flameAcc, smokeAcc, emberAcc, groundAcc;
+    float flameAcc, smokeAcc, emberAcc, groundAcc, clumpAcc, bridgeAcc, flameScale = 1f;
 
     void Start()
     {
@@ -34,9 +36,19 @@ public class FireFX : MonoBehaviour
         var smokeMat = new Material(Shader.Find("Voxel/FireSmoke"));
         smokeMat.SetTexture("_MainTex", PuffTexture());
 
-        flames = MakeSystem("Flames", 9000, glowMat, cubeMesh,
-            Grad(new[] { new Color(1f, 0.62f, 0.18f), new Color(1f, 0.38f, 0.06f), new Color(0.8f, 0.14f, 0.03f), new Color(0.2f, 0.05f, 0.02f) }, new[] { 1f, 1f, 0.8f, 0f }),
-            AnimationCurve.EaseInOut(0f, 1f, 1f, 0.15f));
+        var flameMat = new Material(Shader.Find("Voxel/FireFlame"));
+        flameMat.SetFloat("_Boost", 2.4f);
+        flames = MakeSystem("Flames", 12000, flameMat, null,
+            Grad(new[] { Color.white, Color.white, new Color(1f, 0.9f, 0.85f), new Color(0.85f, 0.6f, 0.5f) }, new[] { 0f, 1f, 1f, 0f }),
+            new AnimationCurve(new Keyframe(0f, 0.6f), new Keyframe(0.3f, 1f), new Keyframe(1f, 0.7f)));
+        {
+            var fr = flames.GetComponent<ParticleSystemRenderer>();
+            fr.renderMode = ParticleSystemRenderMode.VerticalBillboard;          // they stay upright, facing the camera
+            var fm = flames.main; fm.startSize3D = true;
+            // each flame gets its own random seed in uv.z, so the shader animates every one differently
+            fr.SetActiveVertexStreams(new System.Collections.Generic.List<ParticleSystemVertexStream>
+                { ParticleSystemVertexStream.Position, ParticleSystemVertexStream.Color, ParticleSystemVertexStream.UV, ParticleSystemVertexStream.StableRandomX });
+        }
         embers = MakeSystem("Embers", 6000, emberMat, cubeMesh,
             Grad(new[] { new Color(1f, 0.75f, 0.3f), new Color(1f, 0.45f, 0.1f), new Color(0.7f, 0.15f, 0.03f), new Color(0.3f, 0.05f, 0.01f) }, new[] { 1f, 1f, 0.8f, 0f }),
             AnimationCurve.Linear(0f, 1f, 1f, 0.6f));
@@ -129,6 +141,63 @@ public class FireFX : MonoBehaviour
         return t;
     }
 
+    /// A flame: upright, `w` wide and `h` tall, rising and fading in under a second.
+    void EmitFlame(Vector3 at, Vector3 vel, float w, float h, float life)
+    {
+        var e = new ParticleSystem.EmitParams
+        {
+            position = at + Vector3.up * h * 0.4f, velocity = vel, startSize3D = new Vector3(w, h, 1f), startLifetime = life,
+            startColor = Color.white, rotation = Rand(-7f, 7f),
+        };
+        flames.Emit(e, 1);
+    }
+
+    /// The flame sheet: 4 x 4 frames of flame tongues, each a wavering teardrop with ragged licking edges, white-hot
+    /// at the root, orange in the body and deep red at the tips.  Made once, in code.
+    static Texture2D FlameSheet()
+    {
+        const int FW = 64, FH = 128, N = 4;
+        var t = new Texture2D(FW * N, FH * N, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Clamp };
+        var px = new Color32[FW * N * FH * N];
+        for (int f = 0; f < N * N; f++)
+        {
+            int fx = (f % N) * FW, fy = (N - 1 - f / N) * FH;           // frame 0 is the top-left tile
+            float seed = f * 7.31f, sway = Mathf.Lerp(-0.12f, 0.12f, (f * 0.37f) % 1f);
+            for (int y = 0; y < FH; y++)
+                for (int x = 0; x < FW; x++)
+                {
+                    float v = (y + 0.5f) / FH, u = (x + 0.5f) / FW * 2f - 1f;            // v: 0 root .. 1 tip
+                    // two or three tongues of different heights, each narrowing to a tip, leaning and wavering,
+                    // merging into one body low down
+                    float d = 9f;
+                    int tongues = 2 + (f % 2);
+                    for (int k = 0; k < tongues; k++)
+                    {
+                        float off = (k - (tongues - 1) * 0.5f) * 0.32f + 0.08f * Mathf.Sin(seed * (k + 1));
+                        float tall = k == tongues / 2 ? 1f : 0.62f + 0.25f * ((seed * (k + 3)) % 1f);
+                        float vk = v / tall;
+                        if (vk >= 1f) continue;
+                        float centre = off * (1f - v * 0.6f) + sway * vk * vk + 0.10f * Mathf.Sin(vk * 6f + seed + k * 2f) * vk;
+                        float width = (k == tongues / 2 ? 0.55f : 0.36f) * Mathf.Pow(1f - vk, 0.65f) * (0.85f + 0.15f * Mathf.Sin(seed + vk * 3f + k));
+                        d = Mathf.Min(d, Mathf.Abs(u - centre) / Mathf.Max(width, 0.001f));
+                    }
+                    // ragged edges: noise eats in from the sides and the tips break into separate licks
+                    float n = Mathf.PerlinNoise(x * 0.09f + seed * 3f, y * 0.06f - seed) * 0.7f + Mathf.PerlinNoise(x * 0.22f + seed, y * 0.17f + seed * 2f) * 0.3f;
+                    float a = Mathf.Clamp01((1f - d) * 2.0f + (n - 0.5f) * 2.0f * (0.45f + v));
+                    a *= Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(v * 9f));                 // soft at the root
+                    a *= 1f - Mathf.SmoothStep(0.55f, 1f, v) * (0.6f + 0.4f * n);          // thinning at the tip
+                    a = Mathf.Clamp01(a);
+                    // colour: white-yellow core low in the flame, orange body, red tips
+                    float heat = Mathf.Clamp01((1f - d) * (1.1f - v) * 1.5f);
+                    Color c = Color.Lerp(new Color(0.85f, 0.18f, 0.03f), new Color(1f, 0.55f, 0.12f), Mathf.Clamp01(1.4f - v * 1.3f));
+                    c = Color.Lerp(c, new Color(1f, 0.95f, 0.7f), heat * heat);
+                    px[(fx + x) + (fy + y) * FW * N] = new Color32((byte)(c.r * 255), (byte)(c.g * 255), (byte)(c.b * 255), (byte)(a * 255));
+                }
+        }
+        t.SetPixels32(px); t.Apply(true);
+        return t;
+    }
+
     void Emit(ParticleSystem ps, Vector3 at, Vector3 vel, float size, float life, bool spin)
     {
         var e = new ParticleSystem.EmitParams { position = at, velocity = vel, startSize = size, startLifetime = life, startColor = Color.white };
@@ -156,7 +225,7 @@ public class FireFX : MonoBehaviour
         if (!fire.Running || dt <= 0f) return;
 
         // flames and embers from the trees: each tree flares up, then dies down (fewer per tree when many are alight)
-        float perTree = Mathf.Min(16f, 5000f / Mathf.Max(1, nTrees));
+        flameScale = Mathf.Min(1f, 260f / Mathf.Max(1, nTrees));         // fewer flames per tree when the whole hill is alight
         float smokePerTree = Mathf.Min(1.4f, 260f / Mathf.Max(1, nTrees));
         float emberPerTree = Mathf.Min(7f, 900f / Mathf.Max(1, nTrees));
         foreach (int t in trees)
@@ -166,13 +235,62 @@ public class FireFX : MonoBehaviour
             float s = Mathf.SmoothStep(0f, 1f, a) * (1f - Mathf.SmoothStep(0f, 1f, (a - 7f) / 6f));
             var tr = FireSim.Trees[t];
             float h = tr.height;
-            flameAcc += perTree * s * dt;
+            // flames on the tree itself.  From the ground: up the trunk over 4 s, then into the leaf clumps one by one.
+            // From a neighbour's crown: the clumps facing it first, flames reaching across the gap, the trunk later.
+            int from = fire.LitFrom(t);
+            Vector3 top = tr.top.sqrMagnitude > 0f ? tr.top : tr.at + Vector3.up * h * 0.75f;
+            var clumps = tr.clumps;
+            float scale = flameScale;
+            // the trunk
+            float trunkOn = from < 0 ? Mathf.Clamp01(a / 4f) : Mathf.Clamp01((a - 5f) / 3f) * 0.5f;
+            float trunkS = (from < 0 ? 1f : 0.5f) * (1f - Mathf.SmoothStep(0f, 1f, (a - 9f) / 5f));
+            flameAcc += 2.2f * scale * trunkS * (trunkOn > 0f ? 1f : 0f) * dt;
             while (flameAcc >= 1f)
             {
                 flameAcc -= 1f;
-                bool crown = rng.NextDouble() < 0.75;
-                Vector3 p = tr.at + new Vector3(Rand(-1f, 1f) * h * 0.14f, crown ? h * Rand(0.6f, 0.95f) : Rand(0f, 2.5f), Rand(-1f, 1f) * h * 0.14f);
-                Emit(flames, p, Vector3.up * Rand(3f, 6.5f) + wind * 0.35f + new Vector3(Rand(-0.6f, 0.6f), 0f, Rand(-0.6f, 0.6f)), Rand(0.4f, 1.1f) * (crown ? 1f : 0.7f), Rand(0.5f, 1.1f), true);
+                float up = Rand(0f, trunkOn) * (top.y - tr.at.y);
+                Vector3 onTrunk = Vector3.Lerp(tr.at, top, up / Mathf.Max(0.1f, top.y - tr.at.y));
+                Vector3 q = onTrunk + new Vector3(Rand(-0.35f, 0.35f), 0f, Rand(-0.35f, 0.35f));
+                float fwT = Rand(0.8f, 1.6f) * (up > (top.y - tr.at.y) * trunkOn - 2f ? 1.3f : 0.8f);   // biggest at the climbing front
+                EmitFlame(q, Vector3.up * Rand(0.2f, 0.6f) + wind * 0.1f, fwT, fwT * Rand(1.5f, 2.2f), Rand(0.9f, 1.5f));
+            }
+            // the leaf clumps: each catches in turn and burns while its leaves do (the shader burns them away)
+            if (clumps != null && clumps.Length > 0)
+            {
+                Vector3 src = from >= 0 ? FireSim.Trees[from].at : tr.at;
+                for (int c = 0; c < clumps.Length; c++)
+                {
+                    float order = from >= 0 ? Vector3.Distance(new Vector3(clumps[c].x, 0f, clumps[c].z), new Vector3(src.x, 0f, src.z)) / Mathf.Max(1f, h * 0.15f) : c;
+                    float startAt = (from < 0 ? 3f : 0f) + order * 0.7f;
+                    float ca = a - startAt;
+                    if (ca < 0f || ca > 13f) continue;
+                    float cs = Mathf.SmoothStep(0f, 1f, ca / 1.2f) * (1f - Mathf.SmoothStep(0f, 1f, (ca - 7f) / 6f));
+                    clumpAcc += 2.6f * scale * cs * dt;
+                    while (clumpAcc >= 1f)
+                    {
+                        clumpAcc -= 1f;
+                        float spread = h * 0.09f;
+                        Vector3 q = clumps[c] + new Vector3(Rand(-1f, 1f) * spread, Rand(-0.6f, 0.3f) * spread, Rand(-1f, 1f) * spread);
+                        float fwC = h * Rand(0.1f, 0.17f);
+                        EmitFlame(q - Vector3.up * fwC * 0.35f, Vector3.up * Rand(0.3f, 0.8f) + wind * 0.12f, fwC, fwC * Rand(1.3f, 1.9f), Rand(1.0f, 1.7f));
+                    }
+                }
+            }
+            // a crown lit by its neighbour: flames reach across the gap from the burning crown to this one
+            if (from >= 0 && a < 1.8f)
+            {
+                var src = FireSim.Trees[from];
+                Vector3 fromC = src.top.sqrMagnitude > 0f ? src.top + Vector3.up * src.height * 0.12f : src.at + Vector3.up * src.height * 0.85f;
+                Vector3 toC = top + Vector3.up * h * 0.1f;
+                bridgeAcc += 7f * scale * dt;
+                while (bridgeAcc >= 1f)
+                {
+                    bridgeAcc -= 1f;
+                    float u = Rand(0.15f, Mathf.Lerp(0.5f, 1f, a / 1.8f));
+                    Vector3 q = Vector3.Lerp(fromC, toC, u) + Vector3.up * Mathf.Sin(u * Mathf.PI) * 1.2f;
+                    float fwB = h * Rand(0.08f, 0.14f);
+                    EmitFlame(q, (toC - fromC).normalized * 1.5f + Vector3.up * 0.6f, fwB, fwB * Rand(1.2f, 1.7f), Rand(0.6f, 1.0f));
+                }
             }
             smokeAcc += smokePerTree * Mathf.Max(s, a < 14f ? 0.35f : 0f) * dt;
             while (smokeAcc >= 1f)
@@ -198,14 +316,14 @@ public class FireFX : MonoBehaviour
             {
                 Vector3 p = tr.at + dir * tr.height * Rand(0.1f, 0.9f) + Vector3.up * 0.6f;
                 Emit(embers, p, new Vector3(Rand(-3f, 3f), Rand(3f, 9f), Rand(-3f, 3f)) + wind * 0.5f, Rand(0.08f, 0.2f), Rand(1.5f, 4f), true);
-                if (k % 3 == 0) Emit(flames, p, Vector3.up * Rand(2f, 5f), Rand(0.5f, 1.2f), Rand(0.5f, 1f), true);
+                if (k % 4 == 0) { float fw = Rand(0.9f, 1.8f); EmitFlame(p, Vector3.up * Rand(1f, 2.5f), fw, fw * Rand(1.5f, 2.2f), Rand(0.5f, 0.9f)); }
                 if (k % 10 == 0) Emit(smoke, p, Vector3.up * Rand(1.5f, 3f) + wind * 0.5f, Rand(5f, 9f), Rand(8f, 14f), false);
             }
         }
         fire.Landed.Clear();
 
         // low flames along the ground front
-        float perCell = Mathf.Min(5f, 2500f / Mathf.Max(1, cells.Count));
+        float perCell = Mathf.Min(1.8f, 900f / Mathf.Max(1, cells.Count));
         foreach (int c in cells)
         {
             float a = now - fire.CellIgnite(c);
@@ -217,7 +335,8 @@ public class FireFX : MonoBehaviour
                 groundAcc -= 1f;
                 Vector3 p = fire.CellCentre(c) + new Vector3(Rand(-1f, 1f), 0f, Rand(-1f, 1f));
                 p.y = SiteProps.HillY(p.x, p.z) + 0.1f;
-                Emit(flames, p, Vector3.up * Rand(1.5f, 3.5f) + wind * 0.25f, Rand(0.3f, 0.8f), Rand(0.4f, 0.9f), true);
+                float gw = Rand(1.3f, 2.4f);
+                EmitFlame(p, Vector3.up * Rand(0.3f, 0.7f) + wind * 0.1f, gw, gw * Rand(1.1f, 1.5f), Rand(1.0f, 1.6f));
             }
         }
     }
