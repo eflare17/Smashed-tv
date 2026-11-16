@@ -71,6 +71,9 @@ public class FireFX : MonoBehaviour
     void OnDestroy() { Restore(); }
 
     /// Straight back to the normal sky and light, and no smoke or flames left in the air.
+    /// The prologue holds the sky at least this red and smoky (through the escape), whatever is burning.
+    public float minIntensity;
+
     public void RestoreNow()
     {
         intensity = 0f;
@@ -219,8 +222,8 @@ public class FireFX : MonoBehaviour
         int nTrees = 0;
         for (int k = trees.Count - 1; k >= 0; k--) { if (now - fire.TreeIgnite(trees[k]) > 16f) trees.RemoveAt(k); else nTrees++; }
         var cells = fire.BurningCells;
-        float want = fire.Running ? Mathf.Clamp01(nTrees / 120f) : 0f;
-        intensity = Mathf.MoveTowards(intensity, want, Time.deltaTime * 0.12f);
+        float want = Mathf.Max(fire.Running ? Mathf.Clamp01(nTrees / 120f) : 0f, minIntensity);
+        intensity = Mathf.MoveTowards(intensity, want, Time.deltaTime * (intensity < minIntensity ? 0.5f : 0.12f));
         Look(intensity);
         if (!fire.Running || dt <= 0f) return;
 

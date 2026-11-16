@@ -51,6 +51,9 @@ public class Worker : MonoBehaviour
     [Header("Driven by script instead of the keyboard (tests and recordings)")]
     public bool useOverride;
     public float overrideWalk, overrideTurn;
+    // the prologue's son: his own clothes, no tools, arms swinging as he walks; and his right hand on a spot
+    public bool handOn; public Vector3 handPoint;
+    bool civilian; float handK;
     public bool overrideUse;
 
     public bool InDozer { get; private set; }
@@ -290,6 +293,37 @@ public class Worker : MonoBehaviour
         // For now the game starts with you in the dozer, ready to drive.  Enter gets out to go on foot.
         if (dozer != null && !dozer.dead) { GetIn(); Say("Enter gets out of the dozer to go on foot.", 7f); }
         else Say("The mine caved in years ago.  Tab switches view.  1 pick, 2 shovel.", 9f);
+    }
+
+    /// The son (the prologue's ending): a plain shirt, jeans and a dark cap, no backpack, no tools.  Off again puts
+    /// the tools back (the clothes stay).
+    public void Civilian(bool on)
+    {
+        civilian = on; handOn = false; handK = 0f;
+        if (model == null) return;
+        foreach (var mf in model.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (mf.name == "Backpack") { mf.gameObject.SetActive(!on); continue; }
+            if (!on) continue;
+            var mesh = mf.mesh;
+            var cols = mesh.colors32;
+            for (int i = 0; i < cols.Length; i++)
+            {
+                byte m = cols[i].r;
+                cols[i].r = m == HiVis ? (byte)27 : m == Navy ? (byte)28 : m == Hat ? (byte)29 : m;
+            }
+            mesh.colors32 = cols;
+        }
+        if (hold != null) hold.gameObject.SetActive(!on);
+        if (hose != null) hose.gameObject.SetActive(false);
+        if (on && model.Find("Body/Hair") == null)
+        {
+            // short dark hair at the back and sides of his head, under the cap
+            Box(new Vector3(0f, 1.6f, -0.125f), new Vector3(0.25f, 0.2f, 0.02f), (byte)29);
+            Box(new Vector3(0.125f, 1.63f, -0.04f), new Vector3(0.02f, 0.14f, 0.16f), (byte)29);
+            Box(new Vector3(-0.125f, 1.63f, -0.04f), new Vector3(0.02f, 0.14f, 0.16f), (byte)29);
+            Part("Hair", model.Find("Body"), Vector3.zero);
+        }
     }
 
     public void Teleport(Vector3 at, float facing)
@@ -728,6 +762,17 @@ public class Worker : MonoBehaviour
         // he leans into a swing
         float lean = swing == Swing.None ? 0f : Mathf.Sin(Mathf.Clamp01(swingT / (swing == Swing.Dig ? DigTime : swing == Swing.Throw ? ThrowTime : PickTime)) * Mathf.PI) * (swing == Swing.Throw ? -6f : 13f);
         model.localRotation = Quaternion.Euler(lean, 0f, 0f);
+        if (civilian)
+        {
+            // arms swing with his stride; the right one goes out to rest his hand on handPoint
+            armL.localRotation = Quaternion.Euler(-s * 0.6f, 0f, 0f);
+            var swingR = Quaternion.Euler(s * 0.6f, 0f, 0f);
+            handK = Mathf.MoveTowards(handK, handOn ? 1f : 0f, Time.deltaTime * 0.8f);
+            Vector3 local = armR.parent.InverseTransformPoint(handPoint) - armR.localPosition;
+            var reach = local.sqrMagnitude > 1e-6f ? Quaternion.FromToRotation(Vector3.down, local.normalized) : swingR;
+            armR.localRotation = Quaternion.Slerp(swingR, reach, Mathf.SmoothStep(0f, 1f, handK));
+            return;
+        }
         // both hands on the handle: right hand low near the head of the tool, left hand at the top
         Reach(armR, tool.TransformPoint(new Vector3(0f, 0f, 0.56f)));
         Reach(armL, tool.TransformPoint(new Vector3(0f, 0f, 0.06f)));

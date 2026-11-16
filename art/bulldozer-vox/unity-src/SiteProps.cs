@@ -11,6 +11,7 @@ using UnityEngine;
 public class SiteProps : MonoBehaviour
 {
     // material ids understood by the ground shader
+    const byte Bracken = 30;
     const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20, ForestFloor = 25, TrackDirt = 26;
 
     struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
@@ -102,6 +103,41 @@ public class SiteProps : MonoBehaviour
         Vector3 d = b - a;
         if (d.sqrMagnitude < 1e-6f) return;
         Box((a + b) * 0.5f, new Vector3(thick, thick, d.magnitude), Quaternion.LookRotation(d), mat);
+    }
+
+    /// Twenty years on: bracken clumps and young gums on the burnt ground either side of the escape track.
+    public void BuildRegrowth(FireSim fire, Vector3 keepClear)
+    {
+        var rng = new System.Random(77);
+        System.Func<float, float, float> R = (a, b) => a + (float)rng.NextDouble() * (b - a);
+        int n = 0;
+        for (int k = 0; k < 2400 && n < 700; k++)
+        {
+            float z = R(20f, 72f), off = R(-16f, 16f);
+            if (Mathf.Abs(off) < VoxelWorld.TrackHalf + 0.5f) continue;              // the track stays clear
+            float x = VoxelWorld.TrackCentreX(z) + off;
+            var p = new Vector3(x, 0f, z);
+            if (fire == null || !fire.CellBurnt(p) || Blocks(p, 0.8f)) continue;
+            if ((new Vector2(x - keepClear.x, z - keepClear.z)).magnitude < 5f) continue;   // room round the dozer for the ending's camera
+            p.y = HillY(x, z);
+            n++;
+            if (rng.NextDouble() < 0.2)
+            {
+                // a young gum: a thin stem and a few leafy lumps
+                float h = R(1.4f, 3.6f);
+                Box(p + Vector3.up * h * 0.5f, new Vector3(0.1f, h, 0.1f), Bark);
+                for (int c = 0; c < 3; c++)
+                    Box(p + new Vector3(R(-0.35f, 0.35f), h * (0.62f + 0.16f * c), R(-0.35f, 0.35f)), Vector3.one * (h * 0.24f - c * 0.08f), Leaves);
+            }
+            else
+            {
+                // bracken: a low clump of green fronds
+                int fronds = 3 + rng.Next(4);
+                for (int f = 0; f < fronds; f++)
+                    Box(p + new Vector3(R(-0.55f, 0.55f), R(0.12f, 0.4f), R(-0.55f, 0.55f)), new Vector3(R(0.3f, 0.65f), R(0.2f, 0.45f), R(0.3f, 0.65f)), Bracken);
+            }
+        }
+        Finish("Regrowth", false);
     }
 
     GameObject Finish(string name, bool shadows = true)

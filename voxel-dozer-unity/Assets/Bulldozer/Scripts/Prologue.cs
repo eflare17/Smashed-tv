@@ -4,11 +4,12 @@
 //   7-17     Dad cuts a firebreak across the hilltop with the dozer   (the real blade scrapes it bare: the fire can't cross it)
 //   17-28    the fire front arrives beyond the break; it holds
 //   28-38    the wind changes: embers jump the break, spot fires start behind him
-//   38-50    he turns up the escape track; a burning tree falls across it and he shoves it aside;
+//   38-50    he turns up the escape track, and the bush either side of it goes up around him; a burning tree falls across it and he shoves it aside;
 //            two or three more come down in front and behind, and he's trapped
 //   50-57    "Dad!", then red, then black
 //   57-62    "Twenty years later"
-//   62-80    the son walks up the track to the rusted dozer, among the black trunks and fallen logs
+//   62-85    the son walks up the track through the regrowth to the rusted dozer, stops beside it, looks up at the cab
+//            and puts his hand on it; the camera comes in over his shoulder, then rises above the trees, and black
 //
 // Start it with Prologue.Play().  It drives the dozer, the worker, the fire and the camera itself, hides the game's
 // HUD, and draws its own captions and the red and black (RecordPrologue films the same thing).
@@ -18,7 +19,7 @@ public class Prologue : MonoBehaviour
 {
     public static Prologue Instance { get; private set; }
     public static bool Playing { get { return Instance != null && Instance.playing; } }
-    public const float Length = 80f;
+    public const float Length = 85f;
 
     // what's on screen besides the picture (read by the recorder too)
     public string Caption = "", CaptionStyle = "Big", Caption2 = "";
@@ -30,7 +31,10 @@ public class Prologue : MonoBehaviour
     DozerController dozer; Worker wk; FireSim fire; Camera cam; FollowCamera follow;
     int pushTree = -1, behindTree = -1;
     float pushFrom, pushStart = -1f;
-    bool cutCleared, settled, changed, felled, felled2;
+    bool cutCleared, settled, changed, felled, felled2, released;
+    Vector3 standAt, handAt, waypoint, toDozer;            // the ending: where the son stops, where his hand goes
+    float arriveT = -1f, craneT;
+    bool pastWaypoint;
     Vector3 camPos, camLook;
 
     public const float LaneZ = 32f, LaneX0 = -12f;                 // the firebreak: across the hilltop to the escape track
@@ -62,6 +66,7 @@ public class Prologue : MonoBehaviour
         fire.Begin();
         fire.Ignite(new Vector3(-100f, 0f, 150f), new Vector3(100f, 0f, 150f));   // far off: just smoke at first
         fire.speedUp = 3f;
+        fire.HoldTrack(34f, 80f, 9f);                             // the bush by the escape track waits for him
         t0 = Time.time; playing = true;
     }
 
@@ -121,6 +126,13 @@ public class Prologue : MonoBehaviour
         else if (t < 50f)
         {
             fire.speedUp = 1f;
+            if (!released)
+            {
+                // the bush either side of the track goes up as he drives into it, and the sky stays red till the end
+                released = true;
+                fire.ReleaseHeld(dp.z + 3f);
+                var fx = fire.GetComponent<FireFX>(); if (fx != null) fx.minIntensity = 1f;
+            }
             // up the escape track
             float trackZ = dp.z + 4f;
             Vector3 aim = new Vector3(VoxelWorld.TrackCentreX(trackZ), 0f, trackZ);
@@ -179,26 +191,52 @@ public class Prologue : MonoBehaviour
         }
         else if (t < Length)
         {
-            Tint = new Color(0f, 0f, 0f, 1f - Ease(62f, 63.6f, t));
-            Caption = t > 74f ? "Prologue  (rough cut)" : ""; CaptionStyle = "Small";
-            // the son walks up the track to the dozer
-            Vector3 sp = wk.transform.position, to = dp - sp; to.y = 0f;
-            bool there = to.magnitude < 5.5f;
-            wk.overrideWalk = there ? 0f : 1f;
-            if (!there) wk.Teleport(sp, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg);
-            Vector3 dir = to.sqrMagnitude > 0.01f ? to.normalized : Vector3.forward;
-            if (t < 71f) Shot(sp - dir * 3.6f + Vector3.up * 1.75f + Vector3.Cross(Vector3.up, dir) * 0.7f, sp + dir * 8f + Vector3.up * 1.3f);
+            float fade = Ease(Length - 3.6f, Length - 1.6f, t);
+            Tint = new Color(0f, 0f, 0f, Mathf.Max(1f - Ease(62f, 63.6f, t), fade));
+            Caption = t > Length - 1.8f ? "Prologue  (rough cut)" : ""; CaptionStyle = "Small";
+            // the son walks up the track, slowing as he comes up beside the dozer, and stops there
+            Vector3 sp = wk.transform.position;
+            if (!pastWaypoint && (new Vector2(waypoint.x - sp.x, waypoint.z - sp.z)).magnitude < 0.8f) pastWaypoint = true;
+            Vector3 goal = pastWaypoint ? standAt : waypoint;
+            Vector3 to = goal - sp; to.y = 0f;
+            float dist = (new Vector2(standAt.x - sp.x, standAt.z - sp.z)).magnitude;
+            float faceDozer = Mathf.Atan2(toDozer.x, toDozer.z) * Mathf.Rad2Deg;
+            if (arriveT < 0f && pastWaypoint && to.magnitude < 0.25f) arriveT = t;
+            if (arriveT < 0f)
+            {
+                wk.overrideWalk = Mathf.Lerp(0.3f, 0.6f, Mathf.InverseLerp(0.6f, 5f, dist));
+                wk.Teleport(sp, Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg);
+            }
             else
             {
-                Vector3 mid = (sp + dp) * 0.5f;
-                float ang = Mathf.Atan2(-dir.x, -dir.z) - Ease(71f, Length, t) * 1.3f;
-                Shot(mid + new Vector3(Mathf.Sin(ang), 0f, Mathf.Cos(ang)) * 5.5f + Vector3.up * 2.8f, mid + Vector3.up * 1.2f);
+                wk.overrideWalk = 0f;
+                wk.Teleport(sp, Mathf.MoveTowardsAngle(wk.transform.eulerAngles.y, faceDozer, Time.deltaTime * 70f));
+            }
+            wk.handPoint = handAt;
+            wk.handOn = arriveT >= 0f && t > arriveT + 1.8f;            // a moment looking up at the cab, then his hand on it
+            Vector3 dir = to.sqrMagnitude > 0.01f ? to.normalized : Vector3.forward;
+            Vector3 cab = dp + Vector3.up * 2.3f - df * 0.4f;
+            if (arriveT < 0f && dist > 6f)
+                Shot(sp - dir * 3.6f + Vector3.up * 1.75f + Vector3.Cross(Vector3.up, dir) * 0.7f, sp + dir * 8f + Vector3.up * 1.3f);   // behind him, walking
+            else if (arriveT < 0f || t < arriveT + 1.2f)
+                Shot(standAt - toDozer * 1.3f - df * 3.0f + Vector3.up * 1.2f, cab);                                       // low, behind him, up at the cab
+            else
+            {
+                if (craneT <= 0f) craneT = Mathf.Clamp(arriveT + 5f, 75f, Length - 6.5f);
+                // in over his shoulder to his hand on the dozer, then up above the trees
+                float push = Ease(arriveT + 1.2f, craneT, t), up = Ease(craneT, Length - 1.6f, t);
+                Vector3 right = new Vector3(toDozer.z, 0f, -toDozer.x);                // his right hand side
+                Vector3 shoulder = Vector3.Lerp(sp - toDozer * 2.2f + right * 1.4f + Vector3.up * 1.9f, sp - toDozer * 1.5f + right * 0.85f + Vector3.up * 1.95f, push);
+                Vector3 high = dp - df * 20f + Vector3.up * 22f;                       // up and back along the open track
+                Vector3 look = Vector3.Lerp(Vector3.Lerp(handAt + Vector3.up * 0.3f, cab, 0.5f), dp + Vector3.up * 1.2f, up);
+                Shot(Vector3.Lerp(shoulder, high, up), look);
             }
         }
         else
         {
             playing = false;
             wk.overrideWalk = 0f;
+            wk.Civilian(false);
             if (follow != null) follow.enabled = true;
         }
     }
@@ -214,7 +252,13 @@ public class Prologue : MonoBehaviour
     void TwentyYearsOn()
     {
         fire.Settle();
-        var fx = fire.GetComponent<FireFX>(); if (fx != null) fx.RestoreNow();
+        var fx = fire.GetComponent<FireFX>(); if (fx != null) { fx.minIntensity = 0f; fx.RestoreNow(); }
+        // the bush has come back: resprouted gums and grey spars (the shader), bracken and young trees on the burnt
+        // ground, and a clear morning a little brighter than before
+        Shader.SetGlobalFloat("_Regrowth", 1f);
+        SiteProps.ClearFallen();                                   // (the logs stay where they fell, but don't stop him)
+        var props = FindFirstObjectByType<SiteProps>(); if (props != null) props.BuildRegrowth(fire, dozer.transform.position);
+        var sun = RenderSettings.sun; if (sun != null) sun.intensity *= 1.12f;
         dozer.overrideThrottle = 0f; dozer.overrideSteer = 0f; dozer.overrideBlade = 0f;
         var block = new MaterialPropertyBlock();
         block.SetColor("_Color", new Color(0.55f, 0.33f, 0.22f));    // rust over the old yellow
@@ -224,6 +268,25 @@ public class Prologue : MonoBehaviour
         Vector3 start = new Vector3(VoxelWorld.TrackCentreX(26f), 0f, 26f);
         wk.Teleport(start, 0f);
         wk.SetEyes(false);
+        wk.Civilian(true);
+        // where he'll stop: beside the dozer, on whichever side has the flatter ground, level with the cab
+        Vector3 dp = dozer.transform.position, df = dozer.transform.forward, dr = dozer.transform.right;
+        var b = new Bounds(dp, Vector3.zero);
+        foreach (var r in dozer.GetComponentsInChildren<MeshRenderer>()) b.Encapsulate(r.bounds);
+        float halfW = Mathf.Clamp(Mathf.Abs(dr.x) * b.extents.x + Mathf.Abs(dr.z) * b.extents.z, 1.1f, 2.2f);
+        var world = VoxelWorld.Instance;
+        float best = 1e9f; int side = 1;
+        for (int s2 = -1; s2 <= 1; s2 += 2)
+        {
+            Vector3 q = dp + dr * s2 * (halfW + 0.5f);
+            float dy = world != null ? Mathf.Abs(world.FloorAt(q + Vector3.up * 2f) - dp.y) : 0f;
+            if (dy < best - 0.05f) { best = dy; side = s2; }
+        }
+        toDozer = -dr * side;
+        standAt = dp + dr * side * (halfW + 0.5f) - df * 0.4f;
+        waypoint = standAt - df * 4f;
+        handAt = standAt + toDozer * 0.75f + Vector3.up * 1.3f;
+        if (world != null) { standAt.y = world.FloorAt(standAt + Vector3.up * 2f); handAt.y = standAt.y + 1.3f; }
     }
 
     void OnGUI()

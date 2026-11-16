@@ -64,7 +64,7 @@ public class FireSim : MonoBehaviour
     readonly List<int> heapI = new List<int>();
     const int TreeFlag = 1 << 24;
 
-    void Awake() { Instance = this; Shader.SetGlobalFloat("_FireTime", -1e6f); }
+    void Awake() { Instance = this; Shader.SetGlobalFloat("_FireTime", -1e6f); Shader.SetGlobalFloat("_Regrowth", 0f); }
     void OnDestroy() { if (Instance == this) Instance = null; Shader.SetGlobalFloat("_FireTime", -1e6f); }
 
     void Start() { Build(); }
@@ -162,6 +162,27 @@ public class FireSim : MonoBehaviour
         }
     }
 
+    // The prologue keeps the fire off the bush either side of the escape track until he drives up it, so the forest
+    // goes up around him then and not before.  Anything that would catch in there waits, and is let go by ReleaseHeld.
+    bool holding; float holdZ0, holdZ1, holdHalf;
+    readonly HashSet<int> held = new HashSet<int>();
+
+    public void HoldTrack(float z0, float z1, float half) { holding = true; holdZ0 = z0; holdZ1 = z1; holdHalf = half; held.Clear(); }
+
+    bool InHold(Vector3 p) { return p.z > holdZ0 && p.z < holdZ1 && Mathf.Abs(p.x - VoxelWorld.TrackCentreX(p.z)) < holdHalf; }
+
+    /// Lets the held fire go: it all catches over a few seconds, sooner near `fromZ`, later further up the track.
+    public void ReleaseHeld(float fromZ)
+    {
+        holding = false;
+        foreach (int i in held)
+        {
+            Vector3 p = i >= TreeFlag ? Trees[i - TreeFlag].at : CentreOf(i);
+            Push(Now + (float)rng.NextDouble() * 1.5f + Mathf.Max(0f, p.z - fromZ) * 0.12f, i);
+        }
+        held.Clear();
+    }
+
     /// Lights a line of fire from a to b now.
     public void Ignite(Vector3 a, Vector3 b)
     {
@@ -177,6 +198,7 @@ public class FireSim : MonoBehaviour
     public void Begin()
     {
         Running = true; Now = 0f; Shader.SetGlobalFloat("_FireTime", 0f);
+        holding = false; held.Clear(); Shader.SetGlobalFloat("_Regrowth", 0f);
         if (GetComponent<FireFX>() == null) gameObject.AddComponent<FireFX>();        // flames, smoke, embers, the red sky
     }
 
@@ -220,6 +242,7 @@ public class FireSim : MonoBehaviour
         while (heapT.Count > 0 && heapT[0] <= Now)
         {
             float t = heapT[0]; int i = heapI[0]; Pop();
+            if (holding && i < LandFlag && InHold(i >= TreeFlag ? Trees[i - TreeFlag].at : CentreOf(i))) { held.Add(i); continue; }
             if (i >= LandFlag) Land(i - LandFlag);
             else if (i >= TreeFlag) LightTree(i - TreeFlag, t);
             else LightCell(i, t);

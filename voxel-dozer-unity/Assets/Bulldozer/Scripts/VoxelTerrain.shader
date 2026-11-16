@@ -30,7 +30,7 @@ Shader "Voxel/Terrain"
         // 11 timber, 12 dark timber, 13 steel, 14 gum leaves, 15 gum bark: used by the scenery, not by ground
         // 16 hi-vis shirt, 17 navy, 18 skin, 19 hard hat, 20 boots: the worker.  21 rust, 22 old yellow paint, 23 steel: the finds
         // 24 tool handle wood: the worker's pick and shovel (its own colour so the see-through cut never hides them)
-        static const float3 MATS[27] =
+        static const float3 MATS[31] =
         {
             float3(1.00, 0.00, 1.00),
             float3(0.74, 0.60, 0.42),
@@ -58,7 +58,11 @@ Shader "Voxel/Terrain"
             float3(0.50, 0.49, 0.48),
             float3(0.56, 0.38, 0.22),
             float3(0.20, 0.16, 0.10),       // 25 forest floor: dark leaf litter (the hillside past the fence)
-            float3(0.44, 0.34, 0.22)        // 26 track dirt
+            float3(0.44, 0.34, 0.22),       // 26 track dirt
+            float3(0.36, 0.43, 0.50),       // 27 the son's plain shirt
+            float3(0.20, 0.25, 0.37),       // 28 jeans
+            float3(0.16, 0.15, 0.14),       // 29 dark cap
+            float3(0.30, 0.44, 0.13)        // 30 bracken: the green that comes back after a fire
         };
 
         sampler2D _GrassTex;
@@ -69,6 +73,7 @@ Shader "Voxel/Terrain"
         float _CutRadius;
         // the bushfire (FireSim): seconds since it started, and when each tree and each 2 m square caught
         float _FireTime;
+        float _Regrowth;        // 1: years after the fire.  About half the burnt gums have resprouted, the rest are grey dead spars, the burnt ground is green bracken
         sampler2D _TreeFire, _GroundFire, _TreeBase;
         float4 _TreeFireSize, _GroundFireRect;
 
@@ -113,7 +118,7 @@ Shader "Voxel/Terrain"
         void surf(Input IN, inout SurfaceOutput o)
         {
             int m = _FixedMat >= 0 ? (int)_FixedMat : (int)round(IN.color.r * 255.0);
-            m = clamp(m, 0, 26);
+            m = clamp(m, 0, 30);
             if (m >= 11 && m <= 15 && _CutRadius > 0.0 && IN.color.g < 0.5)   // green set = never cut (the cart)
             {
                 // how far this point is from the line between the camera and its subject
@@ -162,10 +167,23 @@ Shader "Voxel/Terrain"
                 {
                     float tid = round(IN.color.b * 255.0) + round(IN.color.a * 255.0) * 256.0;
                     float2 tuv = float2((fmod(tid, 256.0) + 0.5) * _TreeFireSize.z, (floor(tid / 256.0) + 0.5) * _TreeFireSize.w);
-                    float2 tf = tex2Dlod(_TreeFire, float4(tuv, 0, 0)).rg;
+                    float4 tf = tex2Dlod(_TreeFire, float4(tuv, 0, 0));
                     float tb = _FireTime - tf.r;                                              // seconds this tree has been burning
                     float above = IN.worldPos.y - tf.g;                                       // metres up the trunk
-                    if (tb > 0.0)
+                    if (tb > 0.0 && _Regrowth > 0.5)
+                    {
+                        // years on: the fallen are dead logs; of those still standing about half have put out fresh
+                        // leaves (gums do, from buds under the bark), the rest are bare grey spars
+                        bool fallen = _FireTime > tf.b + 3.0;
+                        bool lives = !fallen && frac(sin(tid * 12.9898 + 4.1) * 43758.5453) < 0.45;
+                        if (m == 14)
+                        {
+                            clip(lives ? 0.58 - hash3(floor(v / 3.0) + 5.5) : -1.0);
+                            c = lerp(c, float3(0.34, 0.50, 0.17), 0.5);
+                        }
+                        else c = lives ? lerp(c, float3(0.07, 0.06, 0.05), 0.6) : float3(0.50, 0.48, 0.45) * (0.78 + 0.36 * h);
+                    }
+                    else if (tb > 0.0)
                     {
                         float flick = 0.6 + 0.4 * sin(_Time.y * 13.0 + h * 40.0) * sin(_Time.y * 5.3 + h2 * 20.0);
                         if (m == 14)
@@ -186,13 +204,18 @@ Shader "Voxel/Terrain"
                         }
                     }
                 }
-                else if (m <= 10 || m >= 25)
+                else if (m <= 10 || m == 25 || m == 26)
                 {
                     float2 guv = (IN.worldPos.xz - _GroundFireRect.xy) * _GroundFireRect.zw;
                     if (guv.x > 0.0 && guv.y > 0.0 && guv.x < 1.0 && guv.y < 1.0)
                     {
                         float tg = _FireTime - tex2Dlod(_GroundFire, float4(guv, 0, 0)).r + (h - 0.5) * 3.0;   // ragged edges
-                        if (tg > 0.0)
+                        if (tg > 0.0 && _Regrowth > 0.5)
+                        {
+                            float3 br = lerp(float3(0.25, 0.34, 0.11), float3(0.42, 0.47, 0.19), hash3(floor(v / 2.0) + 4.4)) * (0.8 + 0.4 * h);
+                            c = lerp(c, br, m == 26 ? 0.35 * step(0.5, h2) : 0.85);
+                        }
+                        else if (tg > 0.0)
                         {
                             c = lerp(c, float3(0.05, 0.045, 0.04) * (0.8 + 0.4 * h), smoothstep(0.0, 6.0, tg));
                             if (h2 > 0.72) c = lerp(c, float3(0.30, 0.29, 0.27), smoothstep(12.0, 40.0, tg));   // white ash
