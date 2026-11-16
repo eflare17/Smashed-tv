@@ -48,6 +48,9 @@ public class FollowCamera : MonoBehaviour
 
     void OnDisable() { Shader.SetGlobalFloat("_CutRadius", 0f); }
 
+    // the mouse wheel zooms, unless Shift is held (then it sets the jackhammer's bite)
+    static float ZoomWheel() { return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 0f : Input.GetAxis("Mouse ScrollWheel"); }
+
     void LateUpdate()
     {
         if (target == null) return;
@@ -62,7 +65,7 @@ public class FollowCamera : MonoBehaviour
         {
             // Behind and a little to the right of him, turning with the mouse, so the cross in the middle of
             // the screen is a clear line past his shoulder to what he is working on.
-            distance = Mathf.Clamp(distance * (1f - Input.GetAxis("Mouse ScrollWheel")), minDistance, maxDistance);
+            distance = Mathf.Clamp(distance * (1f - ZoomWheel()), minDistance, maxDistance);
             Quaternion look = Quaternion.Euler(lookPitch, lookYaw, 0f);
             Vector3 pivot = target.position + Vector3.up * lookHeight + look * Vector3.right * 0.55f;
             float back = distance;
@@ -84,7 +87,7 @@ public class FollowCamera : MonoBehaviour
             yawOffset += Input.GetAxis("Mouse X") * 4f;
             pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f, 5f, 75f);
         }
-        distance = Mathf.Clamp(distance * (1f - Input.GetAxis("Mouse ScrollWheel")), minDistance, maxDistance);
+        distance = Mathf.Clamp(distance * (1f - ZoomWheel()), minDistance, maxDistance);
         heading = Mathf.LerpAngle(heading, target.eulerAngles.y, turnFollow * Time.deltaTime);
 
         Vector3 focus = target.position + Vector3.up * lookHeight;

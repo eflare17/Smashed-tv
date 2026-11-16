@@ -3,7 +3,8 @@
 // a branch can be sold back for everything it cost.
 //
 // Three columns:
-//   Breaking      Pick 1-5, then the Jackhammer (coming)
+//   Breaking      Pick 1-5, then the Jackhammer (needs coins and gold), Jackhammer 2-5.  (One branch: levels 6-10
+//                 of the pick are the jackhammer, so saves didn't need to change.)
 //   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8
 //   Hauling       Cart 1-2, then the Motor cart, a bigger cart and the Automatic cart (coming)
 //
@@ -38,6 +39,11 @@ public class Upgrades : MonoBehaviour
             new Step("Pick 3", "Bigger again, better on rock", 80),
             new Step("Pick 4", "Big chunks, good on rock", 128),
             new Step("Pick 5", "Biggest chunk, full strength on rock", 205),
+            new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600, 8f),
+            new Step("Jackhammer 2", "Bigger bite, faster blows", 260),
+            new Step("Jackhammer 3", "Bigger bite, faster blows", 420),
+            new Step("Jackhammer 4", "Bigger bite, faster blows", 670),
+            new Step("Jackhammer 5", "Biggest bite, fastest", 1070),
         },
         new[] {   // shovel: load 117 -> 342 litres, swing speed 1.0 -> 1.6
             new Step("Shovel 1", "117 L a scoop", 0),
@@ -65,13 +71,15 @@ public class Upgrades : MonoBehaviour
     // shown after a branch, not buyable yet
     static readonly string[][] Coming =
     {
-        new[] { "Jackhammer  (coming: needs gold)" },
+        new string[0],
         new string[0],
         new[] { "Motor cart  (coming: needs gold)", "Bigger cart  (coming)", "Automatic cart  (coming)" },
         new string[0],
     };
 
     static readonly float[] PickRadius = { 0.26f, 0.29f, 0.32f, 0.36f, 0.40f };
+    static readonly float[] JackMax = { 0.26f, 0.29f, 0.32f, 0.35f, 0.38f };       // the jackhammer's biggest bite, metres
+    static readonly float[] JackInterval = { 0.09f, 0.085f, 0.08f, 0.075f, 0.07f }; // seconds between blows
     static readonly float[] PickRock = { 0.8f, 0.84f, 0.88f, 0.94f, 1.0f };
     static readonly int[] ShovelHolds = { 480, 640, 800, 980, 1180, 1400 };
     static readonly float[] ShovelSpeed = { 1.0f, 1.1f, 1.2f, 1.3f, 1.45f, 1.6f };
@@ -159,7 +167,9 @@ public class Upgrades : MonoBehaviour
         var wk = Worker.Instance;
         if (wk != null)
         {
-            int p = level[0] - 1, sh = level[1] - 1, bp = Mathf.Max(0, level[2] - 1);
+            int p = Mathf.Min(level[0], 5) - 1, sh = level[1] - 1, bp = Mathf.Max(0, level[2] - 1);
+            wk.jackOwned = level[0] >= 6;
+            if (wk.jackOwned) { wk.jackMax = JackMax[level[0] - 6]; wk.jackInterval = JackInterval[level[0] - 6]; }
             wk.pickRadius = PickRadius[p];
             wk.pickRockFactor = PickRock[p];
             wk.shovelHolds = ShovelHolds[sh];

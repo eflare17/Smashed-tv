@@ -40,6 +40,9 @@ public class Worker : MonoBehaviour
     [System.NonSerialized] public float pickRockFactor = 0.8f;   // how much of the pick's chunk breaks on rock
     [System.NonSerialized] public float shovelSpeed = 1f;        // shovel swings run this much faster
     [System.NonSerialized] public bool backpackOwned = true;      // until the tree says otherwise
+    [System.NonSerialized] public bool jackOwned;                 // the jackhammer: it takes the pick's place on key 1
+    [System.NonSerialized] public float jackMax = 0.26f;          // its biggest bite (metres) at this level
+    [System.NonSerialized] public float jackInterval = 0.09f;     // seconds between blows
     public float throwForward = 5.2f;        // metres a second: how hard a shovelful is thrown
     public float throwUp = 2.8f;
     public int packHolds = 2048;             // voxels: 500 litres, half the hand cart
@@ -86,6 +89,17 @@ public class Worker : MonoBehaviour
     // a swing in progress
     enum Swing { None, Dig, Throw, Pick }
     Swing swing = Swing.None;
+    // the jackhammer: hold to run it.  The bite is set from smallest (0) to biggest (1) in five steps; a big bite
+    // smashes some of any gold it hits, a small one takes gold out whole.
+    const float JackMin = 0.14f;
+    float jackSize = 1f, jackAcc;
+    bool hammering;
+    Transform jack;
+    public bool Hammering { get { return hammering; } }
+    public int GoldShattered { get; private set; }
+    public float JackBite { get { return Mathf.Lerp(JackMin, jackMax, jackSize); } }
+    public float JackShatter { get { return 0.4f * Mathf.Clamp01((JackBite - 0.17f) / 0.21f); } }
+    public void SetJackSize(float f) { jackSize = Mathf.Clamp01(Mathf.Round(f * 4f) / 4f); }
     float swingT;
     bool swingDone;
     bool throwBehind;                                    // this throw goes back over his shoulder
@@ -122,6 +136,7 @@ public class Worker : MonoBehaviour
     // the backpack's nozzle: held low in front, two hands; it is then turned to point where you aim
     static readonly Pose NozzleHold = new Pose(0.2f, -0.42f, 0.2f, 22f, -6f, 0f);
     static readonly Vector3 NozzleTip = new Vector3(0f, 0f, 0.95f);
+    static readonly Pose JackHold = new Pose(0f, -0.36f, 0.22f, 30f, 0f, 0f);             // held in front at the waist, two hands
 
     Pose CurrentPose()
     {
@@ -142,6 +157,7 @@ public class Worker : MonoBehaviour
                 return Pose.Mix(PickStrike, PickCarry, (swingT - PickBite) / (PickTime - PickBite));
         }
         if (Tool == 2) return NozzleHold;
+        if (Tool == 0 && jackOwned) return JackHold;
         return Tool == 0 ? PickCarry : (loaded ? ShovelLoaded : ShovelCarry);
     }
 
@@ -247,6 +263,16 @@ public class Worker : MonoBehaviour
         Box(new Vector3(0f, 0f, 0.06f), new Vector3(0.1f, 0.1f, 0.1f), Steel);            // where the hose joins
         nozzle = Part("Nozzle", hold, Vector3.zero);
         nozzle.gameObject.SetActive(false);
+        // the jackhammer: a T handle with rubber grips, a yellow body, the steel hammer head and the bit
+        Box(new Vector3(0f, 0f, 0.02f), new Vector3(0.44f, 0.05f, 0.05f), Steel);
+        Box(new Vector3(0.2f, 0f, 0.02f), new Vector3(0.07f, 0.075f, 0.075f), Boot);
+        Box(new Vector3(-0.2f, 0f, 0.02f), new Vector3(0.07f, 0.075f, 0.075f), Boot);
+        Box(new Vector3(0f, 0f, 0.3f), new Vector3(0.17f, 0.17f, 0.42f), (byte)22);
+        Box(new Vector3(0f, 0.1f, 0.2f), new Vector3(0.06f, 0.05f, 0.12f), Steel);          // the air inlet
+        Box(new Vector3(0f, 0f, 0.57f), new Vector3(0.12f, 0.12f, 0.12f), Steel);
+        Box(new Vector3(0f, 0f, 0.8f), new Vector3(0.04f, 0.04f, 0.36f), Steel);           // the bit
+        jack = Part("Jackhammer", hold, Vector3.zero);
+        jack.gameObject.SetActive(false);
         // the hose from the backpack to the nozzle, in short pieces laid along a sagging curve each frame
         hose = new GameObject("Hose").transform;
         hose.SetParent(transform, false);
@@ -357,7 +383,8 @@ public class Worker : MonoBehaviour
         if (tool == 2 && !backpackOwned) tool = 1;
         Tool = tool;
         swing = Swing.None;
-        pick.gameObject.SetActive(tool == 0);
+        pick.gameObject.SetActive(tool == 0 && !jackOwned);
+        if (jack != null) jack.gameObject.SetActive(tool == 0 && jackOwned);
         shovel.gameObject.SetActive(tool == 1);
         nozzle.gameObject.SetActive(tool == 2);
     }
@@ -459,6 +486,17 @@ public class Worker : MonoBehaviour
         {
             if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
+            if (Tool == 0 && jackOwned)
+            {
+                // the bite: Shift + mouse wheel, or [ and ]
+                float wheel = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? Input.GetAxis("Mouse ScrollWheel") : 0f;
+                int step = wheel > 0.01f || Input.GetKeyDown(KeyCode.RightBracket) ? 1 : wheel < -0.01f || Input.GetKeyDown(KeyCode.LeftBracket) ? -1 : 0;
+                if (step != 0)
+                {
+                    SetJackSize(jackSize + step * 0.25f);
+                    Say("Jackhammer bite: size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? "   (too big for gold)" : "   (safe for gold)"), 1.5f);
+                }
+            }
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
             if (Input.GetKeyDown(KeyCode.Alpha3)) { if (backpackOwned) SetTool(2); else Say("No backpack yet.  Max out the shovel, then buy it in the upgrades (U).", 3f); }
             if (Input.GetKeyDown(KeyCode.Q)) { if (backpackOwned) StartPour(); }
@@ -514,6 +552,26 @@ public class Worker : MonoBehaviour
             return;
         }
         Pouring = false;
+
+        // ---- the jackhammer: it runs while you hold the button, one blow every jackInterval
+        if (Tool == 0 && jackOwned)
+        {
+            swing = Swing.None;
+            hammering = use && aimInReach;
+            if (hammering)
+            {
+                jackAcc += dt;
+                while (jackAcc >= jackInterval) { jackAcc -= jackInterval; Hammer(); }
+            }
+            else
+            {
+                jackAcc = 0f;
+                if (use && aimFound && !aimInReach) Say("Too far away.  Get closer.", 1.5f);
+            }
+            Animate(move.magnitude);
+            return;
+        }
+        hammering = false;
 
         // ---- the tools: start a swing, then let it run; the work happens part way through it
         if (swing == Swing.None && use)
@@ -572,6 +630,7 @@ public class Worker : MonoBehaviour
                 marker.position = aimPoint - dir * 0.04f;
                 marker.rotation = Quaternion.identity;
                 markerMat.color = aimInReach ? new Color(1f, 0.9f, 0.2f) : new Color(1f, 0.25f, 0.2f);
+                marker.localScale = Vector3.one * (Tool == 0 && jackOwned ? 0.05f + JackBite * 0.3f : 0.11f);   // the jackhammer's shows its bite
             }
         }
     }
@@ -585,6 +644,21 @@ public class Worker : MonoBehaviour
         throwIntoCart = cart != null && cart.HasRoom && cart.Near(transform.position, 7.5f);
         throwAt = throwIntoCart ? cart.Mouth : transform.position + back * 2.6f + Quaternion.Euler(0f, yaw, 0f) * Vector3.right * 0.5f;
         throwBehind = Vector3.Dot(throwAt - transform.position, back) > 0f;
+    }
+
+    /// One blow of the jackhammer where you aim: it breaks a ball the size of the bite, rock and all, and the bits
+    /// fly back about his feet.  Too big a bite smashes some of any gold in it.
+    void Hammer()
+    {
+        Vector3 toFeet = transform.position - aimPoint; toFeet.y = 0f;
+        float away = toFeet.magnitude;
+        Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.5f, 1f, 3.5f) + Vector3.up * 0.9f;
+        if (world.Pick(aimPoint + aimDir * 0.08f, JackBite, kick, JackShatter, true) > 0) PickHits++;
+        if (world.LastShattered > 0)
+        {
+            GoldShattered += world.LastShattered;
+            Say("Gold lost!  That bite's too big for the seam.  Make it smaller: Shift+wheel or [", 3f);
+        }
     }
 
     /// The moment in a swing when the tool does its job, at the spot being aimed at.
@@ -743,7 +817,8 @@ public class Worker : MonoBehaviour
             hold.localPosition = new Vector3(0f, 1.42f, 0.02f);
             hold.localRotation = Quaternion.Euler((lookPitch - 14f) * 0.5f, 0f, 0f);
         }
-        Transform tool = Tool == 0 ? pick : Tool == 1 ? shovel : nozzle;
+        if (jack != null && Tool == 0 && jack.gameObject.activeSelf != jackOwned) { jack.gameObject.SetActive(jackOwned); pick.gameObject.SetActive(!jackOwned); }
+        Transform tool = Tool == 0 ? (jackOwned ? jack : pick) : Tool == 1 ? shovel : nozzle;
         tool.localPosition = p.at;
         tool.localRotation = Quaternion.Euler(p.turn);
         if (Tool == 2)
@@ -755,6 +830,14 @@ public class Worker : MonoBehaviour
             if (look.sqrMagnitude > 0.01f) tool.rotation = Quaternion.LookRotation(look, Vector3.up);
             bool working = Pouring || (useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space)));
             if (working) tool.localPosition += new Vector3(Mathf.Sin(Time.time * 71f), Mathf.Sin(Time.time * 53f), 0f) * 0.004f;
+        }
+        if (Tool == 0 && jackOwned)
+        {
+            // the jackhammer points at what you aim at, and hammers back and forth while it runs
+            Vector3 target = aimFound ? aimPoint : tool.position + aimDir * 2f;
+            Vector3 look = target - tool.position;
+            if (look.sqrMagnitude > 0.01f) tool.rotation = Quaternion.LookRotation(look, Vector3.up);
+            if (hammering) tool.position += tool.forward * (Mathf.Sin(Time.time * 140f) * 0.025f) + new Vector3(Mathf.Sin(Time.time * 97f), Mathf.Sin(Time.time * 83f), 0f) * 0.006f;
         }
         LayHose();
         if (shovelDirt != null) shovelDirt.gameObject.SetActive(Tool == 1 && world.ShovelVoxels >= VoxelWorld.ClodVoxels);
@@ -775,6 +858,13 @@ public class Worker : MonoBehaviour
             Vector3 local = armR.parent.InverseTransformPoint(handPoint) - armR.localPosition;
             var reach = local.sqrMagnitude > 1e-6f ? Quaternion.FromToRotation(Vector3.down, local.normalized) : swingR;
             armR.localRotation = Quaternion.Slerp(swingR, reach, Mathf.SmoothStep(0f, 1f, handK));
+            return;
+        }
+        if (Tool == 0 && jackOwned)
+        {
+            // a hand on each grip of the T handle
+            Reach(armR, tool.TransformPoint(new Vector3(0.2f, 0f, 0.02f)));
+            Reach(armL, tool.TransformPoint(new Vector3(-0.2f, 0f, 0.02f)));
             return;
         }
         // both hands on the handle: right hand low near the head of the tool, left hand at the top
@@ -926,11 +1016,11 @@ public class Worker : MonoBehaviour
         }
         if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), "Enter   get out"); return; }
         if (Tool == 2 && !backpackOwned) SetTool(1);
-        string tool = Tool == 0 ? "PICK" : Tool == 1 ? "SHOVEL" : "BACKPACK";
+        string tool = Tool == 0 ? (jackOwned ? "JACKHAMMER   bite size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") + "   Shift+wheel or [ ]" : "PICK") : Tool == 1 ? "SHOVEL" : "BACKPACK";
         string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
         string text =
             "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
-            "1   pick     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
+            "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
             "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
             "Tool: " + tool + load;
         GUI.Box(new Rect(10, 10, 540, 86), text);
@@ -941,6 +1031,13 @@ public class Worker : MonoBehaviour
         {
             GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
             GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
+        }
+        // the jackhammer on the quartz seam with too big a bite: warn before the gold is smashed
+        if (Tool == 0 && jackOwned && aimFound && (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.Quartz) && JackShatter > 0f)
+        {
+            var warn = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            warn.normal.textColor = new Color(1f, 0.75f, 0.2f);
+            GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height * 0.54f, 660, 40), "Gold seam!  Bite too big: you'll lose gold.  Shift+wheel or [ to go smaller", warn);
         }
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))

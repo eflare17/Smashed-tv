@@ -260,16 +260,20 @@ public partial class VoxelWorld
 
     /// The pick: breaks a ball of ground at `at` into loose clods that fly off with `kick`.  Rock only gives
     /// way close to the point.  Returns how many voxels came out of the ground.
-    public int Pick(Vector3 at, float radius, Vector3 kick)
+    /// How many gold voxels the last Pick smashed (a big jackhammer bite: they come out as worthless quartz).
+    public int LastShattered { get; private set; }
+
+    public int Pick(Vector3 at, float radius, Vector3 kick, float shatter = 0f, bool fullRock = false)
     {
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new HandJob
         {
             vox = vox, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
-            centre = (at - origin) / Voxel, radius = radius / Voxel, kick = kick, origin = origin, seed = frame, mode = 0, most = 0,
+            centre = (at - origin) / Voxel, radius = radius / Voxel, kick = kick, origin = origin, seed = frame, mode = 0, most = 0, shatter = shatter, fullRock = fullRock,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
         int outOfGround = result[0];
+        LastShattered = result[1];
         result.Dispose();
         SolidCount -= outOfGround;
         Recount();
@@ -333,6 +337,8 @@ public partial class VoxelWorld
         public float3 centre, kick, origin;
         public float radius;
         public int seed, mode, most;
+        public float shatter;
+        public bool fullRock;          // the jackhammer: rock breaks across the whole bite, not just at the point          // the pick/jackhammer: the chance a gold voxel it breaks is smashed to quartz grit
         public NativeArray<float3> cPos, cVel;
         public NativeArray<quaternion> cRot;
         public NativeArray<byte> cMat, cCnt;
@@ -375,10 +381,16 @@ public partial class VoxelWorld
                         if (mode != 1)
                         {
                             if (mode == 2 && (m < LooseSoil || outOfGround >= most)) continue;   // the nozzle only lifts loose dirt
-                            if (hard && d2 > radius * radius * 0.42f) continue;      // rock only breaks near the point of the pick
+                            if (hard && !fullRock && d2 > radius * radius * 0.42f) continue;      // rock only breaks near the point of the pick
                             vox[y + NY * col] = Air;
                             Mark(ref dirty, x, y, z);
-                            Loose(Loosen(m), x, y, z, kick);
+                            byte lm = Loosen(m);
+                            if (m == Gold && shatter > 0f && (math.hash(new int3(x, y, z + seed * 31)) % 1000u) < (uint)(shatter * 1000f))
+                            {
+                                lm = LooseQuartz;                                    // smashed: the gold is lost in the grit
+                                result[1] = result[1] + 1;
+                            }
+                            Loose(lm, x, y, z, kick);
                             outOfGround++;
                         }
                         else

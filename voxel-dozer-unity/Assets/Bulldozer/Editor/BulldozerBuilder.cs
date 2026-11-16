@@ -1134,6 +1134,145 @@ public static class BulldozerBuilder
         }
     }
 
+    // The jackhammer:  -executeMethod BulldozerBuilder.JackTest
+    // Picks rock at Pick 5 for 4 s, then jackhammers rock (Jackhammer 1, biggest bite) for 4 s: it must break much
+    // more.  Then breaks gold in the quartz seam with a big bite (some is smashed) and a small one (none is).
+    // Prints BULLDOZER_JACK_RESULT.
+    static int jPhase; static string jLog; static float jStart; static Vector3 jSpot, jStand; static int jFirm0, jPickBroke; static bool jSawHammer;
+
+    public static void JackTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        jPhase = 0; jLog = ""; jSawHammer = false;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += JackTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void JackFinish(int code)
+    {
+        EditorApplication.update -= JackTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    /// Firm rock (rock, quartz, gold) in a 1.8 m box round a spot.
+    static int FirmNear(VoxelWorld w, Vector3 c)
+    {
+        int n = 0;
+        for (float x = -0.9f; x <= 0.9f; x += VoxelWorld.Voxel)
+            for (float y = -0.9f; y <= 0.9f; y += VoxelWorld.Voxel)
+                for (float z = -0.9f; z <= 0.9f; z += VoxelWorld.Voxel)
+                {
+                    byte m = w.MaterialAt(c + new Vector3(x, y, z));
+                    if (m >= VoxelWorld.Rock && m <= VoxelWorld.Gold) n++;
+                }
+        return n;
+    }
+
+    /// Bare rock on top, with flat ground to stand on 1.3 m south of it.  Stands him there aiming at it.
+    static bool StandAtRock(VoxelWorld w, Worker wk, Vector3 avoid)
+    {
+        for (float x = -30f; x <= 30f; x += 0.5f)
+            for (float z = -30f; z <= 30f; z += 0.5f)
+            {
+                var p = new Vector3(x, 0f, z);
+                if ((p - new Vector3(avoid.x, 0f, avoid.z)).sqrMagnitude < 16f) continue;
+                float f = w.FloorAt(p + Vector3.up * 8f);
+                if (w.MaterialAt(new Vector3(x, f - 0.03f, z)) != VoxelWorld.Rock) continue;
+                if (w.MaterialAt(new Vector3(x, f - 0.6f, z)) != VoxelWorld.Rock) continue;
+                var st = new Vector3(x, 0f, z - 1.3f);
+                float fs = w.FloorAt(st + Vector3.up * 8f);
+                if (Mathf.Abs(fs - f) > 0.25f || SiteProps.Blocks(st, 0.4f, true)) continue;
+                jSpot = new Vector3(x, f, z); jStand = new Vector3(st.x, fs, st.z);
+                Vector3 eye = new Vector3(st.x, fs + 1.6f, st.z), d = jSpot - eye, flat = new Vector3(d.x, 0f, d.z);
+                wk.Teleport(new Vector3(st.x, fs, st.z), Facing(flat));
+                wk.Look(Mathf.Atan2(-d.y, flat.magnitude) * Mathf.Rad2Deg);
+                return true;
+            }
+        return false;
+    }
+
+    static void JackTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_JACK_FAILED timed out in phase " + jPhase + " " + jLog); JackFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || up == null) return;
+        float t = Time.time;
+        if (wk.Hammering) jSawHammer = true;
+        if (jPhase == 1 || jPhase == 2)
+        {
+            // work across a patch of the rock, as a player would, not one spot
+            int k = Mathf.FloorToInt((t - jStart) / 0.45f);
+            var target = jSpot + new Vector3((k % 4) * 0.33f - 0.5f, 0f, ((k / 4) % 4) * 0.33f - 0.5f);
+            target.y = w.FloorAt(target + Vector3.up * 3f);
+            Vector3 eye = jStand + Vector3.up * 1.6f, d = target - eye, flat = new Vector3(d.x, 0f, d.z);
+            wk.Teleport(jStand, Facing(flat));
+            wk.Look(Mathf.Atan2(-d.y, flat.magnitude) * Mathf.Rad2Deg);
+        }
+        if (jPhase == 0)
+        {
+            if (t < 1f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.SetLevel(Upgrades.Branch.Pick, 5);
+            wk.SetTool(0);
+            if (!StandAtRock(w, wk, new Vector3(999f, 0f, 999f))) { Debug.LogError("BULLDOZER_JACK_FAILED no bare rock found"); JackFinish(1); return; }
+            jFirm0 = FirmNear(w, jSpot);
+            wk.overrideUse = true;
+            jPhase = 1; jStart = t;
+            return;
+        }
+        if (jPhase == 1)
+        {
+            if (t - jStart < 4f) return;
+            wk.overrideUse = false;
+            jPickBroke = jFirm0 - FirmNear(w, jSpot);
+            jLog += "pickAt=" + jSpot + " pickBroke=" + jPickBroke;
+            Vector3 first = jSpot;
+            up.SetLevel(Upgrades.Branch.Pick, 6);
+            wk.SetJackSize(1f);
+            wk.SetTool(0);
+            if (!StandAtRock(w, wk, first)) { Debug.LogError("BULLDOZER_JACK_FAILED no second rock found " + jLog); JackFinish(1); return; }
+            jFirm0 = FirmNear(w, jSpot);
+            wk.overrideUse = true;
+            jPhase = 2; jStart = t;
+            return;
+        }
+        if (jPhase == 2)
+        {
+            if (t - jStart < 4f) return;
+            wk.overrideUse = false;
+            int jackBroke = jFirm0 - FirmNear(w, jSpot);
+            jLog += " jackAt=" + jSpot + " jackBroke=" + jackBroke + " hammered=" + jSawHammer + " goldShatteredWhileTesting=" + wk.GoldShattered;
+            float bigShatter = wk.JackShatter; wk.SetJackSize(0f); float smallShatter = wk.JackShatter;
+            jLog += " shatterBigBite=" + bigShatter.ToString("F2") + " shatterSmallBite=" + smallShatter.ToString("F2");
+            // gold in the seam: break half of it with a big bite and half with a small one
+            var gold = new System.Collections.Generic.List<Vector3>();
+            for (float x = -40f; x <= 40f && gold.Count < 300; x += 0.5f)
+                for (float z = -40f; z <= 40f && gold.Count < 300; z += 0.5f)
+                {
+                    float f = w.FloorAt(new Vector3(x, 8f, z));
+                    for (float y = f - 4f; y < f; y += VoxelWorld.Voxel)
+                        if (w.MaterialAt(new Vector3(x, y, z)) == VoxelWorld.Gold) { gold.Add(new Vector3(x, y, z)); break; }
+                }
+            int smashedBig = 0, smashedSmall = 0;
+            for (int i = 0; i < gold.Count; i++)
+            {
+                w.Pick(gold[i], 0.1f, Vector3.zero, i % 2 == 0 ? 0.4f : 0f);
+                if (i % 2 == 0) smashedBig += w.LastShattered; else smashedSmall += w.LastShattered;
+            }
+            jLog += " goldSpots=" + gold.Count + " smashedBigBite=" + smashedBig + " smashedSmallBite=" + smashedSmall;
+            bool ok = jSawHammer && jackBroke > jPickBroke * 1.3f && jPickBroke > 0 && bigShatter > 0f && smallShatter == 0f && gold.Count > 10 && smashedBig > 0 && smashedSmall == 0;
+            if (ok) Debug.Log("BULLDOZER_JACK_RESULT " + jLog);
+            else Debug.LogError("BULLDOZER_JACK_FAILED " + jLog);
+            JackFinish(ok ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
@@ -1390,7 +1529,7 @@ public static class BulldozerBuilder
 
     static void CartTick()
     {
-        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_CART_FAILED timed out in phase " + cPhase + " " + cLog); CartFinish(1); return; }
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_CART_FAILED timed out in phase " + cPhase + " gameTime=" + Time.time + " frames=" + Time.frameCount + " clods=" + (VoxelWorld.Instance != null ? VoxelWorld.Instance.ClodCount : -1) + " " + cLog); CartFinish(1); return; }
         if (!EditorApplication.isPlaying) return;
         var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance;
         if (w == null || wk == null || cart == null || cart.Length <= 0f) return;
