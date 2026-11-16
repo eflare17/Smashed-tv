@@ -218,6 +218,8 @@ public static class BulldozerBuilder
         EditorApplication.delayCall += () =>
         {
             EditorApplication.ExecuteMenuItem("Window/General/Game");
+            var gameView = EditorWindow.focusedWindow;
+            if (gameView != null) gameView.maximized = true;                // the game fills the whole editor window
             EditorApplication.EnterPlaymode();
         };
     }

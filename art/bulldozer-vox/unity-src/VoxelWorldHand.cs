@@ -416,7 +416,7 @@ public partial class VoxelWorld
             {
                 // loose clods lying within reach go onto the shovel too
                 float3 c = origin + centre * Voxel;
-                float reach = radius * Voxel + ClodRadius;
+                float reach = radius * Voxel + ClodRadius + 0.4f;          // a bit wider: it gathers up the bits lying round the spot
                 int n = cCount[0];
                 for (int i = n - 1; i >= 0 && taken < most; i--)
                 {

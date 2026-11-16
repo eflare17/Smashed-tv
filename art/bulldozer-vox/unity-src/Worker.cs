@@ -593,7 +593,11 @@ public class Worker : MonoBehaviour
         bool rock = aimMat >= VoxelWorld.Rock && aimMat <= VoxelWorld.Gold;
         if (swing == Swing.Pick)
         {
-            if (aimInReach && world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, -aimDir * 1.3f + Vector3.up * 0.9f) > 0) PickHits++;
+            // the broken bits fly back off the face and land spread about his feet, not in a heap against the face
+            Vector3 toFeet = transform.position - aimPoint; toFeet.y = 0f;
+            float away = toFeet.magnitude;
+            Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.45f, 1.3f, 4f) + Vector3.up * 1.1f;
+            if (aimInReach && world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, kick) > 0) PickHits++;
             else if (aimFound && !aimInReach) Say("Too far away.  Get closer.", 1.5f);
         }
         else if (swing == Swing.Dig)
