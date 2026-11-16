@@ -301,6 +301,17 @@ public class DozerController : MonoBehaviour
         w.Write(lights != null && lights.gameObject.activeSelf);
     }
 
+    /// Puts the dozer at a spot on the ground, facing `yawDeg` (0 = +z), standing still.  (The prologue.)
+    public void Place(Vector3 p, float yawDeg)
+    {
+        yaw = yawDeg; pitch = 0f; roll = 0f;
+        p.y = height = SiteProps.HillY(p.x, p.z);
+        Speed = 0f; turn = 0f; blockedTimer = 0f; haveLastBladePos = false;
+        Quaternion rot = Quaternion.Euler(0f, yaw, 0f);
+        transform.SetPositionAndRotation(p, rot);
+        if (body != null) { body.position = p; body.rotation = rot; }
+    }
+
     public void ReadState(System.IO.BinaryReader r)
     {
         Vector3 p = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());

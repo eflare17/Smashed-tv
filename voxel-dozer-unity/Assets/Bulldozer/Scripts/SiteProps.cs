@@ -456,6 +456,7 @@ public class SiteProps : MonoBehaviour
         int n = 0;
         foreach (var s in spots)
         {
+            if (InBreakLane(s.x, s.z)) continue;
             Tree(new Vector3(s.x, Ground(s.x, s.z) - 0.1f, s.z), s.h);
             Solidify(s.x, s.z, 0.45f);
             Finish("Gum tree " + (++n));
@@ -599,7 +600,7 @@ public class SiteProps : MonoBehaviour
                     if (inSite)
                     {
                         // inside the fence only on the untouched hilltop: not on the quarry's benches or over the mine
-                        if (world.HeightAt(x, zz) < 3.4f || Mathf.Abs(x) > HalfSite - 3f) continue;
+                        if (world.HeightAt(x, zz) < 3.4f || Mathf.Abs(x) > HalfSite - 3f || InBreakLane(x, zz)) continue;
                         if (Mathf.Abs(x - VoxelWorld.PortalX) < 4.5f && zz < VoxelWorld.PortalZ + 4f) continue;
                     }
                     float h = Rand(16f, 24f) * (z > 120f ? 0.85f : 1f);
@@ -642,7 +643,7 @@ public class SiteProps : MonoBehaviour
             {
                 float px = x + Rand(-1.6f, 1.6f), pz = z + Rand(-1.6f, 1.6f);
                 if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 36f) continue;            // the track's trees cover that
-                if (world.HeightAt(px, pz) < 3.4f || Blocks(new Vector3(px, 0f, pz), 1.2f)) continue;
+                if (world.HeightAt(px, pz) < 3.4f || Blocks(new Vector3(px, 0f, pz), 1.2f) || InBreakLane(px, pz)) continue;
                 if (noise.snoise(new float2(px, pz) * 0.06f) < -0.35f) continue;               // a clearing
                 TallGum(new Vector3(px, HillY(px, pz) - 0.15f, pz), Rand(13f, 20f));
                 Solidify(px, pz, 0.5f);
@@ -672,6 +673,12 @@ public class SiteProps : MonoBehaviour
     public static int HillGumCount, FarGumCount;
 
     public static int TrackGumCount;
+
+    /// The lane the prologue's firebreak is cut along: kept clear of trees (an old fire trail).
+    public static bool InBreakLane(float x, float z)
+    {
+        return Mathf.Abs(z - Prologue.LaneZ) < 4.5f && x > Prologue.LaneX0 - 4f && x < Prologue.LaneX1 + 3f;
+    }
 
     void FarHills()
     {

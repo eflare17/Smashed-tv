@@ -58,6 +58,15 @@ public class FireFX : MonoBehaviour
 
     void OnDestroy() { Restore(); }
 
+    /// Straight back to the normal sky and light, and no smoke or flames left in the air.
+    public void RestoreNow()
+    {
+        intensity = 0f;
+        Restore();
+        if (sky != null && skyOriginal != null) RenderSettings.skybox = skyOriginal;
+        foreach (var ps in new[] { flames, smoke, embers }) if (ps != null) ps.Clear();
+    }
+
     void Restore()
     {
         if (sun != null) { sun.color = sunColour; sun.intensity = sunIntensity; }

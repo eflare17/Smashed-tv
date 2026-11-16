@@ -1711,7 +1711,27 @@ public static class BulldozerBuilder
     // A trailer of the game so far: -executeMethod BulldozerBuilder.RecordTrailer   Frames and overlay.ass go to Logs/clip.
     // The bushfire, sped up:  -executeMethod BulldozerBuilder.RecordFireClip
     public static void RecordFireClip() { clipMode = 7; sPh = 0; sOverlay.Clear(); trCaps.Clear(); trCap = ""; StartClip(); }
-    static bool clipSkip;                                   // a frame not to record (the fire warming up)
+    static bool clipSkip, prBreakHeld;                                   // a frame not to record (the fire warming up)
+
+    // The prologue (rough cut), filmed:  -executeMethod BulldozerBuilder.RecordPrologue
+    public static void RecordPrologue() { clipMode = 8; sPh = 0; sOverlay.Clear(); trCaps.Clear(); trCap = ""; StartClip(); }
+
+    static string AssColour(Color c) { return "&H" + ((int)(c.b * 255)).ToString("X2") + ((int)(c.g * 255)).ToString("X2") + ((int)(c.r * 255)).ToString("X2") + "&"; }
+
+    /// The prologue's captions and its red and black, over this frame.
+    static void PrologueOverlay(Prologue pr)
+    {
+        float a = clipFrame / 30f, b = (clipFrame + 1) / 30f;
+        string at = AssTime(a) + "," + AssTime(b);
+        if (pr.Tint.a > 0.004f)
+            sOverlay.Add("Dialogue: 0," + at + ",Shade,,0,0,0,,{\\1c" + AssColour(pr.Tint) + "\\1a&H" + ((int)((1f - pr.Tint.a) * 255)).ToString("X2") + "&\\p1}m 0 0 l 1280 0 1280 720 0 720{\\p0}");
+        if (pr.Caption.Length == 0) return;
+        string style = pr.CaptionStyle == "Place" ? "Place" : pr.CaptionStyle == "Shout" ? "Shout" : pr.CaptionStyle == "Card" ? "Card" : pr.CaptionStyle == "Small" ? "Caption" : "Big";
+        string text = AssEsc(pr.Caption);
+        if (pr.CaptionStyle == "Place" && pr.Caption2.Length > 0) text = AssEsc(pr.Caption).ToUpper() + "\\N{\\fs22\\b0}" + AssEsc(pr.Caption2);
+        if (pr.CaptionStyle == "Shout" && pr.Caption2.Length > 0) text = "{\\fs22\\i1\\b0}" + AssEsc(pr.Caption2) + "{\\fs52\\i0\\b1}\\N" + text;
+        sOverlay.Add("Dialogue: 1," + at + "," + style + ",,0,0,0,," + text);
+    }
 
     public static void RecordTrailer() { clipMode = 6; sPh = 0; sOverlay.Clear(); trCaps.Clear(); trCap = ""; StartClip(); }
     static readonly List<string> trCaps = new List<string>();
@@ -1785,6 +1805,20 @@ public static class BulldozerBuilder
 
         var follow = cam.GetComponent<FollowCamera>();
         if (clipMode == 3) { if (!NightStep(d, t)) return; }
+        else if (clipMode == 8)
+        {
+            if (sPh == 0) { Prologue.Play(); sPh = 1; }
+            var pr = Prologue.Instance;
+            if (pr == null || !Prologue.Playing)
+            {
+                WriteOverlay();
+                Debug.Log("BULLDOZER_PROLOGUE_OK frames=" + clipFrame + " fallen=" + FireSim.Instance.TreesFallen + " dozerAt=" + d.transform.position.ToString("F1")
+                          + " breakHeldBeforeChange=" + prBreakHeld + " sonAt=" + Worker.Instance.transform.position.ToString("F1"));
+                ClipFinish(0); return;
+            }
+            if (pr.T > 27.5f && pr.T < 27.6f) prBreakHeld = !FireSim.Instance.CellBurnt(new Vector3(0f, 0f, Prologue.LaneZ - 4f)) && FireSim.Instance.CellBurnt(new Vector3(0f, 0f, Prologue.LaneZ + 6f));
+            PrologueOverlay(pr);
+        }
         else if (clipMode == 7)
         {
             if (!FireClipStep(d, t, follow))
@@ -1907,7 +1941,7 @@ public static class BulldozerBuilder
         cam.Render();
         RenderTexture.active = clipRT;
         var bv = d.GetComponent<BladeView>();
-        if (bv != null && clipMode != 6 && clipMode != 7) bv.DrawInto(1280, 720);                                // the blade view is normally drawn straight to the screen
+        if (bv != null && clipMode < 6) bv.DrawInto(1280, 720);                                // the blade view is normally drawn straight to the screen
         clipTex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
         clipTex.Apply();
         cam.targetTexture = null;
@@ -2499,6 +2533,8 @@ public static class BulldozerBuilder
             "Style: Pop,Arial,28,&H0040D8FF,&H000000FF,&H00000000,&HA0000000,1,0,0,0,100,100,0,0,3,8,0,5,30,30,0,1",
             "Style: Big,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,1,0,0,0,100,100,1,0,1,3,2,2,40,40,70,1",
             "Style: Card,Arial,46,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,1,0,1,3,2,5,60,60,0,1",
+            "Style: Place,Arial,30,&H00F0F0F0,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,4,0,1,2,2,1,80,40,90,1",
+            "Style: Shout,Arial,52,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,3,2,2,40,40,90,1",
             "Style: Shade,Arial,20,&H00000000,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
             "Style: Panel,Consolas,22,&H00FFFFFF,&H000000FF,&H00000000,&HC0101010,0,0,0,0,100,100,0,0,3,10,0,5,30,30,0,1",
             "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",

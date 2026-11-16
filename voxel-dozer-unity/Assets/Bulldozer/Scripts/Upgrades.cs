@@ -249,6 +249,7 @@ public class Upgrades : MonoBehaviour
     // ---------------------------------------------------------------- the tree screen
     void OnGUI()
     {
+        if (Prologue.Playing) return;
         if (!Open)
         {
             GUI.Box(new Rect(Screen.width - 230, Screen.height - 34, 220, 24), "U   upgrades");

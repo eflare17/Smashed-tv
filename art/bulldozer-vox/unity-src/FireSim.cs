@@ -79,7 +79,7 @@ public class FireSim : MonoBehaviour
         Vector3 p = CentreOf(c);
         var w = VoxelWorld.Instance;
         bool inSite = p.z < VoxelWorld.NZ / 2 * VoxelWorld.Voxel - 0.5f && Mathf.Abs(p.x) < VoxelWorld.NX / 2 * VoxelWorld.Voxel - 0.5f;
-        if (inSite) return (w != null && w.GrassAt(p.x, p.z) > 0) || treesIn[c].Count > 0 && fuel[c] > 0f;
+        if (inSite) return fuel[c] > 0f && ((w != null && w.GrassAt(p.x, p.z) > 0) || treesIn[c].Count > 0);
         return fuel[c] > 0f;
     }
 
@@ -291,10 +291,11 @@ public class FireSim : MonoBehaviour
 
     /// Makes a tree fall, starting at `at` seconds, towards `angle` (radians: 0 = +z, pi/2 = +x).  If it isn't
     /// alight by then it catches just before.  (The prologue uses this for the trees that come down around the dozer.)
-    public void FellTree(int tr, float at, float angle)
+    public void FellTree(int tr, float at, float angle, bool solid = true)
     {
         if (tr < 0 || tr >= Trees.Count || treeFallAt[tr] < Never) return;
         treeFallAt[tr] = at; treeFallAngle[tr] = angle;
+        if (!solid) notSolid.Add(tr);
         if (treeIgnite[tr] >= Never) Push(Mathf.Max(Now, at - 6f), tr + TreeFlag);
         else newTrees.Add(tr);                                       // (already alight: rewrite its pixel with the fall)
         Push(at + FallTook, tr + LandFlag);
@@ -308,6 +309,23 @@ public class FireSim : MonoBehaviour
         return best;
     }
 
+    readonly HashSet<int> notSolid = new HashSet<int>();         // a log the prologue's dozer shoves aside
+
+    /// Turns a tree that is lying down (swung round about its foot, as when the blade shoves it).
+    public void SetFallAngle(int t, float angle)
+    {
+        treeFallAngle[t] = angle;
+        treeTex.SetPixel(t % 256, t / 256, new Color(treeIgnite[t], Trees[t].at.y, treeFallAt[t], angle));
+        treeTex.Apply(false);
+    }
+
+    /// Long after: the fire out, everything it burnt left burnt (black trunks, fallen logs), no glow, no smoke.
+    public void Settle()
+    {
+        Running = false;
+        Shader.SetGlobalFloat("_FireTime", Now + 10000f);
+    }
+
     public bool HasFallen(int t) { return t >= 0 && t < Trees.Count && Now >= treeFallAt[t] + FallTook; }
     public float FallAngle(int t) { return treeFallAngle[t]; }
 
@@ -317,7 +335,7 @@ public class FireSim : MonoBehaviour
         Landed.Add(tr);
         var tree = Trees[tr];
         Vector3 dir = new Vector3(Mathf.Sin(treeFallAngle[tr]), 0f, Mathf.Cos(treeFallAngle[tr]));
-        SiteProps.AddFallen(tree.at + dir * 1.2f, tree.at + dir * tree.height * 0.85f, 0.45f);   // the trunk on the ground is solid
+        if (!notSolid.Contains(tr)) SiteProps.AddFallen(tree.at + dir * 1.2f, tree.at + dir * tree.height * 0.85f, 0.45f);   // the trunk on the ground is solid
     }
 
     public bool CellBurnt(Vector3 p) { int c = CellOf(p.x, p.z); return c >= 0 && cellIgnite[c] < Never; }

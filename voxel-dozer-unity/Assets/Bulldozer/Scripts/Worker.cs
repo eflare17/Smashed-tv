@@ -868,6 +868,7 @@ public class Worker : MonoBehaviour
 
     void OnGUI()
     {
+        if (Prologue.Playing) return;
         if (world == null) return;
         if (sayTimer > 0f)
         {

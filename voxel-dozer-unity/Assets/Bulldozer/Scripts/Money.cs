@@ -121,6 +121,7 @@ public class Money : MonoBehaviour
 
     void OnGUI()
     {
+        if (Prologue.Playing) return;
         var big = new GUIStyle(GUI.skin.box) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
         GUI.Box(new Rect(Screen.width - 230, 10, 220, 40), "Coins: " + Coins.ToString("N0"), big);
         var goldStyle = new GUIStyle(big) { fontSize = 18 };
