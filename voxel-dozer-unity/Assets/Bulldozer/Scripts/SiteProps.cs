@@ -21,8 +21,23 @@ public class SiteProps : MonoBehaviour
 
     /// True if a machine of the given radius at this spot would be inside something solid.
     /// A person on foot is not stopped by things that only keep machines out (the mine tunnel).
+    // trunks lying on the ground (fallen in the fire): solid along their length
+    struct Log { public Vector2 a, b; public float radius; }
+    static readonly List<Log> fallen = new List<Log>();
+    public static void AddFallen(Vector3 a, Vector3 b, float radius) { fallen.Add(new Log { a = new Vector2(a.x, a.z), b = new Vector2(b.x, b.z), radius = radius }); }
+    public static int FallenCount { get { return fallen.Count; } }
+    public static void ClearFallen() { fallen.Clear(); }
+
     public static bool Blocks(Vector3 pos, float radius, bool onFoot = false)
     {
+        Vector2 p2 = new Vector2(pos.x, pos.z);
+        for (int i = 0; i < fallen.Count; i++)
+        {
+            Vector2 ab = fallen[i].b - fallen[i].a;
+            float u = Mathf.Clamp01(Vector2.Dot(p2 - fallen[i].a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-4f));
+            float r = fallen[i].radius + radius;
+            if ((fallen[i].a + ab * u - p2).sqrMagnitude < r * r) return true;
+        }
         for (int i = 0; i < solids.Count; i++)
         {
             if (onFoot && solids[i].machineOnly) continue;
@@ -109,6 +124,7 @@ public class SiteProps : MonoBehaviour
         world = VoxelWorld.Instance;
         if (world == null) return;
         solids.Clear();
+        fallen.Clear();
         FireSim.Trees.Clear();
         rng = new System.Random(11);
         var cam = Camera.main;

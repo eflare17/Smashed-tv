@@ -554,7 +554,7 @@ public static class BulldozerBuilder
     static int frPhase, frShot, frFrames;
     static float frRealStart, frMaxMs, frSumMs;
     static string frLog;
-    static readonly float[] FrShots = { 12f, 30f, 50f, 70f, 90f, 120f };
+    static readonly float[] FrShots = { 12f, 30f, 50f, 70f, 90f, 120f, 150f };
     const float FrBreakZ0 = 54f, FrBreakZ1 = 60f, FrChange = 60f;
 
     public static void FireTest()
@@ -615,6 +615,11 @@ public static class BulldozerBuilder
             var cam = Camera.main;
             // wide, from high over the quarry, looking up the hill; and the last two from inside the forest
             if (frShot < 4) cam.transform.SetPositionAndRotation(new Vector3(-14f, 26f, -26f), Quaternion.LookRotation(new Vector3(VoxelWorld.TrackX + 6f, 12f, 90f) - new Vector3(-14f, 26f, -26f)));
+            else if (frShot == 6)
+            {
+                Vector3 at = new Vector3(VoxelWorld.TrackX - 16f, 16f, 22f), look = new Vector3(VoxelWorld.TrackX + 2f, 4f, 52f);   // over the burnt hilltop
+                cam.transform.SetPositionAndRotation(at, Quaternion.LookRotation(look - at));
+            }
             else
             {
                 Vector3 at = new Vector3(VoxelWorld.TrackCentreX(36f) - 1f, 5.9f, 36f), look = new Vector3(VoxelWorld.TrackCentreX(70f), 12f, 70f);
@@ -625,6 +630,17 @@ public static class BulldozerBuilder
             return;
         }
         if (frShot < FrShots.Length) return;
+        // a fallen trunk must be solid: the middle of the first one blocks a dozer
+        string solid = "none";
+        for (int ft = 0; ft < FireSim.Trees.Count; ft++)
+            if (fire.HasFallen(ft))
+            {
+                var tr = FireSim.Trees[ft];
+                Vector3 mid = tr.at + new Vector3(Mathf.Sin(fire.FallAngle(ft)), 0f, Mathf.Cos(fire.FallAngle(ft))) * tr.height * 0.5f;
+                solid = SiteProps.Blocks(mid, 1f).ToString();
+                break;
+            }
+        frLog += " fallen=" + fire.TreesFallen + " logs=" + SiteProps.FallenCount + " fallenIsSolid=" + solid;
         frLog += " end:cells=" + fire.CellsBurnt + " trees=" + fire.TreesBurnt + " crossedBreakAfterChange=" + FrBurntBelow(FrBreakZ0)
               + " reachedHilltop=" + fire.CellBurnt(new Vector3(-20f, 0f, 30f)) + " avgMs=" + (frSumMs / Mathf.Max(1, frFrames)).ToString("F1") + " worstMs=" + frMaxMs.ToString("F1");
         Debug.Log("BULLDOZER_FIRE_RESULT " + frLog);

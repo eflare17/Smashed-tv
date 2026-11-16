@@ -180,6 +180,21 @@ public class FireFX : MonoBehaviour
                 Emit(embers, p, Vector3.up * Rand(2f, 5f) + wind * Rand(0.8f, 1.3f), Rand(0.07f, 0.16f), Rand(2f, 5f), true);
             }
         }
+        // trees hitting the ground: a burst of sparks, flames and smoke along the trunk
+        foreach (int t in fire.Landed)
+        {
+            var tr = FireSim.Trees[t];
+            Vector3 dir = new Vector3(Mathf.Sin(fire.FallAngle(t)), 0f, Mathf.Cos(fire.FallAngle(t)));
+            for (int k = 0; k < 60; k++)
+            {
+                Vector3 p = tr.at + dir * tr.height * Rand(0.1f, 0.9f) + Vector3.up * 0.6f;
+                Emit(embers, p, new Vector3(Rand(-3f, 3f), Rand(3f, 9f), Rand(-3f, 3f)) + wind * 0.5f, Rand(0.08f, 0.2f), Rand(1.5f, 4f), true);
+                if (k % 3 == 0) Emit(flames, p, Vector3.up * Rand(2f, 5f), Rand(0.5f, 1.2f), Rand(0.5f, 1f), true);
+                if (k % 10 == 0) Emit(smoke, p, Vector3.up * Rand(1.5f, 3f) + wind * 0.5f, Rand(5f, 9f), Rand(8f, 14f), false);
+            }
+        }
+        fire.Landed.Clear();
+
         // low flames along the ground front
         float perCell = Mathf.Min(5f, 2500f / Mathf.Max(1, cells.Count));
         foreach (int c in cells)

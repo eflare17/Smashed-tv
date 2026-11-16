@@ -8,6 +8,9 @@
 //     crowns downwind of them.  So a break holds in a light wind, and a wind change can carry the fire over it.
 // Every tree knows when it caught.  The ground shader (VoxelTerrain) does the rest from two small textures: each
 // tree scorches orange, glows, goes black and loses its leaves; the ground chars behind a glowing front.
+// Badly burnt trees fall: thinner trees, and trees burning in a strong wind, are likelier to; one that falls goes
+// 14-40 s after it caught, mostly downwind.  The shader tips it over (and its shadow); once down, its trunk is solid
+// (SiteProps.Blocks).  The prologue can also fell a chosen tree at a chosen moment (FellTree).
 // It is all seeded, so the same fire plays out the same way every time.
 using System.Collections.Generic;
 using UnityEngine;
@@ -33,7 +36,12 @@ public class FireSim : MonoBehaviour
     Vector2 windA = new Vector2(0f, -5f), windB = new Vector2(0f, -5f);
     float windChangeAt = 1e9f, windChangeTook = 4f;
 
-    float[] fuel, cellIgnite, treeIgnite;
+    float[] fuel, cellIgnite, treeIgnite, treeFallAt, treeFallAngle;
+    public const float FallTook = 2.6f;                            // seconds from starting to tip to hitting the ground
+    public int TreesFallen { get; private set; }
+    /// Trees that have just hit the ground, for FireFX's sparks (it empties this).
+    public readonly List<int> Landed = new List<int>();
+    const int LandFlag = 1 << 25;
     List<int>[] treesIn;                                           // trees standing in each square
     List<int>[] treeNear;                                          // trees within crown reach of each tree
     readonly List<int> burning = new List<int>();                  // squares alight now (for embers)
@@ -89,10 +97,10 @@ public class FireSim : MonoBehaviour
             fuel[c] = onTrack ? 0f : pastFence ? 1f : 1f;              // inside the fence, grass decides (HasFuel)
         }
         int nt = Trees.Count;
-        treeIgnite = new float[nt];
+        treeIgnite = new float[nt]; treeFallAt = new float[nt]; treeFallAngle = new float[nt];
         for (int t = 0; t < nt; t++)
         {
-            treeIgnite[t] = Never;
+            treeIgnite[t] = Never; treeFallAt[t] = Never;
             int c = CellOf(Trees[t].at.x, Trees[t].at.z);
             if (c >= 0) treesIn[c].Add(t);
         }
@@ -116,9 +124,13 @@ public class FireSim : MonoBehaviour
         }
         // the textures the shader reads: when each tree and each square caught (Never = not yet)
         int th = Mathf.Max(1, (nt + 255) / 256);
-        treeTex = new Texture2D(256, th, TextureFormat.RGFloat, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
-        var tp = new Color[256 * th]; for (int i = 0; i < tp.Length; i++) tp[i] = new Color(Never, i < nt ? Trees[i].at.y : 0f, 0, 0);   // green: where the trunk stands
+        treeTex = new Texture2D(256, th, TextureFormat.RGBAFloat, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        var tp = new Color[256 * th]; for (int i = 0; i < tp.Length; i++) tp[i] = new Color(Never, i < nt ? Trees[i].at.y : 0f, Never, 0f);   // caught, foot height, falls, which way
         treeTex.SetPixels(tp); treeTex.Apply(false);
+        var baseTex = new Texture2D(256, th, TextureFormat.RGFloat, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        var bp = new Color[256 * th]; for (int i = 0; i < bp.Length; i++) bp[i] = i < nt ? new Color(Trees[i].at.x, Trees[i].at.z, 0, 0) : Color.clear;
+        baseTex.SetPixels(bp); baseTex.Apply(false);
+        Shader.SetGlobalTexture("_TreeBase", baseTex);
         groundTex = new Texture2D(W, H, TextureFormat.RFloat, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
         var gp = new Color[W * H]; for (int i = 0; i < gp.Length; i++) gp[i] = new Color(Never, 0, 0, 0);
         groundTex.SetPixels(gp); groundTex.Apply(false);
@@ -198,7 +210,8 @@ public class FireSim : MonoBehaviour
         while (heapT.Count > 0 && heapT[0] <= Now)
         {
             float t = heapT[0]; int i = heapI[0]; Pop();
-            if (i >= TreeFlag) LightTree(i - TreeFlag, t);
+            if (i >= LandFlag) Land(i - LandFlag);
+            else if (i >= TreeFlag) LightTree(i - TreeFlag, t);
             else LightCell(i, t);
         }
         if (newCells.Count > 0)
@@ -208,7 +221,7 @@ public class FireSim : MonoBehaviour
         }
         if (newTrees.Count > 0)
         {
-            foreach (int t in newTrees) treeTex.SetPixel(t % 256, t / 256, new Color(treeIgnite[t], Trees[t].at.y, 0, 0));
+            foreach (int t in newTrees) treeTex.SetPixel(t % 256, t / 256, new Color(treeIgnite[t], Trees[t].at.y, treeFallAt[t], treeFallAngle[t]));
             treeTex.Apply(false); newTrees.Clear();
         }
     }
@@ -250,9 +263,19 @@ public class FireSim : MonoBehaviour
         if (treeIgnite[tr] < Never) return;                         // already alight
         treeIgnite[tr] = t;
         newTrees.Add(tr); TreesBurnt++; ActiveTrees.Add(tr);
-        // crowning: in a strong wind a burning crown lights the crowns downwind of it
         Vector2 wind = WindAt(t);
         float ws = wind.magnitude;
+        // does it burn through and fall?  Thin trees and a strong wind make it likelier
+        if (treeFallAt[tr] >= Never)
+        {
+            float chance = 0.18f + 0.35f * Mathf.Clamp01((ws - 4f) / 8f) + (Trees[tr].height < 17f ? 0.12f : 0f);
+            if (rng.NextDouble() < chance)
+            {
+                float down = ws > 0.5f ? Mathf.Atan2(wind.x, wind.y) : (float)rng.NextDouble() * 6.283f;
+                FellTree(tr, t + 14f + (float)rng.NextDouble() * 26f, down + ((float)rng.NextDouble() - 0.5f) * 1.4f);
+            }
+        }
+        // crowning: in a strong wind a burning crown lights the crowns downwind of it
         if (ws < 7f) return;
         Vector3 a = Trees[tr].at;
         foreach (int o in treeNear[tr])
@@ -264,6 +287,37 @@ public class FireSim : MonoBehaviour
             if (along < 0.25f) continue;
             Push(t + dist / (0.8f + 2.5f * along) * (0.8f + 0.4f * (float)rng.NextDouble()), o + TreeFlag);
         }
+    }
+
+    /// Makes a tree fall, starting at `at` seconds, towards `angle` (radians: 0 = +z, pi/2 = +x).  If it isn't
+    /// alight by then it catches just before.  (The prologue uses this for the trees that come down around the dozer.)
+    public void FellTree(int tr, float at, float angle)
+    {
+        if (tr < 0 || tr >= Trees.Count || treeFallAt[tr] < Never) return;
+        treeFallAt[tr] = at; treeFallAngle[tr] = angle;
+        if (treeIgnite[tr] >= Never) Push(Mathf.Max(Now, at - 6f), tr + TreeFlag);
+        else newTrees.Add(tr);                                       // (already alight: rewrite its pixel with the fall)
+        Push(at + FallTook, tr + LandFlag);
+    }
+
+    /// The tree nearest a point (for the prologue to pick one by where it stands).  -1 if none within `within` m.
+    public static int TreeNear(Vector3 p, float within)
+    {
+        int best = -1; float bd = within * within;
+        for (int t = 0; t < Trees.Count; t++) { float d = (new Vector2(Trees[t].at.x - p.x, Trees[t].at.z - p.z)).sqrMagnitude; if (d < bd) { bd = d; best = t; } }
+        return best;
+    }
+
+    public bool HasFallen(int t) { return t >= 0 && t < Trees.Count && Now >= treeFallAt[t] + FallTook; }
+    public float FallAngle(int t) { return treeFallAngle[t]; }
+
+    void Land(int tr)
+    {
+        TreesFallen++;
+        Landed.Add(tr);
+        var tree = Trees[tr];
+        Vector3 dir = new Vector3(Mathf.Sin(treeFallAngle[tr]), 0f, Mathf.Cos(treeFallAngle[tr]));
+        SiteProps.AddFallen(tree.at + dir * 1.2f, tree.at + dir * tree.height * 0.85f, 0.45f);   // the trunk on the ground is solid
     }
 
     public bool CellBurnt(Vector3 p) { int c = CellOf(p.x, p.z); return c >= 0 && cellIgnite[c] < Never; }
