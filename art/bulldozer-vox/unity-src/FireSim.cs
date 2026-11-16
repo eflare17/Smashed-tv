@@ -268,7 +268,7 @@ public class FireSim : MonoBehaviour
         // does it burn through and fall?  Thin trees and a strong wind make it likelier
         if (treeFallAt[tr] >= Never)
         {
-            float chance = 0.18f + 0.35f * Mathf.Clamp01((ws - 4f) / 8f) + (Trees[tr].height < 17f ? 0.12f : 0f);
+            float chance = 0.08f + 0.17f * Mathf.Clamp01((ws - 4f) / 8f) + (Trees[tr].height < 17f ? 0.06f : 0f);   // about 1 in 5 (the owner: fewer)
             if (rng.NextDouble() < chance)
             {
                 float down = ws > 0.5f ? Mathf.Atan2(wind.x, wind.y) : (float)rng.NextDouble() * 6.283f;
