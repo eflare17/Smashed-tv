@@ -152,7 +152,18 @@ public class FireSim : MonoBehaviour
         }
     }
 
-    public void Begin() { Running = true; Now = 0f; Shader.SetGlobalFloat("_FireTime", 0f); }
+    public void Begin()
+    {
+        Running = true; Now = 0f; Shader.SetGlobalFloat("_FireTime", 0f);
+        if (GetComponent<FireFX>() == null) gameObject.AddComponent<FireFX>();        // flames, smoke, embers, the red sky
+    }
+
+    // for FireFX: what's alight now
+    public readonly List<int> ActiveTrees = new List<int>();
+    public List<int> BurningCells { get { return burning; } }
+    public float TreeIgnite(int t) { return treeIgnite[t]; }
+    public float CellIgnite(int c) { return cellIgnite[c]; }
+    public Vector3 CellCentre(int c) { return CentreOf(c); }
     public void Stop() { Running = false; Shader.SetGlobalFloat("_FireTime", -1e6f); }
 
     void Update()
@@ -164,6 +175,7 @@ public class FireSim : MonoBehaviour
         float ws = wind.magnitude;
 
         // embers from a strong wind: spot fires well ahead of the front
+        for (int k = burning.Count - 1; k >= 0; k--) if (Now - cellIgnite[burning[k]] > 20f) burning.RemoveAt(k);
         emberClock += Time.deltaTime * speedUp;
         while (emberClock >= 0.5f)
         {
@@ -173,7 +185,6 @@ public class FireSim : MonoBehaviour
             for (int k = burning.Count - 1; k >= 0; k--)
             {
                 int c = burning[k];
-                if (Now - cellIgnite[c] > 20f) { burning.RemoveAt(k); continue; }
                 if (rng.NextDouble() > rate) continue;
                 Vector2 dir = Rotate(wind / ws, ((float)rng.NextDouble() - 0.5f) * 0.5f);
                 float d = Mathf.Lerp(8f, 26f, (float)rng.NextDouble()) * ws / 10f;
@@ -238,7 +249,7 @@ public class FireSim : MonoBehaviour
     {
         if (treeIgnite[tr] < Never) return;                         // already alight
         treeIgnite[tr] = t;
-        newTrees.Add(tr); TreesBurnt++;
+        newTrees.Add(tr); TreesBurnt++; ActiveTrees.Add(tr);
         // crowning: in a strong wind a burning crown lights the crowns downwind of it
         Vector2 wind = WindAt(t);
         float ws = wind.magnitude;
