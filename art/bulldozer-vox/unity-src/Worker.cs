@@ -99,6 +99,10 @@ public class Worker : MonoBehaviour
     public int GoldShattered { get; private set; }
     public float JackBite { get { return Mathf.Lerp(JackMin, jackMax, jackSize); } }
     public float JackShatter { get { return 0.4f * Mathf.Clamp01((JackBite - 0.17f) / 0.21f); } }
+    /// Aiming the jackhammer at the quartz seam (white quartz or gold).
+    public bool AimingAtSeam { get { TakeAim(); return aimFound && (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.Quartz); } }
+    /// The gold warning is up: the jackhammer on the seam with a bite big enough to smash gold.
+    public bool GoldWarning { get { return Tool == 0 && jackOwned && aimFound && (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.Quartz) && JackShatter > 0f; } }
     public void SetJackSize(float f) { jackSize = Mathf.Clamp01(Mathf.Round(f * 4f) / 4f); }
     float swingT;
     bool swingDone;
@@ -1023,7 +1027,7 @@ public class Worker : MonoBehaviour
             "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
             "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
             "Tool: " + tool + load;
-        GUI.Box(new Rect(10, 10, 540, 86), text);
+        GUI.Box(new Rect(10, 10, 640, 86), text);
         // the backpack gauge, always: a bar that fills, and the litres
         float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
         if (backpackOwned) GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\nQ by the cart squirts it in");
@@ -1033,11 +1037,11 @@ public class Worker : MonoBehaviour
             GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
         }
         // the jackhammer on the quartz seam with too big a bite: warn before the gold is smashed
-        if (Tool == 0 && jackOwned && aimFound && (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.Quartz) && JackShatter > 0f)
+        if (GoldWarning)
         {
             var warn = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             warn.normal.textColor = new Color(1f, 0.75f, 0.2f);
-            GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height * 0.54f, 660, 40), "Gold seam!  Bite too big: you'll lose gold.  Shift+wheel or [ to go smaller", warn);
+            GUI.Box(new Rect(Screen.width / 2 - 450, Screen.height * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  Shift+wheel or [ to go smaller", warn);
         }
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))

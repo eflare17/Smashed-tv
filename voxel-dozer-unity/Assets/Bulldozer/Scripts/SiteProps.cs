@@ -163,6 +163,13 @@ public class SiteProps : MonoBehaviour
     float Rand(float a, float b) { return a + (float)rng.NextDouble() * (b - a); }
     float Ground(float x, float z) { return HillY(x, z); }
 
+    // the rails' height: on the tunnel floor inside the mine (not the hilltop above it), on the ground outside
+    float RailY(float x, float z)
+    {
+        bool inTunnel = z > VoxelWorld.PortalZ - 0.8f && Mathf.Abs(x - VoxelWorld.PortalX) < VoxelWorld.TunnelHalfWidth;
+        return inTunnel ? 0f : Ground(x, z);                // (the tunnel floor is at 0, under any rubble)
+    }
+
     void Start()
     {
         world = VoxelWorld.Instance;
@@ -208,12 +215,22 @@ public class SiteProps : MonoBehaviour
         }
         for (float x = px - hw - 0.3f; x <= px + hw + 0.31f; x += 0.42f)
             Box(new Vector3(x, h + 0.5f, pz - 0.75f), new Vector3(0.36f, 0.14f, 2.3f), (int)(x * 7f) % 2 == 0 ? Timber : DarkTimber);
-        // props holding the roof further in
-        for (float z = pz + 3f; z < pz + VoxelWorld.TunnelLength - 1f; z += 3.5f)
+        // props holding the roof in the open stretches (the ones in the collapses went down with the roof), and a
+        // lantern hanging in each open stretch
+        foreach (float a in new[] { 8.2f, 11.6f, 20.0f, 22.2f, 28.6f, 30.4f })
         {
-            Box(new Vector3(px - hw + 0.3f, h * 0.5f, z), new Vector3(0.26f, h, 0.26f), DarkTimber);
-            Box(new Vector3(px + hw - 0.3f, h * 0.5f, z), new Vector3(0.26f, h, 0.26f), DarkTimber);
-            Box(new Vector3(px, h - 0.05f, z), new Vector3(hw * 2f, 0.24f, 0.26f), DarkTimber);
+            float z = VoxelWorld.PortalZ + a, w = VoxelWorld.TunnelHalfWidthAt(a) + 0.25f, ph = VoxelWorld.TunnelHeightAt(a) + 0.15f;
+            Box(new Vector3(px - w + 0.3f, ph * 0.5f, z), new Vector3(0.26f, ph, 0.26f), DarkTimber);
+            Box(new Vector3(px + w - 0.3f, ph * 0.5f, z), new Vector3(0.26f, ph, 0.26f), DarkTimber);
+            Box(new Vector3(px, ph - 0.05f, z), new Vector3(w * 2f, 0.24f, 0.26f), DarkTimber);
+        }
+        // a prop knocked flat by collapse 1, lying on the floor where it came out
+        Beam(new Vector3(px - 1.1f, 0.15f, VoxelWorld.PortalZ + 7.4f), new Vector3(px + 0.4f, 0.15f, VoxelWorld.PortalZ + 9.2f), 0.24f, DarkTimber);
+        var lamps = new[] { new Vector3(px + 0.6f, h - 0.8f, VoxelWorld.PortalZ + 10f), new Vector3(px - 0.8f, 2.25f, VoxelWorld.PortalZ + 21f), new Vector3(px + 0.9f, 2.4f, VoxelWorld.PortalZ + 29.5f) };
+        foreach (var lp in lamps)
+        {
+            Box(lp + Vector3.up * 0.2f, new Vector3(0.2f, 0.04f, 0.2f), Steel);
+            Box(lp, new Vector3(0.14f, 0.24f, 0.14f), Gold);
         }
         // a low timber fence either side of the mouth
         for (int side = -1; side <= 1; side += 2)
@@ -231,11 +248,11 @@ public class SiteProps : MonoBehaviour
         Box(lamp, new Vector3(0.18f, 0.3f, 0.18f), Gold);
         Box(lamp - Vector3.up * 0.18f, new Vector3(0.24f, 0.05f, 0.24f), Steel);
         Finish("Mine entrance");
-        for (int k = 0; k < 2; k++)
+        for (int k = 0; k < 4; k++)
         {
             var light = new GameObject("Lantern light").AddComponent<Light>();
             light.transform.SetParent(transform, false);
-            light.transform.position = k == 0 ? lamp : new Vector3(px + 0.6f, h - 0.8f, pz + 8f);
+            light.transform.position = k == 0 ? lamp : lamps[k - 1] - Vector3.up * 0.2f;
             light.type = LightType.Point;
             light.color = new Color(1f, 0.62f, 0.25f);
             light.intensity = k == 0 ? 3.2f : 2.2f;
@@ -252,7 +269,7 @@ public class SiteProps : MonoBehaviour
         // from inside the tunnel, out across the floor and away down the road to the south
         Vector3[] way =
         {
-            new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + 10f), new Vector3(VoxelWorld.PortalX, 0f, 3f),
+            new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + VoxelWorld.TunnelLength - 1.2f), new Vector3(VoxelWorld.PortalX, 0f, 3f),
             new Vector3(6f, 0f, -6f), new Vector3(-1f, 0f, -15f), new Vector3(VoxelWorld.RoadX, 0f, -24f),
             new Vector3(VoxelWorld.RoadX, 0f, -40f),
         };
@@ -273,7 +290,7 @@ public class SiteProps : MonoBehaviour
         for (int i = 0; i < pts.Count - 1; i++)
         {
             Vector3 a = pts[i], b = pts[i + 1];
-            a.y = Ground(a.x, a.z); b.y = Ground(b.x, b.z);
+            a.y = RailY(a.x, a.z); b.y = RailY(b.x, b.z);
             Vector3 dir = (b - a).normalized, side = new Vector3(dir.z, 0f, -dir.x);
             Beam(a + side * 0.45f + Vector3.up * 0.15f, b + side * 0.45f + Vector3.up * 0.15f, 0.09f, Steel);
             Beam(a - side * 0.45f + Vector3.up * 0.15f, b - side * 0.45f + Vector3.up * 0.15f, 0.09f, Steel);

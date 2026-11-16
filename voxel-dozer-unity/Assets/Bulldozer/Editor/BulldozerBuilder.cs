@@ -1134,6 +1134,140 @@ public static class BulldozerBuilder
         }
     }
 
+    // The mine tunnel:  -executeMethod BulldozerBuilder.TunnelTest
+    // Counts what is in each collapse and the seams in the far chambers, pictures each stretch (tunnel_*.png), and
+    // stands him with the jackhammer at the chamber seam to check the gold warning comes up (tunnel_warning.png is a
+    // screenshot with the HUD).  Prints BULLDOZER_TUNNEL_RESULT.
+    static int tPhase; static string tLog; static float tStart; static int tShot;
+
+    public static void TunnelTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        tPhase = 0; tLog = ""; tShot = 0;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TunnelTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void TunnelFinish(int code)
+    {
+        EditorApplication.update -= TunnelTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    /// What fills a stretch of the tunnel: loose rubble, solid rock, quartz and gold voxels.
+    static string TunnelStretch(VoxelWorld w, float a0, float a1, float halfW, float tall, out int loose, out int rock, out int gold)
+    {
+        loose = rock = gold = 0; int quartz = 0;
+        for (float z = a0; z < a1; z += VoxelWorld.Voxel)
+            for (float x = -halfW; x < halfW; x += VoxelWorld.Voxel)
+                for (float y = 0.03f; y < tall; y += VoxelWorld.Voxel)
+                {
+                    byte m = w.MaterialAt(new Vector3(VoxelWorld.PortalX + x, y, VoxelWorld.PortalZ + z));
+                    if (m >= VoxelWorld.LooseSoil) loose++;
+                    else if (m == VoxelWorld.Rock) rock++;
+                    else if (m == VoxelWorld.Quartz) quartz++;
+                    else if (m == VoxelWorld.Gold) gold++;
+                }
+        return "loose=" + loose + " rock=" + rock + " quartz=" + quartz + " gold=" + gold;
+    }
+
+    static void TunnelShot(Vector3 at, Vector3 look, string file)
+    {
+        var cam = Camera.main;
+        cam.transform.SetPositionAndRotation(at, Quaternion.LookRotation(look - at));
+        TestCapture(file);
+    }
+
+    static void TunnelTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_TUNNEL_FAILED timed out in phase " + tPhase + " " + tLog); TunnelFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || up == null) return;
+        float t = Time.time;
+        float px = VoxelWorld.PortalX, pz = VoxelWorld.PortalZ;
+        if (tPhase == 0)
+        {
+            if (t < 1.5f) return;
+            int l0, r0, g0, l1, r1, g1, l2, r2, g2, lo, ro, go;
+            tLog += "collapse1[" + TunnelStretch(w, 3f, 7f, 1.5f, 2.6f, out l0, out r0, out g0) + "]";
+            tLog += " collapse2[" + TunnelStretch(w, 13f, 19f, 1.5f, 2.6f, out l1, out r1, out g1) + "]";
+            tLog += " collapse3[" + TunnelStretch(w, 23f, 28f, 1.5f, 2.6f, out l2, out r2, out g2) + "]";
+            tLog += " openStretch[" + TunnelStretch(w, 8f, 12.5f, 1.5f, 2.5f, out lo, out ro, out go) + "]";
+            int sl, sr, sg, el, er, eg;
+            tLog += " chamber2Walls[" + TunnelStretch(w, 19.5f, 22.5f, 3.2f, 3.0f, out sl, out sr, out sg) + "]";
+            tLog += " endWalls[" + TunnelStretch(w, 28f, 31f, 3.5f, 3.2f, out el, out er, out eg) + "]";
+            for (int k = 0; k < 3; k++) tLog += " find" + k + "=" + VoxelWorld.FindSpot(k).z.ToString("F1");
+            bool rockier = (float)r0 / Mathf.Max(1, l0 + r0) < (float)r1 / Mathf.Max(1, l1 + r1) && (float)r1 / Mathf.Max(1, l1 + r1) < (float)r2 / Mathf.Max(1, l2 + r2);
+            tLog += " eachRockier=" + rockier + " openIsOpen=" + (lo + ro < 200) + " seamGold=" + (sg + eg);
+            if (!rockier || lo + ro >= 200 || sg + eg == 0 || l0 < 1000 || l1 < 1000 || l2 < 500) { Debug.LogError("BULLDOZER_TUNNEL_FAILED " + tLog); TunnelFinish(1); return; }
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            tPhase = 1; tStart = t;
+            return;
+        }
+        if (tPhase == 1)
+        {
+            // pictures: from the mouth, the open stretch, the seam chamber, the end chamber
+            if (tShot == 0) { wk.Teleport(new Vector3(px - 4f, 0f, pz - 8f), 0f); TunnelShot(new Vector3(px - 0.6f, 1.6f, pz - 3f), new Vector3(px, 1.0f, pz + 6f), "tunnel_mouth.png"); }
+            if (tShot == 1) TunnelShot(new Vector3(px - 0.8f, 1.7f, pz + 8f), new Vector3(px, 1.0f, pz + 15f), "tunnel_open.png");
+            if (tShot == 2) TunnelShot(new Vector3(px + 1.4f, 1.6f, pz + 19.8f), new Vector3(px - 2.3f, 1.3f, pz + 22f), "tunnel_seam.png");
+            if (tShot == 3) TunnelShot(new Vector3(px - 1.8f, 1.8f, pz + 28.4f), new Vector3(px + 1.5f, 1.2f, pz + 30.8f), "tunnel_end.png");
+            tShot++;
+            if (tShot < 4) return;
+            // the jackhammer at the chamber seam, biggest bite: the warning should be up
+            up.SetLevel(Upgrades.Branch.Pick, 6);
+            wk.SetTool(0);
+            wk.SetJackSize(1f);
+            wk.Teleport(new Vector3(px + 0.4f, 0f, pz + 21f), -90f);
+            tPhase = 2; tStart = t;
+            return;
+        }
+        if (tPhase == 2)
+        {
+            // find a pitch that puts the aim on the seam (quartz or gold) in the west wall
+            float best = 0f; bool on = false;
+            for (float pitch = -20f; pitch <= 30f && !on; pitch += 1f)
+            {
+                wk.Look(pitch);
+                if (wk.AimingAtSeam) { best = pitch; on = true; }
+            }
+            if (!on) { if (t - tStart > 3f) { Debug.LogError("BULLDOZER_TUNNEL_FAILED never aimed at the seam " + tLog); TunnelFinish(1); } return; }
+            wk.Look(best);
+            tPhase = 3; tStart = t;
+            return;
+        }
+        if (tPhase == 3)
+        {
+            if (t - tStart < 0.6f) return;
+            bool warnBig = wk.GoldWarning;
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/tunnel_warning.png");
+            tLog += " warningAtBigBite=" + warnBig;
+            tPhase = 4; tStart = t;
+            return;
+        }
+        if (tPhase == 4)
+        {
+            if (t - tStart < 0.6f) return;
+            wk.SetJackSize(0f);
+            tPhase = 5; tStart = t;
+            return;
+        }
+        if (tPhase == 5)
+        {
+            if (t - tStart < 0.6f) return;
+            bool warnSmall = wk.GoldWarning;
+            tLog += " warningAtSmallBite=" + warnSmall;
+            bool ok = tLog.Contains("warningAtBigBite=True") && !warnSmall;
+            if (ok) Debug.Log("BULLDOZER_TUNNEL_RESULT " + tLog); else Debug.LogError("BULLDOZER_TUNNEL_FAILED " + tLog);
+            TunnelFinish(ok ? 0 : 1);
+        }
+    }
+
     // The jackhammer:  -executeMethod BulldozerBuilder.JackTest
     // Picks rock at Pick 5 for 4 s, then jackhammers rock (Jackhammer 1, biggest bite) for 4 s: it must break much
     // more.  Then breaks gold in the quartz seam with a big bite (some is smashed) and a small one (none is).

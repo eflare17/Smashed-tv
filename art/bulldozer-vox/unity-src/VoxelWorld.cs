@@ -26,7 +26,27 @@ public partial class VoxelWorld : MonoBehaviour
 
     // Landmarks of the quarry, in metres (x right, z ahead of where the dozer starts facing).
     public const float PortalX = 9f, PortalZ = 11.6f;       // the mine entrance in the north face
-    public const float TunnelLength = 15f, TunnelHalfWidth = 1.6f, TunnelHeight = 2.6f;
+    public const float TunnelLength = 31f, TunnelHalfWidth = 1.6f, TunnelHeight = 2.6f;
+    // The tunnel, metres in from the mouth:
+    //   0-3     open, the rails running in
+    //   3-7     collapse 1: small, mostly loose dirt and clay (the shovel clears it)
+    //   7-13    open: old props still standing
+    //   13-19   collapse 2: bigger, rock through it (the pick, or better the jackhammer)
+    //   19-23   a small chamber, wider and taller, with a quartz seam in its walls
+    //   23-28   collapse 3: the worst, mostly rock
+    //   28-31   the end chamber, with a richer seam
+    // One dozer part is buried in each collapse.
+    public const float Chamber2From = 19.5f, Chamber2To = 22.5f, EndFrom = 28f;
+    public static float TunnelHalfWidthAt(float along) { return along >= EndFrom ? 2.6f : along > Chamber2From && along < Chamber2To ? 2.3f : TunnelHalfWidth; }
+    public static float TunnelHeightAt(float along) { return along >= EndFrom ? 3.2f : along > Chamber2From && along < Chamber2To ? 3.0f : TunnelHeight; }
+
+    static float Ramp(float a, float s, float f0, float f1, float e) { return a < s || a > e ? 0f : a < f0 ? (a - s) / (f0 - s) : a <= f1 ? 1f : (e - a) / (e - f1); }
+    /// How high the rubble of a collapse fills the tunnel (1 = to the roof), and which collapse it is (0, 1, 2).
+    static float CollapseFill(float along, out int which)
+    {
+        which = along < 10f ? 0 : along < 21f ? 1 : 2;
+        return 1.2f * math.max(Ramp(along, 3f, 4.2f, 6f, 7f), math.max(Ramp(along, 13f, 14.6f, 17.4f, 19f), Ramp(along, 23f, 24.2f, 26.8f, 28f)));
+    }
     public const float RoadX = -4f, RoadHalfWidth = 5.5f;   // the way out to the south
     // The escape track: a ramp up through the benches just east of the mine, then over the hilltop to the north fence
     // and on up the hillside beyond it (SiteProps.Hillside).  It wanders a little either side of TrackX.
@@ -35,7 +55,7 @@ public partial class VoxelWorld : MonoBehaviour
     public const float RockPadX = 16f, RockPadZ = -8f;      // a bare rock patch on the floor, for ripping
 
     // Where the three dozer parts lie buried in the cave-in (see Finds.cs): across from the tunnel's middle, along from its mouth.
-    const float Find0X = -0.7f, Find0Z = 4.6f, Find1X = 0.6f, Find1Z = 6.4f, Find2X = -0.4f, Find2Z = 8.6f;
+    const float Find0X = -0.7f, Find0Z = 5.0f, Find1X = 0.6f, Find1Z = 16.0f, Find2X = -0.4f, Find2Z = 25.6f;   // one in each collapse
     const float FindHalf = 0.34f, FindTall = 0.5f;
 
     public static Vector3 FindSpot(int k)
@@ -502,8 +522,9 @@ public partial class VoxelWorld : MonoBehaviour
             bool fill = (floor || (onTrack && trackOff < TrackHalf + 0.6f)) && hill > 0.5f && !rockPad;   // dust and clay over the cut floor, and the track
 
             // the tunnel behind the mine entrance
-            bool tunnel = math.abs(wx - PortalX) < TunnelHalfWidth && wz > PortalZ - 1.2f && wz < PortalZ + TunnelLength;
-            int tunnelTop = Ground + (int)(TunnelHeight / Voxel);
+            float tAlong = wz - PortalZ;
+            bool tunnel = math.abs(wx - PortalX) < TunnelHalfWidthAt(tAlong) && wz > PortalZ - 1.2f && wz < PortalZ + TunnelLength;
+            int tunnelTop = Ground + (int)(TunnelHeightAt(tAlong) / Voxel);
 
             int b = i * NY;
             for (int y = 0; y < NY; y++)
@@ -512,11 +533,12 @@ public partial class VoxelWorld : MonoBehaviour
                 if (y >= surf) m = Air;
                 else if (tunnel && y >= Ground && y < tunnelTop && surf - tunnelTop >= 6)
                 {
-                    // The cave-in.  A few metres in, the roof came down years ago: rubble slopes up from the floor,
-                    // fills the tunnel to the roof for a stretch, and slopes away again on the far side.
-                    // It is loose rock and dirt with solid boulders through it.
-                    float along = wz - PortalZ;
-                    float fillTo = along < 2.6f ? 0f : along < 4.4f ? (along - 2.6f) / 1.8f : along < 8.2f ? 1.2f : along < 9.8f ? (9.8f - along) / 1.6f * 1.2f : 0f;
+                    // The collapses.  In three places the roof came down years ago: rubble slopes up from the floor,
+                    // fills the tunnel to the roof for a stretch, and slopes away again on the far side.  Each is
+                    // loose dirt and rock with solid boulders through it, rockier the further in.
+                    float along = tAlong;
+                    int which;
+                    float fillTo = CollapseFill(along, out which);
                     fillTo *= 0.9f + 0.14f * n3;
                     float up = (y - Ground + 0.5f) * Voxel / TunnelHeight;
                     if (up >= fillTo || InFindHole(wx, (y - Ground) * Voxel, wz)) m = Air;
@@ -525,7 +547,9 @@ public partial class VoxelWorld : MonoBehaviour
                         float wy2 = (y - Ground) * Voxel;
                         float boulder = noise.snoise(new float3(wx, wy2, wz) * 1.1f);
                         uint r = math.hash(new int3(x >> 1, y >> 1, z >> 1)) % 100u;
-                        m = boulder > 0.5f ? Rock : r < 60u ? LooseRock : r < 84u ? LooseClay : LooseSoil;
+                        float boulderAt = which == 0 ? 0.8f : which == 1 ? 0.45f : 0.1f;
+                        uint rockU = which == 0 ? 25u : which == 1 ? 60u : 80u, clayU = which == 0 ? 60u : which == 1 ? 84u : 92u;
+                        m = boulder > boulderAt ? Rock : r < rockU ? LooseRock : r < clayU ? LooseClay : LooseSoil;
                     }
                 }
                 else
@@ -537,6 +561,15 @@ public partial class VoxelWorld : MonoBehaviour
                     {
                         int dc = baseSurf - y;
                         if (dc <= 6) m = Soil; else if (dc <= 22 && m == Rock) m = Clay;
+                    }
+                    // a quartz seam through the walls of the far chambers, at about chest height, richer at the end
+                    float sAlong = wz - PortalZ, sx = wx - PortalX;
+                    if ((m == Rock || m == Clay) && sAlong > 18.5f && sAlong < TunnelLength + 0.5f && math.abs(sx) < 4.5f)
+                    {
+                        float wy3 = (y - Ground) * Voxel;
+                        float seam2 = wy3 - 1.1f - (sAlong - 18.5f) * 0.05f - sx * 0.12f + noise.snoise(new float3(wx, wy3, wz) * 0.5f) * 0.18f;
+                        if (math.abs(seam2) < 0.14f)
+                            m = (math.hash(new int3(x, y, z)) % 1000u) < (sAlong > EndFrom - 0.5f ? 150u : 70u) ? Gold : Quartz;
                     }
                     if (m == Rock)
                     {
