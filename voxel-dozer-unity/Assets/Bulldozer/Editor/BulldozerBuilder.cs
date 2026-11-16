@@ -1567,6 +1567,10 @@ public static class BulldozerBuilder
     public static void RecordClip() { clipMode = 0; StartClip(); }
 
     // A trailer of the game so far: -executeMethod BulldozerBuilder.RecordTrailer   Frames and overlay.ass go to Logs/clip.
+    // The bushfire, sped up:  -executeMethod BulldozerBuilder.RecordFireClip
+    public static void RecordFireClip() { clipMode = 7; sPh = 0; sOverlay.Clear(); trCaps.Clear(); trCap = ""; StartClip(); }
+    static bool clipSkip;                                   // a frame not to record (the fire warming up)
+
     public static void RecordTrailer() { clipMode = 6; sPh = 0; sOverlay.Clear(); trCaps.Clear(); trCap = ""; StartClip(); }
     static readonly List<string> trCaps = new List<string>();
     static string trCap = "", trCapStyle = "";
@@ -1639,6 +1643,18 @@ public static class BulldozerBuilder
 
         var follow = cam.GetComponent<FollowCamera>();
         if (clipMode == 3) { if (!NightStep(d, t)) return; }
+        else if (clipMode == 7)
+        {
+            if (!FireClipStep(d, t, follow))
+            {
+                WriteOverlay();
+                Debug.Log("BULLDOZER_FIRECLIP_OK frames=" + clipFrame + " fireTime=" + FireSim.Instance.Now.ToString("F0") + " fallen=" + FireSim.Instance.TreesFallen);
+                if (follow != null) follow.enabled = true;
+                ClipFinish(0); return;
+            }
+            TrCamera(cam, t);
+            if (clipSkip) return;
+        }
         else if (clipMode == 6)
         {
             if (!TrailerStep(d, t, follow))
@@ -1749,7 +1765,7 @@ public static class BulldozerBuilder
         cam.Render();
         RenderTexture.active = clipRT;
         var bv = d.GetComponent<BladeView>();
-        if (bv != null && clipMode != 6) bv.DrawInto(1280, 720);                                // the blade view is normally drawn straight to the screen
+        if (bv != null && clipMode != 6 && clipMode != 7) bv.DrawInto(1280, 720);                                // the blade view is normally drawn straight to the screen
         clipTex.ReadPixels(new Rect(0, 0, 1280, 720), 0, 0);
         clipTex.Apply();
         cam.targetTexture = null;
@@ -1913,6 +1929,75 @@ public static class BulldozerBuilder
         float u = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - trCamT0) / Mathf.Max(0.01f, trCamLen)));
         Vector3 pos = Vector3.Lerp(trCamFrom, trCamTo, u), look = Vector3.Lerp(trLookFrom, trLookTo, u);
         cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
+    }
+
+    /// One step of the fire clip.  Returns false when it has finished.
+    static bool FireClipStep(DozerController d, float t, FollowCamera follow)
+    {
+        var fire = FireSim.Instance; var wk = Worker.Instance;
+        if (fire == null || FireSim.Trees.Count == 0) { clipSkip = true; return true; }
+        clipSkip = false;
+        Vector3 portal = new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ);
+        if (sPh == 0)
+        {
+            if (wk.InDozer) wk.GetOut();
+            wk.Teleport(portal + new Vector3(-30f, 0f, -30f), 0f);
+            fire.SetWind(new Vector2(0.6f, -5f), new Vector2(2.5f, -11f), 60f);
+            fire.ClearFuel(-110f, FrBreakZ0, 110f, FrBreakZ1);
+            fire.Begin();
+            fire.Ignite(new Vector3(-100f, 0f, 160f), new Vector3(100f, 0f, 160f));
+            fire.speedUp = 10f;                                   // warm up unrecorded to 15 s of fire
+            sPh = 1;
+        }
+        if (sPh == 1)
+        {
+            if (fire.Now < 15f) { clipSkip = true; return true; }
+            fire.speedUp = 2.2f;
+            TrMove(follow, t, new Vector3(-14f, 26f, -26f), new Vector3(VoxelWorld.TrackX + 6f, 12f, 90f),
+                              new Vector3(-6f, 22f, -14f), new Vector3(VoxelWorld.TrackX + 4f, 12f, 92f), 9f);
+            TrCaption("Fire test (work in progress): the front comes down the hill");
+            sPh = 2; sT0 = t;
+            return true;
+        }
+        float k = t - sT0;
+        if (sPh == 2)
+        {
+            if (k < 9f) return true;
+            // on the track, looking up into the forest as the front arrives; two trees beside it will come down across it
+            fire.speedUp = 1.2f;
+            float cz = 64f;
+            Vector3 at = new Vector3(VoxelWorld.TrackCentreX(cz) - 1.2f, SiteProps.HillY(VoxelWorld.TrackCentreX(cz), cz) + 2.2f, cz);
+            Vector3 look = new Vector3(VoxelWorld.TrackCentreX(cz + 30f), SiteProps.HillY(VoxelWorld.TrackCentreX(cz + 30f), cz + 30f) + 6f, cz + 30f);
+            TrMove(follow, t, at, look, at + new Vector3(0f, 0.6f, -2f), look + new Vector3(0f, -1f, 0f), 12f);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float tz = side < 0 ? 76f : 83f;
+                int tr = FireSim.TreeNear(new Vector3(VoxelWorld.TrackCentreX(tz) + side * 6f, 0f, tz), 4f);
+                if (tr >= 0) fire.FellTree(tr, fire.Now + (side < 0 ? 5f : 8f), Mathf.Atan2(-side, -0.35f));
+            }
+            TrCaption("Trees burn through and fall");
+            sPh = 3; sT0 = t;
+            return true;
+        }
+        if (sPh == 3)
+        {
+            if (k < 12f) return true;
+            // at the firebreak: it holds, then the wind changes and carries the fire over
+            fire.speedUp = 2.4f;
+            TrMove(follow, t, new Vector3(VoxelWorld.TrackX - 38f, 46f, 18f), new Vector3(VoxelWorld.TrackX - 4f, 10f, 64f),
+                              new Vector3(VoxelWorld.TrackX - 30f, 42f, 22f), new Vector3(VoxelWorld.TrackX, 8f, 60f), 13f);   // high over the canopy
+            TrCaption("The firebreak holds...");
+            sPh = 4; sT0 = t;
+            return true;
+        }
+        if (sPh == 4)
+        {
+            if (fire.Now > 61f && trCap == "The firebreak holds...") TrCaption("...until the wind changes, and embers carry it over");
+            if (k < 13f) return true;
+            TrCaption("");
+            return false;
+        }
+        return true;
     }
 
     /// One step of the trailer.  Returns false when it has finished.
