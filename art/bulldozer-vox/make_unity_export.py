@@ -2184,6 +2184,163 @@ public static class BulldozerBuilder
     static string nMarks;
     static void NightMark(string name) { nMarks += " " + name + "=" + clipFrame; }
 
+    // The motor cart, filmed: a full cart at the mine mouth, buying the Motor cart, riding it out to the dump,
+    // tipping it from the footboard, Motor cart 2 and 3, and driving back in to the rubble.
+    //   -executeMethod BulldozerBuilder.RecordMotorCartClip     Frames and overlay.ass go to Logs/clip.
+    public static void RecordMotorCartClip() { clipMode = 9; sPh = 0; sOverlay.Clear(); uPanel = ""; sTitle = ""; sCaption = ""; sPop = ""; mcSnap = true; StartClip(); }
+    static Vector3 mcOff, mcLookOff;                      // the camera, relative to the cart (eased from shot to shot)
+    static bool mcSnap;
+    static long mcCoins0;
+    static float mcAlong0;
+
+    /// Puts the camera at `off` from the cart (in the cart's own axes), looking at `lookOff`, easing towards it.
+    static void McShot(Camera cam, MineCart cart, Vector3 off, Vector3 lookOff, float ease)
+    {
+        if (mcSnap) { mcOff = off; mcLookOff = lookOff; mcSnap = false; }
+        mcOff = Vector3.Lerp(mcOff, off, ease); mcLookOff = Vector3.Lerp(mcLookOff, lookOff, ease);
+        Vector3 pos = cart.transform.TransformPoint(mcOff), look = cart.transform.TransformPoint(mcLookOff);
+        float floor = VoxelWorld.Instance.FloorAt(pos + Vector3.up * 0.5f) + 0.5f;
+        if (pos.y < floor) pos.y = floor;
+        cam.transform.SetPositionAndRotation(pos, Quaternion.LookRotation(look - pos, Vector3.up));
+    }
+
+    /// One step of the motor cart clip.  Returns false when it has finished.
+    static bool MotorClipStep(DozerController d, float t, FollowCamera follow, Camera cam)
+    {
+        var wk = Worker.Instance; var w = VoxelWorld.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (cart == null || money == null || up == null || cart.Length <= 0f) { clipSkip = true; return true; }
+        if (sPh == 0)
+        {
+            // set up, unrecorded: Cart 2, an empty pot, and the cart filled by the mine mouth
+            clipSkip = true;
+            d.overrideThrottle = 0f;
+            if (wk.InDozer) wk.GetOut();
+            if (follow != null) follow.enabled = false;
+            up.Reset(); money.Clear();
+            up.SetLevel(Upgrades.Branch.Cart, 2);
+            wk.Teleport(cart.transform.position - cart.transform.forward * 2.2f, Facing(cart.transform.forward));
+            dSteps = 0; dNext = t; sStep = 0;
+            sPh = 1; sT0 = t;
+            return true;
+        }
+        float k = t - sT0;
+        if (sPh == 1)
+        {
+            clipSkip = true;
+            if (!FillCart(w, cart, t, 5200) && k < 30f) return true;
+            if (k < 32f && w.ClodCount > 0) return true;                        // let the last of it land
+            Vector3 at, f;
+            cart.HoldPlace(-1, out at, out f);
+            wk.Teleport(at, Facing(f));
+            wk.Look(12f);
+            clipSkip = false;
+            sTitle = "The motor cart"; sCaption = "A full cart at the mine mouth.  Pushing it out by hand is slow work...";
+            sPh = 2; sT0 = t;
+            return true;
+        }
+        if (sPh == 2)
+        {
+            McShot(cam, cart, new Vector3(3.0f - k * 0.2f, 3.0f, 4.8f), new Vector3(0f, 0.8f, 0f), 0.05f);     // outside, from the front, looking back at the mouth
+            if (k < 4f) return true;
+            money.TestGrant(1000, Mathf.CeilToInt(12f / (VoxelWorld.VoxelVolume * 1000f)));
+            sTitle = "The upgrades (U)"; sCaption = "Motor cart:  800 coins + 10 L of gold  (test coins)";
+            uPanel = up.Describe(Upgrades.Branch.Cart);
+            sPh = 3; sT0 = t;
+            return true;
+        }
+        if (sPh == 3)
+        {
+            McShot(cam, cart, new Vector3(2.4f, 1.6f, 3.6f), new Vector3(0f, 0.6f, 0.6f), 0.04f);   // round to the front, where the motor goes
+            if (k > 1.6f && !up.HasMotorCart) { up.Buy(Upgrades.Branch.Cart); uPanel = up.Describe(Upgrades.Branch.Cart); }
+            if (k > 3.2f && uPanel.Length > 0) { uPanel = ""; sTitle = "Motor cart"; sCaption = "A motor box on the front, a footboard on the back"; }
+            if (k < 6f) return true;
+            wk.RideCart();
+            sTitle = ""; sCaption = "R at an end:  he gets on";
+            sPh = 4; sT0 = t;
+            return true;
+        }
+        if (sPh == 4)
+        {
+            McShot(cam, cart, new Vector3(1.0f, 2.3f, -4.6f), new Vector3(0f, 1.2f, 3f), 0.05f);      // behind him
+            if (k < 2f) return true;
+            wk.overrideWalk = 1f;
+            mcAlong0 = cart.Along;
+            sCaption = "W drives it out to the dump  (3 m/s)";
+            sPh = 5; sT0 = t;
+            return true;
+        }
+        if (sPh == 5)
+        {
+            // behind him, then out to the side for a while, then behind again for the run in to the hopper
+            bool side = k > 5f && k < 11f;
+            McShot(cam, cart, side ? new Vector3(4.6f, 2.6f, 1.2f) : new Vector3(1.0f, 2.3f, -4.6f), side ? new Vector3(0f, 0.9f, 0.5f) : new Vector3(0f, 1.2f, 3f), 0.035f);
+            bool stopped = k > 1f && Mathf.Abs(cart.MotorSpeedNow) < 1e-3f;
+            if (!stopped && k < 40f) return true;
+            wk.overrideWalk = 0f;
+            sCaption = "At the dump:  E tips it into the hopper, and he stays on";
+            sPh = 6; sT0 = t;
+            return true;
+        }
+        if (sPh == 6)
+        {
+            McShot(cam, cart, new Vector3(-4.6f, 2.6f, -2.6f), new Vector3(-1.2f, 0.5f, 0f), 0.04f);  // the hopper side
+            if (k < 1.2f) return true;
+            if (sStep != -6) { sStep = -6; mcCoins0 = money.Coins; wk.PressE(); }
+            if (cart.Tipping) { sNext = t; return true; }
+            if (t - sNext < 3f) return true;
+            sPop = "+" + (money.Coins - mcCoins0) + " coins"; sPopUntil = Time.time + 3.5f;
+            sPh = 7; sT0 = t; sStep = 0;
+            return true;
+        }
+        if (sPh == 7)
+        {
+            McShot(cam, cart, new Vector3(-4.6f, 2.6f, -2.6f), new Vector3(-1.2f, 0.5f, 0f), 0.04f);
+            if (k < 2f) return true;
+            if (uPanel.Length == 0) { money.TestGrant(1500, 0); sTitle = "The upgrades (U)"; sCaption = "Motor cart 2 and 3:  4 m/s, then 5 m/s"; uPanel = up.Describe(Upgrades.Branch.Cart); }
+            if (k > 2.8f && sStep == 0) { up.Buy(Upgrades.Branch.Cart); sStep = 1; uPanel = up.Describe(Upgrades.Branch.Cart); }
+            if (k > 3.6f && sStep == 1) { up.Buy(Upgrades.Branch.Cart); sStep = 2; uPanel = up.Describe(Upgrades.Branch.Cart); }
+            if (k < 5.5f) return true;
+            uPanel = ""; sTitle = "";
+            sCaption = "S drives it back into the mine, at 5 m/s.  It stops at the rubble.";
+            wk.overrideWalk = -1f;
+            sPh = 8; sT0 = t;
+            return true;
+        }
+        if (sPh == 8)
+        {
+            // ahead of the cart, looking back over it and him into the mine
+            McShot(cam, cart, new Vector3(0.6f, 2.2f, 4.2f), new Vector3(0f, 1.0f, -4f), 0.05f);
+            bool stopped = k > 1f && Mathf.Abs(cart.MotorSpeedNow) < 1e-3f;
+            if (!stopped && k < 40f) return true;
+            wk.overrideWalk = 0f;
+            sPh = 9; sT0 = t;
+            return true;
+        }
+        if (sPh == 9)
+        {
+            McShot(cam, cart, new Vector3(0.6f, 1.75f, 4.2f), new Vector3(0f, 1.0f, -4f), 0.05f);
+            if (k > 1.5f && wk.RidingCart) { wk.GetOffCart(); sCaption = "R gets off.  Shovel it full again!"; }
+            if (k < 4.5f) return true;
+            return false;
+        }
+        return true;
+    }
+
+    static void MotorOverlay()
+    {
+        var w = VoxelWorld.Instance; var money = Money.Instance; var cart = MineCart.Instance;
+        float a = clipFrame / 30f, b = (clipFrame + 1) / 30f;
+        string at = AssTime(a) + "," + AssTime(b);
+        if (cart != null)
+            sOverlay.Add("Dialogue: 0," + at + ",Perf,,0,0,0,,Cart " + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " of " + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L"
+                       + (cart.spec.motor ? "\\NSpeed " + Mathf.Abs(cart.MotorSpeedNow).ToString("F1") + " m/s" : ""));
+        sOverlay.Add("Dialogue: 0," + at + ",Hud,,0,0,0,,Coins " + money.Coins.ToString("N0") + "\\NGold " + money.GoldLitres.ToString("F0") + " L");
+        if (sTitle.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(sTitle));
+        if (sCaption.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(sCaption));
+        if (uPanel.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Panel,,0,0,0,," + AssEsc(uPanel.TrimEnd('\n').Replace("\n", "\\N")));
+        if (sPop.Length > 0 && Time.time < sPopUntil) sOverlay.Add("Dialogue: 0," + at + ",Pop,,0,0,0,," + AssEsc(sPop));
+    }
+
     static void StartClip()
     {
         EditorSceneManager.OpenScene(ScenePath);
@@ -2208,20 +2365,31 @@ public static class BulldozerBuilder
         if (Time.frameCount == clipLastGameFrame) return;                 // one picture per game frame
         clipLastGameFrame = Time.frameCount;
         if (Worker.Instance == null) return;
-        if (clipFrame == 0)
+        if (clipFrame == 0 && (clipMode != 9 || clipRT == null))         // (the motor clip skips its set-up frames: set up once)
         {
             Worker.Instance.useOverride = true;
-            if (clipMode != 2) { d.dead = false; Worker.Instance.GetIn(); }
+            if (clipMode != 2 && clipMode != 9) { d.dead = false; Worker.Instance.GetIn(); }
             Time.captureFramerate = 30;                                    // game time steps 1/30 s a frame, however long drawing takes
             clipStart = Time.time;
             d.useOverride = true;
-            clipRT = new RenderTexture(1280, 720, 24);
+            if (clipRT == null) clipRT = new RenderTexture(1280, 720, 24);
             clipTex = new Texture2D(1280, 720, TextureFormat.RGB24, false);
         }
         float t = Time.time - clipStart;
 
         var follow = cam.GetComponent<FollowCamera>();
         if (clipMode == 3) { if (!NightStep(d, t)) return; }
+        else if (clipMode == 9)
+        {
+            if (!MotorClipStep(d, t, follow, cam))
+            {
+                WriteOverlay();
+                Debug.Log("BULLDOZER_MOTORCLIP_OK frames=" + clipFrame + " coins=" + Money.Instance.Coins + " cartAt=" + MineCart.Instance.Along.ToString("F1"));
+                if (follow != null) follow.enabled = true;
+                ClipFinish(0); return;
+            }
+            if (clipSkip) return;
+        }
         else if (clipMode == 8)
         {
             if (sPh == 0) { Prologue.Play(); sPh = 1; }
@@ -2353,6 +2521,7 @@ public static class BulldozerBuilder
             ShowOverlay(realMs, dirtMs);
         }
         if (clipMode == 5) UpgradeOverlay();
+        if (clipMode == 9) MotorOverlay();
         var capWatch = System.Diagnostics.Stopwatch.StartNew();
         cam.targetTexture = clipRT;
         cam.Render();
