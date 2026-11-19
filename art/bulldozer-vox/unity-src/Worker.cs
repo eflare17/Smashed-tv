@@ -9,6 +9,8 @@
 //   Enter            get into the dozer, or out of it
 //   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer);
 //                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
+//   R                with the motor cart (an upgrade), at an end of it: get on and ride it (W drives out, S back
+//                    in, R gets off; at the dump E tips it and he stays on)
 //   F5 / F6          save the game / load it
 //
 // The tool works exactly where you aim.  The cross in the middle of the screen is the aim, and a small
@@ -62,6 +64,7 @@ public class Worker : MonoBehaviour
     public bool InDozer { get; private set; }
     public int HoldingCart { get; private set; }         // 0, or which end of the cart he has hold of (+1 / -1)
     float leanIn;                                        // 0..1: how hard he is leaning into the cart
+    public bool RidingCart { get; private set; }         // standing on the motor cart's footboard, driving it
     public int Tool { get; private set; }                // 0 pick, 1 shovel
     public bool Eyes { get; private set; }               // looking through his eyes
     public int PickHits { get; private set; }
@@ -506,6 +509,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Q)) { if (backpackOwned) StartPour(); }
             if (Input.GetKeyDown(KeyCode.E)) PressE();
             if (Input.GetKeyDown(KeyCode.T)) TipCart();
+            if (Input.GetKeyDown(KeyCode.R)) { if (RidingCart) GetOffCart(); else RideCart(); }
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
             {
@@ -522,6 +526,7 @@ public class Worker : MonoBehaviour
 
         if (hintTimer > 0f) hintTimer -= dt;
         if (HoldingCart != 0) { PushCart(dt, walk); return; }
+        if (RidingCart) { DriveCart(dt, walk); return; }
 
         // ---- moving: he faces where you look, and walks relative to that
         Vector3 move = Quaternion.Euler(0f, yaw, 0f) * new Vector3(side * 0.85f, 0f, walk);
@@ -911,6 +916,13 @@ public class Worker : MonoBehaviour
     /// E on foot: let go of the cart if holding it; otherwise fit or pick up a part; otherwise take hold of the cart.
     public void PressE()
     {
+        if (RidingCart)
+        {
+            // on the motor cart: E at the dump tips it and he stays on to drive back; anywhere else he gets off
+            var mc = MineCart.Instance;
+            if (mc != null && mc.AtDump && world.CartVoxels >= VoxelWorld.ClodVoxels) TipCart(); else GetOffCart();
+            return;
+        }
         var atDump = MineCart.Instance;
         if (atDump != null && atDump.AtDump && atDump.Near(transform.position, 3.2f) && world.CartVoxels >= VoxelWorld.ClodVoxels)
         {
@@ -942,8 +954,71 @@ public class Worker : MonoBehaviour
         return true;
     }
 
+    /// R at an end of the motor cart: get on its footboard and ride it.  True if he did.
+    public bool RideCart()
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || InDozer || RidingCart) return false;
+        if (cart.EndNear(transform.position) == 0 && !cart.Near(transform.position, 2.2f))
+        {
+            if (cart.spec.motor) Say("Stand at an end of the cart and press R to ride it.", 2.5f);
+            return false;
+        }
+        if (!cart.spec.motor) { Say("This cart has no motor.  Buy the Motor cart in the upgrades (U), after Cart 2.", 3f); return false; }
+        LetGo();
+        Pouring = false;
+        RidingCart = true;
+        swing = Swing.None;
+        cart.StopMotor();
+        hold.gameObject.SetActive(false);                                                // tools away: hands on the push bar
+        if (marker != null) marker.gameObject.SetActive(false);
+        Vector3 at, facing;
+        cart.RidePlace(out at, out facing);
+        yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
+        Say("Riding the cart.  W drives it out to the dump, S back into the mine.  R gets off.", 3.5f);
+        return true;
+    }
+
+    /// Off the motor cart: he steps down onto the track behind it.
+    public void GetOffCart()
+    {
+        if (!RidingCart) return;
+        RidingCart = false;
+        var cart = MineCart.Instance;
+        if (cart != null)
+        {
+            cart.StopMotor();
+            Vector3 at, facing;
+            cart.HoldPlace(-1, out at, out facing);
+            Teleport(at, Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg);
+        }
+        if (model != null) { model.localRotation = Quaternion.identity; legL.localRotation = Quaternion.identity; legR.localRotation = Quaternion.identity; }
+        if (hold != null) hold.gameObject.SetActive(!InDozer);
+    }
+
+    /// One frame of riding the motor cart: W drives it out, S back in.  He stands on the footboard, hands on the
+    /// push bar, facing out of the mine; the mouse still looks about.
+    void DriveCart(float dt, float walk)
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || !cart.spec.motor) { GetOffCart(); return; }
+        cart.Drive(walk, dt);
+        Vector3 at, facing;
+        cart.RidePlace(out at, out facing);
+        transform.SetPositionAndRotation(at, Quaternion.LookRotation(facing));
+        world.SlumpCentre = at;
+        if (cam != null) { cam.lookYaw = yaw; cam.lookPitch = lookPitch; }
+        if (model == null || Eyes) return;
+        legL.localRotation = Quaternion.Euler(-4f, 0f, 0f);
+        legR.localRotation = Quaternion.Euler(4f, 0f, 0f);
+        model.localRotation = Quaternion.Euler(4f + 3f * Mathf.Abs(cart.MotorSpeedNow) / Mathf.Max(1f, cart.spec.motorSpeed), 0f, 0f);
+        Reach(armR, cart.RideHold(1f));
+        Reach(armL, cart.RideHold(-1f));
+    }
+
     public void LetGo()
     {
+        if (RidingCart) GetOffCart();
         if (HoldingCart == 0) return;
         HoldingCart = 0;
         if (hold != null) hold.gameObject.SetActive(!InDozer);
@@ -1047,9 +1122,10 @@ public class Worker : MonoBehaviour
         if (cart != null && cart.Near(transform.position, 7.5f))
         {
             float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            string what = cart.AtDump ? "AT THE DUMP: E tips it into the hopper and you get paid."
+            string what = cart.AtDump && !RidingCart ? "AT THE DUMP: E tips it into the hopper and you get paid."
+                        : RidingCart ? "Riding:  W drive out   S back in   R get off   (it stops at the dump: E tips it)"
                         : HoldingCart != 0 ? "W push   S pull back   E let go   T tip   (the dump and hopper are at the end of the rails)"
-                        : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it.";
+                        : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it." + (cart.spec.motor ? "   R rides it." : "");
             GUI.Box(new Rect(10, 102, 640, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + what);
         }
         // at the hopper with a load: say so, in the middle of the screen

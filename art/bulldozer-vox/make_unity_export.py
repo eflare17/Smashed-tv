@@ -1703,6 +1703,137 @@ public static class BulldozerBuilder
         }
     }
 
+    // The motor cart:  -executeMethod BulldozerBuilder.MotorCartTest
+    // Without the motor he can't ride.  Buys the Motor cart (Upgrades.SetLevel), fills the cart by the mine mouth,
+    // rides it out to the dump under power (W), tips it with E while still on it and checks it pays what the load
+    // was worth (as the hand cart does), drives back into the mine (S) until it stops, then gets off.
+    // Prints BULLDOZER_MOTORCART_RESULT, or BULLDOZER_MOTORCART_FAILED if a check didn't hold.
+    static int mPhase;
+    static float mPhaseStart, mAlong0, mTopSpeed, mTipEnd;
+    static long mCoins0;
+    static double mExpected;
+    static bool mOk;
+    static string mLog;
+
+    public static void MotorCartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        mPhase = 0; mLog = ""; mOk = true; mTopSpeed = 0f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += MotorCartTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void MotorCartFinish(int code)
+    {
+        EditorApplication.update -= MotorCartTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void MCheck(string name, bool good) { mLog += " " + name + "=" + good; if (!good) mOk = false; }
+
+    static void MotorCartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_MOTORCART_FAILED timed out in phase " + mPhase + " " + mLog); MotorCartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (mPhase == 0)
+        {
+            if (t < 1f) return;                                                  // let everything start
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            Vector3 at, f;
+            cart.HoldPlace(-1, out at, out f);
+            wk.Teleport(at, Facing(f));
+            MCheck("noRideWithoutMotor", !wk.RideCart() && !wk.RidingCart);
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.MotorCartLevel);
+            MCheck("motorOwned", cart.spec.motor && up.HasMotorCart);
+            mLog += " speed=" + cart.spec.motorSpeed + " holdsL=" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            dSteps = 0; dNext = t;
+            mPhase = 1; mPhaseStart = t;
+            return;
+        }
+        if (mPhase == 1)
+        {
+            if (!FillCart(w, cart, t, 3000) && t - mPhaseStart < 20f) return;
+            if (t - mPhaseStart < 2f) return;                                   // let the last clods land in it
+            mExpected = CartWorth(w);
+            mLog += " loaded=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L worth=" + mExpected.ToString("F1");
+            var box = cart.transform.Find("Motor");
+            MCheck("motorBoxShown", box != null && box.gameObject.activeSelf);
+            mAlong0 = cart.Along;
+            MCheck("startsAwayFromDump", !cart.AtDump);
+            Vector3 at, f;
+            cart.HoldPlace(-1, out at, out f);
+            wk.Teleport(at, Facing(f));
+            MCheck("getsOn", wk.RideCart() && wk.RidingCart);
+            wk.overrideWalk = 1f;                                               // W: drive out
+            mPhase = 2; mPhaseStart = t;
+            return;
+        }
+        if (mPhase == 2)
+        {
+            mTopSpeed = Mathf.Max(mTopSpeed, cart.MotorSpeedNow);
+            if (t - mPhaseStart > 1.5f && mLog.IndexOf("ridePic") < 0) { TestCapture("motor_cart_ride.png"); mLog += " ridePic"; }
+            bool stopped = t - mPhaseStart > 1f && Mathf.Abs(cart.MotorSpeedNow) < 1e-3f;
+            if (!stopped && t - mPhaseStart < 60f) return;
+            float took = t - mPhaseStart;
+            mLog += " rode=" + (cart.Along - mAlong0).ToString("F1") + "m in " + took.ToString("F1") + "s topSpeed=" + mTopSpeed.ToString("F2");
+            MCheck("reachedDump", cart.AtDump);
+            MCheck("atEndOfLine", cart.Along >= cart.EndLimit - 0.05f);
+            MCheck("topSpeedOk", mTopSpeed > cart.spec.motorSpeed * 0.95f);
+            Vector3 at, f;
+            cart.RidePlace(out at, out f);
+            MCheck("onFootboard", wk.RidingCart && Vector3.Distance(wk.transform.position, at) < 0.05f);
+            wk.overrideWalk = 0f;
+            mCoins0 = money.Coins;
+            wk.PressE();                                                        // E at the dump: tip it, stay on
+            MCheck("tipsAtDump", cart.Tipping);
+            MCheck("staysOn", wk.RidingCart);
+            mPhase = 3; mPhaseStart = t;
+            return;
+        }
+        if (mPhase == 3)
+        {
+            if (t - mPhaseStart > 0.8f && mLog.IndexOf("tipPic") < 0) { TestCapture("motor_cart_tip.png"); mLog += " tipPic"; }
+            if (cart.Tipping && t - mPhaseStart < 12f) { mTipEnd = t; return; }
+            if (t - mTipEnd < 3.5f) return;                                    // the last of the stream is still falling in
+            long paid = money.Coins - mCoins0;
+            mLog += " paid=" + paid + " paidShare=" + (paid / System.Math.Max(1e-6, mExpected) * 100).ToString("F0") + "% leftInCart=" + w.CartVoxels;
+            MCheck("paysLikeHandCart", System.Math.Abs(paid - mExpected) < 1.01 && paid > 0);
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.MotorCartLevel + 2);
+            mLog += " motor3Speed=" + cart.spec.motorSpeed;
+            mAlong0 = cart.Along; mTopSpeed = 0f;
+            wk.overrideWalk = -1f;                                              // S: back into the mine
+            mPhase = 4; mPhaseStart = t;
+            return;
+        }
+        if (mPhase == 4)
+        {
+            mTopSpeed = Mathf.Max(mTopSpeed, -cart.MotorSpeedNow);
+            bool stopped = t - mPhaseStart > 1f && Mathf.Abs(cart.MotorSpeedNow) < 1e-3f;
+            if (!stopped && t - mPhaseStart < 60f) return;
+            wk.overrideWalk = 0f;
+            mLog += " backIn=" + (mAlong0 - cart.Along).ToString("F1") + "m in " + (t - mPhaseStart).ToString("F1") + "s topSpeed=" + mTopSpeed.ToString("F2") + " along=" + cart.Along.ToString("F1") + " start=" + cart.StartLimit.ToString("F1");
+            MCheck("droveBackIn", mAlong0 - cart.Along > 5f);
+            MCheck("stoppedAtRubbleOrEnd", cart.Along <= cart.StartLimit + 0.05f || cart.RoomAhead(-1f) < 1.5f);
+            TestCapture("motor_cart_back_in.png");
+            wk.PressE();                                                        // E away from the dump: get off
+            MCheck("getsOff", !wk.RidingCart && !cart.BlocksWalker(wk.transform.position));
+            up.SetLevel(Upgrades.Branch.Cart, 2);
+            MCheck("sellBackRemovesMotor", !cart.spec.motor);
+            Debug.Log((mOk ? "BULLDOZER_MOTORCART_RESULT" : "BULLDOZER_MOTORCART_FAILED") + mLog);
+            MotorCartFinish(mOk ? 0 : 1);
+        }
+    }
+
     // Save and load:  -executeMethod BulldozerBuilder.SaveTest
     // Digs, saves, digs more and changes things, loads, and checks everything came back exactly as saved.
     // Prints BULLDOZER_SAVE_RESULT.

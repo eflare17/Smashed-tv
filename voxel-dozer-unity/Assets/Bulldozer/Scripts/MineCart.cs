@@ -5,6 +5,9 @@
 //   - T, standing beside it, tips the load out over its left side.  At the dump (the end of the rails, out by
 //     the road) E does it too, and the load pours into the hopper beside the track: what goes down it is sorted,
 //     sold and paid for, into the shared pot (Money.cs).
+//   - The motor cart (an upgrade, Upgrades.cs) has a motor box on its front end and a footboard on its back end.
+//     R at an end gets on (Worker.cs); W drives it out towards the dump, S back into the mine.  It stops where
+//     pushing would stop: rubble on the track and the ends of the rails.
 // What is in the cart is still counted with the dirt, so volume stays exact.
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,10 +22,12 @@ public struct CartSpec
     public float pushFactor;        // how far it rolls for each metre it is pushed (1 = keeps pace with the worker)
     public float tipSeconds;        // the longest a tip takes
     public int pourPerStep;         // clods that leave per physics step while tipping
+    public bool motor;              // the motor cart: he can ride it and drive it (Upgrades.cs sets this)
+    public float motorSpeed;        // metres a second under power, flat out
 
     public static CartSpec HandCart
     {
-        get { return new CartSpec { name = "hand cart", capacity = 4096, pushFactor = 1f, tipSeconds = 6f, pourPerStep = 6 }; }
+        get { return new CartSpec { name = "hand cart", capacity = 4096, pushFactor = 1f, tipSeconds = 6f, pourPerStep = 6, motor = false, motorSpeed = 3f }; }
     }
 }
 
@@ -35,13 +40,17 @@ public class MineCart : MonoBehaviour
     public float Along { get; private set; }             // metres along the track from its start, deep in the tunnel
 
     const float HalfLength = 0.85f, HalfWidth = 0.55f, FloorHeight = 0.42f, TubTop = 1.1f;
-    const byte Timber = 11, DarkTimber = 12, Steel = 13, Dirt = 6;
+    const byte Timber = 11, DarkTimber = 12, Steel = 13, Dirt = 6, HiVis = 16, Dark = 20;
+    /// How fast the motor cart gets up to speed and slows down, metres a second each second.
+    public const float MotorAccel = 4f;
+    const float FootboardOut = 0.42f, FootboardHeight = 0.3f;   // the footboard he rides on: past the back end, and how high
 
     VoxelWorld world;
     List<Vector3> path;
     float[] distanceAt;
     float length, tipLeft;
-    Transform dirtLevel;
+    Transform dirtLevel, motorBox;
+    float motorVel;
     bool tipping;
     readonly int[] sold = new int[16];
 
@@ -117,6 +126,18 @@ public class MineCart : MonoBehaviour
         Box(new Vector3(0f, TubTop + 0.02f, -HalfLength - 0.12f), new Vector3(0.8f, 0.05f, 0.05f), Steel);   // push bar
         Part("Tub");
         dirtLevel = Part("Load");                                       // its mesh is the heap, built in DrawLoad
+
+        // the motor cart's extras, shown only once it's bought: an orange motor box on the front end (with a dark
+        // exhaust stub and cooling fins) and a steel footboard on the back end, under the push bar, to stand on
+        Box(new Vector3(0f, 0.62f, HalfLength + 0.2f), new Vector3(0.62f, 0.42f, 0.32f), HiVis);
+        Box(new Vector3(0f, 0.86f, HalfLength + 0.2f), new Vector3(0.5f, 0.05f, 0.26f), Dark);
+        for (int f = 0; f < 3; f++) Box(new Vector3(-0.2f + f * 0.2f, 0.62f, HalfLength + 0.37f), new Vector3(0.05f, 0.3f, 0.03f), Dark);
+        Box(new Vector3(0.24f, 0.98f, HalfLength + 0.26f), new Vector3(0.06f, 0.2f, 0.06f), Dark);
+        Box(new Vector3(0f, 0.36f, HalfLength + 0.06f), new Vector3(0.3f, 0.1f, 0.14f), Steel);            // its drive down to the axle
+        Box(new Vector3(0f, FootboardHeight - 0.03f, -HalfLength - FootboardOut), new Vector3(0.86f, 0.05f, 0.42f), Steel);
+        foreach (float x in new[] { -0.38f, 0.38f }) Box(new Vector3(x, FootboardHeight + 0.05f, -HalfLength - 0.22f), new Vector3(0.05f, 0.16f, 0.44f), Steel);
+        motorBox = Part("Motor");
+        motorBox.gameObject.SetActive(spec.motor);
 
         // parked just outside the mine entrance
         Along = 0f;
@@ -200,6 +221,7 @@ public class MineCart : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (motorBox != null && motorBox.gameObject.activeSelf != spec.motor) motorBox.gameObject.SetActive(spec.motor);
         // whatever loose dirt is inside the tub joins the load
         // (only once it has dropped in and reached the heap, so you see each shovelful land in the tub)
         float catchAt = Mathf.Min(TubTop + 0.05f, Mathf.Max(FloorHeight + 0.12f, FloorHeight + 0.04f + LoadDepth * 1.25f + 0.1f));
@@ -306,6 +328,35 @@ public class MineCart : MonoBehaviour
         }
         return Mathf.Abs(s - Along);
     }
+
+    // ---- the motor cart: riding and driving
+    /// Drives the motor cart for one frame.  `throttle` is -1 (back into the mine) to +1 (out towards the dump).
+    /// It speeds up and slows down at MotorAccel, and stops dead where pushing would stop.  Returns how far it went.
+    public float Drive(float throttle, float dt)
+    {
+        if (!spec.motor || tipping) { motorVel = 0f; return 0f; }
+        motorVel = Mathf.MoveTowards(motorVel, Mathf.Clamp(throttle, -1f, 1f) * spec.motorSpeed, MotorAccel * dt);
+        if (Mathf.Abs(motorVel) < 1e-4f) return 0f;
+        // backing in, he is on the footboard behind it: stop with room for him too, not just for the cart
+        if (motorVel < 0f && Blocked(Along + motorVel * dt - (FootboardOut + 0.3f), -1f)) { motorVel = 0f; return 0f; }
+        float went = Roll(motorVel * dt);
+        if (Mathf.Abs(went) < 1e-6f) motorVel = 0f;                          // ran into something, or the end of the line
+        return went;
+    }
+
+    /// How fast it is going under power now, metres a second (+ is out of the mine).
+    public float MotorSpeedNow { get { return motorVel; } }
+    public void StopMotor() { motorVel = 0f; }
+
+    /// Where he stands while riding (on the footboard at the back end) and which way he faces (out of the mine).
+    public void RidePlace(out Vector3 at, out Vector3 facing)
+    {
+        at = transform.TransformPoint(new Vector3(0f, FootboardHeight, -HalfLength - FootboardOut));
+        facing = transform.forward;
+    }
+
+    /// Where his hands go while riding: on the push bar in front of him.
+    public Vector3 RideHold(float side) { return transform.TransformPoint(new Vector3(side * 0.3f, TubTop + 0.02f, -HalfLength - 0.12f)); }
 
     public Vector3 Mouth { get { return transform.position + Vector3.up * (TubTop - 0.15f); } }
     public bool HasRoom { get { return world != null && world.CartVoxels < capacity - VoxelWorld.ClodVoxels; } }
