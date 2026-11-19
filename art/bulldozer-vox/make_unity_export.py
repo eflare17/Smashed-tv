@@ -2265,7 +2265,7 @@ public static class BulldozerBuilder
             if (k < 2f) return true;
             wk.overrideWalk = 1f;
             mcAlong0 = cart.Along;
-            sCaption = "W drives it out to the dump  (3 m/s)";
+            sCaption = "W drives it out to the dump, 8 m out of the mine door  (3 m/s)";
             sPh = 5; sT0 = t;
             return true;
         }
@@ -2283,7 +2283,7 @@ public static class BulldozerBuilder
         }
         if (sPh == 6)
         {
-            McShot(cam, cart, new Vector3(-4.6f, 2.6f, -2.6f), new Vector3(-1.2f, 0.5f, 0f), 0.04f);  // the hopper side
+            McShot(cam, cart, new Vector3(-4.5f, 3.6f, 7.5f), new Vector3(-0.4f, 0.8f, -5f), 0.04f);  // past the hopper, looking back at it and the mine door
             if (k < 1.2f) return true;
             if (sStep != -6) { sStep = -6; mcCoins0 = money.Coins; wk.PressE(); }
             if (cart.Tipping) { sNext = t; return true; }

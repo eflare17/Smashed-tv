@@ -34,7 +34,8 @@ takes a bit longer. Every upgrade should make a difference you can feel at once.
   and gold takes over deeper in.
 - **Levels cost money.** **New machinery costs money plus gold**, so the more gold you find, the more
   machinery you can unlock.
-- **The dump** is at the end of the rails outside the mine. *(suggested)*
+- **The dump** is at the end of the rails, **about 8 m straight out of the mine door** (the owner's call,
+  19 Nov; it used to be 50 m away, down by the road). `DumpOut` in `SiteProps.cs`.
 
 ## The upgrade tree
 

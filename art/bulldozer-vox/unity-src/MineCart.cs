@@ -2,8 +2,8 @@
 //   - It catches whatever is thrown or falls into it, up to its capacity.
 //   - E at either end takes hold of it (Worker.cs); then W pushes it along the track and S pulls it back.  It stops at the end of the rails and where
 //     the rubble on the track is as high as its tub (the cave-in face).  Lower spill it rolls over.
-//   - T, standing beside it, tips the load out over its left side.  At the dump (the end of the rails, out by
-//     the road) E does it too, and the load pours into the hopper beside the track: what goes down it is sorted,
+//   - T, standing beside it, tips the load out over its left side.  At the dump (the end of the rails, 8 m out of
+//     the mine door) E does it too, and the load pours into the hopper beside the track: what goes down it is sorted,
 //     sold and paid for, into the shared pot (Money.cs).
 //   - The motor cart (an upgrade, Upgrades.cs) has a motor box on its front end and a footboard on its back end.
 //     R at an end gets on (Worker.cs); W drives it out towards the dump, S back into the mine.  It stops where
