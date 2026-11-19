@@ -1,6 +1,6 @@
 // Money: the team's one shared pot of coins.
 //
-// Dirt that goes down the hopper at the dump (the end of the rails, out by the road) is sorted:
+// Dirt that goes down the hopper at the dump (the end of the rails, 8 m out of the mine door) is sorted:
 //   - soil, clay, rock and quartz are sold on the spot: 1 coin for every 10 litres;
 //   - gold ore is kept, in the team's gold store.  The gold buyer's shed by the mine entrance buys it, at 50
 //     times the price of dirt (E there sells all of it).  Gold you keep is for buying machinery later.

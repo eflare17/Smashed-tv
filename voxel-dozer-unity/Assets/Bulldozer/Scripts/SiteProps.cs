@@ -266,12 +266,12 @@ public class SiteProps : MonoBehaviour
 
     void Rails()
     {
-        // from inside the tunnel, out across the floor and away down the road to the south
+        // from inside the tunnel, straight out of the door to the dump, DumpOut metres out (the owner's choice, 19 Nov:
+        // the dump not far out of the mine door; it used to be 50 m away, down by the road)
         Vector3[] way =
         {
-            new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + VoxelWorld.TunnelLength - 1.2f), new Vector3(VoxelWorld.PortalX, 0f, 3f),
-            new Vector3(6f, 0f, -6f), new Vector3(-1f, 0f, -15f), new Vector3(VoxelWorld.RoadX, 0f, -24f),
-            new Vector3(VoxelWorld.RoadX, 0f, -40f),
+            new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + VoxelWorld.TunnelLength - 1.2f),
+            new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ - DumpOut - 0.9f),     // (the cart stops 0.9 m short of the end)
         };
         var pts = new List<Vector3>();
         for (int i = 0; i < way.Length - 1; i++)
@@ -417,6 +417,8 @@ public class SiteProps : MonoBehaviour
     public static Matrix4x4 HopperToWorld = Matrix4x4.zero;
     public static readonly Vector3 HopperHalf = new Vector3(0.7f, 0.5f, 1.1f);
     public const float HopperAway = 0.95f;
+    /// How far out of the mine door the cart stops at the dump, metres.
+    public const float DumpOut = 8f;
 
     void Crate(Vector3 at, float size, float turn)
     {
