@@ -39,6 +39,7 @@ pad, and back to keys when you touch the keyboard or mouse.
 | X | squirt the backpack into the cart (Q) |
 | B | tip the cart (T) |
 | Back (View) | switch view: over the shoulder / eyes (Tab) |
+| D-pad right | get on / off the motor cart (R); riding, the left stick drives it out / back in |
 | Y | get in the dozer (Enter) |
 | Start | upgrades (U) |
 

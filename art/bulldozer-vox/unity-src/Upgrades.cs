@@ -6,7 +6,8 @@
 //   Breaking      Pick 1-5, then the Jackhammer (needs coins and gold), Jackhammer 2-5.  (One branch: levels 6-10
 //                 of the pick are the jackhammer, so saves didn't need to change.)
 //   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8
-//   Hauling       Cart 1-2, then the Motor cart, a bigger cart and the Automatic cart (coming)
+//   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster); a bigger cart and
+//                 the Automatic cart are coming.  (Levels 3-5 of the cart are the motor cart, as with the jackhammer.)
 //
 // Every purchase and sell-back goes through Buy and SellBack here, so multiplayer can send them later.
 // F8 is a test key: it adds 10,000 coins and 50 litres of gold.
@@ -66,6 +67,9 @@ public class Upgrades : MonoBehaviour
         new[] {   // cart: 1000 -> 1500 litres
             new Step("Cart 1", "Hand cart, 1000 L", 0),
             new Step("Cart 2", "Bigger tub, 1500 L", 300),
+            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800, 10f),
+            new Step("Motor cart 2", "Faster: 4 m/s", 400),
+            new Step("Motor cart 3", "Fastest: 5 m/s", 640),
         },
     };
     // shown after a branch, not buyable yet
@@ -73,7 +77,7 @@ public class Upgrades : MonoBehaviour
     {
         new string[0],
         new string[0],
-        new[] { "Motor cart  (coming: needs gold)", "Bigger cart  (coming)", "Automatic cart  (coming)" },
+        new[] { "Bigger cart  (coming)", "Automatic cart  (coming)" },
         new string[0],
     };
 
@@ -85,7 +89,9 @@ public class Upgrades : MonoBehaviour
     static readonly float[] ShovelSpeed = { 1.0f, 1.1f, 1.2f, 1.3f, 1.45f, 1.6f };
     static readonly int[] PackHolds = { 819, 1229, 1638, 2048, 2458, 3072, 3584, 4096 };
     static readonly float[] PackRate = { 1.0f, 1.4f, 1.8f, 2.2f, 2.6f, 3.0f, 3.5f, 4.0f };
-    static readonly int[] CartHolds = { 4096, 6144 };
+    static readonly int[] CartHolds = { 4096, 6144, 6144, 6144, 6144 };      // the motor cart keeps the Cart 2 tub
+    public const int MotorCartLevel = 3;                        // the cart level that is the motor cart
+    static readonly float[] MotorSpeed = { 3f, 4f, 5f };        // metres a second, Motor cart 1-3 (pushing is 2)
     const float SuckBase = 130f;                                // voxels a second at backpack level 1 (about 32 litres)
 
     readonly int[] level = { 1, 1, 0, 1 };
@@ -96,6 +102,7 @@ public class Upgrades : MonoBehaviour
     public int Level(Branch b) { return level[(int)b]; }
     public int MaxLevel(Branch b) { return Steps[(int)b].Length; }
     public bool HasBackpack { get { return level[(int)Branch.Backpack] > 0; } }
+    public bool HasMotorCart { get { return level[(int)Branch.Cart] >= MotorCartLevel; } }
 
     void Awake()
     {
@@ -180,7 +187,14 @@ public class Upgrades : MonoBehaviour
             wk.backpackOwned = HasBackpack;
         }
         var cart = MineCart.Instance;
-        if (cart != null) cart.spec.capacity = CartHolds[level[3] - 1];
+        if (cart != null)
+        {
+            int c = level[3];
+            cart.spec.capacity = CartHolds[c - 1];
+            cart.spec.motor = c >= MotorCartLevel;
+            if (cart.spec.motor) cart.spec.motorSpeed = MotorSpeed[c - MotorCartLevel];
+            else if (wk != null && wk.RidingCart) wk.GetOffCart();       // sold back while riding it
+        }
     }
 
     void Note(string text) { note = text; noteTimer = 3f; }
