@@ -11,6 +11,10 @@
 //                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
 //   F5 / F6          save the game / load it
 //
+// Game pad (Pad.cs, CONTROLLER.md): left stick walks, right stick aims, right trigger uses the tool, bumpers
+// cycle the tools, d-pad up / down sets the jackhammer's bite, A does what E does, X what Q does, B what T does,
+// Y gets in or out of the dozer, Back switches the view, Start opens the upgrades.
+//
 // The tool works exactly where you aim.  The cross in the middle of the screen is the aim, and a small
 // marker sits on the ground at the spot the tool will hit: yellow when it is in reach, red when it is not.
 //
@@ -32,6 +36,7 @@ public class Worker : MonoBehaviour
     public float pushSpeed = 2.0f;           // pushing the cart
     public float turnSpeed = 170f;           // degrees a second, for scripted turning only
     public float mouseSpeed = 2.4f;
+    public float padAimSpeed = 150f;         // degrees a second with the right stick right over
     public float reach = 2.4f;               // how far from his chest the tools reach
     public float pickRadius = 0.26f;
     public float scoopRadius = 0.38f;
@@ -476,25 +481,30 @@ public class Worker : MonoBehaviour
                 dozer.dead = !dozer.dead;
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) { LetGo(); TryDozer(); }
+            bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || (!treeUp && Pad.Down(Pad.B.Y))) { LetGo(); TryDozer(); }
         }
         if (InDozer) { transform.position = dozer.transform.position; return; }
 
         float dt = Time.deltaTime;
-        float walk = useOverride ? overrideWalk : Input.GetAxisRaw("Vertical");
-        float side = useOverride ? 0f : Input.GetAxisRaw("Horizontal");
-        bool use = useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space));
+        float walk = useOverride ? overrideWalk : Stronger(Input.GetAxisRaw("Vertical"), Pad.LeftStick.y);
+        float side = useOverride ? 0f : Stronger(Input.GetAxisRaw("Horizontal"), Pad.LeftStick.x);
+        bool use = useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space) || Pad.RT > 0.3f);
         bool treeOpen = !useOverride && Upgrades.Instance != null && Upgrades.Instance.Open;
         if (treeOpen) { walk = 0f; side = 0f; use = false; }
         if (!useOverride && !treeOpen)
         {
-            if (Input.GetKeyDown(KeyCode.Tab)) SetEyes(!Eyes);
+            if (Input.GetKeyDown(KeyCode.Tab) || Pad.Down(Pad.B.Back)) SetEyes(!Eyes);
             if (Input.GetKeyDown(KeyCode.Alpha1)) SetTool(0);
+            // bumpers: the next tool along, or the one before (the backpack only once it is bought)
+            int tools = backpackOwned ? 3 : 2;
+            if (Pad.Down(Pad.B.RB)) SetTool((Tool + 1) % tools);
+            if (Pad.Down(Pad.B.LB)) SetTool((Tool + tools - 1) % tools);
             if (Tool == 0 && jackOwned)
             {
                 // the bite: Shift + mouse wheel, or [ and ]
                 float wheel = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? Input.GetAxis("Mouse ScrollWheel") : 0f;
-                int step = wheel > 0.01f || Input.GetKeyDown(KeyCode.RightBracket) ? 1 : wheel < -0.01f || Input.GetKeyDown(KeyCode.LeftBracket) ? -1 : 0;
+                int step = wheel > 0.01f || Input.GetKeyDown(KeyCode.RightBracket) || Pad.DUpDown ? 1 : wheel < -0.01f || Input.GetKeyDown(KeyCode.LeftBracket) || Pad.DDownDown ? -1 : 0;
                 if (step != 0)
                 {
                     SetJackSize(jackSize + step * 0.25f);
@@ -503,9 +513,17 @@ public class Worker : MonoBehaviour
             }
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
             if (Input.GetKeyDown(KeyCode.Alpha3)) { if (backpackOwned) SetTool(2); else Say("No backpack yet.  Max out the shovel, then buy it in the upgrades (U).", 3f); }
-            if (Input.GetKeyDown(KeyCode.Q)) { if (backpackOwned) StartPour(); }
-            if (Input.GetKeyDown(KeyCode.E)) PressE();
-            if (Input.GetKeyDown(KeyCode.T)) TipCart();
+            if (Input.GetKeyDown(KeyCode.Q) || Pad.Down(Pad.B.X)) { if (backpackOwned) StartPour(); }
+            if (Input.GetKeyDown(KeyCode.E) || Pad.Down(Pad.B.A)) PressE();
+            if (Input.GetKeyDown(KeyCode.T) || Pad.Down(Pad.B.B)) TipCart();
+            // the right stick aims, gently near the middle so small corrections are easy
+            Vector2 aim = Pad.RightStick;
+            if (aim.magnitude > 0.12f)
+            {
+                aim *= aim.magnitude;
+                yaw += aim.x * padAimSpeed * dt;
+                lookPitch = Mathf.Clamp(lookPitch - aim.y * padAimSpeed * 0.7f * dt, Eyes ? -80f : -45f, Eyes ? 80f : 72f);
+            }
             if (Input.GetKeyDown(KeyCode.Escape)) Cursor.lockState = CursorLockMode.None;
             if (Cursor.lockState != CursorLockMode.Locked)
             {
@@ -832,7 +850,7 @@ public class Worker : MonoBehaviour
             Vector3 target = Pouring && cart != null ? cart.Mouth : aimFound ? aimPoint : tool.position + aimDir * 2f;
             Vector3 look = target - tool.position;
             if (look.sqrMagnitude > 0.01f) tool.rotation = Quaternion.LookRotation(look, Vector3.up);
-            bool working = Pouring || (useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space)));
+            bool working = Pouring || (useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space) || Pad.RT > 0.3f));
             if (working) tool.localPosition += new Vector3(Mathf.Sin(Time.time * 71f), Mathf.Sin(Time.time * 53f), 0f) * 0.004f;
         }
         if (Tool == 0 && jackOwned)
@@ -1000,6 +1018,8 @@ public class Worker : MonoBehaviour
     /// Close enough to the dozer to climb in.
     public bool NearDozer() { return dozer != null && !InDozer && Vector3.Distance(transform.position, dozer.transform.position) <= 5.5f; }
 
+    static float Stronger(float a, float b) { return Mathf.Abs(b) > Mathf.Abs(a) ? b : a; }
+
     public void TryDozer()
     {
         if (dozer == null) return;
@@ -1018,11 +1038,15 @@ public class Worker : MonoBehaviour
             var style = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height - 110, 660, 44), say, style);
         }
-        if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), "Enter   get out"); return; }
+        if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), Pad.Key("Enter", "Y") + "   get out"); return; }
         if (Tool == 2 && !backpackOwned) SetTool(1);
-        string tool = Tool == 0 ? (jackOwned ? "JACKHAMMER   bite size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") + "   Shift+wheel or [ ]" : "PICK") : Tool == 1 ? "SHOVEL" : "BACKPACK";
+        string tool = Tool == 0 ? (jackOwned ? "JACKHAMMER   bite size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") + (Pad.InUse ? "   d-pad up / down" : "   Shift+wheel or [ ]") : "PICK") : Tool == 1 ? "SHOVEL" : "BACKPACK";
         string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
-        string text =
+        string text = Pad.InUse ?
+            "Right stick   look and aim     Left stick   walk     Back   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
+            "RB / LB   next / last tool     Right trigger   use it where you aim (hold)     A   grab / tip / sell / fit\n" +
+            "X   squirt backpack into cart     B   tip cart     Y   get in the dozer     Start   upgrades\n" +
+            "Tool: " + tool + load :
             "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
             "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
             "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
@@ -1030,7 +1054,7 @@ public class Worker : MonoBehaviour
         GUI.Box(new Rect(10, 10, 640, 86), text);
         // the backpack gauge, always: a bar that fills, and the litres
         float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
-        if (backpackOwned) GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\nQ by the cart squirts it in");
+        if (backpackOwned) GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\n" + Pad.Key("Q", "X") + " by the cart squirts it in");
         if (backpackOwned)
         {
             GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
@@ -1041,13 +1065,17 @@ public class Worker : MonoBehaviour
         {
             var warn = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             warn.normal.textColor = new Color(1f, 0.75f, 0.2f);
-            GUI.Box(new Rect(Screen.width / 2 - 450, Screen.height * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  Shift+wheel or [ to go smaller", warn);
+            GUI.Box(new Rect(Screen.width / 2 - 450, Screen.height * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  " + Pad.Key("Shift+wheel or [", "D-pad down") + " to go smaller", warn);
         }
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))
         {
             float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            string what = cart.AtDump ? "AT THE DUMP: E tips it into the hopper and you get paid."
+            string what = Pad.InUse
+                        ? (cart.AtDump ? "AT THE DUMP: A tips it into the hopper and you get paid."
+                        : HoldingCart != 0 ? "Left stick push / pull back   A let go   B tip   (the dump and hopper are at the end of the rails)"
+                        : "Shovelfuls go in it.   X squirts the backpack in.   A at an end holds it.   B tips it.")
+                        : cart.AtDump ? "AT THE DUMP: E tips it into the hopper and you get paid."
                         : HoldingCart != 0 ? "W push   S pull back   E let go   T tip   (the dump and hopper are at the end of the rails)"
                         : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it.";
             GUI.Box(new Rect(10, 102, 640, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + what);
@@ -1056,13 +1084,13 @@ public class Worker : MonoBehaviour
         if (cart != null && cart.AtDump && cart.Near(transform.position, 3.2f) && world.CartVoxels >= VoxelWorld.ClodVoxels && !cart.Tipping)
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            GUI.Box(new Rect(Screen.width / 2 - 230, Screen.height * 0.62f, 460, 40), "Press E to tip it into the hopper", prompt);
+            GUI.Box(new Rect(Screen.width / 2 - 230, Screen.height * 0.62f, 460, 40), "Press " + Pad.Key("E", "A") + " to tip it into the hopper", prompt);
         }
         // close enough to climb in: say so, in the middle of the screen where it can't be missed
         if (NearDozer())
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            string what = dozer.dead && !dozer.CanDrive ? "The dozer is dead (it needs parts)" : "Press ENTER to get in the dozer";
+            string what = dozer.dead && !dozer.CanDrive ? "The dozer is dead (it needs parts)" : "Press " + Pad.Key("ENTER", "Y") + " to get in the dozer";
             GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.62f, 420, 40), what, prompt);
         }
         var finds = Finds.Instance;
@@ -1071,8 +1099,8 @@ public class Worker : MonoBehaviour
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             int carried = finds.FirstCarried(), here = finds.Collectable(transform.position);
             string partLine = null;
-            if (carried >= 0 && NearDozer()) partLine = "Press E to fit the " + Finds.Names[carried];
-            else if (here >= 0) partLine = "Press E to pick up the " + Finds.Names[here];
+            if (carried >= 0 && NearDozer()) partLine = "Press " + Pad.Key("E", "A") + " to fit the " + Finds.Names[carried];
+            else if (here >= 0) partLine = "Press " + Pad.Key("E", "A") + " to pick up the " + Finds.Names[here];
             if (partLine != null) GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.70f, 420, 40), partLine, prompt);
             string carrying = "";
             for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
@@ -1083,7 +1111,7 @@ public class Worker : MonoBehaviour
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             var m = Money.Instance;
-            string what = m.GoldStore > 0 ? "Press E to sell your gold:  " + m.GoldLitres.ToString("F0") + " L for " + m.GoldWorth.ToString("N0") + " coins" : "Gold buyer: you have no gold to sell yet";
+            string what = m.GoldStore > 0 ? "Press " + Pad.Key("E", "A") + " to sell your gold:  " + m.GoldLitres.ToString("F0") + " L for " + m.GoldWorth.ToString("N0") + " coins" : "Gold buyer: you have no gold to sell yet";
             GUI.Box(new Rect(Screen.width / 2 - 280, Screen.height * 0.62f, 560, 40), what, prompt);
         }
         // a label over the gold buyer's shed, and over the dump's sign, so you can find them

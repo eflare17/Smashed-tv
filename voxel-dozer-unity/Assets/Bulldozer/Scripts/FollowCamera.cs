@@ -1,6 +1,7 @@
 // The game camera.  Two ways of looking:
 //   behind:  follows a target (the worker or the machine) from behind and swings round with it.
-//            Hold the right mouse button and drag to look round; scroll to zoom.
+//            Hold the right mouse button and drag to look round; scroll to zoom.  A pad's right stick looks round too
+//            (not while the dozer's gyro button is held: then the right stick is the blade).
 //   eyes:    sits at the worker's eye height and looks where he looks (lookYaw / lookPitch, set by Worker).
 // From behind it never sits inside the ground: if rock is in the way (in the mine, say) it moves in closer.
 using UnityEngine;
@@ -14,6 +15,7 @@ public class FollowCamera : MonoBehaviour
     public float pitch = 22f;
     public float yawOffset = 25f;            // a little to one side, so the blade is in view
     public float turnFollow = 2f;
+    public float padLookSpeed = 120f;        // degrees a second with the right stick right over
 
     public bool firstPerson;
     public bool shoulder;                    // over the worker's shoulder, looking where he looks (lookYaw / lookPitch)
@@ -86,6 +88,13 @@ public class FollowCamera : MonoBehaviour
         {
             yawOffset += Input.GetAxis("Mouse X") * 4f;
             pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f, 5f, 75f);
+        }
+        var dozer = target.GetComponent<DozerController>();
+        Vector2 stick = Pad.RightStick;
+        if ((dozer == null || !dozer.GyroHeld) && stick.magnitude > 0.15f)
+        {
+            yawOffset += stick.x * padLookSpeed * Time.deltaTime;
+            pitch = Mathf.Clamp(pitch - stick.y * padLookSpeed * 0.6f * Time.deltaTime, 5f, 75f);
         }
         distance = Mathf.Clamp(distance * (1f - ZoomWheel()), minDistance, maxDistance);
         heading = Mathf.LerpAngle(heading, target.eulerAngles.y, turnFollow * Time.deltaTime);

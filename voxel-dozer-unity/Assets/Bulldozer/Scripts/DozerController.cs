@@ -2,7 +2,11 @@
 //   W / S or up / down     forward / reverse        A / D or left / right   steer (turns on the spot when stopped)
 //   R / F                  blade up / down          T / G                   ripper up / down
 //   Q / E                  angle the blade left / right     Z / C           tilt the blade     X   straighten it
-// A gamepad's left stick drives too.  The numbers below can be changed on the prefab in the Inspector.
+// Game pad (see Pad.cs and CONTROLLER.md): left stick drives, right trigger lowers the blade, left trigger raises it,
+// bumpers move the ripper, d-pad angles / tilts the blade, X straightens it, B lights, right stick looks round.
+// Gyro blade: while the gyro button (right stick click; on the Steam Controller a back grip bound to it) is held,
+// the right stick's POSITION is the blade's: left-right = tilt, up-down = angle.  Let go and the blade stays.
+// The numbers below can be changed on the prefab in the Inspector.
 using UnityEngine;
 
 public class DozerController : MonoBehaviour
@@ -27,6 +31,9 @@ public class DozerController : MonoBehaviour
     public float ripRadius = 0.36f;          // how wide each shank tears
     public int hardRockStops = 60;           // this many hard blocks in the blade's way stops the machine
     public bool showHelp = true;
+    [Header("Gyro blade (pad: right stick while the gyro button is held)")]
+    public float gyroDeadZone = 0.06f;       // stick movement this small is ignored, so the blade doesn't twitch
+    public float gyroSmoothing = 12f;        // how quickly the blade catches up with the stick (higher = snappier)
     [Header("State")]
     // Not saved with the prefab on purpose: Unity kept an old stored "dead" and ignored the value written here.
     [System.NonSerialized] public bool dead = false;     // true = it has sat for years and nothing works until repaired (off for now: F9 switches it)
@@ -43,6 +50,7 @@ public class DozerController : MonoBehaviour
     public float Speed { get; private set; }             // current speed, + forward, - reverse
     public float BladeHeight01 { get; private set; }     // 0 = down, 1 = fully up
     public float RipperHeight01 { get; private set; }
+    public bool GyroHeld { get; private set; }           // the gyro button is down: the right stick is the blade
     public bool BlockedByRock { get; private set; }
     public bool AtFence { get; private set; }            // pushing against the edge of the work site
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
@@ -79,6 +87,8 @@ public class DozerController : MonoBehaviour
     VoxelWorld world;
     float turn, bladeAngle, ripperAngle, throttleIn, steerIn;
     float yaw, pitch, roll, height, blockedTimer, fps;
+    Vector2 gyroGrabStick;                               // the stick, and the blade, at the moment the gyro button went down
+    float gyroGrabTilt, gyroGrabYaw;
     readonly Vector3[] tipsWorld = new Vector3[6];
 
     void Awake()
@@ -148,29 +158,57 @@ public class DozerController : MonoBehaviour
     void Update()
     {
         if (!driven) { throttleIn = steerIn = 0f; ApplyAttachments(); return; }
-        throttleIn = useOverride ? overrideThrottle : Input.GetAxisRaw("Vertical");
-        steerIn = useOverride ? overrideSteer : Input.GetAxisRaw("Horizontal");
+        throttleIn = useOverride ? overrideThrottle : Stronger(Input.GetAxisRaw("Vertical"), Pad.LeftStick.y);
+        steerIn = useOverride ? overrideSteer : Stronger(Input.GetAxisRaw("Horizontal"), Pad.LeftStick.x);
         if (!CanDrive) throttleIn = steerIn = 0f;
 
-        float bladeIn = useOverride ? overrideBlade : (Input.GetKey(KeyCode.R) ? 1f : 0f) - (Input.GetKey(KeyCode.F) ? 1f : 0f);
-        float ripperIn = useOverride ? overrideRipper : (Input.GetKey(KeyCode.T) ? 1f : 0f) - (Input.GetKey(KeyCode.G) ? 1f : 0f);
+        float bladeIn = useOverride ? overrideBlade : (Input.GetKey(KeyCode.R) || Pad.LT > 0.3f ? 1f : 0f) - (Input.GetKey(KeyCode.F) || Pad.RT > 0.3f ? 1f : 0f);
+        float ripperIn = useOverride ? overrideRipper : (Input.GetKey(KeyCode.T) || Pad.Held(Pad.B.RB) ? 1f : 0f) - (Input.GetKey(KeyCode.G) || Pad.Held(Pad.B.LB) ? 1f : 0f);
         if (!CanBlade) bladeIn = 0f;
         if (!CanRip) ripperIn = 0f;
         if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Time.deltaTime);
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
-        float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) ? 1f : 0f) - (Input.GetKey(KeyCode.Q) ? 1f : 0f);
-        float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) ? 1f : 0f) - (Input.GetKey(KeyCode.Z) ? 1f : 0f);
+        float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) || Pad.DX > 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Q) || Pad.DX < 0 ? 1f : 0f);
+        float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) || Pad.DY < 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Z) || Pad.DY > 0 ? 1f : 0f);
         if (!CanBlade) angleIn = tiltIn = 0f;
         BladeYaw = Mathf.Clamp(BladeYaw + angleIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxAngle, bladeMaxAngle);
         BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * 0.5f * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
-        if (!useOverride && CanBlade && Input.GetKey(KeyCode.X))
+        GyroBlade();
+        if (!useOverride && CanBlade && (Input.GetKey(KeyCode.X) || Pad.Held(Pad.B.X)))
         {
             BladeYaw = Mathf.MoveTowards(BladeYaw, 0f, bladeTurnSpeed * 2f * Time.deltaTime);
             BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
         }
         ApplyAttachments();
-        if (lights != null && !useOverride && Input.GetKeyDown(KeyCode.L)) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
+        if (lights != null && !useOverride && (Input.GetKeyDown(KeyCode.L) || Pad.Down(Pad.B.B))) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
         fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.05f);
+    }
+
+    static float Stronger(float a, float b) { return Mathf.Abs(b) > Mathf.Abs(a) ? b : a; }
+
+    /// The gyro blade.  While the gyro button is held, the right stick's position sets the blade: left-right tilts it
+    /// (full over = bladeMaxTilt), up-down angles it (full = bladeMaxAngle).  It counts from where the blade and the
+    /// stick were when the button went down, so the blade never jumps on the press.  Let go and the blade stays put.
+    void GyroBlade()
+    {
+        bool held = !useOverride && CanBlade && Pad.Held(Pad.B.RS);
+        Vector2 stick = Pad.RightStick;
+        if (held && !GyroHeld) { gyroGrabStick = stick; gyroGrabTilt = BladeTilt; gyroGrabYaw = BladeYaw; }
+        GyroHeld = held;
+        if (!held) return;
+        Vector2 moved = stick - gyroGrabStick;
+        moved.x = GyroDead(moved.x); moved.y = GyroDead(moved.y);
+        float wantTilt = Mathf.Clamp(gyroGrabTilt + moved.x * bladeMaxTilt, -bladeMaxTilt, bladeMaxTilt);
+        float wantYaw = Mathf.Clamp(gyroGrabYaw + moved.y * bladeMaxAngle, -bladeMaxAngle, bladeMaxAngle);
+        float k = 1f - Mathf.Exp(-gyroSmoothing * Time.deltaTime);
+        BladeTilt = Mathf.Lerp(BladeTilt, wantTilt, k);
+        BladeYaw = Mathf.Lerp(BladeYaw, wantYaw, k);
+    }
+
+    float GyroDead(float v)
+    {
+        float a = Mathf.Abs(v);
+        return a <= gyroDeadZone ? 0f : Mathf.Sign(v) * (a - gyroDeadZone) / (1f - gyroDeadZone);
     }
 
     void FixedUpdate()
@@ -354,12 +392,18 @@ public class DozerController : MonoBehaviour
     void OnGUI()
     {
         if (!showHelp || !driven) return;
-        string text =
+        string text = Pad.InUse ?
+            "Left stick   drive and steer          Y   get out          Start   upgrades\n" +
+            "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
+            "RB / LB   ripper up / down    (breaks up hard rock)\n" +
+            "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
+            "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" :
             "W / S   drive          A / D   steer\n" +
             "R / F   blade up / down     (lower it into the ground to dig)\n" +
             "T / G   ripper up / down    (breaks up hard rock)\n" +
             "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-            "Right mouse drag: look round    Scroll: zoom\n" +
+            "Right mouse drag: look round    Scroll: zoom\n";
+        text +=
             "Speed " + (Speed * 3.6f).ToString("F1") + " km/h     " + Mathf.RoundToInt(fps) + " frames a second";
         int lines = 0;
         if (world != null)
@@ -376,7 +420,7 @@ public class DozerController : MonoBehaviour
             lines = 4;
             if (BladeYaw != 0f || BladeTilt != 0f) { text += "\nBlade angle " + BladeYaw.ToString("F0") + "   tilt " + BladeTilt.ToString("F0"); lines++; }
         }
-        if (BlockedByRock) text += "\nHARD ROCK: back up and rip it first (G)";
+        if (BlockedByRock) text += "\nHARD ROCK: back up and rip it first (" + Pad.Key("G", "LB") + ")";
         if (AtFence) text += "\nEdge of the work site: turn round";
         if (AtCliff) text += "\nToo steep to climb: cut into it with the blade, or go round";
         int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0);

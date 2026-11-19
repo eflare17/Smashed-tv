@@ -190,6 +190,7 @@ public static class BulldozerBuilder
     {
         EditorApplication.delayCall += () =>
         {
+            EnsurePadAxes();                                              // the game pad's axes (does nothing once they're there)
             if (!Application.isBatchMode && AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) == null) Build();
         };
     }
@@ -1408,6 +1409,218 @@ public static class BulldozerBuilder
             if (ok) Debug.Log("BULLDOZER_TUNNEL_RESULT " + tLog); else Debug.LogError("BULLDOZER_TUNNEL_FAILED " + tLog);
             TunnelFinish(ok ? 0 : 1);
         }
+    }
+
+    // ---------------------------------------------------------------- the game pad
+    // The pad's sticks, triggers and d-pad, by name, in the Input Manager (Pad.cs reads them).  Adds any that are
+    // missing; leaves everything else as it is.  Axis numbers are Unity's for an Xbox-style pad on Windows, which is
+    // what Steam makes of the Steam Controller.
+    [MenuItem("Tools/Bulldozer/Add game pad axes")]
+    public static void EnsurePadAxes()
+    {
+        var assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/InputManager.asset");
+        if (assets == null || assets.Length == 0) { Debug.LogWarning("Pad axes: no InputManager.asset"); return; }
+        var so = new SerializedObject(assets[0]);
+        var axes = so.FindProperty("m_Axes");
+        int added = 0;
+        for (int a = 0; a < Pad.AxisNames.Length; a++)
+        {
+            bool have = false;
+            for (int i = 0; i < axes.arraySize && !have; i++)
+                have = axes.GetArrayElementAtIndex(i).FindPropertyRelative("m_Name").stringValue == Pad.AxisNames[a];
+            if (have) continue;
+            axes.arraySize++;
+            var e = axes.GetArrayElementAtIndex(axes.arraySize - 1);
+            e.FindPropertyRelative("m_Name").stringValue = Pad.AxisNames[a];
+            e.FindPropertyRelative("descriptiveName").stringValue = "";
+            e.FindPropertyRelative("descriptiveNegativeName").stringValue = "";
+            e.FindPropertyRelative("negativeButton").stringValue = "";
+            e.FindPropertyRelative("positiveButton").stringValue = "";
+            e.FindPropertyRelative("altNegativeButton").stringValue = "";
+            e.FindPropertyRelative("altPositiveButton").stringValue = "";
+            e.FindPropertyRelative("gravity").floatValue = 0f;
+            e.FindPropertyRelative("dead").floatValue = 0.02f;            // Pad.cs takes out its own dead zones
+            e.FindPropertyRelative("sensitivity").floatValue = 1f;
+            e.FindPropertyRelative("snap").boolValue = false;
+            e.FindPropertyRelative("invert").boolValue = Pad.AxisInvert[a];
+            e.FindPropertyRelative("type").intValue = 2;                  // joystick axis
+            e.FindPropertyRelative("axis").intValue = Pad.AxisNumbers[a];
+            e.FindPropertyRelative("joyNum").intValue = 0;                // any pad
+            added++;
+        }
+        if (added == 0) return;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        AssetDatabase.SaveAssets();
+        Debug.Log("Pad axes: added " + added + " to the Input Manager");
+    }
+
+    // The game pad path:  -executeMethod BulldozerBuilder.PadTest
+    // Drives everything through Pad's override (as if a pad were plugged in), with the dozer's and worker's own
+    // overrides off.  In the dozer: the left stick drives, the left trigger raises the blade, and with the gyro button
+    // (right stick click) held the right stick's position sets the blade's tilt and angle; let go and the blade stays.
+    // Then Y gets out, and on foot: RB changes tool, the left stick walks, the right stick turns him, the right trigger
+    // swings the tool.  Prints BULLDOZER_PAD_RESULT.
+    static int padPhase; static float padStart; static string padLog; static Vector3 padPos; static float padHeight, padYaw, padTilt, padAngle;
+    static int padTool; static bool padSwung;
+
+    public static void PadTest()
+    {
+        EnsurePadAxes();
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        padPhase = 0; padLog = ""; padSwung = false;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += PadTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void PadFinish(bool ok)
+    {
+        if (ok) Debug.Log("BULLDOZER_PAD_RESULT " + padLog);
+        else Debug.LogError("BULLDOZER_PAD_FAILED phase " + padPhase + " " + padLog);
+        Pad.overrideOn = false; Pad.ClearOverride();
+        EditorApplication.update -= PadTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(ok ? 0 : 1);
+    }
+
+    static void PadTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { padLog += " timed out"; PadFinish(false); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (wk == null || d == null || VoxelWorld.Instance == null) return;
+        float t = Time.time, since = t - padStart;
+        switch (padPhase)
+        {
+            case 0:                                              // in the dozer: drive forward and raise the blade
+                if (t < 1f) return;
+                wk.useOverride = false; d.useOverride = false;
+                if (!wk.InDozer) wk.TryDozer();
+                if (!wk.InDozer) { padLog += "could not get in the dozer"; PadFinish(false); return; }
+                Pad.ClearOverride(); Pad.overrideOn = true;
+                padPos = d.transform.position; padHeight = d.BladeHeight01;
+                Pad.oLY = 1f; Pad.oLT = 1f;
+                padPhase = 1; padStart = t; return;
+            case 1:
+                if (since < 1.5f) return;
+                float drove = Vector3.Distance(padPos, d.transform.position);
+                padLog += "drove=" + drove.ToString("F2") + " bladeUp " + padHeight.ToString("F2") + "->" + d.BladeHeight01.ToString("F2") + " padInUse=" + Pad.InUse;
+                if (drove < 0.5f || d.BladeHeight01 < padHeight + 0.2f || !Pad.InUse) { PadFinish(false); return; }
+                Pad.oLY = 0f; Pad.oLT = 0f;
+                padTilt = d.BladeTilt; padAngle = d.BladeYaw;
+                Pad.Hold(Pad.B.RS, true);                        // the gyro button, stick in the middle
+                padPhase = 2; padStart = t; return;
+            case 2:
+                if (since < 0.3f) return;
+                Pad.oRX = 0.5f; Pad.oRY = -0.4f;                 // tip the controller: half right, a bit back
+                padPhase = 3; padStart = t; return;
+            case 3:
+                if (since < 1.2f) return;
+                {
+                    float dz = d.gyroDeadZone;
+                    float wantTilt = padTilt + (0.5f - dz) / (1f - dz) * d.bladeMaxTilt;
+                    float wantAngle = padAngle - (0.4f - dz) / (1f - dz) * d.bladeMaxAngle;
+                    padLog += " gyroTilt=" + d.BladeTilt.ToString("F2") + "(want " + wantTilt.ToString("F2") + ") gyroAngle=" + d.BladeYaw.ToString("F2") + "(want " + wantAngle.ToString("F2") + ") gyroHeld=" + d.GyroHeld;
+                    if (!d.GyroHeld || Mathf.Abs(d.BladeTilt - wantTilt) > 0.3f || Mathf.Abs(d.BladeYaw - wantAngle) > 0.8f) { PadFinish(false); return; }
+                }
+                Pad.Hold(Pad.B.RS, false);                       // let go of the gyro button ...
+                padTilt = d.BladeTilt; padAngle = d.BladeYaw;
+                Pad.oRX = -1f; Pad.oRY = 1f;                     // ... and wave the stick about: the blade must stay
+                padPhase = 4; padStart = t; return;
+            case 4:
+                if (since < 1f) return;
+                padLog += " afterRelease tilt=" + d.BladeTilt.ToString("F2") + " angle=" + d.BladeYaw.ToString("F2");
+                if (Mathf.Abs(d.BladeTilt - padTilt) > 0.01f || Mathf.Abs(d.BladeYaw - padAngle) > 0.01f) { PadFinish(false); return; }
+                Pad.oRX = 0f; Pad.oRY = 0f;
+                Pad.Hold(Pad.B.Y, true);                         // Y: get out
+                padPhase = 5; padStart = t; return;
+            case 5:
+                if (since < 0.4f) return;
+                Pad.Hold(Pad.B.Y, false);
+                padLog += " outWithY=" + !wk.InDozer;
+                if (wk.InDozer) { PadFinish(false); return; }
+                padTool = wk.Tool;
+                Pad.Hold(Pad.B.RB, true);                        // RB: next tool
+                padPhase = 6; padStart = t; return;
+            case 6:
+                if (since < 0.3f) return;
+                Pad.Hold(Pad.B.RB, false);
+                padLog += " tool " + padTool + "->" + wk.Tool;
+                if (wk.Tool == padTool) { PadFinish(false); return; }
+                padPos = wk.transform.position; padYaw = wk.transform.eulerAngles.y;
+                Pad.oLY = 1f; Pad.oRX = 0.7f;                    // walk on, turning right
+                padPhase = 7; padStart = t; return;
+            case 7:
+                if (since < 1.2f) return;
+                {
+                    float walked = Vector3.Distance(new Vector3(padPos.x, 0f, padPos.z), new Vector3(wk.transform.position.x, 0f, wk.transform.position.z));
+                    float turned = Mathf.Abs(Mathf.DeltaAngle(padYaw, wk.transform.eulerAngles.y));
+                    padLog += " walked=" + walked.ToString("F2") + " turned=" + turned.ToString("F0");
+                    if (walked < 0.5f || turned < 20f) { PadFinish(false); return; }
+                }
+                Pad.oLY = 0f; Pad.oRX = 0f; Pad.oRT = 1f;        // right trigger: use the tool
+                padPhase = 8; padStart = t; return;
+            case 8:
+                if (wk.SwingNow != "None") padSwung = true;
+                if (since < 0.8f) return;
+                Pad.oRT = 0f;
+                padLog += " swungWithRT=" + padSwung;
+                PadFinish(padSwung);
+                return;
+        }
+    }
+
+    // ---------------------------------------------------------------- the Windows game
+    // Builds the game on its own, for adding to Steam as a non-Steam game (so Steam Input works on it).
+    //   -executeMethod BulldozerBuilder.BuildWindowsFromCommandLine     (or Tools > Bulldozer > Build Windows game)
+    // Lands in voxel-dozer-unity/Builds/DiggerGame/DiggerGame.exe.  Prints BULLDOZER_WINBUILD_RESULT.
+    const string WindowsExe = "Builds/DiggerGame/DiggerGame.exe";
+
+    [MenuItem("Tools/Bulldozer/Build Windows game")]
+    public static void BuildWindows() { BuildWindowsGame(); }
+
+    public static void BuildWindowsFromCommandLine() { EditorApplication.Exit(BuildWindowsGame() ? 0 : 1); }
+
+    static bool BuildWindowsGame()
+    {
+        EnsurePadAxes();
+        // shaders the scripts look up by name at run time, which no material in the scene points at
+        IncludeShaders("Voxel/FireFlame", "Voxel/FireParticle", "Voxel/FireSmoke", "Voxel/Terrain", "Unlit/Color", "Sprites/Default");
+        var opts = new BuildPlayerOptions
+        {
+            scenes = new[] { ScenePath },
+            locationPathName = WindowsExe,
+            target = BuildTarget.StandaloneWindows64,
+            options = BuildOptions.None,                           // not a Development build
+        };
+        var report = BuildPipeline.BuildPlayer(opts);
+        bool ok = report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded;
+        if (ok) Debug.Log("BULLDOZER_WINBUILD_RESULT " + System.IO.Path.GetFullPath(WindowsExe) + " " + (report.summary.totalSize / (1024 * 1024)) + " MB in " + report.summary.totalTime.TotalSeconds.ToString("F0") + " s");
+        else Debug.LogError("BULLDOZER_WINBUILD_FAILED " + report.summary.result + " errors=" + report.summary.totalErrors);
+        return ok;
+    }
+
+    static void IncludeShaders(params string[] names)
+    {
+        var gs = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+        if (gs == null || gs.Length == 0) return;
+        var so = new SerializedObject(gs[0]);
+        var list = so.FindProperty("m_AlwaysIncludedShaders");
+        bool changed = false;
+        foreach (var n in names)
+        {
+            var sh = Shader.Find(n);
+            if (sh == null) { Debug.LogWarning("Build: shader " + n + " not found"); continue; }
+            bool have = false;
+            for (int i = 0; i < list.arraySize && !have; i++) have = list.GetArrayElementAtIndex(i).objectReferenceValue == sh;
+            if (have) continue;
+            list.arraySize++;
+            list.GetArrayElementAtIndex(list.arraySize - 1).objectReferenceValue = sh;
+            changed = true;
+        }
+        if (changed) { so.ApplyModifiedPropertiesWithoutUndo(); AssetDatabase.SaveAssets(); }
     }
 
     // The jackhammer:  -executeMethod BulldozerBuilder.JackTest

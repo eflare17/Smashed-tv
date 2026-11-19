@@ -247,8 +247,16 @@ public class Upgrades : MonoBehaviour
         if (noteTimer > 0f) noteTimer -= Time.unscaledDeltaTime;
         var wk = Worker.Instance;
         if (wk != null && wk.useOverride) return;                // not while a test is driving
-        if (Input.GetKeyDown(KeyCode.U)) SetOpen(!Open);
+        if (Input.GetKeyDown(KeyCode.U) || Pad.Down(Pad.B.Start)) SetOpen(!Open);
         if (Open && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
+        if (Open)
+        {
+            // the pad: d-pad left / right picks a branch, A buys its next level, X sells the newest back
+            if (Pad.DRightDown) padBranch = (padBranch + 1) % BranchCount;
+            if (Pad.DLeftDown) padBranch = (padBranch + BranchCount - 1) % BranchCount;
+            if (Pad.Down(Pad.B.A)) { string why = CantBuy((Branch)padBranch); if (why == null) Buy((Branch)padBranch); else Note(why + "."); }
+            if (Pad.Down(Pad.B.X)) { string why = CantSellBack((Branch)padBranch); if (why == null) SellBack((Branch)padBranch); else Note(why + "."); }
+        }
         if (Input.GetKeyDown(KeyCode.F8) && Money.Instance != null)
         {
             Money.Instance.TestGrant(10000, GoldVoxels(50f));
@@ -256,13 +264,15 @@ public class Upgrades : MonoBehaviour
         }
     }
 
+    int padBranch;                                           // the branch the pad has picked in the tree
+
     // ---------------------------------------------------------------- the tree screen
     void OnGUI()
     {
         if (Prologue.Playing) return;
         if (!Open)
         {
-            GUI.Box(new Rect(Screen.width - 230, Screen.height - 34, 220, 24), "U   upgrades");
+            GUI.Box(new Rect(Screen.width - 230, Screen.height - 34, 220, 24), Pad.Key("U", "Start") + "   upgrades");
             return;
         }
         var money = Money.Instance;
@@ -273,7 +283,7 @@ public class Upgrades : MonoBehaviour
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
         GUI.Label(new Rect(area.x + 16, area.y + 8, 400, 34), "Upgrades", title);
         var info = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleRight };
-        if (money != null) GUI.Label(new Rect(area.xMax - 520, area.y + 8, 500, 34), "Coins " + money.Coins.ToString("N0") + "      Gold " + money.GoldLitres.ToString("F0") + " L      U or Esc closes", info);
+        if (money != null) GUI.Label(new Rect(area.xMax - 520, area.y + 8, 500, 34), "Coins " + money.Coins.ToString("N0") + "      Gold " + money.GoldLitres.ToString("F0") + " L      " + (Pad.InUse ? "D-pad pick   A buy   X sell back   Start closes" : "U or Esc closes"), info);
         if (noteTimer > 0f)
         {
             var n = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter };
@@ -314,6 +324,7 @@ public class Upgrades : MonoBehaviour
                 }
                 else if (k == level[i])
                 {
+                    if (Pad.InUse && i == padBranch) GUI.Box(new Rect(row.x - 14f, row.y, 12f, row.height), ">");
                     string why = CantBuy(b);
                     if (why == null)
                     {
