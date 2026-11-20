@@ -3233,6 +3233,391 @@ public static class BulldozerBuilder
         }
     }
 
+    // ---------------------------------------------------------------- the Dingo (Dingo.cs)
+    //   -executeMethod BulldozerBuilder.DingoTest          prints BULLDOZER_DINGO_RESULT (or _FAILED)
+    //   -executeMethod BulldozerBuilder.RecordDingoClip    the same run filmed: frames and overlay.ass go to Logs/clip
+    // Locked until bought; buy it from the tree (after Shovel 6); get on; drive into the mine; dig the first cave-in;
+    // carry each load out and tip it into the cart (3 loads); push the cart along; hit solid rock; get off.  Checks the
+    // dirt adds up exactly and that it reached every place it was sent (never stuck).
+    static int dgPhase, dgLoads, dgCartAtTip, dgBucketAtTip, dgCaught, dgCarried, dgWay, dgCartAt0;
+    static float dgCartPark, dgAimNext, dgShovelLpm, dgFirstDig, dgLastTip;
+    static float dgPhaseStart, dgDigStart, dgDigLitres, dgDigSeconds, dgAlong0, dgStuckFor, dgCartDeep;
+    static long dgVol0;
+    static string dgLog; static bool dgOk, dgFilming;
+    static Vector3 dgLastPos; static float dgWindow, dgBackUntil; static int dgLane, dgRock0; static bool dgDigging;
+
+    public static void DingoTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        dgFilming = false; DingoReset();
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += DingoTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    public static void RecordDingoClip()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        dgFilming = true; DingoReset();
+        chFrame = 0; chView0 = -1; sOverlay.Clear(); trCaps.Clear();
+        string dir = Application.dataPath + "/../Logs/clip";
+        if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+        System.IO.Directory.CreateDirectory(dir);
+        clipLastGameFrame = -1;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += DingoTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void DingoReset() { dgDigging = false; dgLane = 0; dgFirstDig = -1f; dgPhase = 0; dgLoads = 0; dgLog = ""; dgOk = true; dgWay = 0; dgStuckFor = 0f; dgCaught = dgCarried = 0; dgDigLitres = dgDigSeconds = 0f; }
+
+    static void DingoFinish(int code)
+    {
+        EditorApplication.update -= DingoTick;
+        Time.captureFramerate = 0;
+        if (dgFilming && chView0 >= 0) GameViewSelect(chView0);
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void DCheck(string name, bool good) { dgLog += " " + name + "=" + good; if (!good) dgOk = false; }
+    static void DgNext(int p, float t) { dgPhase = p; dgPhaseStart = t; dgStuckFor = 0f; }
+
+    // the autopilot: what a player would press
+    static float DgErr(Dingo dg, Vector3 at) { Vector3 d = at - dg.transform.position; d.y = 0f; return Mathf.DeltaAngle(dg.transform.eulerAngles.y, Facing(d)); }
+    static void DgArms(Dingo dg, float want) { float e = want - dg.ArmRaise; dg.overrideArms = Mathf.Abs(e) < 0.6f ? 0f : Mathf.Sign(e); }
+    static void DgBucket(Dingo dg, float want) { float e = want - dg.BucketAngle; dg.overrideBucket = Mathf.Abs(e) < 1.5f ? 0f : Mathf.Sign(e); }
+    static bool DgGoTo(Dingo dg, Vector3 at, float within)
+    {
+        Vector3 d = at - dg.transform.position; d.y = 0f;
+        if (d.magnitude < within) { dg.overrideThrottle = 0f; dg.overrideSteer = 0f; return true; }
+        float err = DgErr(dg, at);
+        dg.overrideSteer = Mathf.Clamp(err / 25f, -1f, 1f);
+        dg.overrideThrottle = Mathf.Abs(err) < 20f ? Mathf.Clamp(d.magnitude / 0.8f, 0.35f, 1f) : 0f;
+        return false;
+    }
+    static bool DgFace(Dingo dg, float yawDeg)
+    {
+        float err = Mathf.DeltaAngle(dg.transform.eulerAngles.y, yawDeg);
+        dg.overrideThrottle = 0f;
+        dg.overrideSteer = Mathf.Abs(err) < 2.5f ? 0f : Mathf.Clamp(err / 20f, -1f, 1f);
+        return Mathf.Abs(err) < 2.5f;
+    }
+    // stuck: told to drive for 6 s and it hasn't got anywhere
+    static bool DgStuck(Dingo dg, float dt)
+    {
+        // over each second it is told to drive, it must get at least 4 cm (a bogged push still does)
+        bool trying = Mathf.Abs(dg.overrideThrottle) > 0.1f;
+        if (!trying) { dgWindow = 0f; dgLastPos = dg.transform.position; return false; }
+        dgWindow += dt;
+        if (dgWindow < 1f) return false;
+        float moved = Vector3.Distance(dg.transform.position, dgLastPos);
+        dgLastPos = dg.transform.position; dgWindow = 0f;
+        if (moved < 0.04f) dgStuckFor += 1f; else dgStuckFor = 0f;
+        return dgStuckFor >= 6f;
+    }
+    static long DgVolume(VoxelWorld w) { return w.SolidCount + w.LooseTotal() - w.StartTotal; }
+    // a still from a set spot (the follow camera is put back after)
+    static void DgShot(string file, Vector3 from, Vector3 at)
+    {
+        var cam = Camera.main; if (cam == null || dgFilming) return;
+        var f = cam.GetComponent<FollowCamera>();
+        Vector3 p0 = cam.transform.position; Quaternion r0 = cam.transform.rotation;
+        cam.transform.SetPositionAndRotation(from, Quaternion.LookRotation(at - from));
+        TestCapture(file);
+        cam.transform.SetPositionAndRotation(p0, r0);
+    }
+
+    static void DingoTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > (dgFilming ? 900 : 480)) { Debug.LogError("BULLDOZER_DINGO_FAILED timed out in phase " + dgPhase + " " + dgLog); DingoFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance; var dg = Dingo.Instance;
+        var cam = Camera.main;
+        if (w == null || wk == null || cart == null || money == null || up == null || dg == null || cam == null || cart.Length <= 0f) return;
+        if (dgFilming) { if (Time.frameCount == clipLastGameFrame) return; clipLastGameFrame = Time.frameCount; }
+        float t = Time.time, k = t - dgPhaseStart, dt = Time.deltaTime;
+        string title = "", cap = "";
+        Vector3 inside = new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + 1.6f);    // just in the tunnel
+        Vector3 mouth = new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ - 1.2f);
+        if (dgPhase == 0)
+        {
+            Application.runInBackground = true;                              // (play mode otherwise stalls when the window loses focus)
+            if (t < 1.5f) return;
+            if (dgFilming)
+            {
+                chView0 = GameViewIndex();
+                GameViewSize(1920, 1080);
+                Time.captureFramerate = 30;
+            }
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            dg.Park();
+            dgLog += " parkedAt" + dg.transform.position.ToString("F1") + " overlap" + dg.OverlapNow;
+            { Vector3 c = dg.transform.position; DgShot("dingo_parked.png", c + dg.transform.forward * 2.6f + dg.transform.right * 1.9f + Vector3.up * 1.5f, c + Vector3.up * 0.7f);
+              DgShot("dingo_parked_back.png", c - dg.transform.forward * 2.6f - dg.transform.right * 1.5f + Vector3.up * 1.9f, c + Vector3.up * 0.8f); }
+            wk.Teleport(dg.transform.position - dg.transform.right * 1.2f, dg.transform.eulerAngles.y);
+            DCheck("lockedUntilBought", Dingo.TryBoard(wk) && !dg.Driven);
+            DCheck("treeLockedBeforeShovel6", up.CantBuy(Upgrades.Branch.Dingo) == "Needs Shovel 6");
+            up.SetLevel(Upgrades.Branch.Shovel, 6);
+            up.SetLevel(Upgrades.Branch.Pick, 5);
+            up.SetLevel(Upgrades.Branch.Cart, 2);                          // (1,500 L: by the time he can buy a Dingo he'd have it)
+            dgCartPark = cart.Along;
+            dgVol0 = DgVolume(w);
+            // First the shovel, to compare: Pick 5 and Shovel 6 at the same cave-in, the cart pushed right up behind him
+            // (the shovel's best case: every throw goes straight in, no trips).
+            float deepZ = VoxelWorld.PortalZ + VoxelWorld.TunnelLength - 1.2f;   // where the rails start, deep in the tunnel
+            cart.SetAlong(deepZ - (VoxelWorld.PortalZ + 0.6f));
+            wk.Teleport(new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + 2.2f), 0f);
+            wk.SetTool(1); wk.Look(26f);
+            wk.overrideUse = true; wk.overrideWalk = 0f;
+            dgCartAt0 = w.CartVoxels; dgAimNext = t;
+            DgNext(10, t);
+            return;
+        }
+        if (dgPhase == 10)
+        {
+            title = "First, by hand:  Pick 5 and Shovel 6";
+            cap = "The same cave-in, the cart right behind him.  In the cart: " + ((w.CartVoxels - dgCartAt0) * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L";
+            if (t >= dgAimNext)
+            {
+                dgAimNext = t + 0.3f;
+                string ai = wk.AimInfo;
+                bool reach = ai.Contains("inReach=True"), rock = ai.Contains("mat=3 ");
+                wk.overrideWalk = reach ? 0f : 0.5f;
+                if (rock && wk.Tool == 1 && w.ShovelVoxels < VoxelWorld.ClodVoxels) wk.SetTool(0);     // a boulder: the pick
+                else if (!rock && wk.Tool == 0) wk.SetTool(1);
+            }
+            float since = t - dgPhaseStart;
+            if (since > 45f || !cart.HasRoom)
+            {
+                wk.overrideUse = false; wk.overrideWalk = 0f;
+                float litres = (w.CartVoxels - dgCartAt0) * VoxelWorld.VoxelVolume * 1000f;
+                dgShovelLpm = litres / since * 60f;
+                dgLog += " shovel6=" + dgShovelLpm.ToString("F0") + "L/min(" + litres.ToString("F0") + "L in " + since.ToString("F0") + "s)";
+                cart.SetAlong(cart.EndLimit);                                      // (emptied at the dump, so the Dingo starts with an empty cart)
+                cart.Tip();
+                DgNext(11, t);
+            }
+            return;
+        }
+        if (dgPhase == 11)
+        {
+            if (cart.Tipping || k < 4f) return;
+            cart.SetAlong(dgCartPark + 4.5f);                                     // the cart parked out of the mine door, so the Dingo can get in
+            dgCartDeep = cart.transform.position.z + 0.85f;
+            wk.SetTool(1);
+            wk.Teleport(dg.transform.position - dg.transform.right * 1.2f, dg.transform.eulerAngles.y);
+            money.TestGrant(2000, 200);
+            long c0 = money.Coins; int g0 = money.GoldStore;
+            DCheck("bought", up.Buy(Upgrades.Branch.Dingo) && up.HasDingo && dg.owned);
+            dgLog += " paid=" + (c0 - money.Coins) + "c+" + ((g0 - money.GoldStore) * VoxelWorld.VoxelVolume * 1000f).ToString("F1") + "Lgold";
+            DCheck("sellBackNeedsDingoGone", up.CantSellBack(Upgrades.Branch.Shovel) != null);
+            DCheck("getsOn", Dingo.TryBoard(wk) && dg.Driven && Dingo.Working);
+            DCheck("quickOn", dg.BoardSeconds < 0.5f);
+            dg.useOverride = true;
+            dgLastPos = dg.transform.position;
+            DgNext(1, t);
+            return;
+        }
+        if (dgPhase >= 1 && dgPhase <= 6 && dg.Driven && DgStuck(dg, dt)) { DCheck("stuck_phase" + dgPhase + "_way" + dgWay + "_at" + dg.transform.position.ToString("F2") + "_yaw" + dg.transform.eulerAngles.y.ToString("F0") + "_arm" + dg.ArmRaise.ToString("F0") + "_ov" + dg.OverlapWhy(dg.transform.eulerAngles.y).Replace(" ", "|") + "_" + dg.LastBlock + "_cartZ" + cart.transform.position.z.ToString("F2") + "_deep" + dgCartDeep.ToString("F2") + "_th" + dg.overrideThrottle.ToString("F1"), false); DgNext(9, t); }
+        if (dgPhase == 1)
+        {
+            // drive to the mine door, then in, arms a little up so the bucket clears the ground
+            title = "The Dingo: bought, and on";
+            cap = k < 3f ? "From the upgrades, after Shovel 6:  1,000 coins and 12 L of gold.  Enter gets on" : "W / S drive, A / D turn on the spot.  Into the mine";
+            DgArms(dg, 14f); DgBucket(dg, 0f);
+            Vector3 at = dgWay == 0 ? mouth : inside;
+            if (DgGoTo(dg, at, 0.35f)) dgWay++;
+            if (dgWay >= 2) { dg.overrideThrottle = 0f; DgNext(2, t); }
+            if (k > 40f) { DCheck("reachedMine", false); DgNext(9, t); }
+        }
+        else if (dgPhase == 2)
+        {
+            // face in, lower the bucket flat on the floor, drive into the cave-in until it is full
+            title = "Digging the cave-in (load " + (dgLoads + 1) + ")";
+            cap = "Bucket low and flat, drive in:  " + dg.Litres.ToString("F0") + " L  (" + Mathf.RoundToInt(dg.Fill01 * 100f) + "%)" + (dg.Bog < 0.75f ? "   labouring" : "");
+            if (k > 60f) { DCheck("digTimedOut", false); DgNext(9, t); return; }
+            DgBucket(dg, 0f);
+            if (!dgDigging)
+            {
+                // get ready: face in, bucket flat on the floor
+                bool faced = DgFace(dg, 0f);
+                if (!faced) return;
+                DgArms(dg, 0f);
+                if (dg.ArmRaise > 1f) return;
+                dgDigging = true; dgDigStart = t; dgRock0 = dg.RockHits; dgBackUntil = -1f;
+                if (dgFirstDig < 0f) dgFirstDig = t;
+            }
+            DgArms(dg, 0f);
+            // a solid boulder in the way (it clanks off it): back off a little and try the next lane over, as a player would
+            if (dg.RockHits - dgRock0 >= 3) { dgLane = dgLane == 0 ? 1 : dgLane == 1 ? -1 : 0; dgRock0 = dg.RockHits; dgBackUntil = t + 0.9f; dgLog += " rockInTheWay>lane" + dgLane; }
+            float laneX = VoxelWorld.PortalX + dgLane * 0.85f;
+            float steer = Mathf.Clamp((laneX - dg.transform.position.x) * 1.2f + Mathf.DeltaAngle(dg.transform.eulerAngles.y, 0f) / 20f, -1f, 1f);
+            dg.overrideSteer = steer * 0.6f;
+            dg.overrideThrottle = t < dgBackUntil ? -0.8f : 1f;
+            if (dgLoads == 0 && dg.Fill01 > 0.5f && dgLog.IndexOf("digPic") < 0) { dgLog += " digPic"; TestCapture("dingo_dig.png"); Vector3 c = dg.transform.position; DgShot("dingo_dig_side.png", c + dg.transform.right * 1.3f - dg.transform.forward * 0.6f + Vector3.up * 1.6f, c + dg.transform.forward * 1.2f + Vector3.up * 0.4f); }
+            if (dg.Fill01 >= 0.95f || t - dgDigStart > 25f)
+            {
+                dg.overrideThrottle = 0f; dg.overrideSteer = 0f;
+                dgDigLitres += dg.Litres; dgDigSeconds += t - dgDigStart;
+                if (dgLoads == 0) dgLog += " firstLoad=" + dg.Litres.ToString("F0") + "L/" + (t - dgDigStart).ToString("F1") + "s";
+                dgWay = 0; dgDigging = false;
+                DgNext(3, t);
+            }
+        }
+        else if (dgPhase == 3)
+        {
+            // curl back a little, lift, back out of the tunnel, turn round, go up to the deep end of the cart
+            title = "Out to the cart";
+            cap = "Curl back, arms up:  the bucket stays level, nothing spills.  " + dg.Litres.ToString("F0") + " L on board";
+            DgBucket(dg, -12f);
+            if (dgWay == 0)
+            {
+                DgArms(dg, 18f);
+                dg.overrideSteer = 0f;
+                dg.overrideThrottle = dg.transform.position.z > VoxelWorld.PortalZ - 1.4f ? -1f : 0f;
+                if (dg.overrideThrottle == 0f) dgWay = 1;
+            }
+            else if (dgWay == 1) { DgArms(dg, 30f); if (DgFace(dg, 180f)) dgWay = 2; }
+            else
+            {
+                DgArms(dg, 70f);
+                Vector3 stop = new Vector3(VoxelWorld.PortalX, 0f, dgCartDeep + 0.74f);
+                bool there = dg.transform.position.z < stop.z + 0.08f;
+                if (!there) DgGoTo(dg, stop, 0.1f); else { dg.overrideThrottle = 0f; dg.overrideSteer = 0f; }
+                if (there && dg.ArmRaise > 68.5f && DgFace(dg, 180f))
+                {
+                    dgCartAtTip = w.CartVoxels; dgBucketAtTip = w.BucketVoxels;
+                    DgNext(4, t);
+                }
+            }
+            if (k > 45f) { DCheck("reachedCart", false); DgNext(9, t); }
+        }
+        else if (dgPhase == 4)
+        {
+            title = "Tipping into the cart";
+            cap = k < 3f ? "Tip (E):  it pours out over the tub.  With the bucket up the cart catches a little wider"
+                         : "Tap E again to shake out the last of it.  Cart: " + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L";
+            dg.overrideThrottle = 0f; dg.overrideSteer = 0f; dg.overrideArms = 0f;
+            DgBucket(dg, k < 2.4f ? 60f : 78f);                               // tipped well over the tub, then right over to empty it
+            if (dgLoads == 0 && k > 1.2f && dgLog.IndexOf("tipPic") < 0) { dgLog += " tipPic"; TestCapture("dingo_tip.png"); Vector3 c = dg.transform.position; DgShot("dingo_tip_side.png", c + dg.transform.right * 3.2f + Vector3.up * 2.2f, c + dg.transform.forward * 1.2f + Vector3.up * 1.2f); }
+            if (k > 2.6f && k < 2.6f + dt * 1.5f) dg.TapTip();
+            if (k > 3.4f && k < 3.4f + dt * 1.5f) dg.TapTip();
+            if (k > 5.5f)
+            {
+                int got = w.CartVoxels - dgCartAtTip, carried = dgBucketAtTip - w.BucketVoxels;
+                dgCaught += got; dgCarried += carried; dgLastTip = t;
+                dgLoads++;
+                dgLog += " load" + dgLoads + "=" + (carried * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L>cart" + (got * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L";
+                if (dgLoads == 1) DCheck("bucketEmptied", w.BucketVoxels < VoxelWorld.ClodVoxels * 2);
+                dgWay = 0;
+                DgNext(dgLoads < 3 ? 5 : 6, t);
+            }
+        }
+        else if (dgPhase == 5)
+        {
+            // back for another: bucket level, back off the cart, turn round and drive back in
+            title = "Back for another";
+            cap = "Three loads in this run.  About " + Mathf.RoundToInt(1000f / Dingo.BucketLitres) + " fill the cart";
+            DgBucket(dg, 0f);
+            if (dgWay == 0) { DgArms(dg, 30f); dg.overrideThrottle = dg.transform.position.z < dgCartDeep + 1.6f ? -0.7f : 0f; dg.overrideSteer = 0f; if (dg.overrideThrottle == 0f) dgWay = 1; }
+            else if (dgWay == 1) { DgArms(dg, 14f); if (DgFace(dg, 0f)) dgWay = 2; }
+            else if (DgGoTo(dg, inside, 0.35f)) { DgNext(2, t); }
+            if (k > 45f) { DCheck("backIn", false); DgNext(9, t); }
+        }
+        else if (dgPhase == 6)
+        {
+            // push the cart along the rails: bucket level and low, so it meets the cart's end, and drive on
+            title = "Pushing the cart";
+            cap = "Bump it and drive on:  the Dingo pushes the cart along the rails, no getting off";
+            DgBucket(dg, 0f);
+            if (dgWay == 0) { DgArms(dg, 30f); dg.overrideSteer = 0f; dg.overrideThrottle = dg.transform.position.z < dgCartDeep + 1.5f ? -0.6f : 0f; if (dg.overrideThrottle == 0f) dgWay = 1; }   // off the cart first
+            else if (dgWay == 1) { dgAlong0 = cart.Along; DgArms(dg, 6f); if (Mathf.Abs(dg.ArmRaise - 6f) < 1.3f) { dgWay = 2; dgPhaseStart = t; } }
+            else
+            {
+                dg.overrideArms = 0f;
+                dg.overrideSteer = Mathf.Clamp((dg.transform.position.x - VoxelWorld.PortalX) * 0.8f + Mathf.DeltaAngle(dg.transform.eulerAngles.y, 180f) / 20f, -1f, 1f) * 0.6f;
+                dg.overrideThrottle = 0.8f;
+                if (k > 7f)
+                {
+                    dg.overrideThrottle = 0f;
+                    float pushed = cart.Along - dgAlong0;
+                    dgLog += " cartPushed=" + pushed.ToString("F2") + "m" + (cart.AtDump ? "(to the dump)" : "");
+                    DCheck("pushesCart", pushed > 1.5f || (pushed > 0.5f && cart.AtDump));
+                    DgNext(7, t);
+                }
+            }
+        }
+        else if (dgPhase == 7)
+        {
+            // solid rock: the bare rock patch on the floor.  Bucket down below the tracks, drive in: it stops with a clank.
+            title = "Solid rock stops it";
+            cap = "The edge won't cut solid rock:  a clank, sparks and a kick back.  That still needs the jackhammer";
+            if (k < dt * 1.5f) { dg.Place(new Vector3(VoxelWorld.RockPadX - 3f, 0f, VoxelWorld.RockPadZ), 90f); dgWay = 0; }
+            DgBucket(dg, 6f);
+            DgArms(dg, -6f);
+            dg.overrideSteer = 0f;
+            dg.overrideThrottle = k > 1.2f ? 1f : 0f;
+            if (k > 6f)
+            {
+                dg.overrideThrottle = 0f; dg.overrideArms = 0f; dg.overrideBucket = 0f;
+                dgLog += " rockHits=" + dg.RockHits;
+                DCheck("rockStopsIt", dg.RockHits > 0);
+                DgNext(8, t);
+            }
+        }
+        else if (dgPhase == 8)
+        {
+            title = "Off again";
+            cap = "Enter gets off.  It stays where you leave it";
+            if (k > 1.5f && dg.Driven)
+            {
+                Dingo.TryBoard(wk);
+                DCheck("getsOff", !dg.Driven && !Dingo.Working && w.MaterialAt(wk.transform.position + Vector3.up * 1f) == VoxelWorld.Air);
+            }
+            if (k > 4f) DgNext(9, t);
+        }
+        else if (dgPhase == 9)
+        {
+            dg.overrideThrottle = dg.overrideSteer = dg.overrideArms = dg.overrideBucket = 0f;
+            if (k < 2.5f) return;                                             // let the last clods settle
+            long vol = DgVolume(w);
+            long solid = w.CountSolid();
+            dgLog += " loads=" + dgLoads + " dugL=" + dgDigLitres.ToString("F0") + " digSec=" + dgDigSeconds.ToString("F1")
+                   + " carriedL=" + (dgCarried * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " caughtL=" + (dgCaught * VoxelWorld.VoxelVolume * 1000f).ToString("F0")
+                   + " volumeChange=" + (vol - dgVol0) + " solidCounted=" + (solid == w.SolidCount) + " lost=" + w.TotalLost;
+            if (dgFirstDig >= 0f && dgLastTip > dgFirstDig)
+            {
+                float lpm = dgCaught * VoxelWorld.VoxelVolume * 1000f / (dgLastTip - dgFirstDig) * 60f;
+                dgLog += " dingo=" + lpm.ToString("F0") + "L/min(into the cart, first dig to last tip, trips included)";
+                dgLog += " faster=" + (lpm > dgShovelLpm ? "Dingo x" + (lpm / Mathf.Max(1f, dgShovelLpm)).ToString("F1") : "SHOVEL x" + (dgShovelLpm / Mathf.Max(1f, lpm)).ToString("F1"));
+            }
+            DCheck("threeLoads", dgLoads >= 3);
+            DCheck("loadsNearlyFull", dgLoads > 0 && dgCarried / (float)dgLoads > Dingo.Capacity * 0.7f);
+            DCheck("cartCaughtMost", dgCarried > 0 && dgCaught >= dgCarried * 0.8f);
+            DCheck("volumeExact", vol == dgVol0 && solid == w.SolidCount && w.TotalLost == 0);
+            if (dgFilming) { WriteOverlay(); Debug.Log("BULLDOZER_DINGO_CLIP_OK frames=" + chFrame + dgLog); DingoFinish(0); return; }
+            Debug.Log((dgOk ? "BULLDOZER_DINGO_RESULT" : "BULLDOZER_DINGO_FAILED") + dgLog);
+            DingoFinish(dgOk ? 0 : 1);
+            return;
+        }
+        if (dgFilming)
+        {
+            float a0 = chFrame / 30f, b0 = (chFrame + 1) / 30f;
+            string at = AssTime(a0) + "," + AssTime(b0);
+            if (title.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(title));
+            if (cap.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(cap));
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/clip/frame_" + chFrame.ToString("D4") + ".png");
+            chFrame++;
+        }
+    }
+
     // Save and load:  -executeMethod BulldozerBuilder.SaveTest
     // Digs, saves, digs more and changes things, loads, and checks everything came back exactly as saved.
     // Prints BULLDOZER_SAVE_RESULT.

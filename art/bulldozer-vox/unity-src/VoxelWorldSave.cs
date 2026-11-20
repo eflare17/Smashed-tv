@@ -25,7 +25,7 @@ public partial class VoxelWorld
     {
         long sum = 0;
         for (int i = 0; i < bladeLoad.Length; i++) sum += bladeLoad[i] + shovelLoad[i] + cartLoad[i] + packLoad[i];
-        sum += SoldVoxels + SpilledVoxels;
+        sum += SoldVoxels + SpilledVoxels + BucketVoxels;    // (+ the Dingo's bucket)
         int n = cCount[0];
         for (int i = 0; i < n; i++) sum += cCnt[i];
         return sum;
@@ -54,6 +54,7 @@ public partial class VoxelWorld
 
     public void WriteSave(BinaryWriter w)
     {
+        if (BucketVoxels > 0) BucketEmptyAll(BucketMouth, Vector3.zero);   // the Dingo's bucket isn't saved: its dirt goes out as clods, which are
         w.Write(SaveVersion);
         w.Write(NX); w.Write(NY); w.Write(NZ);
         w.Write(SolidCount); w.Write(StartTotal);
@@ -153,6 +154,7 @@ public partial class VoxelWorld
         // where nothing was touched, e.g. where the mountain road now starts)
         new TopFromVoxelsJob { vox = vox, top = top, blocks = blocks }.Schedule(NX * NZ, 512).Complete();
         ReadInts(r, bladeLoad); ReadInts(r, shovelLoad); ReadInts(r, cartLoad);
+        ForgetBucket();                                          // (the Dingo's bucket isn't saved: it was emptied before saving)
         for (int i = 0; i < packLoad.Length; i++) packLoad[i] = 0;
         if (version >= 3) ReadInts(r, packLoad);                 // older saves had no backpack: it comes back empty
         SoldVoxels = version >= 4 ? r.ReadInt32() : 0;
@@ -184,7 +186,7 @@ public partial class VoxelWorld
         for (int i = 0; i < n; i++) inFlight += cCnt[i];
         ClodVoxelsInFlight = inFlight;
         BermVoxels = inFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels + BucketVoxels;
 
         // redraw what changed, and the grass
         for (int c = 0; c < dirty.Length; c++) if (redraw[c]) dirty[c] |= 1;

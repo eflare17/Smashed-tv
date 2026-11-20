@@ -191,6 +191,7 @@ public class SiteProps : MonoBehaviour
         if (SaveGame.Instance == null) new GameObject("Save game").AddComponent<SaveGame>();
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
         if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
+        if (Dingo.Instance == null) new GameObject("Dingo").AddComponent<Dingo>();           // the mini loader (an upgrade), parked by the mine
         if (PauseMenu.Instance == null) new GameObject("Pause menu").AddComponent<PauseMenu>();   // Esc: resume, settings, quit
         if (Hud.Instance == null) new GameObject("Hud").AddComponent<Hud>();                     // H help, F3 debug
         if (GameAudio.Instance == null) new GameObject("Sound").AddComponent<GameAudio>();         // everything you hear

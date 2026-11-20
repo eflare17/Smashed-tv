@@ -171,7 +171,7 @@ public partial class VoxelWorld
         BladeLoadVoxels = result[3];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels + BucketVoxels;   // (+ BucketVoxels: the Dingo)
         result.Dispose();
         Toc(1);
     }

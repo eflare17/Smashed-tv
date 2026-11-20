@@ -7,7 +7,9 @@
 // Three columns:
 //   Breaking      Pick 1-5, then the Jackhammer (needs coins and gold), Jackhammer 2-5.  (One branch: levels 6-10
 //                 of the pick are the jackhammer, so saves didn't need to change.)
-//   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8
+//   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8; and beside it the
+//                 Dingo (also needs Shovel 6, coins and gold): the mini loader, Dingo.cs.  (Its own branch, 4, added
+//                 last, so older saves load with it not bought.)
 //   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster); a bigger cart and
 //                 the Automatic cart are coming.  (Levels 3-5 of the cart are the motor cart, as with the jackhammer.)
 //
@@ -21,8 +23,8 @@ public class Upgrades : MonoBehaviour
 {
     public static Upgrades Instance { get; private set; }
 
-    public enum Branch { Pick = 0, Shovel = 1, Backpack = 2, Cart = 3 }
-    const int BranchCount = 4;
+    public enum Branch { Pick = 0, Shovel = 1, Backpack = 2, Cart = 3, Dingo = 4 }
+    const int BranchCount = 5;
 
     struct Step
     {
@@ -73,6 +75,9 @@ public class Upgrades : MonoBehaviour
             new Step("Motor cart 2", "Faster: 4 m/s", 400),
             new Step("Motor cart 3", "Fastest: 5 m/s", 640),
         },
+        new[] {   // the Dingo: one step, the machine itself
+            new Step("Dingo", "Unlock: mini loader that fits the tunnel.  Enter gets on.  " + Dingo.BucketLitres.ToString("F0") + " L bucket", 1000, 12f),
+        },
     };
     // shown after a branch, not buyable yet
     static readonly string[][] Coming =
@@ -80,6 +85,7 @@ public class Upgrades : MonoBehaviour
         new string[0],
         new string[0],
         new[] { "Bigger cart  (coming)", "Automatic cart  (coming)" },
+        new string[0],
         new string[0],
     };
 
@@ -96,7 +102,7 @@ public class Upgrades : MonoBehaviour
     static readonly float[] MotorSpeed = { 3f, 4f, 5f };        // metres a second, Motor cart 1-3 (pushing is 2)
     const float SuckBase = 130f;                                // voxels a second at backpack level 1 (about 32 litres)
 
-    readonly int[] level = { 1, 1, 0, 1 };
+    readonly int[] level = { 1, 1, 0, 1, 0 };
     readonly string[][] boughtBy = new string[BranchCount][];
     public bool Open { get; private set; }
     string note = ""; float noteTimer;
@@ -105,6 +111,10 @@ public class Upgrades : MonoBehaviour
     public int MaxLevel(Branch b) { return Steps[(int)b].Length; }
     public bool HasBackpack { get { return level[(int)Branch.Backpack] > 0; } }
     public bool HasMotorCart { get { return level[(int)Branch.Cart] >= MotorCartLevel; } }
+    public bool HasDingo { get { return level[(int)Branch.Dingo] > 0; } }
+    // the branches whose first step is bought (not given at the start), and the ones that need Shovel 6
+    static bool StartsUnowned(int b) { return b == (int)Branch.Backpack || b == (int)Branch.Dingo; }
+    static bool NeedsShovel6(Branch b) { return b == Branch.Backpack || b == Branch.Dingo; }
 
     void Awake()
     {
@@ -121,7 +131,7 @@ public class Upgrades : MonoBehaviour
     {
         int i = (int)b, next = level[i];                         // index of the next step
         if (next >= Steps[i].Length) return "Maxed";
-        if (b == Branch.Backpack && level[(int)Branch.Shovel] < MaxLevel(Branch.Shovel)) return "Needs Shovel 6";
+        if (NeedsShovel6(b) && level[(int)Branch.Shovel] < MaxLevel(Branch.Shovel)) return "Needs Shovel 6";
         var money = Money.Instance;
         if (money == null) return "No money yet";
         var s = Steps[i][next];
@@ -151,9 +161,10 @@ public class Upgrades : MonoBehaviour
     public string CantSellBack(Branch b)
     {
         int i = (int)b, have = level[i];
-        int first = b == Branch.Backpack ? 1 : 2;                // the starting level can't be sold
+        int first = StartsUnowned((int)b) ? 1 : 2;               // the starting level can't be sold
         if (have < first) return "Nothing to sell back";
         if (b == Branch.Shovel && have == MaxLevel(Branch.Shovel) && HasBackpack) return "The backpack needs Shovel 6";
+        if (b == Branch.Shovel && have == MaxLevel(Branch.Shovel) && HasDingo) return "The Dingo needs Shovel 6";
         return null;
     }
 
@@ -198,6 +209,7 @@ public class Upgrades : MonoBehaviour
             if (cart.spec.motor) cart.spec.motorSpeed = MotorSpeed[c - MotorCartLevel];
             else if (wk != null && wk.RidingCart) wk.GetOffCart();       // sold back while riding it
         }
+        if (Dingo.Instance != null) Dingo.Instance.SetOwned(HasDingo);
     }
 
     void Note(string text) { note = text; noteTimer = 3f; }
@@ -221,7 +233,7 @@ public class Upgrades : MonoBehaviour
             var names = new string[lv];
             for (int k = 0; k < lv; k++) names[k] = r.ReadString();
             if (b >= BranchCount) continue;
-            level[b] = Mathf.Clamp(lv, b == (int)Branch.Backpack ? 0 : 1, Steps[b].Length);
+            level[b] = Mathf.Clamp(lv, StartsUnowned(b) ? 0 : 1, Steps[b].Length);
             for (int k = 0; k < Steps[b].Length; k++) boughtBy[b][k] = k < names.Length && names[k].Length > 0 ? names[k] : null;
         }
         Apply();
@@ -230,7 +242,7 @@ public class Upgrades : MonoBehaviour
     /// The tree as it is at the start of a new game (and for a save from before upgrades).
     public void Reset()
     {
-        level[0] = 1; level[1] = 1; level[2] = 0; level[3] = 1;
+        level[0] = 1; level[1] = 1; level[2] = 0; level[3] = 1; level[4] = 0;
         for (int b = 0; b < BranchCount; b++) System.Array.Clear(boughtBy[b], 0, boughtBy[b].Length);
         Apply();
     }
@@ -312,6 +324,7 @@ public class Upgrades : MonoBehaviour
                     for (int k = 0; k < Coming[2].Length; k++)
                         list.Add(new Node { branch = -1, step = k, col = c, row = Steps[b].Length + k, coming = Coming[2][k].Replace("  (coming)", "") });
             }
+            list.Add(new Node { branch = (int)Branch.Dingo, step = 0, col = 1, row = Steps[1].Length });   // the Dingo, under Shovel 6
             nodes = list.ToArray();
             treeRows = 0;
             foreach (var n in nodes) treeRows = Mathf.Max(treeRows, n.row + 1);
@@ -344,7 +357,7 @@ public class Upgrades : MonoBehaviour
         int have = level[n.branch];
         if (n.step < have) return NodeState.Owned;
         if (n.step > have) return NodeState.Locked;
-        if (n.branch == (int)Branch.Backpack && level[(int)Branch.Shovel] < MaxLevel(Branch.Shovel)) return NodeState.Locked;
+        if (NeedsShovel6((Branch)n.branch) && level[(int)Branch.Shovel] < MaxLevel(Branch.Shovel)) return NodeState.Locked;
         return CantBuy((Branch)n.branch) == null ? NodeState.CanBuy : NodeState.TooDear;
     }
 
@@ -392,7 +405,7 @@ public class Upgrades : MonoBehaviour
     {
         if (n.branch < 0) return "Coming later";
         if (n.step > level[n.branch]) return "Needs " + Steps[n.branch][n.step - 1].name + " first";
-        if (n.branch == (int)Branch.Backpack) return "Needs Shovel 6 first";
+        if (NeedsShovel6((Branch)n.branch)) return "Needs Shovel 6 first";
         return "";
     }
 
@@ -576,11 +589,18 @@ public class Upgrades : MonoBehaviour
             Color c = st == NodeState.Owned ? Lit : st == NodeState.CanBuy ? Gold * 0.85f : st == NodeState.Coming ? new Color(0.25f, 0.25f, 0.27f) : Dim;
             Ui.Fill(new Rect(centre[i].x - LW / 2f, centre[i - 1].y, LW, centre[i].y - centre[i - 1].y), c);
         }
-        int shovel6 = -1, pack1 = -1;
+        int shovel6 = -1, pack1 = -1, dingo = -1;
         for (int i = 0; i < nodeList.Length; i++)
         {
             if (nodeList[i].branch == (int)Branch.Shovel && nodeList[i].step == Steps[1].Length - 1) shovel6 = i;
             if (nodeList[i].branch == (int)Branch.Backpack && nodeList[i].step == 0) pack1 = i;
+            if (nodeList[i].branch == (int)Branch.Dingo) dingo = i;
+        }
+        if (shovel6 >= 0 && dingo >= 0)                       // the Dingo hangs straight down off Shovel 6
+        {
+            var st = StateOf(dingo);
+            Color c = st == NodeState.Owned ? Lit : st == NodeState.CanBuy ? Gold * 0.85f : StateOf(shovel6) == NodeState.Owned ? Lit * 0.7f : Dim;
+            Ui.Fill(new Rect(centre[dingo].x - LW / 2f, centre[shovel6].y, LW, centre[dingo].y - centre[shovel6].y), c);
         }
         if (shovel6 >= 0 && pack1 >= 0)
         {
@@ -650,7 +670,7 @@ public class Upgrades : MonoBehaviour
             // what it needs, each with a tick or a cross
             var parts = new System.Collections.Generic.List<string>();
             if (n.step > 0) parts.Add(Need(Steps[n.branch][n.step - 1].name, level[n.branch] >= n.step));
-            if (b == Branch.Backpack && n.step == 0) parts.Add(Need("Shovel 6", level[(int)Branch.Shovel] >= MaxLevel(Branch.Shovel)));
+            if (NeedsShovel6(b) && n.step == 0) parts.Add(Need("Shovel 6", level[(int)Branch.Shovel] >= MaxLevel(Branch.Shovel)));
             if (money != null)
             {
                 parts.Add(Need(s.coins.ToString("N0") + " coins", money.Coins >= s.coins));
