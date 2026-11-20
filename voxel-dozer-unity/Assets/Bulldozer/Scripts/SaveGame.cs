@@ -66,6 +66,9 @@ public class SaveGame : MonoBehaviour
                 var upgrades = Upgrades.Instance;
                 w.Write(upgrades != null);
                 if (upgrades != null) upgrades.WriteState(w);
+                var road = MountainRoadJob.Instance;
+                w.Write(road != null);
+                if (road != null) road.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -121,6 +124,11 @@ public class SaveGame : MonoBehaviour
                 try { hasUpgrades = hasMoney && r.ReadBoolean(); } catch (EndOfStreamException) { hasUpgrades = false; }   // saved before upgrades
                 if (hasUpgrades) { if (upgrades != null) upgrades.ReadState(r); }
                 else if (upgrades != null) upgrades.Reset();
+                var road = MountainRoadJob.Instance;
+                bool hasRoad;
+                try { hasRoad = hasUpgrades && r.ReadBoolean(); } catch (EndOfStreamException) { hasRoad = false; }   // saved before the mountain road
+                if (hasRoad) { if (road != null) road.ReadState(r); }
+                else if (road != null) road.Clear();
             }
         }
         catch (System.Exception e)

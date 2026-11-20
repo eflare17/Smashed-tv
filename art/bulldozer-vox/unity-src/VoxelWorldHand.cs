@@ -51,7 +51,7 @@ public partial class VoxelWorld
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new HandJob
         {
-            vox = vox, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
             centre = (at - origin) / Voxel, radius = radius / Voxel, kick = kick, origin = origin, seed = frame, mode = 2, most = most,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
@@ -206,7 +206,7 @@ public partial class VoxelWorld
     {
         int x, y, z;
         if (!Cell(p, out x, out y, out z)) return p.y < 0f ? Soil : Air;
-        return vox[y + NY * (x + NX * z)];
+        return VoxelAt(vox, blocks, top, x, y, z);
     }
 
     /// The height of the surface a person at p would stand on: the first solid ground at or below about knee
@@ -221,12 +221,16 @@ public partial class VoxelWorld
         }
         int col = x + NX * z;
         if (y >= top[col]) return origin.y + top[col] * Voxel;
-        if (vox[y + NY * col] != Air)
+        int lo, hi;
+        int cb = ColBase(blocks, x, z, out lo, out hi);
+        if (cb < 0) return origin.y + top[col] * Voxel;
+        if (y < lo) y = lo;
+        if (vox[cb + y] != Air)
         {
-            for (int k = 0; k < 14 && y < NY - 1 && vox[y + NY * col] != Air; k++) y++;
+            for (int k = 0; k < 14 && y < hi - 1 && vox[cb + y] != Air; k++) y++;
             return origin.y + y * Voxel;
         }
-        while (y > 0 && vox[y - 1 + NY * col] == Air) y--;
+        while (y > lo && vox[cb + y - 1] == Air) y--;
         return origin.y + y * Voxel;
     }
 
@@ -268,7 +272,7 @@ public partial class VoxelWorld
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new HandJob
         {
-            vox = vox, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
             centre = (at - origin) / Voxel, radius = radius / Voxel, kick = kick, origin = origin, seed = frame, mode = 0, most = 0, shatter = shatter, fullRock = fullRock,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
@@ -288,7 +292,7 @@ public partial class VoxelWorld
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new HandJob
         {
-            vox = vox, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = shovelLoad, result = result,
             centre = (at - origin) / Voxel, radius = radius / Voxel, kick = Vector3.zero, origin = origin, seed = frame, mode = 1, most = most,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
@@ -331,6 +335,7 @@ public partial class VoxelWorld
     struct HandJob : IJob
     {
         public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty, grass;
         public NativeArray<int> tally, shovel, result;
@@ -370,19 +375,22 @@ public partial class VoxelWorld
                 for (int x = a.x; x <= b.x; x++)
                 {
                     int col = x + NX * z;
+                    int lo, hi;
+                    int cb = ColBase(blocks, x, z, out lo, out hi);
+                    if (cb < 0) continue;
                     int highest = -1;
-                    for (int y = b.y; y >= a.y; y--)                      // from the top down, so a shovel takes the top of a heap first
+                    for (int y = math.min(b.y, hi - 2); y >= math.max(a.y, lo + 1); y--)   // from the top down, so a shovel takes the top of a heap first
                     {
                         float d2 = math.distancesq(new float3(x, y, z) + 0.5f, centre);
                         if (d2 > radius * radius) continue;
-                        byte m = vox[y + NY * col];
+                        byte m = vox[cb + y];
                         if (m == Air) continue;
                         bool hard = m >= Rock && m <= Gold;
                         if (mode != 1)
                         {
                             if (mode == 2 && (m < LooseSoil || outOfGround >= most)) continue;   // the nozzle only lifts loose dirt
                             if (hard && !fullRock && d2 > radius * radius * 0.42f) continue;      // rock only breaks near the point of the pick
-                            vox[y + NY * col] = Air;
+                            vox[cb + y] = Air;
                             Mark(ref dirty, x, y, z);
                             byte lm = Loosen(m);
                             if (m == Gold && shatter > 0f && (math.hash(new int3(x, y, z + seed * 31)) % 1000u) < (uint)(shatter * 1000f))
@@ -397,7 +405,7 @@ public partial class VoxelWorld
                         {
                             if (hard || taken >= most) continue;
                             if (m < LooseSoil) { if (firmTaken >= most / 4) continue; firmTaken++; }   // firm ground only gives a little
-                            vox[y + NY * col] = Air;
+                            vox[cb + y] = Air;
                             Mark(ref dirty, x, y, z);
                             shovel[Loosen(m)]++;
                             taken++; outOfGround++;
@@ -406,19 +414,19 @@ public partial class VoxelWorld
                     }
                     if (highest < 0) continue;
                     // loose dirt that was sitting on what just went has nothing under it now: it falls as clods
-                    for (int y = highest + 1; y < NY - 1; y++)
+                    for (int y = highest + 1; y < hi - 1; y++)
                     {
-                        byte m = vox[y + NY * col];
+                        byte m = vox[cb + y];
                         if (m < LooseSoil) break;
-                        vox[y + NY * col] = Air;
+                        vox[cb + y] = Air;
                         Mark(ref dirty, x, y, z);
                         Loose(m, x, y, z, float3.zero);
                         outOfGround++;
                     }
                     int t = top[col];
-                    if (t > 0 && vox[t - 1 + NY * col] == Air)
+                    if (t > lo && vox[cb + t - 1] == Air)
                     {
-                        while (t > 0 && vox[t - 1 + NY * col] == Air) t--;
+                        while (t > lo && vox[cb + t - 1] == Air) t--;
                         top[col] = (ushort)t;
                         grass[col] = 0;
                     }

@@ -67,6 +67,10 @@ Shader "Voxel/Terrain"
 
         sampler2D _GrassTex;
         float4 _SiteRect;
+        // the mountain road's guide tint (MountainRoadJob): a picture over the road, red / blue / green, alpha = how strongly
+        sampler2D _RoadTint;
+        float4 _RoadRect;
+        float _RoadTintOn;
         // scenery is cut away where it stands between the camera and what the camera is following
         // (but not things that carry vertex colour green: the cart, which you need to see into)
         float4 _CutFrom, _CutTo;
@@ -163,6 +167,13 @@ Shader "Voxel/Terrain"
                 c *= (m >= 8) ? (0.68 + 0.52 * clod) : (0.84 + 0.30 * clod);   // rubble varies more, lump to lump
             }
             // untouched topsoil carries dry grass on its top face; the dozer wears it off
+            if (m == 1 && IN.worldNormal.y <= 0.5)
+            {
+                // the side of a step of untouched leaf litter (the mountain road's strip): dark like the forest floor too
+                float2 suv = (IN.worldPos.xz - IN.worldNormal.xz * 0.5 * _VoxelSize - _SiteRect.xy) * _SiteRect.zw;
+                float sg = (suv.x > 0.0 && suv.y > 0.0 && suv.x < 1.0 && suv.y < 1.0) ? tex2Dlod(_GrassTex, float4(suv, 0, 0)).r : 0.0;
+                if (sg > 0.15 && sg < 0.3) c = lerp(c, MATS[25] * 0.8 * (0.84 + 0.30 * h), 0.9);
+            }
             if (m == 1 && IN.worldNormal.y > 0.5)
             {
                 float2 uv = (IN.worldPos.xz - _SiteRect.xy) * _SiteRect.zw;
@@ -171,6 +182,21 @@ Shader "Voxel/Terrain"
                 {
                     float3 grassC = lerp(float3(0.36, 0.40, 0.16), float3(0.52, 0.50, 0.22), hash3(floor(v / 2.0) + 1.3));
                     c = lerp(c, grassC * (0.8 + 0.4 * h), 0.9);
+                }
+                else if (g > 0.15)
+                {
+                    // leaf litter: the mountain's forest floor, on the road strip before it is worked (VoxelWorld.Litter)
+                    c = lerp(c, MATS[25] * (0.84 + 0.30 * h), 0.9);
+                }
+            }
+            // the road guide: red where the ground is too high, blue too low, green on grade (top faces of the ground only)
+            if (_RoadTintOn > 0.5 && m <= 10 && IN.worldNormal.y > 0.5)
+            {
+                float2 ruv = (IN.worldPos.xz - _RoadRect.xy) * _RoadRect.zw;
+                if (ruv.x > 0.0 && ruv.y > 0.0 && ruv.x < 1.0 && ruv.y < 1.0)
+                {
+                    float4 rt = tex2Dlod(_RoadTint, float4(ruv, 0, 0));
+                    c = lerp(c, rt.rgb * (0.9 + 0.2 * h), rt.a);
                 }
             }
             if (m == 14) c *= 0.7 + 0.6 * hash3(floor(v / 4.0) + 9.1);          // leaves: clumps of light and shade

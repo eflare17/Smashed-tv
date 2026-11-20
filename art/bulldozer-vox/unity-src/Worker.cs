@@ -630,7 +630,7 @@ public class Worker : MonoBehaviour
     {
         if (step.sqrMagnitude < 1e-10f) return false;
         Vector3 next = pos + step;
-        float lim = VoxelWorld.NX / 2 * VoxelWorld.Voxel - 1.2f;
+        float lim = VoxelWorld.SiteHalf - 1.2f;
         if (Mathf.Abs(next.x) > lim || Mathf.Abs(next.z) > lim) return false;
         if (SiteProps.Blocks(next, 0.3f, true)) return false;
         if (MineCart.Instance != null && MineCart.Instance.BlocksWalker(next)) return false;   // the cart is in the way (E at an end takes hold of it)

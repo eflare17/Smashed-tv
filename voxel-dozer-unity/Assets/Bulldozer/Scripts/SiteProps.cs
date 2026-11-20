@@ -14,7 +14,7 @@ public class SiteProps : MonoBehaviour
     const byte Bracken = 30;
     const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20, ForestFloor = 25, TrackDirt = 26;
 
-    struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
+    struct Solid { public Vector2 at; public float radius; public bool machineOnly; public float below; }   // below: only solid to a machine lower than this (metres)
     static readonly List<Solid> solids = new List<Solid>();
 
     /// The middle of the track, point by point, from deep in the tunnel out to the end of the line.
@@ -42,6 +42,7 @@ public class SiteProps : MonoBehaviour
         for (int i = 0; i < solids.Count; i++)
         {
             if (onFoot && solids[i].machineOnly) continue;
+            if (pos.y >= solids[i].below) continue;                          // (the tunnel: a machine up on the hilltop above it is not in it)
             float r = solids[i].radius + radius;
             if ((new Vector2(pos.x, pos.z) - solids[i].at).sqrMagnitude < r * r) return true;
         }
@@ -155,7 +156,7 @@ public class SiteProps : MonoBehaviour
         return go;
     }
 
-    void Solidify(float x, float z, float radius, bool machineOnly = false) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly }); }
+    void Solidify(float x, float z, float radius, bool machineOnly = false, float below = float.MaxValue) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly, below = below }); }
 
     // ---------------------------------------------------------------- the site
     VoxelWorld world;
@@ -194,6 +195,7 @@ public class SiteProps : MonoBehaviour
         Dump();
         Clutter();
         Hillside();
+        if (MountainRoadJob.Instance == null) new GameObject("Mountain road job").AddComponent<MountainRoadJob>();   // the road's guides and its pay
         TrackGums();
         GoldShed();                                          // after the crates and logs, so it can keep clear of them
         Trees();
@@ -260,8 +262,9 @@ public class SiteProps : MonoBehaviour
             light.shadows = k == 0 ? LightShadows.Soft : LightShadows.None;
         }
         Solidify(px - hw, pz - 0.7f, 0.3f); Solidify(px + hw, pz - 0.7f, 0.3f);
-        // nothing gets into the tunnel itself: it is too low for the machine
-        for (float z = pz + 1f; z < pz + VoxelWorld.TunnelLength; z += 1.5f) Solidify(px, z, VoxelWorld.TunnelHalfWidth, true);
+        // nothing gets into the tunnel itself: it is too low for the machine.  (Only down at the tunnel's own level: up on
+        // the hilltop above it the machine can drive across, which is the way to the mountain road.)
+        for (float z = pz + 1f; z < pz + VoxelWorld.TunnelLength; z += 1.5f) Solidify(px, z, VoxelWorld.TunnelHalfWidth, true, VoxelWorld.TunnelHeight + 0.4f);
     }
 
     void Rails()
@@ -522,7 +525,7 @@ public class SiteProps : MonoBehaviour
         int n = 0;
         foreach (var s in spots)
         {
-            if (InBreakLane(s.x, s.z)) continue;
+            if (InBreakLane(s.x, s.z) || NearRoad(s.x, s.z)) continue;
             Tree(new Vector3(s.x, Ground(s.x, s.z) - 0.1f, s.z), s.h);
             Solidify(s.x, s.z, 0.45f);
             Finish("Gum tree " + (++n));
@@ -543,48 +546,37 @@ public class SiteProps : MonoBehaviour
     // ---------------------------------------------------------------- the hillside behind the mine
     // Past the north fence the hill keeps climbing, as scenery you can't dig: from the height of the site's own hill at
     // the fence, up about 26 m over the next 100 m.  The escape track carries on up it as bare dirt.
-    const float HalfSite = VoxelWorld.NX / 2 * VoxelWorld.Voxel;           // 48 m
+    const float HalfSite = VoxelWorld.SiteHalf;           // 48 m
 
-    /// The site's own hill height at the north fence (the same recipe as VoxelWorld's GenerateJob, without the quarry).
-    static float SiteHillAtEdge(float x)
-    {
-        float2 p = new float2(x, HalfSite);
-        float n1 = noise.snoise(p * 0.035f), n2 = noise.snoise(p * 0.11f);
-        float fade = math.smoothstep(1.5f, 9f, HalfSite - math.abs(x));
-        return math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * fade);
-    }
+    // (The recipes are in Mountain, in MountainRoad.cs, so the voxel jobs can use them too.)
 
-    /// The hillside past the north fence.
-    public static float HillsideY(float x, float z)
-    {
-        float dz = Mathf.Max(0f, z - HalfSite);
-        float2 p = new float2(x, z);
-        float rise = 26f * math.smoothstep(0f, 100f, dz) + (2.6f * noise.snoise(p * 0.03f) + 0.6f * noise.snoise(p * 0.12f)) * math.smoothstep(0f, 14f, dz);
-        float y = SiteHillAtEdge(x) + rise;
-        // the track: the ground across it is eased level
-        float off = Mathf.Abs(x - VoxelWorld.TrackCentreX(z));
-        if (off < VoxelWorld.TrackHalf + 2f)
-        {
-            float level = SiteHillAtEdge(VoxelWorld.TrackCentreX(z)) + 26f * math.smoothstep(0f, 100f, dz);
-            y = Mathf.Lerp(level, y, math.smoothstep(VoxelWorld.TrackHalf, VoxelWorld.TrackHalf + 2f, off));
-        }
-        return y;
-    }
+    /// The hillside past the north fence, with the mountain standing on it.
+    public static float HillsideY(float x, float z) { return Mountain.PastFenceY(x, z) + MountainRoad.ShapeDelta(x, z); }
 
-    /// Ground height anywhere: the site's voxels inside the fence, the hillside past the north fence, flat elsewhere.
+    /// Ground height anywhere: the site's voxels inside the fence, the hillside past the north fence (and the road
+    /// strip's voxels on the mountain), flat elsewhere.
     public static float HillY(float x, float z)
     {
-        if (z > HalfSite - 0.5f && Mathf.Abs(x) < 140f) return HillsideY(x, z);
         var w = VoxelWorld.Instance;
+        if (z > HalfSite - 0.5f && Mathf.Abs(x) < 140f)
+            return w != null && w.KindAt(x, z) == VoxelWorld.BlockStrip ? w.HeightAt(x, z) : HillsideY(x, z);
         return w != null ? w.HeightAt(x, z) : 0f;
     }
 
+    /// Kept clear of trees: the road up the mountain, and a way onto it from the firebreak lane.
+    public static bool NearRoad(float x, float z, float clear = 7f) { return MountainRoad.DistanceTo(x, z) < clear; }
+
     void Hillside()
     {
-        const float x0 = -140f, x1 = 140f, z0 = 47.6f, z1 = 190f, step = 2f;
+        // one corner of the mesh's 2 m grid sits on a corner of the voxel blocks, so the holes left for the road strip
+        // line up with it exactly
+        const float x0 = -140f, x1 = 140f, z0 = 48f, z1 = 190f, step = 2f;
         int nx = Mathf.RoundToInt((x1 - x0) / step) + 1, nz = Mathf.RoundToInt((z1 - z0) / step) + 1;
         var hs = new float[nx * nz];
         for (int j = 0; j < nz; j++) for (int i = 0; i < nx; i++) hs[i + nx * j] = HillsideY(x0 + i * step, z0 + j * step);
+        Vector3 o = world.Origin;
+        System.Func<float, float, bool> strip = (qx, qz) =>
+            world.BlockIsStrip(Mathf.FloorToInt((qx - o.x) / step), Mathf.FloorToInt((qz - o.z) / step));
         for (int j = 0; j < nz; j++)
             for (int i = 0; i < nx; i++)
             {
@@ -595,13 +587,47 @@ public class SiteProps : MonoBehaviour
                 normals.Add(new Vector3(-hx, 4f * step / 2f, -hz).normalized);
                 colours.Add(new Color32(ForestFloor, 0, 0, 255));   // one material: ids must not blend across a triangle
             }
+        int holes = 0;
         for (int j = 0; j < nz - 1; j++)
             for (int i = 0; i < nx - 1; i++)
             {
+                if (strip(x0 + (i + 0.5f) * step, z0 + (j + 0.5f) * step)) { holes++; continue; }   // the road strip's voxels are here
                 int a = i + nx * j, b = a + 1, c = a + nx, d = c + 1;
                 tris.Add(a); tris.Add(c); tris.Add(b);
                 tris.Add(b); tris.Add(c); tris.Add(d);
             }
+        // Round each hole, a wall from the hillside's surface down to the bottom of the strip's voxels, facing into the
+        // strip.  It is only seen where the strip has been dug lower than the mountain beside it: the mountain's own
+        // ground, which can't be dug (grey, like rock).
+        int walls = 0;
+        for (int j = 0; j < nz - 1; j++)
+            for (int i = 0; i < nx - 1; i++)
+            {
+                float cx = x0 + (i + 0.5f) * step, cz = z0 + (j + 0.5f) * step;
+                if (!strip(cx, cz)) continue;
+                int bx = Mathf.FloorToInt((cx - o.x) / step), bz = Mathf.FloorToInt((cz - o.z) / step);
+                float bottom = world.BlockLoY(bx, bz) - 0.05f;
+                for (int side = 0; side < 4; side++)
+                {
+                    int nbx = bx + (side == 0 ? 1 : side == 1 ? -1 : 0), nbz = bz + (side == 2 ? 1 : side == 3 ? -1 : 0);
+                    if (world.BlockHasVoxels(nbx, nbz)) continue;
+                    // the shared edge, as two grid corners, ordered so the wall faces into this block
+                    int ia, ja, ib, jb;
+                    if (side == 0) { ia = i + 1; ja = j; ib = i + 1; jb = j + 1; }
+                    else if (side == 1) { ia = i; ja = j + 1; ib = i; jb = j; }
+                    else if (side == 2) { ia = i + 1; ja = j + 1; ib = i; jb = j + 1; }
+                    else { ia = i; ja = j; ib = i + 1; jb = j; }
+                    Vector3 pa = new Vector3(x0 + ia * step, hs[ia + nx * ja], z0 + ja * step), pb = new Vector3(x0 + ib * step, hs[ib + nx * jb], z0 + jb * step);
+                    Vector3 inward = new Vector3(side == 0 ? -1 : side == 1 ? 1 : 0, 0, side == 2 ? -1 : side == 3 ? 1 : 0);
+                    int start = verts.Count;
+                    verts.Add(pa); verts.Add(pb); verts.Add(new Vector3(pb.x, bottom, pb.z)); verts.Add(new Vector3(pa.x, bottom, pa.z));
+                    for (int k = 0; k < 4; k++) { normals.Add(inward); colours.Add(new Color32(Rock, 0, 0, 255)); }
+                    tris.Add(start); tris.Add(start + 2); tris.Add(start + 1);     // (Unity's front faces go clockwise)
+                    tris.Add(start); tris.Add(start + 3); tris.Add(start + 2);
+                    walls++;
+                }
+            }
+        HillsideHoles = holes; HillsideWalls = walls;
         Finish("Hillside");
         // the track up it: a strip of dirt laid just over the ground
         for (float z = z0; z < z1 - 1f; z += 1f)
@@ -665,6 +691,7 @@ public class SiteProps : MonoBehaviour
                     if (o > 18f && Rand(0f, 1f) < (o - 18f) / 22f) continue;          // thinning out at the edges
                     float x = VoxelWorld.TrackCentreX(z) + side * (o + Rand(-0.9f, 0.9f)), zz = z + Rand(-1.3f, 1.3f);
                     if (z > 110f && Rand(0f, 1f) < 0.35f) continue;
+                    if (NearRoad(x, zz)) continue;
                     bool inSite = zz < HalfSite - 1f;
                     if (inSite)
                     {
@@ -717,6 +744,7 @@ public class SiteProps : MonoBehaviour
                 if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 36f) continue;            // the track's trees cover that
                 if (world.HeightAt(px, pz) < 3.4f || Blocks(new Vector3(px, 0f, pz), 1.2f) || InBreakLane(px, pz)) continue;
                 if (noise.snoise(new float2(px, pz) * 0.06f) < -0.35f) continue;               // a clearing
+                if (NearRoad(px, pz)) continue;
                 TallGum(new Vector3(px, HillY(px, pz) - 0.15f, pz), Rand(13f, 20f));
                 Solidify(px, pz, 0.5f);
                 n++;
@@ -733,6 +761,7 @@ public class SiteProps : MonoBehaviour
                 if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 30f && pz < 172f) continue;
                 float clump = noise.snoise(new float2(px, pz) * 0.025f);
                 if (clump < -0.45f || Rand(0f, 1f) < 0.12f + Mathf.Max(0f, -clump) * 0.4f) continue;   // clumps and gaps
+                if (NearRoad(px, pz)) continue;
                 float h = Rand(14f, 22f) * (1f - 0.25f * Mathf.InverseLerp(60f, 186f, pz));
                 FarGum(new Vector3(px, HillsideY(px, pz) - 0.2f, pz), h);
                 far++;
@@ -743,6 +772,7 @@ public class SiteProps : MonoBehaviour
     }
 
     public static int HillGumCount, FarGumCount;
+    public static int HillsideHoles, HillsideWalls;          // the road strip's holes in the hillside mesh, and the walls round them
 
     public static int TrackGumCount;
 

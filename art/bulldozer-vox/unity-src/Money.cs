@@ -84,6 +84,16 @@ public class Money : MonoBehaviour
     }
 
     /// Gives back what an upgrade cost, when it is sold back.  (Not counted as earned.)
+    /// A job's pay: coins straight into the pot, with a note saying what for.
+    public void Reward(long coins, string why)
+    {
+        if (coins <= 0) return;
+        Coins += coins; Earned += coins;
+        if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
+        popCoins += coins; popTimer = 4f;
+        sellText = why; sellTimer = 5f;
+    }
+
     public void Refund(long coins, int goldVoxels) { if (coins > 0) Coins += coins; if (goldVoxels > 0) GoldStore += goldVoxels; }
 
     /// The F8 test key: free coins and gold, to try upgrades without digging for them.
