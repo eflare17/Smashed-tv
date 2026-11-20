@@ -552,6 +552,7 @@ public class DozerController : MonoBehaviour
     void OnGUI()
     {
         if (!showHelp || !driven) return;
+        Ui.Begin();
         string text = Pad.InUse ?
             "Left stick   drive and steer          Y   get out          Start   upgrades\n" +
             "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +

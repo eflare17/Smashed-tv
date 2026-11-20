@@ -131,17 +131,18 @@ public class Money : MonoBehaviour
 
     void OnGUI()
     {
+        Ui.Begin();
         if (Prologue.Playing) return;
         var big = new GUIStyle(GUI.skin.box) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-        GUI.Box(new Rect(Screen.width - 230, 10, 220, 40), "Coins: " + Coins.ToString("N0"), big);
+        GUI.Box(new Rect(Ui.W - 230, 10, 220, 40), "Coins: " + Coins.ToString("N0"), big);
         var goldStyle = new GUIStyle(big) { fontSize = 18 };
         goldStyle.normal.textColor = new Color(1f, 0.82f, 0.2f);
-        GUI.Box(new Rect(Screen.width - 230, 54, 220, 32), "Gold: " + GoldLitres.ToString("F0") + " L", goldStyle);
+        GUI.Box(new Rect(Ui.W - 230, 54, 220, 32), "Gold: " + GoldLitres.ToString("F0") + " L", goldStyle);
         var pop = new GUIStyle(big) { fontSize = 20 };
         pop.normal.textColor = new Color(1f, 0.85f, 0.25f);
         if (popTimer > 0f)
         {
-            if (popCoins > 0) GUI.Box(new Rect(Screen.width - 230, 90, 220, 34), "+" + popCoins.ToString("N0"), pop);
+            if (popCoins > 0) GUI.Box(new Rect(Ui.W - 230, 90, 220, 34), "+" + popCoins.ToString("N0"), pop);
             // the hopper's sorting: what the load was, in litres; the gold goes to the gold store
             string sorted = "";
             for (int m = VoxelWorld.LooseSoil; m < VoxelWorld.LooseGold; m++)
@@ -151,14 +152,14 @@ public class Money : MonoBehaviour
             if (line.Length > 0)
             {
                 var panel = new GUIStyle(GUI.skin.box) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-                GUI.Box(new Rect(Screen.width / 2 - 360, 104, 720, 78), "Hopper sorted it:\n" + line, panel);
+                GUI.Box(new Rect(Ui.W / 2 - 360, 104, 720, 78), "Hopper sorted it:\n" + line, panel);
             }
         }
         if (sellTimer > 0f)
         {
             var sold = new GUIStyle(big) { fontSize = 22 };
             sold.normal.textColor = new Color(1f, 0.85f, 0.25f);
-            GUI.Box(new Rect(Screen.width / 2 - 260, 104, 520, 44), sellText, sold);
+            GUI.Box(new Rect(Ui.W / 2 - 260, 104, 520, 44), sellText, sold);
         }
     }
 }

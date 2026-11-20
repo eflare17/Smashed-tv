@@ -3,6 +3,7 @@
 //
 //   Resume      back to the game (Esc, Start or Back do it too)
 //   Settings    graphics: quality, shadows, view distance, full screen or windowed, resolution
+//               screen: UI size (how big the panels and help are drawn, 75% to 200%; see Ui.cs)
 //               controls: mouse speed, invert mouse look
 //   Quit        asks first, because anything since the last save (F5) is lost
 //
@@ -47,6 +48,7 @@ public class PauseMenu : MonoBehaviour
         InvertMouse = PlayerPrefs.GetInt("set.invert", 0) == 1;
         ShowFps = PlayerPrefs.GetInt("set.fps", 0) == 1;
         MouseSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("set.mouse", 1f), 0.25f, 3f);
+        Ui.Size = Mathf.Clamp(PlayerPrefs.GetFloat("set.uisize", 1f), Ui.MinSize, Ui.MaxSize);
     }
 
     public static void SavePrefs()
@@ -57,6 +59,7 @@ public class PauseMenu : MonoBehaviour
         PlayerPrefs.SetInt("set.invert", InvertMouse ? 1 : 0);
         PlayerPrefs.SetInt("set.fps", ShowFps ? 1 : 0);
         PlayerPrefs.SetFloat("set.mouse", MouseSpeed);
+        PlayerPrefs.SetFloat("set.uisize", Ui.Size);
         PlayerPrefs.Save();
     }
 
@@ -277,8 +280,8 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---- the settings page: one row each
-    const int SettingRows = 9;
-    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "Show fps  (F11)", "Mouse speed", "Invert mouse look", "Back" };
+    public const int SettingRows = 10, UiSizeRow = 5;
+    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "UI size", "Show fps  (F11)", "Mouse speed", "Invert mouse look", "Back" };
 
     string SettingValue(int row)
     {
@@ -289,9 +292,10 @@ public class PauseMenu : MonoBehaviour
             case 2: return ViewNames[View] + "  (" + ViewMetres[View].ToString("F0") + " m)";
             case 3: return fullScreen ? "Full screen" : "Windowed";
             case 4: return resolutions[resIndex].w + " x " + resolutions[resIndex].h;
-            case 5: return ShowFps ? "On" : "Off";
-            case 6: return MouseSpeed.ToString("0.00") + "x";
-            case 7: return InvertMouse ? "On" : "Off";
+            case 5: return Mathf.RoundToInt(Ui.Size * 100f) + "%";
+            case 6: return ShowFps ? "On" : "Off";
+            case 7: return MouseSpeed.ToString("0.00") + "x";
+            case 8: return InvertMouse ? "On" : "Off";
         }
         return "";
     }
@@ -306,9 +310,10 @@ public class PauseMenu : MonoBehaviour
             case 2: View = Mathf.Clamp(View + dir, 0, 2); break;
             case 3: fullScreen = !fullScreen; ApplyScreen(); break;
             case 4: resIndex = Mathf.Clamp(resIndex + dir, 0, resolutions.Length - 1); ApplyScreen(); break;
-            case 5: ShowFps = !ShowFps; break;
-            case 6: MouseSpeed = Mathf.Clamp(Mathf.Round((MouseSpeed + dir * 0.25f) * 4f) / 4f, 0.25f, 3f); break;
-            case 7: InvertMouse = !InvertMouse; break;
+            case 5: Ui.Size = Mathf.Clamp(Mathf.Round((Ui.Size + dir * 0.25f) * 4f) / 4f, Ui.MinSize, Ui.MaxSize); break;
+            case 6: ShowFps = !ShowFps; break;
+            case 7: MouseSpeed = Mathf.Clamp(Mathf.Round((MouseSpeed + dir * 0.25f) * 4f) / 4f, 0.25f, 3f); break;
+            case 8: InvertMouse = !InvertMouse; break;
         }
     }
 
@@ -320,20 +325,20 @@ public class PauseMenu : MonoBehaviour
     {
         if (ShowFps && FpsText.Length > 0)
         {
+            Ui.Begin();
             GUI.depth = -20;
             // top right, just left of the coins and the blade view (they take the corner itself)
             var fs = new GUIStyle(GUI.skin.box) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             fs.normal.textColor = new Color(1f, 1f, 0.85f);
-            GUI.Box(new Rect(Screen.width - 420f - 170f, 10f, 170f, 26f), FpsText, fs);
+            GUI.Box(new Rect(Ui.W - 420f - 170f, 10f, 170f, 26f), FpsText, fs);
         }
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
-        float W = Mathf.Min(560f, Screen.width - 40f);
-        float H = page == Page.Settings ? 510f : page == Page.Quit ? 220f : 280f;
-        H = Mathf.Min(H, Screen.height - 40f);
-        var area = new Rect((Screen.width - W) / 2f, (Screen.height - H) / 2f, W, H);
+        float W = 560f;
+        float H = page == Page.Settings ? 560f : page == Page.Quit ? 220f : 280f;
+        Ui.Begin(W + 40f, 600f);                                         // (a big UI size is held down so Settings still fits)
+        var area = new Rect((Ui.W - W) / 2f, (Ui.H - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
-        GUI.Box(area, GUIContent.none);                                   // twice, for a darker backing
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
         GUI.Label(new Rect(area.x + 16, area.y + 8, 300, 34), page == Page.Settings ? "Settings" : page == Page.Quit ? "Quit?" : "Paused", title);
         var info = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleRight };
@@ -376,7 +381,8 @@ public class PauseMenu : MonoBehaviour
         for (int i = 0; i < SettingRows; i++)
         {
             if (i == 0) { GUI.Label(new Rect(x, y - 4f, w, 20f), "GRAPHICS", head); y += 16f; }
-            if (i == 6) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
+            if (i == UiSizeRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "SCREEN", head); y += 16f; }
+            if (i == 7) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
             if (i == SettingRows - 1)
             {
                 y += 8f;
