@@ -51,7 +51,7 @@ public class FollowCamera : MonoBehaviour
     void OnDisable() { Shader.SetGlobalFloat("_CutRadius", 0f); }
 
     // the mouse wheel zooms, unless Shift is held (then it sets the jackhammer's bite)
-    static float ZoomWheel() { return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 0f : Input.GetAxis("Mouse ScrollWheel"); }
+    static float ZoomWheel() { return PauseMenu.Paused || Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 0f : Input.GetAxis("Mouse ScrollWheel"); }
 
     /// Set each frame the jackhammer is running (metres): the camera shakes that much this frame, then it is cleared.
     public static float Shake;
@@ -109,10 +109,11 @@ public class FollowCamera : MonoBehaviour
             ClearLineTo(target.position + Vector3.up * 1.2f + look * Vector3.forward * 1.2f, 1.05f);
             return;
         }
-        if (Input.GetMouseButton(1))
+        if (Input.GetMouseButton(1) && !PauseMenu.Paused)
         {
-            yawOffset += Input.GetAxis("Mouse X") * 4f;
-            pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f, 5f, 75f);
+            float ms = PauseMenu.MouseSpeed;                                      // (the settings' mouse speed and invert)
+            yawOffset += Input.GetAxis("Mouse X") * 4f * ms;
+            pitch = Mathf.Clamp(pitch - Input.GetAxis("Mouse Y") * 3f * ms * (PauseMenu.InvertMouse ? -1f : 1f), 5f, 75f);
         }
         var dozer = target.GetComponent<DozerController>();
         Vector2 stick = Pad.RightStick;

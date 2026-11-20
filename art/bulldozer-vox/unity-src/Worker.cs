@@ -491,8 +491,8 @@ public class Worker : MonoBehaviour
                 dozer.dead = !dozer.dead;
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
-            bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
-            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || (!treeUp && Pad.Down(Pad.B.Y))) { LetGo(); TryDozer(); }
+            bool treeUp = (Upgrades.Instance != null && Upgrades.Instance.Open) || PauseMenu.Blocking;
+            if (!PauseMenu.Blocking && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || (!treeUp && Pad.Down(Pad.B.Y)))) { LetGo(); TryDozer(); }
         }
         if (InDozer) { transform.position = dozer.transform.position; return; }
 
@@ -500,7 +500,7 @@ public class Worker : MonoBehaviour
         float walk = useOverride ? overrideWalk : Stronger(Input.GetAxisRaw("Vertical"), Pad.LeftStick.y);
         float side = useOverride ? 0f : Stronger(Input.GetAxisRaw("Horizontal"), Pad.LeftStick.x);
         bool use = useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space) || Pad.RT > 0.3f);
-        bool treeOpen = !useOverride && Upgrades.Instance != null && Upgrades.Instance.Open;
+        bool treeOpen = !useOverride && ((Upgrades.Instance != null && Upgrades.Instance.Open) || PauseMenu.Blocking);
         if (treeOpen) { walk = 0f; side = 0f; use = false; }
         if (!useOverride && !treeOpen)
         {
@@ -543,8 +543,9 @@ public class Worker : MonoBehaviour
             }
             else
             {
-                yaw += Input.GetAxis("Mouse X") * mouseSpeed;
-                lookPitch = Mathf.Clamp(lookPitch - Input.GetAxis("Mouse Y") * mouseSpeed, Eyes ? -80f : -45f, Eyes ? 80f : 72f);
+                float ms = mouseSpeed * PauseMenu.MouseSpeed;                              // (the settings' mouse speed and invert)
+                yaw += Input.GetAxis("Mouse X") * ms;
+                lookPitch = Mathf.Clamp(lookPitch - Input.GetAxis("Mouse Y") * ms * (PauseMenu.InvertMouse ? -1f : 1f), Eyes ? -80f : -45f, Eyes ? 80f : 72f);
             }
         }
         else yaw += overrideTurn * turnSpeed * dt;

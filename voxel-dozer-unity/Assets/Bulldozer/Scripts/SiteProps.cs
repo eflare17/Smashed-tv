@@ -191,6 +191,7 @@ public class SiteProps : MonoBehaviour
         if (SaveGame.Instance == null) new GameObject("Save game").AddComponent<SaveGame>();
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
         if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
+        if (PauseMenu.Instance == null) new GameObject("Pause menu").AddComponent<PauseMenu>();   // Esc: resume, settings, quit
         if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
         Dump();
         Clutter();
