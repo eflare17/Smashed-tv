@@ -737,8 +737,7 @@ public static class BulldozerBuilder
             Vector3 start = new Vector3(VoxelWorld.TrackCentreX(1f), 0.2f, 1f);
             hLog += " startBlocked=" + SiteProps.Blocks(start, 2.3f) + " rampBlocked=" + SiteProps.Blocks(new Vector3(VoxelWorld.TrackCentreX(12f), 2f, 12f), 2.3f)
                   + " shedFront=" + SiteProps.GoldShedFront.ToString("F1") + " dozerWas=" + d.transform.position.ToString("F1");
-            d.transform.position = start;
-            var rb = d.GetComponent<Rigidbody>(); if (rb != null) rb.position = start;
+            d.Place(start, 0f);                                     // (moving the transform alone left the machine's own height and heading behind)
             hPhase = 2; hT0 = t;
             return;
         }
@@ -752,6 +751,7 @@ public static class BulldozerBuilder
             d.overrideSteer = Mathf.Clamp(want * 0.6f, -1f, 1f);
             hMaxY = Mathf.Max(hMaxY, d.transform.position.y); hMaxZ = Mathf.Max(hMaxZ, d.transform.position.z);
             if (k > 6f && hLog.IndexOf("climbPic") < 0) { TestCapture("hill_dozer_climb.png"); hLog += " climbPic"; }
+            if (k > 1.2f && k < 3f && Mathf.Repeat(k, 0.4f) < Time.deltaTime) hLog += " [k" + k.ToString("F1") + " at" + d.transform.position.ToString("F2") + " v" + d.Speed.ToString("F2") + " rock" + d.BlockedByRock + " fence" + d.AtFence + " cliff" + d.AtCliff + " useO" + d.useOverride + " thr" + d.overrideThrottle + " paused" + PauseMenu.Paused + " tree" + Upgrades.Instance.Open + " dead" + d.dead + "]";
             if (k > 3f && hLog.IndexOf("at3s") < 0) hLog += " at3s=" + d.transform.position.ToString("F1") + " speed=" + d.Speed.ToString("F2") + " driven=" + d.driven;
             if (k < 16f) return;
             d.overrideThrottle = 0f;
@@ -815,7 +815,8 @@ public static class BulldozerBuilder
         baNextTrace = t + 0.5f;
         Vector3 e = d.Blade.TransformPoint(new Vector3(0f, -0.75f, 1.125f));
         baLog += " [" + BaBladeAlong(d).ToString("F1") + " edge" + (e.y - baBefore).ToString("F3") + " ground" + (w.HeightAt(e.x, e.z) - baBefore).ToString("F3")
-               + " machine" + (d.transform.position.y - baBefore).ToString("F3") + " pitch" + d.transform.eulerAngles.x.ToString("F1") + " v" + d.Speed.ToString("F1") + "]";
+               + " machine" + (d.transform.position.y - baBefore).ToString("F3") + " pitch" + d.transform.eulerAngles.x.ToString("F1") + " v" + d.Speed.ToString("F1")
+               + " " + System.Text.RegularExpressions.Regex.Match(d.BladeLoadInfo(), @"clods\S+").Value + " ripped=" + w.TotalRipped + " cut=" + w.TotalCut + "]";
     }
 
     static float BaMean(System.Collections.Generic.List<float> l) { float sum = 0f; foreach (var h in l) sum += h; return l.Count > 0 ? sum / l.Count : 0f; }
@@ -859,6 +860,7 @@ public static class BulldozerBuilder
             baLog += " ridgeColumns=" + raised;
             // the cycle: Off -> Flat
             d.bladeAuto = DozerController.BladeAutoMode.Off;
+            DozerController.LastAuto = DozerController.BladeAutoMode.Flat;
             d.CycleBladeAuto();
             baLog += " cycledTo=" + d.BladeAutoName;
             baPhase = 1; baT0 = t;
@@ -888,6 +890,14 @@ public static class BulldozerBuilder
             {
                 bool off = d.bladeAuto == DozerController.BladeAutoMode.Off;
                 baLog += " afterPress=" + d.BladeAutoName; if (!off) baFail = true;
+                // the lever only paused it: one press brings back the depth it had, the next steps on
+                DozerController.LastAuto = DozerController.BladeAutoMode.Cut10;
+                d.CycleBladeAuto(); string back = d.BladeAutoName;
+                d.CycleBladeAuto(); string next = d.BladeAutoName;
+                d.CycleBladeAuto(); d.CycleBladeAuto(); string wrap = d.BladeAutoName;
+                bool resumeOk = back == "Cut 10 cm" && next == "Cut 15 cm" && wrap == "Off";
+                baLog += " resume=" + back + " next=" + next + " then=" + wrap + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                d.bladeAuto = DozerController.BladeAutoMode.Off;
             }
             if (t - baT0 < 3f) return;
             d.overrideBlade = 0f;

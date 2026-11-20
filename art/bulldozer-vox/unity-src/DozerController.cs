@@ -30,7 +30,8 @@ public class DozerController : MonoBehaviour
     public float ripperDownAngle = -21f;     // tips about 40 cm into the ground
     public float ripperSpeed = 20f;
     [Header("Digging")]
-    public float ripRadius = 0.36f;          // how wide each shank tears
+    public float ripRadius = 0.36f;
+    const float RipFrom = -3f;                 // the ripper tears ground once it is lowered past this (degrees; parked is 0)          // how wide each shank tears
     public int hardRockStops = 85;           // this many hard blocks in the blade's way stops the machine
     public bool showHelp = true;
     [Header("Gyro blade (pad: right stick while the gyro button is held)")]
@@ -40,14 +41,37 @@ public class DozerController : MonoBehaviour
     // Not saved with the prefab on purpose: Unity kept an old stored "dead" and ignored the value written here.
     [System.NonSerialized] public bool dead = false;     // true = it has sat for years and nothing works until repaired (off for now: F9 switches it)
     [System.NonSerialized] public bool driven;           // someone is in the seat
-    // Blade auto: the blade holds its edge at a set depth below the tracks by itself.  Not saved.
-    public enum BladeAutoMode { Off, Flat, Cut5, Cut10 }
+    // Blade auto: the blade holds its edge at a set depth by itself.
+    // The setting you pick is remembered (between games too).  Touching the blade lever only pauses it: the next press
+    // of B / A brings back the depth you had, and presses after that step on through the depths and round to Off.
+    // 20 cm is the deepest: fully down, the edge only reaches about 20 cm below the tracks.
+    public enum BladeAutoMode { Off, Flat, Cut5, Cut10, Cut15, Cut20 }
     [System.NonSerialized] public BladeAutoMode bladeAuto = BladeAutoMode.Off;
-    public static readonly string[] BladeAutoNames = { "Off", "Flat", "Cut 5 cm", "Cut 10 cm" };
-    static readonly float[] BladeAutoDepth = { 0f, 0f, 0.05f, 0.10f };   // metres below the tracks
+    public static readonly string[] BladeAutoNames = { "Off", "Flat", "Cut 5 cm", "Cut 10 cm", "Cut 15 cm", "Cut 20 cm" };
+    static readonly float[] BladeAutoDepth = { 0f, 0f, 0.05f, 0.10f, 0.15f, 0.20f };   // metres below the ground
     public string BladeAutoName { get { return BladeAutoNames[(int)bladeAuto]; } }
-    /// The next setting along: Off, Flat, Cut 5 cm, Cut 10 cm, then Off again.
-    public void CycleBladeAuto() { bladeAuto = (BladeAutoMode)(((int)bladeAuto + 1) % BladeAutoNames.Length); }
+    public const string BladeAutoPref = "set.bladeAuto";
+    /// The depth used last (never Off): what B brings back after the blade lever paused it.
+    public static BladeAutoMode LastAuto = BladeAutoMode.Flat;
+    bool autoPaused;                                     // the blade lever took over; the remembered setting stands
+    /// The next setting along: Off, Flat, Cut 5 ... Cut 20 cm, then Off again.  After the lever paused it, back to the last one.
+    public void CycleBladeAuto()
+    {
+        if (autoPaused) { bladeAuto = LastAuto; autoPaused = false; }
+        else bladeAuto = (BladeAutoMode)(((int)bladeAuto + 1) % BladeAutoNames.Length);
+        if (bladeAuto != BladeAutoMode.Off) LastAuto = bladeAuto;
+        PlayerPrefs.SetInt(BladeAutoPref, (int)bladeAuto);
+        PlayerPrefs.SetInt(BladeAutoPref + ".last", (int)LastAuto);
+        PlayerPrefs.Save();
+    }
+    /// The remembered setting, as the game starts.
+    void LoadBladeAuto()
+    {
+        int n = BladeAutoNames.Length;
+        bladeAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref, 0), 0, n - 1);
+        LastAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref + ".last", 1), 1, n - 1);
+        autoPaused = false;
+    }
 
     // What works.  A working dozer (not dead) can do everything.  A dead one gets each back as its part is fitted.
     public bool CanDrive { get { return !dead || Finds.IsInstalled(0); } }
@@ -124,7 +148,7 @@ public class DozerController : MonoBehaviour
     Vector2 gyroGrabStick;                               // the stick, and the blade, at the moment the gyro button went down
     float gyroGrabTilt, gyroGrabYaw;
     readonly Vector3[] tipsWorld = new Vector3[6];
-    readonly float[] autoAngle = new float[4];          // the lift-arm angle that puts the blade edge at each auto depth (machine level)
+    readonly float[] autoAngle = new float[6];          // the lift-arm angle that puts the blade edge at each auto depth (machine level)
     float edgePerDegree;                                // how far the edge drops for each degree the arms go down
     static readonly Vector3 BladeEdge = new Vector3(0f, -0.75f, 1.125f);   // middle of the cutting edge, in the blade's space
 
@@ -144,6 +168,7 @@ public class DozerController : MonoBehaviour
         bladeAngle = 0f;                                                  // parked: blade and ripper resting on the ground
         ripperAngle = 0f;
         WorkOutAutoAngles();
+        if (!Application.isEditor) LoadBladeAuto();                      // (tests start with it off)
         ApplyAttachments();
     }
 
@@ -207,6 +232,7 @@ public class DozerController : MonoBehaviour
     }
 
     public float AutoAngle(BladeAutoMode m) { return autoAngle[(int)m]; }
+    string AutoHelp { get { return autoPaused ? "paused (" + BladeAutoNames[(int)LastAuto] + ": press to carry on)" : BladeAutoName; } }
     public float BladeArmAngle { get { return bladeAngle; } }
     public float BladeDownDepth { get; private set; }    // how far below the tracks the edge goes fully down (for the tests)
 
@@ -269,7 +295,7 @@ public class DozerController : MonoBehaviour
         if (!CanRip) ripperIn = 0f;
         bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
         if (!useOverride && CanBlade && !treeUp && !(PauseMenu.Instance != null && PauseMenu.Instance.Open) && (Input.GetKeyDown(KeyCode.B) || Pad.Down(Pad.B.A))) CycleBladeAuto();
-        if (bladeIn != 0f || !CanBlade) bladeAuto = BladeAutoMode.Off;       // a hand on the blade lever takes over
+        if ((bladeIn != 0f || !CanBlade) && bladeAuto != BladeAutoMode.Off) { bladeAuto = BladeAutoMode.Off; autoPaused = true; }   // a hand on the blade lever takes over
         if (bladeAuto != BladeAutoMode.Off) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
         if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Time.deltaTime);
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
@@ -474,7 +500,9 @@ public class DozerController : MonoBehaviour
             UpdateBog(travel.magnitude);
             if (r.hard >= hardRockStops && Speed > 0f) { Speed = 0f; blockedTimer = 0.6f; }
         }
-        if (ripper != null && ripperAngle < 4f)
+        // Only when it has been lowered into the ground.  Parked (0) its tips rest on the surface: it used to rip from
+        // there too, so driving along tore up a strip of loose dirt behind the machine without anyone asking.
+        if (ripper != null && ripperAngle < RipFrom)
         {
             Matrix4x4 ripperToWorld = root * ripper.localToWorldMatrix;
             for (int i = 0; i < 3; i++)
@@ -559,13 +587,13 @@ public class DozerController : MonoBehaviour
             "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
             "RB / LB   ripper up / down    (breaks up hard rock)\n" +
             "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
-            "A   blade auto: " + BladeAutoName + "    (Off / Flat / Cut 5 cm / Cut 10 cm; a trigger switches it off)\n" +
+            "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; a trigger pauses it)\n" +
             "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" :
             "W / S   drive          A / D   steer\n" +
             "R / F   blade up / down     (lower it into the ground to dig)\n" +
             "T / G   ripper up / down    (breaks up hard rock)\n" +
             "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-            "B   blade auto: " + BladeAutoName + "    (Off / Flat / Cut 5 cm / Cut 10 cm; R / F switches it off)\n" +
+            "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; R / F pauses it)\n" +
             "Right mouse drag: look round    Scroll: zoom\n";
         text +=
             "Speed " + (Speed * 3.6f).ToString("F1") + " km/h     " + Mathf.RoundToInt(fps) + " frames a second";
