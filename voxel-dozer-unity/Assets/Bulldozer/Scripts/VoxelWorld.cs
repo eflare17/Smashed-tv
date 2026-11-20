@@ -2,6 +2,16 @@
 // A 96 m x 96 m site, 14 m tall (4 m below the work floor, 10 m above for the hill and heaps), drawn in 2 m chunks.
 // The ground is shaped as a quarry cut into a hillside: see GenerateJob.
 // Only chunks that change get rebuilt.  The heavy loops are Burst jobs.
+//
+// Where the voxels are kept.  The whole area the game knows about (the "grid") is bigger than the site: it runs on
+// north and west over the mountain behind the mine, and up to its top.  But voxels are only kept where they are
+// needed, in 2 m x 2 m columns of ground ("blocks", one chunk across):
+//   - the site: every block, 14 m tall, as it always was;
+//   - the road strip up the mountain (MountainRoad): only the blocks along it, each only as tall as it needs;
+//   - everywhere else: no voxels.  The ground there is the plain solid mesh of the hillside (SiteProps.Hillside),
+//     and top[] holds its height so the dozer and loose dirt still find the ground.
+// A block's voxels run from layer lo up to (not including) hi.  Below lo is solid ground that can't be dug; above hi is air.
+// blocks[] holds, for each block: where its voxels start in vox[] (-1 = none), lo, hi, and what it is (BlockSite or BlockStrip).
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -12,17 +22,24 @@ using UnityEngine.Rendering;
 
 public partial class VoxelWorld : MonoBehaviour
 {
-    public const int NX = 1536, NY = 224, NZ = 1536;        // voxels
+    public const int NX = 1856, NY = 576, NZ = 2560;        // the grid, in voxels: 116 m x 160 m, 36 m tall (from 4 m below the work floor)
     public const int CS = 32, CX = NX / CS, CY = NY / CS, CZ = NZ / CS;
+    public const int SiteNX = 1536, SiteNY = 224, SiteNZ = 1536;   // the site itself: 96 m x 96 m, 14 m tall
+    public const int SiteX0 = NX - SiteNX;                  // the grid runs on this far west of the site (20 m); the site starts at column SiteX0, row 0
     public const int Ground = 64;                           // voxel layer that sits at world height 0 (4 m to dig down, 10 m of hill and air above)
     public const float Voxel = 0.0625f;
-    public const int Rim = 2;                               // untouchable border, so you can't dig out of the patch
+    public const float SiteHalf = SiteNX / 2 * Voxel;       // 48 m: the site runs from -48 to 48 each way
+    public const int Rim = 2;                               // untouchable border, so you can't dig out of the grid
     /// How far from the middle a machine may drive (metres), keeping its blade and its dirt inside the patch.
-    public const float DriveLimit = NX / 2 * Voxel - 6.5f;   // leaves the heap in front of the blade room to sit
+    /// (On the mountain road it may also drive along the road strip: see DozerController.)
+    public const float DriveLimit = SiteHalf - 6.5f;        // leaves the heap in front of the blade room to sit
+    public const int BlockSite = 1, BlockStrip = 2;         // what a block of voxels is (blocks[].w)
 
     // materials.  6 and up are loose: they can be pushed, and they slump into heaps
     public const byte Air = 0, Soil = 1, Clay = 2, Rock = 3, Quartz = 4, Gold = 5,
                       LooseSoil = 6, LooseClay = 7, LooseRock = 8, LooseQuartz = 9, LooseGold = 10;
+    /// The grass value that means "leaf litter" (the mountain's forest floor, on the road strip before it is worked).
+    public const byte Litter = 60;
 
     // Landmarks of the quarry, in metres (x right, z ahead of where the dozer starts facing).
     public const float PortalX = 9f, PortalZ = 11.6f;       // the mine entrance in the north face
@@ -129,7 +146,11 @@ public partial class VoxelWorld : MonoBehaviour
 
     public void ResetTimings() { for (int i = 0; i < 5; i++) { MsAvg[i] = 0f; MsMax[i] = 0f; MsTotal[i] = 0; Calls[i] = 0; } }
 
-    NativeArray<byte> vox;                                   // index = y + NY * (x + NX * z)
+    NativeArray<byte> vox;                                   // the blocks' voxels, one after another; see ColBase
+    NativeArray<int4> blocks;                                // per block (x / 32 + CX * (z / 32)): where its voxels start (-1 = none), lo, hi, what it is
+    public long VoxelBytes { get { return vox.IsCreated ? vox.Length : 0; } }
+    public int StripBlocks { get; private set; }             // blocks of voxels kept along the mountain road
+    public long StripVoxels { get; private set; }            // how many voxels those hold
     NativeArray<ushort> top;                                 // per column: highest solid voxel + 1
     NativeArray<byte> dirty;                                 // per chunk
     NativeArray<int> dxs, dzs;                               // neighbour offsets, for the jobs
@@ -146,13 +167,99 @@ public partial class VoxelWorld : MonoBehaviour
     [StructLayout(LayoutKind.Sequential)]
     struct VVert { public float3 pos; public float3 normal; public Color32 color; }
 
-    static int Idx(int x, int y, int z) { return y + NY * (x + NX * z); }
+    /// Where column (x, z)'s voxels are: vox[ColBase(...) + y] for lo <= y < hi.  -1 if the column has none.
+    static int ColBase(NativeArray<int4> blocks, int x, int z, out int lo, out int hi)
+    {
+        int4 b = blocks[(x >> 5) + CX * (z >> 5)];
+        lo = b.y; hi = b.z;
+        if (b.x < 0) return -1;
+        return b.x + ((x & 31) + 32 * (z & 31)) * (b.z - b.y) - b.y;
+    }
+
+    /// What is at voxel (x, y, z), anywhere in the grid: below a block's voxels is solid rock that can't be dug, above
+    /// them air; where there are no voxels at all the ground (top[]) is solid and above it is air.
+    static byte VoxelAt(NativeArray<byte> vox, NativeArray<int4> blocks, NativeArray<ushort> top, int x, int y, int z)
+    {
+        if (y >= NY) return Air;
+        if (x < 0 || y < 0 || z < 0 || x >= NX || z >= NZ) return Rock;
+        int lo, hi;
+        int cb = ColBase(blocks, x, z, out lo, out hi);
+        if (cb < 0) return y < top[x + NX * z] ? Rock : Air;
+        if (y < lo) return Rock;
+        if (y >= hi) return Air;
+        return vox[cb + y];
+    }
+
+    /// Lays out the blocks: the whole site, and the blocks along the mountain road with the height of ground they need.
+    /// Returns how many voxels that is.
+    long BuildBlocks()
+    {
+        var b = new int4[CX * CZ];
+        long next = 0;
+        int strip = 0;
+        int sx0 = SiteX0 / CS, sx1 = NX / CS, sz1 = SiteNZ / CS;
+        for (int bz = 0; bz < CZ; bz++)
+            for (int bx = 0; bx < CX; bx++)
+            {
+                int k = bx + CX * bz;
+                b[k] = new int4(-1, 0, 0, 0);
+                if (bx >= sx0 && bx < sx1 && bz < sz1)
+                {
+                    b[k] = new int4((int)next, 0, SiteNY, BlockSite);
+                    next += CS * CS * SiteNY;
+                    continue;
+                }
+                // a block along the road: within a little more than half the strip's width of the line
+                float x0 = origin.x + bx * CS * Voxel, z0 = origin.z + bz * CS * Voxel, size = CS * Voxel;
+                if (x0 > MountainRoad.Max.x + 8f || z0 > MountainRoad.Max.y + 8f || x0 + size < MountainRoad.Min.x - 8f || z0 + size < MountainRoad.Min.y - 8f) continue;
+                if (MountainRoad.DistanceTo(x0 + size * 0.5f, z0 + size * 0.5f) > MountainRoad.StripHalf + 0.6f + size * 0.75f) continue;   // nowhere near
+                float near = float.MaxValue;
+                float lowY = float.MaxValue, highY = float.MinValue;
+                for (int j = 0; j <= 4; j++)
+                    for (int i = 0; i <= 4; i++)
+                    {
+                        float x = x0 + size * i / 4f, z = z0 + size * j / 4f, s, off;
+                        Vector2 dir;
+                        float d = MountainRoad.Nearest(x, z, out s, out off, out dir);
+                        near = Mathf.Min(near, d);
+                        float nat = Mountain.OutsideY(x, z), g = MountainRoad.GradeAt(s);
+                        lowY = Mathf.Min(lowY, Mathf.Min(nat, g) - 3f);          // about 3 m of diggable ground under the road
+                        highY = Mathf.Max(highY, Mathf.Max(nat, g) + 2.5f);      // and room for a heap on top
+                    }
+                if (near > MountainRoad.StripHalf + 0.6f) continue;
+                int lo = Mathf.Clamp(Mathf.FloorToInt((lowY / Voxel + Ground) / CS) * CS, 0, NY - CS);
+                int hi = Mathf.Clamp(Mathf.CeilToInt((highY / Voxel + Ground) / CS) * CS, lo + CS, NY);
+                b[k] = new int4((int)next, lo, hi, BlockStrip);
+                next += CS * CS * (hi - lo);
+                StripVoxels += CS * CS * (hi - lo);
+                strip++;
+            }
+        blocks = new NativeArray<int4>(b, Allocator.Persistent);
+        StripBlocks = strip;
+        return next;
+    }
+
+    /// True if chunk c has voxels of its own (its block has voxels at its height).
+    bool ChunkReal(int c)
+    {
+        int cx = c % CX, cy = (c / CX) % CY, cz = c / (CX * CY);
+        int4 b = blocks[cx + CX * cz];
+        return b.x >= 0 && cy * CS >= b.y && cy * CS < b.z;
+    }
+
+    public long GridBytes { get; private set; }              // all the arrays the ground keeps (for the memory report)
+    public float BuildMs { get; private set; }               // how long making the ground took at the start
+    public float BlocksMs { get; private set; }              //   of which: laying out the blocks (and the road line)
+    public float GenerateMs { get; private set; }            //   making the voxels (the rest is drawing them)
 
     void Awake()
     {
         Instance = this;
-        origin = new Vector3(-NX / 2 * Voxel, -Ground * Voxel, -NZ / 2 * Voxel);
-        vox = new NativeArray<byte>(NX * NY * NZ, Allocator.Persistent);
+        var startWatch = System.Diagnostics.Stopwatch.StartNew();
+        origin = new Vector3(-SiteHalf - SiteX0 * Voxel, -Ground * Voxel, -SiteHalf);
+        long voxels = BuildBlocks();
+        BlocksMs = (float)startWatch.Elapsed.TotalMilliseconds;
+        vox = new NativeArray<byte>((int)voxels, Allocator.Persistent);
         top = new NativeArray<ushort>(NX * NZ, Allocator.Persistent);
         dirty = new NativeArray<byte>(CX * CY * CZ, Allocator.Persistent);
         chunkFilters = new MeshFilter[CX * CY * CZ];
@@ -163,7 +270,9 @@ public partial class VoxelWorld : MonoBehaviour
         InitDirt();
         InitHand();
 
-        new GenerateJob { vox = vox, top = top, grass = grass }.Schedule(NX * NZ, 256).Complete();
+        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin }.Schedule(NX * NZ, 256).Complete();
+        GenerateMs = (float)startWatch.Elapsed.TotalMilliseconds - BlocksMs;
+        GridBytes = vox.Length + top.Length * 2L + grass.Length * 2L + dirty.Length + blocks.Length * 16L;   // (grass twice: the array and its picture)
         grassTex = new Texture2D(NX, NZ, TextureFormat.R8, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
         grassTex.LoadRawTextureData(grass);
         grassTex.Apply(false);
@@ -177,13 +286,19 @@ public partial class VoxelWorld : MonoBehaviour
         }
         MaxRemeshChunks = 0; MaxRemeshMs = 0f;
         SolidCount = StartTotal = CountSolid();
+        var stripCount = new NativeArray<long>(1, Allocator.TempJob);
+        new CountStripJob { vox = vox, blocks = blocks, result = stripCount }.Run();
+        StripSolidAtStart = stripCount[0];
+        stripCount.Dispose();
         ResetTimings();
+        BuildMs = (float)startWatch.Elapsed.TotalMilliseconds;
         Time.maximumDeltaTime = 0.05f;                       // if a frame runs long, don't pile up catch-up physics steps
     }
 
     void OnDestroy()
     {
         if (vox.IsCreated) vox.Dispose();
+        if (blocks.IsCreated) blocks.Dispose();
         if (top.IsCreated) top.Dispose();
         if (dirty.IsCreated) dirty.Dispose();
         if (dxs.IsCreated) dxs.Dispose();
@@ -244,9 +359,74 @@ public partial class VoxelWorld : MonoBehaviour
     public float HighestPoint(out Vector3 where)
     {
         int best = 0, bi = 0;
-        for (int i = 0; i < top.Length; i++) if (top[i] > best) { best = top[i]; bi = i; }
+        for (int z = 0; z < SiteNZ; z++)                      // (only the site: the mountain's top is not a heap)
+            for (int x = SiteX0; x < NX; x++) { int i = x + NX * z; if (top[i] > best) { best = top[i]; bi = i; } }
         where = new Vector3(origin.x + (bi % NX + 0.5f) * Voxel, (best - Ground) * Voxel, origin.z + (bi / NX + 0.5f) * Voxel);
         return (best - Ground) * Voxel;
+    }
+
+    /// The ground's height in metres at the middle of one column (no averaging).  0 outside the grid.
+    public float TopAt(float wx, float wz)
+    {
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return 0f;
+        return (top[ix + NX * iz] - Ground) * Voxel;
+    }
+
+    /// What kind of ground the column at (wx, wz) is: 0 = no voxels (the mountain's mesh, or outside), BlockSite, BlockStrip.
+    public int KindAt(float wx, float wz)
+    {
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return 0;
+        int4 b = blocks[(ix >> 5) + CX * (iz >> 5)];
+        return b.x < 0 ? 0 : b.w;
+    }
+
+    /// What material is at a point (metres), with the same rules as the jobs use.
+    public byte VoxelAtPoint(Vector3 p)
+    {
+        int x = Mathf.FloorToInt((p.x - origin.x) / Voxel), y = Mathf.FloorToInt((p.y - origin.y) / Voxel), z = Mathf.FloorToInt((p.z - origin.z) / Voxel);
+        return VoxelAt(vox, blocks, top, x, y, z);
+    }
+
+    /// The layers a column's voxels cover, in metres (lo, hi).  False where the column has none.
+    public bool ColumnRange(float wx, float wz, out float lo, out float hi)
+    {
+        lo = hi = 0f;
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return false;
+        int4 b = blocks[(ix >> 5) + CX * (iz >> 5)];
+        if (b.x < 0) return false;
+        lo = (b.y - Ground) * Voxel; hi = (b.z - Ground) * Voxel;
+        return true;
+    }
+
+    // the blocks, for the hillside mesh (it leaves a hole over each strip block, and puts a wall round the hole)
+    public bool BlockIsStrip(int bx, int bz) { return bx >= 0 && bz >= 0 && bx < CX && bz < CZ && blocks[bx + CX * bz].w == BlockStrip; }
+    public bool BlockHasVoxels(int bx, int bz) { return bx >= 0 && bz >= 0 && bx < CX && bz < CZ && blocks[bx + CX * bz].x >= 0; }
+    public float BlockLoY(int bx, int bz) { return (blocks[bx + CX * bz].y - Ground) * Voxel; }
+    public Vector3 Origin { get { return origin; } }
+
+    /// For tests: makes the ground in one column exactly `height` metres high (soil added, or ground taken away).
+    /// Keeps the volume books straight.  Only where the column has voxels.
+    public bool TestSetColumn(float wx, float wz, float height)
+    {
+        int x = Mathf.FloorToInt((wx - origin.x) / Voxel), z = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (x < Rim || z < Rim || x >= NX - Rim || z >= NZ - Rim) return false;
+        int lo, hi;
+        int cb = ColBase(blocks, x, z, out lo, out hi);
+        if (cb < 0) return false;
+        int col = x + NX * z, want = Mathf.Clamp(Ground + Mathf.RoundToInt(height / Voxel), lo + 1, hi - 1), t = top[col];
+        if (want == t) return true;
+        for (int y = Mathf.Min(t, want); y < Mathf.Max(t, want); y++)
+        {
+            if (want > t) { if (vox[cb + y] == Air) { vox[cb + y] = Soil; SolidCount++; StartTotal++; } }
+            else if (vox[cb + y] != Air) { vox[cb + y] = Air; SolidCount--; StartTotal--; }
+            Mark(ref dirty, x, y, z);
+        }
+        top[col] = (ushort)want;
+        grass[col] = 0;
+        return true;
     }
 
     public long CountSolid()
@@ -269,7 +449,7 @@ public partial class VoxelWorld : MonoBehaviour
         var result = new NativeArray<int>(8, Allocator.TempJob);
         new BladeSweepJob
         {
-            vox = vox, top = top, dirty = dirty, load = bladeLoad, result = result, grass = grass,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, load = bladeLoad, result = result, grass = grass,
             bladeToWorld = bladeToWorld, worldToBlade = bladeToWorld.inverse,
             boxMin = boxMin, boxMax = boxMax, origin = origin, seed = frame,
             bladeVel = travel / Mathf.Max(dt, 1e-4f),
@@ -284,7 +464,7 @@ public partial class VoxelWorld : MonoBehaviour
         for (int i = 0; i < bladeLoad.Length; i++) carried += bladeLoad[i];
         carriedOnBlade = carried;
         ClodCount = cCount[0];
-        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels;
+        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
         Toc(0);
         return r;
     }
@@ -301,7 +481,7 @@ public partial class VoxelWorld : MonoBehaviour
         var result = new NativeArray<int>(1, Allocator.TempJob);
         new RipJob
         {
-            vox = vox, top = top, dirty = dirty, load = bladeLoad, grass = grass, points = pts, radius = radius, origin = origin,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, load = bladeLoad, grass = grass, points = pts, radius = radius, origin = origin,
             result = result, seed = frame, machineVel = machineVelocity,
             cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
         }.Run();
@@ -326,7 +506,7 @@ public partial class VoxelWorld : MonoBehaviour
         int edge = Rim + 3;                                   // the job looks three columns out
         new SlumpJob
         {
-            vox = vox, top = top, dirty = dirty, grass = grass, iterations = iterations, seed = frame, DX = dxs, DZ = dzs,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass, iterations = iterations, seed = frame, DX = dxs, DZ = dzs,
             x0 = Mathf.Clamp(x0, edge, NX - 1 - edge), x1 = Mathf.Clamp(x1, edge, NX - 1 - edge),
             z0 = Mathf.Clamp(z0, edge, NZ - 1 - edge), z1 = Mathf.Clamp(z1, edge, NZ - 1 - edge),
         }.Run();
@@ -338,7 +518,11 @@ public partial class VoxelWorld : MonoBehaviour
     {
         var list = new NativeList<int>(64, Allocator.Temp);
         for (int i = 0; i < dirty.Length && list.Length < budget; i++)
-            if ((dirty[i] & 1) != 0) { list.Add(i); dirty[i] = (byte)(dirty[i] & 2); }   // bit 1: redraw it.  Bit 2 (touched) stays, for saving
+            if ((dirty[i] & 1) != 0)
+            {
+                if (!ChunkReal(i)) { dirty[i] = 0; continue; }                // a chunk with no voxels of its own: nothing to draw or save
+                list.Add(i); dirty[i] = (byte)(dirty[i] & 2);                  // bit 1: redraw it.  Bit 2 (touched) stays, for saving
+            }
         LastRemeshChunks = list.Length;
         if (list.Length == 0) { LastRemeshMs = 0f; list.Dispose(); return; }
 
@@ -354,7 +538,7 @@ public partial class VoxelWorld : MonoBehaviour
             tris[i] = new NativeList<int>(1536, Allocator.TempJob);
             handles[i] = new MeshJob
             {
-                vox = vox, verts = verts[i], tris = tris[i], origin = origin,
+                vox = vox, blocks = blocks, top = top, verts = verts[i], tris = tris[i], origin = origin,
                 cx = c % CX, cy = (c / CX) % CY, cz = c / (CX * CY),
             }.Schedule();
         }
@@ -462,6 +646,8 @@ public partial class VoxelWorld : MonoBehaviour
         [NativeDisableParallelForRestriction] public NativeArray<byte> vox;
         public NativeArray<ushort> top;
         public NativeArray<byte> grass;
+        [ReadOnly] public NativeArray<int4> blocks;
+        public float3 origin;
 
         static float Spire(float2 p, float cx, float cz, float r, float h)
         {
@@ -471,14 +657,34 @@ public partial class VoxelWorld : MonoBehaviour
 
         public void Execute(int i)
         {
-            int x = i % NX, z = i / NX;
-            float wx = (x - NX / 2) * Voxel, wz = (z - NZ / 2) * Voxel;
+            int gx = i % NX, z = i / NX;
+            int lo, hi;
+            int cb = ColBase(blocks, gx, z, out lo, out hi);
+            if (cb < 0 || blocks[(gx >> 5) + CX * (z >> 5)].w != BlockSite)
+            {
+                // outside the site: the hillside and the mountain.  Where there are voxels (the road strip) they are
+                // natural ground: topsoil over clay, all of it diggable, with leaf litter on top.
+                float ox = origin.x + gx * Voxel, oz = origin.z + z * Voxel;
+                int natY = Ground + (int)math.round(Mountain.OutsideY(ox, oz) / Voxel);
+                if (cb < 0) { top[i] = (ushort)math.clamp(natY, 0, NY - 1); grass[i] = 0; return; }
+                int st = math.clamp(natY, lo + 1, hi - 2);
+                for (int y = lo; y < hi; y++)
+                {
+                    int dn = st - y;
+                    vox[cb + y] = y >= st ? Air : dn <= 7 ? Soil : Clay;
+                }
+                top[i] = (ushort)st;
+                grass[i] = Litter;
+                return;
+            }
+            int x = gx - SiteX0;                                                 // the site's own columns, counted as they always were
+            float wx = (x - SiteNX / 2) * Voxel, wz = (z - SiteNZ / 2) * Voxel;
             float2 p = new float2(wx, wz);
             float n1 = noise.snoise(p * 0.035f), n2 = noise.snoise(p * 0.11f), n3 = noise.snoise(p * 0.5f);
 
             // the hill as it was before anyone dug it
             // (it does not fade away at the north fence: the hillside carries on past it, as scenery)
-            float inside = math.min(NX / 2 * Voxel - math.abs(wx), wz > 0f ? 99f : NZ / 2 * Voxel - math.abs(wz));
+            float inside = math.min(SiteNX / 2 * Voxel - math.abs(wx), wz > 0f ? 99f : SiteNZ / 2 * Voxel - math.abs(wz));
             float fade = math.smoothstep(1.5f, 9f, inside);
             float south = math.smoothstep(-36f, -19f, wz);
             float hill = math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * south * fade);
@@ -514,8 +720,8 @@ public partial class VoxelWorld : MonoBehaviour
             if (spire < 0.12f) spire = 0f;
 
             int nat = Ground + (int)math.round(hill / Voxel);                    // where the surface was, for the layers
-            int baseSurf = math.clamp(Ground + (int)math.round(ground / Voxel), 8, NY - 48);
-            int surf = math.clamp(baseSurf + (int)math.round(spire / Voxel), 8, NY - 44);
+            int baseSurf = math.clamp(Ground + (int)math.round(ground / Voxel), 8, SiteNY - 48);
+            int surf = math.clamp(baseSurf + (int)math.round(spire / Voxel), 8, SiteNY - 44);
             float soil = 7f + n3 * 3f;
             float clay = 30f + noise.snoise(p * 0.17f) * 7f;
             bool rockPad = floor && math.distance(p, new float2(RockPadX, RockPadZ)) < 5.5f + n2 * 1.2f;
@@ -526,8 +732,8 @@ public partial class VoxelWorld : MonoBehaviour
             bool tunnel = math.abs(wx - PortalX) < TunnelHalfWidthAt(tAlong) && wz > PortalZ - 1.2f && wz < PortalZ + TunnelLength;
             int tunnelTop = Ground + (int)(TunnelHeightAt(tAlong) / Voxel);
 
-            int b = i * NY;
-            for (int y = 0; y < NY; y++)
+            int b = cb;
+            for (int y = 0; y < SiteNY; y++)
             {
                 byte m;
                 if (y >= surf) m = Air;
@@ -596,22 +802,21 @@ public partial class VoxelWorld : MonoBehaviour
     struct MeshJob : IJob
     {
         [ReadOnly] public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
+        [ReadOnly] public NativeArray<ushort> top;
         public NativeList<VVert> verts;
         public NativeList<int> tris;
         public float3 origin;
         public int cx, cy, cz;
 
-        byte Get(int3 p)
-        {
-            if (p.y >= NY) return Air;
-            if (p.x < 0 || p.y < 0 || p.z < 0 || p.x >= NX || p.z >= NZ) return Rock;   // nothing to see beyond the patch
-            return vox[p.y + NY * (p.x + NX * p.z)];
-        }
+        byte Get(int3 p) { return VoxelAt(vox, blocks, top, p.x, p.y, p.z); }   // (nothing to see beyond the grid: it counts as rock)
 
         public void Execute()
         {
             var mask = new NativeArray<byte>(CS * CS, Allocator.Temp);
             int3 b = new int3(cx, cy, cz) * CS;
+            int4 blk = blocks[cx + CX * cz];
+            int stride = blk.z - blk.y, cbase = blk.x - blk.y;                   // the chunk's own voxels: all in one block
             for (int d = 0; d < 3; d++)
             {
                 int u = (d + 1) % 3, v = (d + 2) % 3;
@@ -626,7 +831,7 @@ public partial class VoxelWorld : MonoBehaviour
                             for (int uu = 0; uu < CS; uu++)
                             {
                                 int3 p = b; p[d] += i; p[u] += uu; p[v] += vv;
-                                byte a = vox[p.y + NY * (p.x + NX * p.z)];
+                                byte a = vox[cbase + ((p.x & 31) + 32 * (p.z & 31)) * stride + p.y];
                                 byte m = (a != Air && Get(p + dir) == Air) ? a : Air;
                                 mask[uu + vv * CS] = m;
                                 any |= m != Air;
@@ -674,6 +879,7 @@ public partial class VoxelWorld : MonoBehaviour
     struct BladeSweepJob : IJob
     {
         public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<int> load;                        // cut voxels not yet made into a clod, per material
@@ -726,18 +932,21 @@ public partial class VoxelWorld : MonoBehaviour
                 for (int x = a.x; x <= b.x; x++)
                 {
                     int col = x + NX * z;
+                    int vlo, vhi;
+                    int cb = ColBase(blocks, x, z, out vlo, out vhi);
+                    if (cb < 0) continue;                                       // the mountain's mesh: it can't be dug
                     int colTop = top[col];
                     int yMax = math.min(b.y, colTop - 1);
                     bool changed = false;
                     int firstCut = 0, lastCut = 0;
-                    for (int y = a.y; y <= yMax; y++)
+                    for (int y = math.max(a.y, vlo); y <= yMax; y++)
                     {
-                        byte m = vox[y + NY * col];
+                        byte m = vox[cb + y];
                         if (m == Air) continue;
                         float3 l = math.transform(worldToBlade, origin + (new float3(x, y, z) + 0.5f) * Voxel);
                         if (l.x < boxMin.x || l.x > boxMax.x || l.y < boxMin.y || l.y > boxMax.y || l.z < boxMin.z || l.z > boxMax.z) continue;
                         if (m >= Rock && m <= Gold) { hard++; continue; }
-                        vox[y + NY * col] = Air;
+                        vox[cb + y] = Air;
                         Mark(ref dirty, x, y, z);
                         Cut(Loosen(m), x, y, z);
                         if (!changed) firstCut = y;
@@ -750,16 +959,16 @@ public partial class VoxelWorld : MonoBehaviour
                     // Solid rock stays put and holds up what rests on it.
                     for (int y = lastCut + 1; y < colTop; y++)
                     {
-                        byte m = vox[y + NY * col];
+                        byte m = vox[cb + y];
                         if (m == Air) continue;
                         if (m >= Rock && m <= Gold) break;
-                        vox[y + NY * col] = Air;
+                        vox[cb + y] = Air;
                         Mark(ref dirty, x, y, z);
                         Cut(Loosen(m), x, y, z);
                         cut++;
                     }
                     int t = colTop;
-                    while (t > 0 && vox[t - 1 + NY * col] == Air) t--;
+                    while (t > vlo && vox[cb + t - 1] == Air) t--;
                     top[col] = (ushort)t;
                 }
 
@@ -786,6 +995,7 @@ public partial class VoxelWorld : MonoBehaviour
         [ReadOnly] public NativeArray<int> DX, DZ;
         public NativeArray<byte> grass;
         public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public int x0, x1, z0, z1, iterations, seed;
@@ -799,7 +1009,10 @@ public partial class VoxelWorld : MonoBehaviour
                         int c = x + NX * z;
                         int t = top[c];
                         if (t < 2) continue;
-                        byte m = vox[t - 1 + NY * c];
+                        int lo, hi;
+                        int cb = ColBase(blocks, x, z, out lo, out hi);
+                        if (cb < 0 || t <= lo) continue;
+                        byte m = vox[cb + t - 1];
                         if (m < LooseSoil) continue;
                         // 1. Too steep right here: more than one block above a neighbour (any of the eight).
                         //    Roll to the lowest one, starting from a different side each time so heaps stay round.
@@ -829,22 +1042,25 @@ public partial class VoxelWorld : MonoBehaviour
                         if (!move) continue;
                         if ((math.hash(new int3(x, z, it * 31 + seed)) % 10u) == 0u) continue;   // the odd clod hangs on a moment
                         int nc = bestX + NX * bestZ;
+                        int lo2, hi2;
+                        int cb2 = ColBase(blocks, bestX, bestZ, out lo2, out hi2);
+                        if (cb2 < 0) continue;                                 // (it does not roll off onto the mountain's mesh: the blade pushes it over)
                         grass[nc] = 0;                                         // dirt has rolled onto it
                         int count = math.clamp((t - bestT) / 3, 1, 2);         // a little at a time, so it flows and doesn't jump
                         for (int n = 0; n < count; n++)
                         {
                             int ty = top[c];
-                            if (ty < 1) break;
-                            byte mm = vox[ty - 1 + NY * c];
+                            if (ty <= lo) break;
+                            byte mm = vox[cb + ty - 1];
                             if (mm < LooseSoil) break;                           // reached firm ground
                             int by = top[nc];
-                            if (by >= NY - 1 || by >= ty - 1) break;
-                            vox[ty - 1 + NY * c] = Air;
+                            if (by >= hi2 - 1 || by >= ty - 1 || by < lo2) break;
+                            vox[cb + ty - 1] = Air;
                             Mark(ref dirty, x, ty - 1, z);
                             int nt2 = ty - 1;
-                            while (nt2 > 0 && vox[nt2 - 1 + NY * c] == Air) nt2--;
+                            while (nt2 > lo && vox[cb + nt2 - 1] == Air) nt2--;
                             top[c] = (ushort)nt2;
-                            vox[by + NY * nc] = mm;
+                            vox[cb2 + by] = mm;
                             top[nc] = (ushort)(by + 1);
                             Mark(ref dirty, bestX, by, bestZ);
                         }
@@ -856,6 +1072,7 @@ public partial class VoxelWorld : MonoBehaviour
     struct RipJob : IJob
     {
         public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<int> load;
@@ -900,14 +1117,17 @@ public partial class VoxelWorld : MonoBehaviour
                     for (int x = a.x; x <= b.x; x++)
                     {
                         int col = x + NX * z;
+                        int lo, hi;
+                        int cb = ColBase(blocks, x, z, out lo, out hi);
+                        if (cb < 0) continue;
                         int colTop = top[col];
                         int first = -1;
-                        for (int y = a.y; y <= b.y && y < colTop; y++)
+                        for (int y = math.max(a.y, lo); y <= b.y && y < colTop; y++)
                         {
                             if (math.distancesq(new float3(x, y, z) + 0.5f, c) > r * r) continue;
-                            byte m = vox[y + NY * col];
+                            byte m = vox[cb + y];
                             if (m == Air || m >= LooseSoil) continue;       // loose rubble is left for the blade
-                            vox[y + NY * col] = Air;
+                            vox[cb + y] = Air;
                             Mark(ref dirty, x, y, z);
                             Tear(Loosen(m), x, y, z);
                             torn++;
@@ -919,21 +1139,45 @@ public partial class VoxelWorld : MonoBehaviour
                         int wy = first;
                         for (int y = first; y < colTop; y++)
                         {
-                            byte m = vox[y + NY * col];
+                            byte m = vox[cb + y];
                             if (m == Air) continue;
                             if (y != wy)
                             {
-                                vox[wy + NY * col] = Loosen(m);
-                                vox[y + NY * col] = Air;
+                                vox[cb + wy] = Loosen(m);
+                                vox[cb + y] = Air;
                                 Mark(ref dirty, x, wy, z); Mark(ref dirty, x, y, z);
                             }
-                            else if (m < LooseSoil) { vox[y + NY * col] = Loosen(m); Mark(ref dirty, x, y, z); }
+                            else if (m < LooseSoil) { vox[cb + y] = Loosen(m); Mark(ref dirty, x, y, z); }
                             wy++;
                         }
                         top[col] = (ushort)wy;
                     }
             }
             result[0] = torn;
+        }
+    }
+
+    /// The ground in the road strip's blocks (for loading a save made before the road existed).
+    public long StripSolidAtStart { get; private set; }
+
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct CountStripJob : IJob
+    {
+        [ReadOnly] public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
+        public NativeArray<long> result;
+
+        public void Execute()
+        {
+            long n = 0;
+            for (int k = 0; k < blocks.Length; k++)
+            {
+                int4 b = blocks[k];
+                if (b.x < 0 || b.w != BlockStrip) continue;
+                int end = b.x + CS * CS * (b.z - b.y);
+                for (int i = b.x; i < end; i++) if (vox[i] != Air) n++;
+            }
+            result[0] = n;
         }
     }
 

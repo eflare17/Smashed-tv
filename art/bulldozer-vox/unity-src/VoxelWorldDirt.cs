@@ -25,6 +25,8 @@ public partial class VoxelWorld
 
     public int ClodCount { get; private set; }
     public int ClodVoxelsInFlight { get; private set; }     // (set by StepDirt, and by a load)
+    /// Dirt pushed off the edge of the mountain road's strip: it has gone down the mountainside (left the ground for good).
+    public int SpilledVoxels { get; private set; }
 
     NativeArray<float3> cPos, cVel, cPrev, cDelta;
     NativeArray<quaternion> cRot;
@@ -89,7 +91,7 @@ public partial class VoxelWorld
     public void StepDirt(Matrix4x4 bladeToWorld, Vector3 plateMin, Vector3 plateMax, bool hasBlade, float dt)
     {
         Tic();
-        var result = new NativeArray<int>(2, Allocator.TempJob);
+        var result = new NativeArray<int>(3, Allocator.TempJob);
         // The small steps run on all the CPU's cores: each clod works out its own push from its neighbours, so
         // no two workers ever write to the same clod.  Then one job lets clods that have come to rest turn back
         // into ground (that part writes the ground, so it stays on one core).
@@ -110,7 +112,7 @@ public partial class VoxelWorld
                     h = new ClodPushJob { pos = cPos, age = cAge, cellStart = cellStart, sorted = cSorted, delta = cDelta, contacts = cContacts }.Schedule(n, 128, h);
                     h = new ClodSolveJob
                     {
-                        vox = vox, top = top, pos = cPos, prev = cPrev, delta = cDelta, age = cAge, contacts = cContacts, ground = cGround,
+                        vox = vox, blocks = blocks, top = top, pos = cPos, prev = cPrev, delta = cDelta, age = cAge, contacts = cContacts, ground = cGround,
                         bladeToWorld = b2w, worldToBlade = w2b, plateMin = plateMin, plateMax = plateMax, hasBlade = hasBlade,
                         bladeMoving = plateMoving, origin = origin,
                     }.Schedule(n, 256, h);
@@ -120,7 +122,7 @@ public partial class VoxelWorld
         }
         h = new DirtStepJob
         {
-            vox = vox, top = top, dirty = dirty, grass = grass,
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass,
             pos = cPos, vel = cVel, rot = cRot, mat = cMat, cnt = cCnt, ground = cGround,
             rest = cRest, age = cAge, contacts = cContacts, count = cCount,
             origin = origin, dt = dt, result = result, seed = frame,
@@ -128,9 +130,10 @@ public partial class VoxelWorld
         h.Complete();
         SolidCount += result[0];
         ClodVoxelsInFlight = result[1];
+        SpilledVoxels += result[2];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
         result.Dispose();
         Toc(1);
     }
@@ -160,8 +163,8 @@ public partial class VoxelWorld
                 int x = Mathf.FloorToInt((p.x - origin.x) / Voxel), y = Mathf.FloorToInt((p.y - origin.y) / Voxel), z = Mathf.FloorToInt((p.z - origin.z) / Voxel);
                 byte m;
                 if (y >= NY) m = Air;
-                else if (x < 0 || z < 0 || x >= NX || z >= NZ || y < 0) m = y < Ground ? Soil : Air;       // plain ground outside the site
-                else m = vox[y + NY * (x + NX * z)];
+                else if (x < 0 || z < 0 || x >= NX || z >= NZ || y < 0) m = y < Ground ? Soil : Air;       // plain ground outside the grid
+                else m = VoxelAt(vox, blocks, top, x, y, z);
                 Color32 c = m == Air ? sky : SliceColours[m];
                 if (m != Air && ((x * 7 + y * 13 + z * 5) & 3) == 0) { c.r = (byte)(c.r * 0.88f); c.g = (byte)(c.g * 0.88f); c.b = (byte)(c.b * 0.88f); }
                 px[i + j * w] = c;
@@ -186,7 +189,7 @@ public partial class VoxelWorld
         if (n == 0) return;
         new DirtDrawJob { pos = cPos, rot = cRot, mat = cMat, n = n, counts = drawCounts,
                           m0 = drawMats[0], m1 = drawMats[1], m2 = drawMats[2], m3 = drawMats[3], m4 = drawMats[4] }.Run();
-        var bounds = new Bounds(Vector3.zero, new Vector3(NX * Voxel, 40f, NZ * Voxel));
+        var bounds = new Bounds(origin + new Vector3(NX, NY, NZ) * (Voxel * 0.5f), new Vector3(NX * Voxel, NY * Voxel + 10f, NZ * Voxel));
         for (int i = 0; i < 5; i++)
         {
             var rp = new RenderParams(clodMaterials[i]) { worldBounds = bounds, shadowCastingMode = ShadowCastingMode.On, receiveShadows = true };
@@ -234,7 +237,7 @@ public partial class VoxelWorld
 
     /// The voxel layer a clod at p would come to rest on: the top of the first solid ground at or below it.
     /// Under open sky that is just the column's top.  Under a roof (in the mine) it looks down from the clod.
-    static int FloorIndexOf(NativeArray<byte> vox, NativeArray<ushort> top, float3 origin, float3 p)
+    static int FloorIndexOf(NativeArray<byte> vox, NativeArray<int4> blocks, NativeArray<ushort> top, float3 origin, float3 p)
     {
         int ix = (int)math.floor((p.x - origin.x) / Voxel), iz = (int)math.floor((p.z - origin.z) / Voxel);
         if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return Ground;
@@ -242,13 +245,16 @@ public partial class VoxelWorld
         int t = top[col];
         int y = (int)math.floor((p.y - origin.y) / Voxel) + 1;
         if (y >= t) return t;
-        if (y < 1) y = 1;
-        if (vox[y + NY * col] != Air)
+        int lo, hi;
+        int cb = ColBase(blocks, ix, iz, out lo, out hi);
+        if (cb < 0) return t;                                     // the mountain's mesh: no overhangs, the top is the floor
+        if (y < lo + 1) y = lo + 1;
+        if (vox[cb + y] != Air)
         {
-            for (int k = 0; k < 10 && y < NY - 1 && vox[y + NY * col] != Air; k++) y++;   // inside the ground: up to free space
+            for (int k = 0; k < 10 && y < hi - 1 && vox[cb + y] != Air; k++) y++;   // inside the ground: up to free space
             return y;
         }
-        while (y > 0 && vox[y - 1 + NY * col] == Air) y--;
+        while (y > lo && vox[cb + y - 1] == Air) y--;
         return y;
     }
 
@@ -341,6 +347,7 @@ public partial class VoxelWorld
     struct ClodSolveJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         [ReadOnly] public NativeArray<ushort> top;
         [ReadOnly] public NativeArray<float3> prev, delta;
         public NativeArray<float3> pos;
@@ -371,12 +378,12 @@ public partial class VoxelWorld
             }
             // the ground: rest on it, and treat a tall rise as a wall
             p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);
-            float h = origin.y + FloorIndexOf(vox, top, origin, p) * Voxel;
+            float h = origin.y + FloorIndexOf(vox, blocks, top, origin, p) * Voxel;
             if (p.y - R < h)
             {
                 if (h + R - p.y > WallStep)
                 {
-                    float hp = origin.y + FloorIndexOf(vox, top, origin, new float3(prev[i].x, p.y, prev[i].z)) * Voxel;
+                    float hp = origin.y + FloorIndexOf(vox, blocks, top, origin, new float3(prev[i].x, p.y, prev[i].z)) * Voxel;
                     if (hp < h) { p.x = prev[i].x; p.z = prev[i].z; h = hp; }
                 }
                 if (p.y - R < h) { p.y = h + R; ground[i] = 1; }
@@ -421,6 +428,7 @@ public partial class VoxelWorld
     struct DirtStepJob : IJob
     {
         public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
         public NativeArray<ushort> top;
         public NativeArray<byte> dirty;
         public NativeArray<byte> grass;
@@ -438,12 +446,12 @@ public partial class VoxelWorld
         const float SettleAfter = 2.5f;                       // seconds since the blade last touched it: then it settles, moving or not                        // seconds at rest before a clod becomes ground again
         const int Lo = Rim + 6;
 
-        int FloorIndex(float3 p) { return FloorIndexOf(vox, top, origin, p); }
+        int FloorIndex(float3 p) { return FloorIndexOf(vox, blocks, top, origin, p); }
 
         public void Execute()
         {
             int n = count[0];
-            int placed = 0;
+            int placed = 0, spilled = 0;
             if (n > 0)
             {
                 // tumble, and turn clods that have come to rest back into ground
@@ -475,10 +483,17 @@ public partial class VoxelWorld
                         int k = (start + q) & 3;
                         int x = cx + (k & 1), z = cz + (k >> 1);
                         int col = x + NX * z;
+                        int lo, hi;
+                        int cb = ColBase(blocks, x, z, out lo, out hi);
+                        // pushed off the road strip onto the mountain's mesh (or heaped higher than the strip keeps):
+                        // it has gone over the edge, down the mountainside
+                        bool strip = cb < 0 || blocks[(x >> 5) + CX * (z >> 5)].w == BlockStrip;
+                        if (cb < 0) { left--; spilled++; continue; }
                         // it lands on the floor under it, which in the mine is not the top of the hill above
                         int t = FloorIndex(new float3(origin.x + (x + 0.5f) * Voxel, pos[i].y, origin.z + (z + 0.5f) * Voxel));
-                        if (t >= NY - 1 || vox[t + NY * col] != Air) continue;
-                        vox[t + NY * col] = mat[i];
+                        if (t >= hi - 1 && strip) { left--; spilled++; continue; }
+                        if (t >= hi - 1 || t < lo || vox[cb + t] != Air) continue;
+                        vox[cb + t] = mat[i];
                         if (t >= top[col]) { top[col] = (ushort)(t + 1); grass[col] = 0; }
                         Mark(ref dirty, x, t, z);
                         left--; placed++;
@@ -492,7 +507,7 @@ public partial class VoxelWorld
             int flying = 0;
             for (int i = 0; i < n; i++) flying += cnt[i];
             count[0] = n;
-            result[0] = placed; result[1] = flying;
+            result[0] = placed; result[1] = flying; result[2] = spilled;
         }
     }
 }

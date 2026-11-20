@@ -15,7 +15,9 @@ using UnityEngine;
 
 public partial class VoxelWorld
 {
-    const int SaveVersion = 4;                             // 2: parts remember being found; 3: the backpack's load; 4: dirt sold down the hopper
+    const int SaveVersion = 5;                             // 2: parts remember being found; 3: the backpack's load; 4: dirt sold down the hopper
+                                                           // 5: the bigger grid with the mountain road (older saves are moved into it)
+    const int OldNX = 1536, OldNY = 224, OldNZ = 1536;     // the grid before version 5: just the site
     const int ChunkBytes = CS * CS * CS;
 
     /// Dirt that is not ground right now, counted afresh: tallies, shovel, cart and clods.
@@ -23,7 +25,7 @@ public partial class VoxelWorld
     {
         long sum = 0;
         for (int i = 0; i < bladeLoad.Length; i++) sum += bladeLoad[i] + shovelLoad[i] + cartLoad[i] + packLoad[i];
-        sum += SoldVoxels;
+        sum += SoldVoxels + SpilledVoxels;
         int n = cCount[0];
         for (int i = 0; i < n; i++) sum += cCnt[i];
         return sum;
@@ -40,7 +42,7 @@ public partial class VoxelWorld
     public int TouchedChunks()
     {
         int n = 0;
-        for (int i = 0; i < dirty.Length; i++) if ((dirty[i] & 2) != 0) n++;
+        for (int i = 0; i < dirty.Length; i++) if ((dirty[i] & 2) != 0 && ChunkReal(i)) n++;
         return n;
     }
 
@@ -62,12 +64,13 @@ public partial class VoxelWorld
         w.Write(touched);
         for (int c = 0; c < dirty.Length; c++)
         {
-            if ((dirty[c] & 2) == 0) continue;
+            if ((dirty[c] & 2) == 0 || !ChunkReal(c)) continue;
             int cx = c % CX, cy = (c / CX) % CY, cz = c / (CX * CY), o = 0;
             for (int z = cz * CS; z < cz * CS + CS; z++)
                 for (int x = cx * CS; x < cx * CS + CS; x++)
                 {
-                    NativeArray<byte>.Copy(vox, cy * CS + NY * (x + NX * z), buf, o, CS);
+                    int lo, hi;
+                    NativeArray<byte>.Copy(vox, ColBase(blocks, x, z, out lo, out hi) + cy * CS, buf, o, CS);
                     o += CS;
                 }
             w.Write(c);
@@ -78,6 +81,7 @@ public partial class VoxelWorld
         WriteBytes(w, grass.ToArray());
         WriteInts(w, bladeLoad); WriteInts(w, shovelLoad); WriteInts(w, cartLoad); WriteInts(w, packLoad);
         w.Write(SoldVoxels);
+        w.Write(SpilledVoxels);
 
         int n = cCount[0];
         w.Write(n);
@@ -95,7 +99,10 @@ public partial class VoxelWorld
     {
         int version = r.ReadInt32();
         if (version < 2 || version > SaveVersion) throw new IOException("This save was made by a different version of the game.");
-        if (r.ReadInt32() != NX || r.ReadInt32() != NY || r.ReadInt32() != NZ) throw new IOException("This save is for a different size of site.");
+        bool old = version < 5;                               // made before the mountain road: just the site's grid
+        int fx = r.ReadInt32(), fy = r.ReadInt32(), fz = r.ReadInt32();
+        if (old ? (fx != OldNX || fy != OldNY || fz != OldNZ) : (fx != NX || fy != NY || fz != NZ)) throw new IOException("This save is for a different size of site.");
+        int ocx = OldNX / CS, ocy = OldNY / CS;
         long solid = r.ReadInt64(), startTotal = r.ReadInt64();
 
         // Chunks that need redrawing afterwards: everything touched now, and everything the save touched.
@@ -103,7 +110,7 @@ public partial class VoxelWorld
         for (int c = 0; c < dirty.Length; c++) redraw[c] = (dirty[c] & 2) != 0;
 
         // the ground afresh, exactly as it was made at the start
-        new GenerateJob { vox = vox, top = top, grass = grass }.Schedule(NX * NZ, 256).Complete();
+        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin }.Schedule(NX * NZ, 256).Complete();
         for (int c = 0; c < dirty.Length; c++) dirty[c] = 0;
 
         int touched = r.ReadInt32();
@@ -111,11 +118,14 @@ public partial class VoxelWorld
         {
             int c = r.ReadInt32();
             byte[] buf = r.ReadBytes(ChunkBytes);
+            if (old) c = (c % ocx) + SiteX0 / CS + CX * ((c / ocx) % ocy + CY * (c / (ocx * ocy)));   // the site sits SiteX0 further east in the new grid
+            if (c < 0 || c >= dirty.Length || !ChunkReal(c)) continue;
             int cx = c % CX, cy = (c / CX) % CY, cz = c / (CX * CY), o = 0;
             for (int z = cz * CS; z < cz * CS + CS; z++)
                 for (int x = cx * CS; x < cx * CS + CS; x++)
                 {
-                    NativeArray<byte>.Copy(buf, o, vox, cy * CS + NY * (x + NX * z), CS);
+                    int lo, hi;
+                    NativeArray<byte>.Copy(buf, o, vox, ColBase(blocks, x, z, out lo, out hi) + cy * CS, CS);
                     o += CS;
                 }
             dirty[c] = 2;                                    // still counts as touched, for the next save
@@ -123,12 +133,27 @@ public partial class VoxelWorld
         }
 
         byte[] topBytes = ReadBytes(r);
-        top.Reinterpret<byte>(sizeof(ushort)).CopyFrom(topBytes);
-        grass.CopyFrom(ReadBytes(r));
+        byte[] grassBytes = ReadBytes(r);
+        if (old)
+        {
+            // the old grid was just the site: lay its rows into the site's place in the new one
+            var topNew = top.Reinterpret<byte>(sizeof(ushort));
+            for (int z = 0; z < OldNZ; z++)
+            {
+                NativeArray<byte>.Copy(topBytes, z * OldNX * 2, topNew, (SiteX0 + NX * z) * 2, OldNX * 2);
+                NativeArray<byte>.Copy(grassBytes, z * OldNX, grass, SiteX0 + NX * z, OldNX);
+            }
+        }
+        else
+        {
+            top.Reinterpret<byte>(sizeof(ushort)).CopyFrom(topBytes);
+            grass.CopyFrom(grassBytes);
+        }
         ReadInts(r, bladeLoad); ReadInts(r, shovelLoad); ReadInts(r, cartLoad);
         for (int i = 0; i < packLoad.Length; i++) packLoad[i] = 0;
         if (version >= 3) ReadInts(r, packLoad);                 // older saves had no backpack: it comes back empty
         SoldVoxels = version >= 4 ? r.ReadInt32() : 0;
+        SpilledVoxels = version >= 5 ? r.ReadInt32() : 0;
 
         int n = r.ReadInt32();
         if (n > MaxClods) n = MaxClods;
@@ -143,12 +168,13 @@ public partial class VoxelWorld
 
         SolidCount = solid;
         StartTotal = startTotal;
+        if (old) { long road = StripSolidAtStart; SolidCount += road; StartTotal += road; }   // the road strip's ground is new: it was not in the old save's books
         Recount();
         int inFlight = 0;
         for (int i = 0; i < n; i++) inFlight += cCnt[i];
         ClodVoxelsInFlight = inFlight;
         BermVoxels = inFlight;
-        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
 
         // redraw what changed, and the grass
         for (int c = 0; c < dirty.Length; c++) if (redraw[c]) dirty[c] |= 1;

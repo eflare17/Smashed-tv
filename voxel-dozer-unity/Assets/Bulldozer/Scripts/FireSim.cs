@@ -86,7 +86,7 @@ public class FireSim : MonoBehaviour
     {
         Vector3 p = CentreOf(c);
         var w = VoxelWorld.Instance;
-        bool inSite = p.z < VoxelWorld.NZ / 2 * VoxelWorld.Voxel - 0.5f && Mathf.Abs(p.x) < VoxelWorld.NX / 2 * VoxelWorld.Voxel - 0.5f;
+        bool inSite = p.z < VoxelWorld.SiteHalf - 0.5f && Mathf.Abs(p.x) < VoxelWorld.SiteHalf - 0.5f;
         if (inSite) return fuel[c] > 0f && ((w != null && w.GrassAt(p.x, p.z) > 0) || treesIn[c].Count > 0);
         return fuel[c] > 0f;
     }
@@ -100,7 +100,7 @@ public class FireSim : MonoBehaviour
             treesIn[c] = new List<int>();
             cellIgnite[c] = Never;
             Vector3 p = CentreOf(c);
-            bool pastFence = p.z > VoxelWorld.NZ / 2 * VoxelWorld.Voxel - 0.5f && Mathf.Abs(p.x) < 140f;
+            bool pastFence = p.z > VoxelWorld.SiteHalf - 0.5f && Mathf.Abs(p.x) < 140f;
             bool onTrack = Mathf.Abs(p.x - VoxelWorld.TrackCentreX(p.z)) < VoxelWorld.TrackHalf + 0.5f;
             fuel[c] = onTrack ? 0f : pastFence ? 1f : 1f;              // inside the fence, grass decides (HasFuel)
         }

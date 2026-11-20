@@ -53,6 +53,8 @@ public class DozerController : MonoBehaviour
     public bool GyroHeld { get; private set; }           // the gyro button is down: the right stick is the blade
     public bool BlockedByRock { get; private set; }
     public bool AtFence { get; private set; }            // pushing against the edge of the work site
+    public bool OnRoadStrip { get; private set; }
+    public Transform Blade { get { return blade; } }     // the blade itself (its cutting edge is along its bottom, see BladeView)        // out on the mountain road's strip (past the site's own limits)
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
     public int LastCut { get; private set; }             // blocks the blade moved in the last step
     public float BladeYaw { get; private set; }          // degrees; + swings the right-hand end back
@@ -243,10 +245,34 @@ public class DozerController : MonoBehaviour
 
         if (world != null)
         {
-            // stay on the work site: the ground outside the fence can't be dug
+            // stay on the work site: the ground outside the fence can't be dug.  The one way out is the mountain
+            // road: along it the machine may drive anywhere within CorridorHalf of the line (the strip is wider, so
+            // its blade and its dirt stay over diggable ground).
             float lim = VoxelWorld.DriveLimit;
-            AtFence = Mathf.Abs(pos.x) > lim || Mathf.Abs(pos.z) > lim;
-            pos.x = Mathf.Clamp(pos.x, -lim, lim); pos.z = Mathf.Clamp(pos.z, -lim, lim);
+            bool inSite = Mathf.Abs(pos.x) <= lim && Mathf.Abs(pos.z) <= lim;
+            OnRoadStrip = false;
+            AtFence = false;
+            if (!inSite)
+            {
+                float s, off; Vector2 dir;
+                float d = MountainRoad.Nearest(pos.x, pos.z, out s, out off, out dir);
+                OnRoadStrip = d <= MountainRoad.CorridorHalf;
+                if (!OnRoadStrip)
+                {
+                    bool wasOnRoad = MountainRoad.DistanceTo(before.x, before.z) <= MountainRoad.CorridorHalf + 0.05f
+                                     && !(Mathf.Abs(before.x) <= lim && Mathf.Abs(before.z) <= lim);
+                    if (wasOnRoad && s > 0.01f)
+                    {
+                        // slide along the edge of the road strip
+                        Vector2 side = new Vector2(-dir.y, dir.x);
+                        float back = off - Mathf.Sign(off) * MountainRoad.CorridorHalf;
+                        pos.x -= side.x * back; pos.z -= side.y * back;
+                    }
+                    else if (wasOnRoad) { pos.x = before.x; pos.z = before.z; }
+                    else { pos.x = Mathf.Clamp(pos.x, -lim, lim); pos.z = Mathf.Clamp(pos.z, -lim, lim); }
+                    AtFence = true;
+                }
+            }
             // the scenery: trees, crates and the mine entrance are solid
             if (SiteProps.Blocks(pos, 2.3f)) { pos = before; Speed = 0f; }
             // sit on the ground under the tracks, and lean with it
@@ -421,7 +447,8 @@ public class DozerController : MonoBehaviour
             if (BladeYaw != 0f || BladeTilt != 0f) { text += "\nBlade angle " + BladeYaw.ToString("F0") + "   tilt " + BladeTilt.ToString("F0"); lines++; }
         }
         if (BlockedByRock) text += "\nHARD ROCK: back up and rip it first (" + Pad.Key("G", "LB") + ")";
-        if (AtFence) text += "\nEdge of the work site: turn round";
+        if (AtFence) text += MountainRoad.DistanceTo(transform.position.x, transform.position.z) < MountainRoad.CorridorHalf + 1f
+                             ? "\nEdge of the road strip: steer back onto the road" : "\nEdge of the work site: turn round";
         if (AtCliff) text += "\nToo steep to climb: cut into it with the blade, or go round";
         int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0);
         GUI.Box(new Rect(10, 10, 470, 104 + 17 * extra), text);
