@@ -163,9 +163,14 @@ public class DozerController : MonoBehaviour
     // the blade as a solid plate, for shoving loose clods
     static readonly Vector3 BladePlateMin = new Vector3(-2.25f, -0.8f, 0.5f);
     static readonly Vector3 BladePlateMax = new Vector3(2.25f, 1.32f, 1.15f);
+    // Where the ripper breaks the ground: under its three shanks, and the rock between them, which the shanks crack
+    // as they go (every half metre across, so the broken balls overlap).  Ripping only under the shanks used to leave
+    // ridges of solid rock between the furrows, right at blade depth, and the blade then stopped dead on "hard rock"
+    // in ground that had been ripped.
     static readonly Vector3[] RipperTips =
     {
-        new Vector3(-1.5f, -1.15f, -0.56f), new Vector3(0f, -1.15f, -0.56f), new Vector3(1.5f, -1.15f, -0.56f),
+        new Vector3(-1.5f, -1.15f, -0.56f), new Vector3(-1f, -1.15f, -0.56f), new Vector3(-0.5f, -1.15f, -0.56f), new Vector3(0f, -1.15f, -0.56f),
+        new Vector3(0.5f, -1.15f, -0.56f), new Vector3(1f, -1.15f, -0.56f), new Vector3(1.5f, -1.15f, -0.56f),
     };
     // where the tracks touch the ground, in the machine's space
     static readonly Vector3[] TrackPoints =
@@ -187,7 +192,7 @@ public class DozerController : MonoBehaviour
     float yaw, pitch, roll, height, blockedTimer, fps;
     Vector2 gyroGrabStick;                               // the stick, and the blade, at the moment the gyro button went down
     float gyroGrabTilt, gyroGrabYaw;
-    readonly Vector3[] tipsWorld = new Vector3[6];
+    readonly Vector3[] tipsWorld = new Vector3[14];
     readonly float[] autoAngle = new float[6];          // the lift-arm angle that puts the blade edge at each auto depth (machine level)
     float edgePerDegree;                                // how far the edge drops for each degree the arms go down
     static readonly Vector3 BladeEdge = new Vector3(0f, -0.75f, 1.125f);   // middle of the cutting edge, in the blade's space
@@ -595,10 +600,11 @@ public class DozerController : MonoBehaviour
         if (ripper != null && ripperAngle < RipFrom)
         {
             Matrix4x4 ripperToWorld = root * ripper.localToWorldMatrix;
-            for (int i = 0; i < 3; i++)
+            int n = RipperTips.Length;
+            for (int i = 0; i < n; i++)
             {
                 tipsWorld[i] = ripperToWorld.MultiplyPoint3x4(RipperTips[i]);
-                tipsWorld[i + 3] = ripperToWorld.MultiplyPoint3x4(RipperTips[i] + new Vector3(0f, 0.3f, -0.15f));   // up the shank
+                tipsWorld[i + n] = ripperToWorld.MultiplyPoint3x4(RipperTips[i] + new Vector3(0f, 0.3f, -0.15f));   // up the shank
             }
             world.Rip(tipsWorld, ripRadius, rot * Vector3.forward * Speed);
         }

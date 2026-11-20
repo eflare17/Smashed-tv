@@ -4008,6 +4008,119 @@ public static class BulldozerBuilder
         pcFrame++;
     }
 
+    // Driving through ripped ground:  -executeMethod BulldozerBuilder.RubbleTest
+    // Rips the bare rock patch with three passes of the ripper, then drives through the rubble twice: blade resting at
+    // ground level (it pushes the rubble: slower, but must never get stuck), then blade raised (must keep going over
+    // 1 m/s).  Prints BULLDOZER_RUBBLE_RESULT.
+    static int rbPhase, rbPass; static float rbT0, rbMinV, rbSumV, rbDist; static int rbN; static string rbLog; static bool rbOk;
+    static Vector3 rbFrom;
+    public static void RubbleTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        rbPhase = 0; rbPass = 0; rbLog = ""; rbOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += RubbleTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void RubbleFinish()
+    {
+        EditorApplication.update -= RubbleTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (rbOk) Debug.Log("BULLDOZER_RUBBLE_RESULT" + rbLog); else Debug.LogError("BULLDOZER_RUBBLE_FAILED phase " + rbPhase + rbLog);
+        EditorApplication.Exit(rbOk ? 0 : 1);
+    }
+    static void RubbleTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { rbLog += " timed out"; rbOk = false; RubbleFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null) return;
+        float t = Time.time, k = t - rbT0;
+        float px = VoxelWorld.RockPadX, pz = VoxelWorld.RockPadZ;
+        switch (rbPhase)
+        {
+            case 0:
+                if (t < 2f) return;
+                wk.useOverride = true; d.dead = false;
+                if (!wk.InDozer) wk.GetIn();
+                d.useOverride = true;
+                rbPhase = 1; rbT0 = t; return;
+            case 1:
+                // a ripping pass along the patch (three passes, side by side)
+                if (k < 0.05f) { d.Place(new Vector3(px - 0.75f + 0.75f * rbPass, 0f, pz - 7f), 0f); return; }
+                d.overrideBlade = 1f; d.overrideSteer = 0f;
+                d.overrideRipper = k < 2.5f ? -1f : 0f;
+                d.overrideThrottle = k < 2.5f ? 0f : 0.6f;
+                if (k < 14f) return;
+                d.overrideThrottle = 0f; d.overrideRipper = 1f;
+                rbLog += " pass" + rbPass + "reachedZ=" + d.transform.position.z.ToString("F1");
+                rbPass++; rbT0 = t;
+                if (rbPass >= 3) { rbPhase = 2; rbLog += " ripped=" + w.TotalRipped + " clods=" + w.ClodCount; }
+                return;
+            case 2:
+                if (k < 4f) return;                                              // the rubble settles
+                rbPhase = 3; rbT0 = t; return;
+            case 3: case 4: case 5:
+            {
+                bool raised = rbPhase == 5, down = rbPhase == 4;   // 3: blade auto Flat (edge at ground level), 4: pushing, about 10 cm down, 5: raised
+                if (k < 0.05f)
+                {
+                    d.Place(new Vector3(px, 0f, pz - 9f), 0f);
+                    d.overrideBlade = 0f; d.overrideThrottle = 0f;
+                    d.bladeAuto = rbPhase == 3 ? DozerController.BladeAutoMode.Flat : DozerController.BladeAutoMode.Off;
+                    rbFrom = d.transform.position; rbMinV = 99f; rbSumV = 0f; rbN = 0;
+                    return;
+                }
+                d.overrideRipper = 1f; d.overrideSteer = 0f;
+                // ground level: the blade lowered just to the surface (lever down for a moment from parked); raised: up
+                // pushing: the lever down until the edge is about 10 cm into the ground, then let go (it holds there)
+                d.overrideBlade = raised ? 1f : down && k < 1.5f && d.EdgeAboveTracks > -0.10f ? -1f : 0f;
+                d.overrideThrottle = k < 1.5f ? 0f : 1f;
+                bool inPatch = d.transform.position.z > pz - 6f && d.transform.position.z < pz + 4f;
+                if (k > 3f && inPatch) { rbMinV = Mathf.Min(rbMinV, d.Speed); rbSumV += d.Speed; rbN++; }
+                if (down && d.BlockedByRock && rbLog.IndexOf("hardScan") < 0)
+                {
+                    // what the blade is up against: hard voxels in its box, and what is round them
+                    int nHard = 0, topLoose = 0, besideLoose = 0; float ylo = 9f, yhi = -9f;
+                    for (float bx = -2.2f; bx <= 2.2f; bx += 0.0625f)
+                        for (float by = -0.75f; by <= 1.25f; by += 0.0625f)
+                            for (float bz = 0.85f; bz <= 1.15f; bz += 0.0625f)
+                            {
+                                Vector3 wp = d.Blade.TransformPoint(new Vector3(bx, by, bz));
+                                byte m = w.MaterialAt(wp);
+                                if (m < VoxelWorld.Rock || m > VoxelWorld.Gold) continue;
+                                nHard++; ylo = Mathf.Min(ylo, wp.y); yhi = Mathf.Max(yhi, wp.y);
+                                if (w.LooseOnTop(wp.x, wp.z)) topLoose++;
+                                bool near = false;
+                                for (int q = 0; q < 4 && !near; q++)
+                                {
+                                    Vector3 o = q == 0 ? Vector3.right : q == 1 ? Vector3.left : q == 2 ? Vector3.forward : Vector3.back;
+                                    byte mn = w.MaterialAt(wp + o * 0.2f);
+                                    near = mn >= VoxelWorld.LooseSoil;
+                                }
+                                if (near) besideLoose++;
+                            }
+                    rbLog += " hardScan[n=" + nHard + " y=" + ylo.ToString("F2") + ".." + yhi.ToString("F2") + " colTopLoose=" + topLoose + " looseBeside=" + besideLoose + " surface=" + w.HeightAt(d.Blade.position.x, d.Blade.position.z + 1f).ToString("F2") + "]";
+                }
+                if (k > 2f && Mathf.Repeat(k, 1f) < Time.deltaTime && d.transform.position.z < pz + 5f)
+                    rbLog += " [" + (raised ? "up" : down ? "down" : "flat") + " t" + k.ToString("F0") + " z=" + d.transform.position.z.ToString("F1") + " v=" + d.Speed.ToString("F2") + " bog=" + d.Bog.ToString("F2")
+                           + " load=" + d.BladeLoadM3.ToString("F1") + " cut=" + d.CutRateM3.ToString("F1") + " cliff=" + d.AtCliff + " climb=" + d.Climbing + " rock=" + d.BlockedByRock + " edge=" + d.EdgeAboveTracks.ToString("F2") + " arm=" + d.BladeArmAngle.ToString("F1") + " y=" + d.transform.position.y.ToString("F2") + "]";
+                if (k < 16f && d.transform.position.z < pz + 5f) return;
+                d.overrideThrottle = 0f;
+                float avg = rbSumV / Mathf.Max(1, rbN);
+                rbDist = d.transform.position.z - rbFrom.z;
+                rbLog += " " + (raised ? "RAISED" : down ? "DOWN" : "FLAT") + ":dist=" + rbDist.ToString("F1") + " avgV=" + avg.ToString("F2") + " minV=" + rbMinV.ToString("F2");
+                if (raised) { bool ok = avg > 1f && rbMinV > 0.4f; rbLog += " raisedKeepsGoing=" + (ok ? "ok" : "FAIL"); if (!ok) rbOk = false; }
+                else { bool ok = rbMinV > 0.15f && rbDist > 9f; rbLog += " lowNeverStuck=" + (ok ? "ok" : "FAIL"); if (!ok) rbOk = false; }
+                if (raised) { TestCapture("rubble_after.png"); RubbleFinish(); return; }
+                d.bladeAuto = DozerController.BladeAutoMode.Off;
+                rbPhase++; rbT0 = t; return;
+            }
+        }
+    }
+
     // Autosave, carry on and New game:  -executeMethod BulldozerBuilder.AutosaveTest
     // Uses a save file of its own in Logs (never the owner's).  Waits for an autosave, saves with some coins, starts a
     // new game (the save goes aside as .old, the site starts fresh), then puts the save back, reloads, and checks the
