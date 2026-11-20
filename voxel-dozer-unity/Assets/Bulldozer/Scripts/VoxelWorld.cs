@@ -404,6 +404,22 @@ public partial class VoxelWorld : MonoBehaviour
         return vox[cb + t - 1] >= LooseSoil;
     }
 
+    /// The height in metres of the firm ground in one column: loose dirt lying on top (spoil, a heap) is left out.
+    /// False where the column has no voxels.  (Blade auto measures its cut from this.)
+    public bool FirmHeightAt(float wx, float wz, out float h)
+    {
+        h = 0f;
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return false;
+        int lo, hi;
+        int cb = ColBase(blocks, ix, iz, out lo, out hi);
+        int t = top[ix + NX * iz];
+        if (cb < 0 || t <= lo || t > hi) return false;
+        while (t > lo + 1 && vox[cb + t - 1] >= LooseSoil) t--;
+        h = (t - Ground) * Voxel;
+        return true;
+    }
+
     /// What kind of ground the column at (wx, wz) is: 0 = no voxels (the mountain's mesh, or outside), BlockSite, BlockStrip.
     public int KindAt(float wx, float wz)
     {
