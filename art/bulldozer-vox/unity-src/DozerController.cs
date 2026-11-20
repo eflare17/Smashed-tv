@@ -12,14 +12,14 @@ using UnityEngine;
 public class DozerController : MonoBehaviour
 {
     [Header("Driving")]
-    public float maxSpeed = 3.0f;            // metres a second forward (about 11 km/h)
-    public float reverseSpeed = 2.5f;
-    public float acceleration = 2.5f;
-    public float turnSpeed = 38f;            // degrees a second
+    public float maxSpeed = 3.7f;            // metres a second forward (about 13 km/h)
+    public float reverseSpeed = 3.0f;
+    public float acceleration = 3.6f;
+    public float turnSpeed = 44f;            // degrees a second
     [Header("Blade (angle of the lift arms; positive is down)")]
-    public float bladeUpAngle = -16f;
+    public float bladeUpAngle = -26f;          // high enough to clear the ground going up a steep hill
     public float bladeDownAngle = 3f;        // about 14 cm below the tracks: a normal cut for one pass
-    public float bladeSpeed = 12f;
+    public float bladeSpeed = 18f;
     public float bladeMaxAngle = 25f;        // how far the blade swings left or right
     public float bladeMaxTilt = 8f;          // how far one end drops
     public float bladeTurnSpeed = 25f;       // degrees a second for angle and tilt
@@ -29,7 +29,7 @@ public class DozerController : MonoBehaviour
     public float ripperSpeed = 20f;
     [Header("Digging")]
     public float ripRadius = 0.36f;          // how wide each shank tears
-    public int hardRockStops = 60;           // this many hard blocks in the blade's way stops the machine
+    public int hardRockStops = 85;           // this many hard blocks in the blade's way stops the machine
     public bool showHelp = true;
     [Header("Gyro blade (pad: right stick while the gyro button is held)")]
     public float gyroDeadZone = 0.06f;       // stick movement this small is ignored, so the blade doesn't twitch
@@ -57,7 +57,7 @@ public class DozerController : MonoBehaviour
     public Transform Blade { get { return blade; } }     // the blade itself (its cutting edge is along its bottom, see BladeView)        // out on the mountain road's strip (past the site's own limits)
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
     public bool Climbing { get; private set; }           // crawling over loose spoil, or into a face with the blade cutting it
-    const float ClimbSpeed = 0.6f;                       // metres a second while doing that
+    const float ClimbSpeed = 0.8f;                       // metres a second while doing that
     public int LastCut { get; private set; }             // blocks the blade moved in the last step
     public float BladeYaw { get; private set; }          // degrees; + swings the right-hand end back
     public float BladeTilt { get; private set; }         // degrees; + drops the right-hand end
@@ -418,7 +418,10 @@ public class DozerController : MonoBehaviour
     {
         // The blade holds its depth below the tracks even when the machine tips into its own cut:
         // as the nose drops, the arms lift by the matching amount (the blade is further out than the arms are long).
-        float held = Mathf.Clamp(bladeAngle - pitch * 1.46f, bladeUpAngle - 8f, bladeDownAngle + 12f);
+        // Only while the blade is down working, though: lifted, it stays up with the machine, so going up a hill
+        // with the blade raised it clears the ground instead of dropping into it.
+        float down = 1f - Mathf.Clamp01(Mathf.InverseLerp(bladeDownAngle, bladeUpAngle, bladeAngle) / 0.6f);
+        float held = Mathf.Clamp(bladeAngle - pitch * 1.46f * down, bladeUpAngle - 8f, bladeDownAngle + 12f);
         if (bladeMount != null) bladeMount.localRotation = Quaternion.Euler(held, 0f, 0f);
         if (rearMount != null) rearMount.localRotation = Quaternion.Euler(ripperAngle, 0f, 0f);
         // angle swings the blade about its upright; tilt drops one end.  Digging uses the blade exactly as it sits.

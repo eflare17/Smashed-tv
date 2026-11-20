@@ -229,7 +229,7 @@ public partial class VoxelWorld
     const float GroundFriction = 0.72f;                      // sideways speed kept each small step while on the ground
     const float ClodFriction = 0.93f;                        // and while rubbing against other clods
     const float StickSpeed = 0.11f;                          // slower than this while held up, and it stays put (this sets how steep a heap stands)
-    const float MaxSpeed = 4.2f;                             // metres a second (the dozer does 3)
+    const float MaxSpeed = 5.0f;                             // metres a second (the dozer does 3.7)
     const float MaxRise = 1.2f;
     const int DirtLo = Rim + 6;
 

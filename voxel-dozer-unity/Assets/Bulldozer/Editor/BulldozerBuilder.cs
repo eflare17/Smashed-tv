@@ -760,7 +760,7 @@ public static class BulldozerBuilder
     // Measures the memory the ground takes and the frame time on the road.  Pictures in Logs/road_*.png.
     static int mrPhase;
     static float mrT0, mrMaxS, mrMaxY, mrFrameSum, mrFrameMax;
-    static int mrFrames, mrCliff, mrFence, mrOnStrip;
+    static int mrFrames, mrUpCut, mrCliff, mrFence, mrOnStrip;
     static string mrLog;
     static long mrCoins0;
     static bool mrFail;
@@ -770,7 +770,7 @@ public static class BulldozerBuilder
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        mrPhase = 0; mrLog = ""; rcLog = ""; mrMaxS = 0f; mrMaxY = -9f; mrFrames = 0; mrFrameSum = 0f; mrFrameMax = 0f; mrCliff = mrFence = mrOnStrip = 0; mrFail = false;
+        mrPhase = 0; mrLog = ""; rcLog = ""; mrMaxS = 0f; mrMaxY = -9f; mrFrames = 0; mrFrameSum = 0f; mrFrameMax = 0f; mrCliff = mrFence = mrOnStrip = mrUpCut = 0; mrFail = false;
         testStart = EditorApplication.timeSinceStartup;
         EditorApplication.update += RoadTick;
         EditorApplication.EnterPlaymode();
@@ -988,6 +988,7 @@ public static class BulldozerBuilder
             {
                 mrFrames++; mrFrameSum += Time.unscaledDeltaTime; mrFrameMax = Mathf.Max(mrFrameMax, Time.unscaledDeltaTime);
                 if (d.AtCliff) mrCliff++;
+                mrUpCut += d.LastCut;
                 if (d.AtFence) mrFence++;
                 if (w.KindAt(pos.x, pos.z) == VoxelWorld.BlockStrip) mrOnStrip++;
             }
@@ -996,12 +997,13 @@ public static class BulldozerBuilder
             if (k > 12f && mrLog.IndexOf("drivePic") < 0) { TestCapture("road_dozer_climbing.png"); mrLog += " drivePic"; }
             if (k < 45f && mrMaxS < 60f) return;
             d.overrideThrottle = 0f; d.overrideSteer = 0f;
-            mrLog += " drove: reachedS=" + mrMaxS.ToString("F1") + "m in " + k.ToString("F0") + "s maxY=" + mrMaxY.ToString("F2") + " stepsOnMountainStrip=" + mrOnStrip + " atCliffSteps=" + mrCliff + " atEdgeSteps=" + mrFence
+            mrLog += " drove: reachedS=" + mrMaxS.ToString("F1") + "m in " + k.ToString("F0") + "s maxY=" + mrMaxY.ToString("F2") + " stepsOnMountainStrip=" + mrOnStrip + " bladeUpScraped=" + mrUpCut + " atCliffSteps=" + mrCliff + " atEdgeSteps=" + mrFence
                    + " frameMs(avg/worst)=" + (mrFrameSum / Mathf.Max(1, mrFrames) * 1000f).ToString("F1") + "/" + (mrFrameMax * 1000f).ToString("F1")
                    + " guideRefreshMs=" + job.LastRefreshMs.ToString("F2")
                    + " ms(avg/max) cut=" + w.MsAvg[0].ToString("F2") + "/" + w.MsMax[0].ToString("F1") + " clods=" + w.MsAvg[1].ToString("F2") + "/" + w.MsMax[1].ToString("F1")
                    + " slump=" + w.MsAvg[2].ToString("F2") + "/" + w.MsMax[2].ToString("F1") + " ground=" + w.MsAvg[3].ToString("F2") + "/" + w.MsMax[3].ToString("F1");
             RoadCheck(mrMaxS > 30f && mrOnStrip > 50 && mrMaxY > MountainRoad.StartY + 2.5f, "drivesOntoStrip");
+            RoadCheck(mrUpCut < 400, "bladeUpClearsHill");
             mrPhase = 3; mrT0 = t;
             return;
         }
