@@ -28,7 +28,7 @@ public class Dingo : MonoBehaviour
     public static bool Working { get { return Instance != null && Instance.Driven; } }
 
     // ---- the numbers (starting points, to be tuned once it's played)
-    public const float BucketLitres = 100f;                   // the owner's agreed size (see the report: the shovel holds more)
+    public const float BucketLitres = 500f;                   // heaped (2 to 3 loads fill the cart): the big jump over the shovel
     public static int Capacity { get { return Mathf.RoundToInt(BucketLitres / 1000f / VoxelWorld.VoxelVolume); } }
     public float maxSpeed = 1.7f, reverseSpeed = 1.4f, acceleration = 3f, turnSpeed = 75f;
     public float armSpeed = 42f;                              // degrees a second (fixed, full or empty)
@@ -38,6 +38,8 @@ public class Dingo : MonoBehaviour
     const float PourFrom = 32f;                               // tipped further than this, it pours
     const float MaxCutRate = 900f;                            // voxels a second it can dig before it slows (about 220 L)
     const int HardStop = 45;                                  // this much solid rock in the bucket's way stops it
+    const float OverFill = 1.2f;                              // ploughing on when full heaps it up to this much
+    const float CatchWider = 0.12f;                           // with the bucket up, how much wider the cart catches
 
     [System.NonSerialized] public bool owned;
     public bool Driven { get; private set; }
@@ -53,6 +55,8 @@ public class Dingo : MonoBehaviour
     public bool HitRock { get; private set; }                 // the edge stopped on solid rock just now
     public int RockHits { get; private set; }
     public float Fill01 { get { return world == null ? 0f : Mathf.Clamp01(world.BucketVoxels / (float)Capacity); } }
+    public float Fill { get { return world == null ? 0f : world.BucketVoxels / (float)Capacity; } }   // over 1 when heaped past full
+    public int BumpSpills { get; private set; }
     public float Litres { get { return world == null ? 0f : world.BucketVoxels * VoxelWorld.VoxelVolume * 1000f; } }
     public bool Pouring { get; private set; }
     public float BoardSeconds { get; private set; }           // how long the last step on took (tests)
@@ -67,21 +71,23 @@ public class Dingo : MonoBehaviour
     Rigidbody body;
     Transform armMount, bucketMount, bucket, driverPivot, cleatsL, cleatsR, lights, loadHeap;
     Material paint;
+    float lastPitch, lastRoll;
     float yaw, pitch, roll, height, turn, throttleIn, steerIn, armIn, bucketIn, trackRunL, trackRunR;
     bool tapTip;
     float hardTimer, boardT = 1f, shakeT, jiggleT, offAtSec;
     Vector3 lastLip; bool haveLip;
     float camExtra, camBase = -1f;
-    AudioSource engine, hydraulic, oneShot;
-    AudioClip clunkClip, clankClip;
 
     // where things are, in the machine's own space (metres; +z forward, y up from the bottom of the tracks)
     static readonly Vector3 ArmPivot = new Vector3(0f, 1.22f, -0.32f);
     static readonly Vector3 ArmToHinge = new Vector3(0f, -0.92f, 1.12f);    // with the arms down (raise 0)
     // the bucket, in its own space (origin at its hinge, +z out of the mouth)
-    static readonly Vector3 CutMin = new Vector3(-0.50f, -0.30f, 0.02f), CutMax = new Vector3(0.50f, 0.06f, 0.52f);
-    static readonly Vector3 CatchMin = new Vector3(-0.50f, -0.31f, -0.02f), CatchMax = new Vector3(0.50f, 0.18f, 0.47f);
-    static readonly Vector3 PlateMin = new Vector3(-0.53f, -0.32f, -0.06f), PlateMax = new Vector3(0.53f, 0.12f, 0.48f);
+    // The bucket: 1.2 m wide inside, its floor 0.32 m under the hinge, the lip 0.70 m out, the back 0.56 m tall, the sides
+    // sloping down to 0.28 m at the lip.  About 360 L to the rim; heaped, it carries BucketLitres.
+    const float BW = 0.58f, BLip = 0.70f, BFloor = -0.32f, BBack = 0.24f, BSideLip = -0.04f;
+    static readonly Vector3 CutMin = new Vector3(-BW, BFloor + 0.02f, 0.02f), CutMax = new Vector3(BW, 0.10f, BLip + 0.02f);
+    static readonly Vector3 CatchMin = new Vector3(-BW, BFloor + 0.01f, -0.02f), CatchMax = new Vector3(BW, BBack + 0.12f, BLip - 0.03f);
+    static readonly Vector3 PlateMin = new Vector3(-BW - 0.04f, BFloor, -0.06f), PlateMax = new Vector3(BW + 0.04f, BBack, BLip);
     // the body, for bumping into things: two circles (rounded ends)
     static readonly float[] CircleZ = { 0.15f, -0.55f };
     static readonly float[] CircleR = { 0.52f, 0.45f };
@@ -99,7 +105,6 @@ public class Dingo : MonoBehaviour
         body = gameObject.AddComponent<Rigidbody>();
         body.isKinematic = true;
         body.interpolation = RigidbodyInterpolation.Interpolate;
-        MakeSounds();
         ApplyParts();
     }
 
@@ -171,12 +176,11 @@ public class Dingo : MonoBehaviour
         Driven = true;
         boardT = 0f;                                          // the step on: a squat and a clunk, 0.35 s
         BoardSeconds = 0.35f;
-        Play(clunkClip, 0.9f);
+        Sound("clunk", transform.position + Vector3.up * 0.3f, 0.55f, 1.35f);   // the hydraulic clunk as he steps on
         if (lights != null) lights.gameObject.SetActive(true);
         var cam = Camera.main != null ? Camera.main.GetComponent<FollowCamera>() : null;
         if (cam != null) { cam.Follow(transform, 6.5f, 2.5f, 22f, 1.1f, 20f, 18f); cam.turnFollow = 2.5f; camBase = cam.lookHeight; camExtra = 0f; }
         haveLip = false;
-        if (engine != null && !engine.isPlaying) engine.Play();
         Worker.Instance.Say("On the Dingo.  W/S drive, A/D turn, R/F arms, Q/E bucket, V bucket view.", 4f);
     }
 
@@ -186,9 +190,7 @@ public class Dingo : MonoBehaviour
         Driven = false;
         Speed = 0f; turn = 0f; Pouring = false;
         throttleIn = steerIn = armIn = bucketIn = 0f;
-        Play(clunkClip, 0.6f);
-        if (engine != null) engine.Stop();
-        if (hydraulic != null) hydraulic.Stop();
+        Sound("clunk", transform.position + Vector3.up * 0.3f, 0.35f, 1.5f);
         var wk = Worker.Instance;
         if (wk == null) return;
         // step off to the left, else the right, else behind
@@ -203,13 +205,18 @@ public class Dingo : MonoBehaviour
     }
 
     // ---------------------------------------------------------------- controls
+    MeshRenderer[] renderers;
     void Update()
     {
+        if (renderers == null) renderers = GetComponentsInChildren<MeshRenderer>(true);
+        bool show = !Prologue.Playing;                        // (not in the prologue: it isn't there yet)
+        if (renderers.Length > 0 && renderers[0].enabled != show) foreach (var r in renderers) r.enabled = show;
         if (boardT < 1f) boardT += Time.deltaTime / 0.35f;
         if (!Driven)
         {
             throttleIn = steerIn = armIn = bucketIn = 0f;
             ApplyParts();
+            UpdateSound(Time.deltaTime);
             return;
         }
         bool menu = (Upgrades.Instance != null && Upgrades.Instance.Open) || PauseMenu.Blocking;
@@ -229,15 +236,20 @@ public class Dingo : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.V)) showView = !showView;
         }
         float dt = Time.deltaTime;
-        float armWas = ArmRaise;
+        float armWas = ArmRaise, bucketWas = BucketAngle;
         if (armIn != 0f) ArmRaise = Mathf.Clamp(ArmRaise + armIn * armSpeed * dt, ArmMin, ArmMax);
         if (bucketIn != 0f) BucketAngle = Mathf.Clamp(BucketAngle + bucketIn * bucketSpeed * dt, BucketMin, BucketMax);
-        // auto-level: lowered near the ground, the bucket snaps flat
+        // a clunk as a ram runs into its end stop
+        bool armStop = armIn != 0f && ArmRaise != armWas && (ArmRaise == ArmMin || ArmRaise == ArmMax);
+        bool bucketStop = bucketIn != 0f && BucketAngle != bucketWas && (BucketAngle == BucketMin || BucketAngle == BucketMax);
+        if (armStop || bucketStop) { EndStops++; Sound("clunk", bucketMount.position, 0.45f, 1.25f + 0.1f * Random.value); }
+        // auto-level, a soft assist: lowered near the ground (and Q / E not held) the bucket settles flat.  Q / E always wins.
+        if (bucketIn != 0f) { }
         else if (armIn < 0f && ArmRaise < 6f && Mathf.Abs(BucketAngle) < 14f) BucketAngle = Mathf.MoveTowards(BucketAngle, 0f, 90f * dt);
         // the arms can't push the bucket up through the roof
         if (ArmRaise > armWas && world != null && BucketTopHits()) ArmRaise = armWas;
         ApplyParts();
-        UpdateSound();
+        UpdateSound(dt);
         UpdateCamera(dt);
     }
 
@@ -250,9 +262,9 @@ public class Dingo : MonoBehaviour
     {
         for (int i = -1; i <= 1; i++)
         {
-            Vector3 p = bucket.TransformPoint(new Vector3(i * 0.48f, 0.16f, 0.1f));
+            Vector3 p = bucket.TransformPoint(new Vector3(i * (BW - 0.06f), BBack + 0.04f, 0.1f));
             if (world.MaterialAt(p + Vector3.up * 0.06f) != VoxelWorld.Air) return true;
-            Vector3 q = bucket.TransformPoint(new Vector3(i * 0.48f, -0.1f, 0.5f));
+            Vector3 q = bucket.TransformPoint(new Vector3(i * (BW - 0.06f), BSideLip - 0.06f, BLip));
             if (world.MaterialAt(q + Vector3.up * 0.1f) != VoxelWorld.Air && world.MaterialAt(q + Vector3.up * 0.1f) <= VoxelWorld.Gold && q.y > transform.position.y + 1.2f) return true;
         }
         return false;
@@ -267,8 +279,9 @@ public class Dingo : MonoBehaviour
         if (cam == null || cam.target != transform) return;
         if (camBase < 0f) camBase = cam.lookHeight;
         float up01 = Mathf.InverseLerp(0f, ArmMax, ArmRaise);
-        cam.lookHeight = Mathf.Lerp(cam.lookHeight, camBase + 0.9f * up01, 1f - Mathf.Exp(-3f * dt));
-        float wantExtra = Speed < -0.15f ? 1.6f : 0f;
+        // only a small rise, so the cutting edge and the tunnel roof stay in sight
+        cam.lookHeight = Mathf.Lerp(cam.lookHeight, camBase + 0.35f * up01, 1f - Mathf.Exp(-3f * dt));
+        float wantExtra = Speed < -0.15f ? 1.0f : 0f;
         float next = Mathf.MoveTowards(camExtra, wantExtra, 1.4f * dt);
         cam.distance += next - camExtra;
         camExtra = next;
@@ -354,8 +367,8 @@ public class Dingo : MonoBehaviour
         // ---- the bucket
         Matrix4x4 root = Matrix4x4.TRS(pos, rot, Vector3.one) * transform.worldToLocalMatrix;
         Matrix4x4 b2w = root * bucket.localToWorldMatrix;
-        world.BucketMouth = b2w.MultiplyPoint3x4(new Vector3(0f, 0f, 0.8f));
-        Vector3 lip = b2w.MultiplyPoint3x4(new Vector3(0f, -0.2f, 0.4f));
+        world.BucketMouth = b2w.MultiplyPoint3x4(new Vector3(0f, 0f, BLip + 0.3f));
+        Vector3 lip = b2w.MultiplyPoint3x4(new Vector3(0f, BFloor + 0.1f, BLip - 0.1f));
         Vector3 travel = haveLip ? lip - lastLip : Vector3.zero;
         lastLip = lip; haveLip = true;
         HitRock = false;
@@ -363,7 +376,9 @@ public class Dingo : MonoBehaviour
         int cutNow = 0;
         if (digging)
         {
-            world.BucketCollect(b2w.inverse, CatchMin, CatchMax, Capacity);
+            // full and still ploughing on, the heap in front rides up into the bucket: it ends up badly overfilled
+            bool ploughing = Speed > 0.1f && Bog < 0.95f && world.BucketVoxels >= Capacity - VoxelWorld.ClodVoxels;
+            world.BucketCollect(b2w.inverse, CatchMin, CatchMax, ploughing ? Mathf.RoundToInt(Capacity * OverFill) : Capacity);
             if (travel.sqrMagnitude > 0.0008f * 0.0008f)
             {
                 var r = world.BucketCut(b2w, CutMin, CutMax, Capacity - world.BucketVoxels, travel / dt);
@@ -377,7 +392,7 @@ public class Dingo : MonoBehaviour
                     HitRock = true; RockHits++;
                     pos = new Vector3(before.x, pos.y, before.z);
                     Speed = -0.45f; hardTimer = 0.5f; shakeT = 0.18f;
-                    Play(clankClip, 1f);
+                    Sound("clunk", lip, 1f, 1.6f + 0.2f * Random.value);   // steel on rock
                     JackFX.Blow(lip + fwd * 0.12f, -fwd, VoxelWorld.Rock, 1f, true);
                     ArmRaise = Mathf.Min(ArmMax, ArmRaise + 1.5f);
                     haveLip = false;
@@ -386,11 +401,14 @@ public class Dingo : MonoBehaviour
                     ArmRaise = Mathf.Min(ArmMax, ArmRaise + Mathf.Abs(travel.y) / 0.02f);   // lowering onto rock: it stops there
             }
             else CutRate = Mathf.Lerp(CutRate, 0f, 1f - Mathf.Exp(-8f * dt));
-            // the angle of attack: tipped down and pushing, the lip dives in; curled back, it rides up and skims
+            // the angle of attack, while it is pushing into the ground with the bucket low:
+            //   flat, it skims along the surface;  tipped a little (lip down), it pulls itself in to a cut about 1 cm
+            //   deeper for each degree;  tipped steeply it dives as deep as it goes and bogs;  curled back, it rides up
             if (cutNow > 0 && Speed > 0.1f && armIn == 0f && ArmRaise < 12f)
             {
-                float attack = Mathf.Abs(BucketAngle) < 4f ? 0f : BucketAngle;
-                ArmRaise = Mathf.Clamp(ArmRaise - attack * 0.55f * Speed * dt, ArmMin, ArmMax);
+                float attack = Mathf.Abs(BucketAngle) < 3f ? 0f : Mathf.Clamp(BucketAngle, -15f, 30f);
+                float wantRaise = Mathf.Clamp(-attack * 0.01f / 0.0195f, ArmMin, 12f);         // (the lip drops about 2 cm a degree of arm)
+                ArmRaise = Mathf.MoveTowards(ArmRaise, wantRaise, 9f * Speed * dt);
             }
             world.SetBlade(b2w, PlateMin, PlateMax, travel.sqrMagnitude > 1e-8f);
         }
@@ -402,6 +420,16 @@ public class Dingo : MonoBehaviour
         world.SlumpCentre = lip;
         float target = CutRate > MaxCutRate ? Mathf.Max(0.22f, MaxCutRate / CutRate) : 1f;
         Bog = Mathf.MoveTowards(Bog, target, (target < Bog ? 2f : 0.9f) * dt);
+
+        // ---- heaped well above the rim, a bump shakes a few clods off the top (a normally full bucket never loses any)
+        float bump = (Mathf.Abs(pitch - lastPitch) + Mathf.Abs(roll - lastRoll)) / dt;
+        lastPitch = pitch; lastRoll = roll;
+        if (digging && Fill > 1.08f && bump > 10f && Random.value < Mathf.Clamp01(bump / 40f))
+        {
+            float side = Random.value < 0.5f ? -1f : 1f;
+            Vector3 at = b2w.MultiplyPoint3x4(new Vector3(side * (BW + 0.12f), BBack + 0.22f, Random.Range(0.1f, BLip - 0.1f)));
+            if (world.BucketPour(at, b2w.MultiplyVector(new Vector3(side * 0.8f, 0.3f, 0f)) + fwd * Speed)) BumpSpills++;
+        }
 
         // ---- pouring
         Pouring = false;
@@ -417,16 +445,17 @@ public class Dingo : MonoBehaviour
             Vector3 vel = b2w.MultiplyVector(new Vector3(0f, 0f, 1f)) * 0.7f + fwd * Speed;
             for (int i = 0; i < n; i++)
             {
-                Vector3 at = b2w.MultiplyPoint3x4(new Vector3(Random.Range(-0.42f, 0.42f), -0.18f + Random.Range(0f, 0.1f), 0.58f));
+                Vector3 at = b2w.MultiplyPoint3x4(new Vector3(Random.Range(-BW + 0.1f, BW - 0.1f), BFloor + 0.12f + Random.Range(0f, 0.1f), BLip + 0.08f));
                 if (!world.BucketPour(at, vel + Random.insideUnitSphere * 0.25f)) break;
                 Pouring = true;
             }
         }
         tapTip = false;
-        // while the bucket is up, the cart catches a little wider
+        // while the bucket is up, the cart catches a little wider: 12 cm past its sides and ends, no higher than its rim
+        // (clods that fall wider than that land on the ground, as they should)
         var cart = MineCart.Instance;
         if (cart != null && ArmRaise > 25f && cart.Near(pos, 3.5f) && !cart.Tipping)
-            world.CartCollect(cart.transform.worldToLocalMatrix, new Vector3(-CartHalfW - 0.3f, 0.05f, -CartHalfL - 0.25f), new Vector3(CartHalfW + 0.3f, CartTop + 0.3f, CartHalfL + 0.25f), cart.capacity);
+            world.CartCollect(cart.transform.worldToLocalMatrix, new Vector3(-CartHalfW - CatchWider, 0.3f, -CartHalfL - CatchWider), new Vector3(CartHalfW + CatchWider, CartTop + 0.05f, CartHalfL + CatchWider), cart.capacity);
 
         // ---- tracks: they run a little faster than it goes when it bogs (they slip)
         float slew = turn * Mathf.Deg2Rad * 0.39f;
@@ -486,9 +515,9 @@ public class Dingo : MonoBehaviour
         // the bucket, unless it is up over the tub
         if (bucket != null)
         {
-            Vector3 c = p + r * (BucketOffset() + new Vector3(0f, 0f, 0.24f));
+            Vector3 c = p + r * (BucketOffset() + new Vector3(0f, 0f, 0.36f));
             float bottom = p.y + BucketOffset().y - 0.32f;
-            if (bottom < cart.transform.position.y + CartTop + 0.05f && CircleBox(w2c.MultiplyPoint3x4(c), 0.5f, CartHalfW + 0.04f, CartHalfL + 0.06f)) return true;
+            if (bottom < cart.transform.position.y + CartTop + 0.05f && CircleBox(w2c.MultiplyPoint3x4(c), 0.62f, CartHalfW + 0.04f, CartHalfL + 0.06f)) return true;
         }
         return false;
     }
@@ -531,6 +560,24 @@ public class Dingo : MonoBehaviour
                     Vector3 q = new Vector3(centre.x + off.x, baseY + WallHeights[hgt], centre.z + off.z);
                     if (world.MaterialAt(q) != VoxelWorld.Air) { n++; if (why != null) why += " v" + c + "/" + a + "/" + hgt + "=" + world.MaterialAt(q); }
                 }
+            }
+        }
+        // the dump: the hopper and the buffer stop at the end of the rails are solid
+        if (SiteProps.HopperToWorld.m33 != 0f)
+        {
+            Matrix4x4 w2h = SiteProps.HopperToWorld.inverse;
+            var hh = SiteProps.HopperHalf;
+            for (int c = 0; c < 2; c++)
+                if (CircleBox(w2h.MultiplyPoint3x4(p + r * new Vector3(0f, 0f, CircleZ[c])), CircleR[c], hh.x + 0.15f, hh.z + 0.15f)) { n += 6; if (why != null) why += " hopper"; }
+        }
+        var rails = SiteProps.RailPath;
+        if (rails.Count > 1)
+        {
+            Vector3 end = rails[rails.Count - 1];
+            for (int c = 0; c < 2; c++)
+            {
+                Vector3 cc = p + r * new Vector3(0f, 0f, CircleZ[c]);
+                if (new Vector2(cc.x - end.x, cc.z - end.z).magnitude < CircleR[c] + 0.9f) { n += 6; if (why != null) why += " bufferstop"; }
             }
         }
         // the edge of the work site
@@ -578,75 +625,41 @@ public class Dingo : MonoBehaviour
 
     static float Mod(float a, float m) { float r = a % m; return r < 0f ? r + m : r; }
 
-    // ---------------------------------------------------------------- sounds (made here, no files)
-    void MakeSounds()
-    {
-        const int rate = 22050;
-        // a small diesel: firing pulses with a rough edge
-        var e = new float[rate];
-        var rng = new System.Random(5);
-        for (int i = 0; i < e.Length; i++)
-        {
-            float t = i / (float)rate, ph = t * 30f % 1f;
-            float pulse = Mathf.Exp(-ph * 9f);
-            e[i] = 0.5f * pulse * (float)(rng.NextDouble() * 2.0 - 1.0) * 0.6f + 0.35f * Mathf.Sin(2f * Mathf.PI * 60f * t) * pulse + 0.15f * Mathf.Sin(2f * Mathf.PI * 30f * t);
-        }
-        var hy = new float[rate];
-        float lp = 0f;
-        for (int i = 0; i < hy.Length; i++)
-        {
-            float t = i / (float)rate;
-            lp += ((float)(rng.NextDouble() * 2.0 - 1.0) - lp) * 0.08f;
-            hy[i] = lp * 0.6f + 0.12f * Mathf.Sin(2f * Mathf.PI * 410f * t);
-        }
-        var cl = new float[rate / 4];
-        for (int i = 0; i < cl.Length; i++)
-        {
-            float t = i / (float)rate;
-            cl[i] = Mathf.Exp(-t * 28f) * (0.8f * Mathf.Sin(2f * Mathf.PI * 70f * t) + 0.3f * (float)(rng.NextDouble() * 2.0 - 1.0)) + Mathf.Exp(-t * 60f) * 0.3f * Mathf.Sin(2f * Mathf.PI * 900f * t);
-        }
-        var ck = new float[rate / 2];
-        for (int i = 0; i < ck.Length; i++)
-        {
-            float t = i / (float)rate;
-            ck[i] = Mathf.Exp(-t * 9f) * (0.4f * Mathf.Sin(2f * Mathf.PI * 1250f * t) + 0.3f * Mathf.Sin(2f * Mathf.PI * 2730f * t) + 0.2f * Mathf.Sin(2f * Mathf.PI * 3960f * t))
-                  + Mathf.Exp(-t * 50f) * 0.5f * (float)(rng.NextDouble() * 2.0 - 1.0);
-        }
-        engine = MakeSource(Clip("Dingo engine", e, rate), true, 0.35f);
-        hydraulic = MakeSource(Clip("Dingo hydraulics", hy, rate), true, 0f);
-        oneShot = MakeSource(null, false, 1f);
-        clunkClip = Clip("Dingo clunk", cl, rate);
-        clankClip = Clip("Dingo clank", ck, rate);
-    }
+    // ---------------------------------------------------------------- sounds
+    // The sounds come from the game's sound system (SoundBank / GameAudio).  The hook points, for anyone changing them:
+    //   EngineLoad 0..1 (how hard the engine is working, labour included), Labour 0..1, HydraulicsMoving,
+    //   and the one-shots: Sound("clunk") stepping on / off and at an end stop, Sound("clunk") high on solid rock.
+    public float EngineLoad { get; private set; }
+    public float Labour { get; private set; }
+    public bool HydraulicsMoving { get; private set; }
+    public int EndStops { get; private set; }                 // end-stop clunks so far (tests)
+    AudioSource sEngine, sLug, sTracks, sHydraulic;
 
-    static AudioClip Clip(string name, float[] data, int rate)
-    {
-        var c = AudioClip.Create(name, data.Length, 1, rate, false);
-        c.SetData(data, 0);
-        return c;
-    }
+    void Sound(string name, Vector3 at, float volume, float pitch) { GameAudio.PlayAt(name, at, volume, pitch); }
 
-    AudioSource MakeSource(AudioClip clip, bool loop, float vol)
+    void UpdateSound(float dt)
     {
-        var s = gameObject.AddComponent<AudioSource>();
-        s.clip = clip; s.loop = loop; s.volume = vol; s.playOnAwake = false;
-        s.spatialBlend = 0.6f; s.minDistance = 4f; s.maxDistance = 40f;
-        return s;
-    }
-
-    void Play(AudioClip c, float vol) { if (oneShot != null && c != null) oneShot.PlayOneShot(c, vol); }
-
-    void UpdateSound()
-    {
-        if (engine == null) return;
-        float work = Mathf.Clamp01(Mathf.Abs(throttleIn) + Mathf.Abs(armIn) * 0.5f);
-        float labour = 1f - Bog;
-        engine.pitch = Mathf.Lerp(engine.pitch, 0.8f + 0.45f * work - 0.3f * labour, 0.1f);
-        engine.volume = Mathf.Lerp(engine.volume, 0.25f + 0.2f * work + 0.25f * labour, 0.1f);
-        bool moving = armIn != 0f || bucketIn != 0f;
-        hydraulic.volume = Mathf.MoveTowards(hydraulic.volume, moving ? 0.22f : 0f, Time.deltaTime * 2f);
-        if (moving && !hydraulic.isPlaying) hydraulic.Play();
-        if (!moving && hydraulic.volume <= 0f && hydraulic.isPlaying) hydraulic.Stop();
+        if (GameAudio.Instance == null) return;
+        if (sEngine == null)
+        {
+            sEngine = GameAudio.Loop(gameObject, "engine", 0.6f, 4f, 60f);
+            sLug = GameAudio.Loop(gameObject, "engine_lug", 0.6f, 4f, 60f);
+            sTracks = GameAudio.Loop(gameObject, "tracks", 0.6f, 3f, 40f);
+            sHydraulic = GameAudio.Loop(gameObject, "hydraulic", 0.6f, 3f, 30f);
+        }
+        bool on = Driven && !Prologue.Playing;
+        float eng = GameAudio.Engine, fx = GameAudio.Effects;
+        float want = on ? Mathf.Clamp01(Mathf.Abs(throttleIn) * 0.85f + Mathf.Abs(armIn) * 0.35f + Mathf.Abs(bucketIn) * 0.2f) : 0f;
+        EngineLoad = Mathf.MoveTowards(EngineLoad, want, dt * (want > EngineLoad ? 1.4f : 0.9f));
+        float wantLabour = on && throttleIn > 0.2f ? Mathf.Clamp01((1f - Bog) * 1.6f + (hardTimer > 0f ? 0.6f : 0f)) : 0f;
+        Labour = Mathf.MoveTowards(Labour, wantLabour, dt * 1.5f);
+        // a small engine: the dozer's sounds, pitched up
+        GameAudio.Steer(sEngine, on ? (0.4f + 0.3f * EngineLoad) * (1f - 0.3f * Labour) * eng : 0f, 1.25f + 0.6f * EngineLoad - 0.2f * Labour, dt, on ? 6f : 2f);
+        GameAudio.Steer(sLug, on ? Labour * 0.7f * eng : 0f, 1.15f + 0.3f * EngineLoad - 0.15f * Labour, dt, 5f);
+        float run = Mathf.Abs(Speed) + Mathf.Abs(turn) * 0.01f;
+        GameAudio.Steer(sTracks, on ? Mathf.Clamp01(run / 1.2f) * 0.35f * eng : 0f, 0.6f + 0.35f * run, dt, 10f);
+        HydraulicsMoving = on && (armIn != 0f || bucketIn != 0f);
+        GameAudio.Steer(sHydraulic, HydraulicsMoving ? 0.3f * fx : 0f, 1.1f + 0.15f * EngineLoad, dt, 14f);
     }
 
     // ---------------------------------------------------------------- the model, in voxels
@@ -849,21 +862,21 @@ public class Dingo : MonoBehaviour
         // ---- the bucket, hinged at the arms' front ends
         bucketMount = Part("Mount_Bucket", armMount, ArmToHinge, null, Vector3.zero, false);
         var k = new Vox();
-        k.Box(-0.52f, -0.32f, -0.02f, 0.52f, -0.26f, 0.44f, YEL);           // floor
-        k.Box(-0.52f, -0.32f, 0.44f, 0.52f, -0.28f, 0.50f, LST);            // the steel cutting edge
-        k.Box(-0.52f, -0.32f, -0.06f, 0.52f, 0.12f, 0.00f, YEL);            // back
-        k.Box(-0.52f, -0.28f, 0.00f, 0.52f, -0.20f, 0.06f, YEL);            // the curve where they meet
-        k.Box(-0.54f, 0.08f, -0.08f, 0.54f, 0.14f, 0.04f, AMB);             // top of the back
-        k.Box(-0.30f, -0.22f, -0.12f, 0.30f, 0.08f, -0.06f, DGR);           // the hitch plate behind
+        k.Box(-BW, BFloor, -0.02f, BW, BFloor + 0.06f, BLip - 0.06f, YEL);          // floor
+        k.Box(-BW, BFloor, BLip - 0.06f, BW, BFloor + 0.04f, BLip, LST);            // the steel cutting edge
+        k.Box(-BW, BFloor, -0.06f, BW, BBack, 0.00f, YEL);                          // back
+        k.Box(-BW, BFloor + 0.04f, 0.00f, BW, BFloor + 0.12f, 0.06f, YEL);          // the curve where they meet
+        k.Box(-BW - 0.02f, BBack - 0.04f, -0.08f, BW + 0.02f, BBack + 0.02f, 0.04f, AMB);   // top of the back
+        k.Box(-0.30f, BFloor + 0.10f, -0.12f, 0.30f, BBack - 0.06f, -0.06f, DGR);   // the hitch plate behind
         for (int s = -1; s <= 1; s += 2)
-            for (float z = -0.06f; z < 0.48f; z += 0.0625f)
+            for (float z = -0.06f; z < BLip - 0.02f; z += 0.0625f)
             {
-                float topY = 0.12f - (Mathf.Max(0f, z) / 0.46f) * 0.30f;
-                k.Box(s < 0 ? -0.56f : 0.52f, -0.32f, z, s < 0 ? -0.52f : 0.56f, topY, z + 0.0625f, YEL);   // sides, sloping down to the lip
+                float topY = BBack - (Mathf.Max(0f, z) / (BLip - 0.04f)) * (BBack - BSideLip);
+                k.Box(s < 0 ? -BW - 0.04f : BW, BFloor, z, s < 0 ? -BW : BW + 0.04f, topY, z + 0.0625f, YEL);   // sides, sloping down to the lip
             }
         // the marker rod on the back corner: painted bands, red tip.  Its lean shows the bucket's angle.
-        for (int i = 0; i < 8; i++) k.Box(0.44f, 0.14f + i * 0.0625f, -0.06f, 0.50f, 0.14f + (i + 1) * 0.0625f, 0.0f, (i & 1) == 0 ? BLK : YEL);
-        k.Box(0.43f, 0.64f, -0.07f, 0.51f, 0.70f, 0.01f, RED);
+        for (int i = 0; i < 8; i++) k.Box(BW - 0.08f, BBack + 0.02f + i * 0.0625f, -0.06f, BW - 0.02f, BBack + 0.02f + (i + 1) * 0.0625f, 0.0f, (i & 1) == 0 ? BLK : YEL);
+        k.Box(BW - 0.09f, BBack + 0.52f, -0.07f, BW - 0.01f, BBack + 0.58f, 0.01f, RED);
         bucket = Part("Bucket", bucketMount, Vector3.zero, k, Vector3.zero, false);
         loadHeap = new GameObject("Load").transform;
         loadHeap.SetParent(bucket, false);
@@ -928,22 +941,43 @@ public class Dingo : MonoBehaviour
         int[] mats = { VoxelWorld.LooseSoil, VoxelWorld.LooseClay, VoxelWorld.LooseRock, VoxelWorld.LooseQuartz, VoxelWorld.LooseGold };
         float total = 0f;
         foreach (int m in mats) total += world.BucketLoadOf(m);
-        float fill = Mathf.Clamp01(have / (float)Capacity);
+        float fill = Mathf.Min(have / (float)Capacity, OverFill);
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color32>(); var tris = new List<int>();
-        const int NXc = 8, NZc = 4;
-        float sx = 1.0f / NXc, sz = 0.44f / NZc;
-        for (int x = 0; x < NXc; x++)
-            for (int z = 0; z < NZc; z++)
+        // the load as clods (each a clod's size, 1/8 m), stacked in columns: up to the rim, then heaped in the middle.
+        // Each clod is the colour of one of the materials in it, in proportion; the top of each column is a lumpy part-clod.
+        const float C = VoxelWorld.ClodRadius * 2f;
+        int nx = Mathf.FloorToInt(BW * 2f / C), nz = Mathf.FloorToInt((BLip - 0.06f) / C);
+        float x0 = -nx * C * 0.5f;
+        // how tall each column would be full (to the rim, plus the heap), scaled so the clods add up to the load
+        var full = new float[nx, nz];
+        float sum = 0f;
+        for (int x = 0; x < nx; x++)
+            for (int z = 0; z < nz; z++)
             {
-                float u = (x + 0.5f) / NXc * 2f - 1f, w = (z + 0.5f) / NZc;
-                // deeper at the back of the bucket, heaped in the middle
-                float hgt = fill * (0.36f - 0.22f * w) * (1.15f - 0.35f * u * u) + (Noise(x, z, 1) - 0.5f) * 0.05f;
-                hgt = Mathf.Clamp(hgt, 0.02f, 0.5f);
-                float pick = Noise(x, z, 2) * total, acc = 0f;
-                byte mat = (byte)VoxelWorld.LooseSoil;
-                foreach (int m in mats) { acc += world.BucketLoadOf(m); if (pick <= acc && world.BucketLoadOf(m) > 0) { mat = (byte)m; break; } }
-                Vector3 c = new Vector3(-0.5f + (x + 0.5f) * sx, -0.26f + hgt * 0.5f, 0.0f + (z + 0.5f) * sz);
-                Cube(verts, norms, cols, tris, c, new Vector3(sx, hgt, sz), mat);
+                float u = (x + 0.5f) / nx * 2f - 1f, w = (z + 0.5f) / nz;
+                float rim = (BBack - BFloor) - (BBack - BSideLip) * w;
+                float heap = 0.24f * (1f - u * u) * (1f - 0.6f * w);
+                full[x, z] = rim + heap;
+                sum += full[x, z];
+            }
+        float wantVol = have * VoxelWorld.VoxelVolume, scale = sum > 0f ? wantVol / (sum * C * C) : 0f;
+        for (int x = 0; x < nx; x++)
+            for (int z = 0; z < nz; z++)
+            {
+                float hgt = full[x, z] * scale;
+                int whole = Mathf.FloorToInt(hgt / C);
+                for (int y = 0; y <= whole; y++)
+                {
+                    float hy = y < whole ? C : hgt - whole * C;
+                    if (hy < 0.015f) continue;
+                    float jx = (Noise(x, z * 31 + y, 4) - 0.5f) * 0.03f, jz = (Noise(x, z * 31 + y, 5) - 0.5f) * 0.03f;
+                    float pick = Noise(x, z * 31 + y, 2) * total, acc = 0f;
+                    byte mat = (byte)VoxelWorld.LooseSoil;
+                    foreach (int m in mats) { acc += world.BucketLoadOf(m); if (pick <= acc && world.BucketLoadOf(m) > 0) { mat = (byte)m; break; } }
+                    float sz = C * (0.86f + 0.14f * Noise(x, z * 31 + y, 6));
+                    Vector3 c = new Vector3(x0 + (x + 0.5f) * C + jx, BFloor + 0.06f + y * C + hy * 0.5f, 0.02f + (z + 0.5f) * C + jz);
+                    Cube(verts, norms, cols, tris, c, new Vector3(sz, hy, sz), mat);
+                }
             }
         var mesh = loadHeap.GetComponent<MeshFilter>().sharedMesh;
         mesh.Clear();
@@ -1004,12 +1038,12 @@ public class Dingo : MonoBehaviour
         ViewLine(toPx(transform.TransformPoint(0f, 0.19f, -0.95f)), toPx(transform.TransformPoint(0f, 0.19f, -0.56f)), steel, 1);
         // arm and bucket
         ViewLine(toPx(armMount.position), toPx(bucketMount.position), yel, 2);
-        Vector2 b0 = toPx(bucket.TransformPoint(0f, 0.12f, -0.03f)), b1 = toPx(bucket.TransformPoint(0f, -0.32f, -0.03f)), b2 = toPx(bucket.TransformPoint(0f, -0.32f, 0.5f)), b3 = toPx(bucket.TransformPoint(0f, -0.18f, 0.46f));
+        Vector2 b0 = toPx(bucket.TransformPoint(0f, BBack, -0.03f)), b1 = toPx(bucket.TransformPoint(0f, BFloor, -0.03f)), b2 = toPx(bucket.TransformPoint(0f, BFloor, BLip)), b3 = toPx(bucket.TransformPoint(0f, BSideLip, BLip - 0.04f));
         if (Fill01 > 0f)
             for (float t = 0f; t <= 1f; t += 0.08f)
-                ViewLine(Vector2.Lerp(b1, b2, t * 0.9f), Vector2.Lerp(b1, b2, t * 0.9f) + (b0 - b1).normalized * (0.36f - 0.2f * t) * Fill01 / mpp, new Color32(153, 117, 77, 255), 1);
+                ViewLine(Vector2.Lerp(b1, b2, t * 0.9f), Vector2.Lerp(b1, b2, t * 0.9f) + (b0 - b1).normalized * (0.62f - 0.3f * t) * Mathf.Min(Fill, OverFill) / mpp, new Color32(153, 117, 77, 255), 1);
         ViewLine(b0, b1, yel, 2); ViewLine(b1, b2, yel, 2); ViewLine(b2, b3, steel, 1);
-        ViewLine(toPx(bucket.TransformPoint(0.47f, 0.14f, -0.03f)), toPx(bucket.TransformPoint(0.47f, 0.68f, -0.03f)), red, 1);   // the marker rod
+        ViewLine(toPx(bucket.TransformPoint(BW - 0.05f, BBack + 0.02f, -0.03f)), toPx(bucket.TransformPoint(BW - 0.05f, BBack + 0.58f, -0.03f)), red, 1);   // the marker rod
         viewTex.SetPixels32(viewPx); viewTex.Apply(false);
     }
 
@@ -1053,35 +1087,57 @@ public class Dingo : MonoBehaviour
             }
             return;
         }
-        string help = Pad.InUse ?
-            "Left stick   drive and turn          Y   get off          Start   upgrades\n" +
-            "Left trigger / right trigger   arms up / down\n" +
-            "LB / RB   curl / tip the bucket   (tap RB again to shake it out)\n" +
-            "B   lights          Right stick   look round" :
-            "W / S   drive          A / D   turn on the spot          Enter   get off\n" +
-            "R / F   arms up / down\n" +
-            "Q / E   curl / tip the bucket   (tap E again to shake it out)\n" +
-            "L   lights      V   bucket view      Right mouse drag   look round";
-        help += "\nBucket " + Litres.ToString("F0") + " of " + BucketLitres.ToString("F0") + " L  (" + Mathf.RoundToInt(Fill01 * 100f) + "%)    " + AngleText + "    Speed " + (Speed * 3.6f).ToString("F1") + " km/h";
-        int lines = 5;
-        if (Bog < 0.75f && Speed > 0.02f) { help += "\nLabouring: ease off, or curl and lift to break the bite"; lines++; }
-        if (HitRock || hardTimer > 0f) { help += "\nSOLID ROCK: the bucket won't cut it.  Break it with the jackhammer"; lines++; }
-        if (Blocked && Mathf.Abs(throttleIn) > 0.1f) { help += "\nIn the way: back off and steer round"; lines++; }
-        GUI.Box(new Rect(10, 10, 520, 16 + 18 * lines), help);
-        if (wk != null) GUI.Box(new Rect(10, Ui.H - 34, 190, 24), Pad.Key("Enter", "Y") + "   get off");
+        // the controls (H), under the coins, like the dozer's
+        float below = Hud.TopLeftBottom;
+        if (Hud.HelpOn)
+        {
+            string help = Pad.InUse ?
+                "Left stick   drive and turn          Y   get off          Start   upgrades\n" +
+                "Left trigger / right trigger   arms up / down\n" +
+                "LB / RB   curl / tip the bucket   (tap RB again to shake it out)\n" +
+                "B   lights     Right stick   look round     Back   menu     Left stick click   hide this help" :
+                "W / S   drive          A / D   turn on the spot          Enter   get off\n" +
+                "R / F   arms up / down     (bucket low and flat, drive in: it fills)\n" +
+                "Q / E   curl / tip the bucket   (tap E again to shake it out)\n" +
+                "L   lights      V   bucket view      Right mouse drag   look round\n" +
+                "U   upgrades     Esc   menu     F3   debug     H   hide this help";
+            below = Hud.HelpBox(help, 560f);
+        }
+        if (Hud.DebugOn)
+            Hud.DebugBox("Dingo  speed " + (Speed * 3.6f).ToString("F1") + " km/h   bog " + Bog.ToString("F2") + "   cut " + (CutRate * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L/s"
+                         + "\narms " + ArmRaise.ToString("F1") + "   bucket " + BucketAngle.ToString("F1") + " (to the ground " + BucketToGround.ToString("F1") + ")   load " + world.BucketVoxels + " voxels"
+                         + "\nrock hits " + RockHits + "   end stops " + EndStops + "   bump spills " + BumpSpills + "   cart pushed " + CartPushed.ToString("F2") + " m", below);
 
-        // the bucket view, top right
-        if (!showView) { GUI.Box(new Rect(Ui.W - 160, 10, 150, 24), "V   bucket view"); return; }
+        // bottom right: the bucket view, and over it how full the bucket is, its angle and the warnings that apply
+        string warn = "";
+        if (Fill > 1.08f) warn += "Overfilled: it'll drop clods on bumps\n";
+        if (Bog < 0.75f && Speed > 0.02f) warn += "Labouring: ease off, or curl and lift to break the bite\n";
+        if (HitRock || hardTimer > 0f) warn += "Solid rock: the bucket won't cut it.  Break it with the jackhammer\n";
+        if (Blocked && Mathf.Abs(throttleIn) > 0.1f) warn += "In the way: back off and steer round\n";
+        warn = warn.TrimEnd('\n');
+        float viewH = ViewPanelHeight;
+        float warnH = warn.Length == 0 ? 0f : Hud.Warn.CalcHeight(new GUIContent(warn), Hud.RightW - 20f) + 4f;
+        float bottom = Ui.H - Hud.Margin - viewH - (viewH > 0f ? 6f : 0f);
+        Rect r = Hud.RightPanel(bottom, 58f + warnH);
+        float px = r.x + 10f, py = r.y + 6f, pw = r.width - 20f;
+        py = Hud.BarLine(px, py, pw, "Bucket", Fill01, Litres.ToString("F0") + " of " + BucketLitres.ToString("F0") + " L",
+                         Fill > 1.08f ? new Color(1f, 0.35f, 0.2f) : new Color(0.85f, 0.6f, 0.25f));
+        GUI.Label(new Rect(px, py, pw, 22), "Bucket " + AngleText + "    " + Mathf.RoundToInt(Fill * 100f) + "% full    " + Pad.Key("Enter", "Y") + " gets off", Hud.Small);
+        py += 24f;
+        if (warnH > 0f) GUI.Label(new Rect(px, py, pw, warnH), warn, Hud.Warn);
+
+        if (!showView) { GUI.Box(new Rect(Ui.W - Hud.Margin - 150, Ui.H - Hud.Margin - 24, 150, 24), "V   bucket view"); return; }
         viewTimer -= Time.unscaledDeltaTime;
         if (viewTimer <= 0f || viewTex == null) { viewTimer = 1f / 12f; RedrawView(); }
         if (viewLabel == null) viewLabel = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold };
         int w = VW * VZoom, h = VH * VZoom;
-        float x = Ui.W - w - 14;
-        GUI.Box(new Rect(x - 6, 6, w + 12, h + 54), GUIContent.none);
-        GUI.Label(new Rect(x, 8, w, 20), "Bucket   " + AngleText + "     " + Mathf.RoundToInt(Fill01 * 100f) + "% full   " + Litres.ToString("F0") + " L", viewLabel);
-        GUI.DrawTexture(new Rect(x, 30, w, h), viewTex);
-        GUI.Label(new Rect(x, 32 + h, w, 20), "(V hides)", viewLabel);
+        float x = Ui.W - Hud.Margin - w - 6, top = Ui.H - Hud.Margin - viewH;
+        GUI.Box(new Rect(x - 6, top, w + 12, viewH), GUIContent.none);
+        GUI.Label(new Rect(x, top + 2, w, 20), "Bucket from the side        (V hides)", viewLabel);
+        GUI.DrawTexture(new Rect(x, top + 24, w, h), viewTex);
     }
+
+    float ViewPanelHeight { get { return showView ? VH * VZoom + 30f : 24f; } }
 
     /// Draws the bucket view into whatever is being rendered (clips: the normal on-screen drawing isn't recorded).
     public void DrawInto(int width, int height)
@@ -1091,7 +1147,7 @@ public class Dingo : MonoBehaviour
         GL.PushMatrix();
         GL.LoadPixelMatrix(0, width, height, 0);
         int w = VW * VZoom, h = VH * VZoom;
-        Graphics.DrawTexture(new Rect(width - w - 14, 30, w, h), viewTex);
+        Graphics.DrawTexture(new Rect(width - w - 20, height - h - 16, w, h), viewTex);
         GL.PopMatrix();
     }
 }

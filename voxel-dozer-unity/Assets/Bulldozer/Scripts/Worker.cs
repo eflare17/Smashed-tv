@@ -379,6 +379,26 @@ public class Worker : MonoBehaviour
         if (cam != null) { cam.lookYaw = yaw; cam.lookPitch = lookPitch; }
     }
 
+    /// (Dingo) Steps onto a machine (hidden: the machine has its own driver figure) or off it, at `offAt` facing `facing`.
+    public void OnMachine(bool on, Vector3 offAt, float facing)
+    {
+        if (on)
+        {
+            LetGo();
+            Pouring = false;
+            swing = Swing.None;
+            model.gameObject.SetActive(false);
+            hold.gameObject.SetActive(false);
+            if (marker != null) marker.gameObject.SetActive(false);
+            Cursor.lockState = CursorLockMode.None;
+            return;
+        }
+        hold.gameObject.SetActive(true);
+        Teleport(offAt, facing);
+        OnFootCamera();
+        SetEyes(Eyes);
+    }
+
     void OnFootCamera()
     {
         if (cam == null) return;
@@ -425,6 +445,7 @@ public class Worker : MonoBehaviour
         float y = r.ReadSingle(), pitch = r.ReadSingle();
         int tool = r.ReadInt32();
         bool eyes = r.ReadBoolean(), inDozer = r.ReadBoolean();
+        if (Dingo.Working) Dingo.Instance.GetOff();           // (Dingo: a loaded game starts off it)
         swing = Swing.None;
         LetGo();
         Pouring = false;
@@ -494,9 +515,10 @@ public class Worker : MonoBehaviour
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
             bool treeUp = (Upgrades.Instance != null && Upgrades.Instance.Open) || PauseMenu.Blocking;
-            if (!treeUp && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Pad.Down(Pad.B.Y))) { LetGo(); TryDozer(); }   // (Enter buys in the upgrades)
+            if (!treeUp && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Pad.Down(Pad.B.Y))) { LetGo(); if (!Dingo.TryBoard(this)) TryDozer(); }   // (Dingo: the mini loader, Dingo.cs)   // (Enter buys in the upgrades)
         }
         if (InDozer) { transform.position = dozer.transform.position; return; }
+        if (Dingo.Working) { transform.position = Dingo.Instance.transform.position; return; }   // (Dingo: on its platform)
 
         float dt = Time.deltaTime;
         float walk = useOverride ? overrideWalk : Stronger(Input.GetAxisRaw("Vertical"), Pad.LeftStick.y);
@@ -1138,6 +1160,7 @@ public class Worker : MonoBehaviour
             GUI.Box(new Rect(Ui.W / 2 - 330, Ui.H - 110, 660, 44), say, style);
         }
         if (InDozer) return;                                      // (the dozer draws its own; Enter / Y in its help)
+        if (Dingo.Working) return;                               // (Dingo: it draws its own help)
         if (Tool == 2 && !backpackOwned) SetTool(1);
         string tool = Tool == 0 ? (jackOwned ? "Jackhammer   bite " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") : "Pick") : Tool == 1 ? "Shovel" : "Backpack";
         float shovelL = world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f;

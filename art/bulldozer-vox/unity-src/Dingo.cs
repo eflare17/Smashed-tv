@@ -1087,35 +1087,57 @@ public class Dingo : MonoBehaviour
             }
             return;
         }
-        string help = Pad.InUse ?
-            "Left stick   drive and turn          Y   get off          Start   upgrades\n" +
-            "Left trigger / right trigger   arms up / down\n" +
-            "LB / RB   curl / tip the bucket   (tap RB again to shake it out)\n" +
-            "B   lights          Right stick   look round" :
-            "W / S   drive          A / D   turn on the spot          Enter   get off\n" +
-            "R / F   arms up / down\n" +
-            "Q / E   curl / tip the bucket   (tap E again to shake it out)\n" +
-            "L   lights      V   bucket view      Right mouse drag   look round";
-        help += "\nBucket " + Litres.ToString("F0") + " of " + BucketLitres.ToString("F0") + " L  (" + Mathf.RoundToInt(Fill * 100f) + "%)" + (Fill > 1.08f ? "  OVERFILLED: it drops clods on bumps" : "") + "    " + AngleText + "    Speed " + (Speed * 3.6f).ToString("F1") + " km/h";
-        int lines = 5;
-        if (Bog < 0.75f && Speed > 0.02f) { help += "\nLabouring: ease off, or curl and lift to break the bite"; lines++; }
-        if (HitRock || hardTimer > 0f) { help += "\nSOLID ROCK: the bucket won't cut it.  Break it with the jackhammer"; lines++; }
-        if (Blocked && Mathf.Abs(throttleIn) > 0.1f) { help += "\nIn the way: back off and steer round"; lines++; }
-        GUI.Box(new Rect(10, 10, 520, 16 + 18 * lines), help);
-        if (wk != null) GUI.Box(new Rect(10, Ui.H - 34, 190, 24), Pad.Key("Enter", "Y") + "   get off");
+        // the controls (H), under the coins, like the dozer's
+        float below = Hud.TopLeftBottom;
+        if (Hud.HelpOn)
+        {
+            string help = Pad.InUse ?
+                "Left stick   drive and turn          Y   get off          Start   upgrades\n" +
+                "Left trigger / right trigger   arms up / down\n" +
+                "LB / RB   curl / tip the bucket   (tap RB again to shake it out)\n" +
+                "B   lights     Right stick   look round     Back   menu     Left stick click   hide this help" :
+                "W / S   drive          A / D   turn on the spot          Enter   get off\n" +
+                "R / F   arms up / down     (bucket low and flat, drive in: it fills)\n" +
+                "Q / E   curl / tip the bucket   (tap E again to shake it out)\n" +
+                "L   lights      V   bucket view      Right mouse drag   look round\n" +
+                "U   upgrades     Esc   menu     F3   debug     H   hide this help";
+            below = Hud.HelpBox(help, 560f);
+        }
+        if (Hud.DebugOn)
+            Hud.DebugBox("Dingo  speed " + (Speed * 3.6f).ToString("F1") + " km/h   bog " + Bog.ToString("F2") + "   cut " + (CutRate * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L/s"
+                         + "\narms " + ArmRaise.ToString("F1") + "   bucket " + BucketAngle.ToString("F1") + " (to the ground " + BucketToGround.ToString("F1") + ")   load " + world.BucketVoxels + " voxels"
+                         + "\nrock hits " + RockHits + "   end stops " + EndStops + "   bump spills " + BumpSpills + "   cart pushed " + CartPushed.ToString("F2") + " m", below);
 
-        // the bucket view, top right
-        if (!showView) { GUI.Box(new Rect(Ui.W - 160, 10, 150, 24), "V   bucket view"); return; }
+        // bottom right: the bucket view, and over it how full the bucket is, its angle and the warnings that apply
+        string warn = "";
+        if (Fill > 1.08f) warn += "Overfilled: it'll drop clods on bumps\n";
+        if (Bog < 0.75f && Speed > 0.02f) warn += "Labouring: ease off, or curl and lift to break the bite\n";
+        if (HitRock || hardTimer > 0f) warn += "Solid rock: the bucket won't cut it.  Break it with the jackhammer\n";
+        if (Blocked && Mathf.Abs(throttleIn) > 0.1f) warn += "In the way: back off and steer round\n";
+        warn = warn.TrimEnd('\n');
+        float viewH = ViewPanelHeight;
+        float warnH = warn.Length == 0 ? 0f : Hud.Warn.CalcHeight(new GUIContent(warn), Hud.RightW - 20f) + 4f;
+        float bottom = Ui.H - Hud.Margin - viewH - (viewH > 0f ? 6f : 0f);
+        Rect r = Hud.RightPanel(bottom, 58f + warnH);
+        float px = r.x + 10f, py = r.y + 6f, pw = r.width - 20f;
+        py = Hud.BarLine(px, py, pw, "Bucket", Fill01, Litres.ToString("F0") + " of " + BucketLitres.ToString("F0") + " L",
+                         Fill > 1.08f ? new Color(1f, 0.35f, 0.2f) : new Color(0.85f, 0.6f, 0.25f));
+        GUI.Label(new Rect(px, py, pw, 22), "Bucket " + AngleText + "    " + Mathf.RoundToInt(Fill * 100f) + "% full    " + Pad.Key("Enter", "Y") + " gets off", Hud.Small);
+        py += 24f;
+        if (warnH > 0f) GUI.Label(new Rect(px, py, pw, warnH), warn, Hud.Warn);
+
+        if (!showView) { GUI.Box(new Rect(Ui.W - Hud.Margin - 150, Ui.H - Hud.Margin - 24, 150, 24), "V   bucket view"); return; }
         viewTimer -= Time.unscaledDeltaTime;
         if (viewTimer <= 0f || viewTex == null) { viewTimer = 1f / 12f; RedrawView(); }
         if (viewLabel == null) viewLabel = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold };
         int w = VW * VZoom, h = VH * VZoom;
-        float x = Ui.W - w - 14;
-        GUI.Box(new Rect(x - 6, 6, w + 12, h + 54), GUIContent.none);
-        GUI.Label(new Rect(x, 8, w, 20), "Bucket   " + AngleText + "     " + Mathf.RoundToInt(Fill * 100f) + "% full   " + Litres.ToString("F0") + " L", viewLabel);
-        GUI.DrawTexture(new Rect(x, 30, w, h), viewTex);
-        GUI.Label(new Rect(x, 32 + h, w, 20), "(V hides)", viewLabel);
+        float x = Ui.W - Hud.Margin - w - 6, top = Ui.H - Hud.Margin - viewH;
+        GUI.Box(new Rect(x - 6, top, w + 12, viewH), GUIContent.none);
+        GUI.Label(new Rect(x, top + 2, w, 20), "Bucket from the side        (V hides)", viewLabel);
+        GUI.DrawTexture(new Rect(x, top + 24, w, h), viewTex);
     }
+
+    float ViewPanelHeight { get { return showView ? VH * VZoom + 30f : 24f; } }
 
     /// Draws the bucket view into whatever is being rendered (clips: the normal on-screen drawing isn't recorded).
     public void DrawInto(int width, int height)
@@ -1125,7 +1147,7 @@ public class Dingo : MonoBehaviour
         GL.PushMatrix();
         GL.LoadPixelMatrix(0, width, height, 0);
         int w = VW * VZoom, h = VH * VZoom;
-        Graphics.DrawTexture(new Rect(width - w - 14, 30, w, h), viewTex);
+        Graphics.DrawTexture(new Rect(width - w - 20, height - h - 16, w, h), viewTex);
         GL.PopMatrix();
     }
 }

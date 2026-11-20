@@ -3386,7 +3386,7 @@ public static class BulldozerBuilder
     static float dgPhaseStart, dgDigStart, dgDigLitres, dgDigSeconds, dgAlong0, dgStuckFor, dgCartDeep;
     static long dgVol0;
     static string dgLog; static bool dgOk, dgFilming;
-    static Vector3 dgLastPos;
+    static Vector3 dgLastPos; static float dgWindow, dgBackUntil; static int dgLane, dgRock0; static bool dgDigging;
 
     public static void DingoTest()
     {
@@ -3415,7 +3415,7 @@ public static class BulldozerBuilder
         EditorApplication.EnterPlaymode();
     }
 
-    static void DingoReset() { dgFirstDig = -1f; dgPhase = 0; dgLoads = 0; dgLog = ""; dgOk = true; dgWay = 0; dgStuckFor = 0f; dgCaught = dgCarried = 0; dgDigLitres = dgDigSeconds = 0f; }
+    static void DingoReset() { dgDigging = false; dgLane = 0; dgFirstDig = -1f; dgPhase = 0; dgLoads = 0; dgLog = ""; dgOk = true; dgWay = 0; dgStuckFor = 0f; dgCaught = dgCarried = 0; dgDigLitres = dgDigSeconds = 0f; }
 
     static void DingoFinish(int code)
     {
@@ -3452,11 +3452,15 @@ public static class BulldozerBuilder
     // stuck: told to drive for 6 s and it hasn't got anywhere
     static bool DgStuck(Dingo dg, float dt)
     {
+        // over each second it is told to drive, it must get at least 4 cm (a bogged push still does)
         bool trying = Mathf.Abs(dg.overrideThrottle) > 0.1f;
+        if (!trying) { dgWindow = 0f; dgLastPos = dg.transform.position; return false; }
+        dgWindow += dt;
+        if (dgWindow < 1f) return false;
         float moved = Vector3.Distance(dg.transform.position, dgLastPos);
-        dgLastPos = dg.transform.position;
-        if (trying && moved < 0.0015f) dgStuckFor += dt; else dgStuckFor = Mathf.Max(0f, dgStuckFor - dt * 2f);
-        return dgStuckFor > 6f;
+        dgLastPos = dg.transform.position; dgWindow = 0f;
+        if (moved < 0.04f) dgStuckFor += 1f; else dgStuckFor = 0f;
+        return dgStuckFor >= 6f;
     }
     static long DgVolume(VoxelWorld w) { return w.SolidCount + w.LooseTotal() - w.StartTotal; }
     // a still from a set spot (the follow camera is put back after)
@@ -3573,7 +3577,6 @@ public static class BulldozerBuilder
             Vector3 at = dgWay == 0 ? mouth : inside;
             if (DgGoTo(dg, at, 0.35f)) dgWay++;
             if (dgWay >= 2) { dg.overrideThrottle = 0f; DgNext(2, t); }
-            if (Mathf.FloorToInt(k / 4f) != Mathf.FloorToInt((k - dt) / 4f)) dgLog += " [p1 t=" + k.ToString("F0") + " at" + dg.transform.position.ToString("F1") + " yaw" + dg.transform.eulerAngles.y.ToString("F0") + " sp" + dg.Speed.ToString("F2") + " th" + dg.overrideThrottle.ToString("F1") + " st" + dg.overrideSteer.ToString("F1") + " ov" + dg.OverlapWhy(dg.transform.eulerAngles.y + 3f) + " " + dg.LastBlock + " f" + Time.frameCount + " rt" + Time.realtimeSinceStartup.ToString("F0") + "]";
             if (k > 40f) { DCheck("reachedMine", false); DgNext(9, t); }
         }
         else if (dgPhase == 2)
@@ -3581,25 +3584,32 @@ public static class BulldozerBuilder
             // face in, lower the bucket flat on the floor, drive into the cave-in until it is full
             title = "Digging the cave-in (load " + (dgLoads + 1) + ")";
             cap = "Bucket low and flat, drive in:  " + dg.Litres.ToString("F0") + " L  (" + Mathf.RoundToInt(dg.Fill01 * 100f) + "%)" + (dg.Bog < 0.75f ? "   labouring" : "");
-            if (Mathf.FloorToInt(k / 3f) != Mathf.FloorToInt((k - dt) / 3f)) dgLog += " [p2 t=" + k.ToString("F0") + " at" + dg.transform.position.ToString("F2") + " yaw" + dg.transform.eulerAngles.y.ToString("F0") + " arm" + dg.ArmRaise.ToString("F1") + " bkt" + dg.BucketAngle.ToString("F1") + " fill" + dg.Fill01.ToString("F2") + " bog" + dg.Bog.ToString("F2") + " cut" + dg.CutRate.ToString("F0") + " sp" + dg.Speed.ToString("F2") + " ov" + dg.OverlapWhy(dg.transform.eulerAngles.y) + " " + dg.LastBlock + "]";
             if (k > 60f) { DCheck("digTimedOut", false); DgNext(9, t); return; }
-            bool faced = DgFace(dg, 0f);
             DgBucket(dg, 0f);
-            if (!faced) { dgDigStart = t; return; }
+            if (!dgDigging)
+            {
+                // get ready: face in, bucket flat on the floor
+                bool faced = DgFace(dg, 0f);
+                if (!faced) return;
+                DgArms(dg, 0f);
+                if (dg.ArmRaise > 1f) return;
+                dgDigging = true; dgDigStart = t; dgRock0 = dg.RockHits; dgBackUntil = -1f;
+                if (dgFirstDig < 0f) dgFirstDig = t;
+            }
             DgArms(dg, 0f);
-            if (dg.ArmRaise > 1f) { dgDigStart = t; return; }
-            dg.overrideArms = 0f;
-            if (dgFirstDig < 0f) dgFirstDig = t;
-            float steer = Mathf.Clamp((VoxelWorld.PortalX - dg.transform.position.x) * 0.8f + Mathf.DeltaAngle(dg.transform.eulerAngles.y, 0f) / 20f, -1f, 1f);
+            // a solid boulder in the way (it clanks off it): back off a little and try the next lane over, as a player would
+            if (dg.RockHits - dgRock0 >= 3) { dgLane = dgLane == 0 ? 1 : dgLane == 1 ? -1 : 0; dgRock0 = dg.RockHits; dgBackUntil = t + 0.9f; dgLog += " rockInTheWay>lane" + dgLane; }
+            float laneX = VoxelWorld.PortalX + dgLane * 0.85f;
+            float steer = Mathf.Clamp((laneX - dg.transform.position.x) * 1.2f + Mathf.DeltaAngle(dg.transform.eulerAngles.y, 0f) / 20f, -1f, 1f);
             dg.overrideSteer = steer * 0.6f;
-            dg.overrideThrottle = 1f;
+            dg.overrideThrottle = t < dgBackUntil ? -0.8f : 1f;
             if (dgLoads == 0 && dg.Fill01 > 0.5f && dgLog.IndexOf("digPic") < 0) { dgLog += " digPic"; TestCapture("dingo_dig.png"); Vector3 c = dg.transform.position; DgShot("dingo_dig_side.png", c + dg.transform.right * 1.3f - dg.transform.forward * 0.6f + Vector3.up * 1.6f, c + dg.transform.forward * 1.2f + Vector3.up * 0.4f); }
             if (dg.Fill01 >= 0.95f || t - dgDigStart > 25f)
             {
                 dg.overrideThrottle = 0f; dg.overrideSteer = 0f;
                 dgDigLitres += dg.Litres; dgDigSeconds += t - dgDigStart;
                 if (dgLoads == 0) dgLog += " firstLoad=" + dg.Litres.ToString("F0") + "L/" + (t - dgDigStart).ToString("F1") + "s";
-                dgWay = 0;
+                dgWay = 0; dgDigging = false;
                 DgNext(3, t);
             }
         }
