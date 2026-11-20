@@ -1,6 +1,11 @@
 // F5 saves the game, F6 loads it.  One save slot, in Unity's own folder for this game
 // (Application.persistentDataPath).  Everything is gzipped into one file.
 //
+// In the built game it also looks after itself: it carries on from the save when the game starts, saves every
+// AutoEvery seconds of play and when the game is closed.  "New game" (Esc menu) puts the save aside as a backup
+// (".old") and starts the site afresh.  In the editor none of that happens (tests start fresh and must never
+// write the owner's save) unless a test switches it on with TestAuto and points PathOverride at a file of its own.
+//
 // What is kept: the ground (only what has changed since the start, see VoxelWorldSave.cs), grass, every dirt
 // tally and loose clod, the cart's place and load, the dozer and the worker, which parts are found and fitted,
 // the coins and gold in the pot, and the upgrades bought.
@@ -12,7 +17,15 @@ using UnityEngine;
 public class SaveGame : MonoBehaviour
 {
     public static SaveGame Instance { get; private set; }
-    public static string FilePath { get { return Path.Combine(Application.persistentDataPath, "voxel-dozer-save.bin"); } }
+    public static string FilePath { get { return PathOverride ?? Path.Combine(Application.persistentDataPath, "voxel-dozer-save.bin"); } }
+    public static string PathOverride;                       // tests: save somewhere else
+    public static bool TestAuto;                             // tests: do the built game's autosave and carry-on in the editor
+    public static float AutoEvery = 300f;                    // seconds of play between autosaves
+    static bool freshStart;                                  // New game: don't carry on from a save this once
+    public static bool AutoOn { get { return !Application.isEditor || TestAuto; } }
+    public float SinceSave { get; private set; }
+    public bool CarriedOn { get; private set; }
+    bool triedCarryOn;
 
     // what the last save or load did, for the message and for tests
     public long LastBytes { get; private set; }
@@ -23,15 +36,49 @@ public class SaveGame : MonoBehaviour
 
     void Update()
     {
+        if (AutoOn && !triedCarryOn && VoxelWorld.Instance != null && Worker.Instance != null && Time.timeSinceLevelLoad > 0.5f)
+        {
+            triedCarryOn = true;
+            if (freshStart) freshStart = false;
+            else if (File.Exists(FilePath))
+            {
+                string said = Load();
+                CarriedOn = said.StartsWith("Game loaded");
+                Say(CarriedOn ? "Welcome back: carrying on from your saved game." : said);
+            }
+        }
+        if (AutoOn && Time.timeScale > 0f)
+        {
+            SinceSave += Time.unscaledDeltaTime;
+            if (SinceSave >= AutoEvery)
+            {
+                string said = Save();
+                if (!said.StartsWith("Game saved")) Say(said);
+                else if (Worker.Instance != null) Worker.Instance.Say("Autosaved", 1.5f);
+            }
+        }
         if (Worker.Instance != null && Worker.Instance.useOverride) return;     // not while a test is driving
         if (Input.GetKeyDown(KeyCode.F5)) Say(Save());
         if (Input.GetKeyDown(KeyCode.F6)) Say(Load());
+    }
+
+    void OnApplicationQuit() { if (AutoOn && VoxelWorld.Instance != null) Save(); }
+
+    /// Starts the site afresh.  The old save is kept beside it as a backup (".old").
+    public void NewGame()
+    {
+        try { if (File.Exists(FilePath)) { string old = FilePath + ".old"; if (File.Exists(old)) File.Delete(old); File.Move(FilePath, old); } }
+        catch (System.Exception e) { Say("Could not put the old save aside: " + e.Message); return; }
+        freshStart = true;
+        Time.timeScale = 1f;
+        UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
     }
 
     static void Say(string text) { if (Worker.Instance != null) Worker.Instance.Say(text, 3f); }
 
     public string Save()
     {
+        SinceSave = 0f;
         var world = VoxelWorld.Instance;
         if (world == null) return "Nothing to save yet.";
         var watch = Stopwatch.StartNew();

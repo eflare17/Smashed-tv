@@ -3417,6 +3417,87 @@ public static class BulldozerBuilder
         PushFinish(0);
     }
 
+    // Autosave, carry on and New game:  -executeMethod BulldozerBuilder.AutosaveTest
+    // Uses a save file of its own in Logs (never the owner's).  Waits for an autosave, saves with some coins, starts a
+    // new game (the save goes aside as .old, the site starts fresh), then puts the save back, reloads, and checks the
+    // game carried on with the coins.  Prints BULLDOZER_AUTOSAVE_RESULT.
+    static int asPhase; static float asT0; static string asLog; static bool asOk; static long asCoins;
+    static string AsFile { get { return Application.dataPath + "/../Logs/autosave_test.bin"; } }
+    public static void AutosaveTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        if (System.IO.File.Exists(AsFile)) System.IO.File.Delete(AsFile);
+        if (System.IO.File.Exists(AsFile + ".old")) System.IO.File.Delete(AsFile + ".old");
+        SaveGame.PathOverride = AsFile; SaveGame.TestAuto = true; SaveGame.AutoEvery = 3f;
+        asPhase = 0; asLog = ""; asOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += AutosaveTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void AsCheck(bool ok, string what) { asLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) asOk = false; }
+    static void AutosaveFinish(int code)
+    {
+        EditorApplication.update -= AutosaveTick;
+        SaveGame.PathOverride = null; SaveGame.TestAuto = false; SaveGame.AutoEvery = 300f;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void AutosaveTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_AUTOSAVE_FAILED timed out in phase " + asPhase + asLog); AutosaveFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var sg = SaveGame.Instance; var w = VoxelWorld.Instance; var m = Money.Instance;
+        if (sg == null || w == null || m == null || Worker.Instance == null) return;
+        float t = Time.realtimeSinceStartup;
+        if (asPhase == 0)
+        {
+            AsCheck(!sg.CarriedOn, "noSaveSoFreshStart");
+            asPhase = 1; asT0 = t;
+            return;
+        }
+        if (asPhase == 1)
+        {
+            if (!System.IO.File.Exists(AsFile)) { if (t - asT0 > 20f) { AsCheck(false, "autosavedWithin20s"); asPhase = 2; } return; }
+            AsCheck(true, "autosaved");
+            m.Refund(123, 0);
+            asCoins = m.Coins;
+            string said = sg.Save();                                  // what Quit does
+            AsCheck(said.StartsWith("Game saved"), "savedOnQuit");
+            asLog += " coins=" + asCoins;
+            asPhase = 2;
+            return;
+        }
+        if (asPhase == 2)
+        {
+            SaveGame.AutoEvery = 300f;                                 // no more autosaves while checking
+            sg.NewGame();
+            asPhase = 3; asT0 = t;
+            return;
+        }
+        if (asPhase == 3)
+        {
+            if (t - asT0 < 3f || Time.timeSinceLevelLoad < 1.5f) return;
+            AsCheck(!System.IO.File.Exists(AsFile) && System.IO.File.Exists(AsFile + ".old"), "newGameKeptBackup");
+            AsCheck(!sg.CarriedOn, "newGameIsFresh");
+            AsCheck(m.Coins == 0, "newGameCoinsZero(" + m.Coins + ")");
+            AsCheck(Time.timeScale == 1f, "runningAfterNewGame");
+            System.IO.File.Move(AsFile + ".old", AsFile);              // the save back, and start the game again
+            UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+            asPhase = 4; asT0 = t;
+            return;
+        }
+        if (asPhase == 4)
+        {
+            if (t - asT0 < 3f || Time.timeSinceLevelLoad < 2f) return;
+            AsCheck(sg.CarriedOn, "carriedOnFromSave");
+            AsCheck(m.Coins == asCoins, "coinsBack(" + m.Coins + ")");
+            Debug.Log((asOk ? "BULLDOZER_AUTOSAVE_RESULT" : "BULLDOZER_AUTOSAVE_FAILED") + asLog);
+            AutosaveFinish(asOk ? 0 : 1);
+        }
+    }
+
     static void TestFinish(int code)
     {
         EditorApplication.update -= TestTick;

@@ -4,7 +4,8 @@
 //   Resume      back to the game (Esc, Start or Back do it too)
 //   Settings    graphics: quality, shadows, view distance, full screen or windowed, resolution
 //               controls: mouse speed, invert mouse look
-//   Quit        asks first, because anything since the last save (F5) is lost
+//   New game    asks first; starts the site afresh (the old save is kept as a backup)
+//   Quit        asks first; the built game saves itself as it closes
 //
 // The settings are kept in PlayerPrefs, so they stay from one game to the next.
 //
@@ -172,7 +173,7 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---------------------------------------------------------------- opening and closing
-    enum Page { Main, Settings, Quit }
+    enum Page { Main, Settings, Quit, NewGame }
     Page page;
     int sel;                                     // the row the keys and pad have picked
     int changedFrame = -1;
@@ -242,7 +243,7 @@ public class PauseMenu : MonoBehaviour
         }
         if (changedFrame == Time.frameCount) return;
         if (Pad.Down(Pad.B.Start) || Pad.Down(Pad.B.Back)) { SetOpen(false); return; }
-        int rows = page == Page.Main ? 3 : page == Page.Quit ? 2 : SettingRows;
+        int rows = page == Page.Main ? 4 : (page == Page.Quit || page == Page.NewGame) ? 2 : SettingRows;
         if (Pad.DUpDown || Input.GetKeyDown(KeyCode.UpArrow)) sel = (sel + rows - 1) % rows;
         if (Pad.DDownDown || Input.GetKeyDown(KeyCode.DownArrow)) sel = (sel + 1) % rows;
         if (page == Page.Settings)
@@ -256,7 +257,7 @@ public class PauseMenu : MonoBehaviour
     void Back()
     {
         if (page == Page.Main) SetOpen(false);
-        else { sel = page == Page.Quit ? 2 : 1; page = Page.Main; SavePrefs(); }
+        else { sel = page == Page.Quit ? 3 : page == Page.NewGame ? 2 : 1; page = Page.Main; SavePrefs(); }
     }
 
     void Press(Page p, int row)
@@ -265,11 +266,17 @@ public class PauseMenu : MonoBehaviour
         {
             if (row == 0) SetOpen(false);
             else if (row == 1) { page = Page.Settings; sel = 0; }
-            else { page = Page.Quit; sel = 1; }                          // "No" picked to start with
+            else if (row == 2) { page = Page.NewGame; sel = 1; }         // "No" picked to start with
+            else { page = Page.Quit; sel = 1; }
         }
         else if (p == Page.Quit)
         {
-            if (row == 0) { SavePrefs(); Application.Quit(); }
+            if (row == 0) { SavePrefs(); if (SaveGame.Instance != null && SaveGame.AutoOn) SaveGame.Instance.Save(); Application.Quit(); }
+            else Back();
+        }
+        else if (p == Page.NewGame)
+        {
+            if (row == 0) { SavePrefs(); SetOpen(false); if (SaveGame.Instance != null) SaveGame.Instance.NewGame(); }
             else Back();
         }
         else if (row == SettingRows - 1) Back();
@@ -329,13 +336,13 @@ public class PauseMenu : MonoBehaviour
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = Mathf.Min(560f, Screen.width - 40f);
-        float H = page == Page.Settings ? 510f : page == Page.Quit ? 220f : 280f;
+        float H = page == Page.Settings ? 510f : (page == Page.Quit || page == Page.NewGame) ? 220f : 334f;
         H = Mathf.Min(H, Screen.height - 40f);
         var area = new Rect((Screen.width - W) / 2f, (Screen.height - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
         GUI.Box(area, GUIContent.none);                                   // twice, for a darker backing
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-        GUI.Label(new Rect(area.x + 16, area.y + 8, 300, 34), page == Page.Settings ? "Settings" : page == Page.Quit ? "Quit?" : "Paused", title);
+        GUI.Label(new Rect(area.x + 16, area.y + 8, 300, 34), page == Page.Settings ? "Settings" : page == Page.Quit ? "Quit?" : page == Page.NewGame ? "New game?" : "Paused", title);
         var info = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleRight };
         string help = Pad.InUse ? (page == Page.Settings ? "D-pad pick and change   A select   Start closes" : "D-pad pick   A select   Start closes")
                                 : (page == Page.Main ? "Esc closes" : "Esc goes back");
@@ -348,22 +355,24 @@ public class PauseMenu : MonoBehaviour
 
         if (page == Page.Main)
         {
-            string[] names = { "Resume", "Settings", "Quit" };
-            for (int i = 0; i < 3; i++)
+            string[] names = { "Resume", "Settings", "New game", "Quit" };
+            for (int i = 0; i < 4; i++)
             {
                 if (GUI.Button(new Rect(x + 60f, y, w - 120f, 44f), names[i], i == sel ? picked : button)) Press(Page.Main, i);
                 y += 54f;
             }
             return;
         }
-        if (page == Page.Quit)
+        if (page == Page.Quit || page == Page.NewGame)
         {
+            bool quit = page == Page.Quit;
             var text = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            GUI.Label(new Rect(x, y, w, 50f), "Anything since your last save (F5) will be lost.", text);
+            GUI.Label(new Rect(x, y, w, 50f), quit ? (SaveGame.AutoOn ? "The game saves itself as it closes." : "Anything since your last save (F5) will be lost.")
+                                                   : "Start the site again from scratch?  Your current game is kept as a backup.", text);
             y += 64f;
-            string[] names = { "Quit the game", "No, go back" };
+            string[] names = quit ? new[] { "Quit the game", "No, go back" } : new[] { "Start a new game", "No, go back" };
             for (int i = 0; i < 2; i++)
-                if (GUI.Button(new Rect(x + i * (w / 2f + 6f), y, w / 2f - 6f, 44f), names[i], i == sel ? picked : button)) Press(Page.Quit, i);
+                if (GUI.Button(new Rect(x + i * (w / 2f + 6f), y, w / 2f - 6f, 44f), names[i], i == sel ? picked : button)) Press(page, i);
             return;
         }
 
