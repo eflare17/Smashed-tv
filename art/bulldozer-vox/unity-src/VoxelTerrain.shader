@@ -13,7 +13,7 @@ Shader "Voxel/Terrain"
         LOD 200
 
         CGPROGRAM
-        #pragma surface surf Lambert vertex:vert fullforwardshadows addshadow
+        #pragma surface surf Voxel vertex:vert fullforwardshadows addshadow
         #pragma target 3.5
 
         struct Input
@@ -76,6 +76,24 @@ Shader "Voxel/Terrain"
         float _Regrowth;        // 1: years after the fire.  About half the burnt gums have resprouted, the rest are grey dead spars, the burnt ground is green bracken
         sampler2D _TreeFire, _GroundFire, _TreeBase;
         float4 _TreeFireSize, _GroundFireRect;
+
+        // Quartz and gold catch the light up close: within about 4 m of him (_SparkleFrom), a few blocks of the seam
+        // twinkle with a tiny bright point where a light falls on them.  Gold twinkles more.  Further off they look
+        // as they always did.  surf puts the twinkle's strength in Specular and the block's own timing in Gloss.
+        float4 _SparkleFrom;     // xyz where he is, w 1 when it is on
+        inline fixed4 LightingVoxel(SurfaceOutput s, half3 viewDir, UnityGI gi)
+        {
+            fixed4 c = LightingLambert(s, gi);
+            if (s.Specular > 0.0)
+            {
+                float tw = saturate(sin(_Time.y * (1.3 + 2.4 * s.Gloss) + s.Gloss * 62.83));
+                tw = tw * tw; tw = tw * tw;                                     // short bright flashes
+                float lit = saturate(dot(s.Normal, gi.light.dir));
+                c.rgb += gi.light.color * (lit * tw * s.Specular * 4.0);
+            }
+            return c;
+        }
+        inline void LightingVoxel_GI(SurfaceOutput s, UnityGIInput data, inout UnityGI gi) { LightingLambert_GI(s, data, gi); }
 
         float hash3(float3 p)
         {
@@ -222,6 +240,22 @@ Shader "Voxel/Terrain"
                             glow = float3(2.4, 0.5, 0.06) * (1.0 - smoothstep(1.5, 9.0, tg)) * step(0.55, h) * (0.6 + 0.4 * sin(_Time.y * 9.0 + h2 * 30.0));
                         }
                     }
+                }
+            }
+            if ((m == 4 || m == 5 || m == 9 || m == 10) && _SparkleFrom.w > 0.5)
+            {
+                float near = saturate((4.5 - distance(IN.worldPos, _SparkleFrom.xyz)) / 1.0);
+                bool gold = (m == 5 || m == 10);
+                float pick = hash3(v + 19.7);
+                if (near > 0.0 && pick < (gold ? 0.45 : 0.2))
+                {
+                    // a point in the middle of the block's face, not the whole face
+                    float3 f = frac(IN.worldPos / _VoxelSize) - 0.5;
+                    float3 n = IN.worldNormal;
+                    f -= n * dot(f, n);
+                    float star = saturate(1.0 - length(f) / 0.36);
+                    o.Specular = near * star * star * (gold ? 1.6 : 1.0);
+                    o.Gloss = hash3(v + 41.3);
                 }
             }
             #ifndef UNITY_COLORSPACE_GAMMA
