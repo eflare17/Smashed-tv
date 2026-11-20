@@ -54,6 +54,7 @@ public class DozerController : MonoBehaviour
     public bool BlockedByRock { get; private set; }
     public bool AtFence { get; private set; }            // pushing against the edge of the work site
     public bool OnRoadStrip { get; private set; }
+    public string BladeLoadInfo() { return world != null && blade != null ? world.ClodSpread(blade.localToWorldMatrix, BladePlateMin, BladePlateMax) : "no blade"; }
     public Transform Blade { get { return blade; } }     // the blade itself (its cutting edge is along its bottom, see BladeView)        // out on the mountain road's strip (past the site's own limits)
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
     public bool Climbing { get; private set; }           // crawling over loose spoil, or into a face with the blade cutting it

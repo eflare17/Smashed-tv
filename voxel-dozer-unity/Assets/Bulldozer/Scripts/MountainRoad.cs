@@ -107,6 +107,10 @@ public static class MountainRoad
 {
     public const float RoadHalf = 2f;                        // the road is 4 m wide
     public const float StripHalf = 4f;                       // inside an 8 m wide strip of diggable ground
+    // The diggable voxels reach further than that: past the blade's end with the dozer at the edge of where it may
+    // drive and the blade swung over, and past where the dirt it pushes off that end lands.  Otherwise the blade went
+    // through the solid hillside, and the dirt landed off the voxels and was lost.
+    public const float VoxelHalf = 7f;
     public const float CorridorHalf = 3.2f;                  // how far off the line the dozer may drive
     public const float Slope = 1f / 8f, Climb = 20f;         // 1 in 8 (about 7 degrees), 20 m up
     public const float PadLength = 12f;                      // the flat pad at the top

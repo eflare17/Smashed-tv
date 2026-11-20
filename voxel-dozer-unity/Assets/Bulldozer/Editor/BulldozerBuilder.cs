@@ -246,14 +246,14 @@ public static class BulldozerBuilder
     static Vector3 testPos0;
     static float testEdgeZ, testLostAt;
     static int testMaxLoad, testMaxCarried;
-    static float testSettledAt;
+    static float testSettledAt; static string testLoadLog = "";
 
     public static void SelfTest()
     {
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        testPhase = 0; testFrames = 0; testFrameSum = 0f; testFrameMax = 0f; testLostAt = -1f; testMaxLoad = 0; testMaxCarried = 0; testSettledAt = -1f;
+        testPhase = 0; testFrames = 0; testFrameSum = 0f; testFrameMax = 0f; testLostAt = -1f; testMaxLoad = 0; testMaxCarried = 0; testSettledAt = -1f; testLoadLog = "";
         testStart = EditorApplication.timeSinceStartup;
         EditorApplication.update += TestTick;
         EditorApplication.EnterPlaymode();
@@ -295,6 +295,13 @@ public static class BulldozerBuilder
             d.overrideThrottle = 1f; d.overrideBlade = -1f; d.overrideRipper = 0f;
             d.overrideAngle = (t > 3.5f && t < 5f) ? 1f : 0f;
             testFrames++; testFrameSum += Time.unscaledDeltaTime; testFrameMax = Mathf.Max(testFrameMax, Time.unscaledDeltaTime);
+            if (t > 3f && testLoadLog.Length < 10 * 0 + 2000 && Mathf.Repeat(t, 1f) < Time.deltaTime) testLoadLog += " t" + t.ToString("F0") + "[" + d.BladeLoadInfo() + "]";
+            if (t > 5.8f && testLoadLog.IndexOf("sidePic") < 0 && d.Blade != null)
+            {
+                Vector3 bp = d.Blade.position, side = d.transform.right;
+                HillShot(bp - side * 7f + Vector3.up * 1.5f + d.transform.forward * 1.5f, bp + d.transform.forward * 1f, "dig_test_side.png");
+                testLoadLog += " sidePic";
+            }
             if (t > 6.5f && testPhase == 1) { testPhase = 2; TestCapture("dig_test_digging.png"); }
         }
         else if (t < 10f) { d.overrideThrottle = 1f; d.overrideBlade = 1f; d.overrideRipper = -1f; }
@@ -319,7 +326,7 @@ public static class BulldozerBuilder
                 + " maxClods=" + testMaxCarried + " clodsLeftAfterParking=" + w.ClodCount
                 + " allSettledAfter=" + (testSettledAt < 0f ? "never" : testSettledAt.ToString("F1") + "s")
                 + " solidBefore=" + testSolid0 + " solidAfter=" + solid1
-                + " heapHeight=" + heap.ToString("F2") + "m cutFloor=" + cutFloor.ToString("F2") + "m"
+                + " pushing:" + testLoadLog + " heapHeight=" + heap.ToString("F2") + "m cutFloor=" + cutFloor.ToString("F2") + "m"
                 + " machineHeight=" + p.y.ToString("F2") + "m"
                 + " stoppedAtZ=" + testEdgeZ.ToString("F1") + "m (fence at " + (VoxelWorld.SiteHalf - 1.5f).ToString("F1") + "m)"
                 + " trackPads=" + (d.GetComponentInChildren<TrackAnimator>() != null ? d.GetComponentInChildren<TrackAnimator>().PadCount : 0)
@@ -758,7 +765,7 @@ public static class BulldozerBuilder
     // Checks the road strip is there and can be dug, the dozer can drive from the site up onto it, the pegs' and the
     // tint's CUT / FILL match the ground, grading one stretch ticks it (and only it), and grading them all pays.
     // Measures the memory the ground takes and the frame time on the road.  Pictures in Logs/road_*.png.
-    static int mrPhase;
+    static int mrPhase, mrSide, mrEdgeOut, mrEdgeFrames; static long mrSpill0;
     static float mrT0, mrMaxS, mrMaxY, mrFrameSum, mrFrameMax;
     static int mrFrames, mrUpCut, mrCliff, mrFence, mrOnStrip;
     static string mrLog;
@@ -1004,6 +1011,49 @@ public static class BulldozerBuilder
                    + " slump=" + w.MsAvg[2].ToString("F2") + "/" + w.MsMax[2].ToString("F1") + " ground=" + w.MsAvg[3].ToString("F2") + "/" + w.MsMax[3].ToString("F1");
             RoadCheck(mrMaxS > 30f && mrOnStrip > 50 && mrMaxY > MountainRoad.StartY + 2.5f, "drivesOntoStrip");
             RoadCheck(mrUpCut < 400, "bladeUpClearsHill");
+            mrPhase = 20; mrT0 = t; mrSide = 1; mrEdgeOut = mrEdgeFrames = 0; mrSpill0 = w.SpilledVoxels;
+            return;
+        }
+        if (mrPhase == 20)
+        {
+            // cutting along the very edge of where the dozer may drive, blade down and swung right over, each side in
+            // turn: the blade's ends must stay over diggable ground, and the dirt it pushes must not be thrown away
+            float k = t - mrT0;
+            const float S0 = 16f, Off = 3.1f;
+            if (k < 0.1f)
+            {
+                Vector2 st = RoadPoint(S0, mrSide * Off, out dir);
+                d.Place(new Vector3(st.x, 0f, st.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
+                return;
+            }
+            Vector3 pos = d.transform.position;
+            float s, off;
+            MountainRoad.Nearest(pos.x, pos.z, out s, out off, out dir);
+            Vector2 aim = RoadPoint(s + 4.5f, mrSide * Off, out dir);
+            Vector3 to = new Vector3(aim.x - pos.x, 0f, aim.y - pos.z);
+            float ang = Vector3.SignedAngle(Vector3.ProjectOnPlane(d.transform.forward, Vector3.up), to, Vector3.up);
+            d.overrideSteer = Mathf.Clamp(ang / 25f, -1f, 1f);
+            d.overrideBlade = k < 2f ? -1f : 0f;
+            d.overrideAngle = k < 2f ? mrSide : 0f;
+            d.overrideThrottle = k < 1f ? 0f : 1f;
+            if (k > 2f && d.Blade != null)
+            {
+                foreach (float e in new[] { -2.25f, 2.25f })
+                {
+                    Vector3 p = d.Blade.TransformPoint(new Vector3(e, -0.6f, 0.8f));
+                    mrEdgeFrames++;
+                    if (w.KindAt(p.x, p.z) == 0) mrEdgeOut++;
+                }
+            }
+            if (k < 10f) return;
+            d.overrideThrottle = 0f; d.overrideSteer = 0f; d.overrideAngle = 0f;
+            if (mrSide == 1) { mrSide = -1; mrT0 = t; return; }
+            if (k < 16f) return;                                  // let the pushed dirt settle
+            long spilled = w.SpilledVoxels - mrSpill0;
+            mrLog += " edgeCut: bladeEndOffDiggable=" + mrEdgeOut + "/" + mrEdgeFrames + " dirtThrownAway=" + (spilled * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L";
+            RoadCheck(mrEdgeOut == 0, "bladeStaysOverDiggable");
+            RoadCheck(spilled * VoxelWorld.VoxelVolume < 0.02f, "dirtKept");
+            d.overrideBlade = 1f;
             mrPhase = 3; mrT0 = t;
             return;
         }

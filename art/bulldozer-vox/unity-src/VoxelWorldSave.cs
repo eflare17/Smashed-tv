@@ -171,10 +171,10 @@ public partial class VoxelWorld
 
         SolidCount = solid;
         StartTotal = startTotal;
-        if (old)
         {
-            // Made before the mountain road: the road strip is new ground, and the hilltop where the road starts is shaped
-            // a little differently now where nothing had been dug.  Count the ground afresh and move the books to match.
+            // A save made before the mountain road (or before its strip of diggable ground was widened) has new ground
+            // in it now, where nothing had been dug, and the hilltop where the road starts is shaped a little
+            // differently.  Count the ground afresh and move the books to match.
             long actual = CountSolid();
             StartTotal += actual - SolidCount;
             SolidCount = actual;

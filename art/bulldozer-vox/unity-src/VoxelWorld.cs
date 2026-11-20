@@ -226,7 +226,7 @@ public partial class VoxelWorld : MonoBehaviour
                 // a block along the road: within a little more than half the strip's width of the line
                 float x0 = origin.x + bx * CS * Voxel, z0 = origin.z + bz * CS * Voxel, size = CS * Voxel;
                 if (x0 > MountainRoad.Max.x + 8f || z0 > MountainRoad.Max.y + 8f || x0 + size < MountainRoad.Min.x - 8f || z0 + size < MountainRoad.Min.y - 8f) continue;
-                if (MountainRoad.DistanceTo(x0 + size * 0.5f, z0 + size * 0.5f) > MountainRoad.StripHalf + 0.6f + size * 0.75f) continue;   // nowhere near
+                if (MountainRoad.DistanceTo(x0 + size * 0.5f, z0 + size * 0.5f) > MountainRoad.VoxelHalf + 0.6f + size * 0.75f) continue;   // nowhere near
                 float near = float.MaxValue;
                 float lowY = float.MaxValue, highY = float.MinValue;
                 for (int j = 0; j <= 4; j++)
@@ -240,7 +240,7 @@ public partial class VoxelWorld : MonoBehaviour
                         lowY = Mathf.Min(lowY, Mathf.Min(nat, g) - 3f);          // about 3 m of diggable ground under the road
                         highY = Mathf.Max(highY, Mathf.Max(nat, g) + 2.5f);      // and room for a heap on top
                     }
-                if (near > MountainRoad.StripHalf + 0.6f) continue;
+                if (near > MountainRoad.VoxelHalf + 0.6f) continue;
                 int lo = Mathf.Clamp(Mathf.FloorToInt((lowY / Voxel + Ground) / CS) * CS, 0, NY - CS);
                 int hi = Mathf.Clamp(Mathf.CeilToInt((highY / Voxel + Ground) / CS) * CS, lo + CS, NY);
                 b[k] = new int4((int)next, lo, hi, BlockStrip);

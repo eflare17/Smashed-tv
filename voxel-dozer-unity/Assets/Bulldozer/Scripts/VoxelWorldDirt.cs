@@ -28,6 +28,32 @@ public partial class VoxelWorld
     /// Dirt pushed off the edge of the mountain road's strip: it has gone down the mountainside (left the ground for good).
     public int SpilledVoxels { get; private set; }
 
+    /// For the tests: where the moving clods are, seen from the blade (plate in its own space): in front of it
+    /// within its width and 1.5 m, further ahead, off its ends, behind it.  Also how high the ground plus clods
+    /// stand in front of it, above the cutting edge.
+    public string ClodSpread(Matrix4x4 bladeToWorld, Vector3 plateMin, Vector3 plateMax)
+    {
+        Matrix4x4 w2b = bladeToWorld.inverse;
+        int front = 0, ahead = 0, ends = 0, behind = 0; float tall = 0f;
+        for (int i = 0; i < ClodCount; i++)
+        {
+            Vector3 l = w2b.MultiplyPoint3x4(cPos[i]);
+            if (l.z < plateMin.z) behind++;
+            else if (Mathf.Abs(l.x) > plateMax.x) ends++;
+            else if (l.z < plateMax.z + 1.5f) { front++; tall = Mathf.Max(tall, l.y - plateMin.y); }
+            else ahead++;
+        }
+        float ground = 0f;
+        for (float x = -2f; x <= 2f; x += 0.25f)
+            for (float z = 0.1f; z <= 1.5f; z += 0.2f)
+            {
+                Vector3 q = bladeToWorld.MultiplyPoint3x4(new Vector3(x, plateMin.y, plateMax.z + z));
+                Vector3 e = bladeToWorld.MultiplyPoint3x4(new Vector3(x, plateMin.y, plateMax.z));
+                ground = Mathf.Max(ground, HeightAt(q.x, q.z) - e.y);
+            }
+        return "clods(front/ahead/ends/behind)=" + front + "/" + ahead + "/" + ends + "/" + behind + " clodHeapAboveEdge=" + tall.ToString("F2") + "m groundAboveEdge=" + ground.ToString("F2") + "m";
+    }
+
     NativeArray<float3> cPos, cVel, cPrev, cDelta;
     NativeArray<quaternion> cRot;
     NativeArray<byte> cMat, cCnt, cGround;
