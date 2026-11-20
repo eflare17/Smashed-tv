@@ -106,6 +106,10 @@ public class Worker : MonoBehaviour
     public bool Hammering { get { return hammering; } }
     public int GoldShattered { get; private set; }
     public float JackBite { get { return Mathf.Lerp(JackMin, jackMax, jackSize); } }
+    /// Where his aim lands and how far that is from his chest (for the tests).
+    public string AimInfo { get { TakeAim(); return "aim(found=" + aimFound + " inReach=" + aimInReach + " mat=" + aimMat + " dist=" + (aimPoint - (transform.position + Vector3.up * 1.3f)).magnitude.ToString("F2") + " pos=" + transform.position + ")"; } }
+    /// How big the bite is set, 0 (smallest) to 1 (biggest at this level).
+    public float JackBiteFrac { get { return jackMax > JackMin ? Mathf.Clamp01((JackBite - JackMin) / (jackMax - JackMin)) : 0f; } }
     public float JackShatter { get { return 0.4f * Mathf.Clamp01((JackBite - 0.17f) / 0.21f); } }
     /// Aiming the jackhammer at the quartz seam (white quartz or gold).
     public bool AimingAtSeam { get { TakeAim(); return aimFound && (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.Quartz); } }
@@ -476,6 +480,9 @@ public class Worker : MonoBehaviour
     {
         if (sayTimer > 0f) sayTimer -= Time.unscaledDeltaTime;
         if (world == null) return;
+        // quartz and gold twinkle within about 4 m of him (the ground shader does it)
+        Vector3 head = transform.position + Vector3.up * 1.4f;
+        Shader.SetGlobalVector("_SparkleFrom", new Vector4(head.x, head.y, head.z, 1f));
         if (!useOverride)
         {
             // for trying things out before repairs are in the game: F9 breaks or fixes the dozer
@@ -587,6 +594,7 @@ public class Worker : MonoBehaviour
             hammering = use && aimInReach;
             if (hammering)
             {
+                FollowCamera.Shake = 0.006f + 0.008f * JackBiteFrac;     // a small fast shake, a bit more with a bigger bite
                 jackAcc += dt;
                 while (jackAcc >= jackInterval) { jackAcc -= jackInterval; Hammer(); }
             }
@@ -642,7 +650,7 @@ public class Worker : MonoBehaviour
     {
         Vector3 chest = transform.position + Vector3.up * 1.3f;
         Vector3 from, dir;
-        if (cam != null && !useOverride) { from = cam.transform.position; dir = cam.transform.forward; }
+        if (cam != null && !useOverride) FollowCamera.Unshaken(cam.transform, out from, out dir);   // the shake never moves the aim
         else { from = transform.position + Vector3.up * 1.6f; dir = Quaternion.Euler(lookPitch, yaw, 0f) * Vector3.forward; }
         float skip = Mathf.Max(0f, Vector3.Dot(chest - from, dir) - 0.25f);              // start level with him, not behind him
         from += dir * skip;
@@ -681,6 +689,7 @@ public class Worker : MonoBehaviour
         float away = toFeet.magnitude;
         Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.5f, 1f, 3.5f) + Vector3.up * 0.9f;
         if (world.Pick(aimPoint + aimDir * 0.08f, JackBite, kick, JackShatter, true) > 0) PickHits++;
+        JackFX.Blow(aimPoint, -aimDir, aimMat, JackBiteFrac, aimMat == VoxelWorld.Gold || world.LastShattered > 0);
         if (world.LastShattered > 0)
         {
             GoldShattered += world.LastShattered;

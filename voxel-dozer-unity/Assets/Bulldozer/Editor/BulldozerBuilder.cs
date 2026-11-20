@@ -1574,6 +1574,7 @@ public static class BulldozerBuilder
     // Counts what is in each collapse and the seams in the far chambers, pictures each stretch (tunnel_*.png), and
     // stands him with the jackhammer at the chamber seam to check the gold warning comes up (tunnel_warning.png is a
     // screenshot with the HUD).  Prints BULLDOZER_TUNNEL_RESULT.
+    static int dustSeam, chipsSeam, glintsSeam; static float tPitch;
     static int tPhase; static string tLog; static float tStart; static int tShot;
 
     public static void TunnelTest()
@@ -1659,7 +1660,7 @@ public static class BulldozerBuilder
             up.SetLevel(Upgrades.Branch.Pick, 6);
             wk.SetTool(0);
             wk.SetJackSize(1f);
-            wk.Teleport(new Vector3(px + 0.4f, 0f, pz + 21f), -90f);
+            wk.Teleport(new Vector3(px - 1.0f, 0f, pz + 21f), -90f);   // within reach of the west wall
             tPhase = 2; tStart = t;
             return;
         }
@@ -1673,7 +1674,7 @@ public static class BulldozerBuilder
                 if (wk.AimingAtSeam) { best = pitch; on = true; }
             }
             if (!on) { if (t - tStart > 3f) { Debug.LogError("BULLDOZER_TUNNEL_FAILED never aimed at the seam " + tLog); TunnelFinish(1); } return; }
-            wk.Look(best);
+            wk.Look(best); tPitch = best;
             tPhase = 3; tStart = t;
             return;
         }
@@ -1698,7 +1699,34 @@ public static class BulldozerBuilder
             if (t - tStart < 0.6f) return;
             bool warnSmall = wk.GoldWarning;
             tLog += " warningAtSmallBite=" + warnSmall;
-            bool ok = tLog.Contains("warningAtBigBite=True") && !warnSmall;
+            if (!tLog.Contains("warningAtBigBite=True") || warnSmall) { Debug.LogError("BULLDOZER_TUNNEL_FAILED " + tLog); TunnelFinish(1); return; }
+            // close up on the seam beside him, under the lantern: a few blocks of it twinkle (he is within 4 m)
+            TunnelShot(new Vector3(px - 1.2f, 1.5f, pz + 19.9f), new Vector3(px - 2.3f, 1.2f, pz + 20.7f), "tunnel_sparkle.png");
+            wk.SetJackSize(0.25f);              // still safe for gold, a bit more dust than the smallest
+            wk.overrideUse = true;
+            tPhase = 6; tStart = t;
+            return;
+        }
+        if (tPhase == 6)
+        {
+            // a still aim bores straight in (about a metre in half a second), so sweep it up and down the seam the
+            // way a player does, and take the picture after a second and a half of work
+            wk.Look(tPitch + Mathf.Sin((t - tStart) * 4f) * 7f);
+            if (t - tStart < 1.5f) return;
+            TunnelShot(new Vector3(px - 0.6f, 1.75f, pz + 19.7f), new Vector3(px - 2.2f, 1.1f, pz + 21.0f), "tunnel_dust.png");
+            int dN, cN, gN; JackFX.Alive(out dN, out cN, out gN);
+            tPhase = 7; tStart = t;
+            tLog += " hammering=" + wk.Hammering + " " + wk.AimInfo + " dust " + JackFX.DustInfo() + " cam=" + Camera.main.transform.position;
+            dustSeam = dN; chipsSeam = cN; glintsSeam = gN;
+            return;
+        }
+        if (tPhase == 7)
+        {
+            if (t - tStart < 0.3f) return;
+            wk.overrideUse = false;
+            int dN = dustSeam, cN = chipsSeam, gN = glintsSeam;
+            tLog += " dustAtSeam=" + dN + " chipsAtSeam=" + cN + " glintsAtSeam=" + gN;
+            bool ok = dN + cN > 0;      // a fifth of a second in: a few chips, maybe a puff (the smallest bite puffs less)
             if (ok) Debug.Log("BULLDOZER_TUNNEL_RESULT " + tLog); else Debug.LogError("BULLDOZER_TUNNEL_FAILED " + tLog);
             TunnelFinish(ok ? 0 : 1);
         }
@@ -1921,13 +1949,14 @@ public static class BulldozerBuilder
     // more.  Then breaks gold in the quartz seam with a big bite (some is smashed) and a small one (none is).
     // Prints BULLDOZER_JACK_RESULT.
     static int jPhase; static string jLog; static float jStart; static Vector3 jSpot, jStand; static int jFirm0, jPickBroke; static bool jSawHammer;
+    static int jMaxDust, jMaxChips; static float jMaxShake; static bool jAimSteady = true; static Vector3 jAim0;
 
     public static void JackTest()
     {
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        jPhase = 0; jLog = ""; jSawHammer = false;
+        jPhase = 0; jLog = ""; jSawHammer = false; jMaxDust = jMaxChips = 0; jMaxShake = 0f; jAimSteady = true;
         testStart = EditorApplication.timeSinceStartup;
         EditorApplication.update += JackTick;
         EditorApplication.EnterPlaymode();
@@ -2026,8 +2055,12 @@ public static class BulldozerBuilder
         }
         if (jPhase == 2)
         {
+            int dN, cN, gN; JackFX.Alive(out dN, out cN, out gN);
+            jMaxDust = Mathf.Max(jMaxDust, dN); jMaxChips = Mathf.Max(jMaxChips, cN);
+            jMaxShake = Mathf.Max(jMaxShake, FollowCamera.LastShake);
             if (t - jStart < 4f) return;
             wk.overrideUse = false;
+            jLog += " dust=" + jMaxDust + " chips=" + jMaxChips + " shake=" + jMaxShake.ToString("F3") + "m";
             int jackBroke = jFirm0 - FirmNear(w, jSpot);
             jLog += " jackAt=" + jSpot + " jackBroke=" + jackBroke + " hammered=" + jSawHammer + " goldShatteredWhileTesting=" + wk.GoldShattered;
             float bigShatter = wk.JackShatter; wk.SetJackSize(0f); float smallShatter = wk.JackShatter;
@@ -2048,7 +2081,21 @@ public static class BulldozerBuilder
                 if (i % 2 == 0) smashedBig += w.LastShattered; else smashedSmall += w.LastShattered;
             }
             jLog += " goldSpots=" + gold.Count + " smashedBigBite=" + smashedBig + " smashedSmallBite=" + smashedSmall;
-            bool ok = jSawHammer && jackBroke > jPickBroke * 1.3f && jPickBroke > 0 && bigShatter > 0f && smallShatter == 0f && gold.Count > 10 && smashedBig > 0 && smashedSmall == 0;
+            bool ok = jSawHammer && jackBroke > jPickBroke * 1.3f && jPickBroke > 0 && bigShatter > 0f && smallShatter == 0f && gold.Count > 10 && smashedBig > 0 && smashedSmall == 0
+                && jMaxDust > 5 && jMaxChips > 5 && jMaxShake > 0.004f && jMaxShake < 0.02f;
+            if (!ok) { Debug.LogError("BULLDOZER_JACK_FAILED " + jLog); JackFinish(1); return; }
+            jPhase = 3; jStart = t;
+            return;
+        }
+        if (jPhase == 3)
+        {
+            // let go: no shake next frame, and the dust thins out within a few seconds
+            if (t - jStart < 0.3f) return;
+            if (FollowCamera.LastShake > 0f) { Debug.LogError("BULLDOZER_JACK_FAILED still shaking after letting go " + jLog); JackFinish(1); return; }
+            if (t - jStart < 3f) return;
+            int dN, cN, gN; JackFX.Alive(out dN, out cN, out gN);
+            jLog += " dustAfter3s=" + dN + " chipsAfter3s=" + cN;
+            bool ok = dN < jMaxDust / 3 + 2 && cN == 0;
             if (ok) Debug.Log("BULLDOZER_JACK_RESULT " + jLog);
             else Debug.LogError("BULLDOZER_JACK_FAILED " + jLog);
             JackFinish(ok ? 0 : 1);

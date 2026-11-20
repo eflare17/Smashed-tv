@@ -53,7 +53,32 @@ public class FollowCamera : MonoBehaviour
     // the mouse wheel zooms, unless Shift is held (then it sets the jackhammer's bite)
     static float ZoomWheel() { return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 0f : Input.GetAxis("Mouse ScrollWheel"); }
 
+    /// Set each frame the jackhammer is running (metres): the camera shakes that much this frame, then it is cleared.
+    public static float Shake;
+    public static float LastShake { get; private set; }
+    static bool shaken; static Vector3 calmPos, calmFwd;
+
+    /// Where the camera is and looks, without this frame's shake.
+    public static void Unshaken(Transform cam, out Vector3 pos, out Vector3 fwd)
+    {
+        if (shaken) { pos = calmPos; fwd = calmFwd; }
+        else { pos = cam.position; fwd = cam.forward; }
+    }
+
     void LateUpdate()
+    {
+        Place();
+        float s = Shake; Shake = 0f; LastShake = s;
+        shaken = false;
+        if (s <= 0f || target == null) return;
+        calmPos = transform.position; calmFwd = transform.forward; shaken = true;
+        float t = Time.time * 37f;
+        Vector3 off = new Vector3(Mathf.PerlinNoise(t, 0.3f) - 0.5f, Mathf.PerlinNoise(1.7f, t) - 0.5f, 0f) * 2f * s;
+        transform.position += transform.rotation * off;
+        transform.rotation *= Quaternion.Euler(off.y * 25f, off.x * 25f, 0f);
+    }
+
+    void Place()
     {
         if (target == null) return;
         if (firstPerson)
