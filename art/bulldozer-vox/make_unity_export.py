@@ -437,7 +437,7 @@ public static class BulldozerBuilder
             d.overrideThrottle = 1f; d.overrideBlade = -1f; d.overrideRipper = 0f;
             d.overrideAngle = (t > 3.5f && t < 5f) ? 1f : 0f;
             testFrames++; testFrameSum += Time.unscaledDeltaTime; testFrameMax = Mathf.Max(testFrameMax, Time.unscaledDeltaTime);
-            if (t > 3f && testLoadLog.Length < 10 * 0 + 2000 && Mathf.Repeat(t, 1f) < Time.deltaTime) testLoadLog += " t" + t.ToString("F0") + "[" + d.BladeLoadInfo() + "]";
+            if (t > 3f && testLoadLog.Length < 10 * 0 + 2000 && Mathf.Repeat(t, 1f) < Time.deltaTime) testLoadLog += " t" + t.ToString("F0") + "[speed=" + d.Speed.ToString("F2") + " bog=" + d.Bog.ToString("F2") + " heap=" + d.BladeLoadM3.ToString("F1") + "m3 biteAtFull=" + d.CutRateM3.ToString("F1") + "m3/s]";
             if (t > 5.8f && testLoadLog.IndexOf("sidePic") < 0 && d.Blade != null)
             {
                 Vector3 bp = d.Blade.position, side = d.transform.right;
@@ -1417,7 +1417,7 @@ public static class BulldozerBuilder
             d.overrideBlade = k < 2f ? -1f : 0f; d.overrideAngle = 0f;
             d.overrideThrottle = k < 1f ? 0f : 1f;
             if (k > 2f && Mathf.Repeat(k, 1f) < Time.deltaTime)
-                mrPushLog += " t" + k.ToString("F0") + "[s=" + s.ToString("F1") + " kind=" + w.KindAt(pos.x, pos.z) + " blade01=" + d.BladeHeight01.ToString("F2") + " cutNow=" + d.LastCut + " cutSoFar=" + (w.TotalCut - mrCut0) + " clods=" + w.ClodCount + " " + d.BladeLoadInfo() + "]";
+                mrPushLog += " t" + k.ToString("F0") + "[speed=" + d.Speed.ToString("F2") + " bog=" + d.Bog.ToString("F2") + " heap=" + d.BladeLoadM3.ToString("F1") + " bite=" + d.CutRateM3.ToString("F1") + " s=" + s.ToString("F1") + " kind=" + w.KindAt(pos.x, pos.z) + " blade01=" + d.BladeHeight01.ToString("F2") + " cutNow=" + d.LastCut + " cutSoFar=" + (w.TotalCut - mrCut0) + " clods=" + w.ClodCount + " " + d.BladeLoadInfo() + "]";
             if (k > 6f && mrPushLog.IndexOf("pic") < 0 && d.Blade != null)
             {
                 Vector3 bp = d.Blade.position;

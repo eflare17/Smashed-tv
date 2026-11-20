@@ -69,6 +69,25 @@ public class DozerController : MonoBehaviour
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
     public bool Climbing { get; private set; }           // crawling over loose spoil, or into a face with the blade cutting it
     const float ClimbSpeed = 0.8f;                       // metres a second while doing that
+    // ---- Resistance.  An empty blade drives at full speed.  The heap in front of it slows it: a full blade (about
+    // FullLoad m3) to about a third.  A deep bite slows it too: the engine can only cut about MaxCutRate m3 a second,
+    // so a bite that would cut more than that at full speed slows it until it doesn't.  Bog is the share of full
+    // speed that is left (1 = free), eased so it doesn't judder.
+    const float FullLoad = 5f, LoadSlowest = 0.33f, MaxCutRate = 1.3f, CutSlowest = 0.22f;
+    public float Bog { get; private set; } = 1f;
+    public float BladeLoadM3 { get; private set; }
+    public float CutRateM3 { get; private set; }               // what the blade would be cutting per second at full speed
+    void UpdateBog(float moved)
+    {
+        float dt = Time.fixedDeltaTime;
+        BladeLoadM3 = world.BladeLoadVoxels * VoxelWorld.VoxelVolume;
+        float loadK = Mathf.Lerp(1f, LoadSlowest, Mathf.Clamp01(BladeLoadM3 / FullLoad));
+        float atFull = moved > 0.0005f ? LastCut * VoxelWorld.VoxelVolume * (maxSpeed * dt / moved) / dt : 0f;
+        CutRateM3 = Mathf.Lerp(CutRateM3, atFull, 1f - Mathf.Exp(-6f * dt));
+        float cutK = CutRateM3 > MaxCutRate ? Mathf.Max(CutSlowest, MaxCutRate / CutRateM3) : 1f;
+        float target = Mathf.Min(loadK, cutK);
+        Bog = Mathf.MoveTowards(Bog, target, (target < Bog ? 1.5f : 0.8f) * dt);
+    }
     public int LastCut { get; private set; }             // blocks the blade moved in the last step
     public float BladeYaw { get; private set; }          // degrees; + swings the right-hand end back
     public float BladeTilt { get; private set; }         // degrees; + drops the right-hand end
@@ -311,6 +330,9 @@ public class DozerController : MonoBehaviour
         }
         float want = throttleIn > 0f ? throttleIn * maxSpeed : throttleIn * reverseSpeed;
         want *= 1f - 0.35f * Mathf.Abs(steerIn);                         // tracks lose a little speed in a turn
+        // Pushing is hard work: a big heap on the blade, or a deep bite, slows the machine (see Bog).
+        float wantFree = want;
+        if (want > 0f) want *= Bog;
         if (blockedTimer > 0f) { blockedTimer -= dt; if (want > 0f) want = 0f; }
         BlockedByRock = blockedTimer > 0f;
         Speed = Mathf.MoveTowards(Speed, want, acceleration * dt);
@@ -318,8 +340,10 @@ public class DozerController : MonoBehaviour
 
         // in a turn the outside track runs faster and the inside one slower (or backwards, turning on the spot)
         float slew = turn * Mathf.Deg2Rad * HalfTrackGauge;
-        if (trackLeft != null) trackLeft.speed = Speed + slew;
-        if (trackRight != null) trackRight.speed = Speed - slew;
+        // bogged down, the tracks turn faster than the machine goes: they slip
+        float trackRun = Speed > 0f && wantFree > Speed ? Mathf.Lerp(Speed, wantFree, Mathf.Clamp01((1f - Bog) * 1.2f)) : Speed;
+        if (trackLeft != null) trackLeft.speed = trackRun + slew;
+        if (trackRight != null) trackRight.speed = trackRun - slew;
 
         yaw += turn * dt;
         Quaternion yawRot = Quaternion.Euler(0f, yaw, 0f);
@@ -446,6 +470,7 @@ public class DozerController : MonoBehaviour
             world.SetBlade(bladeToWorld, BladePlateMin, BladePlateMax, moved);
             world.SlumpCentre = bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, -1.5f));
             LastCut = r.cut;
+            UpdateBog(travel.magnitude);
             if (r.hard >= hardRockStops && Speed > 0f) { Speed = 0f; blockedTimer = 0.6f; }
         }
         if (ripper != null && ripperAngle < 4f)

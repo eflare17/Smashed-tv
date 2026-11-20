@@ -238,7 +238,7 @@ public partial class VoxelWorld : MonoBehaviour
                         near = Mathf.Min(near, d);
                         float nat = Mountain.OutsideY(x, z) + MountainRoad.ShapeDelta(x, z), g = MountainRoad.GradeAt(s);
                         lowY = Mathf.Min(lowY, Mathf.Min(nat, g) - 3f);          // about 3 m of diggable ground under the road
-                        highY = Mathf.Max(highY, Mathf.Max(nat, g) + 2.5f);      // and room for a heap on top
+                        highY = Mathf.Max(highY, Mathf.Max(nat, g) + 4f);        // and room for a heap on top (less, and a tall heap pushed up the road lost its top)
                     }
                 if (near > MountainRoad.VoxelHalf + 0.6f) continue;
                 int lo = Mathf.Clamp(Mathf.FloorToInt((lowY / Voxel + Ground) / CS) * CS, 0, NY - CS);

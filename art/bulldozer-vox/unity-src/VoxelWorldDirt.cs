@@ -27,6 +27,8 @@ public partial class VoxelWorld
     public int ClodVoxelsInFlight { get; private set; }     // (set by StepDirt, and by a load)
     /// Dirt pushed off the edge of the mountain road's strip: it has gone down the mountainside (left the ground for good).
     public int SpilledVoxels { get; private set; }
+    /// Loose dirt in the heap in front of the blade (voxels), as of the last dirt step: the dozer slows as it grows.
+    public int BladeLoadVoxels { get; private set; }
 
     /// For the tests: where the moving clods are, seen from the blade (plate in its own space): in front of it
     /// within its width and 1.5 m, further ahead, off its ends, behind it.  Also how high the ground plus clods
@@ -117,7 +119,7 @@ public partial class VoxelWorld
     public void StepDirt(Matrix4x4 bladeToWorld, Vector3 plateMin, Vector3 plateMax, bool hasBlade, float dt)
     {
         Tic();
-        var result = new NativeArray<int>(3, Allocator.TempJob);
+        var result = new NativeArray<int>(4, Allocator.TempJob);
         // The small steps run on all the CPU's cores: each clod works out its own push from its neighbours, so
         // no two workers ever write to the same clod.  Then one job lets clods that have come to rest turn back
         // into ground (that part writes the ground, so it stays on one core).
@@ -152,11 +154,13 @@ public partial class VoxelWorld
             pos = cPos, vel = cVel, rot = cRot, mat = cMat, cnt = cCnt, ground = cGround,
             rest = cRest, age = cAge, contacts = cContacts, count = cCount,
             origin = origin, dt = dt, result = result, seed = frame,
+            worldToBlade = (float4x4)bladeToWorld.inverse, plateMax = plateMax, hasBlade = hasBlade,
         }.Schedule(h);
         h.Complete();
         SolidCount += result[0];
         ClodVoxelsInFlight = result[1];
         SpilledVoxels += result[2];
+        BladeLoadVoxels = result[3];
         ClodCount = cCount[0];
         BermVoxels = ClodVoxelsInFlight;
         LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
@@ -257,6 +261,8 @@ public partial class VoxelWorld
     const float StickSpeed = 0.11f;                          // slower than this while held up, and it stays put (this sets how steep a heap stands)
     const float MaxSpeed = 5.0f;                             // metres a second (the dozer does 3.7)
     const float MaxRise = 1.2f;
+    const float Wing = 0.6f;                                 // how far the blade's end plates reach forward of its face
+    const float HeapAhead = 1.8f;                            // the heap the blade is pushing: this far in front of its face
     const int DirtLo = Rim + 6;
 
     static int CellKey(int3 c) { return (int)(math.hash(c) & (HashSize - 1)); }
@@ -401,6 +407,24 @@ public partial class VoxelWorld
                     contacts[i] = contacts[i] + 1;
                     if (bladeMoving) age[i] = 0f;                    // touched by a moving blade: live again (a still one lets it settle)
                 }
+                if (plateMax.x - plateMin.x > 1.5f)                  // the dozer's blade (not the shovel)
+                {
+                    // Its end plates (wings) stick out in front of the face: the heap stays across the blade's width
+                    // instead of rolling straight off its ends.
+                    float side = math.abs(l.x);
+                    if (l.z > plateMax.z && l.z < plateMax.z + Wing && l.y > plateMin.y - R && l.y < plateMax.y
+                        && side > plateMax.x - R && side < plateMax.x + Wing * 0.5f)
+                    {
+                        l.x = math.sign(l.x) * (plateMax.x - R);
+                        p = math.transform(bladeToWorld, l);
+                        contacts[i] = contacts[i] + 1;
+                    }
+                    // While the blade is driving it, the heap in front stays loose dirt: it rolls ahead of the blade and
+                    // builds up, instead of settling back into ground a few seconds after it was cut (and then being cut
+                    // up again, which made the heap look small and the dirt seem to vanish into the ground).
+                    if (bladeMoving && l.z > plateMax.z - R && l.z < plateMax.z + HeapAhead && side < plateMax.x + 0.3f && l.y < plateMax.y + 0.6f)
+                        age[i] = 0f;
+                }
             }
             // the ground: rest on it, and treat a tall rise as a wall
             p.x = math.clamp(p.x, xMin, xMax); p.z = math.clamp(p.z, zMin, zMax);
@@ -466,6 +490,9 @@ public partial class VoxelWorld
         public float3 origin;
         public float dt;
         public int seed;
+        public float4x4 worldToBlade;
+        public float3 plateMax;
+        public bool hasBlade;
 
         const float R = ClodRadius;
         const float RestTime = 0.35f;
@@ -477,12 +504,18 @@ public partial class VoxelWorld
         public void Execute()
         {
             int n = count[0];
-            int placed = 0, spilled = 0;
+            int placed = 0, spilled = 0, load = 0;
             if (n > 0)
             {
                 // tumble, and turn clods that have come to rest back into ground
                 for (int i = n - 1; i >= 0; i--)
                 {
+                    if (hasBlade)
+                    {
+                        // the heap the blade is pushing: loose dirt just in front of it, across its width
+                        float3 l = math.transform(worldToBlade, pos[i]);
+                        if (l.z > plateMax.z - 0.1f && l.z < plateMax.z + 2f && math.abs(l.x) < plateMax.x + 0.2f) load += cnt[i];
+                    }
                     float3 v = vel[i];
                     float speed = math.length(v);
                     if (speed > 0.05f)
@@ -533,7 +566,7 @@ public partial class VoxelWorld
             int flying = 0;
             for (int i = 0; i < n; i++) flying += cnt[i];
             count[0] = n;
-            result[0] = placed; result[1] = flying; result[2] = spilled;
+            result[0] = placed; result[1] = flying; result[2] = spilled; result[3] = load;
         }
     }
 }
