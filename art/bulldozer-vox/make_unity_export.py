@@ -2217,6 +2217,125 @@ public static class BulldozerBuilder
         Debug.Log("Pad axes: added " + added + " to the Input Manager");
     }
 
+    // The pause menu:  -executeMethod BulldozerBuilder.MenuTest
+    // Opens the menu from the upgrades with the pad's Back (the game must stop), picks Settings with the d-pad and A,
+    // raises the quality, changes the mouse speed and view distance, closes it with Start (the game must run again),
+    // then checks the settings come back from PlayerPrefs.  Saves Logs/menu_paused.png and Logs/menu_settings.png.
+    // The editor's own saved settings are put back at the end.  Prints BULLDOZER_MENU_RESULT.
+    static int menuPhase, menuWaitFrame;
+    static float menuWaitReal, menuT, menuShadow1;
+    static bool menuOk;
+    static string menuLog;
+    static readonly string[] menuKeys = { "set.quality", "set.view", "set.shadows", "set.invert", "set.mouse" };
+    static string[] menuOld;
+
+    public static void MenuTest()
+    {
+        EnsurePadAxes();
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        menuPhase = 0; menuWaitFrame = 0; menuWaitReal = 0f; menuOk = true; menuLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += MenuTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void MenuCheck(bool ok, string what) { menuLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) menuOk = false; }
+
+    static void MenuFinish(bool ok)
+    {
+        if (menuOld != null)                                                    // put the editor's own settings back
+        {
+            for (int i = 0; i < menuKeys.Length; i++)
+            {
+                if (menuOld[i] == null) PlayerPrefs.DeleteKey(menuKeys[i]);
+                else if (menuKeys[i] == "set.mouse") PlayerPrefs.SetFloat(menuKeys[i], float.Parse(menuOld[i], System.Globalization.CultureInfo.InvariantCulture));
+                else PlayerPrefs.SetInt(menuKeys[i], int.Parse(menuOld[i]));
+            }
+            PlayerPrefs.Save();
+            menuOld = null;
+        }
+        if (ok) Debug.Log("BULLDOZER_MENU_RESULT" + menuLog);
+        else Debug.LogError("BULLDOZER_MENU_FAILED phase " + menuPhase + menuLog);
+        Pad.overrideOn = false; Pad.ClearOverride();
+        Time.timeScale = 1f;
+        EditorApplication.update -= MenuTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(ok ? 0 : 1);
+    }
+
+    static void MenuTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { menuLog += " timed out"; MenuFinish(false); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var up = Upgrades.Instance; var pm = PauseMenu.Instance;
+        if (wk == null || up == null || pm == null || VoxelWorld.Instance == null) return;
+        float now = Time.realtimeSinceStartup;                               // (game time stops while the menu is up)
+        if (Time.frameCount < menuWaitFrame || now < menuWaitReal) return;
+        menuWaitFrame = Time.frameCount + 2;                                    // each step gets at least two frames
+        switch (menuPhase++)
+        {
+            case 0: menuWaitReal = now + 2f; break;                             // let everything start
+            case 1:
+                wk.useOverride = true;
+                menuOld = new string[menuKeys.Length];
+                for (int i = 0; i < menuKeys.Length; i++)
+                    menuOld[i] = !PlayerPrefs.HasKey(menuKeys[i]) ? null : menuKeys[i] == "set.mouse"
+                        ? PlayerPrefs.GetFloat(menuKeys[i]).ToString(System.Globalization.CultureInfo.InvariantCulture) : PlayerPrefs.GetInt(menuKeys[i]).ToString();
+                foreach (var k in menuKeys) PlayerPrefs.DeleteKey(k);
+                PauseMenu.LoadPrefs(); pm.ApplyGraphics();
+                menuShadow1 = QualitySettings.shadowDistance;
+                menuLog += " start: quality=" + PauseMenu.QualityNames[PauseMenu.Quality] + " shadowDist=" + menuShadow1.ToString("F0") + " far=" + Camera.main.farClipPlane.ToString("F0");
+                MenuCheck(PauseMenu.Quality == 1 && PauseMenu.View == 2 && Mathf.Approximately(Camera.main.farClipPlane, 900f), "defaultIsTheOldLook");
+                Pad.overrideOn = true; Pad.ClearOverride();
+                up.SetOpen(true);
+                break;
+            case 2: Pad.Hold(Pad.B.Back, true); break;
+            case 3:
+                Pad.Hold(Pad.B.Back, false);
+                MenuCheck(PauseMenu.Paused && !up.Open, "backFromUpgradesOpensMenu");
+                MenuCheck(Time.timeScale == 0f, "timeStopped");
+                menuT = Time.time; menuWaitReal = now + 0.5f;
+                break;
+            case 4:
+                MenuCheck(Time.time == menuT, "clockStill");
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/menu_paused.png");
+                menuWaitReal = now + 1f;
+                break;
+            case 5: Pad.oDY = -1; break;                                     // d-pad down: Settings
+            case 6: Pad.oDY = 0; break;
+            case 7: Pad.Hold(Pad.B.A, true); break;
+            case 8: Pad.Hold(Pad.B.A, false); break;
+            case 9: Pad.oDX = 1; break;                                      // d-pad right on Quality
+            case 10:
+                Pad.oDX = 0;
+                MenuCheck(PauseMenu.Quality == 2, "padRaisesQuality");
+                MenuCheck(QualitySettings.shadowDistance > menuShadow1 * 1.5f, "highDrawsShadowsFurther");
+                pm.Change(5, +1); pm.Change(5, +1);                          // mouse speed 1 -> 1.5
+                pm.Change(2, -1);                                            // view distance Far -> Middle
+                MenuCheck(Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f), "mouseSpeed");
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/menu_settings.png");
+                menuWaitReal = now + 1f;
+                break;
+            case 11: Pad.Hold(Pad.B.Start, true); break;
+            case 12:
+                Pad.Hold(Pad.B.Start, false);
+                MenuCheck(!PauseMenu.Paused && Time.timeScale == 1f, "startCloses");
+                menuT = Time.time; menuWaitReal = now + 0.5f;
+                break;
+            case 13:
+                MenuCheck(Time.time > menuT + 0.2f, "clockRunsAgain");
+                MenuCheck(Mathf.Approximately(Camera.main.farClipPlane, 450f), "viewDistance=" + Camera.main.farClipPlane.ToString("F0"));
+                MenuCheck(RenderSettings.fogDensity >= 2.4f / 450f - 0.0001f, "hazeThickened");
+                PauseMenu.Quality = 0; PauseMenu.MouseSpeed = 1f; PauseMenu.View = 2;   // forget them, then read them back
+                PauseMenu.LoadPrefs();
+                MenuCheck(PauseMenu.Quality == 2 && Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f) && PauseMenu.View == 1, "keptAfterReload");
+                MenuFinish(menuOk);
+                break;
+        }
+    }
+
     // The game pad path:  -executeMethod BulldozerBuilder.PadTest
     // Drives everything through Pad's override (as if a pad were plugged in), with the dozer's and worker's own
     // overrides off.  In the dozer: the left stick drives, the left trigger raises the blade, and with the gyro button

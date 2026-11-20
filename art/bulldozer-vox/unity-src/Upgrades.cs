@@ -261,8 +261,8 @@ public class Upgrades : MonoBehaviour
         if (noteTimer > 0f) noteTimer -= Time.unscaledDeltaTime;
         var wk = Worker.Instance;
         if (wk != null && wk.useOverride) return;                // not while a test is driving
+        if (PauseMenu.Blocking) return;                          // the pause menu is up (it also does Esc)
         if (Input.GetKeyDown(KeyCode.U) || Pad.Down(Pad.B.Start)) SetOpen(!Open);
-        if (Open && Input.GetKeyDown(KeyCode.Escape)) SetOpen(false);
         if (Open)
         {
             // the pad: d-pad left / right picks a branch, A buys its next level, X sells the newest back
@@ -286,7 +286,7 @@ public class Upgrades : MonoBehaviour
         if (Prologue.Playing) return;
         if (!Open)
         {
-            GUI.Box(new Rect(Screen.width - 230, Screen.height - 34, 220, 24), Pad.Key("U", "Start") + "   upgrades");
+            GUI.Box(new Rect(Screen.width - 230, Screen.height - 34, 220, 24), (Pad.InUse ? "Start   upgrades, then Back   menu" : "U   upgrades      Esc   menu"));
             return;
         }
         var money = Money.Instance;
@@ -297,7 +297,7 @@ public class Upgrades : MonoBehaviour
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
         GUI.Label(new Rect(area.x + 16, area.y + 8, 400, 34), "Upgrades", title);
         var info = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleRight };
-        if (money != null) GUI.Label(new Rect(area.xMax - 520, area.y + 8, 500, 34), "Coins " + money.Coins.ToString("N0") + "      Gold " + money.GoldLitres.ToString("F0") + " L      " + (Pad.InUse ? "D-pad pick   A buy   X sell back   Start closes" : "U or Esc closes"), info);
+        if (money != null) GUI.Label(new Rect(area.xMax - 520, area.y + 8, 500, 34), "Coins " + money.Coins.ToString("N0") + "      Gold " + money.GoldLitres.ToString("F0") + " L      " + (Pad.InUse ? "D-pad pick   A buy   X sell back   Start closes   Back menu" : "U or Esc closes"), info);
         if (noteTimer > 0f)
         {
             var n = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter };
