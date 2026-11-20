@@ -93,7 +93,7 @@ Shader "Voxel/Terrain"
                 float tw = saturate(sin(_Time.y * (1.3 + 2.4 * s.Gloss) + s.Gloss * 62.83));
                 tw = tw * tw; tw = tw * tw;                                     // short bright flashes
                 float lit = saturate(dot(s.Normal, gi.light.dir));
-                c.rgb += gi.light.color * (lit * tw * s.Specular * 4.0);
+                c.rgb += gi.light.color * (lit * tw * s.Specular * 1.8);
             }
             return c;
         }
@@ -268,18 +268,18 @@ Shader "Voxel/Terrain"
                     }
                 }
             }
-            if ((m == 4 || m == 5 || m == 9 || m == 10) && _SparkleFrom.w > 0.5)
+            if ((m == 4 || m == 5 || m == 10) && _SparkleFrom.w > 0.5)        // the seam and loose gold; not loose quartz (a heap of it in the sun was all glare)
             {
                 float near = saturate((4.5 - distance(IN.worldPos, _SparkleFrom.xyz)) / 1.0);
                 bool gold = (m == 5 || m == 10);
                 float pick = hash3(v + 19.7);
-                if (near > 0.0 && pick < (gold ? 0.45 : 0.2))
+                if (near > 0.0 && pick < (gold ? 0.35 : 0.08))
                 {
                     // a point in the middle of the block's face, not the whole face
                     float3 f = frac(IN.worldPos / _VoxelSize) - 0.5;
                     float3 n = IN.worldNormal;
                     f -= n * dot(f, n);
-                    float star = saturate(1.0 - length(f) / 0.36);
+                    float star = saturate(1.0 - length(f) / 0.16);      // a small point: in the sun a bigger one turned whole faces white
                     o.Specular = near * star * star * (gold ? 1.6 : 1.0);
                     o.Gloss = hash3(v + 41.3);
                 }
