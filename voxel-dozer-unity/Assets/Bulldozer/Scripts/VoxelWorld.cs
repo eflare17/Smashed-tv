@@ -511,7 +511,7 @@ public partial class VoxelWorld : MonoBehaviour
         for (int i = 0; i < bladeLoad.Length; i++) carried += bladeLoad[i];
         carriedOnBlade = carried;
         ClodCount = cCount[0];
-        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels;
+        LoadVoxels = carried + ClodVoxelsInFlight + spawned * ClodVoxels + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels + BucketVoxels;   // (+ BucketVoxels: the Dingo)
         Toc(0);
         return r;
     }

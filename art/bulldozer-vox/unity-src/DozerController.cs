@@ -352,7 +352,7 @@ public class DozerController : MonoBehaviour
             Speed = 0f; turn = 0f;
             if (trackLeft != null) trackLeft.speed = 0f;
             if (trackRight != null) trackRight.speed = 0f;
-            if (world != null && blade != null) world.SetBlade(blade.localToWorldMatrix, BladePlateMin, BladePlateMax, false);
+            if (world != null && blade != null && !Dingo.Working) world.SetBlade(blade.localToWorldMatrix, BladePlateMin, BladePlateMax, false);   // (the Dingo's bucket is the plate while it works)
             return;
         }
         float want = throttleIn > 0f ? throttleIn * maxSpeed : throttleIn * reverseSpeed;
