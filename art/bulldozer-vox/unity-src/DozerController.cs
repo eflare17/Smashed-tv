@@ -586,7 +586,11 @@ public class DozerController : MonoBehaviour
         if (AtFence) text += MountainRoad.DistanceTo(transform.position.x, transform.position.z) < MountainRoad.CorridorHalf + 1f
                              ? "\nEdge of the road strip: steer back onto the road" : "\nEdge of the work site: turn round";
         if (AtCliff) text += "\nToo steep to climb: cut into it with the blade, or go round";
-        int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0);
+        // A swung blade sends its dirt off one end (that is what it is for), so the blade never fills.  Easy to do by
+        // accident with the d-pad, so say so.
+        bool swung = Mathf.Abs(BladeYaw) > 3f;
+        if (swung) text += "\nBLADE SWUNG " + Mathf.Abs(BladeYaw).ToString("F0") + " deg " + (BladeYaw > 0f ? "right" : "left") + ": dirt rolls off one end.  X straightens it";
+        int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0) + (swung ? 1 : 0);
         GUI.Box(new Rect(10, 10, 470, 121 + 17 * extra), text);
     }
 }

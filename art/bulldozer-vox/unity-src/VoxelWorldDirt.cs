@@ -37,12 +37,18 @@ public partial class VoxelWorld
     {
         Matrix4x4 w2b = bladeToWorld.inverse;
         int front = 0, ahead = 0, ends = 0, behind = 0; float tall = 0f;
+        var bins = new int[5]; var binTall = new float[5];
         for (int i = 0; i < ClodCount; i++)
         {
             Vector3 l = w2b.MultiplyPoint3x4(cPos[i]);
             if (l.z < plateMin.z) behind++;
             else if (Mathf.Abs(l.x) > plateMax.x) ends++;
-            else if (l.z < plateMax.z + 1.5f) { front++; tall = Mathf.Max(tall, l.y - plateMin.y); }
+            else if (l.z < plateMax.z + 1.5f)
+            {
+                front++; tall = Mathf.Max(tall, l.y - plateMin.y);
+                int b = Mathf.Clamp((int)((l.x - plateMin.x) / (plateMax.x - plateMin.x) * 5f), 0, 4);
+                bins[b]++; binTall[b] = Mathf.Max(binTall[b], l.y - plateMin.y);
+            }
             else ahead++;
         }
         float ground = 0f;
@@ -53,7 +59,9 @@ public partial class VoxelWorld
                 Vector3 e = bladeToWorld.MultiplyPoint3x4(new Vector3(x, plateMin.y, plateMax.z));
                 ground = Mathf.Max(ground, HeightAt(q.x, q.z) - e.y);
             }
-        return "clods(front/ahead/ends/behind)=" + front + "/" + ahead + "/" + ends + "/" + behind + " clodHeapAboveEdge=" + tall.ToString("F2") + "m groundAboveEdge=" + ground.ToString("F2") + "m";
+        string across = "";
+        for (int b = 0; b < 5; b++) across += (b > 0 ? "/" : "") + bins[b] + "@" + binTall[b].ToString("F1");
+        return "acrossBlade(L..R count@height)=" + across + " clods(front/ahead/ends/behind)=" + front + "/" + ahead + "/" + ends + "/" + behind + " clodHeapAboveEdge=" + tall.ToString("F2") + "m groundAboveEdge=" + ground.ToString("F2") + "m";
     }
 
     NativeArray<float3> cPos, cVel, cPrev, cDelta;

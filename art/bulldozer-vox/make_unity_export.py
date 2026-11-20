@@ -3353,6 +3353,70 @@ public static class BulldozerBuilder
         }
     }
 
+    // Where the pushed dirt sits across the blade:  -executeMethod BulldozerBuilder.PushTest
+    // Pushes on flat ground for 8 s with the blade straight, then again with it swung right over, logging the heap
+    // across the blade's width each second, with a picture from in front of the blade.  Prints BULLDOZER_PUSH_RESULT.
+    static int puPhase; static float puT0; static string puLog; static Vector3 puStart;
+    public static void PushTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        puPhase = 0; puLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += PushTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void PushFinish(int code) { EditorApplication.update -= PushTick; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void PushTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { Debug.LogError("BULLDOZER_PUSH_FAILED timed out " + puLog); PushFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null) return;
+        float t = Time.time;
+        if (puPhase == 0)
+        {
+            if (t < 2f) return;
+            wk.useOverride = true; d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            puStart = d.transform.position;
+            puPhase = 1; puT0 = t;
+            return;
+        }
+        if (puPhase == 1 || puPhase == 3)
+        {
+            bool angled = puPhase == 3;
+            float k = t - puT0;
+            if (k < 0.1f)
+            {
+                d.Place(puStart + (angled ? new Vector3(8f, 0f, 0f) : Vector3.zero), 0f);
+                return;
+            }
+            d.overrideBlade = k < 1.5f ? -1f : 0f;
+            d.overrideAngle = angled && k < 2.5f ? 1f : 0f;
+            d.overrideThrottle = k < 1.5f ? 0f : 1f;
+            d.overrideSteer = 0f;
+            if (k > 2f && Mathf.Repeat(k, 1f) < Time.deltaTime)
+                puLog += " " + (angled ? "angled" : "straight") + "t" + k.ToString("F0") + "[yaw=" + d.BladeYaw.ToString("F0") + " speed=" + d.Speed.ToString("F1") + " heap=" + d.BladeLoadM3.ToString("F1") + " " + d.BladeLoadInfo() + "]";
+            if (k > 8.5f && puLog.IndexOf(angled ? "picA" : "picS") < 0)
+            {
+                Vector3 bp = d.Blade.position, f = d.transform.forward;
+                HillShot(bp + f * 5.5f + Vector3.up * 2.2f, bp + Vector3.up * 0.3f, angled ? "push_front_angled.png" : "push_front_straight.png");
+                puLog += angled ? " picA" : " picS";
+            }
+            if (k < 9f) return;
+            d.overrideThrottle = 0f;
+            puPhase++; puT0 = t;
+            return;
+        }
+        if (puPhase == 2) { d.overrideBlade = 1f; if (t - puT0 < 1.5f) return; d.Place(puStart, 0f); puPhase = 3; puT0 = t; return; }
+        Debug.Log("BULLDOZER_PUSH_RESULT" + puLog);
+        PushFinish(0);
+    }
+
     static void TestFinish(int code)
     {
         EditorApplication.update -= TestTick;
