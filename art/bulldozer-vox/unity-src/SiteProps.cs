@@ -14,7 +14,7 @@ public class SiteProps : MonoBehaviour
     const byte Bracken = 30;
     const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20, ForestFloor = 25, TrackDirt = 26;
 
-    struct Solid { public Vector2 at; public float radius; public bool machineOnly; }
+    struct Solid { public Vector2 at; public float radius; public bool machineOnly; public float below; }   // below: only solid to a machine lower than this (metres)
     static readonly List<Solid> solids = new List<Solid>();
 
     /// The middle of the track, point by point, from deep in the tunnel out to the end of the line.
@@ -42,6 +42,7 @@ public class SiteProps : MonoBehaviour
         for (int i = 0; i < solids.Count; i++)
         {
             if (onFoot && solids[i].machineOnly) continue;
+            if (pos.y >= solids[i].below) continue;                          // (the tunnel: a machine up on the hilltop above it is not in it)
             float r = solids[i].radius + radius;
             if ((new Vector2(pos.x, pos.z) - solids[i].at).sqrMagnitude < r * r) return true;
         }
@@ -155,7 +156,7 @@ public class SiteProps : MonoBehaviour
         return go;
     }
 
-    void Solidify(float x, float z, float radius, bool machineOnly = false) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly }); }
+    void Solidify(float x, float z, float radius, bool machineOnly = false, float below = float.MaxValue) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly, below = below }); }
 
     // ---------------------------------------------------------------- the site
     VoxelWorld world;
@@ -261,8 +262,9 @@ public class SiteProps : MonoBehaviour
             light.shadows = k == 0 ? LightShadows.Soft : LightShadows.None;
         }
         Solidify(px - hw, pz - 0.7f, 0.3f); Solidify(px + hw, pz - 0.7f, 0.3f);
-        // nothing gets into the tunnel itself: it is too low for the machine
-        for (float z = pz + 1f; z < pz + VoxelWorld.TunnelLength; z += 1.5f) Solidify(px, z, VoxelWorld.TunnelHalfWidth, true);
+        // nothing gets into the tunnel itself: it is too low for the machine.  (Only down at the tunnel's own level: up on
+        // the hilltop above it the machine can drive across, which is the way to the mountain road.)
+        for (float z = pz + 1f; z < pz + VoxelWorld.TunnelLength; z += 1.5f) Solidify(px, z, VoxelWorld.TunnelHalfWidth, true, VoxelWorld.TunnelHeight + 0.4f);
     }
 
     void Rails()

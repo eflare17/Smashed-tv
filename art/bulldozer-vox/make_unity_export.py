@@ -912,7 +912,7 @@ public static class BulldozerBuilder
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        mrPhase = 0; mrLog = ""; mrMaxS = 0f; mrMaxY = -9f; mrFrames = 0; mrFrameSum = 0f; mrFrameMax = 0f; mrCliff = mrFence = mrOnStrip = 0; mrFail = false;
+        mrPhase = 0; mrLog = ""; rcLog = ""; mrMaxS = 0f; mrMaxY = -9f; mrFrames = 0; mrFrameSum = 0f; mrFrameMax = 0f; mrCliff = mrFence = mrOnStrip = 0; mrFail = false;
         testStart = EditorApplication.timeSinceStartup;
         EditorApplication.update += RoadTick;
         EditorApplication.EnterPlaymode();
@@ -1062,6 +1062,10 @@ public static class BulldozerBuilder
             int blockedAlong = 0;
             for (float s = 0f; s < MountainRoad.Length; s += 1f) { Vector2 p = RoadPoint(s, 0f, out dir); if (SiteProps.Blocks(new Vector3(p.x, 0f, p.y), 2.3f)) blockedAlong++; }
             mrLog += " solidThingsOnRoad=" + blockedAlong;
+            var way = RcFindWay(new Vector2(VoxelWorld.TrackCentreX(27f), 27f), RoadPoint(3f, 0f, out dir));
+            bool reach = rcLog.IndexOf("noClearWay") < 0;
+            mrLog += " fromEscapeTrack=" + (reach ? "clear way, " + way.Count + " points" : "NO WAY");
+            RoadCheck(reach, "reachableFromTrack");
             RoadPoint(0f, 0f, out dir);
             d.Place(new Vector3(back.x, 0f, back.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
             mrPhase = 2; mrT0 = t;
@@ -2853,6 +2857,289 @@ public static class BulldozerBuilder
         if (sPop.Length > 0 && Time.time < sPopUntil) sOverlay.Add("Dialogue: 0," + at + ",Pop,,0,0,0,," + AssEsc(sPop));
     }
 
+    // The mountain road: a high shot of the mountain, the dozer driving from the quarry up the escape track and along the
+    // firebreak onto the road, the pegs and the tint with the key, and then a stretch worked to grade with the cab
+    // readout, ending with its green tick.  The blade there follows the cab's arrows by itself (what a driver would do).
+    //   -executeMethod BulldozerBuilder.RecordRoadClip     Frames and overlay.ass go to Logs/clip.
+    public static void RecordRoadClip() { clipMode = 10; sPh = 0; sOverlay.Clear(); sTitle = ""; sCaption = ""; sPop = ""; rcLog = ""; rcWays.Clear(); StartClip(); }
+    static int rcWay, rcStride = 1, rcPass, rcStuckFrames;
+    static float rcS0, rcS1, rcLastProgress;
+    static bool rcForward, rcShowKey, rcShowCab;
+    static string rcLog = "";
+    static Vector3 rcCamPos, rcCamLook;
+    static readonly List<Vector2> rcWays = new List<Vector2>();
+    const int RcStretch = 12;                               // the stretch worked in the clip (shown as stretch 13: all cut, no fill)
+
+    static void RcCam(Camera cam, Vector3 pos, Vector3 look, float ease)
+    {
+        if (ease >= 1f) { rcCamPos = pos; rcCamLook = look; }
+        rcCamPos = Vector3.Lerp(rcCamPos, pos, ease); rcCamLook = Vector3.Lerp(rcCamLook, look, ease);
+        cam.transform.SetPositionAndRotation(rcCamPos, Quaternion.LookRotation(rcCamLook - rcCamPos, Vector3.up));
+    }
+
+    static Vector3 RcRoad(float s, float off, float up)
+    {
+        Vector2 dir;
+        Vector2 p = RoadPoint(s, off, out dir);
+        return new Vector3(p.x, VoxelWorld.Instance.HeightAt(p.x, p.y) + up, p.y);
+    }
+
+    /// Steers the dozer at a point on the ground; going backwards if `back`.  Returns how far it is from it.
+    static float RcSteer(DozerController d, Vector2 aim, bool back, float throttle)
+    {
+        Vector3 pos = d.transform.position;
+        Vector3 to = new Vector3(aim.x - pos.x, 0f, aim.y - pos.z);
+        Vector3 fwd = Vector3.ProjectOnPlane(d.transform.forward, Vector3.up);
+        float ang = Vector3.SignedAngle(back ? -fwd : fwd, to, Vector3.up);
+        d.overrideSteer = Mathf.Clamp(ang / 25f, -1f, 1f);       // (the machine turns on the spot: reversing, turning the same way swings its back the same way)
+        d.overrideThrottle = (Mathf.Abs(ang) > 55f ? 0.15f : 1f) * throttle * (back ? -1f : 1f);
+        return to.magnitude;
+    }
+
+    /// A clear way for the dozer across the hilltop, from `from` to `to`: a search over a 1 m grid that keeps clear of
+    /// anything solid (trees, fallen trunks) and of steps too tall to drive.  Returns points about 3 m apart.
+    static List<Vector2> RcFindWay(Vector2 from, Vector2 to)
+    {
+        var w = VoxelWorld.Instance;
+        const float x0 = -24f, z0 = 14f, cell = 1f;
+        const int nx = 48, nz = 34;
+        System.Func<int, int, bool> open = (i, j) =>
+        {
+            float x = x0 + i * cell, z = z0 + j * cell;
+            bool inside = (Mathf.Abs(x) <= VoxelWorld.DriveLimit && Mathf.Abs(z) <= VoxelWorld.DriveLimit) || MountainRoad.DistanceTo(x, z) <= MountainRoad.CorridorHalf;
+            return inside && !SiteProps.Blocks(new Vector3(x, w.HeightAt(x, z), z), 2.45f);
+        };
+        var prev = new int[nx * nz];
+        for (int k = 0; k < prev.Length; k++) prev[k] = -2;
+        int si = Mathf.Clamp(Mathf.RoundToInt((from.x - x0) / cell), 0, nx - 1), sj = Mathf.Clamp(Mathf.RoundToInt((from.y - z0) / cell), 0, nz - 1);
+        int gi = Mathf.Clamp(Mathf.RoundToInt((to.x - x0) / cell), 0, nx - 1), gj = Mathf.Clamp(Mathf.RoundToInt((to.y - z0) / cell), 0, nz - 1);
+        var q = new Queue<int>();
+        q.Enqueue(si + nx * sj); prev[si + nx * sj] = -1;
+        while (q.Count > 0)
+        {
+            int c = q.Dequeue(), ci = c % nx, cj = c / nx;
+            if (ci == gi && cj == gj) break;
+            float h = w.HeightAt(x0 + ci * cell, z0 + cj * cell);
+            for (int dj = -1; dj <= 1; dj++)
+                for (int di = -1; di <= 1; di++)
+                {
+                    int ni = ci + di, nj = cj + dj;
+                    if ((di == 0 && dj == 0) || ni < 0 || nj < 0 || ni >= nx || nj >= nz || prev[ni + nx * nj] != -2) continue;
+                    if (!open(ni, nj) || Mathf.Abs(w.HeightAt(x0 + ni * cell, z0 + nj * cell) - h) > 0.5f) continue;
+                    prev[ni + nx * nj] = c; q.Enqueue(ni + nx * nj);
+                }
+        }
+        var path = new List<Vector2>();
+        if (prev[gi + nx * gj] == -2) { rcLog += " noClearWay!"; path.Add(to); return path; }
+        for (int c = gi + nx * gj; c >= 0; c = prev[c]) path.Add(new Vector2(x0 + (c % nx) * cell, z0 + (c / nx) * cell));
+        path.Reverse();
+        var outPts = new List<Vector2>();
+        for (int k = 0; k < path.Count; k += 2) outPts.Add(path[k]);
+        outPts.Add(path[path.Count - 1]);
+        rcLog += " clearWay=" + path.Count + "m via " + outPts[outPts.Count / 2].ToString("F1");
+        return outPts;
+    }
+
+    static bool RoadClipStep(DozerController d, float t, FollowCamera follow, Camera cam)
+    {
+        var wk = Worker.Instance; var w = VoxelWorld.Instance; var job = MountainRoadJob.Instance;
+        if (job == null) { clipSkip = true; return true; }
+        float k = t - sT0;
+        Vector2 dir;
+        if (sPh == 0)
+        {
+            // set up: the dozer at the foot of the escape track, facing up it
+            clipSkip = true;
+            if (follow != null) follow.enabled = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.dead = false;
+            d.Place(new Vector3(VoxelWorld.TrackCentreX(1f), 0f, 1f), 0f);
+            d.overrideBlade = 1f; d.overrideRipper = 1f; d.overrideThrottle = 0f;
+            if (rcWays.Count == 0)
+            {
+                foreach (float z in new[] { 6f, 12f, 18f, 24f }) rcWays.Add(new Vector2(VoxelWorld.TrackCentreX(z), z));
+                rcWays.AddRange(RcFindWay(new Vector2(VoxelWorld.TrackCentreX(27f), 27f), RoadPoint(3f, 0f, out dir)));
+                for (float s = 3f; s <= 14f; s += 2f) rcWays.Add(RoadPoint(s, 0f, out dir));
+            }
+            rcWay = 0;
+            if (k < 1.5f) return true;
+            string blocked = "";
+            for (int i = 0; i + 1 < rcWays.Count; i++)
+                for (float u = 0f; u < 1f; u += 0.1f)
+                {
+                    Vector2 q = Vector2.Lerp(rcWays[i], rcWays[i + 1], u);
+                    if (SiteProps.Blocks(new Vector3(q.x, 0f, q.y), 2.3f)) blocked += " " + q.ToString("F1");
+                }
+            rcLog += " routeBlockedAt:" + (blocked.Length > 0 ? blocked : " none");
+            clipSkip = false;
+            sTitle = "The mountain road"; sCaption = "20 m up the mountain behind the mine, at 1 in 8, with two switchbacks";
+            RcCam(cam, new Vector3(20f, 46f, 8f), new Vector3(-30f, 12f, 78f), 1f);
+            sPh = 1; sT0 = t;
+            return true;
+        }
+        if (sPh == 1)
+        {
+            // high over the quarry, drifting west to look along the mountain's face
+            RcCam(cam, new Vector3(20f - k * 3.2f, 46f - k * 1.5f, 8f + k * 1.2f), new Vector3(-30f, 12f, 78f), 0.2f);
+            if (k > 3.5f) sCaption = "The road is the bare strip.  The rest of the mountain can't be dug.";
+            if (k < 7f) return true;
+            sTitle = ""; sCaption = "From the quarry: up the escape track, across the hilltop, onto the road   (3x speed)";
+            if (follow != null) { follow.enabled = true; follow.yawOffset = 20f; }
+            rcStride = 3; rcStuckFrames = 0; rcLastProgress = t;
+            sPh = 2; sT0 = t;
+            return true;
+        }
+        if (sPh == 2)
+        {
+            // drive the way points
+            if (Mathf.FloorToInt(k / 3f) != Mathf.FloorToInt((k - Time.deltaTime) / 3f))
+                rcLog += "\n  drive k=" + k.ToString("F0") + " way=" + rcWay + " pos=" + d.transform.position.ToString("F1") + " yaw=" + d.transform.eulerAngles.y.ToString("F0")
+                       + " speed=" + d.Speed.ToString("F1") + " cliff=" + d.AtCliff + " fence=" + d.AtFence + " blockedHere=" + SiteProps.Blocks(d.transform.position + d.transform.forward * 0.3f, 2.3f)
+                       + " cut=" + d.LastCut + " steer=" + d.overrideSteer.ToString("F2");
+            Vector2 aim = rcWays[Mathf.Min(rcWay, rcWays.Count - 1)];
+            float dist = RcSteer(d, aim, false, 1f);
+            if (dist < 1.8f) { rcWay++; rcLastProgress = t; }
+            if (t - rcLastProgress > 8f)
+            {
+                rcLog += " stuckAtWay" + rcWay + "=" + d.transform.position.ToString("F1");
+                rcWay++; rcLastProgress = t;                       // (should not happen: logged if it does)
+            }
+            if (rcWay < rcWays.Count && k < 60f) return true;
+            rcLog += " droveOnToRoad=" + (rcWay >= rcWays.Count) + " in " + k.ToString("F0") + "s at " + d.transform.position.ToString("F1") + " strip=" + (w.KindAt(d.transform.position.x, d.transform.position.z) == VoxelWorld.BlockStrip);
+            d.overrideThrottle = 0f; d.overrideSteer = 0f;
+            rcStride = 1;
+            if (follow != null) follow.enabled = false;
+            rcShowKey = true;
+            sCaption = "Survey pegs every 5 m:  CUT or FILL = metres to grade.  The road is tinted to match.";
+            RcCam(cam, RcRoad(12f, -5.5f, 3.2f), RcRoad(24f, 0f, 0f), 1f);
+            sPh = 3; sT0 = t;
+            return true;
+        }
+        if (sPh == 3)
+        {
+            // along the first leg, beside the road, looking up it at the pegs and the tint
+            float s = 12f + k * 3.2f;
+            RcCam(cam, RcRoad(s, -5.5f, 3.2f), RcRoad(s + 12f, 0.5f, 0.3f), 0.08f);
+            if (k > 5f) sCaption = "Red = too high, cut it down.   Blue = too low, fill it.   Green = on grade.";
+            if (k < 10f) return true;
+            // later, on stretch 14, near the top: the dozer at its start, blade down a little
+            rcS0 = RcStretch * MountainRoad.Length / MountainRoad.Stretches; rcS1 = (RcStretch + 1) * MountainRoad.Length / MountainRoad.Stretches;
+            Vector2 p = RoadPoint(rcS0 - 5f, 0f, out dir);
+            d.Place(new Vector3(p.x, 0f, p.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
+            rcPass = 0; rcForward = true; rcShowCab = true;
+            if (follow != null) { follow.enabled = true; follow.yawOffset = 35f; }
+            sTitle = "Stretch 13 of 15"; sCaption = "Working it to grade.  The cab says how far the blade is from grade:  lower or raise it.";
+            rcLog += " stretch13Before=" + (job.StretchShare(RcStretch) * 100f).ToString("F0") + "%";
+            sPh = 4; sT0 = t;
+            return true;
+        }
+        if (sPh == 4)
+        {
+            if (k > 4f) sTitle = "";
+            if (k > 2f && sCaption.StartsWith("Working")) sCaption = "Pass after pass, following the arrows, blade angled to cast the spoil off the edge   (6x speed)";
+            // the blade follows the cab readout: lower it while the edge is above grade, raise it while below
+            int arrow = job.CabArrow;
+            var blade = d.Blade;
+            float edgeOff = 0f;
+            if (blade != null)
+            {
+                Vector3 edge = (blade.TransformPoint(new Vector3(-2.25f, -0.75f, 1.1f)) + blade.TransformPoint(new Vector3(2.25f, -0.75f, 1.1f))) * 0.5f;
+                float es, eo; Vector2 ed;
+                MountainRoad.Nearest(edge.x, edge.z, out es, out eo, out ed);
+                edgeOff = edge.y - MountainRoad.GradeAt(es);
+            }
+            Vector3 pos = d.transform.position;
+            float s, off;
+            MountainRoad.Nearest(pos.x, pos.z, out s, out off, out dir);
+            if (Mathf.FloorToInt(k / 4f) != Mathf.FloorToInt((k - Time.deltaTime) / 4f))
+                rcLog += "\n  work k=" + k.ToString("F0") + " fwd=" + rcForward + " pass=" + rcPass + " s=" + s.ToString("F1") + " off=" + off.ToString("F1") + " edge=" + edgeOff.ToString("F2")
+                       + " speed=" + d.Speed.ToString("F1") + " cliff=" + d.AtCliff + " fence=" + d.AtFence + " rock=" + d.BlockedByRock + " cut=" + d.LastCut + " clods=" + w.ClodCount
+                       + " share=" + (job.StretchShare(RcStretch) * 100f).ToString("F0") + "%";
+            float lane = (rcPass % 3 == 0) ? 0f : (rcPass % 3 == 1) ? 0.55f : -0.55f;   // each pass a little to one side, so the blade covers the whole road
+            if (Mathf.Abs(d.Speed) > 0.3f) rcStuckFrames = 0; else rcStuckFrames++;
+            if (rcStuckFrames > 90) { rcForward = !rcForward; rcStuckFrames = 0; rcLog += " unstuck@" + k.ToString("F0"); }   // stalled 3 s: go the other way
+            // the blade angled so the spoil runs off its downhill end, over the edge of the road (side-casting)
+            Vector3 outward = pos - new Vector3(Mountain.CX, pos.y, Mountain.CZ);
+            float wantYaw = Vector3.Dot(d.transform.right, outward) > 0f ? d.bladeMaxAngle : -d.bladeMaxAngle;   // + swings the right end back
+            d.overrideAngle = Mathf.Abs(d.BladeYaw - wantYaw) < 1f ? 0f : Mathf.Sign(wantYaw - d.BladeYaw);
+            if (rcForward)
+            {
+                rcStride = 6;
+                // down to grade, but in layers: never more than 0.3 m under the tracks in one pass, or the cut face
+                // gets too tall for the machine to climb back over
+                float layer = (pos.y - 0.3f) - (MountainRoad.GradeAt(s) + edgeOff);    // how far the edge is below the layer's floor (+ = too deep)
+                float aim = Mathf.Min(edgeOff, -layer);                                   // above the higher of the two: lower it
+                d.overrideBlade = aim > 0.03f ? -1f : aim < -0.03f ? 1f : 0f;
+                RcSteer(d, RoadPoint(s + 4.5f, lane, out dir), false, 0.7f);
+                if (s > rcS1 + 3f) { rcForward = false; rcPass++; }
+            }
+            else
+            {
+                rcStride = 10;
+                d.overrideBlade = 1f;                              // back down the road, blade up
+                RcSteer(d, RoadPoint(s - 4.5f, lane, out dir), true, 1f);
+                if (s < rcS0 - 1.5f) rcForward = true;
+            }
+            if (k < 3f) rcStride = 1;                              // (the first seconds at normal speed, with the readout)
+            if (!job.Ticked(RcStretch) && k < 240f && rcPass < 14) return true;
+            rcLog += " ticked=" + job.Ticked(RcStretch) + " after " + rcPass + " passes, " + k.ToString("F0") + "s share=" + (job.StretchShare(RcStretch) * 100f).ToString("F0") + "%";
+            d.overrideThrottle = 0f; d.overrideSteer = 0f; d.overrideBlade = 1f;
+            rcStride = 1; rcShowCab = false;
+            if (follow != null) follow.enabled = false;
+            float mid = (rcS0 + rcS1) * 0.5f;
+            RcCam(cam, RcRoad(mid - 3f, MountainRoad.RoadHalf + 6f, 3.0f), RcRoad(mid, MountainRoad.RoadHalf + 1.1f, 1.2f), 1f);
+            sCaption = job.Ticked(RcStretch) ? "7 in 10 of it within 15 cm of grade:  a green tick.   (All 15 ticked pays 500 coins.)"
+                                             : "Not ticked yet: " + (job.StretchShare(RcStretch) * 100f).ToString("F0") + "% of it on grade";
+            if (job.Ticked(RcStretch)) { sPop = "Stretch 13:  green tick!"; sPopUntil = Time.time + 3.5f; }
+            sPh = 5; sT0 = t;
+            return true;
+        }
+        if (sPh == 5)
+        {
+            float mid = (rcS0 + rcS1) * 0.5f;
+            RcCam(cam, RcRoad(mid - 3f - k * 0.5f, MountainRoad.RoadHalf + 6f + k * 0.4f, 3.0f + k * 0.3f), RcRoad(mid, MountainRoad.RoadHalf + 1.1f, 1.2f), 0.1f);
+            if (k < 5f) return true;
+            rcShowKey = false;
+            Debug.Log("BULLDOZER_ROADCLIP_OK frames=" + clipFrame + rcLog);
+            return false;
+        }
+        return true;
+    }
+
+    static string AssCol32(Color32 c) { return "&H" + c.b.ToString("X2") + c.g.ToString("X2") + c.r.ToString("X2") + "&"; }
+
+    static void RoadOverlay()
+    {
+        var job = MountainRoadJob.Instance;
+        float a = clipFrame / 30f, b = (clipFrame + 1) / 30f;
+        string at = AssTime(a) + "," + AssTime(b);
+        if (sTitle.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(sTitle));
+        if (sCaption.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(sCaption));
+        if (sPop.Length > 0 && Time.time < sPopUntil) sOverlay.Add("Dialogue: 0," + at + ",Pop,,0,0,0,," + AssEsc(sPop));
+        if (job == null) return;
+        string sq = "\u25A0";
+        if (rcShowKey)
+        {
+            string key = "{\\b1}MOUNTAIN ROAD   " + job.TickedCount + " / " + MountainRoad.Stretches + " ticked{\\b0}\\N"
+                + "{\\c" + AssCol32(new Color32(220, 40, 30, 255)) + "}" + sq + "{\\c&HFFFFFF&} RED: too high.  Cut it down.\\N"
+                + "{\\c" + AssCol32(new Color32(40, 90, 230, 255)) + "}" + sq + "{\\c&HFFFFFF&} BLUE: too low.  Fill it.\\N"
+                + "{\\c" + AssCol32(new Color32(40, 200, 60, 255)) + "}" + sq + "{\\c&HFFFFFF&} GREEN: on grade (within 10 cm)\\N"
+                + "Pegs: CUT 1.2 = cut 1.2 m.  FILL 0.4 = fill 0.4 m.\\N"
+                + "{\\c" + AssCol32(new Color32(40, 215, 65, 255)) + "}\u2714{\\c&HFFFFFF&} Tick: stretch done (7 in 10 within 15 cm)";
+            sOverlay.Add("Dialogue: 0," + at + ",Key,,0,0,0,," + key);
+        }
+        if (rcShowCab && job.CabText.Length > 0)
+        {
+            string[] lines = job.CabText.Split('\n');
+            string col = job.CabArrow < 0 ? AssCol32(new Color32(255, 100, 80, 255)) : job.CabArrow > 0 ? AssCol32(new Color32(130, 180, 255, 255)) : AssCol32(new Color32(100, 255, 115, 255));
+            string arrow = job.CabArrow < 0 ? "\u25BC " : job.CabArrow > 0 ? "\u25B2 " : "\u25AC ";
+            string cab = "{\\b1}" + lines[0] + "{\\b0}";
+            for (int i = 1; i < lines.Length - 1; i++) cab += "\\N" + AssEsc(lines[i]);
+            cab += "\\N{\\c" + col + "\\b1\\fs26}" + arrow + AssEsc(lines[lines.Length - 1]);
+            sOverlay.Add("Dialogue: 0," + at + ",Cab,,0,0,0,," + cab);
+        }
+    }
+
     static void StartClip()
     {
         EditorSceneManager.OpenScene(ScenePath);
@@ -2877,10 +3164,10 @@ public static class BulldozerBuilder
         if (Time.frameCount == clipLastGameFrame) return;                 // one picture per game frame
         clipLastGameFrame = Time.frameCount;
         if (Worker.Instance == null) return;
-        if (clipFrame == 0 && (clipMode != 9 || clipRT == null))         // (the motor clip skips its set-up frames: set up once)
+        if (clipFrame == 0 && (clipMode < 9 || clipRT == null))          // (the motor and road clips skip their set-up frames: set up once)
         {
             Worker.Instance.useOverride = true;
-            if (clipMode != 2 && clipMode != 9) { d.dead = false; Worker.Instance.GetIn(); }
+            if (clipMode != 2 && clipMode < 9) { d.dead = false; Worker.Instance.GetIn(); }
             Time.captureFramerate = 30;                                    // game time steps 1/30 s a frame, however long drawing takes
             clipStart = Time.time;
             d.useOverride = true;
@@ -2901,6 +3188,17 @@ public static class BulldozerBuilder
                 ClipFinish(0); return;
             }
             if (clipSkip) return;
+        }
+        else if (clipMode == 10)
+        {
+            if (!RoadClipStep(d, t, follow, cam))
+            {
+                WriteOverlay();
+                if (follow != null) follow.enabled = true;
+                ClipFinish(0); return;
+            }
+            if (clipSkip) return;
+            if (rcStride > 1 && (Time.frameCount % rcStride) != 0) return;   // a sped-up part: only every few frames go in the clip
         }
         else if (clipMode == 8)
         {
@@ -3034,6 +3332,7 @@ public static class BulldozerBuilder
         }
         if (clipMode == 5) UpgradeOverlay();
         if (clipMode == 9) MotorOverlay();
+        if (clipMode == 10) RoadOverlay();
         var capWatch = System.Diagnostics.Stopwatch.StartNew();
         cam.targetTexture = clipRT;
         cam.Render();
@@ -3635,6 +3934,8 @@ public static class BulldozerBuilder
             "Style: Shout,Arial,52,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,3,2,2,40,40,90,1",
             "Style: Shade,Arial,20,&H00000000,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1",
             "Style: Panel,Consolas,22,&H00FFFFFF,&H000000FF,&H00000000,&HC0101010,0,0,0,0,100,100,0,0,3,10,0,5,30,30,0,1",
+            "Style: Key,Arial,19,&H00FFFFFF,&H000000FF,&H00000000,&H90101010,0,0,0,0,100,100,0,0,3,8,0,7,20,20,20,1",
+            "Style: Cab,Consolas,20,&H00FFFFFF,&H000000FF,&H00000000,&H90101010,0,0,0,0,100,100,0,0,3,8,0,9,20,20,20,1",
             "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
         };
         head.AddRange(sOverlay);
