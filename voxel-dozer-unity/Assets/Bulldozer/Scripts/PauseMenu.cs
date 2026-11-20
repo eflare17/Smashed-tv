@@ -13,7 +13,14 @@
 //   Low halves the shadow distance and makes shadows coarser, with no smoothing of edges; High pushes them further
 //   and smooths more.  View distance is how far the camera draws: the ground itself is small, so this mostly cuts
 //   the far hills and trees; the haze is thickened to match, so the edge doesn't show.
+//   Ultra is for a big graphics card: High's shadows pushed further still and drawn from an 8192 shadow map (sharp
+//   edges up close), 8x MSAA edge smoothing, more lights at once, and stronger soft shading in the corners and cracks
+//   between blocks (the ambient occlusion the post-processing already does, turned up).
+//
+// The fps counter (Show fps, or F11) is a small readout in the top right: frames a second and milliseconds a frame,
+// averaged over half a second.
 using UnityEngine;
+using UnityEngine.Rendering.PostProcessing;
 
 public class PauseMenu : MonoBehaviour
 {
@@ -24,19 +31,21 @@ public class PauseMenu : MonoBehaviour
     public static bool Blocking { get { return Instance != null && (Instance.Open || Instance.changedFrame == Time.frameCount); } }
 
     // ---------------------------------------------------------------- the settings
-    public static readonly string[] QualityNames = { "Low", "Medium", "High" };
+    public static readonly string[] QualityNames = { "Low", "Medium", "High", "Ultra" };
     public static readonly string[] ViewNames = { "Short", "Middle", "Far" };
     public static readonly float[] ViewMetres = { 250f, 450f, 900f };     // Far is what the game had (SiteProps sets 900)
     public static int Quality = 1, View = 2;
-    public static bool Shadows = true, InvertMouse;
+    public static bool Shadows = true, InvertMouse, ShowFps;
     public static float MouseSpeed = 1f;                                  // times the normal speed, 0.25 to 3
+    public static float UltraAo = 2.0f;                                   // Ultra's ambient occlusion strength (Medium's is the scene's, 0.6)
 
     public static void LoadPrefs()
     {
-        Quality = Mathf.Clamp(PlayerPrefs.GetInt("set.quality", 1), 0, 2);
+        Quality = Mathf.Clamp(PlayerPrefs.GetInt("set.quality", 1), 0, 3);
         View = Mathf.Clamp(PlayerPrefs.GetInt("set.view", 2), 0, 2);
         Shadows = PlayerPrefs.GetInt("set.shadows", 1) == 1;
         InvertMouse = PlayerPrefs.GetInt("set.invert", 0) == 1;
+        ShowFps = PlayerPrefs.GetInt("set.fps", 0) == 1;
         MouseSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("set.mouse", 1f), 0.25f, 3f);
     }
 
@@ -46,6 +55,7 @@ public class PauseMenu : MonoBehaviour
         PlayerPrefs.SetInt("set.view", View);
         PlayerPrefs.SetInt("set.shadows", Shadows ? 1 : 0);
         PlayerPrefs.SetInt("set.invert", InvertMouse ? 1 : 0);
+        PlayerPrefs.SetInt("set.fps", ShowFps ? 1 : 0);
         PlayerPrefs.SetFloat("set.mouse", MouseSpeed);
         PlayerPrefs.Save();
     }
@@ -56,6 +66,9 @@ public class PauseMenu : MonoBehaviour
     int baseAA, baseCascades, baseLights;
     ShadowQuality baseShadows;
     ShadowResolution baseShadowRes;
+    Light sun; int baseSunRes;
+    public static float AoNow = -1f;                     // for tests: the ambient occlusion strength Ultra set (-1 not touched yet)
+    AmbientOcclusion ao; float baseAo;                  // the scene's own ambient occlusion (the post-processing look)
 
     /// Puts the quality and shadow settings into Unity.
     public void ApplyGraphics()
@@ -67,7 +80,20 @@ public class PauseMenu : MonoBehaviour
             baseAA = QualitySettings.antiAliasing; baseCascades = QualitySettings.shadowCascades;
             baseLights = QualitySettings.pixelLightCount; baseShadows = QualitySettings.shadows;
             baseShadowRes = QualitySettings.shadowResolution;
+            sun = RenderSettings.sun;
+            if (sun != null) baseSunRes = sun.shadowCustomResolution;
         }
+        bool ultra = Quality == 3;
+        if (sun != null) sun.shadowCustomResolution = ultra ? 8192 : baseSunRes;
+        // the ambient occlusion: only touched once Ultra is picked (volume.profile makes the volume its own copy)
+        if (ao == null && ultra)
+        {
+            var vol = FindFirstObjectByType<PostProcessVolume>();
+            if (vol != null && vol.profile != null && vol.profile.TryGetSettings(out ao)) baseAo = ao.intensity.value;
+            else ao = null;
+        }
+        if (ao != null) ao.intensity.value = ultra ? UltraAo : baseAo;
+        AoNow = ao != null ? ao.intensity.value : -1f;
         if (Quality == 0)
         {
             QualitySettings.shadowDistance = baseShadowDist * 0.5f;
@@ -90,12 +116,12 @@ public class PauseMenu : MonoBehaviour
         }
         else
         {
-            QualitySettings.shadowDistance = baseShadowDist * 1.6f;
+            QualitySettings.shadowDistance = baseShadowDist * (ultra ? 2.2f : 1.6f);
             QualitySettings.shadowResolution = ShadowResolution.VeryHigh;
             QualitySettings.shadowCascades = 4;
-            QualitySettings.antiAliasing = Mathf.Max(baseAA, 4);
-            QualitySettings.pixelLightCount = baseLights;
-            QualitySettings.lodBias = baseLod * 1.5f;
+            QualitySettings.antiAliasing = ultra ? 8 : Mathf.Max(baseAA, 4);
+            QualitySettings.pixelLightCount = ultra ? Mathf.Max(baseLights, 16) : baseLights;
+            QualitySettings.lodBias = baseLod * (ultra ? 2.5f : 1.5f);
             QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
         }
         QualitySettings.shadows = Shadows ? (baseShadows == ShadowQuality.Disable ? ShadowQuality.All : baseShadows) : ShadowQuality.Disable;
@@ -103,11 +129,15 @@ public class PauseMenu : MonoBehaviour
 
     // ---- view distance: kept on the camera every frame, since other scripts (SiteProps, the dozer camera) set it too
     float camSetTo = -1f, camBase = 900f, fogSetTo = -1f, fogBase;
+    Camera msaaCam; bool baseMsaa;
 
     void LateUpdate()
     {
         var cam = Camera.main;
         if (cam == null) return;
+        // MSAA is off on the game's camera (the post-processing smooths edges instead); Ultra turns it on as well
+        if (cam != msaaCam) { msaaCam = cam; baseMsaa = cam.allowMSAA; }
+        cam.allowMSAA = Quality == 3 ? true : baseMsaa;
         if (!Mathf.Approximately(cam.farClipPlane, camSetTo)) camBase = cam.farClipPlane;          // someone else set it
         float far = Mathf.Min(camBase, ViewMetres[View]);
         cam.farClipPlane = camSetTo = far;
@@ -174,8 +204,28 @@ public class PauseMenu : MonoBehaviour
         }
     }
 
+    // ---- the fps counter
+    float fpsTime; int fpsFrames;
+    public static float FpsAvg, MsAvg;                   // over the last half second
+    public static string FpsText = "";
+
+    public void ToggleFps() { ShowFps = !ShowFps; SavePrefs(); }
+
+    void CountFrames()
+    {
+        fpsTime += Time.unscaledDeltaTime; fpsFrames++;
+        if (fpsTime >= 0.5f)
+        {
+            MsAvg = fpsTime * 1000f / fpsFrames; FpsAvg = fpsFrames / fpsTime;
+            FpsText = FpsAvg.ToString("F0") + " fps   " + MsAvg.ToString("F1") + " ms";
+            fpsTime = 0f; fpsFrames = 0;
+        }
+    }
+
     void Update()
     {
+        CountFrames();
+        if (Input.GetKeyDown(KeyCode.F11)) ToggleFps();
         var up = Upgrades.Instance;
         if (Input.GetKeyDown(KeyCode.Escape))
         {
@@ -227,8 +277,8 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---- the settings page: one row each
-    const int SettingRows = 8;
-    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "Mouse speed", "Invert mouse look", "Back" };
+    const int SettingRows = 9;
+    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "Show fps  (F11)", "Mouse speed", "Invert mouse look", "Back" };
 
     string SettingValue(int row)
     {
@@ -239,8 +289,9 @@ public class PauseMenu : MonoBehaviour
             case 2: return ViewNames[View] + "  (" + ViewMetres[View].ToString("F0") + " m)";
             case 3: return fullScreen ? "Full screen" : "Windowed";
             case 4: return resolutions[resIndex].w + " x " + resolutions[resIndex].h;
-            case 5: return MouseSpeed.ToString("0.00") + "x";
-            case 6: return InvertMouse ? "On" : "Off";
+            case 5: return ShowFps ? "On" : "Off";
+            case 6: return MouseSpeed.ToString("0.00") + "x";
+            case 7: return InvertMouse ? "On" : "Off";
         }
         return "";
     }
@@ -250,13 +301,14 @@ public class PauseMenu : MonoBehaviour
     {
         switch (row)
         {
-            case 0: Quality = Mathf.Clamp(Quality + dir, 0, 2); ApplyGraphics(); break;
+            case 0: Quality = Mathf.Clamp(Quality + dir, 0, 3); ApplyGraphics(); break;
             case 1: Shadows = !Shadows; ApplyGraphics(); break;
             case 2: View = Mathf.Clamp(View + dir, 0, 2); break;
             case 3: fullScreen = !fullScreen; ApplyScreen(); break;
             case 4: resIndex = Mathf.Clamp(resIndex + dir, 0, resolutions.Length - 1); ApplyScreen(); break;
-            case 5: MouseSpeed = Mathf.Clamp(Mathf.Round((MouseSpeed + dir * 0.25f) * 4f) / 4f, 0.25f, 3f); break;
-            case 6: InvertMouse = !InvertMouse; break;
+            case 5: ShowFps = !ShowFps; break;
+            case 6: MouseSpeed = Mathf.Clamp(Mathf.Round((MouseSpeed + dir * 0.25f) * 4f) / 4f, 0.25f, 3f); break;
+            case 7: InvertMouse = !InvertMouse; break;
         }
     }
 
@@ -266,10 +318,18 @@ public class PauseMenu : MonoBehaviour
     // ---------------------------------------------------------------- the screen (styled like the upgrades panel)
     void OnGUI()
     {
+        if (ShowFps && FpsText.Length > 0)
+        {
+            GUI.depth = -20;
+            // top right, just left of the coins and the blade view (they take the corner itself)
+            var fs = new GUIStyle(GUI.skin.box) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            fs.normal.textColor = new Color(1f, 1f, 0.85f);
+            GUI.Box(new Rect(Screen.width - 420f - 170f, 10f, 170f, 26f), FpsText, fs);
+        }
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = Mathf.Min(560f, Screen.width - 40f);
-        float H = page == Page.Settings ? 470f : page == Page.Quit ? 220f : 280f;
+        float H = page == Page.Settings ? 510f : page == Page.Quit ? 220f : 280f;
         H = Mathf.Min(H, Screen.height - 40f);
         var area = new Rect((Screen.width - W) / 2f, (Screen.height - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
@@ -316,7 +376,7 @@ public class PauseMenu : MonoBehaviour
         for (int i = 0; i < SettingRows; i++)
         {
             if (i == 0) { GUI.Label(new Rect(x, y - 4f, w, 20f), "GRAPHICS", head); y += 16f; }
-            if (i == 5) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
+            if (i == 6) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
             if (i == SettingRows - 1)
             {
                 y += 8f;

@@ -2079,12 +2079,17 @@ public static class BulldozerBuilder
     // Opens the menu from the upgrades with the pad's Back (the game must stop), picks Settings with the d-pad and A,
     // raises the quality, changes the mouse speed and view distance, closes it with Start (the game must run again),
     // then checks the settings come back from PlayerPrefs.  Saves Logs/menu_paused.png and Logs/menu_settings.png.
+    // Then Ultra: digs a stepped pit in front of him, turns the fps counter on, and on Medium and on Ultra takes a
+    // picture of the pit (Logs/quality_medium.png, Logs/quality_ultra.png) and times the frames: the editor's game view
+    // over two seconds, and the camera drawing alone at 3440 x 1440.  Then back to Medium, which must be as it was.
     // The editor's own saved settings are put back at the end.  Prints BULLDOZER_MENU_RESULT.
     static int menuPhase, menuWaitFrame;
-    static float menuWaitReal, menuT, menuShadow1;
+    static float menuWaitReal, menuT, menuShadow1, menuMeasureT, menuAA;
+    static int menuMeasureF; static bool menuMsaa0; static int menuSunRes0;
+    static Vector3 menuPit, menuCamAt;
     static bool menuOk;
     static string menuLog;
-    static readonly string[] menuKeys = { "set.quality", "set.view", "set.shadows", "set.invert", "set.mouse" };
+    static readonly string[] menuKeys = { "set.quality", "set.view", "set.shadows", "set.invert", "set.mouse", "set.fps" };
     static string[] menuOld;
 
     public static void MenuTest()
@@ -2125,7 +2130,7 @@ public static class BulldozerBuilder
 
     static void MenuTick()
     {
-        if (EditorApplication.timeSinceStartup - testStart > 300) { menuLog += " timed out"; MenuFinish(false); return; }
+        if (EditorApplication.timeSinceStartup - testStart > 480) { menuLog += " timed out"; MenuFinish(false); return; }
         if (!EditorApplication.isPlaying) return;
         var wk = Worker.Instance; var up = Upgrades.Instance; var pm = PauseMenu.Instance;
         if (wk == null || up == null || pm == null || VoxelWorld.Instance == null) return;
@@ -2170,7 +2175,7 @@ public static class BulldozerBuilder
                 Pad.oDX = 0;
                 MenuCheck(PauseMenu.Quality == 2, "padRaisesQuality");
                 MenuCheck(QualitySettings.shadowDistance > menuShadow1 * 1.5f, "highDrawsShadowsFurther");
-                pm.Change(5, +1); pm.Change(5, +1);                          // mouse speed 1 -> 1.5
+                pm.Change(6, +1); pm.Change(6, +1);                          // mouse speed 1 -> 1.5
                 pm.Change(2, -1);                                            // view distance Far -> Middle
                 MenuCheck(Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f), "mouseSpeed");
                 ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/menu_settings.png");
@@ -2189,9 +2194,128 @@ public static class BulldozerBuilder
                 PauseMenu.Quality = 0; PauseMenu.MouseSpeed = 1f; PauseMenu.View = 2;   // forget them, then read them back
                 PauseMenu.LoadPrefs();
                 MenuCheck(PauseMenu.Quality == 2 && Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f) && PauseMenu.View == 1, "keptAfterReload");
+                // ---- Ultra and the fps counter
+                PauseMenu.View = 2;
+                PauseMenu.Quality = 1; pm.ApplyGraphics();
+                menuMsaa0 = Camera.main.allowMSAA; menuAA = QualitySettings.antiAliasing;
+                menuSunRes0 = RenderSettings.sun != null ? RenderSettings.sun.shadowCustomResolution : -1;
+                MenuDigPit(wk);
+                if (!PauseMenu.ShowFps) pm.ToggleFps();
+                MenuAim();
+                menuWaitReal = now + 2f;
+                break;
+            case 14: menuMeasureT = now; menuMeasureF = Time.frameCount; MenuAim(); menuWaitReal = now + 2f; break;
+            case 15:
+                MenuCheck(PauseMenu.ShowFps && PauseMenu.FpsText.Length > 0, "fpsCounterShows(" + PauseMenu.FpsText + ")");
+                menuLog += " medium: gameView=" + MenuMs(now) + "ms render3440=" + MenuRenderMs() + "ms";
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/quality_medium.png");
+                menuWaitReal = now + 1f;
+                break;
+            case 16:
+                pm.Change(0, +1); pm.Change(0, +1);                          // Medium -> High -> Ultra
+                MenuCheck(PauseMenu.Quality == 3 && PauseMenu.QualityNames[3] == "Ultra", "ultraPicked");
+                MenuCheck(QualitySettings.antiAliasing == 8 && QualitySettings.shadowDistance > menuShadow1 * 2f, "ultraAaAndShadows");
+                MenuCheck(RenderSettings.sun == null || RenderSettings.sun.shadowCustomResolution == 8192, "ultraSunShadowMap");
+                MenuCheck(PauseMenu.AoNow == PauseMenu.UltraAo, "ultraAo=" + PauseMenu.AoNow.ToString("F1"));
+                MenuAim();
+                menuWaitReal = now + 2f;
+                break;
+            case 17:
+                MenuCheck(Camera.main.allowMSAA, "ultraMsaaOn");
+                menuMeasureT = now; menuMeasureF = Time.frameCount; MenuAim(); menuWaitReal = now + 2f; break;
+            case 18:
+                menuLog += " ultra: gameView=" + MenuMs(now) + "ms render3440=" + MenuRenderMs() + "ms";
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/quality_ultra.png");
+                menuWaitReal = now + 1f;
+                break;
+            case 19:
+                pm.Change(0, -1); pm.Change(0, -1);                          // back to Medium
+                MenuCheck(PauseMenu.Quality == 1 && Mathf.Approximately(QualitySettings.shadowDistance, menuShadow1)
+                          && QualitySettings.antiAliasing == menuAA, "backToMedium");
+                MenuCheck(RenderSettings.sun == null || RenderSettings.sun.shadowCustomResolution == menuSunRes0, "sunShadowMapBack");
+                MenuCheck(PauseMenu.AoNow < PauseMenu.UltraAo, "aoBack=" + PauseMenu.AoNow.ToString("F1"));
+                MenuAim(); menuWaitReal = now + 1f;
+                break;
+            case 20:
+                // Medium timed again, now everything is warmed up (the first time included the pit being built)
+                menuMeasureT = now; menuMeasureF = Time.frameCount; MenuAim(); menuWaitReal = now + 2f; break;
+            case 21:
+                menuLog += " mediumAgain: gameView=" + MenuMs(now) + "ms render3440=" + MenuRenderMs() + "ms";
+                MenuCheck(Camera.main.allowMSAA == menuMsaa0, "msaaBackAsItWas");
+                pm.ToggleFps();
+                MenuCheck(!PauseMenu.ShowFps, "fpsCounterOff");
                 MenuFinish(menuOk);
                 break;
         }
+    }
+
+    // a stepped pit (terraces a quarter metre deep, with odd blocks up and down) and a ripped furrow beside it,
+    // 4 m in front of him, so the pictures show dug voxel ground
+    static void MenuDigPit(Worker wk)
+    {
+        var w = VoxelWorld.Instance;
+        var dz0 = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        Transform from = wk.InDozer && dz0 != null ? dz0.transform : wk.transform;        // he starts in the dozer
+        Vector3 fwd = from.forward; fwd.y = 0f; fwd.Normalize();
+        menuPit = from.position + fwd * 8f;
+        float v = VoxelWorld.Voxel;
+        for (float dx = -1.6f; dx <= 1.6f; dx += v)
+            for (float dz = -1.6f; dz <= 1.6f; dz += v)
+            {
+                float r = Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dz));
+                float depth = r < 0.5f ? 0.75f : r < 1.0f ? 0.5f : r < 1.5f ? 0.25f : 0f;
+                if (depth <= 0f) continue;
+                float hsh = Mathf.Abs(Mathf.Sin(dx * 127.1f + dz * 311.7f) * 43758.5453f) % 1f;
+                if (hsh > 0.93f) depth -= v * 2f; else if (hsh < 0.05f) depth += v;
+                float wx = menuPit.x + dx, wz = menuPit.z + dz;
+                w.TestSetColumn(wx, wz, w.HeightAt(wx, wz) - depth);
+            }
+        Vector3 side = Vector3.Cross(Vector3.up, fwd);
+        var pts = new Vector3[12];
+        for (int i = 0; i < pts.Length; i++)
+        {
+            Vector3 q = menuPit + side * 2.4f + fwd * (-1.5f + i * 0.27f);
+            q.y = w.HeightAt(q.x, q.z) - 0.12f;
+            pts[i] = q;
+        }
+        w.Rip(pts, 0.35f, Vector3.zero);
+        menuPit.y = w.HeightAt(menuPit.x, menuPit.z);
+        menuCamAt = menuPit + fwd * 3.0f + side * 1.1f + Vector3.up * 2.2f;   // past the pit, looking back at it (and the dozer)
+    }
+
+    static void MenuAim()
+    {
+        var cam = Camera.main;
+        var follow = cam.GetComponent<FollowCamera>();
+        if (follow != null) follow.enabled = false;
+        cam.transform.SetPositionAndRotation(menuCamAt, Quaternion.LookRotation(menuPit + Vector3.up * 0.2f - menuCamAt));
+    }
+
+    static string MenuMs(float now)
+    {
+        int f = Time.frameCount - menuMeasureF;
+        return f > 0 ? ((now - menuMeasureT) * 1000f / f).ToString("F2") : "?";
+    }
+
+    // the camera drawing the same view 20 times at the owner's screen size, waited for by reading a pixel back
+    static string MenuRenderMs()
+    {
+        var cam = Camera.main;
+        int aa = cam.allowMSAA ? Mathf.Max(1, QualitySettings.antiAliasing) : 1;
+        var rt = new RenderTexture(3440, 1440, 24, RenderTextureFormat.DefaultHDR) { antiAliasing = aa };
+        var px = new Texture2D(1, 1, TextureFormat.RGBAFloat, false);
+        var old = cam.targetTexture;
+        cam.targetTexture = rt;
+        cam.Render();                                                         // the first one sets things up
+        RenderTexture.active = rt; px.ReadPixels(new Rect(0, 0, 1, 1), 0, 0); RenderTexture.active = null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        const int n = 20;
+        for (int i = 0; i < n; i++) cam.Render();
+        RenderTexture.active = rt; px.ReadPixels(new Rect(0, 0, 1, 1), 0, 0); px.Apply(); RenderTexture.active = null;
+        double ms = sw.Elapsed.TotalMilliseconds / n;
+        cam.targetTexture = old;
+        rt.Release(); UnityEngine.Object.DestroyImmediate(rt); UnityEngine.Object.DestroyImmediate(px);
+        return ms.ToString("F2");
     }
 
     // The game pad path:  -executeMethod BulldozerBuilder.PadTest
