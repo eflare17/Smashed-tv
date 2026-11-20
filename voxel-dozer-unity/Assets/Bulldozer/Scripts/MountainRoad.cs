@@ -274,9 +274,11 @@ public static class MountainRoad
     // The natural mountainside under the road is eased towards the road's grade so there is about half as much to cut
     // and fill, and never more than MaxStart either way.  Out from the road it blends back to the natural ground by
     // the edge of the strip, so the strip still meets the mountain's mesh, and there are no sudden steps.
-    public const float MaxStart = 1.5f;                      // the most cut or fill anywhere at the start
-    const float EaseCap = 1.35f;                             // (eased to this, so with the blocky voxels it stays under MaxStart)
-    const float LeaveAtLeast = 0.4f;                         // easing never brings a spot nearer grade than this: every stretch still needs work
+    public const float MaxStart = 0.8f;                      // the most cut or fill anywhere at the start
+    const float EaseCap = 0.7f;                              // (eased to this, so with the blocky voxels it stays under MaxStart)
+    const float LeaveAtLeast = 0.34f;                        // easing never brings a spot nearer grade than this (25 cm is on grade): every stretch still needs work
+    const float KeepShare = 0.1f;                            // past that, this much of the natural cut or fill is kept
+    const float Ripple = 0.6f, RippleLength = 14f;           // where the mountain is already near grade, a gentle wave (about 0.4 m up and down every 14 m, once blended) so it still needs work
     const float ShapeCell = 0.5f;
     static float[] shape;
     static Vector2 shapeMin;
@@ -308,33 +310,32 @@ public static class MountainRoad
         Vector2 top = hi + Vector2.one * 8f;
         shapeW = Mathf.CeilToInt((top.x - shapeMin.x) / ShapeCell) + 1; shapeH = Mathf.CeilToInt((top.y - shapeMin.y) / ShapeCell) + 1;
         shape = new float[shapeW * shapeH];
-        // Each leg of the road (split at the middle of each switchback) eases the ground near it, fading out in a
-        // straight line from the road's edge to the strip's edge.  Where two legs are close, their easings are blended by
-        // how near each is, so the ground between them slides smoothly from one leg's level to the other's: no jumps.
-        float[] splits = { 0f, hairpinS[0], hairpinS[1], float.MaxValue };
+        // Every road point near the ground eases it towards that point's grade, weighted by how near it is (full on the
+        // road, fading out in a straight line to the strip's edge).  The eased levels are averaged by those weights and
+        // faded by the nearest one, so where two bits of road pass close the ground slides smoothly from one level to the
+        // other: the weights change smoothly with position, so there are no jumps.
+        float reach = StripHalf + 0.5f;
         for (int j = 0; j < shapeH; j++)
             for (int i = 0; i < shapeW; i++)
             {
                 float x = shapeMin.x + i * ShapeCell, z = shapeMin.y + j * ShapeCell;
                 Vector2 p = new Vector2(x, z);
-                float nat = Mountain.NaturalY(x, z), sumW = 0f, sum = 0f;
-                for (int leg = 0; leg < 3; leg++)
+                float nat = Mountain.NaturalY(x, z), sumW = 0f, sum = 0f, most = 0f;
+                for (int k = 0; k < pts.Length; k++)
                 {
-                    float best = float.MaxValue, bs = 0f;
-                    for (int k = 0; k < pts.Length; k++)
-                    {
-                        if (along[k] < splits[leg] || along[k] > splits[leg + 1]) continue;
-                        float dd = (pts[k] - p).sqrMagnitude;
-                        if (dd < best) { best = dd; bs = along[k]; }
-                    }
-                    float d = Mathf.Sqrt(best);
-                    float wgt = 1f - Mathf.Clamp01((d - RoadHalf) / (StripHalf + 0.5f - RoadHalf));
+                    float dd = (pts[k] - p).sqrMagnitude;
+                    if (dd >= reach * reach) continue;
+                    float wgt = 1f - Mathf.Clamp01((Mathf.Sqrt(dd) - RoadHalf) / (reach - RoadHalf));
                     if (wgt <= 0f) continue;
-                    float g = GradeAt(bs), dev = nat - g, want = Mathf.Max(0.5f * Mathf.Abs(dev), Mathf.Min(Mathf.Abs(dev), LeaveAtLeast));
+                    float g = GradeAt(along[k]), dev = nat - g;
+                    float t = Mathf.Clamp01((Mathf.Abs(dev) - 0.2f) / 0.25f), near = 1f - t * t * (3f - 2f * t);
+                    dev += Ripple * near * Mathf.Sin(along[k] * (2f * Mathf.PI / RippleLength));   // ground already near grade: a gentle wave
+                    float ad = Mathf.Abs(dev);
+                    float want = ad <= LeaveAtLeast ? ad : LeaveAtLeast + KeepShare * (ad - LeaveAtLeast);
                     float eased = g + Mathf.Sign(dev) * Mathf.Min(want, EaseCap);
-                    sumW += wgt; sum += wgt * (eased - nat);
+                    sumW += wgt; sum += wgt * (eased - nat); most = Mathf.Max(most, wgt);
                 }
-                shape[i + shapeW * j] = sumW > 0f ? sum / Mathf.Max(1f, sumW) : 0f;
+                shape[i + shapeW * j] = sumW > 0f ? sum / sumW * most : 0f;
             }
     }
 

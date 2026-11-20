@@ -872,7 +872,23 @@ public static class BulldozerBuilder
                                + " sh" + MountainRoad.ShapeDelta(x, z).ToString("F2") + " d" + dd.ToString("F1") + " s" + ss.ToString("F0") + "]";
                     }
                 }
-            RoadCheck(worst <= MountainRoad.MaxStart + 0.1f, "startCutFillUnder1.5m");
+            // how much dirt each stretch makes: the cut and the fill on the 4 m road, in cubic metres
+            string vol = ""; float cutAll = 0f, fillAll = 0f;
+            for (int k = 0; k < MountainRoad.Stretches; k++)
+            {
+                float s0 = k * MountainRoad.Length / MountainRoad.Stretches, s1 = (k + 1) * MountainRoad.Length / MountainRoad.Stretches, vc = 0f, vf = 0f;
+                for (float s = s0 + 0.125f; s < s1; s += 0.25f)
+                    for (float off = -MountainRoad.RoadHalf + 0.125f; off < MountainRoad.RoadHalf; off += 0.25f)
+                    {
+                        Vector2 p = RoadPoint(s, off, out dir);
+                        float cf = w.TopAt(p.x, p.y) - MountainRoad.GradeAt(s);
+                        if (cf > 0f) vc += cf * 0.0625f; else vf -= cf * 0.0625f;
+                    }
+                vol += " " + (k + 1) + ":" + vc.ToString("F0") + "/" + vf.ToString("F0");
+                cutAll += vc; fillAll += vf;
+            }
+            mrLog += " dirtPerStretch(cut/fill m3)" + vol + " total cut=" + cutAll.ToString("F0") + " fill=" + fillAll.ToString("F0");
+            RoadCheck(worst <= MountainRoad.MaxStart + 0.1f, "startCutFillUnderMax");
             RoadCheck(maxStep < 0.45f, "noSuddenSteps");
             RoadCheck(missing == 0, "stripCovered");
             RoadCheck(Mathf.Abs(MountainRoad.TopY - MountainRoad.StartY - 20f) < 0.01f && MountainRoad.Length > 150f && MountainRoad.Length < 185f, "climbs20m");
@@ -885,7 +901,7 @@ public static class BulldozerBuilder
             mrLog += " under=" + under + " deep=" + deep + " picked=" + picked + " countDrop=" + (solid0 - w.CountSolid());
             RoadCheck((under == VoxelWorld.Soil || under == VoxelWorld.Clay) && (deep == VoxelWorld.Soil || deep == VoxelWorld.Clay) && picked > 100 && solid0 - w.CountSolid() == picked, "diggable");
             int ticked0 = job.TickedCount;
-            mrLog += " tickedAtStart=" + ticked0;
+            mrLog += " tickedAtStart=" + ticked0; for (int k = 0; k < MountainRoad.Stretches; k++) mrLog += (k == 0 ? " share%:" : ",") + (k + 1) + "=" + (job.StretchShare(k) * 100f).ToString("F0") + (job.Ticked(k) ? "T" : "");
             RoadCheck(ticked0 == 0, "noFreeTicks");
             // 1. the mountain from the quarry floor
             HillShot(new Vector3(8f, 26f, -14f), new Vector3(-30f, 14f, 80f), "road_mountain_from_site.png");
