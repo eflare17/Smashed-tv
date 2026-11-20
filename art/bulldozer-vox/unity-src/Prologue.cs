@@ -291,27 +291,28 @@ public class Prologue : MonoBehaviour
 
     void OnGUI()
     {
+        Ui.Begin();
         if (!playing) return;
         if (Tint.a > 0.001f)
         {
             GUI.color = Tint;
-            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, 0, Ui.W, Ui.H), Texture2D.whiteTexture);
             GUI.color = Color.white;
         }
         if (Caption.Length == 0) return;
         var big = new GUIStyle(GUI.skin.label) { fontSize = CaptionStyle == "Card" ? 40 : CaptionStyle == "Shout" ? 46 : CaptionStyle == "Small" ? 18 : 28, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
         big.normal.textColor = Color.white;
-        float y = CaptionStyle == "Card" ? Screen.height * 0.45f : CaptionStyle == "Place" ? Screen.height * 0.7f : Screen.height * 0.82f;
+        float y = CaptionStyle == "Card" ? Ui.H * 0.45f : CaptionStyle == "Place" ? Ui.H * 0.7f : Ui.H * 0.82f;
         if (Caption2.Length > 0 && CaptionStyle == "Shout")
         {
             var small = new GUIStyle(big) { fontSize = 18, fontStyle = FontStyle.Italic };
-            GUI.Label(new Rect(0, y - 40, Screen.width, 30), Caption2, small);
+            GUI.Label(new Rect(0, y - 40, Ui.W, 30), Caption2, small);
         }
-        GUI.Label(new Rect(0, y, Screen.width, 50), Caption, big);
+        GUI.Label(new Rect(0, y, Ui.W, 50), Caption, big);
         if (Caption2.Length > 0 && CaptionStyle == "Place")
         {
             var small = new GUIStyle(big) { fontSize = 20, fontStyle = FontStyle.Normal };
-            GUI.Label(new Rect(0, y + 44, Screen.width, 30), Caption2, small);
+            GUI.Label(new Rect(0, y + 44, Ui.W, 30), Caption2, small);
         }
     }
 }

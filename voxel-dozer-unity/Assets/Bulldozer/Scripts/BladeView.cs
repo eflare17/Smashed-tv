@@ -204,10 +204,11 @@ public class BladeView : MonoBehaviour
 
     void OnGUI()
     {
+        Ui.Begin();
         if (world == null || sideTex == null || (dozer != null && !dozer.driven)) return;
         if (label == null) label = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold };
-        int w = SW * Zoom, x = Screen.width - w - 14;
-        if (!show) { GUI.Box(new Rect(Screen.width - 150, 10, 140, 24), "V   blade view"); return; }
+        int w = SW * Zoom, x = (int)Ui.W - w - 14;
+        if (!show) { GUI.Box(new Rect(Ui.W - 150, 10, 140, 24), "V   blade view"); return; }
         int fw = FW * FZoom, fh = FH * FZoom;
         GUI.Box(new Rect(x - 6, 6, w + 12, SH * Zoom + fh + 78), GUIContent.none);
         GUI.Label(new Rect(x, 8, w, 20), "Side     " + depthText + "        (V hides)", label);

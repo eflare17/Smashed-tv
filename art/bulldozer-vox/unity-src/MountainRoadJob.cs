@@ -365,6 +365,7 @@ public class MountainRoadJob : MonoBehaviour
     // ------------------------------------------------------------------ on screen
     void OnGUI()
     {
+        Ui.Begin();
         if (Prologue.Playing || world == null) return;
         if (dozer == null) dozer = FindFirstObjectByType<DozerController>();
         Vector3 here = dozer != null && dozer.driven ? dozer.transform.position : Worker.Instance != null ? Worker.Instance.transform.position : Vector3.zero;
@@ -378,7 +379,7 @@ public class MountainRoadJob : MonoBehaviour
         {
             var big = new GUIStyle(GUI.skin.box) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             big.normal.textColor = new Color(0.4f, 1f, 0.45f);
-            GUI.Box(new Rect(Screen.width / 2 - 300, Screen.height / 2 - 140, 600, 50), payNote, big);
+            GUI.Box(new Rect(Ui.W / 2 - 300, Ui.H / 2 - 140, 600, 50), payNote, big);
         }
     }
 
@@ -387,7 +388,7 @@ public class MountainRoadJob : MonoBehaviour
     void Legend()
     {
         const float W = 480f, H = 178f;
-        float x = 10f, y = Screen.height - H - 44f;                 // (above the "get out" box)
+        float x = 10f, y = Ui.H - H - 44f;                 // (above the "get out" box)
         GUI.Box(new Rect(x, y, W, H), "");
         var head = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold };
         var line = new GUIStyle(GUI.skin.label) { fontSize = 13 };
@@ -428,7 +429,7 @@ public class MountainRoadJob : MonoBehaviour
         CabText = text + "\n" + act;
 
         const float W = 300f, H = 150f;
-        float x = Screen.width - W - 10f, y = Screen.height - H - 48f;   // bottom right, clear of the blade view and the upgrades box
+        float x = Ui.W - W - 10f, y = Ui.H - H - 48f;   // bottom right, clear of the blade view and the upgrades box
         GUI.Box(new Rect(x, y, W, H), "");
         var st = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold };
         GUI.Label(new Rect(x + 10, y + 6, W - 20, 90), text, st);

@@ -492,7 +492,7 @@ public class Worker : MonoBehaviour
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
             }
             bool treeUp = (Upgrades.Instance != null && Upgrades.Instance.Open) || PauseMenu.Blocking;
-            if (!PauseMenu.Blocking && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || (!treeUp && Pad.Down(Pad.B.Y)))) { LetGo(); TryDozer(); }
+            if (!treeUp && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter) || Pad.Down(Pad.B.Y))) { LetGo(); TryDozer(); }   // (Enter buys in the upgrades)
         }
         if (InDozer) { transform.position = dozer.transform.position; return; }
 
@@ -1116,14 +1116,15 @@ public class Worker : MonoBehaviour
 
     void OnGUI()
     {
+        Ui.Begin();
         if (Prologue.Playing) return;
         if (world == null) return;
         if (sayTimer > 0f)
         {
             var style = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-            GUI.Box(new Rect(Screen.width / 2 - 330, Screen.height - 110, 660, 44), say, style);
+            GUI.Box(new Rect(Ui.W / 2 - 330, Ui.H - 110, 660, 44), say, style);
         }
-        if (InDozer) { GUI.Box(new Rect(10, Screen.height - 34, 170, 24), Pad.Key("Enter", "Y") + "   get out"); return; }
+        if (InDozer) { GUI.Box(new Rect(10, Ui.H - 34, 170, 24), Pad.Key("Enter", "Y") + "   get out"); return; }
         if (Tool == 2 && !backpackOwned) SetTool(1);
         string tool = Tool == 0 ? (jackOwned ? "JACKHAMMER   bite size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") + (Pad.InUse ? "   d-pad up / down" : "   Shift+wheel or [ ]") : "PICK") : Tool == 1 ? "SHOVEL" : "BACKPACK";
         string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
@@ -1139,18 +1140,18 @@ public class Worker : MonoBehaviour
         GUI.Box(new Rect(10, 10, 640, 86), text);
         // the backpack gauge, always: a bar that fills, and the litres
         float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
-        if (backpackOwned) GUI.Box(new Rect(560, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\n" + Pad.Key("Q", "X") + " by the cart squirts it in");
+        if (backpackOwned) GUI.Box(new Rect(656, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\n" + Pad.Key("Q", "X") + " by the cart squirts it in");
         if (backpackOwned)
         {
-            GUI.DrawTexture(new Rect(568, 54, 284, 7), Texture2D.grayTexture);
-            GUI.DrawTexture(new Rect(568, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(664, 54, 284, 7), Texture2D.grayTexture);
+            GUI.DrawTexture(new Rect(664, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
         }
         // the jackhammer on the quartz seam with too big a bite: warn before the gold is smashed
         if (GoldWarning)
         {
             var warn = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             warn.normal.textColor = new Color(1f, 0.75f, 0.2f);
-            GUI.Box(new Rect(Screen.width / 2 - 450, Screen.height * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  " + Pad.Key("Shift+wheel or [", "D-pad down") + " to go smaller", warn);
+            GUI.Box(new Rect(Ui.W / 2 - 450, Ui.H * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  " + Pad.Key("Shift+wheel or [", "D-pad down") + " to go smaller", warn);
         }
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 7.5f))
@@ -1171,14 +1172,14 @@ public class Worker : MonoBehaviour
         if (cart != null && cart.AtDump && cart.Near(transform.position, 3.2f) && world.CartVoxels >= VoxelWorld.ClodVoxels && !cart.Tipping)
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            GUI.Box(new Rect(Screen.width / 2 - 230, Screen.height * 0.62f, 460, 40), "Press " + Pad.Key("E", "A") + " to tip it into the hopper", prompt);
+            GUI.Box(new Rect(Ui.W / 2 - 230, Ui.H * 0.62f, 460, 40), "Press " + Pad.Key("E", "A") + " to tip it into the hopper", prompt);
         }
         // close enough to climb in: say so, in the middle of the screen where it can't be missed
         if (NearDozer())
         {
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             string what = dozer.dead && !dozer.CanDrive ? "The dozer is dead (it needs parts)" : "Press " + Pad.Key("ENTER", "Y") + " to get in the dozer";
-            GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.62f, 420, 40), what, prompt);
+            GUI.Box(new Rect(Ui.W / 2 - 210, Ui.H * 0.62f, 420, 40), what, prompt);
         }
         var finds = Finds.Instance;
         if (finds != null)
@@ -1188,7 +1189,7 @@ public class Worker : MonoBehaviour
             string partLine = null;
             if (carried >= 0 && NearDozer()) partLine = "Press " + Pad.Key("E", "A") + " to fit the " + Finds.Names[carried];
             else if (here >= 0) partLine = "Press " + Pad.Key("E", "A") + " to pick up the " + Finds.Names[here];
-            if (partLine != null) GUI.Box(new Rect(Screen.width / 2 - 210, Screen.height * 0.70f, 420, 40), partLine, prompt);
+            if (partLine != null) GUI.Box(new Rect(Ui.W / 2 - 210, Ui.H * 0.70f, 420, 40), partLine, prompt);
             string carrying = "";
             for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
             if (carrying.Length > 0) GUI.Box(new Rect(10, 132, 540, 24), "Carrying: " + carrying);
@@ -1199,7 +1200,7 @@ public class Worker : MonoBehaviour
             var prompt = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             var m = Money.Instance;
             string what = m.GoldStore > 0 ? "Press " + Pad.Key("E", "A") + " to sell your gold:  " + m.GoldLitres.ToString("F0") + " L for " + m.GoldWorth.ToString("N0") + " coins" : "Gold buyer: you have no gold to sell yet";
-            GUI.Box(new Rect(Screen.width / 2 - 280, Screen.height * 0.62f, 560, 40), what, prompt);
+            GUI.Box(new Rect(Ui.W / 2 - 280, Ui.H * 0.62f, 560, 40), what, prompt);
         }
         // a label over the gold buyer's shed, and over the dump's sign, so you can find them
         if (Camera.main != null && SiteProps.GoldShedSign != Vector3.zero)
@@ -1208,7 +1209,8 @@ public class Worker : MonoBehaviour
             if (gp.z > 0f && Vector3.Distance(Camera.main.transform.position, SiteProps.GoldShedSign) < 70f)
             {
                 var tag = new GUIStyle(GUI.skin.box) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                GUI.Box(new Rect(gp.x - 70, Screen.height - gp.y - 14, 140, 28), "GOLD BUYER", tag);
+                Vector2 g = Ui.FromScreen(gp);
+                GUI.Box(new Rect(g.x - 70, g.y - 14, 140, 28), "GOLD BUYER", tag);
             }
         }
         if (Camera.main != null && SiteProps.DumpSign != Vector3.zero)
@@ -1218,11 +1220,13 @@ public class Worker : MonoBehaviour
             if (sp.z > 0f && far < 70f)
             {
                 var tag = new GUIStyle(GUI.skin.box) { fontSize = 16, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-                GUI.Box(new Rect(sp.x - 50, Screen.height - sp.y - 14, 100, 28), "DUMP", tag);
+                Vector2 g = Ui.FromScreen(sp);
+                GUI.Box(new Rect(g.x - 50, g.y - 14, 100, 28), "DUMP", tag);
             }
         }
         // the cross you aim with
-        GUI.Box(new Rect(Screen.width / 2 - 1, Screen.height / 2 - 8, 2, 16), GUIContent.none);
-        GUI.Box(new Rect(Screen.width / 2 - 8, Screen.height / 2 - 1, 16, 2), GUIContent.none);
+        Color cross = new Color(1f, 1f, 1f, 0.85f), rim = new Color(0f, 0f, 0f, 0.6f);
+        Ui.Fill(new Rect(Ui.W / 2 - 2, Ui.H / 2 - 9, 4, 18), rim); Ui.Fill(new Rect(Ui.W / 2 - 9, Ui.H / 2 - 2, 18, 4), rim);
+        Ui.Fill(new Rect(Ui.W / 2 - 1, Ui.H / 2 - 8, 2, 16), cross); Ui.Fill(new Rect(Ui.W / 2 - 8, Ui.H / 2 - 1, 16, 2), cross);
     }
 }

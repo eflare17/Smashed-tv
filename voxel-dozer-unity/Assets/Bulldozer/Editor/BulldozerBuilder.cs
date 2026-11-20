@@ -2112,7 +2112,8 @@ public static class BulldozerBuilder
     static Vector3 menuPit, menuCamAt;
     static bool menuOk;
     static string menuLog;
-    static readonly string[] menuKeys = { "set.quality", "set.view", "set.shadows", "set.invert", "set.mouse", "set.fps" };
+    static readonly string[] menuKeys = { "set.quality", "set.view", "set.shadows", "set.invert", "set.mouse", "set.fps", "set.uisize" };
+    static bool MenuFloatKey(string k) { return k == "set.mouse" || k == "set.uisize"; }
     static string[] menuOld;
 
     public static void MenuTest()
@@ -2136,7 +2137,7 @@ public static class BulldozerBuilder
             for (int i = 0; i < menuKeys.Length; i++)
             {
                 if (menuOld[i] == null) PlayerPrefs.DeleteKey(menuKeys[i]);
-                else if (menuKeys[i] == "set.mouse") PlayerPrefs.SetFloat(menuKeys[i], float.Parse(menuOld[i], System.Globalization.CultureInfo.InvariantCulture));
+                else if (MenuFloatKey(menuKeys[i])) PlayerPrefs.SetFloat(menuKeys[i], float.Parse(menuOld[i], System.Globalization.CultureInfo.InvariantCulture));
                 else PlayerPrefs.SetInt(menuKeys[i], int.Parse(menuOld[i]));
             }
             PlayerPrefs.Save();
@@ -2167,7 +2168,7 @@ public static class BulldozerBuilder
                 wk.useOverride = true;
                 menuOld = new string[menuKeys.Length];
                 for (int i = 0; i < menuKeys.Length; i++)
-                    menuOld[i] = !PlayerPrefs.HasKey(menuKeys[i]) ? null : menuKeys[i] == "set.mouse"
+                    menuOld[i] = !PlayerPrefs.HasKey(menuKeys[i]) ? null : MenuFloatKey(menuKeys[i])
                         ? PlayerPrefs.GetFloat(menuKeys[i]).ToString(System.Globalization.CultureInfo.InvariantCulture) : PlayerPrefs.GetInt(menuKeys[i]).ToString();
                 foreach (var k in menuKeys) PlayerPrefs.DeleteKey(k);
                 PauseMenu.LoadPrefs(); pm.ApplyGraphics();
@@ -2198,7 +2199,9 @@ public static class BulldozerBuilder
                 Pad.oDX = 0;
                 MenuCheck(PauseMenu.Quality == 2, "padRaisesQuality");
                 MenuCheck(QualitySettings.shadowDistance > menuShadow1 * 1.5f, "highDrawsShadowsFurther");
-                pm.Change(6, +1); pm.Change(6, +1);                          // mouse speed 1 -> 1.5
+                pm.Change(7, +1); pm.Change(7, +1);                          // mouse speed 1 -> 1.5
+                pm.Change(PauseMenu.UiSizeRow, +1);                          // UI size 100% -> 125%
+                MenuCheck(Mathf.Approximately(Ui.Size, 1.25f) && Mathf.Approximately(Ui.Wanted, Mathf.Max(0.5f, Screen.height / 1080f) * 1.25f), "uiSizeScales");
                 pm.Change(2, -1);                                            // view distance Far -> Middle
                 MenuCheck(Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f), "mouseSpeed");
                 ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/menu_settings.png");
@@ -2214,9 +2217,11 @@ public static class BulldozerBuilder
                 MenuCheck(Time.time > menuT + 0.2f, "clockRunsAgain");
                 MenuCheck(Mathf.Approximately(Camera.main.farClipPlane, 450f), "viewDistance=" + Camera.main.farClipPlane.ToString("F0"));
                 MenuCheck(RenderSettings.fogDensity >= 2.4f / 450f - 0.0001f, "hazeThickened");
-                PauseMenu.Quality = 0; PauseMenu.MouseSpeed = 1f; PauseMenu.View = 2;   // forget them, then read them back
+                PauseMenu.Quality = 0; PauseMenu.MouseSpeed = 1f; PauseMenu.View = 2; Ui.Size = 1f;   // forget them, then read them back
                 PauseMenu.LoadPrefs();
                 MenuCheck(PauseMenu.Quality == 2 && Mathf.Approximately(PauseMenu.MouseSpeed, 1.5f) && PauseMenu.View == 1, "keptAfterReload");
+                MenuCheck(Mathf.Approximately(Ui.Size, 1.25f), "uiSizeKept");
+                Ui.Size = 1f;
                 // ---- Ultra and the fps counter
                 PauseMenu.View = 2;
                 PauseMenu.Quality = 1; pm.ApplyGraphics();
@@ -2339,6 +2344,242 @@ public static class BulldozerBuilder
         cam.targetTexture = old;
         rt.Release(); UnityEngine.Object.DestroyImmediate(rt); UnityEngine.Object.DestroyImmediate(px);
         return ms.ToString("F2");
+    }
+
+    // The upgrade tree screen and the UI size:  -executeMethod BulldozerBuilder.TreeTest
+    // Gets him out of the dozer, then with the pad (Pad's override): Start opens the tree, the d-pad moves the pick down
+    // a column and across to the next, A on a locked node buys nothing, A on a node that can be bought buys it, A on one
+    // that is too dear buys nothing, and d-pad right from Shovel 6 lands on the Backpack.  Then the pictures, with the
+    // editor's game view set to 1920 x 1080 and to 3440 x 1440: Logs/tree_1080.png, tree_3440.png, hud_3440.png,
+    // settings_3440.png, and it checks the panels' scale follows the screen height (1440 high draws them 1.33 times).
+    // Prints BULLDOZER_TREE_RESULT.
+    static int treePhase, treeWaitFrame, treeSize0 = -1;
+    static float treeWaitReal;
+    static bool treeOk;
+    static string treeLog;
+    static long treeCoins;
+
+    public static void TreeTest()
+    {
+        EnsurePadAxes();
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        treePhase = 0; treeWaitFrame = 0; treeWaitReal = 0f; treeOk = true; treeLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TreeTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void TreeCheck(bool ok, string what) { treeLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) treeOk = false; }
+
+    static void TreeFinish(bool ok)
+    {
+        if (treeSize0 >= 0) GameViewSelect(treeSize0);
+        if (ok) Debug.Log("BULLDOZER_TREE_RESULT" + treeLog);
+        else Debug.LogError("BULLDOZER_TREE_FAILED phase " + treePhase + treeLog);
+        Pad.overrideOn = false; Pad.ClearOverride();
+        Ui.Size = 1f;
+        EditorApplication.update -= TreeTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(ok ? 0 : 1);
+    }
+
+    static void TreeShot(string name) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/" + name); }
+
+    static void TreeTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { treeLog += " timed out"; TreeFinish(false); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var up = Upgrades.Instance; var pm = PauseMenu.Instance; var money = Money.Instance;
+        if (wk == null || up == null || pm == null || money == null || VoxelWorld.Instance == null) return;
+        float now = Time.realtimeSinceStartup;
+        if (Time.frameCount < treeWaitFrame || now < treeWaitReal) return;
+        treeWaitFrame = Time.frameCount + 2;
+        switch (treePhase++)
+        {
+            case 0: treeWaitReal = now + 2f; break;                             // let everything start
+            case 1:
+                if (wk.InDozer) wk.GetOut();
+                wk.useOverride = false;                                         // (the tree ignores the pad while a test drives him)
+                up.Reset(); money.Clear(); money.TestGrant(1000, 0);
+                Ui.Size = 1f;
+                treeSize0 = GameViewIndex();
+                TreeCheck(GameViewSize(1920, 1080), "gameView1080");
+                Pad.overrideOn = true; Pad.ClearOverride();
+                treeWaitReal = now + 0.5f;
+                break;
+            case 2: Pad.Hold(Pad.B.Start, true); break;
+            case 3:
+                Pad.Hold(Pad.B.Start, false);
+                TreeCheck(up.Open, "startOpensTree");
+                TreeCheck(up.SelectedName == "Pick 2" && up.SelectedState == Upgrades.NodeState.CanBuy, "startsOnFirstBuyable(" + up.SelectedName + ")");
+                Pad.oDY = -1;                                                   // d-pad down
+                break;
+            case 4: Pad.oDY = 0; break;
+            case 5:
+                TreeCheck(up.SelectedName == "Pick 3", "dpadDown(" + up.SelectedName + ")");
+                Pad.oDX = 1;                                                    // d-pad right: the shovel column
+                break;
+            case 6: Pad.oDX = 0; break;
+            case 7:
+                TreeCheck(up.SelectedName == "Shovel 3" && up.SelectedColumn == 1, "dpadRight(" + up.SelectedName + ")");
+                up.Select(Upgrades.Branch.Backpack, 0);
+                TreeCheck(up.SelectedState == Upgrades.NodeState.Locked, "backpackLocked");
+                treeCoins = money.Coins;
+                Pad.Hold(Pad.B.A, true);
+                break;
+            case 8: Pad.Hold(Pad.B.A, false); break;
+            case 9:
+                TreeCheck(up.Level(Upgrades.Branch.Backpack) == 0 && money.Coins == treeCoins, "lockedNotBought");
+                up.Select(Upgrades.Branch.Shovel, 1);
+                Pad.Hold(Pad.B.A, true);
+                break;
+            case 10: Pad.Hold(Pad.B.A, false); break;
+            case 11:
+                TreeCheck(up.Level(Upgrades.Branch.Shovel) == 2 && money.Coins == treeCoins - 40 && up.SelectedState == Upgrades.NodeState.Owned, "aBuys");
+                up.SetLevel(Upgrades.Branch.Pick, 5);
+                up.Select(Upgrades.Branch.Pick, 5);                             // the jackhammer: needs 8 L of gold, there is none
+                TreeCheck(up.SelectedState == Upgrades.NodeState.TooDear, "jackhammerTooDear");
+                treeCoins = money.Coins;
+                Pad.Hold(Pad.B.A, true);
+                break;
+            case 12: Pad.Hold(Pad.B.A, false); break;
+            case 13:
+                TreeCheck(up.Level(Upgrades.Branch.Pick) == 5 && money.Coins == treeCoins, "tooDearNotBought");
+                up.SetLevel(Upgrades.Branch.Shovel, 6);
+                up.Select(Upgrades.Branch.Shovel, 5);
+                Pad.oDX = 1;
+                break;
+            case 14: Pad.oDX = 0; break;
+            case 15:
+                TreeCheck(up.SelectedName == "Backpack" && up.SelectedState == Upgrades.NodeState.TooDear, "shovel6ToBackpackUnlocked(" + up.SelectedName + " " + up.SelectedState + ")");
+                // a tree that shows every kind of node for the pictures
+                up.SetLevel(Upgrades.Branch.Backpack, 2); up.SetLevel(Upgrades.Branch.Cart, 2);
+                money.Clear(); money.TestGrant(700, 0);
+                up.Select(Upgrades.Branch.Pick, 5);
+                treeWaitReal = now + 1f;
+                break;
+            case 16:
+                TreeCheck(Screen.height == 1080 && Mathf.Abs(Ui.Scale - 1f) < 0.01f, "scale1080=" + Ui.Scale.ToString("F2") + "(" + Screen.width + "x" + Screen.height + ")");
+                TreeShot("tree_1080.png");
+                treeWaitReal = now + 1f;
+                break;
+            case 17:
+                TreeCheck(GameViewSize(3440, 1440), "gameView3440");
+                up.Select(Upgrades.Branch.Backpack, 2);
+                treeWaitReal = now + 1.5f;
+                break;
+            case 18:
+                TreeCheck(Screen.height == 1440 && Mathf.Abs(Ui.Scale - 1440f / 1080f) < 0.01f, "scale1440=" + Ui.Scale.ToString("F2") + "(" + Screen.width + "x" + Screen.height + ")");
+                TreeShot("tree_3440.png");
+                treeWaitReal = now + 1f;
+                break;
+            case 19: Pad.Hold(Pad.B.Start, true); break;
+            case 20:
+                Pad.Hold(Pad.B.Start, false);
+                TreeCheck(!up.Open, "startCloses");
+                treeWaitReal = now + 1f;
+                break;
+            case 21:
+                TreeShot("hud_3440.png");
+                treeWaitReal = now + 1f;
+                break;
+            case 22:
+                pm.SetOpen(true); pm.ShowSettings();
+                pm.Change(PauseMenu.UiSizeRow, +1);                             // 125%
+                treeWaitReal = now + 1f;
+                break;
+            case 23:
+                TreeCheck(Mathf.Abs(Ui.Scale - 1440f / 1080f * 1.25f) < 0.01f, "uiSize125Scale=" + Ui.Scale.ToString("F2"));
+                TreeShot("settings_3440.png");
+                treeWaitReal = now + 1f;
+                break;
+            case 24:
+                pm.Change(PauseMenu.UiSizeRow, -1);
+                pm.SetOpen(false);
+                TreeFinish(treeOk);
+                break;
+        }
+    }
+
+    // ---- the editor's game view size (for the pictures): through the editor's own (internal) game view sizes
+    static object GameViewGroup(out System.Type groupType)
+    {
+        var asm = typeof(Editor).Assembly;
+        var sizesType = asm.GetType("UnityEditor.GameViewSizes");
+        var single = typeof(ScriptableSingleton<>).MakeGenericType(sizesType);
+        var inst = single.GetProperty("instance").GetValue(null, null);
+        var group = sizesType.GetProperty("currentGroup").GetValue(inst, null);
+        groupType = group.GetType();
+        return group;
+    }
+
+    static EditorWindow GameViewWindow()
+    {
+        var gvType = typeof(Editor).Assembly.GetType("UnityEditor.GameView");
+        return EditorWindow.GetWindow(gvType, false, null, false);
+    }
+
+    static System.Reflection.PropertyInfo GameViewIndexProp(EditorWindow gv)
+    {
+        return gv.GetType().GetProperty("selectedSizeIndex", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+    }
+
+    static int GameViewIndex()
+    {
+        try
+        {
+            var gv = GameViewWindow();
+            var p = GameViewIndexProp(gv);
+            return p != null ? (int)p.GetValue(gv, null) : -1;
+        }
+        catch (System.Exception e) { Debug.LogWarning("TreeTest: game view index: " + e.Message); return -1; }
+    }
+
+    static void GameViewSelect(int index)
+    {
+        var gv = GameViewWindow();
+        var p = GameViewIndexProp(gv);
+        if (p != null) p.SetValue(gv, index, null);
+        else
+        {
+            var m = gv.GetType().GetMethod("SizeSelectionCallback", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            if (m != null) m.Invoke(gv, new object[] { index, null });
+        }
+        gv.Repaint();
+    }
+
+    /// Sets the game view to a fixed w x h (adding the size to the list if it isn't there).  True if it worked.
+    static bool GameViewSize(int w, int h)
+    {
+        try
+        {
+            System.Type groupType;
+            var group = GameViewGroup(out groupType);
+            int total = (int)groupType.GetMethod("GetTotalCount").Invoke(group, null);
+            int index = -1;
+            for (int i = 0; i < total; i++)
+            {
+                var sz = groupType.GetMethod("GetGameViewSize").Invoke(group, new object[] { i });
+                var st = sz.GetType();
+                if ((int)st.GetProperty("width").GetValue(sz, null) == w && (int)st.GetProperty("height").GetValue(sz, null) == h
+                    && st.GetProperty("sizeType").GetValue(sz, null).ToString() == "FixedResolution") { index = i; break; }
+            }
+            if (index < 0)
+            {
+                var asm = typeof(Editor).Assembly;
+                var sizeType = asm.GetType("UnityEditor.GameViewSize");
+                var kind = asm.GetType("UnityEditor.GameViewSizeType");
+                var ctor = sizeType.GetConstructor(new[] { kind, typeof(int), typeof(int), typeof(string) });
+                var size = ctor.Invoke(new object[] { System.Enum.Parse(kind, "FixedResolution"), w, h, "Test " + w + "x" + h });
+                groupType.GetMethod("AddCustomSize").Invoke(group, new[] { size });
+                index = total;
+            }
+            GameViewSelect(index);
+            return true;
+        }
+        catch (System.Exception e) { Debug.LogWarning("TreeTest: couldn't set the game view size: " + e); return false; }
     }
 
     // The game pad path:  -executeMethod BulldozerBuilder.PadTest
