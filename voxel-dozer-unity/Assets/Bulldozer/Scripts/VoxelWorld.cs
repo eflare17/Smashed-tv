@@ -190,6 +190,20 @@ public partial class VoxelWorld : MonoBehaviour
         return vox[cb + y];
     }
 
+    NativeArray<float> shape;                                // MountainRoad's easing of the ground near the road, for the jobs
+    float4 shapeRect; int2 shapeSize;
+
+    /// MountainRoad.ShapeDelta, for Burst: bilinear in its grid, 0 outside it.
+    static float ShapeAt(NativeArray<float> sh, float4 rect, int2 n, float x, float z)
+    {
+        float fx = (x - rect.x) * rect.z, fz = (z - rect.y) * rect.z;
+        if (fx < 0f || fz < 0f || fx >= n.x - 1 || fz >= n.y - 1) return 0f;
+        int ix = (int)fx, iz = (int)fz;
+        float u = fx - ix, v = fz - iz;
+        int k = ix + n.x * iz;
+        return math.lerp(math.lerp(sh[k], sh[k + 1], u), math.lerp(sh[k + n.x], sh[k + n.x + 1], u), v);
+    }
+
     /// Lays out the blocks: the whole site, and the blocks along the mountain road with the height of ground they need.
     /// Returns how many voxels that is.
     long BuildBlocks()
@@ -222,7 +236,7 @@ public partial class VoxelWorld : MonoBehaviour
                         Vector2 dir;
                         float d = MountainRoad.Nearest(x, z, out s, out off, out dir);
                         near = Mathf.Min(near, d);
-                        float nat = Mountain.OutsideY(x, z), g = MountainRoad.GradeAt(s);
+                        float nat = Mountain.OutsideY(x, z) + MountainRoad.ShapeDelta(x, z), g = MountainRoad.GradeAt(s);
                         lowY = Mathf.Min(lowY, Mathf.Min(nat, g) - 3f);          // about 3 m of diggable ground under the road
                         highY = Mathf.Max(highY, Mathf.Max(nat, g) + 2.5f);      // and room for a heap on top
                     }
@@ -257,6 +271,10 @@ public partial class VoxelWorld : MonoBehaviour
         Instance = this;
         var startWatch = System.Diagnostics.Stopwatch.StartNew();
         origin = new Vector3(-SiteHalf - SiteX0 * Voxel, -Ground * Voxel, -SiteHalf);
+        float[] sg; Vector2 smin; float scell; int sw, sh;
+        MountainRoad.ShapeGrid(out sg, out smin, out scell, out sw, out sh);
+        shape = new NativeArray<float>(sg, Allocator.Persistent);
+        shapeRect = new float4(smin.x, smin.y, 1f / scell, 0f); shapeSize = new int2(sw, sh);
         long voxels = BuildBlocks();
         BlocksMs = (float)startWatch.Elapsed.TotalMilliseconds;
         vox = new NativeArray<byte>((int)voxels, Allocator.Persistent);
@@ -270,7 +288,7 @@ public partial class VoxelWorld : MonoBehaviour
         InitDirt();
         InitHand();
 
-        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin }.Schedule(NX * NZ, 256).Complete();
+        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin, shape = shape, shapeRect = shapeRect, shapeSize = shapeSize }.Schedule(NX * NZ, 256).Complete();
         GenerateMs = (float)startWatch.Elapsed.TotalMilliseconds - BlocksMs;
         GridBytes = vox.Length + top.Length * 2L + grass.Length * 2L + dirty.Length + blocks.Length * 16L;   // (grass twice: the array and its picture)
         grassTex = new Texture2D(NX, NZ, TextureFormat.R8, false, true) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
@@ -299,6 +317,7 @@ public partial class VoxelWorld : MonoBehaviour
     {
         if (vox.IsCreated) vox.Dispose();
         if (blocks.IsCreated) blocks.Dispose();
+        if (shape.IsCreated) shape.Dispose();
         if (top.IsCreated) top.Dispose();
         if (dirty.IsCreated) dirty.Dispose();
         if (dxs.IsCreated) dxs.Dispose();
@@ -371,6 +390,18 @@ public partial class VoxelWorld : MonoBehaviour
         int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
         if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return 0f;
         return (top[ix + NX * iz] - Ground) * Voxel;
+    }
+
+    /// True if the top of the ground here is loose dirt (spoil, a heap), not firm ground.
+    public bool LooseOnTop(float wx, float wz)
+    {
+        int ix = Mathf.FloorToInt((wx - origin.x) / Voxel), iz = Mathf.FloorToInt((wz - origin.z) / Voxel);
+        if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) return false;
+        int lo, hi;
+        int cb = ColBase(blocks, ix, iz, out lo, out hi);
+        int t = top[ix + NX * iz];
+        if (cb < 0 || t <= lo || t > hi) return false;
+        return vox[cb + t - 1] >= LooseSoil;
     }
 
     /// What kind of ground the column at (wx, wz) is: 0 = no voxels (the mountain's mesh, or outside), BlockSite, BlockStrip.
@@ -648,6 +679,9 @@ public partial class VoxelWorld : MonoBehaviour
         public NativeArray<byte> grass;
         [ReadOnly] public NativeArray<int4> blocks;
         public float3 origin;
+        [ReadOnly] public NativeArray<float> shape;          // the ground near the mountain road, eased (MountainRoad.ShapeDelta)
+        public float4 shapeRect;
+        public int2 shapeSize;
 
         static float Spire(float2 p, float cx, float cz, float r, float h)
         {
@@ -665,7 +699,7 @@ public partial class VoxelWorld : MonoBehaviour
                 // outside the site: the hillside and the mountain.  Where there are voxels (the road strip) they are
                 // natural ground: topsoil over clay, all of it diggable, with leaf litter on top.
                 float ox = origin.x + gx * Voxel, oz = origin.z + z * Voxel;
-                int natY = Ground + (int)math.round(Mountain.OutsideY(ox, oz) / Voxel);
+                int natY = Ground + (int)math.round((Mountain.OutsideY(ox, oz) + ShapeAt(shape, shapeRect, shapeSize, ox, oz)) / Voxel);
                 if (cb < 0) { top[i] = (ushort)math.clamp(natY, 0, NY - 1); grass[i] = 0; return; }
                 int st = math.clamp(natY, lo + 1, hi - 2);
                 for (int y = lo; y < hi; y++)
@@ -688,6 +722,7 @@ public partial class VoxelWorld : MonoBehaviour
             float fade = math.smoothstep(1.5f, 9f, inside);
             float south = math.smoothstep(-36f, -19f, wz);
             float hill = math.max(0f, (4.5f + 1.1f * n1 + 0.35f * n2) * south * fade);
+            hill += ShapeAt(shape, shapeRect, shapeSize, wx, wz);                 // (the mountain road's start crosses the hilltop: eased there)
 
             // the quarry cut
             float d = (math.length((p - new float2(0f, -6f)) / new float2(24f, 19f)) - 1f) * 20f + n2 * 1.1f;   // metres outside the floor's edge
@@ -1159,6 +1194,23 @@ public partial class VoxelWorld : MonoBehaviour
 
     /// The ground in the road strip's blocks (for loading a save made before the road existed).
     public long StripSolidAtStart { get; private set; }
+
+    [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
+    struct TopFromVoxelsJob : IJobParallelFor
+    {
+        [ReadOnly] public NativeArray<byte> vox;
+        [ReadOnly] public NativeArray<int4> blocks;
+        public NativeArray<ushort> top;
+        public void Execute(int i)
+        {
+            int lo, hi;
+            int cb = ColBase(blocks, i % NX, i / NX, out lo, out hi);
+            if (cb < 0) return;
+            int t = hi;
+            while (t > lo && vox[cb + t - 1] == Air) t--;
+            top[i] = (ushort)t;
+        }
+    }
 
     [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
     struct CountStripJob : IJob

@@ -2,15 +2,15 @@
 //
 // The guides, all worked out from the real ground as it is now, a few times a second:
 //   - survey pegs every 5 m along each edge of the road, tagged with how far the ground there is from grade:
-//     "CUT 1.2" = the ground is 1.2 m too high, cut it down; "FILL 0.4" = 0.4 m too low, fill it; "ON GRADE" within 10 cm;
-//   - a tint on the road itself: red = too high (cut), blue = too low (fill), green = on grade (within 10 cm);
+//     "CUT 1.2" = the ground is 1.2 m too high, cut it down; "FILL 0.4" = 0.4 m too low, fill it; "ON GRADE" within 25 cm;
+//   - a tint on the road itself: red = too high (cut), blue = too low (fill), green = on grade (within 25 cm);
 //   - in the cab, when the dozer is on the road: the road's slope against the machine's, how far the blade's cutting
 //     edge is above or below grade, and an arrow: lower the blade, or raise it.
 // A small key on screen explains every colour.
 //
-// Finishing: the road is judged in 15 stretches.  A stretch gets a green tick once 7 in 10 of it is within 15 cm of
-// grade (a little looser than the green tint, so a reasonable job counts).  A tick, once earned, stays.  When all 15
-// are ticked the job pays 500 coins, once.
+// Finishing: the road is judged in 15 stretches.  A stretch gets a green tick once half of it is within 25 cm of grade
+// (the same 25 cm as the green tint and the pegs: forgiving, so a reasonable job counts).  A tick, once earned, stays.
+// When all 15 are ticked the job pays 500 coins, once.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -18,9 +18,9 @@ public class MountainRoadJob : MonoBehaviour
 {
     public static MountainRoadJob Instance { get; private set; }
 
-    public const float OnGrade = 0.10f;          // the green tint and the pegs' "ON GRADE": within this of grade
-    public const float TickTolerance = 0.15f;    // for a stretch's tick, the ground counts as on grade within this
-    public const float TickShare = 0.70f;        // and this much of the stretch must be
+    public const float TickTolerance = 0.25f;    // for a stretch's tick, the ground counts as on grade within this
+    public const float OnGrade = TickTolerance;  // the green tint and the pegs' "ON GRADE": the same
+    public const float TickShare = 0.50f;        // and this much of the stretch must be
     public const long Reward = 500;              // coins when every stretch is ticked
     const float Cell = 0.25f;                    // the tint's squares
     const float RefreshEvery = 0.25f;
@@ -398,7 +398,7 @@ public class MountainRoadJob : MonoBehaviour
         Swatch(new Rect(x + 12, ly + 3, 22, 13), GradeColour.AsOpaque()); GUI.Label(new Rect(x + 42, ly, W - 50, 20), "GREEN: on grade (within " + Mathf.RoundToInt(OnGrade * 100f) + " cm).", line); ly += 20f;
         GUI.Label(new Rect(x + 12, ly, W - 20, 20), "Pegs: CUT 1.2 = cut 1.2 m down there.  FILL 0.4 = fill 0.4 m up.", line); ly += 20f;
         Swatch(new Rect(x + 12, ly + 3, 22, 13), new Color(0.15f, 0.85f, 0.25f));
-        GUI.Label(new Rect(x + 42, ly, W - 50, 36), "Green tick beside the road: that stretch is done\n(7 in 10 of it within " + Mathf.RoundToInt(TickTolerance * 100f) + " cm of grade).", line); ly += 38f;
+        GUI.Label(new Rect(x + 42, ly, W - 50, 36), "Green tick beside the road: that stretch is done\n(half of it within " + Mathf.RoundToInt(TickTolerance * 100f) + " cm of grade).", line); ly += 38f;
         GUI.Label(new Rect(x + 12, ly, W - 20, 20), "No colour: not the road.  Grey wall: the mountain, can't be dug.", line);
     }
 

@@ -46,7 +46,7 @@ public static class Mountain
         float r = math.distance(new float2(x, z), new float2(CX, CZ));
         float c = Profile(r) + Bumps(x, z) * SS(R1, R1 - 8f, r);
         float west = SS(-40f, -50f, x);                      // west of the site there is no hill at the fence to meet
-        c *= SS(Fence - 0.5f, 60f, z) * (1f - west) + SS(Fence, 62f, z) * west;
+        c *= SS(Fence - 0.5f, 76f, z) * (1f - west) + SS(Fence, 76f, z) * west;   // (spread out, so its foot by the fence is not a steep bank)
         return c;
     }
 
@@ -235,6 +235,9 @@ public static class MountainRoad
         r = rPrev;
     }
 
+    static readonly System.Collections.Generic.List<Vector2> hairpinMid = new System.Collections.Generic.List<Vector2>();
+    static readonly float[] hairpinS = new float[2];
+
     static float Hairpin(float phi, float rOut, float turn)
     {
         float a = phi * Mathf.Deg2Rad, ux = Mathf.Cos(a), uz = Mathf.Sin(a), tx = -uz * turn, tz = ux * turn;
@@ -243,6 +246,7 @@ public static class MountainRoad
         {
             float th = Mathf.PI * i / 40f;
             Add(cx + HairpinR * (Mathf.Cos(th) * ux + Mathf.Sin(th) * tx), cz + HairpinR * (Mathf.Cos(th) * uz + Mathf.Sin(th) * tz));
+            if (i == 20) hairpinMid.Add(raw[raw.Count - 1]);
         }
         return rOut - 2f * HairpinR;
     }
@@ -266,10 +270,78 @@ public static class MountainRoad
 
     public static float BuildMs { get; private set; }
 
+    // ------------------------------------------------------------------ the ground near the road, eased
+    // The natural mountainside under the road is eased towards the road's grade so there is about half as much to cut
+    // and fill, and never more than MaxStart either way.  Out from the road it blends back to the natural ground by
+    // the edge of the strip, so the strip still meets the mountain's mesh, and there are no sudden steps.
+    public const float MaxStart = 1.5f;                      // the most cut or fill anywhere at the start
+    const float EaseCap = 1.35f;                             // (eased to this, so with the blocky voxels it stays under MaxStart)
+    const float LeaveAtLeast = 0.4f;                         // easing never brings a spot nearer grade than this: every stretch still needs work
+    const float ShapeCell = 0.5f;
+    static float[] shape;
+    static Vector2 shapeMin;
+    static int shapeW, shapeH;
+
+    /// How much the ground at (x, z) is raised (+) or lowered (-) from the natural mountainside.  0 away from the road.
+    public static float ShapeDelta(float x, float z)
+    {
+        EnsureShape();
+        float fx = (x - shapeMin.x) / ShapeCell, fz = (z - shapeMin.y) / ShapeCell;
+        if (fx < 0f || fz < 0f || fx >= shapeW - 1 || fz >= shapeH - 1) return 0f;
+        int ix = (int)fx, iz = (int)fz;
+        float u = fx - ix, v = fz - iz;
+        int k = ix + shapeW * iz;
+        return Mathf.Lerp(Mathf.Lerp(shape[k], shape[k + 1], u), Mathf.Lerp(shape[k + shapeW], shape[k + shapeW + 1], u), v);
+    }
+
+    public static void ShapeGrid(out float[] grid, out Vector2 min, out float cell, out int w, out int h)
+    {
+        EnsureShape();
+        grid = shape; min = shapeMin; cell = ShapeCell; w = shapeW; h = shapeH;
+    }
+
+    static void EnsureShape()
+    {
+        if (shape != null) return;
+        Ensure();
+        shapeMin = lo - Vector2.one * 8f;
+        Vector2 top = hi + Vector2.one * 8f;
+        shapeW = Mathf.CeilToInt((top.x - shapeMin.x) / ShapeCell) + 1; shapeH = Mathf.CeilToInt((top.y - shapeMin.y) / ShapeCell) + 1;
+        shape = new float[shapeW * shapeH];
+        // Each leg of the road (split at the middle of each switchback) eases the ground near it, fading out in a
+        // straight line from the road's edge to the strip's edge.  Where two legs are close, their easings are blended by
+        // how near each is, so the ground between them slides smoothly from one leg's level to the other's: no jumps.
+        float[] splits = { 0f, hairpinS[0], hairpinS[1], float.MaxValue };
+        for (int j = 0; j < shapeH; j++)
+            for (int i = 0; i < shapeW; i++)
+            {
+                float x = shapeMin.x + i * ShapeCell, z = shapeMin.y + j * ShapeCell;
+                Vector2 p = new Vector2(x, z);
+                float nat = Mountain.NaturalY(x, z), sumW = 0f, sum = 0f;
+                for (int leg = 0; leg < 3; leg++)
+                {
+                    float best = float.MaxValue, bs = 0f;
+                    for (int k = 0; k < pts.Length; k++)
+                    {
+                        if (along[k] < splits[leg] || along[k] > splits[leg + 1]) continue;
+                        float dd = (pts[k] - p).sqrMagnitude;
+                        if (dd < best) { best = dd; bs = along[k]; }
+                    }
+                    float d = Mathf.Sqrt(best);
+                    float wgt = 1f - Mathf.Clamp01((d - RoadHalf) / (StripHalf + 0.5f - RoadHalf));
+                    if (wgt <= 0f) continue;
+                    float g = GradeAt(bs), dev = nat - g, want = Mathf.Max(0.5f * Mathf.Abs(dev), Mathf.Min(Mathf.Abs(dev), LeaveAtLeast));
+                    float eased = g + Mathf.Sign(dev) * Mathf.Min(want, EaseCap);
+                    sumW += wgt; sum += wgt * (eased - nat);
+                }
+                shape[i + shapeW * j] = sumW > 0f ? sum / Mathf.Max(1f, sumW) : 0f;
+            }
+    }
+
     static void Build()
     {
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        raw.Clear(); rawS = 0f;
+        raw.Clear(); rawS = 0f; hairpinMid.Clear();
         StartY = Mountain.NaturalY(StartAt.x, StartAt.y);
         Add(StartAt.x, StartAt.y);
         float phi = -73f, r = 50f;
@@ -300,6 +372,11 @@ public static class MountainRoad
         Length = along[along.Length - 1];
         lo = new Vector2(float.MaxValue, float.MaxValue); hi = new Vector2(float.MinValue, float.MinValue);
         foreach (var q in pts) { lo = Vector2.Min(lo, q); hi = Vector2.Max(hi, q); }
+        for (int hp = 0; hp < 2 && hp < hairpinMid.Count; hp++)
+        {
+            float bd = float.MaxValue;
+            for (int k = 0; k < pts.Length; k++) { float dd = (pts[k] - hairpinMid[hp]).sqrMagnitude; if (dd < bd) { bd = dd; hairpinS[hp] = along[k]; } }
+        }
         raw.Clear();
         BuildMs = (float)watch.Elapsed.TotalMilliseconds;
     }

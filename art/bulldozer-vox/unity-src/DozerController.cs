@@ -56,6 +56,8 @@ public class DozerController : MonoBehaviour
     public bool OnRoadStrip { get; private set; }
     public Transform Blade { get { return blade; } }     // the blade itself (its cutting edge is along its bottom, see BladeView)        // out on the mountain road's strip (past the site's own limits)
     public bool AtCliff { get; private set; }            // up against a face too steep to climb
+    public bool Climbing { get; private set; }           // crawling over loose spoil, or into a face with the blade cutting it
+    const float ClimbSpeed = 0.6f;                       // metres a second while doing that
     public int LastCut { get; private set; }             // blocks the blade moved in the last step
     public float BladeYaw { get; private set; }          // degrees; + swings the right-hand end back
     public float BladeTilt { get; private set; }         // degrees; + drops the right-hand end
@@ -286,10 +288,31 @@ public class DozerController : MonoBehaviour
                 if (i % 2 == 0) left += h; else right += h;
             }
             // A dozer cannot climb a wall.  If the ground under the leading end of the tracks is much higher
-            // than under the middle, it is up against a face: stop there.  (The blade can still cut into it.)
+            // than under the middle, it is up against a face: stop there.  But not a dead stop it can't get out of:
+            //   - loose dirt (its own spoil, a heap) it climbs over, slowly: the tracks press it down;
+            //   - going forward with the blade down it creeps into the face, so the blade cuts it away.
             float mid = (all - front - rear) / 2f;
             float lead = Speed >= 0f ? front / 2f : rear / 2f;
             AtCliff = lead - mid > 0.8f;
+            Climbing = false;
+            if (AtCliff)
+            {
+                bool loose = false;
+                for (int i = 0; i < TrackPoints.Length; i++)
+                {
+                    if (Speed >= 0f ? i >= 2 : i < 4) continue;          // the leading pair only
+                    Vector3 p = pos + yawRot * TrackPoints[i];
+                    loose |= world.LooseOnTop(p.x, p.z);
+                }
+                bool bladeIn = Speed > 0f && BladeHeight01 < 0.35f && CanBlade;
+                if (loose || bladeIn)
+                {
+                    AtCliff = false; Climbing = true;
+                    float most = ClimbSpeed * dt, moved = new Vector2(pos.x - before.x, pos.z - before.z).magnitude;
+                    if (moved > most) { float k2 = most / moved; pos.x = before.x + (pos.x - before.x) * k2; pos.z = before.z + (pos.z - before.z) * k2; }
+                    Speed = Mathf.Clamp(Speed, -ClimbSpeed, ClimbSpeed);
+                }
+            }
             if (AtCliff)
             {
                 pos.x = before.x; pos.z = before.z;

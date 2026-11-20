@@ -551,7 +551,7 @@ public class SiteProps : MonoBehaviour
     // (The recipes are in Mountain, in MountainRoad.cs, so the voxel jobs can use them too.)
 
     /// The hillside past the north fence, with the mountain standing on it.
-    public static float HillsideY(float x, float z) { return Mountain.PastFenceY(x, z); }
+    public static float HillsideY(float x, float z) { return Mountain.PastFenceY(x, z) + MountainRoad.ShapeDelta(x, z); }
 
     /// Ground height anywhere: the site's voxels inside the fence, the hillside past the north fence (and the road
     /// strip's voxels on the mountain), flat elsewhere.

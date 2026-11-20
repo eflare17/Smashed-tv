@@ -110,7 +110,7 @@ public partial class VoxelWorld
         for (int c = 0; c < dirty.Length; c++) redraw[c] = (dirty[c] & 2) != 0;
 
         // the ground afresh, exactly as it was made at the start
-        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin }.Schedule(NX * NZ, 256).Complete();
+        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin, shape = shape, shapeRect = shapeRect, shapeSize = shapeSize }.Schedule(NX * NZ, 256).Complete();
         for (int c = 0; c < dirty.Length; c++) dirty[c] = 0;
 
         int touched = r.ReadInt32();
@@ -149,6 +149,9 @@ public partial class VoxelWorld
             top.Reinterpret<byte>(sizeof(ushort)).CopyFrom(topBytes);
             grass.CopyFrom(grassBytes);
         }
+        // the surface heights from the voxels themselves (a save made by an older version may have had different ground
+        // where nothing was touched, e.g. where the mountain road now starts)
+        new TopFromVoxelsJob { vox = vox, top = top, blocks = blocks }.Schedule(NX * NZ, 512).Complete();
         ReadInts(r, bladeLoad); ReadInts(r, shovelLoad); ReadInts(r, cartLoad);
         for (int i = 0; i < packLoad.Length; i++) packLoad[i] = 0;
         if (version >= 3) ReadInts(r, packLoad);                 // older saves had no backpack: it comes back empty
@@ -168,7 +171,14 @@ public partial class VoxelWorld
 
         SolidCount = solid;
         StartTotal = startTotal;
-        if (old) { long road = StripSolidAtStart; SolidCount += road; StartTotal += road; }   // the road strip's ground is new: it was not in the old save's books
+        if (old)
+        {
+            // Made before the mountain road: the road strip is new ground, and the hilltop where the road starts is shaped
+            // a little differently now where nothing had been dug.  Count the ground afresh and move the books to match.
+            long actual = CountSolid();
+            StartTotal += actual - SolidCount;
+            SolidCount = actual;
+        }
         Recount();
         int inFlight = 0;
         for (int i = 0; i < n; i++) inFlight += cCnt[i];
