@@ -268,7 +268,7 @@ public class DozerController : MonoBehaviour
         if (!CanBlade) bladeIn = 0f;
         if (!CanRip) ripperIn = 0f;
         bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
-        if (!useOverride && CanBlade && !treeUp && (Input.GetKeyDown(KeyCode.B) || Pad.Down(Pad.B.A))) CycleBladeAuto();
+        if (!useOverride && CanBlade && !treeUp && !(PauseMenu.Instance != null && PauseMenu.Instance.Open) && (Input.GetKeyDown(KeyCode.B) || Pad.Down(Pad.B.A))) CycleBladeAuto();
         if (bladeIn != 0f || !CanBlade) bladeAuto = BladeAutoMode.Off;       // a hand on the blade lever takes over
         if (bladeAuto != BladeAutoMode.Off) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
         if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Time.deltaTime);
@@ -276,6 +276,7 @@ public class DozerController : MonoBehaviour
         float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) || Pad.DX > 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Q) || Pad.DX < 0 ? 1f : 0f);
         float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) || Pad.DY < 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Z) || Pad.DY > 0 ? 1f : 0f);
         if (!CanBlade) angleIn = tiltIn = 0f;
+        if (treeUp || (PauseMenu.Instance != null && PauseMenu.Instance.Open)) angleIn = tiltIn = 0f;   // the d-pad is moving round the upgrades or the menu, not the blade
         BladeYaw = Mathf.Clamp(BladeYaw + angleIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxAngle, bladeMaxAngle);
         BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * 0.5f * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
         GyroBlade();
