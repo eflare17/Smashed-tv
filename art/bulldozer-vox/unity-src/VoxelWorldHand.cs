@@ -267,6 +267,15 @@ public partial class VoxelWorld
     /// How many gold voxels the last Pick smashed (a big jackhammer bite: they come out as worthless quartz).
     public int LastShattered { get; private set; }
 
+    /// A well-mixed random number for a voxel and a frame.  (math.hash of the position is only a weighted sum, so for
+    /// all the voxels of one hit its rolls moved together: one swing smashed all its gold, the next none.)
+    static uint Roll(int x, int y, int z, int seed)
+    {
+        uint h = (uint)x * 73856093u ^ (uint)y * 19349663u ^ (uint)z * 83492791u ^ (uint)seed * 2654435761u;
+        h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+        return h;
+    }
+
     public int Pick(Vector3 at, float radius, Vector3 kick, float shatter = 0f, bool fullRock = false)
     {
         var result = new NativeArray<int>(2, Allocator.TempJob);
@@ -393,7 +402,7 @@ public partial class VoxelWorld
                             vox[cb + y] = Air;
                             Mark(ref dirty, x, y, z);
                             byte lm = Loosen(m);
-                            if (m == Gold && shatter > 0f && (math.hash(new int3(x, y, z + seed * 31)) % 1000u) < (uint)(shatter * 1000f))
+                            if (m == Gold && shatter > 0f && (Roll(x, y, z, seed) % 1000u) < (uint)(shatter * 1000f))
                             {
                                 lm = LooseQuartz;                                    // smashed: the gold is lost in the grit
                                 result[1] = result[1] + 1;

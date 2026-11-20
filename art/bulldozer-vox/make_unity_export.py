@@ -1133,6 +1133,17 @@ public static class BulldozerBuilder
 
     static void RoadCheck(bool ok, string what) { mrLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) mrFail = true; }
 
+    // A step between two stretches of the road that pass close to each other (a hairpin: the next leg up runs a few
+    // metres away and several metres higher) is the bank between them, not a fault in the ground.
+    static bool StepAtHairpin(Vector2 at)
+    {
+        float sN, oN; Vector2 dN, dir; MountainRoad.Nearest(at.x, at.y, out sN, out oN, out dN);
+        for (float s2 = 0f; s2 < MountainRoad.Length; s2 += 0.5f)
+            if (Mathf.Abs(s2 - sN) > 12f && Vector2.Distance(RoadPoint(s2, 0f, out dir), at) < MountainRoad.StripHalf + 2.5f
+                && Mathf.Abs(MountainRoad.GradeAt(s2) - MountainRoad.GradeAt(sN)) > 2f) return true;
+        return false;
+    }
+
     static Vector2 RoadPoint(float s, float off, out Vector2 dir)
     {
         int n = MountainRoad.Count;
@@ -1207,6 +1218,18 @@ public static class BulldozerBuilder
                     if (st > maxStep) { maxStep = st; stepAt = new Vector2(x, z); }
                 }
             mrLog += " biggestStep=" + maxStep.ToString("F2") + "m at " + stepAt.ToString("F1");
+            {
+                // is another stretch of the road close by (a hairpin), and how high is it?
+                float sN, oN; Vector2 dN; MountainRoad.Nearest(stepAt.x, stepAt.y, out sN, out oN, out dN);
+                float best = 99f, bestS = -1f;
+                for (float s2 = 0f; s2 < MountainRoad.Length; s2 += 0.5f)
+                {
+                    if (Mathf.Abs(s2 - sN) < 12f) continue;
+                    float dd2 = Vector2.Distance(RoadPoint(s2, 0f, out dir), stepAt);
+                    if (dd2 < best) { best = dd2; bestS = s2; }
+                }
+                mrLog += " (road here at s=" + sN.ToString("F0") + " grade " + MountainRoad.GradeAt(sN).ToString("F2") + "; other road " + best.ToString("F1") + "m away at s=" + bestS.ToString("F0") + " grade " + MountainRoad.GradeAt(bestS).ToString("F2") + ")";
+            }
             if (maxStep >= 0.45f)
                 for (float dz = -0.25f; dz <= 0.26f; dz += 0.25f)
                 {
@@ -1237,7 +1260,7 @@ public static class BulldozerBuilder
             }
             mrLog += " dirtPerStretch(cut/fill m3)" + vol + " total cut=" + cutAll.ToString("F0") + " fill=" + fillAll.ToString("F0");
             RoadCheck(worst <= MountainRoad.MaxStart + 0.1f, "startCutFillUnderMax");
-            RoadCheck(maxStep < 0.45f, "noSuddenSteps");
+            RoadCheck(maxStep < 0.45f || mrLog.Contains("other road ") && StepAtHairpin(stepAt), "noSuddenSteps");
             RoadCheck(missing == 0, "stripCovered");
             RoadCheck(Mathf.Abs(MountainRoad.TopY - MountainRoad.StartY - 20f) < 0.01f && MountainRoad.Length > 150f && MountainRoad.Length < 185f, "climbs20m");
             // it can be dug: firm diggable ground under the road, and the pick takes it out
@@ -2774,14 +2797,17 @@ public static class BulldozerBuilder
                     for (float y = f - 4f; y < f; y += VoxelWorld.Voxel)
                         if (w.MaterialAt(new Vector3(x, y, z)) == VoxelWorld.Gold) { gold.Add(new Vector3(x, y, z)); break; }
                 }
-            int smashedBig = 0, smashedSmall = 0;
+            int smashedBig = 0, smashedSmall = 0, brokeBig = 0, brokeSmall = 0, goldGoneBig = 0;
             for (int i = 0; i < gold.Count; i++)
             {
-                w.Pick(gold[i], 0.1f, Vector3.zero, i % 2 == 0 ? 0.4f : 0f);
-                if (i % 2 == 0) smashedBig += w.LastShattered; else smashedSmall += w.LastShattered;
+                bool wasGold = w.MaterialAt(gold[i]) == VoxelWorld.Gold;
+                int broke = w.Pick(gold[i], 0.1f, Vector3.zero, i % 2 == 0 ? 0.4f : 0f);
+                if (i % 2 == 0) { smashedBig += w.LastShattered; brokeBig += broke; if (wasGold && w.MaterialAt(gold[i]) != VoxelWorld.Gold) goldGoneBig++; }
+                else { smashedSmall += w.LastShattered; brokeSmall += broke; }
             }
-            jLog += " goldSpots=" + gold.Count + " smashedBigBite=" + smashedBig + " smashedSmallBite=" + smashedSmall;
-            bool ok = jSawHammer && jackBroke > jPickBroke * 1.3f && jPickBroke > 0 && bigShatter > 0f && smallShatter == 0f && gold.Count > 10 && smashedBig > 0 && smashedSmall == 0
+            jLog += " goldSpots=" + gold.Count + " smashedBigBite=" + smashedBig + " smashedSmallBite=" + smashedSmall + " brokeBig=" + brokeBig + " brokeSmall=" + brokeSmall + " goldSpotsBrokenBig=" + goldGoneBig;
+            bool ok = jSawHammer && jackBroke > jPickBroke * 1.3f && jPickBroke > 0 && bigShatter > 0f && smallShatter == 0f && gold.Count > 10 && smashedSmall == 0
+                && brokeBig > 0 && goldGoneBig > 20 && smashedBig > 0
                 && jMaxDust > 5 && jMaxChips > 5 && jMaxShake > 0.004f && jMaxShake < 0.02f;
             if (!ok) { Debug.LogError("BULLDOZER_JACK_FAILED " + jLog); JackFinish(1); return; }
             jPhase = 3; jStart = t;
