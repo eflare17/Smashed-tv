@@ -907,6 +907,7 @@ public static class BulldozerBuilder
     // Checks the road strip is there and can be dug, the dozer can drive from the site up onto it, the pegs' and the
     // tint's CUT / FILL match the ground, grading one stretch ticks it (and only it), and grading them all pays.
     // Measures the memory the ground takes and the frame time on the road.  Pictures in Logs/road_*.png.
+    static long mrCut0; static string mrPushLog = ""; const float MrPushS = 2f;
     static int mrPhase, mrSide, mrEdgeOut, mrEdgeFrames; static long mrSpill0;
     static float mrT0, mrMaxS, mrMaxY, mrFrameSum, mrFrameMax;
     static int mrFrames, mrUpCut, mrCliff, mrFence, mrOnStrip;
@@ -1195,6 +1196,39 @@ public static class BulldozerBuilder
             mrLog += " edgeCut: bladeEndOffDiggable=" + mrEdgeOut + "/" + mrEdgeFrames + " dirtThrownAway=" + (spilled * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L";
             RoadCheck(mrEdgeOut == 0, "bladeStaysOverDiggable");
             RoadCheck(spilled * VoxelWorld.VoxelVolume < 0.02f, "dirtKept");
+            d.overrideBlade = 1f;
+            mrPhase = 21; mrT0 = t; mrCut0 = w.TotalCut; mrSpill0 = w.SpilledVoxels; mrPushLog = "";
+            return;
+        }
+        if (mrPhase == 21)
+        {
+            // a plain push up the middle of the road from its start, blade down: where does the cut dirt go?
+            float k = t - mrT0;
+            if (k < 0.1f)
+            {
+                Vector2 st = RoadPoint(MrPushS, 0f, out dir);
+                d.Place(new Vector3(st.x, 0f, st.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
+                return;
+            }
+            Vector3 pos = d.transform.position;
+            float s, off;
+            MountainRoad.Nearest(pos.x, pos.z, out s, out off, out dir);
+            Vector2 aim = RoadPoint(s + 4.5f, 0f, out dir);
+            Vector3 to = new Vector3(aim.x - pos.x, 0f, aim.y - pos.z);
+            d.overrideSteer = Mathf.Clamp(Vector3.SignedAngle(Vector3.ProjectOnPlane(d.transform.forward, Vector3.up), to, Vector3.up) / 25f, -1f, 1f);
+            d.overrideBlade = k < 2f ? -1f : 0f; d.overrideAngle = 0f;
+            d.overrideThrottle = k < 1f ? 0f : 1f;
+            if (k > 2f && Mathf.Repeat(k, 1f) < Time.deltaTime)
+                mrPushLog += " t" + k.ToString("F0") + "[s=" + s.ToString("F1") + " kind=" + w.KindAt(pos.x, pos.z) + " blade01=" + d.BladeHeight01.ToString("F2") + " cutNow=" + d.LastCut + " cutSoFar=" + (w.TotalCut - mrCut0) + " clods=" + w.ClodCount + " " + d.BladeLoadInfo() + "]";
+            if (k > 6f && mrPushLog.IndexOf("pic") < 0 && d.Blade != null)
+            {
+                Vector3 bp = d.Blade.position;
+                HillShot(bp - d.transform.right * 7f + Vector3.up * 1.5f + d.transform.forward * 1.5f, bp + d.transform.forward * 1f, "road_push_side.png");
+                mrPushLog += " pic";
+            }
+            if (k < 9f) return;
+            d.overrideThrottle = 0f; d.overrideSteer = 0f;
+            mrLog += " centrePush:" + mrPushLog + " spilledL=" + ((w.SpilledVoxels - mrSpill0) * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
             d.overrideBlade = 1f;
             mrPhase = 3; mrT0 = t;
             return;
@@ -2118,7 +2152,8 @@ public static class BulldozerBuilder
     {
         EnsurePadAxes();
         // shaders the scripts look up by name at run time, which no material in the scene points at
-        IncludeShaders("Voxel/FireFlame", "Voxel/FireParticle", "Voxel/FireSmoke", "Voxel/Terrain", "Unlit/Color", "Sprites/Default");
+        IncludeShaders("Voxel/FireFlame", "Voxel/FireParticle", "Voxel/FireSmoke", "Voxel/Terrain", "Unlit/Color", "Sprites/Default", "Standard");
+        KeepInstancingShaders();
         var opts = new BuildPlayerOptions
         {
             scenes = new[] { ScenePath },
@@ -2131,6 +2166,20 @@ public static class BulldozerBuilder
         if (ok) Debug.Log("BULLDOZER_WINBUILD_RESULT " + System.IO.Path.GetFullPath(WindowsExe) + " " + (report.summary.totalSize / (1024 * 1024)) + " MB in " + report.summary.totalTime.TotalSeconds.ToString("F0") + " s");
         else Debug.LogError("BULLDOZER_WINBUILD_FAILED " + report.summary.result + " errors=" + report.summary.totalErrors);
         return ok;
+    }
+
+    // The loose dirt (clods) is drawn many at a time with instancing, from materials made in code.  No material saved
+    // in the project uses instancing, so the build threw the shaders' instancing versions away and the dirt in the
+    // built game was drawn as nothing (in the editor everything is kept, so it showed there).  Keep them all.
+    static void KeepInstancingShaders()
+    {
+        var gs = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/GraphicsSettings.asset");
+        if (gs == null || gs.Length == 0) return;
+        var so = new SerializedObject(gs[0]);
+        var p = so.FindProperty("m_InstancingStripping");
+        if (p == null || p.intValue == 2) return;
+        p.intValue = 2;                                            // 0 strip unused, 1 strip all, 2 keep all
+        so.ApplyModifiedPropertiesWithoutUndo(); AssetDatabase.SaveAssets();
     }
 
     static void IncludeShaders(params string[] names)
