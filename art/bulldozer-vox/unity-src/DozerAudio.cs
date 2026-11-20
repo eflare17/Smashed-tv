@@ -15,7 +15,7 @@ public class DozerAudio : MonoBehaviour
     DozerController d;
     AudioSource engine, lug, tracks, dirt, hydraulic, ripper;
     float run, lastBlade, lastRipper, lastYaw, lastTilt;
-    bool wasBlocked;
+    bool wasBlocked, recEngine, recTracks;
 
     /// How hard the engine is working right now, 0..1 (for tests and the exhaust smoke).
     public float Labour { get { return d != null ? d.Labour : 0f; } }
@@ -32,6 +32,7 @@ public class DozerAudio : MonoBehaviour
         hydraulic = GameAudio.Loop(gameObject, "hydraulic", 0.6f, 4f, 40f);
         ripper = GameAudio.Loop(gameObject, "ripper", 0.6f, 5f, 60f);
         lastBlade = d.BladeHeight01; lastRipper = d.RipperHeight01;
+        recEngine = SoundBank.IsRecorded("engine"); recTracks = SoundBank.IsRecorded("tracks");
     }
 
     void Update()
@@ -42,12 +43,22 @@ public class DozerAudio : MonoBehaviour
         float eng = GameAudio.Engine, fx = GameAudio.Effects;
         // the engine: revs follow the throttle; labour is how much the load is holding it back (DozerController)
         float rpm = d.Rpm, labour = d.Labour;
-        GameAudio.Steer(engine, on ? (0.5f + 0.35f * rpm) * (1f - 0.35f * labour) * eng : 0f, 0.8f + 0.7f * rpm - 0.22f * labour, dt, on ? 6f : 2f);
-        GameAudio.Steer(lug, on ? labour * 0.85f * eng : 0f, 0.85f + 0.35f * rpm - 0.15f * labour, dt, 5f);
+        // the idle take for idling; the labouring take fades in as it bogs down (and a little with the throttle)
+        float lugMix = Mathf.Clamp01(labour + 0.25f * rpm);
+        if (recEngine)       // a recording is at its natural speed at idle, so it is only pitched up, a bit, as it revs
+        {
+            GameAudio.Steer(engine, on ? (0.55f + 0.3f * rpm) * (1f - 0.6f * lugMix) * eng : 0f, 1f + 0.45f * rpm - 0.12f * labour, dt, on ? 6f : 2f);
+            GameAudio.Steer(lug, on ? lugMix * 0.9f * eng : 0f, 0.92f + 0.25f * rpm - 0.1f * labour, dt, 5f);
+        }
+        else
+        {
+            GameAudio.Steer(engine, on ? (0.5f + 0.35f * rpm) * (1f - 0.35f * labour) * eng : 0f, 0.8f + 0.7f * rpm - 0.22f * labour, dt, on ? 6f : 2f);
+            GameAudio.Steer(lug, on ? labour * 0.85f * eng : 0f, 0.85f + 0.35f * rpm - 0.15f * labour, dt, 5f);
+        }
 
         // the tracks
         run = Mathf.Lerp(run, d.TrackSpeed, 1f - Mathf.Exp(-8f * dt));
-        GameAudio.Steer(tracks, Mathf.Clamp01(run / 1.2f) * 0.55f * eng, 0.35f + 0.3f * run, dt, 10f);
+        GameAudio.Steer(tracks, Mathf.Clamp01(run / 1.2f) * 0.55f * eng, recTracks ? 0.75f + 0.13f * run : 0.35f + 0.3f * run, dt, 10f);
 
         // the heap in front of the blade
         float heap = Mathf.Clamp01(d.BladeLoadM3 / DozerController.FullLoadM3);

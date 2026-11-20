@@ -3693,6 +3693,8 @@ public static class BulldozerBuilder
                 foreach (var n in SoundBank.Names) { var c = SoundBank.Get(n); if (c != null && c.samples > 100) { made++; secs += c.length; } }
                 sdLog += " sounds=" + made + "/" + SoundBank.Names.Length + " (" + secs.ToString("F1") + " s)";
                 SoundCheck(made == SoundBank.Names.Length, "allSoundsMade");
+                sdLog += " recorded=" + SoundBank.RecordedCount;
+                SoundCheck(SoundBank.RecordedCount >= 17 && SoundBank.IsRecorded("engine") && SoundBank.IsRecorded("pick_rock"), "ownersRecordingsUsed");
                 wk.useOverride = true; d.dead = false;
                 if (!wk.InDozer) wk.GetIn();
                 sdPhase = 1; sdT0 = t; return;
@@ -4076,7 +4078,7 @@ public static class BulldozerBuilder
                 d.overrideRipper = 1f; d.overrideSteer = 0f;
                 // ground level: the blade lowered just to the surface (lever down for a moment from parked); raised: up
                 // pushing: the lever down until the edge is about 10 cm into the ground, then let go (it holds there)
-                d.overrideBlade = raised ? 1f : down && k < 1.5f && d.EdgeAboveTracks > -0.10f ? -1f : 0f;
+                d.overrideBlade = raised ? 1f : down && d.BladeArmAngle < d.AutoAngle(DozerController.BladeAutoMode.Cut10) ? -1f : 0f;
                 d.overrideThrottle = k < 1.5f ? 0f : 1f;
                 bool inPatch = d.transform.position.z > pz - 6f && d.transform.position.z < pz + 4f;
                 if (k > 3f && inPatch) { rbMinV = Mathf.Min(rbMinV, d.Speed); rbSumV += d.Speed; rbN++; }
@@ -4119,6 +4121,111 @@ public static class BulldozerBuilder
                 rbPhase++; rbT0 = t; return;
             }
         }
+    }
+
+    // A clip of ripping the rock patch and then pushing through it, with the sound:
+    //   -executeMethod BulldozerBuilder.RecordRubbleClip      (frames, captions and sound.wav in Logs/clip, as RecordPolishClip)
+    static int rcSeg2, rcPass2;
+    public static void RecordRubbleClip()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        pcSeg = -1; pcFrame = 0; pcEnd = 0; rcSeg2 = 0; rcPass2 = 0; sOverlay.Clear(); trCaps.Clear(); pcSound.Clear();
+        string dir = Application.dataPath + "/../Logs/clip";
+        System.IO.Directory.CreateDirectory(dir);
+        foreach (var f in System.IO.Directory.GetFiles(dir)) { try { System.IO.File.Delete(f); } catch (System.Exception) { } }
+        testStart = EditorApplication.timeSinceStartup;
+        clipLastGameFrame = -1;
+        EditorApplication.update += RubbleClipTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void RubbleClipTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 900) { Debug.LogError("BULLDOZER_RUBBLECLIP_FAILED timed out in " + pcSeg); EditorApplication.update -= RubbleClipTick; PolishFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var cam = Camera.main; var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || cam == null || w == null || wk == null || d.Blade == null) return;
+        if (Time.frameCount == clipLastGameFrame) return;
+        clipLastGameFrame = Time.frameCount;
+        var follow = cam.GetComponent<FollowCamera>();
+        float px = VoxelWorld.RockPadX, pz = VoxelWorld.RockPadZ;
+        if (pcEnd > 0)
+        {
+            if (--pcEnd == 0)
+            {
+                WriteOverlay();
+                int ch = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+                PcWriteWav(Application.dataPath + "/../Logs/clip/sound.wav", pcSound, AudioSettings.outputSampleRate, ch);
+                Debug.Log("BULLDOZER_RUBBLECLIP_OK frames=" + pcFrame);
+                EditorApplication.update -= RubbleClipTick;
+                PolishFinish(0);
+            }
+            return;
+        }
+        if (pcSeg == -1)
+        {
+            if (Time.realtimeSinceStartup < 3f || Time.timeSinceLevelLoad < 2.5f) return;
+            GameViewSize(1920, 1080);
+            Hud.SkipFirstHelp();
+            pcFps0 = PauseMenu.ShowFps; PauseMenu.ShowFps = false;
+            wk.useOverride = true; d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            Time.captureFramerate = 30;
+            pcSeg = 0; pcSegFrame = Time.frameCount;
+            return;
+        }
+        if (pcSeg == 0)
+        {
+            // not filmed: two ripping passes beside the one that is filmed
+            float k0 = (Time.frameCount - pcSegFrame) / 30f;
+            if (k0 < 0.05f) { d.Place(new Vector3(px - 0.75f + 1.5f * rcPass2, 0f, pz - 7f), 0f); return; }
+            d.overrideBlade = 1f; d.overrideSteer = 0f; d.overrideRipper = k0 < 2.5f ? -1f : 0f; d.overrideThrottle = k0 < 2.5f ? 0f : 0.6f;
+            if (k0 < 14f) return;
+            d.overrideThrottle = 0f; d.overrideRipper = 1f;
+            if (++rcPass2 < 2) { pcSegFrame = Time.frameCount; return; }
+            AudioRenderer.Start();
+            PcNext(1);
+            return;
+        }
+        float k = (pcFrame - pcSegFrame) / 30f;
+        string title = "", cap = "";
+        if (pcSeg == 1)
+        {
+            if (k < 0.05f) d.Place(new Vector3(px, 0f, pz - 7f), 0f);
+            d.overrideBlade = 1f; d.overrideSteer = 0f; d.overrideRipper = k < 2.5f ? -1f : 0f; d.overrideThrottle = k < 2.5f ? 0f : 0.6f;
+            if (follow != null) { follow.yawOffset = 110f; follow.distance = 11f; follow.pitch = 15f; }
+            title = "Rip the rock";
+            cap = "The ripper now cracks the whole width between its teeth (sounds: the owner's recordings)";
+            if (k > 9f) { d.overrideThrottle = 0f; d.overrideRipper = 1f; PcNext(2); }
+        }
+        else if (pcSeg == 2)
+        {
+            if (k < 0.05f) { d.Place(new Vector3(px, 0f, pz - 9f), 0f); d.overrideBlade = 0f; d.overrideThrottle = 0f; }
+            d.overrideRipper = 1f; d.overrideSteer = 0f;
+            d.overrideBlade = d.BladeArmAngle < d.AutoAngle(DozerController.BladeAutoMode.Cut10) ? -1f : 0f;   // the arms where 10 cm in would be
+            d.overrideThrottle = k < 2.6f ? 0f : 1f;
+            if (follow != null) { follow.yawOffset = Mathf.Lerp(70f, 40f, k / 11f); follow.distance = 12f; follow.pitch = 16f; }
+            title = "Then push straight through it";
+            cap = k < 5f ? "Blade 10 cm in, through the ripped rock" : "No more stopping dead on \"hard rock\"";
+            if (k > 11f) { d.overrideThrottle = 0f; pcEnd = 3; return; }
+        }
+        int n = AudioRenderer.GetSampleCountForCaptureFrame();
+        int chs = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+        if (n > 0)
+        {
+            var buf = new Unity.Collections.NativeArray<float>(n * chs, Unity.Collections.Allocator.Temp);
+            if (AudioRenderer.Render(buf)) for (int i = 0; i < buf.Length; i++) pcSound.Add(buf[i]);
+            buf.Dispose();
+        }
+        float a0 = pcFrame / 30f, b0 = (pcFrame + 1) / 30f;
+        string at = AssTime(a0) + "," + AssTime(b0);
+        if (title.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(title));
+        if (cap.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(cap));
+        ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/clip/frame_" + pcFrame.ToString("D4") + ".png");
+        pcFrame++;
     }
 
     // Autosave, carry on and New game:  -executeMethod BulldozerBuilder.AutosaveTest

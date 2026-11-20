@@ -2,7 +2,9 @@
 //
 // To use a recorded sound instead, put the file in Assets/Resources/Sounds/ with the sound's name (for example
 // Assets/Resources/Sounds/engine.wav).  Get() always looks for a file first and only makes the sound when there isn't one.
+// Several takes of a one-shot can be given as name_0, name_1 ...: Get() picks one at random each time.
 // Loops (marked below) should be recorded so they loop cleanly.
+// The owner's recordings (art/bulldozer-vox/sounds, made with ElevenLabs) are cut into these by make_sounds.py.
 //
 //   Dozer        engine (loop)  engine_lug (loop: labouring)  tracks (loop)  dirt (loop: blade pushing)
 //                hydraulic (loop)  ripper (loop)  clunk (hard rock)
@@ -16,25 +18,45 @@ using UnityEngine;
 public static class SoundBank
 {
     public const int Rate = 44100;
-    static readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
+    static readonly Dictionary<string, AudioClip[]> clips = new Dictionary<string, AudioClip[]>();
+    static readonly HashSet<string> recorded = new HashSet<string>();
     static System.Random rng = new System.Random(7);
 
-    /// The sound with this name: a file from Resources/Sounds if there is one, otherwise made here (once).
+    /// The sound with this name: a recorded file from Resources/Sounds if there is one (one of its takes, at random,
+    /// when there are several), otherwise made here (once).
     public static AudioClip Get(string name)
     {
-        AudioClip c;
-        if (clips.TryGetValue(name, out c) && c != null) return c;
-        c = Resources.Load<AudioClip>("Sounds/" + name);
-        if (c == null)
+        AudioClip[] c;
+        if (!clips.TryGetValue(name, out c) || c == null || c.Length == 0 || c[0] == null)
         {
-            rng = new System.Random(name.GetHashCode() & 0x7fffffff);
-            float[] s = Make(name);
-            if (s == null) { Debug.LogWarning("No sound called " + name); s = new float[64]; }
-            c = AudioClip.Create(name, s.Length, 1, Rate, false);
-            c.SetData(s, 0);
+            c = Load(name);
+            clips[name] = c;
         }
-        clips[name] = c;
-        return c;
+        return c.Length == 1 ? c[0] : c[Random.Range(0, c.Length)];
+    }
+
+    /// True if the game plays a recording for this sound (not one made in code).
+    public static bool IsRecorded(string name) { Get(name); return recorded.Contains(name); }
+    public static int RecordedCount { get { return recorded.Count; } }
+
+    static AudioClip[] Load(string name)
+    {
+        var one = Resources.Load<AudioClip>("Sounds/" + name);
+        if (one != null) { recorded.Add(name); return new[] { one }; }
+        var takes = new List<AudioClip>();
+        for (int i = 0; i < 32; i++)
+        {
+            var t = Resources.Load<AudioClip>("Sounds/" + name + "_" + i);
+            if (t == null) break;
+            takes.Add(t);
+        }
+        if (takes.Count > 0) { recorded.Add(name); return takes.ToArray(); }
+        rng = new System.Random(name.GetHashCode() & 0x7fffffff);
+        float[] s = Make(name);
+        if (s == null) { Debug.LogWarning("No sound called " + name); s = new float[64]; }
+        var c = AudioClip.Create(name, s.Length, 1, Rate, false);
+        c.SetData(s, 0);
+        return new[] { c };
     }
 
     /// Makes every sound now (at the start, so none is made in the middle of play).

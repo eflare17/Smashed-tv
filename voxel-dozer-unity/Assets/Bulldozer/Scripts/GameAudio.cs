@@ -89,7 +89,7 @@ public class GameAudio : MonoBehaviour
     GameObject cartGo, workerGo;
     float lastStride, lastAlong, birdTimer = 3f, dripTimer = 2f, creakTimer = 8f, inMine, cashCool;
     int lastPack;
-    bool started;
+    bool started, recBush, recMine, recCart;
 
     void Awake()
     {
@@ -113,6 +113,8 @@ public class GameAudio : MonoBehaviour
         if (FindFirstObjectByType<AudioListener>() == null && Camera.main != null) Camera.main.gameObject.AddComponent<AudioListener>();
         wind = Loop(gameObject, "wind", 0f);
         hum = Loop(gameObject, "mine_hum", 0f);
+        // the owner's recorded ambience has its own birds, drips and creaks: then the made-up ones stay quiet
+        recBush = SoundBank.IsRecorded("wind"); recMine = SoundBank.IsRecorded("mine_hum"); recCart = SoundBank.IsRecorded("cart_roll");
     }
 
     void LateUpdate()
@@ -168,7 +170,7 @@ public class GameAudio : MonoBehaviour
             float speed = Mathf.Abs(cart.Along - lastAlong) / dt;
             lastAlong = cart.Along;
             if (speed > 20f) speed = 0f;                                   // (it was put somewhere: a load, a test)
-            Steer(cartRoll, quiet ? 0f : Mathf.Clamp01(speed / 2.5f) * 0.7f * fx, 0.6f + 0.25f * speed, dt, 6f);
+            Steer(cartRoll, quiet ? 0f : Mathf.Clamp01(speed / 2.5f) * 0.7f * fx, recCart ? 0.85f + 0.1f * speed : 0.6f + 0.25f * speed, dt, 6f);
             bool motorOn = cart.spec.motor && wk != null && wk.RidingCart;
             Steer(motor, motorOn && !quiet ? (0.35f + 0.1f * speed) * fx : 0f, 0.8f + 0.15f * speed, dt, 4f);
             Steer(tip, cart.Tipping && !quiet ? 0.7f * fx : 0f, 1f, dt, 6f);
@@ -185,7 +187,7 @@ public class GameAudio : MonoBehaviour
         if (birdTimer <= 0f)
         {
             birdTimer = 2.5f + 6f * Random.value;
-            if (inMine < 0.5f)
+            if (inMine < 0.5f && !recBush)
             {
                 Vector2 c = Random.insideUnitCircle.normalized * (18f + 25f * Random.value);
                 PlayAt("bird" + Random.Range(0, 3), ear + new Vector3(c.x, 8f + 6f * Random.value, c.y), 0.6f, 0.9f + 0.25f * Random.value);
@@ -195,13 +197,13 @@ public class GameAudio : MonoBehaviour
         if (dripTimer <= 0f)
         {
             dripTimer = 1.5f + 4f * Random.value;
-            if (inMine > 0.5f) { Vector2 c = Random.insideUnitCircle * 4f; PlayAt("drip", ear + new Vector3(c.x, 1f, c.y), 0.35f, 0.85f + 0.35f * Random.value); }
+            if (inMine > 0.5f && !recMine) { Vector2 c = Random.insideUnitCircle * 4f; PlayAt("drip", ear + new Vector3(c.x, 1f, c.y), 0.35f, 0.85f + 0.35f * Random.value); }
         }
         creakTimer -= dt;
         if (creakTimer <= 0f)
         {
             creakTimer = 6f + 10f * Random.value;
-            if (inMine > 0.5f) { Vector2 c = Random.insideUnitCircle * 6f; PlayAt("creak", ear + new Vector3(c.x, 2f, c.y), 0.4f, 0.8f + 0.3f * Random.value); }
+            if (inMine > 0.5f && !recMine) { Vector2 c = Random.insideUnitCircle * 6f; PlayAt("creak", ear + new Vector3(c.x, 2f, c.y), 0.4f, 0.8f + 0.3f * Random.value); }
         }
     }
 
