@@ -2997,8 +2997,13 @@ public static class BulldozerBuilder
     // 30 s of the dozer cutting stretch 13 at normal speed, close up: a side view, a peg close-up, then from behind.
     //   -executeMethod BulldozerBuilder.RecordRoadCutClip     Frames and overlay.ass go to Logs/clip.
     // The same run, filmed from in front of the dozer looking back at the blade:  -executeMethod BulldozerBuilder.RecordRoadCutFrontClip
-    public static void RecordRoadCutFrontClip() { rcFrontView = true; RecordRoadCutClipStart(); }
-    public static void RecordRoadCutClip() { rcFrontView = false; RecordRoadCutClipStart(); }
+    public static void RecordRoadCutFrontClip() { rcFrontView = true; rcSwing = false; RecordRoadCutClipStart(); }
+    public static void RecordRoadCutClip() { rcFrontView = false; rcSwing = false; RecordRoadCutClipStart(); }
+    // One continuous run up stretch 7 and on: from in front, then swinging round the downhill side to behind.
+    //   -executeMethod BulldozerBuilder.RecordRoadCutSwingClip
+    public static void RecordRoadCutSwingClip() { rcFrontView = true; rcSwing = true; RecordRoadCutClipStart(); }
+    static bool rcSwing;
+    const float SwingFrom = 9f, SwingTo = 16f;
     static bool rcFrontView;
     static void RecordRoadCutClipStart() { rcCutOnly = true; clipMode = 10; sPh = 0; sOverlay.Clear(); sTitle = ""; sCaption = ""; sPop = ""; rcLog = ""; rcWays.Clear(); StartClip(); }
     static bool rcCutOnly;
@@ -3006,7 +3011,7 @@ public static class BulldozerBuilder
     const int RcSecondStretch = 6;                          // then stretch 7: all cut too
     const float RcSecondAt = 14f;                           // when the clip cuts to it (stretch 13's cut is done by then)
     static Vector3 rcLastPos;
-    static float rcTickAt = -1f;
+    static float rcTickAt = -1f, rcTickAt7 = -1f;
     static int rcPeg = -1;
     const float RcCutLength = 30f;
 
@@ -3018,6 +3023,26 @@ public static class BulldozerBuilder
         Vector3 bladeAt = d.Blade != null ? d.Blade.TransformPoint(new Vector3(0f, 0f, 1.1f)) : d.transform.position;
         Vector3 pos, look;
         float ease = 0.08f;
+        if (rcFrontView && rcSwing)
+        {
+            // front, then round the downhill side, then behind: an angle round the machine, 0 = in front, 180 = behind
+            Vector3 ahead = bladeAt - d.transform.position; ahead.y = 0f; ahead.Normalize();
+            Vector3 outSide = new Vector3(bladeAt.x - Mountain.CX, 0f, bladeAt.z - Mountain.CZ).normalized;
+            Vector3 side = Vector3.Dot(Vector3.Cross(Vector3.up, ahead), outSide) >= 0f ? Vector3.Cross(Vector3.up, ahead) : -Vector3.Cross(Vector3.up, ahead);
+            float u = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(SwingFrom, SwingTo, k));
+            float ang = u * Mathf.PI;
+            Vector3 centre = (d.transform.position + bladeAt) * 0.5f;
+            float radius = Mathf.Lerp(7.5f, 9.5f, u);
+            Vector3 dirOut = ahead * Mathf.Cos(ang) + side * Mathf.Sin(ang);
+            pos = centre + dirOut * radius;
+            float lift = Mathf.Sin(ang) * 1.2f;                                                // a little higher going round the side
+            float gyS = Mathf.Max(w.HeightAt(pos.x, pos.z), w.HeightAt(Vector3.Lerp(pos, centre, 0.3f).x, Vector3.Lerp(pos, centre, 0.3f).z));
+            pos.y = Mathf.Max(centre.y + Mathf.Lerp(1.6f, 3.4f, u) + lift, gyS + 1.6f);
+            look = Vector3.Lerp(bladeAt + Vector3.up * 0.2f, centre + ahead * 3f, u);        // the blade at first, the road it leaves at the end
+            if (k < 0.1f || rcPeg != -6) { rcPeg = -6; ease = 1f; } else ease = 0.15f;
+            RcCam(cam, pos, look, ease);
+            return;
+        }
         if (rcFrontView)
         {
             // in front of the blade, low, looking back at it and the dirt rolling up in front of it; a little to the
@@ -3184,14 +3209,15 @@ public static class BulldozerBuilder
             rcWay = 0;
             if (rcCutOnly)
             {
-                rcS0 = RcCutStretch * MountainRoad.Length / MountainRoad.Stretches; rcS1 = (RcCutStretch + 1) * MountainRoad.Length / MountainRoad.Stretches;
+                int first = rcSwing ? RcSecondStretch : RcCutStretch;
+                rcS0 = first * MountainRoad.Length / MountainRoad.Stretches; rcS1 = (first + 1) * MountainRoad.Length / MountainRoad.Stretches;
                 Vector2 st = RoadPoint(rcS0 - 3f, 0f, out dir);
                 d.Place(new Vector3(st.x, 0f, st.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);   // (the set-up above puts it at the track every frame: move it here, every frame too)
                 if (k < 2f) return true;
                 clipSkip = false;
                 rcPass = 0; rcForward = true; rcShowCab = true; rcShowKey = true; rcStride = 1; rcPeg = -1;
-                sTitle = "Cutting stretch 13"; sCaption = "Normal speed.  The blade follows the cab readout down to grade.";
-                rcLastPos = d.transform.position; rcTickAt = -1f;
+                sTitle = rcSwing ? "Cutting stretch 7" : "Cutting stretch 13"; sCaption = "Normal speed.  The blade follows the cab readout down to grade.";
+                rcLastPos = d.transform.position; rcTickAt = -1f; rcTickAt7 = -1f;
                 rcLog += " stretch13Before=" + (job.StretchShare(RcStretch) * 100f).ToString("F0") + "%";
                 sPh = 4; sT0 = t;
                 return true;
@@ -3272,7 +3298,16 @@ public static class BulldozerBuilder
             if (k > 4f) sTitle = "";
             if (rcCutOnly)
             {
-                if (k >= RcSecondAt) { if (k > RcSecondAt + 4f) sTitle = ""; sCaption = k < RcSecondAt + 10f ? "Blade angled, so the spoil rolls off the downhill edge." : "Red turning green as the blade takes it down to grade."; }
+                if (rcSwing)
+                {
+                    if ((k > 4f && k < SwingTo) || k > SwingTo + 4f) sTitle = "";
+                    sCaption = rcLog.IndexOf("TICK 7") >= 0 && k < rcTickAt7 + 3f ? "Half of stretch 7 is within 25 cm:  its green tick."
+                             : k < SwingFrom ? "Red: too high.  Green: within 25 cm of grade."
+                             : k < SwingTo ? "Blade angled, so the spoil rolls off the downhill edge."
+                             : rcTickAt >= 0f && k < rcTickAt + 3f ? "Half of stretch 13 is within 25 cm:  its green tick."
+                             : "Behind it: the cut floor, on grade, turning green.";
+                }
+                else if (k >= RcSecondAt) { if (k > RcSecondAt + 4f) sTitle = ""; sCaption = k < RcSecondAt + 10f ? "Blade angled, so the spoil rolls off the downhill edge." : "Red turning green as the blade takes it down to grade."; }
                 else if (rcTickAt >= 0f && k < rcTickAt + 3f) sCaption = "Half of stretch 13 is within 25 cm:  its green tick.";
                 else if (k >= 9f && !rcFrontView) sCaption = "The peg beside the road: how much is left to cut there.";
                 else if (k >= 9f) sCaption = "The blade on grade: the cut floor behind it turns green.";
@@ -3298,15 +3333,16 @@ public static class BulldozerBuilder
                 // the cutting clip: one steady run up the road, cutting a thin layer at a time, the blade angled to
                 // cast the spoil off the downhill edge.  If it stalls against its load it lifts the blade a moment.
                 rcStride = 1;
-                if (k >= RcSecondAt && k < RcSecondAt + 0.5f)
+                float jumpAt = rcSwing ? SwingTo : RcSecondAt;
+                if (k >= jumpAt && k < jumpAt + 0.5f)
                 {
-                    // cut to stretch 7 (not filmed while it is put there)
+                    // cut to the next stretch (not filmed while it is put there): stretch 7 in the first clip, 13 in the swing clip
                     clipSkip = true;
-                    float s7 = RcSecondStretch * MountainRoad.Length / MountainRoad.Stretches - 3f;
+                    float s7 = (rcSwing ? RcCutStretch : RcSecondStretch) * MountainRoad.Length / MountainRoad.Stretches - 3f;
                     Vector2 st = RoadPoint(s7, 0f, out dir);
                     d.Place(new Vector3(st.x, 0f, st.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
                     rcLastPos = d.transform.position;
-                    sTitle = "Stretch 7"; sPop = ""; if (rcFrontView) rcPeg = -7;   // (the front camera jumps with it)
+                    sTitle = rcSwing ? "Stretch 13" : "Stretch 7"; sPop = ""; if (rcFrontView) rcPeg = -7;   // (the front camera jumps with it)
                     return true;
                 }
                 clipSkip = false;
@@ -3322,8 +3358,8 @@ public static class BulldozerBuilder
                 d.overrideBlade = lift ? 1f : aimC > 0.03f ? -1f : aimC < -0.03f ? 1f : 0f;
                 Vector2 roadDir = dir;
                 RcSteer(d, RoadPoint(s + 4.5f, 0f, out dir), false, 0.45f);
-                if (rcTickAt < 0f && job.Ticked(RcCutStretch)) { rcTickAt = k; sPop = "Stretch 13:  green tick!"; sPopUntil = Time.time + 3f; rcLog += " | TICK 13 at k=" + k.ToString("F1"); }
-                if (k > RcSecondAt && job.Ticked(RcSecondStretch) && rcLog.IndexOf("TICK 7") < 0) { sPop = "Stretch 7:  green tick!"; sPopUntil = Time.time + 3f; rcLog += " | TICK 7 at k=" + k.ToString("F1"); }
+                if ((!rcSwing || k > SwingTo + 0.5f) && rcTickAt < 0f && job.Ticked(RcCutStretch)) { rcTickAt = k; sPop = "Stretch 13:  green tick!"; sPopUntil = Time.time + 3f; rcLog += " | TICK 13 at k=" + k.ToString("F1"); }
+                if ((rcSwing || k > RcSecondAt) && job.Ticked(RcSecondStretch) && rcLog.IndexOf("TICK 7") < 0) { sPop = "Stretch 7:  green tick!"; sPopUntil = Time.time + 3f; rcTickAt7 = k; rcLog += " | TICK 7 at k=" + k.ToString("F1"); }
                 RcCutCam(d, cam, k, s, roadDir);
                 // once a second: how far the machine went, and how much dirt is on the move (for checking the clip has no still part)
                 if (Mathf.FloorToInt(k) != Mathf.FloorToInt(k - Time.deltaTime))
