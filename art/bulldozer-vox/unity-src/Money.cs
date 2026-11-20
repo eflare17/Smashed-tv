@@ -64,7 +64,7 @@ public class Money : MonoBehaviour
         Coins += whole;
         Earned += whole;
         popCoins += whole;
-        if (whole > 0) GameAudio.Cash();
+        if (whole > 0) { GameAudio.Cash(); Goals.Tipped(); }
         return whole;
     }
 
@@ -81,6 +81,7 @@ public class Money : MonoBehaviour
         Earned += whole;
         sellText = "Sold " + litres.ToString("F0") + " L of gold:  +" + whole.ToString("N0") + " coins";
         GameAudio.Cash();
+        Goals.GoldSold();
         sellTimer = 4f;
         return whole;
     }
@@ -95,6 +96,9 @@ public class Money : MonoBehaviour
         popCoins += coins; popTimer = 4f;
         sellText = why; sellTimer = 5f;
     }
+
+    /// A goal's bonus: coins straight in (the goal says so on screen itself).
+    public void Bonus(long coins) { if (coins <= 0) return; Coins += coins; Earned += coins; }
 
     public void Refund(long coins, int goldVoxels) { if (coins > 0) Coins += coins; if (goldVoxels > 0) GoldStore += goldVoxels; }
 

@@ -86,6 +86,42 @@ public class DozerController : MonoBehaviour
     /// How fast the faster track is running, metres a second (slipping included).
     public float TrackSpeed { get { return Mathf.Max(trackLeft != null ? Mathf.Abs(trackLeft.speed) : 0f, trackRight != null ? Mathf.Abs(trackRight.speed) : 0f); } }
     public bool RipperIn { get { return ripperAngle < RipFrom; } }   // lowered into the ground, tearing it
+    /// The engine: Rpm 0 (idle) .. 1 (flat out), and Labour 0..1, how hard the load is holding it back.
+    /// (The sound and the exhaust smoke follow these.)
+    public float Rpm { get; private set; }
+    public float Labour { get; private set; }
+    void UpdateEngine(float dt)
+    {
+        bool on = driven && CanDrive;
+        float throttle = Mathf.Abs(throttleIn);
+        float wantRpm = on ? Mathf.Clamp01(throttle * 0.85f + Mathf.Abs(Speed) * 0.04f) : 0f;
+        Rpm = Mathf.MoveTowards(Rpm, wantRpm, dt * (wantRpm > Rpm ? 1.2f : 0.8f));
+        float wantLabour = on && throttle > 0.2f ? Mathf.Clamp01((1f - Bog) * 1.5f + (Climbing ? 0.4f : 0f) + (BlockedByRock ? 0.7f : 0f)) : 0f;
+        Labour = Mathf.MoveTowards(Labour, wantLabour, dt * 1.5f);
+    }
+
+    // ---- Heavy feel.  Looks only: the body lifts its nose a little as the blade fills, jolts forward on a hard hit
+    // and rocks as it climbs over a heap.  The digging and blade auto use the machine without this (Unfelt).
+    Quaternion felt = Quaternion.identity;
+    float feltLift, jolt, joltVel, rockAmt, rockT;
+    public float FeltPitch { get { return felt.eulerAngles.x > 180f ? felt.eulerAngles.x - 360f : felt.eulerAngles.x; } }   // (tests)
+    Quaternion Feel(float dt)
+    {
+        float load = Mathf.Clamp01(BladeLoadM3 / FullLoad);
+        feltLift = Mathf.Lerp(feltLift, -0.8f * load * (Speed > 0.05f ? 1f : 0.5f), 1f - Mathf.Exp(-2f * dt));   // - is nose up
+        joltVel += (-70f * jolt - 10f * joltVel) * dt;                                                          // a spring, kicked by a hard hit
+        jolt += joltVel * dt;
+        rockAmt = Mathf.MoveTowards(rockAmt, Climbing ? 0.6f : 0f, dt * 2f);
+        rockT += dt * (1.5f + Mathf.Abs(Speed) * 4f);
+        float rp = rockAmt * (Mathf.PerlinNoise(rockT, 0.37f) - 0.5f) * 2f, rr = rockAmt * (Mathf.PerlinNoise(0.71f, rockT) - 0.5f) * 2f;
+        return Quaternion.Euler(feltLift + jolt + rp, 0f, rr);
+    }
+    /// A point on the machine as it would be without the heavy-feel tilt.
+    Vector3 Unfelt(Vector3 p)
+    {
+        Vector3 o = transform.position;
+        return o + transform.rotation * (Quaternion.Inverse(felt) * (Quaternion.Inverse(transform.rotation) * (p - o)));
+    }
     public float BladeHeight01 { get; private set; }     // 0 = down, 1 = fully up
     public float RipperHeight01 { get; private set; }
     public bool GyroHeld { get; private set; }           // the gyro button is down: the right stick is the blade
@@ -220,7 +256,7 @@ public class DozerController : MonoBehaviour
         if (fwd.sqrMagnitude < 0.01f) return fixedAngle;
         fwd.Normalize();
         Vector3 right = new Vector3(fwd.z, 0f, -fwd.x);
-        Vector3 edge = blade.TransformPoint(BladeEdge);
+        Vector3 edge = Unfelt(blade.TransformPoint(BladeEdge));
         float sum = 0f; int n = 0;
         for (float a = 1.5f; a <= 3.01f; a += 0.75f)
             for (float s = -1f; s <= 1.01f; s += 1f)
@@ -244,6 +280,7 @@ public class DozerController : MonoBehaviour
     {
         world = VoxelWorld.Instance;
         if (world != null && GetComponent<BladeView>() == null) gameObject.AddComponent<BladeView>();
+        if (world != null && GetComponent<DozerFX>() == null) gameObject.AddComponent<DozerFX>();
     }
 
     // Clods tumbling off the top of the heap while the blade is cutting.  Looks only: they are not counted as dirt.
@@ -288,7 +325,7 @@ public class DozerController : MonoBehaviour
 
     void Update()
     {
-        if (!driven) { throttleIn = steerIn = 0f; ApplyAttachments(); return; }
+        if (!driven) { throttleIn = steerIn = 0f; UpdateEngine(Time.deltaTime); ApplyAttachments(); return; }
         throttleIn = useOverride ? overrideThrottle : Stronger(Input.GetAxisRaw("Vertical"), Pad.LeftStick.y);
         steerIn = useOverride ? overrideSteer : Stronger(Input.GetAxisRaw("Horizontal"), Pad.LeftStick.x);
         if (!CanDrive) throttleIn = steerIn = 0f;
@@ -318,6 +355,9 @@ public class DozerController : MonoBehaviour
         ApplyAttachments();
         if (lights != null && !useOverride && (Input.GetKeyDown(KeyCode.L) || Pad.Down(Pad.B.B))) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
         fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.05f);
+        UpdateEngine(Time.deltaTime);
+        // a faint steady shudder through the seat while the ripper tears the ground
+        if (RipperIn && Mathf.Abs(Speed) > 0.1f) FollowCamera.Shake = Mathf.Max(FollowCamera.Shake, 0.004f + 0.003f * Mathf.Abs(Speed));
     }
 
     static float Stronger(float a, float b) { return Mathf.Abs(b) > Mathf.Abs(a) ? b : a; }
@@ -472,15 +512,49 @@ public class DozerController : MonoBehaviour
         }
         Quaternion rot = yawRot * Quaternion.Euler(pitch, 0f, roll);
 
-        if (world != null) Dig(pos, rot);
+        if (world != null)
+        {
+            glance = 0f;
+            Dig(pos, rot);
+            if (glance != 0f)
+            {
+                // a raised blade caught rock at one end only: slide away from it and turn off it a little
+                pos += yawRot * Vector3.right * (glance * GlanceSlide * dt);
+                yaw += glance * GlanceTurn * dt;
+                Glanced = true;
+            }
+        }
         if (spray != null)
         {
             var emission = spray.emission;
             emission.rateOverTime = Speed > 0.3f ? Mathf.Clamp(LastCut * 0.25f, 0f, 140f) : 0f;
         }
 
-        if (body != null) { body.MoveRotation(rot); body.MovePosition(pos); }
-        else { transform.SetPositionAndRotation(pos, rot); }
+        felt = Feel(dt);
+        Quaternion shown = rot * felt;
+        if (body != null) { body.MoveRotation(shown); body.MovePosition(pos); }
+        else { transform.SetPositionAndRotation(pos, shown); }
+    }
+
+    // ---- glancing off rock with a raised blade (see Dig)
+    const float GlanceSlide = 0.6f, GlanceTurn = 14f;  // metres a second sideways, degrees a second of turn
+    float glance;                                      // -1 slide left, +1 slide right, 0 none (this step)
+    public bool Glanced { get; private set; }          // it has glanced off rock at some point (tests)
+
+    /// Where hard rock is in the blade's box: -1 only in the left end, +1 only in the right end, 0 elsewhere or none.
+    int RockAtOneEnd(Matrix4x4 bladeToWorld)
+    {
+        int left = 0, mid = 0, right = 0;
+        for (float x = BladeBoxMin.x; x <= BladeBoxMax.x + 0.01f; x += 0.25f)
+            for (float y = BladeBoxMin.y; y <= BladeBoxMax.y + 0.01f; y += 0.2f)
+                for (float z = BladeBoxMin.z; z <= BladeBoxMax.z + 0.01f; z += 0.15f)
+                {
+                    byte m = world.MaterialAt(bladeToWorld.MultiplyPoint3x4(new Vector3(x, y, z)));
+                    if (m < VoxelWorld.Rock || m > VoxelWorld.Gold) continue;
+                    if (x < -1.2f) left++; else if (x > 1.2f) right++; else mid++;
+                }
+        if (mid > 0 || (left > 0) == (right > 0)) return 0;
+        return left > 0 ? -1 : 1;
     }
 
     void Dig(Vector3 pos, Quaternion rot)
@@ -501,8 +575,20 @@ public class DozerController : MonoBehaviour
             world.SetBlade(bladeToWorld, BladePlateMin, BladePlateMax, moved);
             world.SlumpCentre = bladeToWorld.MultiplyPoint3x4(new Vector3(0f, 0f, -1.5f));
             LastCut = r.cut;
+            if (Speed > 0.05f) Goals.Pushed(r.cut);
             UpdateBog(travel.magnitude);
-            if (r.hard >= hardRockStops && Speed > 0f) { Speed = 0f; blockedTimer = 0.6f; }
+            if (r.hard >= hardRockStops && Speed > 0f && BladeHeight01 > 0.6f)
+            {
+                // Raised, the blade isn't working: if it is only one end catching a rock wall (driving past a bench,
+                // turning into the ramp), glance off it instead of stopping dead.  Rock across the middle still stops it.
+                int side = RockAtOneEnd(bladeToWorld);
+                if (side != 0) { glance = -side; Speed *= 0.97f; r.hard = 0; }
+            }
+            if (r.hard >= hardRockStops && Speed > 0f)
+            {
+                if (blockedTimer <= 0f) { joltVel += 9f + 6f * Speed; FollowCamera.Bump(0.05f + 0.02f * Speed); }   // a hard hit: the body jolts, the camera bumps
+                Speed = 0f; blockedTimer = 0.6f;
+            }
         }
         // Only when it has been lowered into the ground.  Parked (0) its tips rest on the surface: it used to rip from
         // there too, so driving along tore up a strip of loose dirt behind the machine without anyone asking.
@@ -589,7 +675,7 @@ public class DozerController : MonoBehaviour
         get
         {
             if (blade == null) return 0f;
-            return Mathf.Min(blade.TransformPoint(new Vector3(-2.25f, -0.75f, 1.1f)).y, blade.TransformPoint(new Vector3(2.25f, -0.75f, 1.1f)).y) - transform.position.y;
+            return Mathf.Min(Unfelt(blade.TransformPoint(new Vector3(-2.25f, -0.75f, 1.1f))).y, Unfelt(blade.TransformPoint(new Vector3(2.25f, -0.75f, 1.1f))).y) - transform.position.y;
         }
     }
     public bool AutoPaused { get { return autoPaused; } }

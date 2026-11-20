@@ -14,12 +14,12 @@ public class DozerAudio : MonoBehaviour
 {
     DozerController d;
     AudioSource engine, lug, tracks, dirt, hydraulic, ripper;
-    float rpm, labour, run, lastBlade, lastRipper, lastYaw, lastTilt;
+    float run, lastBlade, lastRipper, lastYaw, lastTilt;
     bool wasBlocked;
 
     /// How hard the engine is working right now, 0..1 (for tests and the exhaust smoke).
-    public float Labour { get { return labour; } }
-    public float Rpm { get { return rpm; } }
+    public float Labour { get { return d != null ? d.Labour : 0f; } }
+    public float Rpm { get { return d != null ? d.Rpm : 0f; } }
     public float EngineVolume { get { return engine != null ? engine.volume : 0f; } }
 
     void Start()
@@ -40,13 +40,8 @@ public class DozerAudio : MonoBehaviour
         if (dt <= 0f || d == null) return;
         bool on = d.driven && d.CanDrive && !Prologue.Playing;
         float eng = GameAudio.Engine, fx = GameAudio.Effects;
-        float throttle = Mathf.Abs(d.Throttle);
-
-        // the engine: revs follow the throttle; labour is how much the load is holding it back
-        float wantRpm = on ? Mathf.Clamp01(throttle * 0.85f + Mathf.Abs(d.Speed) * 0.04f) : 0f;
-        rpm = Mathf.MoveTowards(rpm, wantRpm, dt * (wantRpm > rpm ? 1.2f : 0.8f));
-        float wantLabour = on && throttle > 0.2f ? Mathf.Clamp01((1f - d.Bog) * 1.5f + (d.Climbing ? 0.4f : 0f) + (d.BlockedByRock ? 0.7f : 0f)) : 0f;
-        labour = Mathf.MoveTowards(labour, wantLabour, dt * 1.5f);
+        // the engine: revs follow the throttle; labour is how much the load is holding it back (DozerController)
+        float rpm = d.Rpm, labour = d.Labour;
         GameAudio.Steer(engine, on ? (0.5f + 0.35f * rpm) * (1f - 0.35f * labour) * eng : 0f, 0.8f + 0.7f * rpm - 0.22f * labour, dt, on ? 6f : 2f);
         GameAudio.Steer(lug, on ? labour * 0.85f * eng : 0f, 0.85f + 0.35f * rpm - 0.15f * labour, dt, 5f);
 

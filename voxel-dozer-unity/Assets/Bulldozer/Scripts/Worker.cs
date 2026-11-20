@@ -695,6 +695,7 @@ public class Worker : MonoBehaviour
         Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.5f, 1f, 3.5f) + Vector3.up * 0.9f;
         if (world.Pick(aimPoint + aimDir * 0.08f, JackBite, kick, JackShatter, true) > 0) PickHits++;
         JackFX.Blow(aimPoint, -aimDir, aimMat, JackBiteFrac, aimMat == VoxelWorld.Gold || world.LastShattered > 0);
+        if (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.LooseGold) Goals.GoldSeen();
         if (world.LastShattered > 0)
         {
             GoldShattered += world.LastShattered;
@@ -715,6 +716,7 @@ public class Worker : MonoBehaviour
             if (aimInReach)
             {
                 GameAudio.PlayAt(aimMat == VoxelWorld.Gold ? "pick_gold" : rock ? "pick_rock" : "pick_dirt", aimPoint, 0.9f, 0.92f + 0.16f * Random.value);
+                if (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.LooseGold) Goals.GoldSeen();
                 if (world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, kick) > 0) PickHits++;
             }
             else if (aimFound) Say("Too far away.  Get closer.", 1.5f);
@@ -738,6 +740,7 @@ public class Worker : MonoBehaviour
             world.Throw(from, velocity, throwIntoCart ? 0.3f : 0.8f, time + 0.08f);
             Throws++;
             GameAudio.PlayAt("shovel_whump", throwAt, throwIntoCart ? 0.9f : 0.7f, throwIntoCart ? 1.1f : 0.9f + 0.2f * Random.value, time);
+            HeavyFX.Dust(throwAt, 3, 0.35f, HeavyFX.DustColour(VoxelWorld.LooseSoil), time);
         }
     }
 
