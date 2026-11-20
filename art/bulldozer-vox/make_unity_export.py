@@ -3765,6 +3765,169 @@ public static class BulldozerBuilder
         }
     }
 
+    // A video of the latest changes, filmed with the screen (so the menus and the cab text are in it):
+    //   -executeMethod BulldozerBuilder.RecordChangesClip    Frames (1920 x 1080) and overlay.ass go to Logs/clip.
+    // Straight push (faster, slows under the heap, fills the blade), swung blade warning, the blade lifted clear going
+    // up the ramp, the auto blade on Flat, the Esc menu and settings, and the upgrade tree.  On Ultra with the fps shown.
+    static int chSeg, chSegFrame, chFrame, chView0 = -1, chQ0, chEnd;
+    static bool chFps0;
+    static Vector3 chStart;
+    public static void RecordChangesClip()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        chSeg = -1; chFrame = 0; chEnd = 0; sOverlay.Clear(); trCaps.Clear(); sTitle = ""; sCaption = "";
+        string dir = Application.dataPath + "/../Logs/clip";
+        if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+        System.IO.Directory.CreateDirectory(dir);
+        testStart = EditorApplication.timeSinceStartup;
+        clipLastGameFrame = -1;
+        EditorApplication.update += ChangesTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void ChNext(int seg) { chSeg = seg; chSegFrame = chFrame; }
+    static void ChangesFinish(int code)
+    {
+        EditorApplication.update -= ChangesTick;
+        Time.captureFramerate = 0;
+        PauseMenu.Quality = chQ0; PauseMenu.ShowFps = chFps0; PauseMenu.SavePrefs();
+        if (chView0 >= 0) GameViewSelect(chView0);
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void ChangesTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 600) { Debug.LogError("BULLDOZER_CHANGES_FAILED timed out in " + chSeg); ChangesFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var cam = Camera.main; var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        var pm = PauseMenu.Instance; var up = Upgrades.Instance; var money = Money.Instance;
+        if (d == null || cam == null || w == null || wk == null || pm == null || up == null || money == null || d.Blade == null) return;
+        if (Time.frameCount == clipLastGameFrame) return;
+        clipLastGameFrame = Time.frameCount;
+        var follow = cam.GetComponent<FollowCamera>();
+        if (chEnd > 0) { if (--chEnd == 0) { WriteOverlay(); Debug.Log("BULLDOZER_CHANGES_OK frames=" + chFrame); ChangesFinish(0); } return; }
+        if (chSeg == -1)
+        {
+            if (Time.realtimeSinceStartup < 3f || Time.timeSinceLevelLoad < 2f) return;
+            chView0 = GameViewIndex();
+            GameViewSize(1920, 1080);
+            chQ0 = PauseMenu.Quality; chFps0 = PauseMenu.ShowFps;
+            PauseMenu.Quality = 3; PauseMenu.ShowFps = false; pm.ApplyGraphics();      // (filming makes the fps read low, so it's off)
+            wk.useOverride = true; d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            chStart = d.transform.position;
+            d.Place(chStart, 0f);
+            Time.captureFramerate = 30;
+            ChNext(0);
+            return;
+        }
+        float k = (chFrame - chSegFrame) / 30f;
+        string title = "", cap = "";
+        if (chSeg == 0)
+        {
+            // straight push: blade down, full throttle
+            d.overrideBlade = k < 1.2f ? -1f : 0f; d.overrideAngle = 0f; d.overrideSteer = 0f;
+            d.overrideThrottle = k < 1.2f ? 0f : 1f;
+            if (follow != null) { follow.yawOffset = Mathf.Lerp(30f, 60f, k / 11f); follow.distance = 11f; follow.pitch = 22f; }
+            title = "Faster and stronger, but it feels the load";
+            cap = k < 5.5f ? "Top speed up from 3.0 to 3.7 m/s, and the blade lifts higher"
+                           : "Slows as the heap grows:  heap " + d.BladeLoadM3.ToString("F1") + " m\u00b3,  speed " + d.Speed.ToString("F1") + " m/s";
+            if (k > 11f) ChNext(1);
+        }
+        else if (chSeg == 1)
+        {
+            // keep pushing, from in front: a straight blade fills edge to edge
+            d.overrideThrottle = 0.6f; d.overrideBlade = 0f;
+            Vector3 bp = d.Blade.position, f = d.transform.forward;
+            Vector3 cp = bp + f * 6f + Vector3.up * 2.4f + d.transform.right * 1.2f;
+            if (follow != null) follow.enabled = false;
+            cam.transform.SetPositionAndRotation(cp, Quaternion.LookRotation((bp + Vector3.up * 0.3f) - cp));
+            title = "The blade fills";
+            cap = "Blade straight:  the dirt fills it edge to edge, and stays in front";
+            if (k > 6f) { if (follow != null) follow.enabled = true; ChNext(2); }
+        }
+        else if (chSeg == 2)
+        {
+            // swing it: the warning
+            d.overrideThrottle = 0.6f;
+            d.overrideAngle = k < 1.2f ? 1f : (k > 5.5f && k < 6.7f) ? -1f : 0f;     // swing it, then back straight
+            if (follow != null) { follow.yawOffset = 20f; follow.distance = 10f; follow.pitch = 26f; }
+            title = "Blade swung warning";
+            cap = k < 5.5f ? "Swing the blade and it tells you:  the dirt rolls off one end" : "X straightens it again";
+            if (k > 8f) { d.overrideThrottle = 0f; ChNext(3); }
+        }
+        else if (chSeg == 3)
+        {
+            // up the ramp with the blade up
+            if (k < 0.05f)
+            {
+                d.Place(new Vector3(VoxelWorld.TrackCentreX(1f), 0f, 1f), 0f);
+                d.overrideAngle = 0f;
+            }
+            d.overrideBlade = 1f; d.overrideRipper = 1f;
+            d.overrideThrottle = k < 1f ? 0f : 1f;
+            float want = VoxelWorld.TrackCentreX(d.transform.position.z + 3f) - d.transform.position.x;
+            d.overrideSteer = Mathf.Clamp(want * 0.6f, -1f, 1f);
+            if (follow != null) { follow.yawOffset = 95f; follow.distance = 11f; follow.pitch = 12f; }
+            title = "Blade up clears the hill";
+            cap = "It lifts higher now (26 degrees), so going up a steep bit it doesn't scrape the ground away";
+            if (k > 10f) { d.overrideThrottle = 0f; ChNext(4); }
+        }
+        else if (chSeg == 4)
+        {
+            // the auto blade on Flat
+            if (k < 0.05f)
+            {
+                d.Place(chStart + new Vector3(8f, 0f, 0f), 0f);
+                d.overrideBlade = 0f; d.overrideRipper = 0f; d.overrideSteer = 0f; d.overrideThrottle = 0f;
+                d.bladeAuto = DozerController.BladeAutoMode.Off; d.CycleBladeAuto();
+            }
+            d.overrideBlade = 0f; d.overrideSteer = 0f;
+            d.overrideThrottle = k < 1.5f ? 0f : 1f;
+            if (follow != null) { follow.yawOffset = 70f; follow.distance = 10f; follow.pitch = 18f; }
+            title = "Auto blade:  B on the keyboard, A on the pad";
+            cap = "Off, Flat, Cut 5 cm, Cut 10 cm.  It holds the height for you.  Here on " + d.BladeAutoName;
+            if (k > 10f) { d.overrideThrottle = 0f; d.bladeAuto = DozerController.BladeAutoMode.Off; ChNext(5); }
+        }
+        else if (chSeg == 5)
+        {
+            // the Esc menu, then settings
+            if (k < 0.05f) pm.SetOpen(true);
+            if (k > 4f && k < 4.05f) pm.ShowSettings();
+            title = k < 4f ? "Esc menu" : "Settings";
+            cap = k < 4f ? "Resume, Settings, New game, Quit.  It autosaves every 5 minutes and when you quit"
+                         : "Ultra graphics (this video is on Ultra), fps counter (F11), UI size, view distance";
+            if (k > 9f) { pm.SetOpen(false); ChNext(6); }
+        }
+        else if (chSeg == 6)
+        {
+            // the upgrade tree
+            if (k < 0.05f)
+            {
+                if (wk.InDozer) wk.GetOut();
+                wk.useOverride = false;
+                up.Reset(); money.Clear(); money.TestGrant(1500, 0);
+            }
+            if (k > 0.5f && !up.Open && k < 1f) up.SetOpen(true);
+            if (k > 2.5f && k < 2.55f) up.MoveSelection(0, 1);
+            if (k > 4f && k < 4.05f) up.MoveSelection(1, 0);
+            if (k > 5.5f && k < 5.55f) up.MoveSelection(-1, 0);
+            if (k > 6.5f && k < 6.55f) up.BuySelected();
+            title = "The upgrade tree";
+            cap = "Bigger, and laid out as a tree.  Arrows / d-pad to move, Enter / A to buy";
+            if (k > 9.5f) { up.SetOpen(false); chEnd = 3; return; }
+        }
+        float a0 = chFrame / 30f, b0 = (chFrame + 1) / 30f;
+        string at = AssTime(a0) + "," + AssTime(b0);
+        if (title.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(title));
+        if (cap.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(cap));
+        ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/clip/frame_" + chFrame.ToString("D4") + ".png");
+        chFrame++;
+    }
+
     static void TestFinish(int code)
     {
         EditorApplication.update -= TestTick;
