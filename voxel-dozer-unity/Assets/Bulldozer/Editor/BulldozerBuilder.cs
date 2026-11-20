@@ -3552,6 +3552,188 @@ public static class BulldozerBuilder
         PushFinish(0);
     }
 
+    // The clean screen:  -executeMethod BulldozerBuilder.HudTest
+    // The help shows by itself at the start of a new game and goes with H; the dozer's corner shows the blade load and
+    // depth; on foot the tool and the cart.  Takes hud_*.png in Logs.  Prints BULLDOZER_HUD_RESULT.
+    static int hdPhase; static float hdT0; static string hdLog; static bool hdOk;
+    public static void HudTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        hdPhase = 0; hdLog = ""; hdOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += HudTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void HudCheck(bool ok, string what) { hdLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) hdOk = false; }
+    static void HudShot(string name) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/" + name); }
+    static void HudFinish()
+    {
+        EditorApplication.update -= HudTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        Hud.HelpKey = false; Hud.DebugOn = false;
+        if (hdOk) Debug.Log("BULLDOZER_HUD_RESULT" + hdLog); else Debug.LogError("BULLDOZER_HUD_FAILED phase " + hdPhase + hdLog);
+        EditorApplication.Exit(hdOk ? 0 : 1);
+    }
+    static void HudTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { hdLog += " timed out"; hdOk = false; HudFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null || Hud.Instance == null) return;
+        float t = Time.time;
+        switch (hdPhase)
+        {
+            case 0:
+                if (t < 2f) return;
+                wk.useOverride = true; d.dead = false;
+                if (!wk.InDozer) wk.GetIn();
+                HudCheck(Hud.HelpOn, "helpAtStart");
+                hdPhase = 1; hdT0 = t; return;
+            case 1:
+                if (t - hdT0 < 0.5f) return;
+                HudShot("hud_help_dozer.png");
+                hdPhase = 2; hdT0 = t; return;
+            case 2:
+                if (t - hdT0 < 0.5f) return;
+                Hud.SkipFirstHelp();
+                HudCheck(!Hud.HelpOn, "helpGoesAway");
+                Hud.ToggleHelp(); HudCheck(Hud.HelpOn, "hShowsIt");
+                Hud.ToggleHelp(); HudCheck(!Hud.HelpOn, "hHidesIt");
+                d.useOverride = true; d.overrideBlade = -1f; d.overrideThrottle = 0f;
+                hdPhase = 3; hdT0 = t; return;
+            case 3:
+                if (t - hdT0 < 1.5f) return;
+                d.overrideBlade = 0f; d.overrideThrottle = 1f;
+                hdPhase = 4; hdT0 = t; return;
+            case 4:
+                if (t - hdT0 < 4f) return;
+                hdLog += " depth=[" + d.DepthLine() + "] load=" + d.BladeLoadM3.ToString("F1");
+                HudCheck(d.DepthLine().StartsWith("Blade") && d.DepthLine().Contains(" cm "), "depthShown");
+                HudCheck(d.BladeLoadM3 > 0.3f, "bladeHasLoad");
+                d.overrideBlade = 0f; d.overrideAngle = 1f;
+                hdPhase = 5; hdT0 = t; return;
+            case 5:
+                if (t - hdT0 < 1.2f) return;
+                d.overrideAngle = 0f; d.overrideThrottle = 0f;
+                HudCheck(d.Warnings().Contains("BLADE SWUNG"), "swungWarning");
+                HudShot("hud_dozer.png");
+                hdPhase = 6; hdT0 = t; return;
+            case 6:
+                if (t - hdT0 < 0.5f) return;
+                Hud.DebugOn = true;
+                hdPhase = 7; hdT0 = t; return;
+            case 7:
+                if (t - hdT0 < 0.5f) return;
+                HudShot("hud_debug.png");
+                Hud.DebugOn = false;
+                d.useOverride = false;
+                wk.GetOut();
+                hdPhase = 8; hdT0 = t; return;
+            case 8:
+                if (t - hdT0 < 1.5f) return;
+                HudCheck(!wk.InDozer, "gotOut");
+                HudShot("hud_foot.png");
+                hdPhase = 9; hdT0 = t; return;
+            case 9:
+                if (t - hdT0 < 0.5f) return;
+                HudFinish(); return;
+        }
+    }
+
+    // The sound:  -executeMethod BulldozerBuilder.SoundTest
+    // Every sound gets made, the engine idles in the seat and works harder pushing a heap, the pick makes a sound, and
+    // the volume settings step and are kept.  Prints BULLDOZER_SOUND_RESULT.
+    static int sdPhase; static float sdT0, sdIdleVol, sdIdleLabour; static string sdLog; static bool sdOk; static int sdPlayed0;
+    static float sdOldMaster, sdOldEngine, sdOldFx;
+    public static void SoundTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        sdPhase = 0; sdLog = ""; sdOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += SoundTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void SoundCheck(bool ok, string what) { sdLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) sdOk = false; }
+    static void SoundFinish()
+    {
+        EditorApplication.update -= SoundTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (sdOk) Debug.Log("BULLDOZER_SOUND_RESULT" + sdLog); else Debug.LogError("BULLDOZER_SOUND_FAILED phase " + sdPhase + sdLog);
+        EditorApplication.Exit(sdOk ? 0 : 1);
+    }
+    static void SoundTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { sdLog += " timed out"; sdOk = false; SoundFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null || GameAudio.Instance == null) return;
+        var da = d.GetComponent<DozerAudio>();
+        float t = Time.time;
+        switch (sdPhase)
+        {
+            case 0:
+                if (t < 2f || da == null) return;
+                int made = 0; float secs = 0f;
+                foreach (var n in SoundBank.Names) { var c = SoundBank.Get(n); if (c != null && c.samples > 100) { made++; secs += c.length; } }
+                sdLog += " sounds=" + made + "/" + SoundBank.Names.Length + " (" + secs.ToString("F1") + " s)";
+                SoundCheck(made == SoundBank.Names.Length, "allSoundsMade");
+                wk.useOverride = true; d.dead = false;
+                if (!wk.InDozer) wk.GetIn();
+                sdPhase = 1; sdT0 = t; return;
+            case 1:
+                if (t - sdT0 < 2f) return;
+                sdIdleVol = da.EngineVolume; sdIdleLabour = da.Labour;
+                sdLog += " idle[vol=" + sdIdleVol.ToString("F2") + " labour=" + sdIdleLabour.ToString("F2") + "]";
+                SoundCheck(sdIdleVol > 0.1f, "engineIdles");
+                d.useOverride = true; d.overrideBlade = -1f; d.overrideThrottle = 0f;
+                sdPhase = 2; sdT0 = t; return;
+            case 2:
+                if (t - sdT0 < 1.5f) return;
+                d.overrideBlade = 0f; d.overrideThrottle = 1f;
+                sdPhase = 3; sdT0 = t; return;
+            case 3:
+                if (t - sdT0 < 6f) return;
+                sdLog += " pushing[rpm=" + da.Rpm.ToString("F2") + " labour=" + da.Labour.ToString("F2") + " bog=" + d.Bog.ToString("F2") + " heap=" + d.BladeLoadM3.ToString("F1") + "]";
+                SoundCheck(da.Rpm > 0.5f, "revsWithThrottle");
+                SoundCheck(da.Labour > sdIdleLabour + 0.2f, "laboursUnderLoad");
+                d.overrideThrottle = 0f; d.useOverride = false;
+                wk.GetOut();
+                sdPhase = 4; sdT0 = t; return;
+            case 4:
+                if (t - sdT0 < 1.5f) return;
+                SoundCheck(da.EngineVolume < 0.05f, "engineOffWhenOut(" + da.EngineVolume.ToString("F2") + ")");
+                sdPlayed0 = GameAudio.Played;
+                GameAudio.PlayAt("pick_rock", wk.transform.position);
+                GameAudio.Cash();
+                SoundCheck(GameAudio.Played >= sdPlayed0 + 2, "oneShotsPlay");
+                // the settings: step the volumes and read them back
+                sdOldMaster = GameAudio.Master; sdOldEngine = GameAudio.Engine; sdOldFx = GameAudio.Effects;
+                var pm = PauseMenu.Instance;
+                pm.Change(PauseMenu.SoundRow, -1); pm.Change(PauseMenu.SoundRow + 1, +1); pm.Change(PauseMenu.SoundRow + 2, -1); pm.Change(PauseMenu.SoundRow + 2, -1);
+                float m = GameAudio.Master, e = GameAudio.Engine, f = GameAudio.Effects;
+                PauseMenu.SavePrefs();
+                GameAudio.Master = GameAudio.Engine = GameAudio.Effects = 0.123f;
+                PauseMenu.LoadPrefs();
+                SoundCheck(Mathf.Approximately(GameAudio.Master, m) && Mathf.Approximately(GameAudio.Engine, e) && Mathf.Approximately(GameAudio.Effects, f)
+                           && Mathf.Abs(m - (sdOldMaster - 0.1f)) < 0.001f, "volumesKept(" + m.ToString("F1") + "," + e.ToString("F1") + "," + f.ToString("F1") + ")");
+                bool shake = PauseMenu.CameraShake;
+                pm.Change(PauseMenu.ShakeRow, 1);
+                SoundCheck(PauseMenu.CameraShake != shake, "shakeToggles");
+                pm.Change(PauseMenu.ShakeRow, 1);
+                GameAudio.Master = sdOldMaster; GameAudio.Engine = sdOldEngine; GameAudio.Effects = sdOldFx;
+                PauseMenu.SavePrefs();
+                sdPhase = 5; sdT0 = t; return;
+            case 5:
+                if (t - sdT0 < 0.5f) return;
+                SoundCheck(AudioListener.volume == GameAudio.Master, "masterOnListener");
+                SoundFinish(); return;
+        }
+    }
+
     // Autosave, carry on and New game:  -executeMethod BulldozerBuilder.AutosaveTest
     // Uses a save file of its own in Logs (never the owner's).  Waits for an autosave, saves with some coins, starts a
     // new game (the save goes aside as .old, the site starts fresh), then puts the save back, reloads, and checks the

@@ -192,6 +192,8 @@ public class SiteProps : MonoBehaviour
         if (Money.Instance == null) new GameObject("Money").AddComponent<Money>();
         if (Upgrades.Instance == null) new GameObject("Upgrades").AddComponent<Upgrades>();
         if (PauseMenu.Instance == null) new GameObject("Pause menu").AddComponent<PauseMenu>();   // Esc: resume, settings, quit
+        if (Hud.Instance == null) new GameObject("Hud").AddComponent<Hud>();                     // H help, F3 debug
+        if (GameAudio.Instance == null) new GameObject("Sound").AddComponent<GameAudio>();         // everything you hear
         if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
         Dump();
         Clutter();

@@ -429,7 +429,7 @@ public class MountainRoadJob : MonoBehaviour
         CabText = text + "\n" + act;
 
         const float W = 300f, H = 150f;
-        float x = Ui.W - W - 10f, y = Ui.H - H - 48f;   // bottom right, clear of the blade view and the upgrades box
+        float x = Ui.W - Hud.RightW - W - 2f * Hud.Margin, y = Ui.H - H - Hud.Margin;   // bottom right, left of the blade view
         GUI.Box(new Rect(x, y, W, H), "");
         var st = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold };
         GUI.Label(new Rect(x + 10, y + 6, W - 20, 90), text, st);

@@ -82,6 +82,10 @@ public class DozerController : MonoBehaviour
     public float overrideThrottle, overrideSteer, overrideBlade, overrideRipper, overrideAngle, overrideTilt;
 
     public float Speed { get; private set; }             // current speed, + forward, - reverse
+    public float Throttle { get { return throttleIn; } }  // the driver's throttle, -1..1 (the sound and the exhaust)
+    /// How fast the faster track is running, metres a second (slipping included).
+    public float TrackSpeed { get { return Mathf.Max(trackLeft != null ? Mathf.Abs(trackLeft.speed) : 0f, trackRight != null ? Mathf.Abs(trackRight.speed) : 0f); } }
+    public bool RipperIn { get { return ripperAngle < RipFrom; } }   // lowered into the ground, tearing it
     public float BladeHeight01 { get; private set; }     // 0 = down, 1 = fully up
     public float RipperHeight01 { get; private set; }
     public bool GyroHeld { get; private set; }           // the gyro button is down: the right stick is the blade
@@ -578,49 +582,97 @@ public class DozerController : MonoBehaviour
         return null;
     }
 
+    /// How high the middle of the blade's edge is above the bottom of the tracks, in metres (- = cutting in).
+    /// (The lower end of the edge, against where the tracks ride: the same as the blade view's number.)
+    public float EdgeAboveTracks
+    {
+        get
+        {
+            if (blade == null) return 0f;
+            return Mathf.Min(blade.TransformPoint(new Vector3(-2.25f, -0.75f, 1.1f)).y, blade.TransformPoint(new Vector3(2.25f, -0.75f, 1.1f)).y) - transform.position.y;
+        }
+    }
+    public bool AutoPaused { get { return autoPaused; } }
+    public static float FullLoadM3 { get { return FullLoad; } }
+
+    /// The blade's depth line for the screen: "Blade 12 cm down", "Auto: Cut 10 cm", "Auto paused ...".
+    public string DepthLine()
+    {
+        if (bladeAuto != BladeAutoMode.Off) return "Auto: " + BladeAutoName;
+        int cm = Mathf.RoundToInt(EdgeAboveTracks * 100f);
+        string hand = cm < 0 ? "Blade " + (-cm) + " cm down" : cm == 0 ? "Blade level with the tracks" : "Blade " + cm + " cm up";
+        return autoPaused ? hand + "   (Auto paused: " + Pad.Key("B", "A") + ")" : hand;
+    }
+
+    /// The warnings that apply right now (empty if none), one a line.
+    public string Warnings()
+    {
+        string w = "";
+        if (BlockedByRock) w += "HARD ROCK: back up and rip it first (" + Pad.Key("G", "LB") + ")\n";
+        if (Mathf.Abs(BladeYaw) > 3f)          // a swung blade sends its dirt off one end, so it never fills: easy to do by accident
+            w += "BLADE SWUNG " + Mathf.Abs(BladeYaw).ToString("F0") + " deg " + (BladeYaw > 0f ? "right" : "left") + ": dirt rolls off.  " + Pad.Key("X", "X") + " straightens it\n";
+        if (AtFence) w += (MountainRoad.DistanceTo(transform.position.x, transform.position.z) < MountainRoad.CorridorHalf + 1f
+                           ? "Edge of the road strip: steer back onto the road" : "Edge of the work site: turn round") + "\n";
+        if (AtCliff) w += "Too steep to climb: cut into it with the blade, or go round\n";
+        if (dead && !CanDrive) w += "The dozer needs its parts\n";
+        return w.TrimEnd('\n');
+    }
+
     void OnGUI()
     {
-        if (!showHelp || !driven) return;
+        if (!showHelp || !driven || Prologue.Playing) return;
         Ui.Begin();
-        string text = Pad.InUse ?
-            "Left stick   drive and steer          Y   get out          Start   upgrades\n" +
-            "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
-            "RB / LB   ripper up / down    (breaks up hard rock)\n" +
-            "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
-            "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; a trigger pauses it)\n" +
-            "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" :
-            "W / S   drive          A / D   steer\n" +
-            "R / F   blade up / down     (lower it into the ground to dig)\n" +
-            "T / G   ripper up / down    (breaks up hard rock)\n" +
-            "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-            "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; R / F pauses it)\n" +
-            "Right mouse drag: look round    Scroll: zoom\n";
-        text +=
-            "Speed " + (Speed * 3.6f).ToString("F1") + " km/h     " + Mathf.RoundToInt(fps) + " frames a second";
-        int lines = 0;
-        if (world != null)
+        float below = Hud.TopLeftBottom;
+        if (Hud.HelpOn)
         {
-            float v = VoxelWorld.VoxelVolume;
-            float carried = world.LoadVoxels * v;
-            text += "\nLoose dirt moving " + carried.ToString("F2") + " m3   (" + world.ClodCount + " clods)";
-            text += "\nGround " + (world.SolidCount * v).ToString("F3") + " m3 + moving " + (world.LoadVoxels * v).ToString("F3")
-                  + " = " + ((world.SolidCount + world.LoadVoxels) * v).ToString("F3");
-            text += "\nChange since start: " + (((world.SolidCount + world.LoadVoxels) - world.StartTotal) * v).ToString("F3") + " m3";
-            string ms = "";
-            for (int i = 0; i < 5; i++) ms += VoxelWorld.MsNames[i] + " " + world.MsAvg[i].ToString("F1") + "  ";
-            text += "\nWork per step (ms): " + ms;
-            lines = 4;
-            if (BladeYaw != 0f || BladeTilt != 0f) { text += "\nBlade angle " + BladeYaw.ToString("F0") + "   tilt " + BladeTilt.ToString("F0"); lines++; }
+            string text = Pad.InUse ?
+                "Left stick   drive and steer          Y   get out          Start   upgrades\n" +
+                "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
+                "RB / LB   ripper up / down    (breaks up hard rock)\n" +
+                "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
+                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; a trigger pauses it)\n" +
+                "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" +
+                "Back   menu     Left stick click   hide this help" :
+                "W / S   drive          A / D   steer          Enter   get out\n" +
+                "R / F   blade up / down     (lower it into the ground to dig)\n" +
+                "T / G   ripper up / down    (breaks up hard rock)\n" +
+                "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
+                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; R / F pauses it)\n" +
+                "Right mouse drag: look round    Scroll: zoom\n" +
+                "U   upgrades     Esc   menu     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
+            below = Hud.HelpBox(text, 560f);
         }
-        if (BlockedByRock) text += "\nHARD ROCK: back up and rip it first (" + Pad.Key("G", "LB") + ")";
-        if (AtFence) text += MountainRoad.DistanceTo(transform.position.x, transform.position.z) < MountainRoad.CorridorHalf + 1f
-                             ? "\nEdge of the road strip: steer back onto the road" : "\nEdge of the work site: turn round";
-        if (AtCliff) text += "\nToo steep to climb: cut into it with the blade, or go round";
-        // A swung blade sends its dirt off one end (that is what it is for), so the blade never fills.  Easy to do by
-        // accident with the d-pad, so say so.
-        bool swung = Mathf.Abs(BladeYaw) > 3f;
-        if (swung) text += "\nBLADE SWUNG " + Mathf.Abs(BladeYaw).ToString("F0") + " deg " + (BladeYaw > 0f ? "right" : "left") + ": dirt rolls off one end.  X straightens it";
-        int extra = lines + 1 + (BlockedByRock ? 1 : 0) + (AtFence ? 1 : 0) + (AtCliff ? 1 : 0) + (swung ? 1 : 0);
-        GUI.Box(new Rect(10, 10, 470, 121 + 17 * extra), text);
+        if (Hud.DebugOn)
+        {
+            string dbg = "Speed " + (Speed * 3.6f).ToString("F1") + " km/h     " + Mathf.RoundToInt(fps) + " frames a second     Bog " + Bog.ToString("F2");
+            dbg += "\nBlade load " + BladeLoadM3.ToString("F2") + " m3   cut rate " + CutRateM3.ToString("F2") + " m3/s   last cut " + LastCut;
+            if (world != null)
+            {
+                float v = VoxelWorld.VoxelVolume;
+                dbg += "\nLoose dirt moving " + (world.LoadVoxels * v).ToString("F2") + " m3   (" + world.ClodCount + " clods)";
+                dbg += "\nGround " + (world.SolidCount * v).ToString("F3") + " m3 + moving " + (world.LoadVoxels * v).ToString("F3")
+                     + " = " + ((world.SolidCount + world.LoadVoxels) * v).ToString("F3");
+                dbg += "\nChange since start: " + (((world.SolidCount + world.LoadVoxels) - world.StartTotal) * v).ToString("F3") + " m3";
+                string ms = "";
+                for (int i = 0; i < 5; i++) ms += VoxelWorld.MsNames[i] + " " + world.MsAvg[i].ToString("F1") + "  ";
+                dbg += "\nWork per step (ms): " + ms;
+            }
+            dbg += "\nBlade angle " + BladeYaw.ToString("F0") + "   tilt " + BladeTilt.ToString("F0") + "   arms " + bladeAngle.ToString("F1");
+            Hud.DebugBox(dbg, below);
+        }
+
+        // bottom right: over the blade view, how full the blade is, its depth, and the warnings that apply
+        string warn = Warnings();
+        float warnH = warn.Length == 0 ? 0f : Hud.Warn.CalcHeight(new GUIContent(warn), Hud.RightW - 20f) + 4f;
+        float h = 58f + warnH;
+        float bottom = Ui.H - Hud.Margin - BladeView.PanelHeight(this) - (BladeView.PanelHeight(this) > 0f ? 6f : 0f);
+        Rect r = Hud.RightPanel(bottom, h);
+        float x = r.x + 10f, y = r.y + 6f, wdt = r.width - 20f;
+        float load = BladeLoadM3 / FullLoad;
+        y = Hud.BarLine(x, y, wdt, "Blade", load, BladeLoadM3.ToString("F1") + " of " + FullLoad.ToString("F0") + " m3",
+                        Color.Lerp(new Color(0.85f, 0.6f, 0.25f), new Color(1f, 0.35f, 0.2f), Mathf.Clamp01(load - 0.6f) * 2.5f));
+        GUI.Label(new Rect(x, y, wdt, 22), DepthLine(), Hud.Small);
+        y += 24f;
+        if (warnH > 0f) GUI.Label(new Rect(x, y, wdt, warnH), warn, Hud.Warn);
     }
 }

@@ -5,6 +5,7 @@
 //   Settings    graphics: quality, shadows, view distance, full screen or windowed, resolution
 //               screen: UI size (how big the panels and help are drawn, 75% to 200%; see Ui.cs)
 //               controls: mouse speed, invert mouse look
+//               sound: master, engine and effects volume (GameAudio.cs); camera shake on or off
 //   New game    asks first; starts the site afresh (the old save is kept as a backup)
 //   Quit        asks first; the built game saves itself as it closes
 //
@@ -38,6 +39,7 @@ public class PauseMenu : MonoBehaviour
     public static readonly float[] ViewMetres = { 250f, 450f, 900f };     // Far is what the game had (SiteProps sets 900)
     public static int Quality = 1, View = 2;
     public static bool Shadows = true, InvertMouse, ShowFps;
+    public static bool CameraShake = true;                                // the camera bumps on hard hits (FollowCamera)
     public static float MouseSpeed = 1f;                                  // times the normal speed, 0.25 to 3
     public static float UltraAo = 2.0f;                                   // Ultra's ambient occlusion strength (Medium's is the scene's, 0.6)
 
@@ -50,6 +52,8 @@ public class PauseMenu : MonoBehaviour
         ShowFps = PlayerPrefs.GetInt("set.fps", 0) == 1;
         MouseSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("set.mouse", 1f), 0.25f, 3f);
         Ui.Size = Mathf.Clamp(PlayerPrefs.GetFloat("set.uisize", 1f), Ui.MinSize, Ui.MaxSize);
+        CameraShake = PlayerPrefs.GetInt("set.shake", 1) == 1;
+        GameAudio.LoadPrefs();
     }
 
     public static void SavePrefs()
@@ -61,6 +65,8 @@ public class PauseMenu : MonoBehaviour
         PlayerPrefs.SetInt("set.fps", ShowFps ? 1 : 0);
         PlayerPrefs.SetFloat("set.mouse", MouseSpeed);
         PlayerPrefs.SetFloat("set.uisize", Ui.Size);
+        PlayerPrefs.SetInt("set.shake", CameraShake ? 1 : 0);
+        GameAudio.SavePrefs();
         PlayerPrefs.Save();
     }
 
@@ -287,8 +293,9 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---- the settings page: one row each
-    public const int SettingRows = 10, UiSizeRow = 5;
-    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "UI size", "Show fps  (F11)", "Mouse speed", "Invert mouse look", "Back" };
+    public const int SettingRows = 14, UiSizeRow = 5, SoundRow = 9, ShakeRow = 12;
+    static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "UI size", "Show fps  (F11)", "Mouse speed", "Invert mouse look",
+                                              "Master volume", "Engine volume", "Effects volume", "Camera shake", "Back" };
 
     string SettingValue(int row)
     {
@@ -303,6 +310,10 @@ public class PauseMenu : MonoBehaviour
             case 6: return ShowFps ? "On" : "Off";
             case 7: return MouseSpeed.ToString("0.00") + "x";
             case 8: return InvertMouse ? "On" : "Off";
+            case 9: return Mathf.RoundToInt(GameAudio.Master * 100f) + "%";
+            case 10: return Mathf.RoundToInt(GameAudio.Engine * 100f) + "%";
+            case 11: return Mathf.RoundToInt(GameAudio.Effects * 100f) + "%";
+            case 12: return CameraShake ? "On" : "Off";
         }
         return "";
     }
@@ -321,8 +332,14 @@ public class PauseMenu : MonoBehaviour
             case 6: ShowFps = !ShowFps; break;
             case 7: MouseSpeed = Mathf.Clamp(Mathf.Round((MouseSpeed + dir * 0.25f) * 4f) / 4f, 0.25f, 3f); break;
             case 8: InvertMouse = !InvertMouse; break;
+            case 9: GameAudio.Master = Step10(GameAudio.Master, dir); break;
+            case 10: GameAudio.Engine = Step10(GameAudio.Engine, dir); break;
+            case 11: GameAudio.Effects = Step10(GameAudio.Effects, dir); break;
+            case 12: CameraShake = !CameraShake; break;
         }
     }
+
+    static float Step10(float v, int dir) { return Mathf.Clamp01(Mathf.Round(v * 10f + dir) / 10f); }
 
     /// For tests: shows the settings page.
     public void ShowSettings() { page = Page.Settings; sel = 0; }
@@ -334,16 +351,16 @@ public class PauseMenu : MonoBehaviour
         {
             Ui.Begin();
             GUI.depth = -20;
-            // top right, just left of the coins and the blade view (they take the corner itself)
+            // top right, in the corner (the coins are top left, the blade view bottom right)
             var fs = new GUIStyle(GUI.skin.box) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             fs.normal.textColor = new Color(1f, 1f, 0.85f);
-            GUI.Box(new Rect(Ui.W - 420f - 170f, 10f, 170f, 26f), FpsText, fs);
+            GUI.Box(new Rect(Ui.W - 170f - Hud.Margin, 10f, 170f, 26f), FpsText, fs);
         }
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = 560f;
-        float H = page == Page.Settings ? 560f : (page == Page.Quit || page == Page.NewGame) ? 220f : 334f;
-        Ui.Begin(W + 40f, 600f);                                         // (a big UI size is held down so Settings still fits)
+        float H = page == Page.Settings ? 742f : (page == Page.Quit || page == Page.NewGame) ? 220f : 334f;
+        Ui.Begin(W + 40f, page == Page.Settings ? H + 30f : 600f);                                         // (a big UI size is held down so Settings still fits)
         var area = new Rect((Ui.W - W) / 2f, (Ui.H - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
@@ -392,6 +409,7 @@ public class PauseMenu : MonoBehaviour
             if (i == 0) { GUI.Label(new Rect(x, y - 4f, w, 20f), "GRAPHICS", head); y += 16f; }
             if (i == UiSizeRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "SCREEN", head); y += 16f; }
             if (i == 7) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
+            if (i == SoundRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "SOUND", head); y += 16f; }
             if (i == SettingRows - 1)
             {
                 y += 8f;
