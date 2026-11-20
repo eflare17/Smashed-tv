@@ -1,4 +1,4 @@
-// Two small live pictures in the top right, because from the driver's camera the machine hides its own blade.
+// Two small live pictures in the bottom right, because from the driver's camera the machine hides its own blade.
 //   Side:      a slice through the ground along the machine, with the blade, ripper and the heap being pushed.
 //   From seat: the blade seen from behind, across its width, so you can see which end is lower when it is tilted.
 // Both show the real ground (topsoil, clay, rock) and the real loose clods.  V hides and shows them.
@@ -197,23 +197,33 @@ public class BladeView : MonoBehaviour
         GL.PushMatrix();
         GL.LoadPixelMatrix(0, width, height, 0);
         int w = SW * Zoom, x = width - w - 14, fw = FW * FZoom, fh = FH * FZoom;
-        Graphics.DrawTexture(new Rect(x, 30, w, SH * Zoom), sideTex);
-        Graphics.DrawTexture(new Rect(x + (w - fw) / 2, 30 + SH * Zoom + 28, fw, fh), frontTex);
+        int top = height - 10 - (SH * Zoom + fh + 78) + 24;
+        Graphics.DrawTexture(new Rect(x, top, w, SH * Zoom), sideTex);
+        Graphics.DrawTexture(new Rect(x + (w - fw) / 2, top + SH * Zoom + 28, fw, fh), frontTex);
         GL.PopMatrix();
+    }
+
+    /// How tall the panel is on screen (Ui units), so the dozer's status can sit on top of it.  0 if it isn't drawn.
+    public static float PanelHeight(DozerController d)
+    {
+        var bv = d != null ? d.GetComponent<BladeView>() : null;
+        if (bv == null || bv.sideTex == null) return 0f;
+        return bv.show ? SH * Zoom + FH * FZoom + 78 : 24f;
     }
 
     void OnGUI()
     {
         Ui.Begin();
-        if (world == null || sideTex == null || (dozer != null && !dozer.driven)) return;
+        if (world == null || sideTex == null || (dozer != null && !dozer.driven) || Prologue.Playing) return;
         if (label == null) label = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold };
-        int w = SW * Zoom, x = (int)Ui.W - w - 14;
-        if (!show) { GUI.Box(new Rect(Ui.W - 150, 10, 140, 24), "V   blade view"); return; }
+        int w = SW * Zoom, x = (int)(Ui.W - Hud.Margin - Hud.RightW + 6);
+        float top = Ui.H - Hud.Margin - PanelHeight(dozer);
+        if (!show) { GUI.Box(new Rect(Ui.W - Hud.Margin - 140, top, 140, 24), "V   blade view"); return; }
         int fw = FW * FZoom, fh = FH * FZoom;
-        GUI.Box(new Rect(x - 6, 6, w + 12, SH * Zoom + fh + 78), GUIContent.none);
-        GUI.Label(new Rect(x, 8, w, 20), "Side     " + depthText + "        (V hides)", label);
-        GUI.DrawTexture(new Rect(x, 30, w, SH * Zoom), sideTex);
-        int y2 = 30 + SH * Zoom + 6;
+        GUI.Box(new Rect(x - 6, top, w + 12, SH * Zoom + fh + 78), GUIContent.none);
+        GUI.Label(new Rect(x, top + 2, w, 20), "Side     " + depthText + "        (V hides)", label);
+        GUI.DrawTexture(new Rect(x, top + 24, w, SH * Zoom), sideTex);
+        float y2 = top + 24 + SH * Zoom + 6;
         GUI.Label(new Rect(x, y2, w, 20), "From the seat     " + angleText, label);
         GUI.DrawTexture(new Rect(x + (w - fw) / 2, y2 + 22, fw, fh), frontTex);
     }

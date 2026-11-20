@@ -56,6 +56,9 @@ public class FollowCamera : MonoBehaviour
     /// Set each frame the jackhammer is running (metres): the camera shakes that much this frame, then it is cleared.
     public static float Shake;
     public static float LastShake { get; private set; }
+    static float bump;
+    /// A one-off knock (metres) that dies away in a fraction of a second: the dozer hitting hard rock.
+    public static void Bump(float metres) { bump = Mathf.Max(bump, metres); }
     static bool shaken; static Vector3 calmPos, calmFwd;
 
     /// Where the camera is and looks, without this frame's shake.
@@ -68,7 +71,9 @@ public class FollowCamera : MonoBehaviour
     void LateUpdate()
     {
         Place();
-        float s = Shake; Shake = 0f; LastShake = s;
+        bump *= Mathf.Exp(-9f * Time.deltaTime);
+        float s = Mathf.Max(Shake, bump); Shake = 0f; LastShake = s;
+        if (!PauseMenu.CameraShake) s = 0f;                               // Esc > Settings > Camera shake
         shaken = false;
         if (s <= 0f || target == null) return;
         calmPos = transform.position; calmFwd = transform.forward; shaken = true;

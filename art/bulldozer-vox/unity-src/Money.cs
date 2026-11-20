@@ -64,6 +64,7 @@ public class Money : MonoBehaviour
         Coins += whole;
         Earned += whole;
         popCoins += whole;
+        if (whole > 0) { GameAudio.Cash(); Goals.Tipped(); }
         return whole;
     }
 
@@ -79,6 +80,8 @@ public class Money : MonoBehaviour
         Coins += whole;
         Earned += whole;
         sellText = "Sold " + litres.ToString("F0") + " L of gold:  +" + whole.ToString("N0") + " coins";
+        GameAudio.Cash();
+        Goals.GoldSold();
         sellTimer = 4f;
         return whole;
     }
@@ -93,6 +96,9 @@ public class Money : MonoBehaviour
         popCoins += coins; popTimer = 4f;
         sellText = why; sellTimer = 5f;
     }
+
+    /// A goal's bonus: coins straight in (the goal says so on screen itself).
+    public void Bonus(long coins) { if (coins <= 0) return; Coins += coins; Earned += coins; }
 
     public void Refund(long coins, int goldVoxels) { if (coins > 0) Coins += coins; if (goldVoxels > 0) GoldStore += goldVoxels; }
 
@@ -133,16 +139,19 @@ public class Money : MonoBehaviour
     {
         Ui.Begin();
         if (Prologue.Playing) return;
+        // top left, small: coins and gold
         var big = new GUIStyle(GUI.skin.box) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-        GUI.Box(new Rect(Ui.W - 230, 10, 220, 40), "Coins: " + Coins.ToString("N0"), big);
-        var goldStyle = new GUIStyle(big) { fontSize = 18 };
+        var coinStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+        var goldStyle = new GUIStyle(coinStyle) { fontSize = 16 };
         goldStyle.normal.textColor = new Color(1f, 0.82f, 0.2f);
-        GUI.Box(new Rect(Ui.W - 230, 54, 220, 32), "Gold: " + GoldLitres.ToString("F0") + " L", goldStyle);
+        GUI.Box(new Rect(Hud.Margin, 10, 200, 54), GUIContent.none);
+        GUI.Label(new Rect(Hud.Margin + 10, 11, 190, 28), Coins.ToString("N0") + " coins", coinStyle);
+        GUI.Label(new Rect(Hud.Margin + 10, 37, 190, 24), "Gold " + GoldLitres.ToString("F0") + " L", goldStyle);
         var pop = new GUIStyle(big) { fontSize = 20 };
         pop.normal.textColor = new Color(1f, 0.85f, 0.25f);
         if (popTimer > 0f)
         {
-            if (popCoins > 0) GUI.Box(new Rect(Ui.W - 230, 90, 220, 34), "+" + popCoins.ToString("N0"), pop);
+            if (popCoins > 0) GUI.Box(new Rect(Hud.Margin + 206, 10, 140, 34), "+" + popCoins.ToString("N0"), pop);
             // the hopper's sorting: what the load was, in litres; the gold goes to the gold store
             string sorted = "";
             for (int m = VoxelWorld.LooseSoil; m < VoxelWorld.LooseGold; m++)

@@ -8,7 +8,9 @@
 //
 // What is kept: the ground (only what has changed since the start, see VoxelWorldSave.cs), grass, every dirt
 // tally and loose clod, the cart's place and load, the dozer and the worker, which parts are found and fitted,
-// the coins and gold in the pot, and the upgrades bought.
+// the coins and gold in the pot, the upgrades bought, the mountain road's ticks, and the goals.
+// Each part is written one after the other; a part added later goes on the end, so a save from before it simply
+// stops early, and loading it gives that part its old-save start (the goals skip what that save has already done).
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -116,6 +118,9 @@ public class SaveGame : MonoBehaviour
                 var road = MountainRoadJob.Instance;
                 w.Write(road != null);
                 if (road != null) road.WriteState(w);
+                var goals = Goals.Instance;
+                w.Write(goals != null);
+                if (goals != null) goals.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -176,6 +181,11 @@ public class SaveGame : MonoBehaviour
                 try { hasRoad = hasUpgrades && r.ReadBoolean(); } catch (EndOfStreamException) { hasRoad = false; }   // saved before the mountain road
                 if (hasRoad) { if (road != null) road.ReadState(r); }
                 else if (road != null) road.Clear();
+                var goals = Goals.Instance;
+                bool hasGoals;
+                try { hasGoals = hasRoad && r.ReadBoolean(); } catch (EndOfStreamException) { hasGoals = false; }   // saved before the goals
+                if (hasGoals) { if (goals != null) goals.ReadState(r); }
+                else if (goals != null) goals.FromOldSave();
             }
         }
         catch (System.Exception e)

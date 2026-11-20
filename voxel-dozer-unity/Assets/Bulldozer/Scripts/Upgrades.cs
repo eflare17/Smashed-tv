@@ -153,6 +153,7 @@ public class Upgrades : MonoBehaviour
         boughtBy[i][next] = who;
         Apply();
         Note("Bought " + s.name + ".");
+        GameAudio.Play("upgrade", 0.8f);
         return true;
     }
 
@@ -543,9 +544,7 @@ public class Upgrades : MonoBehaviour
         if (Prologue.Playing) return;
         if (!Open)
         {
-            Ui.Begin();
-            GUI.Box(new Rect(Ui.W - 250, Ui.H - 36, 240, 26), (Pad.InUse ? "Start   upgrades, then Back   menu" : "U   upgrades      Esc   menu"));
-            return;
+            return;                                                // (U / Start is in the help, H)
         }
         GUI.depth = -5;                                           // over the help, the prompts and the labels
         Ui.Begin(PW + 40f, PH + 40f);                             // a big UI size is held down so the tree still fits

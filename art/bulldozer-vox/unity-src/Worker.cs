@@ -104,6 +104,8 @@ public class Worker : MonoBehaviour
     bool hammering;
     Transform jack;
     public bool Hammering { get { return hammering; } }
+    public bool Sucking { get; private set; }            // the backpack is sucking (the sound)
+    public float Stride { get { return stride; } }      // metres walked (the footsteps)
     public int GoldShattered { get; private set; }
     public float JackBite { get { return Mathf.Lerp(JackMin, jackMax, jackSize); } }
     /// Where his aim lands and how far that is from his chest (for the tests).
@@ -605,10 +607,12 @@ public class Worker : MonoBehaviour
             if (Pouring) Pour(dt);
             else if (use) Suck(dt);
             else suckAcc = 0f;
+            Sucking = use && !Pouring;
             Animate(move.magnitude);
             return;
         }
         Pouring = false;
+        Sucking = false;
 
         // ---- the jackhammer: it runs while you hold the button, one blow every jackInterval
         if (Tool == 0 && jackOwned)
@@ -713,6 +717,7 @@ public class Worker : MonoBehaviour
         Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.5f, 1f, 3.5f) + Vector3.up * 0.9f;
         if (world.Pick(aimPoint + aimDir * 0.08f, JackBite, kick, JackShatter, true) > 0) PickHits++;
         JackFX.Blow(aimPoint, -aimDir, aimMat, JackBiteFrac, aimMat == VoxelWorld.Gold || world.LastShattered > 0);
+        if (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.LooseGold) Goals.GoldSeen();
         if (world.LastShattered > 0)
         {
             GoldShattered += world.LastShattered;
@@ -730,13 +735,19 @@ public class Worker : MonoBehaviour
             Vector3 toFeet = transform.position - aimPoint; toFeet.y = 0f;
             float away = toFeet.magnitude;
             Vector3 kick = (away > 0.01f ? toFeet / away : -aimDir) * Mathf.Clamp((away - 0.7f) / 0.45f, 1.3f, 4f) + Vector3.up * 1.1f;
-            if (aimInReach && world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, kick) > 0) PickHits++;
-            else if (aimFound && !aimInReach) Say("Too far away.  Get closer.", 1.5f);
+            if (aimInReach)
+            {
+                GameAudio.PlayAt(aimMat == VoxelWorld.Gold ? "pick_gold" : rock ? "pick_rock" : "pick_dirt", aimPoint, 0.9f, 0.92f + 0.16f * Random.value);
+                if (aimMat == VoxelWorld.Gold || aimMat == VoxelWorld.LooseGold) Goals.GoldSeen();
+                if (world.Pick(aimPoint + aimDir * 0.1f, rock ? pickRadius * pickRockFactor : pickRadius, kick) > 0) PickHits++;
+            }
+            else if (aimFound) Say("Too far away.  Get closer.", 1.5f);
         }
         else if (swing == Swing.Dig)
         {
             if (!aimInReach) { if (aimFound) Say("Too far away.  Get closer.", 1.5f); return; }
-            if (world.Scoop(aimPoint + aimDir * 0.06f, scoopRadius, shovelHolds) > 0) Scoops++;
+            if (world.Scoop(aimPoint + aimDir * 0.06f, scoopRadius, shovelHolds) > 0) { Scoops++; GameAudio.PlayAt("shovel_scrape", aimPoint, 0.8f, 0.9f + 0.2f * Random.value); }
+            else if (rock) GameAudio.PlayAt("pick_rock", aimPoint, 0.4f, 1.3f);
             else if (rock) Say("Solid rock.  Break it up with the pick first (1).", 2.5f);
         }
         else if (swing == Swing.Throw)
@@ -750,6 +761,8 @@ public class Worker : MonoBehaviour
             Vector3 velocity = gap / time + Vector3.up * (0.5f * 9.81f * time);
             world.Throw(from, velocity, throwIntoCart ? 0.3f : 0.8f, time + 0.08f);
             Throws++;
+            GameAudio.PlayAt("shovel_whump", throwAt, throwIntoCart ? 0.9f : 0.7f, throwIntoCart ? 1.1f : 0.9f + 0.2f * Random.value, time);
+            HeavyFX.Dust(throwAt, 3, 0.35f, HeavyFX.DustColour(VoxelWorld.LooseSoil), time);
         }
     }
 
@@ -1146,50 +1159,73 @@ public class Worker : MonoBehaviour
             var style = new GUIStyle(GUI.skin.box) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
             GUI.Box(new Rect(Ui.W / 2 - 330, Ui.H - 110, 660, 44), say, style);
         }
-        if (InDozer) { GUI.Box(new Rect(10, Ui.H - 34, 170, 24), Pad.Key("Enter", "Y") + "   get out"); return; }
+        if (InDozer) return;                                      // (the dozer draws its own; Enter / Y in its help)
         if (Dingo.Working) return;                               // (Dingo: it draws its own help)
         if (Tool == 2 && !backpackOwned) SetTool(1);
-        string tool = Tool == 0 ? (jackOwned ? "JACKHAMMER   bite size " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") + (Pad.InUse ? "   d-pad up / down" : "   Shift+wheel or [ ]") : "PICK") : Tool == 1 ? "SHOVEL" : "BACKPACK";
-        string load = Tool == 1 ? "   holding " + (world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " litres" + (world.ShovelVoxels >= VoxelWorld.ClodVoxels ? " (use again to throw)" : "") : "";
-        string text = Pad.InUse ?
-            "Right stick   look and aim     Left stick   walk     Back   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
-            "RB / LB   next / last tool     Right trigger   use it where you aim (hold)     A   grab / tip / sell / fit\n" +
-            "X   squirt backpack into cart     B   tip cart     Y   get in the dozer     Start   upgrades\n" +
-            "Tool: " + tool + load :
-            "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
-            "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
-            "Esc   free the mouse        Enter   get in the dozer        F5 save   F6 load\n" +
-            "Tool: " + tool + load;
-        GUI.Box(new Rect(10, 10, 640, 86), text);
-        // the backpack gauge, always: a bar that fills, and the litres
-        float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
-        if (backpackOwned) GUI.Box(new Rect(656, 10, 300, 58), "Backpack: " + packL.ToString("F0") + " of " + packMax.ToString("F0") + " litres" + (Pouring ? "   (squirting)" : world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? "   FULL" : "") + "\n" + Pad.Key("Q", "X") + " by the cart squirts it in");
+        string tool = Tool == 0 ? (jackOwned ? "Jackhammer   bite " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") : "Pick") : Tool == 1 ? "Shovel" : "Backpack";
+        float shovelL = world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f;
+        var cart = MineCart.Instance;
+        float below = Hud.TopLeftBottom;
+        if (Hud.HelpOn)
+        {
+            string help = Pad.InUse ?
+                "Right stick   look and aim     Left stick   walk     Back   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
+                "RB / LB   next / last tool     Right trigger   use it where you aim (hold)     A   grab / tip / sell / fit\n" +
+                "X   squirt backpack into cart     B   tip cart     Y   get in the dozer     Start   upgrades\n" +
+                (jackOwned ? "D-pad up / down   jackhammer bite size\n" : "") +
+                "Cart: A at an end holds it, left stick pushes" + (cart != null && cart.spec.motor ? ", d-pad right rides it" : "") + ".  At the dump A tips it.\n" +
+                "Left stick click   hide this help" :
+                "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
+                "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
+                (jackOwned ? "Shift+wheel or [ ]   jackhammer bite size\n" : "") +
+                "Cart: E at an end holds it, W push, S pull, E let go, T tips it" + (cart != null && cart.spec.motor ? ", R rides it" : "") + ".  At the dump E tips it.\n" +
+                "Q   squirt the backpack into the cart        Enter   get in the dozer\n" +
+                "U   upgrades     Esc   menu (and frees the mouse)     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
+            below = Hud.HelpBox(help, 640f);
+        }
+        if (Hud.DebugOn)
+        {
+            float v = VoxelWorld.VoxelVolume;
+            string dbg = "At " + transform.position.x.ToString("F1") + ", " + transform.position.y.ToString("F2") + ", " + transform.position.z.ToString("F1")
+                       + "   shovel " + world.ShovelVoxels + "   pack " + world.PackVoxels + "   cart " + world.CartVoxels + " voxels";
+            dbg += "\nGround " + (world.SolidCount * v).ToString("F3") + " m3 + moving " + (world.LoadVoxels * v).ToString("F3") + "   (" + world.ClodCount + " clods)";
+            string ms = "";
+            for (int i = 0; i < 5; i++) ms += VoxelWorld.MsNames[i] + " " + world.MsAvg[i].ToString("F1") + "  ";
+            dbg += "\nWork per step (ms): " + ms;
+            Hud.DebugBox(dbg, below);
+        }
+
+        // bottom right: the tool, the cart and the backpack, each with how full it is
+        string carrying = "";
+        var finds0 = Finds.Instance;
+        if (finds0 != null) for (int i = 0; i < Finds.Count; i++) if (finds0.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
+        string riding = "";
+        if (cart != null && RidingCart) riding = Pad.InUse ? "Riding: stick up out, down in, d-pad right off" : "Riding: W out   S in   R off";
+        else if (cart != null && HoldingCart != 0) riding = Pad.InUse ? "Holding the cart: stick pushes, A lets go" : "Holding the cart: W push   S pull   E let go";
+        float h = 34f + (cart != null ? 22f : 0f) + (backpackOwned ? 22f : 0f) + (carrying.Length > 0 ? 22f : 0f) + (riding.Length > 0 ? 22f : 0f);
+        Rect pr = Hud.RightPanel(Ui.H - Hud.Margin, h);
+        float px = pr.x + 10f, py = pr.y + 6f, pw = pr.width - 20f;
+        GUI.Label(new Rect(px, py, pw, 22), tool + (Tool == 1 && shovelL > 0.5f ? "   holding " + shovelL.ToString("F0") + " L" : ""), Hud.SmallBold);
+        py += 26f;
+        if (cart != null)
+        {
+            float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
+            py = Hud.BarLine(px, py, pw, "Cart", litres / holds, litres.ToString("F0") + " of " + holds.ToString("F0") + " L", new Color(0.8f, 0.62f, 0.38f));
+        }
         if (backpackOwned)
         {
-            GUI.DrawTexture(new Rect(664, 54, 284, 7), Texture2D.grayTexture);
-            GUI.DrawTexture(new Rect(664, 54, 284 * Mathf.Clamp01(packL / packMax), 7), Texture2D.whiteTexture);
+            float packL = world.PackVoxels * VoxelWorld.VoxelVolume * 1000f, packMax = packHolds * VoxelWorld.VoxelVolume * 1000f;
+            py = Hud.BarLine(px, py, pw, Pouring ? "Pack >>" : "Backpack", packL / packMax, packL.ToString("F0") + " of " + packMax.ToString("F0") + " L",
+                             world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? new Color(1f, 0.45f, 0.25f) : new Color(0.55f, 0.75f, 0.95f));
         }
+        if (carrying.Length > 0) { GUI.Label(new Rect(px, py, pw, 22), "Carrying: " + carrying, Hud.Small); py += 22f; }
+        if (riding.Length > 0) { GUI.Label(new Rect(px, py, pw, 22), riding, Hud.Small); py += 22f; }
         // the jackhammer on the quartz seam with too big a bite: warn before the gold is smashed
         if (GoldWarning)
         {
             var warn = new GUIStyle(GUI.skin.box) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             warn.normal.textColor = new Color(1f, 0.75f, 0.2f);
             GUI.Box(new Rect(Ui.W / 2 - 450, Ui.H * 0.54f, 900, 40), "Gold seam!  Bite too big: you'll lose gold.  " + Pad.Key("Shift+wheel or [", "D-pad down") + " to go smaller", warn);
-        }
-        var cart = MineCart.Instance;
-        if (cart != null && cart.Near(transform.position, 7.5f))
-        {
-            float litres = world.CartVoxels * VoxelWorld.VoxelVolume * 1000f, holds = cart.capacity * VoxelWorld.VoxelVolume * 1000f;
-            string what = Pad.InUse
-                        ? (cart.AtDump && !RidingCart ? "AT THE DUMP: A tips it into the hopper and you get paid."
-                        : RidingCart ? "Riding:  left stick up drive out   down back in   d-pad right get off   (it stops at the dump: A tips it)"
-                        : HoldingCart != 0 ? "Left stick push / pull back   A let go   B tip   (the dump and hopper are at the end of the rails)"
-                        : "Shovelfuls go in it.   X squirts the backpack in.   A at an end holds it.   B tips it." + (cart.spec.motor ? "   D-pad right rides it." : ""))
-                        : cart.AtDump && !RidingCart ? "AT THE DUMP: E tips it into the hopper and you get paid."
-                        : RidingCart ? "Riding:  W drive out   S back in   R get off   (it stops at the dump: E tips it)"
-                        : HoldingCart != 0 ? "W push   S pull back   E let go   T tip   (the dump and hopper are at the end of the rails)"
-                        : "Shovelfuls go in it.   Q squirts the backpack in.   E at an end holds it.   T tips it." + (cart.spec.motor ? "   R rides it." : "");
-            GUI.Box(new Rect(10, 102, 640, 24), "Cart: " + litres.ToString("F0") + " of " + holds.ToString("F0") + " litres.   " + what);
         }
         // at the hopper with a load: say so, in the middle of the screen
         if (cart != null && cart.AtDump && cart.Near(transform.position, 3.2f) && world.CartVoxels >= VoxelWorld.ClodVoxels && !cart.Tipping)
@@ -1213,9 +1249,6 @@ public class Worker : MonoBehaviour
             if (carried >= 0 && NearDozer()) partLine = "Press " + Pad.Key("E", "A") + " to fit the " + Finds.Names[carried];
             else if (here >= 0) partLine = "Press " + Pad.Key("E", "A") + " to pick up the " + Finds.Names[here];
             if (partLine != null) GUI.Box(new Rect(Ui.W / 2 - 210, Ui.H * 0.70f, 420, 40), partLine, prompt);
-            string carrying = "";
-            for (int i = 0; i < Finds.Count; i++) if (finds.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
-            if (carrying.Length > 0) GUI.Box(new Rect(10, 132, 540, 24), "Carrying: " + carrying);
         }
         // at the gold buyer's counter: what E does here
         if (AtGoldShed() && Money.Instance != null)

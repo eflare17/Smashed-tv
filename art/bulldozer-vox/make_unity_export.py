@@ -457,9 +457,10 @@ public static class BulldozerBuilder
         {
             Vector3 p = d.transform.position;
             long solid1 = w.CountSolid();
+            bool digOk = (solid1 + w.LoadVoxels) - testSolid0 == 0 && w.SolidCount - solid1 == 0 && p.z - testPos0.z > 5f && w.TotalCut > 0;
             float heap = w.MaxHeightIn(p.x - 3f, testPos0.z, p.x + 3f, p.z + 8f);
             float cutFloor = w.HeightAt(testPos0.x, testPos0.z + 6f);
-            Debug.Log("BULLDOZER_DIG_RESULT drove=" + (p.z - testPos0.z).ToString("F1") + "m"
+            Debug.Log((digOk ? "BULLDOZER_DIG_RESULT" : "BULLDOZER_DIG_FAILED") + " drove=" + (p.z - testPos0.z).ToString("F1") + "m"
                 + " bladeMoved=" + w.TotalCut + " ripped=" + w.TotalRipped
                 + " notGroundNow=" + w.LoadVoxels + " trackedGround=" + w.SolidCount
                 + " volumeChange=" + ((solid1 + w.LoadVoxels) - testSolid0) + " trackingError=" + (w.SolidCount - solid1)
@@ -490,7 +491,7 @@ public static class BulldozerBuilder
                 cam.transform.LookAt(d.transform.position + Vector3.up * 0.9f);
                 TestCapture("dig_test_track.png");
             }
-            TestFinish(0);
+            TestFinish(digOk ? 0 : 1);
         }
     }
 
@@ -893,13 +894,17 @@ public static class BulldozerBuilder
             d.overrideSteer = Mathf.Clamp(want * 0.6f, -1f, 1f);
             hMaxY = Mathf.Max(hMaxY, d.transform.position.y); hMaxZ = Mathf.Max(hMaxZ, d.transform.position.z);
             if (k > 6f && hLog.IndexOf("climbPic") < 0) { TestCapture("hill_dozer_climb.png"); hLog += " climbPic"; }
-            if (k > 1.2f && k < 3f && Mathf.Repeat(k, 0.4f) < Time.deltaTime) hLog += " [k" + k.ToString("F1") + " at" + d.transform.position.ToString("F2") + " v" + d.Speed.ToString("F2") + " rock" + d.BlockedByRock + " fence" + d.AtFence + " cliff" + d.AtCliff + " useO" + d.useOverride + " thr" + d.overrideThrottle + " paused" + PauseMenu.Paused + " tree" + Upgrades.Instance.Open + " dead" + d.dead + "]";
+            if (d.BlockedByRock && hLog.IndexOf("firstRock") < 0)
+            {
+                hLog += " firstRock=" + d.transform.position.ToString("F1") + " blade01=" + d.BladeHeight01.ToString("F2") + " edge=" + d.EdgeAboveTracks.ToString("F2");
+            }
             if (k > 3f && hLog.IndexOf("at3s") < 0) hLog += " at3s=" + d.transform.position.ToString("F1") + " speed=" + d.Speed.ToString("F2") + " driven=" + d.driven;
             if (k < 16f) return;
             d.overrideThrottle = 0f;
-            hLog += " dozerReachedZ=" + hMaxZ.ToString("F1") + " dozerMaxY=" + hMaxY.ToString("F2") + " onHilltop=" + (hMaxY > 3.5f) + " atCliff=" + d.AtCliff;
-            Debug.Log("BULLDOZER_HILL_RESULT " + hLog);
-            HillFinish(0);
+            hLog += " dozerReachedZ=" + hMaxZ.ToString("F1") + " dozerMaxY=" + hMaxY.ToString("F2") + " onHilltop=" + (hMaxY > 3.5f) + " atCliff=" + d.AtCliff + " glancedOffRock=" + d.Glanced;
+            bool up = hMaxY > 3.5f;
+            if (up) Debug.Log("BULLDOZER_HILL_RESULT " + hLog); else Debug.LogError("BULLDOZER_HILL_FAILED (never reached the hilltop) " + hLog);
+            HillFinish(up ? 0 : 1);
         }
     }
 
@@ -1758,8 +1763,13 @@ public static class BulldozerBuilder
             if (t - uPhaseStart < 0.8f) return;
             wk.overrideUse = false;
             uLog += " realScoop=" + (uMaxShovel * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L(level1 max 117L)";
-            Debug.Log("BULLDOZER_UPGRADE_RESULT " + uLog);
-            UpgradeFinish(0);
+            bool uOk = uMaxShovel * VoxelWorld.VoxelVolume * 1000f > 117f;
+            foreach (var want in new[] { "start=P1/S1/B0/C1", "backpackLocked=True", "buyBroke=False", "backpackBeforeShovel6=False", "shovel=6 ", "paid=632(want 632)",
+                                         "buyBackpack=True", "owned=True", "sellShovel6WithPack=False", "sellBackpack=True", "refunded=True", "ownedAfter=False",
+                                         "backpackMax=8", "resetOk=True", "holdsBack=1400" })
+                if (uLog.IndexOf(want) < 0) { uOk = false; uLog += " WRONG[" + want + "]"; }
+            Debug.Log((uOk ? "BULLDOZER_UPGRADE_RESULT " : "BULLDOZER_UPGRADE_FAILED ") + uLog);
+            UpgradeFinish(uOk ? 0 : 1);
         }
     }
 
@@ -3227,9 +3237,10 @@ public static class BulldozerBuilder
         if (bPhase == 7)
         {
             if (t - bPhaseStart < 7f) return;
-            bLog += " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - bVolume0);
-            Debug.Log("BULLDOZER_PACK_RESULT " + bLog);
-            BackpackFinish(0);
+            long bChange = (w.CountSolid() + w.LoadVoxels) - bVolume0;
+            bLog += " volumeChange=" + bChange;
+            Debug.Log((bChange == 0 ? "BULLDOZER_PACK_RESULT " : "BULLDOZER_PACK_FAILED ") + bLog);
+            BackpackFinish(bChange == 0 ? 0 : 1);
         }
     }
 
@@ -3999,9 +4010,10 @@ public static class BulldozerBuilder
         if (cPhase == 6)
         {
             if (t - cPhaseStart < 7f) return;                                  // let it all settle into ground
-            cLog += " clodsStillLoose=" + w.ClodCount + " volumeChange=" + ((w.CountSolid() + w.LoadVoxels) - cVolume0);
-            Debug.Log("BULLDOZER_CART_RESULT " + cLog);
-            CartFinish(0);
+            long cChange = (w.CountSolid() + w.LoadVoxels) - cVolume0;
+            cLog += " clodsStillLoose=" + w.ClodCount + " volumeChange=" + cChange;
+            Debug.Log((cChange == 0 ? "BULLDOZER_CART_RESULT " : "BULLDOZER_CART_FAILED ") + cLog);
+            CartFinish(cChange == 0 ? 0 : 1);
         }
     }
 
@@ -4067,6 +4079,450 @@ public static class BulldozerBuilder
         if (puPhase == 2) { d.overrideBlade = 1f; if (t - puT0 < 1.5f) return; d.Place(puStart, 0f); puPhase = 3; puT0 = t; return; }
         Debug.Log("BULLDOZER_PUSH_RESULT" + puLog);
         PushFinish(0);
+    }
+
+    // The clean screen:  -executeMethod BulldozerBuilder.HudTest
+    // The help shows by itself at the start of a new game and goes with H; the dozer's corner shows the blade load and
+    // depth; on foot the tool and the cart.  Takes hud_*.png in Logs.  Prints BULLDOZER_HUD_RESULT.
+    static int hdPhase; static float hdT0; static string hdLog; static bool hdOk;
+    public static void HudTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        hdPhase = 0; hdLog = ""; hdOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += HudTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void HudCheck(bool ok, string what) { hdLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) hdOk = false; }
+    static void HudShot(string name) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/" + name); }
+    static void HudFinish()
+    {
+        EditorApplication.update -= HudTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        Hud.HelpKey = false; Hud.DebugOn = false;
+        if (hdOk) Debug.Log("BULLDOZER_HUD_RESULT" + hdLog); else Debug.LogError("BULLDOZER_HUD_FAILED phase " + hdPhase + hdLog);
+        EditorApplication.Exit(hdOk ? 0 : 1);
+    }
+    static void HudTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { hdLog += " timed out"; hdOk = false; HudFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null || Hud.Instance == null) return;
+        float t = Time.time;
+        switch (hdPhase)
+        {
+            case 0:
+                if (t < 2f) return;
+                wk.useOverride = true; d.dead = false;
+                if (!wk.InDozer) wk.GetIn();
+                HudCheck(Hud.HelpOn, "helpAtStart");
+                hdPhase = 1; hdT0 = t; return;
+            case 1:
+                if (t - hdT0 < 0.5f) return;
+                HudShot("hud_help_dozer.png");
+                hdPhase = 2; hdT0 = t; return;
+            case 2:
+                if (t - hdT0 < 0.5f) return;
+                Hud.SkipFirstHelp();
+                HudCheck(!Hud.HelpOn, "helpGoesAway");
+                Hud.ToggleHelp(); HudCheck(Hud.HelpOn, "hShowsIt");
+                Hud.ToggleHelp(); HudCheck(!Hud.HelpOn, "hHidesIt");
+                d.useOverride = true; d.overrideBlade = -1f; d.overrideThrottle = 0f;
+                hdPhase = 3; hdT0 = t; return;
+            case 3:
+                if (t - hdT0 < 1.5f) return;
+                d.overrideBlade = 0f; d.overrideThrottle = 1f;
+                hdPhase = 4; hdT0 = t; return;
+            case 4:
+                if (t - hdT0 < 4f) return;
+                hdLog += " depth=[" + d.DepthLine() + "] load=" + d.BladeLoadM3.ToString("F1");
+                HudCheck(d.DepthLine().StartsWith("Blade") && d.DepthLine().Contains(" cm "), "depthShown");
+                HudCheck(d.BladeLoadM3 > 0.3f, "bladeHasLoad");
+                d.overrideBlade = 0f; d.overrideAngle = 1f;
+                hdPhase = 5; hdT0 = t; return;
+            case 5:
+                if (t - hdT0 < 1.2f) return;
+                d.overrideAngle = 0f; d.overrideThrottle = 0f;
+                HudCheck(d.Warnings().Contains("BLADE SWUNG"), "swungWarning");
+                HudShot("hud_dozer.png");
+                hdPhase = 6; hdT0 = t; return;
+            case 6:
+                if (t - hdT0 < 0.5f) return;
+                Hud.DebugOn = true;
+                hdPhase = 7; hdT0 = t; return;
+            case 7:
+                if (t - hdT0 < 0.5f) return;
+                HudShot("hud_debug.png");
+                Hud.DebugOn = false;
+                d.useOverride = false;
+                wk.GetOut();
+                hdPhase = 8; hdT0 = t; return;
+            case 8:
+                if (t - hdT0 < 1.5f) return;
+                HudCheck(!wk.InDozer, "gotOut");
+                HudShot("hud_foot.png");
+                hdPhase = 9; hdT0 = t; return;
+            case 9:
+                if (t - hdT0 < 0.5f) return;
+                HudFinish(); return;
+        }
+    }
+
+    // The sound:  -executeMethod BulldozerBuilder.SoundTest
+    // Every sound gets made, the engine idles in the seat and works harder pushing a heap, the pick makes a sound, and
+    // the volume settings step and are kept.  Prints BULLDOZER_SOUND_RESULT.
+    static int sdPhase; static float sdT0, sdIdleVol, sdIdleLabour; static string sdLog; static bool sdOk; static int sdPlayed0;
+    static float sdOldMaster, sdOldEngine, sdOldFx;
+    public static void SoundTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        sdPhase = 0; sdLog = ""; sdOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += SoundTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void SoundCheck(bool ok, string what) { sdLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) sdOk = false; }
+    static void SoundFinish()
+    {
+        EditorApplication.update -= SoundTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (sdOk) Debug.Log("BULLDOZER_SOUND_RESULT" + sdLog); else Debug.LogError("BULLDOZER_SOUND_FAILED phase " + sdPhase + sdLog);
+        EditorApplication.Exit(sdOk ? 0 : 1);
+    }
+    static void SoundTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { sdLog += " timed out"; sdOk = false; SoundFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || d.Blade == null || GameAudio.Instance == null) return;
+        var da = d.GetComponent<DozerAudio>();
+        float t = Time.time;
+        switch (sdPhase)
+        {
+            case 0:
+                if (t < 2f || da == null) return;
+                int made = 0; float secs = 0f;
+                foreach (var n in SoundBank.Names) { var c = SoundBank.Get(n); if (c != null && c.samples > 100) { made++; secs += c.length; } }
+                sdLog += " sounds=" + made + "/" + SoundBank.Names.Length + " (" + secs.ToString("F1") + " s)";
+                SoundCheck(made == SoundBank.Names.Length, "allSoundsMade");
+                wk.useOverride = true; d.dead = false;
+                if (!wk.InDozer) wk.GetIn();
+                sdPhase = 1; sdT0 = t; return;
+            case 1:
+                if (t - sdT0 < 2f) return;
+                sdIdleVol = da.EngineVolume; sdIdleLabour = da.Labour;
+                sdLog += " idle[vol=" + sdIdleVol.ToString("F2") + " labour=" + sdIdleLabour.ToString("F2") + "]";
+                SoundCheck(sdIdleVol > 0.1f, "engineIdles");
+                d.useOverride = true; d.overrideBlade = -1f; d.overrideThrottle = 0f;
+                sdPhase = 2; sdT0 = t; return;
+            case 2:
+                if (t - sdT0 < 1.5f) return;
+                d.overrideBlade = 0f; d.overrideThrottle = 1f;
+                sdPhase = 3; sdT0 = t; return;
+            case 3:
+                if (t - sdT0 < 6f) return;
+                sdLog += " pushing[rpm=" + da.Rpm.ToString("F2") + " labour=" + da.Labour.ToString("F2") + " bog=" + d.Bog.ToString("F2") + " heap=" + d.BladeLoadM3.ToString("F1") + "]";
+                SoundCheck(da.Rpm > 0.5f, "revsWithThrottle");
+                SoundCheck(da.Labour > sdIdleLabour + 0.2f, "laboursUnderLoad");
+                // the heavy feel: smoke and dust are being made, the nose has lifted with the full blade
+                sdLog += " fx[puffs=" + HeavyFX.Emitted + " alive=" + HeavyFX.Alive + " feltPitch=" + d.FeltPitch.ToString("F2") + "]";
+                SoundCheck(HeavyFX.Emitted > 20 && HeavyFX.Alive > 0, "smokeAndDust");
+                SoundCheck(d.FeltPitch < -0.2f, "noseLiftsWithLoad");
+                d.overrideThrottle = 0f; d.useOverride = false;
+                wk.GetOut();
+                sdPhase = 4; sdT0 = t; return;
+            case 4:
+                if (t - sdT0 < 1.5f) return;
+                SoundCheck(da.EngineVolume < 0.05f, "engineOffWhenOut(" + da.EngineVolume.ToString("F2") + ")");
+                sdPlayed0 = GameAudio.Played;
+                GameAudio.PlayAt("pick_rock", wk.transform.position);
+                GameAudio.Cash();
+                SoundCheck(GameAudio.Played >= sdPlayed0 + 2, "oneShotsPlay");
+                // the settings: step the volumes and read them back
+                sdOldMaster = GameAudio.Master; sdOldEngine = GameAudio.Engine; sdOldFx = GameAudio.Effects;
+                var pm = PauseMenu.Instance;
+                pm.Change(PauseMenu.SoundRow, -1); pm.Change(PauseMenu.SoundRow + 1, +1); pm.Change(PauseMenu.SoundRow + 2, -1); pm.Change(PauseMenu.SoundRow + 2, -1);
+                float m = GameAudio.Master, e = GameAudio.Engine, f = GameAudio.Effects;
+                PauseMenu.SavePrefs();
+                GameAudio.Master = GameAudio.Engine = GameAudio.Effects = 0.123f;
+                PauseMenu.LoadPrefs();
+                SoundCheck(Mathf.Approximately(GameAudio.Master, m) && Mathf.Approximately(GameAudio.Engine, e) && Mathf.Approximately(GameAudio.Effects, f)
+                           && Mathf.Abs(m - (sdOldMaster - 0.1f)) < 0.001f, "volumesKept(" + m.ToString("F1") + "," + e.ToString("F1") + "," + f.ToString("F1") + ")");
+                bool shake = PauseMenu.CameraShake;
+                pm.Change(PauseMenu.ShakeRow, 1);
+                SoundCheck(PauseMenu.CameraShake != shake, "shakeToggles");
+                pm.Change(PauseMenu.ShakeRow, 1);
+                GameAudio.Master = sdOldMaster; GameAudio.Engine = sdOldEngine; GameAudio.Effects = sdOldFx;
+                PauseMenu.SavePrefs();
+                sdPhase = 5; sdT0 = t; return;
+            case 5:
+                if (t - sdT0 < 0.5f) return;
+                SoundCheck(AudioListener.volume == GameAudio.Master, "masterOnListener");
+                SoundFinish(); return;
+        }
+    }
+
+    // The goals:  -executeMethod BulldozerBuilder.GoalsTest
+    // A new game starts on the first goal.  Shovelling into the first cave-in ticks it (bonus paid, sound played).
+    // Buying an upgrade ticks that one.  The goals go through a save and a load.  A save from before the goals skips
+    // what it has already done.  Then a COPY of the owner's save (Logs/goals_owner_copy.bin, if the scratchpad one is
+    // given) is loaded to check it still carries on.  Never writes the owner's own save.  Prints BULLDOZER_GOALS_RESULT.
+    static int glPhase; static float glT0; static string glLog; static bool glOk; static long glCoins; static int glPlayed;
+    static string GlFile { get { return Application.dataPath + "/../Logs/goals_test.bin"; } }
+    static string GlOwnerCopy { get { return Application.dataPath + "/../Logs/goals_owner_copy.bin"; } }
+    public static void GoalsTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        glPhase = 0; glLog = ""; glOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += GoalsTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void GoalsCheck(bool ok, string what) { glLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) glOk = false; }
+    static void GoalsFinish()
+    {
+        SaveGame.PathOverride = null;
+        EditorApplication.update -= GoalsTick; EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (glOk) Debug.Log("BULLDOZER_GOALS_RESULT" + glLog); else Debug.LogError("BULLDOZER_GOALS_FAILED phase " + glPhase + glLog);
+        EditorApplication.Exit(glOk ? 0 : 1);
+    }
+    static void GoalsTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { glLog += " timed out"; glOk = false; GoalsFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var g = Goals.Instance; var m = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || g == null || m == null || up == null || SaveGame.Instance == null) return;
+        float t = Time.time;
+        switch (glPhase)
+        {
+            case 0:
+                if (t < 2.5f) return;
+                wk.useOverride = true;
+                glLog += " fresh fill=" + g.CaveFill(0).ToString("F3") + "/" + g.CaveFill(1).ToString("F3") + "/" + g.CaveFill(2).ToString("F3")
+                       + " highest=" + g.CaveHighest(0).ToString("F2") + "/" + g.CaveHighest(1).ToString("F2") + "/" + g.CaveHighest(2).ToString("F2");
+                GoalsCheck(g.CurrentId == "cave1_dig", "startsOnFirst(" + g.CurrentId + ")");
+                GoalsCheck(!g.CaveDug(0) && !g.CaveClear(0) && !g.CaveClear(1) && !g.CaveClear(2), "cavesStartFull");
+                GoalsCheck(Mathf.Abs(g.CaveFill(0) - Goals.FreshFill[0]) < 0.02f && Mathf.Abs(g.CaveFill(1) - Goals.FreshFill[1]) < 0.02f && Mathf.Abs(g.CaveFill(2) - Goals.FreshFill[2]) < 0.02f, "freshFillMatchesTable");
+                glCoins = m.Coins; glPlayed = GameAudio.Played;
+                // shovel into the face of the first cave-in, and throw each load out of the mine
+                int got = 0;
+                for (float a = 4.0f; a <= 6.01f; a += 0.4f)
+                    for (float x = -1f; x <= 1.01f; x += 0.5f)
+                        for (float y = 0.4f; y <= 1.21f; y += 0.4f)
+                        {
+                            got += w.Scoop(new Vector3(VoxelWorld.PortalX + x, y, VoxelWorld.PortalZ + a), 0.3f, 3000);
+                            if (w.ShovelVoxels > 0) w.Throw(new Vector3(VoxelWorld.PortalX + 3f, 1.5f, VoxelWorld.PortalZ - 9f), new Vector3(0f, 1f, -2f), 1f, 0.7f);
+                        }
+                glLog += " shovelled=" + (got * VoxelWorld.VoxelVolume).ToString("F2") + "m3 fill1now=" + g.CaveFill(0).ToString("F3");
+                glPhase = 1; glT0 = t; return;
+            case 1:
+                if (t - glT0 < 1.5f) return;
+                GoalsCheck(g.IsDone("cave1_dig") && g.CurrentId == "cart_fill", "digIntoTicks(" + g.CurrentId + ")");
+                GoalsCheck(m.Coins >= glCoins + Goals.List[0].bonus, "bonusPaid");
+                GoalsCheck(GameAudio.Played > glPlayed, "soundPlayed");
+                TestCapture("goals_done.png");
+                g.TestComplete(); g.TestComplete();                                     // fill the cart, tip it
+                m.TestGrant(1000, 0);
+                GoalsCheck(up.Buy(Upgrades.Branch.Pick), "boughtPick2");
+                glPhase = 2; glT0 = t; return;
+            case 2:
+                if (t - glT0 < 1.5f) return;
+                GoalsCheck(g.IsDone("upgrade1") && g.CurrentId == "cave1_clear", "upgradeTicks(" + g.CurrentId + ")");
+                TestCapture("goals_hud.png");
+                // through a real save and load (a file of the test's own)
+                SaveGame.PathOverride = GlFile;
+                string said = SaveGame.Instance.Save();
+                int cur = g.Current, n = g.DoneCount;
+                g.Reset();
+                string said2 = SaveGame.Instance.Load();
+                GoalsCheck(said.StartsWith("Game saved") && said2.StartsWith("Game loaded") && g.Current == cur && g.DoneCount == n, "savedAndLoaded(" + g.CurrentId + "," + g.DoneCount + ")");
+                // a save from before the goals: what it has done is skipped
+                g.FromOldSave();
+                GoalsCheck(g.IsDone("cave1_dig") && g.IsDone("cart_tip") && g.IsDone("upgrade1") && !g.IsDone("cart_fill") && g.CurrentId == "cart_fill", "oldSaveSkipsDone(" + g.CurrentId + ")");
+                // the owner's save (a copy): it must load and carry on
+                if (System.IO.File.Exists(GlOwnerCopy))
+                {
+                    SaveGame.PathOverride = GlOwnerCopy;
+                    string said3 = SaveGame.Instance.Load();
+                    glLog += " owner[" + said3 + " coins=" + m.Coins + " earned=" + m.Earned + " goal=" + g.CurrentId + " done=" + g.DoneCount + "]";
+                    GoalsCheck(said3.StartsWith("Game loaded"), "ownerSaveLoads");
+                }
+                SaveGame.PathOverride = null;
+                glPhase = 3; glT0 = t; return;
+            case 3:
+                if (t - glT0 < 1f) return;
+                TestCapture("goals_owner.png");
+                glPhase = 4; glT0 = t; return;
+            case 4:
+                if (t - glT0 < 0.5f) return;
+                GoalsFinish(); return;
+        }
+    }
+
+    // A clip of the polish (heavy feel, hard rock, ripping, the ramp, a goal), WITH the game's sound:
+    //   -executeMethod BulldozerBuilder.RecordPolishClip
+    // Frames go to Logs/clip at 30 a second, captions to Logs/clip/overlay.ass, the sound to Logs/clip/sound.wav
+    // (Unity's AudioRenderer, in step with the frames).  ffmpeg puts them together.
+    static int pcSeg, pcSegFrame, pcFrame, pcEnd;
+    static Vector3 pcStart; static bool pcFps0;
+    static List<float> pcSound = new List<float>();
+    public static void RecordPolishClip()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        pcSeg = -1; pcFrame = 0; pcEnd = 0; sOverlay.Clear(); trCaps.Clear(); pcSound.Clear();
+        string dir = Application.dataPath + "/../Logs/clip";
+        System.IO.Directory.CreateDirectory(dir);
+        foreach (var f in System.IO.Directory.GetFiles(dir)) { try { System.IO.File.Delete(f); } catch (System.Exception) { } }   // (the folder itself may be open somewhere)
+        testStart = EditorApplication.timeSinceStartup;
+        clipLastGameFrame = -1;
+        EditorApplication.update += PolishTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void PcNext(int seg) { pcSeg = seg; pcSegFrame = pcFrame; }
+    static void PolishFinish(int code)
+    {
+        EditorApplication.update -= PolishTick;
+        Time.captureFramerate = 0;
+        PauseMenu.ShowFps = pcFps0;
+        try { AudioRenderer.Stop(); } catch (System.Exception) { }
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void PcWriteWav(string path, List<float> s, int rate, int ch)
+    {
+        using (var f = new System.IO.BinaryWriter(System.IO.File.Create(path)))
+        {
+            int bytes = s.Count * 2;
+            f.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); f.Write(36 + bytes); f.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+            f.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); f.Write(16); f.Write((short)1); f.Write((short)ch); f.Write(rate); f.Write(rate * ch * 2); f.Write((short)(ch * 2)); f.Write((short)16);
+            f.Write(System.Text.Encoding.ASCII.GetBytes("data")); f.Write(bytes);
+            foreach (float v in s) f.Write((short)Mathf.Clamp(Mathf.RoundToInt(v * 32767f), -32768, 32767));
+        }
+    }
+    static void PolishTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 900) { Debug.LogError("BULLDOZER_POLISHCLIP_FAILED timed out in " + pcSeg); PolishFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var cam = Camera.main; var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || cam == null || w == null || wk == null || d.Blade == null || Goals.Instance == null) return;
+        if (Time.frameCount == clipLastGameFrame) return;
+        clipLastGameFrame = Time.frameCount;
+        var follow = cam.GetComponent<FollowCamera>();
+        if (pcEnd > 0)
+        {
+            if (--pcEnd == 0)
+            {
+                WriteOverlay();
+                int ch = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+                PcWriteWav(Application.dataPath + "/../Logs/clip/sound.wav", pcSound, AudioSettings.outputSampleRate, ch);
+                Debug.Log("BULLDOZER_POLISHCLIP_OK frames=" + pcFrame + " soundSeconds=" + (pcSound.Count / (float)ch / AudioSettings.outputSampleRate).ToString("F1") + " rate=" + AudioSettings.outputSampleRate + " ch=" + ch);
+                PolishFinish(0);
+            }
+            return;
+        }
+        if (pcSeg == -1)
+        {
+            if (Time.realtimeSinceStartup < 3f || Time.timeSinceLevelLoad < 2.5f) return;
+            GameViewSize(1920, 1080);
+            Hud.SkipFirstHelp();
+            pcFps0 = PauseMenu.ShowFps; PauseMenu.ShowFps = false;            // (filming makes the fps read low)
+            wk.useOverride = true; d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            pcStart = d.transform.position;
+            d.Place(pcStart, 0f);
+            Time.captureFramerate = 30;
+            AudioRenderer.Start();
+            PcNext(0);
+            return;
+        }
+        float k = (pcFrame - pcSegFrame) / 30f;
+        string title = "", cap = "";
+        if (pcSeg == 0)
+        {
+            d.overrideBlade = k < 1.2f ? -1f : 0f; d.overrideSteer = 0f; d.overrideRipper = 0f;
+            d.overrideThrottle = k < 1.6f ? 0f : 1f;
+            if (follow != null) { follow.yawOffset = Mathf.Lerp(80f, 55f, k / 11f); follow.distance = 12f; follow.pitch = 16f; }
+            title = "A heavy machine";
+            cap = k < 4f ? "Grey puff from the stack as the throttle opens" : "Labouring: thick black smoke, the engine drops, dust off the blade, the nose lifts";
+            if (k > 11f) { d.overrideThrottle = 0f; PcNext(1); }
+        }
+        else if (pcSeg == 1)
+        {
+            if (k < 0.05f) { d.Place(new Vector3(VoxelWorld.RockPadX, 0f, VoxelWorld.RockPadZ - 9f), 0f); d.overrideBlade = 0f; }
+            d.overrideBlade = k < 1.2f ? -1f : 0f; d.overrideThrottle = k < 1.3f ? 0f : 1f; d.overrideSteer = 0f;
+            if (follow != null) { follow.yawOffset = 100f; follow.distance = 11f; follow.pitch = 15f; }
+            title = "Hard rock";
+            cap = "The blade bangs into rock:  a clunk, a jolt, and the camera bumps";
+            if (k > 7f) { d.overrideThrottle = 0f; PcNext(2); }
+        }
+        else if (pcSeg == 2)
+        {
+            if (k < 0.05f) { d.Place(new Vector3(VoxelWorld.RockPadX, 0f, VoxelWorld.RockPadZ - 3f), 0f); }
+            d.overrideBlade = 1f; d.overrideRipper = k < 1.5f ? -1f : 0f; d.overrideThrottle = k < 1.6f ? 0f : 0.5f; d.overrideSteer = 0f;
+            if (follow != null) { follow.yawOffset = 150f; follow.distance = 10f; follow.pitch = 14f; }
+            title = "Ripping";
+            cap = "The ripper grinds through the rock, with a steady shudder";
+            if (k > 7f) { d.overrideThrottle = 0f; d.overrideRipper = 1f; PcNext(3); }
+        }
+        else if (pcSeg == 3)
+        {
+            if (k < 0.05f) { d.Place(new Vector3(VoxelWorld.TrackCentreX(1f), 0f, 1f), 0f); }
+            d.overrideBlade = 1f; d.overrideRipper = 1f;
+            d.overrideThrottle = k < 1f ? 0f : 1f;
+            float want = VoxelWorld.TrackCentreX(d.transform.position.z + 3f) - d.transform.position.x;
+            d.overrideSteer = Mathf.Clamp(want * 0.6f, -1f, 1f);
+            if (follow != null) { follow.yawOffset = 70f; follow.distance = 12f; follow.pitch = 14f; }
+            title = "Fixed: up the ramp with the blade raised";
+            cap = d.Glanced ? "The blade end catches the rock bench, glances off it, and carries on up" : "It used to stop dead here on \"hard rock\"";
+            if (k > 10f) { d.overrideThrottle = 0f; PcNext(4); }
+        }
+        else if (pcSeg == 4)
+        {
+            if (k < 0.05f)
+            {
+                d.useOverride = false;
+                wk.GetOut();
+                wk.Teleport(new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + 1.6f), 0f);
+                wk.Look(10f);
+            }
+            if (k > 2.5f && k < 2.55f)
+                for (float a = 4.0f; a <= 6.01f; a += 0.4f)
+                    for (float x = -1f; x <= 1.01f; x += 0.5f)
+                        for (float y = 0.4f; y <= 1.21f; y += 0.4f)
+                        {
+                            w.Scoop(new Vector3(VoxelWorld.PortalX + x, y, VoxelWorld.PortalZ + a), 0.3f, 3000);
+                            if (w.ShovelVoxels > 0) w.Throw(new Vector3(VoxelWorld.PortalX + 2.5f, 2.5f, VoxelWorld.PortalZ - 2f), new Vector3(0f, 1f, -3f), 1f, 0.7f);
+                        }
+            title = "Small goals, one at a time";
+            cap = k < 3f ? "The goal sits at the top of the screen" : "Done:  a ding, a few coins, and the next goal comes up";
+            if (k > 8f) { pcEnd = 3; return; }
+        }
+        // the sound for this frame
+        int n = AudioRenderer.GetSampleCountForCaptureFrame();
+        int chs = AudioSettings.speakerMode == AudioSpeakerMode.Mono ? 1 : 2;
+        if (n > 0)
+        {
+            var buf = new Unity.Collections.NativeArray<float>(n * chs, Unity.Collections.Allocator.Temp);
+            if (AudioRenderer.Render(buf)) for (int i = 0; i < buf.Length; i++) pcSound.Add(buf[i]);
+            buf.Dispose();
+        }
+        float a0 = pcFrame / 30f, b0 = (pcFrame + 1) / 30f;
+        string at = AssTime(a0) + "," + AssTime(b0);
+        if (title.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Title,,0,0,0,," + AssEsc(title));
+        if (cap.Length > 0) sOverlay.Add("Dialogue: 0," + at + ",Caption,,0,0,0,," + AssEsc(cap));
+        ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/clip/frame_" + pcFrame.ToString("D4") + ".png");
+        pcFrame++;
     }
 
     // Autosave, carry on and New game:  -executeMethod BulldozerBuilder.AutosaveTest
