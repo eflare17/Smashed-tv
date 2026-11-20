@@ -21,6 +21,7 @@ pad, and back to keys when you touch the keyboard or mouse.
 | D-pad up / down | tilt the blade (Z / C) |
 | X | straighten the blade (X) |
 | B | lights (L) |
+| A | blade auto: Off / Flat / Cut 5 cm / Cut 10 cm (B) |
 | Right stick | look round |
 | **Right stick click, held** | **gyro blade** (see below) |
 | Y | get out (Enter) |
@@ -47,6 +48,16 @@ pad, and back to keys when you touch the keyboard or mouse.
 
 D-pad left / right picks a branch (a `>` marks it), A buys its next level, X sells the newest level back,
 Start closes.
+
+## Blade auto
+
+Press **B** on the keyboard (**A** on the pad) to step through the blade auto settings:
+**Off → Flat → Cut 5 cm → Cut 10 cm → Off**. The help box shows the one that's on, e.g. "blade auto: Cut 5 cm".
+
+- **Flat**: the blade's edge holds at the level of the tracks, so it shaves off bumps and leaves the ground level.
+- **Cut 5 cm / Cut 10 cm**: the edge holds that far below the tracks, so each pass takes an even slice.
+- The blade moves itself to keep that depth as the machine tips and drives.
+- **Touch blade up or down by hand (R / F, or a trigger) and auto switches off**, so you're always in charge.
 
 ## The gyro blade
 

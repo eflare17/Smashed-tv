@@ -903,6 +903,204 @@ public static class BulldozerBuilder
         }
     }
 
+    // Blade auto:  -executeMethod BulldozerBuilder.BladeAutoTest      Prints BULLDOZER_BLADEAUTO_RESULT.
+    // On the site floor, puts two low ridges across the way, then with blade auto on Flat drives 10 m: the ground left
+    // behind must be level (within about 3 cm of the start).  A touch on the blade lever must switch auto off.  Then
+    // back to the start and a second pass on Cut 10 cm: the floor it leaves must be about 10 cm lower.
+    // Picture: Logs/blade_auto_flat.png.
+    static int baPhase; static float baT0; static string baLog; static bool baFail;
+    static Vector3 baP0, baFwd, baRight; static float baYaw, baBladeFrom, baBladeTo, baBefore;
+
+    public static void BladeAutoTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        baPhase = 0; baLog = ""; baFail = false;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BladeAutoTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void BladeAutoFinish(int code)
+    {
+        EditorApplication.update -= BladeAutoTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    // how far along the drive line (from the start, in metres) the middle of the blade's edge is
+    static float BaBladeAlong(DozerController d)
+    {
+        Vector3 e = d.Blade.TransformPoint(new Vector3(0f, -0.75f, 1.125f));
+        return Vector3.Dot(e - baP0, baFwd);
+    }
+
+    // ground heights over the stretch the blade worked, across the middle 3 m of its width
+    static System.Collections.Generic.List<float> BaSamples(VoxelWorld w, float from, float to)
+    {
+        var list = new System.Collections.Generic.List<float>();
+        for (float a = from; a <= to; a += 0.25f)
+            for (float s = -1.5f; s <= 1.51f; s += 0.5f)
+            {
+                Vector3 p = baP0 + baFwd * a + baRight * s;
+                list.Add(w.HeightAt(p.x, p.z));
+            }
+        return list;
+    }
+
+    static float baNextTrace;
+    // every half second while driving: how far along the blade is, its edge against the start ground, and the machine's tip
+    static void BaTrace(DozerController d, VoxelWorld w, float t)
+    {
+        if (t < baNextTrace) return;
+        baNextTrace = t + 0.5f;
+        Vector3 e = d.Blade.TransformPoint(new Vector3(0f, -0.75f, 1.125f));
+        baLog += " [" + BaBladeAlong(d).ToString("F1") + " edge" + (e.y - baBefore).ToString("F3") + " ground" + (w.HeightAt(e.x, e.z) - baBefore).ToString("F3")
+               + " machine" + (d.transform.position.y - baBefore).ToString("F3") + " pitch" + d.transform.eulerAngles.x.ToString("F1") + " v" + d.Speed.ToString("F1") + "]";
+    }
+
+    static float BaMean(System.Collections.Generic.List<float> l) { float sum = 0f; foreach (var h in l) sum += h; return l.Count > 0 ? sum / l.Count : 0f; }
+
+    static void BladeAutoTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 600) { Debug.LogError("BULLDOZER_BLADEAUTO_FAILED timed out at " + Time.time.ToString("F0") + "s in phase " + baPhase + " " + baLog); BladeAutoFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (d == null || w == null || wk == null || Camera.main == null || d.Blade == null) return;
+        float t = Time.time;
+        if (baPhase == 0)
+        {
+            if (t < 2f) return;
+            wk.useOverride = true;
+            d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            d.useOverride = true;
+            d.overrideThrottle = d.overrideSteer = d.overrideBlade = d.overrideRipper = d.overrideAngle = d.overrideTilt = 0f;
+            baP0 = d.transform.position; baYaw = d.transform.eulerAngles.y;
+            baFwd = Quaternion.Euler(0f, baYaw, 0f) * Vector3.forward; baRight = Quaternion.Euler(0f, baYaw, 0f) * Vector3.right;
+            baLog += "start=" + baP0.ToString("F1") + " yaw=" + baYaw.ToString("F0")
+                   + " angles(flat/5/10/down)=" + d.AutoAngle(DozerController.BladeAutoMode.Flat).ToString("F2") + "/" + d.AutoAngle(DozerController.BladeAutoMode.Cut5).ToString("F2")
+                   + "/" + d.AutoAngle(DozerController.BladeAutoMode.Cut10).ToString("F2") + "/" + d.bladeDownAngle.ToString("F0") + "deg bladeDownDepth=" + d.BladeDownDepth.ToString("F3");
+            var before = BaSamples(w, 2f, 14f);
+            float lo = 99f, hi = -99f; foreach (var h in before) { lo = Mathf.Min(lo, h); hi = Mathf.Max(hi, h); }
+            baBefore = BaMean(before);
+            int w0 = 0; foreach (var h in before) if (Mathf.Abs(h - baBefore) <= 0.035f) w0++;
+            baLog += " groundBefore mean=" + baBefore.ToString("F3") + " range=" + (hi - lo).ToString("F3") + " within3cm=" + (100f * w0 / Mathf.Max(1, before.Count)).ToString("F0") + "%";
+            // two ridges 12.5 cm high and half a metre wide across the way, 3 m wide
+            int raised = 0; var done = new System.Collections.Generic.HashSet<long>();
+            foreach (float along in new[] { 7f, 9.5f })
+                for (float a = along; a < along + 0.5f; a += VoxelWorld.Voxel)
+                    for (float s = -1.5f; s <= 1.5f; s += VoxelWorld.Voxel)
+                    {
+                        Vector3 p = baP0 + baFwd * a + baRight * s;
+                        long key = Mathf.FloorToInt(p.x / VoxelWorld.Voxel) * 100000L + Mathf.FloorToInt(p.z / VoxelWorld.Voxel);
+                        if (done.Add(key) && w.TestSetColumn(p.x, p.z, w.TopAt(p.x, p.z) + 0.125f)) raised++;
+                    }
+            baLog += " ridgeColumns=" + raised;
+            // the cycle: Off -> Flat
+            d.bladeAuto = DozerController.BladeAutoMode.Off;
+            d.CycleBladeAuto();
+            baLog += " cycledTo=" + d.BladeAutoName;
+            baPhase = 1; baT0 = t;
+            return;
+        }
+        if (baPhase == 1)
+        {
+            // let the blade find its height, then drive 10 m
+            if (t - baT0 < 1.5f) return;
+            if (baLog.IndexOf("bladeFrom") < 0) { baBladeFrom = BaBladeAlong(d); baLog += " bladeFrom=" + baBladeFrom.ToString("F2") + " armAngle=" + d.BladeArmAngle.ToString("F2"); }
+            d.overrideThrottle = 1f;
+            BaTrace(d, w, t);
+            if (Vector3.Dot(d.transform.position - baP0, baFwd) < 10f && t - baT0 < 15f) return;
+            d.overrideThrottle = 0f;
+            baBladeTo = BaBladeAlong(d);
+            baLog += " flatAuto=" + d.BladeAutoName + " drove=" + Vector3.Dot(d.transform.position - baP0, baFwd).ToString("F1") + " bladeTo=" + baBladeTo.ToString("F2");
+            baPhase = 2; baT0 = t;
+            return;
+        }
+        if (baPhase == 2)
+        {
+            // stopped.  A touch on the blade lever (blade up) switches auto off; then lift clear and let the dirt settle.
+            if (t - baT0 < 0.5f) return;
+            d.overrideBlade = 1f;
+            if (t - baT0 < 0.6f) return;
+            if (baLog.IndexOf("afterPress") < 0)
+            {
+                bool off = d.bladeAuto == DozerController.BladeAutoMode.Off;
+                baLog += " afterPress=" + d.BladeAutoName; if (!off) baFail = true;
+            }
+            if (t - baT0 < 3f) return;
+            d.overrideBlade = 0f;
+            var after = BaSamples(w, baBladeFrom + 0.5f, baBladeTo - 2f);
+            float mean = BaMean(after), worst = 0f; int within = 0;
+            foreach (var h in after) { float dv = Mathf.Abs(h - baBefore); worst = Mathf.Max(worst, dv); if (dv <= 0.035f) within++; }
+            float frac = within / (float)Mathf.Max(1, after.Count);
+            // each metre along, the ground across the strip on average (a thin spread of loose clods is rough close up)
+            baLog += " rows:"; float worstRow = 0f;
+            for (float a = Mathf.Ceil(baBladeFrom + 0.5f); a + 0.75f <= baBladeTo - 2f; a += 1f)
+            {
+                float r = BaMean(BaSamples(w, a, a + 0.75f)) - baBefore;
+                worstRow = Mathf.Max(worstRow, Mathf.Abs(r));
+                baLog += " " + a.ToString("F0") + "=" + r.ToString("F3");
+            }
+            bool level = Mathf.Abs(mean - baBefore) <= 0.03f && worstRow <= 0.035f;
+            if (!level) baFail = true;
+            baLog += " FLAT: samples=" + after.Count + " meanChange=" + (mean - baBefore).ToString("F3") + " within3cm=" + (frac * 100f).ToString("F0") + "% worst=" + worst.ToString("F3") + " level=" + level;
+            // picture: from behind and to one side, looking along the levelled strip
+            Vector3 mid = baP0 + baFwd * ((baBladeFrom + baBladeTo) * 0.5f);
+            HillShot(baP0 - baFwd * 3f + baRight * 6f + Vector3.up * 3.5f, mid + Vector3.up * 0.2f, "blade_auto_flat.png");
+            Camera.main.GetComponent<FollowCamera>().enabled = true;
+            // back to the start for the cut pass
+            d.Place(baP0, baYaw);
+            baPhase = 3; baT0 = t;
+            return;
+        }
+        if (baPhase == 3)
+        {
+            if (t - baT0 < 1f) return;
+            var before = BaSamples(w, baBladeFrom + 0.5f, baBladeTo - 2f);
+            baBefore = BaMean(before);
+            d.bladeAuto = DozerController.BladeAutoMode.Cut10;
+            baPhase = 4; baT0 = t;
+            return;
+        }
+        if (baPhase == 4)
+        {
+            if (t - baT0 < 1.5f) return;
+            d.overrideThrottle = 1f;
+            BaTrace(d, w, t);
+            if (Vector3.Dot(d.transform.position - baP0, baFwd) < 10f && t - baT0 < 17f) return;
+            d.overrideThrottle = 0f;
+            baLog += " cutAuto=" + d.BladeAutoName + " drove=" + Vector3.Dot(d.transform.position - baP0, baFwd).ToString("F1");
+            float to = BaBladeAlong(d);
+            d.bladeAuto = DozerController.BladeAutoMode.Off;
+            d.overrideBlade = 1f;
+            baBladeTo = Mathf.Min(baBladeTo, to);
+            baPhase = 5; baT0 = t;
+            return;
+        }
+        if (baPhase == 5)
+        {
+            if (t - baT0 < 2.5f) return;
+            d.overrideBlade = 0f;
+            // where the machine's own tracks started is still on the old ground, so look from a metre past where the
+            // blade started this pass, to two metres short of where it stopped
+            var after = BaSamples(w, baBladeFrom + 1f, baBladeTo - 2f);
+            float mean = BaMean(after);
+            float drop = baBefore - mean;
+            bool ok = drop >= 0.06f && drop <= 0.14f;
+            if (!ok) baFail = true;
+            float lo2 = 99f, hi2 = -99f;
+            for (float a = baBladeFrom + 1f; a + 0.75f <= baBladeTo - 2f; a += 1f) { float r = baBefore - BaMean(BaSamples(w, a, a + 0.75f)); lo2 = Mathf.Min(lo2, r); hi2 = Mathf.Max(hi2, r); }
+            baLog += " CUT10: floorDrop=" + drop.ToString("F3") + " rowDrops=" + lo2.ToString("F3") + ".." + hi2.ToString("F3") + " ok=" + ok;
+            HillShot(baP0 - baFwd * 3f + baRight * 6f + Vector3.up * 3.5f, baP0 + baFwd * 8f, "blade_auto_cut10.png");
+            Debug.Log("BULLDOZER_BLADEAUTO_RESULT " + (baFail ? "FAIL " : "PASS ") + baLog);
+            BladeAutoFinish(baFail ? 1 : 0);
+        }
+    }
+
     // The mountain road:  -executeMethod BulldozerBuilder.MountainRoadTest      Prints BULLDOZER_ROAD_RESULT.
     // Checks the road strip is there and can be dug, the dozer can drive from the site up onto it, the pegs' and the
     // tint's CUT / FILL match the ground, grading one stretch ticks it (and only it), and grading them all pays.
