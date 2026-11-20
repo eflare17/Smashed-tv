@@ -2996,7 +2996,11 @@ public static class BulldozerBuilder
     public static void RecordRoadClip() { rcCutOnly = false; clipMode = 10; sPh = 0; sOverlay.Clear(); sTitle = ""; sCaption = ""; sPop = ""; rcLog = ""; rcWays.Clear(); StartClip(); }
     // 30 s of the dozer cutting stretch 13 at normal speed, close up: a side view, a peg close-up, then from behind.
     //   -executeMethod BulldozerBuilder.RecordRoadCutClip     Frames and overlay.ass go to Logs/clip.
-    public static void RecordRoadCutClip() { rcCutOnly = true; clipMode = 10; sPh = 0; sOverlay.Clear(); sTitle = ""; sCaption = ""; sPop = ""; rcLog = ""; rcWays.Clear(); StartClip(); }
+    // The same run, filmed from in front of the dozer looking back at the blade:  -executeMethod BulldozerBuilder.RecordRoadCutFrontClip
+    public static void RecordRoadCutFrontClip() { rcFrontView = true; RecordRoadCutClipStart(); }
+    public static void RecordRoadCutClip() { rcFrontView = false; RecordRoadCutClipStart(); }
+    static bool rcFrontView;
+    static void RecordRoadCutClipStart() { rcCutOnly = true; clipMode = 10; sPh = 0; sOverlay.Clear(); sTitle = ""; sCaption = ""; sPop = ""; rcLog = ""; rcWays.Clear(); StartClip(); }
     static bool rcCutOnly;
     const int RcCutStretch = 12;                            // stretch 13: all cut (up to about 0.9 m once eased)
     const int RcSecondStretch = 6;                          // then stretch 7: all cut too
@@ -3014,6 +3018,20 @@ public static class BulldozerBuilder
         Vector3 bladeAt = d.Blade != null ? d.Blade.TransformPoint(new Vector3(0f, 0f, 1.1f)) : d.transform.position;
         Vector3 pos, look;
         float ease = 0.08f;
+        if (rcFrontView)
+        {
+            // in front of the blade, low, looking back at it and the dirt rolling up in front of it; a little to the
+            // downhill side, so the cut bank on the uphill side is not in the way
+            Vector3 ahead = bladeAt - d.transform.position; ahead.y = 0f; ahead.Normalize();
+            Vector3 outSide = new Vector3(bladeAt.x - Mountain.CX, 0f, bladeAt.z - Mountain.CZ).normalized;
+            pos = bladeAt + ahead * 6.0f + outSide * 1.2f;
+            float gy = Mathf.Max(w.HeightAt(pos.x, pos.z), w.HeightAt(pos.x - ahead.x * 2f, pos.z - ahead.z * 2f));
+            pos.y = Mathf.Max(bladeAt.y + 1.4f, gy + 1.6f);                                   // about 2 m up, and always clear of the ground
+            look = bladeAt + Vector3.up * 0.2f;
+            if (k < 0.1f || rcPeg != -6) { rcPeg = -6; ease = 1f; } else ease = 0.15f;
+            RcCam(cam, pos, look, ease);
+            return;
+        }
         if (k > 9f && k < 13.5f && job.PegCount > 0)
         {
             if (rcPeg < 0)
@@ -3256,7 +3274,8 @@ public static class BulldozerBuilder
             {
                 if (k >= RcSecondAt) { if (k > RcSecondAt + 4f) sTitle = ""; sCaption = k < RcSecondAt + 10f ? "Blade angled, so the spoil rolls off the downhill edge." : "Red turning green as the blade takes it down to grade."; }
                 else if (rcTickAt >= 0f && k < rcTickAt + 3f) sCaption = "Half of stretch 13 is within 25 cm:  its green tick.";
-                else if (k >= 9f) sCaption = "The peg beside the road: how much is left to cut there.";
+                else if (k >= 9f && !rcFrontView) sCaption = "The peg beside the road: how much is left to cut there.";
+                else if (k >= 9f) sCaption = "The blade on grade: the cut floor behind it turns green.";
                 else if (k > 4f) sCaption = "Red: too high.  Green: within 25 cm of grade.";
             }
             if (!rcCutOnly && k > 2f && sCaption.StartsWith("Working")) sCaption = "Pass after pass, following the arrows, blade angled to cast the spoil off the edge   (6x speed)";
@@ -3287,7 +3306,7 @@ public static class BulldozerBuilder
                     Vector2 st = RoadPoint(s7, 0f, out dir);
                     d.Place(new Vector3(st.x, 0f, st.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
                     rcLastPos = d.transform.position;
-                    sTitle = "Stretch 7"; sPop = "";
+                    sTitle = "Stretch 7"; sPop = ""; if (rcFrontView) rcPeg = -7;   // (the front camera jumps with it)
                     return true;
                 }
                 clipSkip = false;
