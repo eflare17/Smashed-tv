@@ -16,6 +16,9 @@
 //   -trailer low [m]   low and close at the front corner of the blade, the dirt spraying off it, creeping round slowly;
 //   -trailer side [m]  three-quarters front, a bit higher, the whole dozer and its blade load;
 //   -trailer high [m]  high and wide over the switchbacks and the forest, the road behind it already graded (green).
+//   -trailer pull [m]  starts close behind the blade and rises slowly away to high and wide, the graded road below.
+// Add  -tall  for a tall (phone, 9:16) window: the cameras frame the blade and its dirt for a narrow picture.
+// Add  -recordaudio <file.wav>  to record the game's own sound while filming (TrailerAudio).
 using UnityEngine;
 
 public class TrailerMode : MonoBehaviour
@@ -23,7 +26,8 @@ public class TrailerMode : MonoBehaviour
     public static bool On { get; set; }
     public enum ShotKind { Road, Mine, Restore, Wide }
     public static ShotKind Shot = ShotKind.Road;
-    public enum RoadCamKind { Swing, Low, Side, High }
+    public enum RoadCamKind { Swing, Low, Side, High, Pull }
+    public static bool Tall;
     public static RoadCamKind RoadCam = RoadCamKind.Swing;
     public static float StartAlong = 0f;
     public static TrailerMode Instance { get; private set; }
@@ -39,13 +43,14 @@ public class TrailerMode : MonoBehaviour
     public static void CheckCommandLine()
     {
         var args = System.Environment.GetCommandLineArgs();
+        foreach (var a in args) if (a.ToLowerInvariant() == "-tall") Tall = true;
         for (int i = 0; i < args.Length; i++)
             if (args[i].ToLowerInvariant() == "-trailer")
             {
                 On = true;
                 string k = i + 1 < args.Length ? args[i + 1].ToLowerInvariant() : "";
                 Shot = k == "mine" ? ShotKind.Mine : k == "restore" ? ShotKind.Restore : k == "wide" ? ShotKind.Wide : ShotKind.Road;
-                RoadCam = k == "low" ? RoadCamKind.Low : k == "side" ? RoadCamKind.Side : k == "high" ? RoadCamKind.High : RoadCamKind.Swing;
+                RoadCam = k == "low" ? RoadCamKind.Low : k == "side" ? RoadCamKind.Side : k == "high" ? RoadCamKind.High : k == "pull" ? RoadCamKind.Pull : RoadCamKind.Swing;
                 float m;
                 if (i + 2 < args.Length && float.TryParse(args[i + 2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out m)) StartAlong = Mathf.Max(0f, m);
             }
@@ -81,7 +86,7 @@ public class TrailerMode : MonoBehaviour
             at = PointAlong(StartAlong);
             dir = (PointAlong(StartAlong + 2f) - at).normalized;
         }
-        if (RoadCam == RoadCamKind.High && StartAlong > 0f)
+        if ((RoadCam == RoadCamKind.High || RoadCam == RoadCamKind.Pull) && StartAlong > 0f)
         {
             // the stretches it has already done are graded (green) behind it
             var job = MountainRoadJob.Instance;
@@ -94,6 +99,7 @@ public class TrailerMode : MonoBehaviour
         var cam = UnityEngine.Camera.main;
         follow = cam != null ? cam.GetComponent<FollowCamera>() : null;
         t0 = Time.time; lastPos = d.transform.position;
+        TrailerAudio.Attach();
         if (RoadCam != RoadCamKind.Swing)
         {
             if (follow != null) follow.enabled = false;
@@ -159,7 +165,26 @@ public class TrailerMode : MonoBehaviour
         Vector3 p = d.transform.position;
         Vector3 fwd = Quaternion.Euler(0f, camHeading, 0f) * Vector3.forward;
         float ang, dist, up; Vector3 look;
-        if (RoadCam == RoadCamKind.Low)
+        if (Tall && RoadCam == RoadCamKind.Low)
+        {
+            ang = -28f + 14f * Mathf.Clamp01(t / 40f);                         // nearer head-on: the blade and the dirt it spills fit a narrow picture
+            dist = 13.5f; up = 4.2f;
+            look = p + fwd * 3.2f + Vector3.up * 0.4f;
+        }
+        else if (Tall && RoadCam == RoadCamKind.Side)
+        {
+            ang = 30f + 20f * Mathf.Clamp01(t / 30f);
+            dist = 17f; up = 9f;
+            look = p + fwd * 2f;
+        }
+        else if (RoadCam == RoadCamKind.Pull)
+        {
+            float u = Mathf.Clamp01(t / 14f); u = u * u * (3f - 2f * u);     // eased
+            ang = 165f - 25f * u;                                               // from just behind, swinging a little to the side
+            dist = Mathf.Lerp(9f, 34f, u); up = Mathf.Lerp(5f, 34f, u);
+            look = p + fwd * Mathf.Lerp(3f, 0f, u);
+        }
+        else if (RoadCam == RoadCamKind.Low)
         {
             ang = -46f + 20f * Mathf.Clamp01(t / 40f);                         // front-left corner of the blade, creeping round
             dist = 13f; up = 3.6f;
@@ -210,6 +235,7 @@ public class TrailerMode : MonoBehaviour
         d.useOverride = true; d.dead = false;
         d.overrideThrottle = 0f; d.overrideSteer = 0f; d.overrideBlade = 0f; d.overrideRipper = 0f;
         t0 = Time.time;
+        TrailerAudio.Attach();
         if (Shot == ShotKind.Mine) BeginMine();
         else if (Shot == ShotKind.Restore) BeginRestore();
         else BeginWide();

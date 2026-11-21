@@ -1070,7 +1070,7 @@ public static class BulldozerBuilder
                    + " hillsideHoles=" + SiteProps.HillsideHoles + " walls=" + SiteProps.HillsideWalls + " roadSquares=" + job.SquareCount + " pegs=" + job.PegCount;
             // every point of the road and the strip has voxels under it
             int missing = 0, roadPts = 0;
-            float worst = 0f, sumAbs = 0f, cutShare = 0f, fillShare = 0f; int nCF = 0;
+            float worst = 0f, sumAbs = 0f, cutShare = 0f, fillShare = 0f; int nCF = 0; string worstAt = "";
             for (float s = 0f; s <= MountainRoad.Length; s += 1f)
                 for (float off = -MountainRoad.StripHalf + 0.2f; off <= MountainRoad.StripHalf - 0.19f; off += 0.95f)
                 {
@@ -1079,11 +1079,12 @@ public static class BulldozerBuilder
                     if (w.KindAt(p.x, p.y) == 0) { missing++; continue; }
                     if (Mathf.Abs(off) > MountainRoad.RoadHalf) continue;
                     float cf = w.TopAt(p.x, p.y) - MountainRoad.GradeAt(s);
+                    if (Mathf.Abs(cf) > worst) worstAt = "s" + s.ToString("F0") + "/off" + off.ToString("F1");
                     worst = Mathf.Max(worst, Mathf.Abs(cf)); sumAbs += Mathf.Abs(cf); nCF++;
                     if (cf > MountainRoadJob.OnGrade) cutShare++; else if (cf < -MountainRoadJob.OnGrade) fillShare++;
                 }
             mrLog += " stripPoints=" + roadPts + " withoutVoxels=" + missing
-                   + " startCutFill: worst=" + worst.ToString("F2") + "m mean=" + (sumAbs / Mathf.Max(1, nCF)).ToString("F2") + "m cut=" + (cutShare / Mathf.Max(1, nCF) * 100f).ToString("F0") + "% fill=" + (fillShare / Mathf.Max(1, nCF) * 100f).ToString("F0") + "%";
+                   + " startCutFill: worst=" + worst.ToString("F2") + "m at " + worstAt + " mean=" + (sumAbs / Mathf.Max(1, nCF)).ToString("F2") + "m cut=" + (cutShare / Mathf.Max(1, nCF) * 100f).ToString("F0") + "% fill=" + (fillShare / Mathf.Max(1, nCF) * 100f).ToString("F0") + "%";
             // how much cut and fill each stretch starts with (on the road: + cut, - fill)
             string per = "";
             for (int k = 0; k < MountainRoad.Stretches; k++)
@@ -1099,6 +1100,10 @@ public static class BulldozerBuilder
                 per += " " + (k + 1) + ":" + (sum / n).ToString("+0.0;-0.0") + "[" + lo.ToString("+0.0;-0.0") + "," + hi.ToString("+0.0;-0.0") + "]";
             }
             mrLog += " perStretch(mean[min,max])" + per;
+            // the start of the road, metre by metre on its centre line (+ cut, - fill): the hump (22 Nov 2026)
+            string prof = "";
+            for (float s = 0f; s <= 30f; s += 1f) { Vector2 p = RoadPoint(s, 0f, out dir); prof += " " + (w.TopAt(p.x, p.y) - MountainRoad.GradeAt(s)).ToString("+0.0;-0.0"); }
+            mrLog += " startProfile(0..30m)" + prof;
             // no sudden steps in the starting ground: the biggest rise between neighbouring points 0.25 m apart on a square
             // grid over the strip (and where the strip meets the mountain's mesh)
             float maxStep = 0f; Vector2 stepAt = Vector2.zero;
@@ -1366,10 +1371,11 @@ public static class BulldozerBuilder
             const int K = 4;
             job.Refresh();
             float before = job.StretchShare(K);
+            int tickedBefore = job.TickedCount;
             job.TestGradeStretch(K);
             job.Refresh();
             mrLog += " stretch" + (K + 1) + ": before=" + (before * 100f).ToString("F0") + "% after=" + (job.StretchShare(K) * 100f).ToString("F0") + "% ticked=" + job.Ticked(K) + " tickedNow=" + job.TickedCount;
-            RoadCheck(!(before >= MountainRoadJob.TickShare) && job.Ticked(K) && job.TickedCount == 1, "gradeTicks");
+            RoadCheck(!(before >= MountainRoadJob.TickShare) && job.Ticked(K) && job.TickedCount == tickedBefore + 1, "gradeTicks");
             RoadCheck(!job.Paid, "notPaidYet");
             mrCoins0 = Money.Instance.Coins;
             mrPhase = 5; mrT0 = t;

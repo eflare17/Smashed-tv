@@ -284,6 +284,18 @@ public static class MountainRoad
     const float KeepShare = 0.1f;                            // past that, this much of the natural cut or fill is kept
     const float Ripple = 0.6f, RippleLength = 14f;           // where the mountain is already near grade, a gentle wave (about 0.4 m up and down every 14 m, once blended) so it still needs work
     const float ShapeCell = 0.5f;
+    // The first part of the road (its first three stretches) is a hump instead: the ground is high over the first
+    // stretch (cut) and low over the next two (fill), the same amount of each, so the dirt knocked off the top is pushed
+    // on up the road into the dip.  The owner found the start hard: it was mostly fill, with nowhere to get the dirt
+    // from (22 Nov 2026).  Its banks out to the mountainside are spread wider, so they slope gently instead of sharply.
+    const float HumpStretches = 3f, HumpHeight = 0.7f, HumpBlend = 6f;
+    const float HumpReach = 6.5f;                            // how far out its banks blend back to the mountainside (inside VoxelHalf)
+    public static float HumpLength { get { Ensure(); return Length * HumpStretches / Stretches; } }
+    /// 1 on the hump, fading to 0 just past it.
+    static float HumpWeight(float s) { float L = HumpLength; return s <= L ? 1f : 1f - SmoothStep(L, L + HumpBlend, s); }
+    /// The hump: how far above (+, cut) or below (-, fill) the grade the ground is, this far along the road.
+    public static float HumpDev(float s) { float u = Mathf.Min(s / HumpLength, 1f); return HumpHeight * Mathf.Cos(2f * Mathf.PI * (u - 1f / 6f)) * SmoothStep(0f, 7f, s) - StartLift * (1f - SmoothStep(0f, 5f, s)); }   // (eased in from the hilltop, so driving on there is no ledge)
+    const float StartLift = 0.4f;                            // the hilltop where the road starts comes out about this much higher than asked: take it off   // one whole wave: top over stretch 1, dip over 2 and 3
     static float[] shape;
     static Vector2 shapeMin;
     static int shapeW, shapeH;
@@ -318,18 +330,25 @@ public static class MountainRoad
         // road, fading out in a straight line to the strip's edge).  The eased levels are averaged by those weights and
         // faded by the nearest one, so where two bits of road pass close the ground slides smoothly from one level to the
         // other: the weights change smoothly with position, so there are no jumps.
-        float reach = StripHalf + 0.5f;
+        float baseReach = StripHalf + 0.5f, reach = HumpReach;
         for (int j = 0; j < shapeH; j++)
             for (int i = 0; i < shapeW; i++)
             {
                 float x = shapeMin.x + i * ShapeCell, z = shapeMin.y + j * ShapeCell;
                 Vector2 p = new Vector2(x, z);
                 float nat = Mountain.NaturalY(x, z), sumW = 0f, sum = 0f, most = 0f;
+                // how near the rest of the road (past the hump) comes: the hump's wide banks stop short of it
+                float other = float.MaxValue;
+                for (int k = 0; k < pts.Length; k++)
+                    if (HumpWeight(along[k]) <= 0f) { float dd = (pts[k] - p).sqrMagnitude; if (dd < other) other = dd; }
+                other = Mathf.Sqrt(other);
                 for (int k = 0; k < pts.Length; k++)
                 {
                     float dd = (pts[k] - p).sqrMagnitude;
                     if (dd >= reach * reach) continue;
-                    float wgt = 1f - Mathf.Clamp01((Mathf.Sqrt(dd) - RoadHalf) / (reach - RoadHalf));
+                    float hw = HumpWeight(along[k]);
+                    float rk = Mathf.Min(Mathf.Lerp(baseReach, HumpReach, hw), Mathf.Max(baseReach, other - RoadHalf));
+                    float wgt = 1f - Mathf.Clamp01((Mathf.Sqrt(dd) - RoadHalf) / (rk - RoadHalf));
                     if (wgt <= 0f) continue;
                     float g = GradeAt(along[k]), dev = nat - g;
                     float t = Mathf.Clamp01((Mathf.Abs(dev) - 0.2f) / 0.25f), near = 1f - t * t * (3f - 2f * t);
@@ -337,6 +356,7 @@ public static class MountainRoad
                     float ad = Mathf.Abs(dev);
                     float want = ad <= LeaveAtLeast ? ad : LeaveAtLeast + KeepShare * (ad - LeaveAtLeast);
                     float eased = g + Mathf.Sign(dev) * Mathf.Min(want, EaseCap);
+                    if (hw > 0f) eased = Mathf.Lerp(eased, g + HumpDev(along[k]), hw);
                     sumW += wgt; sum += wgt * (eased - nat); most = Mathf.Max(most, wgt);
                 }
                 shape[i + shapeW * j] = sumW > 0f ? sum / sumW * most : 0f;
