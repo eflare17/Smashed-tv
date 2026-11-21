@@ -12,6 +12,10 @@
 //                      at 5.0 s exactly it becomes the restored yellow dozer, same framing, idling, to 10 s.
 //   -trailer wide      the whole road graded and ticked; a slow 12 s pull-back from above the switchbacks to wide.
 // (-trailer road, or -trailer alone, is the drive up the road.)  Each shot then holds its last frame.
+// The road drive with other cameras (for the road clip, 22 Nov 2026); an optional number starts it that many metres up the road:
+//   -trailer low [m]   low and close at the front corner of the blade, the dirt spraying off it, creeping round slowly;
+//   -trailer side [m]  three-quarters front, a bit higher, the whole dozer and its blade load;
+//   -trailer high [m]  high and wide over the switchbacks and the forest, the road behind it already graded (green).
 using UnityEngine;
 
 public class TrailerMode : MonoBehaviour
@@ -19,6 +23,9 @@ public class TrailerMode : MonoBehaviour
     public static bool On { get; set; }
     public enum ShotKind { Road, Mine, Restore, Wide }
     public static ShotKind Shot = ShotKind.Road;
+    public enum RoadCamKind { Swing, Low, Side, High }
+    public static RoadCamKind RoadCam = RoadCamKind.Swing;
+    public static float StartAlong = 0f;
     public static TrailerMode Instance { get; private set; }
     public const float DriveFor = 80f;
 
@@ -38,6 +45,9 @@ public class TrailerMode : MonoBehaviour
                 On = true;
                 string k = i + 1 < args.Length ? args[i + 1].ToLowerInvariant() : "";
                 Shot = k == "mine" ? ShotKind.Mine : k == "restore" ? ShotKind.Restore : k == "wide" ? ShotKind.Wide : ShotKind.Road;
+                RoadCam = k == "low" ? RoadCamKind.Low : k == "side" ? RoadCamKind.Side : k == "high" ? RoadCamKind.High : RoadCamKind.Swing;
+                float m;
+                if (i + 2 < args.Length && float.TryParse(args[i + 2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out m)) StartAlong = Mathf.Max(0f, m);
             }
     }
 
@@ -66,12 +76,31 @@ public class TrailerMode : MonoBehaviour
         d.useOverride = true;
         Vector2 p0 = MountainRoad.Point(0), p1 = MountainRoad.Point(Mathf.Min(3, MountainRoad.Count - 1)), dir = (p1 - p0).normalized;
         Vector2 at = p0 - dir * 3f;
+        if (StartAlong > 0f)
+        {
+            at = PointAlong(StartAlong);
+            dir = (PointAlong(StartAlong + 2f) - at).normalized;
+        }
+        if (RoadCam == RoadCamKind.High && StartAlong > 0f)
+        {
+            // the stretches it has already done are graded (green) behind it
+            var job = MountainRoadJob.Instance;
+            int upTo = MountainRoad.StretchOf(StartAlong);
+            if (job != null) for (int k = 0; k < upTo; k++) job.TestGradeStretch(k);
+        }
         d.Place(new Vector3(at.x, 0f, at.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
         d.SetGradeAuto(0);
         d.overrideBlade = 0f; d.overrideRipper = 1f; d.overrideSteer = 0f; d.overrideThrottle = 0f;
         var cam = UnityEngine.Camera.main;
         follow = cam != null ? cam.GetComponent<FollowCamera>() : null;
         t0 = Time.time; lastPos = d.transform.position;
+        if (RoadCam != RoadCamKind.Swing)
+        {
+            if (follow != null) follow.enabled = false;
+            camHeading = d.transform.eulerAngles.y;
+            camSnap = true;
+            RoadCamera();
+        }
     }
 
     void Drive()
@@ -111,6 +140,7 @@ public class TrailerMode : MonoBehaviour
 
     void Camera()
     {
+        if (RoadCam != RoadCamKind.Swing) { RoadCamera(); return; }
         if (follow == null) return;
         float t = Time.time - t0;
         // a slow swing from one side to the other and back (about 40 s each way), drifting in and out a little
@@ -118,6 +148,47 @@ public class TrailerMode : MonoBehaviour
         follow.distance = 13f + 3f * Mathf.Sin(t * Mathf.PI * 2f / 47f);
         follow.pitch = 21f + 5f * Mathf.Sin(t * Mathf.PI * 2f / 61f + 1f);
     }
+    // the road drive's other cameras: placed round the dozer by a slowly following heading, so the switchbacks become slow orbits
+    float camHeading;
+    bool camSnap;
+    void RoadCamera()
+    {
+        if (d == null) return;
+        float t = Time.time - t0, dt = Time.deltaTime;
+        camHeading = Mathf.MoveTowardsAngle(camHeading, d.transform.eulerAngles.y, Mathf.Max(4f, Mathf.Abs(Mathf.DeltaAngle(camHeading, d.transform.eulerAngles.y)) * 0.5f) * dt);
+        Vector3 p = d.transform.position;
+        Vector3 fwd = Quaternion.Euler(0f, camHeading, 0f) * Vector3.forward;
+        float ang, dist, up; Vector3 look;
+        if (RoadCam == RoadCamKind.Low)
+        {
+            ang = -46f + 20f * Mathf.Clamp01(t / 40f);                         // front-left corner of the blade, creeping round
+            dist = 13f; up = 3.6f;
+            look = p + fwd * 2.2f + Vector3.up * 1.0f;
+        }
+        else if (RoadCam == RoadCamKind.Side)
+        {
+            ang = 38f + 30f * Mathf.Clamp01(t / 30f);                          // three-quarters front-right
+            dist = 16f; up = 7.5f;
+            look = p + fwd * 1.2f + Vector3.up * 1.1f;
+        }
+        else
+        {
+            ang = 140f + 1.2f * t;                                             // high, behind and to the side, the graded road below
+            dist = 30f; up = 26f;
+            look = p + fwd * 4f;
+        }
+        Vector3 dir = Quaternion.Euler(0f, camHeading + ang, 0f) * Vector3.forward;
+        Vector3 want = p + dir * dist + Vector3.up * up;
+        var w = VoxelWorld.Instance;
+        if (w != null) want.y = Mathf.Max(want.y, w.HeightAt(want.x, want.z) + 1.3f);    // never inside the hillside
+        if (camSnap) { camPos = want; camLook = look; camSnap = false; }
+        else
+        {
+            camPos = Vector3.Lerp(camPos, want, 1f - Mathf.Exp(-dt * 1.6f));
+            camLook = Vector3.Lerp(camLook, look, 1f - Mathf.Exp(-dt * 2.5f));
+        }
+    }
+
     // ================================================================== the other shots
     float shotT { get { return Time.time - t0; } }
     Vector3 camPos, camLook;
@@ -153,7 +224,7 @@ public class TrailerMode : MonoBehaviour
 
     void LateUpdate()
     {
-        if (!On || !started || Shot == ShotKind.Road) return;
+        if (!On || !started || (Shot == ShotKind.Road && RoadCam == RoadCamKind.Swing)) return;
         var cam = UnityEngine.Camera.main;
         if (cam == null) return;
         cam.transform.position = camPos;
