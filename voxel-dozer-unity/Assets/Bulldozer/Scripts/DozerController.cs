@@ -2,8 +2,8 @@
 //   W / S or up / down     forward / reverse        A / D or left / right   steer (turns on the spot when stopped)
 //   R / F                  blade up / down          T / G                   ripper up / down
 //   Q / E                  angle the blade left / right     Z / C           tilt the blade     X   straighten it
-//   B                      blade auto: Off / Flat / Cut 5 cm / Cut 10 cm.  The blade holds that depth below the tracks
-//                          by itself; pressing blade up or down by hand switches it off.  (Pad: A.)
+//   B                      blade auto on / off (Pad: A).  The blade holds a height by itself; while it is on, R / F
+//                          (the triggers) move that height 5 cm a tap, from fully down (Cut 90 cm) to fully up (Fill).
 // Game pad (see Pad.cs and CONTROLLER.md): left stick drives, right trigger lowers the blade, left trigger raises it,
 // bumpers move the ripper, d-pad angles / tilts the blade, X straightens it, B lights, A blade auto, right stick looks round.
 // Gyro blade: while the gyro button (right stick click; on the Steam Controller a back grip bound to it) is held,
@@ -21,7 +21,7 @@ public class DozerController : MonoBehaviour
     [Header("Blade (angle of the lift arms; positive is down)")]
     public float bladeUpAngle = -26f;          // high enough to clear the ground going up a steep hill
     public float bladeDownAngle = 3f;        // worked out at the start from bladeDigDepth
-    [System.NonSerialized] public float bladeDigDepth = 0.45f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
+    [System.NonSerialized] public float bladeDigDepth = 0.90f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
     [System.NonSerialized] public float bladeSpeed = 24f;      // (not kept in the scene, so a change here always counts)
     public float bladeMaxAngle = 25f;        // how far the blade swings left or right
     [System.NonSerialized] public float bladeMaxTilt = 15f;         // how far one end drops (enough to cut level on any side slope you can drive)
@@ -42,29 +42,62 @@ public class DozerController : MonoBehaviour
     // Not saved with the prefab on purpose: Unity kept an old stored "dead" and ignored the value written here.
     [System.NonSerialized] public bool dead = false;     // true = it has sat for years and nothing works until repaired (off for now: F9 switches it)
     [System.NonSerialized] public bool driven;           // someone is in the seat
-    // Blade auto: the blade holds its edge at a set depth by itself.
-    // The setting you pick is remembered (between games too).  Touching the blade lever only pauses it: the next press
-    // of B / A brings back the depth you had, and presses after that step on through the depths and round to Off.
-    // 20 cm is the deepest: fully down, the edge only reaches about 20 cm below the tracks.
-    public enum BladeAutoMode { Off, Flat, Cut5, Cut10, Cut15, Cut20 }
-    [System.NonSerialized] public BladeAutoMode bladeAuto = BladeAutoMode.Off;
-    public static readonly string[] BladeAutoNames = { "Off", "Flat", "Cut 5 cm", "Cut 10 cm", "Cut 15 cm", "Cut 20 cm" };
-    static readonly float[] BladeAutoDepth = { 0f, 0f, 0.05f, 0.10f, 0.15f, 0.20f };   // metres below the ground
-    public string BladeAutoName { get { return BladeAutoNames[(int)bladeAuto]; } }
+    // Blade auto: the blade holds its edge at a set height by itself, anywhere from fully down to fully up.
+    //   B / A turns it on (at the height used last) and off.
+    //   While it is on, the blade lever (R / F, the triggers) moves the height it holds, 5 cm a tap (hold to keep
+    //   stepping): "Cut 25 cm" holds the edge 25 cm into the firm ground ahead, "Flat" level with the bottom of the
+    //   tracks, "Fill 10 cm" 10 cm above them (for spreading dirt in layers).  Settings > Auto height off: the lever
+    //   moves the blade by hand as before.  Moving the blade's angle or tilt by hand pauses just that part; the next
+    //   press of B / A brings it back.  The height is remembered (between games too).
+    // (The named settings below are kept for the tests and for older code: Flat and Cut 5..20 cm.)
+    public enum BladeAutoMode { Off, Flat, Cut5, Cut10, Cut15, Cut20, Other }
+    static readonly int[] ModeCm = { 0, 0, -5, -10, -15, -20, 0 };
+    public const int AutoStepCm = 5;
+    bool autoOn;
+    int autoCm;                                          // the height it holds, cm: - = cut into the ground, + = above the tracks
+    /// The setting, as one of the named ones (Other: a height that has no name of its own).  Setting it picks that height.
+    public BladeAutoMode bladeAuto
+    {
+        get
+        {
+            if (!autoOn) return BladeAutoMode.Off;
+            for (int m = 1; m <= 5; m++) if (ModeCm[m] == autoCm) return (BladeAutoMode)m;
+            return BladeAutoMode.Other;
+        }
+        set
+        {
+            if (value == BladeAutoMode.Off) { autoOn = false; return; }
+            autoOn = true;
+            if (value != BladeAutoMode.Other) autoCm = ModeCm[(int)value];
+            heightPaused = levelPaused = straightPaused = false;
+        }
+    }
+    /// The height blade auto holds (cm, - = cut).  Kept within what the blade can reach.
+    public int AutoCm { get { return autoCm; } set { autoCm = Mathf.Clamp(value, -MaxCutCm, MaxFillCm); LastCm = autoCm; } }
+    public int MaxCutCm { get { return Mathf.FloorToInt(bladeDigDepth * 100f / AutoStepCm + 0.01f) * AutoStepCm; } }
+    public int MaxFillCm { get { return Mathf.Max(0, Mathf.FloorToInt((BladeUpHeight * 100f - 2f) / AutoStepCm) * AutoStepCm); } }
+    public static string NameOfCm(int cm) { return cm == 0 ? "Flat" : cm < 0 ? "Cut " + (-cm) + " cm" : "Fill " + cm + " cm"; }
+    public string BladeAutoName { get { return autoOn ? NameOfCm(autoCm) : "Off"; } }
     public const string BladeAutoPref = "set.bladeAuto";
-    /// The depth used last (never Off): what B brings back after the blade lever paused it.
-    public static BladeAutoMode LastAuto = BladeAutoMode.Flat;
-    // Full auto: three parts, each with its own switch in Settings (all on to start with).  B / A turns auto on and
-    // picks the depth.  Moving a part by hand pauses just that part; the next press of B / A brings them all back.
+    /// The height used last: what B brings back when it turns auto on.
+    public static int LastCm = 0;
+    /// (older name for the last setting, for the tests: picks a named height)
+    public static BladeAutoMode LastAuto
+    {
+        get { for (int m = 1; m <= 5; m++) if (ModeCm[m] == LastCm) return (BladeAutoMode)m; return BladeAutoMode.Other; }
+        set { if (value != BladeAutoMode.Off && value != BladeAutoMode.Other) LastCm = ModeCm[(int)value]; }
+    }
+    // Full auto: three parts, each with its own switch in Settings (all on to start with).  B / A turns auto on.
+    // Moving the angle or tilt by hand pauses just that part; the next press of B / A brings them all back.
     public static bool AutoHeight = true, AutoLevel = true, AutoStraight = true;
     bool heightPaused, levelPaused, straightPaused;
     bool autoPaused { get { return heightPaused || levelPaused || straightPaused; } }
-    bool AutoOn { get { return bladeAuto != BladeAutoMode.Off; } }
+    bool AutoOn { get { return autoOn; } }
     bool HeightActive { get { return AutoOn && AutoHeight && !heightPaused; } }
     bool LevelActive { get { return AutoOn && AutoLevel && !levelPaused; } }
     bool StraightActive { get { return AutoOn && AutoStraight && !straightPaused; } }
     // moving the blade by hand starts slow and speeds up the longer you hold it: a tap is a nudge
-    float holdLift, holdAngle, holdTilt;
+    float holdLift, holdAngle, holdTilt, stepHeld;
     const float NudgeSpeed = 0.2f, FullSpeedAfter = 0.7f;
     static float Ramp(ref float held, float input, float dt)
     {
@@ -72,22 +105,42 @@ public class DozerController : MonoBehaviour
         held += dt;
         return input * Mathf.Lerp(NudgeSpeed, 1f, Mathf.Clamp01(held / FullSpeedAfter));
     }
-    /// The next setting along: Off, Flat, Cut 5 ... Cut 20 cm, then Off again.  After the lever paused it, back to the last one.
+    /// B / A: paused, it carries on; otherwise it turns auto on (at the last height) or off.
     public void CycleBladeAuto()
     {
-        if (autoPaused && AutoOn) { heightPaused = levelPaused = straightPaused = false; }
-        else { bladeAuto = (BladeAutoMode)(((int)bladeAuto + 1) % BladeAutoNames.Length); heightPaused = levelPaused = straightPaused = false; }
-        if (bladeAuto != BladeAutoMode.Off) LastAuto = bladeAuto;
-        PlayerPrefs.SetInt(BladeAutoPref, (int)bladeAuto);
-        PlayerPrefs.SetInt(BladeAutoPref + ".last", (int)LastAuto);
+        if (autoPaused && AutoOn) heightPaused = levelPaused = straightPaused = false;
+        else if (autoOn) autoOn = false;
+        else { autoOn = true; autoCm = Mathf.Clamp(LastCm, -MaxCutCm, MaxFillCm); heightPaused = levelPaused = straightPaused = false; }
+        SaveAutoPrefs();
+    }
+    /// The lever while auto is on: the height it holds goes up (+1) or down (-1) one step.
+    public void StepAutoHeight(int dir)
+    {
+        AutoCm = autoCm + dir * AutoStepCm;
+        SaveAutoPrefs();
+    }
+    void SaveAutoPrefs()
+    {
+        if (autoOn) LastCm = autoCm;
+        PlayerPrefs.SetInt(BladeAutoPref + ".on", autoOn ? 1 : 0);
+        PlayerPrefs.SetInt(BladeAutoPref + ".cm", LastCm);
         PlayerPrefs.Save();
     }
     /// The remembered setting, as the game starts.
     void LoadBladeAuto()
     {
-        int n = BladeAutoNames.Length;
-        bladeAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref, 0), 0, n - 1);
-        LastAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref + ".last", 1), 1, n - 1);
+        if (PlayerPrefs.HasKey(BladeAutoPref + ".on"))
+        {
+            autoOn = PlayerPrefs.GetInt(BladeAutoPref + ".on", 0) == 1;
+            LastCm = autoCm = PlayerPrefs.GetInt(BladeAutoPref + ".cm", 0);
+        }
+        else
+        {
+            // remembered from before there were free heights: Off, Flat, Cut 5, 10, 15, 20 cm
+            int was = Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref, 0), 0, 5), last = Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref + ".last", 1), 1, 5);
+            autoOn = was != 0;
+            LastCm = autoCm = ModeCm[was != 0 ? was : last];
+        }
         heightPaused = levelPaused = straightPaused = false;
         AutoHeight = PlayerPrefs.GetInt("set.autoHeight", 1) == 1;
         AutoLevel = PlayerPrefs.GetInt("set.autoLevel", 1) == 1;
@@ -214,7 +267,8 @@ public class DozerController : MonoBehaviour
     Vector2 gyroGrabStick;                               // the stick, and the blade, at the moment the gyro button went down
     float gyroGrabTilt, gyroGrabYaw;
     readonly Vector3[] tipsWorld = new Vector3[14];
-    readonly float[] autoAngle = new float[6];          // the lift-arm angle that puts the blade edge at each auto depth (machine level)
+    float[] autoAngle = new float[1];                   // the lift-arm angle that puts the blade edge at each auto height, every 5 cm from fully down (machine level)
+    float AngleForCm(int cm) { int i = Mathf.Clamp((cm + MaxCutCm) / AutoStepCm, 0, autoAngle.Length - 1); return autoAngle[i]; }
     float edgePerDegree;                                // how far the edge drops for each degree the arms go down
     static readonly Vector3 BladeEdge = new Vector3(0f, -0.75f, 1.125f);   // middle of the cutting edge, in the blade's space
 
@@ -254,7 +308,7 @@ public class DozerController : MonoBehaviour
         if (bladeHinge != null) bladeHinge.localRotation = Quaternion.identity;
         {
             // fully down: the arm angle that puts the edge bladeDigDepth below the tracks
-            float lo = bladeUpAngle, hi = 40f;
+            float lo = bladeUpAngle, hi = 70f;
             for (int i = 0; i < 30; i++)
             {
                 float mid = (lo + hi) * 0.5f;
@@ -262,19 +316,21 @@ public class DozerController : MonoBehaviour
             }
             bladeDownAngle = (lo + hi) * 0.5f;
         }
-        for (int m = 1; m < autoAngle.Length; m++)
+        BladeDownDepth = -EdgeHeightAt(bladeDownAngle);
+        BladeUpHeight = EdgeHeightAt(bladeUpAngle);
+        autoAngle = new float[(MaxCutCm + MaxFillCm) / AutoStepCm + 1];
+        for (int k = 0; k < autoAngle.Length; k++)
         {
             // more angle = lower blade.  Halve the gap until it is close enough.
-            float lo = bladeUpAngle, hi = bladeDownAngle + 12f, want = -BladeAutoDepth[m];
+            float lo = bladeUpAngle, hi = bladeDownAngle + 12f, want = (k * AutoStepCm - MaxCutCm) / 100f;
             for (int i = 0; i < 30; i++)
             {
                 float mid = (lo + hi) * 0.5f;
                 if (EdgeHeightAt(mid) > want) lo = mid; else hi = mid;
             }
-            autoAngle[m] = (lo + hi) * 0.5f;
+            autoAngle[k] = (lo + hi) * 0.5f;
         }
-        BladeDownDepth = -EdgeHeightAt(bladeDownAngle);
-        BladeUpHeight = EdgeHeightAt(bladeUpAngle);
+        autoCm = Mathf.Clamp(autoCm, -MaxCutCm, MaxFillCm);
         edgePerDegree = (EdgeHeightAt(0f) - EdgeHeightAt(bladeDownAngle)) / Mathf.Max(0.1f, bladeDownAngle);
         bladeMount.localRotation = was;
         if (bladeHinge != null) bladeHinge.localRotation = hingeWas;
@@ -287,8 +343,8 @@ public class DozerController : MonoBehaviour
     /// and the cut would keep getting deeper.
     float AutoWant()
     {
-        float fixedAngle = autoAngle[(int)bladeAuto];
-        if (bladeAuto == BladeAutoMode.Flat || world == null || blade == null || edgePerDegree <= 0f) return fixedAngle;
+        float fixedAngle = AngleForCm(autoCm);
+        if (autoCm >= 0 || world == null || blade == null || edgePerDegree <= 0f) return fixedAngle;
         Vector3 fwd = transform.forward; fwd.y = 0f;
         if (fwd.sqrMagnitude < 0.01f) return fixedAngle;
         fwd.Normalize();
@@ -303,12 +359,13 @@ public class DozerController : MonoBehaviour
                 if (world.FirmHeightAt(p.x, p.z, out h)) { sum += h; n++; }
             }
         if (n < 5) return fixedAngle;
-        float want = sum / n - BladeAutoDepth[(int)bladeAuto];
+        float want = sum / n + autoCm / 100f;
         // more arm angle = lower edge, about edgePerDegree metres a degree
         return Mathf.Clamp(bladeAngle + (edge.y - want) / edgePerDegree, bladeUpAngle, bladeDownAngle);
     }
 
-    public float AutoAngle(BladeAutoMode m) { return autoAngle[(int)m]; }
+    public float AutoAngle(BladeAutoMode m) { return AngleForCm(ModeCm[(int)m]); }
+    public float AutoAngleCm(int cm) { return AngleForCm(cm); }
 
     /// How much higher the right end of the cutting edge is than the left (metres, in the world).
     public float EdgeEndsGap()
@@ -400,7 +457,20 @@ public class DozerController : MonoBehaviour
         bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
         if (!useOverride && CanBlade && !treeUp && !(PauseMenu.Instance != null && PauseMenu.Instance.Open) && (Input.GetKeyDown(KeyCode.B) || Pad.Down(Pad.B.A))) CycleBladeAuto();
         if (AutoOn && !CanBlade) heightPaused = levelPaused = straightPaused = true;
-        if (bladeIn != 0f && AutoOn && AutoHeight) heightPaused = true;     // a hand on the blade lever takes over the height
+        if (bladeIn != 0f && AutoOn && AutoHeight)
+        {
+            if (useOverride) heightPaused = true;                          // (the tests' hand on the lever takes over the height, as it used to)
+            else
+            {
+                // the lever moves the height auto holds: a step as it is pressed, then a step every 0.15 s while held
+                int dir = bladeIn > 0f ? 1 : -1;
+                if (stepHeld == 0f || (stepHeld >= 0.4f && Mathf.Repeat(stepHeld - 0.4f, 0.15f) < Time.deltaTime)) StepAutoHeight(dir);
+                stepHeld += Time.deltaTime;
+                heightPaused = false;
+                bladeIn = 0f;
+            }
+        }
+        else stepHeld = 0f;
         if (HeightActive) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
         if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Mathf.Abs(bladeIn) * Time.deltaTime);
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
@@ -523,7 +593,18 @@ public class DozerController : MonoBehaviour
                 }
             }
             // the scenery: trees, crates and the mine entrance are solid
-            if (SiteProps.Blocks(pos, 2.3f)) { pos = before; Speed = 0f; }
+            if (SiteProps.Blocks(pos, 2.3f))
+            {
+                // driving into a tree: push it (it leans, then goes over; TreeFelling).  Only head on, going forward.
+                int tree = TreeFelling.Instance != null && throttleIn > 0.2f ? SiteProps.TreeBlocking(pos, 2.3f) : -1;
+                if (tree >= 0)
+                {
+                    Vector3 fwd = yawRot * Vector3.forward, to = FireSim.Trees[tree].at - before;
+                    to.y = 0f;
+                    if (Vector3.Dot(fwd, to.normalized) > 0.35f) TreeFelling.Instance.Push(tree, fwd, dt);
+                }
+                pos = before; Speed = 0f;
+            }
             // sit on the ground under the tracks, and lean with it
             float front = 0f, rear = 0f, left = 0f, right = 0f, all = 0f;
             for (int i = 0; i < TrackPoints.Length; i++)
@@ -809,7 +890,7 @@ public class DozerController : MonoBehaviour
         bool onTarget = false;
         if (HeightActive)
         {
-            float want = -BladeAutoDepth[(int)bladeAuto];
+            float want = autoCm / 100f;
             Ui.Fill(new Rect(tall.x - 10f, yOf(want) - 2f, tallW + 20f, 4f), MarkOn);
             onTarget = Mathf.Abs(edge - want) < 0.03f;
         }
@@ -846,14 +927,14 @@ public class DozerController : MonoBehaviour
                 "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
                 "RB / LB   ripper up / down    (breaks up hard rock)\n" +
                 "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
-                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds height, level and straight; moving a part yourself pauses it)\n" +
+                "A   blade auto on / off: " + AutoHelp + "    (holds height, level and straight; while on, the triggers move the height 5 cm a tap: Cut " + MaxCutCm + " cm to Fill " + MaxFillCm + " cm)\n" +
                 "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" +
                 "Back   menu     Left stick click   hide this help" :
                 "W / S   drive          A / D   steer          Enter   get out\n" +
                 "R / F   blade up / down     (lower it into the ground to dig)\n" +
                 "T / G   ripper up / down    (breaks up hard rock)\n" +
                 "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds height, level and straight; moving a part yourself pauses it)\n" +
+                "B   blade auto on / off: " + AutoHelp + "    (holds height, level and straight; while on, R / F move the height 5 cm a tap: Cut " + MaxCutCm + " cm to Fill " + MaxFillCm + " cm)\n" +
                 "Right mouse drag: look round    Scroll: zoom\n" +
                 "U   upgrades     Esc   menu     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
             below = Hud.HelpBox(text, 560f);

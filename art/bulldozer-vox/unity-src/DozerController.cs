@@ -3,7 +3,7 @@
 //   R / F                  blade up / down          T / G                   ripper up / down
 //   Q / E                  angle the blade left / right     Z / C           tilt the blade     X   straighten it
 //   B                      blade auto on / off (Pad: A).  The blade holds a height by itself; while it is on, R / F
-//                          (the triggers) move that height 5 cm a tap, from fully down (Cut 45 cm) to fully up (Fill).
+//                          (the triggers) move that height 5 cm a tap, from fully down (Cut 90 cm) to fully up (Fill).
 // Game pad (see Pad.cs and CONTROLLER.md): left stick drives, right trigger lowers the blade, left trigger raises it,
 // bumpers move the ripper, d-pad angles / tilts the blade, X straightens it, B lights, A blade auto, right stick looks round.
 // Gyro blade: while the gyro button (right stick click; on the Steam Controller a back grip bound to it) is held,
@@ -21,7 +21,7 @@ public class DozerController : MonoBehaviour
     [Header("Blade (angle of the lift arms; positive is down)")]
     public float bladeUpAngle = -26f;          // high enough to clear the ground going up a steep hill
     public float bladeDownAngle = 3f;        // worked out at the start from bladeDigDepth
-    [System.NonSerialized] public float bladeDigDepth = 0.45f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
+    [System.NonSerialized] public float bladeDigDepth = 0.90f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
     [System.NonSerialized] public float bladeSpeed = 24f;      // (not kept in the scene, so a change here always counts)
     public float bladeMaxAngle = 25f;        // how far the blade swings left or right
     [System.NonSerialized] public float bladeMaxTilt = 15f;         // how far one end drops (enough to cut level on any side slope you can drive)
@@ -308,7 +308,7 @@ public class DozerController : MonoBehaviour
         if (bladeHinge != null) bladeHinge.localRotation = Quaternion.identity;
         {
             // fully down: the arm angle that puts the edge bladeDigDepth below the tracks
-            float lo = bladeUpAngle, hi = 40f;
+            float lo = bladeUpAngle, hi = 70f;
             for (int i = 0; i < 30; i++)
             {
                 float mid = (lo + hi) * 0.5f;

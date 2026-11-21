@@ -1008,7 +1008,7 @@ public static class BulldozerBuilder
             // leaning 10 degrees either way, auto level brings the cutting edge level (it was 4.5 m x sin 10 = 78 cm out)
             float gapR = d.TestLevelGap(10f); baLog += " tiltR=" + DozerController.TestLevelTilt.ToString("F1") + " rawR=" + DozerController.TestLevelRaw.ToString("F3"); float gapL = d.TestLevelGap(-10f);
             bool levelOk = Mathf.Abs(gapR) < 0.03f && Mathf.Abs(gapL) < 0.03f;
-            bool deepOk = d.BladeDownDepth > 0.40f;
+            bool deepOk = d.BladeDownDepth > 0.85f;
             baLog += " levelGap(+10/-10)=" + gapR.ToString("F3") + "/" + gapL.ToString("F3") + " levelOk=" + levelOk + " deepOk=" + deepOk;
             if (!levelOk || !deepOk) baFail = true;
             // the cycle: Off -> Flat
@@ -1059,7 +1059,7 @@ public static class BulldozerBuilder
                 string top = d.BladeAutoName;
                 bool anglesOk = d.AutoAngleCm(-d.MaxCutCm) > d.AutoAngleCm(0) && d.AutoAngleCm(d.MaxFillCm) < d.AutoAngleCm(20) && d.AutoAngleCm(20) < d.AutoAngleCm(0)
                                 && Mathf.Abs(d.AutoAngleCm(-d.MaxCutCm) - d.bladeDownAngle) < 1f;
-                bool stepsOk = down1 == "Cut 5 cm" && up2 == "Fill 10 cm" && bottom == "Cut 45 cm" && top == "Fill " + d.MaxFillCm + " cm" && d.MaxFillCm >= 50 && anglesOk;
+                bool stepsOk = down1 == "Cut 5 cm" && up2 == "Fill 10 cm" && bottom == "Cut " + d.MaxCutCm + " cm" && d.MaxCutCm >= 85 && top == "Fill " + d.MaxFillCm + " cm" && d.MaxFillCm >= 50 && anglesOk;
                 baLog += " steps: " + down1 + " / " + up2 + " / bottom " + bottom + " / top " + top + " anglesOk=" + anglesOk + " stepsOk=" + stepsOk; if (!stepsOk) baFail = true;
                 d.bladeAuto = DozerController.BladeAutoMode.Off;
                 DozerController.LastAuto = DozerController.BladeAutoMode.Flat;

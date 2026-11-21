@@ -866,7 +866,7 @@ public static class BulldozerBuilder
             // leaning 10 degrees either way, auto level brings the cutting edge level (it was 4.5 m x sin 10 = 78 cm out)
             float gapR = d.TestLevelGap(10f); baLog += " tiltR=" + DozerController.TestLevelTilt.ToString("F1") + " rawR=" + DozerController.TestLevelRaw.ToString("F3"); float gapL = d.TestLevelGap(-10f);
             bool levelOk = Mathf.Abs(gapR) < 0.03f && Mathf.Abs(gapL) < 0.03f;
-            bool deepOk = d.BladeDownDepth > 0.40f;
+            bool deepOk = d.BladeDownDepth > 0.85f;
             baLog += " levelGap(+10/-10)=" + gapR.ToString("F3") + "/" + gapL.ToString("F3") + " levelOk=" + levelOk + " deepOk=" + deepOk;
             if (!levelOk || !deepOk) baFail = true;
             // the cycle: Off -> Flat
@@ -901,13 +901,26 @@ public static class BulldozerBuilder
             {
                 bool off = d.AutoPaused && !d.HeightAutoActive && d.bladeAuto == DozerController.BladeAutoMode.Flat;
                 baLog += " afterPress=" + d.BladeAutoName + (d.AutoPaused ? " paused" : ""); if (!off) baFail = true;
-                // the lever only paused the height: one press carries on at the same depth, the next steps on
+                // the lever only paused the height: one press carries on at the same height, the next turns auto off,
+                // the next back on at that height
                 d.CycleBladeAuto(); string back = d.BladeAutoName; bool resumed = !d.AutoPaused;
                 d.CycleBladeAuto(); string next = d.BladeAutoName;
-                d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); string wrap = d.BladeAutoName;
-                bool resumeOk = back == "Flat" && resumed && next == "Cut 5 cm" && wrap == "Off";
-                baLog += " resume=" + back + " next=" + next + " then=" + wrap + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                d.CycleBladeAuto(); string again = d.BladeAutoName;
+                bool resumeOk = back == "Flat" && resumed && next == "Off" && again == "Flat";
+                baLog += " resume=" + back + " next=" + next + " then=" + again + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                // with auto on, the lever steps the height it holds, 5 cm a step, from fully down to fully up
+                d.StepAutoHeight(-1); string down1 = d.BladeAutoName;
+                d.StepAutoHeight(1); d.StepAutoHeight(1); d.StepAutoHeight(1); string up2 = d.BladeAutoName;
+                for (int i = 0; i < 40; i++) d.StepAutoHeight(-1);
+                string bottom = d.BladeAutoName;
+                for (int i = 0; i < 60; i++) d.StepAutoHeight(1);
+                string top = d.BladeAutoName;
+                bool anglesOk = d.AutoAngleCm(-d.MaxCutCm) > d.AutoAngleCm(0) && d.AutoAngleCm(d.MaxFillCm) < d.AutoAngleCm(20) && d.AutoAngleCm(20) < d.AutoAngleCm(0)
+                                && Mathf.Abs(d.AutoAngleCm(-d.MaxCutCm) - d.bladeDownAngle) < 1f;
+                bool stepsOk = down1 == "Cut 5 cm" && up2 == "Fill 10 cm" && bottom == "Cut " + d.MaxCutCm + " cm" && d.MaxCutCm >= 85 && top == "Fill " + d.MaxFillCm + " cm" && d.MaxFillCm >= 50 && anglesOk;
+                baLog += " steps: " + down1 + " / " + up2 + " / bottom " + bottom + " / top " + top + " anglesOk=" + anglesOk + " stepsOk=" + stepsOk; if (!stepsOk) baFail = true;
                 d.bladeAuto = DozerController.BladeAutoMode.Off;
+                DozerController.LastAuto = DozerController.BladeAutoMode.Flat;
             }
             if (t - baT0 < 3f) return;
             d.overrideBlade = 0f;
@@ -4142,6 +4155,153 @@ public static class BulldozerBuilder
         }
     }
 
+    // Pushing a tree over and picking up its wood:  -executeMethod BulldozerBuilder.TreeFellTest
+    // On a fresh test save (Logs/fell_test.bin): the dozer drives head on into a tree on the hilltop and is held up
+    // by it while it leans (about as long as PushNeeded says), then it goes over away from the dozer, lands as chunks
+    // of wood, and no longer stops anything; driving on over the chunks picks them up (Wood goes up, nothing is lost).
+    // Saved and loaded again: the tree is still down and not in the way, the wood and the chunks left are kept.
+    // Pictures: Logs/tree_fall.png (going over), Logs/tree_chunks.png (the wood lying there).
+    static int tfPhase, tfTree, tfChunks0, tfWood1, tfLeft1; static string tfLog; static bool tfOk, tfShot1, tfShot2;
+    static double tfT0, tfStrainFrom, tfFellAt; static Vector3 tfFrom; static float tfWay;
+    static string TfWork { get { return Application.dataPath + "/../Logs/fell_test.bin"; } }
+    public static void TreeFellTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        tfPhase = 0; tfLog = ""; tfOk = true; tfTree = -1; tfShot1 = tfShot2 = false; tfStrainFrom = tfFellAt = -1;
+        if (System.IO.File.Exists(TfWork)) System.IO.File.Delete(TfWork);
+        SaveGame.PathOverride = TfWork; SaveGame.TestAuto = true; SaveGame.AutoEvery = 1e6f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TreeFellTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void TfCheck(bool ok, string what) { tfLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) tfOk = false; }
+    static void TreeFellFinish()
+    {
+        EditorApplication.update -= TreeFellTick;
+        SaveGame.PathOverride = null; SaveGame.TestAuto = false; SaveGame.AutoEvery = 300f;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (tfOk) Debug.Log("BULLDOZER_TREEFELL_RESULT" + tfLog); else Debug.LogError("BULLDOZER_TREEFELL_FAILED phase " + tfPhase + tfLog);
+        EditorApplication.Exit(tfOk ? 0 : 1);
+    }
+    static void TreeFellTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { tfLog += " timed out"; tfOk = false; TreeFellFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var sg = SaveGame.Instance; var fell = TreeFelling.Instance; var wk = Worker.Instance;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (w == null || sg == null || fell == null || wk == null || d == null) return;
+        double t = EditorApplication.timeSinceStartup;
+        switch (tfPhase)
+        {
+            case 0:                                                     // pick a tree with a clear, fairly level run up to it
+                if (!sg.StartupDone || Time.timeSinceLevelLoad < 2f) return;
+                wk.useOverride = true;
+                foreach (int tr in SiteProps.SolidTrees())
+                {
+                    Vector3 at = FireSim.Trees[tr].at;
+                    for (int k = 0; k < 8 && tfTree < 0; k++)
+                    {
+                        float a = k * Mathf.PI / 4f;
+                        Vector3 dir = new Vector3(Mathf.Sin(a), 0f, Mathf.Cos(a));
+                        bool clear = true;
+                        for (float back = 3.1f; back <= 9f && clear; back += 0.7f)
+                        {
+                            Vector3 q = at - dir * back;
+                            if (SiteProps.Blocks(q, 2.4f) || Mathf.Abs(w.HeightAt(q.x, q.z) - w.HeightAt(at.x, at.z)) > 1.2f || Mathf.Abs(q.x) > 44f || q.z > 44f) clear = false;
+                        }
+                        for (float on = 1f; on <= FireSim.Trees[tr].height && clear; on += 1f)   // and room ahead for it to fall and to drive on
+                        {
+                            Vector3 q = at + dir * on;
+                            if (Mathf.Abs(q.x) > 44f || q.z > 44f || q.z < -44f) clear = false;
+                        }
+                        if (clear) { tfTree = tr; tfWay = a; }
+                    }
+                    if (tfTree >= 0) break;
+                }
+                TfCheck(tfTree >= 0, "foundATree");
+                if (tfTree < 0) { TreeFellFinish(); return; }
+                {
+                    Vector3 at = FireSim.Trees[tfTree].at, dir = new Vector3(Mathf.Sin(tfWay), 0f, Mathf.Cos(tfWay));
+                    tfFrom = at - dir * 7f;
+                    if (!wk.InDozer) wk.GetIn();
+                    d.useOverride = true; d.dead = false;
+                    d.Place(new Vector3(tfFrom.x, 0f, tfFrom.z), tfWay * Mathf.Rad2Deg);
+                    d.bladeAuto = DozerController.BladeAutoMode.Off;
+                    d.overrideBlade = 0f; d.overrideSteer = 0f; d.overrideRipper = 1f; d.overrideThrottle = 0f;
+                    tfLog += " tree=" + tfTree + " at=(" + at.x.ToString("F1") + "," + at.z.ToString("F1") + ") tall=" + FireSim.Trees[tfTree].height.ToString("F1") + " needs=" + TreeFelling.PushNeeded(tfTree).ToString("F1") + "s";
+                    TfCheck(SiteProps.TreeBlocking(at, 0.3f) == tfTree, "treeStandsInTheWay");
+                }
+                tfPhase = 1; tfT0 = t;
+                return;
+            case 1:                                                     // drive into it until it goes over
+                d.overrideThrottle = t - tfT0 < 1f ? 0f : 0.7f;
+                if (tfStrainFrom < 0 && fell.Pushing == tfTree) tfStrainFrom = t;
+                if (tfFellAt < 0 && fell.Felled.Contains(tfTree)) tfFellAt = t;
+                if (tfFellAt > 0 && !tfShot1 && t - tfFellAt > 1.3f && Camera.main != null)
+                {
+                    tfShot1 = true;
+                    TfShoot(w, "tree_fall.png", 0.3f);
+                }
+                if (tfFellAt > 0 && t - tfFellAt > TreeFelling.FallTook + 0.5f)
+                {
+                    d.overrideThrottle = 0f;
+                    Vector3 at = FireSim.Trees[tfTree].at;
+                    double strain = tfFellAt - tfStrainFrom;
+                    tfChunks0 = fell.ChunkCount;
+                    tfLog += " strained=" + strain.ToString("F1") + "s chunks=" + tfChunks0;
+                    TfCheck(strain > TreeFelling.PushNeeded(tfTree) * 0.7f && strain < TreeFelling.PushNeeded(tfTree) + 2f, "heldUpWhileItLeant");
+                    TfCheck(SiteProps.TreeBlocking(at, 0.3f) < 0 && !SiteProps.Blocks(at, 0.3f), "trunkNoLongerInTheWay");
+                    TfCheck(tfChunks0 >= 4, "brokeIntoWood");
+                    TfCheck(fell.Wood == 0, "notPickedUpYet");
+                    tfPhase = 2; tfT0 = t;
+                }
+                else if (tfFellAt < 0 && t - tfT0 > 15f) { TfCheck(false, "fellWithin15s(push=" + fell.PushShare.ToString("F2") + ")"); TreeFellFinish(); }
+                return;
+            case 2:                                                     // drive on over the wood
+                if (!tfShot2 && Camera.main != null) { tfShot2 = true; TfShoot(w, "tree_chunks.png", 0.5f); }
+                d.overrideThrottle = t - tfT0 < 0.5f ? 0f : 0.6f;
+                if (t - tfT0 < 12f && fell.ChunkCount > 0) return;
+                d.overrideThrottle = 0f;
+                if (t - tfT0 < 12.6f && fell.ChunkCount == 0) { }                 // (let the last ones land in the cab)
+                tfWood1 = fell.Wood; tfLeft1 = fell.ChunkCount;
+                tfLog += " wood=" + tfWood1 + " left=" + tfLeft1 + " made=" + fell.ChunksMade + " treesDown=" + fell.Felled.Count;
+                TfCheck(tfWood1 > 0, "pickedUpWood");
+                TfCheck(tfWood1 + tfLeft1 == fell.ChunksMade, "noWoodLost");          // (a chunk flying into the cab is still in ChunkCount)
+                string said = sg.Save();
+                TfCheck(said.StartsWith("Game saved"), "saved");
+                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+                tfPhase = 3; tfT0 = t;
+                return;
+            case 3:                                                     // loaded again
+                if (t - tfT0 < 2f || !sg.StartupDone || Time.timeSinceLevelLoad < 2.5f) return;
+                {
+                    Vector3 at = FireSim.Trees[tfTree].at;
+                    TfCheck(sg.CarriedOn, "reloaded");
+                    TfCheck(fell.Felled.Contains(tfTree), "stillDown");
+                    TfCheck(SiteProps.TreeBlocking(at, 0.3f) < 0 && !SiteProps.Blocks(at, 0.3f), "stillNotInTheWay");
+                    TfCheck(fell.Wood == tfWood1, "woodKept(" + fell.Wood + ")");
+                    TfCheck(fell.ChunkCount == tfLeft1, "chunksKept(" + fell.ChunkCount + ")");
+                }
+                TreeFellFinish();
+                return;
+        }
+    }
+    static void TfShoot(VoxelWorld w, string file, float along)
+    {
+        var tree = FireSim.Trees[tfTree];
+        Vector3 dir = new Vector3(Mathf.Sin(tfWay), 0f, Mathf.Cos(tfWay)), side = new Vector3(dir.z, 0f, -dir.x);
+        Vector3 look = tree.at + dir * tree.height * along;
+        look.y = w.HeightAt(look.x, look.z) + 1.5f;
+        Vector3 eye = look + side * 13f - dir * 3f;                      // from the side, a little above
+        eye.y = look.y + 7f;
+        var ct = Camera.main.transform;
+        ct.position = eye; ct.LookAt(look);
+        Shader.SetGlobalVector("_CutFrom", eye); Shader.SetGlobalVector("_CutTo", look); Shader.SetGlobalFloat("_CutRadius", 1.6f);   // see through the forest (as the game's camera does)
+        TestCapture(file);
+    }
+
     // The one-off pile at the foot of the mountain road:  -executeMethod BulldozerBuilder.RoadPileTest
     // On a COPY of the owner's save (Logs/pile_owner_copy.bin; it was saved before the pile existed):
     //   loads it and the pile is dropped once: about 20 m³ of loose soil, a heap at the foot of the road, the books straight,
@@ -4205,6 +4365,22 @@ public static class BulldozerBuilder
                 RpCheck(w.KindAt(c.x, c.y) == VoxelWorld.BlockSite, "onTheSite");
                 RpCheck(w.SolidCount + w.LooseTotal() == w.StartTotal, "booksStraight(" + (w.SolidCount + w.LooseTotal() - w.StartTotal) + ")");
                 RpCheck((new Vector2(d.transform.position.x, d.transform.position.z) - c).magnitude > RoadPile.Radius + 1.5f, "dozerNotInIt");
+                {   // the second pile, beside the road on its left
+                    Vector2 c2 = RoadPile.Centre2();
+                    float m3b = pile.LastAdded2 * VoxelWorld.VoxelVolume;
+                    float ring2 = 0f;
+                    for (int k = 0; k < 8; k++) { float a2 = k * Mathf.PI / 4f; ring2 += w.TopAt(c2.x + Mathf.Cos(a2) * (RoadPile.Radius2 + 0.6f), c2.y + Mathf.Sin(a2) * (RoadPile.Radius2 + 0.6f)); }
+                    ring2 /= 8f;
+                    int treesIn = 0;
+                    foreach (int tr in SiteProps.SolidTrees()) if ((new Vector2(FireSim.Trees[tr].at.x, FireSim.Trees[tr].at.z) - c2).magnitude < RoadPile.Radius2 + 0.6f) treesIn++;
+                    rpLog += " pile2=(" + c2.x.ToString("F1") + "," + c2.y.ToString("F1") + ") m3=" + m3b.ToString("F2") + " tall=" + (w.TopAt(c2.x, c2.y) - ring2).ToString("F2") + " treesIn=" + treesIn;
+                    RpCheck(pile.Placed2 && m3b > 29f && m3b < 31f, "pile2about30m3");
+                    RpCheck(w.TopAt(c2.x, c2.y) - ring2 > 0.6f, "pile2Stands");
+                    RpCheck(w.LooseOnTop(c2.x, c2.y) && w.KindAt(c2.x, c2.y) == VoxelWorld.BlockSite, "pile2LooseOnSite");
+                    Vector2 dv2 = (MountainRoad.Point(Mathf.Min(4, MountainRoad.Count - 1)) - MountainRoad.Point(0)).normalized;
+                    RpCheck(Vector2.Dot(c2 - MountainRoad.Point(0), new Vector2(-dv2.y, dv2.x)) > 4f, "pile2LeftOfRoad");
+                    RpCheck(treesIn == 0, "noTreeInPile2");
+                }
                 string said = sg.Save();
                 RpCheck(said.StartsWith("Game saved"), "saved");
                 UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
@@ -4215,6 +4391,7 @@ public static class BulldozerBuilder
                 wk.useOverride = true;
                 RpCheck(sg.CarriedOn, "reloaded");
                 RpCheck(pile.Placed && pile.LastAdded == 0, "notDroppedAgain(" + pile.LastAdded + ")");
+                RpCheck(pile.Placed2 && pile.LastAdded2 == 0, "pile2NotDroppedAgain");
                 RpCheck(Mathf.Abs(w.TopAt(c.x, c.y) - rpTop0) < 0.07f, "heapKept");
                 RpCheck(w.SolidCount + w.LooseTotal() == w.StartTotal, "booksStraightAfterLoad");
                 // into the dozer, behind the heap, facing up the road; blade on Flat
@@ -5010,7 +5187,7 @@ public static class BulldozerBuilder
             d.overrideThrottle = k < 1.5f ? 0f : 1f;
             if (follow != null) { follow.yawOffset = 70f; follow.distance = 10f; follow.pitch = 18f; }
             title = "Auto blade:  B on the keyboard, A on the pad";
-            cap = "Off, Flat, Cut 5 cm, Cut 10 cm.  It holds the height for you.  Here on " + d.BladeAutoName;
+            cap = "On and off; while on, blade up / down set the height it holds, 5 cm a tap.  Here on " + d.BladeAutoName;
             if (k > 10f) { d.overrideThrottle = 0f; d.bladeAuto = DozerController.BladeAutoMode.Off; ChNext(5); }
         }
         else if (chSeg == 5)
