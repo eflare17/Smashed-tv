@@ -28,13 +28,14 @@ and nothing in it touches the Digger Game or its save. Its product name is `voxe
 | Rifle | left mouse | right trigger |
 | Rocket | right mouse | left trigger |
 | Free the mouse | Esc (click to take it back) | |
+| Full screen / window (remembered) | F11 or Alt+Enter | |
 
 Over the shoulder, W walks the way you look and the cross is the aim. From above, W is always up the screen and
 you shoot at the mouse.
 
 ## Running it
 - In the editor: open the project, then **Tools > Arena > Play**. **Tools > Arena > Rebuild scene** remakes the scene.
-- The Windows game: `-executeMethod ArenaBuilder.BuildWindows` makes `Builds/VoxelArena/VoxelArena.exe`.
+- The Windows game: `-executeMethod ArenaBuilder.BuildWindows` makes `Builds/VoxelArena2/VoxelArena.exe` (`Play Arena.bat` starts it). It opens full screen.
 
 ## Tests
 Close any Unity that has this project open first. Then run:

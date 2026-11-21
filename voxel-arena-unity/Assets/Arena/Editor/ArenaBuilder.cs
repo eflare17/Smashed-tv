@@ -2,7 +2,7 @@
 //   -executeMethod ArenaBuilder.BuildScene      the scene (Assets/Arena/Arena.unity)
 //   -executeMethod ArenaBuilder.Test            the checks (exit 0 when they all pass, 1 when any fails)
 //   -executeMethod ArenaBuilder.RecordClip      frames, captions and sound into Logs/clip (ffmpeg makes the video)
-//   -executeMethod ArenaBuilder.BuildWindows    Builds/VoxelArena/VoxelArena.exe
+//   -executeMethod ArenaBuilder.BuildWindows    Builds/VoxelArena2/VoxelArena.exe
 // (Copied in spirit from the Digger Game's BulldozerBuilder; nothing here touches the Digger Game.)
 using System.Collections.Generic;
 using UnityEditor;
@@ -543,7 +543,7 @@ public static class ArenaBuilder
         var opts = new BuildPlayerOptions
         {
             scenes = new[] { ScenePath },
-            locationPathName = "Builds/VoxelArena/VoxelArena.exe",
+            locationPathName = "Builds/VoxelArena2/VoxelArena.exe",
             target = BuildTarget.StandaloneWindows64,
             options = BuildOptions.None,
         };
