@@ -147,6 +147,13 @@ public class Money : MonoBehaviour
         GUI.Box(new Rect(Hud.Margin, 10, 200, 54), GUIContent.none);
         GUI.Label(new Rect(Hud.Margin + 10, 11, 190, 28), Coins.ToString("N0") + " coins", coinStyle);
         GUI.Label(new Rect(Hud.Margin + 10, 37, 190, 24), "Gold " + GoldLitres.ToString("F0") + " L", goldStyle);
+        var fell = TreeFelling.Instance;
+        if (fell != null && fell.Wood > 0)
+        {
+            var woodStyle = new GUIStyle(goldStyle);
+            woodStyle.normal.textColor = new Color(0.85f, 0.65f, 0.42f);
+            GUI.Label(new Rect(Hud.Margin + 110, 37, 90, 24), "Wood " + fell.Wood, woodStyle);
+        }
         var pop = new GUIStyle(big) { fontSize = 20 };
         pop.normal.textColor = new Color(1f, 0.85f, 0.25f);
         if (popTimer > 0f)

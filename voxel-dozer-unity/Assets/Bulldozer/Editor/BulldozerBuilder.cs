@@ -906,8 +906,9 @@ public static class BulldozerBuilder
                 d.CycleBladeAuto(); string back = d.BladeAutoName; bool resumed = !d.AutoPaused;
                 d.CycleBladeAuto(); string next = d.BladeAutoName;
                 d.CycleBladeAuto(); string again = d.BladeAutoName;
-                bool resumeOk = back == "Flat" && resumed && next == "Off" && again == "Flat";
-                baLog += " resume=" + back + " next=" + next + " then=" + again + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                d.CycleBladeAuto(); string third = d.BladeAutoName;
+                bool resumeOk = back == "Flat" && resumed && next == "Grade (the pegs)" && again == "Off" && third == "Flat";
+                baLog += " resume=" + back + " next=" + next + " then=" + again + " then=" + third + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
                 // with auto on, the lever steps the height it holds, 5 cm a step, from fully down to fully up
                 d.StepAutoHeight(-1); string down1 = d.BladeAutoName;
                 d.StepAutoHeight(1); d.StepAutoHeight(1); d.StepAutoHeight(1); string up2 = d.BladeAutoName;
@@ -2758,7 +2759,7 @@ public static class BulldozerBuilder
         var opts = new BuildPlayerOptions
         {
             scenes = new[] { ScenePath },
-            locationPathName = WindowsExe,
+            locationPathName = System.Environment.GetEnvironmentVariable("DIGGER_BUILD_EXE") ?? WindowsExe,   // (a build somewhere else while the game is open)
             target = BuildTarget.StandaloneWindows64,
             options = BuildOptions.None,                           // not a Development build
         };
@@ -4152,6 +4153,255 @@ public static class BulldozerBuilder
                 if (t - sdT0 < 0.5f) return;
                 SoundCheck(AudioListener.volume == GameAudio.Master, "masterOnListener");
                 SoundFinish(); return;
+        }
+    }
+
+    // Trailer mode (DiggerGame.exe -trailer):  -executeMethod BulldozerBuilder.TrailerTest
+    // The dozer drives itself up the mountain road on blade auto Grade: after 40 s it is well up the road, on the
+    // road, with Grade on.  Pictures at 12 s and 35 s: Logs/trailer_mode_1.png, trailer_mode_2.png (no panels).
+    static int trPhase; static string trLog; static bool trOk, trShot1, trShot2;
+    public static void TrailerTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        trPhase = 0; trLog = ""; trOk = true; trShot1 = trShot2 = false;
+        TrailerMode.On = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TrailerTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void TrailerFinish()
+    {
+        EditorApplication.update -= TrailerTick;
+        TrailerMode.On = false;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (trOk) Debug.Log("BULLDOZER_TRAILER_RESULT" + trLog); else Debug.LogError("BULLDOZER_TRAILER_FAILED" + trLog);
+        EditorApplication.Exit(trOk ? 0 : 1);
+    }
+    static void TrailerTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { trLog += " timed out"; trOk = false; TrailerFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (d == null) return;
+        float t = Time.timeSinceLevelLoad;
+        if (!trShot1 && t > 12f) { trShot1 = true; TestCapture("trailer_mode_1.png"); }
+        if (!trShot2 && t > 35f) { trShot2 = true; TestCapture("trailer_mode_2.png"); }
+        if (t < 42f) return;
+        Vector3 p = d.transform.position;
+        float s, off; Vector2 dir; MountainRoad.Nearest(p.x, p.z, out s, out off, out dir);
+        trLog += " along=" + s.ToString("F1") + "m off=" + off.ToString("F2") + " auto=" + d.BladeAutoName + " grade=" + d.GradeMode;
+        if (s < 25f) { trOk = false; trLog += " NOT_FAR_UP=FAIL"; }
+        if (Mathf.Abs(off) > MountainRoad.CorridorHalf) { trOk = false; trLog += " OFF_ROAD=FAIL"; }
+        if (!d.GradeMode) { trOk = false; trLog += " NOT_ON_GRADE=FAIL"; }
+        if (SaveGame.AutoOn) { trOk = false; trLog += " WOULD_SAVE=FAIL"; }
+        TrailerFinish();
+    }
+
+    // Blade auto holding a cut (below 0):  -executeMethod BulldozerBuilder.BladeCutHoldTest
+    // On flat ground, standing still: blade auto on Flat, then set to Cut 30 cm.  The blade must go down to about
+    // 30 cm into the ground and STAY there (not spring back up); then driving on, it keeps cutting about 30 cm.
+    // Then the lever as the player works it: a quick tap down from Flat holds Cut 5 cm (it used to spring back to
+    // Flat, as the blade had not moved yet when the tap was let go); held down and let go it stays where it got to;
+    // a tap up goes up one step.  Uphill on the mountain road, stepping from Flat to Cut 10 cm never lifts the blade.
+    // Grade (the next press of B after a height): standing on the road the cutting edge goes to the road's grade, and
+    // driving up the road on it brings the road nearer grade.
+    static int bcPhase; static string bcLog; static bool bcOk; static double bcT0; static float bcLowest, bcAfter;
+    public static void BladeCutHoldTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bcPhase = 0; bcLog = ""; bcOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BladeCutTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void BladeCutFinish()
+    {
+        EditorApplication.update -= BladeCutTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (bcOk) Debug.Log("BULLDOZER_BLADECUT_RESULT" + bcLog); else Debug.LogError("BULLDOZER_BLADECUT_FAILED phase " + bcPhase + bcLog);
+        EditorApplication.Exit(bcOk ? 0 : 1);
+    }
+    static double bcNextLog;
+    static float bcGrade0, bcGradeS0; static float[] bcRoadBefore;
+    // the mean distance from grade of the road's middle, from `from` to `to` metres ahead of the dozer (and remembers
+    // the ground there, so it can be compared afterwards)
+    static float BcRoadOff(DozerController d, float from, float to)
+    {
+        float s0, o0; Vector2 d0; MountainRoad.Nearest(d.transform.position.x, d.transform.position.z, out s0, out o0, out d0);
+        bcGradeS0 = s0;
+        bcRoadBefore = new float[40];
+        for (int i = 0; i < 40; i++) { float s = s0 + i * 0.25f; Vector2 p = BcRoadPoint(s); float fh; VoxelWorld.Instance.FirmHeightAt(p.x, p.y, out fh); bcRoadBefore[i] = fh - MountainRoad.GradeAt(s); }
+        return BcRoadOffAt(s0 + from, s0 + to, true);
+    }
+    static Vector2 BcRoadPoint(float s)
+    {
+        int n = MountainRoad.Count;
+        for (int i = 1; i < n; i++)
+            if (MountainRoad.AlongAt(i) >= s) { float u = Mathf.InverseLerp(MountainRoad.AlongAt(i - 1), MountainRoad.AlongAt(i), s); return Vector2.Lerp(MountainRoad.Point(i - 1), MountainRoad.Point(i), u); }
+        return MountainRoad.Point(n - 1);
+    }
+    static float BcRoadOffAt(float from, float to, bool before = false)
+    {
+        float sum = 0f; int n = 0;
+        for (float s = from; s <= to; s += 0.25f)
+        {
+            float off;
+            if (before) { int i = Mathf.RoundToInt((s - bcGradeS0) / 0.25f); if (i < 0 || i >= bcRoadBefore.Length) continue; off = bcRoadBefore[i]; }
+            else { Vector2 p = BcRoadPoint(s); float fh; VoxelWorld.Instance.FirmHeightAt(p.x, p.y, out fh); off = fh - MountainRoad.GradeAt(s); }
+            sum += Mathf.Abs(off); n++;
+        }
+        return n > 0 ? sum / n : 0f;
+    }
+    static void BladeCutTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 200) { bcLog += " timed out"; bcOk = false; BladeCutFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (wk == null || d == null || Time.timeSinceLevelLoad < 2f) return;
+        double t = EditorApplication.timeSinceStartup;
+        switch (bcPhase)
+        {
+            case 0:
+                wk.useOverride = true;
+                if (!wk.InDozer) wk.GetIn();
+                d.useOverride = true; d.dead = false;
+                d.Place(new Vector3(0f, 0f, -16f), 0f);
+                d.overrideBlade = 0f; d.overrideSteer = 0f; d.overrideRipper = 1f; d.overrideThrottle = 0f;
+                d.bladeAuto = DozerController.BladeAutoMode.Flat;
+                bcPhase = 1; bcT0 = t; bcNextLog = t;
+                return;
+            case 1:                                                     // on Flat for a second, then Cut 30 cm, standing still
+                if (t - bcT0 < 1.5f) return;
+                d.AutoCm = -30;
+                bcLog += " set=" + d.BladeAutoName;
+                bcPhase = 2; bcT0 = t; bcLowest = 9f;
+                return;
+            case 2:
+                if (t >= bcNextLog) { bcNextLog = t + 0.5; bcLog += " [" + (t - bcT0).ToString("F1") + "s edge=" + d.EdgeAboveTracks.ToString("F2") + " arm=" + d.BladeArmAngle.ToString("F1") + " cm=" + d.AutoCm + (d.HeightAutoActive ? "" : " NOTACTIVE") + "]"; }
+                bcLowest = Mathf.Min(bcLowest, d.EdgeAboveTracks);
+                if (t - bcT0 < 7f) return;
+                bcAfter = d.EdgeAboveTracks;
+                bcLog += " standing: lowest=" + bcLowest.ToString("F2") + " after7s=" + bcAfter.ToString("F2");
+                if (!(bcAfter < -0.2f)) { bcOk = false; bcLog += " STAYED_DOWN=FAIL"; }
+                if (d.AutoCm != -30) { bcOk = false; bcLog += " HEIGHT_CHANGED=FAIL"; }
+                bcPhase = 3; bcT0 = t;
+                return;
+            case 3:                                                     // drive on: it keeps cutting
+                d.overrideThrottle = 0.5f;
+                if (t >= bcNextLog) { bcNextLog = t + 0.5; bcLog += " [drive " + (t - bcT0).ToString("F1") + "s edge=" + d.EdgeAboveTracks.ToString("F2") + " cm=" + d.AutoCm + "]"; }
+                if (t - bcT0 < 8f) return;
+                d.overrideThrottle = 0f;
+                if (d.AutoCm != -30) { bcOk = false; bcLog += " HEIGHT_CHANGED_DRIVING=FAIL"; }
+                {   // the cut it left: about 30 cm below the ground as it was (flat, about 0 here), not deeper and deeper
+                    var w = VoxelWorld.Instance;
+                    Vector3 dp = d.transform.position;
+                    string depths = ""; float worst = 0f;
+                    bcLog += " drove=" + (dp.z + 16f).ToString("F1") + "m";
+                    // along where the blade went: from where it started (3.4 m ahead of the dozer's middle) to where it is now
+                    for (float u = 0.2f; u <= 0.81f; u += 0.15f)
+                    {
+                        float z = Mathf.Lerp(-16f + 3.4f, dp.z + 3.0f, u);
+                        float fh; w.FirmHeightAt(0f, z, out fh);        // (firm: loose dirt can lie in the cut)
+                        float dep = -fh;
+                        depths += (depths.Length > 0 ? "/" : "") + dep.ToString("F2");
+                        worst = Mathf.Max(worst, dep);
+                    }
+                    bcLog += " cutDepthsBehind=" + depths;
+                    if (worst > 0.40f) { bcOk = false; bcLog += " CUT_KEPT_GOING_DOWN=FAIL"; }
+                    if (worst < 0.15f) { bcOk = false; bcLog += " DID_NOT_CUT=FAIL"; }
+                }
+                d.AutoCm = 0; d.leverAsPlayer = true; d.overrideBlade = 0f;
+                d.Place(new Vector3(9f, 0f, -16f), 0f);                     // fresh flat ground, beside the cut
+                bcPhase = 4; bcT0 = t;
+                return;
+            case 4:                                                     // the player's lever: a quick tap down from Flat
+                if (t - bcT0 < 2f) return;
+                d.overrideBlade = t - bcT0 < 2.12f ? -1f : 0f;
+                if (t - bcT0 < 5f) return;
+                bcLog += " tapDown: " + d.BladeAutoName + " edge=" + d.EdgeAboveTracks.ToString("F2");
+                if (d.AutoCm != -5 || d.EdgeAboveTracks > -0.03f) { bcOk = false; bcLog += " TAP_DOWN_SPRANG_BACK=FAIL"; }
+                bcPhase = 5; bcT0 = t;
+                return;
+            case 5:                                                     // held down 1.5 s, let go: it stays down where it got to
+                d.overrideBlade = t - bcT0 < 1.5f ? -1f : 0f;
+                if (t - bcT0 < 5f) return;
+                bcLog += " heldDown: " + d.BladeAutoName + " edge=" + d.EdgeAboveTracks.ToString("F2");
+                if (d.AutoCm > -10 || d.EdgeAboveTracks > -0.08f || Mathf.Abs(d.EdgeAboveTracks * 100f - d.AutoCm) > 6f) { bcOk = false; bcLog += " HOLD_DOWN_SPRANG_BACK=FAIL"; }
+                bcAfter = d.AutoCm;
+                bcPhase = 6; bcT0 = t;
+                return;
+            case 6:                                                     // a tap up: one step up
+                d.overrideBlade = t - bcT0 < 0.12f ? 1f : 0f;
+                if (t - bcT0 < 3f) return;
+                bcLog += " tapUp: " + d.BladeAutoName;
+                if (d.AutoCm != (int)bcAfter + 5) { bcOk = false; bcLog += " TAP_UP=FAIL"; }
+                d.leverAsPlayer = false;
+                {   // uphill on the mountain road, facing up it, on Flat
+                    Vector2 a0 = MountainRoad.Point(10), a1 = MountainRoad.Point(14), dv = (a1 - a0).normalized;
+                    d.Place(new Vector3(a0.x, 0f, a0.y), Mathf.Atan2(dv.x, dv.y) * Mathf.Rad2Deg);
+                    d.AutoCm = 0;
+                }
+                bcPhase = 7; bcT0 = t;
+                return;
+            case 7:                                                     // uphill, Cut 10 cm: the blade goes DOWN, not up
+                if (t - bcT0 < 2f) return;
+                if (bcPhase == 7 && d.AutoCm == 0) { bcAfter = d.EdgeAboveTracks; d.AutoCm = -10; bcLog += " uphill flat edge=" + bcAfter.ToString("F2"); }
+                if (t - bcT0 < 5f) return;
+                bcLog += " uphill cut10 edge=" + d.EdgeAboveTracks.ToString("F2") + " pitch=" + Mathf.DeltaAngle(0f, d.transform.eulerAngles.x).ToString("F1");
+                if (d.EdgeAboveTracks > bcAfter + 0.05f) { bcOk = false; bcLog += " UPHILL_CUT_LIFTED_THE_BLADE=FAIL"; }   // (a cut goes from the ground ahead, which is lumpy here, not yet graded: a few cm either way, but no big lift)
+                // Grade: one more press after a height
+                {   // to a stretch of road that needs cutting (its middle well above grade), just before it, facing up the road
+                    float best = -1f, bestOff = 0f;
+                    for (float s0 = 6f; s0 < MountainRoad.Length - 20f; s0 += 1f)
+                    {
+                        float sum = 0f; int n = 0;
+                        for (float s1 = s0 + 3f; s1 <= s0 + 11f; s1 += 0.5f) { Vector2 q = BcRoadPoint(s1); float fh; if (VoxelWorld.Instance.FirmHeightAt(q.x, q.y, out fh)) { sum += fh - MountainRoad.GradeAt(s1); n++; } }
+                        if (n > 10 && sum / n > bestOff) { bestOff = sum / n; best = s0; }
+                    }
+                    Vector2 a0 = BcRoadPoint(best), a1 = BcRoadPoint(best + 2f), dv = (a1 - a0).normalized;
+                    d.Place(new Vector3(a0.x, 0f, a0.y), Mathf.Atan2(dv.x, dv.y) * Mathf.Rad2Deg);
+                    bcLog += " cutStretchAt=" + best.ToString("F0") + "m (" + bestOff.ToString("F2") + " m above grade)";
+                }
+                d.bladeAuto = DozerController.BladeAutoMode.Flat;
+                d.CycleBladeAuto();
+                bcLog += " then=" + d.BladeAutoName;
+                if (!d.GradeMode) { bcOk = false; bcLog += " NO_GRADE_MODE=FAIL"; }
+                bcPhase = 8; bcT0 = t;
+                return;
+            case 8:                                                     // Grade, standing on the road: the edge goes to the road's grade
+                if (t - bcT0 < 5f) return;
+                {
+                    var blade = d.Blade;
+                    Vector3 e = (blade.TransformPoint(new Vector3(-2.25f, -0.75f, 1.1f)) + blade.TransformPoint(new Vector3(2.25f, -0.75f, 1.1f))) * 0.5f;
+                    float es, eo; Vector2 ed; MountainRoad.Nearest(e.x, e.z, out es, out eo, out ed);
+                    float offG = e.y - MountainRoad.GradeAt(es);
+                    bcLog += " grade: edgeOffGrade=" + offG.ToString("F2") + " edgeAboveTracks=" + d.EdgeAboveTracks.ToString("F2");
+                    if (Mathf.Abs(offG) > 0.07f) { bcOk = false; bcLog += " EDGE_NOT_ON_GRADE=FAIL"; }
+                    // the road ahead, before: how far its middle is from grade
+                    bcGrade0 = BcRoadOff(d, 2f, 10f);
+                    bcLog += " roadOffBefore=" + bcGrade0.ToString("F2");
+                }
+                bcPhase = 9; bcT0 = t;
+                return;
+            case 9:                                                     // drive up the road on Grade: the road gets nearer grade
+                d.overrideThrottle = t - bcT0 < 0.5f ? 0f : 0.5f;
+                if (t - bcT0 < 9f) return;
+                d.overrideThrottle = 0f;
+                {
+                    float after = BcRoadOffAt(bcGradeS0 + 3f, bcGradeS0 + 7f);
+                    bcLog += " roadOffAfter=" + after.ToString("F2") + " (" + (bcGradeS0 + 3f).ToString("F0") + "-" + (bcGradeS0 + 7f).ToString("F0") + " m along)";
+                    float before = BcRoadOffAt(bcGradeS0 + 3f, bcGradeS0 + 7f, true);
+                    if (!(after < before * 0.7f || after < 0.08f)) { bcOk = false; bcLog += " ROAD_NOT_NEARER_GRADE=FAIL(before " + before.ToString("F2") + ")"; }
+                }
+                // the corridor: the dozer may now drive 4 m off the road's line (past the pegs at 2.25 m)
+                bcLog += " corridor=" + MountainRoad.CorridorHalf.ToString("F1");
+                if (MountainRoad.CorridorHalf < 3.9f) { bcOk = false; bcLog += " CORRIDOR=FAIL"; }
+                BladeCutFinish();
+                return;
         }
     }
 
