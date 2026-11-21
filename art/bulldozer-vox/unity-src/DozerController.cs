@@ -125,6 +125,12 @@ public class DozerController : MonoBehaviour
         else { autoOn = true; gradeMode = false; autoCm = Mathf.Clamp(LastCm, -MaxCutCm, MaxFillCm); heightPaused = levelPaused = straightPaused = false; }
         SaveAutoPrefs();
     }
+    /// Trailer mode: blade auto on Grade, `offsetCm` above it (not remembered as the player's setting).
+    public void SetGradeAuto(int offsetCm)
+    {
+        autoOn = true; gradeMode = true; gradeOffCm = Mathf.Clamp(offsetCm, -50, 50);
+        heightPaused = levelPaused = straightPaused = false;
+    }
     /// The lever while auto is on: the height it holds goes up (+1) or down (-1) one step.
     public void StepAutoHeight(int dir)
     {

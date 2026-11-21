@@ -25,7 +25,7 @@ public class SaveGame : MonoBehaviour
     public static bool TestAuto;                             // tests: do the built game's autosave and carry-on in the editor
     public static float AutoEvery = 300f;                    // seconds of play between autosaves
     static bool freshStart;                                  // New game: don't carry on from a save this once
-    public static bool AutoOn { get { return !Application.isEditor || TestAuto; } }
+    public static bool AutoOn { get { return (!Application.isEditor || TestAuto) && !TrailerMode.On; } }   // (trailer mode: a fresh game, never saved)
     public float SinceSave { get; private set; }
     public bool CarriedOn { get; private set; }
     bool triedCarryOn;

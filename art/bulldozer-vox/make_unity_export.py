@@ -4298,6 +4298,49 @@ public static class BulldozerBuilder
         }
     }
 
+    // Trailer mode (DiggerGame.exe -trailer):  -executeMethod BulldozerBuilder.TrailerTest
+    // The dozer drives itself up the mountain road on blade auto Grade: after 40 s it is well up the road, on the
+    // road, with Grade on.  Pictures at 12 s and 35 s: Logs/trailer_mode_1.png, trailer_mode_2.png (no panels).
+    static int trPhase; static string trLog; static bool trOk, trShot1, trShot2;
+    public static void TrailerTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        trPhase = 0; trLog = ""; trOk = true; trShot1 = trShot2 = false;
+        TrailerMode.On = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += TrailerTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void TrailerFinish()
+    {
+        EditorApplication.update -= TrailerTick;
+        TrailerMode.On = false;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (trOk) Debug.Log("BULLDOZER_TRAILER_RESULT" + trLog); else Debug.LogError("BULLDOZER_TRAILER_FAILED" + trLog);
+        EditorApplication.Exit(trOk ? 0 : 1);
+    }
+    static void TrailerTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { trLog += " timed out"; trOk = false; TrailerFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (d == null) return;
+        float t = Time.timeSinceLevelLoad;
+        if (!trShot1 && t > 12f) { trShot1 = true; TestCapture("trailer_mode_1.png"); }
+        if (!trShot2 && t > 35f) { trShot2 = true; TestCapture("trailer_mode_2.png"); }
+        if (t < 42f) return;
+        Vector3 p = d.transform.position;
+        float s, off; Vector2 dir; MountainRoad.Nearest(p.x, p.z, out s, out off, out dir);
+        trLog += " along=" + s.ToString("F1") + "m off=" + off.ToString("F2") + " auto=" + d.BladeAutoName + " grade=" + d.GradeMode;
+        if (s < 25f) { trOk = false; trLog += " NOT_FAR_UP=FAIL"; }
+        if (Mathf.Abs(off) > MountainRoad.CorridorHalf) { trOk = false; trLog += " OFF_ROAD=FAIL"; }
+        if (!d.GradeMode) { trOk = false; trLog += " NOT_ON_GRADE=FAIL"; }
+        if (SaveGame.AutoOn) { trOk = false; trLog += " WOULD_SAVE=FAIL"; }
+        TrailerFinish();
+    }
+
     // Blade auto holding a cut (below 0):  -executeMethod BulldozerBuilder.BladeCutHoldTest
     // On flat ground, standing still: blade auto on Flat, then set to Cut 30 cm.  The blade must go down to about
     // 30 cm into the ground and STAY there (not spring back up); then driving on, it keeps cutting about 30 cm.
