@@ -80,6 +80,10 @@ Shader "Voxel/Terrain"
         float _Regrowth;        // 1: years after the fire.  About half the burnt gums have resprouted, the rest are grey dead spars, the burnt ground is green bracken
         sampler2D _TreeFire, _GroundFire, _TreeBase;
         float4 _TreeFireSize, _GroundFireRect;
+        // trees the dozer pushes over (TreeFelling): per tree r = when it started to fall (on _FellClock; huge = standing),
+        // g = which way it falls, b = how far it leans while being pushed, a = which way it leans.  _FellOn 0: none yet.
+        sampler2D _TreeFell;
+        float _FellClock, _FellOn;
 
         // Quartz and gold catch the light up close: within about 4 m of him (_SparkleFrom), a few blocks of the seam
         // twinkle with a tiny bright point where a light falls on them.  Gold twinkles more.  Further off they look
@@ -115,20 +119,37 @@ Shader "Voxel/Terrain"
 
         void vert(inout appdata_full v)
         {
-            if (_FireTime < -1000.0 || v.color.a > 0.99) return;
+            if (v.color.a > 0.99) return;
+            if (_FireTime < -1000.0 && _FellOn < 0.5) return;
             float m = round(v.color.r * 255.0);
             if (m != 14.0 && m != 15.0) return;
             float tid = round(v.color.b * 255.0) + round(v.color.a * 255.0) * 256.0;
             float4 tuv = float4((fmod(tid, 256.0) + 0.5) * _TreeFireSize.z, (floor(tid / 256.0) + 0.5) * _TreeFireSize.w, 0, 0);
             float4 f = tex2Dlod(_TreeFire, tuv);
-            float tf = _FireTime - f.b;
-            if (tf <= 0.0) return;
-            float u = saturate(tf / 2.6);
-            float ang = u * u * 1.53;
-            if (tf > 2.6) ang = 1.53 - 0.07 * sin(min((tf - 2.6) * 7.0, 3.14159)) * exp(-(tf - 2.6) * 2.5);
             float2 b = tex2Dlod(_TreeBase, tuv).rg;
             float3 pivot = float3(b.x, f.g, b.y);
-            float3 dir = float3(sin(f.a), 0, cos(f.a));
+            float ang = 0.0, way = 0.0;
+            float4 fl = _FellOn > 0.5 ? tex2Dlod(_TreeFell, tuv) : float4(1e9, 0, 0, 0);
+            float tp = _FellClock - fl.r;
+            if (tp > 0.0)
+            {
+                // pushed over: it falls like a burnt one, and once down it has broken up into wood (TreeFelling): gone
+                if (tp > 2.75) { v.vertex.xyz = mul(unity_WorldToObject, float4(pivot - float3(0, 60, 0), 1)).xyz; return; }
+                float u = saturate(tp / 2.6);
+                ang = max(fl.b, u * u * 1.53); way = fl.g;
+            }
+            else if (fl.b > 0.0) { ang = fl.b; way = fl.a; }                                // leaning under the blade
+            else
+            {
+                if (_FireTime < -1000.0) return;
+                float tf = _FireTime - f.b;
+                if (tf <= 0.0) return;
+                float u = saturate(tf / 2.6);
+                ang = u * u * 1.53;
+                if (tf > 2.6) ang = 1.53 - 0.07 * sin(min((tf - 2.6) * 7.0, 3.14159)) * exp(-(tf - 2.6) * 2.5);
+                way = f.a;
+            }
+            float3 dir = float3(sin(way), 0, cos(way));
             float3 axis = normalize(cross(float3(0, 1, 0), dir));
             float3 wp = mul(unity_ObjectToWorld, v.vertex).xyz - pivot;
             wp = RotateAbout(wp, axis, ang) + pivot;

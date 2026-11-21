@@ -14,7 +14,7 @@ public class SiteProps : MonoBehaviour
     const byte Bracken = 30;
     const byte Timber = 11, DarkTimber = 12, Steel = 13, Leaves = 14, Bark = 15, Rock = 3, Gold = 5, HiVis = 16, Dark = 20, ForestFloor = 25, TrackDirt = 26;
 
-    struct Solid { public Vector2 at; public float radius; public bool machineOnly; public float below; }   // below: only solid to a machine lower than this (metres)
+    struct Solid { public Vector2 at; public float radius; public bool machineOnly; public float below; public int tree; }   // tree: the tree this is the trunk of (-1: not a tree)   // below: only solid to a machine lower than this (metres)
     static readonly List<Solid> solids = new List<Solid>();
 
     /// The middle of the track, point by point, from deep in the tunnel out to the end of the line.
@@ -42,12 +42,34 @@ public class SiteProps : MonoBehaviour
         for (int i = 0; i < solids.Count; i++)
         {
             if (onFoot && solids[i].machineOnly) continue;
+            if (solids[i].tree >= 0 && felled.Contains(solids[i].tree)) continue;   // pushed over by the dozer: gone
             if (pos.y >= solids[i].below) continue;                          // (the tunnel: a machine up on the hilltop above it is not in it)
             float r = solids[i].radius + radius;
             if ((new Vector2(pos.x, pos.z) - solids[i].at).sqrMagnitude < r * r) return true;
         }
         return false;
     }
+
+    // trees the dozer has pushed over (TreeFelling): their trunks are no longer in the way
+    static readonly HashSet<int> felled = new HashSet<int>();
+    public static void SetFelled(int tree) { felled.Add(tree); }
+    public static void ClearFelled() { felled.Clear(); }
+
+    /// The standing tree whose trunk a machine of this radius at this spot would be inside, or -1.
+    public static int TreeBlocking(Vector3 pos, float radius)
+    {
+        Vector2 p2 = new Vector2(pos.x, pos.z);
+        for (int i = 0; i < solids.Count; i++)
+        {
+            if (solids[i].tree < 0 || felled.Contains(solids[i].tree) || pos.y >= solids[i].below) continue;
+            float r = solids[i].radius + radius;
+            if ((p2 - solids[i].at).sqrMagnitude < r * r) return solids[i].tree;
+        }
+        return -1;
+    }
+
+    /// Every tree that stands in the way of machines (has a solid trunk), for tests.
+    public static List<int> SolidTrees() { var l = new List<int>(); foreach (var s in solids) if (s.tree >= 0) l.Add(s.tree); return l; }
 
     // ---------------------------------------------------------------- box builder
     readonly List<Vector3> verts = new List<Vector3>();
@@ -156,7 +178,9 @@ public class SiteProps : MonoBehaviour
         return go;
     }
 
-    void Solidify(float x, float z, float radius, bool machineOnly = false, float below = float.MaxValue) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly, below = below }); }
+    void Solidify(float x, float z, float radius, bool machineOnly = false, float below = float.MaxValue) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, machineOnly = machineOnly, below = below, tree = -1 }); }
+    /// The trunk of the tree just built is solid (and the dozer can push it over).
+    void SolidifyTree(float x, float z, float radius) { solids.Add(new Solid { at = new Vector2(x, z), radius = radius, below = float.MaxValue, tree = FireSim.Trees.Count - 1 }); }
 
     // ---------------------------------------------------------------- the site
     VoxelWorld world;
@@ -177,6 +201,7 @@ public class SiteProps : MonoBehaviour
         if (world == null) return;
         solids.Clear();
         fallen.Clear();
+        felled.Clear();
         FireSim.Trees.Clear();
         rng = new System.Random(11);
         var cam = Camera.main;
@@ -197,6 +222,7 @@ public class SiteProps : MonoBehaviour
         if (GameAudio.Instance == null) new GameObject("Sound").AddComponent<GameAudio>();         // everything you hear
         if (Goals.Instance == null) new GameObject("Goals").AddComponent<Goals>();                // one small goal at a time
         if (RoadPile.Instance == null) new GameObject("Road pile").AddComponent<RoadPile>();      // the one-off dirt at the foot of the road
+        if (TreeFelling.Instance == null) new GameObject("Tree felling").AddComponent<TreeFelling>();   // the dozer pushes trees over; their wood
         if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
         Dump();
         Clutter();
@@ -533,7 +559,7 @@ public class SiteProps : MonoBehaviour
         {
             if (InBreakLane(s.x, s.z) || NearRoad(s.x, s.z)) continue;
             Tree(new Vector3(s.x, Ground(s.x, s.z) - 0.1f, s.z), s.h);
-            Solidify(s.x, s.z, 0.45f);
+            SolidifyTree(s.x, s.z, 0.45f);
             Finish("Gum tree " + (++n));
         }
         // low scrub scattered on the grassy ground
@@ -707,7 +733,7 @@ public class SiteProps : MonoBehaviour
                     }
                     float h = Rand(16f, 24f) * (z > 120f ? 0.85f : 1f);
                     TallGum(new Vector3(x, HillY(x, zz) - 0.15f, zz), h);
-                    if (inSite) Solidify(x, zz, 0.5f);
+                    if (inSite) SolidifyTree(x, zz, 0.5f);
                     n++;
                     if (++inMesh >= 14) { Finish("Track gums " + n); inMesh = 0; }
                 }
@@ -752,7 +778,7 @@ public class SiteProps : MonoBehaviour
                 if (noise.snoise(new float2(px, pz) * 0.06f) < -0.35f) continue;               // a clearing
                 if (NearRoad(px, pz)) continue;
                 TallGum(new Vector3(px, HillY(px, pz) - 0.15f, pz), Rand(13f, 20f));
-                Solidify(px, pz, 0.5f);
+                SolidifyTree(px, pz, 0.5f);
                 n++;
                 if (++inMesh >= 14) { Finish("Hilltop gums " + n); inMesh = 0; }
             }

@@ -523,7 +523,18 @@ public class DozerController : MonoBehaviour
                 }
             }
             // the scenery: trees, crates and the mine entrance are solid
-            if (SiteProps.Blocks(pos, 2.3f)) { pos = before; Speed = 0f; }
+            if (SiteProps.Blocks(pos, 2.3f))
+            {
+                // driving into a tree: push it (it leans, then goes over; TreeFelling).  Only head on, going forward.
+                int tree = TreeFelling.Instance != null && throttleIn > 0.2f ? SiteProps.TreeBlocking(pos, 2.3f) : -1;
+                if (tree >= 0)
+                {
+                    Vector3 fwd = yawRot * Vector3.forward, to = FireSim.Trees[tree].at - before;
+                    to.y = 0f;
+                    if (Vector3.Dot(fwd, to.normalized) > 0.35f) TreeFelling.Instance.Push(tree, fwd, dt);
+                }
+                pos = before; Speed = 0f;
+            }
             // sit on the ground under the tracks, and lean with it
             float front = 0f, rear = 0f, left = 0f, right = 0f, all = 0f;
             for (int i = 0; i < TrackPoints.Length; i++)
