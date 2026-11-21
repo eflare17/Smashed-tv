@@ -57,6 +57,7 @@ public class Money : MonoBehaviour
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
             popLitres[m] += voxelsByMaterial[m] * VoxelWorld.VoxelVolume * 1000.0;
         popTimer = 4f;
+        Ending.CountPaid(voxelsByMaterial);                     // (the totals for the ending's stats)
         if (value <= 0) return 0;
         fraction += value;
         long whole = (long)System.Math.Floor(fraction);

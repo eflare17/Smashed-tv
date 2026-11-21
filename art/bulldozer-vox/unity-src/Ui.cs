@@ -30,7 +30,7 @@ public static class Ui
         if (fitH > 0f) f = Mathf.Min(f, Screen.height / fitH);
         Scale = Mathf.Max(0.3f, f);
         GUI.matrix = Matrix4x4.Scale(new Vector3(Scale, Scale, 1f));
-        if (TrailerMode.On) GUI.matrix = Matrix4x4.Translate(new Vector3(-100000f, -100000f, 0f));   // trailer mode: every panel drawn far off the screen
+        if (TrailerMode.On || Ending.Playing && !Ending.Drawing) GUI.matrix = Matrix4x4.Translate(new Vector3(-100000f, -100000f, 0f));   // trailer mode, the ending: every panel drawn far off the screen
         DarkBoxes();
     }
 

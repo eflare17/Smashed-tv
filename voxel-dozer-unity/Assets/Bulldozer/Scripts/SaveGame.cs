@@ -147,6 +147,9 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 w.Write(fell != null);
                 if (fell != null) { w.Write(pile != null && pile.Placed2); fell.WriteState(w); }
+                var ending = Ending.Instance;
+                w.Write(ending != null);
+                if (ending != null) ending.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -224,6 +227,11 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 if (hasFell) { if (fell != null) fell.ReadState(r); }
                 else if (fell != null) fell.FromOldSave();
+                var ending = Ending.Instance;
+                bool hasEnding;
+                try { hasEnding = hasFell && r.ReadBoolean(); } catch (EndOfStreamException) { hasEnding = false; }   // saved before the ending
+                if (hasEnding) { if (ending != null) ending.ReadState(r); else { r.ReadInt32(); r.ReadBoolean(); r.ReadDouble(); r.ReadDouble(); } }
+                else if (ending != null) ending.Clear();
             }
         }
         catch (System.Exception e)

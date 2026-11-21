@@ -3465,6 +3465,90 @@ public static class BulldozerBuilder
         }
     }
 
+    // The goal and the ending:  -executeMethod BulldozerBuilder.EndingTest
+    // The ending doesn't play before the goal.  Goes through every goal (Goals.TestComplete, with the parts fitted and
+    // every road stretch graded so the new goals are really true), and the ending starts by itself: the panels hide,
+    // the camera flies up the road (pictures on the way and of the stats card), the stats count what went down the
+    // hopper; "Keep playing" hands the camera back; it doesn't play again; and Shown and the totals survive a save
+    // and load of its section.  Prints BULLDOZER_ENDING_RESULT, or BULLDOZER_ENDING_FAILED.
+    static int enPhase; static float enT0; static bool enOk; static string enLog; static Vector3 enCam0;
+
+    public static void EndingTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        enPhase = 0; enLog = ""; enOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += EndingTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void EndingFinish(int code) { EditorApplication.update -= EndingTick; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void ECheck(string name, bool good) { enLog += " " + name + "=" + good; if (!good) enOk = false; }
+
+    static void EndingTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_ENDING_FAILED timed out in phase " + enPhase + " " + enLog); EndingFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var money = Money.Instance; var goals = Goals.Instance; var end = Ending.Instance; var finds = Finds.Instance; var road = MountainRoadJob.Instance;
+        if (wk == null || money == null || goals == null || end == null || finds == null || road == null || Camera.main == null) return;
+        float t = Time.time;
+        switch (enPhase)
+        {
+            case 0:
+                if (Time.timeSinceLevelLoad < 4f) return;
+                wk.useOverride = true;
+                money.Clear(); goals.Reset(); end.TestReset();
+                ECheck("notBeforeGoal", !Ending.Playing && !Ending.GoalReached);
+                // what goes down the hopper is counted for the stats: 4,096 voxels of soil (1 m3) and 41 of gold (10 L)
+                var paid = new int[16]; paid[VoxelWorld.LooseSoil] = 4096; paid[VoxelWorld.LooseGold] = 41;
+                money.Pay(paid);
+                enLog += " sold=" + end.SoldLitres.ToString("F0") + "L gold=" + end.GoldFoundLitres.ToString("F1") + "L";
+                ECheck("countsHopper", System.Math.Abs(end.SoldLitres - 1000.0) < 0.5 && end.GoldFoundLitres > 9.5 && end.GoldFoundLitres < 10.5);
+                for (int k = 0; k < Finds.Count; k++) finds.SetState(k, true, true, true);
+                for (int k = 0; k < MountainRoad.Stretches; k++) road.TestGradeStretch(k);
+                road.Refresh();
+                enLog += " ticked=" + road.TickedCount;
+                for (int guard = 0; guard < 40 && goals.Current < Goals.List.Length; guard++) goals.TestComplete();
+                ECheck("allGoalsDone", goals.DoneCount == Goals.List.Length && goals.IsDone("dozer_fixed") && goals.IsDone("road_done"));
+                ECheck("goalReached", Ending.GoalReached);
+                enCam0 = Camera.main.transform.position;
+                enPhase = 1; enT0 = t;
+                return;
+            case 1:
+                if (!Ending.Playing && t - enT0 < 3f) return;
+                ECheck("startsByItself", Ending.Playing);
+                ECheck("playerHeld", wk.useOverride);
+                enPhase = 2; enT0 = t;
+                return;
+            case 2:
+                if (t - enT0 > 4f && enLog.IndexOf("flyPic1") < 0) { TestCapture("ending_fly1.png"); enLog += " flyPic1"; }
+                if (t - enT0 > 11f && enLog.IndexOf("flyPic2") < 0) { TestCapture("ending_fly2.png"); enLog += " flyPic2"; ECheck("cameraMoved", (Camera.main.transform.position - enCam0).magnitude > 10f); }
+                if (t - enT0 < Ending.FlyFor + 6f) return;
+                TestCapture("ending_card.png");
+                enLog += " stats=[" + string.Join(" | ", end.StatLines()) + "]";
+                end.Finish();                                                     // "Keep playing"
+                var follow = Camera.main.GetComponent<FollowCamera>();
+                ECheck("handsBack", !Ending.Playing && follow != null && follow.enabled);
+                enPhase = 3; enT0 = t;
+                return;
+            case 3:
+                if (t - enT0 < 4f) return;
+                ECheck("onlyOnce", !Ending.Playing && end.Shown);
+                var ms = new System.IO.MemoryStream();
+                end.WriteState(new System.IO.BinaryWriter(ms));
+                double sold = end.SoldLitres;
+                end.Clear();
+                ECheck("clearForgets", !end.Shown && end.SoldLitres == 0);
+                ms.Position = 0;
+                end.ReadState(new System.IO.BinaryReader(ms));
+                ECheck("loadKeeps", end.Shown && end.SoldLitres == sold);
+                Debug.Log((enOk ? "BULLDOZER_ENDING_RESULT" : "BULLDOZER_ENDING_FAILED") + enLog);
+                EndingFinish(enOk ? 0 : 1);
+                return;
+        }
+    }
+
     // ---------------------------------------------------------------- the Dingo (Dingo.cs)
     //   -executeMethod BulldozerBuilder.DingoTest          prints BULLDOZER_DINGO_RESULT (or _FAILED)
     //   -executeMethod BulldozerBuilder.RecordDingoClip    the same run filmed: frames and overlay.ass go to Logs/clip

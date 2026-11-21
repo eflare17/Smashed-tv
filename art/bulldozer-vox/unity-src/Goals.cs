@@ -33,11 +33,15 @@ public class Goals : MonoBehaviour
         G("gold_find",   "Find gold in the quartz seam",                  100, g => g.goldSeen || (Money.Instance != null && Money.Instance.GoldStore > 0)),
         G("gold_sell",   "Sell gold at the gold buyer's shed",            100, g => g.goldSold),
         G("caves_all",   "Clear all three cave-ins",                      300, g => g.CaveClear(0) && g.CaveClear(1) && g.CaveClear(2), g => g.CavesLine()),
+        G("dozer_fixed", "Fit all three parts: restore Dad's old dozer",  300, g => PartsFitted() == Finds.Count, g => PartsFitted() + " of " + Finds.Count + " fitted"),
         G("jackhammer",  "Buy the jackhammer",                            150, g => Upgrades.Instance != null && Upgrades.Instance.Level(Upgrades.Branch.Pick) >= 6),
         G("motor_cart",  "Buy the motor cart",                            200, g => Upgrades.Instance != null && Upgrades.Instance.HasMotorCart),
         // extras
         G("road_grade",  "Grade a stretch of the mountain road",          150, g => MountainRoadJob.Instance != null && MountainRoadJob.Instance.TickedCount >= 1),
         G("push50",      "Push 50 m3 of dirt with the dozer",             200, g => g.pushedM3 >= 50f, g => g.pushedM3.ToString("F0") + " of 50 m3"),
+        // the game's goal: with the dozer restored, finish the road (then the ending plays: Ending.cs)
+        G("road_done",   "Finish the mountain road: every stretch ticked", 250, g => MountainRoadJob.Instance != null && MountainRoadJob.Instance.TickedCount >= MountainRoad.Stretches,
+                         g => (MountainRoadJob.Instance != null ? MountainRoadJob.Instance.TickedCount : 0) + " of " + MountainRoad.Stretches + " stretches ticked"),
     };
 
     // ------------------------------------------------------------------ state (saved)
@@ -113,6 +117,13 @@ public class Goals : MonoBehaviour
     {
         var u = Upgrades.Instance;
         return u != null && (u.Level(Upgrades.Branch.Pick) > 1 || u.Level(Upgrades.Branch.Shovel) > 1 || u.Level(Upgrades.Branch.Backpack) > 0 || u.Level(Upgrades.Branch.Cart) > 1);
+    }
+    static int PartsFitted()
+    {
+        var f = Finds.Instance;
+        int n = 0;
+        if (f != null) for (int k = 0; k < Finds.Count; k++) if (f.Installed[k]) n++;
+        return n;
     }
     static bool AnyFound()
     {
