@@ -40,7 +40,7 @@ void fragment() {
 }
 """
 
-var sim: MineSim
+var sim                         # MineSim (the mine_sim GDExtension: not in the web build, so untyped)
 var seed_ := 1
 var flags := {"sewers": true, "cops": true, "rivals": true}
 ## where things are (metres; y as depth): "caves" [[cx, cy, rx, ry]], "cathedral" [cx, cy, rx, ry, stem x, floor],
@@ -63,7 +63,7 @@ var _decor_t := 0.0
 var _rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
-	sim = MineSim.new()
+	sim = ClassDB.instantiate("MineSim")
 	sim.setup(CW, CH, SKY)
 	MineTiles.apply(sim)
 	_mat = ShaderMaterial.new()
@@ -403,7 +403,7 @@ func _worm_cavern() -> void:
 
 ## The ground as bytes (its seed, its switches, and every cell, packed small)
 func save_bytes() -> PackedByteArray:
-	var raw := sim.get_raw()
+	var raw = sim.get_raw()
 	var head := JSON.stringify({"seed": seed_, "flags": flags, "n": raw.size(), "v": 2}).to_utf8_buffer()
 	var out := PackedByteArray()
 	out.resize(4)

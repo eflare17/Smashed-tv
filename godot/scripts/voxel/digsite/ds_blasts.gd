@@ -18,11 +18,11 @@ const CHUNKS := 22
 const CHUNK_S := 0.22           # m, a flying chunk's size
 
 var site: Node3D                # DigSite
-var sticks := {}                # id -> {at, t, node, real}
-var flying := []                # {node, v, m, n, real}
-var booms := 0                  # (the tests')
-var last := {}                  # (the tests: the last blast's {n, cracked, at})
-var _seq := 0
+var sticks = {}                # id -> {at, t, node, real}
+var flying = []                # {node, v, m, n, real}
+var booms = 0                  # (the tests')
+var last = {}                  # (the tests: the last blast's {n, cracked, at})
+var _seq = 0
 
 func setup(s: Node3D) -> void:
 	site = s
@@ -42,7 +42,7 @@ func light(p: Vector3) -> bool:
 		return false
 	a.inv.remove("dynamite", 1)
 	_seq += 1
-	var id := "%s%d" % [site.net.role().left(1), _seq]
+	var id = "%s%d" % [site.net.role().left(1), _seq]
 	site.net.act("dyn", [id, p, FUSE])
 	a.say("Lit! Run! (%d s)" % int(FUSE), 1.5)
 	return true
@@ -51,30 +51,30 @@ func light(p: Vector3) -> bool:
 func _dyn_op(a: Array, again: bool) -> void:
 	if again or a.size() < 3:
 		return
-	var id := String(a[0])
+	var id = String(a[0])
 	if sticks.has(id):
 		return
 	var real: bool = site.net.runs()
-	var node := _stick_node(a[1])
+	var node = _stick_node(a[1])
 	sticks[id] = {"at": a[1], "t": float(a[2]), "node": node, "real": real}
 	site.arena.sound.play("bbq_light", a[1], 0.0, 1.4)
 	if real and site.net.role() == "host":
 		site.net.event("dyn", a)           # (the guest sees it too; its own comes back: already there)
 
 func _stick_node(at: Vector3) -> Node3D:
-	var n := Node3D.new()
-	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
+	var n = Node3D.new()
+	var mi = MeshInstance3D.new()
+	var cm = CylinderMesh.new()
 	cm.top_radius = 0.03
 	cm.bottom_radius = 0.03
 	cm.height = 0.22
 	mi.mesh = cm
-	var m := StandardMaterial3D.new()
+	var m = StandardMaterial3D.new()
 	m.albedo_color = Color8(200, 30, 30)
 	mi.material_override = m
 	mi.position = Vector3(0, 0.11, 0)
 	n.add_child(mi)
-	var ps := CPUParticles3D.new()
+	var ps = CPUParticles3D.new()
 	ps.amount = 24
 	ps.lifetime = 0.4
 	ps.direction = Vector3.UP
@@ -82,9 +82,9 @@ func _stick_node(at: Vector3) -> Node3D:
 	ps.initial_velocity_min = 0.5
 	ps.initial_velocity_max = 1.5
 	ps.gravity = Vector3(0, -3, 0)
-	var sm := BoxMesh.new()
+	var sm = BoxMesh.new()
 	sm.size = Vector3.ONE * 0.015
-	var sp := StandardMaterial3D.new()
+	var sp = StandardMaterial3D.new()
 	sp.albedo_color = Color(1.0, 0.8, 0.3)
 	sp.emission_enabled = true
 	sp.emission = Color(1.0, 0.6, 0.1)
@@ -119,13 +119,13 @@ func _process(dt: float) -> void:
 		f.v = (f.v as Vector3) + Vector3(0, -9.8 * dt, 0)
 		node.global_position += (f.v as Vector3) * dt
 		node.rotation += Vector3(3.0, 2.0, 1.0) * dt
-		var p := node.global_position
-		var top := tr.top_at(p.x, p.z)
+		var p = node.global_position
+		var top = tr.top_at(p.x, p.z)
 		if top == -INF:
 			top = 0.0
 		if (p.y <= top and float((f.v as Vector3).y) < 0.0) or p.y < -30.0:
 			if bool(f.real):
-				var q := _inside(p)
+				var q = _inside(p)
 				_dump_spread(q, int(f.m), int(f.n))
 			node.queue_free()
 			flying.remove_at(i)
@@ -138,8 +138,8 @@ func _inside(p: Vector3) -> Vector3:
 ## n loose blocks of m dumped at p, spilling over to the columns round it when one's full
 func _dump_spread(p: Vector3, m: int, n: int) -> int:
 	var tr: DsTerrain = site.terrain
-	var left := n
-	var r := 0
+	var left = n
+	var r = 0
 	while left > 0 and r < 6:
 		for dz in range(-r, r + 1):
 			for dx in range(-r, r + 1):
@@ -156,21 +156,21 @@ func _blow(at: Vector3) -> void:
 	var counts: PackedInt32Array = got.counts
 	last = {"n": int(got.n), "cracked": int(got.cracked), "at": at}
 	# the chunks: each carrying its share of what came out, by material
-	var mats := []
+	var mats = []
 	for m in counts.size():
 		if counts[m] > 0:
 			mats.append([m, counts[m]])
-	var chunks := []
-	var k := mini(CHUNKS, maxi(1, int(got.n)))
+	var chunks = []
+	var k = mini(CHUNKS, maxi(1, int(got.n)))
 	for m_n in mats:
-		var share := maxi(1, roundi(float(k) * m_n[1] / maxf(1.0, float(got.n))))
+		var share = maxi(1, roundi(float(k) * m_n[1] / maxf(1.0, float(got.n))))
 		var left: int = m_n[1]
 		for j in share:
-			var c := left / (share - j)
+			var c = left / (share - j)
 			left -= c
 			if c > 0:
 				chunks.append([m_n[0], c])
-	var seed := randi()
+	var seed = randi()
 	_boom_fx(at, RADIUS, [seed, chunks], true)
 	site.net.event("boom", [at, RADIUS, [seed, chunks]])
 	site.arena.hurt_players_near(at, HURT_R, HURT)
@@ -183,34 +183,34 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	var a = site.arena
 	a.sound.play("mine_boom", at, 6.0, randf_range(0.9, 1.05))
 	a.sound.play("grenades_boom", at, 2.0, 0.8)
-	var light := OmniLight3D.new()
+	var light = OmniLight3D.new()
 	light.light_color = Color(1.0, 0.75, 0.4)
 	light.light_energy = 8.0
 	light.omni_range = 10.0
 	add_child(light)
 	light.global_position = at + Vector3(0, 0.5, 0)
-	var tw := light.create_tween()
+	var tw = light.create_tween()
 	tw.tween_property(light, "light_energy", 0.0, 0.4)
 	tw.tween_callback(light.queue_free)
 	if a.player.global_position.distance_to(at) < 12.0:
 		a._kick = maxf(a._kick, 1.0 - a.player.global_position.distance_to(at) / 12.0)
-	var rng := RandomNumberGenerator.new()
+	var rng = RandomNumberGenerator.new()
 	rng.seed = int(chunks_in[0]) if chunks_in.size() > 0 else 1
 	var list: Array = chunks_in[1] if chunks_in.size() > 1 else []
 	for c in list:
-		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
+		var mi = MeshInstance3D.new()
+		var bm = BoxMesh.new()
 		bm.size = Vector3.ONE * CHUNK_S * clampf(sqrt(float(c[1])) / 8.0, 0.6, 1.6)
 		mi.mesh = bm
-		var m := StandardMaterial3D.new()
+		var m = StandardMaterial3D.new()
 		m.albedo_color = DsMats.COL[clampi(int(c[0]), 0, DsMats.COL.size() - 1)]
 		mi.material_override = m
 		add_child(mi)
 		mi.global_position = at + Vector3(rng.randf_range(-0.3, 0.3), 0.2, rng.randf_range(-0.3, 0.3))
-		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.8, 1.6), rng.randf_range(-1, 1)).normalized()
+		var dir = Vector3(rng.randf_range(-1, 1), rng.randf_range(0.8, 1.6), rng.randf_range(-1, 1)).normalized()
 		flying.append({"node": mi, "v": dir * rng.randf_range(4.0, 8.0) * (r / RADIUS), "m": int(c[0]), "n": int(c[1]), "real": real})
 	# a cloud of dust
-	var ps := CPUParticles3D.new()
+	var ps = CPUParticles3D.new()
 	ps.one_shot = true
 	ps.amount = 90
 	ps.lifetime = 1.4
@@ -222,9 +222,9 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	ps.initial_velocity_min = 2.0
 	ps.initial_velocity_max = 5.0
 	ps.gravity = Vector3(0, -3.0, 0)
-	var dm := BoxMesh.new()
+	var dm = BoxMesh.new()
 	dm.size = Vector3.ONE * 0.09
-	var dmat := StandardMaterial3D.new()
+	var dmat = StandardMaterial3D.new()
 	dmat.albedo_color = Color8(140, 112, 84)
 	dm.material = dmat
 	ps.mesh = dm

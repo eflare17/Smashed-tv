@@ -183,8 +183,13 @@ var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash g
 var _flip := 1.0                # still mouse: slashes go back and forth
 
 func _ready() -> void:
-	for a in OS.get_cmdline_user_args():
-		var kv := a.trim_prefix("--").split("=")
+	var args := Array(OS.get_cmdline_user_args())
+	if OS.has_feature("web"):                      # (the web build: the page's ?stkilda&topdown... as the same options)
+		var q = JavaScriptBridge.eval("window.location.search", true)
+		if q is String and q.length() > 1:
+			args += Array(q.substr(1).split("&", false))
+	for a in args:
+		var kv := String(a).trim_prefix("--").split("=")
 		_opts[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	chunk = int(_opts.get("chunk", "1"))
 	top_down = _opts.has("topdown")
@@ -357,6 +362,10 @@ func _ready() -> void:
 		stkilda.go()
 		if String(_opts.stkilda) != "1":
 			stkilda.stand(String(_opts.stkilda))
+	if _opts.has("carousel"):        # (the web link: straight to St Kilda, stood by the Carousel)
+		if not stkilda.active:
+			stkilda.go()
+		stkilda.stand_by_carousel()
 	if _opts.has("digsite"):         # (tests, pictures: --digsite straight to the Dig Site)
 		digsite.go()
 	if _opts.has("phone"):

@@ -97,7 +97,7 @@ func _pic(p: Vector2) -> String:
 	var out := ""
 	for y in range(c.y - 8, c.y + 8):
 		for x in range(c.x - 8, c.x + 8):
-			var mt := m.ground.sim.get_cell(x, y)
+			var mt = m.ground.sim.get_cell(x, y)
 			out += "." if mt == MineTiles.AIR else ("#" if mt != MineTiles.SAND else "s")
 		out += "\n"
 	return out

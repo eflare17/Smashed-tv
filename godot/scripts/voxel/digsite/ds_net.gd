@@ -24,28 +24,28 @@ const FAST := 68                # (the fast messages' first byte: a Dig Site mac
 const MOST_CHUNKS := 240        # chunks a diff at most (the rest next time)
 
 var site: Node3D                # DigSite
-var stats := {"ch": 0, "ch_bytes": 0, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0}
+var stats = {"ch": 0, "ch_bytes": 0, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0}
 # the host's
-var guest_here := false
-var _applied := 0               # the guest's last action done here
-var _acked := 0                 # (the last number sent back)
-var _diff_t := 0.0
-var _hash_t := 0.0
+var guest_here = false
+var _applied = 0               # the guest's last action done here
+var _acked = 0                 # (the last number sent back)
+var _diff_t = 0.0
+var _hash_t = 0.0
 # the guest's
-var synced := false             # showing the host's ground
-var _want := false
-var _want_t := 0.0
-var _parts := []
-var _seq := 0
-var _pending := []              # [[seq, kind, args]] not yet done by the host
-var _outbox := []
-var _out_t := 0.0
-var _own := {}                  # its own site while it's at the host's: {seed, chunks}
-var last_match := false         # (the tests') the last checksums compared all matched
+var synced = false             # showing the host's ground
+var _want = false
+var _want_t = 0.0
+var _parts = []
+var _seq = 0
+var _pending = []              # [[seq, kind, args]] not yet done by the host
+var _outbox = []
+var _out_t = 0.0
+var _own = {}                  # its own site while it's at the host's: {seed, chunks}
+var last_match = false         # (the tests') the last checksums compared all matched
 # both
-var _ops := {}                  # kind -> Callable(args: Array, again: bool) -> what it did
-var _events := {}               # kind -> Callable(args: Array)
-var _fast := {}                 # id -> Callable(d: PackedByteArray)
+var _ops = {}                  # kind -> Callable(args: Array, again: bool) -> what it did
+var _events = {}               # kind -> Callable(args: Array)
+var _fast = {}                 # id -> Callable(d: PackedByteArray)
 
 func setup(s: Node3D) -> void:
 	site = s
@@ -82,7 +82,7 @@ func _send(m: Array) -> void:
 	if n:
 		n.send_digsite(["n"] + m)
 
-func _grid() -> DigSiteGrid:
+func _grid():
 	return site.terrain.grid
 
 # ---------------------------------------------------------------- actions and events
@@ -110,7 +110,7 @@ func send_fast(id: int, body: PackedByteArray) -> void:
 	var n = _net()
 	if n == null or not ((role() == "host" and guest_here) or (role() == "guest" and synced)):
 		return
-	var d := PackedByteArray([FAST, id])
+	var d = PackedByteArray([FAST, id])
 	d.append_array(body)
 	n.send_digsite_fast(d)
 
@@ -141,7 +141,7 @@ func left() -> void:
 
 func _drop_shared() -> void:
 	if synced and not _own.is_empty():
-		var g := _grid()
+		var g = _grid()
 		if g.get_seed() != int(_own.seed):
 			g.generate(int(_own.seed))
 		else:
@@ -160,7 +160,7 @@ func _drop_shared() -> void:
 func _process(dt: float) -> void:
 	if site == null or not site.active or site.terrain == null:
 		return
-	var r := role()
+	var r = role()
 	if r == "":
 		if synced:
 			synced = false          # (the link's gone: what's here is this game's now)
@@ -196,7 +196,7 @@ func _process(dt: float) -> void:
 func _send_diff() -> void:
 	var d: PackedByteArray = _grid().take_diff(MOST_CHUNKS)
 	if d.size() > 0:
-		var z := d.compress(FileAccess.COMPRESSION_ZSTD)
+		var z = d.compress(FileAccess.COMPRESSION_ZSTD)
 		stats.ch += 1
 		stats.ch_bytes += z.size()
 		_send(["ch", _applied, d.size(), z])
@@ -210,22 +210,22 @@ func _send_diff() -> void:
 func on_net(m: Array) -> void:
 	if m.is_empty():
 		return
-	var r := role()
+	var r = role()
 	match String(m[0]):
 		"hello":
 			# (the host's) the guest's here: the ground as it is, in parts
 			if r != "host" or site.terrain == null:
 				return
-			var g := _grid()
+			var g = _grid()
 			_send_diff()                                  # (anything changed meanwhile goes the usual way first)
-			var all := g.pack_chunks(g.modified_chunks())
-			var z := all.compress(FileAccess.COMPRESSION_ZSTD)
+			var all = g.pack_chunks(g.modified_chunks())
+			var z = all.compress(FileAccess.COMPRESSION_ZSTD)
 			g.clear_touched()
 			_applied = 0
 			_acked = 0
 			guest_here = true
 			stats.world_bytes = z.size()
-			var n := maxi(1, ceili(float(z.size()) / PART))
+			var n = maxi(1, ceili(float(z.size()) / PART))
 			for i in n:
 				_send(["world", g.get_seed(), i, n, all.size(), z.slice(i * PART, mini(z.size(), (i + 1) * PART))])
 		"world":
@@ -235,12 +235,12 @@ func on_net(m: Array) -> void:
 			_parts.append(m[5])
 			if _parts.size() < int(m[3]):
 				return
-			var z := PackedByteArray()
+			var z = PackedByteArray()
 			for p in _parts:
 				z.append_array(p)
 			_parts.clear()
-			var all := z.decompress(int(m[4]), FileAccess.COMPRESSION_ZSTD) if int(m[4]) > 0 else PackedByteArray()
-			var g := _grid()
+			var all = z.decompress(int(m[4]), FileAccess.COMPRESSION_ZSTD) if int(m[4]) > 0 else PackedByteArray()
+			var g = _grid()
 			_own = {"seed": g.get_seed(), "chunks": g.pack_chunks(g.modified_chunks())}
 			if g.get_seed() != int(m[1]) or not g.modified_chunks().is_empty():
 				g.generate(int(m[1]))
@@ -286,8 +286,8 @@ func on_net(m: Array) -> void:
 			if not _pending.is_empty() or not _outbox.is_empty() or int(m[1]) < _seq:
 				return              # (its own on the way: they'd differ for now anyway)
 			var theirs: PackedInt32Array = m[2]
-			var mine := _grid().section_hashes()
-			var bad := PackedInt32Array()
+			var mine = _grid().section_hashes()
+			var bad = PackedInt32Array()
 			for s in mini(theirs.size(), mine.size()):
 				if theirs[s] != mine[s]:
 					bad.append(s)
@@ -300,11 +300,11 @@ func on_net(m: Array) -> void:
 			# (the host's) sections the guest's got wrong: their chunks again
 			if r != "host":
 				return
-			var g := _grid()
-			var list := PackedInt32Array()
+			var g = _grid()
+			var list = PackedInt32Array()
 			for s in m[1]:
 				list.append_array(g.section_chunks(int(s)))
-			var all := g.pack_chunks(list)
+			var all = g.pack_chunks(list)
 			_send(["fixd", all.size(), all.compress(FileAccess.COMPRESSION_ZSTD)])
 		"fixd":
 			if r == "guest" and synced and m.size() >= 3:

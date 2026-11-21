@@ -5,12 +5,12 @@ extends Node3D
 
 const CLEAT_GAP := 0.3
 
-var _path := PackedVector2Array()
-var _dist := PackedFloat32Array()
-var _loop := 0.0
-var _count := 0
-var _z := 0.0
-var _face := 0.0
+var _path = PackedVector2Array()
+var _dist = PackedFloat32Array()
+var _loop = 0.0
+var _count = 0
+var _z = 0.0
+var _face = 0.0
 var _wheels: Array[Vector3] = []     # x, y, radius
 var _travel: Array[float] = [0.0, 0.0]
 var _cleats: MultiMesh
@@ -27,11 +27,11 @@ func setup(mat: Material, path: PackedVector2Array, z_mid: float, width: float, 
 	_loop = _dist[path.size()]
 	_count = int(round(_loop / gap))
 
-	var cleat := DsKit.new()
+	var cleat = DsKit.new()
 	cleat.box(Vector3.ZERO, Vector3(0.13, 0.06, width), DsProps.BLACK)
 	_cleats = _multi(cleat.mesh(), mat, _count * 2)
 
-	var w := DsKit.new()
+	var w = DsKit.new()
 	w.cone(Vector3(0, 0, -0.05), Vector3(0, 0, 0.05), 1.0, 1.0, 8, DsProps.BLACK)
 	# Spokes that stand out from the wheel's face, or a turning wheel wouldn't look any different.
 	for k in 3:
@@ -41,11 +41,11 @@ func setup(mat: Material, path: PackedVector2Array, z_mid: float, width: float, 
 	_draw_side(1)
 
 func _multi(mesh: Mesh, mat: Material, count: int) -> MultiMesh:
-	var mm := MultiMesh.new()
+	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
 	mm.instance_count = count
-	var inst := MultiMeshInstance3D.new()
+	var inst = MultiMeshInstance3D.new()
 	inst.multimesh = mm
 	inst.material_override = mat
 	inst.custom_aabb = AABB(Vector3(-4, -1, -3), Vector3(8, 4, 6))
@@ -62,20 +62,20 @@ func update(left: float, right: float, dt: float) -> void:
 		_draw_side(1)
 
 func _draw_side(side: int) -> void:
-	var z := -_z if side == 0 else _z
-	var face := -_face if side == 0 else _face
-	var gap := _loop / _count
+	var z = -_z if side == 0 else _z
+	var face = -_face if side == 0 else _face
+	var gap = _loop / _count
 	for c in _count:
-		var s := fposmod(_travel[side] + c * gap, _loop)
-		var k := 0
+		var s = fposmod(_travel[side] + c * gap, _loop)
+		var k = 0
 		while k < _path.size() - 1 and s >= _dist[k + 1]:
 			k += 1
-		var a := _path[k]
-		var b := _path[(k + 1) % _path.size()]
-		var p := a.lerp(b, (s - _dist[k]) / maxf(_dist[k + 1] - _dist[k], 0.001))
-		var t := b - a
+		var a = _path[k]
+		var b = _path[(k + 1) % _path.size()]
+		var p = a.lerp(b, (s - _dist[k]) / maxf(_dist[k + 1] - _dist[k], 0.001))
+		var t = b - a
 		_cleats.set_instance_transform(c + side * _count, Transform3D(Basis(Vector3.BACK, atan2(t.y, t.x)), Vector3(p.x, p.y, z)))
 	for w in _wheels.size():
 		var at: Vector3 = _wheels[w]
-		var turn := Basis(Vector3.BACK, -_travel[side] / at.z).scaled(Vector3(at.z, at.z, 1.0))
+		var turn = Basis(Vector3.BACK, -_travel[side] / at.z).scaled(Vector3(at.z, at.z, 1.0))
 		_wheel_mesh.set_instance_transform(w + side * _wheels.size(), Transform3D(turn, Vector3(at.x, at.y, face)))

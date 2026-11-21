@@ -19,12 +19,12 @@ const CONCRETE_MAX := 30.0
 const CHECK_T := 0.5
 
 var site: Node3D                # DigSite
-var posts := []                 # {x, z, y0, y1, m, stress (0 .. 1), groan_t}
-var stress_k := 1.0             # (the tests: weight comes on this many times as fast)
-var broke := 0                  # (the tests')
-var heard := 0
-var added := 0
-var _t := 0.0
+var posts = []                 # {x, z, y0, y1, m, stress (0 .. 1), groan_t}
+var stress_k = 1.0             # (the tests: weight comes on this many times as fast)
+var broke = 0                  # (the tests')
+var heard = 0
+var added = 0
+var _t = 0.0
 
 func setup(s: Node3D) -> void:
 	site = s
@@ -32,18 +32,18 @@ func setup(s: Node3D) -> void:
 	site.net.register_op("post", _post_op)
 	site.net.register_event("sup", func(a: Array): _sound(String(a[0]), a[1]))
 
-func _grid() -> DigSiteGrid:
+func _grid():
 	return site.terrain.grid
 
 ## What the hammer's right click would put up where it hit (p, normal n): [x, z, y0, y1] in cells, or a reason why not
 func plan(p: Vector3, n: Vector3):
 	var tr: DsTerrain = site.terrain
-	var g := _grid()
-	var c := tr.cell_of(p - n * 0.06)          # (the block it hit)
-	var x := c.x - (1 if fposmod(p.x - tr.origin.x, DsTerrain.CELL) < DsTerrain.CELL * 0.5 else 0)
-	var z := c.z - (1 if fposmod(p.z - tr.origin.z, DsTerrain.CELL) < DsTerrain.CELL * 0.5 else 0)
-	var y0 := 0
-	var y1 := 0
+	var g = _grid()
+	var c = tr.cell_of(p - n * 0.06)          # (the block it hit)
+	var x = c.x - (1 if fposmod(p.x - tr.origin.x, DsTerrain.CELL) < DsTerrain.CELL * 0.5 else 0)
+	var z = c.z - (1 if fposmod(p.z - tr.origin.z, DsTerrain.CELL) < DsTerrain.CELL * 0.5 else 0)
+	var y0 = 0
+	var y1 = 0
 	if n.y > 0.5:
 		y0 = c.y + 1                            # (the floor: up from it to the roof)
 		y1 = y0
@@ -68,7 +68,7 @@ func plan(p: Vector3, n: Vector3):
 			return "Something's in the way"
 	return [x, z, y0, y1]
 
-func _air_box(g: DigSiteGrid, x: int, y: int, z: int) -> bool:
+func _air_box(g, x: int, y: int, z: int) -> bool:
 	for dz in POST:
 		for dx in POST:
 			if g.get_cell(x + dx, y, z + dz) & DsMats.MASK != 0:
@@ -79,7 +79,7 @@ func _air_box(g: DigSiteGrid, x: int, y: int, z: int) -> bool:
 func place(p: Vector3, n: Vector3) -> bool:
 	var a = site.arena
 	var concrete: bool = a.inv.count("prop_concrete") > 0 and (a.inv.count("prop_wood") == 0 or _depth_at(p) > WOOD_OK)
-	var item := "prop_concrete" if concrete else "prop_wood"
+	var item = "prop_concrete" if concrete else "prop_wood"
 	if a.inv.count(item) <= 0:
 		a.say("No props in your backpack: the site office sells them", 2.0)
 		return false
@@ -101,13 +101,13 @@ func _depth_at(p: Vector3) -> float:
 
 # the action (both games; the host keeps it in its list)
 func _post_op(a: Array, again: bool) -> int:
-	var g := _grid()
-	var x := int(a[0])
-	var z := int(a[1])
-	var y0 := int(a[2])
-	var y1 := int(a[3])
-	var m := int(a[4])
-	var n := 0
+	var g = _grid()
+	var x = int(a[0])
+	var z = int(a[1])
+	var y0 = int(a[2])
+	var y1 = int(a[3])
+	var m = int(a[4])
+	var n = 0
 	for y in range(y0, y1):
 		for dz in POST:
 			for dx in POST:
@@ -125,7 +125,7 @@ func _post_top(pp: Dictionary) -> Vector3:
 	return tr.centre_of(Vector3i(int(pp.x) + 1, int(pp.y1), int(pp.z) + 1)) - Vector3(0.0625, 0.0625, 0.0625)
 
 func depth_of(pp: Dictionary) -> float:
-	var g := _grid()
+	var g = _grid()
 	return float(g.column_top(int(pp.x), int(pp.z)) - int(pp.y1)) * DsTerrain.CELL
 
 func _process(dt: float) -> void:
@@ -134,9 +134,9 @@ func _process(dt: float) -> void:
 	_t += dt
 	if _t < CHECK_T:
 		return
-	var step := _t
+	var step = _t
 	_t = 0.0
-	var g := _grid()
+	var g = _grid()
 	for i in range(posts.size() - 1, -1, -1):
 		var pp: Dictionary = posts[i]
 		# its foot gone (dug out, blown away): what's left of it gives way (it doesn't hang from the roof); all gone: off
@@ -146,21 +146,21 @@ func _process(dt: float) -> void:
 				_break(pp)
 			posts.remove_at(i)
 			continue
-		var d := depth_of(pp)
-		var at := _post_top(pp)
+		var d = depth_of(pp)
+		var at = _post_top(pp)
 		if int(pp.m) == DsMats.CONCRETE:
 			if d <= CONCRETE_MAX:
 				continue
 		elif d <= WOOD_OK:
 			continue
 		# too much weight: it groans, cracks, gives way
-		var k := clampf((d - WOOD_OK) / (WOOD_MAX - WOOD_OK), 0.0, 1.0)
-		var life := lerpf(WOOD_LIFE, 8.0, k)
+		var k = clampf((d - WOOD_OK) / (WOOD_MAX - WOOD_OK), 0.0, 1.0)
+		var life = lerpf(WOOD_LIFE, 8.0, k)
 		pp.stress = float(pp.stress) + step * stress_k / life
 		pp.groan_t = float(pp.groan_t) - step
 		if float(pp.groan_t) <= 0.0:
 			pp.groan_t = randf_range(2.0, 4.0) * (1.0 - 0.6 * float(pp.stress))
-			var snd := "gate_creak" if float(pp.stress) < 0.6 else "mine_groan"
+			var snd = "gate_creak" if float(pp.stress) < 0.6 else "mine_groan"
 			_sound(snd, at)
 			site.net.event("sup", [snd, at])
 			if float(pp.stress) > 0.6 and site.arena.player.global_position.distance_to(at) < 10.0:
@@ -171,15 +171,15 @@ func _process(dt: float) -> void:
 
 # a post giving way: its blocks drop loose (splinters and rubble), the roof it held on its own again
 func _break(pp: Dictionary) -> void:
-	var g := _grid()
+	var g = _grid()
 	for y in range(int(pp.y0), int(pp.y1)):
 		for dz in POST:
 			for dx in POST:
-				var c := g.get_cell(int(pp.x) + dx, y, int(pp.z) + dz)
+				var c = g.get_cell(int(pp.x) + dx, y, int(pp.z) + dz)
 				if c & DsMats.MASK == int(pp.m):
 					g.set_cell(int(pp.x) + dx, y, int(pp.z) + dz, c | DsMats.LOOSE)
 	broke += 1
-	var at := _post_top(pp)
+	var at = _post_top(pp)
 	_sound("hammer_thud_1", at)
 	_sound("mine_crumble", at)
 	site.net.event("sup", ["mine_crumble", at])

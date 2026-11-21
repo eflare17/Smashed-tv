@@ -467,6 +467,9 @@ func can_enter() -> bool:
 func enter() -> void:
 	if not can_enter():
 		return
+	if not ClassDB.class_exists("MineSim"):        # (the web build has no mine_sim: the mine is PC only)
+		arena.say("The mine is in the PC version only", 2.5)
+		return
 	_build()
 	if net.need_world():
 		arena.say("Going down your mate's mine...", 2.0)     # (enter() again once the host's ground is here)

@@ -3,10 +3,10 @@ extends RefCounted
 ## (The digger game's MeshKit, copied for the Dig Site's machines.) Builds faceted, solid-colour meshes in code: every face has its own flat normal and one colour from the palette. All
 ## the shapes are convex, so each face is turned to point away from its shape's middle.
 
-var verts := PackedVector3Array()
-var norms := PackedVector3Array()
-var cols := PackedColorArray()
-var xf := Transform3D.IDENTITY
+var verts = PackedVector3Array()
+var norms = PackedVector3Array()
+var cols = PackedColorArray()
+var xf = Transform3D.IDENTITY
 
 func _tri(a: Vector3, b: Vector3, c: Vector3, n: Vector3, col: Color) -> void:
 	# Godot's front faces wind clockwise seen from the front.
@@ -16,16 +16,16 @@ func _tri(a: Vector3, b: Vector3, c: Vector3, n: Vector3, col: Color) -> void:
 
 ## A flat convex polygon facing away from `middle`.
 func face(pts: Array, middle: Vector3, col: Color) -> void:
-	var w := []
+	var w = []
 	for p in pts:
 		w.append(xf * (p as Vector3))
 	var m: Vector3 = xf * middle
 	var n: Vector3 = ((w[1] - w[0]) as Vector3).cross(w[2] - w[0]).normalized()
-	var at := Vector3.ZERO
+	var at = Vector3.ZERO
 	for p in w:
 		at += p
 	at /= w.size()
-	var flip := n.dot(at - m) < 0.0
+	var flip = n.dot(at - m) < 0.0
 	if flip:
 		n = -n
 	for i in range(1, w.size() - 1):
@@ -36,8 +36,8 @@ func face(pts: Array, middle: Vector3, col: Color) -> void:
 			_tri(w[0], w[i + 1], w[i], n, col)
 
 func box(c: Vector3, s: Vector3, col: Color, tilt := Basis.IDENTITY) -> void:
-	var h := s * 0.5
-	var p := []
+	var h = s * 0.5
+	var p = []
 	for z in [-1, 1]:
 		for y in [-1, 1]:
 			for x in [-1, 1]:
@@ -47,12 +47,12 @@ func box(c: Vector3, s: Vector3, col: Color, tilt := Basis.IDENTITY) -> void:
 
 ## A convex side profile (x along, y up) extruded across z.
 func prism(profile: Array, z0: float, z1: float, col: Color, cap := Color.TRANSPARENT) -> void:
-	var middle := Vector3(0, 0, (z0 + z1) * 0.5)
+	var middle = Vector3(0, 0, (z0 + z1) * 0.5)
 	for p in profile:
 		middle += Vector3(p.x, p.y, 0) / float(profile.size())
 	var end_col: Color = col if cap.a == 0.0 else cap
-	var a := []
-	var b := []
+	var a = []
+	var b = []
 	for p in profile:
 		a.append(Vector3(p.x, p.y, z0))
 		b.append(Vector3(p.x, p.y, z1))
@@ -65,21 +65,21 @@ func prism(profile: Array, z0: float, z1: float, col: Color, cap := Color.TRANSP
 
 ## A faceted tapering cylinder from a to b. `wobble` nudges each corner for a hand-cut look.
 func cone(a: Vector3, b: Vector3, r0: float, r1: float, sides: int, col: Color, wobble := 0.0, rng: RandomNumberGenerator = null, cap := true) -> void:
-	var axis := (b - a).normalized()
-	var u := axis.cross(Vector3(0.3, 0.1, 1.0)).normalized()
-	var v := axis.cross(u)
-	var lo := []
-	var hi := []
-	var turn := rng.randf() * TAU if rng else 0.0
+	var axis = (b - a).normalized()
+	var u = axis.cross(Vector3(0.3, 0.1, 1.0)).normalized()
+	var v = axis.cross(u)
+	var lo = []
+	var hi = []
+	var turn = rng.randf() * TAU if rng else 0.0
 	for i in sides:
-		var t := turn + TAU * i / sides
+		var t = turn + TAU * i / sides
 		var w: float = 1.0 + (rng.randf_range(-wobble, wobble) if rng else 0.0)
-		var d := (u * cos(t) + v * sin(t)) * w
+		var d = (u * cos(t) + v * sin(t)) * w
 		lo.append(a + d * r0)
 		hi.append(b + d * r1)
-	var middle := (a + b) * 0.5
+	var middle = (a + b) * 0.5
 	for i in sides:
-		var j := (i + 1) % sides
+		var j = (i + 1) % sides
 		if r1 < 0.001:
 			face([lo[i], lo[j], b], middle, col)
 		else:
@@ -90,11 +90,11 @@ func cone(a: Vector3, b: Vector3, r0: float, r1: float, sides: int, col: Color, 
 			face(hi, middle, col)
 
 func mesh() -> ArrayMesh:
-	var arrays := []
+	var arrays = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_COLOR] = cols
-	var m := ArrayMesh.new()
+	var m = ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return m

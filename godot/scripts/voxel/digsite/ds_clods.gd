@@ -15,39 +15,39 @@ const KEEP_MOST := 8            # blade and bucket boxes the shader keeps lumps 
 
 var site: Node3D
 var _patches: Array[MultiMeshInstance3D] = []
-var _per := 0
-var _loose := PackedInt32Array()
+var _per = 0
+var _loose = PackedInt32Array()
 
 func setup(s: Node3D) -> void:
 	site = s
 	name = "Clods"
 	var tr: DsTerrain = site.terrain
 	var mat: ShaderMaterial = DsLook.clod_mat()
-	var cols := PackedVector3Array()
+	var cols = PackedVector3Array()
 	for c: Color in DsMats.COL:
 		cols.append(Vector3(c.r, c.g, c.b))
 	while cols.size() < 16:
 		cols.append(Vector3(0.45, 0.25, 0.16))
 	mat.set_shader_parameter("soil_cols", cols)
-	var side_m := 32 * DsTerrain.CELL
-	var nx := DsTerrain.W / 32
-	var nz := DsTerrain.D / 32
+	var side_m = 32 * DsTerrain.CELL
+	var nx = DsTerrain.W / 32
+	var nz = DsTerrain.D / 32
 	_per = int(CLODS_PER_M2 * side_m * side_m)
-	var gr := RandomNumberGenerator.new()
+	var gr = RandomNumberGenerator.new()
 	gr.seed = 29
 	for pz in nz:
 		for px in nx:
-			var mm := MultiMesh.new()
+			var mm = MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
 			mm.mesh = DsLook.clod_mesh(px + pz * 2)
 			mm.instance_count = _per
 			for i in _per:
 				# big enough to overlap and hide the ground under them, with some small ones to fill in
-				var size := lerpf(0.07, 0.34, pow(gr.randf(), 1.7))
-				var b := Basis(Vector3(gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0)).normalized(), gr.randf() * TAU)
+				var size = lerpf(0.07, 0.34, pow(gr.randf(), 1.7))
+				var b = Basis(Vector3(gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0)).normalized(), gr.randf() * TAU)
 				b = b * Basis.from_scale(Vector3(size * gr.randf_range(0.85, 1.35), size, size * gr.randf_range(0.8, 1.25)))
 				mm.set_instance_transform(i, Transform3D(b, Vector3(gr.randf() * side_m, 0.0, gr.randf() * side_m)))
-			var inst := MultiMeshInstance3D.new()
+			var inst = MultiMeshInstance3D.new()
 			inst.multimesh = mm
 			inst.material_override = mat
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -65,27 +65,27 @@ func _on_loose(per: PackedInt32Array) -> void:
 func _process(_dt: float) -> void:
 	if site == null or not site.get("active"):
 		return
-	var cam := get_viewport().get_camera_3d()
+	var cam = get_viewport().get_camera_3d()
 	if cam == null:
 		return
-	var at := cam.global_position
-	var side_m := 32 * DsTerrain.CELL
+	var at = cam.global_position
+	var side_m = 32 * DsTerrain.CELL
 	for k in _patches.size():
-		var inst := _patches[k]
-		var any := k < _loose.size() and _loose[k] > 0
-		var n := 0
+		var inst = _patches[k]
+		var any = k < _loose.size() and _loose[k] > 0
+		var n = 0
 		if any:
-			var mid := inst.position + Vector3(side_m * 0.5, 0.0, side_m * 0.5)
-			var d := Vector2(at.x - mid.x, at.z - mid.z).length()
+			var mid = inst.position + Vector3(side_m * 0.5, 0.0, side_m * 0.5)
+			var d = Vector2(at.x - mid.x, at.z - mid.z).length()
 			n = int(_per * (1.0 if d < 22.0 else (0.6 if d < 36.0 else 0.3)))
 		if inst.multimesh.visible_instance_count != n:
 			inst.multimesh.visible_instance_count = n
 			inst.visible = n > 0
 	# the blades and buckets near the camera, for the shader to keep lumps out of
-	var rx := []
-	var ry := []
-	var rz := []
-	var half := PackedVector3Array()
+	var rx = []
+	var ry = []
+	var rz = []
+	var half = PackedVector3Array()
 	if site.get("machines"):
 		for m in site.machines.list:
 			if rx.size() >= KEEP_MOST or not m.has_method("keepout_boxes") or m.global_position.distance_to(at) > 60.0:
@@ -98,7 +98,7 @@ func _process(_dt: float) -> void:
 				ry.append(Vector4(inv.basis.x.y, inv.basis.y.y, inv.basis.z.y, inv.origin.y))
 				rz.append(Vector4(inv.basis.x.z, inv.basis.y.z, inv.basis.z.z, inv.origin.z))
 				half.append(box[1])
-	var n_keep := rx.size()
+	var n_keep = rx.size()
 	while rx.size() < KEEP_MOST:
 		rx.append(Vector4.ZERO)
 		ry.append(Vector4.ZERO)

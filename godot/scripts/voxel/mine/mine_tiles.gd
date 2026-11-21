@@ -156,7 +156,7 @@ static func flags(t: int) -> int:
 	return n
 
 ## Everything handed to the pixel world
-static func apply(sim: MineSim) -> void:
+static func apply(sim) -> void:
 	for t in INFO:
 		var i: Dictionary = INFO[t]
 		var g: Array = i.get("glow", [0.0, 0.0, 0.0])

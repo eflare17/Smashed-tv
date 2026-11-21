@@ -40,15 +40,15 @@ func _init() -> void:
 	shake_hz = 61.0
 
 func _build_body() -> void:
-	var kit := DsKit.new()
+	var kit = DsKit.new()
 	DsProps.bobcat_body(kit)
 	_add(_shake, kit)
-	var w := DsKit.new()
+	var w = DsKit.new()
 	DsProps.wheel(w, 0.32)
-	var tyre := w.mesh()
+	var tyre = w.mesh()
 	for side in [-1.0, 1.0]:
 		for x in [-0.62, 0.62]:
-			var mi := MeshInstance3D.new()
+			var mi = MeshInstance3D.new()
 			mi.mesh = tyre
 			mi.material_override = DsExcavator.mat()
 			mi.position = Vector3(x, 0.38, side * 0.84)

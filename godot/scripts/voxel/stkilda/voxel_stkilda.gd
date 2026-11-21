@@ -135,6 +135,16 @@ func build() -> void:
 	built = true
 	print("VoxelStKilda: built in ", Time.get_ticks_msec() - t0, " ms")
 
+## Stood outside the Carousel looking at it (the web link's ?carousel: straight to the ride).
+func stand_by_carousel() -> void:
+	var car := get_node_or_null("Carousel") as Node3D
+	if car == null:
+		return
+	var mid := car.global_position
+	var at := mid + Vector3(cos(0.4), 0.0, sin(0.4)) * 11.0
+	var to := mid + Vector3(0, 2.0, 0) - (at + Vector3(0, 1.7, 0))
+	_put(Vector3(at.x, 0.05, at.z), atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
+
 ## Where you arrive: on Luna Park's forecourt, facing Mr Moon's mouth. [where (world), yaw]
 func arrive_spot() -> Array:
 	var face := SkLunaPark.xf(town)               # (its front looks along its +z: you look the other way, at it)

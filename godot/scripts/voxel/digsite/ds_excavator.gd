@@ -56,25 +56,25 @@ const BOG_AT := 40.0            # firm blocks cut in a tick that hold the arm ri
 const POUR_RATE := 520.0 * DsTerrain.MM
 const SEAT_MODEL := Vector3(0.45, 1.2, -0.8)    # (in the house, the digger game's way round: the cab's floor)
 
-var swing := 0.0
-var wrist := Vector2(5.2, 2.7)  # the bucket's pin, in the house's up-and-out plane
-var curl := 2.7
-var swing_cmd := 0.0
-var reach_cmd := 0.0
-var raise_cmd := 0.0
-var curl_cmd := 0.0
-var bucket := {}
-var load_n := 0
-var _boom_a := 0.0
-var _stick_a := 0.0
-var _v_swing := 0.0
-var _v_reach := 0.0
-var _v_raise := 0.0
-var _v_curl := 0.0
-var dug := 0                    # (tests: mm its teeth have taken)
-var bog := 0.0                  # how much the ground's holding the arm back (0 .. 0.85)
-var _firm_acc := 0.0
-var _pour_acc := 0.0
+var swing = 0.0
+var wrist = Vector2(5.2, 2.7)  # the bucket's pin, in the house's up-and-out plane
+var curl = 2.7
+var swing_cmd = 0.0
+var reach_cmd = 0.0
+var raise_cmd = 0.0
+var curl_cmd = 0.0
+var bucket = {}
+var load_n = 0
+var _boom_a = 0.0
+var _stick_a = 0.0
+var _v_swing = 0.0
+var _v_reach = 0.0
+var _v_raise = 0.0
+var _v_curl = 0.0
+var dug = 0                    # (tests: mm its teeth have taken)
+var bog = 0.0                  # how much the ground's holding the arm back (0 .. 0.85)
+var _firm_acc = 0.0
+var _pour_acc = 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
 var _house: Node3D
 var _boom: MeshInstance3D
@@ -102,7 +102,7 @@ static func mat() -> Material:
 	return DsLook.prop_mat()
 
 func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
-	var m := MeshInstance3D.new()
+	var m = MeshInstance3D.new()
 	m.mesh = kit.mesh()
 	m.material_override = mat()
 	parent.add_child(m)
@@ -114,7 +114,7 @@ func _build() -> void:
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)
-	var carriage := DsKit.new()
+	var carriage = DsKit.new()
 	DsProps.track_frames(carriage, 1.25, 0.32, 1.9, 2.4, 2.05, false)
 	DsProps.excavator_carriage(carriage)
 	_add(_look, carriage)
@@ -129,10 +129,10 @@ func _build() -> void:
 	shake_hz = 52.0
 	_house = Node3D.new()
 	_shake.add_child(_house)
-	var hk := DsKit.new()
+	var hk = DsKit.new()
 	DsProps.excavator_house(hk, false)
 	_add(_house, hk)
-	var kit := DsKit.new()
+	var kit = DsKit.new()
 	DsProps.excavator_boom(kit, BOOM, false)
 	_boom = _add(_house, kit)
 	kit = DsKit.new()
@@ -148,34 +148,34 @@ func _build() -> void:
 	_lump.visible = false
 	_solve(wrist)
 	# the boom's, the stick's and the bucket's rams: barrels a little over half their length as built
-	var ends := _ram_ends()
+	var ends = _ram_ends()
 	for k in 3:
-		var d := (ends[k][0] as Vector3).distance_to(ends[k][1])
+		var d = (ends[k][0] as Vector3).distance_to(ends[k][1])
 		_rams.append(DsRam.make(_house, d * 0.56, 0.11 if k == 0 else 0.095, 0.05, DsProps.CHARCOAL))
 	_pose_tool()
 
 ## Sets the boom and stick to bring the pin as near to want as they can reach (the digger game's, as it is)
 func _solve(want: Vector2) -> void:
-	var w := Vector2(maxf(want.x, NEAREST), want.y)
-	var v := w - SHOULDER
-	var far := sqrt(BOOM * BOOM + STICK * STICK - 2.0 * BOOM * STICK * cos(ELBOW_MAX))
-	var near := sqrt(BOOM * BOOM + STICK * STICK - 2.0 * BOOM * STICK * cos(ELBOW_MIN))
-	var d := clampf(v.length(), near, far)
+	var w = Vector2(maxf(want.x, NEAREST), want.y)
+	var v = w - SHOULDER
+	var far = sqrt(BOOM * BOOM + STICK * STICK - 2.0 * BOOM * STICK * cos(ELBOW_MAX))
+	var near = sqrt(BOOM * BOOM + STICK * STICK - 2.0 * BOOM * STICK * cos(ELBOW_MIN))
+	var d = clampf(v.length(), near, far)
 	if v.length() < 0.001:
 		v = Vector2(1.0, 0.0)
 	v = v.normalized() * d
-	var a := v.angle() + acos(clampf((BOOM * BOOM + d * d - STICK * STICK) / (2.0 * BOOM * d), -1.0, 1.0))
-	var boom_a := clampf(a, BOOM_LOW, BOOM_HIGH)
-	var elbow := SHOULDER + Vector2(cos(boom_a), sin(boom_a)) * BOOM
-	var to := (SHOULDER + v) - elbow
-	var between := wrapf(boom_a - to.angle() + PI, 0.0, TAU)
+	var a = v.angle() + acos(clampf((BOOM * BOOM + d * d - STICK * STICK) / (2.0 * BOOM * d), -1.0, 1.0))
+	var boom_a = clampf(a, BOOM_LOW, BOOM_HIGH)
+	var elbow = SHOULDER + Vector2(cos(boom_a), sin(boom_a)) * BOOM
+	var to = (SHOULDER + v) - elbow
+	var between = wrapf(boom_a - to.angle() + PI, 0.0, TAU)
 	between = clampf(between if between <= PI else TAU - between, ELBOW_MIN, ELBOW_MAX)
 	_boom_a = boom_a
 	_stick_a = boom_a + between - PI
 	wrist = elbow + Vector2(cos(_stick_a), sin(_stick_a)) * STICK
 	if wrist.x < NEAREST:
 		wrist.x = NEAREST
-		var drop := asin(clampf((wrist.x - elbow.x) / STICK, -1.0, 1.0))
+		var drop = asin(clampf((wrist.x - elbow.x) / STICK, -1.0, 1.0))
 		_stick_a = -PI * 0.5 + drop
 		wrist.y = elbow.y + sin(_stick_a) * STICK
 
@@ -184,9 +184,9 @@ func _teeth_local() -> Vector3:
 
 ## The teeth's two ends (across the bucket) in the world
 func teeth_ends() -> Array:
-	var t := _teeth_local()
-	var g := _look.global_transform
-	var r := Basis(Vector3.UP, swing)
+	var t = _teeth_local()
+	var g = _look.global_transform
+	var r = Basis(Vector3.UP, swing)
 	return [g * (r * (t + Vector3(0, 0, -BUCKET_HALF))), g * (r * (t + Vector3(0, 0, BUCKET_HALF)))]
 
 ## The bucket's teeth in the world
@@ -213,23 +213,23 @@ func _pose_tool() -> void:
 	if _house == null:
 		return
 	_house.transform = Transform3D(Basis(Vector3.UP, swing), Vector3.ZERO)
-	var shoulder := Vector3(SHOULDER.x, SHOULDER.y, ARM_Z)
-	var elbow := Vector3(SHOULDER.x + cos(_boom_a) * BOOM, SHOULDER.y + sin(_boom_a) * BOOM, ARM_Z)
-	var pin := Vector3(wrist.x, wrist.y, ARM_Z)
-	var boom_b := Basis(Vector3.BACK, _boom_a)
-	var stick_b := Basis(Vector3.BACK, _stick_a)
-	var bucket_b := Basis(Vector3.BACK, -curl)
+	var shoulder = Vector3(SHOULDER.x, SHOULDER.y, ARM_Z)
+	var elbow = Vector3(SHOULDER.x + cos(_boom_a) * BOOM, SHOULDER.y + sin(_boom_a) * BOOM, ARM_Z)
+	var pin = Vector3(wrist.x, wrist.y, ARM_Z)
+	var boom_b = Basis(Vector3.BACK, _boom_a)
+	var stick_b = Basis(Vector3.BACK, _stick_a)
+	var bucket_b = Basis(Vector3.BACK, -curl)
 	_boom.transform = Transform3D(boom_b, shoulder)
 	_stick.transform = Transform3D(stick_b, elbow)
 	_bucket.transform = Transform3D(bucket_b, pin)
-	var ends := _ram_ends()
+	var ends = _ram_ends()
 	for k in _rams.size():
 		_rams[k].aim(ends[k][0], ends[k][1])
-	var f := _shown / CAPACITY
+	var f = _shown / CAPACITY
 	_lump.visible = f > 0.02
 	if _lump.visible:
 		# the soil in the bucket: fills its hollow from the back, then heaps up out of the open side
-		var k := 0
+		var k = 0
 		if f <= HEAPED:
 			k = clampi(int(ceil(f / HEAPED * LOAD_LEVELS)) - 1, 0, LOAD_LEVELS - 1)
 		else:
@@ -247,25 +247,25 @@ func keepout_boxes() -> Array:
 func at_stop() -> bool:
 	return curl > CURL_MAX - 0.01 or curl < CURL_MIN + 0.01
 
-var _wrist_was := Vector2.ZERO
-var _swing_was := 0.0
+var _wrist_was = Vector2.ZERO
+var _swing_was = 0.0
 
 # (the arm and the house moving: it works harder)
 func shake_effort() -> float:
-	var dt := maxf(get_process_delta_time(), 0.001)
-	var moving := (wrist - _wrist_was).length() / dt + absf(swing - _swing_was) / dt * 2.0
+	var dt = maxf(get_process_delta_time(), 0.001)
+	var moving = (wrist - _wrist_was).length() / dt + absf(swing - _swing_was) / dt * 2.0
 	_wrist_was = wrist
 	_swing_was = swing
 	return clampf(moving / 1.5, 0.0, 1.0) * 0.7
 
 ## Each ram's pins (the boom's, the stick's, the bucket's), in the house's frame, as the arm is
 func _ram_ends() -> Array:
-	var shoulder := Vector3(SHOULDER.x, SHOULDER.y, ARM_Z)
-	var elbow := Vector3(SHOULDER.x + cos(_boom_a) * BOOM, SHOULDER.y + sin(_boom_a) * BOOM, ARM_Z)
-	var pin := Vector3(wrist.x, wrist.y, ARM_Z)
-	var boom_b := Basis(Vector3.BACK, _boom_a)
-	var stick_b := Basis(Vector3.BACK, _stick_a)
-	var bucket_b := Basis(Vector3.BACK, -curl)
+	var shoulder = Vector3(SHOULDER.x, SHOULDER.y, ARM_Z)
+	var elbow = Vector3(SHOULDER.x + cos(_boom_a) * BOOM, SHOULDER.y + sin(_boom_a) * BOOM, ARM_Z)
+	var pin = Vector3(wrist.x, wrist.y, ARM_Z)
+	var boom_b = Basis(Vector3.BACK, _boom_a)
+	var stick_b = Basis(Vector3.BACK, _stick_a)
+	var bucket_b = Basis(Vector3.BACK, -curl)
 	return [[Vector3(1.75, 1.3, ARM_Z), shoulder + boom_b * Vector3(2.45, 0.12, 0.0)],
 			[shoulder + boom_b * Vector3(BOOM * 0.55, 1.02, 0.0), elbow + stick_b * Vector3(-0.58, 0.42, 0.0)],
 			[elbow + stick_b * Vector3(0.1, 0.34, 0.0), pin + bucket_b * Vector3(0.12, 0.33, 0.0)]]
@@ -299,24 +299,24 @@ func _tool(dt: float) -> void:
 	_v_raise = move_toward(_v_raise, raise_cmd, ARM_EASE * dt)
 	_v_curl = move_toward(_v_curl, curl_cmd, ARM_EASE * 1.4 * dt)
 	var tr: DsTerrain = site.terrain
-	var e0 := edge()
+	var e0 = edge()
 	# (how far its teeth are under the ground round them, the lower side of the bucket (a heap beside it isn't ground
 	# to push into): the strip they've just cut doesn't count, or with the ground cut exactly to them it never read
 	# deep, and the bucket went on down 1.8 m and couldn't lift out to pour)
-	var deep := 0.0
+	var deep = 0.0
 	if tr.contains(e0):
 		var across: Vector3 = _look.global_transform.basis * (Basis(Vector3.UP, swing) * Vector3(0, 0, BUCKET_HALF + 0.35))
-		var side := minf(tr.surface_at(e0.x + across.x, e0.z + across.z), tr.surface_at(e0.x - across.x, e0.z - across.z))
+		var side = minf(tr.surface_at(e0.x + across.x, e0.z + across.z), tr.surface_at(e0.x - across.x, e0.z - across.z))
 		deep = maxf(tr.surface_at(e0.x, e0.z), side) - e0.y
-	var slow := 1.0 - bog                          # (cutting firm ground holds the arm back)
-	var want := wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt * slow
+	var slow = 1.0 - bog                          # (cutting firm ground holds the arm back)
+	var want = wrist + Vector2(_v_reach * REACH_SPEED, _v_raise * RAISE_SPEED) * dt * slow
 	if deep > STAB_MOST and _v_raise < 0.0:
 		want.y = wrist.y                       # (it won't stab deeper: drag it in)
-	var before := wrist
-	var before_curl := curl
-	var b0 := _bury()
+	var before = wrist
+	var before_curl = curl
+	var b0 = _bury()
 	_solve(want)
-	var spin := _v_curl * CURL_SPEED
+	var spin = _v_curl * CURL_SPEED
 	if deep > 0.05 and _v_reach < -0.1:
 		spin += CURL_ASSIST
 	if load_n > 0 and _v_raise > 0.1 and curl < CURL_HOLDS and curl_cmd >= 0.0:
@@ -324,25 +324,25 @@ func _tool(dt: float) -> void:
 	curl = clampf(curl + spin * dt, CURL_MIN, CURL_MAX)
 	# cutting: curled in, or dragged in, the bucket open enough to take it and room in it; anything else, it rests on
 	# the ground
-	var working := (spin > 0.1 or _v_reach < -0.1) and curl > CURL_EMPTY + 0.1 and load_n < CAPACITY
+	var working = (spin > 0.1 or _v_reach < -0.1) and curl > CURL_EMPTY + 0.1 and load_n < CAPACITY
 	if not working:
 		_keep_out(b0, before, before_curl)
 	_tracks.update(speed + steer * 0.8, speed - steer * 0.8, dt)
 	_pose_tool()
-	var e := edge()
+	var e = edge()
 	# digging (the digger game's way, DsTerrain.blade): the teeth dragged, pulled down or curled through the ground take
 	# what stands above them in the strip they sweep, into the bucket (firm ground only so fast: in firm ground the arm
 	# bogs down); rock harder than it breaks stops them
 	if working and tr.contains(e) and e.y < tr.surface_at(e.x, e.z) + 0.1:
-		var ends := teeth_ends()
-		var travel := e - e0
-		var fwd := Vector3(travel.x, 0.0, travel.z)
+		var ends = teeth_ends()
+		var travel = e - e0
+		var fwd = Vector3(travel.x, 0.0, travel.z)
 		if fwd.length() < 0.002:
 			fwd = Vector3.ZERO
 		_firm_acc = minf(_firm_acc + FIRM_RATE * dt, 3.0)
-		var firm := int(_firm_acc)
+		var firm = int(_firm_acc)
 		_firm_acc -= firm
-		var rows := 2 + ceili(fwd.length() / 0.22)          # (the whole strip the teeth swept this frame)
+		var rows = 2 + ceili(fwd.length() / 0.22)          # (the whole strip the teeth swept this frame)
 		var r: Dictionary = tr.blade(ends[0], ends[1], fwd, rows, 0.75, firm, HARDEST, CAPACITY - load_n, 0.9)
 		var counts: PackedInt32Array = r.counts
 		for m in counts.size():
@@ -351,23 +351,23 @@ func _tool(dt: float) -> void:
 				load_n += counts[m]
 		dug += int(r.taken) + int(r.moved)
 		# (firm ground being cut, or standing over the teeth uncut, holds the arm back; loose comes easy)
-		var stuck := 0.5 if int(r.taken) == 0 and e.y < tr.surface_at(e.x, e.z) - 0.1 else 0.0
+		var stuck = 0.5 if int(r.taken) == 0 and e.y < tr.surface_at(e.x, e.z) - 0.1 else 0.0
 		bog = lerpf(bog, clampf(float(r.cut) / DsTerrain.MM / BOG_AT + stuck, 0.0, 0.85), minf(1.0, dt * 6.0))
 		blocked = "Hard rock: too hard for the bucket" if bool(r.rock) and int(r.taken) == 0 else ""
 	else:
 		bog = 0.0
 	# pouring: opened past where it holds, out it comes at the teeth (over the truck: in its tray)
-	var hold := clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0)
+	var hold = clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0)
 	if hold < 1.0 and load_n > 0:
 		_pour_acc += POUR_RATE * (1.0 - hold) * dt
-		var n := int(_pour_acc)
+		var n = int(_pour_acc)
 		if n > 0:
 			_pour_acc -= n
-			var pp := pour_point()
+			var pp = pour_point()
 			var truck = site.machines.catcher(pp, self)
 			while n > 0 and load_n > 0:
-				var m := _most()
-				var take := mini(n, int(bucket[m]))
+				var m = _most()
+				var take = mini(n, int(bucket[m]))
 				var put: int = let_go(pp, m, take, truck)
 				if put <= 0:
 					break
@@ -380,12 +380,12 @@ func _tool(dt: float) -> void:
 ## How deep the deepest part of the bucket is under the ground (m; under nothing: -INF)
 func _bury() -> float:
 	var tr: DsTerrain = site.terrain
-	var g := _look.global_transform * Transform3D(Basis(Vector3.UP, swing), Vector3.ZERO)
-	var bb := Basis(Vector3.BACK, -curl)
-	var pin := Vector3(wrist.x, wrist.y, ARM_Z)
-	var most := -INF
+	var g = _look.global_transform * Transform3D(Basis(Vector3.UP, swing), Vector3.ZERO)
+	var bb = Basis(Vector3.BACK, -curl)
+	var pin = Vector3(wrist.x, wrist.y, ARM_Z)
+	var most = -INF
 	for p in SHELL:
-		var w := g * (pin + bb * Vector3(p.x, p.y, 0.0))
+		var w = g * (pin + bb * Vector3(p.x, p.y, 0.0))
 		if tr.contains(w):
 			most = maxf(most, tr.surface_at(w.x, w.z) - w.y)
 	return most
@@ -393,9 +393,9 @@ func _bury() -> float:
 ## Not cutting, the bucket's kept to BITE in the ground (or as deep as it was): it rides up out of it, or, if the arm
 ## can't lift it so, stays where it was
 func _keep_out(b0: float, before: Vector2, before_curl: float) -> void:
-	var limit := maxf(BITE, b0)
+	var limit = maxf(BITE, b0)
 	for i in 3:
-		var over := _bury() - limit
+		var over = _bury() - limit
 		if over <= 0.003:
 			if wrist.y > before.y + 0.0001 and _v_raise < 0.0:
 				_v_raise = 0.0
@@ -414,30 +414,30 @@ func _follow(dt: float) -> void:
 func exhaust_at() -> Vector3:
 	return _look.global_transform * (Basis(Vector3.UP, swing) * Vector3(-1.75, 3.1, 0.8))
 
-var _dug_was := 0
-var _load_was := 0
-var _shown := 0.0               # the load as the bucket draws it: it comes up as the soil tumbles in, not all at once
+var _dug_was = 0
+var _load_was = 0
+var _shown = 0.0               # the load as the bucket draws it: it comes up as the soil tumbles in, not all at once
 var _inflow: CPUParticles3D
-var _inflow_left := 0.0
+var _inflow_left = 0.0
 
 # (the digger game's _update_dig_fx) dirt flying and dust where its teeth are cutting, at the ground; and the soil
 # they cut rolling up over them into the bucket (the owner, 10 Nov: "it drags it and then just appears in the
 # bucket"), seen on both games (the guest's sees its load going up)
 func _dust_fx() -> void:
 	super()
-	var dt := get_process_delta_time()
-	var filling := load_n > _load_was
+	var dt = get_process_delta_time()
+	var filling = load_n > _load_was
 	var cutting: bool = dug != _dug_was or (not runs() and filling)
 	cut_now = clampf(0.4 + bog, 0.0, 1.0) if cutting else 0.0
 	_dug_was = dug
 	_load_was = load_n
 	_shown = move_toward(_shown, float(load_n), CAPACITY * 1.3 * dt)
-	var at := edge()
+	var at = edge()
 	at.y = maxf(at.y, ground_y(at.x, at.z) + 0.05)
 	# (thrown up and back towards the machine, the way the bucket's dragged, not the way its tracks face)
 	work_fx(at, BUCKET_HALF * 0.8, cutting, yaw + swing + PI)
 	if cutting and site.terrain:
-		var te := teeth_ends()
+		var te = teeth_ends()
 		site.terrain.wear_edge(te[0], te[1], (te[0] as Vector3) - _look.global_position)
 	if filling:
 		_inflow_left = 0.15
@@ -454,21 +454,21 @@ func _dust_fx() -> void:
 		_inflow.scale_amount_max = 0.8
 		add_child(_inflow)
 	# along the teeth, aimed from them up into the bucket's mouth (towards its back, over its floor)
-	var ends := teeth_ends()
-	var across := ((ends[1] as Vector3) - (ends[0] as Vector3)).normalized()
-	var house := _look.global_transform.basis * Basis(Vector3.UP, swing)
-	var bb := house * Basis(Vector3.BACK, -curl)
-	var mouth := (bb * Vector3(-0.8, 0.3, 0.0)).normalized()        # (DsProps.excavator_bucket: its hollow lies back from the teeth, over the open side)
-	var up := across.cross(mouth).normalized()
-	var b := Basis(across, up, across.cross(up))
+	var ends = teeth_ends()
+	var across = ((ends[1] as Vector3) - (ends[0] as Vector3)).normalized()
+	var house = _look.global_transform.basis * Basis(Vector3.UP, swing)
+	var bb = house * Basis(Vector3.BACK, -curl)
+	var mouth = (bb * Vector3(-0.8, 0.3, 0.0)).normalized()        # (DsProps.excavator_bucket: its hollow lies back from the teeth, over the open side)
+	var up = across.cross(mouth).normalized()
+	var b = Basis(across, up, across.cross(up))
 	_inflow.global_transform = Transform3D(b, edge())
 	_inflow.emission_box_extents = Vector3(BUCKET_HALF * 0.8, 0.05, 0.05)
 	_inflow.direction = b.inverse() * (mouth + Vector3(0.0, 0.25, 0.0)).normalized()
 	_inflow.emitting = _inflow_left > 0.0
 
 func _most() -> int:
-	var best := DsMats.DIRT
-	var bn := -1
+	var best = DsMats.DIRT
+	var bn = -1
 	for m in bucket:
 		if int(bucket[m]) > bn:
 			best = int(m)
@@ -499,75 +499,75 @@ func _take_cmds_more(f: PackedFloat32Array) -> void:
 ## old block poked out through it). It fills the bucket's own hollow, in from its shell and side plates, from the back
 ## towards the open side, its top lumpy; past HEAPED a rounded heap of lumps stands out of the open side, inside the plates.
 func _build_loads() -> void:
-	var length := BUCKET
+	var length = BUCKET
 	# the hollow, as DsProps.excavator_bucket shapes it: the shell round the back, the open side from the teeth to the heel
-	var hollow := PackedVector2Array([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length - 0.12, 0.14), Vector2(length, -0.02), Vector2(0.15, -0.28)])
+	var hollow = PackedVector2Array([Vector2(-0.08, 0.1), Vector2(0.35, 0.5), Vector2(0.85, 0.52), Vector2(length - 0.12, 0.14), Vector2(length, -0.02), Vector2(0.15, -0.28)])
 	_loads = load_meshes(hollow, 4, 5, BUCKET_HALF - 0.06, 1.0)
 
 ## A bucket's load at each of LOAD_LEVELS + HEAP_LEVELS levels: `hollow` its inside (in its own x-y plane, shrunk a
 ## little here), the open side from hollow[lip_i] to hollow[heel_i], `half` its inside half width, `scale` the lumps'
 ## size against the excavator's (the loaders' buckets are smaller). Shared with DsDingo.
 static func load_meshes(hollow_in: PackedVector2Array, lip_i: int, heel_i: int, half: float, scale: float) -> Array[ArrayMesh]:
-	var hollow := hollow_in.duplicate()
-	var mid := Vector2.ZERO
+	var hollow = hollow_in.duplicate()
+	var mid = Vector2.ZERO
 	for p in hollow:
 		mid += p / hollow.size()
 	for i in hollow.size():
 		hollow[i] = mid + (hollow[i] - mid) * 0.9
-	var lip := hollow[lip_i]
-	var heel := hollow[heel_i]
-	var along := (heel - lip).normalized()
-	var into := Vector2(-along.y, along.x)
+	var lip = hollow[lip_i]
+	var heel = hollow[heel_i]
+	var along = (heel - lip).normalized()
+	var into = Vector2(-along.y, along.x)
 	if into.dot(mid - lip) < 0.0:
 		into = -into
-	var deepest := 0.0
+	var deepest = 0.0
 	for p in hollow:
 		deepest = maxf(deepest, (p - lip).dot(into))
-	var whole := _area(hollow)
-	var rng := RandomNumberGenerator.new()
+	var whole = _area(hollow)
+	var rng = RandomNumberGenerator.new()
 	rng.seed = 19
-	var dark := DsProps.DIRT.darkened(0.15)
+	var dark = DsProps.DIRT.darkened(0.15)
 	var loads: Array[ArrayMesh] = []
 	for k in LOAD_LEVELS + HEAP_LEVELS:
-		var kit := DsKit.new()
-		var share := minf(float(k + 1) / LOAD_LEVELS, 1.0)
-		var heap := maxf(float(k + 1 - LOAD_LEVELS) / HEAP_LEVELS, 0.0)
+		var kit = DsKit.new()
+		var share = minf(float(k + 1) / LOAD_LEVELS, 1.0)
+		var heap = maxf(float(k + 1 - LOAD_LEVELS) / HEAP_LEVELS, 0.0)
 		# where its top is, measured in from the open side, found so it holds the right share of the hollow
-		var lo := 0.0
-		var hi := deepest
+		var lo = 0.0
+		var hi = deepest
 		for i in 18:
-			var try_at := (lo + hi) * 0.5
+			var try_at = (lo + hi) * 0.5
 			if _area(_clip(hollow, lip, into, try_at)) > share * whole:
 				lo = try_at
 			else:
 				hi = try_at
-		var cut := (lo + hi) * 0.5
-		var body := _clip(hollow, lip, into, cut)
+		var cut = (lo + hi) * 0.5
+		var body = _clip(hollow, lip, into, cut)
 		if body.size() >= 3:
 			kit.prism(Array(body), -half, half, DsProps.DIRT)
-		var top_a := lip + into * cut
-		var top_b := heel + into * cut
+		var top_a = lip + into * cut
+		var top_b = heel + into * cut
 		if heap <= 0.0:
 			# where the top meets the shell at each end, kept a little in so no lump pokes through it
-			var ends := _top_ends(body, lip, into, cut)
+			var ends = _top_ends(body, lip, into, cut)
 			top_a = ends[0]
 			top_b = ends[1]
-		var out := Vector3(-into.x, -into.y, 0.0)
+		var out = Vector3(-into.x, -into.y, 0.0)
 		# low, rounded and close together, so they read as one heap of clods, not a row of rocks
-		var rows := 6 if heap > 0.0 else 4
-		var cols := 5 if heap > 0.0 else 3
+		var rows = 6 if heap > 0.0 else 4
+		var cols = 5 if heap > 0.0 else 3
 		for i in rows:
 			for j in cols:
-				var t := lerpf(0.16, 0.84, (i + rng.randf_range(-0.3, 0.3)) / (rows - 1))
-				var r := (0.13 if heap > 0.0 else 0.09) * scale * rng.randf_range(0.8, 1.2)
+				var t = lerpf(0.16, 0.84, (i + rng.randf_range(-0.3, 0.3)) / (rows - 1))
+				var r = (0.13 if heap > 0.0 else 0.09) * scale * rng.randf_range(0.8, 1.2)
 				# kept clear of the side plates, rough edges and all
-				var z := clampf(lerpf(-half + r * 1.5, half - r * 1.5, (j + rng.randf_range(-0.25, 0.25)) / (cols - 1)), -half + r * 1.5, half - r * 1.5)
-				var base2 := top_a.lerp(top_b, t)
-				var dome := (1.0 - pow(2.0 * t - 1.0, 2.0)) * (1.0 - pow(z / half, 2.0))
-				var tall := heap * HEAP_TALL * scale * dome + r * rng.randf_range(0.25, 0.5)
-				var base := Vector3(base2.x, base2.y, z) - out * r * 0.5
-				var waist := base + out * (tall * 0.6 + r * 0.25)
-				var col := DsProps.DIRT if rng.randf() < 0.6 else dark
+				var z = clampf(lerpf(-half + r * 1.5, half - r * 1.5, (j + rng.randf_range(-0.25, 0.25)) / (cols - 1)), -half + r * 1.5, half - r * 1.5)
+				var base2 = top_a.lerp(top_b, t)
+				var dome = (1.0 - pow(2.0 * t - 1.0, 2.0)) * (1.0 - pow(z / half, 2.0))
+				var tall = heap * HEAP_TALL * scale * dome + r * rng.randf_range(0.25, 0.5)
+				var base = Vector3(base2.x, base2.y, z) - out * r * 0.5
+				var waist = base + out * (tall * 0.6 + r * 0.25)
+				var col = DsProps.DIRT if rng.randf() < 0.6 else dark
 				kit.cone(base, waist, r, r * 1.1, 7, col, 0.2, rng)
 				kit.cone(waist, base + out * (tall + r * 0.5), r * 1.1, r * 0.5, 7, col, 0.2, rng)
 		loads.append(kit.mesh())
@@ -575,12 +575,12 @@ static func load_meshes(hollow_in: PackedVector2Array, lip_i: int, heel_i: int, 
 
 ## The part of a convex shape at least `cut` in from the line through `at` (measured along `into`)
 static func _clip(shape: PackedVector2Array, at: Vector2, into: Vector2, cut: float) -> PackedVector2Array:
-	var out := PackedVector2Array()
+	var out = PackedVector2Array()
 	for i in shape.size():
-		var a := shape[i]
-		var b := shape[(i + 1) % shape.size()]
-		var da := (a - at).dot(into) - cut
-		var db := (b - at).dot(into) - cut
+		var a = shape[i]
+		var b = shape[(i + 1) % shape.size()]
+		var da = (a - at).dot(into) - cut
+		var db = (b - at).dot(into) - cut
 		if da >= 0.0:
 			out.append(a)
 		if (da >= 0.0) != (db >= 0.0):
@@ -600,9 +600,9 @@ static func _top_ends(shape: PackedVector2Array, at: Vector2, into: Vector2, cut
 	return [a.lerp(b, 0.08), b.lerp(a, 0.08)]
 
 static func _area(shape: PackedVector2Array) -> float:
-	var sum := 0.0
+	var sum = 0.0
 	for i in shape.size():
-		var a := shape[i]
-		var b := shape[(i + 1) % shape.size()]
+		var a = shape[i]
+		var b = shape[(i + 1) % shape.size()]
 		sum += a.x * b.y - b.x * a.y
 	return absf(sum) * 0.5

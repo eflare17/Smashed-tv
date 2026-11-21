@@ -43,22 +43,22 @@ const BODY_PIN := Vector3(1.2, 1.78, 0.76)    # (each side: z flipped; DsProps.b
 const BLADE_PIN := Vector3(2.36, 1.15, 0.84)  # (in the blade's frame: DsProps.dozer_blade's brackets)
 const BARREL_LEN := 0.62
 
-var lift := START_LIFT
-var lift_cmd := 0.0
-var push_load := 0.0            # loose dirt banked against the blade (blocks: 125 mm over a column)
-var moved := 0                  # (tests: mm it's moved)
-var cut_on := false
-var cut_cm := 20
-var edge_gap := 0.0             # m from the edge down to the ground under it (negative: in it)
-var _steady := 0.0
-var _edge_avg := NAN
-var _keys_was := {}
-var cut_rate := 0.0             # firm blocks a second it's cutting (smoothed)
-var _jam_t := 0.0               # (a moment since the blade was too full to take more)
+var lift = START_LIFT
+var lift_cmd = 0.0
+var push_load = 0.0            # loose dirt banked against the blade (blocks: 125 mm over a column)
+var moved = 0                  # (tests: mm it's moved)
+var cut_on = false
+var cut_cm = 20
+var edge_gap = 0.0             # m from the edge down to the ground under it (negative: in it)
+var _steady = 0.0
+var _edge_avg = NAN
+var _keys_was = {}
+var cut_rate = 0.0             # firm blocks a second it's cutting (smoothed)
+var _jam_t = 0.0               # (a moment since the blade was too full to take more)
 var _look: Node3D
 var _pivot: MeshInstance3D
 var _tracks: DsTrackRig
-var _was := Vector3.INF
+var _was = Vector3.INF
 var _shake: Node3D
 var _rams: Array[DsRam] = []
 
@@ -81,15 +81,15 @@ func _build() -> void:
 	_look = Node3D.new()
 	_look.rotation.y = PI * 0.5
 	add_child(_look)
-	var frame := DsKit.new()
+	var frame = DsKit.new()
 	DsProps.track_frames(frame, 1.15, 0.3, 1.8, 2.3, 1.95, false)
 	_mesh(_look, frame)
 	_shake = Node3D.new()
 	_look.add_child(_shake)
-	var body := DsKit.new()
+	var body = DsKit.new()
 	DsProps.bulldozer(body, false)
 	_mesh(_shake, body)
-	var bk := DsKit.new()
+	var bk = DsKit.new()
 	DsProps.dozer_blade(bk, false)
 	_pivot = _mesh(_shake, bk)
 	for side in 2:
@@ -103,7 +103,7 @@ func _build() -> void:
 	_tracks.setup(DsExcavator.mat(), DsProps.track_path(1.8, 2.33, 1.97), 1.15, 0.62, 1.47, DsProps.dozer_wheels())
 
 func _mesh(parent: Node3D, kit: DsKit) -> MeshInstance3D:
-	var m := MeshInstance3D.new()
+	var m = MeshInstance3D.new()
 	m.mesh = kit.mesh()
 	m.material_override = DsExcavator.mat()
 	parent.add_child(m)
@@ -112,15 +112,15 @@ func _mesh(parent: Node3D, kit: DsKit) -> MeshInstance3D:
 func _pose_tool() -> void:
 	if _pivot == null:
 		return
-	var bp := _blade_pose(lift + _steady)
+	var bp = _blade_pose(lift + _steady)
 	_pivot.transform = bp
 	for i in _rams.size():
-		var side := -1.0 if i == 0 else 1.0
+		var side = -1.0 if i == 0 else 1.0
 		_rams[i].aim(Vector3(BODY_PIN.x, BODY_PIN.y, BODY_PIN.z * side), bp * Vector3(BLADE_PIN.x, BLADE_PIN.y, BLADE_PIN.z * side))
 
 func _blade_pose(l: float) -> Transform3D:
-	var swing := asin(clampf(l / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
-	var turn := Basis(Vector3.BACK, swing)
+	var swing = asin(clampf(l / (EDGE_X - ARM_PIVOT.x), -0.9, 0.9))
+	var turn = Basis(Vector3.BACK, swing)
 	return Transform3D(turn, ARM_PIVOT - turn * ARM_PIVOT)
 
 ## The edge's middle in the world with the blade at l
@@ -129,7 +129,7 @@ func _edge_at(l: float) -> Vector3:
 
 ## The blade's cutting edge, its two ends, in the world
 func edge_ends() -> Array:
-	var t := _look.global_transform * _pivot.transform
+	var t = _look.global_transform * _pivot.transform
 	return [t * Vector3(EDGE_X, 0.0, -HALF_WIDTH), t * Vector3(EDGE_X, 0.0, HALF_WIDTH)]
 
 func edge() -> Vector3:
@@ -154,7 +154,7 @@ func read_input() -> void:
 		cut_cm = clampi(cut_cm - CUT_STEP, CUT_STEP, CUT_MOST)
 
 func _pressed(k: Key) -> bool:
-	var on := Input.is_physical_key_pressed(k)
+	var on = Input.is_physical_key_pressed(k)
 	var was: bool = _keys_was.get(k, false)
 	_keys_was[k] = on
 	return on and not was
@@ -170,16 +170,16 @@ func keys() -> String:
 	return "W/S drive   A/D turn   R/F blade up/down (lower it into the ground to cut, push the heap)\nQ CUT: hold the blade under where the ground began (T/G deeper/shallower)   V view   wheel zoom   E get off"
 
 func status() -> String:
-	var word := ("CUT %d cm" % cut_cm) if cut_on else ("Blade %+.2f m" % edge_gap)
+	var word = ("CUT %d cm" % cut_cm) if cut_on else ("Blade %+.2f m" % edge_gap)
 	if push_load > 0:
 		word += "   pushing %.1f t" % (push_load * 0.0031)
 	return word + ("   " + blocked if blocked != "" else "")
 
 func _drive(dt: float) -> void:
 	# the push_load pushes back: slower with more banked against the blade
-	var k := 1.0 - 0.85 * pow(clampf(float(push_load) / BOG, 0.0, 1.0), 1.3) * (0.6 if cut_on else 1.0)
+	var k = 1.0 - 0.85 * pow(clampf(float(push_load) / BOG, 0.0, 1.0), 1.3) * (0.6 if cut_on else 1.0)
 	k *= clampf(1.0 - cut_rate / CUT_BOG, 0.3, 1.0)
-	var top := max_speed
+	var top = max_speed
 	max_speed = minf(top, CUT_TOP if cut_on else top) * k
 	super(dt)
 	max_speed = top
@@ -201,20 +201,20 @@ func _tool(dt: float) -> void:
 	var e: Array = edge_ends()
 	var a: Vector3 = e[0]
 	var b: Vector3 = e[1]
-	var mid := (a + b) * 0.5
+	var mid = (a + b) * 0.5
 	edge_gap = mid.y - ground_y(mid.x, mid.z)
-	var f := forward()
+	var f = forward()
 	# working only going forward (or trying to): a parked blade doesn't dig, and it moves only what it sweeps through
 	if speed > 0.02 or (throttle > 0.05 and speed > -0.05):
-		var share := clampf(maxf(speed, 0.0) * dt / SWEEP_DEPTH, 0.0, 1.0)
+		var share = clampf(maxf(speed, 0.0) * dt / SWEEP_DEPTH, 0.0, 1.0)
 		var r: Dictionary = tr.blade(a, b, f, 2, MOUTH, FIRM, HARDEST, 0, HEAP, share)
 		moved += int(r.moved)
 		_jam(int(r.jammed), int(r.moved))
 		# (from the blade back to the tracks nothing's left standing above the edge, or above where the tracks ride
 		# if that's higher: the blade's swept through all of it. So a step it cut before the machine dipped, or
 		# dirt that's tumbled over the blade's top, can't stop it or lift it; it goes in front of the blade)
-		var base := (global_transform * Vector3(0, 0, -length * 0.5)).y
-		var rows := ceili((EDGE_X - length * 0.5) / 0.22) + 1
+		var base = (global_transform * Vector3(0, 0, -length * 0.5)).y
+		var rows = ceili((EDGE_X - length * 0.5) / 0.22) + 1
 		var r2: Dictionary = tr.blade(Vector3(a.x, maxf(a.y, base), a.z), Vector3(b.x, maxf(b.y, base), b.z), f, rows, MOUTH, 999, HARDEST, 0, HEAP, 1.0)
 		moved += int(r2.moved)
 		if int(r2.jammed) > 0:
@@ -241,30 +241,30 @@ func _jam(jammed: int, did: int) -> void:
 	if jammed <= 0:
 		return
 	_jam_t = 1.0
-	var k := clampf(float(jammed) / float(jammed + did + 1), 0.0, 1.0)
+	var k = clampf(float(jammed) / float(jammed + did + 1), 0.0, 1.0)
 	speed = minf(speed, max_speed * (1.0 - k))
 	if k > 0.6:
 		blocked = "The blade's full: back up, or raise it"
 
 ## CUT: the edge held cut_cm under where the ground began, read across the blade just behind it
 func _hold_cut(dt: float) -> void:
-	var f := forward()
-	var ahead := global_position + f * (EDGE_X + CUT_READ)
-	var side := right() * HALF_WIDTH * 0.8
+	var f = forward()
+	var ahead = global_position + f * (EDGE_X + CUT_READ)
+	var side = right() * HALF_WIDTH * 0.8
 	var tr: DsTerrain = site.terrain
-	var began := (tr.start_at(ahead.x, ahead.z) + tr.start_at(ahead.x + side.x, ahead.z + side.z) + tr.start_at(ahead.x - side.x, ahead.z - side.z)) / 3.0
-	var want := began - cut_cm * 0.01
-	var err := want - _edge_at(lift + _steady).y
+	var began = (tr.start_at(ahead.x, ahead.z) + tr.start_at(ahead.x + side.x, ahead.z + side.z) + tr.start_at(ahead.x - side.x, ahead.z - side.z)) / 3.0
+	var want = began - cut_cm * 0.01
+	var err = want - _edge_at(lift + _steady).y
 	lift = clampf(lift + clampf(err * 8.0, -1.0, 1.0) * HOLD_LIFT_SPEED * dt, HOLD_LIFT_MIN, LIFT_MAX)
 
 ## Why a blade left to itself makes waves: it's far ahead of the tracks, so it lifts more than the tracks climb. It
 ## cuts a dip, the machine drives down into it, the blade digs deeper still, and round it goes. So while it's working
 ## it keeps to the height it's been averaging over the last few metres, the machine pitching under it.
 func _steady_blade(dt: float) -> void:
-	var raw := _edge_at(lift).y
+	var raw = _edge_at(lift).y
 	if is_nan(_edge_avg):
 		_edge_avg = raw
-	var working := not cut_on and lift_cmd == 0.0 and edge_gap < 0.25
+	var working = not cut_on and lift_cmd == 0.0 and edge_gap < 0.25
 	if not working:
 		_edge_avg = raw
 		_steady = move_toward(_steady, 0.0, 1.5 * dt)
@@ -277,7 +277,7 @@ func _follow(dt: float) -> void:
 	super(dt)
 	_tracks.update(speed, speed, dt)
 
-var _moved_was := 0
+var _moved_was = 0
 var _tumble: CPUParticles3D
 
 # (the digger game's _update_blade_fx) while it's pushing dirt: dust and flying lumps at the blade, and lumps tumbling
@@ -308,8 +308,8 @@ func _dust_fx() -> void:
 		_tumble.angular_velocity_min = -420.0
 		_tumble.angular_velocity_max = 420.0
 		add_child(_tumble)
-	var tonnes := push_load * 0.0031
-	var top := mid + forward() * 0.45
+	var tonnes = push_load * 0.0031
+	var top = mid + forward() * 0.45
 	_tumble.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(top.x, ground_y(top.x, top.z) + 0.2, top.z))
 	_tumble.emitting = pushing and tonnes > 0.6
 	_tumble.scale_amount_max = lerpf(0.45, 0.9, clampf(tonnes / 10.0, 0.0, 1.0))
@@ -319,11 +319,11 @@ func _dust_fx() -> void:
 func at_stop() -> bool:
 	return edge_gap < 0.02 or lift > LIFT_MAX - 0.01
 
-var _lift_was := 0.0
+var _lift_was = 0.0
 
 # (the blade going up or down: its pump's working)
 func shake_effort() -> float:
-	var moving := absf(lift - _lift_was) / maxf(get_process_delta_time(), 0.001)
+	var moving = absf(lift - _lift_was) / maxf(get_process_delta_time(), 0.001)
 	_lift_was = lift
 	return clampf(moving / LIFT_SPEED, 0.0, 1.0) * 0.6
 

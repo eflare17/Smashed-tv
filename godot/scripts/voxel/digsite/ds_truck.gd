@@ -21,26 +21,26 @@ const TRAY_LONG := 4.6
 const TRAY_HALF := 1.2
 const TRAY_HIGH := 0.95
 
-var tip := 0.0                  # the tray, 0 down .. 1 right up
-var tip_cmd := 0.0
-var tray_load := {}             # material -> mm in the tray
-var load_n := 0
-var props := 0                  # concrete supports on it
-var _pour_acc := 0.0
+var tip = 0.0                  # the tray, 0 down .. 1 right up
+var tip_cmd = 0.0
+var tray_load = {}             # material -> mm in the tray
+var load_n = 0
+var props = 0                  # concrete supports on it
+var _pour_acc = 0.0
 var _tray: Node3D
 var _lump: MeshInstance3D
 var _props_mesh: MeshInstance3D
 var _look: Node3D
-var _wheels := []
+var _wheels = []
 var _shake: Node3D              # (its body and tray: what its engine shakes; not its wheels)
 var _ram: DsRam
-var _tip_was := 0.0
+var _tip_was = 0.0
 # its tipping ram (the owner, 9 Nov): stages sliding out of each other, from its chassis behind the cab to the top of
 # the tray's front, as a real tipper's
 const RAM_BASE := Vector3(1.38, 0.84, 0.0)
 const RAM_TOP := Vector3(5.05, 0.5, 0.0)     # (in the tray's frame: out in front of its front wall, so tipped right
                                               # up the ram stays clear of it)
-var _roll := 0.0
+var _roll = 0.0
 
 func _init() -> void:
 	kind = "tip truck"
@@ -68,15 +68,15 @@ func _build() -> void:
 	shake_idle = 0.0013
 	shake_work = 0.0025
 	shake_hz = 53.0
-	var kit := DsKit.new()
+	var kit = DsKit.new()
 	DsProps.truck_body(kit)
 	_mesh(_shake, kit)
-	var wk := DsKit.new()
+	var wk = DsKit.new()
 	DsProps.wheel(wk, 0.34)
-	var wide := DsKit.new()
+	var wide = DsKit.new()
 	DsProps.wheel(wide, 0.56)
-	var tyre := wk.mesh()
-	var tyre2 := wide.mesh()
+	var tyre = wk.mesh()
+	var tyre2 = wide.mesh()
 	for side in [-1.0, 1.0]:
 		_wheel(tyre, Vector3(2.3, 0.6, side * 1.08), 0.6)
 		_wheel(tyre2, Vector3(-1.5, 0.6, side * 0.98), 0.6)
@@ -99,14 +99,14 @@ func _build() -> void:
 	_props_mesh.visible = false
 
 func _mesh(parent: Node3D, kit: DsKit) -> MeshInstance3D:
-	var m := MeshInstance3D.new()
+	var m = MeshInstance3D.new()
 	m.mesh = kit.mesh()
 	m.material_override = DsExcavator.mat()
 	parent.add_child(m)
 	return m
 
 func _wheel(mesh: Mesh, at: Vector3, r: float) -> void:
-	var mi := MeshInstance3D.new()
+	var mi = MeshInstance3D.new()
 	mi.mesh = mesh
 	mi.material_override = DsExcavator.mat()
 	mi.position = at
@@ -116,19 +116,19 @@ func _wheel(mesh: Mesh, at: Vector3, r: float) -> void:
 
 ## Whether a point's over the tray (a bucket pouring there fills it)
 func over_tray(p: Vector3) -> bool:
-	var l := global_transform.affine_inverse() * p
-	var t := TRAY_AT
+	var l = global_transform.affine_inverse() * p
+	var t = TRAY_AT
 	return absf(l.x - t.x) < TRAY.x * 0.5 + 0.1 and absf(l.z - t.z) < TRAY.z * 0.5 + 0.1 and l.y > t.y - 0.2 and l.y < t.y + TRAY.y + 4.5 and tip < 0.2
 
 ## Blocks of m poured in (a bucket over it): -> how many fitted
-var incoming := 0               # blocks falling into its tray from a bucket, not landed yet (DsMachine.let_go)
+var incoming = 0               # blocks falling into its tray from a bucket, not landed yet (DsMachine.let_go)
 
 ## Room in its tray, less what's already falling into it
 func room() -> int:
 	return maxi(0, CAPACITY - load_n - incoming)
 
 func take(m: int, n: int) -> int:
-	var k := mini(n, CAPACITY - load_n)
+	var k = mini(n, CAPACITY - load_n)
 	if k <= 0:
 		return 0
 	tray_load[m] = int(tray_load.get(m, 0)) + k
@@ -151,10 +151,10 @@ func _pose_tool() -> void:
 	_tray.transform = Transform3D(Basis(Vector3.BACK, tip * 0.95), HINGE)
 	if _ram:
 		_ram.aim(RAM_BASE, _tray.transform * RAM_TOP)
-	var f := float(load_n) / CAPACITY
+	var f = float(load_n) / CAPACITY
 	_lump.visible = f > 0.01
 	if _lump.visible:
-		var up := TRAY_HIGH * (0.25 + 0.9 * f)
+		var up = TRAY_HIGH * (0.25 + 0.9 * f)
 		_lump.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(TRAY_LONG * 0.92, up, TRAY_HALF * 1.85)), Vector3(TRAY_LONG * 0.5, 0.08, 0.0))
 	_props_mesh.visible = props > 0 and load_n == 0
 	for w in _wheels:
@@ -167,7 +167,7 @@ func at_stop() -> bool:
 
 # (the tray going up or down: its pump's working)
 func shake_effort() -> float:
-	var moving := absf(tip - _tip_was) / maxf(get_process_delta_time(), 0.001)
+	var moving = absf(tip - _tip_was) / maxf(get_process_delta_time(), 0.001)
 	_tip_was = tip
 	return 0.6 if moving > 0.01 else 0.0
 
@@ -183,7 +183,7 @@ func keys() -> String:
 	return "W/S drive   A/D steer   R/F tip the tray up/down\nL load concrete supports (by the site office)   V view   wheel zoom   E get off"
 
 func status() -> String:
-	var s := "Tray %d%%" % int(100.0 * load_n / CAPACITY)
+	var s = "Tray %d%%" % int(100.0 * load_n / CAPACITY)
 	if props > 0:
 		s += "   %d concrete supports on it" % props
 	return s + ("   " + blocked if blocked != "" else "")
@@ -197,15 +197,15 @@ func _tool(dt: float) -> void:
 	tip = clampf(tip + tip_cmd * TIP_RATE * dt, 0.0, 1.0)
 	_pose_tool()
 	if tip > POUR_FROM and load_n > 0:
-		var k := (tip - POUR_FROM) / (1.0 - POUR_FROM)
+		var k = (tip - POUR_FROM) / (1.0 - POUR_FROM)
 		_pour_acc += POUR_RATE * k * dt
-		var n := int(_pour_acc)
+		var n = int(_pour_acc)
 		if n <= 0:
 			return
 		_pour_acc -= n
-		var at := spout()
+		var at = spout()
 		while n > 0 and load_n > 0:
-			var m := _most()
+			var m = _most()
 			var put: int = let_go(at + Vector3(0, 1.2, 0), m, mini(n, int(tray_load[m])), null)
 			if put <= 0:
 				break
@@ -216,8 +216,8 @@ func _tool(dt: float) -> void:
 			n -= put
 
 func _most() -> int:
-	var best := DsMats.DIRT
-	var bn := -1
+	var best = DsMats.DIRT
+	var bn = -1
 	for m in tray_load:
 		if int(tray_load[m]) > bn:
 			best = int(m)

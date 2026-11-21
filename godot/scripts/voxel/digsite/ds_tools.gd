@@ -20,8 +20,8 @@ const UPGRADES := [
 ]
 
 var site: Node3D                # DigSite
-var pick_tier := 0
-var hammer_tier := 0
+var pick_tier = 0
+var hammer_tier = 0
 
 ## The backpack's Dig Site things (VoxelItems merges these)
 static func items() -> Dictionary:
@@ -45,20 +45,20 @@ const DYNAMITE := 3             # sticks for ...
 const DYNAMITE_COST := 15
 
 func shop_line() -> String:
-	var a := arena()
-	var c := []
+	var a = arena()
+	var c = []
 	for id in CONCRETE:
 		c.append("%d %s" % [int(CONCRETE[id]), VoxelItems.name_of(id).to_lower()])
 	return "B  %d wooden props ($%d)     X  %d sticks of dynamite ($%d)     C  a concrete support (%s)     V  sell your ore ($%d; you've $%d)" % [PROPS, PROPS_COST, DYNAMITE, DYNAMITE_COST, ", ".join(c), ore_value(), a.cash]
 
 func ore_value() -> int:
-	var v := 0
+	var v = 0
 	for id in PRICES:
 		v += arena().inv.count(id) * int(PRICES[id])
 	return v
 
 func buy_props() -> bool:
-	var a := arena()
+	var a = arena()
 	if a.cash < PROPS_COST:
 		a.say("Not enough cash: $%d for %d props (V sells your ore)" % [PROPS_COST, PROPS], 2.0)
 		return false
@@ -70,7 +70,7 @@ func buy_props() -> bool:
 	return true
 
 func buy_dynamite() -> bool:
-	var a := arena()
+	var a = arena()
 	if a.cash < DYNAMITE_COST:
 		a.say("Not enough cash: $%d for %d sticks (V sells your ore)" % [DYNAMITE_COST, DYNAMITE], 2.0)
 		return false
@@ -82,7 +82,7 @@ func buy_dynamite() -> bool:
 	return true
 
 func make_concrete() -> bool:
-	var a := arena()
+	var a = arena()
 	for id in CONCRETE:
 		if a.inv.count(id) < int(CONCRETE[id]):
 			a.say("A concrete support needs %d %s (you've %d)" % [int(CONCRETE[id]), VoxelItems.name_of(id).to_lower(), a.inv.count(id)], 2.0)
@@ -95,8 +95,8 @@ func make_concrete() -> bool:
 	return true
 
 func sell_ore() -> int:
-	var a := arena()
-	var v := 0
+	var a = arena()
+	var v = 0
 	for id in PRICES:
 		var n: int = a.inv.count(id)
 		if n > 0:
@@ -125,8 +125,8 @@ func _fx_in(a: Array) -> void:
 	if a.size() < 3 or not site.active:
 		return
 	var p: Vector3 = a[1]
-	var m := int(a[2])
-	var snd := String(a[0])
+	var m = int(a[2])
+	var snd = String(a[0])
 	site.arena.sound.play(snd, p, -4.0, randf_range(0.9, 1.1))
 	if snd != "dig_clang":
 		_dust_at(p, DsMats.COL[clampi(m, 0, DsMats.COL.size() - 1)])
@@ -136,11 +136,11 @@ func _dust_at(p: Vector3, col: Color) -> void:
 	if tool:
 		tool._dust(p, col)
 
-var _carry := {}                # material -> mm the spade's dug (or tipped short) not yet a whole block in the backpack
+var _carry = {}                # material -> mm the spade's dug (or tipped short) not yet a whole block in the backpack
 
 ## The spade's mm by material as whole blocks for the backpack (what's left over carried to the next bite)
 func _blocks_of(counts_mm: PackedInt32Array) -> PackedInt32Array:
-	var out := PackedInt32Array()
+	var out = PackedInt32Array()
 	out.resize(counts_mm.size())
 	for m in counts_mm.size():
 		var v: int = counts_mm[m] + int(_carry.get(m, 0))
@@ -157,17 +157,17 @@ func dig_at(p: Vector3, r: float, hardest: int) -> Dictionary:
 ## A spade's bite (the hand shovel): an edge r*2 wide, across the way you look, a little under where it hit, cutting
 ## what stands above it for a scoop's depth along the look into the scoop (through DsNet: a guest's goes to the host's)
 func spade_at(p: Vector3, look: Vector3, r: float, hardest: int) -> Dictionary:
-	var f := Vector3(look.x, 0.0, look.z)
+	var f = Vector3(look.x, 0.0, look.z)
 	f = f.normalized() if f.length() > 0.01 else Vector3.FORWARD
-	var across := Vector3(-f.z, 0.0, f.x) * r
-	var e := p + Vector3(0, -r, 0) - f * r * 0.5
-	var rows := maxi(1, ceili(r * 2.0 / 0.22))
+	var across = Vector3(-f.z, 0.0, f.x) * r
+	var e = p + Vector3(0, -r, 0) - f * r * 0.5
+	var rows = maxi(1, ceili(r * 2.0 / 0.22))
 	var got = site.net.act("cut", [e - across, e + across, f, rows, r * 1.4, 99, hardest, 100000000, 0.5])
 	if not got is Dictionary:
 		return {"counts": PackedInt32Array(), "n": 0, "mm": 0, "refused": 0}
 	# (the cut's in mm: whole blocks go in the backpack, the rest's carried)
-	var blocks := _blocks_of(got.counts)
-	var n := 0
+	var blocks = _blocks_of(got.counts)
+	var n = 0
 	for c in blocks:
 		n += c
 	return {"counts": blocks, "n": n, "mm": int(got.taken), "refused": hardest + 1 if bool(got.rock) else 0}
@@ -176,10 +176,10 @@ func spade_at(p: Vector3, look: Vector3, r: float, hardest: int) -> Dictionary:
 ## out of the backpack (a part block that didn't land is carried, not lost)
 func tip_at(p: Vector3, m: int, n: int) -> int:
 	var got = site.net.act("pour", [p + Vector3(0, 0.45, 0), m, n * DsTerrain.MM])
-	var mm := int(got) if got != null else 0
+	var mm = int(got) if got != null else 0
 	if mm <= 0:
 		return 0
-	var k := ceili(float(mm) / DsTerrain.MM)
+	var k = ceili(float(mm) / DsTerrain.MM)
 	_carry[m] = int(_carry.get(m, 0)) + k * DsTerrain.MM - mm
 	return k
 
@@ -218,7 +218,7 @@ func load_data(d) -> void:
 
 ## The next thing the office makes for a tool (null: as good as it gets)
 func next_upgrade(tool: String):
-	var t := pick_tier if tool == "pick" else hammer_tier
+	var t = pick_tier if tool == "pick" else hammer_tier
 	for u in UPGRADES:
 		if u.tool == tool and int(u.tier) == t + 1:
 			return u
@@ -240,7 +240,7 @@ func office_line() -> String:
 	var u = offer()
 	if u == null:
 		return "Site office: your pick and hammer are as good as they get"
-	var need := []
+	var need = []
 	for id in u.cost:
 		need.append("%d %s (%d)" % [int(u.cost[id]), VoxelItems.name_of(id).to_lower(), arena().inv.count(id)])
 	return ("E  make a %s: " % u.name if _afford(u) else "Site office: a %s needs " % u.name) + ", ".join(need)
@@ -248,7 +248,7 @@ func office_line() -> String:
 ## E at the office counter: the next tool made if the backpack has what it takes
 func office_make() -> bool:
 	var u = offer()
-	var a := arena()
+	var a = arena()
 	if u == null:
 		return false
 	if not _afford(u):
@@ -270,7 +270,7 @@ func office_make() -> bool:
 ## A tool (VoxelTool) bites the ground at p (normal n): dug blocks into the backpack, or (the shovel's right click,
 ## filling) dirt out of it put back. -> blocks moved
 func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
-	var a := arena()
+	var a = arena()
 	if not site.net.can_change():
 		a.say("Waiting for your mate's ground ...", 1.0)
 		return 0
@@ -281,8 +281,8 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		if have <= 0:
 			a.say("No dirt in your backpack to fill with", 1.5)
 			return 0
-		var scoop := maxi(8, roundi(r * r * 300.0))          # (a scoop's worth, as the shovel takes)
-		var k := tip_at(p, DsMats.DIRT, mini(have, scoop))
+		var scoop = maxi(8, roundi(r * r * 300.0))          # (a scoop's worth, as the shovel takes)
+		var k = tip_at(p, DsMats.DIRT, mini(have, scoop))
 		if k > 0:
 			a.inv.remove("dirt", k)
 			tool.sfx("dig_dirt", p, -2.0, 0.85)
@@ -306,9 +306,9 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		site.net.event("fx", ["dig_clang", p, 0])
 		a.say(_too_hard(tool.weapon_id, int(got.refused), String(st[3])), 1.5)
 		return 0
-	var rock := 0
-	var best := DsMats.DIRT
-	var best_n := -1
+	var rock = 0
+	var best = DsMats.DIRT
+	var best_n = -1
 	for m in counts.size():
 		var c: int = counts[m]
 		if c <= 0:
@@ -321,7 +321,7 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 		var id: String = DsMats.ITEM[m] if m < DsMats.ITEM.size() else ""
 		if id != "":
 			a.receive({"id": id, "n": c}, "inv")
-	var snd := "dig_stone" if rock * 2 > int(got.n) else "dig_dirt"
+	var snd = "dig_stone" if rock * 2 > int(got.n) else "dig_dirt"
 	tool.sfx(snd, p, -2.0, randf_range(0.9, 1.1))
 	tool._dust(p, DsMats.COL[best])
 	site.net.event("fx", [snd, p, best])

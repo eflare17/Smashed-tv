@@ -21,21 +21,21 @@ static var _grass: ShaderMaterial
 static var _clod: ShaderMaterial
 static var _blade: ArrayMesh
 static var _clods: Array = []
-static var _flats := {}
+static var _flats = {}
 
 var site: Node3D
 var env: Environment
 var _we: WorldEnvironment
 var _arena_env: Environment
-var _sun_was := {}
-var _fov_was := 80.0
+var _sun_was = {}
+var _fov_was = 80.0
 var _outline: MeshInstance3D
-var on := false
+var on = false
 
 ## The shared noise picture (the sky's clouds, the ground's patches)
 static func noise() -> ImageTexture:
 	if _noise == null:
-		var fn := FastNoiseLite.new()
+		var fn = FastNoiseLite.new()
 		fn.seed = 3
 		fn.frequency = 0.02
 		fn.fractal_octaves = 3
@@ -69,7 +69,7 @@ static func grass_mat() -> ShaderMaterial:
 
 static func blade_mesh() -> ArrayMesh:
 	if _blade == null:
-		var arrays := []
+		var arrays = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.045, 0, 0), Vector3(0.045, 0, 0), Vector3(-0.03, 0.12, 0.012), Vector3(0.03, 0.12, 0.012), Vector3(0.008, 0.26, 0.05)])
 		arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
@@ -89,28 +89,28 @@ static func clod_mat() -> ShaderMaterial:
 
 static func clod_mesh(k: int) -> ArrayMesh:
 	if _clods.is_empty():
-		var gr := RandomNumberGenerator.new()
+		var gr = RandomNumberGenerator.new()
 		gr.seed = 29
 		const T := 1.618034
-		var corners := [Vector3(-1, T, 0), Vector3(1, T, 0), Vector3(-1, -T, 0), Vector3(1, -T, 0), Vector3(0, -1, T), Vector3(0, 1, T), Vector3(0, -1, -T), Vector3(0, 1, -T), Vector3(T, 0, -1), Vector3(T, 0, 1), Vector3(-T, 0, -1), Vector3(-T, 0, 1)]
+		var corners = [Vector3(-1, T, 0), Vector3(1, T, 0), Vector3(-1, -T, 0), Vector3(1, -T, 0), Vector3(0, -1, T), Vector3(0, 1, T), Vector3(0, -1, -T), Vector3(0, 1, -T), Vector3(T, 0, -1), Vector3(T, 0, 1), Vector3(-T, 0, -1), Vector3(-T, 0, 1)]
 		for i in 3:
-			var points := PackedVector3Array()
+			var points = PackedVector3Array()
 			for c: Vector3 in corners:
 				points.append(c.normalized() * gr.randf_range(0.72, 1.12))
-			var arrays := []
+			var arrays = []
 			arrays.resize(Mesh.ARRAY_MAX)
 			arrays[Mesh.ARRAY_VERTEX] = points
 			arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 5, 11, 0, 1, 5, 0, 7, 1, 0, 10, 7, 0, 11, 10, 1, 9, 5, 5, 4, 11, 11, 2, 10, 10, 6, 7, 7, 8, 1, 3, 4, 9, 3, 2, 4, 3, 6, 2, 3, 8, 6, 3, 9, 8, 4, 5, 9, 2, 11, 4, 6, 10, 2, 8, 7, 6, 9, 1, 8])
-			var m := ArrayMesh.new()
+			var m = ArrayMesh.new()
 			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 			_clods.append(m)
 	return _clods[posmod(k, 3)]
 
 ## A toon material in one colour (shared by colour)
 static func flat(c: Color) -> Material:
-	var k := c.to_html(false)
+	var k = c.to_html(false)
 	if not _flats.has(k):
-		var m := ShaderMaterial.new()
+		var m = ShaderMaterial.new()
 		m.shader = load("res://scripts/voxel/digsite/shaders/ds_flat.gdshader")
 		m.set_shader_parameter("albedo", Vector3(c.r, c.g, c.b))
 		_flats[k] = m
@@ -119,10 +119,10 @@ static func flat(c: Color) -> Material:
 func setup(s: Node3D) -> void:
 	site = s
 	name = "Look"
-	var sky_mat := ShaderMaterial.new()
+	var sky_mat = ShaderMaterial.new()
 	sky_mat.shader = load("res://scripts/voxel/digsite/shaders/ds_sky.gdshader")
 	sky_mat.set_shader_parameter("noise_tex", noise())
-	var sky := Sky.new()
+	var sky = Sky.new()
 	sky.sky_material = sky_mat
 	sky.radiance_size = Sky.RADIANCE_SIZE_32
 	sky.process_mode = Sky.PROCESS_MODE_QUALITY
@@ -149,10 +149,10 @@ func setup(s: Node3D) -> void:
 	env.adjustment_enabled = true
 	env.adjustment_brightness = 0.95
 	# the ink: a quad over the whole view, drawn last, that paints only the lines
-	var om := ShaderMaterial.new()
+	var om = ShaderMaterial.new()
 	om.shader = load("res://scripts/voxel/digsite/shaders/ds_outline.gdshader")
 	om.render_priority = 0
-	var q := QuadMesh.new()
+	var q = QuadMesh.new()
 	q.size = Vector2(2.0, 2.0)
 	q.material = om
 	_outline = MeshInstance3D.new()

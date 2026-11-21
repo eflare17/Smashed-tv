@@ -44,7 +44,7 @@ const BLAST := [0.0, 1.0, 1.0, 0.85, 1.1, 1.0, 0.6, 0.45, 0.0, 0.65, 0.55, 0.55,
 const ITEM := ["", "dirt", "dirt", "clay", "sand", "gravel", "stone", "stone", "", "coal", "iron_ore", "gold", "gem", "", "", ""]
 
 ## The grid's materials handed to it (colours, hardness, the grass on top)
-static func apply(g: DigSiteGrid) -> void:
+static func apply(g) -> void:
 	g.set_materials(PackedColorArray(COL), PackedInt32Array(HARD), GRASS)
 	g.set_physics(PackedInt32Array(WALL))
 	g.set_spans(PackedInt32Array(SPAN))

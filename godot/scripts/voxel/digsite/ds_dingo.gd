@@ -32,52 +32,52 @@ const BITE_EVERY := 0.08        # s between bites
 const POUR_RATE := 300.0 * DsTerrain.MM   # mm a second, tipped right forward
 const HARDEST := 2              # soil and clay (DsMats.HARD)
 
-var arm := 0.0                  # radians from level (where the driver's put the arms)
-var curl := 0.0                 # the bucket's floor against level (up +: holding; tipped forward -: pouring)
-var arm_at := 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST; right down,
+var arm = 0.0                  # radians from level (where the driver's put the arms)
+var curl = 0.0                 # the bucket's floor against level (up +: holding; tipped forward -: pouring)
+var arm_at = 0.0               # the arms as they are: arm, lifted if need be so the lip stays over DIG_MOST; right down,
                                 # they float, the lip riding DIG_MOST under the ground ahead
-var _float_lo := 0.0
-var ride_ref := 0.0             # (tests: the ground the bucket's lip was last held under, the lower of the firm ground ahead and its highest wheel)
-var curl_at := 0.0              # the bucket against the body as it is: curl, less the body's pitch (it self-levels)
-var lift_cmd := 0.0
-var curl_cmd := 0.0
-var bucket := {}                # material -> blocks in it
-var load_n := 0
-var push_load := 0.0            # loose dirt banked against the bucket, in blocks (it slows it)
-var dug := 0                    # (tests: mm its bucket's taken or pushed)
-var firm_rate := 2              # firm blocks off a column at full sweep (the Bobcat: 3)
-var bog := 900.0                # banked blocks that bring it nearly to a stop
-var _pour_acc := 0.0
+var _float_lo = 0.0
+var ride_ref = 0.0             # (tests: the ground the bucket's lip was last held under, the lower of the firm ground ahead and its highest wheel)
+var curl_at = 0.0              # the bucket against the body as it is: curl, less the body's pitch (it self-levels)
+var lift_cmd = 0.0
+var curl_cmd = 0.0
+var bucket = {}                # material -> blocks in it
+var load_n = 0
+var push_load = 0.0            # loose dirt banked against the bucket, in blocks (it slows it)
+var dug = 0                    # (tests: mm its bucket's taken or pushed)
+var firm_rate = 2              # firm blocks off a column at full sweep (the Bobcat: 3)
+var bog = 900.0                # banked blocks that bring it nearly to a stop
+var _pour_acc = 0.0
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
 var _shake: Node3D              # (its body, arms and bucket: what its engine shakes; the tracks or wheels aren't on it)
 var _rams: Array[DsRam] = []
 # its rams (the owner, 9 Nov): a lift ram each side, from its body (z: each side, flipped) to under its arm (along it,
 # up from it), and the bucket's tilt rams, from its arms' cross bar to the bucket's back (z: each one's)
-var lift_body := Vector3(-0.42, 0.62, 0.37)
-var lift_arm := Vector2(0.45, -0.04)
-var lift_len := 0.4
-var lift_r := 0.045
-var tilt_arm := Vector2(0.8, 0.06)
+var lift_body = Vector3(-0.42, 0.62, 0.37)
+var lift_arm = Vector2(0.45, -0.04)
+var lift_len = 0.4
+var lift_r = 0.045
+var tilt_arm = Vector2(0.8, 0.06)
 var tilt_z: Array[float] = [0.0]
-var tilt_r := 0.04
-var _arm_was := 0.0
+var tilt_r = 0.04
+var _arm_was = 0.0
 var _arms: MeshInstance3D
 var _bucket: MeshInstance3D
 var _lump: MeshInstance3D
 var _loads: Array[ArrayMesh] = []
 var _tracks: DsTrackRig
-var _wheels := []               # (the Bobcat's) [node, radius]
-var _roll := 0.0
+var _wheels = []               # (the Bobcat's) [node, radius]
+var _roll = 0.0
 # the digger game's Loader numbers (the Bobcat changes these: DsBobcat), in its frame: x forward, y up
-var capacity := CAPACITY
-var hardest := HARDEST
-var pivot := Vector2(-0.1, 0.85)
-var arm_len := 1.15
-var arm_low := ARM_LOW
-var arm_high := ARM_HIGH
-var bucket_len := 0.42
-var bucket_half := 0.5
-var bucket_high := 0.36
+var capacity = CAPACITY
+var hardest = HARDEST
+var pivot = Vector2(-0.1, 0.85)
+var arm_len = 1.15
+var arm_low = ARM_LOW
+var arm_high = ARM_HIGH
+var bucket_len = 0.42
+var bucket_half = 0.5
+var bucket_high = 0.36
 
 func _init() -> void:
 	kind = "Dingo"
@@ -95,7 +95,7 @@ func _init() -> void:
 	shake_hz = 66.0
 
 func _add(parent: Node3D, kit: DsKit) -> MeshInstance3D:
-	var m := MeshInstance3D.new()
+	var m = MeshInstance3D.new()
 	m.mesh = kit.mesh()
 	m.material_override = DsExcavator.mat()
 	parent.add_child(m)
@@ -120,7 +120,7 @@ func _build() -> void:
 	for k in 2:
 		_rams.append(DsRam.make(_shake, lift_len, lift_r, lift_r * 0.5, DsProps.YELLOW_DARK))
 	_pose_tool()
-	var ends := _ram_ends()
+	var ends = _ram_ends()
 	for k in tilt_z.size():
 		var e: Array = ends[2 + k]
 		_rams.append(DsRam.make(_shake, (e[0] as Vector3).distance_to(e[1]) * 0.55, tilt_r, tilt_r * 0.5, DsProps.YELLOW_DARK))
@@ -128,12 +128,12 @@ func _build() -> void:
 
 ## (the digger game's Dingo: its body, its tracks)
 func _build_body() -> void:
-	var kit := DsKit.new()
+	var kit = DsKit.new()
 	DsProps.dingo_body(kit)
 	_add(_shake, kit)
-	var frames := DsKit.new()
+	var frames = DsKit.new()
 	DsProps.track_frames(frames, 0.44, 0.1, 0.56, 0.72, 0.6)
-	var frame := _add(_look, frames)
+	var frame = _add(_look, frames)
 	frame.scale = Vector3(1.0, 0.42, 1.0)
 	_tracks = DsTrackRig.new()
 	_tracks.scale = Vector3(1.0, 0.42, 1.0)
@@ -143,7 +143,7 @@ func _build_body() -> void:
 
 ## The arms and the bucket (the digger game's loader_arms, loader_bucket) and the load in it
 func _build_arms() -> void:
-	var kit := DsKit.new()
+	var kit = DsKit.new()
 	DsProps.loader_arms(kit, arm_len, 0.84 if kind == "Bobcat" else 0.3, 0.16 if kind == "Bobcat" else 0.07)
 	_arms = _add(_shake, kit)
 	kit = DsKit.new()
@@ -151,8 +151,8 @@ func _build_arms() -> void:
 	_bucket = _add(_shake, kit)
 	# the soil in it (owner, 9 Nov: "the dirt clips through the bucket"): built to its hollow, the triangle between its
 	# floor, its back and its side plates' slope, from the back out to the open side, lumps on top, then heaped
-	var hb := bucket_high
-	var hollow := PackedVector2Array([Vector2(hb * 0.1 + 0.01, hb * 0.05), Vector2(bucket_len - 0.02, hb * 0.05), Vector2(hb * 0.1 + 0.01, hb - 0.02)])
+	var hb = bucket_high
+	var hollow = PackedVector2Array([Vector2(hb * 0.1 + 0.01, hb * 0.05), Vector2(bucket_len - 0.02, hb * 0.05), Vector2(hb * 0.1 + 0.01, hb - 0.02)])
 	_loads = DsExcavator.load_meshes(hollow, 1, 2, bucket_half - 0.05, bucket_len / DsExcavator.BUCKET * 1.3)
 	_lump = MeshInstance3D.new()
 	_lump.material_override = DsExcavator.mat()
@@ -187,23 +187,23 @@ func _pin() -> Vector2:
 ## over its lowest or DIG_MOST under its highest wheel, whichever's higher (it cuts into a bank, it doesn't ride it).
 func _hold() -> void:
 	curl_at = clampf(curl - pitch, CURL_MIN, CURL_MAX)
-	var p := _pin()
-	var ahead := _look.global_transform * Vector3(p.x + bucket_len + 0.3, p.y, 0.0)
+	var p = _pin()
+	var ahead = _look.global_transform * Vector3(p.x + bucket_len + 0.3, p.y, 0.0)
 	var ref: float = site.terrain.firm_at(ahead.x, ahead.z)
 	if not is_finite(ref):
 		ref = ground_y(ahead.x, ahead.z)
-	var c := _corners(global_position, yaw)
-	var top := maxf(maxf(c[0], c[1]), maxf(c[2], c[3]))
-	var lim := minf(ref - DIG_MOST, maxf(_lip_y(arm_low), top - DIG_MOST))
+	var c = _corners(global_position, yaw)
+	var top = maxf(maxf(c[0], c[1]), maxf(c[2], c[3]))
+	var lim = minf(ref - DIG_MOST, maxf(_lip_y(arm_low), top - DIG_MOST))
 	ride_ref = minf(ref, top)
-	var lo := _float_lo
-	var hi := maxf(arm_high, lo)
-	var want := lo
+	var lo = _float_lo
+	var hi = maxf(arm_high, lo)
+	var want = lo
 	if _lip_y(hi) <= lim:
 		want = hi
 	elif _lip_y(lo) < lim:
 		for i in 12:
-			var mid := (lo + hi) * 0.5
+			var mid = (lo + hi) * 0.5
 			if _lip_y(mid) < lim:
 				lo = mid
 			else:
@@ -212,13 +212,13 @@ func _hold() -> void:
 	arm_at = want if arm <= arm_low + 0.001 else maxf(arm, want)
 
 func _lip_y(a: float) -> float:
-	var p := pivot + Vector2(cos(a), sin(a)) * arm_len
+	var p = pivot + Vector2(cos(a), sin(a)) * arm_len
 	return (_look.global_transform * Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)).y
 
 ## The bucket's lip, its two ends, in the world
 func edge_ends() -> Array:
-	var p := _pin()
-	var l := Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)
+	var p = _pin()
+	var l = Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)
 	return [_look.global_transform * (l + Vector3(0, 0, -bucket_half)), _look.global_transform * (l + Vector3(0, 0, bucket_half))]
 
 ## From the bucket's lip back to its front wheels (m)
@@ -226,39 +226,39 @@ func _gap() -> float:
 	return maxf((edge() - global_position).dot(forward()) - length * 0.5, bucket_len)
 
 func _drive(dt: float) -> void:
-	var top := max_speed
+	var top = max_speed
 	max_speed = top * (1.0 - 0.75 * clampf(float(push_load) / bog, 0.0, 1.0))
 	super(dt)
 	max_speed = top
 
 ## The bucket's cutting edge in the world
 func edge() -> Vector3:
-	var p := _pin()
+	var p = _pin()
 	return _look.global_transform * Vector3(p.x + cos(curl_at) * bucket_len, p.y + sin(curl_at) * bucket_len, 0.0)
 
 func _pose_tool() -> void:
 	if _arms == null:
 		return
-	var p := _pin()
+	var p = _pin()
 	_arms.transform = Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
 	_bucket.transform = Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
-	var ends := _ram_ends()
+	var ends = _ram_ends()
 	for k in mini(_rams.size(), ends.size()):
 		_rams[k].aim(ends[k][0], ends[k][1])
-	var f := _shown / capacity
+	var f = _shown / capacity
 	_lump.visible = f > 0.03
 	if _lump.visible:
-		var hp := DsExcavator.HEAPED
-		var k := clampi(int(ceil(f / hp * DsExcavator.LOAD_LEVELS)) - 1, 0, DsExcavator.LOAD_LEVELS - 1) if f <= hp else \
+		var hp = DsExcavator.HEAPED
+		var k = clampi(int(ceil(f / hp * DsExcavator.LOAD_LEVELS)) - 1, 0, DsExcavator.LOAD_LEVELS - 1) if f <= hp else \
 				DsExcavator.LOAD_LEVELS - 1 + clampi(int(ceil((f - hp) / (1.0 - hp) * DsExcavator.HEAP_LEVELS)), 0, DsExcavator.HEAP_LEVELS)
 		_lump.mesh = _loads[k]
 
 ## Each ram's pins in the model's frame: the two lift rams, then the tilt rams
 func _ram_ends() -> Array:
-	var arm_t := Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
-	var p := _pin()
-	var bucket_t := Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
-	var out := []
+	var arm_t = Transform3D(Basis(Vector3.BACK, arm_at), Vector3(pivot.x, pivot.y, 0.0))
+	var p = _pin()
+	var bucket_t = Transform3D(Basis(Vector3.BACK, curl_at), Vector3(p.x, p.y, 0.0))
+	var out = []
 	for side: float in [-1.0, 1.0]:
 		out.append([Vector3(lift_body.x, lift_body.y, lift_body.z * side), arm_t * Vector3(lift_arm.x, lift_arm.y, lift_body.z * side)])
 	for z in tilt_z:
@@ -271,7 +271,7 @@ func at_stop() -> bool:
 
 # (the arms going up or down: it works harder)
 func shake_effort() -> float:
-	var moving := absf(arm_at - _arm_was) / maxf(get_process_delta_time(), 0.001)
+	var moving = absf(arm_at - _arm_was) / maxf(get_process_delta_time(), 0.001)
 	_arm_was = arm_at
 	return clampf(moving, 0.0, 1.0) * 0.6
 
@@ -301,7 +301,7 @@ func keys() -> String:
 	return "W/S drive   A/D turn   R/F arms up/down\nright mouse: curl the bucket   left mouse: tip it   V view   wheel zoom   E get off"
 
 func status() -> String:
-	var s := "Bucket %d%%" % int(100.0 * load_n / capacity)
+	var s = "Bucket %d%%" % int(100.0 * load_n / capacity)
 	return s + ("   " + blocked if blocked != "" else "")
 
 func _follow(dt: float) -> void:
@@ -315,19 +315,19 @@ func _tool(dt: float) -> void:
 	_hold()
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
-	var e := edge()
+	var e = edge()
 	# the bucket's lip through the ground (the digger game's way, DsTerrain.blade): going forward, not tipped, what
 	# stands above the lip goes in (firm ground only so fast), and once it's full the rest banks up ahead of it (it
 	# pushes, like a small dozer); what's banked against it slows it
 	push_load = 0.0
 	if (speed > 0.03 or throttle > 0.05) and tip() > POUR_FROM:
-		var ends := edge_ends()
-		var f := forward()
-		var cut_ends := [ends[0] - Vector3(0, BITE, 0), ends[1] - Vector3(0, BITE, 0)]
-		var share := clampf(maxf(speed, 0.0) * dt / 0.25, 0.0, 1.0)     # (it takes only what it drives through)
+		var ends = edge_ends()
+		var f = forward()
+		var cut_ends = [ends[0] - Vector3(0, BITE, 0), ends[1] - Vector3(0, BITE, 0)]
+		var share = clampf(maxf(speed, 0.0) * dt / 0.25, 0.0, 1.0)     # (it takes only what it drives through)
 		# (two rows at the lip; behind them, back to its front wheels, loose dirt only: what's slid in under the bucket
 		# goes in it or ahead, never under the wheels to lift it up onto the pile)
-		var rows := 2 + ceili(_gap() / 0.22)
+		var rows = 2 + ceili(_gap() / 0.22)
 		var r: Dictionary = tr.blade(cut_ends[0], cut_ends[1], f, rows, bucket_high + 0.1 + BITE, firm_rate, hardest, capacity - load_n, bucket_high + 0.35 + BITE, share)
 		var counts: PackedInt32Array = r.counts
 		for m in counts.size():
@@ -343,21 +343,21 @@ func _tool(dt: float) -> void:
 		push_load = tr.load_ahead(ends[0], ends[1], f, bucket_high + 0.3)
 	# (the bucket's a wall to loose dirt while it's held level, so what's banked against it stays in front)
 	if tip() > POUR_FROM:
-		var be := edge_ends()
+		var be = edge_ends()
 		tr.block(id, be[0], be[1], forward(), _gap() + 0.1, bucket_high)
 	else:
 		tr.unblock(id)
 	# pouring: tipped forward, it comes out where the edge is, loose (a pile)
 	if tip() < POUR_FROM and load_n > 0:
-		var k := clampf((POUR_FROM - tip()) / (POUR_FROM - POUR_ALL), 0.0, 1.0)
+		var k = clampf((POUR_FROM - tip()) / (POUR_FROM - POUR_ALL), 0.0, 1.0)
 		_pour_acc += POUR_RATE * k * dt
-		var n := int(_pour_acc)
+		var n = int(_pour_acc)
 		if n > 0:
 			_pour_acc -= n
 			n = mini(n, load_n)
 			while n > 0 and load_n > 0:
-				var m := _most()
-				var take := mini(n, int(bucket[m]))
+				var m = _most()
+				var take = mini(n, int(bucket[m]))
 				var truck = site.machines.catcher(e, self)
 				var put: int = let_go(e, m, take, truck)
 				if put <= 0:
@@ -368,27 +368,27 @@ func _tool(dt: float) -> void:
 				load_n -= put
 				n -= put
 
-var _dug_was := 0
+var _dug_was = 0
 
 # dirt flying and dust at the bucket's lip while it's cutting (the digger game's loaders')
-var _load_was := 0
-var _shown := 0.0               # the load as the bucket draws it: it comes up as the soil rolls in, not in jumps
+var _load_was = 0
+var _shown = 0.0               # the load as the bucket draws it: it comes up as the soil rolls in, not in jumps
 var _inflow: CPUParticles3D
-var _inflow_left := 0.0
+var _inflow_left = 0.0
 
 # (and, as the excavator's: the soil its lip cuts rolling back over it into the bucket while its load goes up, on both
 # games; the owner, 10 Nov, "it drags it and then just appears in the bucket")
 func _dust_fx() -> void:
 	super()
-	var dt := get_process_delta_time()
-	var filling := load_n > _load_was
+	var dt = get_process_delta_time()
+	var filling = load_n > _load_was
 	_load_was = load_n
 	_shown = move_toward(_shown, float(load_n), capacity * 1.3 * dt)
 	if filling:
 		_inflow_left = 0.15
 	_inflow_left -= dt
 	if _inflow == null:
-		var k := bucket_len / 0.72
+		var k = bucket_len / 0.72
 		_inflow = DsMachine.chunks(50)
 		_inflow.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		_inflow.spread = 16.0
@@ -399,11 +399,11 @@ func _dust_fx() -> void:
 		_inflow.scale_amount_min = 0.22 * k
 		_inflow.scale_amount_max = 0.5 * k
 		add_child(_inflow)
-	var le := edge_ends()
-	var across := ((le[1] as Vector3) - (le[0] as Vector3)).normalized()
+	var le = edge_ends()
+	var across = ((le[1] as Vector3) - (le[0] as Vector3)).normalized()
 	var back: Vector3 = (_look.global_transform.basis * Vector3(-cos(curl_at), -sin(curl_at) + 0.45, 0.0)).normalized()
-	var up := across.cross(back).normalized()
-	var ib := Basis(across, up, across.cross(up))
+	var up = across.cross(back).normalized()
+	var ib = Basis(across, up, across.cross(up))
 	_inflow.global_transform = Transform3D(ib, edge() + Vector3(0, 0.05, 0))
 	_inflow.emission_box_extents = Vector3(bucket_half * 0.85, 0.04, 0.04)
 	_inflow.direction = ib.inverse() * back
@@ -411,15 +411,15 @@ func _dust_fx() -> void:
 	var cutting: bool = (dug != _dug_was and speed > 0.05) or (not runs() and filling)
 	cut_now = clampf(0.35 + float(load_n) / capacity * 0.5, 0.0, 1.0) if cutting else 0.0
 	_dug_was = dug
-	var e := edge()
+	var e = edge()
 	work_fx(Vector3(e.x, maxf(e.y, ground_y(e.x, e.z)) + 0.1, e.z), bucket_half * 0.85, cutting)
 	if cutting and site.terrain:
-		var ends := edge_ends()
+		var ends = edge_ends()
 		site.terrain.wear_edge(ends[0], ends[1], forward())
 
 func _most() -> int:
-	var best := DsMats.DIRT
-	var bn := -1
+	var best = DsMats.DIRT
+	var bn = -1
 	for m in bucket:
 		if int(bucket[m]) > bn:
 			best = int(m)

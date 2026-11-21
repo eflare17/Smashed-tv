@@ -24,34 +24,34 @@ func _paint(m: StandardMaterial3D) -> void:
 
 # a short wooden handle, a steel head across its end: a face one side, a claw the other (the nail gun: a yellow body)
 func _model(parent: Node3D, s: float) -> void:
-	var wood := StandardMaterial3D.new()
+	var wood = StandardMaterial3D.new()
 	wood.albedo_color = Color8(170, 120, 70) if tier < 2 else Color8(40, 40, 44)
 	wood.roughness = 0.8
 	_paint(_blade_mat)
-	var handle := MeshInstance3D.new()
-	var hm := BoxMesh.new()
+	var handle = MeshInstance3D.new()
+	var hm = BoxMesh.new()
 	hm.size = Vector3(0.035, 0.03, 0.34) * s
 	handle.mesh = hm
 	handle.material_override = wood
 	handle.position = Vector3(0, 0, -0.12 * s)
 	parent.add_child(handle)
-	var head := MeshInstance3D.new()
-	var bm := BoxMesh.new()
+	var head = MeshInstance3D.new()
+	var bm = BoxMesh.new()
 	bm.size = Vector3(0.04, 0.14, 0.045) * s if tier < 2 else Vector3(0.07, 0.12, 0.16) * s
 	head.mesh = bm
 	head.material_override = _blade_mat
 	head.position = Vector3(0, 0.0, -0.3 * s)
 	parent.add_child(head)
-	var face := MeshInstance3D.new()
-	var fm := BoxMesh.new()
+	var face = MeshInstance3D.new()
+	var fm = BoxMesh.new()
 	fm.size = Vector3(0.05, 0.04, 0.05) * s
 	face.mesh = fm
 	face.material_override = _blade_mat
 	face.position = Vector3(0, 0.08 * s, -0.3 * s)
 	parent.add_child(face)
 	if tier < 2:
-		var claw := MeshInstance3D.new()
-		var cm := BoxMesh.new()
+		var claw = MeshInstance3D.new()
+		var cm = BoxMesh.new()
 		cm.size = Vector3(0.03, 0.07, 0.03) * s
 		claw.mesh = cm
 		claw.material_override = _blade_mat
@@ -76,7 +76,7 @@ func press(button: int) -> void:
 			if not ds.net.can_change():
 				arena.say("Waiting for your mate's ground ...", 1.0)
 				return
-			var ad := _aim_digsite()
+			var ad = _aim_digsite()
 			if ad.is_empty():
 				arena.say("Aim at the floor or the roof, close", 1.5)
 			else:
@@ -94,7 +94,7 @@ func _bite() -> void:
 	super()
 
 func draw_icon(ci: CanvasItem, r: Rect2, col: Color) -> void:
-	var y := r.position.y + r.size.y * 0.5
+	var y = r.position.y + r.size.y * 0.5
 	ci.draw_rect(Rect2(r.position.x + r.size.x * 0.15, y - 2, r.size.x * 0.5, 4), Color(0.66, 0.47, 0.27, col.a))
 	var hc: Color = HEAD[clampi(tier, 0, 2)]
 	ci.draw_rect(Rect2(r.position.x + r.size.x * 0.62, y - r.size.y * 0.3, r.size.x * 0.14, r.size.y * 0.6), Color(hc.r, hc.g, hc.b, col.a))

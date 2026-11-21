@@ -29,8 +29,8 @@ const MM := 125                 # a block's height in mm: loose dirt is counted 
 const SW := 32                  # a section's cells across (x, z) and up (DigSiteGrid's SW, SH)
 const SH := 64
 
-var grid: DigSiteGrid
-var origin := Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
+var grid
+var origin = Vector3.ZERO      # the grid's corner (lowest x, y, z) in the world
 # the ground as drawn (the owner, 9 Nov: "its still so jumpy"): the loose dirt moves mm at a time every frame (the
 # grid's loose layer), but a section's mesh is made from the cells now and then. So the shaders draw each column's
 # surface where it truly stands, off its mesh's top (DigSiteGrid.show_update: the host's exact, a guest's eased to
@@ -42,47 +42,47 @@ var topo_tex: ImageTexture
 # where tracks and tyres have worn the grass bare (the digger game's track marks): a byte a column, a texture the
 # ground and grass shaders read; each game wears its own from the machines' poses (nothing to send)
 const WEAR_HZ := 10.0
-var wear := PackedByteArray()
+var wear = PackedByteArray()
 var wear_tex: ImageTexture
-var _wear_due := false
-var _wear_at := 0.0
-var _layer_acc := 0.0
+var _wear_due = false
+var _wear_at = 0.0
+var _layer_acc = 0.0
 const TOPO_HZ := 30.0           # (the loose depth and material texture: this often, or at once when a section's redrawn)
-var _topo_at := 0.0
+var _topo_at = 0.0
 signal loose_changed(per_section_column: PackedInt32Array)   # (DsClods: which section columns have loose dirt on top)
 var site: Node3D                # DigSite
 var _mat: Material
-var _sec := {}                  # section index -> {mi: MeshInstance3D or null, body: StaticBody3D or null, faces: PackedVector3Array}
-var _dirty := {}                # section index -> true: changed since it was built
-var _dims := Vector3i.ZERO
-var built_n := 0                # (tests: sections built so far)
-var settle_on := true           # (the dirt runs here: solo or the host; a guest's shows the host's)
-var paused := false             # (the tests: the dirt held still)
-var _settle_acc := 0.0
-var _now_at := 0                # (ticks, ms: the near sections last redrawn together)
+var _sec = {}                  # section index -> {mi: MeshInstance3D or null, body: StaticBody3D or null, faces: PackedVector3Array}
+var _dirty = {}                # section index -> true: changed since it was built
+var _dims = Vector3i.ZERO
+var built_n = 0                # (tests: sections built so far)
+var settle_on = true           # (the dirt runs here: solo or the host; a guest's shows the host's)
+var paused = false             # (the tests: the dirt held still)
+var _settle_acc = 0.0
+var _now_at = 0                # (ticks, ms: the near sections last redrawn together)
 var _batch: Array = []          # (the near batch under way: [[index, want_col]] ...
-var _batch_prep := {}           # ... and what's made of it so far: index -> _prep's; shown together once it's all made)
-var _build_ms := 2.0            # (what a section's redraw costs, on average: none's started that would run past a cap)
-var settle_moves := 0           # (tests: cells the dirt's moved)
-var layer_us := 0               # (tests, telemetry: this frame's loose layer ticks, and its drawing brought up to date, us)
-var show_us := 0
+var _batch_prep = {}           # ... and what's made of it so far: index -> _prep's; shown together once it's all made)
+var _build_ms = 2.0            # (what a section's redraw costs, on average: none's started that would run past a cap)
+var settle_moves = 0           # (tests: cells the dirt's moved)
+var layer_us = 0               # (tests, telemetry: this frame's loose layer ticks, and its drawing brought up to date, us)
+var show_us = 0
 
 func setup(s: Node3D, at: Vector3, seed: int) -> void:
 	site = s
 	name = "Ground"
 	# (after the machines each frame: what their blades and buckets moved is slumped and drawn in the same frame)
 	process_priority = 10
-	grid = DigSiteGrid.new()
+	grid = ClassDB.instantiate("DigSiteGrid")
 	grid.setup(W, H, D, SURFACE)
 	DsMats.apply(grid)
 	grid.generate(seed)
 	origin = at - Vector3(W * CELL * 0.5, SURFACE * CELL, D * CELL * 0.5)
-	var dv := grid.section_dims()
+	var dv = grid.section_dims()
 	_dims = Vector3i(int(dv.x), int(dv.y), int(dv.z))
 	_mat = DsLook.ground_mat()
 	show_off_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RH, grid.show_offsets()))
 	topo_tex = ImageTexture.create_from_image(Image.create_from_data(W, D, false, Image.FORMAT_RGBA8, grid.show_topo_bytes()))
-	var cols := PackedVector3Array()
+	var cols = PackedVector3Array()
 	for c: Color in DsMats.COL:
 		cols.append(Vector3(c.r, c.g, c.b))
 	while cols.size() < 16:
@@ -107,7 +107,7 @@ func setup(s: Node3D, at: Vector3, seed: int) -> void:
 
 ## The cell a world point is in
 func cell_of(p: Vector3) -> Vector3i:
-	var l := (p - origin) / CELL
+	var l = (p - origin) / CELL
 	return Vector3i(floori(l.x), floori(l.y), floori(l.z))
 
 ## A cell's middle in the world
@@ -119,38 +119,38 @@ func to_cells(p: Vector3) -> Vector3:
 	return (p - origin) / CELL
 
 func contains(p: Vector3) -> bool:
-	var c := cell_of(p)
+	var c = cell_of(p)
 	return c.x >= 0 and c.z >= 0 and c.x < W and c.z < D and c.y >= 0 and c.y < H
 
 ## The material at a world point (the cell byte: DsMats.MASK for the material)
 func cell_at(p: Vector3) -> int:
-	var c := cell_of(p)
+	var c = cell_of(p)
 	return grid.get_cell(c.x, c.y, c.z)
 
 ## The ground's top at a world x, z (its highest solid cell's top), or -INF off the grid
 ## The firm ground's top at (x, z), under any loose dirt lying on it
 func firm_at(x: float, z: float) -> float:
-	var c := cell_of(Vector3(x, 0, z))
-	var y := grid.firm_top(c.x, c.z)
+	var c = cell_of(Vector3(x, 0, z))
+	var y = grid.firm_top(c.x, c.z)
 	if y < 0:
 		return -INF
-	var top := origin.y + (y + 1) * CELL
+	var top = origin.y + (y + 1) * CELL
 	# (and a firm layer on it: what's left of a block a blade cut part way into, DigSiteGrid.FIRM_LAYER)
 	if grid.column_top(c.x, c.z) == y:
-		var l := grid.get_layer(c.x, c.z)
+		var l = grid.get_layer(c.x, c.z)
 		if (l >> 8) & 0x80:
 			top += float(l & 255) / MM * CELL
 	return top
 
 func top_at(x: float, z: float) -> float:
-	var c := cell_of(Vector3(x, 0, z))
-	var y := grid.column_top(c.x, c.z)
+	var c = cell_of(Vector3(x, 0, z))
+	var y = grid.column_top(c.x, c.z)
 	return -INF if y < 0 else origin.y + (y + 1) * CELL
 
 ## The ground's surface at (x, z): its top cell's top and the loose layer on it (that column's, not blended), or -INF
 func surface_at(x: float, z: float) -> float:
-	var c := cell_of(Vector3(x, 0, z))
-	var y := grid.column_top(c.x, c.z)
+	var c = cell_of(Vector3(x, 0, z))
+	var y = grid.column_top(c.x, c.z)
 	return -INF if y < 0 else origin.y + (y + 1) * CELL + float(grid.get_layer(c.x, c.z) & 255) / MM * CELL
 
 ## The ground's surface at a world x, z, smooth: blended between the four columns round it, the loose layer and all
@@ -174,14 +174,14 @@ func _sec_index(sx: int, sy: int, sz: int) -> int:
 	return (sy * _dims.z + sz) * _dims.x + sx
 
 func _sec_centre(i: int) -> Vector3:
-	var sx := i % _dims.x
-	var sz := (i / _dims.x) % _dims.z
-	var sy := i / (_dims.x * _dims.z)
+	var sx = i % _dims.x
+	var sz = (i / _dims.x) % _dims.z
+	var sy = i / (_dims.x * _dims.z)
 	return origin + Vector3((sx + 0.5) * SW, (sy + 0.5) * SH, (sz + 0.5) * SW) * CELL
 
 ## Where the players are (the sections near them are drawn and made solid)
 func _near_points() -> Array:
-	var out := []
+	var out = []
 	var a = site.arena
 	if a and a.player:
 		out.append(a.player.global_position)
@@ -209,7 +209,7 @@ func _process(dt: float) -> void:
 	# the loose layer slumps a little every tick, LAYER_HZ of them a second whatever the frame rate (two at most a
 	# frame: a long stall doesn't make it catch up all at once)
 	_layer_acc = minf(_layer_acc + dt, 2.0 / LAYER_HZ)
-	var t0 := Time.get_ticks_usec()
+	var t0 = Time.get_ticks_usec()
 	if settle_on and not paused:
 		while _layer_acc >= 1.0 / LAYER_HZ:
 			_layer_acc -= 1.0 / LAYER_HZ
@@ -222,18 +222,18 @@ func _process(dt: float) -> void:
 
 ## A machine's tracks (or tyres) wearing the grass bare under them, at their front, middle and back
 func wear_tracks(m: DsMachine) -> void:
-	var f := m.forward()
-	var r := m.right()
-	var p := m.global_position
-	var gauge := maxf(m.width * 0.5 - 0.3, 0.2)
+	var f = m.forward()
+	var r = m.right()
+	var p = m.global_position
+	var gauge = maxf(m.width * 0.5 - 0.3, 0.2)
 	for side: float in [-1.0, 1.0]:
 		for along: float in [-0.42, 0.0, 0.42]:
 			for w: float in [-0.18, 0.0, 0.18]:
-				var q := p + f * (along * m.length) + r * (side * gauge + w)
-				var c := cell_of(q)
+				var q = p + f * (along * m.length) + r * (side * gauge + w)
+				var c = cell_of(q)
 				if c.x < 0 or c.z < 0 or c.x >= W or c.z >= D:
 					continue
-				var k := c.z * W + c.x
+				var k = c.z * W + c.x
 				if wear[k] != 255:
 					wear[k] = 255
 					_wear_due = true
@@ -241,15 +241,15 @@ func wear_tracks(m: DsMachine) -> void:
 ## A blade's or a bucket's cutting edge scraping the grass off, from a to b (the owner's dig, 10 Nov: patches of grass
 ## were left green in a cut where the edge only shaved the top): bare along it, and a step behind it
 func wear_edge(a: Vector3, b: Vector3, fwd: Vector3) -> void:
-	var n := maxi(1, ceili(a.distance_to(b) / (CELL * 0.8)))
-	var back := Vector3(fwd.x, 0.0, fwd.z).normalized() * CELL
+	var n = maxi(1, ceili(a.distance_to(b) / (CELL * 0.8)))
+	var back = Vector3(fwd.x, 0.0, fwd.z).normalized() * CELL
 	for i in n + 1:
-		var q := a.lerp(b, float(i) / n)
+		var q = a.lerp(b, float(i) / n)
 		for k2 in 3:
-			var c := cell_of(q - back * float(k2))
+			var c = cell_of(q - back * float(k2))
 			if c.x < 0 or c.z < 0 or c.x >= W or c.z >= D:
 				continue
-			var k := c.z * W + c.x
+			var k = c.z * W + c.x
 			if wear[k] != 255:
 				wear[k] = 255
 				_wear_due = true
@@ -285,7 +285,7 @@ func unblock(owner: int) -> void:
 
 ## The ground's height at (x, z) as the site was made (before anyone dug): a dozer's CUT holds its depth under it
 func start_at(x: float, z: float) -> float:
-	var c := cell_of(Vector3(x, 0, z))
+	var c = cell_of(Vector3(x, 0, z))
 	return origin.y + (grid.start_top(c.x, c.z) + 1) * CELL
 
 ## Loose dirt banked against an edge from a to b going fwd (up to reach m over it), in blocks (125 mm over a column):
@@ -296,34 +296,34 @@ func load_ahead(a: Vector3, b: Vector3, fwd: Vector3, reach: float) -> float:
 ## n mm of loose m poured from a bucket at world point p: under it first, then round it, never piled up past the
 ## bucket itself (DigSiteGrid.pour_at): -> mm that landed
 func pour(p: Vector3, m: int, n: int) -> int:
-	var c := cell_of(p)
+	var c = cell_of(p)
 	return grid.pour_at(c.x, c.z, c.y, m, n)
 
 ## n loose blocks of m dumped at world point p (on the ground's top there; they slump into a pile): -> how many
 func dump(p: Vector3, m: int, n: int) -> int:
-	var c := cell_of(p)
+	var c = cell_of(p)
 	return grid.drop_column(c.x, c.z, m, n)
 
 ## Builds what's due near the players for up to budget_ms (nearest first). -> sections built
 func step(budget_ms: float) -> int:
 	for i in grid.take_dirty_sections(100000):
 		_dirty[i] = true
-	var pts := _near_points()
+	var pts = _near_points()
 	if pts.is_empty():
 		return 0
-	var t0 := Time.get_ticks_usec()
-	var due := []                   # [distance, index, want_col]
-	var now := []                   # (near, built, changed: redrawn together)
+	var t0 = Time.get_ticks_usec()
+	var due = []                   # [distance, index, want_col]
+	var now = []                   # (near, built, changed: redrawn together)
 	for sy in _dims.y:
 		for sz in _dims.z:
 			for sx in _dims.x:
-				var i := _sec_index(sx, sy, sz)
-				var c := _sec_centre(i)
-				var dist := INF
+				var i = _sec_index(sx, sy, sz)
+				var c = _sec_centre(i)
+				var dist = INF
 				for p: Vector3 in pts:
 					dist = minf(dist, Vector2(c.x - p.x, c.z - p.z).length())
 				var s: Dictionary = _sec.get(i, {})
-				var want_col := dist < R_COL + 3.0
+				var want_col = dist < R_COL + 3.0
 				if dist > R_DROP:
 					if not s.is_empty():
 						_free(i)
@@ -335,8 +335,8 @@ func step(budget_ms: float) -> int:
 					now.append([dist, i, want_col])
 				elif _dirty.has(i) or s.is_empty() or (want_col and not has_col and int(s.get("nf", 0)) > 0) or (not want_col and has_col):
 					due.append([dist, i, want_col])
-	var n := 0
-	var ms := Time.get_ticks_msec()
+	var n = 0
+	var ms = Time.get_ticks_msec()
 	if _batch.is_empty() and not now.is_empty() and ms - _now_at >= int(1000.0 / NOW_HZ):
 		now.sort_custom(func(a, b): return a[0] < b[0])
 		_batch = now.slice(0, NOW_MOST)
@@ -355,24 +355,24 @@ func step(budget_ms: float) -> int:
 			_batch_prep.clear()
 		else:
 			for e in _batch:
-				var bi := int(e[1])
+				var bi = int(e[1])
 				if _batch_prep.has(bi):
 					continue
 				if n > 0 and (Time.get_ticks_usec() - t0) / 1000.0 + _build_ms > NOW_MS:
 					break
-				var tb := Time.get_ticks_usec()
+				var tb = Time.get_ticks_usec()
 				_batch_prep[bi] = _prep(bi, bool(e[2]), true)
 				_build_ms = lerpf(_build_ms, (Time.get_ticks_usec() - tb) / 1000.0, 0.2)
 				n += 1
 	if due.is_empty():
 		return n
 	due.sort_custom(func(a, b): return a[0] < b[0])
-	var built_now := n
+	var built_now = n
 	n = 0
 	# (its own time, after the batch: on a slow frame the batch runs every frame, and the rest mustn't starve; at least
 	# one a frame when there was no batch)
-	var t1 := Time.get_ticks_usec()
-	var own_ms := budget_ms if built_now == 0 else budget_ms * 0.5
+	var t1 = Time.get_ticks_usec()
+	var own_ms = budget_ms if built_now == 0 else budget_ms * 0.5
 	for e in due:
 		if (n > 0 or built_now > 0) and (Time.get_ticks_usec() - t1) / 1000.0 + _build_ms > own_ms:
 			break
@@ -381,7 +381,7 @@ func step(budget_ms: float) -> int:
 	return n + built_now
 
 func _timed_build(i: int, want_col: bool) -> void:
-	var t := Time.get_ticks_usec()
+	var t = Time.get_ticks_usec()
 	_build(i, want_col)
 	_build_ms = lerpf(_build_ms, (Time.get_ticks_usec() - t) / 1000.0, 0.2)
 
@@ -407,23 +407,23 @@ func _build(i: int, want_col: bool) -> void:
 ## using yet (the near batch makes its sections' over a few frames, then shows them all at once: _apply)
 func _prep(i: int, want_col: bool, rebuild: bool) -> Dictionary:
 	var s: Dictionary = _sec.get(i, {})
-	var p := {"rebuild": rebuild, "want_col": want_col}
+	var p = {"rebuild": rebuild, "want_col": want_col}
 	var faces: PackedVector3Array = s.get("faces", PackedVector3Array())
 	if rebuild:
-		var sx := i % _dims.x
-		var sz := (i / _dims.x) % _dims.z
-		var sy := i / (_dims.x * _dims.z)
+		var sx = i % _dims.x
+		var sz = (i / _dims.x) % _dims.z
+		var sy = i / (_dims.x * _dims.z)
 		var arr: Array = grid.mesh_section(sx, sy, sz)
 		p["tops"] = grid.section_tops(sx, sz)
 		faces = arr[0]
 		if not faces.is_empty():
-			var a := []
+			var a = []
 			a.resize(Mesh.ARRAY_MAX)
 			a[Mesh.ARRAY_VERTEX] = faces
 			a[Mesh.ARRAY_NORMAL] = arr[1]
 			a[Mesh.ARRAY_COLOR] = arr[2]
 			a[Mesh.ARRAY_CUSTOM0] = arr[3]
-			var m := ArrayMesh.new()
+			var m = ArrayMesh.new()
 			m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 			p["mesh"] = m
 			# what stands on it: grass where it's untouched, lumps on the loose dirt
@@ -434,7 +434,7 @@ func _prep(i: int, want_col: bool, rebuild: bool) -> Dictionary:
 	# collision: near a player, from the same faces
 	var body: StaticBody3D = s.get("body")
 	if want_col and not faces.is_empty() and (rebuild or body == null or (body.get_child(0) as CollisionShape3D).shape == null):
-		var sh := ConcavePolygonShape3D.new()
+		var sh = ConcavePolygonShape3D.new()
 		sh.backface_collision = true
 		sh.set_faces(faces)
 		p["shape"] = sh
@@ -459,8 +459,8 @@ func _apply(i: int, p: Dictionary) -> void:
 				mi.position = origin
 				add_child(mi)
 			mi.mesh = p.mesh
-		var grass := _show_multi(s.get("grass"), p.get("grass"), DsLook.grass_mat())
-		var clods := _show_multi(s.get("clods"), p.get("clods"), DsLook.clod_mat())
+		var grass = _show_multi(s.get("grass"), p.get("grass"), DsLook.grass_mat())
+		var clods = _show_multi(s.get("clods"), p.get("clods"), DsLook.clod_mat())
 		s = {"mi": mi, "body": s.get("body"), "faces": faces, "nf": faces.size() / 6, "grass": grass, "clods": clods}
 		built_n += 1
 	var body: StaticBody3D = s.get("body")
@@ -472,7 +472,7 @@ func _apply(i: int, p: Dictionary) -> void:
 			body.position = origin
 			body.set_meta("digsite", true)
 			add_child(body)
-			var cs := CollisionShape3D.new()
+			var cs = CollisionShape3D.new()
 			body.add_child(cs)
 		if p.has("shape"):
 			(body.get_child(0) as CollisionShape3D).shape = p.shape
@@ -484,10 +484,10 @@ func _apply(i: int, p: Dictionary) -> void:
 
 ## A grass or clods MultiMesh from the grid's buffer (null: none)
 func _multimesh(buf: PackedFloat32Array, stride: int, mesh: Mesh, colours: bool) -> MultiMesh:
-	var n := buf.size() / stride
+	var n = buf.size() / stride
 	if n == 0:
 		return null
-	var mm := MultiMesh.new()
+	var mm = MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = colours
 	mm.mesh = mesh
@@ -512,7 +512,7 @@ func _show_multi(mmi: MultiMeshInstance3D, mm: MultiMesh, mat: Material) -> Mult
 
 ## Everything near the players built now, whatever it takes (arriving: the screen's black anyway)
 func build_now(max_ms := 3000.0) -> void:
-	var t0 := Time.get_ticks_msec()
+	var t0 = Time.get_ticks_msec()
 	while Time.get_ticks_msec() - t0 < max_ms:
 		if step(50.0) == 0:
 			break

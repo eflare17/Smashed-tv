@@ -15,53 +15,53 @@ const RIDE_EASE := 10.0         # per second: its height and lean ease to the gr
 const FALL_FROM := 0.3          # m: further under it than this, the ground's a drop and it falls
 
 var site: Node3D                # DigSite
-var id := 0                     # 1 .. 99 (its fast messages' id; its driver's controls go as id + 128)
-var kind := ""                  # its name: "Dingo"
-var driver := 0                 # 0 nobody, 1 the host (or solo), 2 the guest
+var id = 0                     # 1 .. 99 (its fast messages' id; its driver's controls go as id + 128)
+var kind = ""                  # its name: "Dingo"
+var driver = 0                 # 0 nobody, 1 the host (or solo), 2 the guest
 # how it's made and how it goes (a subclass sets these)
-var length := 1.6               # m, the footprint (tracks) front to back ...
-var width := 1.0                # ... and side to side
-var max_speed := 2.2            # m/s forward (backward: 70% of it)
-var accel := 1.8                # m/s2, getting going (stopping: twice that)
-var turn_rate := 1.5            # rad/s, on the spot (less at speed)
-var max_climb := deg_to_rad(30.0)
-var step_up := 0.3              # m: the tallest step it'll climb
-var wall_look := 1.0            # m ahead of its leading wheels a bank's looked for (a dozer: no further than its blade)
-var seat := Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
-var pipe := Vector3(0.3, 1.5, 0.3)   # its exhaust stack's top, from its middle
-var turn_needs_speed := false   # (a truck: steered wheels, it only turns rolling)
+var length = 1.6               # m, the footprint (tracks) front to back ...
+var width = 1.0                # ... and side to side
+var max_speed = 2.2            # m/s forward (backward: 70% of it)
+var accel = 1.8                # m/s2, getting going (stopping: twice that)
+var turn_rate = 1.5            # rad/s, on the spot (less at speed)
+var max_climb = deg_to_rad(30.0)
+var step_up = 0.3              # m: the tallest step it'll climb
+var wall_look = 1.0            # m ahead of its leading wheels a bank's looked for (a dozer: no further than its blade)
+var seat = Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
+var pipe = Vector3(0.3, 1.5, 0.3)   # its exhaust stack's top, from its middle
+var turn_needs_speed = false   # (a truck: steered wheels, it only turns rolling)
 # where it is
-var yaw := 0.0
-var speed := 0.0
-var pitch := 0.0                # nose up +
-var roll := 0.0
-var _vy := 0.0
+var yaw = 0.0
+var speed = 0.0
+var pitch = 0.0                # nose up +
+var roll = 0.0
+var _vy = 0.0
 # its controls (its driver's: here or sent)
-var throttle := 0.0             # -1 .. 1
-var steer := 0.0                # -1 (left) .. 1
-var blocked := ""               # why it stopped, for the driver ("" : it's going)
-var auto := false               # (the tests: its controls set straight, not read from the keys)
+var throttle = 0.0             # -1 .. 1
+var steer = 0.0                # -1 (left) .. 1
+var blocked = ""               # why it stopped, for the driver ("" : it's going)
+var auto = false               # (the tests: its controls set straight, not read from the keys)
 # the guest's: the host's last state, eased to
-var _to_pos := Vector3.INF
-var _to := {}
-var _state_t := 0.0
+var _to_pos = Vector3.INF
+var _to = {}
+var _state_t = 0.0
 var _body: AnimatableBody3D
 # Its engine shaking it a little (the web game's _shake_body, about a third as much; the owner, 9 Nov): shake_node's
 # what shakes (its body and what's on it, not its wheels or tracks: a subclass sets it), a few mm ticking over, more
 # the harder it works. Seen alike on both games (speed and driver come over the wire); its digging doesn't feel it.
-var effort_now := 0.0           # how hard it's working besides driving, this frame (0 .. 1: shake_effort(), once a frame)
-var cut_now := 0.0              # how much dirt its blade or bucket is cutting or pushing, this frame (0 .. 1: a subclass's)
-var clunk_weight := 0.8
-var _stop_was := true
-var _clunk_wait := 0.0
-var tracked := true             # (on tracks: they clatter)
+var effort_now = 0.0           # how hard it's working besides driving, this frame (0 .. 1: shake_effort(), once a frame)
+var cut_now = 0.0              # how much dirt its blade or bucket is cutting or pushing, this frame (0 .. 1: a subclass's)
+var clunk_weight = 0.8
+var _stop_was = true
+var _clunk_wait = 0.0
+var tracked = true             # (on tracks: they clatter)
 var sfx: DsSfx
 var shake_node: Node3D
-var shake_idle := 0.0018        # m up and down, ticking over
-var shake_work := 0.0045        # more at full speed
-var shake_pitch := 0.0007       # rad
-var shake_hz := 58.0            # (rad a second: its main buzz)
-var _shake_clock := 0.0
+var shake_idle = 0.0018        # m up and down, ticking over
+var shake_work = 0.0045        # more at full speed
+var shake_pitch = 0.0007       # rad
+var shake_hz = 58.0            # (rad a second: its main buzz)
+var _shake_clock = 0.0
 
 func setup(s: Node3D, id_: int, at: Vector3, yaw_: float) -> void:
 	site = s
@@ -78,8 +78,8 @@ func _build() -> void:
 	_body.sync_to_physics = false
 	_body.collision_layer = 1
 	_body.collision_mask = 0
-	var cs := CollisionShape3D.new()
-	var sh := BoxShape3D.new()
+	var cs = CollisionShape3D.new()
+	var sh = BoxShape3D.new()
 	sh.size = Vector3(width, 0.8, length)
 	cs.shape = sh
 	cs.position = Vector3(0, 0.45, 0)
@@ -102,9 +102,9 @@ func ground_y(x: float, z: float) -> float:
 
 ## The ground under its four corners: [front left, front right, back left, back right]
 func _corners(at: Vector3, yaw_: float) -> PackedFloat32Array:
-	var f := Vector3(-sin(yaw_), 0, -cos(yaw_)) * (length * 0.5)
-	var r := Vector3(cos(yaw_), 0, -sin(yaw_)) * (width * 0.5)
-	var out := PackedFloat32Array()
+	var f = Vector3(-sin(yaw_), 0, -cos(yaw_)) * (length * 0.5)
+	var r = Vector3(cos(yaw_), 0, -sin(yaw_)) * (width * 0.5)
+	var out = PackedFloat32Array()
 	for p in [at + f - r, at + f + r, at - f - r, at - f + r]:
 		out.append(ground_y(p.x, p.z))
 	return out
@@ -117,7 +117,7 @@ func runs() -> bool:
 func step(dt: float) -> void:
 	if runs():
 		# (in steps of no more than ~1/45 s: a slow frame drives and digs the same as quick ones)
-		var n := clampi(ceili(dt * 45.0), 1, 6)
+		var n = clampi(ceili(dt * 45.0), 1, 6)
 		for i in n:
 			_drive(dt / n)
 			_pose_now()             # (its tool's worked out from where it is now, not where it was last frame)
@@ -141,7 +141,7 @@ func step(dt: float) -> void:
 	if sfx:
 		sfx.update(dt, self, tracked, _stream_t > 0.0 and fx_load() >= 0)
 		# (a clunk when its tool comes to the end of its travel or lands: at_stop() going true)
-		var stop := at_stop()
+		var stop = at_stop()
 		_clunk_wait -= dt
 		if stop and not _stop_was and driver != 0 and _clunk_wait <= 0.0:
 			sfx.clunked(clunk_weight)
@@ -151,13 +151,13 @@ func step(dt: float) -> void:
 # Dirt let go of, falling (the owner, 10 Nov: "the dust appears before it's even dropped"): it lands, in the ground or a
 # truck's tray, when it's fallen there, with the stream of lumps falling from the bucket; until then it's in the air.
 # [lands at (_fx_clock), where it was let go, material, blocks, the truck it falls in or null]
-var _falling := []
-var _fx_clock := 0.0
+var _falling = []
+var _fx_clock = 0.0
 
 ## Lets n blocks of m go at p, over the truck (DsMachines.catcher) or the ground: they land when they've fallen. -> how
 ## many it let go (no more than a truck has room for)
 func let_go(p: Vector3, m: int, n: int, truck) -> int:
-	var floor := ground_y(p.x, p.z)
+	var floor = ground_y(p.x, p.z)
 	if truck:
 		n = mini(n, truck.room())
 		if n <= 0:
@@ -173,7 +173,7 @@ static func fall_time(h: float) -> float:
 
 ## What it's let go of that hasn't landed yet (blocks)
 func falling_n() -> int:
-	var k := 0
+	var k = 0
 	for f in _falling:
 		k += int(f[3])
 	return k
@@ -204,8 +204,8 @@ func _shake_body(dt: float) -> void:
 	if _shake_clock == 0.0:
 		_shake_clock = id * 1.7         # (not all in step)
 	_shake_clock += dt
-	var c := _shake_clock
-	var work := clampf(absf(speed) / max_speed + effort_now, 0.0, 1.0)
+	var c = _shake_clock
+	var work = clampf(absf(speed) / max_speed + effort_now, 0.0, 1.0)
 	shake_node.position.y = sin(c * shake_hz) * (shake_idle + shake_work * work) + sin(c * shake_hz * 0.64) * shake_work * 0.3 * work
 	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean()
 
@@ -227,9 +227,9 @@ func _block_body() -> void:
 	var tr: DsTerrain = site.terrain
 	if tr == null:
 		return
-	var f := forward()
-	var r := right() * (width * 0.5)
-	var front := Vector3(global_position.x, global_position.y, global_position.z) + f * (length * 0.5)
+	var f = forward()
+	var r = right() * (width * 0.5)
+	var front = Vector3(global_position.x, global_position.y, global_position.z) + f * (length * 0.5)
 	tr.block(id + 1000, front - r, front + r, f, length, 1.0)
 
 var _dust: CPUParticles3D
@@ -247,23 +247,23 @@ func exhaust_at() -> Vector3:
 ## Flying lumps of dirt (the digger game's _chunks with its _flying_lump): a lumpy little rock in two browns, lit
 static func chunks(amount: int) -> CPUParticles3D:
 	if _lump_mesh == null:
-		var src := DsLook.clod_mesh(1).surface_get_arrays(0)
+		var src = DsLook.clod_mesh(1).surface_get_arrays(0)
 		var pts: PackedVector3Array = src[Mesh.ARRAY_VERTEX]
 		var order: PackedInt32Array = src[Mesh.ARRAY_INDEX]
-		var at := PackedVector3Array()
-		var nrm := PackedVector3Array()
-		var tint := PackedColorArray()
-		var browns := [DsMats.COL[DsMats.DIRT], DsMats.COL[DsMats.DIRT].darkened(0.25), DsMats.COL[DsMats.TOPSOIL]]
+		var at = PackedVector3Array()
+		var nrm = PackedVector3Array()
+		var tint = PackedColorArray()
+		var browns = [DsMats.COL[DsMats.DIRT], DsMats.COL[DsMats.DIRT].darkened(0.25), DsMats.COL[DsMats.TOPSOIL]]
 		for k in range(0, order.size(), 3):
-			var a := pts[order[k]] * 0.5
-			var b := pts[order[k + 1]] * 0.5
-			var c := pts[order[k + 2]] * 0.5
-			var n := (c - a).cross(b - a).normalized()
+			var a = pts[order[k]] * 0.5
+			var b = pts[order[k + 1]] * 0.5
+			var c = pts[order[k + 2]] * 0.5
+			var n = (c - a).cross(b - a).normalized()
 			for p: Vector3 in [a, b, c]:
 				at.append(p)
 				nrm.append(n)
 				tint.append(browns[(k / 3) % browns.size()])
-		var arrays := []
+		var arrays = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = at
 		arrays[Mesh.ARRAY_NORMAL] = nrm
@@ -273,7 +273,7 @@ static func chunks(amount: int) -> CPUParticles3D:
 		_lump_mat = StandardMaterial3D.new()
 		_lump_mat.vertex_color_use_as_albedo = true
 		_lump_mat.roughness = 1.0
-	var p := CPUParticles3D.new()
+	var p = CPUParticles3D.new()
 	p.mesh = _lump_mesh
 	p.material_override = _lump_mat
 	p.amount = amount
@@ -289,7 +289,7 @@ static func chunks(amount: int) -> CPUParticles3D:
 ## the edge `across` m either side, thrown forward and up; on while it's working
 func work_fx(at: Vector3, across: float, on: bool, face := NAN) -> void:
 	if _work_dust == null:
-		var k := clampf(length / 4.0, 0.4, 1.0)
+		var k = clampf(length / 4.0, 0.4, 1.0)
 		_work_dust = puffs(Color("#c9a77c"), 26, 1.3)
 		_work_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		_work_dust.direction = Vector3(0, 1, 0)
@@ -316,14 +316,14 @@ func work_fx(at: Vector3, across: float, on: bool, face := NAN) -> void:
 
 ## A puff emitter (the digger game's): soft balls that grow and fade
 static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
-	var ball := SphereMesh.new()
+	var ball = SphereMesh.new()
 	ball.radius = 0.5
 	ball.height = 1.0
 	ball.radial_segments = 6
 	ball.rings = 3
-	var p := CPUParticles3D.new()
+	var p = CPUParticles3D.new()
 	p.mesh = ball
-	var m := StandardMaterial3D.new()
+	var m = StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.vertex_color_use_as_albedo = true
@@ -338,11 +338,11 @@ static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
 	p.lifetime = life
 	p.emitting = false
 	p.local_coords = false
-	var fade := Gradient.new()
+	var fade = Gradient.new()
 	fade.set_color(0, Color(1, 1, 1, 0.8))
 	fade.set_color(1, Color(1, 1, 1, 0.0))
 	p.color_ramp = fade
-	var grow := Curve.new()
+	var grow = Curve.new()
 	grow.add_point(Vector2(0.0, 0.45))
 	grow.add_point(Vector2(1.0, 1.0))
 	p.scale_amount_curve = grow
@@ -352,7 +352,7 @@ static func puffs(colour: Color, amount: int, life: float) -> CPUParticles3D:
 func _dust_fx() -> void:
 	if _dust == null:
 		# (sized to the machine: a Dingo's puffs are a third of a truck's)
-		var k := clampf(length / 5.0, 0.35, 1.0)
+		var k = clampf(length / 5.0, 0.35, 1.0)
 		_dust = puffs(Color("#d6bd98"), 18, 1.0)
 		_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		_dust.emission_box_extents = Vector3(width * 0.45, 0.05, length * 0.2)
@@ -366,7 +366,7 @@ func _dust_fx() -> void:
 		add_child(_dust)
 		# (bigger and slower off the stack than the digger game's, which seen from a camera beside it only showed once
 		# they'd risen 2 m clear: the owner, 9 Nov, "the smoke's not coming out of the stack")
-		var ke := maxf(k, 0.8)
+		var ke = maxf(k, 0.8)
 		_exhaust = puffs(Color("#2f2f2f"), 24, 1.5)
 		_exhaust.direction = Vector3(0, 1, 0)
 		_exhaust.spread = 12.0
@@ -418,27 +418,27 @@ func fx_pour_floor(at: Vector3) -> float:
 		return (truck.global_transform * DsTruck.TRAY_AT).y + 0.3
 	return ground_y(at.x, at.z)
 
-var _dust_due := []             # [when, where]: pour dust due where it lands
-var _dust_left := 0.0
+var _dust_due = []             # [when, where]: pour dust due where it lands
+var _dust_left = 0.0
 
 var _stream: CPUParticles3D
-var _last_load := -1
-var _stream_t := 0.0
+var _last_load = -1
+var _stream_t = 0.0
 
 # dirt falling where it pours (a bucket tipping, the excavator opening, the truck's tray up): whenever its load's going
 # down, in both games (the guest's sees the load in the host's state)
 func _pour_fx(dt: float) -> void:
-	var n := fx_load()
+	var n = fx_load()
 	if n < 0:
 		return
 	if _last_load >= 0 and n < _last_load:
 		_stream_t = 0.25
-		var at := fx_pour_at()
-		var floor := fx_pour_floor(at)
+		var at = fx_pour_at()
+		var floor = fx_pour_floor(at)
 		_dust_due.append([_fx_clock + fall_time(at.y - floor), Vector3(at.x, floor + 0.3, at.z)])
 	_last_load = n
 	_stream_t -= dt
-	var on := _stream_t > 0.0
+	var on = _stream_t > 0.0
 	if on and _stream == null:
 		_stream = CPUParticles3D.new()
 		_stream.amount = 60
@@ -453,9 +453,9 @@ func _pour_fx(dt: float) -> void:
 		_stream.gravity = Vector3(0, -9.8, 0)
 		_stream.scale_amount_min = 0.6
 		_stream.scale_amount_max = 1.5
-		var bm := BoxMesh.new()
+		var bm = BoxMesh.new()
 		bm.size = Vector3.ONE * 0.08
-		var m := StandardMaterial3D.new()
+		var m = StandardMaterial3D.new()
 		m.albedo_color = Color8(122, 86, 52)
 		m.roughness = 1.0
 		bm.material = m
@@ -468,27 +468,27 @@ func _pour_fx(dt: float) -> void:
 
 ## (the game that runs it) moves it by its controls over the ground
 func _drive(dt: float) -> void:
-	var want := throttle * max_speed * (1.0 if throttle >= 0.0 else 0.7)
-	var a := accel if absf(want) > absf(speed) and signf(want) == signf(speed) or is_zero_approx(speed) else accel * 2.0
+	var want = throttle * max_speed * (1.0 if throttle >= 0.0 else 0.7)
+	var a = accel if absf(want) > absf(speed) and signf(want) == signf(speed) or is_zero_approx(speed) else accel * 2.0
 	speed = move_toward(speed, want, a * dt)
-	var turn_k := 1.0 - 0.5 * clampf(absf(speed) / max_speed, 0.0, 1.0)
+	var turn_k = 1.0 - 0.5 * clampf(absf(speed) / max_speed, 0.0, 1.0)
 	if turn_needs_speed:
 		turn_k = clampf(absf(speed) / 1.5, 0.0, 1.0) * (1.0 if speed >= 0.0 else -1.0)    # (wheels: it turns as it rolls)
-	var new_yaw := yaw - steer * turn_rate * turn_k * dt
-	var at := global_position
-	var to := at + Vector3(-sin(new_yaw), 0, -cos(new_yaw)) * speed * dt
+	var new_yaw = yaw - steer * turn_rate * turn_k * dt
+	var at = global_position
+	var to = at + Vector3(-sin(new_yaw), 0, -cos(new_yaw)) * speed * dt
 	# the site's fence
 	var half: float = site.SIZE * 0.5 - 0.6
 	to.x = clampf(to.x, site.AT.x - half, site.AT.x + half)
 	to.z = clampf(to.z, site.AT.z - half, site.AT.z + half)
-	var c := _corners(to, new_yaw)
-	var hf := maxf(c[0], c[1])
-	var hb := maxf(c[2], c[3])
-	var top := maxf(hf, hb)
-	var new_pitch := atan2(hf - hb, length)
+	var c = _corners(to, new_yaw)
+	var hf = maxf(c[0], c[1])
+	var hb = maxf(c[2], c[3])
+	var top = maxf(hf, hb)
+	var new_pitch = atan2(hf - hb, length)
 	blocked = ""
-	var going := speed * dt
-	var uphill := new_pitch if going > 0.0 else -new_pitch      # (nose-up the way it's going)
+	var going = speed * dt
+	var uphill = new_pitch if going > 0.0 else -new_pitch      # (nose-up the way it's going)
 	if absf(going) > 0.0:
 		if top - at.y > step_up:
 			blocked = "Too big a step: find a ramp"
@@ -508,10 +508,10 @@ func _drive(dt: float) -> void:
 	# where it rests (the digger game's: on its corners' average, or a crest between its tracks if that's higher),
 	# eased to, as are its pitch and roll (the owner, 9 Nov: "it's still so jumpy": it climbed each block's 12.5 cm
 	# step in one frame, and the camera behind it jolted with it). Off a real drop it falls.
-	var ml := ground_y(to.x - right().x * width * 0.5, to.z - right().z * width * 0.5)
-	var mr := ground_y(to.x + right().x * width * 0.5, to.z + right().z * width * 0.5)
-	var rest := maxf((c[0] + c[1] + c[2] + c[3]) * 0.25, maxf(ml, mr))
-	var k := 1.0 - exp(-RIDE_EASE * dt)
+	var ml = ground_y(to.x - right().x * width * 0.5, to.z - right().z * width * 0.5)
+	var mr = ground_y(to.x + right().x * width * 0.5, to.z + right().z * width * 0.5)
+	var rest = maxf((c[0] + c[1] + c[2] + c[3]) * 0.25, maxf(ml, mr))
+	var k = 1.0 - exp(-RIDE_EASE * dt)
 	if rest < at.y - FALL_FROM or _vy < 0.0:
 		_vy -= GRAVITY * dt
 		to.y = maxf(rest, at.y + _vy * dt)
@@ -520,23 +520,23 @@ func _drive(dt: float) -> void:
 	else:
 		to.y = lerpf(at.y, rest, k)
 	global_position = to
-	var lean_f := (c[0] + c[1] - c[2] - c[3]) * 0.5
-	var lean_r := (c[1] + c[3] - c[0] - c[2]) * 0.5
+	var lean_f = (c[0] + c[1] - c[2] - c[3]) * 0.5
+	var lean_r = (c[1] + c[3] - c[0] - c[2]) * 0.5
 	pitch = lerpf(pitch, atan2(lean_f, length), k)
 	roll = lerpf(roll, atan2(lean_r, width), k)
 
 ## The ground just ahead of its leading corners rising steeper than it climbs (a pit's wall, a bank), measured from
 ## where it rides (base: its height now; a hole under a corner, its own bucket's bite, doesn't count)
 func _wall_ahead(at: Vector3, yaw_: float, dir: float, base: float) -> bool:
-	var f := Vector3(-sin(yaw_), 0, -cos(yaw_)) * dir
-	var r := Vector3(cos(yaw_), 0, -sin(yaw_)) * (width * 0.5)
-	var lead := at + f * (length * 0.5)
-	var lim := tan(max_climb)
+	var f = Vector3(-sin(yaw_), 0, -cos(yaw_)) * dir
+	var r = Vector3(cos(yaw_), 0, -sin(yaw_)) * (width * 0.5)
+	var lead = at + f * (length * 0.5)
+	var lim = tan(max_climb)
 	for p in [lead - r, lead + r, lead]:
 		# (loose dirt isn't a wall: tracks and wheels climb it or shove through it; a bank of firm ground is)
 		var q: Vector3 = p + f * 0.3
-		var from := maxf(base, ground_y(p.x, p.z))
-		var rise := minf(ground_y(q.x, q.z), site.terrain.firm_at(q.x, q.z)) - from
+		var from = maxf(base, ground_y(p.x, p.z))
+		var rise = minf(ground_y(q.x, q.z), site.terrain.firm_at(q.x, q.z)) - from
 		if rise / 0.3 > lim and rise > 0.08:
 			# (a lip it steps up onto isn't a wall: a bank is, rising on past what it steps up)
 			var q2: Vector3 = p + f * wall_look
@@ -571,12 +571,12 @@ func view_yaw() -> float:
 
 ## Its state, for the guest's game: where, its tool, its driver
 func net_state() -> PackedByteArray:
-	var f := PackedFloat32Array([global_position.x, global_position.y, global_position.z, yaw, pitch, roll, speed, float(driver)])
+	var f = PackedFloat32Array([global_position.x, global_position.y, global_position.z, yaw, pitch, roll, speed, float(driver)])
 	f.append_array(net_more())
 	return f.to_byte_array()
 
 func net_take(d: PackedByteArray) -> void:
-	var f := d.to_float32_array()
+	var f = d.to_float32_array()
 	if f.size() < 8:
 		return
 	_to_pos = Vector3(f[0], f[1], f[2])
@@ -596,7 +596,7 @@ func net_take_more(_f: PackedFloat32Array) -> void:
 func _follow(dt: float) -> void:
 	if _to_pos == Vector3.INF:
 		return
-	var k := minf(1.0, dt * 12.0)
+	var k = minf(1.0, dt * 12.0)
 	if global_position.distance_to(_to_pos) > 4.0:
 		k = 1.0
 	global_position = global_position.lerp(_to_pos, k)
@@ -606,12 +606,12 @@ func _follow(dt: float) -> void:
 
 ## Its driver's controls (the guest's, to the host)
 func net_cmds() -> PackedByteArray:
-	var f := PackedFloat32Array([throttle, steer])
+	var f = PackedFloat32Array([throttle, steer])
 	f.append_array(_cmds_more())
 	return f.to_byte_array()
 
 func net_take_cmds(d: PackedByteArray) -> void:
-	var f := d.to_float32_array()
+	var f = d.to_float32_array()
 	if f.size() < 2:
 		return
 	throttle = clampf(f[0], -1.0, 1.0)
@@ -644,8 +644,8 @@ func status() -> String:
 # ---------------------------------------------------------------- model helpers
 
 func _box(parent: Node3D, size: Vector3, at: Vector3, col: Color, metal := 0.2) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
+	var mi = MeshInstance3D.new()
+	var bm = BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
 	mi.material_override = DsLook.flat(col)

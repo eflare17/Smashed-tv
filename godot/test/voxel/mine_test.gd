@@ -53,7 +53,7 @@ func zone_at(depth: float) -> int:
 	var bn := 0
 	var y := int(MineGround.dy(depth))
 	for mt in [MineTiles.DIRT, MineTiles.CLAY, MineTiles.STONE, MineTiles.RED, MineTiles.BASALT, MineTiles.CRYSTAL]:
-		var n := g.sim.count_rect(MineGround.C, y, MineGround.CW - 2 * MineGround.C, 2, mt)
+		var n = g.sim.count_rect(MineGround.C, y, MineGround.CW - 2 * MineGround.C, 2, mt)
 		if n > bn:
 			bn = n
 			best = mt

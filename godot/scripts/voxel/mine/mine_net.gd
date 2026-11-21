@@ -105,7 +105,7 @@ func op(kind: String, args: Array) -> void:
 	_pending.append([_seq, kind, args])
 	_outbox.append([_seq, kind, args])
 
-func _do(sim: MineSim, kind: String, a: Array, again: bool) -> void:
+func _do(sim, kind: String, a: Array, again: bool) -> void:
 	match kind:
 		"dig":
 			if a.size() == 11:
@@ -352,7 +352,7 @@ func on_net(m: Array) -> void:
 				stats.ch_bytes += (m[3] as PackedByteArray).size()
 				# (the ops the host hasn't done yet, done again on top: holes stay holes; the chunks they reach that this
 				# update leaves alone have them already: kept as they are)
-				var sim: MineSim = mine.ground.sim
+				var sim = mine.ground.sim
 				var keep := PackedByteArray()
 				if not _pending.is_empty():
 					var rects := PackedInt32Array()
