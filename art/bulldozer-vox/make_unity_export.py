@@ -2901,7 +2901,7 @@ public static class BulldozerBuilder
         var opts = new BuildPlayerOptions
         {
             scenes = new[] { ScenePath },
-            locationPathName = WindowsExe,
+            locationPathName = System.Environment.GetEnvironmentVariable("DIGGER_BUILD_EXE") ?? WindowsExe,   // (a build somewhere else while the game is open)
             target = BuildTarget.StandaloneWindows64,
             options = BuildOptions.None,                           // not a Development build
         };
