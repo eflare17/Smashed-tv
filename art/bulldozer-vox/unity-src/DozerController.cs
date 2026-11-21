@@ -22,6 +22,8 @@ public class DozerController : MonoBehaviour
     public float bladeUpAngle = -26f;          // high enough to clear the ground going up a steep hill
     public float bladeDownAngle = 3f;        // worked out at the start from bladeDigDepth
     [System.NonSerialized] public float bladeDigDepth = 0.90f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
+    [System.NonSerialized] public float bladeDigSpeed = 6f;   // going down below the tracks (into the ground) it goes slower, so it's easy to stop where you want
+    float BladeMoveSpeed(float want) { return want > bladeAngle && bladeAngle >= 0f ? bladeDigSpeed : bladeSpeed; }   // lifting is always quick
     [System.NonSerialized] public float bladeSpeed = 24f;      // (not kept in the scene, so a change here always counts)
     public float bladeMaxAngle = 25f;        // how far the blade swings left or right
     [System.NonSerialized] public float bladeMaxTilt = 15f;         // how far one end drops (enough to cut level on any side slope you can drive)
@@ -471,8 +473,8 @@ public class DozerController : MonoBehaviour
             }
         }
         else stepHeld = 0f;
-        if (HeightActive) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
-        if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Mathf.Abs(bladeIn) * Time.deltaTime);
+        if (HeightActive) { float want = AutoWant(); bladeAngle = Mathf.MoveTowards(bladeAngle, want, BladeMoveSpeed(want) * Time.deltaTime); }
+        if (bladeIn != 0f) { float want = bladeIn > 0f ? bladeUpAngle : bladeDownAngle; bladeAngle = Mathf.MoveTowards(bladeAngle, want, BladeMoveSpeed(want) * Mathf.Abs(bladeIn) * Time.deltaTime); }
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
         float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) || Pad.DX > 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Q) || Pad.DX < 0 ? 1f : 0f);
         float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) || Pad.DY < 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Z) || Pad.DY > 0 ? 1f : 0f);
