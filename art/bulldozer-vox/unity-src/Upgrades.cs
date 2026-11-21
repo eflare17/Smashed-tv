@@ -10,9 +10,10 @@
 //   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8; and beside it the
 //                 Dingo (also needs Shovel 6, coins and gold): the mini loader, Dingo.cs.  (Its own branch, 4, added
 //                 last, so older saves load with it not bought.)
-//   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster), then the
-//                 Automatic cart (G sends it to the hopper and back by itself); a bigger cart is coming.
-//                 (Levels 3-5 of the cart are the motor cart, level 6 the automatic cart, as with the jackhammer.)
+//   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster), the Bigger cart
+//                 (a 2,000 L tub, with higher sides), then the Automatic cart (G sends it to the hopper and back
+//                 by itself).  (Levels 3-5 of the cart are the motor cart, 6 the bigger cart, 7 the automatic cart,
+//                 as with the jackhammer: one branch, so saves didn't need to change.)
 //
 // Every purchase and sell-back goes through Buy and SellBack here, so multiplayer can send them later.
 // F8 is a test key: it adds 10,000 coins and 50 litres of gold.
@@ -75,6 +76,7 @@ public class Upgrades : MonoBehaviour
             new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800, 10f),
             new Step("Motor cart 2", "Faster: 4 m/s", 400),
             new Step("Motor cart 3", "Fastest: 5 m/s", 640),
+            new Step("Bigger cart", "Higher sides: a 2,000 L tub", 900),
             new Step("Automatic cart", "G sends it to the hopper: it tips itself and comes back empty", 1200, 20f),
         },
         new[] {   // the Dingo: one step, the machine itself
@@ -86,7 +88,7 @@ public class Upgrades : MonoBehaviour
     {
         new string[0],
         new string[0],
-        new[] { "Bigger cart  (coming)" },
+        new string[0],
         new string[0],
         new string[0],
     };
@@ -99,10 +101,11 @@ public class Upgrades : MonoBehaviour
     static readonly float[] ShovelSpeed = { 1.0f, 1.1f, 1.2f, 1.3f, 1.45f, 1.6f };
     static readonly int[] PackHolds = { 819, 1229, 1638, 2048, 2458, 3072, 3584, 4096 };
     static readonly float[] PackRate = { 1.0f, 1.4f, 1.8f, 2.2f, 2.6f, 3.0f, 3.5f, 4.0f };
-    static readonly int[] CartHolds = { 4096, 6144, 6144, 6144, 6144, 6144 };      // the motor cart keeps the Cart 2 tub
+    static readonly int[] CartHolds = { 4096, 6144, 6144, 6144, 6144, 8192, 8192 };   // the motor cart keeps the Cart 2 tub; the bigger cart is 2,000 L
     public const int MotorCartLevel = 3;                        // the cart level that is the motor cart
-    public const int AutoCartLevel = 6;                         // the cart level that is the automatic cart
-    static readonly float[] MotorSpeed = { 3f, 4f, 5f, 5f };    // metres a second, Motor cart 1-3 and the automatic cart (pushing is 2)
+    public const int BigCartLevel = 6;                          // the cart level that is the bigger cart
+    public const int AutoCartLevel = 7;                         // the cart level that is the automatic cart
+    static readonly float[] MotorSpeed = { 3f, 4f, 5f, 5f, 5f };   // metres a second: Motor cart 1-3, the bigger cart, the automatic cart (pushing is 2)
     const float SuckBase = 130f;                                // voxels a second at backpack level 1 (about 32 litres)
 
     readonly int[] level = { 1, 1, 0, 1, 0 };
@@ -213,6 +216,7 @@ public class Upgrades : MonoBehaviour
             if (cart.spec.motor) cart.spec.motorSpeed = MotorSpeed[c - MotorCartLevel];
             else if (wk != null && wk.RidingCart) wk.GetOffCart();       // sold back while riding it
             cart.spec.auto = c >= AutoCartLevel;
+            cart.spec.bigTub = c >= BigCartLevel;
             if (!cart.spec.auto && cart.OnTrip) cart.CancelTrip();        // sold back while it was out
         }
         if (Dingo.Instance != null) Dingo.Instance.SetOwned(HasDingo);

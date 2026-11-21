@@ -3443,7 +3443,7 @@ public static class BulldozerBuilder
             wk.useOverride = true;
             up.Reset(); money.Clear();
             wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
-            up.SetLevel(Upgrades.Branch.Cart, Upgrades.AutoCartLevel - 1);       // Motor cart 3
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.AutoCartLevel - 1);       // the level before it
             ACheck("noSendWithoutIt", !wk.SendCart() && !cart.OnTrip);
             money.TestGrant(5000, 400);
             long c0 = money.Coins; int g0 = money.GoldStore;
@@ -3488,7 +3488,7 @@ public static class BulldozerBuilder
             ACheck("reachedDump", acMaxAlong >= cart.EndLimit - MineCart.DumpLength);
             ACheck("cameBack", Mathf.Abs(cart.Along - acAlong0) < 0.15f);
             ACheck("empty", w.CartVoxels < VoxelWorld.ClodVoxels);
-            ACheck("paysLikeHandTip", System.Math.Abs(paid - acDirtWorth) < 1.01 && paid > 0);
+            ACheck("paysLikeHandTip", paid >= acDirtWorth - 1.01 && paid <= acDirtWorth * 1.08 + 1.01);   // (a few spilled clods on the rails get scooped up on the way, as when pushed)
             ACheck("goldKept", gold == acGoldIn);
             TestCapture("auto_cart_back.png");
 
@@ -3523,6 +3523,87 @@ public static class BulldozerBuilder
             ACheck("noSendAfterSellBack", !wk.SendCart());
             Debug.Log((acOk ? "BULLDOZER_AUTOCART_RESULT" : "BULLDOZER_AUTOCART_FAILED") + acLog);
             AutoCartFinish(acOk ? 0 : 1);
+        }
+    }
+
+    // The bigger cart:  -executeMethod BulldozerBuilder.BigCartTest
+    // Buys it after Motor cart 3 (900 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
+    // the old 1,500 L; it still drives to the dump and pays what the load was worth; sold back, it is 1,500 L again.
+    // Prints BULLDOZER_BIGCART_RESULT, or BULLDOZER_BIGCART_FAILED if a check didn't hold.
+    static int bgcPhase; static float bgcPhaseStart, bgcTipEnd; static long bgcCoins0; static double bgcWorth; static bool bgcOk; static string bgcLog;
+
+    public static void BigCartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bgcPhase = 0; bgcLog = ""; bgcOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BigCartTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void BigCartFinish(int code) { EditorApplication.update -= BigCartTick; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void BCheck(string name, bool good) { bgcLog += " " + name + "=" + good; if (!good) bgcOk = false; }
+
+    static void BigCartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_BIGCART_FAILED timed out in phase " + bgcPhase + " " + bgcLog); BigCartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (bgcPhase == 0)
+        {
+            if (t < 1f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.BigCartLevel - 1);        // Motor cart 3
+            var boards = cart.transform.Find("Big tub");
+            BCheck("boardsHiddenBefore", boards != null && !boards.gameObject.activeSelf);
+            int before = cart.capacity;
+            money.TestGrant(900, 0);
+            BCheck("buysWithCoinsOnly", up.Buy(Upgrades.Branch.Cart) && money.Coins == 0);
+            bgcLog += " holdsL=" + (before * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "->" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
+            BCheck("bigger", cart.capacity == 8192 && before == 6144);
+            BCheck("stillMotor", cart.spec.motor && !cart.spec.auto);
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            dSteps = 0; dNext = t;
+            bgcPhase = 1; bgcPhaseStart = t;
+            return;
+        }
+        if (bgcPhase == 1)
+        {
+            var boards = cart.transform.Find("Big tub");
+            if (boards != null && boards.gameObject.activeSelf && bgcLog.IndexOf("boardsShown") < 0) BCheck("boardsShown", true);
+            if (!FillCart(w, cart, t, 7000) && t - bgcPhaseStart < 40f) return;
+            if (t - bgcPhaseStart < 2f) return;
+            float l = w.CartVoxels * VoxelWorld.VoxelVolume * 1000f;
+            bgcLog += " loaded=" + l.ToString("F0") + "L";
+            BCheck("boardsShown", boards != null && boards.gameObject.activeSelf);
+            BCheck("holdsMoreThan1500", l > 1550f);
+            TestCapture("big_cart_full.png");
+            bgcWorth = CartWorth(w);
+            cart.SetAlong(cart.EndLimit);                                         // at the dump
+            Vector3 at, f; cart.HoldPlace(-1, out at, out f); wk.Teleport(at, Facing(f));
+            bgcCoins0 = money.Coins;
+            wk.PressE();
+            BCheck("tips", cart.Tipping);
+            bgcPhase = 2; bgcPhaseStart = t;
+            return;
+        }
+        if (bgcPhase == 2)
+        {
+            if (cart.Tipping && t - bgcPhaseStart < 20f) { bgcTipEnd = t; return; }
+            if (t - bgcTipEnd < 3.5f) return;
+            long paid = money.Coins - bgcCoins0;
+            bgcLog += " paid=" + paid + " worth=" + bgcWorth.ToString("F1") + " left=" + w.CartVoxels;
+            BCheck("paysForAll", System.Math.Abs(paid - bgcWorth) < 1.01 && w.CartVoxels < VoxelWorld.ClodVoxels);
+            long c0 = money.Coins;
+            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 900);
+            BCheck("smallerAgain", cart.capacity == 6144);
+            Debug.Log((bgcOk ? "BULLDOZER_BIGCART_RESULT" : "BULLDOZER_BIGCART_FAILED") + bgcLog);
+            BigCartFinish(bgcOk ? 0 : 1);
         }
     }
 

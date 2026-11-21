@@ -29,6 +29,7 @@ public struct CartSpec
     public bool motor;              // the motor cart: he can ride it and drive it (Upgrades.cs sets this)
     public float motorSpeed;        // metres a second under power, flat out
     public bool auto;               // the automatic cart: G sends it on the round trip by itself (Upgrades.cs sets this)
+    public bool bigTub;             // the bigger cart: boards along the top of the tub's sides (only the look: capacity holds the size)
 
     public static CartSpec HandCart
     {
@@ -54,7 +55,7 @@ public class MineCart : MonoBehaviour
     List<Vector3> path;
     float[] distanceAt;
     float length, tipLeft;
-    Transform dirtLevel, motorBox;
+    Transform dirtLevel, motorBox, sideBoards;
     float motorVel;
     bool tipping;
     readonly int[] sold = new int[16];
@@ -144,6 +145,17 @@ public class MineCart : MonoBehaviour
         motorBox = Part("Motor");
         motorBox.gameObject.SetActive(spec.motor);
 
+        // the bigger cart's extra boards: a second plank all round the top of the tub, on steel corner posts
+        Box(new Vector3(-HalfWidth, TubTop + 0.14f, 0f), new Vector3(0.07f, 0.26f, HalfLength * 2f), Timber);
+        Box(new Vector3(HalfWidth, TubTop + 0.14f, 0f), new Vector3(0.07f, 0.26f, HalfLength * 2f), Timber);
+        Box(new Vector3(0f, TubTop + 0.14f, HalfLength), new Vector3(HalfWidth * 2f, 0.26f, 0.07f), Timber);
+        Box(new Vector3(0f, TubTop + 0.14f, -HalfLength), new Vector3(HalfWidth * 2f, 0.26f, 0.07f), Timber);
+        foreach (float x in new[] { -HalfWidth, HalfWidth })
+            foreach (float z in new[] { -HalfLength, HalfLength })
+                Box(new Vector3(x, TubTop + 0.1f, z), new Vector3(0.1f, 0.4f, 0.1f), Steel);
+        sideBoards = Part("Big tub");
+        sideBoards.gameObject.SetActive(spec.bigTub);
+
         // parked just outside the mine entrance
         Along = 0f;
         for (int i = 0; i < path.Count; i++) if (path[i].z <= VoxelWorld.PortalZ - 2.2f) { Along = distanceAt[i]; break; }
@@ -227,6 +239,7 @@ public class MineCart : MonoBehaviour
     void FixedUpdate()
     {
         if (motorBox != null && motorBox.gameObject.activeSelf != spec.motor) motorBox.gameObject.SetActive(spec.motor);
+        if (sideBoards != null && sideBoards.gameObject.activeSelf != spec.bigTub) sideBoards.gameObject.SetActive(spec.bigTub);
         AutoStep(Time.fixedDeltaTime);
         // whatever loose dirt is inside the tub joins the load
         // (only once it has dropped in and reached the heap, so you see each shovelful land in the tub)
