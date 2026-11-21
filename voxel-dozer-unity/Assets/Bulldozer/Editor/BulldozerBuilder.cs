@@ -4538,6 +4538,80 @@ public static class BulldozerBuilder
         }
     }
 
+    // Trailer mode's other shots, one after another:  -executeMethod BulldozerBuilder.TrailerShotsTest
+    // mine (the pick, then the cart out into daylight), restore (rusted -> engine catches -> yellow), wide (the
+    // graded road from above, pulling back).  Pictures: Logs/shot_<name>_<seconds>.png.
+    static int tsIdx; static string tsLog; static bool tsOk; static double tsT0; static readonly System.Collections.Generic.HashSet<string> tsTaken = new System.Collections.Generic.HashSet<string>();
+    static readonly TrailerMode.ShotKind[] TsShots = { TrailerMode.ShotKind.Mine, TrailerMode.ShotKind.Restore, TrailerMode.ShotKind.Wide };
+    static readonly float[][] TsAt = { new[] { 3f, 7f, 11f, 14.5f }, new[] { 1.5f, 3.8f, 4.9f, 6.5f }, new[] { 1f, 6f, 12f } };
+    static float tsCartZ0, tsSolid0;
+    public static void TrailerShotsTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        tsIdx = 0; tsLog = ""; tsOk = true; tsTaken.Clear();
+        TrailerMode.On = true; TrailerMode.Shot = TsShots[0];
+        testStart = EditorApplication.timeSinceStartup; tsT0 = -1;
+        EditorApplication.update += TrailerShotsTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void TrailerShotsFinish()
+    {
+        EditorApplication.update -= TrailerShotsTick;
+        TrailerMode.On = false; TrailerMode.Shot = TrailerMode.ShotKind.Road;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (tsOk) Debug.Log("BULLDOZER_SHOTS_RESULT" + tsLog); else Debug.LogError("BULLDOZER_SHOTS_FAILED" + tsLog);
+        EditorApplication.Exit(tsOk ? 0 : 1);
+    }
+    static void TrailerShotsTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { tsLog += " timed out"; tsOk = false; TrailerShotsFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var tm = TrailerMode.Instance; var w = VoxelWorld.Instance; var cart = MineCart.Instance;
+        if (tm == null || w == null) return;
+        double t = EditorApplication.timeSinceStartup;
+        if (tsT0 < 0)
+        {
+            if (Time.timeSinceLevelLoad < 1.6f) return;                    // the shot starts 1.5 s in
+            tsT0 = t;
+            if (cart != null) tsCartZ0 = cart.transform.position.z;
+            tsSolid0 = w.SolidCount;
+        }
+        float st = (float)(t - tsT0);
+        string name = TsShots[tsIdx].ToString().ToLowerInvariant();
+        foreach (float at in TsAt[tsIdx])
+        {
+            string key = name + at;
+            if (st >= at && tsTaken.Add(key)) TestCapture("shot_" + name + "_" + at.ToString("F1") + ".png");
+        }
+        float end = TsAt[tsIdx][TsAt[tsIdx].Length - 1] + 0.5f;
+        if (st < end) return;
+        if (TsShots[tsIdx] == TrailerMode.ShotKind.Mine)
+        {
+            float cz = cart != null ? cart.transform.position.z : 0f;
+            tsLog += " mine: picked=" + (tsSolid0 - w.SolidCount) + " voxels held=" + Worker.Instance.HoldingCart + " cartZ " + tsCartZ0.ToString("F1") + "->" + cz.ToString("F1") + " (mouth " + VoxelWorld.PortalZ + ")";
+            if (cart == null || cz > VoxelWorld.PortalZ - 1f) { tsOk = false; tsLog += " CART_NOT_OUT=FAIL"; }
+        }
+        else if (TsShots[tsIdx] == TrailerMode.ShotKind.Restore)
+        {
+            var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+            bool yellow = true;
+            foreach (var r in d.GetComponentsInChildren<MeshRenderer>()) if (r.HasPropertyBlock()) yellow = false;
+            tsLog += " restore: yellowAfter5s=" + yellow;
+            if (!yellow) { tsOk = false; tsLog += " STILL_RUSTY=FAIL"; }
+        }
+        else
+        {
+            tsLog += " wide: done";
+        }
+        tsIdx++;
+        if (tsIdx >= TsShots.Length) { TrailerShotsFinish(); return; }
+        TrailerMode.Shot = TsShots[tsIdx];
+        tsT0 = -1;
+        UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+    }
+
     // Trailer mode (DiggerGame.exe -trailer):  -executeMethod BulldozerBuilder.TrailerTest
     // The dozer drives itself up the mountain road on blade auto Grade: after 40 s it is well up the road, on the
     // road, with Grade on.  Pictures at 12 s and 35 s: Logs/trailer_mode_1.png, trailer_mode_2.png (no panels).
