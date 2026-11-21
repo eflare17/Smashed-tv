@@ -19,6 +19,8 @@ public partial class VoxelWorld
 {
     public int ShovelVoxels { get; private set; }           // what the shovel is holding
     public int CartVoxels { get; private set; }             // what the mine cart is holding
+    /// Trailer mode only (nothing is saved there): fills the cart for the camera; the dirt books are not kept straight.
+    public void TrailerFillCart(int voxels) { CartVoxels = voxels; }
     public int PackVoxels { get; private set; }             // what the worker's backpack is holding
     public int SoldVoxels { get; private set; }             // what has gone down the hopper and been sold (it has left the site)
     NativeArray<int> shovelLoad, cartLoad, packLoad;         // per material
