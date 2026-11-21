@@ -4147,7 +4147,7 @@ public static class BulldozerBuilder
     //   loads it and the pile is dropped once: about 20 m³ of loose soil, a heap at the foot of the road, the books straight,
     //   the dozer not inside it; saved and loaded again it is still there and is NOT dropped a second time;
     //   then the dozer pushes it up the road (the heap goes down, the dozer gets past where it was).
-    static int rpPhase; static string rpLog; static bool rpOk; static double rpT0; static float rpTop0, rpBase0; static long rpAdded;
+    static int rpPhase; static string rpLog; static bool rpOk, rpShot; static double rpT0; static float rpTop0, rpBase0; static long rpAdded;
     static string RpCopy { get { return Application.dataPath + "/../Logs/pile_owner_copy.bin"; } }
     static string RpWork { get { return Application.dataPath + "/../Logs/pile_test.bin"; } }
     public static void RoadPileTest()
@@ -4155,7 +4155,7 @@ public static class BulldozerBuilder
         EditorSceneManager.OpenScene(ScenePath);
         EditorSettings.enterPlayModeOptionsEnabled = true;
         EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
-        rpPhase = 0; rpLog = ""; rpOk = true;
+        rpPhase = 0; rpLog = ""; rpOk = true; rpShot = false;
         if (!System.IO.File.Exists(RpCopy)) { Debug.LogError("BULLDOZER_ROADPILE_FAILED no copy of the owner's save at " + RpCopy); EditorApplication.Exit(1); return; }
         System.IO.File.Copy(RpCopy, RpWork, true);
         SaveGame.PathOverride = RpWork; SaveGame.TestAuto = true; SaveGame.AutoEvery = 1e6f;
@@ -4229,6 +4229,16 @@ public static class BulldozerBuilder
                 return;
             case 2:                                                     // push it up the road
                 d.overrideThrottle = t - rpT0 < 1.5f ? 0f : 0.8f;
+                if (!rpShot && t - rpT0 > 1.2f && Camera.main != null)                    // the heap from behind and above the dozer, looking up the road
+                {
+                    rpShot = true;
+                    Vector2 dv = (MountainRoad.Point(Mathf.Min(4, MountainRoad.Count - 1)) - MountainRoad.Point(0)).normalized;
+                    Vector2 eye = c - dv * 6f + new Vector2(dv.y, -dv.x) * 11f;           // (from the side: trees stand behind it)
+                    var ct = Camera.main.transform;
+                    ct.position = new Vector3(eye.x, w.TopAt(c.x, c.y) + 6f, eye.y);
+                    ct.LookAt(new Vector3(c.x + dv.x * 2f, w.TopAt(c.x, c.y) - 0.5f, c.y + dv.y * 2f));
+                    TestCapture("road_pile.png");
+                }
                 if (t - rpT0 < 16f) return;
                 d.overrideThrottle = 0f;
                 Vector2 dir2 = (MountainRoad.Point(Mathf.Min(4, MountainRoad.Count - 1)) - MountainRoad.Point(0)).normalized;
