@@ -99,7 +99,9 @@ public class DozerController : MonoBehaviour
     bool LevelActive { get { return AutoOn && AutoLevel && !levelPaused; } }
     bool StraightActive { get { return AutoOn && AutoStraight && !straightPaused; } }
     // moving the blade by hand starts slow and speeds up the longer you hold it: a tap is a nudge
-    float holdLift, holdAngle, holdTilt, stepHeld; int stepDir;
+    float holdLift, holdAngle, holdTilt, stepHeld; int stepDir, firstStepCm;
+    /// Tests: overrideBlade is worked like the player's lever (blade auto's steps), not as a hand taking over.
+    [System.NonSerialized] public bool leverAsPlayer;
     const float NudgeSpeed = 0.2f, FullSpeedAfter = 0.7f;
     static float Ramp(ref float held, float input, float dt)
     {
@@ -352,18 +354,26 @@ public class DozerController : MonoBehaviour
         fwd.Normalize();
         Vector3 right = new Vector3(fwd.z, 0f, -fwd.x);
         Vector3 edge = Unfelt(blade.TransformPoint(BladeEdge));
+        // the firm ground ahead, brought back to the edge along the slope the machine is sitting on (uphill, the
+        // ground 2 m ahead is higher than the ground at the edge: without this a cut held the blade too high, and
+        // stepping below 0 on a slope lifted the blade instead of lowering it)
+        float slope = Mathf.Tan(pitch * Mathf.Deg2Rad);                  // (nose up = negative pitch)
         float sum = 0f; int n = 0;
         for (float a = 1.5f; a <= 3.01f; a += 0.75f)
             for (float s = -1f; s <= 1.01f; s += 1f)
             {
                 Vector3 p = edge + fwd * a + right * s;
                 float h;
-                if (world.FirmHeightAt(p.x, p.z, out h)) { sum += h; n++; }
+                if (world.FirmHeightAt(p.x, p.z, out h)) { sum += h + a * slope; n++; }
             }
         if (n < 5) return fixedAngle;
         float want = sum / n + autoCm / 100f;
         // more arm angle = lower edge, about edgePerDegree metres a degree
-        return Mathf.Clamp(bladeAngle + (edge.y - want) / edgePerDegree, bladeUpAngle, bladeDownAngle);
+        float cut = bladeAngle + (edge.y - want) / edgePerDegree;
+        // a cut never holds the blade higher than Flat (level with the tracks): sitting in a hollow or the bottom of
+        // your own cut, the ground ahead is above the tracks, and stepping below 0 must not lift the blade
+        cut = Mathf.Max(cut, AngleForCm(0));
+        return Mathf.Clamp(cut, bladeUpAngle, bladeDownAngle);
     }
 
     public float AutoAngle(BladeAutoMode m) { return AngleForCm(ModeCm[(int)m]); }
@@ -461,13 +471,14 @@ public class DozerController : MonoBehaviour
         if (AutoOn && !CanBlade) heightPaused = levelPaused = straightPaused = true;
         if (bladeIn != 0f && AutoOn && AutoHeight)
         {
-            if (useOverride) heightPaused = true;                          // (the tests' hand on the lever takes over the height, as it used to)
+            if (useOverride && !leverAsPlayer) heightPaused = true;        // (the tests' hand on the lever takes over the height, as it used to)
             else
             {
                 // the lever moves the height auto holds: a step as it is pressed, then a step every 0.15 s while held
                 int dir = bladeIn > 0f ? 1 : -1;
                 stepDir = dir;
-                if (stepHeld == 0f || (stepHeld >= 0.4f && Mathf.Repeat(stepHeld - 0.4f, 0.15f) < Time.deltaTime)) StepAutoHeight(dir);
+                if (stepHeld == 0f) { StepAutoHeight(dir); firstStepCm = autoCm; }        // a tap is always at least one step
+                else if (stepHeld >= 0.4f && Mathf.Repeat(stepHeld - 0.4f, 0.15f) < Time.deltaTime) StepAutoHeight(dir);
                 stepHeld += Time.deltaTime;
                 heightPaused = false;
                 bladeIn = 0f;
@@ -476,10 +487,13 @@ public class DozerController : MonoBehaviour
         else
         {
             // let go of the lever: hold the height the blade has got to (the next 5 cm step), so it stops where you let go
-            if (stepHeld > 0f && AutoOn && AutoHeight && !useOverride && edgePerDegree > 0f)
+            if (stepHeld > 0f && AutoOn && AutoHeight && (!useOverride || leverAsPlayer) && edgePerDegree > 0f)
             {
                 float nowCm = autoCm + (AutoWant() - bladeAngle) * edgePerDegree * 100f;     // more angle = lower edge
                 int snapped = stepDir < 0 ? Mathf.FloorToInt(nowCm / AutoStepCm + 0.001f) * AutoStepCm : Mathf.CeilToInt(nowCm / AutoStepCm - 0.001f) * AutoStepCm;
+                // (but never back past the first step of this press: the blade goes down slowly, and a quick tap let go
+                // before it has moved must still take it down a step, not spring back to where it was)
+                snapped = stepDir < 0 ? Mathf.Min(snapped, firstStepCm) : Mathf.Max(snapped, firstStepCm);
                 if (stepDir < 0 ? snapped > autoCm : snapped < autoCm) { AutoCm = snapped; SaveAutoPrefs(); }
             }
             stepHeld = 0f;

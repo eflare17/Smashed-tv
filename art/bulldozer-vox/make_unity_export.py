@@ -4297,6 +4297,115 @@ public static class BulldozerBuilder
         }
     }
 
+    // Blade auto holding a cut (below 0):  -executeMethod BulldozerBuilder.BladeCutHoldTest
+    // On flat ground, standing still: blade auto on Flat, then set to Cut 30 cm.  The blade must go down to about
+    // 30 cm into the ground and STAY there (not spring back up); then driving on, it keeps cutting about 30 cm.
+    // Then the lever as the player works it: a quick tap down from Flat holds Cut 5 cm (it used to spring back to
+    // Flat, as the blade had not moved yet when the tap was let go); held down and let go it stays where it got to;
+    // a tap up goes up one step.  Uphill on the mountain road, stepping from Flat to Cut 10 cm never lifts the blade.
+    static int bcPhase; static string bcLog; static bool bcOk; static double bcT0; static float bcLowest, bcAfter;
+    public static void BladeCutHoldTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bcPhase = 0; bcLog = ""; bcOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BladeCutTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void BladeCutFinish()
+    {
+        EditorApplication.update -= BladeCutTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (bcOk) Debug.Log("BULLDOZER_BLADECUT_RESULT" + bcLog); else Debug.LogError("BULLDOZER_BLADECUT_FAILED phase " + bcPhase + bcLog);
+        EditorApplication.Exit(bcOk ? 0 : 1);
+    }
+    static double bcNextLog;
+    static void BladeCutTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 200) { bcLog += " timed out"; bcOk = false; BladeCutFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (wk == null || d == null || Time.timeSinceLevelLoad < 2f) return;
+        double t = EditorApplication.timeSinceStartup;
+        switch (bcPhase)
+        {
+            case 0:
+                wk.useOverride = true;
+                if (!wk.InDozer) wk.GetIn();
+                d.useOverride = true; d.dead = false;
+                d.Place(new Vector3(0f, 0f, -16f), 0f);
+                d.overrideBlade = 0f; d.overrideSteer = 0f; d.overrideRipper = 1f; d.overrideThrottle = 0f;
+                d.bladeAuto = DozerController.BladeAutoMode.Flat;
+                bcPhase = 1; bcT0 = t; bcNextLog = t;
+                return;
+            case 1:                                                     // on Flat for a second, then Cut 30 cm, standing still
+                if (t - bcT0 < 1.5f) return;
+                d.AutoCm = -30;
+                bcLog += " set=" + d.BladeAutoName;
+                bcPhase = 2; bcT0 = t; bcLowest = 9f;
+                return;
+            case 2:
+                if (t >= bcNextLog) { bcNextLog = t + 0.5; bcLog += " [" + (t - bcT0).ToString("F1") + "s edge=" + d.EdgeAboveTracks.ToString("F2") + " arm=" + d.BladeArmAngle.ToString("F1") + " cm=" + d.AutoCm + (d.HeightAutoActive ? "" : " NOTACTIVE") + "]"; }
+                bcLowest = Mathf.Min(bcLowest, d.EdgeAboveTracks);
+                if (t - bcT0 < 7f) return;
+                bcAfter = d.EdgeAboveTracks;
+                bcLog += " standing: lowest=" + bcLowest.ToString("F2") + " after7s=" + bcAfter.ToString("F2");
+                if (!(bcAfter < -0.2f)) { bcOk = false; bcLog += " STAYED_DOWN=FAIL"; }
+                if (d.AutoCm != -30) { bcOk = false; bcLog += " HEIGHT_CHANGED=FAIL"; }
+                bcPhase = 3; bcT0 = t;
+                return;
+            case 3:                                                     // drive on: it keeps cutting
+                d.overrideThrottle = 0.5f;
+                if (t >= bcNextLog) { bcNextLog = t + 0.5; bcLog += " [drive " + (t - bcT0).ToString("F1") + "s edge=" + d.EdgeAboveTracks.ToString("F2") + " cm=" + d.AutoCm + "]"; }
+                if (t - bcT0 < 5f) return;
+                d.overrideThrottle = 0f;
+                if (d.AutoCm != -30) { bcOk = false; bcLog += " HEIGHT_CHANGED_DRIVING=FAIL"; }
+                d.AutoCm = 0; d.leverAsPlayer = true; d.overrideBlade = 0f;
+                d.Place(new Vector3(9f, 0f, -16f), 0f);                     // fresh flat ground, beside the cut
+                bcPhase = 4; bcT0 = t;
+                return;
+            case 4:                                                     // the player's lever: a quick tap down from Flat
+                if (t - bcT0 < 2f) return;
+                d.overrideBlade = t - bcT0 < 2.12f ? -1f : 0f;
+                if (t - bcT0 < 5f) return;
+                bcLog += " tapDown: " + d.BladeAutoName + " edge=" + d.EdgeAboveTracks.ToString("F2");
+                if (d.AutoCm != -5 || d.EdgeAboveTracks > -0.03f) { bcOk = false; bcLog += " TAP_DOWN_SPRANG_BACK=FAIL"; }
+                bcPhase = 5; bcT0 = t;
+                return;
+            case 5:                                                     // held down 1.5 s, let go: it stays down where it got to
+                d.overrideBlade = t - bcT0 < 1.5f ? -1f : 0f;
+                if (t - bcT0 < 5f) return;
+                bcLog += " heldDown: " + d.BladeAutoName + " edge=" + d.EdgeAboveTracks.ToString("F2");
+                if (d.AutoCm > -10 || d.EdgeAboveTracks > -0.08f || Mathf.Abs(d.EdgeAboveTracks * 100f - d.AutoCm) > 6f) { bcOk = false; bcLog += " HOLD_DOWN_SPRANG_BACK=FAIL"; }
+                bcAfter = d.AutoCm;
+                bcPhase = 6; bcT0 = t;
+                return;
+            case 6:                                                     // a tap up: one step up
+                d.overrideBlade = t - bcT0 < 0.12f ? 1f : 0f;
+                if (t - bcT0 < 3f) return;
+                bcLog += " tapUp: " + d.BladeAutoName;
+                if (d.AutoCm != (int)bcAfter + 5) { bcOk = false; bcLog += " TAP_UP=FAIL"; }
+                d.leverAsPlayer = false;
+                {   // uphill on the mountain road, facing up it, on Flat
+                    Vector2 a0 = MountainRoad.Point(10), a1 = MountainRoad.Point(14), dv = (a1 - a0).normalized;
+                    d.Place(new Vector3(a0.x, 0f, a0.y), Mathf.Atan2(dv.x, dv.y) * Mathf.Rad2Deg);
+                    d.AutoCm = 0;
+                }
+                bcPhase = 7; bcT0 = t;
+                return;
+            case 7:                                                     // uphill, Cut 10 cm: the blade goes DOWN, not up
+                if (t - bcT0 < 2f) return;
+                if (bcPhase == 7 && d.AutoCm == 0) { bcAfter = d.EdgeAboveTracks; d.AutoCm = -10; bcLog += " uphill flat edge=" + bcAfter.ToString("F2"); }
+                if (t - bcT0 < 5f) return;
+                bcLog += " uphill cut10 edge=" + d.EdgeAboveTracks.ToString("F2") + " pitch=" + Mathf.DeltaAngle(0f, d.transform.eulerAngles.x).ToString("F1");
+                if (d.EdgeAboveTracks > bcAfter + 0.015f) { bcOk = false; bcLog += " UPHILL_CUT_LIFTED_THE_BLADE=FAIL"; }   // (the ground there is lumpy, not yet graded: it may hold at Flat, but never higher)
+                BladeCutFinish();
+                return;
+        }
+    }
+
     // Pushing a tree over and picking up its wood:  -executeMethod BulldozerBuilder.TreeFellTest
     // On a fresh test save (Logs/fell_test.bin): the dozer drives head on into a tree on the hilltop and is held up
     // by it while it leans (about as long as PushNeeded says), then it goes over away from the dozer, lands as chunks
