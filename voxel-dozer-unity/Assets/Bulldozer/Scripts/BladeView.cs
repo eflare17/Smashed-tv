@@ -213,6 +213,7 @@ public class BladeView : MonoBehaviour
 
     void OnGUI()
     {
+        if (TrailerMode.On) return;                                        // (trailer mode: no panels)
         Ui.Begin();
         if (world == null || sideTex == null || (dozer != null && !dozer.driven) || Prologue.Playing) return;
         if (label == null) label = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold };

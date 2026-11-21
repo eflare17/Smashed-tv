@@ -1733,7 +1733,7 @@ public static class BulldozerBuilder
             long c0 = money.Coins;
             uLog += " backpackBeforeShovel6=" + up.Buy(Upgrades.Branch.Backpack) + "(" + up.CantBuy(Upgrades.Branch.Backpack) + ")";
             for (int k = 0; k < 5; k++) up.Buy(Upgrades.Branch.Shovel);
-            uLog += " shovel=" + up.Level(Upgrades.Branch.Shovel) + " holds=" + wk.shovelHolds + " speed=" + wk.shovelSpeed.ToString("F2") + " paid=" + (c0 - money.Coins) + "(want 632)";
+            uLog += " shovel=" + up.Level(Upgrades.Branch.Shovel) + " holds=" + wk.shovelHolds + " speed=" + wk.shovelSpeed.ToString("F2") + " paid=" + (c0 - money.Coins) + "(want 860)";
             int g0 = money.GoldStore; c0 = money.Coins;
             uLog += " buyBackpack=" + up.Buy(Upgrades.Branch.Backpack) + " owned=" + wk.backpackOwned + " packHolds=" + wk.packHolds + " goldTaken=" + (g0 - money.GoldStore) + " coinsTaken=" + (c0 - money.Coins);
             uLog += " sellShovel6WithPack=" + up.SellBack(Upgrades.Branch.Shovel) + "(" + up.CantSellBack(Upgrades.Branch.Shovel) + ")";
@@ -1783,7 +1783,7 @@ public static class BulldozerBuilder
             wk.overrideUse = false;
             uLog += " realScoop=" + (uMaxShovel * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L(level1 max 117L)";
             bool uOk = uMaxShovel * VoxelWorld.VoxelVolume * 1000f > 117f;
-            foreach (var want in new[] { "start=P1/S1/B0/C1", "backpackLocked=True", "buyBroke=False", "backpackBeforeShovel6=False", "shovel=6 ", "paid=632(want 632)",
+            foreach (var want in new[] { "start=P1/S1/B0/C1", "backpackLocked=True", "buyBroke=False", "backpackBeforeShovel6=False", "shovel=6 ", "paid=860(want 860)",
                                          "buyBackpack=True", "owned=True", "sellShovel6WithPack=False", "sellBackpack=True", "refunded=True", "ownedAfter=False",
                                          "backpackMax=8", "resetOk=True", "holdsBack=1400" })
                 if (uLog.IndexOf(want) < 0) { uOk = false; uLog += " WRONG[" + want + "]"; }
@@ -3391,6 +3391,388 @@ public static class BulldozerBuilder
             MCheck("sellBackRemovesMotor", !cart.spec.motor);
             Debug.Log((mOk ? "BULLDOZER_MOTORCART_RESULT" : "BULLDOZER_MOTORCART_FAILED") + mLog);
             MotorCartFinish(mOk ? 0 : 1);
+        }
+    }
+
+    // The automatic cart:  -executeMethod BulldozerBuilder.AutoCartTest
+    // Without it, G does nothing.  Buys it through the tree (Upgrades.Buy: the coins and gold must come off), fills
+    // the cart by the mine mouth, sends it (G), and checks that it reaches the dump, tips itself, pays what the
+    // load was worth (dirt as coins, gold into the gold store, as a tip by hand), and comes back empty to where
+    // it was sent from.  Then the upgrade level survives a save and load of the tree, selling it back mid-trip
+    // stops the trip, and the refund is the full price.
+    // Prints BULLDOZER_AUTOCART_RESULT, or BULLDOZER_AUTOCART_FAILED if a check didn't hold.
+    static int acPhase;
+    static float acPhaseStart, acAlong0, acMaxAlong, acTripEnd;
+    static long acCoins0;
+    static int acGold0, acGoldIn;
+    static double acDirtWorth;
+    static bool acOk;
+    static string acLog;
+
+    public static void AutoCartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        acPhase = 0; acLog = ""; acOk = true; acMaxAlong = 0f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += AutoCartTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void AutoCartFinish(int code)
+    {
+        EditorApplication.update -= AutoCartTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void ACheck(string name, bool good) { acLog += " " + name + "=" + good; if (!good) acOk = false; }
+
+    static void AutoCartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_AUTOCART_FAILED timed out in phase " + acPhase + " " + acLog); AutoCartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (acPhase == 0)
+        {
+            if (t < 1f) return;                                                  // let everything start
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.AutoCartLevel - 1);       // the level before it
+            ACheck("noSendWithoutIt", !wk.SendCart() && !cart.OnTrip);
+            money.TestGrant(5000, 400);
+            long c0 = money.Coins; int g0 = money.GoldStore;
+            ACheck("buys", up.Buy(Upgrades.Branch.Cart));
+            acLog += " price=" + (c0 - money.Coins) + "c+" + (g0 - money.GoldStore) + "vox";
+            ACheck("costTaken", money.Coins < c0 && money.GoldStore < g0);
+            ACheck("autoOwned", cart.spec.auto && cart.spec.motor && up.HasAutoCart);
+            ACheck("noSendEmpty", !wk.SendCart() && !cart.OnTrip);
+            money.Clear();
+            dSteps = 0; dNext = t;
+            acPhase = 1; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 1)
+        {
+            if (!FillCart(w, cart, t, 3000) && t - acPhaseStart < 20f) return;
+            if (t - acPhaseStart < 2f) return;                                  // let the last clods land in it
+            acDirtWorth = 0;
+            for (int m = VoxelWorld.LooseSoil; m < VoxelWorld.LooseGold; m++) acDirtWorth += Money.ValueOf(m, w.CartLoadOf(m));
+            acGoldIn = w.CartLoadOf(VoxelWorld.LooseGold);
+            acLog += " loaded=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L dirtWorth=" + acDirtWorth.ToString("F1") + " goldIn=" + acGoldIn;
+            acAlong0 = cart.Along; acMaxAlong = cart.Along;
+            acCoins0 = money.Coins; acGold0 = money.GoldStore;
+            ACheck("startsAwayFromDump", !cart.AtDump);
+            ACheck("sends", wk.SendCart() && cart.OnTrip);
+            ACheck("workerNotRiding", !wk.RidingCart && wk.HoldingCart == 0);
+            acPhase = 2; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 2)
+        {
+            acMaxAlong = Mathf.Max(acMaxAlong, cart.Along);
+            if (t - acPhaseStart > 1.2f && acLog.IndexOf("outPic") < 0) { TestCapture("auto_cart_out.png"); acLog += " outPic"; }
+            if (cart.TripState == MineCart.Trip.Tipping && acLog.IndexOf("tipPic") < 0 && t - acPhaseStart > 2f) { TestCapture("auto_cart_tip.png"); acLog += " tipPic"; }
+            if (cart.OnTrip && t - acPhaseStart < 60f) { acTripEnd = t; return; }
+            if (t - acTripEnd < 3.5f) return;                                   // the last of the stream is still falling in
+            long paid = money.Coins - acCoins0;
+            int gold = money.GoldStore - acGold0;
+            acLog += " trip=" + (acTripEnd - acPhaseStart).ToString("F1") + "s reached=" + acMaxAlong.ToString("F1") + "/" + cart.EndLimit.ToString("F1") + " backAt=" + cart.Along.ToString("F2") + "/" + acAlong0.ToString("F2")
+                   + " paid=" + paid + " goldStored=" + gold + " leftInCart=" + w.CartVoxels + " trips=" + cart.TripsDone;
+            ACheck("tripEnded", !cart.OnTrip);
+            ACheck("reachedDump", acMaxAlong >= cart.EndLimit - MineCart.DumpLength);
+            ACheck("cameBack", Mathf.Abs(cart.Along - acAlong0) < 0.15f);
+            ACheck("empty", w.CartVoxels < VoxelWorld.ClodVoxels);
+            ACheck("paysLikeHandTip", paid >= acDirtWorth - 1.01 && paid <= acDirtWorth * 1.08 + 1.01);   // (a few spilled clods on the rails get scooped up on the way, as when pushed)
+            ACheck("goldKept", gold == acGoldIn);
+            TestCapture("auto_cart_back.png");
+
+            // the upgrade level survives a save and load of the tree
+            var ms = new System.IO.MemoryStream();
+            up.WriteState(new System.IO.BinaryWriter(ms));
+            up.Reset();
+            ACheck("resetRemovesIt", !cart.spec.auto);
+            ms.Position = 0;
+            up.ReadState(new System.IO.BinaryReader(ms));
+            ACheck("loadKeepsIt", cart.spec.auto && up.Level(Upgrades.Branch.Cart) == Upgrades.AutoCartLevel);
+
+            // sent off again with a little in it, then sold back mid-trip: it stops, and the refund is the full price
+            for (int k = 0; k < 6; k++) { w.Pick(cart.transform.position + cart.transform.right * 2.4f + Vector3.up * (0.1f - k * 0.1f), 0.35f, Vector3.zero); w.Scoop(cart.transform.position + cart.transform.right * 2.4f + Vector3.up * (0.1f - k * 0.1f), 0.5f, 4000); if (w.ShovelVoxels >= VoxelWorld.ClodVoxels) w.Throw(cart.Mouth + Vector3.up * 0.7f, Vector3.zero, 0.25f, 0.4f); }
+            acPhase = 3; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 3)
+        {
+            if (t - acPhaseStart < 2f) return;
+            if (acLog.IndexOf(" resent=") < 0)
+            {
+                acLog += " resent=" + (w.CartVoxels >= VoxelWorld.ClodVoxels ? wk.SendCart() : false);
+                acPhaseStart = t;
+                return;
+            }
+            if (t - acPhaseStart < 1f) return;                                  // part way out
+            long c0 = money.Coins; int g0 = money.GoldStore;
+            ACheck("sellsBack", up.SellBack(Upgrades.Branch.Cart));
+            acLog += " refund=" + (money.Coins - c0) + "c+" + (money.GoldStore - g0) + "vox";
+            ACheck("sellBackStopsTrip", !cart.OnTrip && !cart.spec.auto && cart.spec.motor);
+            ACheck("noSendAfterSellBack", !wk.SendCart());
+            Debug.Log((acOk ? "BULLDOZER_AUTOCART_RESULT" : "BULLDOZER_AUTOCART_FAILED") + acLog);
+            AutoCartFinish(acOk ? 0 : 1);
+        }
+    }
+
+    // The bigger cart:  -executeMethod BulldozerBuilder.BigCartTest
+    // Buys it after Motor cart 3 (900 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
+    // the old 1,500 L; it still drives to the dump and pays what the load was worth; sold back, it is 1,500 L again.
+    // Prints BULLDOZER_BIGCART_RESULT, or BULLDOZER_BIGCART_FAILED if a check didn't hold.
+    static int bgcPhase; static float bgcPhaseStart, bgcTipEnd; static long bgcCoins0; static double bgcWorth; static bool bgcOk; static string bgcLog;
+
+    public static void BigCartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bgcPhase = 0; bgcLog = ""; bgcOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BigCartTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void BigCartFinish(int code) { EditorApplication.update -= BigCartTick; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void BCheck(string name, bool good) { bgcLog += " " + name + "=" + good; if (!good) bgcOk = false; }
+
+    static void BigCartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_BIGCART_FAILED timed out in phase " + bgcPhase + " " + bgcLog); BigCartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (bgcPhase == 0)
+        {
+            if (t < 1f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.BigCartLevel - 1);        // Motor cart 3
+            var boards = cart.transform.Find("Big tub");
+            BCheck("boardsHiddenBefore", boards != null && !boards.gameObject.activeSelf);
+            int before = cart.capacity;
+            money.TestGrant(900, 0);
+            BCheck("buysWithCoinsOnly", up.Buy(Upgrades.Branch.Cart) && money.Coins == 0);
+            bgcLog += " holdsL=" + (before * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "->" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
+            BCheck("bigger", cart.capacity == 8192 && before == 6144);
+            BCheck("stillMotor", cart.spec.motor && !cart.spec.auto);
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            dSteps = 0; dNext = t;
+            bgcPhase = 1; bgcPhaseStart = t;
+            return;
+        }
+        if (bgcPhase == 1)
+        {
+            var boards = cart.transform.Find("Big tub");
+            if (boards != null && boards.gameObject.activeSelf && bgcLog.IndexOf("boardsShown") < 0) BCheck("boardsShown", true);
+            if (!FillCart(w, cart, t, 7000) && t - bgcPhaseStart < 40f) return;
+            if (t - bgcPhaseStart < 2f) return;
+            float l = w.CartVoxels * VoxelWorld.VoxelVolume * 1000f;
+            bgcLog += " loaded=" + l.ToString("F0") + "L";
+            BCheck("boardsShown", boards != null && boards.gameObject.activeSelf);
+            BCheck("holdsMoreThan1500", l > 1550f);
+            TestCapture("big_cart_full.png");
+            bgcWorth = CartWorth(w);
+            cart.SetAlong(cart.EndLimit);                                         // at the dump
+            Vector3 at, f; cart.HoldPlace(-1, out at, out f); wk.Teleport(at, Facing(f));
+            bgcCoins0 = money.Coins;
+            wk.PressE();
+            BCheck("tips", cart.Tipping);
+            bgcPhase = 2; bgcPhaseStart = t;
+            return;
+        }
+        if (bgcPhase == 2)
+        {
+            if (cart.Tipping && t - bgcPhaseStart < 20f) { bgcTipEnd = t; return; }
+            if (t - bgcTipEnd < 3.5f) return;
+            long paid = money.Coins - bgcCoins0;
+            bgcLog += " paid=" + paid + " worth=" + bgcWorth.ToString("F1") + " left=" + w.CartVoxels;
+            BCheck("paysForAll", System.Math.Abs(paid - bgcWorth) < 1.01 && w.CartVoxels < VoxelWorld.ClodVoxels);
+            long c0 = money.Coins;
+            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 900);
+            BCheck("smallerAgain", cart.capacity == 6144);
+            Debug.Log((bgcOk ? "BULLDOZER_BIGCART_RESULT" : "BULLDOZER_BIGCART_FAILED") + bgcLog);
+            BigCartFinish(bgcOk ? 0 : 1);
+        }
+    }
+
+    // The goal and the ending:  -executeMethod BulldozerBuilder.EndingTest
+    // The ending doesn't play before the goal.  Goes through every goal (Goals.TestComplete, with the parts fitted and
+    // every road stretch graded so the new goals are really true), and the ending starts by itself: the panels hide,
+    // the camera flies up the road (pictures on the way and of the stats card), the stats count what went down the
+    // hopper; "Keep playing" hands the camera back; it doesn't play again; and Shown and the totals survive a save
+    // and load of its section.  Prints BULLDOZER_ENDING_RESULT, or BULLDOZER_ENDING_FAILED.
+    static int enPhase; static float enT0; static bool enOk; static string enLog; static Vector3 enCam0;
+
+    public static void EndingTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        enPhase = 0; enLog = ""; enOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += EndingTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void EndingFinish(int code) { EditorApplication.update -= EndingTick; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void ECheck(string name, bool good) { enLog += " " + name + "=" + good; if (!good) enOk = false; }
+
+    static void EndingTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_ENDING_FAILED timed out in phase " + enPhase + " " + enLog); EndingFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var wk = Worker.Instance; var money = Money.Instance; var goals = Goals.Instance; var end = Ending.Instance; var finds = Finds.Instance; var road = MountainRoadJob.Instance;
+        if (wk == null || money == null || goals == null || end == null || finds == null || road == null || Camera.main == null) return;
+        float t = Time.time;
+        switch (enPhase)
+        {
+            case 0:
+                if (Time.timeSinceLevelLoad < 4f) return;
+                wk.useOverride = true;
+                money.Clear(); goals.Reset(); end.TestReset();
+                ECheck("notBeforeGoal", !Ending.Playing && !Ending.GoalReached);
+                // what goes down the hopper is counted for the stats: 4,096 voxels of soil (1 m3) and 41 of gold (10 L)
+                var paid = new int[16]; paid[VoxelWorld.LooseSoil] = 4096; paid[VoxelWorld.LooseGold] = 41;
+                money.Pay(paid);
+                enLog += " sold=" + end.SoldLitres.ToString("F0") + "L gold=" + end.GoldFoundLitres.ToString("F1") + "L";
+                ECheck("countsHopper", System.Math.Abs(end.SoldLitres - 1000.0) < 0.5 && end.GoldFoundLitres > 9.5 && end.GoldFoundLitres < 10.5);
+                for (int k = 0; k < Finds.Count; k++) finds.SetState(k, true, true, true);
+                for (int k = 0; k < MountainRoad.Stretches; k++) road.TestGradeStretch(k);
+                road.Refresh();
+                enLog += " ticked=" + road.TickedCount;
+                for (int guard = 0; guard < 40 && goals.Current < Goals.List.Length; guard++) goals.TestComplete();
+                ECheck("allGoalsDone", goals.DoneCount == Goals.List.Length && goals.IsDone("dozer_fixed") && goals.IsDone("road_done"));
+                ECheck("goalReached", Ending.GoalReached);
+                enCam0 = Camera.main.transform.position;
+                enPhase = 1; enT0 = t;
+                return;
+            case 1:
+                if (!Ending.Playing && t - enT0 < 3f) return;
+                ECheck("startsByItself", Ending.Playing);
+                ECheck("playerHeld", wk.useOverride);
+                enPhase = 2; enT0 = t;
+                return;
+            case 2:
+                if (t - enT0 > 4f && enLog.IndexOf("flyPic1") < 0) { TestCapture("ending_fly1.png"); enLog += " flyPic1"; }
+                if (t - enT0 > 11f && enLog.IndexOf("flyPic2") < 0) { TestCapture("ending_fly2.png"); enLog += " flyPic2"; ECheck("cameraMoved", (Camera.main.transform.position - enCam0).magnitude > 10f); }
+                if (t - enT0 > Ending.FlyFor + 4f && enLog.IndexOf("cardShot") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ending_card_screen.png"); enLog += " cardShot"; }
+                if (t - enT0 > 8f && enLog.IndexOf("capShot") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ending_caption_screen.png"); enLog += " capShot"; }
+                if (t - enT0 < Ending.FlyFor + 6f) return;
+                TestCapture("ending_card.png");
+                enLog += " stats=[" + string.Join(" | ", end.StatLines()) + "]";
+                end.Finish();                                                     // "Keep playing"
+                var follow = Camera.main.GetComponent<FollowCamera>();
+                ECheck("handsBack", !Ending.Playing && follow != null && follow.enabled);
+                enPhase = 3; enT0 = t;
+                return;
+            case 3:
+                if (t - enT0 < 4f) return;
+                ECheck("onlyOnce", !Ending.Playing && end.Shown);
+                var ms = new System.IO.MemoryStream();
+                end.WriteState(new System.IO.BinaryWriter(ms));
+                double sold = end.SoldLitres;
+                end.Clear();
+                ECheck("clearForgets", !end.Shown && end.SoldLitres == 0);
+                ms.Position = 0;
+                end.ReadState(new System.IO.BinaryReader(ms));
+                ECheck("loadKeeps", end.Shown && end.SoldLitres == sold);
+                Debug.Log((enOk ? "BULLDOZER_ENDING_RESULT" : "BULLDOZER_ENDING_FAILED") + enLog);
+                EndingFinish(enOk ? 0 : 1);
+                return;
+        }
+    }
+
+    // First-time hints:  -executeMethod BulldozerBuilder.HintsTest
+    // With the computer's prefs left alone (Hints.TestNoPrefs), sets up each tip's moment in turn (in the dozer, on
+    // foot, dirt on the shovel, coins for an upgrade, gold in the store, a half-full cart) and checks that each tip
+    // comes up, one at a time, and never twice.  A picture of one.  Prints BULLDOZER_HINTS_RESULT, or _FAILED.
+    static int hnPhase; static float hnT0; static bool hnOk; static string hnLog, hnLast; static List<string> hnSeq = new List<string>();
+    static bool hnPrefBefore; static float hnDigAt;
+
+    public static void HintsTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        hnPhase = 0; hnLog = ""; hnOk = true; hnLast = ""; hnSeq.Clear(); hnDigAt = -1f;
+        Hints.TestNoPrefs = true;
+        hnPrefBefore = PlayerPrefs.HasKey("hint.dig");
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += HintsTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void HintsFinish(int code) { EditorApplication.update -= HintsTick; Hints.TestNoPrefs = false; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void HCheck(string name, bool good) { hnLog += " " + name + "=" + good; if (!good) hnOk = false; }
+
+    static void HintsTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_HINTS_FAILED timed out in phase " + hnPhase + " " + hnLog); HintsFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance; var h = Hints.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || h == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        string now = h.ShowingId;
+        if (now != hnLast) { if (now.Length > 0) hnSeq.Add(now); hnLast = now; }
+        switch (hnPhase)
+        {
+            case 0:                                                     // in the dozer
+                if (Time.timeSinceLevelLoad < 2f) return;
+                wk.useOverride = true;
+                up.Reset(); money.Clear(); h.TestForget(); hnSeq.Clear(); hnLast = "";
+                if (!wk.InDozer) wk.GetIn();
+                hnPhase = 1; hnT0 = t; return;
+            case 1:
+                if (h.ShowingId != "dozer" && t - hnT0 < 8f) return;
+                TestCapture("hint_dozer.png");
+                wk.GetOut();                                            // on foot: the digging tip
+                hnPhase = 2; hnT0 = t; return;
+            case 2:
+                if (h.ShowingId == "dig" && hnDigAt < 0f) hnDigAt = t;
+                if ((hnDigAt < 0f || t - hnDigAt < 2f) && t - hnT0 < 14f) return;
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/hint_dig_screen.png"); hnLog += " dbg[" + h.DebugLine + "]";
+                wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+                Vector3 at = cart.transform.position + cart.transform.right * 2.4f;
+                w.Pick(at, 0.35f, Vector3.zero); w.Scoop(at, 0.5f, 400);   // dirt on the shovel: the cart tip
+                hnPhase = 3; hnT0 = t; return;
+            case 3:
+                if (h.ShowingId != "cart" && t - hnT0 < 12f) return;
+                money.TestGrant(100, 0);                                // can afford an upgrade
+                hnPhase = 4; hnT0 = t; return;
+            case 4:
+                if (h.ShowingId != "upgrade" && t - hnT0 < 12f) return;
+                money.TestGrant(0, 10);                                 // gold in the store
+                hnPhase = 5; hnT0 = t; return;
+            case 5:
+                if (h.ShowingId != "gold" && t - hnT0 < 12f) return;
+                dSteps = 0; dNext = t;
+                hnPhase = 6; hnT0 = t; return;
+            case 6:                                                     // half a cart: the hopper tip
+                FillCart(w, cart, t, cart.capacity / 2 + 200);
+                if (h.ShowingId != "hopper" && t - hnT0 < 30f) return;
+                hnPhase = 7; hnT0 = t; return;
+            case 7:                                                     // nothing comes twice
+                if (t - hnT0 < 15f) return;
+                hnLog += " seq=" + string.Join(",", hnSeq.ToArray());
+                foreach (var id in new[] { "dozer", "dig", "cart", "upgrade", "gold", "hopper" })
+                {
+                    int n = 0; foreach (var s in hnSeq) if (s == id) n++;
+                    HCheck(id + "Once", n == 1);
+                }
+                HCheck("prefsUntouched", PlayerPrefs.HasKey("hint.dig") == hnPrefBefore);
+                Debug.Log((hnOk ? "BULLDOZER_HINTS_RESULT" : "BULLDOZER_HINTS_FAILED") + hnLog);
+                HintsFinish(hnOk ? 0 : 1);
+                return;
         }
     }
 

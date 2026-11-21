@@ -50,13 +50,14 @@ public class Money : MonoBehaviour
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
         {
             if (voxelsByMaterial[m] <= 0) continue;
-            if (m == VoxelWorld.LooseGold) { GoldStore += voxelsByMaterial[m]; continue; }   // kept, not sold here
+            if (m == VoxelWorld.LooseGold) { GoldStore += voxelsByMaterial[m]; GameAudio.Gold(); continue; }   // kept, not sold here (with its own sparkle)
             value += ValueOf(m, voxelsByMaterial[m]);
         }
         if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
             popLitres[m] += voxelsByMaterial[m] * VoxelWorld.VoxelVolume * 1000.0;
         popTimer = 4f;
+        Ending.CountPaid(voxelsByMaterial);                     // (the totals for the ending's stats)
         if (value <= 0) return 0;
         fraction += value;
         long whole = (long)System.Math.Floor(fraction);
@@ -147,6 +148,13 @@ public class Money : MonoBehaviour
         GUI.Box(new Rect(Hud.Margin, 10, 200, 54), GUIContent.none);
         GUI.Label(new Rect(Hud.Margin + 10, 11, 190, 28), Coins.ToString("N0") + " coins", coinStyle);
         GUI.Label(new Rect(Hud.Margin + 10, 37, 190, 24), "Gold " + GoldLitres.ToString("F0") + " L", goldStyle);
+        var fell = TreeFelling.Instance;
+        if (fell != null && fell.Wood > 0)
+        {
+            var woodStyle = new GUIStyle(goldStyle);
+            woodStyle.normal.textColor = new Color(0.85f, 0.65f, 0.42f);
+            GUI.Label(new Rect(Hud.Margin + 110, 37, 90, 24), "Wood " + fell.Wood, woodStyle);
+        }
         var pop = new GUIStyle(big) { fontSize = 20 };
         pop.normal.textColor = new Color(1f, 0.85f, 0.25f);
         if (popTimer > 0f)

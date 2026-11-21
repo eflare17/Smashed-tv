@@ -87,7 +87,7 @@ public class GameAudio : MonoBehaviour
     // ---- the loops looked after here
     AudioSource jack, vacuum, gravel, cartRoll, motor, tip, wind, hum;
     GameObject cartGo, workerGo;
-    float lastStride, lastAlong, birdTimer = 3f, dripTimer = 2f, creakTimer = 8f, inMine, cashCool;
+    float lastStride, lastAlong, birdTimer = 3f, dripTimer = 2f, creakTimer = 8f, inMine, cashCool, goldCool, lastMotorVel;
     int lastPack;
     bool started, recBush, recMine, recCart;
 
@@ -171,11 +171,19 @@ public class GameAudio : MonoBehaviour
             lastAlong = cart.Along;
             if (speed > 20f) speed = 0f;                                   // (it was put somewhere: a load, a test)
             Steer(cartRoll, quiet ? 0f : Mathf.Clamp01(speed / 2.5f) * 0.7f * fx, recCart ? 0.85f + 0.1f * speed : 0.6f + 0.25f * speed, dt, 6f);
-            bool motorOn = cart.spec.motor && wk != null && wk.RidingCart;
+            bool motorOn = cart.spec.motor && (wk != null && wk.RidingCart || cart.OnTrip);   // (the automatic cart runs its motor on its own)
             Steer(motor, motorOn && !quiet ? (0.35f + 0.1f * speed) * fx : 0f, 0.8f + 0.15f * speed, dt, 4f);
             Steer(tip, cart.Tipping && !quiet ? 0.7f * fx : 0f, 1f, dt, 6f);
         }
         if (cashCool > 0f) cashCool -= dt;
+        if (goldCool > 0f) goldCool -= dt;
+        // a motor cart driven fast into the end of the rails (or rubble) hits the stop with a clunk
+        if (cart != null)
+        {
+            float v = cart.MotorSpeedNow;
+            if (Mathf.Abs(lastMotorVel) > 1.5f && Mathf.Abs(v) < 0.01f && !quiet) PlayAt("clunk", cart.transform.position, 0.45f * fx, 1.7f);
+            lastMotorVel = v;
+        }
 
         // ---- the ambience: outside, wind and birds; in the mine, a hum, drips and creaks
         Vector3 ear = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
@@ -212,6 +220,14 @@ public class GameAudio : MonoBehaviour
     {
         float along = p.z - VoxelWorld.PortalZ;
         return along > 0.8f && along < VoxelWorld.TunnelLength + 1f && Mathf.Abs(p.x - VoxelWorld.PortalX) < 3.5f && p.y < 4f;
+    }
+
+    /// Gold going into the gold store at the hopper (not more than one every two seconds).
+    public static void Gold()
+    {
+        if (Instance == null || Instance.goldCool > 0f) return;
+        Instance.goldCool = 2f;
+        Play("gold", 0.75f);
     }
 
     /// The ka-ching for money coming in (not more than one every second and a half: the hopper pays as it fills).

@@ -41,6 +41,7 @@ pad, and back to keys when you touch the keyboard or mouse.
 | B | tip the cart (T) |
 | Back (View) | switch view: over the shoulder / eyes (Tab) |
 | D-pad right | get on / off the motor cart (R); riding, the left stick drives it out / back in |
+| D-pad left | with the Automatic cart: send the cart off by itself to the hopper and back (G) |
 | Y | get in the dozer (Enter) |
 | Start | upgrades (U) |
 

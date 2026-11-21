@@ -91,7 +91,7 @@ public class SaveGame : MonoBehaviour
         if (RoadPile.Instance != null) { RoadPile.Instance.Placed = false; RoadPile.Instance.Placed2 = false; }   // the road piles are part of the ground as new
         if (dozer != null) dozer.Place(dozer.transform.position, dozer.transform.eulerAngles.y);   // back on top of the ground
         if (dingo != null) dingo.Park();
-        if (cart != null) cart.SetAlong(1e6f);                                                  // out at the tunnel mouth
+        if (cart != null) { cart.CancelTrip(); cart.SetAlong(1e6f); }                                                  // out at the tunnel mouth
         if (wk != null && !wk.InDozer) wk.Teleport(dozer != null ? dozer.transform.position + new Vector3(-4.5f, 0f, -2.5f) : wk.transform.position, 20f);
         Say("Ground reset: all the dirt is back as new.  Coins and upgrades kept.");
     }
@@ -147,6 +147,9 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 w.Write(fell != null);
                 if (fell != null) { w.Write(pile != null && pile.Placed2); fell.WriteState(w); }
+                var ending = Ending.Instance;
+                w.Write(ending != null);
+                if (ending != null) ending.WriteState(w);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -181,7 +184,7 @@ public class SaveGame : MonoBehaviour
                 {
                     float along = r.ReadSingle();
                     var spec = new CartSpec { name = r.ReadString(), capacity = r.ReadInt32(), pushFactor = r.ReadSingle(), tipSeconds = r.ReadSingle(), pourPerStep = r.ReadInt32() };
-                    if (cart != null) { cart.spec = spec; cart.SetAlong(along); }
+                    if (cart != null) { cart.CancelTrip(); cart.spec = spec; cart.SetAlong(along); }   // (an automatic cart's trip isn't saved)
                 }
                 var finds = Finds.Instance;
                 int count = r.ReadInt32();
@@ -224,6 +227,11 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 if (hasFell) { if (fell != null) fell.ReadState(r); }
                 else if (fell != null) fell.FromOldSave();
+                var ending = Ending.Instance;
+                bool hasEnding;
+                try { hasEnding = hasFell && r.ReadBoolean(); } catch (EndOfStreamException) { hasEnding = false; }   // saved before the ending
+                if (hasEnding) { if (ending != null) ending.ReadState(r); else { r.ReadInt32(); r.ReadBoolean(); r.ReadDouble(); r.ReadDouble(); } }
+                else if (ending != null) ending.Clear();
             }
         }
         catch (System.Exception e)

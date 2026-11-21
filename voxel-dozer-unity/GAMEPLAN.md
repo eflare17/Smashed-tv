@@ -68,12 +68,14 @@ undo. The tree shows which player bought each upgrade.
 Built 19 Nov 2026 *(suggested, all easy to change)*:
 - **Where it sits:** in the Hauling branch after Cart 2. Cart levels 3–5 are the motor cart (Motor cart,
   Motor cart 2, Motor cart 3), the same trick as the jackhammer, so saves didn't change.
-- **Price:** the unlock is 800 coins + 10 L of gold. Motor cart 2 is 400 coins, Motor cart 3 is 640.
+- **Price:** the unlock is 800 coins (it was 800 coins + 10 L of gold until the 22 Nov tuning, which made it
+  coins only so there's something to buy while digging through to the gold). Motor cart 2 is 400 coins, Motor cart 3 is 640.
   (`Steps` in `Upgrades.cs`.)
 - **Speed:** 3, 4, then 5 m/s (pushing is 2). It speeds up and slows down over about a second.
   (`MotorSpeed` in `Upgrades.cs`, `MotorAccel` in `MineCart.cs`.)
-- **Size:** the motor cart keeps the Cart 2 tub (1,500 L). The plan's "bigger again" stays as its own
-  upgrade, still marked *coming*.
+- **Size:** the motor cart keeps the Cart 2 tub (1,500 L). The plan's "bigger again" is the **Bigger cart**
+  (built 22 Nov: 2,000 L, 900 coins), then the **Automatic cart** (built 22 Nov: G sends it to the hopper and
+  back, 1,200 coins + 20 L gold). See MORNING_REPORT.md.
 - **Controls:** **R** at either end of the cart gets on. **W** drives it out towards the dump, **S** back
   into the mine. **R** (or E away from the dump) gets off, onto the track behind it. At the dump, **E**
   tips it and he stays on, ready to drive back in. He can still push it by hand with E as before.

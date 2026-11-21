@@ -10,13 +10,22 @@
 //   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8; and beside it the
 //                 Dingo (also needs Shovel 6, coins and gold): the mini loader, Dingo.cs.  (Its own branch, 4, added
 //                 last, so older saves load with it not bought.)
-//   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster); a bigger cart and
-//                 the Automatic cart are coming.  (Levels 3-5 of the cart are the motor cart, as with the jackhammer.)
+//   Hauling       Cart 1-2, then the Motor cart (needs coins and gold), Motor cart 2-3 (faster), the Bigger cart
+//                 (a 2,000 L tub, with higher sides), then the Automatic cart (G sends it to the hopper and back
+//                 by itself).  (Levels 3-5 of the cart are the motor cart, 6 the bigger cart, 7 the automatic cart,
+//                 as with the jackhammer: one branch, so saves didn't need to change.)
 //
 // Every purchase and sell-back goes through Buy and SellBack here, so multiplayer can send them later.
 // F8 is a test key: it adds 10,000 coins and 50 litres of gold.
 //
 // The numbers (prices, sizes, speeds) are starting points, to be tuned once it's played.
+// Tuned 22 Nov 2026 (overnight, its own commit so it can be undone alone): the coins-only levels (Pick 2-5,
+// Shovel 2-6, Cart 2) cost more, so they last about as long as it takes to dig through the first two cave-ins
+// to the gold seam (before, they were all bought long before the first gold, then nothing to buy for a while);
+// Backpack 7 and 8 cost less (they were the biggest jumps in the whole tree); and the Motor cart costs coins
+// only (was 800 + 10 L gold).  Gold is only found past the second cave-in, and every buy after Cart 2 needed
+// gold, so there was a long stretch (a rough model: about 19 minutes) of digging with nothing to buy.  The motor
+// cart and its levels now fill that stretch.  The model is art/bulldozer-vox/pace_model.py.  See MORNING_REPORT.md.
 using UnityEngine;
 
 public class Upgrades : MonoBehaviour
@@ -40,10 +49,10 @@ public class Upgrades : MonoBehaviour
     {
         new[] {   // pick: chunk radius 0.26 -> 0.40 m, rock from 80% to 100% of that
             new Step("Pick 1", "Breaks a small chunk", 0),
-            new Step("Pick 2", "Bigger chunk each hit", 50),
-            new Step("Pick 3", "Bigger again, better on rock", 80),
-            new Step("Pick 4", "Big chunks, good on rock", 128),
-            new Step("Pick 5", "Biggest chunk, full strength on rock", 205),
+            new Step("Pick 2", "Bigger chunk each hit", 60),
+            new Step("Pick 3", "Bigger again, better on rock", 110),
+            new Step("Pick 4", "Big chunks, good on rock", 190),
+            new Step("Pick 5", "Biggest chunk, full strength on rock", 320),
             new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600, 8f),
             new Step("Jackhammer 2", "Bigger bite, faster blows", 260),
             new Step("Jackhammer 3", "Bigger bite, faster blows", 420),
@@ -53,10 +62,10 @@ public class Upgrades : MonoBehaviour
         new[] {   // shovel: load 117 -> 342 litres, swing speed 1.0 -> 1.6
             new Step("Shovel 1", "117 L a scoop", 0),
             new Step("Shovel 2", "156 L a scoop, 10% faster", 40),
-            new Step("Shovel 3", "195 L a scoop, 20% faster", 64),
-            new Step("Shovel 4", "239 L a scoop, 30% faster", 102),
-            new Step("Shovel 5", "288 L a scoop, 45% faster", 164),
-            new Step("Shovel 6", "342 L a scoop, 60% faster", 262),
+            new Step("Shovel 3", "195 L a scoop, 20% faster", 75),
+            new Step("Shovel 4", "239 L a scoop, 30% faster", 135),
+            new Step("Shovel 5", "288 L a scoop, 45% faster", 230),
+            new Step("Shovel 6", "342 L a scoop, 60% faster", 380),
         },
         new[] {   // backpack: 200 -> 1000 litres, suction 1x -> 4x
             new Step("Backpack", "Unlock: sucks up loose dirt.  200 L, slow", 400, 5f),
@@ -65,15 +74,17 @@ public class Upgrades : MonoBehaviour
             new Step("Backpack 4", "500 L, 2.2x suction", 384),
             new Step("Backpack 5", "600 L, 2.6x suction", 614),
             new Step("Backpack 6", "750 L, 3x suction", 983),
-            new Step("Backpack 7", "875 L, 3.5x suction", 1573),
-            new Step("Backpack 8", "1000 L, 4x suction", 2516),
+            new Step("Backpack 7", "875 L, 3.5x suction", 1400),
+            new Step("Backpack 8", "1000 L, 4x suction", 1900),
         },
         new[] {   // cart: 1000 -> 1500 litres
             new Step("Cart 1", "Hand cart, 1000 L", 0),
-            new Step("Cart 2", "Bigger tub, 1500 L", 300),
-            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800, 10f),
+            new Step("Cart 2", "Bigger tub, 1500 L", 450),
+            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800),   // (coins only: see the tuning note at the top)
             new Step("Motor cart 2", "Faster: 4 m/s", 400),
             new Step("Motor cart 3", "Fastest: 5 m/s", 640),
+            new Step("Bigger cart", "Higher sides: a 2,000 L tub", 900),
+            new Step("Automatic cart", "G sends it to the hopper: it tips itself and comes back empty", 1200, 20f),
         },
         new[] {   // the Dingo: one step, the machine itself
             new Step("Dingo", "Unlock: mini loader that fits the tunnel.  Enter gets on.  " + Dingo.BucketLitres.ToString("F0") + " L bucket", 1000, 12f),
@@ -84,7 +95,7 @@ public class Upgrades : MonoBehaviour
     {
         new string[0],
         new string[0],
-        new[] { "Bigger cart  (coming)", "Automatic cart  (coming)" },
+        new string[0],
         new string[0],
         new string[0],
     };
@@ -97,9 +108,11 @@ public class Upgrades : MonoBehaviour
     static readonly float[] ShovelSpeed = { 1.0f, 1.1f, 1.2f, 1.3f, 1.45f, 1.6f };
     static readonly int[] PackHolds = { 819, 1229, 1638, 2048, 2458, 3072, 3584, 4096 };
     static readonly float[] PackRate = { 1.0f, 1.4f, 1.8f, 2.2f, 2.6f, 3.0f, 3.5f, 4.0f };
-    static readonly int[] CartHolds = { 4096, 6144, 6144, 6144, 6144 };      // the motor cart keeps the Cart 2 tub
+    static readonly int[] CartHolds = { 4096, 6144, 6144, 6144, 6144, 8192, 8192 };   // the motor cart keeps the Cart 2 tub; the bigger cart is 2,000 L
     public const int MotorCartLevel = 3;                        // the cart level that is the motor cart
-    static readonly float[] MotorSpeed = { 3f, 4f, 5f };        // metres a second, Motor cart 1-3 (pushing is 2)
+    public const int BigCartLevel = 6;                          // the cart level that is the bigger cart
+    public const int AutoCartLevel = 7;                         // the cart level that is the automatic cart
+    static readonly float[] MotorSpeed = { 3f, 4f, 5f, 5f, 5f };   // metres a second: Motor cart 1-3, the bigger cart, the automatic cart (pushing is 2)
     const float SuckBase = 130f;                                // voxels a second at backpack level 1 (about 32 litres)
 
     readonly int[] level = { 1, 1, 0, 1, 0 };
@@ -111,6 +124,7 @@ public class Upgrades : MonoBehaviour
     public int MaxLevel(Branch b) { return Steps[(int)b].Length; }
     public bool HasBackpack { get { return level[(int)Branch.Backpack] > 0; } }
     public bool HasMotorCart { get { return level[(int)Branch.Cart] >= MotorCartLevel; } }
+    public bool HasAutoCart { get { return level[(int)Branch.Cart] >= AutoCartLevel; } }
     public bool HasDingo { get { return level[(int)Branch.Dingo] > 0; } }
     // the branches whose first step is bought (not given at the start), and the ones that need Shovel 6
     static bool StartsUnowned(int b) { return b == (int)Branch.Backpack || b == (int)Branch.Dingo; }
@@ -208,6 +222,9 @@ public class Upgrades : MonoBehaviour
             cart.spec.motor = c >= MotorCartLevel;
             if (cart.spec.motor) cart.spec.motorSpeed = MotorSpeed[c - MotorCartLevel];
             else if (wk != null && wk.RidingCart) wk.GetOffCart();       // sold back while riding it
+            cart.spec.auto = c >= AutoCartLevel;
+            cart.spec.bigTub = c >= BigCartLevel;
+            if (!cart.spec.auto && cart.OnTrip) cart.CancelTrip();        // sold back while it was out
         }
         if (Dingo.Instance != null) Dingo.Instance.SetOwned(HasDingo);
     }

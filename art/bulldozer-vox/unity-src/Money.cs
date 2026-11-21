@@ -50,13 +50,14 @@ public class Money : MonoBehaviour
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
         {
             if (voxelsByMaterial[m] <= 0) continue;
-            if (m == VoxelWorld.LooseGold) { GoldStore += voxelsByMaterial[m]; continue; }   // kept, not sold here
+            if (m == VoxelWorld.LooseGold) { GoldStore += voxelsByMaterial[m]; GameAudio.Gold(); continue; }   // kept, not sold here (with its own sparkle)
             value += ValueOf(m, voxelsByMaterial[m]);
         }
         if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
             popLitres[m] += voxelsByMaterial[m] * VoxelWorld.VoxelVolume * 1000.0;
         popTimer = 4f;
+        Ending.CountPaid(voxelsByMaterial);                     // (the totals for the ending's stats)
         if (value <= 0) return 0;
         fraction += value;
         long whole = (long)System.Math.Floor(fraction);

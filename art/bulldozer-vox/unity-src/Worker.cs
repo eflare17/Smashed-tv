@@ -11,6 +11,8 @@
 //                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
 //   R                with the motor cart (an upgrade), at an end of it: get on and ride it (W drives out, S back
 //                    in, R gets off; at the dump E tips it and he stays on)
+//   G                with the automatic cart (the last Hauling upgrade): send the cart off on its own to the dump;
+//                    it tips itself into the hopper and comes back empty to where it was
 //   F5 / F6          save the game / load it
 //
 // Game pad (Pad.cs, CONTROLLER.md): left stick walks, right stick aims, right trigger uses the tool, bumpers
@@ -551,6 +553,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.E) || Pad.Down(Pad.B.A)) PressE();
             if (Input.GetKeyDown(KeyCode.T) || Pad.Down(Pad.B.B)) TipCart();
             if (Input.GetKeyDown(KeyCode.R) || Pad.DRightDown) { if (RidingCart) GetOffCart(); else RideCart(); }   // the motor cart (pad: d-pad right)
+            if (Input.GetKeyDown(KeyCode.G) || Pad.DLeftDown) SendCart();                                   // the automatic cart (pad: d-pad left)
             // the right stick aims, gently near the middle so small corrections are easy
             Vector2 aim = Pad.RightStick;
             if (aim.magnitude > 0.12f)
@@ -826,6 +829,7 @@ public class Worker : MonoBehaviour
     {
         var cart = MineCart.Instance;
         if (cart == null || InDozer || !cart.Near(transform.position, 3f)) return;
+        if (cart.OnTrip) { Say("The cart is on its way by itself.", 2f); return; }
         if (world.CartVoxels < VoxelWorld.ClodVoxels) { Say("The cart is empty.", 2f); return; }
         cart.Tip();
         Say(cart.AtDump ? "Into the hopper: it's sorted and sold as it goes down." : "Tipped here, so no pay.  Push the cart to the end of the rails and press E to tip it into the hopper.", 3.5f);
@@ -987,6 +991,7 @@ public class Worker : MonoBehaviour
             return;
         }
         var atDump = MineCart.Instance;
+        if (atDump != null && atDump.OnTrip && atDump.Near(transform.position, 2.6f)) { Say("The cart is on its way by itself.  Let it go.", 2f); return; }
         if (atDump != null && atDump.AtDump && atDump.Near(transform.position, 3.2f) && world.CartVoxels >= VoxelWorld.ClodVoxels)
         {
             LetGo();                                                    // let go, and tip it into the hopper
@@ -1008,6 +1013,7 @@ public class Worker : MonoBehaviour
         if (cart == null || InDozer) return false;
         int end = cart.EndNear(transform.position);
         if (end == 0) return false;
+        if (cart.OnTrip) { Say("The cart is on its way by itself.  Let it go.", 2f); return false; }
         HoldingCart = end;
         swing = Swing.None;
         leanIn = 0f;
@@ -1028,6 +1034,7 @@ public class Worker : MonoBehaviour
             return false;
         }
         if (!cart.spec.motor) { Say("This cart has no motor.  Buy the Motor cart in the upgrades (U), after Cart 2.", 3f); return false; }
+        if (cart.OnTrip) { Say("The cart is on its way by itself.  Wait for it to come back.", 2.5f); return false; }
         LetGo();
         Pouring = false;
         RidingCart = true;
@@ -1039,6 +1046,24 @@ public class Worker : MonoBehaviour
         cart.RidePlace(out at, out facing);
         yaw = Mathf.Atan2(facing.x, facing.z) * Mathf.Rad2Deg;
         Say("Riding the cart.  W drives it out to the dump, S back into the mine.  R gets off.", 3.5f);
+        return true;
+    }
+
+    /// G: send the automatic cart off on its own round trip to the hopper and back.  True if it went.
+    public bool SendCart()
+    {
+        var cart = MineCart.Instance;
+        if (cart == null || InDozer) return false;
+        if (!cart.spec.auto)
+        {
+            if (cart.spec.motor) Say("Sending the cart off by itself needs the Automatic cart (U, Hauling).", 3f);
+            return false;
+        }
+        if (!cart.Near(transform.position, 12f)) { Say("Get closer to the cart to send it.", 2.5f); return false; }
+        LetGo();                                                         // (lets go of it, or gets off it)
+        string why = cart.SendOff();
+        if (why != null) { Say(why, 2.5f); return false; }
+        Say("Off it goes.  It tips itself into the hopper and comes back empty.", 3f);
         return true;
     }
 
@@ -1173,12 +1198,12 @@ public class Worker : MonoBehaviour
                 "RB / LB   next / last tool     Right trigger   use it where you aim (hold)     A   grab / tip / sell / fit\n" +
                 "X   squirt backpack into cart     B   tip cart     Y   get in the dozer     Start   upgrades\n" +
                 (jackOwned ? "D-pad up / down   jackhammer bite size\n" : "") +
-                "Cart: A at an end holds it, left stick pushes" + (cart != null && cart.spec.motor ? ", d-pad right rides it" : "") + ".  At the dump A tips it.\n" +
+                "Cart: A at an end holds it, left stick pushes" + (cart != null && cart.spec.motor ? ", d-pad right rides it" : "") + (cart != null && cart.spec.auto ? ", d-pad left sends it" : "") + ".  At the dump A tips it.\n" +
                 "Left stick click   hide this help" :
                 "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
                 "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     Left mouse or Space   use it where you aim (hold)\n" +
                 (jackOwned ? "Shift+wheel or [ ]   jackhammer bite size\n" : "") +
-                "Cart: E at an end holds it, W push, S pull, E let go, T tips it" + (cart != null && cart.spec.motor ? ", R rides it" : "") + ".  At the dump E tips it.\n" +
+                "Cart: E at an end holds it, W push, S pull, E let go, T tips it" + (cart != null && cart.spec.motor ? ", R rides it" : "") + (cart != null && cart.spec.auto ? ", G sends it" : "") + ".  At the dump E tips it.\n" +
                 "Q   squirt the backpack into the cart        Enter   get in the dozer\n" +
                 "U   upgrades     Esc   menu (and frees the mouse)     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
             below = Hud.HelpBox(help, 640f);
@@ -1201,6 +1226,7 @@ public class Worker : MonoBehaviour
         if (finds0 != null) for (int i = 0; i < Finds.Count; i++) if (finds0.Carrying(i)) carrying += (carrying.Length > 0 ? ", " : "") + Finds.Names[i];
         string riding = "";
         if (cart != null && RidingCart) riding = Pad.InUse ? "Riding: stick up out, down in, d-pad right off" : "Riding: W out   S in   R off";
+        else if (cart != null && cart.OnTrip) riding = cart.TripState == MineCart.Trip.Out ? "Cart: on its way to the hopper" : cart.TripState == MineCart.Trip.Tipping ? "Cart: tipping into the hopper" : "Cart: coming back empty";
         else if (cart != null && HoldingCart != 0) riding = Pad.InUse ? "Holding the cart: stick pushes, A lets go" : "Holding the cart: W push   S pull   E let go";
         float h = 34f + (cart != null ? 22f : 0f) + (backpackOwned ? 22f : 0f) + (carrying.Length > 0 ? 22f : 0f) + (riding.Length > 0 ? 22f : 0f);
         Rect pr = Hud.RightPanel(Ui.H - Hud.Margin, h);

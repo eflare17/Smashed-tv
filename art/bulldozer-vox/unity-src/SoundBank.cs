@@ -10,7 +10,7 @@
 //                hydraulic (loop)  ripper (loop)  clunk (hard rock)
 //   On foot      pick_rock  pick_dirt  pick_gold  shovel_scrape  shovel_whump  jackhammer (loop)  vacuum (loop)
 //                gravel (loop: stones up the hose)  step  step_mine
-//   Cart / money cart_roll (loop)  motor (loop)  tip_rumble (loop)  kaching  upgrade  goal
+//   Cart / money cart_roll (loop)  motor (loop)  tip_rumble (loop)  kaching  upgrade  goal  gold (into the gold store)
 //   Ambience     wind (loop)  bird0 bird1 bird2  mine_hum (loop)  drip  creak
 using System.Collections.Generic;
 using UnityEngine;
@@ -69,7 +69,7 @@ public static class SoundBank
     {
         "engine", "engine_lug", "tracks", "dirt", "hydraulic", "ripper", "clunk",
         "pick_rock", "pick_dirt", "pick_gold", "shovel_scrape", "shovel_whump", "jackhammer", "vacuum", "gravel", "step", "step_mine",
-        "cart_roll", "motor", "tip_rumble", "kaching", "upgrade", "goal",
+        "cart_roll", "motor", "tip_rumble", "kaching", "upgrade", "goal", "gold",
         "wind", "bird0", "bird1", "bird2", "mine_hum", "drip", "creak",
     };
 
@@ -260,6 +260,14 @@ public static class SoundBank
                 foreach (float at in new[] { 0.16f, 0.21f, 0.26f, 0.31f }) { Tone(b, at, 1500f, 0.3f, 0.006f); Noise(b, at, 0.3f, 0.002f, 0.8f); }
                 Tone(b, 0.36f, 520f, 0.4f, 0.12f); Tone(b, 0.36f, 1040f, 0.2f, 0.08f);
                 return Shot(b, 0.8f);
+            case "gold":                                      // gold into the gold store: a quick rising sparkle over a soft bell
+                b = Buf(1.4f);
+                Tone(b, 0f, 523f, 0.35f, 0.6f); Tone(b, 0f, 1046f, 0.15f, 0.5f);
+                {
+                    float[] up = { 1568f, 1976f, 2349f, 3136f, 3951f, 4699f };
+                    for (int k = 0; k < up.Length; k++) { Tone(b, 0.05f + k * 0.055f, up[k], 0.32f - k * 0.03f, 0.25f); Noise(b, 0.05f + k * 0.055f, 0.08f, 0.002f, 0.95f); }
+                }
+                return Shot(b, 0.6f);
             case "goal":                                      // a goal done: two bright notes
                 b = Buf(1.1f);
                 Tone(b, 0f, 784f, 0.5f, 0.3f); Tone(b, 0f, 1568f, 0.12f, 0.2f);
