@@ -1,8 +1,8 @@
 // Characters built from boxes of voxels in code, the way Smashed builds them (godot/arcade/smash/smash_vox.gd):
 // boxes are [x0, y0, z0, x1, y1, z1] inclusive voxel coordinates with a colour; only the faces with no neighbour
 // are kept.  Front of a character is +Z, its right hand is -X, feet at y = 0.
-// The colours are Smashed's, exactly.  Smashed's voxels are 0.1 m; the arena draws them at 0.15 m (Grunts.Scale),
-// so a grunt stands about 1.65 m next to the 1.8 m player.
+// The colours are Smashed's, exactly.  The game's grunt is GruntBoxesFine, Smashed's grunt redrawn in the ground's
+// 6.25 cm voxels (1.5 m tall); GruntBoxes is Smashed's own (0.1 m voxels, drawn at 0.15 m), kept for comparison.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -21,6 +21,12 @@ public static class VoxModel
 
     /// Smashed's grunt gib colours (chunks pick from these).
     public static readonly Color[] GruntGibs = { GruntShirt, GruntShirt, Skin, GruntPants, Blood, Blood, GruntCap };
+    /// The fine grunt's gib colours: its own blocks' colours, in about the amounts it is made of, plus Smashed's blood.
+    public static readonly Color[] GruntGibsFine =
+    {
+        GruntShirt, GruntShirt, GruntShirt, new Color(0.36f * 0.78f, 0.62f * 0.78f, 0.22f * 0.78f), Skin, Skin,
+        GruntPants, GruntPants, Boot, GruntCap, Blood, Blood, Blood,
+    };
 
     /// Smashed's grunt (_grunt_boxes), walk frame 0 or 1: legs one forward one back, swapped between the frames,
     /// arms reaching for the player.
@@ -44,8 +50,7 @@ public static class VoxModel
 
     /// The same grunt drawn in the ground's own 6.25 cm voxels (VoxelWorld.Voxel): 24 tall (1.5 m), 15 wide, 8 deep.
     /// Smashed's shape and colours kept; the finer blocks add a cap brim, nose, mouth, hands, a belt with a buckle and
-    /// shading on the shirt.  Walk frame 0 or 1 as before (legs and arms one forward, swapped).  NOT USED IN THE GAME
-    /// YET: only the picture (ArenaBuilder.GruntPicture) draws it, until the owner says yes.
+    /// shading on the shirt.  Walk frame 0 or 1 as before (legs and arms one forward, swapped).
     public static B[] GruntBoxesFine(int frame)
     {
         int a = frame == 0 ? 2 : 0, b = 2 - a;          // walk offsets, 2 voxels (12.5 cm)

@@ -1,10 +1,11 @@
 // The grunts: Smashed's grunt (godot/arcade/smash/smash_horde.gd), brought onto the voxel ground.
 //   - They come in from the four doors, one burst at a time (ArenaGame does the waves), walk down the short
 //     corridor and run straight at the player, veering a little while more than 3 m away (each its own way), and
-//     push apart so they don't stack.  Same look, two walk frames, same speeds as Smashed.
+//     push apart so they don't stack.  Smashed's look redrawn in the ground's 6.25 cm blocks (VoxModel.GruntBoxesFine,
+//     1.5 m tall), two walk frames, same speeds as Smashed.
 //   - On the ground they follow FloorAt, so they climb down into craters and back out (slower going up).
-//   - One bullet kills one; a rocket kills every grunt in its blast.  On death they burst into gib cubes in
-//     Smashed's grunt colours.
+//   - One bullet kills one; a rocket kills every grunt in its blast.  On death they burst into 6.25 cm gib cubes
+//     (the size of a voxel of dirt) in the grunt's colours.
 // Kept in plain arrays and drawn instanced (two meshes, one per walk frame), like Smashed's MultiMesh.
 using System.Collections.Generic;
 using UnityEngine;
@@ -15,9 +16,11 @@ public class Grunts : MonoBehaviour
     public static Grunts Instance { get; private set; }
 
     public const int Max = 400;
-    public const float Scale = 1.5f;                         // Smashed's 0.1 m voxels drawn at 0.15 m
-    public const float Radius = 0.33f * Scale;               // Smashed's RADIUS, scaled with the model
-    public const float Height = 11 * 0.1f * Scale;           // 1.65 m
+    public const float Scale = 1.5f;                         // the OLD grunt: Smashed's 0.1 m voxels drawn at 0.15 m
+    public const float Radius = 0.44f;                       // Smashed's RADIUS to body width (0.33 of 0.7 m), on the new 0.94 m wide model
+    public const float Height = 24 * VoxelWorld.Voxel;       // 1.5 m
+    public const int GibsEach = 40;                          // 6.25 cm cubes per grunt
+    public static bool OldModel;                             // (the fps test only) draw the old 15 cm grunt and its gibs
     public static readonly Vector2[] DoorN = { new Vector2(0, 1), new Vector2(0, -1), new Vector2(1, 0), new Vector2(-1, 0) };   // into the arena: from the south, north, west, east doors
     const int Inside = 255;
 
@@ -39,12 +42,24 @@ public class Grunts : MonoBehaviour
     void Awake()
     {
         Instance = this;
-        float v = 0.1f * Scale;
-        meshA = VoxModel.FromBoxes(VoxModel.GruntBoxes(0), new Vector3(3.5f, 0f, 2f), v);
-        meshB = VoxModel.FromBoxes(VoxModel.GruntBoxes(1), new Vector3(3.5f, 0f, 2f), v);
+        MakeMeshes();
         mat = new Material(Shader.Find("Arena/VertexColour")) { enableInstancing = true };
     }
     void OnDestroy() { if (Instance == this) Instance = null; }
+
+    public void MakeMeshes()
+    {
+        if (OldModel)
+        {
+            meshA = VoxModel.FromBoxes(VoxModel.GruntBoxes(0), new Vector3(3.5f, 0f, 2f), 0.1f * Scale);
+            meshB = VoxModel.FromBoxes(VoxModel.GruntBoxes(1), new Vector3(3.5f, 0f, 2f), 0.1f * Scale);
+        }
+        else
+        {
+            meshA = VoxModel.FromBoxes(VoxModel.GruntBoxesFine(0), new Vector3(7.5f, 0f, 4f), VoxelWorld.Voxel);
+            meshB = VoxModel.FromBoxes(VoxModel.GruntBoxesFine(1), new Vector3(7.5f, 0f, 4f), VoxelWorld.Voxel);
+        }
+    }
 
     public Vector3 Position(int i) { return pos[i]; }
 
@@ -194,7 +209,8 @@ public class Grunts : MonoBehaviour
         KilledTotal++;
         Vector3 away = pos[i] - from; away.y = 0f;
         if (away.sqrMagnitude < 1e-4f) away = Vector3.forward;
-        Gibs.Burst(pos[i] + Vector3.up * Height * 0.55f, away.normalized, VoxModel.GruntGibs, 5);
+        if (OldModel) Gibs.Burst(pos[i] + Vector3.up * Height * 0.55f, away.normalized, VoxModel.GruntGibs, 5);
+        else Gibs.Burst(pos[i] + Vector3.up * Height * 0.55f, away.normalized, VoxModel.GruntGibsFine, GibsEach, VoxelWorld.Voxel);
         HeavyFX.Dust(pos[i] + Vector3.up * 0.9f, 2, 0.35f, new Color(0.55f, 0.06f, 0.05f, 0.55f));
         GameAudio.PlayAt("grunt_die", pos[i], 0.7f, 0.9f + 0.25f * Random.value);
         if (ArenaGame.Instance != null) ArenaGame.Instance.Kills++;
@@ -236,7 +252,7 @@ public class Grunts : MonoBehaviour
         {
             if (dead[i] != 0) continue;
             float ph = phase[i];
-            float bob = Mathf.Abs(Mathf.Sin(ph)) * 0.06f * Scale;
+            float bob = Mathf.Abs(Mathf.Sin(ph)) * 0.08f;
             var m = Matrix4x4.TRS(pos[i] + Vector3.up * bob, Quaternion.LookRotation(new Vector3(facing[i].x, 0f, facing[i].y)), Vector3.one);
             if (((int)(ph / Mathf.PI) & 1) == 0) bufA[na++] = m; else bufB[nb++] = m;
         }

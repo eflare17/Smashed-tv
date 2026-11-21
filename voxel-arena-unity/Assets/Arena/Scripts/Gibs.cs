@@ -6,7 +6,7 @@ using UnityEngine.Rendering;
 public class Gibs : MonoBehaviour
 {
     static Gibs instance;
-    const int Max = 900;
+    const int Max = 4000;
     const float Life = 6f;
 
     readonly Vector3[] pos = new Vector3[Max], vel = new Vector3[Max], spin = new Vector3[Max];
@@ -46,24 +46,25 @@ public class Gibs : MonoBehaviour
         return n;
     }
 
-    /// `n` chunks from `at`, thrown mostly along `dir` and up, coloured from `palette`.
-    public static void Burst(Vector3 at, Vector3 dir, Color[] palette, int n)
+    /// `n` chunks from `at`, thrown mostly along `dir` and up, coloured from `palette`.  `cubeSize` > 0: every chunk that
+    /// size (the grunt's 6.25 cm voxels); otherwise 13 to 24 cm.
+    public static void Burst(Vector3 at, Vector3 dir, Color[] palette, int n, float cubeSize = 0f)
     {
         if (instance == null) return;
-        instance.DoBurst(at, dir, palette, n);
+        instance.DoBurst(at, dir, palette, n, cubeSize);
     }
 
-    void DoBurst(Vector3 at, Vector3 dir, Color[] palette, int n)
+    void DoBurst(Vector3 at, Vector3 dir, Color[] palette, int n, float cubeSize)
     {
         for (int k = 0; k < n; k++)
         {
             int i = count < Max ? count++ : Random.Range(0, Max);
-            pos[i] = at + Random.insideUnitSphere * 0.3f;
+            pos[i] = at + Vector3.Scale(Random.insideUnitSphere, new Vector3(0.35f, 0.6f, 0.35f));   // spread through the body
             vel[i] = dir * Random.Range(2f, 5.5f) + Random.insideUnitSphere * 2.5f + Vector3.up * Random.Range(2.5f, 5f);
             spin[i] = Random.insideUnitSphere * 720f;
             rot[i] = Random.rotation;
             age[i] = 0f;
-            size[i] = Random.Range(0.13f, 0.24f);
+            size[i] = cubeSize > 0f ? cubeSize : Random.Range(0.13f, 0.24f);
             colour[i] = ColourIndex(palette[Random.Range(0, palette.Length)]);
             Made++;
         }

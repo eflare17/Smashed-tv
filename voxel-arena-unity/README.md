@@ -35,7 +35,7 @@ you shoot at the mouse.
 
 ## Running it
 - In the editor: open the project, then **Tools > Arena > Play**. **Tools > Arena > Rebuild scene** remakes the scene.
-- The Windows game: `-executeMethod ArenaBuilder.BuildWindows` makes `Builds/VoxelArena2/VoxelArena.exe` (`Play Arena.bat` starts it). It opens full screen.
+- The Windows game: `-executeMethod ArenaBuilder.BuildWindows` makes `Builds/VoxelArena3/VoxelArena.exe` (`Play Arena.bat` starts it). It opens full screen.
 
 ## Tests
 Close any Unity that has this project open first. Then run:
