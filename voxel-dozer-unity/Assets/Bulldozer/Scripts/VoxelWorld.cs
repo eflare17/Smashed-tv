@@ -454,6 +454,34 @@ public partial class VoxelWorld : MonoBehaviour
     public float BlockLoY(int bx, int bz) { return (blocks[bx + CX * bz].y - Ground) * Voxel; }
     public Vector3 Origin { get { return origin; } }
 
+    /// For tests: lays `layers` voxels of loose gold on top of the ground in every column within `radius` of `at`.
+    /// New ground, so the volume books grow by what it adds.  Returns the voxels laid.
+    public int TestLayGold(Vector3 at, float radius, int layers)
+    {
+        int laid = 0;
+        int x0 = Mathf.FloorToInt((at.x - radius - origin.x) / Voxel), x1 = Mathf.CeilToInt((at.x + radius - origin.x) / Voxel);
+        int z0 = Mathf.FloorToInt((at.z - radius - origin.z) / Voxel), z1 = Mathf.CeilToInt((at.z + radius - origin.z) / Voxel);
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                if (x < Rim || z < Rim || x >= NX - Rim || z >= NZ - Rim) continue;
+                Vector3 c = origin + new Vector3(x + 0.5f, 0f, z + 0.5f) * Voxel;
+                if (new Vector2(c.x - at.x, c.z - at.z).sqrMagnitude > radius * radius) continue;
+                int lo, hi;
+                int cb = ColBase(blocks, x, z, out lo, out hi);
+                if (cb < 0) continue;
+                int col = x + NX * z, t = top[col];
+                for (int k = 0; k < layers && t < hi - 1; k++, t++)
+                {
+                    vox[cb + t] = LooseGold; SolidCount++; StartTotal++; laid++;
+                    Mark(ref dirty, x, t, z);
+                }
+                top[col] = (ushort)t;
+                grass[col] = 0;
+            }
+        return laid;
+    }
+
     /// For tests: makes the ground in one column exactly `height` metres high (soil added, or ground taken away).
     /// Keeps the volume books straight.  Only where the column has voxels.
     public bool TestSetColumn(float wx, float wz, float height)

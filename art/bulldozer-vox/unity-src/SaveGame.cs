@@ -147,6 +147,7 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 w.Write(fell != null);
                 if (fell != null) { w.Write(pile != null && pile.Placed2); fell.WriteState(w); }
+                w.Write(worker != null ? worker.PocketGold : 0);
                 var ending = Ending.Instance;
                 w.Write(ending != null);
                 if (ending != null) ending.WriteState(w);
@@ -227,6 +228,9 @@ public class SaveGame : MonoBehaviour
                 var fell = TreeFelling.Instance;
                 if (hasFell) { if (fell != null) fell.ReadState(r); }
                 else if (fell != null) fell.FromOldSave();
+                int pockets = 0;
+                if (hasFell && fell != null) { try { pockets = r.ReadInt32(); } catch (EndOfStreamException) { pockets = 0; } }   // saved before pockets
+                if (worker != null) worker.PocketGold = pockets;
                 var ending = Ending.Instance;
                 bool hasEnding;
                 try { hasEnding = hasFell && r.ReadBoolean(); } catch (EndOfStreamException) { hasEnding = false; }   // saved before the ending

@@ -64,6 +64,53 @@ public partial class VoxelWorld
         return outOfGround;
     }
 
+    /// E by hand: loose gold round `at` (lumps lying there, and loose gold on top of the ground) goes into the son's
+    /// pockets, up to `most` voxels.  Only gold, and only gold that's on top: nothing else is moved.  What he takes
+    /// leaves the site's tally the way the hopper's does (SoldVoxels).  Returns the voxels taken.
+    public int PickGold(Vector3 at, float radius, int most)
+    {
+        if (most <= 0) return 0;
+        var result = new NativeArray<int>(2, Allocator.TempJob);
+        var got = new NativeArray<int>(16, Allocator.TempJob);
+        new HandJob
+        {
+            vox = vox, blocks = blocks, top = top, dirty = dirty, grass = grass, tally = bladeLoad, shovel = got, result = result,
+            centre = (at - origin) / Voxel, radius = radius / Voxel, kick = Vector3.zero, origin = origin, seed = frame, mode = 3, most = most,
+            cPos = cPos, cVel = cVel, cRot = cRot, cMat = cMat, cCnt = cCnt, cRest = cRest, cAge = cAge, cCount = cCount,
+        }.Run();
+        int outOfGround = result[0], fromClods = result[1], took = got[LooseGold];
+        result.Dispose(); got.Dispose();
+        if (took == 0) return 0;
+        SolidCount -= outOfGround;
+        ClodVoxelsInFlight -= fromClods;                        // (StepDirt recounts these each step anyway)
+        SoldVoxels += took;
+        Recount();
+        RecountLoad();
+        return took;
+    }
+
+    /// Is there loose gold he could pick up round `at` (a gold lump lying there, or loose gold with nothing on it)?
+    public bool LooseGoldNear(Vector3 at, float radius)
+    {
+        float reach = radius + ClodRadius + 0.3f;
+        for (int i = 0; i < cCount[0]; i++) if (cMat[i] == LooseGold && Vector3.Distance(cPos[i], at) <= reach) return true;
+        Vector3 c = (at - origin) / Voxel;
+        float r = radius / Voxel;
+        int x0 = Mathf.Max(Rim, Mathf.FloorToInt(c.x - r)), x1 = Mathf.Min(NX - Rim - 1, Mathf.CeilToInt(c.x + r));
+        int z0 = Mathf.Max(Rim, Mathf.FloorToInt(c.z - r)), z1 = Mathf.Min(NZ - Rim - 1, Mathf.CeilToInt(c.z + r));
+        int y0 = Mathf.FloorToInt(c.y - r), y1 = Mathf.CeilToInt(c.y + r);
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                int lo, hi;
+                int cb = ColBase(blocks, x, z, out lo, out hi);
+                if (cb < 0) continue;
+                for (int y = Mathf.Max(y0, lo); y <= Mathf.Min(y1, hi - 2); y++)
+                    if (vox[cb + y] == LooseGold && vox[cb + y + 1] == Air && (new Vector3(x, y, z) + Vector3.one * 0.5f - c).sqrMagnitude <= r * r) return true;
+            }
+        return false;
+    }
+
     /// The suction: clods near the line from the nozzle out to `aim` (and just past it) are drawn to the
     /// nozzle at `speed`; those that reach it go into the backpack while it has room (`room` voxels).
     /// When it is full nothing more is drawn in.  Returns how many voxels went in.
@@ -341,7 +388,8 @@ public partial class VoxelWorld
         return thrown;
     }
 
-    /// mode 0 = pick, mode 1 = shovel, mode 2 = the backpack's nozzle (loose dirt only, `most` at a time, as clods).
+    /// mode 0 = pick, mode 1 = shovel, mode 2 = the backpack's nozzle (loose dirt only, `most` at a time, as clods),
+    /// mode 3 = picking up gold by hand (loose gold on top of the ground, and gold lumps, into `shovel`; result[1] = from lumps).
     [BurstCompile(CompileSynchronously = true, DisableSafetyChecks = true)]
     struct HandJob : IJob
     {
@@ -393,10 +441,21 @@ public partial class VoxelWorld
                     for (int y = math.min(b.y, hi - 2); y >= math.max(a.y, lo + 1); y--)   // from the top down, so a shovel takes the top of a heap first
                     {
                         float d2 = math.distancesq(new float3(x, y, z) + 0.5f, centre);
+                        if (mode == 3 && vox[cb + y] != Air && d2 > radius * radius) break;   // by hand: never from under anything
                         if (d2 > radius * radius) continue;
                         byte m = vox[cb + y];
                         if (m == Air) continue;
                         bool hard = m >= Rock && m <= Gold;
+                        if (mode == 3)
+                        {
+                            if (m != LooseGold || taken >= most) break;      // only the gold on top: stop at anything else
+                            vox[cb + y] = Air;
+                            Mark(ref dirty, x, y, z);
+                            shovel[LooseGold]++;
+                            taken++; outOfGround++;
+                            highest = y;
+                            continue;
+                        }
                         if (mode != 1)
                         {
                             if (mode == 2 && (m < LooseSoil || outOfGround >= most)) continue;   // the nozzle only lifts loose dirt
@@ -424,6 +483,7 @@ public partial class VoxelWorld
                         if (highest < 0) highest = y;
                     }
                     if (highest < 0) continue;
+                    if (mode == 3) { FixTop(col, lo, cb); continue; }   // nothing was on top of the gold
                     // loose dirt that was sitting on what just went has nothing under it now: it falls as clods
                     for (int y = highest + 1; y < hi - 1; y++)
                     {
@@ -434,15 +494,26 @@ public partial class VoxelWorld
                         Loose(m, x, y, z, float3.zero);
                         outOfGround++;
                     }
-                    int t = top[col];
-                    if (t > lo && vox[cb + t - 1] == Air)
-                    {
-                        while (t > lo && vox[cb + t - 1] == Air) t--;
-                        top[col] = (ushort)t;
-                        grass[col] = 0;
-                    }
+                    FixTop(col, lo, cb);
                 }
 
+            if (mode == 3)
+            {
+                // gold lumps lying within reach go into his pockets too
+                float3 c = origin + centre * Voxel;
+                float reach = radius * Voxel + ClodRadius + 0.3f;
+                int n = cCount[0], fromClods = 0;
+                for (int i = n - 1; i >= 0; i--)
+                {
+                    if (cMat[i] != LooseGold || taken + cCnt[i] > most || math.distancesq(cPos[i], c) > reach * reach) continue;
+                    shovel[LooseGold] += cCnt[i];
+                    taken += cCnt[i]; fromClods += cCnt[i];
+                    n--;
+                    cPos[i] = cPos[n]; cVel[i] = cVel[n]; cRot[i] = cRot[n]; cMat[i] = cMat[n]; cCnt[i] = cCnt[n]; cRest[i] = cRest[n]; cAge[i] = cAge[n];
+                }
+                cCount[0] = n;
+                result[1] = fromClods;
+            }
             if (mode == 1)
             {
                 // loose clods lying within reach go onto the shovel too
@@ -460,6 +531,18 @@ public partial class VoxelWorld
                 cCount[0] = n;
             }
             result[0] = outOfGround;
+        }
+
+        /// The column's top after voxels came out of it.
+        void FixTop(int col, int lo, int cb)
+        {
+            int t = top[col];
+            if (t > lo && vox[cb + t - 1] == Air)
+            {
+                while (t > lo && vox[cb + t - 1] == Air) t--;
+                top[col] = (ushort)t;
+                grass[col] = 0;
+            }
         }
     }
 }

@@ -3108,6 +3108,86 @@ public static class BulldozerBuilder
         }
     }
 
+    // Gold in his pockets:  -executeMethod BulldozerBuilder.PocketGoldTest    prints BULLDOZER_POCKETS_RESULT (or _FAILED)
+    // Loose gold on the ground near the gold shed: E aimed at it puts it in his pockets, up to 20 L and no more, and
+    // nothing else is taken; then E at the gold buyer's counter puts it all in the gold store.  Volume kept straight.
+    static int pgPhase, pgLaid, pgStore0, pgPocket;
+    static float pgT0;
+    static long pgVolume0;
+    static string pgLog;
+    static bool pgOk;
+    static Vector3 pgPatch;
+    public static void PocketGoldTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        pgPhase = 0; pgLog = ""; pgOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += PocketGoldTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void PgCheck(bool ok, string what) { pgLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) pgOk = false; }
+    static void PocketGoldFinish(int code)
+    {
+        EditorApplication.update -= PocketGoldTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void PocketGoldTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_POCKETS_FAILED timed out in phase " + pgPhase + pgLog); PocketGoldFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var m = Money.Instance;
+        if (w == null || wk == null || m == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (pgPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            Vector3 shed = SiteProps.GoldShedFront;
+            Vector3 away = (new Vector3(0f, 0f, 0f) - shed); away.y = 0f;
+            away = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+            bStand = shed + away * 4f; bStand.y = w.FloorAt(bStand + Vector3.up * 3f);
+            pgPatch = bStand + away * 1.4f;
+            pgPatch.y = w.FloorAt(pgPatch + Vector3.up * 3f);
+            pgLaid = w.TestLayGold(pgPatch, 0.3f, 2);
+            pgVolume0 = w.CountSolid() + w.LoadVoxels;
+            wk.PocketGold = 0;
+            pgPhase = 1; pgT0 = t;
+            return;
+        }
+        if (pgPhase == 1)
+        {
+            if (t - pgT0 < 0.5f) return;
+            AimAt(wk, new Vector3(pgPatch.x, w.FloorAt(pgPatch + Vector3.up * 3f), pgPatch.z));
+            for (int i = 0; i < 4; i++) wk.PressE();
+            pgPocket = wk.PocketGold;
+            pgLog += " laid=" + pgLaid + " pockets=" + pgPocket + "/" + Worker.PocketHolds + " (" + wk.PocketLitresNow.ToString("F1") + " L)";
+            PgCheck(pgLaid > Worker.PocketHolds, "enoughLaid");
+            PgCheck(pgPocket == Worker.PocketHolds, "pocketsFilledTo20L");
+            wk.PressE();
+            PgCheck(wk.PocketGold == pgPocket && wk.LastSaid.Contains("full"), "noMoreWhenFull");
+            long vol = w.CountSolid() + w.LoadVoxels;
+            pgLog += " volumeChange=" + (vol - pgVolume0);
+            PgCheck(vol == pgVolume0, "volumeKept");
+            pgPhase = 2; pgT0 = t;
+            return;
+        }
+        if (pgPhase == 2)
+        {
+            if (t - pgT0 < 0.5f) return;
+            wk.Teleport(SiteProps.GoldShedFront, 0f);
+            pgStore0 = m.GoldStore;
+            wk.PressE();
+            pgLog += " store " + pgStore0 + " -> " + m.GoldStore;
+            PgCheck(m.GoldStore == pgStore0 + pgPocket && wk.PocketGold == 0, "intoGoldStore");
+            Debug.Log((pgOk ? "BULLDOZER_POCKETS_RESULT" : "BULLDOZER_POCKETS_FAILED") + pgLog);
+            PocketGoldFinish(pgOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.

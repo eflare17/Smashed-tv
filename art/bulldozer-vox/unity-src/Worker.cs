@@ -7,6 +7,7 @@
 //   Left mouse or Space   use the tool (hold to keep going; the nozzle sucks while you hold it)
 //   Q                squirt the backpack's load into the cart (stand near it)
 //   Enter            get into the dozer, or out of it
+//   E                aim at loose gold: pick it up into your pockets (20 L); at the gold buyer's shed, E puts it in the gold store
 //   E                pick up a dozer part you have dug out, or fit one you are carrying (at the dozer);
 //                    at an end of the cart, take hold of it (then W pushes, S pulls back, E lets go)
 //   R                with the motor cart (an upgrade), at an end of it: get on and ride it (W drives out, S back
@@ -77,6 +78,10 @@ public class Worker : MonoBehaviour
     public int PickHits { get; private set; }
     public int Scoops { get; private set; }
     public int Throws { get; private set; }
+    public const float PocketLitres = 20f;
+    public static int PocketHolds { get { return Mathf.CeilToInt(PocketLitres / (VoxelWorld.VoxelVolume * 1000f)); } }
+    public int PocketGold { get; set; }                  // gold in his pockets, in voxels (saved; it has left the site's tally)
+    public float PocketLitresNow { get { return PocketGold * VoxelWorld.VoxelVolume * 1000f; } }
     public int Sucked { get; private set; }              // voxels that have gone into the backpack, all told
     public bool Pouring { get; private set; }            // squirting the backpack into the cart
 
@@ -999,11 +1004,48 @@ public class Worker : MonoBehaviour
             return;
         }
         if (HoldingCart != 0) { LetGo(); return; }
-        if (AtGoldShed()) { SellGold(); return; }
+        if (AtGoldShed()) { if (PocketGold > 0) EmptyPockets(); else SellGold(); return; }
+        if (PickGold()) return;
         if (UsePart() != "none") return;
         if (GrabCart()) return;
         var cart = MineCart.Instance;
         if (cart != null && cart.Near(transform.position, 2.6f)) Say("Stand at an end of the cart and press E to take hold of it.", 2.5f);
+    }
+
+    /// E aimed at loose gold within reach: it goes into his pockets.  True if there was gold there (picked or not).
+    public bool PickGold()
+    {
+        if (InDozer || world == null) return false;
+        TakeAim();
+        Vector3 chest = transform.position + Vector3.up * 1.3f;
+        if (!aimFound || Vector3.Distance(aimPoint, chest) > reach + 0.6f) return false;
+        int room = PocketHolds - PocketGold;
+        if (room < 1)
+        {
+            if (!world.LooseGoldNear(aimPoint, 0.35f)) return false;
+            Say("Your pockets are full of gold (" + PocketLitres.ToString("F0") + " L).  Take it to the gold buyer's shed and press " + Pad.Key("E", "A") + ".", 3f);
+            return true;
+        }
+        int got = world.PickGold(aimPoint, 0.35f, room);
+        if (got == 0) return false;
+        PocketGold += got;
+        Goals.GoldSeen();
+        GameAudio.PlayAt("pick_gold", aimPoint, 0.8f, 1.1f);
+        Say("Gold into your pockets: " + PocketLitresNow.ToString("F0") + " of " + PocketLitres.ToString("F0") + " L." + (PocketGold >= PocketHolds ? "  Full: take it to the gold buyer's shed." : ""), 2.5f);
+        return true;
+    }
+
+    /// E at the gold buyer's shed with gold in his pockets: it goes into the gold store (spend it, or E again sells it).
+    public void EmptyPockets()
+    {
+        var money = Money.Instance;
+        if (money == null || PocketGold <= 0) return;
+        float litres = PocketLitresNow;
+        var by = new int[16];
+        by[VoxelWorld.LooseGold] = PocketGold;
+        money.Pay(by);
+        PocketGold = 0;
+        Say(litres.ToString("F0") + " L of gold from your pockets into the gold store.  Press " + Pad.Key("E", "A") + " again to sell it, or keep it for upgrades.", 4f);
     }
 
     /// Takes hold of the nearer end of the cart, if he is standing at one.  True if he did.
@@ -1228,7 +1270,7 @@ public class Worker : MonoBehaviour
         if (cart != null && RidingCart) riding = Pad.InUse ? "Riding: stick up out, down in, d-pad right off" : "Riding: W out   S in   R off";
         else if (cart != null && cart.OnTrip) riding = cart.TripState == MineCart.Trip.Out ? "Cart: on its way to the hopper" : cart.TripState == MineCart.Trip.Tipping ? "Cart: tipping into the hopper" : "Cart: coming back empty";
         else if (cart != null && HoldingCart != 0) riding = Pad.InUse ? "Holding the cart: stick pushes, A lets go" : "Holding the cart: W push   S pull   E let go";
-        float h = 34f + (cart != null ? 22f : 0f) + (backpackOwned ? 22f : 0f) + (carrying.Length > 0 ? 22f : 0f) + (riding.Length > 0 ? 22f : 0f);
+        float h = 34f + (cart != null ? 22f : 0f) + (backpackOwned ? 22f : 0f) + (PocketGold > 0 ? 22f : 0f) + (carrying.Length > 0 ? 22f : 0f) + (riding.Length > 0 ? 22f : 0f);
         Rect pr = Hud.RightPanel(Ui.H - Hud.Margin, h);
         float px = pr.x + 10f, py = pr.y + 6f, pw = pr.width - 20f;
         GUI.Label(new Rect(px, py, pw, 22), tool + (Tool == 1 && shovelL > 0.5f ? "   holding " + shovelL.ToString("F0") + " L" : ""), Hud.SmallBold);
@@ -1244,6 +1286,9 @@ public class Worker : MonoBehaviour
             py = Hud.BarLine(px, py, pw, Pouring ? "Pack >>" : "Backpack", packL / packMax, packL.ToString("F0") + " of " + packMax.ToString("F0") + " L",
                              world.PackVoxels >= packHolds - VoxelWorld.ClodVoxels ? new Color(1f, 0.45f, 0.25f) : new Color(0.55f, 0.75f, 0.95f));
         }
+        if (PocketGold > 0)
+            py = Hud.BarLine(px, py, pw, "Pockets", (float)PocketGold / PocketHolds, PocketLitresNow.ToString("F0") + " of " + PocketLitres.ToString("F0") + " L gold",
+                             PocketGold >= PocketHolds ? new Color(1f, 0.45f, 0.25f) : new Color(1f, 0.82f, 0.25f));
         if (carrying.Length > 0) { GUI.Label(new Rect(px, py, pw, 22), "Carrying: " + carrying, Hud.Small); py += 22f; }
         if (riding.Length > 0) { GUI.Label(new Rect(px, py, pw, 22), riding, Hud.Small); py += 22f; }
         // the jackhammer on the quartz seam with too big a bite: warn before the gold is smashed
