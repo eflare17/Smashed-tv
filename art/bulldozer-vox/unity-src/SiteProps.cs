@@ -196,6 +196,7 @@ public class SiteProps : MonoBehaviour
         if (Hud.Instance == null) new GameObject("Hud").AddComponent<Hud>();                     // H help, F3 debug
         if (GameAudio.Instance == null) new GameObject("Sound").AddComponent<GameAudio>();         // everything you hear
         if (Goals.Instance == null) new GameObject("Goals").AddComponent<Goals>();                // one small goal at a time
+        if (RoadPile.Instance == null) new GameObject("Road pile").AddComponent<RoadPile>();      // the one-off dirt at the foot of the road
         if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
         Dump();
         Clutter();

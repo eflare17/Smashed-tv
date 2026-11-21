@@ -476,6 +476,43 @@ public partial class VoxelWorld : MonoBehaviour
         return true;
     }
 
+    /// Drops a round heap of loose soil (a rounded mound, highest in the middle) on the ground, about `m3` cubic metres,
+    /// `radius` metres across from its middle.  New dirt, so the volume books grow by what it adds.  Only on columns
+    /// that have voxels.  Returns the voxels added.  (RoadPile: the one-off pile at the foot of the mountain road.)
+    public long AddLoosePile(float cx, float cz, float radius, float m3)
+    {
+        int x0 = Mathf.Max(Rim, Mathf.FloorToInt((cx - radius - origin.x) / Voxel)), x1 = Mathf.Min(NX - Rim - 1, Mathf.CeilToInt((cx + radius - origin.x) / Voxel));
+        int z0 = Mathf.Max(Rim, Mathf.FloorToInt((cz - radius - origin.z) / Voxel)), z1 = Mathf.Min(NZ - Rim - 1, Mathf.CeilToInt((cz + radius - origin.z) / Voxel));
+        // the shape, 0..1 at each column (1 - (r/R)^2), then the height that makes it the volume asked for
+        double shapeSum = 0;
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                float dx = origin.x + (x + 0.5f) * Voxel - cx, dz = origin.z + (z + 0.5f) * Voxel - cz;
+                float u = 1f - (dx * dx + dz * dz) / (radius * radius);
+                if (u > 0f) shapeSum += u;
+            }
+        if (shapeSum <= 0) return 0;
+        double peak = m3 / VoxelVolume / shapeSum;              // in voxels
+        long added = 0;
+        for (int z = z0; z <= z1; z++)
+            for (int x = x0; x <= x1; x++)
+            {
+                float dx = origin.x + (x + 0.5f) * Voxel - cx, dz = origin.z + (z + 0.5f) * Voxel - cz;
+                float u = 1f - (dx * dx + dz * dz) / (radius * radius);
+                if (u <= 0f) continue;
+                int lo, hi;
+                int cb = ColBase(blocks, x, z, out lo, out hi);
+                if (cb < 0) continue;
+                int col = x + NX * z, t = top[col];
+                int want = Mathf.Min(hi - 1, t + (int)System.Math.Round(peak * u));
+                for (int y = t; y < want; y++)
+                    if (vox[cb + y] == Air) { vox[cb + y] = LooseSoil; SolidCount++; StartTotal++; added++; Mark(ref dirty, x, y, z); }
+                if (want > t) { top[col] = (ushort)want; grass[col] = 0; }
+            }
+        return added;
+    }
+
     public long CountSolid()
     {
         var result = new NativeArray<long>(1, Allocator.TempJob);

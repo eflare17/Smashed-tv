@@ -8,7 +8,8 @@
 //
 // What is kept: the ground (only what has changed since the start, see VoxelWorldSave.cs), grass, every dirt
 // tally and loose clod, the cart's place and load, the dozer and the worker, which parts are found and fitted,
-// the coins and gold in the pot, the upgrades bought, the mountain road's ticks, and the goals.
+// the coins and gold in the pot, the upgrades bought, the mountain road's ticks, the goals, and whether the road pile
+// has been dropped.
 // Each part is written one after the other; a part added later goes on the end, so a save from before it simply
 // stops early, and loading it gives that part its old-save start (the goals skip what that save has already done).
 using System.Diagnostics;
@@ -28,6 +29,8 @@ public class SaveGame : MonoBehaviour
     public float SinceSave { get; private set; }
     public bool CarriedOn { get; private set; }
     bool triedCarryOn;
+    /// The start-up carry-on from the save (if any) has been done.
+    public bool StartupDone { get { return triedCarryOn; } }
 
     // what the last save or load did, for the message and for tests
     public long LastBytes { get; private set; }
@@ -85,6 +88,7 @@ public class SaveGame : MonoBehaviour
         if (dingo != null && dingo.Driven) dingo.GetOff();
         if (wk != null && wk.RidingCart) wk.GetOffCart();
         w.ResetGround();
+        if (RoadPile.Instance != null) RoadPile.Instance.Placed = false;                       // the road pile is part of the ground as new
         if (dozer != null) dozer.Place(dozer.transform.position, dozer.transform.eulerAngles.y);   // back on top of the ground
         if (dingo != null) dingo.Park();
         if (cart != null) cart.SetAlong(1e6f);                                                  // out at the tunnel mouth
@@ -137,6 +141,9 @@ public class SaveGame : MonoBehaviour
                 var goals = Goals.Instance;
                 w.Write(goals != null);
                 if (goals != null) goals.WriteState(w);
+                var pile = RoadPile.Instance;
+                w.Write(pile != null);
+                if (pile != null) w.Write(pile.Placed);
             }
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(temp, FilePath);                       // only replace the old save once the new one is complete
@@ -202,6 +209,11 @@ public class SaveGame : MonoBehaviour
                 try { hasGoals = hasRoad && r.ReadBoolean(); } catch (EndOfStreamException) { hasGoals = false; }   // saved before the goals
                 if (hasGoals) { if (goals != null) goals.ReadState(r); }
                 else if (goals != null) goals.FromOldSave();
+                var pile = RoadPile.Instance;
+                bool hasPile;
+                try { hasPile = hasGoals && r.ReadBoolean(); } catch (EndOfStreamException) { hasPile = false; }   // saved before the road pile
+                bool placed = hasPile && r.ReadBoolean();
+                if (pile != null) pile.Placed = placed;                                     // not dropped yet: RoadPile drops it now
             }
         }
         catch (System.Exception e)

@@ -4142,6 +4142,108 @@ public static class BulldozerBuilder
         }
     }
 
+    // The one-off pile at the foot of the mountain road:  -executeMethod BulldozerBuilder.RoadPileTest
+    // On a COPY of the owner's save (Logs/pile_owner_copy.bin; it was saved before the pile existed):
+    //   loads it and the pile is dropped once: about 20 m³ of loose soil, a heap at the foot of the road, the books straight,
+    //   the dozer not inside it; saved and loaded again it is still there and is NOT dropped a second time;
+    //   then the dozer pushes it up the road (the heap goes down, the dozer gets past where it was).
+    static int rpPhase; static string rpLog; static bool rpOk; static double rpT0; static float rpTop0, rpBase0; static long rpAdded;
+    static string RpCopy { get { return Application.dataPath + "/../Logs/pile_owner_copy.bin"; } }
+    static string RpWork { get { return Application.dataPath + "/../Logs/pile_test.bin"; } }
+    public static void RoadPileTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        rpPhase = 0; rpLog = ""; rpOk = true;
+        if (!System.IO.File.Exists(RpCopy)) { Debug.LogError("BULLDOZER_ROADPILE_FAILED no copy of the owner's save at " + RpCopy); EditorApplication.Exit(1); return; }
+        System.IO.File.Copy(RpCopy, RpWork, true);
+        SaveGame.PathOverride = RpWork; SaveGame.TestAuto = true; SaveGame.AutoEvery = 1e6f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += RoadPileTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void RpCheck(bool ok, string what) { rpLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) rpOk = false; }
+    static void RoadPileFinish()
+    {
+        EditorApplication.update -= RoadPileTick;
+        SaveGame.PathOverride = null; SaveGame.TestAuto = false; SaveGame.AutoEvery = 300f;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        if (rpOk) Debug.Log("BULLDOZER_ROADPILE_RESULT" + rpLog); else Debug.LogError("BULLDOZER_ROADPILE_FAILED phase " + rpPhase + rpLog);
+        EditorApplication.Exit(rpOk ? 0 : 1);
+    }
+    static float RpRing(VoxelWorld w, Vector2 c)       // the ground just outside the heap (the average of 8 points)
+    {
+        float s = 0f;
+        for (int k = 0; k < 8; k++) { float a = k * Mathf.PI / 4f; s += w.TopAt(c.x + Mathf.Cos(a) * (RoadPile.Radius + 0.6f), c.y + Mathf.Sin(a) * (RoadPile.Radius + 0.6f)); }
+        return s / 8f;
+    }
+    static void RoadPileTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { rpLog += " timed out"; rpOk = false; RoadPileFinish(); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var sg = SaveGame.Instance; var pile = RoadPile.Instance; var wk = Worker.Instance;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (w == null || sg == null || pile == null || wk == null || d == null) return;
+        double t = EditorApplication.timeSinceStartup;
+        Vector2 c = RoadPile.Centre();
+        switch (rpPhase)
+        {
+            case 0:                                                     // the owner's save loads, and the pile is dropped
+                if (!sg.StartupDone || !pile.Placed || Time.timeSinceLevelLoad < 2f) return;
+                wk.useOverride = true;
+                rpAdded = pile.LastAdded;
+                float m3 = rpAdded * VoxelWorld.VoxelVolume;
+                rpTop0 = w.TopAt(c.x, c.y); rpBase0 = RpRing(w, c);
+                Vector2 roadStart = MountainRoad.Point(0);
+                rpLog += " centre=(" + c.x.ToString("F1") + "," + c.y.ToString("F1") + ") roadStart=(" + roadStart.x.ToString("F1") + "," + roadStart.y.ToString("F1") + ") m3=" + m3.ToString("F2")
+                       + " heapTall=" + (rpTop0 - rpBase0).ToString("F2") + " dozerAt=(" + d.transform.position.x.ToString("F1") + "," + d.transform.position.z.ToString("F1") + ")";
+                RpCheck(sg.CarriedOn, "ownerSaveLoaded");
+                RpCheck(m3 > 19f && m3 < 21f, "about20m3");
+                RpCheck(rpTop0 - rpBase0 > 0.6f, "aHeapStandsThere");             // (about 1.1 m in the middle; the ground round it slopes)
+                RpCheck(w.LooseOnTop(c.x, c.y), "itIsLooseDirt");
+                RpCheck(w.KindAt(c.x, c.y) == VoxelWorld.BlockSite, "onTheSite");
+                RpCheck(w.SolidCount + w.LooseTotal() == w.StartTotal, "booksStraight(" + (w.SolidCount + w.LooseTotal() - w.StartTotal) + ")");
+                RpCheck((new Vector2(d.transform.position.x, d.transform.position.z) - c).magnitude > RoadPile.Radius + 1.5f, "dozerNotInIt");
+                string said = sg.Save();
+                RpCheck(said.StartsWith("Game saved"), "saved");
+                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+                rpPhase = 1; rpT0 = t;
+                return;
+            case 1:                                                     // loaded again: still there, not dropped twice
+                if (t - rpT0 < 2f || !sg.StartupDone || Time.timeSinceLevelLoad < 2.5f) return;
+                wk.useOverride = true;
+                RpCheck(sg.CarriedOn, "reloaded");
+                RpCheck(pile.Placed && pile.LastAdded == 0, "notDroppedAgain(" + pile.LastAdded + ")");
+                RpCheck(Mathf.Abs(w.TopAt(c.x, c.y) - rpTop0) < 0.07f, "heapKept");
+                RpCheck(w.SolidCount + w.LooseTotal() == w.StartTotal, "booksStraightAfterLoad");
+                // into the dozer, behind the heap, facing up the road; blade on Flat
+                Vector2 dir = (MountainRoad.Point(Mathf.Min(4, MountainRoad.Count - 1)) - MountainRoad.Point(0)).normalized;
+                Vector2 p = c - dir * (RoadPile.Radius + 4f);
+                if (!wk.InDozer) wk.GetIn();
+                d.useOverride = true; d.dead = false;
+                d.Place(new Vector3(p.x, 0f, p.y), Mathf.Atan2(dir.x, dir.y) * Mathf.Rad2Deg);
+                d.bladeAuto = DozerController.BladeAutoMode.Flat;
+                d.overrideBlade = 0f; d.overrideSteer = 0f; d.overrideRipper = 1f; d.overrideThrottle = 0f;
+                rpPhase = 2; rpT0 = t;
+                return;
+            case 2:                                                     // push it up the road
+                d.overrideThrottle = t - rpT0 < 1.5f ? 0f : 0.8f;
+                if (t - rpT0 < 16f) return;
+                d.overrideThrottle = 0f;
+                Vector2 dir2 = (MountainRoad.Point(Mathf.Min(4, MountainRoad.Count - 1)) - MountainRoad.Point(0)).normalized;
+                Vector2 at = new Vector2(d.transform.position.x, d.transform.position.z);
+                float past = Vector2.Dot(at - c, dir2);
+                float top1 = w.TopAt(c.x, c.y);
+                rpLog += " afterPush heapTall=" + (top1 - rpBase0).ToString("F2") + " dozerPastMiddle=" + past.ToString("F1") + "m load=" + (d.BladeLoadM3).ToString("F1") + "m3";
+                RpCheck(top1 < rpTop0 - 0.5f, "heapPushedAway");
+                RpCheck(past > 0f, "dozerGotThrough");
+                RpCheck(w.TotalLost == 0, "nothingLost");
+                RoadPileFinish();
+                return;
+        }
+    }
+
     // The goals:  -executeMethod BulldozerBuilder.GoalsTest
     // A new game starts on the first goal.  Shovelling into the first cave-in ticks it (bonus paid, sound played).
     // Buying an upgrade ticks that one.  The goals go through a save and a load.  A save from before the goals skips
