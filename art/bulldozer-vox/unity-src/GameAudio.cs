@@ -171,7 +171,7 @@ public class GameAudio : MonoBehaviour
             lastAlong = cart.Along;
             if (speed > 20f) speed = 0f;                                   // (it was put somewhere: a load, a test)
             Steer(cartRoll, quiet ? 0f : Mathf.Clamp01(speed / 2.5f) * 0.7f * fx, recCart ? 0.85f + 0.1f * speed : 0.6f + 0.25f * speed, dt, 6f);
-            bool motorOn = cart.spec.motor && wk != null && wk.RidingCart;
+            bool motorOn = cart.spec.motor && (wk != null && wk.RidingCart || cart.OnTrip);   // (the automatic cart runs its motor on its own)
             Steer(motor, motorOn && !quiet ? (0.35f + 0.1f * speed) * fx : 0f, 0.8f + 0.15f * speed, dt, 4f);
             Steer(tip, cart.Tipping && !quiet ? 0.7f * fx : 0f, 1f, dt, 6f);
         }

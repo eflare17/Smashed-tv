@@ -8,6 +8,10 @@
 //   - The motor cart (an upgrade, Upgrades.cs) has a motor box on its front end and a footboard on its back end.
 //     R at an end gets on (Worker.cs); W drives it out towards the dump, S back into the mine.  It stops where
 //     pushing would stop: rubble on the track and the ends of the rails.
+//   - The automatic cart (the last Hauling upgrade) does the round trip by itself: G sends it (SendOff).  It
+//     drives out to the dump, tips into the hopper (paid the same way as a tip by hand), waits until it is empty,
+//     and drives back to where it was sent from.  Nobody rides it.  The trip itself isn't saved: a game saved
+//     mid-trip loads with the cart standing where it was, still holding what it held.
 // What is in the cart is still counted with the dirt, so volume stays exact.
 using System.Collections.Generic;
 using UnityEngine;
@@ -24,6 +28,7 @@ public struct CartSpec
     public int pourPerStep;         // clods that leave per physics step while tipping
     public bool motor;              // the motor cart: he can ride it and drive it (Upgrades.cs sets this)
     public float motorSpeed;        // metres a second under power, flat out
+    public bool auto;               // the automatic cart: G sends it on the round trip by itself (Upgrades.cs sets this)
 
     public static CartSpec HandCart
     {
@@ -222,6 +227,7 @@ public class MineCart : MonoBehaviour
     void FixedUpdate()
     {
         if (motorBox != null && motorBox.gameObject.activeSelf != spec.motor) motorBox.gameObject.SetActive(spec.motor);
+        AutoStep(Time.fixedDeltaTime);
         // whatever loose dirt is inside the tub joins the load
         // (only once it has dropped in and reached the heap, so you see each shovelful land in the tub)
         float catchAt = Mathf.Min(TubTop + 0.05f, Mathf.Max(FloorHeight + 0.12f, FloorHeight + 0.04f + LoadDepth * 1.25f + 0.1f));
@@ -342,6 +348,56 @@ public class MineCart : MonoBehaviour
         float went = Roll(motorVel * dt);
         if (Mathf.Abs(went) < 1e-6f) motorVel = 0f;                          // ran into something, or the end of the line
         return went;
+    }
+
+    // ---- the automatic cart: the round trip by itself
+    public enum Trip { None, Out, Tipping, Back }
+    public Trip TripState { get; private set; }
+    /// True while it is out on its round trip (not to be held, ridden or tipped by hand).
+    public bool OnTrip { get { return TripState != Trip.None; } }
+    float tripHome, tripWait;
+    /// How many round trips it has done (tests and stats).
+    public int TripsDone { get; private set; }
+
+    /// G: send it out to the dump.  Returns why it can't go, or null if it went.
+    public string SendOff()
+    {
+        if (!spec.auto) return "This cart can't drive itself.  The Automatic cart is the last Hauling upgrade (U).";
+        if (OnTrip) return "The cart is already on its way.";
+        if (tipping) return "The cart is tipping.";
+        if (world.CartVoxels < VoxelWorld.ClodVoxels) return "The cart is empty.  Fill it first.";
+        tripHome = Along;
+        TripState = AtDump ? Trip.Tipping : Trip.Out;
+        if (TripState == Trip.Tipping) { Tip(); tripWait = 0.6f; }
+        return null;
+    }
+
+    /// Stops a trip where it is (sold back, a save loaded, a test).
+    public void CancelTrip() { TripState = Trip.None; motorVel = 0f; }
+
+    void AutoStep(float dt)
+    {
+        if (TripState == Trip.None) return;
+        if (!spec.auto || !spec.motor) { CancelTrip(); return; }
+        switch (TripState)
+        {
+            case Trip.Out:
+                if (AtDump) { motorVel = 0f; Tip(); tripWait = 0.6f; TripState = Trip.Tipping; break; }
+                if (Mathf.Abs(Drive(1f, dt)) < 1e-6f && motorVel == 0f) CancelTrip();   // something on the rails
+                break;
+            case Trip.Tipping:
+                if (tipping) break;
+                tripWait -= dt;                                              // a moment for the last of it to slide off
+                if (tripWait <= 0f) TripState = Trip.Back;
+                break;
+            case Trip.Back:
+                if (Along <= tripHome + 0.05f) { motorVel = 0f; TripState = Trip.None; TripsDone++; break; }
+                // slow down for the last couple of metres so it pulls up where it was sent from
+                float left = Along - tripHome, want = Mathf.Clamp01(left / 1.5f + 0.15f);
+                if (Mathf.Abs(Drive(-want, dt)) < 1e-6f && motorVel == 0f) { TripState = Trip.None; TripsDone++; }   // stopped short (rubble): home is here now
+                else if (Along < tripHome) SetAlong(tripHome);
+                break;
+        }
     }
 
     /// How fast it is going under power now, metres a second (+ is out of the mine).

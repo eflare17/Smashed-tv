@@ -3252,6 +3252,138 @@ public static class BulldozerBuilder
         }
     }
 
+    // The automatic cart:  -executeMethod BulldozerBuilder.AutoCartTest
+    // Without it, G does nothing.  Buys it through the tree (Upgrades.Buy: the coins and gold must come off), fills
+    // the cart by the mine mouth, sends it (G), and checks that it reaches the dump, tips itself, pays what the
+    // load was worth (dirt as coins, gold into the gold store, as a tip by hand), and comes back empty to where
+    // it was sent from.  Then the upgrade level survives a save and load of the tree, selling it back mid-trip
+    // stops the trip, and the refund is the full price.
+    // Prints BULLDOZER_AUTOCART_RESULT, or BULLDOZER_AUTOCART_FAILED if a check didn't hold.
+    static int acPhase;
+    static float acPhaseStart, acAlong0, acMaxAlong, acTripEnd;
+    static long acCoins0;
+    static int acGold0, acGoldIn;
+    static double acDirtWorth;
+    static bool acOk;
+    static string acLog;
+
+    public static void AutoCartTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        acPhase = 0; acLog = ""; acOk = true; acMaxAlong = 0f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += AutoCartTick;
+        EditorApplication.EnterPlaymode();
+    }
+
+    static void AutoCartFinish(int code)
+    {
+        EditorApplication.update -= AutoCartTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+
+    static void ACheck(string name, bool good) { acLog += " " + name + "=" + good; if (!good) acOk = false; }
+
+    static void AutoCartTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_AUTOCART_FAILED timed out in phase " + acPhase + " " + acLog); AutoCartFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        if (acPhase == 0)
+        {
+            if (t < 1f) return;                                                  // let everything start
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            up.Reset(); money.Clear();
+            wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+            up.SetLevel(Upgrades.Branch.Cart, Upgrades.AutoCartLevel - 1);       // Motor cart 3
+            ACheck("noSendWithoutIt", !wk.SendCart() && !cart.OnTrip);
+            money.TestGrant(5000, 400);
+            long c0 = money.Coins; int g0 = money.GoldStore;
+            ACheck("buys", up.Buy(Upgrades.Branch.Cart));
+            acLog += " price=" + (c0 - money.Coins) + "c+" + (g0 - money.GoldStore) + "vox";
+            ACheck("costTaken", money.Coins < c0 && money.GoldStore < g0);
+            ACheck("autoOwned", cart.spec.auto && cart.spec.motor && up.HasAutoCart);
+            ACheck("noSendEmpty", !wk.SendCart() && !cart.OnTrip);
+            money.Clear();
+            dSteps = 0; dNext = t;
+            acPhase = 1; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 1)
+        {
+            if (!FillCart(w, cart, t, 3000) && t - acPhaseStart < 20f) return;
+            if (t - acPhaseStart < 2f) return;                                  // let the last clods land in it
+            acDirtWorth = 0;
+            for (int m = VoxelWorld.LooseSoil; m < VoxelWorld.LooseGold; m++) acDirtWorth += Money.ValueOf(m, w.CartLoadOf(m));
+            acGoldIn = w.CartLoadOf(VoxelWorld.LooseGold);
+            acLog += " loaded=" + (w.CartVoxels * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L dirtWorth=" + acDirtWorth.ToString("F1") + " goldIn=" + acGoldIn;
+            acAlong0 = cart.Along; acMaxAlong = cart.Along;
+            acCoins0 = money.Coins; acGold0 = money.GoldStore;
+            ACheck("startsAwayFromDump", !cart.AtDump);
+            ACheck("sends", wk.SendCart() && cart.OnTrip);
+            ACheck("workerNotRiding", !wk.RidingCart && wk.HoldingCart == 0);
+            acPhase = 2; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 2)
+        {
+            acMaxAlong = Mathf.Max(acMaxAlong, cart.Along);
+            if (t - acPhaseStart > 1.2f && acLog.IndexOf("outPic") < 0) { TestCapture("auto_cart_out.png"); acLog += " outPic"; }
+            if (cart.TripState == MineCart.Trip.Tipping && acLog.IndexOf("tipPic") < 0 && t - acPhaseStart > 2f) { TestCapture("auto_cart_tip.png"); acLog += " tipPic"; }
+            if (cart.OnTrip && t - acPhaseStart < 60f) { acTripEnd = t; return; }
+            if (t - acTripEnd < 3.5f) return;                                   // the last of the stream is still falling in
+            long paid = money.Coins - acCoins0;
+            int gold = money.GoldStore - acGold0;
+            acLog += " trip=" + (acTripEnd - acPhaseStart).ToString("F1") + "s reached=" + acMaxAlong.ToString("F1") + "/" + cart.EndLimit.ToString("F1") + " backAt=" + cart.Along.ToString("F2") + "/" + acAlong0.ToString("F2")
+                   + " paid=" + paid + " goldStored=" + gold + " leftInCart=" + w.CartVoxels + " trips=" + cart.TripsDone;
+            ACheck("tripEnded", !cart.OnTrip);
+            ACheck("reachedDump", acMaxAlong >= cart.EndLimit - MineCart.DumpLength);
+            ACheck("cameBack", Mathf.Abs(cart.Along - acAlong0) < 0.15f);
+            ACheck("empty", w.CartVoxels < VoxelWorld.ClodVoxels);
+            ACheck("paysLikeHandTip", System.Math.Abs(paid - acDirtWorth) < 1.01 && paid > 0);
+            ACheck("goldKept", gold == acGoldIn);
+            TestCapture("auto_cart_back.png");
+
+            // the upgrade level survives a save and load of the tree
+            var ms = new System.IO.MemoryStream();
+            up.WriteState(new System.IO.BinaryWriter(ms));
+            up.Reset();
+            ACheck("resetRemovesIt", !cart.spec.auto);
+            ms.Position = 0;
+            up.ReadState(new System.IO.BinaryReader(ms));
+            ACheck("loadKeepsIt", cart.spec.auto && up.Level(Upgrades.Branch.Cart) == Upgrades.AutoCartLevel);
+
+            // sent off again with a little in it, then sold back mid-trip: it stops, and the refund is the full price
+            for (int k = 0; k < 6; k++) { w.Pick(cart.transform.position + cart.transform.right * 2.4f + Vector3.up * (0.1f - k * 0.1f), 0.35f, Vector3.zero); w.Scoop(cart.transform.position + cart.transform.right * 2.4f + Vector3.up * (0.1f - k * 0.1f), 0.5f, 4000); if (w.ShovelVoxels >= VoxelWorld.ClodVoxels) w.Throw(cart.Mouth + Vector3.up * 0.7f, Vector3.zero, 0.25f, 0.4f); }
+            acPhase = 3; acPhaseStart = t;
+            return;
+        }
+        if (acPhase == 3)
+        {
+            if (t - acPhaseStart < 2f) return;
+            if (acLog.IndexOf(" resent=") < 0)
+            {
+                acLog += " resent=" + (w.CartVoxels >= VoxelWorld.ClodVoxels ? wk.SendCart() : false);
+                acPhaseStart = t;
+                return;
+            }
+            if (t - acPhaseStart < 1f) return;                                  // part way out
+            long c0 = money.Coins; int g0 = money.GoldStore;
+            ACheck("sellsBack", up.SellBack(Upgrades.Branch.Cart));
+            acLog += " refund=" + (money.Coins - c0) + "c+" + (money.GoldStore - g0) + "vox";
+            ACheck("sellBackStopsTrip", !cart.OnTrip && !cart.spec.auto && cart.spec.motor);
+            ACheck("noSendAfterSellBack", !wk.SendCart());
+            Debug.Log((acOk ? "BULLDOZER_AUTOCART_RESULT" : "BULLDOZER_AUTOCART_FAILED") + acLog);
+            AutoCartFinish(acOk ? 0 : 1);
+        }
+    }
+
     // ---------------------------------------------------------------- the Dingo (Dingo.cs)
     //   -executeMethod BulldozerBuilder.DingoTest          prints BULLDOZER_DINGO_RESULT (or _FAILED)
     //   -executeMethod BulldozerBuilder.RecordDingoClip    the same run filmed: frames and overlay.ass go to Logs/clip
