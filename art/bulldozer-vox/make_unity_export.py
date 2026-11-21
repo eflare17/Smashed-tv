@@ -1041,14 +1041,13 @@ public static class BulldozerBuilder
             if (t - baT0 < 0.6f) return;
             if (baLog.IndexOf("afterPress") < 0)
             {
-                bool off = d.bladeAuto == DozerController.BladeAutoMode.Off;
-                baLog += " afterPress=" + d.BladeAutoName; if (!off) baFail = true;
-                // the lever only paused it: one press brings back the depth it had, the next steps on
-                DozerController.LastAuto = DozerController.BladeAutoMode.Cut10;
-                d.CycleBladeAuto(); string back = d.BladeAutoName;
+                bool off = d.AutoPaused && !d.HeightAutoActive && d.bladeAuto == DozerController.BladeAutoMode.Flat;
+                baLog += " afterPress=" + d.BladeAutoName + (d.AutoPaused ? " paused" : ""); if (!off) baFail = true;
+                // the lever only paused the height: one press carries on at the same depth, the next steps on
+                d.CycleBladeAuto(); string back = d.BladeAutoName; bool resumed = !d.AutoPaused;
                 d.CycleBladeAuto(); string next = d.BladeAutoName;
-                d.CycleBladeAuto(); d.CycleBladeAuto(); string wrap = d.BladeAutoName;
-                bool resumeOk = back == "Cut 10 cm" && next == "Cut 15 cm" && wrap == "Off";
+                d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); string wrap = d.BladeAutoName;
+                bool resumeOk = back == "Flat" && resumed && next == "Cut 5 cm" && wrap == "Off";
                 baLog += " resume=" + back + " next=" + next + " then=" + wrap + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
                 d.bladeAuto = DozerController.BladeAutoMode.Off;
             }

@@ -54,12 +54,29 @@ public class DozerController : MonoBehaviour
     public const string BladeAutoPref = "set.bladeAuto";
     /// The depth used last (never Off): what B brings back after the blade lever paused it.
     public static BladeAutoMode LastAuto = BladeAutoMode.Flat;
-    bool autoPaused;                                     // the blade lever took over; the remembered setting stands
+    // Full auto: three parts, each with its own switch in Settings (all on to start with).  B / A turns auto on and
+    // picks the depth.  Moving a part by hand pauses just that part; the next press of B / A brings them all back.
+    public static bool AutoHeight = true, AutoLevel = true, AutoStraight = true;
+    bool heightPaused, levelPaused, straightPaused;
+    bool autoPaused { get { return heightPaused || levelPaused || straightPaused; } }
+    bool AutoOn { get { return bladeAuto != BladeAutoMode.Off; } }
+    bool HeightActive { get { return AutoOn && AutoHeight && !heightPaused; } }
+    bool LevelActive { get { return AutoOn && AutoLevel && !levelPaused; } }
+    bool StraightActive { get { return AutoOn && AutoStraight && !straightPaused; } }
+    // moving the blade by hand starts slow and speeds up the longer you hold it: a tap is a nudge
+    float holdLift, holdAngle, holdTilt;
+    const float NudgeSpeed = 0.2f, FullSpeedAfter = 0.7f;
+    static float Ramp(ref float held, float input, float dt)
+    {
+        if (input == 0f) { held = 0f; return 0f; }
+        held += dt;
+        return input * Mathf.Lerp(NudgeSpeed, 1f, Mathf.Clamp01(held / FullSpeedAfter));
+    }
     /// The next setting along: Off, Flat, Cut 5 ... Cut 20 cm, then Off again.  After the lever paused it, back to the last one.
     public void CycleBladeAuto()
     {
-        if (autoPaused) { bladeAuto = LastAuto; autoPaused = false; }
-        else bladeAuto = (BladeAutoMode)(((int)bladeAuto + 1) % BladeAutoNames.Length);
+        if (autoPaused && AutoOn) { heightPaused = levelPaused = straightPaused = false; }
+        else { bladeAuto = (BladeAutoMode)(((int)bladeAuto + 1) % BladeAutoNames.Length); heightPaused = levelPaused = straightPaused = false; }
         if (bladeAuto != BladeAutoMode.Off) LastAuto = bladeAuto;
         PlayerPrefs.SetInt(BladeAutoPref, (int)bladeAuto);
         PlayerPrefs.SetInt(BladeAutoPref + ".last", (int)LastAuto);
@@ -71,7 +88,10 @@ public class DozerController : MonoBehaviour
         int n = BladeAutoNames.Length;
         bladeAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref, 0), 0, n - 1);
         LastAuto = (BladeAutoMode)Mathf.Clamp(PlayerPrefs.GetInt(BladeAutoPref + ".last", 1), 1, n - 1);
-        autoPaused = false;
+        heightPaused = levelPaused = straightPaused = false;
+        AutoHeight = PlayerPrefs.GetInt("set.autoHeight", 1) == 1;
+        AutoLevel = PlayerPrefs.GetInt("set.autoLevel", 1) == 1;
+        AutoStraight = PlayerPrefs.GetInt("set.autoStraight", 1) == 1;
     }
 
     // What works.  A working dozer (not dead) can do everything.  A dead one gets each back as its part is fitted.
@@ -313,7 +333,8 @@ public class DozerController : MonoBehaviour
         roll = r0; BladeTilt = t0; transform.rotation = q0; ApplyAttachments();
         return gap;
     }
-    string AutoHelp { get { return autoPaused ? "paused (" + BladeAutoNames[(int)LastAuto] + ": press to carry on)" : BladeAutoName; } }
+    string AutoHelp { get { return autoPaused && AutoOn ? BladeAutoName + ", paused (press to carry on)" : BladeAutoName; } }
+    public bool HeightAutoActive { get { return HeightActive; } }
     public float BladeArmAngle { get { return bladeAngle; } }
     public float BladeUpHeight { get; private set; }     // how high the edge is above the tracks fully up (the height bar's top)
     public float BladeDownDepth { get; private set; }    // how far below the tracks the edge goes fully down (for the tests)
@@ -372,31 +393,35 @@ public class DozerController : MonoBehaviour
         steerIn = useOverride ? overrideSteer : Stronger(Input.GetAxisRaw("Horizontal"), Pad.LeftStick.x);
         if (!CanDrive) throttleIn = steerIn = 0f;
 
-        float bladeIn = useOverride ? overrideBlade : (Input.GetKey(KeyCode.R) || Pad.LT > 0.3f ? 1f : 0f) - (Input.GetKey(KeyCode.F) || Pad.RT > 0.3f ? 1f : 0f);
+        float bladeIn = useOverride ? overrideBlade : Ramp(ref holdLift, (Input.GetKey(KeyCode.R) || Pad.LT > 0.3f ? 1f : 0f) - (Input.GetKey(KeyCode.F) || Pad.RT > 0.3f ? 1f : 0f), Time.deltaTime);
         float ripperIn = useOverride ? overrideRipper : (Input.GetKey(KeyCode.T) || Pad.Held(Pad.B.RB) ? 1f : 0f) - (Input.GetKey(KeyCode.G) || Pad.Held(Pad.B.LB) ? 1f : 0f);
         if (!CanBlade) bladeIn = 0f;
         if (!CanRip) ripperIn = 0f;
         bool treeUp = Upgrades.Instance != null && Upgrades.Instance.Open;
         if (!useOverride && CanBlade && !treeUp && !(PauseMenu.Instance != null && PauseMenu.Instance.Open) && (Input.GetKeyDown(KeyCode.B) || Pad.Down(Pad.B.A))) CycleBladeAuto();
-        if ((bladeIn != 0f || !CanBlade) && bladeAuto != BladeAutoMode.Off) { bladeAuto = BladeAutoMode.Off; autoPaused = true; }   // a hand on the blade lever takes over
-        if (bladeAuto != BladeAutoMode.Off) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
-        if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Time.deltaTime);
+        if (AutoOn && !CanBlade) heightPaused = levelPaused = straightPaused = true;
+        if (bladeIn != 0f && AutoOn && AutoHeight) heightPaused = true;     // a hand on the blade lever takes over the height
+        if (HeightActive) bladeAngle = Mathf.MoveTowards(bladeAngle, AutoWant(), bladeSpeed * Time.deltaTime);
+        if (bladeIn != 0f) bladeAngle = Mathf.MoveTowards(bladeAngle, bladeIn > 0f ? bladeUpAngle : bladeDownAngle, bladeSpeed * Mathf.Abs(bladeIn) * Time.deltaTime);
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
         float angleIn = useOverride ? overrideAngle : (Input.GetKey(KeyCode.E) || Pad.DX > 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Q) || Pad.DX < 0 ? 1f : 0f);
         float tiltIn = useOverride ? overrideTilt : (Input.GetKey(KeyCode.C) || Pad.DY < 0 ? 1f : 0f) - (Input.GetKey(KeyCode.Z) || Pad.DY > 0 ? 1f : 0f);
         if (!CanBlade) angleIn = tiltIn = 0f;
         if (treeUp || (PauseMenu.Instance != null && PauseMenu.Instance.Open)) angleIn = tiltIn = 0f;   // the d-pad is moving round the upgrades or the menu, not the blade
+        if (!useOverride) { angleIn = Ramp(ref holdAngle, angleIn, Time.deltaTime); tiltIn = Ramp(ref holdTilt, tiltIn, Time.deltaTime); }
         BladeYaw = Mathf.Clamp(BladeYaw + angleIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxAngle, bladeMaxAngle);
         BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
         GyroBlade();
-        if ((tiltIn != 0f || GyroHeld) && bladeAuto != BladeAutoMode.Off) { bladeAuto = BladeAutoMode.Off; autoPaused = true; }   // tilting by hand pauses it too
+        if ((tiltIn != 0f || GyroHeld) && AutoOn && AutoLevel) levelPaused = true;          // tilting by hand pauses the levelling
+        if ((angleIn != 0f || GyroHeld) && AutoOn && AutoStraight) straightPaused = true;   // swinging by hand pauses the straightening
         if (!useOverride && CanBlade && (Input.GetKey(KeyCode.X) || Pad.Held(Pad.B.X)))
         {
             BladeYaw = Mathf.MoveTowards(BladeYaw, 0f, bladeTurnSpeed * 2f * Time.deltaTime);
-            if (bladeAuto == BladeAutoMode.Off) BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
+            if (!LevelActive) BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
         }
-        // blade auto also keeps the blade level side to side, however the machine leans
-        if (bladeAuto != BladeAutoMode.Off) BladeTilt = Mathf.MoveTowards(BladeTilt, LevelTilt(), bladeTurnSpeed * Time.deltaTime);
+        // auto level: the blade level side to side, however the machine leans.  Auto straight: swung back square.
+        if (LevelActive) BladeTilt = Mathf.MoveTowards(BladeTilt, LevelTilt(), bladeTurnSpeed * Time.deltaTime);
+        if (StraightActive) BladeYaw = Mathf.MoveTowards(BladeYaw, 0f, bladeTurnSpeed * Time.deltaTime);
         ApplyAttachments();
         if (lights != null && !useOverride && (Input.GetKeyDown(KeyCode.L) || Pad.Down(Pad.B.B))) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
         fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.05f);
@@ -693,7 +718,7 @@ public class DozerController : MonoBehaviour
         // Only while the blade is down working, though: lifted, it stays up with the machine, so going up a hill
         // with the blade raised it clears the ground instead of dropping into it.
         float down = 1f - Mathf.Clamp01(Mathf.InverseLerp(bladeDownAngle, bladeUpAngle, bladeAngle) / 0.6f);
-        if (bladeAuto != BladeAutoMode.Off) down = 1f;                    // blade auto: always hold the depth
+        if (HeightActive) down = 1f;                                       // auto height: always hold the depth
         float held = Mathf.Clamp(bladeAngle - pitch * 1.46f * down, bladeUpAngle - 8f, bladeDownAngle + 12f);
         if (bladeMount != null) bladeMount.localRotation = Quaternion.Euler(held, 0f, 0f);
         if (rearMount != null) rearMount.localRotation = Quaternion.Euler(ripperAngle, 0f, 0f);
@@ -730,7 +755,7 @@ public class DozerController : MonoBehaviour
     /// The blade's depth line for the screen: "Blade 12 cm down", "Auto: Cut 10 cm", "Auto paused ...".
     public string DepthLine()
     {
-        if (bladeAuto != BladeAutoMode.Off) return "Auto: " + BladeAutoName;
+        if (HeightActive) return "Auto: " + BladeAutoName;
         int cm = Mathf.RoundToInt(EdgeAboveTracks * 100f);
         string hand = cm < 0 ? "Blade " + (-cm) + " cm down" : cm == 0 ? "Blade level with the tracks" : "Blade " + cm + " cm up";
         return autoPaused ? hand + "   (Auto paused: " + Pad.Key("B", "A") + ")" : hand;
@@ -782,7 +807,7 @@ public class DozerController : MonoBehaviour
         Ui.Fill(new Rect(tall.x - 6f, yOf(0f) - 1f, tallW + 12f, 2f), BarLine);                     // the ground (bottom of the tracks)
         Ui.Fill(new Rect(tall.x + 1f, yOf(0f), tallW - 2f, tall.yMax - yOf(0f) - 1f), new Color(0.45f, 0.3f, 0.15f, 0.55f));   // below ground
         bool onTarget = false;
-        if (bladeAuto != BladeAutoMode.Off)
+        if (HeightActive)
         {
             float want = -BladeAutoDepth[(int)bladeAuto];
             Ui.Fill(new Rect(tall.x - 10f, yOf(want) - 2f, tallW + 20f, 4f), MarkOn);
@@ -821,14 +846,14 @@ public class DozerController : MonoBehaviour
                 "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
                 "RB / LB   ripper up / down    (breaks up hard rock)\n" +
                 "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
-                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds the blade level too; a trigger or the d-pad pauses it)\n" +
+                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds height, level and straight; moving a part yourself pauses it)\n" +
                 "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" +
                 "Back   menu     Left stick click   hide this help" :
                 "W / S   drive          A / D   steer          Enter   get out\n" +
                 "R / F   blade up / down     (lower it into the ground to dig)\n" +
                 "T / G   ripper up / down    (breaks up hard rock)\n" +
                 "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds the blade level too; R / F or Z / C pauses it)\n" +
+                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds height, level and straight; moving a part yourself pauses it)\n" +
                 "Right mouse drag: look round    Scroll: zoom\n" +
                 "U   upgrades     Esc   menu     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
             below = Hud.HelpBox(text, 560f);
