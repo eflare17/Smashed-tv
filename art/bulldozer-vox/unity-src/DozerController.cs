@@ -99,7 +99,7 @@ public class DozerController : MonoBehaviour
     bool LevelActive { get { return AutoOn && AutoLevel && !levelPaused; } }
     bool StraightActive { get { return AutoOn && AutoStraight && !straightPaused; } }
     // moving the blade by hand starts slow and speeds up the longer you hold it: a tap is a nudge
-    float holdLift, holdAngle, holdTilt, stepHeld;
+    float holdLift, holdAngle, holdTilt, stepHeld; int stepDir;
     const float NudgeSpeed = 0.2f, FullSpeedAfter = 0.7f;
     static float Ramp(ref float held, float input, float dt)
     {
@@ -466,13 +466,24 @@ public class DozerController : MonoBehaviour
             {
                 // the lever moves the height auto holds: a step as it is pressed, then a step every 0.15 s while held
                 int dir = bladeIn > 0f ? 1 : -1;
+                stepDir = dir;
                 if (stepHeld == 0f || (stepHeld >= 0.4f && Mathf.Repeat(stepHeld - 0.4f, 0.15f) < Time.deltaTime)) StepAutoHeight(dir);
                 stepHeld += Time.deltaTime;
                 heightPaused = false;
                 bladeIn = 0f;
             }
         }
-        else stepHeld = 0f;
+        else
+        {
+            // let go of the lever: hold the height the blade has got to (the next 5 cm step), so it stops where you let go
+            if (stepHeld > 0f && AutoOn && AutoHeight && !useOverride && edgePerDegree > 0f)
+            {
+                float nowCm = autoCm + (AutoWant() - bladeAngle) * edgePerDegree * 100f;     // more angle = lower edge
+                int snapped = stepDir < 0 ? Mathf.FloorToInt(nowCm / AutoStepCm + 0.001f) * AutoStepCm : Mathf.CeilToInt(nowCm / AutoStepCm - 0.001f) * AutoStepCm;
+                if (stepDir < 0 ? snapped > autoCm : snapped < autoCm) { AutoCm = snapped; SaveAutoPrefs(); }
+            }
+            stepHeld = 0f;
+        }
         if (HeightActive) { float want = AutoWant(); bladeAngle = Mathf.MoveTowards(bladeAngle, want, BladeMoveSpeed(want) * Time.deltaTime); }
         if (bladeIn != 0f) { float want = bladeIn > 0f ? bladeUpAngle : bladeDownAngle; bladeAngle = Mathf.MoveTowards(bladeAngle, want, BladeMoveSpeed(want) * Mathf.Abs(bladeIn) * Time.deltaTime); }
         if (ripperIn != 0f) ripperAngle = Mathf.MoveTowards(ripperAngle, ripperIn > 0f ? ripperUpAngle : ripperDownAngle, ripperSpeed * Time.deltaTime);
