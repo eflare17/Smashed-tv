@@ -193,7 +193,19 @@ public class PauseMenu : MonoBehaviour
 
     void Awake() { Instance = this; LoadPrefs(); }
     void OnDestroy() { if (Instance == this) { Instance = null; if (Open) { Time.timeScale = timeScaleBefore; AudioListener.pause = false; } } }
-    void Start() { ApplyGraphics(); ReadScreen(); }
+    void Start() { ApplyGraphics(); bool full = StartFullScreen(); ReadScreen(); if (full) fullScreen = true; }
+
+    // The game always opens full screen, at the desktop's own size, whatever it was left on last time.
+    // Alt+Enter or Settings > Display can still put it in a window for that game.
+    static bool startedFull;
+    static bool StartFullScreen()
+    {
+        if (Application.isEditor || startedFull) return false;
+        if (TrailerMode.On || System.Environment.CommandLine.ToLowerInvariant().Contains("-trailer")) return false;   // recordings keep their own size
+        startedFull = true;                                                // once per run (not again on New game)
+        Screen.SetResolution(Display.main.systemWidth, Display.main.systemHeight, FullScreenMode.FullScreenWindow);
+        return true;
+    }
 
     public void SetOpen(bool open)
     {
