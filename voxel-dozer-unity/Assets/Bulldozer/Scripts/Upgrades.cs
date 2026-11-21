@@ -19,6 +19,13 @@
 // F8 is a test key: it adds 10,000 coins and 50 litres of gold.
 //
 // The numbers (prices, sizes, speeds) are starting points, to be tuned once it's played.
+// Tuned 22 Nov 2026 (overnight, its own commit so it can be undone alone): the coins-only levels (Pick 2-5,
+// Shovel 2-6, Cart 2) cost more, so they last about as long as it takes to dig through the first two cave-ins
+// to the gold seam (before, they were all bought long before the first gold, then nothing to buy for a while);
+// Backpack 7 and 8 cost less (they were the biggest jumps in the whole tree); and the Motor cart costs coins
+// only (was 800 + 10 L gold).  Gold is only found past the second cave-in, and every buy after Cart 2 needed
+// gold, so there was a long stretch (a rough model: about 19 minutes) of digging with nothing to buy.  The motor
+// cart and its levels now fill that stretch.  The model is art/bulldozer-vox/pace_model.py.  See MORNING_REPORT.md.
 using UnityEngine;
 
 public class Upgrades : MonoBehaviour
@@ -42,10 +49,10 @@ public class Upgrades : MonoBehaviour
     {
         new[] {   // pick: chunk radius 0.26 -> 0.40 m, rock from 80% to 100% of that
             new Step("Pick 1", "Breaks a small chunk", 0),
-            new Step("Pick 2", "Bigger chunk each hit", 50),
-            new Step("Pick 3", "Bigger again, better on rock", 80),
-            new Step("Pick 4", "Big chunks, good on rock", 128),
-            new Step("Pick 5", "Biggest chunk, full strength on rock", 205),
+            new Step("Pick 2", "Bigger chunk each hit", 60),
+            new Step("Pick 3", "Bigger again, better on rock", 110),
+            new Step("Pick 4", "Big chunks, good on rock", 190),
+            new Step("Pick 5", "Biggest chunk, full strength on rock", 320),
             new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600, 8f),
             new Step("Jackhammer 2", "Bigger bite, faster blows", 260),
             new Step("Jackhammer 3", "Bigger bite, faster blows", 420),
@@ -55,10 +62,10 @@ public class Upgrades : MonoBehaviour
         new[] {   // shovel: load 117 -> 342 litres, swing speed 1.0 -> 1.6
             new Step("Shovel 1", "117 L a scoop", 0),
             new Step("Shovel 2", "156 L a scoop, 10% faster", 40),
-            new Step("Shovel 3", "195 L a scoop, 20% faster", 64),
-            new Step("Shovel 4", "239 L a scoop, 30% faster", 102),
-            new Step("Shovel 5", "288 L a scoop, 45% faster", 164),
-            new Step("Shovel 6", "342 L a scoop, 60% faster", 262),
+            new Step("Shovel 3", "195 L a scoop, 20% faster", 75),
+            new Step("Shovel 4", "239 L a scoop, 30% faster", 135),
+            new Step("Shovel 5", "288 L a scoop, 45% faster", 230),
+            new Step("Shovel 6", "342 L a scoop, 60% faster", 380),
         },
         new[] {   // backpack: 200 -> 1000 litres, suction 1x -> 4x
             new Step("Backpack", "Unlock: sucks up loose dirt.  200 L, slow", 400, 5f),
@@ -67,13 +74,13 @@ public class Upgrades : MonoBehaviour
             new Step("Backpack 4", "500 L, 2.2x suction", 384),
             new Step("Backpack 5", "600 L, 2.6x suction", 614),
             new Step("Backpack 6", "750 L, 3x suction", 983),
-            new Step("Backpack 7", "875 L, 3.5x suction", 1573),
-            new Step("Backpack 8", "1000 L, 4x suction", 2516),
+            new Step("Backpack 7", "875 L, 3.5x suction", 1400),
+            new Step("Backpack 8", "1000 L, 4x suction", 1900),
         },
         new[] {   // cart: 1000 -> 1500 litres
             new Step("Cart 1", "Hand cart, 1000 L", 0),
-            new Step("Cart 2", "Bigger tub, 1500 L", 300),
-            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800, 10f),
+            new Step("Cart 2", "Bigger tub, 1500 L", 450),
+            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800),   // (coins only: see the tuning note at the top)
             new Step("Motor cart 2", "Faster: 4 m/s", 400),
             new Step("Motor cart 3", "Fastest: 5 m/s", 640),
             new Step("Bigger cart", "Higher sides: a 2,000 L tub", 900),

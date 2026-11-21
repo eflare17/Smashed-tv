@@ -1733,7 +1733,7 @@ public static class BulldozerBuilder
             long c0 = money.Coins;
             uLog += " backpackBeforeShovel6=" + up.Buy(Upgrades.Branch.Backpack) + "(" + up.CantBuy(Upgrades.Branch.Backpack) + ")";
             for (int k = 0; k < 5; k++) up.Buy(Upgrades.Branch.Shovel);
-            uLog += " shovel=" + up.Level(Upgrades.Branch.Shovel) + " holds=" + wk.shovelHolds + " speed=" + wk.shovelSpeed.ToString("F2") + " paid=" + (c0 - money.Coins) + "(want 632)";
+            uLog += " shovel=" + up.Level(Upgrades.Branch.Shovel) + " holds=" + wk.shovelHolds + " speed=" + wk.shovelSpeed.ToString("F2") + " paid=" + (c0 - money.Coins) + "(want 860)";
             int g0 = money.GoldStore; c0 = money.Coins;
             uLog += " buyBackpack=" + up.Buy(Upgrades.Branch.Backpack) + " owned=" + wk.backpackOwned + " packHolds=" + wk.packHolds + " goldTaken=" + (g0 - money.GoldStore) + " coinsTaken=" + (c0 - money.Coins);
             uLog += " sellShovel6WithPack=" + up.SellBack(Upgrades.Branch.Shovel) + "(" + up.CantSellBack(Upgrades.Branch.Shovel) + ")";
@@ -1783,7 +1783,7 @@ public static class BulldozerBuilder
             wk.overrideUse = false;
             uLog += " realScoop=" + (uMaxShovel * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "L(level1 max 117L)";
             bool uOk = uMaxShovel * VoxelWorld.VoxelVolume * 1000f > 117f;
-            foreach (var want in new[] { "start=P1/S1/B0/C1", "backpackLocked=True", "buyBroke=False", "backpackBeforeShovel6=False", "shovel=6 ", "paid=632(want 632)",
+            foreach (var want in new[] { "start=P1/S1/B0/C1", "backpackLocked=True", "buyBroke=False", "backpackBeforeShovel6=False", "shovel=6 ", "paid=860(want 860)",
                                          "buyBackpack=True", "owned=True", "sellShovel6WithPack=False", "sellBackpack=True", "refunded=True", "ownedAfter=False",
                                          "backpackMax=8", "resetOk=True", "holdsBack=1400" })
                 if (uLog.IndexOf(want) < 0) { uOk = false; uLog += " WRONG[" + want + "]"; }
