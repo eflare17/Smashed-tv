@@ -183,7 +183,28 @@ mode, which stops saving, so use it in a throwaway session.
 
 ## How to play the new build
 
-TO FILL IN AFTER THE BUILD
+The new build is in its own folder, next to your usual one (which wasn't touched):
+
+```
+C:\Users\Admin\Documents\Smashed-tv\voxel-dozer-unity\Builds\DiggerGameOvernight\DiggerGame.exe
+```
+
+Double-click it, or run it from PowerShell:
+
+```powershell
+& "C:\Users\Admin\Documents\Smashed-tv\voxel-dozer-unity\Builds\DiggerGameOvernight\DiggerGame.exe"
+```
+
+It carries on from your save, like your normal build (read "Your save" first). I started it once in
+trailer mode (which never loads or saves) and it ran for 40 seconds with no errors. I haven't played it by hand.
+
+## Test results (the final run, all on tonight's code)
+
+26 of 27 tests pass: SelfTest, CartTest, MotorCartTest, **AutoCartTest**, **BigCartTest**, UpgradeTest, DumpTest,
+SaveTest, GoalsTest, **EndingTest**, **HintsTest**, HudTest, SoundTest, TrailerTest (trailer mode), MenuTest,
+PadTest (controller), BackpackTest, JackTest, FindsTest, AutosaveTest (new game, carry on), RoadPileTest,
+TreeFellTest, MountainRoadTest (the road job), RoadOldSaveTest (loads your real save, read only),
+ResetGroundTest, DingoTest. **TreeTest** fails the same one check it failed before tonight (UI size 125%).
 
 ---
 
