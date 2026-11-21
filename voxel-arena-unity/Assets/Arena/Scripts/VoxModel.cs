@@ -40,6 +40,47 @@ public static class VoxModel
         };
     }
 
+    static Color Shade(Color c, float k) { return new Color(c.r * k, c.g * k, c.b * k); }
+
+    /// The same grunt drawn in the ground's own 6.25 cm voxels (VoxelWorld.Voxel): 24 tall (1.5 m), 15 wide, 8 deep.
+    /// Smashed's shape and colours kept; the finer blocks add a cap brim, nose, mouth, hands, a belt with a buckle and
+    /// shading on the shirt.  Walk frame 0 or 1 as before (legs and arms one forward, swapped).  NOT USED IN THE GAME
+    /// YET: only the picture (ArenaBuilder.GruntPicture) draws it, until the owner says yes.
+    public static B[] GruntBoxesFine(int frame)
+    {
+        int a = frame == 0 ? 2 : 0, b = 2 - a;          // walk offsets, 2 voxels (12.5 cm)
+        Color shirtDark = Shade(GruntShirt, 0.78f), shirtLight = Shade(GruntShirt, 1.12f), hand = Shade(Skin, 0.9f);
+        Color belt = new Color(0.2f, 0.13f, 0.07f), buckle = new Color(0.78f, 0.66f, 0.3f), mouth = new Color(0.45f, 0.12f, 0.1f);
+        Color capDark = Shade(GruntCap, 0.8f), pantsDark = Shade(GruntPants, 0.82f);
+        var l = new List<B>
+        {
+            // legs: pants y2-8, boots y0-1 with a toe; hips join them at the top
+            new B(3, 2, 1 + a, 6, 8, 4 + a, GruntPants), new B(8, 2, 1 + b, 11, 8, 4 + b, GruntPants),
+            new B(3, 2, 1 + a, 6, 2, 4 + a, pantsDark), new B(8, 2, 1 + b, 11, 2, 4 + b, pantsDark),   // turn-ups
+            new B(3, 0, 1 + a, 6, 1, 5 + a, Boot), new B(8, 0, 1 + b, 11, 1, 5 + b, Boot),
+            new B(3, 7, 1, 11, 8, 6, GruntPants),
+            // belt and buckle
+            new B(2, 9, 0, 12, 9, 7, belt), new B(6, 9, 7, 8, 9, 7, buckle),
+            // shirt y10-16: darker at the bottom and the sides, lighter over the shoulders
+            new B(2, 10, 0, 12, 16, 7, GruntShirt),
+            new B(2, 10, 0, 12, 10, 7, shirtDark), new B(2, 11, 0, 2, 15, 7, shirtDark), new B(12, 11, 0, 12, 15, 7, shirtDark),
+            new B(3, 16, 1, 11, 16, 6, shirtLight),
+            // arms reaching forward: green sleeve, skin forearm, a bigger hand
+            new B(0, 13, 2, 1, 16, 5, GruntShirt), new B(13, 13, 2, 14, 16, 5, GruntShirt),
+            new B(0, 14, 6, 1, 16, 7 + a, Skin), new B(13, 14, 6, 14, 16, 7 + b, Skin),
+            new B(0, 13, 8 + a, 1, 16, 9 + a, hand), new B(13, 13, 8 + b, 14, 16, 9 + b, hand),
+            // head y17-21
+            new B(4, 17, 0, 10, 21, 7, Skin),
+            new B(5, 19, 7, 6, 20, 7, Eye), new B(8, 19, 7, 9, 20, 7, Eye),
+            new B(7, 18, 8, 7, 19, 8, hand),                                   // nose
+            new B(6, 17, 7, 8, 17, 7, mouth),
+            // cap y22-23 with a brim out the front
+            new B(4, 22, 0, 10, 23, 7, GruntCap), new B(5, 23, 1, 9, 23, 6, Shade(GruntCap, 1.08f)),
+            new B(4, 22, 8, 10, 22, 9, capDark),
+        };
+        return l.ToArray();
+    }
+
     /// Smashed's rocket (rocket_mesh), pointing +Z, centred on the origin.
     public static B[] RocketBoxes()
     {
@@ -71,16 +112,18 @@ public static class VoxModel
                     for (int z = bx.z0; z <= bx.z1; z++)
                         grid[new Vector3Int(x, y, z)] = bx.c;
         var verts = new List<Vector3>(); var norms = new List<Vector3>(); var cols = new List<Color>(); var tris = new List<int>();
+        bool linear = QualitySettings.activeColorSpace == ColorSpace.Linear;   // vertex colours aren't converted for us
+        foreach (var key in new List<Vector3Int>(grid.Keys)) if (linear) grid[key] = grid[key].linear;
         foreach (var kv in grid)
             for (int f = 0; f < 6; f++)
             {
                 if (grid.ContainsKey(kv.Key + Dirs[f])) continue;
                 int s = verts.Count;
                 for (int k = 0; k < 4; k++) { verts.Add(((Vector3)kv.Key + Corners[f][k] - centre) * size); norms.Add(Dirs[f]); cols.Add(kv.Value); }
-                // wound so the face looks outward
+                // wound so the face looks outward (Unity: Cross(b - a, c - a) points out of a front face)
                 Vector3 n = Dirs[f], e1 = Corners[f][1] - Corners[f][0], e2 = Corners[f][2] - Corners[f][0];
-                if (Vector3.Dot(Vector3.Cross(e1, e2), n) > 0f) { tris.Add(s); tris.Add(s + 2); tris.Add(s + 1); tris.Add(s); tris.Add(s + 3); tris.Add(s + 2); }
-                else { tris.Add(s); tris.Add(s + 1); tris.Add(s + 2); tris.Add(s); tris.Add(s + 2); tris.Add(s + 3); }
+                if (Vector3.Dot(Vector3.Cross(e1, e2), n) > 0f) { tris.Add(s); tris.Add(s + 1); tris.Add(s + 2); tris.Add(s); tris.Add(s + 2); tris.Add(s + 3); }
+                else { tris.Add(s); tris.Add(s + 2); tris.Add(s + 1); tris.Add(s); tris.Add(s + 3); tris.Add(s + 2); }
             }
         var m = new Mesh();
         m.SetVertices(verts); m.SetNormals(norms); m.SetColors(cols); m.SetTriangles(tris, 0);
