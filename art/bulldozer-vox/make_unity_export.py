@@ -1043,13 +1043,26 @@ public static class BulldozerBuilder
             {
                 bool off = d.AutoPaused && !d.HeightAutoActive && d.bladeAuto == DozerController.BladeAutoMode.Flat;
                 baLog += " afterPress=" + d.BladeAutoName + (d.AutoPaused ? " paused" : ""); if (!off) baFail = true;
-                // the lever only paused the height: one press carries on at the same depth, the next steps on
+                // the lever only paused the height: one press carries on at the same height, the next turns auto off,
+                // the next back on at that height
                 d.CycleBladeAuto(); string back = d.BladeAutoName; bool resumed = !d.AutoPaused;
                 d.CycleBladeAuto(); string next = d.BladeAutoName;
-                d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); d.CycleBladeAuto(); string wrap = d.BladeAutoName;
-                bool resumeOk = back == "Flat" && resumed && next == "Cut 5 cm" && wrap == "Off";
-                baLog += " resume=" + back + " next=" + next + " then=" + wrap + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                d.CycleBladeAuto(); string again = d.BladeAutoName;
+                bool resumeOk = back == "Flat" && resumed && next == "Off" && again == "Flat";
+                baLog += " resume=" + back + " next=" + next + " then=" + again + " resumeOk=" + resumeOk; if (!resumeOk) baFail = true;
+                // with auto on, the lever steps the height it holds, 5 cm a step, from fully down to fully up
+                d.StepAutoHeight(-1); string down1 = d.BladeAutoName;
+                d.StepAutoHeight(1); d.StepAutoHeight(1); d.StepAutoHeight(1); string up2 = d.BladeAutoName;
+                for (int i = 0; i < 40; i++) d.StepAutoHeight(-1);
+                string bottom = d.BladeAutoName;
+                for (int i = 0; i < 60; i++) d.StepAutoHeight(1);
+                string top = d.BladeAutoName;
+                bool anglesOk = d.AutoAngleCm(-d.MaxCutCm) > d.AutoAngleCm(0) && d.AutoAngleCm(d.MaxFillCm) < d.AutoAngleCm(20) && d.AutoAngleCm(20) < d.AutoAngleCm(0)
+                                && Mathf.Abs(d.AutoAngleCm(-d.MaxCutCm) - d.bladeDownAngle) < 1f;
+                bool stepsOk = down1 == "Cut 5 cm" && up2 == "Fill 10 cm" && bottom == "Cut 45 cm" && top == "Fill " + d.MaxFillCm + " cm" && d.MaxFillCm >= 50 && anglesOk;
+                baLog += " steps: " + down1 + " / " + up2 + " / bottom " + bottom + " / top " + top + " anglesOk=" + anglesOk + " stepsOk=" + stepsOk; if (!stepsOk) baFail = true;
                 d.bladeAuto = DozerController.BladeAutoMode.Off;
+                DozerController.LastAuto = DozerController.BladeAutoMode.Flat;
             }
             if (t - baT0 < 3f) return;
             d.overrideBlade = 0f;
@@ -5316,7 +5329,7 @@ public static class BulldozerBuilder
             d.overrideThrottle = k < 1.5f ? 0f : 1f;
             if (follow != null) { follow.yawOffset = 70f; follow.distance = 10f; follow.pitch = 18f; }
             title = "Auto blade:  B on the keyboard, A on the pad";
-            cap = "Off, Flat, Cut 5 cm, Cut 10 cm.  It holds the height for you.  Here on " + d.BladeAutoName;
+            cap = "On and off; while on, blade up / down set the height it holds, 5 cm a tap.  Here on " + d.BladeAutoName;
             if (k > 10f) { d.overrideThrottle = 0f; d.bladeAuto = DozerController.BladeAutoMode.Off; ChNext(5); }
         }
         else if (chSeg == 5)
