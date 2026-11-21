@@ -3524,6 +3524,8 @@ public static class BulldozerBuilder
             case 2:
                 if (t - enT0 > 4f && enLog.IndexOf("flyPic1") < 0) { TestCapture("ending_fly1.png"); enLog += " flyPic1"; }
                 if (t - enT0 > 11f && enLog.IndexOf("flyPic2") < 0) { TestCapture("ending_fly2.png"); enLog += " flyPic2"; ECheck("cameraMoved", (Camera.main.transform.position - enCam0).magnitude > 10f); }
+                if (t - enT0 > Ending.FlyFor + 4f && enLog.IndexOf("cardShot") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ending_card_screen.png"); enLog += " cardShot"; }
+                if (t - enT0 > 8f && enLog.IndexOf("capShot") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ending_caption_screen.png"); enLog += " capShot"; }
                 if (t - enT0 < Ending.FlyFor + 6f) return;
                 TestCapture("ending_card.png");
                 enLog += " stats=[" + string.Join(" | ", end.StatLines()) + "]";
@@ -3545,6 +3547,89 @@ public static class BulldozerBuilder
                 ECheck("loadKeeps", end.Shown && end.SoldLitres == sold);
                 Debug.Log((enOk ? "BULLDOZER_ENDING_RESULT" : "BULLDOZER_ENDING_FAILED") + enLog);
                 EndingFinish(enOk ? 0 : 1);
+                return;
+        }
+    }
+
+    // First-time hints:  -executeMethod BulldozerBuilder.HintsTest
+    // With the computer's prefs left alone (Hints.TestNoPrefs), sets up each tip's moment in turn (in the dozer, on
+    // foot, dirt on the shovel, coins for an upgrade, gold in the store, a half-full cart) and checks that each tip
+    // comes up, one at a time, and never twice.  A picture of one.  Prints BULLDOZER_HINTS_RESULT, or _FAILED.
+    static int hnPhase; static float hnT0; static bool hnOk; static string hnLog, hnLast; static List<string> hnSeq = new List<string>();
+    static bool hnPrefBefore; static float hnDigAt;
+
+    public static void HintsTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        hnPhase = 0; hnLog = ""; hnOk = true; hnLast = ""; hnSeq.Clear(); hnDigAt = -1f;
+        Hints.TestNoPrefs = true;
+        hnPrefBefore = PlayerPrefs.HasKey("hint.dig");
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += HintsTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void HintsFinish(int code) { EditorApplication.update -= HintsTick; Hints.TestNoPrefs = false; EditorSettings.enterPlayModeOptionsEnabled = false; EditorApplication.Exit(code); }
+    static void HCheck(string name, bool good) { hnLog += " " + name + "=" + good; if (!good) hnOk = false; }
+
+    static void HintsTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_HINTS_FAILED timed out in phase " + hnPhase + " " + hnLog); HintsFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance; var money = Money.Instance; var up = Upgrades.Instance; var h = Hints.Instance;
+        if (w == null || wk == null || cart == null || money == null || up == null || h == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        string now = h.ShowingId;
+        if (now != hnLast) { if (now.Length > 0) hnSeq.Add(now); hnLast = now; }
+        switch (hnPhase)
+        {
+            case 0:                                                     // in the dozer
+                if (Time.timeSinceLevelLoad < 2f) return;
+                wk.useOverride = true;
+                up.Reset(); money.Clear(); h.TestForget(); hnSeq.Clear(); hnLast = "";
+                if (!wk.InDozer) wk.GetIn();
+                hnPhase = 1; hnT0 = t; return;
+            case 1:
+                if (h.ShowingId != "dozer" && t - hnT0 < 8f) return;
+                TestCapture("hint_dozer.png");
+                wk.GetOut();                                            // on foot: the digging tip
+                hnPhase = 2; hnT0 = t; return;
+            case 2:
+                if (h.ShowingId == "dig" && hnDigAt < 0f) hnDigAt = t;
+                if ((hnDigAt < 0f || t - hnDigAt < 2f) && t - hnT0 < 14f) return;
+                ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/hint_dig_screen.png"); hnLog += " dbg[" + h.DebugLine + "]";
+                wk.Teleport(cart.transform.position + cart.transform.right * 3.2f, Facing(-cart.transform.right));
+                Vector3 at = cart.transform.position + cart.transform.right * 2.4f;
+                w.Pick(at, 0.35f, Vector3.zero); w.Scoop(at, 0.5f, 400);   // dirt on the shovel: the cart tip
+                hnPhase = 3; hnT0 = t; return;
+            case 3:
+                if (h.ShowingId != "cart" && t - hnT0 < 12f) return;
+                money.TestGrant(100, 0);                                // can afford an upgrade
+                hnPhase = 4; hnT0 = t; return;
+            case 4:
+                if (h.ShowingId != "upgrade" && t - hnT0 < 12f) return;
+                money.TestGrant(0, 10);                                 // gold in the store
+                hnPhase = 5; hnT0 = t; return;
+            case 5:
+                if (h.ShowingId != "gold" && t - hnT0 < 12f) return;
+                dSteps = 0; dNext = t;
+                hnPhase = 6; hnT0 = t; return;
+            case 6:                                                     // half a cart: the hopper tip
+                FillCart(w, cart, t, cart.capacity / 2 + 200);
+                if (h.ShowingId != "hopper" && t - hnT0 < 30f) return;
+                hnPhase = 7; hnT0 = t; return;
+            case 7:                                                     // nothing comes twice
+                if (t - hnT0 < 15f) return;
+                hnLog += " seq=" + string.Join(",", hnSeq.ToArray());
+                foreach (var id in new[] { "dozer", "dig", "cart", "upgrade", "gold", "hopper" })
+                {
+                    int n = 0; foreach (var s in hnSeq) if (s == id) n++;
+                    HCheck(id + "Once", n == 1);
+                }
+                HCheck("prefsUntouched", PlayerPrefs.HasKey("hint.dig") == hnPrefBefore);
+                Debug.Log((hnOk ? "BULLDOZER_HINTS_RESULT" : "BULLDOZER_HINTS_FAILED") + hnLog);
+                HintsFinish(hnOk ? 0 : 1);
                 return;
         }
     }

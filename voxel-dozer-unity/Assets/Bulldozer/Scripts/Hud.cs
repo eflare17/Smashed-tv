@@ -80,12 +80,15 @@ public class Hud : MonoBehaviour
     }
 
     /// The help (controls) box, top left under the coins.  Returns its bottom.
+    /// The right edge of the help box last drawn (the tips keep clear of it).
+    public static float HelpRight { get; private set; }
     public static float HelpBox(string text, float width)
     {
         if (helpStyle == null) helpStyle = new GUIStyle(GUI.skin.box) { fontSize = 14, alignment = TextAnchor.UpperLeft, wordWrap = false, padding = new RectOffset(8, 8, 6, 6) };
         width = Mathf.Max(width, helpStyle.CalcSize(new GUIContent(text)).x + 4f);
         float h = helpStyle.CalcHeight(new GUIContent(text), width);
         var r = new Rect(Margin, TopLeftBottom + 6f, width, h);
+        HelpRight = r.xMax;
         GUI.Box(r, text, helpStyle);
         return r.yMax;
     }
