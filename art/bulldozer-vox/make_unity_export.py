@@ -4767,6 +4767,81 @@ public static class BulldozerBuilder
     // game carried on with the coins.  Prints BULLDOZER_AUTOSAVE_RESULT.
     static int asPhase; static float asT0; static string asLog; static bool asOk; static long asCoins;
     static string AsFile { get { return Application.dataPath + "/../Logs/autosave_test.bin"; } }
+    // Reset ground:  -executeMethod BulldozerBuilder.ResetGroundTest    prints BULLDOZER_RESETGROUND_RESULT (or _FAILED)
+    // Dig a trench and raise a heap, drive a bit, then reset: the ground must be exactly as made (same height at the
+    // spots, same amount of ground, nothing loose), and the coins must still be there.
+    static int rgPhase; static string rgLog; static bool rgOk; static float rgT0; static long rgSolid0, rgCoins;
+    static float[] rgH0;
+    static readonly Vector2[] RgSpots = { new Vector2(2f, -10f), new Vector2(3f, -10f), new Vector2(-2f, -6f), new Vector2(0f, -4f) };
+    public static void ResetGroundTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        rgPhase = 0; rgLog = ""; rgOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += ResetGroundTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void RgCheck(bool ok, string what) { rgLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) rgOk = false; }
+    static void ResetGroundFinish(int code)
+    {
+        EditorApplication.update -= ResetGroundTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void ResetGroundTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_RESETGROUND_FAILED timed out in phase " + rgPhase + rgLog); ResetGroundFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var sg = SaveGame.Instance; var w = VoxelWorld.Instance; var m = Money.Instance; var wk = Worker.Instance;
+        var d = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+        if (sg == null || w == null || m == null || wk == null || d == null) return;
+        float t = Time.time;
+        if (rgPhase == 0)
+        {
+            if (t < 2f) return;
+            wk.useOverride = true; d.useOverride = true; d.dead = false;
+            if (!wk.InDozer) wk.GetIn();
+            rgSolid0 = w.StartTotal;                                     // the ground as made (the parked blade may already have nicked a few voxels)
+            rgH0 = new float[RgSpots.Length];
+            for (int i = 0; i < RgSpots.Length; i++) rgH0[i] = w.TopAt(RgSpots[i].x, RgSpots[i].y);
+            // a trench and a heap
+            for (float x = 1.5f; x < 3.5f; x += VoxelWorld.Voxel) for (float z = -11f; z < -9f; z += VoxelWorld.Voxel) w.TestSetColumn(x, z, w.TopAt(x, z) - 0.5f);
+            for (float x = -2.5f; x < -1.5f; x += VoxelWorld.Voxel) for (float z = -6.5f; z < -5.5f; z += VoxelWorld.Voxel) w.TestSetColumn(x, z, w.TopAt(x, z) + 0.4f);
+            m.TestGrant(250, 0); rgCoins = m.Coins;
+            d.overrideBlade = -1f; d.overrideThrottle = 1f;           // dig a bit with the blade too
+            rgPhase = 1; rgT0 = t;
+            return;
+        }
+        if (rgPhase == 1)
+        {
+            if (t - rgT0 < 4f) return;
+            d.overrideThrottle = 0f; d.overrideBlade = 1f;            // stop and lift clear, so it isn't digging as it resets
+            if (t - rgT0 < 7f) return;
+            bool changed = Mathf.Abs(w.TopAt(2f, -10f) - rgH0[0]) > 0.3f;
+            RgCheck(changed, "dugFirst");
+            rgLog += " clodsBefore=" + w.ClodCount + " solidChange=" + (w.SolidCount - rgSolid0);
+            sg.ResetGround();
+            rgPhase = 2; rgT0 = t;
+            return;
+        }
+        if (rgPhase == 2)
+        {
+            if (t - rgT0 < 1f) return;
+            float worst = 0f;
+            for (int i = 0; i < RgSpots.Length; i++) worst = Mathf.Max(worst, Mathf.Abs(w.TopAt(RgSpots[i].x, RgSpots[i].y) - rgH0[i]));
+            rgLog += " worstHeightChange=" + worst.ToString("F3") + " solidAfter-start=" + (w.SolidCount - rgSolid0) + " clods=" + w.ClodCount + " loose=" + w.LoadVoxels;
+            RgCheck(worst < 0.001f, "groundAsMade");
+            RgCheck(w.SolidCount == rgSolid0, "sameAmountOfGround");
+            RgCheck(w.ClodCount == 0 && w.LoadVoxels == 0, "nothingLoose");
+            RgCheck(m.Coins == rgCoins, "coinsKept");
+            RgCheck(d.transform.position.y > w.TopAt(d.transform.position.x, d.transform.position.z) - 0.3f, "dozerOnTop");
+            Debug.Log((rgOk ? "BULLDOZER_RESETGROUND_RESULT" : "BULLDOZER_RESETGROUND_FAILED") + rgLog);
+            ResetGroundFinish(rgOk ? 0 : 1);
+        }
+    }
+
     public static void AutosaveTest()
     {
         EditorSceneManager.OpenScene(ScenePath);

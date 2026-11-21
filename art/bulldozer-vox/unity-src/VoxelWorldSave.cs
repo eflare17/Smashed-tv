@@ -96,6 +96,36 @@ public partial class VoxelWorld
         }
     }
 
+    /// Reset ground: everything dug, cut, heaped and ripped goes back to new.  Loose clods, and the dirt on the blade,
+    /// in the shovel, cart, backpack and bucket, go too.  (Coins and the rest are not the world's: they stay.)
+    public void ResetGround()
+    {
+        var redraw = new bool[dirty.Length];
+        for (int c = 0; c < dirty.Length; c++) redraw[c] = (dirty[c] & 2) != 0;
+        new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin, shape = shape, shapeRect = shapeRect, shapeSize = shapeSize }.Schedule(NX * NZ, 256).Complete();
+        for (int c = 0; c < dirty.Length; c++) dirty[c] = 0;
+        for (int i = 0; i < bladeLoad.Length; i++) bladeLoad[i] = 0;
+        for (int i = 0; i < shovelLoad.Length; i++) shovelLoad[i] = 0;
+        for (int i = 0; i < cartLoad.Length; i++) cartLoad[i] = 0;
+        for (int i = 0; i < packLoad.Length; i++) packLoad[i] = 0;
+        ForgetBucket();
+        SoldVoxels = 0; SpilledVoxels = 0;
+        cCount[0] = 0;
+        SolidCount = StartTotal = CountSolid();
+        Recount();
+        carriedOnBlade = 0;
+        ClodVoxelsInFlight = 0; BermVoxels = 0;
+        LoadVoxels = carriedOnBlade + ClodVoxelsInFlight + ShovelVoxels + CartVoxels + PackVoxels + SoldVoxels + SpilledVoxels + BucketVoxels;
+        for (int c = 0; c < dirty.Length; c++) if (redraw[c]) dirty[c] |= 1;
+        for (int pass = 0; pass < 400; pass++)
+        {
+            Remesh(512);
+            if (LastRemeshChunks == 0) break;
+        }
+        grassTex.LoadRawTextureData(grass);
+        grassTex.Apply(false);
+    }
+
     public void ReadSave(BinaryReader r)
     {
         int version = r.ReadInt32();

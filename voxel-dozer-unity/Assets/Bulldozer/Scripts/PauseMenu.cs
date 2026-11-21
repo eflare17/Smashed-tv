@@ -182,7 +182,7 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---------------------------------------------------------------- opening and closing
-    enum Page { Main, Settings, Quit, NewGame }
+    enum Page { Main, Settings, Quit, NewGame, ResetGround }
     Page page;
     int sel;                                     // the row the keys and pad have picked
     int changedFrame = -1;
@@ -252,7 +252,7 @@ public class PauseMenu : MonoBehaviour
         }
         if (changedFrame == Time.frameCount) return;
         if (Pad.Down(Pad.B.Start) || Pad.Down(Pad.B.Back)) { SetOpen(false); return; }
-        int rows = page == Page.Main ? 4 : (page == Page.Quit || page == Page.NewGame) ? 2 : SettingRows;
+        int rows = page == Page.Main ? MainRows : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 2 : SettingRows;
         if (Pad.DUpDown || Input.GetKeyDown(KeyCode.UpArrow)) sel = (sel + rows - 1) % rows;
         if (Pad.DDownDown || Input.GetKeyDown(KeyCode.DownArrow)) sel = (sel + 1) % rows;
         if (page == Page.Settings)
@@ -266,7 +266,7 @@ public class PauseMenu : MonoBehaviour
     void Back()
     {
         if (page == Page.Main) SetOpen(false);
-        else { sel = page == Page.Quit ? 3 : page == Page.NewGame ? 2 : 1; page = Page.Main; SavePrefs(); }
+        else { sel = page == Page.Quit ? 4 : page == Page.ResetGround ? 2 : page == Page.NewGame ? 3 : 1; page = Page.Main; SavePrefs(); }
     }
 
     void Press(Page p, int row)
@@ -275,12 +275,18 @@ public class PauseMenu : MonoBehaviour
         {
             if (row == 0) SetOpen(false);
             else if (row == 1) { page = Page.Settings; sel = 0; }
-            else if (row == 2) { page = Page.NewGame; sel = 1; }         // "No" picked to start with
+            else if (row == 2) { page = Page.ResetGround; sel = 1; }     // "No" picked to start with
+            else if (row == 3) { page = Page.NewGame; sel = 1; }
             else { page = Page.Quit; sel = 1; }
         }
         else if (p == Page.Quit)
         {
             if (row == 0) { SavePrefs(); if (SaveGame.Instance != null && SaveGame.AutoOn) SaveGame.Instance.Save(); Application.Quit(); }
+            else Back();
+        }
+        else if (p == Page.ResetGround)
+        {
+            if (row == 0) { SetOpen(false); if (SaveGame.Instance != null) SaveGame.Instance.ResetGround(); }
             else Back();
         }
         else if (p == Page.NewGame)
@@ -343,6 +349,7 @@ public class PauseMenu : MonoBehaviour
 
     /// For tests: shows the settings page.
     public void ShowSettings() { page = Page.Settings; sel = 0; }
+    public const int MainRows = 5;
 
     // ---------------------------------------------------------------- the screen (styled like the upgrades panel)
     void OnGUI()
@@ -359,12 +366,12 @@ public class PauseMenu : MonoBehaviour
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = 560f;
-        float H = page == Page.Settings ? 742f : (page == Page.Quit || page == Page.NewGame) ? 220f : 334f;
+        float H = page == Page.Settings ? 742f : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 220f : 388f;
         Ui.Begin(W + 40f, page == Page.Settings ? H + 30f : 600f);                                         // (a big UI size is held down so Settings still fits)
         var area = new Rect((Ui.W - W) / 2f, (Ui.H - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
         var title = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-        GUI.Label(new Rect(area.x + 16, area.y + 8, 300, 34), page == Page.Settings ? "Settings" : page == Page.Quit ? "Quit?" : page == Page.NewGame ? "New game?" : "Paused", title);
+        GUI.Label(new Rect(area.x + 16, area.y + 8, 300, 34), page == Page.Settings ? "Settings" : page == Page.Quit ? "Quit?" : page == Page.NewGame ? "New game?" : page == Page.ResetGround ? "Reset ground?" : "Paused", title);
         var info = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleRight };
         string help = Pad.InUse ? (page == Page.Settings ? "D-pad pick and change   A select   Start closes" : "D-pad pick   A select   Start closes")
                                 : (page == Page.Main ? "Esc closes" : "Esc goes back");
@@ -377,12 +384,22 @@ public class PauseMenu : MonoBehaviour
 
         if (page == Page.Main)
         {
-            string[] names = { "Resume", "Settings", "New game", "Quit" };
-            for (int i = 0; i < 4; i++)
+            string[] names = { "Resume", "Settings", "Reset ground", "New game", "Quit" };
+            for (int i = 0; i < MainRows; i++)
             {
                 if (GUI.Button(new Rect(x + 60f, y, w - 120f, 44f), names[i], i == sel ? picked : button)) Press(Page.Main, i);
                 y += 54f;
             }
+            return;
+        }
+        if (page == Page.ResetGround)
+        {
+            var text = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            GUI.Label(new Rect(x, y, w, 50f), "Put all the dirt back as new?  Coins, upgrades and machines are kept.", text);
+            y += 64f;
+            string[] names = { "Reset the ground", "No, go back" };
+            for (int i = 0; i < 2; i++)
+                if (GUI.Button(new Rect(x + i * (w / 2f + 6f), y, w / 2f - 6f, 44f), names[i], i == sel ? picked : button)) Press(page, i);
             return;
         }
         if (page == Page.Quit || page == Page.NewGame)

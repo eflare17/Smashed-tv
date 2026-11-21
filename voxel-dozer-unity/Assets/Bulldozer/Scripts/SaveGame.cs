@@ -76,6 +76,22 @@ public class SaveGame : MonoBehaviour
         UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
     }
 
+    /// Reset ground (Esc menu): the dirt all back as new; coins, upgrades, finds and goals kept.
+    public void ResetGround()
+    {
+        var w = VoxelWorld.Instance;
+        if (w == null) return;
+        var wk = Worker.Instance; var dingo = Dingo.Instance; var dozer = FindFirstObjectByType<DozerController>(); var cart = MineCart.Instance;
+        if (dingo != null && dingo.Driven) dingo.GetOff();
+        if (wk != null && wk.RidingCart) wk.GetOffCart();
+        w.ResetGround();
+        if (dozer != null) dozer.Place(dozer.transform.position, dozer.transform.eulerAngles.y);   // back on top of the ground
+        if (dingo != null) dingo.Park();
+        if (cart != null) cart.SetAlong(1e6f);                                                  // out at the tunnel mouth
+        if (wk != null && !wk.InDozer) wk.Teleport(dozer != null ? dozer.transform.position + new Vector3(-4.5f, 0f, -2.5f) : wk.transform.position, 20f);
+        Say("Ground reset: all the dirt is back as new.  Coins and upgrades kept.");
+    }
+
     static void Say(string text) { if (Worker.Instance != null) Worker.Instance.Say(text, 3f); }
 
     public string Save()
