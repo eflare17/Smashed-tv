@@ -20,10 +20,11 @@ public class DozerController : MonoBehaviour
     public float turnSpeed = 44f;            // degrees a second
     [Header("Blade (angle of the lift arms; positive is down)")]
     public float bladeUpAngle = -26f;          // high enough to clear the ground going up a steep hill
-    public float bladeDownAngle = 3f;        // about 14 cm below the tracks: a normal cut for one pass
-    public float bladeSpeed = 18f;
+    public float bladeDownAngle = 3f;        // worked out at the start from bladeDigDepth
+    [System.NonSerialized] public float bladeDigDepth = 0.45f;      // fully down, the edge goes this far below the tracks (cuts into a hill)
+    [System.NonSerialized] public float bladeSpeed = 24f;      // (not kept in the scene, so a change here always counts)
     public float bladeMaxAngle = 25f;        // how far the blade swings left or right
-    public float bladeMaxTilt = 8f;          // how far one end drops
+    [System.NonSerialized] public float bladeMaxTilt = 15f;         // how far one end drops (enough to cut level on any side slope you can drive)
     public float bladeTurnSpeed = 25f;       // degrees a second for angle and tilt
     [Header("Ripper (positive is up)")]
     public float ripperUpAngle = 22f;
@@ -231,6 +232,16 @@ public class DozerController : MonoBehaviour
         if (bladeMount == null || blade == null) return;
         Quaternion was = bladeMount.localRotation, hingeWas = bladeHinge != null ? bladeHinge.localRotation : Quaternion.identity;
         if (bladeHinge != null) bladeHinge.localRotation = Quaternion.identity;
+        {
+            // fully down: the arm angle that puts the edge bladeDigDepth below the tracks
+            float lo = bladeUpAngle, hi = 40f;
+            for (int i = 0; i < 30; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (EdgeHeightAt(mid) > -bladeDigDepth) lo = mid; else hi = mid;
+            }
+            bladeDownAngle = (lo + hi) * 0.5f;
+        }
         for (int m = 1; m < autoAngle.Length; m++)
         {
             // more angle = lower blade.  Halve the gap until it is close enough.
@@ -243,6 +254,7 @@ public class DozerController : MonoBehaviour
             autoAngle[m] = (lo + hi) * 0.5f;
         }
         BladeDownDepth = -EdgeHeightAt(bladeDownAngle);
+        BladeUpHeight = EdgeHeightAt(bladeUpAngle);
         edgePerDegree = (EdgeHeightAt(0f) - EdgeHeightAt(bladeDownAngle)) / Mathf.Max(0.1f, bladeDownAngle);
         bladeMount.localRotation = was;
         if (bladeHinge != null) bladeHinge.localRotation = hingeWas;
@@ -277,8 +289,33 @@ public class DozerController : MonoBehaviour
     }
 
     public float AutoAngle(BladeAutoMode m) { return autoAngle[(int)m]; }
+
+    /// How much higher the right end of the cutting edge is than the left (metres, in the world).
+    public float EdgeEndsGap()
+    {
+        if (blade == null) return 0f;
+        Vector3 r = Unfelt(blade.TransformPoint(new Vector3(2.25f, BladeEdge.y, BladeEdge.z)));
+        Vector3 l = Unfelt(blade.TransformPoint(new Vector3(-2.25f, BladeEdge.y, BladeEdge.z)));
+        return r.y - l.y;
+    }
+    /// The tilt that makes the cutting edge level side to side (+ tilt drops the right end; 4.5 m of edge, about 7.9 cm a degree).
+    float LevelTilt() { return Mathf.Clamp(BladeTilt + EdgeEndsGap() / 0.0785f, -bladeMaxTilt, bladeMaxTilt); }
+    /// (tests) Lean the machine `lean` degrees, let auto level settle, and give the edge's end-to-end gap; then put it back.
+    public static float TestLevelTilt, TestLevelRaw;
+    public float TestLevelGap(float lean)
+    {
+        float r0 = roll, t0 = BladeTilt; Quaternion q0 = transform.rotation;
+        roll = lean;
+        transform.rotation = Quaternion.Euler(0f, yaw, 0f) * Quaternion.Euler(pitch, 0f, roll) * felt;   // as the game shows it
+        ApplyAttachments();
+        for (int i = 0; i < 60; i++) { BladeTilt = LevelTilt(); ApplyAttachments(); }   // (about one second of play)
+        float gap = EdgeEndsGap(); TestLevelTilt = BladeTilt; BladeTilt = 0f; ApplyAttachments(); TestLevelRaw = EdgeEndsGap();
+        roll = r0; BladeTilt = t0; transform.rotation = q0; ApplyAttachments();
+        return gap;
+    }
     string AutoHelp { get { return autoPaused ? "paused (" + BladeAutoNames[(int)LastAuto] + ": press to carry on)" : BladeAutoName; } }
     public float BladeArmAngle { get { return bladeAngle; } }
+    public float BladeUpHeight { get; private set; }     // how high the edge is above the tracks fully up (the height bar's top)
     public float BladeDownDepth { get; private set; }    // how far below the tracks the edge goes fully down (for the tests)
 
     void Start()
@@ -350,13 +387,16 @@ public class DozerController : MonoBehaviour
         if (!CanBlade) angleIn = tiltIn = 0f;
         if (treeUp || (PauseMenu.Instance != null && PauseMenu.Instance.Open)) angleIn = tiltIn = 0f;   // the d-pad is moving round the upgrades or the menu, not the blade
         BladeYaw = Mathf.Clamp(BladeYaw + angleIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxAngle, bladeMaxAngle);
-        BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * 0.5f * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
+        BladeTilt = Mathf.Clamp(BladeTilt + tiltIn * bladeTurnSpeed * Time.deltaTime, -bladeMaxTilt, bladeMaxTilt);
         GyroBlade();
+        if ((tiltIn != 0f || GyroHeld) && bladeAuto != BladeAutoMode.Off) { bladeAuto = BladeAutoMode.Off; autoPaused = true; }   // tilting by hand pauses it too
         if (!useOverride && CanBlade && (Input.GetKey(KeyCode.X) || Pad.Held(Pad.B.X)))
         {
             BladeYaw = Mathf.MoveTowards(BladeYaw, 0f, bladeTurnSpeed * 2f * Time.deltaTime);
-            BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
+            if (bladeAuto == BladeAutoMode.Off) BladeTilt = Mathf.MoveTowards(BladeTilt, 0f, bladeTurnSpeed * Time.deltaTime);
         }
+        // blade auto also keeps the blade level side to side, however the machine leans
+        if (bladeAuto != BladeAutoMode.Off) BladeTilt = Mathf.MoveTowards(BladeTilt, LevelTilt(), bladeTurnSpeed * Time.deltaTime);
         ApplyAttachments();
         if (lights != null && !useOverride && (Input.GetKeyDown(KeyCode.L) || Pad.Down(Pad.B.B))) lights.gameObject.SetActive(!lights.gameObject.activeSelf);
         fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.05f);
@@ -710,10 +750,69 @@ public class DozerController : MonoBehaviour
         return w.TrimEnd('\n');
     }
 
+    /// The lower end of the cutting edge against the bottom of the tracks (metres; minus = cutting into the ground).
+    public float EdgeBelowTracks()
+    {
+        if (blade == null) return 0f;
+        Vector3 r = Unfelt(blade.TransformPoint(new Vector3(2.25f, BladeEdge.y, BladeEdge.z)));
+        Vector3 l = Unfelt(blade.TransformPoint(new Vector3(-2.25f, BladeEdge.y, BladeEdge.z)));
+        return Mathf.Min(r.y, l.y) - transform.position.y;
+    }
+
+    // The blade bars, bottom middle: a tall bar for the blade's height (ground line at the tracks, a green tick where
+    // blade auto is aiming) and a wide bar for side to side (the middle is level with the world, the marker goes to
+    // the low end).  Both markers turn green when the blade is where it should be.
+    static readonly Color BarBack = new Color(0f, 0f, 0f, 0.6f), BarLine = new Color(1f, 1f, 1f, 0.5f);
+    static readonly Color MarkOn = new Color(0.35f, 0.95f, 0.4f), MarkOff = new Color(1f, 0.8f, 0.2f);
+    GUIStyle barText;
+    void DrawBladeBars()
+    {
+        if (blade == null) return;
+        if (barText == null) { barText = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter }; barText.normal.textColor = Color.white; }
+        const float tallH = 150f, tallW = 22f, wideW = 220f, wideH = 18f;
+        float baseY = Ui.H - Hud.Margin - 26f;
+        float cx = Ui.W * 0.5f;
+
+        // height: top = fully up, bottom = fully down
+        float hi = Mathf.Max(0.2f, BladeUpHeight), lo = -Mathf.Max(0.1f, BladeDownDepth);
+        float edge = EdgeBelowTracks();
+        Rect tall = new Rect(cx + wideW * 0.5f + 40f, baseY - tallH, tallW, tallH);
+        System.Func<float, float> yOf = v => tall.yMax - Mathf.InverseLerp(lo, hi, v) * tall.height;
+        Ui.Fill(tall, BarBack);
+        Ui.Fill(new Rect(tall.x - 6f, yOf(0f) - 1f, tallW + 12f, 2f), BarLine);                     // the ground (bottom of the tracks)
+        Ui.Fill(new Rect(tall.x + 1f, yOf(0f), tallW - 2f, tall.yMax - yOf(0f) - 1f), new Color(0.45f, 0.3f, 0.15f, 0.55f));   // below ground
+        bool onTarget = false;
+        if (bladeAuto != BladeAutoMode.Off)
+        {
+            float want = -BladeAutoDepth[(int)bladeAuto];
+            Ui.Fill(new Rect(tall.x - 10f, yOf(want) - 2f, tallW + 20f, 4f), MarkOn);
+            onTarget = Mathf.Abs(edge - want) < 0.03f;
+        }
+        float my = Mathf.Clamp(yOf(edge), tall.y, tall.yMax);
+        Ui.Fill(new Rect(tall.x - 3f, my - 4f, tallW + 6f, 8f), onTarget ? MarkOn : MarkOff);
+        string ht = edge < -0.01f ? Mathf.RoundToInt(-edge * 100f) + " cm deep" : Mathf.RoundToInt(edge * 100f) + " cm up";
+        GUI.Label(new Rect(tall.xMax + 6f, my - 11f, 110f, 22f), ht, barText);
+        GUI.Label(new Rect(tall.x - 40f, baseY + 2f, tallW + 80f, 20f), "Height", barText);
+
+        // side to side: the marker goes to the low end
+        float gap = EdgeEndsGap();                       // + = right end higher, so the left end is low
+        const float range = 0.5f;
+        Rect wide = new Rect(cx - wideW * 0.5f, baseY - wideH, wideW, wideH);
+        Ui.Fill(wide, BarBack);
+        Ui.Fill(new Rect(wide.center.x - 1f, wide.y - 5f, 2f, wideH + 10f), MarkOn);                  // level
+        float mx = wide.center.x - Mathf.Clamp(gap / range, -1f, 1f) * wideW * 0.5f;
+        bool level = Mathf.Abs(gap) < 0.02f;
+        Ui.Fill(new Rect(mx - 4f, wide.y - 3f, 8f, wideH + 6f), level ? MarkOn : MarkOff);
+        string lt = level ? "Level" : (gap > 0f ? "Left" : "Right") + " end " + Mathf.RoundToInt(Mathf.Abs(gap) * 100f) + " cm low";
+        GUI.Label(new Rect(wide.x, wide.y - 26f, wideW, 22f), lt, barText);
+        GUI.Label(new Rect(wide.x, baseY + 2f, wideW, 20f), "Side to side", barText);
+    }
+
     void OnGUI()
     {
         if (!showHelp || !driven || Prologue.Playing) return;
         Ui.Begin();
+        DrawBladeBars();
         float below = Hud.TopLeftBottom;
         if (Hud.HelpOn)
         {
@@ -722,14 +821,14 @@ public class DozerController : MonoBehaviour
                 "Right trigger   blade down     Left trigger   blade up     (lower it into the ground to dig)\n" +
                 "RB / LB   ripper up / down    (breaks up hard rock)\n" +
                 "D-pad   angle / tilt blade    X   straighten    B   lights    Right stick   look round\n" +
-                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; a trigger pauses it)\n" +
+                "A   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds the blade level too; a trigger or the d-pad pauses it)\n" +
                 "GYRO: hold right stick click (or the grip set up for it) and tilt the controller" + (GyroHeld ? "   [GYRO ON]" : "") + "\n" +
                 "Back   menu     Left stick click   hide this help" :
                 "W / S   drive          A / D   steer          Enter   get out\n" +
                 "R / F   blade up / down     (lower it into the ground to dig)\n" +
                 "T / G   ripper up / down    (breaks up hard rock)\n" +
                 "Q / E   angle blade    Z / C   tilt blade    X   straighten    L   lights    V   blade view\n" +
-                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; R / F pauses it)\n" +
+                "B   blade auto: " + AutoHelp + "    (Off / Flat / Cut 5 to 20 cm; holds the blade level too; R / F or Z / C pauses it)\n" +
                 "Right mouse drag: look round    Scroll: zoom\n" +
                 "U   upgrades     Esc   menu     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
             below = Hud.HelpBox(text, 560f);

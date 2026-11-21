@@ -863,6 +863,12 @@ public static class BulldozerBuilder
                         if (done.Add(key) && w.TestSetColumn(p.x, p.z, w.TopAt(p.x, p.z) + 0.125f)) raised++;
                     }
             baLog += " ridgeColumns=" + raised;
+            // leaning 10 degrees either way, auto level brings the cutting edge level (it was 4.5 m x sin 10 = 78 cm out)
+            float gapR = d.TestLevelGap(10f); baLog += " tiltR=" + DozerController.TestLevelTilt.ToString("F1") + " rawR=" + DozerController.TestLevelRaw.ToString("F3"); float gapL = d.TestLevelGap(-10f);
+            bool levelOk = Mathf.Abs(gapR) < 0.03f && Mathf.Abs(gapL) < 0.03f;
+            bool deepOk = d.BladeDownDepth > 0.40f;
+            baLog += " levelGap(+10/-10)=" + gapR.ToString("F3") + "/" + gapL.ToString("F3") + " levelOk=" + levelOk + " deepOk=" + deepOk;
+            if (!levelOk || !deepOk) baFail = true;
             // the cycle: Off -> Flat
             d.bladeAuto = DozerController.BladeAutoMode.Off;
             DozerController.LastAuto = DozerController.BladeAutoMode.Flat;
