@@ -5,6 +5,7 @@
 //   Tab              switch between the view over his shoulder and the view through his eyes
 //   1 / 2 / 3        pick / shovel / backpack nozzle
 //   4                the rifle (just for fun, free from the start: it chips the ground; Rifle.cs)
+//   5                the freeze gun (free too): water it hits turns to ice (Fluids.cs)
 //   Left mouse or Space   use the tool (hold to keep going; the nozzle sucks while you hold it)
 //   Q                squirt the backpack's load into the cart (stand near it)
 //   Enter            get into the dozer, or out of it
@@ -110,7 +111,9 @@ public class Worker : MonoBehaviour
     const float JackMin = 0.14f;
     float jackSize = 1f, jackAcc;
     bool hammering;
-    Transform jack, rifle;
+    Transform jack, rifle, freezeGun;
+    public const float FreezeGap = 0.25f;                  // the freeze gun: 4 shots a second
+    public static int FreezeShots { get; private set; }    // (tests)
     float rifleWait, recoil;
     public bool Hammering { get { return hammering; } }
     public bool Sucking { get; private set; }            // the backpack is sucking (the sound)
@@ -185,7 +188,7 @@ public class Worker : MonoBehaviour
                 if (swingT < PickBite) return Pose.Mix(PickHigh, PickStrike, (swingT - PickRaise) / (PickBite - PickRaise));
                 return Pose.Mix(PickStrike, PickCarry, (swingT - PickBite) / (PickTime - PickBite));
         }
-        if (Tool == 3) return RifleHold;
+        if (Tool == 3 || Tool == 4) return RifleHold;
         if (Tool == 2) return NozzleHold;
         if (Tool == 0 && jackOwned) return JackHold;
         return Tool == 0 ? PickCarry : (loaded ? ShovelLoaded : ShovelCarry);
@@ -194,7 +197,7 @@ public class Worker : MonoBehaviour
     // ---------------------------------------------------------------- building him out of boxes
     // The tools use their own wood (24) and the finds' steel (23), not the scenery's timber and steel (11, 13):
     // scenery colours are cut away between the camera and him, which used to make the tools vanish.
-    const byte HiVis = 16, Navy = 17, Skin = 18, Hat = 19, Boot = 20, Timber = 24, Steel = 23, Dirt = 6;
+    const byte HiVis = 16, Navy = 17, Skin = 18, Hat = 19, Boot = 20, Timber = 24, Steel = 23, Dirt = 6, IceBlue = 31;
     readonly List<Vector3> verts = new List<Vector3>();
     readonly List<Vector3> normals = new List<Vector3>();
     readonly List<Color32> colours = new List<Color32>();
@@ -313,6 +316,15 @@ public class Worker : MonoBehaviour
         Box(new Vector3(0f, 0.065f, 0.36f), new Vector3(0.03f, 0.03f, 0.12f), Boot);          // sight
         rifle = Part("Rifle", hold, Vector3.zero);
         rifle.gameObject.SetActive(false);
+        // the freeze gun (Fluids.cs): a fat ice-blue body with a tank under it and a wide short nozzle
+        Box(new Vector3(0f, -0.03f, 0.08f), new Vector3(0.05f, 0.1f, 0.24f), Steel);          // stock
+        Box(new Vector3(0f, 0.01f, 0.36f), new Vector3(0.09f, 0.1f, 0.32f), IceBlue);         // body
+        Box(new Vector3(0f, -0.08f, 0.3f), new Vector3(0.04f, 0.1f, 0.04f), Steel);           // grip
+        Box(new Vector3(0f, -0.1f, 0.46f), new Vector3(0.07f, 0.07f, 0.16f), Steel);          // the tank
+        Box(new Vector3(0f, 0.02f, 0.6f), new Vector3(0.06f, 0.06f, 0.16f), Steel);           // the neck
+        Box(new Vector3(0f, 0.02f, 0.72f), new Vector3(0.09f, 0.09f, 0.08f), IceBlue);        // the nozzle
+        freezeGun = Part("FreezeGun", hold, Vector3.zero);
+        freezeGun.gameObject.SetActive(false);
         // the hose from the backpack to the nozzle, in short pieces laid along a sagging curve each frame
         hose = new GameObject("Hose").transform;
         hose.SetParent(transform, false);
@@ -448,15 +460,16 @@ public class Worker : MonoBehaviour
         shovel.gameObject.SetActive(tool == 1);
         nozzle.gameObject.SetActive(tool == 2);
         if (rifle != null) rifle.gameObject.SetActive(tool == 3);
+        if (freezeGun != null) freezeGun.gameObject.SetActive(tool == 4);
     }
 
-    /// The bumpers: the next tool along (dir 1) or the one before (-1): pick, shovel, backpack (once bought), rifle.
+    /// The bumpers: the next tool along (dir 1) or the one before (-1): pick, shovel, backpack (once bought), rifle, freeze gun.
     int NextTool(int dir)
     {
         int t = Tool;
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 5; i++)
         {
-            t = (t + dir + 4) % 4;
+            t = (t + dir + 5) % 5;
             if (t != 2 || backpackOwned) return t;
         }
         return Tool;
@@ -582,6 +595,7 @@ public class Worker : MonoBehaviour
             if (Input.GetKeyDown(KeyCode.Alpha2)) SetTool(1);
             if (Input.GetKeyDown(KeyCode.Alpha3)) { if (backpackOwned) SetTool(2); else Say("No backpack yet.  Max out the shovel, then buy it in the upgrades (U).", 3f); }
             if (Input.GetKeyDown(KeyCode.Alpha4)) SetTool(3);
+            if (Input.GetKeyDown(KeyCode.Alpha5)) SetTool(4);
             if (Input.GetKeyDown(KeyCode.Q) || Pad.Down(Pad.B.X)) { if (backpackOwned) StartPour(); }
             if (Input.GetKeyDown(KeyCode.E) || Pad.Down(Pad.B.A)) PressE();
             if (Input.GetKeyDown(KeyCode.T) || Pad.Down(Pad.B.B)) TipCart();
@@ -638,12 +652,16 @@ public class Worker : MonoBehaviour
         TakeAim();
 
         // ---- the rifle: 8 shots a second while you hold the button
-        if (Tool == 3)
+        if (Tool == 3 || Tool == 4)
         {
             Pouring = false; Sucking = false; hammering = false; swing = Swing.None;
             rifleWait -= dt;
             recoil = Mathf.MoveTowards(recoil, 0f, dt * 0.6f);
-            if (use && rifleWait <= 0f) { FireRifle(); rifleWait = Rifle.Gap; }
+            if (use && rifleWait <= 0f)
+            {
+                if (Tool == 3) { FireRifle(); rifleWait = Rifle.Gap; }
+                else { FireFreeze(); rifleWait = FreezeGap; }
+            }
             Animate(move.magnitude);
             return;
         }
@@ -753,6 +771,20 @@ public class Worker : MonoBehaviour
         throwIntoCart = cart != null && cart.HasRoom && cart.Near(transform.position, 7.5f);
         throwAt = throwIntoCart ? cart.Mouth : transform.position + back * 2.6f + Quaternion.Euler(0f, yaw, 0f) * Vector3.right * 0.5f;
         throwBehind = Vector3.Dot(throwAt - transform.position, back) > 0f;
+    }
+
+    /// One shot of the freeze gun down the aim line: water it reaches turns to ice (Fluids.cs).
+    public void FireFreeze()
+    {
+        Vector3 from, dir;
+        if (cam != null && !useOverride) FollowCamera.Unshaken(cam.transform, out from, out dir);
+        else { from = transform.position + Vector3.up * 1.6f; dir = Quaternion.Euler(lookPitch, yaw, 0f) * Vector3.forward; }
+        Vector3 chest = transform.position + Vector3.up * 1.3f;
+        from += dir * Mathf.Max(0f, Vector3.Dot(chest - from, dir) - 0.25f);
+        Vector3 muzzle = freezeGun != null && freezeGun.gameObject.activeInHierarchy ? freezeGun.TransformPoint(new Vector3(0f, 0.02f, 0.78f)) : from;
+        FreezeShots++;
+        if (Fluids.Instance != null) Fluids.Instance.FreezeShot(from, dir, muzzle);
+        recoil = 0.015f;
     }
 
     /// One shot of the rifle down the aim line (the same line the cross is on).
@@ -951,7 +983,7 @@ public class Worker : MonoBehaviour
             hold.localRotation = Quaternion.Euler((lookPitch - 14f) * 0.5f, 0f, 0f);
         }
         if (jack != null && Tool == 0 && jack.gameObject.activeSelf != jackOwned) { jack.gameObject.SetActive(jackOwned); pick.gameObject.SetActive(!jackOwned); }
-        Transform tool = Tool == 3 ? rifle : Tool == 0 ? (jackOwned ? jack : pick) : Tool == 1 ? shovel : nozzle;
+        Transform tool = Tool == 4 ? freezeGun : Tool == 3 ? rifle : Tool == 0 ? (jackOwned ? jack : pick) : Tool == 1 ? shovel : nozzle;
         tool.localPosition = p.at;
         tool.localRotation = Quaternion.Euler(p.turn);
         if (Tool == 2)
@@ -964,7 +996,7 @@ public class Worker : MonoBehaviour
             bool working = Pouring || (useOverride ? overrideUse : (Input.GetMouseButton(0) || Input.GetKey(KeyCode.Space) || Pad.RT > 0.3f));
             if (working) tool.localPosition += new Vector3(Mathf.Sin(Time.time * 71f), Mathf.Sin(Time.time * 53f), 0f) * 0.004f;
         }
-        if (Tool == 3)
+        if (Tool == 3 || Tool == 4)
         {
             // the rifle points along the aim (far out, so it lines up with the cross), and kicks back a little each shot
             Vector3 target = tool.position + aimDir * 40f;
@@ -1000,7 +1032,7 @@ public class Worker : MonoBehaviour
             armR.localRotation = Quaternion.Slerp(swingR, reach, Mathf.SmoothStep(0f, 1f, handK));
             return;
         }
-        if (Tool == 3)
+        if (Tool == 3 || Tool == 4)
         {
             // right hand on the grip, left hand under the fore-end
             Reach(armR, tool.TransformPoint(new Vector3(0f, -0.1f, 0.3f)));
@@ -1295,7 +1327,7 @@ public class Worker : MonoBehaviour
         if (InDozer) return;                                      // (the dozer draws its own; Enter / Y in its help)
         if (Dingo.Working) return;                               // (Dingo: it draws its own help)
         if (Tool == 2 && !backpackOwned) SetTool(1);
-        string tool = Tool == 3 ? "Rifle   (just for fun)" : Tool == 0 ? (jackOwned ? "Jackhammer   bite " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") : "Pick") : Tool == 1 ? "Shovel" : "Backpack";
+        string tool = Tool == 4 ? "Freeze gun   (freezes water)" : Tool == 3 ? "Rifle   (just for fun)" : Tool == 0 ? (jackOwned ? "Jackhammer   bite " + (Mathf.RoundToInt(jackSize * 4f) + 1) + " of 5" + (JackShatter > 0f ? " (too big for gold)" : " (safe for gold)") : "Pick") : Tool == 1 ? "Shovel" : "Backpack";
         float shovelL = world.ShovelVoxels * VoxelWorld.VoxelVolume * 1000f;
         var cart = MineCart.Instance;
         float below = Hud.TopLeftBottom;
@@ -1310,7 +1342,7 @@ public class Worker : MonoBehaviour
                 "Cart: A at an end holds it, left stick pushes" + (cart != null && cart.spec.motor ? ", d-pad right rides it" : "") + (cart != null && cart.spec.auto ? ", d-pad left sends it" : "") + ".  At the dump A tips it.\n" +
                 "Left stick click   hide this help" :
                 "Mouse   look and aim        W A S D   walk        Tab   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
-                "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     4   rifle     Left mouse or Space   use it where you aim (hold)\n" +
+                "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     4   rifle     5   freeze gun     Left mouse or Space   use it where you aim (hold)\n" +
                 (jackOwned ? "Shift+wheel or [ ]   jackhammer bite size\n" : "") +
                 "Cart: E at an end holds it, W push, S pull, E let go, T tips it" + (cart != null && cart.spec.motor ? ", R rides it" : "") + (cart != null && cart.spec.auto ? ", G sends it" : "") + ".  At the dump E tips it.\n" +
                 "E   pick up loose gold (into your pockets); at the gold shed E hands it in, or sells the gold store\n" +
@@ -1327,6 +1359,8 @@ public class Worker : MonoBehaviour
             string ms = "";
             for (int i = 0; i < 5; i++) ms += VoxelWorld.MsNames[i] + " " + world.MsAvg[i].ToString("F1") + "  ";
             dbg += "\nWork per step (ms): " + ms;
+            var ft = world.FluidRoughTotals();
+            dbg += "\nWater " + (ft.x / 255) + " cells   gas " + (ft.y / 255) + "   cold " + (ft.z / 255) + "   ice " + ft.w + "   (" + world.FluidBricks + " bricks, " + world.FluidMs.ToString("F1") + " ms)";
             Hud.DebugBox(dbg, below);
         }
 

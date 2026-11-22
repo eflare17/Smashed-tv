@@ -3448,6 +3448,212 @@ public static class BulldozerBuilder
         }
     }
 
+    // Ice:  -executeMethod BulldozerBuilder.IceTest    prints BULLDOZER_ICE_RESULT (or _FAILED)
+    // A puddle is laid on the floor.  5 picks the freeze gun (it shows); a shot freezes the puddle into ice that you can
+    // stand on; the pick breaks it into loose bits that melt back to water; the rifle breaks ice too; ice melts back on
+    // its own; a cold-gas pocket broken open at the end of the tunnel freezes water lying under it; the bumpers reach
+    // the freeze gun; nothing costs money and the dirt's books stay exact.
+    static int icPhase, icFrozen0, icBroken0;
+    static float icT0;
+    static long icVol0, icCoins0;
+    static Vector3 icPool;
+    static float icGround;
+    static string icLog;
+    static bool icOk;
+    static Fluids.Pocket icPocket;
+    public static void IceTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        icPhase = 0; icLog = ""; icOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += IceTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void IcCheck(bool ok, string what) { icLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) icOk = false; }
+    static void IceFinish(int code)
+    {
+        EditorApplication.update -= IceTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    /// Lays a puddle of water `r` across at `at`, on the ground.
+    static void LayPuddle(VoxelWorld w, Vector3 at, float r, int amount)
+    {
+        for (float z = -r; z <= r; z += VoxelWorld.FCellSize)
+            for (float x = -r; x <= r; x += VoxelWorld.FCellSize)
+            {
+                if (x * x + z * z > r * r) continue;
+                Vector3 p = at + new Vector3(x, 0f, z);
+                p.y = w.FloorAt(p + Vector3.up * 0.4f) + 0.03f;
+                int gx, gy, gz;
+                if (!w.FluidCellOf(p, out gx, out gy, out gz)) continue;
+                if (w.AddWater(gx, gy, gz, amount) == 0) w.AddWater(gx, gy + 1, gz, amount);
+            }
+    }
+    static int IceCells(VoxelWorld w, Vector3 at, float r)
+    {
+        int n = 0;
+        for (float z = -r; z <= r; z += VoxelWorld.FCellSize)
+            for (float x = -r; x <= r; x += VoxelWorld.FCellSize)
+                for (float y = -0.4f; y <= 0.6f; y += VoxelWorld.FCellSize)
+                    if (w.IceAt(at + new Vector3(x, y, z))) n++;
+        return n;
+    }
+    static float WaterNear(VoxelWorld w, Vector3 at, float r)
+    {
+        long n = 0;
+        for (float z = -r; z <= r; z += VoxelWorld.FCellSize)
+            for (float x = -r; x <= r; x += VoxelWorld.FCellSize)
+                for (float y = -0.4f; y <= 0.6f; y += VoxelWorld.FCellSize)
+                    n += w.WaterAt(at + new Vector3(x, y, z));
+        return n / 255f;
+    }
+    static void IceTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_ICE_FAILED timed out in phase " + icPhase + icLog); IceFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var f = Fluids.Instance; var m = Money.Instance;
+        if (w == null || wk == null || f == null || m == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (icPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            f.StopRain();
+            Fluids.WaterOn = false;                          // (the creek off: just our own water)
+            icPool = f.Spring + new Vector3(-2.5f, 0f, -3f); icPool.y = w.FloorAt(icPool + Vector3.up * 0.5f);   // open floor, out from the face
+            icGround = icPool.y;
+            LayPuddle(w, icPool, 0.6f, 160);
+            icVol0 = w.CountSolid() + w.LoadVoxels;
+            icCoins0 = m.Coins;
+            bStand = icPool + new Vector3(0f, 0f, -3f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            AimAt(wk, icPool);
+            wk.SetTool(4);
+            var gun = wk.transform.Find("Hold/FreezeGun");
+            IcCheck(wk.Tool == 4 && gun != null && gun.gameObject.activeSelf, "freezeGunInHand");
+            icPhase = 1; icT0 = t;
+            return;
+        }
+        if (icPhase == 1)
+        {
+            if (t - icT0 < 1.5f) return;
+            float water = WaterNear(w, icPool, 0.8f);
+            icLog += " puddle=" + water.ToString("F0") + "cells";
+            IcCheck(water > 10f, "puddleLaid");
+            icFrozen0 = Fluids.Frozen;
+            int shots0 = Worker.FreezeShots;
+            AimAt(wk, icPool);
+            wk.FireFreeze(); wk.FireFreeze();
+            int ice = IceCells(w, icPool, 0.8f);
+            icLog += " froze=" + (Fluids.Frozen - icFrozen0) + " iceCells=" + ice;
+            IcCheck(Worker.FreezeShots - shots0 == 2, "fires");
+            IcCheck(ice >= 10, "puddleFreezes");
+            icPhase = 2; icT0 = t;
+            return;
+        }
+        if (icPhase == 2)
+        {
+            if (t - icT0 < 1f) return;
+            // stand on it
+            float floor = w.FloorAt(icPool + Vector3.up * 0.4f);
+            icLog += " floorOnIce=" + (floor - icGround).ToString("F3") + "m";
+            IcCheck(floor > icGround + 0.005f, "standOnIce");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ice_puddle.png");
+            icLog += " icePic";
+            // the pick breaks it
+            icBroken0 = Fluids.IceBroken;
+            w.Pick(icPool + Vector3.up * 0.02f, 0.3f, new Vector3(0f, 2f, -1f));
+            icLog += " pickBroke=" + (Fluids.IceBroken - icBroken0) + " bits=" + f.IceBits;
+            IcCheck(Fluids.IceBroken > icBroken0 && f.IceBits > 0, "pickBreaksIce");
+            // the rifle breaks it too
+            int b1 = Fluids.IceBroken;
+            Vector3 aim = icPool + new Vector3(0.1f, 0.02f, -0.48f);              // the near edge, which the pick left
+            Vector3 eye = bStand + Vector3.up * 1.6f;
+            Rifle.Fire(eye, (aim - eye).normalized, eye);
+            icLog += " rifleBroke=" + (Fluids.IceBroken - b1);
+            IcCheck(Fluids.IceBroken > b1, "rifleBreaksIce");
+            icPhase = 3; icT0 = t;
+            return;
+        }
+        if (icPhase == 3)
+        {
+            if (t - icT0 < Fluids.IceBitLife + 1.5f) return;
+            icLog += " bitsLeft=" + f.IceBits;
+            IcCheck(f.IceBits == 0, "bitsMelt");
+            // ice melts on its own (made quick for the test)
+            w.MeltSeconds = 2f;
+            icPhase = 4; icT0 = t;
+            return;
+        }
+        if (icPhase == 4)
+        {
+            if (t - icT0 < 8f) return;
+            int ice = IceCells(w, icPool, 0.8f);
+            float water = WaterNear(w, icPool, 1.2f);
+            icLog += " afterMelt ice=" + ice + " water=" + water.ToString("F0") + "cells";
+            IcCheck(ice <= 3, "meltsAway");
+            IcCheck(water > 2f, "backToWater");
+            w.MeltSeconds = 100f;
+            // a cold-gas pocket: the deepest one in the tunnel
+            icPocket = null;
+            foreach (var p in f.Pockets) if (p.cold && (icPocket == null || p.centre.z > icPocket.centre.z)) icPocket = p;
+            IcCheck(icPocket != null, "coldPocketThere");
+            if (icPocket == null) { Debug.Log("BULLDOZER_ICE_FAILED" + icLog); IceFinish(1); return; }
+            float side = Mathf.Sign(icPocket.centre.x - VoxelWorld.PortalX);
+            float half = VoxelWorld.TunnelHalfWidthAt(icPocket.centre.z - VoxelWorld.PortalZ);
+            Vector3 wall = new Vector3(VoxelWorld.PortalX + side * half, icPocket.centre.y, icPocket.centre.z);
+            // water lying on the tunnel floor under where it will come out
+            icPool = new Vector3(wall.x - side * 0.7f, 0f, wall.z); icPool.y = w.FloorAt(icPool + Vector3.up * 0.5f);
+            LayPuddle(w, icPool, 0.6f, 160);
+            bStand = icPool + new Vector3(-side * 1.2f, 0f, -2.5f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            wk.SetTool(0);
+            for (int i = 0; i < 3; i++) w.Pick(wall + new Vector3(side * (0.08f + 0.1f * i), 0f, 0f), 0.3f, new Vector3(-side * 2f, 1f, 0f));
+            IcCheck(icPocket.open, "pocketOpens");
+            icPhase = 5; icT0 = t;
+            return;
+        }
+        if (icPhase == 5)
+        {
+            if (t - icT0 < 1f) return;
+            AimAt(wk, icPool + Vector3.up * 0.5f);
+            if (t - icT0 < 10f) return;
+            var tot = w.FluidTotals();
+            int ice = IceCells(w, icPool, 0.9f);
+            icLog += " coldGas=" + (tot.z / 255) + "cells iceUnderIt=" + ice;
+            IcCheck(tot.z > 0 || icPocket.spent, "coldGasLeaks");
+            IcCheck(ice >= 5, "coldGasFreezesWater");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/ice_cold_gas.png");
+            icLog += " coldPic";
+            // the bumpers reach the freeze gun
+            wk.SetTool(3);
+            bool reached = false;
+            var next = typeof(Worker).GetMethod("NextTool", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            for (int i = 0; i < 5 && !reached; i++)
+            {
+                int n = (int)next.Invoke(wk, new object[] { 1 });
+                wk.SetTool(n);
+                if (n == 4) reached = true;
+            }
+            IcCheck(reached, "bumpersReachIt");
+            icPhase = 6; icT0 = t;
+            return;
+        }
+        if (icPhase == 6)
+        {
+            if (t - icT0 < 5f) return;                         // the clods from the pick land
+            long vol = w.CountSolid() + w.LoadVoxels;
+            icLog += " volumeChange=" + (vol - icVol0);
+            IcCheck(vol == icVol0, "dirtKept");
+            IcCheck(m.Coins == icCoins0, "free");
+            Fluids.WaterOn = true;
+            Debug.Log((icOk ? "BULLDOZER_ICE_RESULT" : "BULLDOZER_ICE_FAILED") + icLog);
+            IceFinish(icOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
