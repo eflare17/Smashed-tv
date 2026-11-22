@@ -26,6 +26,10 @@
 // only (was 800 + 10 L gold).  Gold is only found past the second cave-in, and every buy after Cart 2 needed
 // gold, so there was a long stretch (a rough model: about 19 minutes) of digging with nothing to buy.  The motor
 // cart and its levels now fill that stretch.  The model is art/bulldozer-vox/pace_model.py.  See MORNING_REPORT.md.
+// Tuned again 22 Nov 2026 (evening): the Jackhammer is coins only (was 600 + 8 L gold: the owner found the gold
+// confusing), and the longest waits are trimmed so no buy is more than about 3 minutes' digging away in the model:
+// Jackhammer 4 670 -> 560, Jackhammer 5 1070 -> 850, Backpack 6 983 -> 800, Motor cart 800 -> 650,
+// Bigger cart 900 -> 750, Automatic cart 1200 -> 1000 (+ 20 L gold still).
 using UnityEngine;
 
 public class Upgrades : MonoBehaviour
@@ -56,8 +60,8 @@ public class Upgrades : MonoBehaviour
             new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600),
             new Step("Jackhammer 2", "Bigger bite, faster blows", 260),
             new Step("Jackhammer 3", "Bigger bite, faster blows", 420),
-            new Step("Jackhammer 4", "Bigger bite, faster blows", 670),
-            new Step("Jackhammer 5", "Biggest bite, fastest", 1070),
+            new Step("Jackhammer 4", "Bigger bite, faster blows", 560),
+            new Step("Jackhammer 5", "Biggest bite, fastest", 850),
         },
         new[] {   // shovel: load 117 -> 342 litres, swing speed 1.0 -> 1.6
             new Step("Shovel 1", "117 L a scoop", 0),
@@ -73,18 +77,18 @@ public class Upgrades : MonoBehaviour
             new Step("Backpack 3", "400 L, 1.8x suction", 240),
             new Step("Backpack 4", "500 L, 2.2x suction", 384),
             new Step("Backpack 5", "600 L, 2.6x suction", 614),
-            new Step("Backpack 6", "750 L, 3x suction", 983),
+            new Step("Backpack 6", "750 L, 3x suction", 800),
             new Step("Backpack 7", "875 L, 3.5x suction", 1400),
             new Step("Backpack 8", "1000 L, 4x suction", 1900),
         },
         new[] {   // cart: 1000 -> 1500 litres
             new Step("Cart 1", "Hand cart, 1000 L", 0),
             new Step("Cart 2", "Bigger tub, 1500 L", 450),
-            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 800),   // (coins only: see the tuning note at the top)
+            new Step("Motor cart", "Unlock: R at an end rides it, W out, S back in.  3 m/s", 650),   // (coins only: see the tuning note at the top)
             new Step("Motor cart 2", "Faster: 4 m/s", 400),
             new Step("Motor cart 3", "Fastest: 5 m/s", 640),
-            new Step("Bigger cart", "Higher sides: a 2,000 L tub", 900),
-            new Step("Automatic cart", "G sends it to the hopper: it tips itself and comes back empty", 1200, 20f),
+            new Step("Bigger cart", "Higher sides: a 2,000 L tub", 750),
+            new Step("Automatic cart", "G sends it to the hopper: it tips itself and comes back empty", 1000, 20f),
         },
         new[] {   // the Dingo: one step, the machine itself
             new Step("Dingo", "Unlock: mini loader that fits the tunnel.  Enter gets on.  " + Dingo.BucketLitres.ToString("F0") + " L bucket", 1000, 12f),

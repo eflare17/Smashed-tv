@@ -18,10 +18,10 @@ PRICES = json.loads(sys.argv[1]) if len(sys.argv) > 1 else None
 
 # (name, coins, gold litres) per branch, in order; from Upgrades.cs
 P = PRICES or {
-  "pick":  [("Pick 2",60,0),("Pick 3",110,0),("Pick 4",190,0),("Pick 5",320,0),("Jackhammer",600,8),("Jackhammer 2",260,0),("Jackhammer 3",420,0),("Jackhammer 4",670,0),("Jackhammer 5",1070,0)],
+  "pick":  [("Pick 2",60,0),("Pick 3",110,0),("Pick 4",190,0),("Pick 5",320,0),("Jackhammer",600,0),("Jackhammer 2",260,0),("Jackhammer 3",420,0),("Jackhammer 4",560,0),("Jackhammer 5",850,0)],
   "shovel":[("Shovel 2",40,0),("Shovel 3",75,0),("Shovel 4",135,0),("Shovel 5",230,0),("Shovel 6",380,0)],
-  "pack":  [("Backpack",400,5),("Backpack 2",150,0),("Backpack 3",240,0),("Backpack 4",384,0),("Backpack 5",614,0),("Backpack 6",983,0),("Backpack 7",1400,0),("Backpack 8",1900,0)],
-  "cart":  [("Cart 2",450,0),("Motor cart",800,0),("Motor cart 2",400,0),("Motor cart 3",640,0),("Bigger cart",900,0),("Automatic cart",1200,20)],
+  "pack":  [("Backpack",400,5),("Backpack 2",150,0),("Backpack 3",240,0),("Backpack 4",384,0),("Backpack 5",614,0),("Backpack 6",800,0),("Backpack 7",1400,0),("Backpack 8",1900,0)],
+  "cart":  [("Cart 2",450,0),("Motor cart",650,0),("Motor cart 2",400,0),("Motor cart 3",640,0),("Bigger cart",750,0),("Automatic cart",1000,20)],
 }
 SHOVEL_HOLDS = [480,640,800,980,1180,1400]
 SHOVEL_SPEED = [1.0,1.1,1.2,1.3,1.45,1.6]

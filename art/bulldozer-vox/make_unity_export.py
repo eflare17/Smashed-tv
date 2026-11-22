@@ -3614,7 +3614,7 @@ public static class BulldozerBuilder
     }
 
     // The bigger cart:  -executeMethod BulldozerBuilder.BigCartTest
-    // Buys it after Motor cart 3 (900 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
+    // Buys it after Motor cart 3 (750 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
     // the old 1,500 L; it still drives to the dump and pays what the load was worth; sold back, it is 1,500 L again.
     // Prints BULLDOZER_BIGCART_RESULT, or BULLDOZER_BIGCART_FAILED if a check didn't hold.
     static int bgcPhase; static float bgcPhaseStart, bgcTipEnd; static long bgcCoins0; static double bgcWorth; static bool bgcOk; static string bgcLog;
@@ -3649,7 +3649,7 @@ public static class BulldozerBuilder
             var boards = cart.transform.Find("Big tub");
             BCheck("boardsHiddenBefore", boards != null && !boards.gameObject.activeSelf);
             int before = cart.capacity;
-            money.TestGrant(900, 0);
+            money.TestGrant(750, 0);
             BCheck("buysWithCoinsOnly", up.Buy(Upgrades.Branch.Cart) && money.Coins == 0);
             bgcLog += " holdsL=" + (before * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "->" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
             BCheck("bigger", cart.capacity == 8192 && before == 6144);
@@ -3687,7 +3687,7 @@ public static class BulldozerBuilder
             bgcLog += " paid=" + paid + " worth=" + bgcWorth.ToString("F1") + " left=" + w.CartVoxels;
             BCheck("paysForAll", System.Math.Abs(paid - bgcWorth) < 1.01 && w.CartVoxels < VoxelWorld.ClodVoxels);
             long c0 = money.Coins;
-            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 900);
+            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 750);
             BCheck("smallerAgain", cart.capacity == 6144);
             Debug.Log((bgcOk ? "BULLDOZER_BIGCART_RESULT" : "BULLDOZER_BIGCART_FAILED") + bgcLog);
             BigCartFinish(bgcOk ? 0 : 1);
