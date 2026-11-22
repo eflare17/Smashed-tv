@@ -12,8 +12,13 @@
 //   cold    the blue cold gas (it freezes water)
 //   flag    1 = solid (most of its 8 voxels are ground), 2 = ice
 //
+// How water looks (23 Nov, the owner's call): chunky blocks.  A cell with a fair bit of water in it that sits on
+// something (ground, ice, more water) is drawn as a whole see-through blue cube; thin films aren't drawn at all.
+// Water in free fall (open air under it, two cells down) leaves the grid as a tumbling cube (Fluids.cs: drops) that
+// lands back in the grid where it comes to rest.
+//
 // One step (20 a second), a Burst job over the awake bricks:
-//   water falls into the cell below if it can, then spreads sideways to level out (a cell with very little stays put,
+//   water in free fall goes out as a drop (above); otherwise it falls into the cell below if it can, then spreads sideways to level out (a cell with very little stays put,
 //   so water stops as a film instead of spreading thinner for ever).  Water lying on ground soaks away slowly.
 //   Green gas rises, cold gas sinks; both spread out and slowly thin away.  Gas that reaches the open sky is gone.
 //   Water touching cold gas freezes; ice melts back, slowly.
@@ -41,7 +46,13 @@ public partial class VoxelWorld
     [System.NonSerialized] public float FluidRange = 1e9f;
     public const byte FSolid = 1, FIce = 2;
     public const int GasGoesOff = 20;                        // green gas this strong (or more) explodes when set off
-    public const int WaterStill = 24;                        // water this little in a cell doesn't spread any further
+    public const int WaterStill = 80;                        // water this little in a cell doesn't spread any further (so it lies in chunky blocks, not films)
+    public const int WaterShows = 40;                        // a cell with this much water or more is drawn (as a whole block)
+    public const int DropMin = 64;                           // water in free fall this much or more goes out as a tumbling cube
+    /// Water that went into free fall this step: cell (x, y, z) and how much (Fluids.cs turns each into a falling cube).
+    public readonly List<int4> NewDrops = new List<int4>();
+    public static bool DropsOn = true;
+    public Material FluidMaterial { get { return fMat; } }
     const int AwakeSteps = 30;                               // a brick nothing happened in sleeps after this many steps (1.5 s)
     public const float FluidStep = 0.05f;
 
@@ -55,6 +66,7 @@ public partial class VoxelWorld
     NativeArray<byte> fWater, fGas, fCold, fFlag;
     NativeArray<byte> fAwake, fMeshDirty;
     NativeArray<int4> fSum;                                  // per brick: water, green gas, cold gas (units) and ice cells
+    NativeQueue<int4> fDropQ;
     readonly Stack<int> fFree = new Stack<int>();
     float[] fEmpty;                                          // per brick: seconds it has had nothing in it
     MeshFilter[] fMeshes;
@@ -84,6 +96,7 @@ public partial class VoxelWorld
         fAwake = new NativeArray<byte>(FluidSlots, Allocator.Persistent);
         fMeshDirty = new NativeArray<byte>(FluidSlots, Allocator.Persistent);
         fSum = new NativeArray<int4>(FluidSlots, Allocator.Persistent);
+        fDropQ = new NativeQueue<int4>(Allocator.Persistent);
         for (int i = FluidSlots - 1; i >= 0; i--) fFree.Push(i);
         fEmpty = new float[FluidSlots];
         fMeshes = new MeshFilter[FluidSlots];
@@ -104,6 +117,7 @@ public partial class VoxelWorld
         if (fAwake.IsCreated) fAwake.Dispose();
         if (fMeshDirty.IsCreated) fMeshDirty.Dispose();
         if (fSum.IsCreated) fSum.Dispose();
+        if (fDropQ.IsCreated) fDropQ.Dispose();
     }
 
     /// Called when a chunk of the ground is redrawn (it changed): its brick works out its solid cells again.
@@ -339,6 +353,7 @@ public partial class VoxelWorld
         if (!fSlot.IsCreated) return;
         for (int s = 0; s < FluidSlots; s++) if (fChunk[s] >= 0) FreeBrick(s);
         fGroundChanged.Clear();
+        NewDrops.Clear();
         IceAny = false;
     }
 
@@ -425,6 +440,7 @@ public partial class VoxelWorld
                 list = lists[k].AsArray(),
                 slot = fSlot, chunk = fChunk, water = fWater, gas = fGas, cold = fCold, flag = fFlag,
                 awake = fAwake, meshDirty = fMeshDirty, sum = fSum, step = fStepN,
+                drops = fDropQ.AsParallelWriter(), makeDrops = DropsOn,
                 soak = (uint)math.clamp(SoakPerSecond * FluidStep * 65536f, 0f, 65535f),
                 melt = (uint)math.clamp(FluidStep / math.max(1f, MeltSeconds) * 65536f * 4f, 1f, 65535f),     // (checked every 4th step)
                 fade = (uint)math.clamp(FluidStep / math.max(0.05f, GasFadeSeconds) * 65536f, 1f, 65535f),
@@ -432,6 +448,8 @@ public partial class VoxelWorld
         }
         h.Complete();
         for (int k = 0; k < 8; k++) lists[k].Dispose();
+        int4 d;
+        while (fDropQ.TryDequeue(out d)) NewDrops.Add(d);
         bool ice = false;
         for (int s = 0; s < FluidSlots && !ice; s++) if (fChunk[s] >= 0 && fSum[s].w > 0) ice = true;
         IceAny = ice;
@@ -529,6 +547,8 @@ public partial class VoxelWorld
         [ReadOnly] public NativeArray<int> slot, chunk;
         [NativeDisableParallelForRestriction] public NativeArray<byte> water, gas, cold, flag, awake, meshDirty;
         [NativeDisableParallelForRestriction] public NativeArray<int4> sum;
+        public NativeQueue<int4>.ParallelWriter drops;
+        public bool makeDrops;
         public int step;
         public uint soak, melt, fade;                        // chances per step, out of 65536
 
@@ -609,6 +629,22 @@ public partial class VoxelWorld
                                 goto Gases;
                             }
                             int below = Index(gx, gy - 1, gz);
+                            // free fall (open air under it, two cells down): out it goes as a tumbling cube.  A small
+                            // amount waits a little to gather first (so a trickle comes down as small cubes, not mist).
+                            if (makeDrops && w >= 16 && Open(below) && water[below] == 0)
+                            {
+                                int below2 = Index(gx, gy - 2, gz);
+                                if (Open(below2) && water[below2] == 0)
+                                {
+                                    if (w >= DropMin || ((h >> 12) & 7u) == 0)
+                                    {
+                                        drops.Enqueue(new int4(gx, gy, gz, w));
+                                        w = 0; water[i] = 0; changed = true;
+                                    }
+                                    else total.x += w;                       // (gathering)
+                                    goto Gases;
+                                }
+                            }
                             if (Open(below))
                             {
                                 int room = 255 - water[below];
@@ -838,10 +874,34 @@ public partial class VoxelWorld
                         // under a roof (the mine): darker
                         float dark = colTop > gy * FCell + 24 ? 0.45f : 1f;
                         bool ice = (f & FIce) != 0;
-                        if (ice || w > 0)
+                        if (!ice && w > 0)
+                        {
+                            // water: a whole block, if there's a fair bit and it sits on something
+                            int under = Index(gx, gy - 1, gz);
+                            bool sits = under < 0 ? gy * FCell <= colTop : (flag[under] & (FSolid | FIce)) != 0 || water[under] >= WaterShows;
+                            if (w >= WaterShows && sits)
+                            {
+                                int show = 0;
+                                for (int d = 0; d < 6; d++)
+                                {
+                                    int n = Index(gx + (d == 0 ? 1 : d == 1 ? -1 : 0), gy + (d == 2 ? 1 : d == 3 ? -1 : 0), gz + (d == 4 ? 1 : d == 5 ? -1 : 0));
+                                    bool hide = n >= 0 && ((flag[n] & FSolid) != 0 || (flag[n] & FIce) == 0 && water[n] >= WaterShows && d != 3);
+                                    if (d == 3) hide = n < 0 || (flag[n] & (FSolid | FIce)) != 0 || water[n] >= WaterShows;
+                                    if (!hide) show |= 1 << d;
+                                }
+                                if (show != 0)
+                                {
+                                    uint hh = (uint)(gx * 73856093) ^ (uint)(gy * 19349663) ^ (uint)(gz * 83492791);
+                                    float v = 0.9f + ((hh >> 7) & 15u) / 15f * 0.2f;           // each block a touch different, like the dirt
+                                    Color32 col = new Color32((byte)math.min(255f, 55 * dark * v), (byte)math.min(255f, 125 * dark * v), (byte)math.min(255f, 215 * dark * v), 175);
+                                    Box(lo, 0f, FCellSize, show, col);
+                                }
+                            }
+                        }
+                        if (ice)
                         {
                             float floor = FloorIn(gx, gy, gz);
-                            float depth = math.max(w, ice ? 40 : 10) / 255f * FCellSize;
+                            float depth = math.max(w, 40) / 255f * FCellSize;
                             float y1 = math.min(FCellSize, floor + depth);
                             int show = 0;
                             for (int d = 0; d < 6; d++)
@@ -859,8 +919,7 @@ public partial class VoxelWorld
                             }
                             if (show != 0)
                             {
-                                Color32 col = ice ? new Color32((byte)(225 * dark), (byte)(242 * dark), (byte)(255 * dark), 235)
-                                                  : new Color32((byte)(60 * dark), (byte)(120 * dark), (byte)(200 * dark), 150);
+                                Color32 col = new Color32((byte)(225 * dark), (byte)(242 * dark), (byte)(255 * dark), 235);
                                 Box(lo, floor, y1, show, col);
                             }
                         }

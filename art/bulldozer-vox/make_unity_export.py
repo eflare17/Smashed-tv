@@ -3296,12 +3296,14 @@ public static class BulldozerBuilder
 
     // Water:  -executeMethod BulldozerBuilder.WaterTest    prints BULLDOZER_WATER_RESULT (or _FAILED)
     // The creek runs from its spring; a hole dug beside it fills with water; filling the hole with dirt pushes the
-    // water out; with the creek off the ground soaks it away; rain puts water down round you; the dirt's books stay
+    // water out; with the creek off the ground soaks it away; the creek's water comes down the face as tumbling cubes
+    // that land back as water (no rain any more); the dirt's books stay
     // exact all the way (water is not dirt) and the water never goes over its cap; the step stays cheap.
     static int waPhase;
     static float waT0, waHoleWater;
     static long waVol0, waPile;
     static int waTotal0;
+    static int waDrops0, waLanded0;
     static Vector3 waHole;
     static string waLog;
     static bool waOk;
@@ -3344,7 +3346,6 @@ public static class BulldozerBuilder
             if (t < 2f) return;
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
-            f.StopRain();
             Vector3 s = f.Spring;
             waLog += " spring=" + s.ToString("F1");
             WaCheck(w.MaterialAt(s + new Vector3(0f, 0f, 0.2f)) != VoxelWorld.Air && w.MaterialAt(s) == VoxelWorld.Air, "springInTheFace");
@@ -3422,9 +3423,7 @@ public static class BulldozerBuilder
             waLog += " soak " + (waTotal0 / 255) + "->" + (now / 255) + "cells";
             WaCheck(now < waTotal0 * 0.7f, "soaksAway");
             Fluids.WaterOn = true;
-            f.StartRain();
-            bStand = new Vector3(-12f, 0f, -20f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
-            AimAt(wk, bStand + new Vector3(0f, 0f, 6f));
+            waDrops0 = Fluids.DropsMade; waLanded0 = Fluids.DropsLanded;
             waTotal0 = w.FluidTotals().x;
             waPhase = 4; waT0 = t;
             return;
@@ -3432,13 +3431,14 @@ public static class BulldozerBuilder
         if (waPhase == 4)
         {
             if (t - waT0 < 6f) return;
-            if (waLog.IndexOf("rainPic") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/water_rain.png"); waLog += " rainPic"; }
             int now = w.FluidTotals().x;
-            waLog += " raining=" + f.Raining + " water " + (waTotal0 / 255) + "->" + (now / 255) + "cells";
-            WaCheck(f.Raining, "rains");
-            WaCheck(now > waTotal0, "rainLandsAsWater");
+            int made = Fluids.DropsMade - waDrops0, landed = Fluids.DropsLanded - waLanded0;
+            waLog += " cubesMade=" + made + " landed=" + landed + " flying=" + f.DropsFlying + " water " + (waTotal0 / 255) + "->" + (now / 255) + "cells";
+            WaCheck(made > 20, "fallsAsCubes");
+            WaCheck(landed > 10, "cubesLand");
+            WaCheck(f.DropsFlying <= Fluids.MaxDrops, "cubesCapped");
+            WaCheck(now > waTotal0, "landsAsWater");
             WaCheck(now <= Fluids.WaterCap, "underTheCap");
-            f.StopRain();
             long vol = w.CountSolid() + w.LoadVoxels;
             WaCheck(vol == waVol0 + waPile, "dirtStillKept");
             waLog += " fluidStepMaxMs=" + w.FluidMaxMs.ToString("F2") + " bricks=" + w.FluidBricks;
@@ -3524,7 +3524,6 @@ public static class BulldozerBuilder
             if (t < 2f) return;
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
-            f.StopRain();
             Fluids.WaterOn = false;                          // (the creek off: just our own water)
             icPool = f.Spring + new Vector3(-2.5f, 0f, -3f); icPool.y = w.FloorAt(icPool + Vector3.up * 0.5f);   // open floor, out from the face
             icGround = icPool.y;
@@ -3714,7 +3713,6 @@ public static class BulldozerBuilder
             if (t < 2f) return;
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
-            f.StopRain();
             Fluids.WaterOn = false;
             gsCoins0 = m.Coins;
             gsVol0 = w.CountSolid() + w.LoadVoxels;
@@ -3848,7 +3846,6 @@ public static class BulldozerBuilder
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
             Grunts.SetOn(true);
-            f.StopRain();
             // blocked: none from outside, and none from the chamber before the last cave-in
             int s0 = Grunts.Spawned;
             bStand = new Vector3(-6f, 0f, -6f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
@@ -3971,7 +3968,6 @@ public static class BulldozerBuilder
             if (t < 2f) return;
             if (wk.InDozer) wk.GetOut();
             wk.useOverride = true;
-            f.StopRain();
             Fluids.WaterOn = false;
             Grunts.SetOn(true);
             mxVol0 = w.CountSolid() + w.LoadVoxels;
@@ -4091,7 +4087,6 @@ public static class BulldozerBuilder
             wk.Teleport(c + new Vector3(0f, 0f, -7f), 0f);
             for (float z = -6f; z <= 6f; z += 3f) for (float x = -6f; x <= 6f; x += 3f) LayPuddle(w, c + new Vector3(x, 0f, z), 1.6f, 255);
             Fluids.WaterOn = true;
-            f.StartRain();
             w.ResetFluidTiming();
             mxFrames = 0; mxFrameSum = 0f; mxFrameMax = 0f;
             mxPhase = 6; mxT0 = t;
@@ -4117,13 +4112,13 @@ public static class BulldozerBuilder
             // the Quality setting: Low works a smaller area with a smaller cap, Ultra the whole site with a bigger one
             int q0 = PauseMenu.Quality;
             PauseMenu.Quality = 0;
-            int capLow = Fluids.WaterCap; float rainLow = Fluids.RainRadius;
+            int capLow = Fluids.WaterCap; int dropsLow = Fluids.MaxDrops;
             PauseMenu.Quality = 3;
-            int capUltra = Fluids.WaterCap; float rainUltra = Fluids.RainRadius;
+            int capUltra = Fluids.WaterCap; int dropsUltra = Fluids.MaxDrops;
             PauseMenu.Quality = 1;
             int capMed = Fluids.WaterCap;
             mxLog += " caps low/medium/ultra=" + (capLow / 255) + "/" + (capMed / 255) + "/" + (capUltra / 255);
-            MxCheck(capLow < capMed && capMed < capUltra && rainLow < rainUltra && capMed == 255 * 7000, "qualityTiers");
+            MxCheck(capLow < capMed && capMed < capUltra && dropsLow < dropsUltra && capMed == 255 * 7000, "qualityTiers");
             PauseMenu.Quality = 0;
             mxPhase = 8; mxT0 = t;
             return;
@@ -4134,7 +4129,6 @@ public static class BulldozerBuilder
             mxLog += " lowRange=" + w.FluidRange.ToString("F0");
             MxCheck(w.FluidRange < 30f, "lowWorksSmallerArea");
             PauseMenu.Quality = 1;
-            f.StopRain();
             Debug.Log((mxOk ? "BULLDOZER_MIX_RESULT" : "BULLDOZER_MIX_FAILED") + mxLog);
             MixFinish(mxOk ? 0 : 1);
         }
