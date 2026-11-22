@@ -404,6 +404,18 @@ public class Worker : MonoBehaviour
         }
     }
 
+    Vector3 knock;
+    public static int Knocks { get; private set; }         // (tests)
+    /// Knocked back (a grunt reached him): he slides `push` metres a second away, quickly slowing.  He never gets hurt.
+    public void Knock(Vector3 push)
+    {
+        push.y = 0f;
+        knock = push;
+        Knocks++;
+        FollowCamera.Bump(0.06f);
+        swing = Swing.None;
+    }
+
     public void Teleport(Vector3 at, float facing)
     {
         at.y = world.FloorAt(at + Vector3.up * 0.6f);
@@ -642,6 +654,13 @@ public class Worker : MonoBehaviour
             if (!TryStep(ref pos, step) && !hitCart && !TryStep(ref pos, new Vector3(step.x, 0f, 0f)) && !hitCart)
                 TryStep(ref pos, new Vector3(0f, 0f, step.z));
             stride += move.magnitude * dt;
+        }
+        if (knock.sqrMagnitude > 0.01f)
+        {
+            // knocked back (a grunt got him, Grunts.cs): slides away, slowing quickly
+            Vector3 kstep = knock * dt;
+            if (!TryStep(ref pos, kstep)) knock = Vector3.zero;
+            knock = Vector3.MoveTowards(knock, Vector3.zero, 9f * dt);
         }
         float floor = world.FloorAt(pos + Vector3.up * 0.45f);
         pos.y = floor > pos.y ? floor : Mathf.MoveTowards(pos.y, floor, 6f * dt);       // steps up at once, drops down quickly

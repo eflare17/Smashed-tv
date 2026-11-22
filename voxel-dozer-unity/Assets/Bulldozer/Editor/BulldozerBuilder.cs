@@ -3663,6 +3663,123 @@ public static class BulldozerBuilder
         }
     }
 
+    // Grunts:  -executeMethod BulldozerBuilder.GruntTest    prints BULLDOZER_GRUNT_RESULT (or _FAILED)
+    // None come while the tunnel is still blocked (from outside, or from the chamber before the last cave-in).  A grunt
+    // put 6 m away walks at him and knocks him back (5 coins dropped, he is fine).  The rifle kills one: it bursts
+    // into cubes.  A gas blast kills one.  Esc > Settings > Enemies off clears them all; on again.
+    static int grPhase, grKnocks0, grKilled0;
+    static float grT0;
+    static long grCoins0;
+    static Vector3 grStart;
+    static string grLog;
+    static bool grOk;
+    static Grunts.Grunt grOne;
+    public static void GruntTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        grPhase = 0; grLog = ""; grOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += GruntTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void GrCheck(bool ok, string what) { grLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) grOk = false; }
+    static void GruntFinish(int code)
+    {
+        EditorApplication.update -= GruntTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void GruntTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_GRUNT_FAILED timed out in phase " + grPhase + grLog); GruntFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var gr = Grunts.Instance; var m = Money.Instance; var f = Fluids.Instance;
+        if (w == null || wk == null || gr == null || m == null || f == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (grPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            Grunts.SetOn(true);
+            f.StopRain();
+            // blocked: none from outside, and none from the chamber before the last cave-in
+            int s0 = Grunts.Spawned;
+            bStand = new Vector3(-6f, 0f, -6f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            wk.Teleport(bStand, 0f);
+            gr.TrySpawn(wk.transform.position);
+            Vector3 chamber = new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ + 20.5f);
+            float openTo = Grunts.OpenTo(20.5f);
+            gr.TrySpawn(new Vector3(chamber.x, w.FloorAt(chamber + Vector3.up * 0.5f), chamber.z));
+            grLog += " openFromChamberTo=" + openTo.ToString("F1") + "m";
+            GrCheck(openTo < 24.5f, "caveInBlocks");
+            GrCheck(Grunts.Spawned == s0, "noneWhileBlocked");
+            // one in the open, 6 m off: it walks at him
+            m.TestGrant(100, 0);
+            grCoins0 = m.Coins;
+            grKnocks0 = Worker.Knocks;
+            grStart = wk.transform.position;
+            grOne = gr.SpawnAt(grStart + new Vector3(0f, 0f, 6f));
+            wk.Teleport(grStart, 0f);
+            GrCheck(gr.Alive == 1 && grOne != null, "spawns");
+            grPhase = 1; grT0 = t;
+            return;
+        }
+        if (grPhase == 1)
+        {
+            if (Worker.Knocks == grKnocks0 && t - grT0 < 10f) return;
+            float moved = Vector3.Distance(new Vector3(grStart.x, 0f, grStart.z), new Vector3(wk.transform.position.x, 0f, wk.transform.position.z));
+            grLog += " reachedIn=" + (t - grT0).ToString("F1") + "s coinsLost=" + (grCoins0 - m.Coins);
+            GrCheck(Worker.Knocks > grKnocks0, "itGetsYou");
+            GrCheck(grCoins0 - m.Coins == Grunts.CoinsLost, "fewCoins");
+            grPhase = 2; grT0 = t;
+            return;
+        }
+        if (grPhase == 2)
+        {
+            if (t - grT0 < 1f) return;
+            float moved = Vector3.Distance(new Vector3(grStart.x, 0f, grStart.z), new Vector3(wk.transform.position.x, 0f, wk.transform.position.z));
+            grLog += " knockedBack=" + moved.ToString("F2") + "m";
+            GrCheck(moved > 0.4f, "knockedBack");
+            GrCheck(wk.isActiveAndEnabled, "stillFine");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/grunt_close.png");
+            grLog += " gruntPic";
+            // shoot it
+            grKilled0 = Grunts.Killed;
+            int gibs0 = GruntGibs.Made;
+            Vector3 eye = wk.transform.position + Vector3.up * 1.6f;
+            Vector3 chest = grOne.pos + Vector3.up * 1f;
+            Rifle.Fire(eye, (chest - eye).normalized, eye);
+            grLog += " killed=" + (Grunts.Killed - grKilled0) + " gibs=" + (GruntGibs.Made - gibs0);
+            GrCheck(Grunts.Killed > grKilled0 && gr.Alive == 0, "rifleKillsIt");
+            GrCheck(GruntGibs.Made - gibs0 >= 20, "burstsIntoCubes");
+            // a gas blast kills one
+            Vector3 there = grStart + new Vector3(4f, 0f, 3f);
+            var g2 = gr.SpawnAt(there);
+            grKilled0 = Grunts.Killed;
+            f.GoOff(g2.pos + new Vector3(0.5f, 0.3f, 0f));
+            GrCheck(Grunts.Killed > grKilled0 && gr.Alive == 0, "blastKillsIt");
+            grPhase = 3; grT0 = t;
+            return;
+        }
+        if (grPhase == 3)
+        {
+            if (t - grT0 < 0.5f) return;
+            if (grLog.IndexOf("gibsPic") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/grunt_gibs.png"); grLog += " gibsPic"; }
+            // the settings switch
+            gr.SpawnAt(grStart + new Vector3(-3f, 0f, 5f));
+            var pm = PauseMenu.Instance;
+            pm.Change(PauseMenu.EnemyRow, 1);
+            GrCheck(!Grunts.On && gr.Alive == 0, "switchOffClearsThem");
+            pm.Change(PauseMenu.EnemyRow, 1);
+            GrCheck(Grunts.On, "switchOnAgain");
+            Debug.Log((grOk ? "BULLDOZER_GRUNT_RESULT" : "BULLDOZER_GRUNT_FAILED") + grLog);
+            GruntFinish(grOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.

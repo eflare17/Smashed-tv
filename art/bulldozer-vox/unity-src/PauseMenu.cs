@@ -314,9 +314,9 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---- the settings page: one row each
-    public const int SettingRows = 17, UiSizeRow = 5, SoundRow = 9, ShakeRow = 12, AutoRow = 13;
+    public const int SettingRows = 18, UiSizeRow = 5, SoundRow = 9, ShakeRow = 12, EnemyRow = 13, AutoRow = 14;
     static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "UI size", "Show fps  (F11)", "Mouse speed", "Invert mouse look",
-                                              "Master volume", "Engine volume", "Effects volume", "Camera shake",
+                                              "Master volume", "Engine volume", "Effects volume", "Camera shake", "Enemies (grunts)",
                                               "Auto height", "Auto level", "Auto straight", "Back" };
 
     string SettingValue(int row)
@@ -336,9 +336,10 @@ public class PauseMenu : MonoBehaviour
             case 10: return Mathf.RoundToInt(GameAudio.Engine * 100f) + "%";
             case 11: return Mathf.RoundToInt(GameAudio.Effects * 100f) + "%";
             case 12: return CameraShake ? "On" : "Off";
-            case 13: return DozerController.AutoHeight ? "On" : "Off";
-            case 14: return DozerController.AutoLevel ? "On" : "Off";
-            case 15: return DozerController.AutoStraight ? "On" : "Off";
+            case 13: return Grunts.On ? "On" : "Off";
+            case 14: return DozerController.AutoHeight ? "On" : "Off";
+            case 15: return DozerController.AutoLevel ? "On" : "Off";
+            case 16: return DozerController.AutoStraight ? "On" : "Off";
         }
         return "";
     }
@@ -361,9 +362,10 @@ public class PauseMenu : MonoBehaviour
             case 10: GameAudio.Engine = Step10(GameAudio.Engine, dir); break;
             case 11: GameAudio.Effects = Step10(GameAudio.Effects, dir); break;
             case 12: CameraShake = !CameraShake; break;
-            case 13: DozerController.AutoHeight = !DozerController.AutoHeight; break;
-            case 14: DozerController.AutoLevel = !DozerController.AutoLevel; break;
-            case 15: DozerController.AutoStraight = !DozerController.AutoStraight; break;
+            case 13: Grunts.SetOn(!Grunts.On); break;
+            case 14: DozerController.AutoHeight = !DozerController.AutoHeight; break;
+            case 15: DozerController.AutoLevel = !DozerController.AutoLevel; break;
+            case 16: DozerController.AutoStraight = !DozerController.AutoStraight; break;
         }
     }
 
@@ -388,7 +390,7 @@ public class PauseMenu : MonoBehaviour
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = 560f;
-        float H = page == Page.Settings ? 884f : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 220f : 388f;
+        float H = page == Page.Settings ? 946f : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 220f : 388f;
         Ui.Begin(W + 40f, page == Page.Settings ? H + 30f : 600f);                                         // (a big UI size is held down so Settings still fits)
         var area = new Rect((Ui.W - W) / 2f, (Ui.H - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);
@@ -449,6 +451,7 @@ public class PauseMenu : MonoBehaviour
             if (i == UiSizeRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "SCREEN", head); y += 16f; }
             if (i == 7) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "CONTROLS", head); y += 16f; }
             if (i == SoundRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "SOUND", head); y += 16f; }
+            if (i == EnemyRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "GAME", head); y += 16f; }
             if (i == AutoRow) { y += 6f; GUI.Label(new Rect(x, y - 4f, w, 20f), "BLADE AUTO  (B / A turns it on)", head); y += 16f; }
             if (i == SettingRows - 1)
             {

@@ -118,6 +118,17 @@ one place in the code from the start, ready to be sent to other players.
   scales from the owner's RTX 4090 down to the S25 Ultra. The phone needs touch controls and Unity's
   Android build support, which is an install and needs an OK.
 
+## Added 23 Nov 2026 (the owner asked for these; built overnight, see MORNING_REPORT_23NOV.md)
+
+- **Water**: a creek seeping out of the face beside the mine door, and a minute of rain now and then. It runs
+  into holes and channels you dig, soaks away slowly, and is capped so it can't flood the site.
+- **Ice**: water that freezes is solid ice you can stand on; the pick, jackhammer or rifle breaks it, and it melts
+  back. Frozen by the **freeze gun** (5, free) or by **cold-gas pockets** (blue) in the deep rock.
+- **Explosive gas**: green-gas pockets in the deep rock leak a haze; a rifle shot or a jackhammer blow sets it
+  off (a crater, the dirt kept, never hurts you).
+- **First enemy**: the Voxel Arena's grunt comes out of the deep tunnel and walks at you; the rifle or a gas blast
+  kills it; it only knocks you back (5 coins). Off switch: Esc > Settings > Enemies.
+
 ## Later (not in version 1)
 
 - **Version 2 machinery** (costs gold): a mini digger, the Dingo, the dozer as an earned machine. The
@@ -125,7 +136,7 @@ one place in the code from the start, ready to be sent to other players.
 - Two carts with a passing spot
 - The filter machine and gold sorting
 - A shop building
-- Enemies (voxel style like Smashed, with limbs that come off)
+- More enemies (voxel style like Smashed, with limbs that come off): the grunt is the first, added 23 Nov
 - Finishing a mine, then the next shaft with its machinery
 - Supports and shoring, deeper and harder layers, the tunnel sloping down
 - Each player upgrading their own tools from the shared pot

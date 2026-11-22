@@ -247,6 +247,7 @@ public class SaveGame : MonoBehaviour
         LastMs = (float)watch.Elapsed.TotalMilliseconds;
         LastBytes = new FileInfo(FilePath).Length;
         if (Fluids.Instance != null) Fluids.Instance.AfterLoad();              // water and gas aren't saved: a loaded game starts dry
+        if (Grunts.Instance != null) Grunts.Instance.RemoveAll();               // nor are the grunts
         return "Game loaded.";
     }
 }

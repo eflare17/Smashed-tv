@@ -224,7 +224,8 @@ public class SiteProps : MonoBehaviour
         if (RoadPile.Instance == null) new GameObject("Road pile").AddComponent<RoadPile>();      // the one-off dirt at the foot of the road
         if (TreeFelling.Instance == null) new GameObject("Tree felling").AddComponent<TreeFelling>();   // the dozer pushes trees over; their wood
         if (Ending.Instance == null) new GameObject("Ending").AddComponent<Ending>();             // the goal reached: a short ending, once
-        if (Hints.Instance == null) new GameObject("Hints").AddComponent<Hints>();                // first-time tips, each shown once
+        if (Hints.Instance == null) new GameObject("Hints").AddComponent<Hints>();
+        if (Grunts.Instance == null) new GameObject("Grunts").AddComponent<Grunts>();             // the first enemy: out of the deep tunnel (Esc > Settings > Enemies)                // first-time tips, each shown once
         TrailerMode.CheckCommandLine();                                                            // DiggerGame.exe -trailer: it plays itself
         if (TrailerMode.Instance == null) new GameObject("Trailer mode").AddComponent<TrailerMode>();
         if (FireSim.Instance == null) new GameObject("Fire").AddComponent<FireSim>();      // idle unless the prologue lights it
