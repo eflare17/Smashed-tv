@@ -39,7 +39,7 @@ already failing before). There's a new Windows build in its own folder. **Nothin
 | 3 | Ice: freeze gun and cold gas | `a52c0f4` | `IceTest` |
 | 4 | Gas that explodes | `9d393b1` | `GasTest` |
 | 5 | First enemy: the grunt | `5007570` | `GruntTest` |
-| 6 | Second sweep: everything mixed, and the water tied to Quality | (see below) | `MixTest` + all 34 older tests |
+| 6 | Second sweep: everything mixed, and the water tied to Quality | `a4a5cc0` | `MixTest` + all 34 older tests |
 
 ### 1. Bug and polish sweep
 I played the whole game through by test, start to finish (34 tests: dig, cart, dump, money, upgrades, gold,
@@ -170,12 +170,12 @@ and then want something out:
 ```
 git revert 5007570
 ```
-takes out just the grunts. Or switch them off in Settings.
+takes out just the grunts (do it after reverting step 6, which touches the grunts too). Or switch them off in Settings.
 
 ```
-git revert 9d393b1 a52c0f4 a406503
+git revert a4a5cc0 5007570 9d393b1 a52c0f4 a406503
 ```
-takes out gas, ice and water together (they share one piece of code, so take them out together).
+takes out step 6, the grunts, gas, ice and water (they share code, so take them out together).
 
 ```
 git reset --hard before-overnight-23nov
