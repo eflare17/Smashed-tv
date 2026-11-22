@@ -561,7 +561,7 @@ public class SiteProps : MonoBehaviour
         int n = 0;
         foreach (var s in spots)
         {
-            if (InBreakLane(s.x, s.z) || NearRoad(s.x, s.z)) continue;
+            if (InBreakLane(s.x, s.z) || TreeOff(s.x, s.z)) continue;
             Tree(new Vector3(s.x, Ground(s.x, s.z) - 0.1f, s.z), s.h);
             SolidifyTree(s.x, s.z, 0.45f);
             Finish("Gum tree " + (++n));
@@ -601,6 +601,8 @@ public class SiteProps : MonoBehaviour
 
     /// Kept clear of trees: the road up the mountain, and a way onto it from the firebreak lane.
     public static bool NearRoad(float x, float z, float clear = 7f) { return MountainRoad.DistanceTo(x, z) < clear; }
+    /// No tree here: not in the road's diggable strip (it reaches VoxelHalf out), and not where the second road pile drops.
+    static bool TreeOff(float x, float z) { return NearRoad(x, z, MountainRoad.VoxelHalf + 1f) || (new Vector2(x, z) - RoadPile.Centre2()).magnitude < RoadPile.Radius2 + 1.5f; }
 
     void Hillside()
     {
@@ -727,7 +729,7 @@ public class SiteProps : MonoBehaviour
                     if (o > 18f && Rand(0f, 1f) < (o - 18f) / 22f) continue;          // thinning out at the edges
                     float x = VoxelWorld.TrackCentreX(z) + side * (o + Rand(-0.9f, 0.9f)), zz = z + Rand(-1.3f, 1.3f);
                     if (z > 110f && Rand(0f, 1f) < 0.35f) continue;
-                    if (NearRoad(x, zz)) continue;
+                    if (TreeOff(x, zz)) continue;
                     bool inSite = zz < HalfSite - 1f;
                     if (inSite)
                     {
@@ -780,7 +782,7 @@ public class SiteProps : MonoBehaviour
                 if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 36f) continue;            // the track's trees cover that
                 if (world.HeightAt(px, pz) < 3.4f || Blocks(new Vector3(px, 0f, pz), 1.2f) || InBreakLane(px, pz)) continue;
                 if (noise.snoise(new float2(px, pz) * 0.06f) < -0.35f) continue;               // a clearing
-                if (NearRoad(px, pz)) continue;
+                if (TreeOff(px, pz)) continue;
                 TallGum(new Vector3(px, HillY(px, pz) - 0.15f, pz), Rand(13f, 20f));
                 SolidifyTree(px, pz, 0.5f);
                 n++;
@@ -797,7 +799,7 @@ public class SiteProps : MonoBehaviour
                 if (Mathf.Abs(px - VoxelWorld.TrackCentreX(pz)) < 30f && pz < 172f) continue;
                 float clump = noise.snoise(new float2(px, pz) * 0.025f);
                 if (clump < -0.45f || Rand(0f, 1f) < 0.12f + Mathf.Max(0f, -clump) * 0.4f) continue;   // clumps and gaps
-                if (NearRoad(px, pz)) continue;
+                if (TreeOff(px, pz)) continue;
                 float h = Rand(14f, 22f) * (1f - 0.25f * Mathf.InverseLerp(60f, 186f, pz));
                 FarGum(new Vector3(px, HillsideY(px, pz) - 0.2f, pz), h);
                 far++;

@@ -110,8 +110,8 @@ public static class MountainRoad
     // The diggable voxels reach further than that: past the blade's end with the dozer at the edge of where it may
     // drive and the blade swung over, and past where the dirt it pushes off that end lands.  Otherwise the blade went
     // through the solid hillside, and the dirt landed off the voxels and was lost.
-    public const float VoxelHalf = 7f;
-    public const float CorridorHalf = 4.0f;                  // how far off the line the dozer may drive (to the edge of the diggable strip, past the pegs: was 3.2 and it felt stuck on them)
+    public const float VoxelHalf = 10f;                      // (was 7: widened with the corridor, 22 Nov 2026)
+    public const float CorridorHalf = 7.0f;                  // how far off the line the dozer may drive: well past the pegs, so it can get round behind a heap beside the road and push it back on (was 3.2, then 4; the owner asked, 22 Nov 2026)
     public const float Slope = 1f / 8f, Climb = 20f;         // 1 in 8 (about 7 degrees), 20 m up
     public const float PadLength = 12f;                      // the flat pad at the top
     public const float Step = 0.5f;                          // the line is kept as points this far apart

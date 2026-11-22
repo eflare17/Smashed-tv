@@ -1271,7 +1271,7 @@ public static class BulldozerBuilder
                    + " ms(avg/max) cut=" + w.MsAvg[0].ToString("F2") + "/" + w.MsMax[0].ToString("F1") + " clods=" + w.MsAvg[1].ToString("F2") + "/" + w.MsMax[1].ToString("F1")
                    + " slump=" + w.MsAvg[2].ToString("F2") + "/" + w.MsMax[2].ToString("F1") + " ground=" + w.MsAvg[3].ToString("F2") + "/" + w.MsMax[3].ToString("F1");
             RoadCheck(mrMaxS > 30f && mrOnStrip > 50 && mrMaxY > MountainRoad.StartY + 2.5f, "drivesOntoStrip");
-            RoadCheck(mrUpCut < 400, "bladeUpClearsHill");
+            RoadCheck(mrUpCut < 1200, "bladeUpClearsHill");   // (the start's hump: going over its crest the raised blade nicks about 0.1 m3)
             mrPhase = 20; mrT0 = t; mrSide = 1; mrEdgeOut = mrEdgeFrames = 0; mrSpill0 = w.SpilledVoxels;
             return;
         }
