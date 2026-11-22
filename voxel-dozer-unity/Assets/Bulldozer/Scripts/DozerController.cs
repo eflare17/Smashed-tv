@@ -384,6 +384,15 @@ public class DozerController : MonoBehaviour
             }
         if (n < 5) return fixedAngle;
         float want = sum / n + autoCm / 100f;
+        // Climbing onto a rise, the ground ahead (brought back along the machine's slope) can sit below where Flat
+        // already has the edge, so picking a cut raised the blade.  Climbing, a cut is never above Flat less its depth.
+        // (Not going downhill or level: there the machine noses down into its own cut, and measuring from the tracks
+        // would keep making the cut deeper.)  The owner found it, 22 Nov 2026.
+        if (pitch < -1f)
+        {
+            float flatY = edge.y - (AngleForCm(0) - bladeAngle) * edgePerDegree;   // the edge where Flat would hold it (more angle = lower edge)
+            want = Mathf.Min(want, flatY + autoCm / 100f);
+        }
         // more arm angle = lower edge, about edgePerDegree metres a degree
         // (not limited to Flat or below: Flat tips with the machine, and as it noses down into its own cut that
         // dragged the cut deeper and deeper)
