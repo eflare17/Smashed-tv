@@ -3512,6 +3512,157 @@ public static class BulldozerBuilder
         }
     }
 
+    // Gas:  -executeMethod BulldozerBuilder.GasTest    prints BULLDOZER_GAS_RESULT (or _FAILED)
+    // A green-gas pocket in the chamber wall is broken open: gas leaks out and rises to the roof.  A rifle shot through
+    // it sets it off: a crater, the dirt thrown out as clods, every voxel kept.  Another pocket is opened and the
+    // jackhammer (a blow in the gas) sets it off.  Cold gas doesn't go off.  It costs nothing.
+    static int gsPhase, gsBlasts0;
+    static float gsT0;
+    static long gsVol0, gsCoins0, gsSolid0;
+    static string gsLog;
+    static bool gsOk;
+    static Fluids.Pocket gsPocket;
+    static Vector3 gsWall;
+    public static void GasTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        gsPhase = 0; gsLog = ""; gsOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += GasTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void GsCheck(bool ok, string what) { gsLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) gsOk = false; }
+    static void GasFinish(int code)
+    {
+        EditorApplication.update -= GasTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    /// Breaks open the pocket nearest `along` (green or cold): picks into the wall in front of it.  Returns the wall point.
+    static Vector3 OpenPocket(VoxelWorld w, Fluids f, float along, bool cold, out Fluids.Pocket pocket)
+    {
+        pocket = null;
+        float best = 99f;
+        foreach (var p in f.Pockets)
+        {
+            if (p.cold != cold) continue;
+            float d = Mathf.Abs(p.centre.z - VoxelWorld.PortalZ - along);
+            if (d < best) { best = d; pocket = p; }
+        }
+        if (pocket == null) return Vector3.zero;
+        float side = Mathf.Sign(pocket.centre.x - VoxelWorld.PortalX);
+        float half = VoxelWorld.TunnelHalfWidthAt(pocket.centre.z - VoxelWorld.PortalZ);
+        Vector3 wall = new Vector3(VoxelWorld.PortalX + side * half, pocket.centre.y, pocket.centre.z);
+        for (int i = 0; i < 3; i++) w.Pick(wall + new Vector3(side * (0.08f + 0.1f * i), 0f, 0f), 0.3f, new Vector3(-side * 2f, 1f, 0f));
+        return wall;
+    }
+    static void GasTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_GAS_FAILED timed out in phase " + gsPhase + gsLog); GasFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var f = Fluids.Instance; var m = Money.Instance;
+        if (w == null || wk == null || f == null || m == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (gsPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            f.StopRain();
+            Fluids.WaterOn = false;
+            gsCoins0 = m.Coins;
+            gsVol0 = w.CountSolid() + w.LoadVoxels;
+            gsWall = OpenPocket(w, f, 21f, false, out gsPocket);
+            GsCheck(gsPocket != null && gsPocket.open, "pocketOpens");
+            if (gsPocket == null) { Debug.Log("BULLDOZER_GAS_FAILED" + gsLog); GasFinish(1); return; }
+            float side = Mathf.Sign(gsPocket.centre.x - VoxelWorld.PortalX);
+            bStand = new Vector3(VoxelWorld.PortalX - side * 0.6f, 0f, gsWall.z - 1.2f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);   // in the chamber
+            AimAt(wk, gsWall + new Vector3(-side * 0.6f, 0.8f, 0f));
+            gsPhase = 1; gsT0 = t;
+            return;
+        }
+        if (gsPhase == 1)
+        {
+            if (t - gsT0 < 8f) return;
+            var tot = w.FluidTotals();
+            float side = Mathf.Sign(gsPocket.centre.x - VoxelWorld.PortalX);
+            float roofY = VoxelWorld.TunnelHeightAt(gsWall.z - VoxelWorld.PortalZ) - 0.2f;
+            int atRoof = w.GasAt(new Vector3(gsWall.x - side * 0.4f, roofY, gsWall.z));
+            int low = w.GasAt(new Vector3(gsWall.x - side * 0.4f, 0.3f, gsWall.z));
+            gsLog += " gas=" + (tot.y / 255) + "cells atRoof=" + atRoof + " nearFloor=" + low;
+            GsCheck(tot.y > 255 * 50, "gasLeaks");
+            GsCheck(atRoof > low, "rises");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/gas_haze.png");
+            gsLog += " hazePic";
+            // shoot through it
+            gsBlasts0 = Fluids.Blasts;
+            gsSolid0 = w.SolidCount;
+            Vector3 eye = bStand + Vector3.up * 1.6f;
+            Vector3 aim = new Vector3(gsWall.x - side * 0.15f, roofY + 0.25f, gsWall.z + 0.6f);   // up into the roof by the wall
+            Vector3 gasAt;
+            gsLog += " gasOnTheShot=" + w.GasAlong(eye, (aim - eye).normalized, Vector3.Distance(eye, aim), out gasAt);
+            Rifle.Fire(eye, (aim - eye).normalized, eye);
+            gsLog += " blasts=" + (Fluids.Blasts - gsBlasts0) + " groundBroken=" + (gsSolid0 - w.SolidCount);
+            GsCheck(Fluids.Blasts > gsBlasts0, "rifleSetsItOff");
+            GsCheck(gsSolid0 - w.SolidCount > 2000, "crater");
+            gsPhase = 2; gsT0 = t;
+            return;
+        }
+        if (gsPhase == 2)
+        {
+            if (t - gsT0 < 0.4f) return;
+            if (gsLog.IndexOf("blastPic") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/gas_blast.png"); gsLog += " blastPic"; }
+            if (t - gsT0 < 8f) return;
+            long vol = w.CountSolid() + w.LoadVoxels;
+            gsLog += " volumeChange=" + (vol - gsVol0) + " blastsInAll=" + (Fluids.Blasts - gsBlasts0);
+            GsCheck(vol == gsVol0, "dirtKept");
+            // the end chamber: another pocket, set off by the jackhammer
+            Fluids.Pocket p2;
+            gsWall = OpenPocket(w, f, 30.5f, false, out p2);
+            w.ResetFluidTiming();
+            GsCheck(p2 != null && p2.open, "secondPocketOpens");
+            gsPocket = p2;
+            gsPhase = 3; gsT0 = t;
+            return;
+        }
+        if (gsPhase == 3)
+        {
+            if (t - gsT0 < 6f) return;
+            gsBlasts0 = Fluids.Blasts;
+            float side = Mathf.Sign(gsPocket.centre.x - VoxelWorld.PortalX);
+            // a jackhammer blow into the wall, up where the gas is
+            float roofY = VoxelWorld.TunnelHeightAt(gsWall.z - VoxelWorld.PortalZ) - 0.3f;
+            Vector3 hammerAt = new Vector3(gsWall.x + side * 0.05f, roofY, gsWall.z);
+            int g = w.GasAt(hammerAt - new Vector3(side * 0.25f, 0f, 0f));
+            w.Pick(hammerAt, 0.25f, new Vector3(-side, 0.5f, 0f), 0f, true);
+            gsLog += " gasAtHammer=" + g + " hammerBlasts=" + (Fluids.Blasts - gsBlasts0);
+            GsCheck(Fluids.Blasts > gsBlasts0, "jackhammerSetsItOff");
+            // cold gas doesn't go off
+            Vector3 c = new Vector3(VoxelWorld.PortalX, 1.2f, VoxelWorld.PortalZ + 9f);
+            int cx, cy, cz;
+            w.FluidCellOf(c, out cx, out cy, out cz);
+            for (int i = -2; i <= 2; i++) w.AddGas(cx + i, cy, cz, 200, true);
+            int b2 = Fluids.Blasts;
+            bool went = f.ShotThrough(c + Vector3.left * 2f, Vector3.right, 4f);
+            GsCheck(!went && Fluids.Blasts == b2, "coldGasDoesntGoOff");
+            gsPhase = 4; gsT0 = t;
+            return;
+        }
+        if (gsPhase == 4)
+        {
+            if (t - gsT0 < 8f) return;
+            long vol = w.CountSolid() + w.LoadVoxels;
+            gsLog += " volumeChange=" + (vol - gsVol0) + " fluidStepMaxMs=" + w.FluidMaxMs.ToString("F2");
+            GsCheck(vol == gsVol0, "dirtStillKept");
+            GsCheck(m.Coins == gsCoins0, "free");
+            Fluids.WaterOn = true;
+            Debug.Log((gsOk ? "BULLDOZER_GAS_RESULT" : "BULLDOZER_GAS_FAILED") + gsLog);
+            GasFinish(gsOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
