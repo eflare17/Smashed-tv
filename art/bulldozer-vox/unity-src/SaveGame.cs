@@ -88,6 +88,7 @@ public class SaveGame : MonoBehaviour
         if (dingo != null && dingo.Driven) dingo.GetOff();
         if (wk != null && wk.RidingCart) wk.GetOffCart();
         w.ResetGround();
+        if (Fluids.Instance != null) Fluids.Instance.AfterReset();
         if (RoadPile.Instance != null) { RoadPile.Instance.Placed = false; RoadPile.Instance.Placed2 = false; }   // the road piles are part of the ground as new
         if (dozer != null) dozer.Place(dozer.transform.position, dozer.transform.eulerAngles.y);   // back on top of the ground
         if (dingo != null) dingo.Park();
@@ -245,6 +246,7 @@ public class SaveGame : MonoBehaviour
         }
         LastMs = (float)watch.Elapsed.TotalMilliseconds;
         LastBytes = new FileInfo(FilePath).Length;
+        if (Fluids.Instance != null) Fluids.Instance.AfterLoad();              // water and gas aren't saved: a loaded game starts dry
         return "Game loaded.";
     }
 }

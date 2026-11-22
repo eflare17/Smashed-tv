@@ -287,6 +287,8 @@ public partial class VoxelWorld : MonoBehaviour
         grass = new NativeArray<byte>(NX * NZ, Allocator.Persistent);
         InitDirt();
         InitHand();
+        InitFluid();
+        gameObject.AddComponent<Fluids>();                   // the creek, the rain, ice and gas (Fluids.cs)
 
         new GenerateJob { vox = vox, top = top, grass = grass, blocks = blocks, origin = origin, shape = shape, shapeRect = shapeRect, shapeSize = shapeSize }.Schedule(NX * NZ, 256).Complete();
         GenerateMs = (float)startWatch.Elapsed.TotalMilliseconds - BlocksMs;
@@ -326,6 +328,7 @@ public partial class VoxelWorld : MonoBehaviour
         if (grass.IsCreated) grass.Dispose();
         DisposeDirt();
         DisposeHand();
+        DisposeFluid();
         if (Instance == this) Instance = null;
     }
 
@@ -633,7 +636,7 @@ public partial class VoxelWorld : MonoBehaviour
             if ((dirty[i] & 1) != 0)
             {
                 if (!ChunkReal(i)) { dirty[i] = 0; continue; }                // a chunk with no voxels of its own: nothing to draw or save
-                list.Add(i); dirty[i] = (byte)(dirty[i] & 2);                  // bit 1: redraw it.  Bit 2 (touched) stays, for saving
+                list.Add(i); dirty[i] = (byte)(dirty[i] & 2); FluidGroundChanged(i);                  // bit 1: redraw it.  Bit 2 (touched) stays, for saving
             }
         LastRemeshChunks = list.Length;
         if (list.Length == 0) { LastRemeshMs = 0f; list.Dispose(); return; }

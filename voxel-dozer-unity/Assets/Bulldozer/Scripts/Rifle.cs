@@ -4,7 +4,9 @@
 // the ground keeps its books) with a puff of dust.
 //
 // Enemies to come: anything with a collider and a component that is IShootable gets Shot() when a bullet reaches it
-// before the ground does.  There are none yet, so for now every shot goes into the ground.
+// before the ground does.
+// A shot through strong green gas sets it off (Fluids.cs), and a shot at ice breaks it (the ice stops the shot like
+// ground does, and VoxelWorld.Pick tells Fluids.cs).
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -58,6 +60,7 @@ public class Rifle : MonoBehaviour
         }
         var r = Get();
         r.Flash(muzzle, dir);
+        if (Fluids.Instance != null) Fluids.Instance.ShotThrough(from, dir, best);   // green gas on the way goes off (Fluids.cs)
         if (target != null)
         {
             r.AddTracer(muzzle, targetAt);

@@ -12,6 +12,8 @@
 //   On foot      pick_rock  pick_dirt  pick_gold  shovel_scrape  shovel_whump  jackhammer (loop)  vacuum (loop)
 //                gravel (loop: stones up the hose)  step  step_mine
 //   Cart / money cart_roll (loop)  motor (loop)  tip_rumble (loop)  kaching  upgrade  goal  gold (into the gold store)
+//   Grunts       grunt_die  hurt (a grunt got you)
+//   Water, gas   rain (loop)  creek (loop)  boom (gas going off)  freeze (the freeze gun)  ice_break  hiss (loop: gas leaking)
 //   Ambience     wind (loop)  bird0 bird1 bird2  mine_hum (loop)  drip  creak
 using System.Collections.Generic;
 using UnityEngine;
@@ -281,6 +283,49 @@ public static class SoundBank
                 return Shot(b, 0.65f);
 
             // ---- the ambience
+            case "grunt_die":                                 // a grunt bursting (Voxel Arena): a wet splat and a short yelp
+                b = Buf(0.5f);
+                Noise(b, 0f, 0.9f, 0.04f, 0.3f);
+                for (int i = 0; i < 8; i++) Noise(b, 0.01f + 0.12f * U(), 0.25f, 0.006f, 0.5f);
+                Chirp(b, 0f, 0.18f, 520f, 260f, 0.35f);
+                return Shot(b, 0.8f);
+            case "hurt":                                      // a grunt got you: a low thud and a buzz
+                b = Buf(0.5f);
+                Tone(b, 0f, 70f, 1f, 0.08f);
+                for (int i = 0; i < b.Length; i++) { float t = (float)i / Rate; b[i] += 0.3f * Mathf.Exp(-t / 0.12f) * Mathf.Sign(Mathf.Sin(2f * Mathf.PI * 110f * t)); }
+                return Shot(b, 0.8f);
+            case "rain":                                      // steady rain: soft hiss with pattering drops
+                b = Buf(4f + Tail);
+                for (int i = 0; i < b.Length; i++) b[i] = R() * 0.35f;
+                LowPass(b, 0.25f);
+                for (int i = 0; i < 900; i++) Noise(b, U() * (4f + Tail), 0.1f + 0.25f * U(), 0.003f, 0.5f);
+                return Loop(b, 0.6f);
+            case "creek":                                     // a little creek running: bubbling chirps over a low wash
+                b = Buf(4f + Tail);
+                for (int i = 0; i < b.Length; i++) b[i] = R() * 0.2f;
+                LowPass(b, 0.06f);
+                for (int i = 0; i < 160; i++) { float fq = 500f + 900f * U(); Chirp(b, U() * (4f + Tail), 0.02f + 0.03f * U(), fq, fq * (1.4f + U()), 0.12f + 0.15f * U()); }
+                return Loop(b, 0.55f);
+            case "boom":                                      // the gas going off: a crack and a long low rumble
+                b = Buf(2.2f);
+                Noise(b, 0f, 1.0f, 0.03f, 0.9f); Noise(b, 0.01f, 0.9f, 0.25f, 0.08f); Noise(b, 0.02f, 0.7f, 0.5f, 0.02f);
+                Tone(b, 0f, 48f, 0.9f, 0.3f); Tone(b, 0f, 32f, 0.7f, 0.5f);
+                return Shot(b, 1f);
+            case "freeze":                                    // the freeze gun: a cold airy whoosh with a glassy ring
+                b = Buf(0.5f);
+                Noise(b, 0f, 0.6f, 0.05f, 0.6f);
+                Chirp(b, 0f, 0.12f, 2600f, 1500f, 0.25f); Tone(b, 0.02f, 3800f, 0.12f, 0.05f);
+                return Shot(b, 0.6f);
+            case "ice_break":                                 // ice cracking into bits
+                b = Buf(0.5f);
+                Noise(b, 0f, 0.9f, 0.01f, 0.95f);
+                Tone(b, 0f, 2900f, 0.4f, 0.03f); Tone(b, 0.01f, 4300f, 0.3f, 0.02f); Tone(b, 0.03f, 1700f, 0.25f, 0.03f);
+                return Shot(b, 0.7f);
+            case "hiss":                                      // gas leaking out of the rock
+                b = Buf(2f + Tail);
+                for (int i = 0; i < b.Length; i++) b[i] = R();
+                Band(b, 0.6f, 0.2f);
+                return Loop(b, 0.5f);
             case "wind":
                 b = Buf(6f + Tail);
                 for (int i = 0; i < b.Length; i++) b[i] = R();

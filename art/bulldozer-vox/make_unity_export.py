@@ -2903,7 +2903,7 @@ public static class BulldozerBuilder
     {
         EnsurePadAxes();
         // shaders the scripts look up by name at run time, which no material in the scene points at
-        IncludeShaders("Voxel/FireFlame", "Voxel/FireParticle", "Voxel/FireSmoke", "Voxel/Terrain", "Unlit/Color", "Sprites/Default", "Standard");
+        IncludeShaders("Voxel/FireFlame", "Voxel/FireParticle", "Voxel/FireSmoke", "Voxel/Terrain", "Voxel/Fluid", "Voxel/VertexColour", "Unlit/Color", "Sprites/Default", "Standard");
         KeepInstancingShaders();
         var opts = new BuildPlayerOptions
         {
@@ -3291,6 +3291,160 @@ public static class BulldozerBuilder
             RfCheck(wk.transform.Find("Hold/Rifle") != null && !wk.transform.Find("Hold/Rifle").gameObject.activeSelf, "putAway");
             Debug.Log((rfOk ? "BULLDOZER_RIFLE_RESULT" : "BULLDOZER_RIFLE_FAILED") + rfLog);
             RifleFinish(rfOk ? 0 : 1);
+        }
+    }
+
+    // Water:  -executeMethod BulldozerBuilder.WaterTest    prints BULLDOZER_WATER_RESULT (or _FAILED)
+    // The creek runs from its spring; a hole dug beside it fills with water; filling the hole with dirt pushes the
+    // water out; with the creek off the ground soaks it away; rain puts water down round you; the dirt's books stay
+    // exact all the way (water is not dirt) and the water never goes over its cap; the step stays cheap.
+    static int waPhase;
+    static float waT0, waHoleWater;
+    static long waVol0, waPile;
+    static int waTotal0;
+    static Vector3 waHole;
+    static string waLog;
+    static bool waOk;
+    public static void WaterTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        waPhase = 0; waLog = ""; waOk = true; waPile = 0;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += WaterTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void WaCheck(bool ok, string what) { waLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) waOk = false; }
+    static void WaterFinish(int code)
+    {
+        EditorApplication.update -= WaterTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    /// The water lying in the hole (cells within 0.6 m of its middle, from 0.8 m under the old floor up to it).
+    static float WaterIn(VoxelWorld w, Vector3 c)
+    {
+        long sum = 0;
+        for (float z = -0.6f; z <= 0.6f; z += VoxelWorld.FCellSize)
+            for (float x = -0.6f; x <= 0.6f; x += VoxelWorld.FCellSize)
+                for (float y = -0.8f; y <= 0.15f; y += VoxelWorld.FCellSize)
+                    if (x * x + z * z <= 0.36f) sum += w.WaterAt(c + new Vector3(x, y, z));
+        return sum / 255f;
+    }
+    static void WaterTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 300) { Debug.LogError("BULLDOZER_WATER_FAILED timed out in phase " + waPhase + waLog); WaterFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var f = Fluids.Instance;
+        if (w == null || wk == null || f == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (waPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            f.StopRain();
+            Vector3 s = f.Spring;
+            waLog += " spring=" + s.ToString("F1");
+            WaCheck(w.MaterialAt(s + new Vector3(0f, 0f, 0.2f)) != VoxelWorld.Air && w.MaterialAt(s) == VoxelWorld.Air, "springInTheFace");
+            // a hole in the floor at the foot of the face, a little out from where the water comes down
+            waHole = new Vector3(s.x - 0.3f, 0f, s.z - 1.3f);
+            waHole.y = w.FloorAt(waHole + Vector3.up * 0.5f);
+            waVol0 = w.CountSolid() + w.LoadVoxels;
+            for (int i = 0; i < 4; i++) w.Pick(waHole + Vector3.down * (0.12f + 0.12f * i), 0.42f, new Vector3(3f, 3f, -3f), 0f, true);
+            bStand = waHole + new Vector3(0.5f, 0f, -4.5f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            AimAt(wk, waHole + Vector3.up * 1.5f);
+            w.ResetFluidTiming();
+            waPhase = 1; waT0 = t;
+            return;
+        }
+        if (waPhase == 1)
+        {
+            if (t - waT0 < 30f) return;
+            var tot = w.FluidTotals();
+            waHoleWater = WaterIn(w, waHole);
+            // a map of where the water is, 0.5 m squares round the mine door (for working on it)
+            string map = " map(x " + (VoxelWorld.PortalX - 9f) + ".." + (VoxelWorld.PortalX + 6f) + ", z down from " + (VoxelWorld.PortalZ + 6f) + "):";
+            for (float mz = VoxelWorld.PortalZ + 6f; mz > VoxelWorld.PortalZ - 10f; mz -= 0.5f)
+            {
+                map += "|";
+                for (float mx = VoxelWorld.PortalX - 9f; mx < VoxelWorld.PortalX + 6f; mx += 0.5f)
+                {
+                    int best = 0;
+                    for (float my = -0.5f; my < 6f; my += VoxelWorld.FCellSize) best = Mathf.Max(best, w.WaterAt(new Vector3(mx, my, mz)) + w.WaterAt(new Vector3(mx + 0.25f, my, mz + 0.25f)));
+                    map += best == 0 ? "." : best < 60 ? "-" : best < 200 ? "o" : "O";
+                }
+            }
+            waLog += map;
+            waLog += " creekGave=" + (Fluids.CreekGiven / 255) + "cells water=" + (tot.x / 255) + "cells inHole=" + waHoleWater.ToString("F0") + "cells bricks=" + w.FluidBricks;
+            WaCheck(Fluids.CreekGiven > 255 * 100, "creekRuns");
+            WaCheck(tot.x > 255 * 50, "waterLies");
+            WaCheck(waHoleWater > 20f, "holeFills");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/water_creek.png");
+            waLog += " creekPic";
+            // from up on the hill over the mine door, for a picture of where it has run
+            bStand = new Vector3(f.Spring.x - 3.5f, 0f, f.Spring.z - 4.5f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            wk.SetEyes(true);
+            AimAt(wk, new Vector3(f.Spring.x, 0.2f, f.Spring.z - 1f));
+            waPhase = 11; waT0 = t;
+            return;
+        }
+        if (waPhase == 11)
+        {
+            if (t - waT0 < 1.5f) return;
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/water_overview.png");
+            waLog += " overviewPic";
+            wk.SetEyes(false);
+            // fill the hole in
+            waPile = w.AddLoosePile(waHole.x, waHole.z, 0.75f, 0.9f);
+            waPhase = 2; waT0 = t;
+            return;
+        }
+        if (waPhase == 2)
+        {
+            if (t - waT0 < 8f) return;
+            float now = WaterIn(w, waHole);
+            waLog += " inHoleAfterFill=" + now.ToString("F0") + "cells";
+            WaCheck(now < waHoleWater * 0.5f, "fillingPushesItOut");
+            long vol = w.CountSolid() + w.LoadVoxels;
+            waLog += " volumeChange=" + (vol - waVol0 - waPile);
+            WaCheck(vol == waVol0 + waPile, "dirtKept");
+            Fluids.WaterOn = false;
+            waTotal0 = w.FluidTotals().x;
+            waPhase = 3; waT0 = t;
+            return;
+        }
+        if (waPhase == 3)
+        {
+            if (t - waT0 < 40f) return;
+            int now = w.FluidTotals().x;
+            waLog += " soak " + (waTotal0 / 255) + "->" + (now / 255) + "cells";
+            WaCheck(now < waTotal0 * 0.7f, "soaksAway");
+            Fluids.WaterOn = true;
+            f.StartRain();
+            bStand = new Vector3(-12f, 0f, -20f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            AimAt(wk, bStand + new Vector3(0f, 0f, 6f));
+            waTotal0 = w.FluidTotals().x;
+            waPhase = 4; waT0 = t;
+            return;
+        }
+        if (waPhase == 4)
+        {
+            if (t - waT0 < 6f) return;
+            if (waLog.IndexOf("rainPic") < 0) { ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/water_rain.png"); waLog += " rainPic"; }
+            int now = w.FluidTotals().x;
+            waLog += " raining=" + f.Raining + " water " + (waTotal0 / 255) + "->" + (now / 255) + "cells";
+            WaCheck(f.Raining, "rains");
+            WaCheck(now > waTotal0, "rainLandsAsWater");
+            WaCheck(now <= Fluids.WaterCap, "underTheCap");
+            f.StopRain();
+            long vol = w.CountSolid() + w.LoadVoxels;
+            WaCheck(vol == waVol0 + waPile, "dirtStillKept");
+            waLog += " fluidStepMaxMs=" + w.FluidMaxMs.ToString("F2") + " bricks=" + w.FluidBricks;
+            WaCheck(w.FluidMaxMs < 12f, "cheap");
+            Debug.Log((waOk ? "BULLDOZER_WATER_RESULT" : "BULLDOZER_WATER_FAILED") + waLog);
+            WaterFinish(waOk ? 0 : 1);
         }
     }
 

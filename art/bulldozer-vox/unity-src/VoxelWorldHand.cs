@@ -268,6 +268,13 @@ public partial class VoxelWorld
             if (p.y >= 0f || x < 0 || z < 0 || x >= NX || z >= NZ) return 0f;
             y = 0;
         }
+        float ground = GroundFloorAt(x, y, z);
+        if (IceAny) return Mathf.Max(ground, IceFloorAt(p, p.y - ground + 0.01f));   // ice (VoxelWorldFluid.cs) can be stood on
+        return ground;
+    }
+
+    float GroundFloorAt(int x, int y, int z)
+    {
         int col = x + NX * z;
         if (y >= top[col]) return origin.y + top[col] * Voxel;
         int lo, hi;
@@ -292,6 +299,7 @@ public partial class VoxelWorld
             Vector3 p = from + dir * t;
             byte m = MaterialAt(p);
             if (m != Air) { hit = p; mat = m; return true; }
+            if (IceAny && IceAt(p)) { hit = p; mat = Rock; return true; }       // ice (VoxelWorldFluid.cs) stops it too: it's as hard as rock
         }
         hit = from + dir * max; mat = Air;
         return false;
@@ -325,8 +333,13 @@ public partial class VoxelWorld
         return h;
     }
 
+    /// The ground is being broken at a point (the pick, the jackhammer, a rifle shot, a blast): Fluids.cs breaks
+    /// ice there, opens gas pockets, and sets gas off.  (radius, true for the jackhammer and blasts)
+    public static event System.Action<Vector3, float, bool> Picked;
+
     public int Pick(Vector3 at, float radius, Vector3 kick, float shatter = 0f, bool fullRock = false)
     {
+        if (Picked != null) Picked(at, radius, fullRock);
         var result = new NativeArray<int>(2, Allocator.TempJob);
         new HandJob
         {
