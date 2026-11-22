@@ -34,7 +34,11 @@ public partial class VoxelWorld
     const int FBC = FB * FB * FB;
     public const int FNX = NX / FCell, FNY = NY / FCell, FNZ = NZ / FCell;
     public const float FCellSize = Voxel * FCell;
-    public const int FluidSlots = 2048;                      // bricks kept at once, at most (32 MB)
+    public int FluidSlots { get; private set; }               // bricks kept at once, at most: 2048 (32 MB), 4096 at High and Ultra quality
+    /// Only bricks within FluidRange metres (across) of FluidFocus are worked on; the rest wait, still (Fluids.cs sets
+    /// these from the Quality setting and where you are).
+    [System.NonSerialized] public Vector3 FluidFocus;
+    [System.NonSerialized] public float FluidRange = 1e9f;
     public const byte FSolid = 1, FIce = 2;
     public const int GasGoesOff = 20;                        // green gas this strong (or more) explodes when set off
     public const int WaterStill = 24;                        // water this little in a cell doesn't spread any further
@@ -68,6 +72,7 @@ public partial class VoxelWorld
 
     void InitFluid()
     {
+        FluidSlots = PlayerPrefs.GetInt("set.quality", 1) >= 2 ? 4096 : 2048;   // (fixed for the game: the Quality when it started)
         fSlot = new NativeArray<int>(CX * CY * CZ, Allocator.Persistent);
         for (int i = 0; i < fSlot.Length; i++) fSlot[i] = -1;
         fChunk = new NativeArray<int>(FluidSlots, Allocator.Persistent);
@@ -378,7 +383,7 @@ public partial class VoxelWorld
         for (int s = 0; s < FluidSlots; s++)
         {
             int c = fChunk[s];
-            if (c < 0 || fAwake[s] == 0) continue;
+            if (c < 0 || fAwake[s] == 0 || !InRange(c)) continue;
             awake++;
             int4 sum = fSum[s];
             if (sum.x == 0 && sum.y == 0 && sum.z == 0 && fStepN > 1) continue;
@@ -388,7 +393,7 @@ public partial class VoxelWorld
                 int nx = bx + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = by + (k == 2 ? 1 : k == 3 ? -1 : 0), nz = bz + (k == 4 ? 1 : k == 5 ? -1 : 0);
                 if (nx < 0 || ny < 0 || nz < 0 || nx >= CX || ny >= CY || nz >= CZ) continue;
                 int nc = nx + CX * (ny + CY * nz);
-                if (fSlot[nc] < 0 && fFree.Count > 0) fNew.Add(MakeBrick(nc, false));
+                if (fSlot[nc] < 0 && fFree.Count > 0 && fNew.Count < 48) fNew.Add(MakeBrick(nc, false));   // (at most 48 new a step: no hitch in a flood)
             }
         }
         if (fNew.Count > 0)
@@ -407,7 +412,7 @@ public partial class VoxelWorld
         for (int s = 0; s < FluidSlots; s++)
         {
             int c = fChunk[s];
-            if (c < 0 || fAwake[s] == 0) continue;
+            if (c < 0 || fAwake[s] == 0 || !InRange(c)) continue;
             int bx = c % CX, by = (c / CX) % CY, bz = c / (CX * CY);
             lists[(bx & 1) + 2 * (by & 1) + 4 * (bz & 1)].Add(s);
         }
@@ -430,6 +435,15 @@ public partial class VoxelWorld
         bool ice = false;
         for (int s = 0; s < FluidSlots && !ice; s++) if (fChunk[s] >= 0 && fSum[s].w > 0) ice = true;
         IceAny = ice;
+    }
+
+    /// Is the chunk's brick within FluidRange of FluidFocus (across the ground)?
+    bool InRange(int c)
+    {
+        if (FluidRange >= 1e8f) return true;
+        int bx = c % CX, bz = c / (CX * CY);
+        float x = origin.x + (bx + 0.5f) * FB * FCellSize - FluidFocus.x, z = origin.z + (bz + 0.5f) * FB * FCellSize - FluidFocus.z;
+        return x * x + z * z <= FluidRange * FluidRange;
     }
 
     void FreeEmptyBricks(float dt)

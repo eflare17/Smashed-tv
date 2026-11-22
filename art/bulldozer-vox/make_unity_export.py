@@ -3486,7 +3486,9 @@ public static class BulldozerBuilder
             {
                 if (x * x + z * z > r * r) continue;
                 Vector3 p = at + new Vector3(x, 0f, z);
-                p.y = w.FloorAt(p + Vector3.up * 0.4f) + 0.03f;
+                float fy = w.FloorAt(p + Vector3.up * 0.4f);
+                for (int k = 0; k < 8 && w.MaterialAt(new Vector3(p.x, fy + 0.03f, p.z)) != VoxelWorld.Air; k++) fy = w.FloorAt(new Vector3(p.x, fy + 0.9f, p.z));   // (on top of a heap, not inside it)
+                p.y = fy + 0.03f;
                 int gx, gy, gz;
                 if (!w.FluidCellOf(p, out gx, out gy, out gz)) continue;
                 if (w.AddWater(gx, gy, gz, amount) == 0) w.AddWater(gx, gy + 1, gz, amount);
@@ -3919,6 +3921,222 @@ public static class BulldozerBuilder
             GrCheck(Grunts.On, "switchOnAgain");
             Debug.Log((grOk ? "BULLDOZER_GRUNT_RESULT" : "BULLDOZER_GRUNT_FAILED") + grLog);
             GruntFinish(grOk ? 0 : 1);
+        }
+    }
+
+    // Everything together:  -executeMethod BulldozerBuilder.MixTest    prints BULLDOZER_MIX_RESULT (or _FAILED)
+    // The new things mixed with each other and with the old ones: a grunt walks through water; a gas blast next to
+    // ice breaks the ice and kills a grunt caught in it; water lying at the dump, round the cart and under the
+    // Dingo pays nothing, goes in nothing and moves nothing; the dozer drives through a puddle (dirt kept); a save
+    // and load with water, ice, gas, an open pocket and a grunt about comes back clean (dry, pocket spent, no
+    // grunts, dirt the same); a flood well over the cap keeps the water step and the frame time sane; the Quality
+    // setting changes how far round you it works and the cap.
+    static int mxPhase;
+    static float mxT0, mxFrameSum, mxFrameMax;
+    static int mxFrames;
+    static long mxVol0, mxCoins0, mxSold0;
+    static int mxCart0;
+    static Vector3 mxIce, mxGruntAt, mxDingo0;
+    static string mxLog;
+    static bool mxOk;
+    static Grunts.Grunt mxGrunt;
+    static Fluids.Pocket mxPocket;
+    public static void MixTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        mxPhase = 0; mxLog = ""; mxOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += MixTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void MxCheck(bool ok, string what) { mxLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) mxOk = false; }
+    static void MixFinish(int code)
+    {
+        EditorApplication.update -= MixTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void MixTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 400) { Debug.LogError("BULLDOZER_MIX_FAILED timed out in phase " + mxPhase + mxLog); MixFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var f = Fluids.Instance; var m = Money.Instance; var gr = Grunts.Instance;
+        var sg = SaveGame.Instance; var cart = MineCart.Instance; var dingo = Dingo.Instance;
+        if (w == null || wk == null || f == null || m == null || gr == null || sg == null || cart == null || dingo == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (mxPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            f.StopRain();
+            Fluids.WaterOn = false;
+            Grunts.SetOn(true);
+            mxVol0 = w.CountSolid() + w.LoadVoxels;
+            // a grunt walks through a puddle toward him
+            Vector3 c = new Vector3(-6f, 0f, -6f); c.y = w.FloorAt(c + Vector3.up * 0.5f);
+            LayPuddle(w, c + new Vector3(0f, 0f, 3f), 0.9f, 200);
+            wk.Teleport(c, 0f);
+            mxGrunt = gr.SpawnAt(c + new Vector3(0f, 0f, 6f));
+            mxGruntAt = mxGrunt.pos;
+            mxPhase = 1; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 1)
+        {
+            if (t - mxT0 < 1.8f) return;
+            float moved = mxGrunt != null ? Vector3.Distance(mxGrunt.pos, mxGruntAt) : 0f;
+            mxLog += " gruntWadedMetres=" + moved.ToString("F1");
+            MxCheck(mxGrunt != null && moved > 1.5f, "gruntWalksThroughWater");
+            gr.RemoveAll();
+            // ice beside some gas, a grunt beside them; set the gas off
+            Vector3 c = new Vector3(-2f, 0f, 0f); c.y = w.FloorAt(c + Vector3.up * 0.5f);   // open floor in the middle of the quarry
+            mxLog += " blastSpot=" + c.ToString("F2") + " matThere=" + w.MaterialAt(c + Vector3.up * 0.05f);
+            mxIce = c + new Vector3(0.9f, 0f, 0f);
+            LayPuddle(w, mxIce, 0.5f, 200);
+            int gx, gy, gz;
+            w.FluidCellOf(mxIce + Vector3.up * 0.06f, out gx, out gy, out gz);
+            for (int z = -4; z <= 4; z++) for (int x = -4; x <= 4; x++) for (int y = -1; y <= 1; y++) w.FreezeCell(gx + x, gy + y, gz + z);
+            int ice0 = IceCells(w, mxIce, 0.6f);
+            w.FluidCellOf(c + Vector3.up * 0.8f, out gx, out gy, out gz);
+            for (int z = -3; z <= 3; z++) for (int x = -3; x <= 3; x++) for (int y = -2; y <= 2; y++) w.AddGas(gx + x, gy + y, gz + z, 200, false);
+            var g = gr.SpawnAt(c + new Vector3(-1.2f, 0f, -0.8f));
+            int killed0 = Grunts.Killed, broke0 = Fluids.IceBroken;
+            wk.Teleport(c + new Vector3(0f, 0f, -6f), 0f);
+            bool went = f.ShotThrough(wk.transform.position + Vector3.up * 1.6f, (c + Vector3.up * 0.8f - (wk.transform.position + Vector3.up * 1.6f)).normalized, 8f);
+            mxLog += " iceBefore=" + ice0 + " iceBroken=" + (Fluids.IceBroken - broke0);
+            MxCheck(went, "shotSetsGasOff");
+            MxCheck(Fluids.IceBroken > broke0, "blastBreaksIce");
+            MxCheck(Grunts.Killed > killed0 && gr.Alive == 0, "gruntInBlastDies");
+            mxPhase = 2; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 2)
+        {
+            if (t - mxT0 < 9f) return;                        // the clods and the ice bits come down
+            long vol = w.CountSolid() + w.LoadVoxels;
+            mxLog += " volumeChange=" + (vol - mxVol0);
+            MxCheck(vol == mxVol0, "blastDirtKept");
+            // water at the dump, round the cart and under the Dingo
+            mxCoins0 = m.Coins; mxSold0 = w.SoldVoxels; mxCart0 = w.CartVoxels;
+            mxDingo0 = dingo.transform.position;
+            Vector3 dump = new Vector3(VoxelWorld.PortalX, 0f, VoxelWorld.PortalZ - SiteProps.DumpOut);
+            LayPuddle(w, dump, 1.2f, 255);
+            LayPuddle(w, cart.transform.position, 1.2f, 255);
+            LayPuddle(w, dingo.transform.position, 1.4f, 255);
+            mxPhase = 3; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 3)
+        {
+            if (t - mxT0 < 4f) return;
+            MxCheck(m.Coins == mxCoins0 && w.SoldVoxels == mxSold0, "waterAtDumpPaysNothing");
+            MxCheck(w.CartVoxels == mxCart0, "waterNotInCart");
+            MxCheck(Vector3.Distance(dingo.transform.position, mxDingo0) < 0.05f, "dingoStaysPut");
+            // the dozer drives through a puddle
+            var dozer = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+            if (dozer != null)
+            {
+                Vector3 ahead = dozer.transform.position + dozer.transform.forward * 3f;
+                LayPuddle(w, ahead, 1.5f, 255);
+                wk.GetIn();
+                dozer.useOverride = true; dozer.overrideThrottle = 0.6f; dozer.overrideBlade = 0f;
+            }
+            mxVol0 = w.CountSolid() + w.LoadVoxels;
+            mxPhase = 4; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 4)
+        {
+            if (t - mxT0 < 4f) return;
+            var dozer = UnityEngine.Object.FindFirstObjectByType<DozerController>();
+            if (dozer != null) { dozer.overrideThrottle = 0f; }
+            if (t - mxT0 < 9f) return;
+            if (dozer != null) dozer.useOverride = false;
+            if (wk.InDozer) wk.GetOut();
+            long vol = w.CountSolid() + w.LoadVoxels;
+            mxLog += " dozerVolumeChange=" + (vol - mxVol0);
+            MxCheck(vol == mxVol0, "dozerThroughWaterDirtKept");
+            // save with water, ice, gas, an open pocket and a grunt about; then load
+            Fluids.Pocket p;
+            OpenPocket(w, f, 21f, false, out p);
+            mxPocket = p;
+            LayPuddle(w, new Vector3(0f, 0f, -10f), 1f, 200);
+            gr.SpawnAt(new Vector3(-8f, 0f, -14f));
+            mxPhase = 5; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 5)
+        {
+            if (t - mxT0 < 3f) return;
+            var tot = w.FluidTotals();
+            mxLog += " beforeSave water=" + (tot.x / 255) + " gas=" + (tot.y / 255) + " ice=" + tot.w + " grunts=" + gr.Alive;
+            MxCheck(tot.x > 0 && tot.y > 0 && tot.w > 0 && gr.Alive > 0, "allThereBeforeSave");
+            long volSave = w.CountSolid() + w.LoadVoxels;
+            string saved = sg.Save();
+            string loaded = sg.Load();
+            var after = w.FluidTotals();
+            long volLoad = w.CountSolid() + w.LoadVoxels;
+            mxLog += " save=[" + saved + "] load=[" + loaded + "] afterLoad water=" + after.x + " gas=" + after.y + " ice=" + after.w + " grunts=" + gr.Alive;
+            MxCheck(loaded.StartsWith("Game loaded"), "loads");
+            MxCheck(after.x == 0 && after.y == 0 && after.z == 0 && after.w == 0 && !w.IceAny, "loadsDry");
+            MxCheck(mxPocket != null && mxPocket.spent && !mxPocket.open, "openPocketStaysSpent");
+            MxCheck(gr.Alive == 0, "noGruntsAfterLoad");
+            MxCheck(volLoad == volSave, "dirtSameAfterLoad");
+            // a flood well over the cap, round him
+            if (wk.InDozer) wk.GetOut();
+            Vector3 c = new Vector3(-8f, 0f, -14f); c.y = w.FloorAt(c + Vector3.up * 0.5f);
+            wk.Teleport(c + new Vector3(0f, 0f, -7f), 0f);
+            for (float z = -6f; z <= 6f; z += 3f) for (float x = -6f; x <= 6f; x += 3f) LayPuddle(w, c + new Vector3(x, 0f, z), 1.6f, 255);
+            Fluids.WaterOn = true;
+            f.StartRain();
+            w.ResetFluidTiming();
+            mxFrames = 0; mxFrameSum = 0f; mxFrameMax = 0f;
+            mxPhase = 6; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 6)
+        {
+            if (t - mxT0 > 1f) { float dt = Time.unscaledDeltaTime; mxFrames++; mxFrameSum += dt; if (dt > mxFrameMax) mxFrameMax = dt; }
+            if (t - mxT0 < 12f) return;
+            var tot = w.FluidTotals();
+            float avgMs = mxFrames > 0 ? mxFrameSum / mxFrames * 1000f : 0f;
+            mxLog += " flood water=" + (tot.x / 255) + "cells cap=" + (Fluids.WaterCap / 255) + " bricks=" + w.FluidBricks + " fluidStepMaxMs=" + w.FluidMaxMs.ToString("F2")
+                   + " frameAvgMs=" + avgMs.ToString("F1") + " frameMaxMs=" + (mxFrameMax * 1000f).ToString("F1");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/mix_flood.png");
+            MxCheck(w.FluidMaxMs < 15f, "floodStepCheap");
+            MxCheck(avgMs < 40f, "floodFrameRate");
+            mxT0 = t; mxPhase = 7;
+            return;
+        }
+        if (mxPhase == 7)
+        {
+            if (t - mxT0 < 0.5f) return;
+            // the Quality setting: Low works a smaller area with a smaller cap, Ultra the whole site with a bigger one
+            int q0 = PauseMenu.Quality;
+            PauseMenu.Quality = 0;
+            int capLow = Fluids.WaterCap; float rainLow = Fluids.RainRadius;
+            PauseMenu.Quality = 3;
+            int capUltra = Fluids.WaterCap; float rainUltra = Fluids.RainRadius;
+            PauseMenu.Quality = 1;
+            int capMed = Fluids.WaterCap;
+            mxLog += " caps low/medium/ultra=" + (capLow / 255) + "/" + (capMed / 255) + "/" + (capUltra / 255);
+            MxCheck(capLow < capMed && capMed < capUltra && rainLow < rainUltra && capMed == 255 * 7000, "qualityTiers");
+            PauseMenu.Quality = 0;
+            mxPhase = 8; mxT0 = t;
+            return;
+        }
+        if (mxPhase == 8)
+        {
+            if (t - mxT0 < 0.5f) return;
+            mxLog += " lowRange=" + w.FluidRange.ToString("F0");
+            MxCheck(w.FluidRange < 30f, "lowWorksSmallerArea");
+            PauseMenu.Quality = 1;
+            f.StopRain();
+            Debug.Log((mxOk ? "BULLDOZER_MIX_RESULT" : "BULLDOZER_MIX_FAILED") + mxLog);
+            MixFinish(mxOk ? 0 : 1);
         }
     }
 

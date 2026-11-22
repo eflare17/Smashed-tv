@@ -33,9 +33,19 @@ public class Fluids : MonoBehaviour
 
     // ---- tuning
     public const float CreekPerSecond = 9000f;                 // units of water (255 = one 12.5 cm cell full) the spring gives
-    public const int WaterCap = 255 * 7000;                    // all the water there can be at once (about 14 m3)
+    // Set by the Quality setting (Esc > Settings > Quality), each frame:
+    //            simulated round you   water cap         rain lands within
+    //   Low      22 m                  3,500 cells (7 m3)   7 m
+    //   Medium   48 m                  7,000 cells (14 m3) 10 m     (the numbers it was built with)
+    //   High     70 m                 12,000 cells (23 m3) 13 m
+    //   Ultra    the whole site       20,000 cells (39 m3) 16 m
+    static readonly float[] RangeFor = { 22f, 48f, 70f, 1e9f };
+    static readonly int[] CapFor = { 3500, 7000, 12000, 20000 };
+    static readonly float[] RainFor = { 7f, 10f, 13f, 16f };
+    static int Tier { get { return Mathf.Clamp(PauseMenu.Quality, 0, 3); } }
+    public static int WaterCap { get { return 255 * CapFor[Tier]; } }   // all the water there can be at once
     public const float RainEvery = 420f, RainEveryJitter = 120f, RainFirst = 180f, RainLasts = 60f;
-    public const float RainRadius = 10f;
+    public static float RainRadius { get { return RainFor[Tier]; } }
     public const int GreenPocketGas = 255 * 900, ColdPocketGas = 255 * 500;
     public const float PocketLeakPerSecond = 255 * 70f;
     public const float BlastReach = 2f;                         // gas this close goes off with a blast
@@ -396,6 +406,9 @@ public class Fluids : MonoBehaviour
         if (w == null || !w.FluidReady) return;
         float dt = Time.deltaTime;
         if (dt <= 0f) return;
+        var wkf = Worker.Instance;
+        w.FluidFocus = wkf != null ? wkf.transform.position : Vector3.zero;
+        w.FluidRange = RangeFor[Tier];
         var t = w.FluidRoughTotals();
         bool room = t.x < WaterCap;
 
@@ -416,7 +429,7 @@ public class Fluids : MonoBehaviour
         if (creekSound != null) GameAudio.Steer(creekSound, WaterOn ? 0.35f : 0f, 1f, dt, 2f);
 
         // the rain
-        if (WaterOn)
+        if (WaterOn && !TrailerMode.On && !Ending.Playing && !Prologue.Playing)
         {
             if (rainLeft > 0f)
             {

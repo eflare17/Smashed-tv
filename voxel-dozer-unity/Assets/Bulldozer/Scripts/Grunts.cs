@@ -178,11 +178,12 @@ public class Grunts : MonoBehaviour
         if (!On) { if (list.Count > 0) RemoveAll(); return; }
         float dt = Time.deltaTime;
         if (dt <= 0f) return;
-        bool busy = Prologue.Playing || TrailerMode.On;
+        bool busy = Prologue.Playing || TrailerMode.On || Ending.Playing;
         Vector3 player = wk.transform.position;
         if (wk.InDozer && dozerCache == null) dozerCache = FindFirstObjectByType<DozerController>();
         DozerController dozer = wk.InDozer ? dozerCache : null;
-        bool onMachine = dozer != null || Dingo.Working;
+        bool onMachine = dozer != null || Dingo.Working || wk.RidingCart;   // (riding the motor cart: it runs them down)
+        if (Ending.Playing) return;                              // (they stand still while the ending plays)
         if (dozer != null) player = dozer.transform.position;
         else if (Dingo.Working) player = Dingo.Instance.transform.position;
 

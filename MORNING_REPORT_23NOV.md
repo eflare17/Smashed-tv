@@ -2,7 +2,7 @@
 
 Good morning. This is what happened overnight, in plain words.
 
-**The short version:** all five steps are done. There's a creek and rain, ice and a freeze gun, gas that
+**The short version:** all six steps are done (step 6, a second sweep of everything mixed together, was added during the night). There's a creek and rain, ice and a freeze gun, gas that
 explodes, and the Voxel Arena's grunt as the first enemy. Each step has its own commit and its own test, and
 every new test passes. The older tests still pass too (the only failure is the old TreeTest one that was
 already failing before). There's a new Windows build in its own folder. **Nothing is merged into
@@ -39,6 +39,7 @@ already failing before). There's a new Windows build in its own folder. **Nothin
 | 3 | Ice: freeze gun and cold gas | `a52c0f4` | `IceTest` |
 | 4 | Gas that explodes | `9d393b1` | `GasTest` |
 | 5 | First enemy: the grunt | `5007570` | `GruntTest` |
+| 6 | Second sweep: everything mixed, and the water tied to Quality | (see below) | `MixTest` + all 34 older tests |
 
 ### 1. Bug and polish sweep
 I played the whole game through by test, start to finish (34 tests: dig, cart, dump, money, upgrades, gold,
@@ -83,6 +84,41 @@ Everything worked. Small fixes:
 - If one reaches you, it knocks you back and you drop 5 coins (or nothing if you have none). You never die.
 - **Esc > Settings > Enemies (grunts)** turns them on or off, and it remembers your choice.
 
+### 6. Second sweep: the new things mixed together
+I played it through again by test, with everything on, looking at how the new things mix:
+
+| Mix | Result |
+|---|---|
+| A grunt walking through a puddle | fine, it wades straight through |
+| Gas going off next to ice | the blast breaks the ice into bits (they melt), dirt kept |
+| A grunt caught in a blast | it dies (bursts into cubes) |
+| Water at the dump, round the cart, under the Dingo | pays nothing, nothing goes in the cart, the Dingo doesn't move |
+| The dozer driving through a puddle | fine, dirt kept |
+| Save and load with water, ice, gas, an open pocket and a grunt about | loads clean: dry, no grunts, the pocket stays used up, the dirt exactly the same |
+| A flood well over the cap (about 10,000 cells), with rain | about 6 ms a frame on average, the water step peaks around 8 ms |
+
+Fixes from this sweep:
+- **Ice could stop melting** (and a still pool stop soaking away) once nothing nearby moved. Fixed: anywhere
+  with water, ice or gas keeps working.
+- **No rain while a film plays** (trailer mode, the ending, the opening).
+- **Grunts stand still during the ending**, and don't come out then.
+- **Riding the motor cart runs grunts down**, like the dozer and the Dingo do.
+- **Holding the cart:** a grunt knocks you off the handle as well as back.
+- In a flood, at most 48 new patches of water grid are made per step, so it doesn't hitch.
+
+**Water and gas follow the Quality setting** (Esc > Settings > Quality). There's no new menu item:
+
+| Quality | Water works within | Water cap | Rain lands within |
+|---|---|---|---|
+| Low | 22 m of you | 3,500 cells (about 7 m3) | 7 m |
+| Medium | 48 m of you | 7,000 cells (about 14 m3), the same as before | 10 m |
+| High | 70 m of you | 12,000 cells | 13 m |
+| Ultra | the whole site | 20,000 cells | 16 m |
+
+Water further away than that just waits, still, until you come back. High and Ultra also keep twice as much
+water grid in memory (64 MB instead of 32 MB). That part only changes when the game starts, so restart after
+changing Quality to get it.
+
 ---
 
 ## Guesses I made (all easy to change)
@@ -121,6 +157,8 @@ Everything worked. Small fixes:
 - No pump (as you said).
 - The water isn't in the multiplayer plan yet (there's no multiplayer yet anyway).
 - Old: TreeTest still fails its UI-size-125% check, as before.
+- The Medium area (48 m) is new: before, all water everywhere was worked on. In normal play near the mine it
+  makes no difference.
 
 ---
 

@@ -410,6 +410,7 @@ public class Worker : MonoBehaviour
     public void Knock(Vector3 push)
     {
         push.y = 0f;
+        if (HoldingCart != 0) LetGo();                       // (knocked off the cart's handle)
         knock = push;
         Knocks++;
         FollowCamera.Bump(0.06f);
