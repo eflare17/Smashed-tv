@@ -39,7 +39,7 @@ already failing before). There's a new Windows build in its own folder. **Nothin
 | 3 | Ice: freeze gun and cold gas | `a52c0f4` | `IceTest` |
 | 4 | Gas that explodes | `9d393b1` | `GasTest` |
 | 5 | First enemy: the grunt | `5007570` | `GruntTest` |
-| 6 | Second sweep: everything mixed, and the water tied to Quality | `a4a5cc0` | `MixTest` + all 34 older tests |
+| 6 | Second sweep: everything mixed, and the water tied to Quality | `a4a5cc0` | `MixTest` + the whole suite again (30 tests) |
 
 ### 1. Bug and polish sweep
 I played the whole game through by test, start to finish (34 tests: dig, cart, dump, money, upgrades, gold,
