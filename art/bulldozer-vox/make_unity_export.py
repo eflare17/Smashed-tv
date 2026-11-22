@@ -2626,7 +2626,8 @@ public static class BulldozerBuilder
             case 11:
                 TreeCheck(up.Level(Upgrades.Branch.Shovel) == 2 && money.Coins == treeCoins - 40 && up.SelectedState == Upgrades.NodeState.Owned, "aBuys");
                 up.SetLevel(Upgrades.Branch.Pick, 5);
-                up.Select(Upgrades.Branch.Pick, 5);                             // the jackhammer: needs 8 L of gold, there is none
+                money.Clear(); money.TestGrant(100, 0);                         // the jackhammer: 600 coins, there are 100
+                up.Select(Upgrades.Branch.Pick, 5);
                 TreeCheck(up.SelectedState == Upgrades.NodeState.TooDear, "jackhammerTooDear");
                 treeCoins = money.Coins;
                 Pad.Hold(Pad.B.A, true);

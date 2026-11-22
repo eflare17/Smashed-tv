@@ -5,7 +5,7 @@
 // branch can be sold back for everything it cost (X).
 //
 // Three columns:
-//   Breaking      Pick 1-5, then the Jackhammer (needs coins and gold), Jackhammer 2-5.  (One branch: levels 6-10
+//   Breaking      Pick 1-5, then the Jackhammer (coins only), Jackhammer 2-5.  (One branch: levels 6-10
 //                 of the pick are the jackhammer, so saves didn't need to change.)
 //   Moving dirt   Shovel 1-6, then the Backpack (needs Shovel 6, coins and gold), Backpack 1-8; and beside it the
 //                 Dingo (also needs Shovel 6, coins and gold): the mini loader, Dingo.cs.  (Its own branch, 4, added
@@ -53,7 +53,7 @@ public class Upgrades : MonoBehaviour
             new Step("Pick 3", "Bigger again, better on rock", 110),
             new Step("Pick 4", "Big chunks, good on rock", 190),
             new Step("Pick 5", "Biggest chunk, full strength on rock", 320),
-            new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600, 8f),
+            new Step("Jackhammer", "Unlock: hold to hammer.  Shift+wheel or [ ] sets the bite", 600),
             new Step("Jackhammer 2", "Bigger bite, faster blows", 260),
             new Step("Jackhammer 3", "Bigger bite, faster blows", 420),
             new Step("Jackhammer 4", "Bigger bite, faster blows", 670),
