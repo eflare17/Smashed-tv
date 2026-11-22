@@ -8,6 +8,7 @@
 //
 //   Dozer        engine (loop)  engine_lug (loop: labouring)  tracks (loop)  dirt (loop: blade pushing)
 //                hydraulic (loop)  ripper (loop)  clunk (hard rock)
+//   Rifle        rifle (a shot)
 //   On foot      pick_rock  pick_dirt  pick_gold  shovel_scrape  shovel_whump  jackhammer (loop)  vacuum (loop)
 //                gravel (loop: stones up the hose)  step  step_mine
 //   Cart / money cart_roll (loop)  motor (loop)  tip_rumble (loop)  kaching  upgrade  goal  gold (into the gold store)
@@ -69,7 +70,7 @@ public static class SoundBank
     {
         "engine", "engine_lug", "tracks", "dirt", "hydraulic", "ripper", "clunk",
         "pick_rock", "pick_dirt", "pick_gold", "shovel_scrape", "shovel_whump", "jackhammer", "vacuum", "gravel", "step", "step_mine",
-        "cart_roll", "motor", "tip_rumble", "kaching", "upgrade", "goal", "gold",
+        "cart_roll", "motor", "tip_rumble", "kaching", "upgrade", "goal", "gold", "rifle",
         "wind", "bird0", "bird1", "bird2", "mine_hum", "drip", "creak",
     };
 
@@ -149,6 +150,11 @@ public static class SoundBank
                 return Shot(b, 0.95f);
 
             // ---- on foot
+            case "rifle":                                     // a sharp crack with a short low thump under it
+                b = Buf(0.35f);
+                Noise(b, 0f, 1.0f, 0.012f, 0.95f); Noise(b, 0.002f, 0.6f, 0.05f, 0.25f);
+                Tone(b, 0f, 120f, 0.6f, 0.04f); Tone(b, 0f, 70f, 0.4f, 0.07f);
+                return Shot(b, 0.9f);
             case "pick_rock":                                 // clink
                 b = Buf(0.45f);
                 Tone(b, 0f, 2150f, 0.6f, 0.07f); Tone(b, 0f, 3340f, 0.4f, 0.05f); Tone(b, 0f, 5200f, 0.2f, 0.03f); Tone(b, 0f, 1250f, 0.3f, 0.04f);

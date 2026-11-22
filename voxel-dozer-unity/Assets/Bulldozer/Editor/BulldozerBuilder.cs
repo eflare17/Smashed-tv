@@ -2484,7 +2484,8 @@ public static class BulldozerBuilder
             case 11:
                 TreeCheck(up.Level(Upgrades.Branch.Shovel) == 2 && money.Coins == treeCoins - 40 && up.SelectedState == Upgrades.NodeState.Owned, "aBuys");
                 up.SetLevel(Upgrades.Branch.Pick, 5);
-                up.Select(Upgrades.Branch.Pick, 5);                             // the jackhammer: needs 8 L of gold, there is none
+                money.Clear(); money.TestGrant(100, 0);                         // the jackhammer: 600 coins, there are 100
+                up.Select(Upgrades.Branch.Pick, 5);
                 TreeCheck(up.SelectedState == Upgrades.NodeState.TooDear, "jackhammerTooDear");
                 treeCoins = money.Coins;
                 Pad.Hold(Pad.B.A, true);
@@ -3052,6 +3053,105 @@ public static class BulldozerBuilder
         }
     }
 
+    // The rifle:  -executeMethod BulldozerBuilder.RifleTest    prints BULLDOZER_RIFLE_RESULT (or _FAILED)
+    // On foot, 4 picks the rifle (it shows, the others hide); held fire shoots 8 a second; shots at the ground a few
+    // metres off chip it (loose rubble, the dirt kept: no ground made or lost); a far shot (20 m) still reaches; the
+    // bumpers go round to it and back; nothing costs money.
+    static int rfPhase, rfShots0;
+    static float rfT0;
+    static long rfVolume0, rfCoins0;
+    static string rfLog;
+    static bool rfOk;
+    public static void RifleTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        rfPhase = 0; rfLog = ""; rfOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += RifleTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void RfCheck(bool ok, string what) { rfLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) rfOk = false; }
+    static void RifleFinish(int code)
+    {
+        EditorApplication.update -= RifleTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void RifleTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_RIFLE_FAILED timed out in phase " + rfPhase + rfLog); RifleFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var m = Money.Instance;
+        if (w == null || wk == null || m == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (rfPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            wk.SetTool(3);
+            var rifle = wk.transform.Find("Hold/Rifle");
+            var pick = wk.transform.Find("Hold/Pick");
+            RfCheck(wk.Tool == 3 && rifle != null && rifle.gameObject.activeSelf && (pick == null || !pick.gameObject.activeSelf), "rifleInHand");
+            Vector3 shed = SiteProps.GoldShedFront;
+            Vector3 away = -shed; away.y = 0f;
+            away = away.sqrMagnitude > 0.01f ? away.normalized : Vector3.forward;
+            bStand = shed + away * 4f; bStand.y = w.FloorAt(bStand + Vector3.up * 3f);
+            Vector3 spot = bStand + away * 4f; spot.y = w.FloorAt(spot + Vector3.up * 3f);
+            AimAt(wk, spot);
+            rfVolume0 = w.CountSolid() + w.LoadVoxels;
+            rfCoins0 = m.Coins;
+            rfShots0 = Rifle.Shots;
+            rfPhase = 1; rfT0 = t;
+            return;
+        }
+        if (rfPhase == 1)
+        {
+            if (t - rfT0 < 0.3f) return;
+            int chips0 = Rifle.Chips;
+            for (int i = 0; i < 6; i++) wk.FireRifle();
+            rfLog += " shots=" + (Rifle.Shots - rfShots0) + " chips=" + (Rifle.Chips - chips0);
+            RfCheck(Rifle.Shots - rfShots0 == 6, "fires");
+            RfCheck(Rifle.Chips - chips0 >= 3, "chipsTheGround");
+            // held fire: about 8 a second
+            wk.overrideUse = true;
+            rfShots0 = Rifle.Shots;
+            rfPhase = 2; rfT0 = t;
+            return;
+        }
+        if (rfPhase == 2)
+        {
+            if (t - rfT0 < 1f) return;
+            wk.overrideUse = false;
+            int n = Rifle.Shots - rfShots0;
+            rfLog += " heldOneSecond=" + n;
+            RfCheck(n >= 6 && n <= 10, "eightASecond");
+            // a far shot: 20 m out along the ground
+            Vector3 dir = wk.transform.forward;
+            Vector3 far = bStand + dir * 20f; far.y = w.FloorAt(far + Vector3.up * 6f);
+            AimAt(wk, far);
+            int chips0 = Rifle.Chips;
+            wk.FireRifle();
+            RfCheck(Rifle.Chips > chips0, "reachesFar");
+            rfPhase = 3; rfT0 = t;
+            return;
+        }
+        if (rfPhase == 3)
+        {
+            if (t - rfT0 < 5f) return;                       // let the chips land
+            long vol = w.CountSolid() + w.LoadVoxels;
+            rfLog += " volumeChange=" + (vol - rfVolume0);
+            RfCheck(vol == rfVolume0, "dirtKept");
+            RfCheck(m.Coins == rfCoins0, "free");
+            wk.SetTool(0);
+            RfCheck(wk.transform.Find("Hold/Rifle") != null && !wk.transform.Find("Hold/Rifle").gameObject.activeSelf, "putAway");
+            Debug.Log((rfOk ? "BULLDOZER_RIFLE_RESULT" : "BULLDOZER_RIFLE_FAILED") + rfLog);
+            RifleFinish(rfOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
@@ -3471,7 +3571,7 @@ public static class BulldozerBuilder
     }
 
     // The bigger cart:  -executeMethod BulldozerBuilder.BigCartTest
-    // Buys it after Motor cart 3 (900 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
+    // Buys it after Motor cart 3 (750 coins, no gold): the tub holds 2,000 L and its extra boards show; it fills past
     // the old 1,500 L; it still drives to the dump and pays what the load was worth; sold back, it is 1,500 L again.
     // Prints BULLDOZER_BIGCART_RESULT, or BULLDOZER_BIGCART_FAILED if a check didn't hold.
     static int bgcPhase; static float bgcPhaseStart, bgcTipEnd; static long bgcCoins0; static double bgcWorth; static bool bgcOk; static string bgcLog;
@@ -3506,7 +3606,7 @@ public static class BulldozerBuilder
             var boards = cart.transform.Find("Big tub");
             BCheck("boardsHiddenBefore", boards != null && !boards.gameObject.activeSelf);
             int before = cart.capacity;
-            money.TestGrant(900, 0);
+            money.TestGrant(750, 0);
             BCheck("buysWithCoinsOnly", up.Buy(Upgrades.Branch.Cart) && money.Coins == 0);
             bgcLog += " holdsL=" + (before * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "->" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
             BCheck("bigger", cart.capacity == 8192 && before == 6144);
@@ -3544,7 +3644,7 @@ public static class BulldozerBuilder
             bgcLog += " paid=" + paid + " worth=" + bgcWorth.ToString("F1") + " left=" + w.CartVoxels;
             BCheck("paysForAll", System.Math.Abs(paid - bgcWorth) < 1.01 && w.CartVoxels < VoxelWorld.ClodVoxels);
             long c0 = money.Coins;
-            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 900);
+            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 750);
             BCheck("smallerAgain", cart.capacity == 6144);
             Debug.Log((bgcOk ? "BULLDOZER_BIGCART_RESULT" : "BULLDOZER_BIGCART_FAILED") + bgcLog);
             BigCartFinish(bgcOk ? 0 : 1);

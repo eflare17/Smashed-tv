@@ -358,7 +358,7 @@ public class Worker : MonoBehaviour
         OnFootCamera();
         // For now the game starts with you in the dozer, ready to drive.  Enter gets out to go on foot.
         if (dozer != null && !dozer.dead) { GetIn(); Say("Enter gets out of the dozer to go on foot.", 7f); }
-        else Say("The mine caved in years ago.  Tab switches view.  1 pick, 2 shovel.", 9f);
+        else Say("The mine caved in years ago.  1 pick, 2 shovel, Tab switches view.  H shows every control.", 9f);
     }
 
     /// The son (the prologue's ending): a plain shirt, jeans and a dark cap, no backpack, no tools.  Off again puts
@@ -781,7 +781,7 @@ public class Worker : MonoBehaviour
         if (world.LastShattered > 0)
         {
             GoldShattered += world.LastShattered;
-            Say("Gold lost!  That bite's too big for the seam.  Make it smaller: Shift+wheel or [", 3f);
+            Say("Gold lost!  That bite's too big for the seam.  Make it smaller: " + Pad.Key("Shift+wheel or [", "d-pad down") + ".", 3f);
         }
     }
 
@@ -1305,6 +1305,7 @@ public class Worker : MonoBehaviour
                 "Right stick   look and aim     Left stick   walk     Back   view: " + (Eyes ? "eyes" : "over the shoulder") + "\n" +
                 "RB / LB   next / last tool     Right trigger   use it where you aim (hold)     A   grab / tip / sell / fit\n" +
                 "X   squirt backpack into cart     B   tip cart     Y   get in the dozer     Start   upgrades\n" +
+                "A at loose gold   into your pockets;  A at the gold shed   hand it in, or sell the gold store\n" +
                 (jackOwned ? "D-pad up / down   jackhammer bite size\n" : "") +
                 "Cart: A at an end holds it, left stick pushes" + (cart != null && cart.spec.motor ? ", d-pad right rides it" : "") + (cart != null && cart.spec.auto ? ", d-pad left sends it" : "") + ".  At the dump A tips it.\n" +
                 "Left stick click   hide this help" :
@@ -1312,6 +1313,7 @@ public class Worker : MonoBehaviour
                 "1   " + (jackOwned ? "jackhammer" : "pick") + "     2   shovel     3   backpack     4   rifle     Left mouse or Space   use it where you aim (hold)\n" +
                 (jackOwned ? "Shift+wheel or [ ]   jackhammer bite size\n" : "") +
                 "Cart: E at an end holds it, W push, S pull, E let go, T tips it" + (cart != null && cart.spec.motor ? ", R rides it" : "") + (cart != null && cart.spec.auto ? ", G sends it" : "") + ".  At the dump E tips it.\n" +
+                "E   pick up loose gold (into your pockets); at the gold shed E hands it in, or sells the gold store\n" +
                 "Q   squirt the backpack into the cart        Enter   get in the dozer\n" +
                 "U   upgrades     Esc   menu (and frees the mouse)     F5 save   F6 load     F3   debug     F11   fps     H   hide this help";
             below = Hud.HelpBox(help, 640f);

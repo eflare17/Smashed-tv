@@ -1,5 +1,6 @@
 // Trailer mode: the game plays itself for filming a trailer (the owner asked for it, 22 Nov 2026).
-// Start the game with  -trailer  (DiggerGame.exe -trailer), or press F8 in the game.
+// Start the game with  -trailer  (DiggerGame.exe -trailer), or press F7 in the game.  (It was F8, which is also the upgrades' test key:
+// pressing it for free coins started trailer mode by mistake and stopped the game saving.)
 //   - a FRESH game: nothing is loaded and nothing is saved (the owner's save is never touched);
 //   - the yellow dozer starts at the foot of the mountain road and drives itself up it with blade auto on Grade,
 //     so the pegs, the red / green / blue grade tint and the stretch ticks are all there to see;
@@ -61,7 +62,7 @@ public class TrailerMode : MonoBehaviour
 
     void Update()
     {
-        if (!On && Input.GetKeyDown(KeyCode.F8)) On = true;               // (mid-game: from where the dozer is, the save is no longer written)
+        if (!On && Input.GetKeyDown(KeyCode.F7)) On = true;               // (mid-game: from where the dozer is, the save is no longer written)
         if (!On) return;
         if (!started) { if (Time.timeSinceLevelLoad > 1.5f) { if (Shot == ShotKind.Road) Begin(); else BeginShot(); } return; }
         if (Shot != ShotKind.Road) { UpdateShot(); return; }
