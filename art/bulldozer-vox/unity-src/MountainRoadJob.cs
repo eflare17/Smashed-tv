@@ -371,7 +371,7 @@ public class MountainRoadJob : MonoBehaviour
         Vector3 here = dozer != null && dozer.driven ? dozer.transform.position : Worker.Instance != null ? Worker.Instance.transform.position : Vector3.zero;
         float s, off; Vector2 dir;
         float dist = MountainRoad.Nearest(here.x, here.z, out s, out off, out dir);
-        LegendShown = dist < 25f;
+        LegendShown = dist < 25f && !GameAudio.InMine(here);     // (deep in the mine the road runs overhead: not there)
         if (LegendShown) Legend();
         CabText = "";
         if (dozer != null && dozer.driven && dist <= MountainRoad.CorridorHalf) Cab(s, dir);
