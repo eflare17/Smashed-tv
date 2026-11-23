@@ -39,6 +39,9 @@ public class PauseMenu : MonoBehaviour
     public static readonly float[] ViewMetres = { 250f, 450f, 900f };     // Far is what the game had (SiteProps sets 900)
     public static int Quality = 1, View = 2;
     public static bool Shadows = true, InvertMouse, ShowFps;
+    /// Esc > Settings > Test keys: F7 trailer mode, F8 free coins and gold, F9 breaks or fixes the dozer.  Off by
+    /// default, so nobody presses them by accident (F7 stops the game saving); kept in PlayerPrefs "set.testkeys".
+    public static bool TestKeys;
     public static bool CameraShake = true;                                // the camera bumps on hard hits (FollowCamera)
     public static float MouseSpeed = 1f;                                  // times the normal speed, 0.25 to 3
     public static float UltraAo = 2.0f;                                   // Ultra's ambient occlusion strength (Medium's is the scene's, 0.6)
@@ -53,6 +56,7 @@ public class PauseMenu : MonoBehaviour
         MouseSpeed = Mathf.Clamp(PlayerPrefs.GetFloat("set.mouse", 1f), 0.25f, 3f);
         Ui.Size = Mathf.Clamp(PlayerPrefs.GetFloat("set.uisize", 1f), Ui.MinSize, Ui.MaxSize);
         CameraShake = PlayerPrefs.GetInt("set.shake", 1) == 1;
+        TestKeys = PlayerPrefs.GetInt("set.testkeys", 0) == 1;
         GameAudio.LoadPrefs();
     }
 
@@ -66,6 +70,7 @@ public class PauseMenu : MonoBehaviour
         PlayerPrefs.SetFloat("set.mouse", MouseSpeed);
         PlayerPrefs.SetFloat("set.uisize", Ui.Size);
         PlayerPrefs.SetInt("set.shake", CameraShake ? 1 : 0);
+        PlayerPrefs.SetInt("set.testkeys", TestKeys ? 1 : 0);
         PlayerPrefs.SetInt("set.autoHeight", DozerController.AutoHeight ? 1 : 0);
         PlayerPrefs.SetInt("set.autoLevel", DozerController.AutoLevel ? 1 : 0);
         PlayerPrefs.SetInt("set.autoStraight", DozerController.AutoStraight ? 1 : 0);
@@ -314,9 +319,9 @@ public class PauseMenu : MonoBehaviour
     }
 
     // ---- the settings page: one row each
-    public const int SettingRows = 18, UiSizeRow = 5, SoundRow = 9, ShakeRow = 12, EnemyRow = 13, AutoRow = 14;
+    public const int SettingRows = 19, UiSizeRow = 5, SoundRow = 9, ShakeRow = 12, EnemyRow = 13, TestKeysRow = 14, AutoRow = 15;
     static readonly string[] SettingNames = { "Quality", "Shadows", "View distance", "Display", "Resolution", "UI size", "Show fps  (F11)", "Mouse speed", "Invert mouse look",
-                                              "Master volume", "Engine volume", "Effects volume", "Camera shake", "Enemies (grunts)",
+                                              "Master volume", "Engine volume", "Effects volume", "Camera shake", "Enemies (grunts)", "Test keys (F7 F8 F9)",
                                               "Auto height", "Auto level", "Auto straight", "Back" };
 
     string SettingValue(int row)
@@ -337,9 +342,10 @@ public class PauseMenu : MonoBehaviour
             case 11: return Mathf.RoundToInt(GameAudio.Effects * 100f) + "%";
             case 12: return CameraShake ? "On" : "Off";
             case 13: return Grunts.On ? "On" : "Off";
-            case 14: return DozerController.AutoHeight ? "On" : "Off";
-            case 15: return DozerController.AutoLevel ? "On" : "Off";
-            case 16: return DozerController.AutoStraight ? "On" : "Off";
+            case 14: return TestKeys ? "On" : "Off";
+            case 15: return DozerController.AutoHeight ? "On" : "Off";
+            case 16: return DozerController.AutoLevel ? "On" : "Off";
+            case 17: return DozerController.AutoStraight ? "On" : "Off";
         }
         return "";
     }
@@ -363,9 +369,10 @@ public class PauseMenu : MonoBehaviour
             case 11: GameAudio.Effects = Step10(GameAudio.Effects, dir); break;
             case 12: CameraShake = !CameraShake; break;
             case 13: Grunts.SetOn(!Grunts.On); break;
-            case 14: DozerController.AutoHeight = !DozerController.AutoHeight; break;
-            case 15: DozerController.AutoLevel = !DozerController.AutoLevel; break;
-            case 16: DozerController.AutoStraight = !DozerController.AutoStraight; break;
+            case 14: TestKeys = !TestKeys; break;
+            case 15: DozerController.AutoHeight = !DozerController.AutoHeight; break;
+            case 16: DozerController.AutoLevel = !DozerController.AutoLevel; break;
+            case 17: DozerController.AutoStraight = !DozerController.AutoStraight; break;
         }
     }
 
@@ -390,7 +397,7 @@ public class PauseMenu : MonoBehaviour
         if (!Open) return;
         GUI.depth = -10;                                                  // over the upgrades and the help
         float W = 560f;
-        float H = page == Page.Settings ? 946f : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 220f : 388f;
+        float H = page == Page.Settings ? 986f : (page == Page.Quit || page == Page.NewGame || page == Page.ResetGround) ? 220f : 388f;
         Ui.Begin(W + 40f, page == Page.Settings ? H + 30f : 600f);                                         // (a big UI size is held down so Settings still fits)
         var area = new Rect((Ui.W - W) / 2f, (Ui.H - H) / 2f, W, H);
         GUI.Box(area, GUIContent.none);

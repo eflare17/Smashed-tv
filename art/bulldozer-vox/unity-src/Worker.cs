@@ -115,6 +115,7 @@ public class Worker : MonoBehaviour
     bool hammering;
     Transform jack, rifle, freezeGun, bow, bowString, bowArrow;
     float drawT;                                            // how long the bow has been drawn (s)
+    float gunUp, firedLately;                               // the gun raised to aim (0..1), and how long ago it was fired
     public float BowDraw { get { return Mathf.Clamp01(drawT / Arrows.DrawTime); } }
     public bool Sprinting { get; private set; }
     public bool sprintOverride;                             // (tests) as if Shift were held
@@ -596,7 +597,7 @@ public class Worker : MonoBehaviour
         if (!useOverride)
         {
             // for trying things out before repairs are in the game: F9 breaks or fixes the dozer
-            if (Input.GetKeyDown(KeyCode.F9) && dozer != null)
+            if (PauseMenu.TestKeys && Input.GetKeyDown(KeyCode.F9) && dozer != null)
             {
                 dozer.dead = !dozer.dead;
                 Say(dozer.dead ? "Dozer set to dead (test key).  Dig its parts out of the mine and fit them." : "Dozer working again (test key).");
@@ -715,6 +716,7 @@ public class Worker : MonoBehaviour
         {
             Pouring = false; Sucking = false; hammering = false; swing = Swing.None;
             rifleWait -= dt;
+            firedLately = use ? 0.8f : firedLately - dt;
             recoil = Mathf.MoveTowards(recoil, 0f, dt * 0.6f);
             if (use && rifleWait <= 0f)
             {
@@ -1056,6 +1058,11 @@ public class Worker : MonoBehaviour
             hold.localPosition = new Vector3(0f, 1.42f, 0.02f);
             hold.localRotation = Quaternion.Euler((lookPitch - 14f) * 0.5f, 0f, 0f);
         }
+        // the guns and the bow, seen from behind: off to the side, where his body doesn't hide them (the rifle and freeze
+        // gun at his right shoulder, the bow held out on his left); through his eyes, the bow off to the left of the cross
+        if (!Eyes && (Tool == 3 || Tool == 4)) p.at = new Vector3(0.3f, -0.04f, 0.18f);
+        if (!Eyes && Tool == 5) p.at = new Vector3(-0.34f, 0.02f, 0.34f);
+        if (Eyes && Tool == 5) p.at = new Vector3(-0.2f, -0.12f, 0.55f);
         if (jack != null && Tool == 0 && jack.gameObject.activeSelf != jackOwned) { jack.gameObject.SetActive(jackOwned); pick.gameObject.SetActive(!jackOwned); }
         Transform tool = Tool == 5 ? bow : Tool == 4 ? freezeGun : Tool == 3 ? rifle : Tool == 0 ? (jackOwned ? jack : pick) : Tool == 1 ? shovel : nozzle;
         tool.localPosition = p.at;
@@ -1081,9 +1088,13 @@ public class Worker : MonoBehaviour
         }
         if (Tool == 3 || Tool == 4)
         {
-            // the rifle points along the aim (far out, so it lines up with the cross), and kicks back a little each shot
+            // the rifle points along the aim (far out, so it lines up with the cross), and kicks back a little each shot.
+            // Seen from behind and not firing, he carries it angled down and out to the right, so you can see it.
             Vector3 target = tool.position + aimDir * 40f;
             tool.rotation = Quaternion.LookRotation(target - tool.position, Vector3.up);
+            gunUp = Mathf.MoveTowards(gunUp, firedLately > 0f ? 1f : 0f, Time.deltaTime * 6f);
+            if (!Eyes && gunUp < 1f)
+                tool.rotation = Quaternion.Slerp(Quaternion.AngleAxis(38f, transform.up) * Quaternion.AngleAxis(28f, tool.right) * tool.rotation, tool.rotation, gunUp);
             tool.position -= tool.forward * recoil;
         }
         if (Tool == 0 && jackOwned)
@@ -1176,11 +1187,6 @@ public class Worker : MonoBehaviour
     /// E on foot: let go of the cart if holding it; otherwise fit or pick up a part; otherwise take hold of the cart.
     public void PressE()
     {
-        if (!InDozer && !RidingCart && HoldingCart == 0 && Arrows.PickUp(transform.position + Vector3.up * 0.9f))
-        {
-            Say("Arrow back in the quiver (" + Arrows.InQuiver + " of " + Arrows.Total + ").", 1.5f);
-            return;
-        }
         if (RidingCart)
         {
             // on the motor cart: E at the dump tips it and he stays on to drive back; anywhere else he gets off
@@ -1197,7 +1203,15 @@ public class Worker : MonoBehaviour
             return;
         }
         if (HoldingCart != 0) { LetGo(); return; }
-        if (AtGoldShed()) { if (PocketGold > 0) EmptyPockets(); else SellGold(); return; }
+        // at the shed: gold first; with no gold to hand in, an arrow lying there can be picked up
+        if (AtGoldShed() && (PocketGold > 0 || Money.Instance == null || Money.Instance.GoldStore > 0 || !Arrows.NearOne(transform.position + Vector3.up * 0.9f)))
+        { if (PocketGold > 0) EmptyPockets(); else SellGold(); return; }
+        // an arrow in reach: pulled out (after the hopper and the shed, so one lying there never gets in their way)
+        if (!InDozer && Arrows.PickUp(transform.position + Vector3.up * 0.9f))
+        {
+            Say("Arrow back in the quiver (" + Arrows.InQuiver + " of " + Arrows.Total + ").", 1.5f);
+            return;
+        }
         if (PickGold()) return;
         if (UsePart() != "none") return;
         if (GrabCart()) return;
@@ -1382,7 +1396,7 @@ public class Worker : MonoBehaviour
         if (carried >= 0 && NearDozer())
         {
             finds.Install(carried);
-            Say("Fitted the " + Finds.Names[carried] + "." + (dozer.dead ? "" : "  (The dozer already works.  F9 makes it dead, to try repairs.)"), 4f);
+            Say("Fitted the " + Finds.Names[carried] + "." + (dozer.dead ? "" : PauseMenu.TestKeys ? "  (The dozer already works.  F9 makes it dead, to try repairs.)" : "  (The dozer already works.)"), 4f);
             return "installed " + carried;
         }
         int here = finds.Collectable(transform.position);

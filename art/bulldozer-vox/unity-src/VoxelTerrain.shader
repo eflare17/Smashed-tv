@@ -162,7 +162,7 @@ Shader "Voxel/Terrain"
         void surf(Input IN, inout SurfaceOutput o)
         {
             int m = _FixedMat >= 0 ? (int)_FixedMat : (int)round(IN.color.r * 255.0);
-            m = clamp(m, 0, 30);
+            m = clamp(m, 0, 31);
             if (m >= 11 && m <= 15 && _CutRadius > 0.0 && IN.color.g < 0.5)   // green set = never cut (the cart)
             {
                 // how far this point is from the line between the camera and its subject

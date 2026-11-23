@@ -62,7 +62,7 @@ public class TrailerMode : MonoBehaviour
 
     void Update()
     {
-        if (!On && Input.GetKeyDown(KeyCode.F7)) On = true;               // (mid-game: from where the dozer is, the save is no longer written)
+        if (!On && PauseMenu.TestKeys && Input.GetKeyDown(KeyCode.F7)) On = true;               // (mid-game: from where the dozer is, the save is no longer written)
         if (!On) return;
         if (!started) { if (Time.timeSinceLevelLoad > 1.5f) { if (Shot == ShotKind.Road) Begin(); else BeginShot(); } return; }
         if (Shot != ShotKind.Road) { UpdateShot(); return; }

@@ -313,7 +313,7 @@ public class Upgrades : MonoBehaviour
             if (Pad.Down(Pad.B.A) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) BuySelected();
             if (Pad.Down(Pad.B.X)) SellBackSelected();
         }
-        if (Input.GetKeyDown(KeyCode.F8) && Money.Instance != null)
+        if (PauseMenu.TestKeys && Input.GetKeyDown(KeyCode.F8) && Money.Instance != null)
         {
             Money.Instance.TestGrant(10000, GoldVoxels(50f));
             if (wk != null) wk.Say("Test key: +10,000 coins and 50 L of gold.", 3f);

@@ -64,8 +64,20 @@ public class SaveGame : MonoBehaviour
         }
         if (Worker.Instance != null && Worker.Instance.useOverride) return;     // not while a test is driving
         if (Input.GetKeyDown(KeyCode.F5)) Say(Save());
-        if (Input.GetKeyDown(KeyCode.F6)) Say(Load());
+        if (Input.GetKeyDown(KeyCode.F6)) PressF6();
     }
+
+    /// F6 asks first: press it again within 3 seconds to load (anything since the last save is lost).
+    /// Returns true if this press loaded.
+    public bool PressF6()
+    {
+        if (Time.unscaledTime < loadArmedUntil) { loadArmedUntil = 0f; Say(Load()); return true; }
+        loadArmedUntil = Time.unscaledTime + 3f;
+        if (Worker.Instance != null) Worker.Instance.Say("Load your last save?  Press F6 again.  (Anything since then is lost.)", 3f);
+        return false;
+    }
+
+    float loadArmedUntil;
 
     void OnApplicationQuit() { if (AutoOn && VoxelWorld.Instance != null) Save(); }
 

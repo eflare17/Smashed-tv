@@ -4466,6 +4466,168 @@ public static class BulldozerBuilder
         }
     }
 
+    // What he holds:  -executeMethod BulldozerBuilder.ToolsLookTest    prints BULLDOZER_TOOLSLOOK_RESULT (or _FAILED)
+    // Each tool in turn, over his shoulder and then through his eyes: a picture each (Logs/tool_<n>_<view>.png), and
+    // whether the tool is drawn and where it is.  Every tool must be in view in both views.
+    static int tlPhase, tlTool;
+    static float tlT0;
+    static bool tlEyes, tlOk;
+    static string tlLog;
+    public static void ToolsLookTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        tlPhase = 0; tlTool = 0; tlEyes = false; tlOk = true; tlLog = "";
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += ToolsLookTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void ToolsLookFinish(int code)
+    {
+        EditorApplication.update -= ToolsLookTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static readonly string[] ToolNames = { "Pick", "Shovel", "Nozzle", "Rifle", "FreezeGun", "Bow" };
+    static void ToolsLookTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 200) { Debug.LogError("BULLDOZER_TOOLSLOOK_FAILED timed out" + tlLog); ToolsLookFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance;
+        if (w == null || wk == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (tlPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            Hud.SkipFirstHelp();
+            // out on the open floor, looking along it (the mouse is left alone, so the camera is the player's own)
+            Vector3 at = new Vector3(-6f, 0f, -10f);
+            wk.Teleport(at, 30f);
+            wk.SetEyes(false);
+            wk.SetTool(0);
+            tlPhase = 1; tlT0 = t;
+            return;
+        }
+        if (tlPhase == 1)
+        {
+            if (t - tlT0 < 0.6f) return;
+            var tr = wk.transform.Find("Hold/" + ToolNames[tlTool]);
+            var cam = Camera.main;
+            string info = " " + ToolNames[tlTool] + (tlEyes ? "/eyes" : "/back") + "[";
+            bool seen = false;
+            if (tr == null) info += "missing";
+            else
+            {
+                var r = tr.GetComponentInChildren<MeshRenderer>();
+                Vector3 vp = cam != null && r != null ? cam.WorldToViewportPoint(r.bounds.center) : Vector3.zero;   // (the middle of the tool, not its handle end)
+                bool inView = vp.z > 0f && vp.x > 0f && vp.x < 1f && vp.y > 0f && vp.y < 1f;
+                seen = tr.gameObject.activeInHierarchy && r != null && r.enabled && inView;
+                info += "active=" + tr.gameObject.activeInHierarchy + " drawn=" + (r != null && r.isVisible) + " view=" + vp.ToString("F2") + " size=" + (r != null ? r.bounds.size.ToString("F2") : "-")
+                      + " camDist=" + (cam != null ? Vector3.Distance(cam.transform.position, tr.position).ToString("F2") : "-");
+            }
+            info += "]";
+            tlLog += info;
+            if (tlTool != 2 && !seen && (!tlEyes || tlTool >= 3)) { tlOk = false; tlLog += "=FAIL"; }        // (the nozzle needs the backpack; through his eyes the pick and shovel sit low, as they always have)
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/tool_" + ToolNames[tlTool] + (tlEyes ? "_eyes" : "_back") + ".png");
+            tlPhase = 2; tlT0 = t;
+            return;
+        }
+        if (tlPhase == 2)
+        {
+            if (t - tlT0 < 0.3f) return;                     // (the picture is taken at the end of the frame: change nothing till it's done)
+            tlPhase = 1;
+            tlTool++;
+            if (tlTool >= ToolNames.Length)
+            {
+                if (tlEyes) { Debug.Log((tlOk ? "BULLDOZER_TOOLSLOOK_RESULT" : "BULLDOZER_TOOLSLOOK_FAILED") + tlLog); ToolsLookFinish(tlOk ? 0 : 1); return; }
+                tlEyes = true; tlTool = 0; wk.SetEyes(true);
+            }
+            wk.SetTool(tlTool);
+            tlT0 = t;
+        }
+    }
+
+    // Small fixes (24 Nov):  -executeMethod BulldozerBuilder.FixesTest    prints BULLDOZER_FIXES_RESULT (or _FAILED)
+    // The test keys (F7 F8 F9) are off unless switched on in Settings, and the switch works.  At the gold shed with
+    // gold, E hands the gold in even with an arrow lying right there; with no gold, E then picks the arrow up.  F6
+    // asks first: one press doesn't load, a second press within 3 s does.
+    static int fxPhase;
+    static float fxT0;
+    static string fxLog;
+    static bool fxOk;
+    public static void FixesTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        fxPhase = 0; fxLog = ""; fxOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += FixesTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void FxCheck(bool ok, string what) { fxLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) fxOk = false; }
+    static void FixesFinish(int code)
+    {
+        EditorApplication.update -= FixesTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void FixesTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 180) { Debug.LogError("BULLDOZER_FIXES_FAILED timed out in phase " + fxPhase + fxLog); FixesFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var m = Money.Instance; var pm = PauseMenu.Instance; var sg = SaveGame.Instance;
+        if (w == null || wk == null || m == null || pm == null || sg == null || SiteProps.GoldShedFront == Vector3.zero) return;
+        float t = Time.time;
+        if (fxPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            Grunts.SetOn(false);
+            // the test keys switch
+            bool was = PauseMenu.TestKeys;
+            fxLog += " testKeysWere=" + was;
+            pm.Change(PauseMenu.TestKeysRow, 1);
+            bool flipped = PauseMenu.TestKeys != was;
+            pm.Change(PauseMenu.TestKeysRow, 1);
+            FxCheck(flipped && PauseMenu.TestKeys == was, "testKeysSwitch");
+            // at the gold shed, with gold, and an arrow stuck in the ground right by the counter
+            Vector3 shed = SiteProps.GoldShedFront;
+            wk.Teleport(shed, 0f);
+            FxCheck(wk.AtGoldShed(), "atTheShed");
+            Arrows.AllBack();
+            Arrows.Loose(shed + new Vector3(0.4f, 1.2f, 0.3f), Vector3.down, 14f);
+            m.TestGrant(0, 200);
+            fxPhase = 1; fxT0 = t;
+            return;
+        }
+        if (fxPhase == 1)
+        {
+            if (t - fxT0 < 1f) return;
+            int out0 = Arrows.Out.Count;
+            fxLog += " arrowsOut=" + out0 + (out0 > 0 ? " state=" + Arrows.Out[0].state : "");
+            int gold0 = m.GoldStore;
+            wk.PressE();
+            fxLog += " afterE1 gold " + gold0 + "->" + m.GoldStore + " arrowsOut=" + Arrows.Out.Count + " said=[" + wk.LastSaid + "]";
+            FxCheck(out0 == 1 && m.GoldStore < gold0 && Arrows.Out.Count == 1, "goldBeforeArrow");
+            wk.PressE();
+            fxLog += " afterE2 arrowsOut=" + Arrows.Out.Count + " quiver=" + Arrows.InQuiver;
+            FxCheck(Arrows.Out.Count == 0 && Arrows.InQuiver == Arrows.Total, "thenTheArrow");
+            // F6 asks first (the save is the one there now: back it up if it matters; the test runner does)
+            bool first = sg.PressF6();
+            string said1 = wk.LastSaid;
+            bool second = sg.PressF6();
+            fxLog += " f6first=" + first + " [" + said1 + "] f6second=" + second;
+            FxCheck(!first && said1.StartsWith("Load your last save?"), "f6Asks");
+            FxCheck(second, "f6AgainLoads");
+            Debug.Log((fxOk ? "BULLDOZER_FIXES_RESULT" : "BULLDOZER_FIXES_FAILED") + fxLog);
+            FixesFinish(fxOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
