@@ -237,7 +237,57 @@ public class SiteProps : MonoBehaviour
         GoldShed();                                          // after the crates and logs, so it can keep clear of them
         Trees();
         FarHills();
+        // the creek (Creek.cs): its bed is cut now the trees stand, bending round their trunks; then its plants
+        var obstacles = new List<Vector3>();
+        foreach (var sd in solids) if (!sd.machineOnly) obstacles.Add(new Vector3(sd.at.x, sd.radius, sd.at.y));
+        Creek.Build(world, obstacles);
+        CreekPlants();
     }
+
+    /// Reeds and low bushes along both banks of the creek.  (Its own random numbers, so nothing else on the site moves.)
+    void CreekPlants()
+    {
+        var r = new System.Random(23);
+        System.Func<float, float, float> rand = (a, b) => a + (float)r.NextDouble() * (b - a);
+        int n = 0;
+        for (int i = 2; i < Creek.Line.Count - 4; i += 3)
+        {
+            Vector3 p = Creek.Line[i], q = Creek.Line[i + 1];
+            Vector3 dir = q - p; dir.y = 0f;
+            if (dir.sqrMagnitude < 1e-6f) continue;
+            dir.Normalize();
+            Vector3 side = new Vector3(-dir.z, 0f, dir.x);
+            for (int k = -1; k <= 1; k += 2)
+            {
+                if (r.NextDouble() < 0.35) continue;
+                Vector3 at = p + side * k * rand(Creek.BedHalf + 0.15f, Creek.BankOut + 0.6f) + dir * rand(-0.3f, 0.3f);
+                if (Blocks(at, 0.2f)) continue;
+                float y = world.FloorAt(new Vector3(at.x, p.y + 2.5f, at.z));
+                if (r.NextDouble() < 0.7)
+                {
+                    // a clump of reeds: thin stems, leaning a little
+                    int stems = r.Next(4, 9);
+                    for (int j = 0; j < stems; j++)
+                    {
+                        float hgt = rand(0.35f, 0.9f);
+                        Vector3 b = at + new Vector3(rand(-0.18f, 0.18f), 0f, rand(-0.18f, 0.18f));
+                        Box(new Vector3(b.x, y + hgt * 0.5f, b.z), new Vector3(0.035f, hgt, 0.035f), Quaternion.Euler(rand(-12f, 12f), rand(0f, 90f), rand(-12f, 12f)), j % 3 == 0 ? Leaves : Bracken);
+                    }
+                }
+                else
+                {
+                    // a low bush
+                    float size = rand(0.35f, 0.7f);
+                    for (int j = 0; j < 4; j++)
+                        Box(new Vector3(at.x + rand(-0.3f, 0.3f), y + size * rand(0.2f, 0.6f), at.z + rand(-0.3f, 0.3f)), Vector3.one * size * rand(0.5f, 1f), Quaternion.Euler(0f, rand(0f, 90f), 0f), j % 2 == 0 ? Bracken : Leaves);
+                }
+                if (++n % 60 == 0) Finish("Creek plants " + n);
+            }
+        }
+        Finish("Creek plants " + n);
+        CreekPlantCount = n;
+    }
+    public static int CreekPlantCount;
 
     void OnDestroy() { solids.Clear(); }
 

@@ -1,14 +1,15 @@
 // Water, ice and gas in the game (the simulation itself is VoxelWorldFluid.cs).
 //
 // Water
-//   The creek: a spring seeps out of the sheer face beside the mine door, 2 m up: the water falls down the face and
-//   lands by the door.  It runs all the time, at a set
-//   rate, and the water goes wherever the ground leads it: into holes you dig, along a channel you cut, in at the mine
-//   door.  The ground soaks it up slowly, so it can't flood the site: there is also a cap on all the water there can
-//   be at once (the creek and the rain stop adding while it's reached).  Fill a hole and the water in it is pushed out;
+//   The creek (Creek.cs): a spring in the bush on the hill above the mine, outside the quarry cut; its bed runs west
+//   and then south down the outside of the quarry, and off the bottom of the map, where the water drains away.  It
+//   runs all the time, at a set rate, and the water goes wherever the ground leads it: down its bed, into holes you
+//   dig, along a channel you cut off it.  The ground soaks it up slowly, so it can't flood the site: there is also a cap on all the water there can
+//   be at once (the creek stops adding while it's reached).  Fill a hole and the water in it is pushed out;
 //   dig a drain and it runs away.
-//   Rain: now and then (every 5 to 9 minutes, the first after about 3) it rains for a minute near you.  The creek runs
-//   twice as hard while it rains.
+//   Water is drawn as chunky see-through blocks, and water in free fall (off the face, over an edge into a hole)
+//   comes down as tumbling cubes that land back as blocks (the drops, at the end of this file).
+//   (No rain: the owner tried it on 23 Nov and it looked bad, so it came out.)
 //
 // Ice
 //   Water that freezes is solid ice: you can walk on it, and the pick, the jackhammer or the rifle breaks it into loose
@@ -32,29 +33,25 @@ public class Fluids : MonoBehaviour
     public static bool WaterOn = true, GasOn = true;            // (off switches, for tests and if it ever misbehaves)
 
     // ---- tuning
-    public const float CreekPerSecond = 9000f;                 // units of water (255 = one 12.5 cm cell full) the spring gives
+    public const float CreekPerSecond = 14000f;                 // units of water (255 = one 12.5 cm cell full) the spring gives
     // Set by the Quality setting (Esc > Settings > Quality), each frame:
-    //            simulated round you   water cap         rain lands within
-    //   Low      22 m                  3,500 cells (7 m3)   7 m
-    //   Medium   48 m                  7,000 cells (14 m3) 10 m     (the numbers it was built with)
-    //   High     70 m                 12,000 cells (23 m3) 13 m
-    //   Ultra    the whole site       20,000 cells (39 m3) 16 m
+    //            simulated round you   water cap              falling cubes at once
+    //   Low      22 m                  3,500 cells (7 m3)     120
+    //   Medium   48 m                  7,000 cells (14 m3)    250     (the numbers it was built with)
+    //   High     70 m                 12,000 cells (23 m3)    400
+    //   Ultra    the whole site       20,000 cells (39 m3)    600
     static readonly float[] RangeFor = { 22f, 48f, 70f, 1e9f };
     static readonly int[] CapFor = { 3500, 7000, 12000, 20000 };
-    static readonly float[] RainFor = { 7f, 10f, 13f, 16f };
     static int Tier { get { return Mathf.Clamp(PauseMenu.Quality, 0, 3); } }
     public static int WaterCap { get { return 255 * CapFor[Tier]; } }   // all the water there can be at once
-    public const float RainEvery = 420f, RainEveryJitter = 120f, RainFirst = 180f, RainLasts = 60f;
-    public static float RainRadius { get { return RainFor[Tier]; } }
     public const int GreenPocketGas = 255 * 900, ColdPocketGas = 255 * 500;
     public const float PocketLeakPerSecond = 255 * 70f;
     public const float BlastReach = 2f;                         // gas this close goes off with a blast
     public const float IceBitLife = 7f;
 
-    public Vector3 Spring { get; private set; }               // where the water comes out of the face
-    public const float SpringUp = 2f;
-    public bool Raining { get { return rainLeft > 0f; } }
-    public float RainIn { get { return rainIn; } }
+    public Vector3 Spring { get { return Creek.Spring; } }    // where the creek's water comes out (Creek.cs)
+    public static long Drained { get; private set; }          // water that has run off the map down the creek (tests)
+    readonly HashSet<int> creekColumns = new HashSet<int>();
     public static int Blasts { get; private set; }             // (tests)
     public static int IceBroken { get; private set; }
     public static int Frozen { get; private set; }
@@ -65,9 +62,7 @@ public class Fluids : MonoBehaviour
     public class Pocket { public Vector3 centre; public float radius; public bool cold; public int gas; public bool open, spent; public Vector3 openAt; public AudioSource hiss; }
     public readonly List<Pocket> Pockets = new List<Pocket>();
 
-    float rainIn, rainLeft;
-    ParticleSystem rain;
-    AudioSource rainSound, creekSound;
+    AudioSource creekSound;
     VoxelWorld w;
 
     struct Blast { public Vector3 at; public float when; }
@@ -85,27 +80,14 @@ public class Fluids : MonoBehaviour
     {
         Instance = this;
         w = GetComponent<VoxelWorld>();
-        rainIn = RainFirst;
     }
     void OnDestroy() { if (Instance == this) Instance = null; Exploded = null; }
 
     void Start()
     {
         if (w == null) w = VoxelWorld.Instance;
-        // the spring: it seeps out of the sheer face beside the mine door, 2 m up.  The water falls down the face and
-        // lands at its foot, by the door: some runs into the mine, the rest out over the floor.
-        Vector3 s = new Vector3(VoxelWorld.PortalX - 2.4f, SpringUp, 8f);
-        for (float z = 8f; z < 16f; z += 0.03f)
-        {
-            if (w.MaterialAt(new Vector3(s.x, s.y, z)) != VoxelWorld.Air) break;
-            s.z = z;
-        }
-        s.z -= 0.08f;
-        Spring = s;
-        var springGo = new GameObject("Creek spring");
-        springGo.transform.position = Spring;
-        springGo.transform.SetParent(transform, true);
-        creekSound = GameAudio.Loop(springGo, "creek", 1f, 2f, 18f);
+        // (the spring is the creek's, Creek.cs: set up once SiteProps has cut its bed.  No creek sound: the owner found
+        // the bubbling loop horrible, 23 Nov.)
 
         // the pockets, in the walls of the deep tunnel (where the gold is)
         AddPocket(14f, 1, 1.0f, false);
@@ -130,6 +112,7 @@ public class Fluids : MonoBehaviour
     /// After a load: no water or gas, and a pocket that's already dug open is spent.
     public void AfterLoad()
     {
+        Creek.Cut(w);                                          // (a save from before the creek: its bed again)
         w.ClearFluids();
         pending.Clear();
         foreach (var p in Pockets)
@@ -142,6 +125,7 @@ public class Fluids : MonoBehaviour
     /// After the ground is reset: everything as new, every pocket full again.
     public void AfterReset()
     {
+        Creek.Cut(w);
         w.ClearFluids();
         pending.Clear();
         foreach (var p in Pockets) { StopHiss(p); p.open = false; p.spent = false; p.gas = p.cold ? ColdPocketGas : GreenPocketGas; }
@@ -412,42 +396,35 @@ public class Fluids : MonoBehaviour
         var t = w.FluidRoughTotals();
         bool room = t.x < WaterCap;
 
-        // the creek
-        if (WaterOn && room)
+        // the creek: water wells up at the spring, and drains away where the bed leaves the map.  Its whole length is
+        // always worked on (at Medium quality and up), so it keeps running wherever you are.
+        if (Creek.Line.Count > 0 && creekColumns.Count == 0)
+            foreach (var cp in Creek.Line)
+                for (int k = 0; k < 9; k++) creekColumns.Add(w.ChunkColumnOf(cp + new Vector3((k % 3 - 1) * 1.6f, 0f, (k / 3 - 1) * 1.6f)));   // (its banks too)
+        w.FluidAlways = Tier >= 1 ? creekColumns : null;
+        if (WaterOn && room && Creek.Line.Count > 0)
         {
-            float give = CreekPerSecond * (Raining ? 2f : 1f) * dt;
+            float give = CreekPerSecond * dt;
             int gx, gy, gz;
-            if (w.FluidCellOf(Spring, out gx, out gy, out gz))
-                for (int k = 0; k < 6 && give > 1f; k++)
+            if (w.FluidCellOf(Spring + Vector3.up * 0.07f, out gx, out gy, out gz))
+                for (int k = 0; k < 9 && give > 1f; k++)
                 {
-                    // out of a slot in the face a few cells wide (and a cell or two high when it backs up)
-                    int x = k % 3 - 1, y = k / 3;
-                    int put = w.AddWater(gx + x, gy + y, gz, Mathf.CeilToInt(give / (6 - k)));
+                    int x = k % 3 - 1, z = k / 3 - 1;
+                    int put = w.AddWater(gx + x, gy, gz + z, Mathf.CeilToInt(give / (9 - k)));
+                    if (put == 0) put = w.AddWater(gx + x, gy + 1, gz + z, Mathf.CeilToInt(give / (9 - k)));
                     give -= put; CreekGiven += put;
                 }
         }
-        if (creekSound != null) GameAudio.Steer(creekSound, WaterOn ? 0.35f : 0f, 1f, dt, 2f);
-
-        // the rain
-        if (WaterOn && !TrailerMode.On && !Ending.Playing && !Prologue.Playing)
+        if (Creek.Line.Count > 0)
         {
-            if (rainLeft > 0f)
-            {
-                rainLeft -= dt;
-                if (rainLeft <= 0f) rainIn = RainEvery + Random.Range(-RainEveryJitter, RainEveryJitter);
-            }
-            else
-            {
-                rainIn -= dt;
-                if (rainIn <= 0f)
-                {
-                    StartRain();
-                    if (Worker.Instance != null) Worker.Instance.Say("Rain!  For a minute: it runs into your holes, and the creek runs harder.", 3.5f);
-                }
-            }
+            // off the map: the last metre of the bed
+            int gx, gy, gz;
+            Vector3 end = Creek.End;
+            if (w.FluidCellOf(end + Vector3.up * 0.07f, out gx, out gy, out gz))
+                for (int z = -8; z <= 4; z++) for (int x = -12; x <= 12; x++) for (int y = -2; y <= 6; y++)
+                    Drained += w.TakeWater(gx + x, gy + y, gz + z);
         }
-        else rainLeft = 0f;
-        StepRain(dt, room);
+
 
         // the pockets leak
         foreach (var p in Pockets)
@@ -479,56 +456,140 @@ public class Fluids : MonoBehaviour
 
         if (flash != null && flashLife > 0f) { flashLife -= dt; flash.intensity = 7f * Mathf.Clamp01(flashLife / 0.35f); if (flashLife <= 0f) flash.enabled = false; }
         StepBits(dt);
+        MakeDrops();
+        StepDrops(dt);
         w.StepFluid(dt);
+        DrawDrops();
     }
 
-    public void StartRain() { rainLeft = RainLasts; }
-    public void StopRain() { rainLeft = 0f; rainIn = RainEvery; }
+    // ------------------------------------------------------------------ falling water: tumbling cubes
+    // Water in free fall leaves the grid (VoxelWorldFluid.cs) as a cube the size of its water (a full cell's worth is
+    // a 12.5 cm block).  It tumbles down, bounces once off the ground, and goes back into the grid where it stops.
+    static readonly int[] DropCapFor = { 120, 250, 400, 600 };  // cubes in the air at once, by Quality
+    public static int MaxDrops { get { return DropCapFor[Tier]; } }
+    public static int DropsMade { get; private set; }
+    public static int DropsLanded { get; private set; }
+    public int DropsFlying { get { return drops.Count; } }
+    class Drop { public Vector3 p, v, spin; public Quaternion r; public int water, bounces; public float age, size; }
+    readonly List<Drop> drops = new List<Drop>();
+    Mesh dropMesh;
 
-    void StepRain(float dt, bool room)
+    void MakeDrops()
     {
-        var cam = Camera.main;
-        var wk = Worker.Instance;
-        Vector3 centre = wk != null ? wk.transform.position : cam != null ? cam.transform.position : Vector3.zero;
-        if (rain == null)
+        var list = w.NewDrops;
+        for (int i = 0; i < list.Count; i++)
         {
-            var go = new GameObject("Rain");
-            go.transform.SetParent(transform, false);
-            rain = go.AddComponent<ParticleSystem>();
-            rain.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            var main = rain.main;
-            main.loop = true; main.startLifetime = 1.1f; main.startSpeed = 0f; main.startSize = 0.025f;
-            main.startColor = new Color(0.75f, 0.82f, 0.95f, 0.45f);
-            main.maxParticles = 4000; main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.gravityModifier = 0f;
-            var vel = rain.velocityOverLifetime; vel.enabled = true; vel.space = ParticleSystemSimulationSpace.World;
-            vel.x = new ParticleSystem.MinMaxCurve(-0.8f); vel.y = new ParticleSystem.MinMaxCurve(-11f); vel.z = new ParticleSystem.MinMaxCurve(0.4f);
-            var em = rain.emission; em.rateOverTime = 2600f;
-            var shape = rain.shape; shape.shapeType = ParticleSystemShapeType.Box; shape.scale = new Vector3(26f, 0.5f, 26f);
-            var r = go.GetComponent<ParticleSystemRenderer>();
-            r.renderMode = ParticleSystemRenderMode.Stretch; r.velocityScale = 0.025f; r.lengthScale = 1f;
-            var m = new Material(Shader.Find("Sprites/Default"));
-            r.sharedMaterial = m;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            rainSound = GameAudio.Loop(gameObject, "rain", 0f);
+            var d = list[i];
+            Vector3 c = w.FluidCellCentre(d.x, d.y, d.z);
+            if (drops.Count >= MaxDrops)
+            {
+                // too many in the air: this one falls on in the grid
+                if (w.AddWater(d.x, d.y - 1, d.z, d.w) < d.w) w.AddWater(d.x, d.y, d.z, d.w);
+                continue;
+            }
+            DropsMade++;
+            drops.Add(new Drop
+            {
+                p = c, v = new Vector3(Random.Range(-0.25f, 0.25f), -0.6f, Random.Range(-0.25f, 0.25f)),
+                r = Random.rotation, spin = Random.insideUnitSphere * 400f, water = d.w,
+                size = VoxelWorld.FCellSize * Mathf.Pow(d.w / 255f, 1f / 3f),
+            });
         }
-        rain.transform.position = centre + Vector3.up * 9f;
-        if (Raining && !rain.isEmitting) rain.Play();
-        if (!Raining && rain.isEmitting) rain.Stop(true, ParticleSystemStopBehavior.StopEmitting);
-        bool inMine = wk != null && GameAudio.InMine(wk.transform.position);
-        if (rainSound != null) GameAudio.Steer(rainSound, Raining ? (inMine ? 0.12f : 0.45f) : 0f, 1f, dt, 1.5f);
-        if (!Raining || !room) return;
-        // drops landing near you: each a little water on the ground where it falls
-        int drops = Mathf.CeilToInt(350f * dt);
-        for (int i = 0; i < drops; i++)
+        list.Clear();
+    }
+
+    bool Blocked(Vector3 p)
+    {
+        if (w.MaterialAt(p) != VoxelWorld.Air) return true;
+        if (w.IceAny && w.IceAt(p)) return true;
+        return false;
+    }
+
+    void StepDrops(float dt)
+    {
+        for (int i = drops.Count - 1; i >= 0; i--)
         {
-            Vector2 o = Random.insideUnitCircle * RainRadius;
-            Vector3 p = new Vector3(centre.x + o.x, 0f, centre.z + o.y);
-            if (Mathf.Abs(p.x) > VoxelWorld.SiteHalf - 1f || Mathf.Abs(p.z) > VoxelWorld.SiteHalf - 1f) continue;
-            float h = w.TopAt(p.x, p.z);
-            int gx, gy, gz;
-            if (!w.FluidCellOf(new Vector3(p.x, h + 0.03f, p.z), out gx, out gy, out gz)) continue;
-            if (w.AddWater(gx, gy, gz, 30) == 0) w.AddWater(gx, gy + 1, gz, 30);
+            var d = drops[i];
+            d.age += dt;
+            d.v += Physics.gravity * dt;
+            Vector3 next = d.p + d.v * dt;
+            float half = d.size * 0.5f;
+            bool land = false;
+            // into a wall: it stops going that way
+            if (Blocked(new Vector3(next.x, d.p.y, next.z))) { next.x = d.p.x; next.z = d.p.z; d.v.x *= -0.3f; d.v.z *= -0.3f; }
+            // onto the ground (or ice), or into standing water
+            if (d.v.y < 0f && (Blocked(next - Vector3.up * half) || w.WaterAt(next) >= 160))
+            {
+                if (d.bounces == 0 && d.v.y < -2.5f && w.WaterAt(next) < 160)
+                {
+                    d.bounces++;
+                    d.v = new Vector3(d.v.x * 0.6f + Random.Range(-0.4f, 0.4f), -d.v.y * 0.22f, d.v.z * 0.6f + Random.Range(-0.4f, 0.4f));
+                    d.spin = Random.insideUnitSphere * 600f;
+                    next = d.p;
+                }
+                else land = true;
+            }
+            if (land || d.age > 4f || Mathf.Abs(next.x) > VoxelWorld.SiteHalf || Mathf.Abs(next.z) > VoxelWorld.SiteHalf)
+            {
+                PutBack(d);
+                drops.RemoveAt(i);
+                continue;
+            }
+            d.p = next;
+            d.r = Quaternion.Euler(d.spin * dt) * d.r;
         }
+    }
+
+    /// A cube comes to rest: its water goes back into the grid where it is (and spills to the cells round it).
+    void PutBack(Drop d)
+    {
+        DropsLanded++;
+        int gx, gy, gz;
+        if (!w.FluidCellOf(d.p, out gx, out gy, out gz)) return;
+        int left = d.water;
+        for (int k = 0; k < 7 && left > 0; k++)
+        {
+            int x = k == 1 ? 1 : k == 2 ? -1 : 0, z = k == 3 ? 1 : k == 4 ? -1 : 0, y = k == 5 ? 1 : k == 6 ? 2 : 0;
+            left -= w.AddWater(gx + x, gy + y, gz + z, left);
+        }
+    }
+
+    void DrawDrops()
+    {
+        if (drops.Count == 0) return;
+        var mat = w.FluidMaterial;
+        if (mat == null) return;
+        if (dropMesh == null) dropMesh = MakeDropMesh();
+        for (int i = 0; i < drops.Count; i++)
+        {
+            var d = drops[i];
+            Graphics.DrawMesh(dropMesh, Matrix4x4.TRS(d.p, d.r, Vector3.one * d.size), mat, 0, null, 0, null, false, false);
+        }
+    }
+
+    /// A unit cube, see-through blue, each side shaded (the same look as the water blocks).
+    static Mesh MakeDropMesh()
+    {
+        var v = new List<Vector3>(); var c = new List<Color32>(); var t = new List<int>();
+        Color32 top = new Color32(70, 140, 225, 185);
+        System.Action<Vector3, Vector3, Vector3, float> face = (n, u, r, shade) =>
+        {
+            int b = v.Count;
+            Vector3 o = n * 0.5f;
+            v.Add(o - u * 0.5f - r * 0.5f); v.Add(o + u * 0.5f - r * 0.5f); v.Add(o + u * 0.5f + r * 0.5f); v.Add(o - u * 0.5f + r * 0.5f);
+            var col = new Color32((byte)(top.r * shade), (byte)(top.g * shade), (byte)(top.b * shade), top.a);
+            for (int k = 0; k < 4; k++) c.Add(col);
+            t.Add(b); t.Add(b + 1); t.Add(b + 2); t.Add(b); t.Add(b + 2); t.Add(b + 3);
+        };
+        face(Vector3.up, Vector3.forward, Vector3.right, 1f);
+        face(Vector3.down, Vector3.right, Vector3.forward, 0.55f);
+        face(Vector3.right, Vector3.up, Vector3.forward, 0.78f);
+        face(Vector3.left, Vector3.forward, Vector3.up, 0.78f);
+        face(Vector3.forward, Vector3.right, Vector3.up, 0.68f);
+        face(Vector3.back, Vector3.up, Vector3.right, 0.68f);
+        var m = new Mesh();
+        m.SetVertices(v); m.SetColors(c); m.SetTriangles(t, 0);
+        m.RecalculateBounds();
+        return m;
     }
 }

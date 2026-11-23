@@ -44,7 +44,16 @@ public partial class VoxelWorld
     /// these from the Quality setting and where you are).
     [System.NonSerialized] public Vector3 FluidFocus;
     [System.NonSerialized] public float FluidRange = 1e9f;
+    /// Columns of chunks (ChunkColumnOf) always worked on, wherever you are: the creek's (Fluids.cs).  Null for none.
+    [System.NonSerialized] public HashSet<int> FluidAlways;
+    public int ChunkColumnOf(Vector3 p) { return Mathf.FloorToInt((p.x - origin.x) / (FB * FCellSize)) + CX * Mathf.FloorToInt((p.z - origin.z) / (FB * FCellSize)); }
     public const byte FSolid = 1, FIce = 2;
+    /// A cell of the creek's bed (Creek.cs): its water has a current, pushed downstream each step, so the creek runs
+    /// instead of spreading out slowly like a puddle; and the bed doesn't soak it up.  Bit 0x10: downstream is -x (else
+    /// +x); 0x20: -z (else +z); 0x40: push along x first (else z first).  The other way is tried when the first is blocked.
+    public const byte FCurrent = 0x80, FDirShift = 4;
+    /// The creek's middle line (x, bed height, z), for marking its cells as bricks are made.  Null for none.
+    [System.NonSerialized] public List<Vector3> CurrentLine;
     public const int GasGoesOff = 20;                        // green gas this strong (or more) explodes when set off
     public const int WaterStill = 80;                        // water this little in a cell doesn't spread any further (so it lies in chunky blocks, not films)
     public const int WaterShows = 40;                        // a cell with this much water or more is drawn (as a whole block)
@@ -162,12 +171,51 @@ public partial class VoxelWorld
         fSum[s] = int4.zero;
         int b = s * FBC;
         for (int i = 0; i < FBC; i++) { fWater[b + i] = 0; fGas[b + i] = 0; fCold[b + i] = 0; fFlag[b + i] = 0; }
+        MarkCurrent(s, c);
         if (!solidNow) return s;
         var list = new NativeArray<int>(1, Allocator.TempJob);
         list[0] = s;
         new FluidSolidJob { vox = vox, blocks = blocks, top = top, chunk = fChunk, water = fWater, gas = fGas, cold = fCold, flag = fFlag, list = list }.Run(1);
         list.Dispose();
         return s;
+    }
+
+    /// Marks the creek's bed cells in a new brick with their current (the way down the creek from there).
+    void MarkCurrent(int s, int c)
+    {
+        var line = CurrentLine;
+        if (line == null || line.Count < 2) return;
+        int bx = c % CX, by = (c / CX) % CY, bz = c / (CX * CY);
+        float size = FB * FCellSize;
+        Vector3 lo = origin + new Vector3(bx, by, bz) * size, hi = lo + Vector3.one * size;
+        const float half = 0.75f;                            // the bed's half width, and a little up its banks
+        int b = s * FBC;
+        for (int i = 0; i < line.Count - 1; i++)
+        {
+            Vector3 p = line[i];
+            if (p.x < lo.x - 1f || p.x > hi.x + 1f || p.z < lo.z - 1f || p.z > hi.z + 1f || p.y < lo.y - 1.2f || p.y > hi.y + 1.8f) continue;
+            Vector3 t = line[Mathf.Min(line.Count - 1, i + 2)] - line[Mathf.Max(0, i - 2)];
+            float ax = Mathf.Abs(t.x), az = Mathf.Abs(t.z);
+            if (ax + az < 1e-4f) continue;
+            for (float dz = -half; dz <= half; dz += FCellSize * 0.5f)
+                for (float dx = -half; dx <= half; dx += FCellSize * 0.5f)
+                {
+                    if (dx * dx + dz * dz > half * half) continue;
+                    for (float dy = -1.6f; dy <= 1.0f; dy += FCellSize)          // (from well under the line: where the hill bumps up, the bed is cut deeper)
+                    {
+                        Vector3 q = new Vector3(p.x + dx, p.y + dy, p.z + dz);
+                        if (q.x < lo.x || q.y < lo.y || q.z < lo.z || q.x >= hi.x || q.y >= hi.y || q.z >= hi.z) continue;
+                        int gx = Mathf.FloorToInt((q.x - origin.x) / FCellSize), gy = Mathf.FloorToInt((q.y - origin.y) / FCellSize), gz = Mathf.FloorToInt((q.z - origin.z) / FCellSize);
+                        // a slanting creek: each cell pushes along x or z, mixed in proportion, so it zig-zags the right way
+                        uint hsh = (uint)(gx * 73856093 ^ gz * 19349663);
+                        hsh ^= hsh >> 13; hsh *= 0x5bd1e995u; hsh ^= hsh >> 15;
+                        bool alongX = (hsh % 1000u) < (uint)(1000f * ax / (ax + az));
+                        int bits = (t.x < 0f ? 0x10 : 0) | (t.z < 0f ? 0x20 : 0) | (alongX ? 0x40 : 0);
+                        int k = b + InBrick(gx, gy, gz);
+                        fFlag[k] = (byte)((fFlag[k] & 0x0F) | FCurrent | bits);
+                    }
+                }
+        }
     }
 
     void FreeBrick(int s)
@@ -460,6 +508,7 @@ public partial class VoxelWorld
     {
         if (FluidRange >= 1e8f) return true;
         int bx = c % CX, bz = c / (CX * CY);
+        if (FluidAlways != null && FluidAlways.Contains(bx + CX * bz)) return true;
         float x = origin.x + (bx + 0.5f) * FB * FCellSize - FluidFocus.x, z = origin.z + (bz + 0.5f) * FB * FCellSize - FluidFocus.z;
         return x * x + z * z <= FluidRange * FluidRange;
     }
@@ -531,7 +580,7 @@ public partial class VoxelWorld
                                 cold[up] = (byte)math.min(255, cold[up] + cold[i]);
                             }
                             water[i] = 0; gas[i] = 0; cold[i] = 0;
-                            f = FSolid;                                      // (ice in a filled cell is crushed out too)
+                            f = (byte)(FSolid | (f & 0xF0));                 // (ice in a filled cell is crushed out too; the creek's current mark stays)
                         }
                         else if (!solid) f = (byte)(f & ~FSolid);
                         flag[i] = f;
@@ -652,6 +701,20 @@ public partial class VoxelWorld
                                 if (m > 0) { water[below] = (byte)(water[below] + m); w -= m; Touch(below); changed = true; }
                             }
                             bool resting = below >= 0 && !Open(below) || below >= 0 && water[below] >= 250;
+                            if ((f & FCurrent) != 0 && w > 0 && resting)
+                            {
+                                // the creek's current: most of it moves on downstream (along x or z, whichever is open)
+                                int sx = (f & 0x10) != 0 ? -1 : 1, sz = (f & 0x20) != 0 ? -1 : 1;
+                                bool xFirst = (f & 0x40) != 0;
+                                for (int tryk = 0; tryk < 2 && w > 0; tryk++)
+                                {
+                                    bool alongX = xFirst ^ (tryk == 1);
+                                    int n = Index(gx + (alongX ? sx : 0), gy, gz + (alongX ? 0 : sz));
+                                    if (!Open(n)) continue;
+                                    int m = math.min((w * 3 + 3) / 4, 255 - water[n]);
+                                    if (m > 0) { water[n] = (byte)(water[n] + m); w -= m; Touch(n); changed = true; break; }
+                                }
+                            }
                             if (w > WaterStill && resting)
                             {
                                 for (int d0 = 0; d0 < 4; d0++)
@@ -669,7 +732,7 @@ public partial class VoxelWorld
                                 }
                             }
                             // soaks into the ground it lies on (a little at a time, at random so it's even)
-                            if (w > 0 && below >= 0 && (flag[below] & FSolid) != 0 && ((h >> 8) & 65535u) < soak) { w--; changed = true; }
+                            if (w > 0 && (f & FCurrent) == 0 && below >= 0 && (flag[below] & FSolid) != 0 && ((h >> 8) & 65535u) < soak) { w--; changed = true; }   // (not the creek's bed)
                             if (w > 0 && w <= 2 && ((h >> 3) & 31u) == 0) { w = 0; changed = true; }   // a few drops: dried up
                             // off the grid's edge: gone
                             if (below == -2) { w = 0; changed = true; }

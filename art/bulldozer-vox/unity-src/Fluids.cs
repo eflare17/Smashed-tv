@@ -1,10 +1,10 @@
 // Water, ice and gas in the game (the simulation itself is VoxelWorldFluid.cs).
 //
 // Water
-//   The creek: a spring seeps out of the sheer face beside the mine door, 2 m up: the water falls down the face and
-//   lands by the door.  It runs all the time, at a set
-//   rate, and the water goes wherever the ground leads it: into holes you dig, along a channel you cut, in at the mine
-//   door.  The ground soaks it up slowly, so it can't flood the site: there is also a cap on all the water there can
+//   The creek (Creek.cs): a spring in the bush on the hill above the mine, outside the quarry cut; its bed runs west
+//   and then south down the outside of the quarry, and off the bottom of the map, where the water drains away.  It
+//   runs all the time, at a set rate, and the water goes wherever the ground leads it: down its bed, into holes you
+//   dig, along a channel you cut off it.  The ground soaks it up slowly, so it can't flood the site: there is also a cap on all the water there can
 //   be at once (the creek stops adding while it's reached).  Fill a hole and the water in it is pushed out;
 //   dig a drain and it runs away.
 //   Water is drawn as chunky see-through blocks, and water in free fall (off the face, over an edge into a hole)
@@ -33,7 +33,7 @@ public class Fluids : MonoBehaviour
     public static bool WaterOn = true, GasOn = true;            // (off switches, for tests and if it ever misbehaves)
 
     // ---- tuning
-    public const float CreekPerSecond = 9000f;                 // units of water (255 = one 12.5 cm cell full) the spring gives
+    public const float CreekPerSecond = 14000f;                 // units of water (255 = one 12.5 cm cell full) the spring gives
     // Set by the Quality setting (Esc > Settings > Quality), each frame:
     //            simulated round you   water cap              falling cubes at once
     //   Low      22 m                  3,500 cells (7 m3)     120
@@ -49,8 +49,9 @@ public class Fluids : MonoBehaviour
     public const float BlastReach = 2f;                         // gas this close goes off with a blast
     public const float IceBitLife = 7f;
 
-    public Vector3 Spring { get; private set; }               // where the water comes out of the face
-    public const float SpringUp = 2f;
+    public Vector3 Spring { get { return Creek.Spring; } }    // where the creek's water comes out (Creek.cs)
+    public static long Drained { get; private set; }          // water that has run off the map down the creek (tests)
+    readonly HashSet<int> creekColumns = new HashSet<int>();
     public static int Blasts { get; private set; }             // (tests)
     public static int IceBroken { get; private set; }
     public static int Frozen { get; private set; }
@@ -85,20 +86,8 @@ public class Fluids : MonoBehaviour
     void Start()
     {
         if (w == null) w = VoxelWorld.Instance;
-        // the spring: it seeps out of the sheer face beside the mine door, 2 m up.  The water falls down the face and
-        // lands at its foot, by the door: some runs into the mine, the rest out over the floor.
-        Vector3 s = new Vector3(VoxelWorld.PortalX - 2.4f, SpringUp, 8f);
-        for (float z = 8f; z < 16f; z += 0.03f)
-        {
-            if (w.MaterialAt(new Vector3(s.x, s.y, z)) != VoxelWorld.Air) break;
-            s.z = z;
-        }
-        s.z -= 0.08f;
-        Spring = s;
-        var springGo = new GameObject("Creek spring");
-        springGo.transform.position = Spring;
-        springGo.transform.SetParent(transform, true);
-        creekSound = GameAudio.Loop(springGo, "creek", 1f, 2f, 18f);
+        // (the spring is the creek's, Creek.cs: set up once SiteProps has cut its bed.  No creek sound: the owner found
+        // the bubbling loop horrible, 23 Nov.)
 
         // the pockets, in the walls of the deep tunnel (where the gold is)
         AddPocket(14f, 1, 1.0f, false);
@@ -123,6 +112,7 @@ public class Fluids : MonoBehaviour
     /// After a load: no water or gas, and a pocket that's already dug open is spent.
     public void AfterLoad()
     {
+        Creek.Cut(w);                                          // (a save from before the creek: its bed again)
         w.ClearFluids();
         pending.Clear();
         foreach (var p in Pockets)
@@ -135,6 +125,7 @@ public class Fluids : MonoBehaviour
     /// After the ground is reset: everything as new, every pocket full again.
     public void AfterReset()
     {
+        Creek.Cut(w);
         w.ClearFluids();
         pending.Clear();
         foreach (var p in Pockets) { StopHiss(p); p.open = false; p.spent = false; p.gas = p.cold ? ColdPocketGas : GreenPocketGas; }
@@ -405,21 +396,34 @@ public class Fluids : MonoBehaviour
         var t = w.FluidRoughTotals();
         bool room = t.x < WaterCap;
 
-        // the creek
-        if (WaterOn && room)
+        // the creek: water wells up at the spring, and drains away where the bed leaves the map.  Its whole length is
+        // always worked on (at Medium quality and up), so it keeps running wherever you are.
+        if (Creek.Line.Count > 0 && creekColumns.Count == 0)
+            foreach (var cp in Creek.Line)
+                for (int k = 0; k < 9; k++) creekColumns.Add(w.ChunkColumnOf(cp + new Vector3((k % 3 - 1) * 1.6f, 0f, (k / 3 - 1) * 1.6f)));   // (its banks too)
+        w.FluidAlways = Tier >= 1 ? creekColumns : null;
+        if (WaterOn && room && Creek.Line.Count > 0)
         {
             float give = CreekPerSecond * dt;
             int gx, gy, gz;
-            if (w.FluidCellOf(Spring, out gx, out gy, out gz))
-                for (int k = 0; k < 6 && give > 1f; k++)
+            if (w.FluidCellOf(Spring + Vector3.up * 0.07f, out gx, out gy, out gz))
+                for (int k = 0; k < 9 && give > 1f; k++)
                 {
-                    // out of a slot in the face a few cells wide (and a cell or two high when it backs up)
-                    int x = k % 3 - 1, y = k / 3;
-                    int put = w.AddWater(gx + x, gy + y, gz, Mathf.CeilToInt(give / (6 - k)));
+                    int x = k % 3 - 1, z = k / 3 - 1;
+                    int put = w.AddWater(gx + x, gy, gz + z, Mathf.CeilToInt(give / (9 - k)));
+                    if (put == 0) put = w.AddWater(gx + x, gy + 1, gz + z, Mathf.CeilToInt(give / (9 - k)));
                     give -= put; CreekGiven += put;
                 }
         }
-        if (creekSound != null) GameAudio.Steer(creekSound, WaterOn ? 0.35f : 0f, 1f, dt, 2f);
+        if (Creek.Line.Count > 0)
+        {
+            // off the map: the last metre of the bed
+            int gx, gy, gz;
+            Vector3 end = Creek.End;
+            if (w.FluidCellOf(end + Vector3.up * 0.07f, out gx, out gy, out gz))
+                for (int z = -8; z <= 4; z++) for (int x = -12; x <= 12; x++) for (int y = -2; y <= 6; y++)
+                    Drained += w.TakeWater(gx + x, gy + y, gz + z);
+        }
 
 
         // the pockets leak
