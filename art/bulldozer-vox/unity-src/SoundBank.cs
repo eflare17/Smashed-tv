@@ -12,6 +12,7 @@
 //   On foot      pick_rock  pick_dirt  pick_gold  shovel_scrape  shovel_whump  jackhammer (loop)  vacuum (loop)
 //                gravel (loop: stones up the hose)  step  step_mine
 //   Cart / money cart_roll (loop)  motor (loop)  tip_rumble (loop)  kaching  upgrade  goal  gold (into the gold store)
+//   Bow          bow (an arrow let go)  arrow_thunk (into a tree)
 //   Grunts       grunt_die  hurt (a grunt got you)
 //   Water, gas   rain (loop)  creek (loop)  boom (gas going off)  freeze (the freeze gun)  ice_break  hiss (loop: gas leaking)
 //   Ambience     wind (loop)  bird0 bird1 bird2  mine_hum (loop)  drip  creak
@@ -283,6 +284,16 @@ public static class SoundBank
                 return Shot(b, 0.65f);
 
             // ---- the ambience
+            case "bow":                                       // the string let go: a short twang and a whoosh
+                b = Buf(0.5f);
+                Tone(b, 0f, 180f, 0.6f, 0.05f); Tone(b, 0f, 360f, 0.3f, 0.03f);
+                Noise(b, 0.01f, 0.35f, 0.06f, 0.25f);
+                return Shot(b, 0.6f);
+            case "arrow_thunk":                               // an arrow into wood
+                b = Buf(0.35f);
+                Noise(b, 0f, 0.9f, 0.006f, 0.5f);
+                Tone(b, 0f, 240f, 0.8f, 0.04f); Tone(b, 0f, 520f, 0.3f, 0.02f);
+                return Shot(b, 0.7f);
             case "grunt_die":                                 // a grunt bursting (Voxel Arena): a wet splat and a short yelp
                 b = Buf(0.5f);
                 Noise(b, 0f, 0.9f, 0.04f, 0.3f);

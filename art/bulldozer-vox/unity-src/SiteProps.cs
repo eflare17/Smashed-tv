@@ -55,6 +55,39 @@ public class SiteProps : MonoBehaviour
     public static void SetFelled(int tree) { felled.Add(tree); }
     public static void ClearFelled() { felled.Clear(); }
 
+    /// Is tree `tree` still standing (not pushed over by the dozer)?
+    public static bool TreeStanding(int tree) { return !felled.Contains(tree); }
+
+    /// The first standing tree trunk the line from `a` to `b` goes into (an arrow, Arrows.cs): where, and which tree.
+    /// A trunk is an upright round post from its foot to where its branches start.
+    public static bool TrunkAlong(Vector3 a, Vector3 b, out Vector3 hit, out int tree)
+    {
+        hit = b; tree = -1;
+        float best = 1f;
+        Vector2 a2 = new Vector2(a.x, a.z), d2 = new Vector2(b.x - a.x, b.z - a.z);
+        float dd = d2.sqrMagnitude;
+        if (dd < 1e-10f) return false;
+        for (int i = 0; i < solids.Count; i++)
+        {
+            int t = solids[i].tree;
+            if (t < 0 || felled.Contains(t) || t >= FireSim.Trees.Count) continue;
+            Vector2 f = a2 - solids[i].at;
+            float r = solids[i].radius * 0.75f;                   // (the solid round a trunk is a little wider than the wood)
+            float bq = 2f * Vector2.Dot(f, d2), cq = f.sqrMagnitude - r * r;
+            float disc = bq * bq - 4f * dd * cq;
+            if (disc < 0f) continue;
+            float u = (-bq - Mathf.Sqrt(disc)) / (2f * dd);
+            if (cq < 0f) u = 0f;                                  // (starting inside it)
+            if (u < 0f || u >= best) continue;
+            float y = a.y + (b.y - a.y) * u;
+            var ft = FireSim.Trees[t];
+            if (y < ft.at.y - 0.2f || y > Mathf.Max(ft.top.y, ft.at.y + 2f)) continue;   // over the trunk, or under the ground
+            best = u; tree = t;
+            hit = Vector3.Lerp(a, b, u);
+        }
+        return tree >= 0;
+    }
+
     /// The standing tree whose trunk a machine of this radius at this spot would be inside, or -1.
     public static int TreeBlocking(Vector3 pos, float radius)
     {

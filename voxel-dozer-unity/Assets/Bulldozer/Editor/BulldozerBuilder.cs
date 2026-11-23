@@ -4127,6 +4127,203 @@ public static class BulldozerBuilder
         EditorApplication.Exit(0);
     }
 
+    // The bow and sprinting:  -executeMethod BulldozerBuilder.BowTest    prints BULLDOZER_BOW_RESULT (or _FAILED)
+    // 6 picks the bow (it shows).  An arrow shot at a tree trunk flies, drops a little, and sticks in the trunk; E by
+    // the tree pulls it out (back in the quiver).  One shot down at the ground sticks in it.  A full draw up at 25
+    // degrees lands far off; a short draw much nearer.  A grunt shot with an arrow dies.  The quiver runs out at 12.
+    // Shift makes him walk faster.  It costs nothing, and the dirt's books stay exact.
+    static int bwPhase, bwStuck0, bwGround0, bwPick0;
+    static float bwT0, bwFarLanded, bwNearLanded;
+    static long bwVol0, bwCoins0;
+    static Vector3 bwTrunk, bwFrom;
+    static string bwLog;
+    static bool bwOk;
+    public static void BowTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        bwPhase = 0; bwLog = ""; bwOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += BowTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void BwCheck(bool ok, string what) { bwLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) bwOk = false; }
+    static void BowFinish(int code)
+    {
+        EditorApplication.update -= BowTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static Arrows.Arrow LastArrow() { var o = Arrows.Out; return o.Count > 0 ? o[o.Count - 1] : null; }
+    static void BowTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_BOW_FAILED timed out in phase " + bwPhase + bwLog); BowFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var m = Money.Instance; var gr = Grunts.Instance;
+        if (w == null || wk == null || m == null || gr == null || SiteProps.GoldShedFront == Vector3.zero || FireSim.Trees.Count == 0) return;
+        float t = Time.time;
+        if (bwPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            Grunts.SetOn(false);
+            bwVol0 = w.CountSolid() + w.LoadVoxels; bwCoins0 = m.Coins;
+            wk.SetTool(5);
+            var bowT = wk.transform.Find("Hold/Bow");
+            BwCheck(wk.Tool == 5 && bowT != null && bowT.gameObject.activeSelf, "bowInHand");
+            BwCheck(Arrows.InQuiver == Arrows.Total, "fullQuiver");
+            // a standing tree inside the site, with open ground 8 m south of it
+            int pickT = -1;
+            for (int i = 0; i < FireSim.Trees.Count && pickT < 0; i++)
+            {
+                var ft = FireSim.Trees[i];
+                if (Mathf.Abs(ft.at.x) > 40f || ft.at.z > 40f || ft.at.z < -40f || ft.top.y - ft.at.y < 2.5f || !SiteProps.TreeStanding(i)) continue;
+                Vector3 stand = ft.at + new Vector3(0f, 0f, -8f);
+                stand.y = w.FloorAt(stand + Vector3.up * 3f);
+                if (Mathf.Abs(stand.y - ft.at.y) > 1.2f) continue;
+                Vector3 eye = stand + Vector3.up * 1.6f, aim = ft.at + Vector3.up * 1.4f;
+                Vector3 hit; byte mat;
+                if (w.Raycast(eye, (aim - eye).normalized, Vector3.Distance(eye, aim), out hit, out mat)) continue;   // a clear line to it
+                Vector3 th; int ti;
+                if (!SiteProps.TrunkAlong(eye, aim + (aim - eye).normalized, out th, out ti) || ti != i) continue;
+                pickT = i; bwTrunk = aim; bStand = stand;
+            }
+            BwCheck(pickT >= 0, "foundATree");
+            if (pickT < 0) { Debug.Log("BULLDOZER_BOW_FAILED" + bwLog); BowFinish(1); return; }
+            AimAt(wk, bwTrunk + Vector3.up * 0.12f);              // (a touch high: it drops a little over 8 m)
+            bwStuck0 = Arrows.StuckInTrees;
+            wk.DrawBow(1f); wk.ShootArrow();
+            BwCheck(Arrows.InQuiver == Arrows.Total - 1, "oneShot");
+            bwPhase = 1; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 1)
+        {
+            if (Arrows.StuckInTrees == bwStuck0 && t - bwT0 < 3f) return;
+            var a = LastArrow();
+            bwLog += " inTree=" + (Arrows.StuckInTrees - bwStuck0) + (a != null ? " stuckAt=" + a.pos.ToString("F2") + " state=" + a.state : "");
+            BwCheck(Arrows.StuckInTrees > bwStuck0 && a != null && a.state == Arrows.State.InTree, "sticksInTheTree");
+            if (a != null) BwCheck(a.pos.y < bwTrunk.y + 0.12f, "itDroppedALittle");
+            ScreenCapture.CaptureScreenshot(Application.dataPath + "/../Logs/bow_tree.png");
+            bwLog += " treePic";
+            bwPhase = 2; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 2)
+        {
+            if (t - bwT0 < 0.5f) return;
+            // walk up and pull it out
+            wk.Teleport(bwTrunk + new Vector3(0f, 0f, -1f), 0f);
+            bwPick0 = Arrows.PickedUp;
+            wk.PressE();
+            BwCheck(Arrows.PickedUp > bwPick0 && Arrows.InQuiver == Arrows.Total && Arrows.Out.Count == 0, "pullItOut");
+            bwLog += " said=[" + wk.LastSaid + "]";
+            // one down into the ground
+            bwGround0 = Arrows.StuckInGround;
+            bStand = new Vector3(-6f, 0f, -6f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            AimAt(wk, bStand + new Vector3(0f, 0f, 5f));
+            wk.DrawBow(1f); wk.ShootArrow();
+            bwPhase = 3; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 3)
+        {
+            if (Arrows.StuckInGround == bwGround0 && t - bwT0 < 3f) return;
+            BwCheck(Arrows.StuckInGround > bwGround0 && LastArrow() != null && LastArrow().state == Arrows.State.InGround, "sticksInTheGround");
+            wk.Teleport(LastArrow() != null ? LastArrow().pos - LastArrow().dir * 0.3f : bStand, 0f);
+            wk.PressE();
+            BwCheck(Arrows.InQuiver == Arrows.Total, "pullItOutOfTheGround");
+            // a full draw and a short one, both 25 degrees up, over the open floor
+            bStand = new Vector3(-12f, 0f, -14f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            wk.Teleport(bStand, 70f);
+            wk.Look(-25f);
+            bwFrom = bStand;
+            wk.DrawBow(1f); wk.ShootArrow();
+            bwFarLanded = -1f; bwNearLanded = -1f;
+            bwPhase = 4; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 4)
+        {
+            var a = LastArrow();
+            if (a != null && a.state == Arrows.State.Flying && t - bwT0 < 8f) return;
+            bwFarLanded = a != null ? Vector2.Distance(new Vector2(a.pos.x, a.pos.z), new Vector2(bwFrom.x, bwFrom.z)) : 0f;
+            wk.Teleport(bwFrom, 70f); wk.Look(-25f);
+            wk.DrawBow(0.15f); wk.ShootArrow();
+            bwPhase = 5; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 5)
+        {
+            var a = LastArrow();
+            if (a != null && a.state == Arrows.State.Flying && t - bwT0 < 8f) return;
+            bwNearLanded = a != null ? Vector2.Distance(new Vector2(a.pos.x, a.pos.z), new Vector2(bwFrom.x, bwFrom.z)) : 0f;
+            bwLog += " fullDrawLanded=" + bwFarLanded.ToString("F1") + "m shortDrawLanded=" + bwNearLanded.ToString("F1") + "m";
+            BwCheck(bwFarLanded > 25f, "fullDrawGoesFar");
+            BwCheck(bwNearLanded > 3f && bwNearLanded < bwFarLanded * 0.5f, "shortDrawFallsShort");
+            // a grunt, 7 m off
+            Grunts.SetOn(true);
+            var g = gr.SpawnAt(bwFrom + new Vector3(0f, 0f, 7f));
+            int killed0 = Grunts.Killed, hits0 = Arrows.HitTargets;
+            AimAt(wk, g.pos + Vector3.up * 1f);
+            wk.DrawBow(1f); wk.ShootArrow();
+            bwPhase = 6; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 6)
+        {
+            if (t - bwT0 < 1f) return;
+            BwCheck(Grunts.Killed > 0 && Arrows.HitTargets > 0 && gr.Alive == 0, "arrowKillsAGrunt");
+            Grunts.SetOn(false);
+            // shoot them all: the quiver runs out
+            int shot0 = Arrows.Shot;
+            for (int i = 0; i < Arrows.Total + 3; i++) { wk.DrawBow(0.5f); wk.ShootArrow(); }
+            bwLog += " shotWhenEmptying=" + (Arrows.Shot - shot0) + " quiver=" + Arrows.InQuiver;
+            BwCheck(Arrows.InQuiver == 0 && Arrows.Shot - shot0 <= Arrows.Total, "runsOut");
+            // sprinting
+            bStand = new Vector3(-8f, 0f, -20f); bStand.y = w.FloorAt(bStand + Vector3.up * 0.5f);
+            wk.Teleport(bStand, 90f);
+            wk.overrideWalk = 1f; wk.sprintOverride = false;
+            bwFrom = wk.transform.position;
+            bwPhase = 7; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 7)
+        {
+            if (t - bwT0 < 1f) return;
+            float walked = Vector3.Distance(wk.transform.position, bwFrom);
+            bwLog += " walked1s=" + walked.ToString("F2");
+            bwFarLanded = walked;
+            wk.Teleport(bStand, 90f);
+            wk.sprintOverride = true;
+            bwFrom = wk.transform.position;
+            bwPhase = 8; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 8)
+        {
+            if (t - bwT0 < 1f) return;
+            float ran = Vector3.Distance(wk.transform.position, bwFrom);
+            wk.overrideWalk = 0f; wk.sprintOverride = false;
+            bwLog += " sprinted1s=" + ran.ToString("F2");
+            BwCheck(ran > bwFarLanded * 1.5f, "shiftSprints");
+            bwPhase = 9; bwT0 = t;
+            return;
+        }
+        if (bwPhase == 9)
+        {
+            if (t - bwT0 < 4f) return;
+            long vol = w.CountSolid() + w.LoadVoxels;
+            bwLog += " volumeChange=" + (vol - bwVol0);
+            BwCheck(vol == bwVol0, "dirtKept");
+            BwCheck(m.Coins == bwCoins0, "free");
+            Debug.Log((bwOk ? "BULLDOZER_BOW_RESULT" : "BULLDOZER_BOW_FAILED") + bwLog);
+            BowFinish(bwOk ? 0 : 1);
+        }
+    }
+
     // The backpack:  -executeMethod BulldozerBuilder.BackpackTest
     // Beside the cart: sucks at firm ground (must take nothing), picks a patch loose, sucks it up (must stop at
     // 500 litres), saves and loads (the load must come back), then squirts it into the cart with Q.
