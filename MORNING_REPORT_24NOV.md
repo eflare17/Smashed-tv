@@ -31,4 +31,4 @@ Backed up before the tests and put back after each one.
 
 ## Rollback
 
-`git revert <this commit>` takes out just these fixes.
+`git revert 920d9d5` takes out just these fixes.
