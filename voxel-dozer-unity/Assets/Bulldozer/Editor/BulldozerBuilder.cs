@@ -3640,6 +3640,27 @@ public static class BulldozerBuilder
         EditorApplication.Exit(code);
     }
     /// Breaks open the pocket nearest `along` (green or cold): picks into the wall in front of it.  Returns the wall point.
+    static Fluids.Pocket NearestPocket(Fluids f, float along)
+    {
+        Fluids.Pocket best = null; float d0 = 99f;
+        foreach (var p in f.Pockets) { if (p.cold) continue; float d = Mathf.Abs(p.centre.z - VoxelWorld.PortalZ - along); if (d < d0) { d0 = d; best = p; } }
+        return best;
+    }
+    /// A pocket's state for a test's log: where it is (from the tunnel's mouth), open / spent, and how much of the rock
+    /// round it has been broken away (the same 26 spots Fluids.PocketBroken looks at).
+    static string PocketLine(VoxelWorld w, Fluids.Pocket p)
+    {
+        if (p == null) return "[none]";
+        int air = 0;
+        for (int i = 0; i < 27; i++)
+        {
+            Vector3 d = new Vector3(i % 3 - 1, (i / 3) % 3 - 1, i / 9 - 1);
+            if (d != Vector3.zero && w.MaterialAt(p.centre + d.normalized * p.radius) == VoxelWorld.Air) air++;
+        }
+        return "[at(" + (p.centre.x - VoxelWorld.PortalX).ToString("F2") + "," + p.centre.y.ToString("F2") + "," + (p.centre.z - VoxelWorld.PortalZ).ToString("F2") + ") open=" + p.open + " spent=" + p.spent
+             + " gas=" + p.gas + " centreMat=" + w.MaterialAt(p.centre) + " airAround=" + air + "]";
+    }
+
     static Vector3 OpenPocket(VoxelWorld w, Fluids f, float along, bool cold, out Fluids.Pocket pocket)
     {
         pocket = null;
@@ -4013,8 +4034,10 @@ public static class BulldozerBuilder
             MxCheck(vol == mxVol0, "dozerThroughWaterDirtKept");
             // save with water, ice, gas, an open pocket and a grunt about; then load
             Fluids.Pocket p;
+            mxLog += " pocketBefore=" + PocketLine(w, NearestPocket(f, 21f));
             OpenPocket(w, f, 21f, false, out p);
             mxPocket = p;
+            mxLog += " pocketOpened=" + PocketLine(w, p);
             LayPuddle(w, new Vector3(0f, 0f, -10f), 1f, 200);
             gr.SpawnAt(new Vector3(-8f, 0f, -14f));
             mxPhase = 5; mxT0 = t;
@@ -4027,8 +4050,10 @@ public static class BulldozerBuilder
             mxLog += " beforeSave water=" + (tot.x / 255) + " gas=" + (tot.y / 255) + " ice=" + tot.w + " grunts=" + gr.Alive;
             MxCheck(tot.x > 0 && tot.y > 0 && tot.w > 0 && gr.Alive > 0, "allThereBeforeSave");
             long volSave = w.CountSolid() + w.LoadVoxels;
+            mxLog += " pocketAtSave=" + PocketLine(w, mxPocket);
             string saved = sg.Save();
             string loaded = sg.Load();
+            mxLog += " pocketAfterLoad=" + PocketLine(w, mxPocket);
             var after = w.FluidTotals();
             long volLoad = w.CountSolid() + w.LoadVoxels;
             mxLog += " save=[" + saved + "] load=[" + loaded + "] afterLoad water=" + after.x + " gas=" + after.y + " ice=" + after.w + " grunts=" + gr.Alive;
