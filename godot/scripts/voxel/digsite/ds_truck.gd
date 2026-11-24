@@ -120,6 +120,39 @@ func over_tray(p: Vector3) -> bool:
 	var t = TRAY_AT
 	return absf(l.x - t.x) < TRAY.x * 0.5 + 0.1 and absf(l.z - t.z) < TRAY.z * 0.5 + 0.1 and l.y > t.y - 0.2 and l.y < t.y + TRAY.y + 4.5 and tip < 0.2
 
+## Its body for the clods: its chassis, up to the tray's floor (its cab's another: clod_boxes)
+func body_box() -> Array:
+	return [global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 0.6, 0)), Vector3(width * 0.5, 0.6, length * 0.5)]
+
+## The tray as boxes, for the clods: its floor and four walls (front, left, right, tailgate), tipping with it; the
+## tailgate's not there once it's tipping (kind 0), so what's in it runs out the back
+func tray_boxes() -> Array:
+	if _tray == null:
+		return []
+	var t = _tray.global_transform
+	var out = []
+	for b: Array in TRAY_BOXES:
+		out.append([t * Transform3D(Basis.IDENTITY, b[0]), b[1], DsDirt.K_TRAY])
+	if tip > 0.1:
+		out[4][2] = 0
+	return out
+
+# (in the tray's own frame: x forward from its hinge, y up from its floor's underside, z across)
+const WALL := 0.06
+const TRAY_BOXES := [
+	[Vector3(TRAY_LONG * 0.5, -0.12, 0.0), Vector3(TRAY_LONG * 0.5, 0.2, TRAY_HALF)],
+	[Vector3(TRAY_LONG - WALL, 0.08 + TRAY_HIGH * 0.5, 0.0), Vector3(WALL, TRAY_HIGH * 0.5, TRAY_HALF)],
+	[Vector3(TRAY_LONG * 0.5, 0.08 + TRAY_HIGH * 0.5, -TRAY_HALF + WALL), Vector3(TRAY_LONG * 0.5, TRAY_HIGH * 0.5, WALL)],
+	[Vector3(TRAY_LONG * 0.5, 0.08 + TRAY_HIGH * 0.5, TRAY_HALF - WALL), Vector3(TRAY_LONG * 0.5, TRAY_HIGH * 0.5, WALL)],
+	[Vector3(WALL, 0.08 + TRAY_HIGH * 0.5, 0.0), Vector3(WALL, TRAY_HIGH * 0.5, TRAY_HALF)]]
+
+func clod_boxes() -> Array:
+	var out = super()
+	# (its cab, forward of the tray)
+	out.append([global_transform * Transform3D(Basis.IDENTITY, Vector3(0, 1.9, -2.55)), Vector3(width * 0.5, 0.7, 1.25), DsDirt.K_BODY])
+	out.append_array(tray_boxes())
+	return out
+
 ## Blocks of m poured in (a bucket over it): -> how many fitted
 var incoming = 0               # blocks falling into its tray from a bucket, not landed yet (DsMachine.let_go)
 

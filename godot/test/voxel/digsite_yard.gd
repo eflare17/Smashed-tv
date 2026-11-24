@@ -185,7 +185,7 @@ func heap_ahead(dz: DsDozer, reach := 3.0) -> float:
 # ---------------------------------------------------------------- mass
 
 ## Everything there is, in mm over a column: the ground (blocks and the loose layer), every machine's bucket or tray
-## and what's falling from it, the backpack's blocks and the spade's carry. Later stages add the clods to it.
+## and what's falling from it, the backpack's blocks and the spade's carry, and the clods (with what they owe the ground).
 func mass() -> Dictionary:
 	var d := ds()
 	var ground: int = d.terrain.grid.ground_mm()
@@ -205,8 +205,12 @@ func mass() -> Dictionary:
 	var carry := 0
 	for k in d.tools._carry:
 		carry += int(d.tools._carry[k])
-	return {"ground": ground, "loads": loads, "falling": falling, "pack": pack, "carry": carry,
-		"total": ground + loads + falling + pack + carry}
+	# (the clods, and what they owe the ground: DsDirt, stage 3 on)
+	var clods := 0
+	if d.dirt != null:
+		clods = d.dirt.mass_mm() + d.dirt.owed_mm()
+	return {"ground": ground, "loads": loads, "falling": falling, "pack": pack, "carry": carry, "clods": clods,
+		"total": ground + loads + falling + pack + carry + clods}
 
 # ---------------------------------------------------------------- timing
 

@@ -64,6 +64,8 @@ var _rams: Array[DsRam] = []
 
 func _init() -> void:
 	kind = "bulldozer"
+	body_high = 2.0
+	tool_kind = DsDirt.K_BLADE
 	length = 4.0
 	width = 2.9
 	max_speed = 3.2

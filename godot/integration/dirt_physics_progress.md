@@ -292,3 +292,132 @@ better) 2.05 to 2.2 us; a square's slopes kept 3 steps instead of worked out eve
 - Clods are kept 1.5 m in from the grid's side (the edge ring takes no loose dirt).
 - The perf numbers are for clods alone on a bare grid: drawing (stage 3) and machine boxes (stage 3 on) come on top,
   inside the same 2 ms.
+
+## Stage 3: clods in the site (done, 24 Nov)
+
+**What was built**
+
+- `scripts/voxel/digsite/ds_dirt.gd`, on top of stage 2's core:
+  - **Drawing** (`make_draw(parent)`): one MultiMesh of the lumps the loose dirt already wears (`DsLook.clod_mesh`), one
+    buffer a step. An instance's transform is only where the clod is; the new `shaders/ds_dirt.gdshader` sizes, shapes
+    and turns it from the instance's custom data (material, radius and a shape number packed in one float; how far it
+    has turned; the level line it turns about), so a clod costs seven numbers a step to draw. Rolling, a clod turns at
+    its speed over its radius; thrown, it tumbles. Lit and coloured as the lumps on the ground are, drawn after the ink.
+  - **Shrink on settle**: a settled clod is drawn 0.15 s more, shrinking into the ground (256 at once at most).
+  - **Box colliders** (`set_boxes([[Transform3D, half size, kind]])`): a clod inside a box is put out by the face it
+    came in at (the one it was furthest outside a step ago, with the box where it was then: a thin tray wall or a quick
+    blade does not let it through); it keeps the box's own speed at that point, loses its speed into the face (bounces
+    if it hit hard) and 30% a step of its speed across it (it is carried). **Broadphase**: each box marks the 1 m
+    squares it is over (a bit a box, redone only when a box has moved); a clod looks at a box only in a marked square,
+    and a clod napping in the air wakes there. Kinds: `K_BODY`, `K_BLADE`, `K_BUCKET`, `K_TRAY`.
+  - **The blade's rules**: a clod a blade is shoving does not settle (it would be cut again at once); at the face they
+    stack, each on those counted before it in its quarter-metre square (up to 1.25 m); one over 0.6 of the blade's
+    height is sent along the face to the nearer end at 1.6 m/s (the roll-over rule: off the end it is a windrow). At a
+    blade standing still a clod settles as anywhere. On top of a body or a blade a clod slides off the side. Off the
+    ground on a bucket or in a tray it is held and does not age.
+  - **Tunnels**: a clod well under the surface with ground over it goes by the cells, not the surface (`_cave`: a
+    solid cell across is a wall, under its feet the floor, over its head the roof). At rest its dirt goes back where
+    it lies in whole loose blocks (`fill_sphere`), not on the hill over it; what will not fit is owed (`owed_mm()`, in
+    the mass sum) and tried again with the next clod there; `land_all()` puts what is still owed down (a wider ball,
+    then the surface). A spawn turned away under a roof goes the same way.
+  - Also: `last_id`, `settle_log` (tests), `hits_n`, `buried_n`, `draw_us` (in `step_us`).
+- `dig_site.gd`: makes the site's `DsDirt` (`dirt`), steps it 60 times a second where the dirt runs (solo, or the host),
+  hands it every machine's boxes while there are clods (`clod_boxes()`, plus `extra_boxes` for tests); `land_all()` on
+  leaving and on quitting; the debug key.
+- `ds_machine.gd`: `body_box()` (its footprint, `body_high` tall) and `clod_boxes()` (body + its `keepout_boxes()` as
+  blade or bucket). `ds_truck.gd`: `tray_boxes()` (floor and four walls in the tray's own frame, so they tip with it;
+  the tailgate goes once it is tipping), its chassis and cab as bodies. Dozer, Bobcat, excavator: their heights.
+- `test/voxel/digsite_clod_site_test.gd`, `test/voxel/digsite_clod_site_shots.gd`; `digsite_yard.gd`'s `mass()` counts
+  the clods and what they owe.
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_clod_site_test.gd -- --nosave --out=res://integration/dirt_shots
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_clod_site_shots.gd -- --nosave --out=res://integration/dirt_shots
+
+(50 s and 60 s. The test writes `integration/dirt_shots/clod_site.txt`.)
+
+**`digsite_clod_site_test`: `DSCLODSITE done 14 passed, 0 failed`** (seven runs in a row after the last change to the
+clods; the physics numbers are the same to the digit every run, the timings are the range over them)
+
+| Criterion | Measured |
+|---|---|
+| (a) 500 clods poured over 5 s in front of a scripted moving box (the dozer blade's size, 2 m/s for 6 s): none end inside it | 0 settled inside it; and on no frame was any clod's middle inside it (58304 box hits; 301 awake at most) |
+| (a) mean travel >= 3 m | 4.42 m (least 0.01, most 12.06) |
+| (b) 300 dropped into the parked truck's tray: >= 95% rest inside | 300 of 300, the fastest going 0.00 m/s 5 s on |
+| (b) 0 through the floor | 0 |
+| (c) 100 let go in a dug tunnel (1 m across, 6 m long, a 0.4 m roof): the surface over it gained 0 mm | 0 mm, 0 of 1425 columns changed; all 100 put back under the roof: 400 loose blocks in the tunnel = the 50000 mm let go; owed 0 mm |
+| (d) `land_all()` leaves 0 clods | 300 before (the tray's), 0 after, 0 mm in clods, 0 owed |
+| `step_us` mean <= 2.0 ms, p95 <= 4.0 ms (drawing in it, time cap off) | mean 828 to 942 us, p95 1417 to 1825 us, over 1022 steps with up to 400 awake; drawing 64 to 79 us of it |
+| frame p95 <= baseline + 3.0 ms | 11.85 to 13.64 ms against the baseline's 12.53 to 13.80 ms in the same run: -1.3 to +0.6 ms |
+| mass exact | 0 mm off at all 42 checks (every second and after each part) |
+
+**The frame baseline, and why it is what it is.** The plan's "baseline + 3.0 ms" means stage 1's dozing p95 (21.85 ms):
+this test's 11.85 to 13.64 ms is 8.2 to 10.0 ms *under* that, so the plan's criterion as written passes with nothing to
+see. The test holds a stricter one, measured back to back in the same run: after (d) the run is played again frame for
+frame with no clods, each clod's dirt laid straight on the ground (or in the tunnel) where and when its clod settled,
+and the clods' frames must be within 3.0 ms of *that* at p95. A first version compared with the scene doing nothing at
+all (3 s before (a)): that is still printed (clods awake are +1.6 to +5.4 ms over it at p95, +1.3 to +2.8 ms at the
+mean), but it failed two runs of the first four at +3.3 and +4.1 ms, and most of that is not the clods: dirt landing makes the
+ground slump and redraw its sections whoever laid it (the baseline replay alone is +3 to +4.5 ms over the idle scene).
+What the clods themselves add shows in the mean: 0.2 to 1.3 ms a frame over the baseline, with 300 to 400 awake.
+
+**Stage 2's tests after the change**: `digsite_clod_test` 10/0 with the same numbers to the digit (397 ticks, 79 mm,
+31.5 degrees, 4.58 m): the clods' look takes nothing from their random numbers, and the tunnel rule only applies to a
+clod that was already in a hole (a first version sent clods buried by a fast-rising pile down that path: 364 ticks and
+119 mm, still passing but not the same; fixed). `digsite_clod_perf` 5/0: 800 awake mean 1334 to 1497 us, p95 2216 us at
+most (limits 2000 and 4000): the new checks in the loop (a box about? under a roof?) and the spin cost about 0.1 us a clod.
+
+**Two things found and fixed on the way**
+
+- **The time cap turned clods away for no reason.** `us_per_clod` was a step's time over its clods whatever their
+  number: with three clods left a step's own overhead made one look like 20 us, and the next 13 of 300 let go were
+  refused (laid straight on the ground). It is now taken only from steps with 64 clods or more (`PER_FROM`).
+- **A clod pushed along the ground was only "at the blade" every other step** (it drops a few mm behind between
+  steps), so it settled under the blade's nose: mean travel 1.27 m. A box now counts as touched within 12 mm
+  (`TOUCH`): 4.42 m.
+
+**Shots** (`integration/dirt_shots/`, looked at): `clods_1_push.png`, `clods_2_push_side.png` (the bulldozer, blade just
+clear of the ground so it cuts nothing, clods poured ahead: lumps stacked up the blade's face and rolling ahead of it,
+melted ones as low lumpy mounds behind); `clods_3_tray_falling.png`, `clods_4_tray.png` (300 into the truck's tray:
+lying on its floor inside the walls); `clods_5_thrown.png`, `clods_6_landing.png`, `clods_7_melted.png` (the debug
+key's throw on foot: in the air, on the ground, gone into it). The lumps match the ground's own.
+
+**What the owner will see**: at the Dig Site, on foot, **K** throws a barrow's worth of dirt out ahead of you (a debug
+key: it is dirt from nowhere). The lumps fly, tumble, bounce, roll and after a moment shrink into the ground as a low
+mound. Throw them at a machine and they bounce off it; into the truck's tray and they lie in it; drive the dozer into
+them and it shoves them along, stacked on its blade. Nothing the tools or machines do makes clods yet (stage 5 on).
+
+**Guards** (one after another in one session, after the last change; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_perf` | 10/0 / 5/0 |
+| save pair (`--save=<path> --phase=1`, then `--phase=2`) | 4/0, 6/0 |
+| sync pair (`--host=YARD1 --via=enet` / `--join=127.0.0.1 --via=enet`) | host 6/0, guest 9/0 |
+| `digsite_yard_test` phase 1, 2 (no clods are made by the dozer yet) | 6/0, 7/0: 14.54 m (14.66 the run before: 0.81% apart), frame p95 20.63 ms, mass exact |
+
+The yard shots were taken again (`stage3_1_start.png` to `stage3_4_side.png`): the dozer's push is stage 1's, as it
+should be (nothing a machine does makes clods yet).
+
+**Known gaps and things later stages must know**
+
+- **Clods lying in a tray or on a bucket stay clods** (awake, counted against `FLY_MAX`, about 2.5 us each a step)
+  until `land_all()`: stage 6 takes them into the load. In a tray they lie in one layer, overlapping: no stacking.
+- **A bucket's box is its whole hollow, solid**: clods cannot get into a bucket yet (stage 6).
+- **The time cap can drop a clod through a tray**: over the cap it settles ones on the ground first, then from the
+  front of the list wherever they are, and a tray's clod then lands on the ground under the truck (seen once, with the
+  cap on and the box loaded). Stage 6 should take tray clods off the list before that matters.
+- **Owed dirt measured 0 mm** here (risk 3): every clod is a whole number of blocks, so dirt is only owed when the
+  tunnel has no room within the ball. `land_all()` then tries a wider ball and only after that the surface.
+- A clod up against a vertical bank **in the open** still goes by the smooth surface, as in stage 2 (the loose layer
+  is up to two blocks deep with no cell to show for it, so the cells cannot say where open ground is). Under a roof,
+  walls are walls.
+- The clods step at 60 Hz and are drawn where they are: at a higher frame rate they move in 60 Hz steps (stage 9).
+- Guests see no clods and the debug key does nothing for them (stage 8). The minute's autosave does not put clods
+  down (leaving and quitting do): with only the debug key making them nothing real is lost; stage 8 settles it.
+- `put_layer` at the grid's roof (stage 2's note) is still unguarded.
+- The site test runs with `cap_us = 0` so that it is the same every run; the cap itself is `digsite_clod_perf`'s.

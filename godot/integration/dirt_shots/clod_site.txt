@@ -1,0 +1,31 @@
+yard: level 162, 23718 blocks lowered, 12872 raised; the tunnel 2276 blocks dug (1 m across, 6.0 m long, its roof 0.40 m thick)
+ok   the site has its DsDirt, no clods yet; the ground's at rest (patch 0.00 to 0.00 cells off level away from the tunnel's dig)
+frame, no clods: 177 frames, mean 6.40, p95 7.97, worst 10.09 ms
+(a) 500 let go in 5.0 s in front of the box (4.4 x 1.84 x 0.52 m, 2.0 m/s for 6 s: 12.0 m); 500 became clods; the last settled at 9.30 s; 58304 box hits; 301 awake at most
+ok   (a) all 500 were clods and all settled (0 not clods, 500 settled)
+ok   (a) none inside the box: 0 frames with a clod's middle in it, 0 settled in it
+ok   (a) mean travel 4.42 m (>= 3.0; least 0.01, most 12.06)
+mass exact after (a) (ground 5264284750, clods and owed 0)
+(b) 300 dropped from 1.5 to 2.5 m over the tray's floor; 5 s on: 300 lying in it (the fastest going 0.00 m/s), 0 beside the truck, 0 under the tray's floor or in the truck; 0 not clods; 0 settled into the ground
+ok   (b) all 300 were clods and all are accounted for (300)
+ok   (b) 300 of 300 rest in the tray (100.0%, >= 95%), none faster than 0.3 m/s (0.00)
+ok   (b) 0 through the tray's floor (0)
+mass exact after (b) (ground 5264284750, clods and owed 150000)
+(c) the ground over the tunnel before: unchanged since the yard was made
+(c) 100 let go in the tunnel; all settled 1.02 s after the last; 100 put back under the roof (400 loose blocks in the tunnel now, of 400 they made); owed 0 mm
+ok   (c) all 100 were clods and settled under the roof (0 not clods, 100 buried)
+ok   (c) the ground over the tunnel gained 0 mm (0), 0 of its 1425 columns changed
+ok   (c) their dirt's in the tunnel: 50000 mm as loose blocks + 0 owed = 50000 let go
+mass exact after (c) (ground 5264334750, clods and owed 150000)
+ok   (d) land_all(): 300 clods before, 0 after, 0 mm in clods, 0 mm owed
+(d) what was owed (0 mm) is on the ground now: the columns over the tunnel rose 0 mm in all
+mass exact after land_all() (ground 5264484750, clods and owed 0)
+step_us with clods awake: 1022 steps, mean 828, p95 1417, worst 7428 us (its drawing: mean 64, p95 111 us); 400 awake at most
+frame with clods awake: 1002 frames, mean 7.79, p95 11.95, worst 27.07 ms
+frame, the baseline (the same 600 clods' dirt laid where and when each settled, no clods): 1004 frames, mean 7.17, p95 12.53, worst 21.95 ms
+frame, nothing happening: mean 6.40, p95 7.97 ms; stage 1's dozing p95 was 21.85 ms (baseline.txt): against either, clods awake are +3.98 and -9.90 ms
+ok   step_us mean 828 (<= 2000), p95 1417 (<= 4000)
+ok   frame p95 11.95 ms <= the baseline's 12.53 + 3.0 = 15.53
+mass exact after the baseline (ground 5264784750, clods and owed 0)
+ok   mass exact at all 42 checks (every second, and after each part)
+done 14 passed, 0 failed

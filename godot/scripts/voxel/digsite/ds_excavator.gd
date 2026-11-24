@@ -89,6 +89,7 @@ static var prop_mat: Material
 
 func _init() -> void:
 	kind = "excavator"
+	body_high = 1.1
 	length = 4.1
 	width = 3.2
 	max_speed = 1.5

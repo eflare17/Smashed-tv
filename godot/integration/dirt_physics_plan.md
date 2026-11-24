@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: plan only. Nothing below has been built. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 3 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -90,7 +90,10 @@ Remainders below 125 mm never become a clod: they go straight to `put_layer`.
 5. **Machines**: oriented boxes from `keepout_boxes()`, one body box per machine, and the truck tray (floor + 4
    walls, new `tray_boxes()`). Broadphase: only clods within a machine's bounding radius are tested. Push out along
    least penetration, take the box's point velocity. Clods above 0.6 of blade height get a sideways push toward the
-   nearer blade end (windrows).
+   nearer blade end (windrows). *As built in stage 3*: the broadphase is a bit a box in each 1 m square it is over;
+   a clod is put out by the face it came in at (where it and the box were a step ago), not by least penetration,
+   unless it was inside then too; it loses 30% a step of its speed across the face. At a blade's face clods stack
+   (each on those counted before it in its square, to 1.25 m), which is what gets them over 0.6 of its height.
 6. **Settle** when speed < 0.4 m/s for 0.25 s **and** slope < 30 degrees, or age > 6 s, or overflow. Never while
    inside a blade or bucket box (avoids a settle/re-cut flicker). *As built in stage 2*: also when slow for 1 s
    whatever the slope (`STUCK_S`), so a clod on a 30 to 35 degree flank does not wait out its 6 s.
@@ -108,6 +111,9 @@ A clod is "under a roof" when `grid.get_cell` above it is solid below the column
 `grid.fill_sphere(pos, r, m, cells, true)` in whole cells and checks the return. Leftover mm (sub-cell, or cells
 that did not fit) go into a per-material `_owed` counter that tops up the next underground deposit and is flushed to
 the surface by `land_all()`. `_owed` counts in the mass invariant.
+*As built in stage 3*: under a roof a clod also moves by the cells (floor, walls, roof), since the surface there is
+the hill over it; only a clod already in a hole treats a solid cell as a wall (one buried by a rising heap pops up, as
+in stage 2). `land_all()` tries a wider ball before the surface. Owed measured 0 mm in stage 3's test.
 
 ### Mass invariant (asserted in every stage's test)
 
@@ -209,7 +215,9 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   floor. (c) 100 spawned inside a dug tunnel: after settling, the surface columns above gained 0 mm and the mass
   sum is exact. (d) `land_all()` leaves 0 clods. Budgets: `step_us` mean <= 2.0 ms, p95 <= 4.0 ms; frame p95 <=
   baseline + 3.0 ms; mass exact.
-- **Owner sees**: with a debug key, lumps that fall, roll, bounce off machines and melt into the ground.
+  *As tested*: the frame baseline is taken in the same run: the run replayed with no clods, each clod's dirt laid
+  where and when it settled (stricter than stage 1's dozing p95, which the test is 8 ms under). Time cap off.
+- **Owner sees**: with a debug key (K, on foot), lumps that fall, roll, bounce off machines and melt into the ground.
 - **Out of scope**: tools creating clods, absorbing into buckets/trays, co-op.
 
 ### Stage 4: machine weight

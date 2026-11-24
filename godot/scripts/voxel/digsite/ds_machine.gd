@@ -30,6 +30,8 @@ var wall_look = 1.0            # m ahead of its leading wheels a bank's looked f
 var seat = Vector3(0, 0.35, 0.75)   # where the driver stands/sits (its feet), from its middle
 var pipe = Vector3(0.3, 1.5, 0.3)   # its exhaust stack's top, from its middle
 var turn_needs_speed = false   # (a truck: steered wheels, it only turns rolling)
+var body_high = 1.0            # m: its body as a box for the clods (body_box): this tall, its footprint wide and long
+var tool_kind = DsDirt.K_BUCKET   # what its keepout_boxes() are to the clods (a dozer's: K_BLADE)
 # where it is
 var yaw = 0.0
 var speed = 0.0
@@ -111,6 +113,20 @@ func _corners(at: Vector3, yaw_: float) -> PackedFloat32Array:
 
 func runs() -> bool:
 	return site.net == null or site.net.runs()
+
+## Its body as a box, for the clods (DsDirt.set_boxes): [where its middle is (world), half its size]
+func body_box() -> Array:
+	return [global_transform * Transform3D(Basis.IDENTITY, Vector3(0, body_high * 0.5, 0)), Vector3(width * 0.5, body_high * 0.5, length * 0.5)]
+
+## Every box of it the clods bump into: [[Transform3D, half its size, DsDirt.K_*]]: its body, and its blade or bucket
+## (keepout_boxes(), where it has one). The same boxes in the same order every time.
+func clod_boxes() -> Array:
+	var b = body_box()
+	var out = [[b[0], b[1], DsDirt.K_BODY]]
+	if has_method("keepout_boxes"):
+		for k: Array in call("keepout_boxes"):
+			out.append([k[0], k[1], tool_kind])
+	return out
 
 # ---------------------------------------------------------------- each frame
 

@@ -33,6 +33,9 @@ var blasts: DsBlasts                      # dynamite (stage 9)
 var lamp: SpotLight3D                     # the hard hat's lamp, on under a roof (stage 7)
 var look: DsLook                            # the site's sky, sun, toon shading and ink
 var clods: DsClods                          # the lumps on the loose dirt, fixed in place, riding the gliding surface
+var dirt: DsDirt                            # the dirt that's come loose: clods that fall, roll, get shoved and settle (dirt physics, stage 3)
+var _dirt_acc = 0.0
+var dirt_paused = false                     # (the tests' pictures: the clods held still)
 var near_office = false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
 
@@ -90,6 +93,9 @@ func _build() -> void:
 	clods = DsClods.new()
 	add_child(clods)
 	clods.setup(self)
+	dirt = DsDirt.new()
+	dirt.setup(terrain.grid, terrain.origin)
+	dirt.make_draw(self)
 	terrain.hook(net)
 	tools.hook(net)
 	machines = DsMachines.new()
@@ -402,6 +408,8 @@ func home() -> void:
 	if lamp:
 		lamp.visible = false
 	net.left()
+	if dirt:
+		dirt.land_all()                       # (what's in the air is put down: nothing's left hanging, nothing's lost)
 	DsSave.save(self)
 	active = false
 	visible = false
@@ -425,6 +433,8 @@ var _save_in = 60.0
 ## (quitting from the site: it's kept)
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and active:
+		if dirt:
+			dirt.land_all()
 		DsSave.save(self)
 
 func _process(_dt: float) -> void:
@@ -435,6 +445,7 @@ func _process(_dt: float) -> void:
 	if _save_in <= 0.0:
 		_save_in = 60.0
 		DsSave.save(self)
+	_step_dirt(_dt)
 	var who = "with your mate" if _linked() else "on your own"
 	_hud.text = "DIG SITE   (%s)   P: the phone takes you home" % who
 	var p: Vector3 = arena.player.global_position
@@ -449,6 +460,37 @@ func _process(_dt: float) -> void:
 		var c = terrain.cell_of(p + Vector3(0, 1.7, 0))
 		var top = terrain.grid.column_top(c.x, c.z)
 		lamp.visible = terrain.contains(p) and top > c.y + 1
+
+# The clods (DsDirt) stepped, 60 times a second whatever the frame rate (two steps a frame at most), where the dirt
+# runs (solo, or the host); the machines' boxes handed to them first (only while there are any)
+func _step_dirt(dt: float) -> void:
+	if dirt == null or dirt_paused or not net.runs():
+		return
+	_dirt_acc = minf(_dirt_acc + dt, 2.0 / 60.0)
+	while _dirt_acc >= 1.0 / 60.0 - 0.00001:
+		_dirt_acc -= 1.0 / 60.0
+		if dirt.n > 0:
+			dirt.set_boxes(clod_boxes())
+		dirt.step(1.0 / 60.0)
+
+## Every box the clods bump into: each machine's (DsMachine.clod_boxes), then extra_boxes (the tests')
+var extra_boxes: Array = []
+func clod_boxes() -> Array:
+	var out = []
+	if machines:
+		for m: DsMachine in machines.list:
+			out.append_array(m.clod_boxes())
+	out.append_array(extra_boxes)
+	return out
+
+## A debug key (K, on foot): a barrow's worth of clods thrown out ahead of you, to watch them fall, roll, bounce off
+## the machines and melt into the ground. (Dirt from nowhere: the tools make the real ones in later stages.)
+func throw_clods() -> void:
+	if dirt == null or not net.runs():
+		return
+	var f = Vector3(-sin(arena.look_yaw), 0.0, -cos(arena.look_yaw))
+	var at: Vector3 = arena.player.global_position + Vector3(0, 1.5, 0) + f * 1.2
+	dirt.spawn_mass(at, f * 4.5 + Vector3(0, 2.5, 0), DsMats.DIRT, 60 * DsDirt.CLOD, 1.6, 0.35)
 
 ## Whether this player's driving a machine here (the arena: no walking, no weapons)
 func driving() -> bool:
@@ -474,6 +516,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	var k = (e as InputEventKey).physical_keycode
+	if k == KEY_K and not driving():
+		throw_clods()
+		get_viewport().set_input_as_handled()
+		return
 	if near_office and k in [KEY_B, KEY_C, KEY_V, KEY_X]:
 		match k:
 			KEY_B:

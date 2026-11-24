@@ -10,7 +10,11 @@ extends RefCounted
 ## that a stream onto one spot stood 3 m of clods on each other and threw them 9 m, measured).
 ## A clod's dirt goes onto the columns under it evenly (2 x 2, 4 x 4 or 6 x 6 of them by its size), not split four
 ## ways as the plan had it: a chunk's 2000 mm on four columns is a 500 mm spike, and the plan allows 250.
-## This is the core alone (dirt_physics_plan.md, stage 2): no drawing, no machines, no tunnels, no network.
+## Stage 3 (dirt_physics_plan.md) put them in the site: drawn (one MultiMesh, a buffer a step: make_draw), knocked
+## about by the machines' boxes (set_boxes: a body, a blade, a bucket, a truck's tray: pushed out the way they came in,
+## taking the box's speed there), stacked up a blade's face and shoved off its ends, and at home under a roof (in a
+## tunnel the ground's surface is the hill over it: there a clod goes by the cells round it, and its dirt is put back
+## in whole blocks where it lies, DigSiteGrid.fill_sphere, what won't fit owed till it will). No network yet.
 ## Nothing's made or lost: grid.ground_mm() + mass_mm() + owed_mm() never changes.
 ## Runs where the dirt runs (solo, or the host), a step every 1/60 s. With cap_us 0 it's the same every run (its random
 ## numbers are its own, from `seed_`); the time cap, when it bites, is by the clock. Owned by the voxel session.
@@ -42,6 +46,26 @@ const CLOD := 500
 const CHUNK := 2000
 const FLY_MAX := 800            # clods awake at once (stage 2's measurement on the 4-core box: digsite_clod_perf)
 const CLOD_US := 2000           # a step's time: over it, the slowest (then the oldest) are settled where they are
+# the machines' boxes (set_boxes): what a box is
+const K_BODY := 1               # a machine's body: clods are pushed out of it, and slide off its top
+const K_BLADE := 2              # a dozer's blade: clods at its face don't settle (they'd be cut again at once), they stack up it and go off its ends
+const K_BUCKET := 3             # a bucket, a tray: a clod lying in one stays a clod (stage 6 takes them into the load)
+const K_TRAY := 4
+const BOX_REST := 0.15          # of its speed kept bouncing off a box
+const BOX_GRIP := 0.3           # of its speed across a box's face lost a step (it's carried along)
+const PER_FROM := 64            # clods in a step before its time says what one costs
+const PUSH_V := 0.2             # m/s a box's face comes at a clod: it's being shoved
+const TOUCH := 0.012            # m off a box's face a clod's still at it (pushed along the ground it drops a few mm behind between steps)
+const BOX_PAD := 0.45           # m round a box its squares are marked (the biggest clod, and a step's travel)
+const HEAP_FACE := 5000         # mm stacked up a blade's face in a square at most (1.25 m) ...
+const OVER := 0.6               # ... and a clod over this much of the blade's height goes sideways ...
+const WINDROW_V := 1.6          # ... toward its nearer end, this fast (m/s), getting there at ...
+const WINDROW_A := 9.0          # ... this (m/s2): off the end it's a windrow
+const SLIDE_V := 0.2            # m/s more a step a clod on a body's top slides to its side
+const CAVE := 0.19              # m under the ground's surface a clod's middle is: it's in a hole under a roof or by a wall (or in the ground): the cells decide
+const SHRINK_S := 0.15          # a settled clod's seen shrinking into the ground this long
+const GHOSTS := 256             # of those at once
+const DRAW_K := 1.3             # a lump's drawn radius, of its clod's half side (as much dirt as the cube)
 
 var grid                        # DigSiteGrid
 var origin := Vector3.ZERO      # its corner in the world
@@ -51,7 +75,13 @@ var seed_ := 1:
 	set(v):
 		seed_ = v
 		_rng = v & 0x7fffffff
-var step_us := 0                # the last step's time
+var step_us := 0                # the last step's time (its drawing in it: draw_us)
+var draw_us := 0
+var hits_n := 0                 # (tests: clods a box pushed, so far)
+var buried_n := 0               # (tests: clods put back under a roof)
+var log_on := false             # (tests: where each clod settled, settle_log: id, x, y, z, how (0 on the ground, 1 under a roof), ...)
+var settle_log := PackedFloat32Array()
+var last_id := -1               # the last clod spawn() made
 var us_per_clod := 0.0          # (smoothed)
 var settled_n := 0              # clods settled so far; of them shed_n forced by the caps; direct_n spawns that went straight to ground
 var shed_n := 0
@@ -72,8 +102,24 @@ var age := PackedFloat32Array()
 var cmm := PackedInt32Array()     # its dirt (mm)
 var cmat := PackedByteArray()
 var cid := PackedInt32Array()     # (16 bits: the network's, stage 8)
-var gnd := PackedByteArray()      # on the ground last step
+var gnd := PackedByteArray()      # on the ground last step (2: in a hole under a roof, _cave)
+var ang := PackedFloat32Array()   # how it's drawn: turned this far (rad) about (axx, 0, azz), turning at spn (rad/s: rolling, its speed over its radius)
+var spn := PackedFloat32Array()
+var axx := PackedFloat32Array()
+var azz := PackedFloat32Array()
+var csz := PackedFloat32Array()   # its material, drawn size and shape packed as the shader takes them (_pack)
 var n := 0
+# the settled, shrinking away (drawn only: their dirt's in the ground)
+var gx := PackedFloat32Array()
+var gy := PackedFloat32Array()
+var gz := PackedFloat32Array()
+var gbase := PackedFloat32Array()
+var gsize := PackedFloat32Array()
+var gang := PackedFloat32Array()
+var gax := PackedFloat32Array()
+var gaz := PackedFloat32Array()
+var gt := PackedFloat32Array()
+var gn := 0
 
 var _w := 0
 var _d := 0
@@ -92,7 +138,31 @@ var _dep := PackedInt32Array()  # this frame's settled dirt by column (mm), laid
 var _depm := PackedByteArray()
 var _dept := PackedInt32Array() # ... the columns with any
 var _mass := 0
-var _owed := 0                  # (stage 3's tunnels: dirt that couldn't be laid yet)
+var _owed := 0                  # dirt that couldn't be put back under a roof yet (under a block of it, or no room there), by material:
+var _owed_by := PackedInt32Array()
+var _owed_at := PackedVector3Array()   # ... and where each was last tried (cells)
+var _h := 0
+# the machines' boxes this step: where each is and was a step ago, half its size, its kind; and the metre squares each
+# is over (a bit a box), so only clods near one look at it
+var _bn := 0
+var _bxf: Array[Transform3D] = []
+var _binv: Array[Transform3D] = []
+var _bprev: Array[Transform3D] = []
+var _bpinv: Array[Transform3D] = []
+var _bhalf := PackedVector3Array()
+var _bkind := PackedByteArray()
+var _bw := 0
+var _bd := 0
+var _bm := PackedInt64Array()
+var _bmt := PackedInt32Array()
+var _hp := Vector3.ZERO         # (_hit's answer: where the clod is, how it's going)
+var _hv := Vector3.ZERO
+var _hpush := false            # (and whether the box is coming at it)
+var _settled := 0               # (this step's)
+var _mmi: MultiMeshInstance3D
+var _mm: MultiMesh
+var _buf := PackedFloat32Array()
+var _shown := -1
 var _rng := 1
 var _next_id := 0
 var _x0 := 0.0
@@ -105,6 +175,16 @@ func setup(g, at := Vector3.ZERO) -> void:
 	origin = at
 	_w = g.get_w()
 	_d = g.get_d()
+	_h = g.get_h()
+	_bw = (_w + 7) / 8
+	_bd = (_d + 7) / 8
+	_bm.resize(_bw * _bd)
+	_bm.fill(0)
+	_owed_by.resize(32)
+	_owed_by.fill(0)
+	_owed_at.resize(32)
+	for a in [gx, gy, gz, gbase, gsize, gang, gax, gaz, gt]:
+		a.resize(GHOSTS)
 	_hw = (_w + 1) / 2
 	_hd = (_d + 1) / 2
 	for a in [_hm, _hn, _gst]:
@@ -151,7 +231,18 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int) -> bool:
 		return false
 	if mm < CRUMB or n >= _room():
 		direct_n += 1
-		_lay(clampf(p.x, _x0, _x1), clampf(p.z, _z0, _z1), mm, m)
+		var x := clampf(p.x, _x0, _x1)
+		var z := clampf(p.z, _z0, _z1)
+		var c := Vector3((x - origin.x) * INV_CELL, (p.y - origin.y) * INV_CELL, (z - origin.z) * INV_CELL)
+		if int(grid.column_top(int(c.x), int(c.z))) > int(c.y):
+			# (under a roof: in blocks where it is, not on the ground over it)
+			var total := mm + _owed_by[m]
+			var put: int = grid.fill_sphere(c, pow(float(total / MM), 1.0 / 3.0) + 1.5, m, total / MM, true) if total >= MM else 0
+			_owed += total - put * MM - _owed_by[m]
+			_owed_by[m] = total - put * MM
+			_owed_at[m] = c
+		else:
+			_lay(x, z, mm, m)
 		return false
 	if n == px.size():
 		_grow(maxi(64, n * 2))
@@ -169,6 +260,15 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int) -> bool:
 	cmat[n] = m
 	cid[n] = _next_id
 	gnd[n] = 0
+	# (how it's drawn: its own shape and tumble from its number; not from the clods' random numbers, which are the dirt's)
+	var k := (((_next_id + 1) * 2654435761) >> 9) & 0x3fffffff
+	var t := (k & 1023) * (TAU / 1024.0)
+	ang[n] = t * 3.0
+	spn[n] = 2.0 + ((k >> 10) & 7)
+	axx[n] = cos(t)
+	azz[n] = sin(t)
+	csz[n] = _pack(m, rad[n] * DRAW_K, ((k >> 13) & 255) / 256.0)
+	last_id = _next_id
 	_next_id = (_next_id + 1) & 0xffff
 	n += 1
 	_mass += mm
@@ -200,6 +300,11 @@ func spawn_mass(p: Vector3, v: Vector3, m: int, mm: int, spread := 0.5, within :
 	if mm > 0:
 		_lay(clampf(p.x, _x0, _x1), clampf(p.z, _z0, _z1), mm, m)
 	return made
+
+# What the shader's given of a lump (its instance's custom x): its material, its radius (m, under 0.5, in 800ths) and
+# a number 0 .. 1 for its shape, in one float: m + floor(size * 400) / 800 + shape / 1600
+static func _pack(m: int, size: float, shape: float) -> float:
+	return m + floorf(minf(size, 0.49) * 400.0) / 800.0 + shape / 1600.0
 
 # how many clods there's room for: fly_max, fewer while a step at that many would run over the time cap
 func _room() -> int:
@@ -243,7 +348,70 @@ func _deposit(i: int, gently: bool) -> bool:
 			_dept.append(c)
 			_depm[c] = m
 		_dep[c] += left
+	_gone(i, 0)
 	return true
+
+# clod i's settled (how: 0 on the ground, 1 under a roof): it's seen shrinking away where it lay, and the tests told
+func _gone(i: int, how: int) -> void:
+	if log_on:
+		settle_log.append_array(PackedFloat32Array([cid[i], px[i], py[i], pz[i], how]))
+	if _mm == null or gn >= GHOSTS:
+		return
+	var f := (csz[i] - floorf(csz[i])) * 800.0
+	var size := floorf(f) / 400.0
+	gx[gn] = px[i]
+	gy[gn] = py[i]
+	gz[gn] = pz[i]
+	gsize[gn] = size
+	gbase[gn] = csz[i] - floorf(f) / 800.0
+	gang[gn] = ang[i]
+	gax[gn] = axx[i]
+	gaz[gn] = azz[i]
+	gt[gn] = SHRINK_S
+	gn += 1
+
+func _solid(x: int, y: int, z: int) -> bool:
+	return grid.get_cell(x, y, z) != 0
+
+# whether clod i has ground over it (it's in a tunnel: its dirt can't be laid on the column's top)
+func _roofed(i: int) -> bool:
+	return grid.column_top(int((px[i] - origin.x) * INV_CELL), int((pz[i] - origin.z) * INV_CELL)) > int((py[i] - origin.y) * INV_CELL)
+
+# Clod i's dirt put back where it lies under a roof, in whole blocks (loose), lowest first, within a ball big enough
+# for it; with what its material's owed from before. What's left (under a block, or no room) is owed. The clod's gone.
+func _bury(i: int) -> void:
+	var m := cmat[i]
+	var c := Vector3((px[i] - origin.x) * INV_CELL, (py[i] - origin.y) * INV_CELL, (pz[i] - origin.z) * INV_CELL)
+	var total := cmm[i] + _owed_by[m]
+	var cells := total / MM
+	var put := 0
+	if cells > 0:
+		put = grid.fill_sphere(c, pow(float(cells), 1.0 / 3.0) + 1.5, m, cells, true)
+	var left := total - put * MM
+	_owed += left - _owed_by[m]
+	_owed_by[m] = left
+	_owed_at[m] = c
+	buried_n += 1
+	_gone(i, 1)
+	_remove(i)
+
+# what's owed put down: in blocks where it was last tried, a wider ball; what's left then (under a block, mostly) on
+# the ground over it
+func _pay_owed() -> void:
+	if _owed <= 0:
+		return
+	for m in _owed_by.size():
+		var mm := _owed_by[m]
+		if mm <= 0:
+			continue
+		var c := _owed_at[m]
+		var cells := mm / MM
+		if cells > 0:
+			mm -= MM * int(grid.fill_sphere(c, pow(float(cells), 1.0 / 3.0) + 4.0, m, cells, true))
+		if mm > 0:
+			grid.put_layer(clampi(int(c.x), 12, _w - 13), clampi(int(c.z), 12, _d - 13), mm, m)
+		_owed_by[m] = 0
+	_owed = 0
 
 # mm of m straight onto the ground at world (x, z) (what never became a clod), spread as a clod's is
 func _lay(x: float, z: float, mm: int, m: int) -> void:
@@ -278,10 +446,15 @@ func _remove(i: int) -> void:
 		cmat[i] = cmat[n]
 		cid[i] = cid[n]
 		gnd[i] = gnd[n]
+		ang[i] = ang[n]
+		spn[i] = spn[n]
+		axx[i] = axx[n]
+		azz[i] = azz[n]
+		csz[i] = csz[n]
 
 # room for `most` clods (the arrays only ever grow: n is how many are in use)
 func _grow(most: int) -> void:
-	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, cmm, cmat, cid, gnd]:
+	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz]:
 		a.resize(most)
 
 # the frame's settled dirt laid on the ground
@@ -291,18 +464,24 @@ func _flush() -> void:
 		_dep[c] = 0
 	_dept.clear()
 
-## Every clod settled where it is, now (a save, leaving, the host changing): all of it's in the ground after
+## Every clod settled where it is, now (a save, leaving, the host changing): all of it's in the ground after, what
+## was owed too
 func land_all() -> void:
 	for i in range(n - 1, -1, -1):
-		_deposit(i, false)
-		_remove(i)
+		if _roofed(i):
+			_bury(i)
+		else:
+			_deposit(i, false)
+			_remove(i)
 		settled_n += 1
 	_flush()
-	if _owed > 0:
-		_owed = 0   # (stage 3 lays it on the surface here)
+	_pay_owed()
 	for c in _ht:
 		_hm[c] = 0
 	_ht.clear()
+	gn = 0
+	if _mm:
+		_draw(0.0)
 
 # a quarter-metre square's slopes: the ground at its middle and its four neighbours', each with its awake heap
 func _slopes(hc: int) -> void:
@@ -332,14 +511,249 @@ func _slopes(hc: int) -> void:
 	_gzp[hc] = (zp - c) * 4.0
 	_gst[hc] = frame + SLOPE_KEEP
 
+# ---------------------------------------------------------------- the machines' boxes
+
+var _bstale := true             # (no step with clods since the boxes were last given: where they were then says nothing of their speed)
+
+## The machines' boxes for the next step: [[Transform3D (the box's middle, in the world), half its size, kind (K_*;
+## 0: not there now)]], 62 at most, the same boxes in the same order every time: a box's speed is how far it's gone
+## since the last call. Called each step there are clods (DigSite).
+func set_boxes(list: Array) -> void:
+	var k := mini(list.size(), 62)
+	var moved := k != _bn or _bstale
+	if moved:
+		_bxf.resize(k)
+		_binv.resize(k)
+		_bprev.resize(k)
+		_bpinv.resize(k)
+		_bhalf.resize(k)
+		_bkind.resize(k)
+		for b in k:
+			var t: Transform3D = list[b][0]
+			_bxf[b] = t
+			_binv[b] = t.affine_inverse()
+			_bprev[b] = t
+			_bpinv[b] = _binv[b]
+			_bhalf[b] = list[b][1]
+			_bkind[b] = list[b][2]
+		_bn = k
+		_bstale = false
+	else:
+		for b in k:
+			var box: Array = list[b]
+			var t: Transform3D = box[0]
+			_bprev[b] = _bxf[b]
+			_bpinv[b] = _binv[b]
+			if t != _bxf[b]:
+				moved = true
+				_bxf[b] = t
+				_binv[b] = t.affine_inverse()
+			if _bkind[b] != int(box[2]) or _bhalf[b] != (box[1] as Vector3):
+				moved = true
+				_bhalf[b] = box[1]
+				_bkind[b] = box[2]
+	if not moved:
+		return
+	# the metre squares each is over
+	for c in _bmt:
+		_bm[c] = 0
+	_bmt.clear()
+	for b in k:
+		if _bkind[b] == 0:
+			continue
+		var t := _bxf[b]
+		var h := _bhalf[b]
+		var bs := t.basis
+		var ex := absf(bs.x.x) * h.x + absf(bs.y.x) * h.y + absf(bs.z.x) * h.z + BOX_PAD
+		var ez := absf(bs.x.z) * h.x + absf(bs.y.z) * h.y + absf(bs.z.z) * h.z + BOX_PAD
+		var x0 := maxi(0, floori(t.origin.x - ex - origin.x))
+		var x1 := mini(_bw - 1, floori(t.origin.x + ex - origin.x))
+		var z0 := maxi(0, floori(t.origin.z - ez - origin.z))
+		var z1 := mini(_bd - 1, floori(t.origin.z + ez - origin.z))
+		var bit := 1 << b
+		for z in range(z0, z1 + 1):
+			for x in range(x0, x1 + 1):
+				var c := z * _bw + x
+				if _bm[c] == 0:
+					_bmt.append(c)
+				_bm[c] |= bit
+
+# A clod (at l in box b's own frame, within its radius r of it; `was` where it was a step ago, v how it's going) put
+# out of the box: by the face it came in at (the one it was furthest outside a step ago, the box where it was then:
+# so a thin wall or a quick box doesn't let it through); if it was inside then too, by the nearest face, never the
+# bottom. It keeps the box's own speed there, and of its speed against that: none into the face (a bounce if it hit
+# hard), less across it (it's carried). A blade's: one high up its face goes off toward the nearer end. On top of a
+# body or a blade it slides off the side. -> _hp, _hv, _hpush
+func _hit(b: int, l: Vector3, r: float, was: Vector3, v: Vector3, dt: float) -> void:
+	var h := _bhalf[b]
+	var e := Vector3(h.x + r, h.y + r, h.z + r)
+	var lp: Vector3 = _bpinv[b] * was
+	var sx := absf(lp.x) - e.x
+	var sy := absf(lp.y) - e.y
+	var sz := absf(lp.z) - e.z
+	var k := 1
+	var sgn := 1.0
+	if maxf(sx, maxf(sy, sz)) > -0.01:
+		if sx >= sy and sx >= sz:
+			k = 0
+		elif sz > sy:
+			k = 2
+		sgn = -1.0 if lp[k] < 0.0 else 1.0
+	else:
+		var dx := e.x - absf(l.x)
+		var dy := e.y - l.y
+		var dz := e.z - absf(l.z)
+		if dx <= dy and dx <= dz:
+			k = 0
+		elif dz < dy:
+			k = 2
+		if k != 1:
+			sgn = -1.0 if l[k] < 0.0 else 1.0
+	l[k] = sgn * (e[k] + 0.001)
+	var t := _bxf[b]
+	var p: Vector3 = t * l
+	var bv: Vector3 = (p - _bprev[b] * l) / dt
+	var nrm: Vector3 = t.basis[k] * sgn
+	var rel := v - bv
+	var vn := rel.dot(nrm)
+	if vn < 0.0:
+		rel -= nrm * (vn * (1.0 + BOX_REST) if vn < -BOUNCE_V else vn)
+	rel -= (rel - nrm * rel.dot(nrm)) * BOX_GRIP
+	var kind := _bkind[b]
+	if kind == K_BLADE and k != 1:
+		var ka := 2 if h.z >= h.x else 0
+		if k != ka and l.y > h.y * (2.0 * OVER - 1.0):
+			var along: Vector3 = t.basis[ka]
+			var cur := rel.dot(along)
+			rel += along * (move_toward(cur, WINDROW_V if l[ka] >= 0.0 else -WINDROW_V, WINDROW_A * dt) - cur)
+	elif kind <= K_BLADE and k == 1 and sgn > 0.0:
+		# (on top of a body or a blade: off its nearer long side)
+		var ka := 0 if h.x <= h.z else 2
+		rel += t.basis[ka] * (SLIDE_V if l[ka] >= 0.0 else -SLIDE_V)
+	hits_n += 1
+	_hpush = bv.dot(nrm) > PUSH_V
+	_hp = p
+	_hv = bv + rel
+
+# ---------------------------------------------------------------- under a roof
+
+# Clod i, its middle well under the ground's surface and ground over it (at x, y, z after this step's move, going at
+# ux, uy, uz, aged a): in a tunnel, or gone into a wall. Here the cells decide, not the surface: a solid cell where it
+# would go across is a wall (it stays where it was across), one under its feet is the floor (it bounces, rolls on the
+# flat, comes to rest), one over its head stops it rising. At rest (as on the surface: slow REST_S, or old) its
+# dirt's put back where it lies, in whole blocks (_bury). (Only with ground over it: the loose layer is up to two
+# blocks deep with no cell to show for it, so in the open the cells can't say where the ground is.)
+# -> 0 it's stepped, 1 it's settled and gone, 2 it's just in the ground a little (the surface's rule has it), 3 it
+# met a wall in the open (it's back where it was across: _hp, _hv; the surface's rule has it there)
+func _cave(i: int, x: float, y: float, z: float, ux: float, uy: float, uz: float, a: float, dt: float) -> int:
+	var ox := origin.x
+	var oy := origin.y
+	var oz := origin.z
+	var r := rad[i]
+	var cx := int((x - ox) * INV_CELL)
+	var cy := int((y - oy) * INV_CELL)
+	var cz := int((z - oz) * INV_CELL)
+	if grid.get_cell(cx, cy, cz) != 0:
+		if gnd[i] != 2:
+			return 2                # (it wasn't in a hole: it's come down into the ground, or the ground's come up round it)
+		var qx := int((px[i] - ox) * INV_CELL)
+		var qz := int((pz[i] - oz) * INV_CELL)
+		if (qx != cx or qz != cz) and grid.get_cell(qx, cy, qz) == 0:
+			x = px[i]
+			z = pz[i]
+			ux *= -0.2
+			uz *= -0.2
+			cx = qx
+			cz = qz
+			if int(grid.column_top(cx, cz)) <= cy:
+				_hp = Vector3(x, y, z)
+				_hv = Vector3(ux, uy, uz)
+				return 3
+		else:
+			var up := 1
+			while up <= 3 and grid.get_cell(cx, cy + up, cz) != 0:
+				up += 1
+			if up > 3:
+				if int(grid.column_top(cx, cz)) - cy < 8:
+					return 2
+				# (deep in the ground: it's closed over it. Its dirt's owed)
+				px[i] = x
+				py[i] = y
+				pz[i] = z
+				_bury(i)
+				settled_n += 1
+				return 1
+			y = oy + (cy + up) * CELL + r
+	if uy > 0.0 and grid.get_cell(cx, int((y + r - oy) * INV_CELL), cz) != 0:
+		uy = 0.0
+	var fy := int((y - r - SKIN - oy) * INV_CELL)
+	var done := false
+	if grid.get_cell(cx, fy, cz) != 0:
+		var top := oy + (fy + 1) * CELL
+		if y < top + r:
+			y = top + r
+		if uy < -BOUNCE_V:
+			uy = -uy * REST
+			ux *= BOUNCE_GRIP
+			uz *= BOUNCE_GRIP
+			rest[i] = 0.0
+		else:
+			if uy < 0.0:
+				uy = 0.0
+			var sp := sqrt(ux * ux + uz * uz)
+			var f := MU * G * dt
+			if sp <= f:
+				ux = 0.0
+				uz = 0.0
+				spn[i] = 0.0
+			else:
+				spn[i] = sp / r
+				axx[i] = uz / sp
+				azz[i] = -ux / sp
+				f = 1.0 - f / sp
+				ux *= f
+				uz *= f
+			if sp < SLOW:
+				rest[i] += dt
+				done = rest[i] >= REST_S or a >= AGE_S
+			else:
+				rest[i] = 0.0
+				done = a >= AGE_S
+	else:
+		done = a >= AGE_MOST
+	px[i] = x
+	py[i] = y
+	pz[i] = z
+	vx[i] = ux
+	vy[i] = uy
+	vz[i] = uz
+	gnd[i] = 2                      # (in a hole: what it meets solid next is a wall, a floor)
+	nap[i] = 0
+	if not done:
+		return 0
+	if _roofed(i):
+		_bury(i)
+	else:
+		_deposit(i, false)
+		_remove(i)
+	settled_n += 1
+	return 1
+
+# ---------------------------------------------------------------- each step
+
 ## A step of dt (1/60 s)
 func step(dt: float) -> void:
 	if n == 0:
 		step_us = 0
+		draw_us = 0
+		_bstale = true
 		if not _ht.is_empty():
 			for c in _ht:
 				_hm[c] = 0
 			_ht.clear()
+		if _mm and (gn > 0 or _shown != 0):
+			_draw(dt)
+			step_us = draw_us
 		return
 	var t0 := Time.get_ticks_usec()
 	frame += 1
@@ -352,7 +766,7 @@ func step(dt: float) -> void:
 		var shed := mini(n - room, DEP_FRAME)
 		var i := n - 1
 		while i >= 0 and shed > 0:
-			if gnd[i] != 0:
+			if gnd[i] == 1:
 				_deposit(i, false)
 				_remove(i)
 				shed -= 1
@@ -360,8 +774,11 @@ func step(dt: float) -> void:
 				shed_n += 1
 			i -= 1
 		while shed > 0 and n > 0:
-			_deposit(0, false)
-			_remove(0)
+			if _roofed(0):
+				_bury(0)
+			else:
+				_deposit(0, false)
+				_remove(0)
 			shed -= 1
 			settled += 1
 			shed_n += 1
@@ -370,6 +787,12 @@ func step(dt: float) -> void:
 	var oz := origin.z
 	var gdt := G * dt
 	var hw := _hw
+	var nb := _bn
+	var bmask := _bm
+	var bw := _bw
+	var binv := _binv
+	var bhalf := _bhalf
+	var bkind := _bkind
 	var i := 0
 	while i < n:
 		var r := rad[i]
@@ -381,9 +804,9 @@ func step(dt: float) -> void:
 		var z := pz[i] + uz * dt
 		var a := age[i] + dt
 		age[i] = a
-		# (well up in the air: the ground's not looked at till it could be there)
+		# (well up in the air, no machine about: the ground's not looked at till it could be there)
 		var np := nap[i]
-		if np > 0 and a < AGE_MOST:
+		if np > 0 and a < AGE_MOST and (nb == 0 or bmask[int(z - oz) * bw + int(x - ox)] == 0):
 			nap[i] = np - 1
 			px[i] = x
 			py[i] = y
@@ -391,6 +814,33 @@ func step(dt: float) -> void:
 			vy[i] = uy
 			i += 1
 			continue
+		# the machines' boxes over this metre square
+		var tk := 0
+		if nb > 0:
+			var bm := bmask[int(z - oz) * bw + int(x - ox)]
+			if bm != 0:
+				var b := 0
+				var rt := r + TOUCH
+				while bm != 0:
+					if (bm & 1) != 0:
+						var l: Vector3 = binv[b] * Vector3(x, y, z)
+						var hh := bhalf[b]
+						if absf(l.x) < hh.x + rt and absf(l.y) < hh.y + rt and absf(l.z) < hh.z + rt:
+							_hit(b, l, r, Vector3(px[i], py[i], pz[i]), Vector3(ux, uy, uz), dt)
+							x = _hp.x
+							y = _hp.y
+							z = _hp.z
+							ux = _hv.x
+							uy = _hv.y
+							uz = _hv.z
+							# (a blade's only a blade to it while it's shoving it: at a blade standing still a clod settles as anywhere)
+							var kd := bkind[b]
+							if kd == K_BLADE and not _hpush:
+								kd = K_BODY
+							if kd > tk:
+								tk = kd
+					bm >>= 1
+					b += 1
 		if x < _x0 or x > _x1:
 			x = clampf(x, _x0, _x1)
 			ux = 0.0
@@ -402,14 +852,40 @@ func step(dt: float) -> void:
 		var hc := (int(cz) >> 1) * hw + (int(cx) >> 1)
 		var mm := cmm[i]
 		var ht: float = oy + grid.height_at(cx, cz) * CELL
+		if y < ht - CAVE and int(grid.column_top(int(cx), int(cz))) > int((y - oy) * INV_CELL):
+			# (well under the surface, ground over it: in a tunnel, or come up against a wall)
+			var how := _cave(i, x, y, z, ux, uy, uz, a, dt)
+			if how == 0:
+				i += 1
+				continue
+			if how == 1:
+				continue
+			if how == 3:
+				# (a wall in the open: it's back where it was across, and goes by the surface there)
+				x = _hp.x
+				z = _hp.z
+				ux = _hv.x
+				uz = _hv.z
+				cx = (x - ox) * INV_CELL
+				cz = (z - oz) * INV_CELL
+				hc = (int(cz) >> 1) * hw + (int(cx) >> 1)
+				ht = oy + grid.height_at(cx, cz) * CELL
 		var heap := _hm[hc] - mm
 		var h := ht + mini(heap, HEAP_FULL) * HEAP_M if heap > 0 else ht
+		if tk == K_BLADE:
+			# (at a blade's face they stack: each on those counted before it in its square this step)
+			heap = _hn[hc]
+			h = ht + mini(heap, HEAP_FACE) * HEAP_M
 		if y - r > h + SKIN:
 			# (how many steps it can't come down in: falling as it is and a metre a second faster, the ground rising
 			# under it as steeply as dirt lies)
 			var k := int((y - r - h - 0.05) / ((absf(ux) + absf(uz)) * 0.7 + 1.0 - minf(uy, 0.0)) * 60.0) - 1
 			if k > 0:
 				nap[i] = mini(k, NAP_MOST)
+			if tk >= K_BUCKET:
+				# (off the ground on a bucket or in a tray: it's held there, it doesn't age)
+				a = 0.0
+				age[i] = 0.0
 			px[i] = x
 			py[i] = y
 			pz[i] = z
@@ -425,7 +901,8 @@ func step(dt: float) -> void:
 			i += 1
 			continue
 		# on the ground (on a square that's full of them: it's part of the heap now)
-		if heap >= HEAP_FULL and settled < DEP_FRAME and _deposit(i, true):
+		var free := tk != K_BLADE
+		if heap >= HEAP_FULL and free and settled < DEP_FRAME and _deposit(i, true):
 			_remove(i)
 			settled += 1
 			continue
@@ -435,12 +912,12 @@ func step(dt: float) -> void:
 			y = minf(h + r, y + HEAP_UP)
 		if _gst[hc] < frame:
 			_slopes(hc)
-		var gx := _gxp[hc] if (int(cx) & 1) != 0 else _gxm[hc]
-		var gz := _gzp[hc] if (int(cz) & 1) != 0 else _gzm[hc]
-		var g2 := gx * gx + gz * gz
+		var sx := _gxp[hc] if (int(cx) & 1) != 0 else _gxm[hc]
+		var sz := _gzp[hc] if (int(cz) & 1) != 0 else _gzm[hc]
+		var g2 := sx * sx + sz * sz
 		var inv := 1.0 / sqrt(1.0 + g2)
-		var nx := -gx * inv
-		var nz := -gz * inv
+		var nx := -sx * inv
+		var nz := -sz * inv
 		var vn := ux * nx + uy * inv + uz * nz
 		if vn < -BOUNCE_V:
 			var k := (1.0 + REST) * vn
@@ -460,7 +937,13 @@ func step(dt: float) -> void:
 				ux = 0.0
 				uy = 0.0
 				uz = 0.0
+				spn[i] = 0.0
 			else:
+				# (rolling: it turns as fast as it goes, about the line across its way)
+				spn[i] = sp / r
+				if sp > 0.3:
+					axx[i] = uz / sp
+					azz[i] = -ux / sp
 				f = 1.0 - f / sp
 				ux *= f
 				uy *= f
@@ -471,16 +954,16 @@ func step(dt: float) -> void:
 				_hnt.append(hc)
 			_hn[hc] += mm
 			if sp < SLOW:
-				var rs := rest[i] + dt
+				var rs := rest[i] + dt if free else 0.0
 				rest[i] = rs
-				if ((rs >= REST_S and g2 < SLOPE2) or rs >= STUCK_S or a >= AGE_S) and settled < DEP_FRAME and _deposit(i, a < AGE_MOST):
+				if ((free and ((rs >= REST_S and g2 < SLOPE2) or rs >= STUCK_S or a >= AGE_S)) or a >= AGE_MOST) and settled < DEP_FRAME and _deposit(i, a < AGE_MOST):
 					_hn[hc] -= mm
 					_remove(i)
 					settled += 1
 					continue
 			else:
 				rest[i] = 0.0
-				if a >= AGE_S and settled < DEP_FRAME and _deposit(i, a < AGE_MOST):
+				if ((free and a >= AGE_S) or a >= AGE_MOST) and settled < DEP_FRAME and _deposit(i, a < AGE_MOST):
 					_hn[hc] -= mm
 					_remove(i)
 					settled += 1
@@ -504,6 +987,108 @@ func step(dt: float) -> void:
 	_ht = _hnt
 	_hnt = st
 	_hnt.clear()
+	if _mm:
+		_draw(dt)
 	step_us = Time.get_ticks_usec() - t0
-	var per := float(step_us) / maxf(1.0, float(n + settled))
-	us_per_clod = per if us_per_clod <= 0.0 else us_per_clod * 0.9 + per * 0.1
+	# (what a clod costs, from steps with enough of them to say: a handful's time is mostly the step's own, and made
+	# a clod look so dear that the next ones let go were refused, 13 of 300 in stage 3's test)
+	if n + settled >= PER_FROM:
+		var per := float(step_us) / float(n + settled)
+		us_per_clod = per if us_per_clod <= 0.0 else us_per_clod * 0.9 + per * 0.1
+
+# ---------------------------------------------------------------- drawing
+
+## The clods drawn, under `parent`: one MultiMesh of lumps (DsLook.clod_mesh), a buffer a step. Each instance is where
+## its clod is (no turn or size in its transform: the shader, shaders/ds_dirt.gdshader, turns and sizes it from the
+## instance's custom data: _pack, its turn, the line it turns about), so a clod costs seven numbers a step to draw.
+func make_draw(parent: Node3D) -> void:
+	_mm = MultiMesh.new()
+	_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_mm.use_custom_data = true
+	_mm.mesh = DsLook.clod_mesh(1)
+	var most := FLY_MAX + GHOSTS
+	_mm.instance_count = most
+	_buf.resize(most * 16)
+	_buf.fill(0.0)
+	for i in most:
+		_buf[i * 16] = 1.0
+		_buf[i * 16 + 5] = 1.0
+		_buf[i * 16 + 10] = 1.0
+	_mm.buffer = _buf
+	_mm.visible_instance_count = 0
+	_shown = 0
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://scripts/voxel/digsite/shaders/ds_dirt.gdshader")
+	mat.render_priority = 1
+	var cols := PackedVector3Array()
+	for c: Color in DsMats.COL:
+		cols.append(Vector3(c.r, c.g, c.b))
+	while cols.size() < 16:
+		cols.append(Vector3(0.45, 0.25, 0.16))
+	mat.set_shader_parameter("soil_cols", cols)
+	_mmi = MultiMeshInstance3D.new()
+	_mmi.name = "Dirt"
+	_mmi.multimesh = _mm
+	_mmi.material_override = mat
+	_mmi.top_level = true
+	_mmi.custom_aabb = AABB(origin, Vector3(_w, _h, _d) * CELL)
+	_mmi.visible = false
+	parent.add_child(_mmi)
+	_mmi.global_transform = Transform3D.IDENTITY
+
+# the buffer brought up to date and shown: the clods, then the settled ones shrinking away
+func _draw(dt: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	var buf := _buf
+	var most := _mm.instance_count
+	var k := mini(n, most)
+	var o := 0
+	var i := 0
+	while i < k:
+		var a := ang[i] + spn[i] * dt
+		ang[i] = a
+		buf[o + 3] = px[i]
+		buf[o + 7] = py[i]
+		buf[o + 11] = pz[i]
+		buf[o + 12] = csz[i]
+		buf[o + 13] = a
+		buf[o + 14] = axx[i]
+		buf[o + 15] = azz[i]
+		o += 16
+		i += 1
+	var j := 0
+	while j < gn:
+		var t := gt[j] - dt
+		if t <= 0.0:
+			gn -= 1
+			if j != gn:
+				gx[j] = gx[gn]
+				gy[j] = gy[gn]
+				gz[j] = gz[gn]
+				gbase[j] = gbase[gn]
+				gsize[j] = gsize[gn]
+				gang[j] = gang[gn]
+				gax[j] = gax[gn]
+				gaz[j] = gaz[gn]
+				gt[j] = gt[gn]
+			continue
+		gt[j] = t
+		if i < most:
+			var f := t / SHRINK_S
+			buf[o + 3] = gx[j]
+			buf[o + 7] = gy[j] - gsize[j] * (1.0 - f) * 0.6
+			buf[o + 11] = gz[j]
+			buf[o + 12] = gbase[j] + floorf(gsize[j] * f * 400.0) / 800.0
+			buf[o + 13] = gang[j]
+			buf[o + 14] = gax[j]
+			buf[o + 15] = gaz[j]
+			o += 16
+			i += 1
+		j += 1
+	if i > 0:
+		_mm.buffer = buf
+	if i != _shown:
+		_shown = i
+		_mm.visible_instance_count = i
+		_mmi.visible = i > 0
+	draw_us = Time.get_ticks_usec() - t0
