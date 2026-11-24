@@ -3,23 +3,34 @@ extends Node3D
 ## Dynamite at the Dig Site (stage 9): a stick put down and lit (the Dynamite's left click, DsDynamite), its fuse
 ## hissing and sparking for FUSE seconds (run), then it goes off: a sphere of the ground blown out, bigger in soft
 ## ground than hard (DsMats.BLAST: dirt all of RADIUS, stone 60%, hard rock less; bedrock and the edge never; a prop
-## goes too), a shell round it cracked loose (it slumps); what's blown out flies as chunks that land as loose blocks
-## round the crater (nothing's made or lost: a blasted ore pocket's ore lies there to be shovelled up). A roof it opens
-## up may cave in (stage 7: it all wakes). Anyone near is hurt, nearer worse. The game that runs the ground blows it
-## up and lands the chunks; a guest's stick goes to the host as an action ("dyn"), and the guest gets "boom" events
-## for the bang, the flash and chunks to watch. Owned by the voxel session.
+## goes too), a shell round it cracked loose (it slumps); what's blown out is thrown as clods (DsDirt: chunks mostly,
+## that fly, bounce, roll and melt into the ground round the crater; dirt physics, stage 7), nothing made or lost. Ore
+## isn't thrown: it lies loose in the hole, in whole blocks, to be shovelled up (a clod's dirt melts into the loose
+## layer, which is of one material a column). A roof it opens up may cave in (stage 7: it all wakes). Anyone near is
+## hurt, nearer worse. The game that runs the ground blows it up and throws the clods; a guest's stick goes to the
+## host as an action ("dyn"), and the guest gets "boom" events for the bang, the flash and a few chunks to watch
+## (its own, nothing in them, till it's sent the clods: stage 8). Owned by the voxel session.
 
 const FUSE := 4.0
 const RADIUS := 1.3             # m, in the softest ground
 const CRACK := 1.35             # the shell cracked loose, past the hole
 const HURT := 70.0              # at the middle
 const HURT_R := 4.5             # m out it hurts
-const CHUNKS := 22
-const CHUNK_S := 0.22           # m, a flying chunk's size
+const CHUNKS := 22              # (what a guest's shown)
+const CHUNK_S := 0.22           # m, one of those's size
+const THROW_UP_LO := 3.5        # m/s up the clods are thrown, least and most ...
+const THROW_UP_HI := 6.5
+const THROW_NEAR := 1.0         # ... to come down this far off, least and most (m, in dirt; less far from a smaller hole):
+const THROW_FAR := 2.7          # a quarter falls back in the hole, the rest is its rim and the scatter round it
 
 var site: Node3D                # DigSite
 var sticks = {}                # id -> {at, t, node, real}
-var flying = []                # {node, v, m, n, real}
+var flying = []                # a guest's chunks to watch: {node, v}
+var clods = true               # (the tests' baseline: false, what's blown out is laid round the crater at once)
+var thrown = 0                 # (the tests: clods thrown so far, and the mm in them; what went straight down)
+var thrown_mm = 0
+var laid_mm = 0
+var _out = false               # clods thrown by a blast may still be in the air
 var booms = 0                  # (the tests')
 var last = {}                  # (the tests: the last blast's {n, cracked, at})
 var _seq = 0
@@ -111,7 +122,10 @@ func _process(dt: float) -> void:
 				_blow(s.at)
 		elif fmod(float(s.t), 0.5) < dt:
 			site.arena.sound.play("dig_scrape", s.at, -12.0, 2.5)   # (the fuse fizzing)
-	# the chunks in the air
+	# (the clods a blast threw: at rest, when there's none awake)
+	if _out and (site.dirt == null or site.dirt.awake() == 0):
+		_out = false
+	# a guest's chunks to watch
 	var tr: DsTerrain = site.terrain
 	for i in range(flying.size() - 1, -1, -1):
 		var f: Dictionary = flying[i]
@@ -124,30 +138,76 @@ func _process(dt: float) -> void:
 		if top == -INF:
 			top = 0.0
 		if (p.y <= top and float((f.v as Vector3).y) < 0.0) or p.y < -30.0:
-			if bool(f.real):
-				var q = _inside(p)
-				_dump_spread(q, int(f.m), int(f.n))
 			node.queue_free()
 			flying.remove_at(i)
 
-# a point kept on the grid (a chunk landing in the field: on the site's edge instead)
-func _inside(p: Vector3) -> Vector3:
-	var half: float = site.SIZE * 0.5 - 1.2
-	return Vector3(clampf(p.x, site.AT.x - half, site.AT.x + half), p.y, clampf(p.z, site.AT.z - half, site.AT.z + half))
-
-## n loose blocks of m dumped at p, spilling over to the columns round it when one's full
-func _dump_spread(p: Vector3, m: int, n: int) -> int:
+# What a blast at `at` blew out (counts: blocks by material, n of them) thrown as clods from the hole: chunks mostly,
+# bigger ones as the awake fill up (twice over a fifth of the room, three times over half, as DsDirt.spawn_mass), out
+# and up from under the hole's middle. Ore lies in the hole in whole blocks. All of it's kept.
+func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float) -> void:
 	var tr: DsTerrain = site.terrain
-	var left = n
-	var r = 0
-	while left > 0 and r < 6:
-		for dz in range(-r, r + 1):
-			for dx in range(-r, r + 1):
-				if maxi(absi(dx), absi(dz)) != r or left <= 0:
-					continue
-				left -= tr.dump(p + Vector3(dx, 0, dz) * DsTerrain.CELL, m, mini(left, 24))
-		r += 1
-	return n - left
+	var d: DsDirt = site.dirt
+	var c = tr.to_cells(at)
+	var r = DsTerrain.CELL * pow(maxf(1.0, float(n)) * 0.2387, 1.0 / 3.0)     # (a ball of n blocks)
+	for m in counts.size():
+		var mm: int = counts[m] * DsTerrain.MM
+		if mm <= 0:
+			continue
+		if m >= DsMats.COAL and m <= DsMats.GEM:
+			var put: int = tr.grid.fill_sphere(c, RADIUS / DsTerrain.CELL + 2.0, m, counts[m], true)
+			mm -= put * DsTerrain.MM
+			laid_mm += put * DsTerrain.MM
+			if mm > 0 and d:
+				d.lay(at, m, mm)
+				laid_mm += mm
+			continue
+		if d == null:
+			continue
+		if not clods:
+			# (the tests' baseline: in a ring round the hole, at once)
+			var k = CHUNKS
+			for j in k:
+				var one = mm / (k - j)
+				var a = TAU * j / k
+				d.lay(at + Vector3(cos(a), 0, sin(a)) * RADIUS * 1.3, m, one)
+				mm -= one
+				laid_mm += one
+			continue
+		while mm >= DsDirt.CRUMB:
+			var coarse = 1
+			if d.n * 5 > d.fly_max:
+				coarse = 3 if d.n * 2 > d.fly_max else 2
+			var k = d._rnd() % 20
+			var one = DsDirt.CHUNK
+			if k < 2:
+				one = DsDirt.CRUMB
+			elif k < 9:
+				one = DsDirt.CLOD
+			one = mini(one * coarse, mm)
+			# from over the hole's middle (the top half of a ball half its size) ...
+			var o = Vector3(d.randf01() - 0.5, d.randf01() - 0.5, d.randf01() - 0.5) * 2.0
+			if o.length_squared() > 1.0:
+				o = o.normalized() * d.randf01()
+			var p = at + Vector3(o.x, absf(o.y), o.z) * r * 0.5
+			if tr.grid.get_cell(int((p.x - tr.origin.x) / DsTerrain.CELL), int((p.y - tr.origin.y) / DsTerrain.CELL), int((p.z - tr.origin.z) / DsTerrain.CELL)) != 0:
+				p = at + Vector3(o.x * 0.1, 0.1, o.z * 0.1)
+			# ... up, and out as far as it takes to come down THROW_NEAR to THROW_FAR m off (the small ones further)
+			var out = Vector3(o.x, 0.0, o.z)
+			if out.length_squared() < 0.0004:
+				out = Vector3(1, 0, 0).rotated(Vector3.UP, d.randf01() * TAU)
+			var up = lerpf(THROW_UP_LO, THROW_UP_HI, d.randf01())
+			var far = lerpf(THROW_NEAR, THROW_FAR, d.randf01()) * power * (1.12 if one <= DsDirt.CLOD else 1.0)
+			var vel = out.normalized() * (far * 9.8 / (2.0 * up)) + Vector3(0, up, 0)
+			if d.spawn(p, vel, m, one):
+				thrown += 1
+				thrown_mm += one
+			else:
+				laid_mm += one
+			mm -= one
+		if mm > 0:
+			d.lay(at, m, mm)
+			laid_mm += mm
+	_out = d != null and d.awake() > 0
 
 # (the game that runs the ground) the bang: the hole, the cracks, the chunks, the hurt
 func _blow(at: Vector3) -> void:
@@ -155,7 +215,7 @@ func _blow(at: Vector3) -> void:
 	var got: Dictionary = tr.grid.blast_sphere(tr.to_cells(at), RADIUS / DsTerrain.CELL, PackedFloat32Array(DsMats.BLAST), CRACK)
 	var counts: PackedInt32Array = got.counts
 	last = {"n": int(got.n), "cracked": int(got.cracked), "at": at}
-	# the chunks: each carrying its share of what came out, by material
+	# a guest's chunks to watch: each its share of what came out, by material (what's real is the clods: _throw)
 	var mats = []
 	for m in counts.size():
 		if counts[m] > 0:
@@ -171,11 +231,12 @@ func _blow(at: Vector3) -> void:
 			if c > 0:
 				chunks.append([m_n[0], c])
 	var seed = randi()
+	_throw(at, counts, int(got.n), clampf(pow(maxf(1.0, float(got.n)) / 2300.0, 1.0 / 3.0), 0.35, 1.2))
 	_boom_fx(at, RADIUS, [seed, chunks], true)
 	site.net.event("boom", [at, RADIUS, [seed, chunks]])
 	site.arena.hurt_players_near(at, HURT_R, HURT)
 
-# the bang, the flash, the dust, the chunks flying (both games; only the one that runs the ground lands them)
+# the bang, the flash, the dust (both games); a guest's chunks to watch (where the ground runs they're clods: _throw)
 func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	booms += 1
 	if not site.active:
@@ -198,6 +259,8 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	rng.seed = int(chunks_in[0]) if chunks_in.size() > 0 else 1
 	var list: Array = chunks_in[1] if chunks_in.size() > 1 else []
 	for c in list:
+		if real:
+			break
 		var mi = MeshInstance3D.new()
 		var bm = BoxMesh.new()
 		bm.size = Vector3.ONE * CHUNK_S * clampf(sqrt(float(c[1])) / 8.0, 0.6, 1.6)
@@ -208,7 +271,7 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 		add_child(mi)
 		mi.global_position = at + Vector3(rng.randf_range(-0.3, 0.3), 0.2, rng.randf_range(-0.3, 0.3))
 		var dir = Vector3(rng.randf_range(-1, 1), rng.randf_range(0.8, 1.6), rng.randf_range(-1, 1)).normalized()
-		flying.append({"node": mi, "v": dir * rng.randf_range(4.0, 8.0) * (r / RADIUS), "m": int(c[0]), "n": int(c[1]), "real": real})
+		flying.append({"node": mi, "v": dir * rng.randf_range(4.0, 8.0) * (r / RADIUS), })
 	# a cloud of dust
 	var ps = CPUParticles3D.new()
 	ps.one_shot = true
@@ -233,6 +296,6 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	ps.emitting = true
 	ps.finished.connect(ps.queue_free)
 
-## Everything still in the air (or lit): the chunks land, the sticks... (the tests, leaving)
+## Anything still lit or in the air: a stick, a blast's clods not yet at rest, a guest's chunks (the tests, leaving)
 func busy() -> bool:
-	return not sticks.is_empty() or not flying.is_empty()
+	return not sticks.is_empty() or not flying.is_empty() or _out

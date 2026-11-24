@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: stages 1 to 4 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 7 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -272,6 +272,15 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   p95 <= baseline + 3.0 ms. Dingo test still passes.
 - **Owner sees**: dirt pouring out of the bucket, rattling into the tray, spilling over the side if badly aimed.
 - **Out of scope**: clods stacking as a visible volume inside the tray (the tray level is still the counted load).
+- *As built in stage 6*: `DsMachine.let_go` spawns the clods (`DsDirt.spawn_mass`, at the lip, going as the lip
+  goes); for `POUR_FREE` s (0.3; the excavator 0.6) a poured clod goes through buckets' boxes, since it is coming out
+  of one. A bucket still pours no more over a tray than the tray has room for (`DsTruck.room()`, the clods over it
+  counted). The loaders had no "overflow" or "lip tear" before: both were added (`DsMachine._tear`: 10% of each bite
+  as crumbs from the lip; a full Dingo or Bobcat bucket sheds 35% of what it pushes on the same way). Loads take in
+  clods through `DsDirt.take_in` (at a bucket's or tray's boxes for 0.15 s and slower than 0.4 m/s against them). A
+  clod on top of a tray wall or a bucket that is not taken in slides off after 1 s; one hanging over any box's edge
+  goes on off it. The old timer path (`_falling`, `_land_falling`, `falling_n`, `DsTruck.incoming`) is gone;
+  `pour_clods = false` on a machine lands its pour at once (the test's baseline, and what happens with no `DsDirt`).
 
 ### Stage 7: blasts, hand tools and cave-ins
 
@@ -287,6 +296,15 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   <= baseline worst + 8 ms. Dynamite 12/0, tools 15/0, cave 9/0, tunnel 7/0 unchanged.
 - **Owner sees**: blasts throw chunks that bounce and roll; a shovel flicks crumbs; a cave-in drops lumps.
 - **Out of scope**: detaching whole connected slabs of a bank (needs native code).
+- *As built in stage 7*: `DsBlasts._throw` spawns the clods itself (55% chunks, 35% clods, 10% crumbs, two and three
+  times the size as the awake fill up), each thrown up at 3.5 to 6.5 m/s and out as far as brings it down 1.0 to
+  2.7 m off. `_dump_spread` and the host's own chunk ballistics are gone; a guest still gets its 22 chunks to watch
+  (nothing in them) until stage 8 sends it clods. Ore is not thrown: it lies loose in the hole in whole blocks
+  (`fill_sphere`), since a clod's dirt melts into the loose layer, which is one material a column. `DsBlasts.clods =
+  false` lays it all round the crater at once (the test's baseline). The shovel and the pick flick 15% (`DsTools.FLICK`)
+  of a bite as crumbs, in whole crumbs, ore never, a guest's bites never; the hammer does not. A cave event's lumps are
+  3 x 3 balls of 19 blocks dug out of the falling roof (`DsCaves.lumps`, 171 blocks an event at the most).
+  Tests: dynamite 15/0, tools 17/0, cave 14/0 (the checks that were there, and new ones), blast 20/0.
 
 ### Stage 8: co-op and save
 

@@ -3,7 +3,9 @@ extends SceneTree
 ## its own (no arena): a 1 m tunnel through the dirt holds; a 4 m room dug in the dirt creaks (a warning), then its
 ## roof falls into it as loose dirt, nothing made or lost; the same room down in the stone holds (stone spans 6 m);
 ## a room with a post left in the middle holds (the post halves its span); a room that's going, held up by a post put
-## in before it falls, settles instead. Owned by the voxel session.
+## in before it falls, settles instead. And (dirt physics, stage 7) with the lumps: the middle of a roof that falls
+## comes down as clods (DsCaves.lumps, 200 blocks an event at most), which land in the room and are put back there in
+## whole blocks, nothing made or lost. Owned by the voxel session.
 
 var passed := 0
 var failed := 0
@@ -96,5 +98,61 @@ func _initialize() -> void:
 				g2.set_cell(x, y, z, DsMats.WOOD)
 	ev = _settle(g2, 100)
 	check(_kinds(ev).has(3) and not _kinds(ev).has(2), "held up in time, it settles (%s)" % str(_kinds(ev)))
+	_lumps()
 	print("DSCAVE done %d passed, %d failed" % [passed, failed])
 	quit()
+
+# the 4 m room again on a ground of its own, its fall's middle as lumps (as DsCaves.poll does it in the site)
+func _lumps() -> void:
+	var g := _grid()
+	var top := g.column_top(200, 200)
+	var d := DsDirt.new()
+	d.setup(g)
+	d.cap_us = 0
+	_room(g, 300, top - 20, 300, 32, 12, 32)
+	var total: int = g.ground_mm()
+	var over := 0               # (the ground's top over the room and round it, before)
+	for z in range(290, 342):
+		for x in range(290, 342):
+			over += int(g.height_at(x + 0.5, z + 0.5) * 1000.0)
+	var falls := 0
+	var most := 0
+	var went := 0
+	var awake_most := 0
+	var drift := 0
+	var steps := 0
+	var roofed := 0
+	for i in 200:
+		g.settle(1000000)
+		var ev := g.take_cave_events()
+		for j in range(0, ev.size() - 4, 5):
+			if ev[j] == 2:
+				falls += 1
+				var n0 := d.n
+				var n := DsCaves.lumps(g, d, ev[j + 1], ev[j + 2], ev[j + 3])
+				most = maxi(most, n)
+				went += n
+				for q in range(n0, d.n):
+					if d._roofed(q):
+						roofed += 1
+		# (the dirt ticks 10 times a second in the site: six clod steps to each)
+		for s in 6:
+			if d.n > 0:
+				d.step(1.0 / 60.0)
+				steps += 1
+			awake_most = maxi(awake_most, d.n)
+		drift = maxi(drift, absi(int(g.ground_mm()) + d.mass_mm() + d.owed_mm() - total))
+	var made := d.settled_n + d.n + d.direct_n
+	check(falls > 0 and went > 0 and most <= 200, "a 4 m room's roof falls: %d blocks of it come down as lumps (%d falls, %d at the most a fall: 200 at most)" % [went, falls, most])
+	check(made > 0 and roofed == made, "%d clods, every one let go under the roof (%d awake at the most)" % [made, awake_most])
+	check(drift == 0, "not a mm made or lost at any tick (%d)" % drift)
+	# (a clod that lands where the whole roof's come down by then, the sky over it, is laid on the ground as any other)
+	check(d.n == 0 and d.settled_n == made and d.buried_n * 10 >= d.settled_n * 9, "they all come to rest in the room: %d of %d put back in blocks under what's left of the roof, the rest where it's open to the sky by then (%d still awake after %d steps)" % [d.buried_n, d.settled_n, d.n, steps])
+	var owed := d.owed_mm()
+	d.land_all()
+	var over2 := 0
+	for z in range(290, 342):
+		for x in range(290, 342):
+			over2 += int(g.height_at(x + 0.5, z + 0.5) * 1000.0)
+	check(int(g.ground_mm()) == total and d.mass_mm() + d.owed_mm() == 0, "after land_all it's all ground again (%d mm were owed)" % owed)
+	print("DSCAVE   the ground's top over the room: %d before, %d after (cells x 1000, summed)" % [over, over2])

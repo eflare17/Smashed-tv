@@ -1,9 +1,10 @@
 class_name DsTruck
 extends DsMachine
 ## The tip truck (stage 10), like the digger game's Truck: six wheels, it turns as it rolls (steered wheels), quicker
-## than the rest but it won't climb as steep. A bucket poured over its tray (the Dingo's, the Bobcat's, the
-## excavator's) fills the tray instead of the ground (DsMachines.catcher); R tips the tray up and out it pours behind,
-## loose, in a pile (F lowers it). It hauls concrete supports down: parked by the site office, L loads it with them
+## than the rest but it won't climb as steep. What a bucket pours over its tray (the Dingo's, the Bobcat's, the
+## excavator's) are clods (DsDirt) that land in the tray, its floor and walls boxes to them, and are its load once
+## they lie still there; badly aimed they go down its side (the dirt physics' stage 6). R tips the tray up and out it
+## pours over the tail as clods, into a heap behind (F lowers it). It hauls concrete supports down: parked by the site office, L loads it with them
 ## (paid for, $8 each); on foot at its back, G takes one into your backpack. In co-op the host's game runs it, as every
 ## machine; a guest's loading and taking go to the host as events and come back. Owned by the voxel session.
 
@@ -28,6 +29,7 @@ var _v_tip = 0.0               # its ram, eased (-1 .. 1)
 var tray_load = {}             # material -> mm in the tray
 var load_n = 0
 var props = 0                  # concrete supports on it
+var caught = 0                 # (tests: mm of clods that landed in its tray and became its load)
 var _pour_acc = 0.0
 var _tray: Node3D
 var _lump: MeshInstance3D
@@ -156,12 +158,16 @@ func clod_boxes() -> Array:
 	out.append_array(tray_boxes())
 	return out
 
-## Blocks of m poured in (a bucket over it): -> how many fitted
-var incoming = 0               # blocks falling into its tray from a bucket, not landed yet (DsMachine.let_go)
-
-## Room in its tray, less what's already falling into it
+## Room in its tray (mm), less what's already falling into it or lying in it not yet its load: the clods in it and
+## over it (DsMachine.let_go pours no more than this over it)
 func room() -> int:
-	return maxi(0, CAPACITY - load_n - incoming)
+	var d: DsDirt = site.dirt
+	var coming = 0
+	if d != null and d.n > 0:
+		coming = d.mass_in(global_transform * Transform3D(Basis.IDENTITY, TRAY_AT + Vector3(0, 2.6, 0)), Vector3(TRAY.x * 0.5 + 0.1, 2.8, TRAY.z * 0.5 + 0.1))
+	return maxi(0, CAPACITY - load_n - coming)
+
+## mm of m poured in (a bucket over it): -> how many fitted
 
 func take(m: int, n: int) -> int:
 	var k = mini(n, CAPACITY - load_n)
@@ -235,6 +241,13 @@ func _tool(dt: float) -> void:
 	if (tip <= 0.0 and _v_tip < 0.0) or (tip >= 1.0 and _v_tip > 0.0):
 		_v_tip = 0.0
 	_pose_tool()
+	# the clods lying still in the tray, under its rim, are its load (the dirt physics' stage 6: what a bucket pours
+	# over it are clods that land in it, or don't), tipped or not (its floor's a box to them: they'd creep down it).
+	# All of them: what's poured is no more than there's room for (room()), and a few thrown in over that heap it.
+	if _tray:
+		var took = _take_in(0, _tray.global_transform * Transform3D(Basis.IDENTITY, Vector3(TRAY_LONG * 0.5, 0.08 + TRAY_HIGH * 0.5, 0.0)), Vector3(TRAY_LONG * 0.5 - WALL, TRAY_HIGH * 0.5, TRAY_HALF - WALL), 1 << 30, tray_load, dt)
+		load_n += took
+		caught += took
 	if tip > POUR_FROM and load_n > 0:
 		var k = (tip - POUR_FROM) / (1.0 - POUR_FROM)
 		_pour_acc += POUR_RATE * k * dt
@@ -242,10 +255,17 @@ func _tool(dt: float) -> void:
 		if n <= 0:
 			return
 		_pour_acc -= n
-		var at = spout()
+		# (out over the tray's tail as clods, sliding off its floor as it slopes, across its width)
+		var tt = _tray.global_transform
+		var d: DsDirt = site.dirt
+		var back: Vector3 = -tt.basis.x
+		var v0 = forward() * speed
 		while n > 0 and load_n > 0:
 			var m = _most()
-			var put: int = let_go(at + Vector3(0, 1.2, 0), m, mini(n, int(tray_load[m])), null)
+			var w: float = d.randf01() if d else 0.5
+			var u: float = d.randf01() if d else 0.5
+			var at: Vector3 = tt * Vector3(-0.5 - 0.15 * u, 0.3 + 0.3 * u, (w - 0.5) * 2.0 * (TRAY_HALF - 0.3))
+			var put: int = let_go(at, m, mini(n, int(tray_load[m])), null, v0 + back * (1.4 + 1.6 * k), 0.4, 0.1)
 			if put <= 0:
 				break
 			tray_load[m] = int(tray_load[m]) - put

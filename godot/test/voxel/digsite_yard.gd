@@ -190,12 +190,11 @@ func mass() -> Dictionary:
 	var d := ds()
 	var ground: int = d.terrain.grid.ground_mm()
 	var loads := 0
-	var falling := 0
+	var falling := 0            # (nothing's "falling" any more: what a bucket pours is clods, stage 6)
 	for m: DsMachine in d.machines.list:
 		var l = m.get("load_n")
 		if l != null:
 			loads += int(l)
-		falling += m.falling_n()
 	var pack := 0
 	var names := {}
 	for it: String in DsMats.ITEM:

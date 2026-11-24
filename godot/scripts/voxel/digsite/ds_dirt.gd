@@ -65,6 +65,10 @@ const SLIDE_V := 0.2            # m/s more a step a clod on a body's top slides 
 const CAVE := 0.19              # m under the ground's surface a clod's middle is: it's in a hole under a roof or by a wall (or in the ground): the cells decide
 const SHRINK_S := 0.15          # a settled clod's seen shrinking into the ground this long
 const GHOSTS := 256             # of those at once
+const POUR_FREE := 0.3          # s a clod let go from a bucket goes through buckets' boxes (it's coming out of one: spawn's `free`)
+const HELD_S := 0.15            # s a clod's been on a bucket or in a tray, and lies still there, before it's part of the load (take_in)
+const HELD_SLIDE := 1.0         # s on top of a bucket or a tray's wall and not taken in: it slides off (it's not in it)
+const HELD_MOST := 8.0          # s held and neither: it ages again (and is put down in the end, as any clod)
 const DRAW_K := 1.3             # a lump's drawn radius, of its clod's half side (as much dirt as the cube)
 
 var grid                        # DigSiteGrid
@@ -87,6 +91,8 @@ var settled_n := 0              # clods settled so far; of them shed_n forced by
 var shed_n := 0
 var direct_n := 0
 var frame := 0
+var held_n := 0                 # clods at a bucket's or a tray's boxes last step (the machines only look for ones to take in while there are any)
+var taken_n := 0                # (tests: clods taken into a bucket or a tray so far)
 
 # the clods (struct of arrays; a clod deleted is swapped with the last)
 var px := PackedFloat32Array()
@@ -99,6 +105,7 @@ var rad := PackedFloat32Array()
 var nap := PackedByteArray()      # steps it's sure to be in the air yet (the ground's not looked at)
 var rest := PackedFloat32Array()  # how long it's been slow
 var age := PackedFloat32Array()
+var hld := PackedFloat32Array()   # how long it's been on a bucket or in a tray (take_in takes the ones lying still)
 var cmm := PackedInt32Array()     # its dirt (mm)
 var cmat := PackedByteArray()
 var cid := PackedInt32Array()     # (16 bits: the network's, stage 8)
@@ -236,6 +243,51 @@ func mass_in(t: Transform3D, half: Vector3) -> int:
 			sum += cmm[i]
 	return sum
 
+## The clods lying still in a box taken out of the dirt (a bucket's or a truck's tray's, taking them into its load:
+## stage 6): t the box's middle and axes in the world now and `was` a call ago (dt s: what's still against a moving box
+## is still), half its size; up to `room` mm, whole clods only. A clod's taken when it's been at a bucket's or a
+## tray's boxes for HELD_S and is slower than SLOW against the box. -> the mm taken; by material in `out` (material -> mm, added to)
+func take_in(t: Transform3D, was: Transform3D, half: Vector3, room: int, dt: float, out: Dictionary) -> int:
+	if n == 0 or room <= 0:
+		return 0
+	var inv := t.affine_inverse()
+	var cx := t.origin.x
+	var cz := t.origin.z
+	var r2 := half.length_squared()
+	var hx := half.x
+	var hy := half.y
+	var hz := half.z
+	var idt := 1.0 / maxf(dt, 0.0001)
+	var sum := 0
+	var i := n - 1
+	while i >= 0:
+		var dx := px[i] - cx
+		var dz := pz[i] - cz
+		if dx * dx + dz * dz <= r2:
+			var p := Vector3(px[i], py[i], pz[i])
+			var l: Vector3 = inv * p
+			if absf(l.x) <= hx and absf(l.y) <= hy and absf(l.z) <= hz and age[i] >= 0.0:
+				var rel := Vector3(vx[i], vy[i], vz[i]) - (p - was * l) * idt
+				if rel.length_squared() < SLOW * SLOW and hld[i] >= HELD_S and cmm[i] <= room - sum:
+					var m := cmat[i]
+					out[m] = int(out.get(m, 0)) + cmm[i]
+					sum += cmm[i]
+					_gone(i, 2)
+					_remove(i)
+					taken_n += 1
+		i -= 1
+	return sum
+
+## mm of m straight onto the ground under p (world): what's too little for a clod
+func lay(p: Vector3, m: int, mm: int) -> void:
+	if mm > 0:
+		_lay(clampf(p.x, _x0, _x1), clampf(p.z, _z0, _z1), mm, m)
+
+## Whether there's room for `more` clods now (fly_max, the time cap): a pour over a truck's tray that there's none
+## for goes in the tray as it did before the clods, not on the ground under the truck
+func has_room(more := 1) -> bool:
+	return n + more <= _room()
+
 func _rnd() -> int:
 	_rng = (_rng * 1103515245 + 12345) & 0x7fffffff
 	return _rng >> 8
@@ -249,7 +301,8 @@ static func radius_of(mm: int) -> float:
 
 ## A clod of mm of m at p (world), going at v. None (false) if it's under a crumb or there are fly_max already (or the
 ## time cap's biting): the dirt goes straight to the ground under p instead. Either way all of it's kept.
-func spawn(p: Vector3, v: Vector3, m: int, mm: int) -> bool:
+## `free` s (POUR_FREE) it goes through buckets' boxes: it's poured from one.
+func spawn(p: Vector3, v: Vector3, m: int, mm: int, free := 0.0) -> bool:
 	if mm <= 0:
 		return false
 	if mm < CRUMB or n >= _room():
@@ -278,7 +331,8 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int) -> bool:
 	rad[n] = radius_of(mm)
 	nap[n] = 0
 	rest[n] = 0.0
-	age[n] = 0.0
+	hld[n] = 0.0
+	age[n] = -free                  # (under 0: just let go from a bucket)
 	cmm[n] = mm
 	cmat[n] = m
 	cid[n] = _next_id
@@ -300,7 +354,7 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int) -> bool:
 ## mm of m come loose about p, as clods: mostly the middle size, some crumbs and chunks (bigger ones as the awake
 ## fill up: twice over a fifth of fly_max, three times over half), each off at v and up to `spread` m/s more any way,
 ## from within `within` m of p. What's left under a crumb goes straight to the ground. How many clods.
-func spawn_mass(p: Vector3, v: Vector3, m: int, mm: int, spread := 0.5, within := 0.1) -> int:
+func spawn_mass(p: Vector3, v: Vector3, m: int, mm: int, spread := 0.5, within := 0.1, free := 0.0) -> int:
 	var made := 0
 	var coarse := 1
 	if n * 5 > fly_max:
@@ -317,7 +371,7 @@ func spawn_mass(p: Vector3, v: Vector3, m: int, mm: int, spread := 0.5, within :
 			break
 		var o := Vector3(randf01() - 0.5, randf01() - 0.5, randf01() - 0.5) * 2.0
 		var u := Vector3(randf01() - 0.5, randf01() - 0.5, randf01() - 0.5) * 2.0
-		if spawn(p + o * within, v + u * spread, m, one):
+		if spawn(p + o * within, v + u * spread, m, one, free):
 			made += 1
 		mm -= one
 	if mm > 0:
@@ -465,6 +519,7 @@ func _remove(i: int) -> void:
 		nap[i] = nap[n]
 		rest[i] = rest[n]
 		age[i] = age[n]
+		hld[i] = hld[n]
 		cmm[i] = cmm[n]
 		cmat[i] = cmat[n]
 		cid[i] = cid[n]
@@ -477,7 +532,7 @@ func _remove(i: int) -> void:
 
 # room for `most` clods (the arrays only ever grow: n is how many are in use)
 func _grow(most: int) -> void:
-	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz]:
+	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, hld, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz]:
 		a.resize(most)
 
 # the frame's settled dirt laid on the ground
@@ -607,7 +662,7 @@ func set_boxes(list: Array) -> void:
 # bottom. It keeps the box's own speed there, and of its speed against that: none into the face (a bounce if it hit
 # hard), less across it (it's carried). A blade's: one high up its face goes off toward the nearer end. On top of a
 # body or a blade it slides off the side. -> _hp, _hv, _hpush
-func _hit(b: int, l: Vector3, r: float, was: Vector3, v: Vector3, dt: float) -> void:
+func _hit(b: int, l: Vector3, r: float, was: Vector3, v: Vector3, dt: float, held := 0.0) -> void:
 	var h := _bhalf[b]
 	var e := Vector3(h.x + r, h.y + r, h.z + r)
 	var lp: Vector3 = _bpinv[b] * was
@@ -643,7 +698,14 @@ func _hit(b: int, l: Vector3, r: float, was: Vector3, v: Vector3, dt: float) -> 
 		rel -= nrm * (vn * (1.0 + BOX_REST) if vn < -BOUNCE_V else vn)
 	rel -= (rel - nrm * rel.dot(nrm)) * BOX_GRIP
 	var kind := _bkind[b]
-	if kind == K_BLADE and k != 1:
+	var off_x := absf(l.x) - h.x
+	var off_z := absf(l.z) - h.z
+	if k == 1 and sgn > 0.0 and (off_x > 0.0 or off_z > 0.0):
+		# (on top, but its middle's past the box's edge: it's hanging on the edge by its own width, and goes on off
+		# it. Without this what a bucket poured down the outside of a truck's tray lay in a row along its floor's edge)
+		var ka := 0 if off_x > off_z else 2
+		rel += t.basis[ka] * (SLIDE_V if l[ka] >= 0.0 else -SLIDE_V)
+	elif kind == K_BLADE and k != 1:
 		var ka := 2 if h.z >= h.x else 0
 		if k != ka and l.y > h.y * (2.0 * OVER - 1.0):
 			var along: Vector3 = t.basis[ka]
@@ -651,6 +713,10 @@ func _hit(b: int, l: Vector3, r: float, was: Vector3, v: Vector3, dt: float) -> 
 			rel += along * (move_toward(cur, WINDROW_V if l[ka] >= 0.0 else -WINDROW_V, WINDROW_A * dt) - cur)
 	elif kind <= K_BLADE and k == 1 and sgn > 0.0:
 		# (on top of a body or a blade: off its nearer long side)
+		var ka := 0 if h.x <= h.z else 2
+		rel += t.basis[ka] * (SLIDE_V if l[ka] >= 0.0 else -SLIDE_V)
+	elif k == 1 and sgn > 0.0 and held >= HELD_SLIDE and (kind == K_BUCKET or minf(h.x, h.z) < 0.15):
+		# (on top of a bucket, or of a tray's wall, and not taken into the load: off its nearer side)
 		var ka := 0 if h.x <= h.z else 2
 		rel += t.basis[ka] * (SLIDE_V if l[ka] >= 0.0 else -SLIDE_V)
 	hits_n += 1
@@ -769,6 +835,7 @@ func step(dt: float) -> void:
 	if n == 0:
 		step_us = 0
 		draw_us = 0
+		held_n = 0
 		_bstale = true
 		if not _ht.is_empty():
 			for c in _ht:
@@ -816,6 +883,7 @@ func step(dt: float) -> void:
 	var binv := _binv
 	var bhalf := _bhalf
 	var bkind := _bkind
+	var held := 0
 	var i := 0
 	while i < n:
 		var r := rad[i]
@@ -848,8 +916,9 @@ func step(dt: float) -> void:
 					if (bm & 1) != 0:
 						var l: Vector3 = binv[b] * Vector3(x, y, z)
 						var hh := bhalf[b]
-						if absf(l.x) < hh.x + rt and absf(l.y) < hh.y + rt and absf(l.z) < hh.z + rt:
-							_hit(b, l, r, Vector3(px[i], py[i], pz[i]), Vector3(ux, uy, uz), dt)
+						# (one just poured from a bucket goes through buckets: a < 0)
+						if absf(l.x) < hh.x + rt and absf(l.y) < hh.y + rt and absf(l.z) < hh.z + rt and (a >= 0.0 or bkind[b] != K_BUCKET):
+							_hit(b, l, r, Vector3(px[i], py[i], pz[i]), Vector3(ux, uy, uz), dt, hld[i])
 							x = _hp.x
 							y = _hp.y
 							z = _hp.z
@@ -864,6 +933,11 @@ func step(dt: float) -> void:
 								tk = kd
 					bm >>= 1
 					b += 1
+		if tk >= K_BUCKET:
+			held += 1
+			hld[i] += dt
+		else:
+			hld[i] = 0.0
 		if x < _x0 or x > _x1:
 			x = clampf(x, _x0, _x1)
 			ux = 0.0
@@ -905,7 +979,7 @@ func step(dt: float) -> void:
 			var k := int((y - r - h - 0.05) / ((absf(ux) + absf(uz)) * 0.7 + 1.0 - minf(uy, 0.0)) * 60.0) - 1
 			if k > 0:
 				nap[i] = mini(k, NAP_MOST)
-			if tk >= K_BUCKET:
+			if tk >= K_BUCKET and a > 0.0 and hld[i] < HELD_MOST:
 				# (off the ground on a bucket or in a tray: it's held there, it doesn't age)
 				a = 0.0
 				age[i] = 0.0
@@ -999,6 +1073,7 @@ func step(dt: float) -> void:
 		vz[i] = uz
 		i += 1
 	settled_n += settled
+	held_n = held
 	_flush()
 	# this step's heap is the next one's
 	for c in _ht:

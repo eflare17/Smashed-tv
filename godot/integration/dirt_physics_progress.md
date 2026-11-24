@@ -658,3 +658,264 @@ second or so (stragglers on a steep flank within 6 s).
   test). It reads as the heap trickling; if it reads as jitter, `STUCK_S` is the knob.
 - `feel.txt` was re-written by the guard run (this stage's game: 12.52 m). `feel_base.txt` is still stage 3's.
 - The clod's shade against the skin, and popping at settle, need judging at full frame rate on a real GPU.
+
+## Stage 6: buckets, pouring and the truck
+
+**What was built**
+
+- `ds_machine.gd`: `let_go(p, m, mm, truck, v, spread, within, free)` lets what a bucket pours or a tray tips go as
+  clods (`DsDirt.spawn_mass`) at `p`, going at `v`; 40 clods' worth a step at the most (`POUR_MOST`). The timer and
+  `_land_falling` are gone, with `_falling`, `falling_n()` and `DsTruck.incoming`. What is under a crumb's worth
+  (125 mm), and all of it when there is no room for more clods, goes straight where it is bound: the tray, or the
+  ground under `p`. `_pour_v` is how the lip is going, eased over an eighth of a second. `_tear` and `_take_in` are
+  shared by the loaders and the excavator (below). `pour_clods = false` on a machine lands its pour at once, as
+  before the clods: the test's baseline, and what happens where there is no `DsDirt`.
+- `ds_dingo.gd` (the Bobcat through it): tipped, the load comes out along the lip (across its width), going as the lip
+  goes plus 0.5 to 1.5 m/s off the bucket's floor, at the rate the curl sets (as before: 300 blocks a second right
+  forward). **Lip tear**: a tenth of each bite never reaches the bucket, it is let go at the lip as crumbs that tumble
+  on ahead. **Overflow**: full, 35% of what the lip pushes on ahead is taken out of the sweep and rolls off the same
+  way (`OVER_SHARE`, the dozer's share). **Scooping**: clods lying still in or against the bucket are in it, while
+  there is room and it is not tipped.
+- `ds_excavator.gd`: opened, it pours clods from under its pin (`pour_point`), thrown on a little when it is swinging;
+  the same tear at its teeth and the same taking in while it holds.
+- `ds_truck.gd`: the clods lying still in the tray under its rim are its load (`_take_in`: its floor and walls were
+  already boxes to them, stage 3). Tipped past 0.45 it lets clods go over the tail, across the tray's width, sliding
+  off at 1.4 to 3 m/s. `room()` is the tray's room less the clods in it and over it, so a bucket still pours no more
+  over a tray than fits.
+- `ds_dirt.gd`: `take_in(box, where it was, half, room, dt, load)` (a clod at a bucket's or a tray's boxes for 0.15 s
+  and slower than 0.4 m/s against the box); `spawn`/`spawn_mass` take `free`, the seconds a poured clod goes through
+  buckets' boxes (it is coming out of one: 0.3 s, the excavator 0.6); `held_n`, `lay`, `has_room`. Two rules for
+  clods on top of boxes: one whose middle is past the box's edge goes on off it (it hung there by its own width);
+  one on a tray wall's top or a bucket's top for 1 s and not taken in slides off. Held for 8 s and neither, it ages
+  again, so no clod is awake for ever.
+- The pour's particle stream is 14 crumbs where the stream is real clods (solo or host); a guest keeps the 60.
+- `test/voxel/digsite_pour_test.gd`, `test/voxel/digsite_pour_shots.gd`.
+- Tests edited because `falling_n()` is gone and a pour is clods till they rest: `digsite_dingo_test` (its total
+  counts the clods; it waits for them to be at rest, 8 s at most instead of 4), `digsite_fleet_test` (the same two
+  waits, 8 and 16 s), `digsite_yard.gd` (`falling` is 0).
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_pour_test.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_pour_shots.gd -- --nosave --out=res://integration/dirt_shots
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_yard_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=stage6
+
+(70 s; 60 s; 60 s. The test does (a) to (c) twice in the one run, back to back: with every machine's `pour_clods`
+off, the baseline, then with the clods; `--order=ba` the other way round. It writes `integration/dirt_shots/pour.txt`.)
+
+**`digsite_pour_test`: `DSPOUR done 21 passed, 0 failed`** (both orders; below, baseline first / clods first)
+
+| Criterion | Baseline (no clods, same run) | Measured |
+|---|---|---|
+| (a) Dingo, 32500 mm scripted into its bucket, lip over the tray's middle: the tray gains >= 85% | 100% at once | 32500 of 32500: 100% / 100%; the rest (0) on the ground; poured in 1.28 s, at rest 1.57 s on |
+| (b) lip 2.00 m off the tray's middle (0.8 m outside its side): the tray gains 0 | 0 | 0 / 0; all 32500 on the ground, at rest 3.85 / 4.75 s on |
+| (c) the truck tips: >= 95% of its load on the ground behind it within 10 s | 100% | 32500 of 32500: 100% / 100%; tray empty 2.25 s after the tip starts, heap out to 3.1 / 2.6 m behind the tail (baseline 1.4) |
+| mass exact in (a), (b), (c), every second and at each end | 0, 0, 0 mm | 0, 0, 0 mm |
+| `step_us` mean <= 2.0 ms | | 0.14 / 0.14 ms (p95 0.36 / 0.33); 85 / 94 awake at the most, none put down by the caps |
+| frame p95 <= baseline + 3.0 ms | 12.80 / 12.60 ms | 14.23 / 14.58 ms: +1.43 / +1.98 (means 7.53 -> 9.04, 7.82 -> 8.44) |
+| added (d): the Bobcat standing outside the truck, nose at the tray's side, lip over the rim: the tray gains >= 85% | | 65000 of 65000: 100%; its lip 0.37 / 0.34 m over the rim at the lowest; mass exact |
+| added (e): the Bobcat 0.2 m further back, its lip over the side wall as it tips: some in, some over the side | | 25% / 16% in the tray, the rest on the ground beside the truck; mass exact |
+| added (f): a full tray (500000 mm, scripted) tipped: all out, `step_us` mean <= 2.0 ms, awake <= `FLY_MAX` | | all 500000 on the ground, mass exact; empty 9.7 s on, at rest 16.0 s on; 167 / 170 awake at the most; step mean 0.43 / 0.39 ms (p95 0.80); heap 1.52 m high; frame mean 13.8 / 12.8, p95 20.2 / 18.3 ms |
+
+Earlier runs of the same test the same hour gave frame p95 differences of -1.18, -0.96, -0.12 and +1.62 ms: the
+frame time here is mostly the arena's own and moves by a millisecond or two between runs. The clods' own step is
+0.14 ms.
+
+**Where a criterion's meaning had to be chosen, and what the plan had wrong**
+
+- **"Pour centred over the tray" with the Dingo puts the Dingo inside the truck.** Its lip reaches 0.8 m ahead of its
+  middle and, arms right up and tipped, is 1.44 to 1.79 m off the ground; the tray's rim is at 2.23 m. So (a) is as
+  the plan says (the lip over the tray's middle, 0.51 m over its floor: it pours from inside the tray's walls), and
+  that is also how the Dingo loaded the truck before this stage (machines pass through each other; the old rule
+  took anything poured within the tray's footprint from 0.2 m under its floor up). (d) is the pour a driver can
+  really make from outside, with the Bobcat, whose arms reach over the rim.
+- **The loaders had no "overflow" or "10% lip tear" to turn into clods**; both are new here (see above).
+- **"On the ground behind it"** is the rise of the ground in the columns from 0.5 m ahead of the tray's tail to 8 m
+  behind it, 4 m either side; clods still awake at 10 s do not count (there were none).
+- **A bucket still holds back over a full tray** (`room()`), as before; so the tray takes in every clod that lies in
+  it, and a few thrown in from elsewhere heap it past its 100%.
+
+**Three things found by looking, and fixed**
+
+- Clods that went down the outside of the tray lay in a row along the tray floor's edge for ever (150 of them in
+  (e)): a box is grown by a clod's radius on every side, so its top has a ledge that wide, and a clod on a tray is
+  held and does not age. Now a clod on top with its middle past the edge goes on off it.
+- The excavator's pour threw 11 clods (2250 of 77500 mm) over the truck's cab in the fleet test: opened, its bucket
+  hangs under where it pours from, turning, and a clod still in its box when the box counted again was flung 3 m.
+  Its poured clods now go through buckets for 0.6 s. (The fleet test then puts all 77500 mm in the tray, as before.)
+- The first shots run hung waiting for clods on top of the tray's side wall to come to rest: hence the slide rule.
+
+**Shots** (`integration/dirt_shots/`, looked at): `pour_1_stream.png` (the Bobcat's bucket over the rim, lumps under
+its lip in the tray), `pour_2_tray.png` (the tray's load after), `pour_3_miss.png` (backed off: a stream of lumps
+down the outside of the tray's wall), `pour_4_tip.png` (the tray up, lumps coming off its tail onto a growing heap),
+`pour_5_heap.png` (the heap at rest, lumpy), and the yard's four again as `stage6_1_start.png` to
+`stage6_4_side.png` (the push looks as in stage 5). Stills only: at one or two frames a second here the stream could
+not be judged as motion, and no clip was made (the stage does not ask for one).
+
+**What the owner will see**: tip a bucket and the dirt comes out as lumps along its lip, faster the further it is
+tipped, falls, bounces and rolls into a pile; over the truck it rattles into the tray and the tray's load comes up as
+the lumps come to rest; with the lip over the wall or short of it, part or all of it goes down the truck's side onto
+the ground. Tip the truck and the load comes off the tail as lumps that tumble down a growing heap. Digging with a
+loader, crumbs flick off the lip and roll on ahead, more of them once the bucket is full, and lumps lying in the way
+are scooped up.
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 (dingo and fleet after the edits above; fleet before the excavator's 0.6 s: 19/1) |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` | 22/0: (d) 12.52 m, frame p95 21.14 ms against the committed 20.98 |
+| `digsite_dozer_clod_test` | 16/0: 12.52 m, step mean 0.31 ms, frame p95 +0.37 ms on its baseline |
+| save pair | 4/0, 6/0 |
+| sync pair (enet) | host 6/0, guest 9/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0: 12.52 m both runs, frame p95 19.46 and 18.50 ms, mass exact |
+
+**Known gaps and things later stages must know**
+
+- **A guest sees no clods** (stage 8): a pour on its screen is the old particle stream, and the tray's load and the
+  heap come up as the host's clods land. Nobody looked at a guest's screen.
+- **The Dingo cannot pour over the tray's rim** (see above): it loads the truck with its bucket through the tray's
+  wall, as it always did. Its clods start inside the tray. Raising its arms' reach, or lowering the tray's sides, is
+  a design change for the owner, not made here.
+- **Clods in the tray are not a visible volume**: they lie on its floor for a sixth of a second and are then the
+  counted load (the lump that rises). Out of scope by the plan.
+- **A clod pushed against a tipped bucket or lying on a full one** is not taken in; it slides off after a second.
+- **Spilled dirt beside the truck stands steep against it** (the truck's body is a wall to loose dirt) until the truck
+  moves; clods on that bank take up to 6 s to settle.
+- **The time cap** (`cap_us`) was off in the test, as in stage 5's. With it biting, or `FLY_MAX` reached, a pour over
+  a tray goes straight into the tray (as before the clods) and a pour over the ground straight onto it; neither
+  happened in any run (0 laid straight down).
+- **The lip tear's share (10%) and the overflow's (35%) were not tuned by eye**; `TEAR` and `OVER_SHARE` are the knobs.
+  The Dingo test's bucket has 30920 mm in it after its 3 s bite (not compared with the game before this stage).
+- `baseline.txt` is still stage 1's (the yard test's guard run re-wrote it; put back). `feel.txt` and
+  `dozer_clod.txt` are this stage's guard runs.
+- Sound: nothing new; clod ticks are stage 9.
+
+## Stage 7: blasts, hand tools and cave-ins
+
+**What was built**
+
+- `ds_blasts.gd`: what a blast blows out (`blast_sphere`'s counts) is thrown as clods (`_throw`, straight through
+  `DsDirt.spawn`): 55% chunks (2000 mm), 35% clods, 10% crumbs, twice and three times that size as the awake fill up
+  (`spawn_mass`'s rule). They start over the hole's middle, go up at 3.5 to 6.5 m/s and out as far as brings them
+  down 1.0 to 2.7 m off (less from a smaller hole: in stone), the small ones a little further; then they bounce and
+  roll as any clod. About a quarter falls back in the hole, the rest is its rim and the scatter round it. The
+  host's own chunk ballistics and `_dump_spread` are gone. `busy()` is true while a blast's clods are awake.
+  `clods = false` lays everything round the crater at once (the test's baseline).
+- **Ore is not thrown**: coal, iron, gold and gems lie loose in the hole in whole blocks (`fill_sphere`), to be
+  shovelled up as before. A clod's dirt melts into the loose layer, and the layer is of one material a column
+  (`lay_put`: "the layer takes the material there's more of"), so an ore clod on dirt would have turned to dirt.
+- `ds_tools.gd`: 15% (`FLICK`) of a shovel's or a pick's bite never reaches the backpack: it flies off the tool as
+  crumbs (125 mm each), back toward you and up, to roll by your feet and melt into the ground. In whole crumbs (a
+  12-block scoop flicks 2); taken out before the spade's carry is worked out, so the backpack and the carry add up
+  as before. Ore never; the hammer's chip never; a guest's bites never (its clods would be nobody's: stage 8).
+- `ds_caves.gd`: at a fall, the middle of the roof comes down as lumps (`DsCaves.lumps`): 3 x 3 balls of 19 blocks,
+  3 blocks apart, dug out of the three blocks' depth that has just turned loose (`dig_sphere`, hardness 1: what's
+  loose and soft ground, never rock or a prop), each let go where it was as a chunk and a smaller clod. 171 blocks an
+  event at the most; the rest is the grid's own loose fall. They land in the room and are put back there in whole
+  blocks (stage 3's tunnel rule).
+- No native change. Nothing in `dig_site.gd` changed.
+- `test/voxel/digsite_blast_clod_test.gd` (the stage's test), `test/voxel/digsite_blast_shots.gd`.
+- Tests extended: `digsite_dynamite_test` (the clods thrown and at rest; after the tunnel blast, the cave-in's
+  lumps and the mass after `land_all`: 12 checks -> 15), `digsite_tools_test` (its ground count takes in the clods;
+  the flick's share; the crumbs back in the ground: 15 -> 17), `digsite_cave_test` (the 4 m room again with a
+  `DsDirt` on the bare grid: 9 -> 14). Every check that was there is still there and passes.
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_blast_clod_test.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_blast_shots.gd -- --nosave --out=res://integration/dirt_shots
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_yard_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=stage7
+
+(56 s; 58 s; 60 s. The test blows five sticks' worth in the one run, each on fresh ground of the yard 12 m from the
+last: baseline, clods, baseline, clods (`--order=ba`: clods first), then four sticks together. It writes
+`integration/dirt_shots/blast.txt`.)
+
+**`digsite_blast_clod_test`: `DSBLAST done 20 passed, 0 failed`** (four runs: three baseline first, one clods first;
+below, the committed run / the clods-first one; the two sticks of a run as a, b)
+
+| Criterion | Baseline (laid at once, same run) | Measured |
+|---|---|---|
+| one stick: blown out, a crater | 2316 blocks (289500 mm), crater 0.92 m | 2316 blocks; crater 0.72, 0.92 / 0.86, 0.84 m |
+| mass exact each second, at rest, after `land_all()` | 0 mm | 0, 0, 0 mm; 0 mm left in clods |
+| >= 90% of the blast's mm comes to rest within 3 x the radius (3.9 m) | | a 98.7%, b 97.4% (3750 and 7500 mm beyond; the furthest clod 4.15 and 6.32 m) |
+| peak awake <= `FLY_MAX` 800 | 0 | 198 and 184 (all 289500 mm as clods, none laid straight, none put down by the caps) |
+| `step_us` p95 <= 4.0 ms | | 0.61 / 0.63 ms (mean 0.31, worst 1.55 / 1.93) |
+| worst frame, the bang to 6 s after, <= baseline's worst + 8 ms | 50.30, 50.13 / 51.62, 57.38 ms | 51.02, 56.21 / 51.59, 51.46 ms: +0.89 / -0.16 (the better of two each) |
+| added: over 100 clods, every one seen to rest; at rest within 10 s | | 198 and 184; 6.02 s |
+| added: four sticks together (0.9 m apart) | | 387 clods (800000 mm, 2067 mm each on average against 1470 for one stick: the coarsening), 387 awake at the most, mass exact; worst frame 57.9 / 52.2 ms, step worst 1.4 / 1.9 ms |
+
+- **The worst frame is the bang's own** in both: about 50 ms, the `blast_sphere` and the sections it re-meshes; the
+  clods add nothing that shows over it. Frame means from the bang to 6 s on: 7.7 to 9.5 ms baseline, 9.1 to 10.1 ms
+  with the clods.
+- **"The better of the two of each"**: the first tuning run had one clod stick at 80.0 ms beside 52.4 for the other
+  and 49.9, 48.7 baseline; it did not come back in the three runs after (51.0, 56.2, 51.6, 51.5), so it is taken as
+  this box's other job, and the test compares the better stick of each kind and prints all four.
+- **Tuning by the criterion**: the first throw (2.2 to 6.2 m/s out from under the hole) put 99.7% within 3.9 m and
+  filled the crater back in (-0.03 m deep: failed the crater check). Thrown to come down 1.1 to 3.4 m off: 84.6% and
+  79.9% within 3.9 m (the bounce and roll add a metre). At 1.0 to 2.7 m: 98.7% and 97.4%, craters 0.72 to 0.92 m.
+- **`FLY_MAX` is not reached by dynamite**: four sticks together make 387. "Coarsening works" is shown by the lump
+  size going up, not by the cap being held.
+
+**The extended tests**
+
+| Test | Result | New checks |
+|---|---|---|
+| `digsite_dynamite_test` | 15/0 | 194 clods thrown, all 272750 mm, at rest 6.0 s after the bang (the old "not one made or lost" check now waits for them: `busy()`); after the blast in the propped room, 429 blocks of its roof came down as lumps; after four blasts and a cave-in, `land_all()`, 0 mm drift |
+| `digsite_tools_test` | 17/0 | the shovel flicks 2 of a 12-block bite (17%); 4 crumbs in all, back in the ground, 0 owed |
+| `digsite_cave_test` | 14/0 | 4 falls, 684 of the 768 falling blocks as lumps (171 a fall), 72 clods all let go under the roof, 0 mm drift at every tick, 70 put back in blocks in the room and 2 on the ground where the roof was right through by then |
+| dynamite pair (enet) | host 4/0, guest 5/0 | (as before) |
+
+**Shots** (`integration/dirt_shots/`, looked at): `blast_1_bang.png` (a third of a second after: a column of lumps
+going up over the hole), `blast_2_fall.png` (a second after: lumps of three sizes coming down and bouncing out to
+about 3 m), `blast_3_crater.png` (at rest: the crater and its rim, lumpy), `blast_4_flick.png` (the shovel's third
+bite: four crumbs in the air over the hole), `blast_5_cave.png` (in a 4 m room as its roof goes: the dust burst's
+cubes fill the view, the lumps are the orange shapes at the bottom, by your feet), and the yard's four again as
+`stage7_1_start.png` to `stage7_4_side.png` (the push looks as in stage 6). Stills only. The cave picture shows
+little: the old dust burst hides most of the lumps from inside the room.
+
+**What the owner will see**: light a stick and run: the ground goes up as a couple of hundred lumps, big ones and
+small, that rise 1 to 2 m, come down around the hole, bounce, roll back into the crater or out onto the grass, and
+melt into a rough rim over the next few seconds. Dig with the shovel or the pick and a few crumbs fly back off it at
+each bite and roll by your feet (and your backpack gets 15% less of each bite: they are on the ground to be dug
+again). When a tunnel's roof goes, lumps come down with the dust and pile on the floor.
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` | 22/0 / 16/0 / 21/0 |
+| save pair | 4/0, 6/0 |
+| sync pair (enet) / dynamite pair (enet) | host 6/0, guest 9/0 / host 4/0, guest 5/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0 |
+
+**Known gaps and things later stages must know**
+
+- **A guest sees no clods** (stage 8): its blast is the old 22 chunks that fall and vanish, with the crater's rim
+  coming up as the host's clods land; its own shovel flicks nothing and its backpack gets the whole bite, the
+  host's gets 85%. Nobody looked at a guest's screen.
+- **The plan said "own ballistics removed"**: the host's are; the guest's cosmetic chunks keep a dozen lines of them
+  until stage 8 replaces them with the seeded clods.
+- **Blast clods take 6.0 s to be "at rest"** every time: a few on the crater's steep side keep creeping until their
+  age puts them down (stage 5's gap, the same `STUCK_S` knob). Most are down within 2 s.
+- **Ore blown out is not lumps**, and was not tested: no test's blast reaches ore. Stone, clay, sand and gravel are
+  thrown as clods of their own colour and melt into the layer (which takes the material there is more of in a column,
+  as for everything the machines move).
+- **A stick in a tunnel**: the clods hit the roof and fall in the room (the dynamite test's last blast: mass exact).
+  Not looked at.
+- **Flicked crumbs are whole crumbs**: a slipped rusty-shovel bite (a third the size) flicks 1 or 0, so its share is
+  0 to 25%, not 10 to 20; a full bite's is 17%. Over many bites it is 15% to the rounding.
+- **The fill (the shovel's right click) and the hammer make no clods.**
+- **Cave lumps dig at hardness 1**: beside the loose blocks they can take a block or two of soft firm ground where a
+  column's roof was a block higher than the event's. Counted (it is in the clods), not lost.
+- **The cave-in's dust burst hides its lumps** from inside (see the shot); thinning it is a look change for stage 9.
+- `baseline.txt` is still stage 1's (the yard guard re-wrote it; put back). `feel.txt`, `dozer_clod.txt` and
+  `pour.txt` are this stage's guard runs.
+- Sound: nothing new; clod ticks are stage 9.

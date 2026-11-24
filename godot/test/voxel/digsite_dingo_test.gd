@@ -46,8 +46,10 @@ func _dingo() -> DsDingo:
 	return _ds().machines.list[0] as DsDingo
 
 # everything solid, in mm over a column (every block's 125 and the loose layer); the bucket's load is mm too
+# (the ground, and the clods: what its lip tears off and what it pours are clods till they've come to rest)
 func _total(g: DigSiteGrid) -> int:
-	return g.ground_mm()
+	var d: DsDirt = _ds().dirt
+	return g.ground_mm() + (d.mass_mm() + d.owed_mm() if d != null else 0)
 
 func _beside() -> void:
 	var d := _dingo()
@@ -121,7 +123,7 @@ func _solo() -> bool:
 				_next(7)
 		7:
 			var d := _dingo()
-			if (d.load_n == 0 and d.falling_n() == 0) or t - mark > 4.0:      # (and landed: it falls a moment)
+			if (d.load_n == 0 and ds.dirt.awake() == 0) or t - mark > 8.0:      # (and landed, the clods at rest: stage 6 of the dirt physics)
 				d.curl_cmd = 0.0
 				var loose: int = ds.terrain.grid.loose_mm() - int(v.loose0)
 				check(d.load_n == 0 and loose >= int(v.n), "tipped: it all pours out, loose (%d mm loose now, %d poured)" % [loose, v.n])

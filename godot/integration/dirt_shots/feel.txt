@@ -23,10 +23,10 @@ DSFEEL ok   (f) it's stopped at the bank, not short of it or in it (0.30 m off),
 DSFEEL ok   (f): not a mm made or lost (0 mm drift; ground 5272383250, loads 0, clods 0)
 DSFEEL ok   (d) the patch levelled again: flat to +-1 cell (0.00 to 0.00)
 DSFEEL (d) the yard's push, 20 s, blade 0.10 m in: 12.52 m; slowest 0.00 m/s, at the end 0.00 m/s; mean slip 0.68; the most a frame lost 0.137 m/s; heap ahead 1.23 m, 1461 blocks banked; stops: 'The blade's full: back up, or raise it' 469 frames; 
-DSFEEL (d) frames 1201, mean 14.31, p95 19.07, worst 64.58 ms; layer_us mean 211, p95 327; show_us mean 325, p95 501
+DSFEEL (d) frames 1201, mean 13.22, p95 16.80, worst 55.38 ms; layer_us mean 193, p95 290; show_us mean 308, p95 487
 DSFEEL ok   (d) not a mm made or lost at any second of it (0 mm at the most)
 DSFEEL ok   (d): not a mm made or lost (0 mm drift; ground 5264318403, loads 0, clods 847)
 DSFEEL (d) the baseline (stage 3's game, this test): p95 20.98 ms, 14.66 m, top 3.20 m/s
 DSFEEL ok   (d) the 20 s push moves >= 80% of the baseline's metres (12.52 of 14.66: 85%)
-DSFEEL ok   (d) frame p95 <= the baseline's + 0.5 ms (19.07 against 20.98: -1.91)
+DSFEEL ok   (d) frame p95 <= the baseline's + 0.5 ms (16.80 against 20.98: -4.19)
 DSFEEL done 22 passed, 0 failed
