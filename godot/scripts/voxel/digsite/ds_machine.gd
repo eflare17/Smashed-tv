@@ -190,8 +190,6 @@ func step(dt: float) -> void:
 		_follow(dt)
 	_pose_now()
 	_fx_clock += dt
-	if runs():
-		_land_falling()
 	_pour_fx(dt)
 	effort_now = shake_effort()
 	_weight_fx(dt)
@@ -212,52 +210,106 @@ func step(dt: float) -> void:
 			_clunk_wait = 0.7           # (a blade skimming the ground doesn't rattle them off)
 		_stop_was = stop
 
-# Dirt let go of, falling (the owner, 10 Nov: "the dust appears before it's even dropped"): it lands, in the ground or a
-# truck's tray, when it's fallen there, with the stream of lumps falling from the bucket; until then it's in the air.
-# [lands at (_fx_clock), where it was let go, material, blocks, the truck it falls in or null]
-var _falling = []
+# Dirt let go of (the owner, 10 Nov: "the dust appears before it's even dropped"; 24 Nov: the dirt should "feel like"
+# the buildings' bricks): what a bucket pours or a tray tips is a stream of clods (DsDirt: the dirt physics' stage 6)
+# from where it comes out, going as its lip goes. They fall, hit what's under them, roll; over a truck's tray they
+# land in it and are its load once they lie still (DsTruck._take_in), and badly aimed they go over its side.
+const POUR_MOST := 40 * DsDirt.CLOD    # mm let go in a step at the most (40 clods)
+const TEAR := 0.1               # of what a bucket's lip cuts, torn off as crumbs tumbling ahead of it, not into it
 var _fx_clock = 0.0
+var pour_clods = true          # (tests: false, what it pours lands at once, as before the clods: the baseline)
+var poured = 0                 # (tests: mm it's let go)
+var torn = 0                   # (tests: mm its lip's torn off or its full bucket's spilled, as clods)
 
-## Lets n blocks of m go at p, over the truck (DsMachines.catcher) or the ground: they land when they've fallen. -> how
-## many it let go (no more than a truck has room for)
-func let_go(p: Vector3, m: int, n: int, truck) -> int:
-	var floor = ground_y(p.x, p.z)
+## Lets n mm of m go at p, going at v, over the truck (DsMachines.catcher) or the ground: as clods (each up to `spread`
+## m/s off v, from within `within` m of p). -> how many mm it let go (no more than a truck has room for, with what's
+## already falling into it, nor than POUR_MOST). What's under a crumb's worth, and all of it when there's no room for
+## more clods, goes straight where it's bound: the truck's tray, or the ground under p.
+## For `free` s they go through buckets' boxes (they're coming out of one).
+func let_go(p: Vector3, m: int, n: int, truck, v := Vector3.ZERO, spread := 0.35, within := 0.08, free := DsDirt.POUR_FREE) -> int:
 	if truck:
 		n = mini(n, truck.room())
-		if n <= 0:
-			return 0
-		truck.incoming += n
-		floor = (truck.global_transform * DsTruck.TRAY_AT).y + 0.3
-	_falling.append([_fx_clock + fall_time(p.y - floor), p, m, n, truck])
+	n = mini(n, POUR_MOST)
+	if n <= 0:
+		return 0
+	poured += n
+	var d: DsDirt = site.dirt
+	var whole = n - n % DsDirt.MM
+	if d == null or not pour_clods or (truck and not d.has_room(4)):
+		whole = 0
+	var odd = n - whole
+	if odd > 0:
+		if truck:
+			odd -= truck.take(m, odd)
+		if odd > 0:
+			# (a pour stops at the height it came from; what's left, if the heap's already that high, goes on top of it)
+			odd -= site.terrain.pour(p, m, odd)
+			if odd > 0:
+				var c = site.terrain.cell_of(p)
+				site.terrain.grid.put_layer(c.x, c.z, odd, m)
+	if whole > 0:
+		d.spawn_mass(p, v, m, whole, spread, within, free)
 	return n
+
+## How where it pours from (p, this step) is going: what it pours goes with it. Eased over an eighth of a second (a
+## ram's jitter, a couple of cm in a step, is over a metre a second, and threw clods from an excavator's bucket 4 m up
+## clean over the truck's cab), and none of a jump (carried somewhere by a test: it's standing).
+func _pour_v(p: Vector3, dt: float) -> Vector3:
+	var raw: Vector3 = (p - _pour_p) / maxf(dt, 0.001) if _pour_p.is_finite() else Vector3.ZERO
+	_pour_p = p
+	if raw.length() > 8.0:
+		_pour_vel = Vector3.ZERO
+	else:
+		_pour_vel = _pour_vel.lerp(raw, minf(1.0, dt * 8.0))
+	return _pour_vel
+var _pour_p = Vector3.INF
+var _pour_vel = Vector3.ZERO
 
 ## How long dirt takes to fall h m (from standing)
 static func fall_time(h: float) -> float:
 	return sqrt(2.0 * maxf(h, 0.0) / 9.8)
 
-## What it's let go of that hasn't landed yet (blocks)
-func falling_n() -> int:
-	var k = 0
-	for f in _falling:
-		k += int(f[3])
-	return k
+## A bucket's bite (mm by material, from DsTerrain.blade) less what its lip tears off: TEAR of it, in whole crumbs,
+## let go as clods from a to b (the lip's ends) going at v and up, to tumble on ahead; and with `room` mm of room in
+## the bucket, what's over that too (it's full: the rest rolls off). -> the counts that go in the bucket
+func _tear(counts: PackedInt32Array, room: int, a: Vector3, b: Vector3, v: Vector3) -> PackedInt32Array:
+	var d: DsDirt = site.dirt
+	if d == null or not pour_clods:
+		return counts
+	for m in counts.size():
+		var c = counts[m]
+		if c <= 0:
+			continue
+		_tear_due += TEAR * c
+		var off = 0
+		if _tear_due >= DsDirt.CRUMB:
+			off = mini(int(_tear_due) / DsDirt.CRUMB * DsDirt.CRUMB, c / DsDirt.CRUMB * DsDirt.CRUMB)
+			_tear_due -= off
+		if c - off > room:
+			off += (c - off - room + DsDirt.CRUMB - 1) / DsDirt.CRUMB * DsDirt.CRUMB
+			off = mini(off, c)
+		room -= c - off
+		counts[m] = c - off
+		torn += off
+		while off > 0:
+			var one = mini(off, DsDirt.CLOD if d.randf01() < 0.4 else DsDirt.CRUMB)
+			off -= one
+			var p: Vector3 = a.lerp(b, d.randf01())
+			d.spawn(p + Vector3(0, 0.12 + 0.1 * d.randf01(), 0), v + Vector3(d.randf01() - 0.5, 1.0 + 1.2 * d.randf01(), d.randf01() - 0.5), m, one, DsDirt.POUR_FREE)
+	return counts
+var _tear_due = 0.0
 
-func _land_falling() -> void:
-	while not _falling.is_empty() and float(_falling[0][0]) <= _fx_clock:
-		var f: Array = _falling.pop_front()
-		var p: Vector3 = f[1]
-		var m: int = f[2]
-		var n: int = f[3]
-		var truck = f[4]
-		if truck and is_instance_valid(truck):
-			truck.incoming = maxi(0, truck.incoming - n)
-			if truck.over_tray(p):
-				n -= truck.take(m, n)
-		if n > 0:
-			# (a pour stops at the height it came from; what's left, if the heap's already that high, goes on top of it)
-			n -= site.terrain.pour(p, m, n)
-			if n > 0:
-				site.terrain.dump(p, m, n)
+## The clods lying still in a box of it (in, the box's middle and axes in its own frame; half its size) taken into a
+## load (material -> mm), up to room mm: -> the mm taken. Only where the dirt runs, and while there are clods at a
+## bucket or a tray at all.
+func _take_in(key: int, box: Transform3D, half: Vector3, room: int, load: Dictionary, dt: float) -> int:
+	var d: DsDirt = site.dirt
+	var was: Transform3D = _box_was.get(key, box)
+	_box_was[key] = box
+	if d == null or d.held_n == 0 or room <= 0:
+		return 0
+	return d.take_in(box, was, half, room, dt, load)
+var _box_was = {}
 
 func _shake_body(dt: float) -> void:
 	if shake_node == null:
@@ -599,7 +651,8 @@ func _pour_fx(dt: float) -> void:
 	var on = _stream_t > 0.0
 	if on and _stream == null:
 		_stream = CPUParticles3D.new()
-		_stream.amount = 60
+		# (where the stream's real clods, solo or the host's, a few crumbs with them; a guest sees no clods yet)
+		_stream.amount = 14 if runs() and pour_clods and site.dirt != null else 60
 		_stream.lifetime = 0.9
 		_stream.local_coords = false
 		_stream.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX

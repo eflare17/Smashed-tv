@@ -54,6 +54,7 @@ const FIRM_RATE := 120.0        # firm blocks a second its teeth cut off a colum
                                 # (at 9 a dragged bite was a 9 cm scrape: the owner, 10 Nov)
 const BOG_AT := 40.0            # firm blocks cut in a tick that hold the arm right back
 const POUR_RATE := 520.0 * DsTerrain.MM
+const POUR_FREE := 0.6          # s what it pours goes through its bucket's box (opened, the bucket hangs under where it pours from, turning: a clod still in its box when that counted again was flung 3 m, over the truck's cab)
 const SEAT_MODEL := Vector3(0.45, 1.2, -0.8)    # (in the house, the digger game's way round: the cab's floor)
 
 var swing = 0.0
@@ -345,7 +346,8 @@ func _tool(dt: float) -> void:
 		_firm_acc -= firm
 		var rows = 2 + ceili(fwd.length() / 0.22)          # (the whole strip the teeth swept this frame)
 		var r: Dictionary = tr.blade(ends[0], ends[1], fwd, rows, 0.75, firm, HARDEST, CAPACITY - load_n, 0.9)
-		var counts: PackedInt32Array = r.counts
+		# (a tenth of the bite torn off at the teeth as crumbs, going as they go: the dirt physics' stage 6)
+		var counts: PackedInt32Array = _tear(r.counts, CAPACITY - load_n, ends[0], ends[1], travel / maxf(dt, 0.001) * 0.5 if travel.length() < 0.15 else Vector3.ZERO)
 		for m in counts.size():
 			if counts[m] > 0:
 				bucket[m] = int(bucket.get(m, 0)) + counts[m]
@@ -359,17 +361,22 @@ func _tool(dt: float) -> void:
 		bog = 0.0
 	# pouring: opened past where it holds, out it comes at the teeth (over the truck: in its tray)
 	var hold = clampf((curl - CURL_EMPTY) / (CURL_HOLDS - CURL_EMPTY), 0.0, 1.0)
+	var pp = pour_point()
+	# (as clods, going as the bucket goes: swung, they're thrown on a little)
+	var pv = _pour_v(pp, dt)
+	if hold >= 1.0 and _bucket:
+		# (holding: clods lying still in it or against it are in it, while there's room)
+		load_n += _take_in(0, _bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(0.64, 0.12, 0.0)), Vector3(0.96, 0.64, BUCKET_HALF + 0.1), CAPACITY - load_n, bucket, dt)
 	if hold < 1.0 and load_n > 0:
 		_pour_acc += POUR_RATE * (1.0 - hold) * dt
 		var n = int(_pour_acc)
 		if n > 0:
 			_pour_acc -= n
-			var pp = pour_point()
 			var truck = site.machines.catcher(pp, self)
 			while n > 0 and load_n > 0:
 				var m = _most()
 				var take = mini(n, int(bucket[m]))
-				var put: int = let_go(pp, m, take, truck)
+				var put: int = let_go(pp, m, take, truck, pv + Vector3(0, -0.6, 0), 0.35, 0.22, POUR_FREE)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put

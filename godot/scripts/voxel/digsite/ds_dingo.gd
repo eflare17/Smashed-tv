@@ -4,7 +4,10 @@ extends DsMachine
 ## LIFT_RATE, CURL_RATE, POUR_FROM). R/F raise and lower the arms, the right mouse button curls the bucket back (it
 ## holds), the left tips it forward (it pours). Drive at the ground with the bucket low and it bites the voxel ground
 ## into the bucket (soil and clay: not rock, it rings on that and stalls); lift it, drive, tip it and what's in it pours
-## out where the bucket's edge is, loose, and slumps into a pile (DsTerrain.dump). The game that runs the ground does
+## out along the bucket's lip as clods (DsDirt: they fall, roll, pile and melt into the ground; over a truck's tray they
+## land in it, or go over its side; the dirt physics' stage 6). A tenth of each bite is torn off at the lip as crumbs
+## that tumble on ahead, a full bucket sheds some of what it pushes the same way, and clods lying still against the
+## bucket are scooped into it. The game that runs the ground does
 ## the digging and pouring; the guest's shows the arms and the bucket from the host's state. Owned by the voxel
 ## session.
 
@@ -32,6 +35,8 @@ const BITE_EVERY := 0.08        # s between bites
 const POUR_RATE := 300.0 * DsTerrain.MM   # mm a second, tipped right forward
 const HARDEST := 2              # soil and clay (DsMats.HARD)
 const ARM_EASE := 5.0           # per second: its rams ease in and out (the excavator's ARM_EASE; the dirt physics' stage 4)
+const OVER_SHARE := 0.35        # of what its lip pushes on ahead once it's full, rolled off it as clods (the dozer's CLOD_SHARE)
+const OVER_STEP := 1500         # mm of that a step at the most
 const ROCK_MOST := 3.0          # rock under its lip holds it this hard (of its drive standing): it rings and stalls
 
 var arm = 0.0                  # radians from level (where the driver's put the arms)
@@ -50,9 +55,11 @@ var _v_lift = 0.0              # its rams, eased (-1 .. 1)
 var _v_curl = 0.0
 var _rock_r = 0.0              # rock, holding it back (fading)
 var dug = 0                    # (tests: mm its bucket's taken or pushed)
+var scooped = 0                # (tests: mm of clods taken into its bucket)
 var firm_rate = 2              # firm blocks off a column at full sweep (the Bobcat: 3)
 var bog = 900.0                # banked blocks that bring it nearly to a stop
 var _pour_acc = 0.0
+var _over_due = 0.0            # mm of what a full bucket pushes on owed to clods (OVER_SHARE of it)
 var _look: Node3D               # the model, turned to face -z (the digger game's face +x)
 var _shake: Node3D              # (its body, arms and bucket: what its engine shakes; the tracks or wheels aren't on it)
 var _rams: Array[DsRam] = []
@@ -328,6 +335,8 @@ func _tool(dt: float) -> void:
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
 	var e = edge()
+	# (how its lip's going: what it pours and what it tears off go with it; carried somewhere by a test, it's standing)
+	var lip_v = _pour_v(e, dt)
 	# the bucket's lip through the ground (the digger game's way, DsTerrain.blade): going forward, not tipped, what
 	# stands above the lip goes in (firm ground only so fast), and once it's full the rest banks up ahead of it (it
 	# pushes, like a small dozer); what's banked against it slows it
@@ -340,8 +349,15 @@ func _tool(dt: float) -> void:
 		# (two rows at the lip; behind them, back to its front wheels, loose dirt only: what's slid in under the bucket
 		# goes in it or ahead, never under the wheels to lift it up onto the pile)
 		var rows = 2 + ceili(_gap() / 0.22)
-		var r: Dictionary = tr.blade(cut_ends[0], cut_ends[1], f, rows, bucket_high + 0.1 + BITE, firm_rate, hardest, capacity - load_n, bucket_high + 0.35 + BITE, share)
-		var counts: PackedInt32Array = r.counts
+		# (full, OVER_SHARE of what it pushes on ahead is taken too, to roll off it as clods: _tear)
+		var room: int = capacity - load_n
+		var over = 0
+		if room < DsDirt.CRUMB and pour_clods and site.dirt != null and _over_due >= DsDirt.CLOD:
+			over = mini(int(_over_due) / DsDirt.MM * DsDirt.MM, OVER_STEP)
+		var r: Dictionary = tr.blade(cut_ends[0], cut_ends[1], f, rows, bucket_high + 0.1 + BITE, firm_rate, hardest, room + over, bucket_high + 0.35 + BITE, share)
+		_over_due = clampf(_over_due + (OVER_SHARE * int(r.moved) if room < DsDirt.CRUMB else 0.0) - maxi(int(r.taken) - room, 0), 0.0, 2.0 * OVER_STEP)
+		# (a tenth of the bite torn off at the lip, tumbling on ahead as crumbs: the dirt physics' stage 6)
+		var counts: PackedInt32Array = _tear(r.counts, room, ends[0], ends[1], f * (maxf(speed, 0.0) + 0.5))
 		for m in counts.size():
 			if counts[m] > 0:
 				bucket[m] = int(bucket.get(m, 0)) + counts[m]
@@ -359,9 +375,14 @@ func _tool(dt: float) -> void:
 	if tip() > POUR_FROM:
 		var be = edge_ends()
 		tr.block(id, be[0], be[1], forward(), _gap() + 0.1, bucket_high)
+		# (and clods lying still in it or against it are in it, while there's room: the ones it's driven into)
+		var took = _take_in(0, _bucket.global_transform * Transform3D(Basis.IDENTITY, Vector3(bucket_len * 0.5 + 0.1, bucket_high * 0.5 + 0.1, 0.0)), Vector3(bucket_len * 0.5 + 0.3, bucket_high * 0.5 + 0.3, bucket_half + 0.1), capacity - load_n, bucket, dt)
+		load_n += took
+		scooped += took
 	else:
 		tr.unblock(id)
-	# pouring: tipped forward, it comes out where the edge is, loose (a pile)
+	# pouring: tipped forward, it comes out along the lip as clods, going as the lip goes and sliding off the bucket's
+	# floor (faster the further it's tipped); over a truck's tray they land in it
 	if tip() < POUR_FROM and load_n > 0:
 		var k = clampf((POUR_FROM - tip()) / (POUR_FROM - POUR_ALL), 0.0, 1.0)
 		_pour_acc += POUR_RATE * k * dt
@@ -373,7 +394,10 @@ func _tool(dt: float) -> void:
 				var m = _most()
 				var take = mini(n, int(bucket[m]))
 				var truck = site.machines.catcher(e, self)
-				var put: int = let_go(e, m, take, truck)
+				var le = edge_ends()
+				var w: float = site.dirt.randf01() if site.dirt else 0.5
+				var out: Vector3 = _look.global_transform.basis * Vector3(cos(curl_at), sin(curl_at), 0.0)
+				var put: int = let_go((le[0] as Vector3).lerp(le[1], 0.12 + 0.76 * w) + out * 0.12, m, take, truck, lip_v + out * (0.5 + 1.0 * k), 0.3, 0.06)
 				if put <= 0:
 					break
 				bucket[m] = int(bucket[m]) - put
