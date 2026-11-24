@@ -4,11 +4,11 @@ DSPOUR the order: the baseline first, then the clods
 DSPOUR baseline (no clods): (a) lip 0.00 m off the tray's middle, 0.51 m over its floor: 32500 mm poured in 1.28 s, the tray +32500 (100.0%), the ground +0; at rest 1.28 s on (0 awake, 0 in the bucket)
 DSPOUR baseline (no clods): (b) lip 2.00 m off the tray's middle: 32500 mm poured, the tray +0, the ground +32500; at rest 1.28 s on (0 awake, 0 in the bucket)
 DSPOUR baseline (no clods): (c) the tray's 32500 mm tipped: empty 2.25 s on; at 10 s the ground behind it +32500 mm (100.0%), the ground in all +32500, 0 mm still in the tray, 0 clods awake (0 mm); the heap out to 1.4 m behind its tail; all at rest 10.00 s on (0 awake)
-DSPOUR baseline (no clods): frames 754, mean 7.53, p95 12.80, worst 50.93 ms; clods awake at the most 0; the clods' step mean 0 us, p95 0, worst 0 over 0 frames with any; 0 taken into loads, 0 laid straight down, 0 put down by the caps
+DSPOUR baseline (no clods): frames 754, mean 7.13, p95 11.98, worst 52.58 ms; clods awake at the most 0; the clods' step mean 0 us, p95 0, worst 0 over 0 frames with any; 0 taken into loads, 0 laid straight down, 0 put down by the caps
 DSPOUR with clods: (a) lip 0.00 m off the tray's middle, 0.51 m over its floor: 32500 mm poured in 1.28 s, the tray +32500 (100.0%), the ground +0; at rest 1.57 s on (0 awake, 0 in the bucket)
 DSPOUR with clods: (b) lip 2.00 m off the tray's middle: 32500 mm poured, the tray +0, the ground +32500; at rest 3.85 s on (0 awake, 0 in the bucket)
 DSPOUR with clods: (c) the tray's 32500 mm tipped: empty 2.25 s on; at 10 s the ground behind it +32500 mm (100.0%), the ground in all +32500, 0 mm still in the tray, 0 clods awake (0 mm); the heap out to 3.1 m behind its tail; all at rest 10.02 s on (0 awake)
-DSPOUR with clods: frames 926, mean 9.04, p95 14.23, worst 57.66 ms; clods awake at the most 85; the clods' step mean 143 us, p95 362, worst 716 over 725 frames with any; 100 taken into loads, 0 laid straight down, 0 put down by the caps
+DSPOUR with clods: frames 926, mean 7.65, p95 12.67, worst 61.96 ms; clods awake at the most 85; the clods' step mean 126 us, p95 322, worst 647 over 725 frames with any; 100 taken into loads, 0 laid straight down, 0 put down by the caps
 DSPOUR ok   (a) the Dingo's lip is over the tray's middle (0.00 m off it)
 DSPOUR ok   (a) the bucket pours empty and the clods come to rest (1.57 s)
 DSPOUR ok   (a) the tray's load gains >= 85% of the poured mm (32500 of 32500: 100.0%)
@@ -20,14 +20,14 @@ DSPOUR ok   (c) and the clods come to rest (10.02 s from the tip's start)
 DSPOUR ok   not a mm made or lost in (a), (b) or (c), at any second or at the end (0, 0, 0 mm)
 DSPOUR ok   nor in the baseline, which makes no clods (0, 0, 0 mm; 0 clods)
 DSPOUR ok   never more awake than FLY_MAX (85 of 800), none put down by the caps
-DSPOUR ok   the clods' step <= 2.0 ms on average (143 us with any awake; p95 362)
-DSPOUR ok   frame p95 <= the baseline's + 3.0 ms (14.23 against 12.80: +1.43; means 9.04 against 7.53: +1.51)
+DSPOUR ok   the clods' step <= 2.0 ms on average (126 us with any awake; p95 322)
+DSPOUR ok   frame p95 <= the baseline's + 3.0 ms (12.67 against 11.98: +0.69; means 7.65 against 7.13: +0.52)
 DSPOUR with clods: (d) the Bobcat's nose 0.00 m from the tray's side, its lip 0.51 m inside it and 0.95 m over its rim (0.37 at the lowest while it poured): 65000 mm poured, the tray +65000 (100.0%); at rest 2.63 s on (0 awake, 0 in the bucket)
 DSPOUR ok   (d) the Bobcat stands outside the tray, its lip over the rim all the pour (0.37 m at the lowest)
 DSPOUR ok   (d) over the rim, the tray gains >= 85% of what the Bobcat pours (65000 of 65000: 100.0%)
 DSPOUR ok   (d) not a mm made or lost (0 mm)
 DSPOUR ok   (e) its lip over the tray's side wall as it tips (0.11 m inside its outer face, level): some in the tray, some over the side (16330 mm in, 25.1%; 48670 on the ground; of 65000; 0 mm drift; at rest 7.33 s on)
-DSPOUR with clods: (f) a full tray (500000 mm) tipped: empty 9.73 s on, all at rest 15.98 s on (0 awake, 0 mm in the tray); the ground +500000; clods awake at the most 167, 0 laid straight down, 0 put down by the caps; the heap behind it 1.52 m high; frames 959, mean 13.84, p95 20.18, worst 70.60 ms; the clods' step mean 425 us, p95 796, worst 4549
+DSPOUR with clods: (f) a full tray (500000 mm) tipped: empty 9.73 s on, all at rest 15.97 s on (0 awake, 0 mm in the tray); the ground +500000; clods awake at the most 169, 0 laid straight down, 0 put down by the caps; the heap behind it 1.53 m high; frames 958, mean 11.34, p95 15.28, worst 59.98 ms; the clods' step mean 372 us, p95 663, worst 1906
 DSPOUR ok   (f) a full tray tips out, all of it on the ground, not a mm made or lost (500000 of 500000 mm; 0 mm drift at the most)
-DSPOUR ok   (f) never more awake than FLY_MAX (167 of 800), the clods' step <= 2.0 ms on average (425 us; p95 796)
+DSPOUR ok   (f) never more awake than FLY_MAX (169 of 800), the clods' step <= 2.0 ms on average (372 us; p95 663)
 DSPOUR done 21 passed, 0 failed

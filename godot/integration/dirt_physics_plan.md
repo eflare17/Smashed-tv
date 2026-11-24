@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: stages 1 to 6 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 7 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -296,6 +296,15 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   <= baseline worst + 8 ms. Dynamite 12/0, tools 15/0, cave 9/0, tunnel 7/0 unchanged.
 - **Owner sees**: blasts throw chunks that bounce and roll; a shovel flicks crumbs; a cave-in drops lumps.
 - **Out of scope**: detaching whole connected slabs of a bank (needs native code).
+- *As built in stage 7*: `DsBlasts._throw` spawns the clods itself (55% chunks, 35% clods, 10% crumbs, two and three
+  times the size as the awake fill up), each thrown up at 3.5 to 6.5 m/s and out as far as brings it down 1.0 to
+  2.7 m off. `_dump_spread` and the host's own chunk ballistics are gone; a guest still gets its 22 chunks to watch
+  (nothing in them) until stage 8 sends it clods. Ore is not thrown: it lies loose in the hole in whole blocks
+  (`fill_sphere`), since a clod's dirt melts into the loose layer, which is one material a column. `DsBlasts.clods =
+  false` lays it all round the crater at once (the test's baseline). The shovel and the pick flick 15% (`DsTools.FLICK`)
+  of a bite as crumbs, in whole crumbs, ore never, a guest's bites never; the hammer does not. A cave event's lumps are
+  3 x 3 balls of 19 blocks dug out of the falling roof (`DsCaves.lumps`, 171 blocks an event at the most).
+  Tests: dynamite 15/0, tools 17/0, cave 14/0 (the checks that were there, and new ones), blast 20/0.
 
 ### Stage 8: co-op and save
 

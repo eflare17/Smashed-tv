@@ -1,9 +1,9 @@
 DSBLAST ok   the patch is flat to +-1 cell (0.00 to 0.00)
-DSBLAST run 0: baseline, 1 stick(s): 2316 blocks blown out, 0 clods (0 mm) thrown, 289500 mm laid straight; awake 0 at the most; at rest 0.02 s after the bang; crater 0.92 m; frames mean 8.48 p95 13.15 worst 49.87 ms; step worst 0.00 ms
-DSBLAST run 1: clods, 1 stick(s): 2316 blocks blown out, 198 clods (289500 mm) thrown, 0 mm laid straight; awake 198 at the most; at rest 6.02 s after the bang; crater 0.72 m; frames mean 9.23 p95 11.96 worst 80.01 ms; step worst 2.20 ms
-DSBLAST run 2: baseline, 1 stick(s): 2316 blocks blown out, 0 clods (0 mm) thrown, 289500 mm laid straight; awake 0 at the most; at rest 0.02 s after the bang; crater 0.92 m; frames mean 8.75 p95 13.09 worst 48.65 ms; step worst 0.00 ms
-DSBLAST run 3: clods, 1 stick(s): 2316 blocks blown out, 184 clods (289500 mm) thrown, 0 mm laid straight; awake 184 at the most; at rest 6.02 s after the bang; crater 0.92 m; frames mean 9.25 p95 13.56 worst 52.36 ms; step worst 1.21 ms
-DSBLAST run 4: clods, 4 stick(s): 0 blocks blown out, 387 clods (800000 mm) thrown, 0 mm laid straight; awake 387 at the most; at rest 6.03 s after the bang; crater 0.59 m; frames mean 10.51 p95 14.84 worst 53.24 ms; step worst 1.46 ms
+DSBLAST run 0: baseline, 1 stick(s): 2316 blocks blown out, 0 clods (0 mm) thrown, 289500 mm laid straight; awake 0 at the most; at rest 0.02 s after the bang; crater 0.92 m; frames mean 7.74 p95 11.64 worst 50.30 ms; step worst 0.00 ms
+DSBLAST run 1: clods, 1 stick(s): 2316 blocks blown out, 198 clods (289500 mm) thrown, 0 mm laid straight; awake 198 at the most; at rest 6.02 s after the bang; crater 0.72 m; frames mean 9.10 p95 11.68 worst 51.02 ms; step worst 0.74 ms
+DSBLAST run 2: baseline, 1 stick(s): 2316 blocks blown out, 0 clods (0 mm) thrown, 289500 mm laid straight; awake 0 at the most; at rest 0.02 s after the bang; crater 0.92 m; frames mean 8.84 p95 13.55 worst 50.13 ms; step worst 0.00 ms
+DSBLAST run 3: clods, 1 stick(s): 2316 blocks blown out, 184 clods (289500 mm) thrown, 0 mm laid straight; awake 184 at the most; at rest 6.02 s after the bang; crater 0.92 m; frames mean 10.05 p95 13.97 worst 56.21 ms; step worst 1.55 ms
+DSBLAST run 4: clods, 4 stick(s): 0 blocks blown out, 387 clods (800000 mm) thrown, 0 mm laid straight; awake 387 at the most; at rest 6.03 s after the bang; crater 0.59 m; frames mean 11.00 p95 15.69 worst 57.92 ms; step worst 1.37 ms
 DSBLAST ok   stick 1 goes off: 2316 blocks blown out, a crater 0.72 m deep
 DSBLAST ok   stick 1: not a mm made or lost (each second 0, at rest 0, after land_all 0; 0 mm left in clods)
 DSBLAST ok   stick 1: all of it thrown or laid (289500 + 0 of 289500 mm)
@@ -20,7 +20,7 @@ DSBLAST ok   stick 2: never more awake than 800 (184 at the most; 0 put down by 
 DSBLAST ok   stick 2: all at rest 6.02 s after the bang
 DSBLAST ok   the baseline: no clods, not a mm made or lost (2316 blocks blown out)
 DSBLAST ok   the baseline: no clods, not a mm made or lost (2316 blocks blown out)
-DSBLAST ok   the clods' step: p95 0.61 ms (4.0 at the most), mean 0.29, worst 2.20, over 1080 frames
-DSBLAST ok   the worst frame from the bang to 6 s after: 52.36 ms with the clods, the baseline's 48.65 (+3.71; 8 more at the most; each: baseline 49.87, baseline 48.65, clods 80.01, clods 52.36)
-DSBLAST ok   four sticks together: 387 clods (800000 mm) thrown, 387 awake at the most (800 at the most), mass exact (0, 0, 0); at rest 6.03 s on; worst frame 53.24 ms, step worst 1.46 ms
+DSBLAST ok   the clods' step: p95 0.61 ms (4.0 at the most), mean 0.31, worst 1.55, over 1080 frames
+DSBLAST ok   the worst frame from the bang to 6 s after: 51.02 ms with the clods, the baseline's 50.13 (+0.89; 8 more at the most; each: baseline 50.30, baseline 50.13, clods 51.02, clods 56.21)
+DSBLAST ok   four sticks together: 387 clods (800000 mm) thrown, 387 awake at the most (800 at the most), mass exact (0, 0, 0); at rest 6.03 s on; worst frame 57.92 ms, step worst 1.37 ms
 DSBLAST done 20 passed, 0 failed
