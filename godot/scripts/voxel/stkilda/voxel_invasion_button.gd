@@ -18,7 +18,7 @@ const BUTTON_OUT := 0.2          # the button's rest, out from the post's middle
 const PRESS := 0.07
 const YELLOW := Color("#f2c230")
 const BLACK := Color("#17181a")
-const RED := Color("#d8231f")
+const RED := Color("#ee2a22")
 const STEEL := Color("#5c646b")
 const RATE := 22050
 
@@ -67,6 +67,9 @@ func _build() -> void:
 	for k in 8:
 		var c := YELLOW if k % 2 == 0 else BLACK
 		SkModels.box(h, Vector3(0.105, 0.06, 0.62), Vector3(-0.3675 + k * 0.105, BUTTON_Y + 0.36, 0.14), c)
+	for k in 8:                               # (its front edge, striped the other way round: seen as you walk up)
+		var c := BLACK if k % 2 == 0 else YELLOW
+		SkModels.box(h, Vector3(0.105, 0.12, 0.03), Vector3(-0.3675 + k * 0.105, BUTTON_Y + 0.33, 0.455), c)
 	for s in [-1.0, 1.0]:
 		for k in 5:
 			var c := BLACK if k % 2 == 0 else YELLOW
@@ -102,7 +105,7 @@ func _build() -> void:
 	button = MeshInstance3D.new()
 	button.name = "Button"
 	var dome := SphereMesh.new()
-	dome.radius = 0.19
+	dome.radius = 0.21
 	dome.height = 0.2
 	dome.is_hemisphere = true
 	button.mesh = dome
@@ -113,7 +116,7 @@ func _build() -> void:
 	red.roughness = 0.35
 	red.emission_enabled = true
 	red.emission = RED
-	red.emission_energy_multiplier = 0.25
+	red.emission_energy_multiplier = 0.7
 	button.material_override = red
 	add_child(button)
 	for side in [1.0, -1.0]:

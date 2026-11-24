@@ -1229,6 +1229,52 @@ On branch `claude/luna-park-enemies` (not merged or published by this job).
   `test/voxel/luna_invasion_shots.gd` (`voxel_shots/luna_invasion_*.png`: `carousel`, `carousel_close`, `coaster`,
   `wheel`, `spider`, `ground`, `phone`).
 
+### The start button, and the Carousel's brake flinging them (24 Nov, the owner: "a way to start with enemies there. Not just there when you spawn in ... A button to start it"; the Carousel: all of them fly off)
+
+On branch `claude/luna-invasion-2` (not merged or published by this job).
+
+- **The button** (`scripts/voxel/stkilda/voxel_invasion_button.gd`, `VoxelInvasionButton`, `sk.button`, made in
+  `VoxelStKilda.build()` after the invasion): a post 8 m in past Mr Moon's face and 3.1 m to the right of the path's
+  middle (the mouth's 2 m either side: it's off the path), turned toward you as you come in: a yellow box with a big red
+  mushroom button, a yellow-and-black striped hood over it, a red "INVASION" board in a striped frame above (both
+  sides; a lamp lights it at night, `SkDayNight.t`), a red lamp on top. You bump into it. Within 2.8 m and looking at
+  the button or the sign (top-down: just by it) the arena's own prompt (`_use_label`, as the control box's) says
+  **"E  start the invasion"**; E (an `InputEventKey`, so a touch E button that sends one works) pushes it: the button
+  goes in with a clunk, a siren winds up (`VoxelInvasionButton.siren()`, an `AudioStreamWAV` made in code as
+  `SkSounds`'), the lamp flashes while it's on, the screen washes red for most of a second, and
+  `VoxelParkInvasion.start(true)` runs. While it's on: **"E  call off the invasion (hold)"**, a bar filling as E's
+  held, 1 s: `stop()`, its enemies gone, the scenery riders back. (The E that started it has to be let go first.) The
+  button follows `invasion.running`, so it's down and flashing when the phone started it too.
+- **Travelling there's peaceful**: St Kilda on the phone doesn't start it. The phone's "Luna Park: Invasion" and
+  `--invasion` / `?invasion` still start it at once (`start()`), as before.
+- **Started at the button, nobody pops up beside you** (`start(inside := true)`): riders within 15 m and in front of
+  you are made 0.3 to 0.7 s later than the rest (under the red wash); nobody at all is made within 12 m for the first
+  3 s; the first of the ground groups comes after 3 s, at the wall as always (14 m or more from you, out of sight if
+  there's such a spot), and if no spot's that far it's the furthest one, never a random one that might be beside you.
+- **The Carousel's brake** (`VoxelCarouselHack.send`'s brake calls `VoxelParkInvasion.carousel_stopped(mid, w, flat
+  out)`): stopped dead from flat out (above `THROW_FROM`, 3 rad/s) every enemy riding it is let go and launched the
+  way its horse was going (0.75 of that, 15 m/s at most) plus 4 to 7 m/s outward and 4.5 to 7 m/s up, scaled by how
+  fast it was turning; they tumble as any body knocked flying (`VoxelBody.launch`), bounce off the buildings, and where
+  they come to rest they're hurt 170 (`FLING_HURT`: dead, every kind that rides; a brute or a shielder would lose 45%,
+  lie 1.6 s longer, get up and come at you). They die through the body's own `hurt`, so they're kills, paid, and the
+  ride's cleared ($20) when its last rider's dead; one that lived is no longer riding, just a park enemy still to
+  kill. From above half speed (1.7 rad/s: speed 3) a third of them (one at least, never all) fall off and are hurt 15;
+  the rest stay on. The scenery rider's still thrown at Luna Palace as before, but with enemies flung the view isn't
+  taken to follow them (`_throw(view)`); with the invasion off it's exactly as it was.
+- **They hold on** while the Carousel's turning faster than 0.9 rad/s (speed 2 up): nobody gets off it for you being
+  near or its riders being hit (one on fire still jumps). Without that they'd all have hopped off before you got it up
+  to speed. At its own speed they get off as on any ride when you're within 8 m, so the box is best worked first:
+  spin it up before you press the button (the gadget works to 9 m from the box), or get to the box fast.
+- **More of them on the Carousel**: 80% of its riders are enemies (`FILL_RIDE`; 6 with seed 7, was 3), the other
+  rides 40% as before.
+- **Not done**: no brute or shielder rides, so nobody survives a flat-out fling as things are; the button isn't in
+  co-op (the invasion isn't).
+- Tests: `test/voxel/luna_invasion_test.gd`, the button and the brake first, then all the earlier checks:
+  "LUNA INVASION: 65 passed, 0 failed" (about 70 s headless). Guards after: `stkilda_carousel_hack_test` 30 ok,
+  `stkilda_tumble_test` 6 ok, `stkilda_kill12_test` 9 ok. Pictures `test/voxel/luna_invasion_button_shots.gd`:
+  `voxel_shots/luna_invasion_button.png` (walking in, day), `_button_close.png`, `_button_night.png` (pressed, the
+  lamp on), `luna_invasion_fling.png` (enemies in the air just after the brake).
+
 Luna invasion: done
 
 # Block (voxel) characters: integration note
