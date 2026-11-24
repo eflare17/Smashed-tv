@@ -330,6 +330,14 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   Pass: whole-frame p95 <= 12 ms and <= baseline + 3.0 ms; `step_us` mean <= 2.0 ms; mass exact;
   `CLOD_SHARE` is the highest value at which stage 5's test still passes. Full regression set as at stage 1.
   If native: `digsite_dirt_test` 12/0 on the new `.so`, and the game still runs with the old binaries swapped back.
+- **Owner's bug report (24 Nov, stages 1-7 Windows build), must be fixed in this stage**: "this big boulder flickers
+  when I emptied the bucket". An excavator emptied its bucket on the grass and a big tan boulder (a large angular
+  rock about 2 m across with a dark band, half sunk in the ground) flickered while the clods poured and settled
+  beside it. Find what draws that boulder and why a pour next to it makes it flicker (suspects: the boulder being
+  rebuilt or shown/hidden each time the ground under it changes as clods melt into the layer; z-fighting with the
+  terrain's remesh; clods knocking it). Reproduce in a test (a pour beside a boulder: the boulder's node, mesh,
+  visibility and transform do not change while clods land unless the ground under it really gives way), fix it,
+  and take a before/after shot.
 - **Owner sees**: the camera breathes with the machine, clods tick as they land, more of the pushed dirt is real.
 - **Out of scope**: clod-against-clod contacts, slab detach, gamepad and key remapping.
 
