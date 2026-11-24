@@ -310,7 +310,7 @@ func start_ride() -> void:
 		_rider = VoxelBody.new()
 	ride_train.seat(_rider)
 	if first:
-		_rider.setup("jared_new", 0.0125, 1, arena._mat)
+		_rider.setup("jared_new", 0.0125 * VoxelArena.jared_chunk, VoxelArena.jared_chunk, arena._mat)
 	_rider.yaw = PI                        # (facing the front of the car)
 	ride_train.view_from_behind(_behind)
 	SkScenicRailway.space_out(rail, ride_train)

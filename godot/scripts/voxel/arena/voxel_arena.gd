@@ -194,12 +194,40 @@ func _ready() -> void:
 		_opts[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	chunk = int(_opts.get("chunk", "1"))
 	VoxelTouch.detect(_opts)        # (a phone's browser, ?touch: before the settings, which start on Low there)
+	# a phone's browser (or --staged): the start-up a step a frame, each named on screen and in the console, so a phone
+	# that stops can be told where (chrome://inspect); nothing of the half-made arena runs till it's done
+	jared_chunk = 2 if (_opts.has("lightjared") or (VoxelTouch.active and OS.has_feature("web"))) else 1
+	_staged = _opts.has("staged") or (VoxelTouch.active and OS.has_feature("web"))
+	_boot_t = Time.get_ticks_msec()
+	_boot_0 = _boot_t
+	var luna_first: bool = _opts.has("stkilda") or _opts.has("carousel") or _opts.has("invasion")
+	_boot_steps = 10 if luna_first else 9
+	if _staged:
+		process_mode = Node.PROCESS_MODE_DISABLED
+		var bl := CanvasLayer.new()
+		bl.layer = 60
+		add_child(bl)
+		var bg := ColorRect.new()
+		bg.color = Color(0.03, 0.02, 0.06)
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		bl.add_child(bg)
+		_boot_label = Label.new()
+		_boot_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		_boot_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_boot_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_boot_label.add_theme_font_size_override("font_size", 34)
+		_boot_label.add_theme_color_override("font_color", Color("#f7a8ff"))
+		bl.add_child(_boot_label)
+	if OS.has_feature("web"):       # (the graphics lost, a phone short of memory: said on the page, not a frozen picture)
+		JavaScriptBridge.eval("(function(){var c=document.getElementById('canvas');if(!c||c.__lostHook)return;c.__lostHook=1;c.addEventListener('webglcontextlost',function(e){console.error('VoxelArena: WebGL context lost');var d=document.createElement('div');d.style.cssText='position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#f7a8ff;font:600 18px sans-serif;text-align:center;padding:24px';d.textContent='The graphics stopped (the phone ran short of memory). Tap to reload.';d.addEventListener('click',function(){location.reload();});document.body.appendChild(d);});})()", true)
+	await _boot("the arena's world")
 	top_down = _opts.has("topdown")
 	_mat = StandardMaterial3D.new()
 	_mat.vertex_color_use_as_albedo = true
 	_mat.vertex_color_is_srgb = true
 	_mat.roughness = 0.95
 	_world()
+	await _boot("settings")
 	var testing := false
 	for t in ["auto", "meleetest", "weaponshots", "swordtest", "walkcheck", "nosave", "secs"]:
 		testing = testing or _opts.has(t)
@@ -207,6 +235,7 @@ func _ready() -> void:
 	settings_menu = VoxelSettingsMenu.new()
 	add_child(settings_menu)
 	settings_menu.setup(self, (get_tree().current_scene == self and not testing) or _opts.has("settings"))
+	await _boot("the player, the HUD, cubes, sounds")
 	_player()
 	_hud()
 	announcer = VoxelAnnouncer.new()
@@ -249,6 +278,7 @@ func _ready() -> void:
 	add_child(blood)
 	blood.setup(self)
 	debris.on_take = _on_take
+	await _boot("chests, the house, the yard")
 	stash = VoxelStorages.new()
 	add_child(stash)
 	stash.setup(self)
@@ -266,6 +296,7 @@ func _ready() -> void:
 	# saved between games (not the self-tests'; --save=path elsewhere, --nosave never)
 	stash.save_path = String(_opts.get("save", "")) if _opts.has("save") else ("" if testing else VoxelStorages.SAVE_PATH)
 	stash.load_save()
+	await _boot("weapons")
 	var have := []
 	me = VoxelShooter.local_for(self)
 	for id in MELEE:
@@ -302,7 +333,9 @@ func _ready() -> void:
 	_hud_layer.add_child(lock_view)
 	lock_view.setup(self)
 	cam.cull_mask &= ~(1 << (VoxelMirror.LAYER_SELF - 1))      # (your own Jared in first person: the mirror's only)
+	await _boot("enemies")
 	_warm_up()
+	await _boot("online, places to travel")
 	net = VoxelNet.new()
 	add_child(net)
 	net.setup(self)
@@ -322,6 +355,7 @@ func _ready() -> void:
 	phone = VoxelPhone.new()
 	_hud_layer.add_child(phone)
 	phone.setup(self, stkilda)
+	await _boot("the first wave")
 	waves.on = false                # (the test set-ups below: one at a time; the real game's chosen at the end)
 	if _opts.has("walkcheck"):
 		_walkcheck_setup()
@@ -360,6 +394,8 @@ func _ready() -> void:
 			net.host(String(_opts.host), via, String(_opts.get("server", "")), _opts.has("local"))
 		else:
 			net.join(String(_opts.join), via, String(_opts.get("server", "")), _opts.has("local"))
+	if luna_first:                   # (St Kilda's only built when you go: here the link asks for it straight away)
+		await _boot("Luna Park")
 	if _opts.has("stkilda"):         # (tests, pictures: --stkilda straight there, =dx,dz,yaw to stand elsewhere; --phone the phone out)
 		stkilda.go()
 		if String(_opts.stkilda) != "1":
@@ -378,6 +414,12 @@ func _ready() -> void:
 		touch_on()
 	if _opts.has("phone"):
 		phone.open()
+	await _boot("done")
+	if _staged:
+		process_mode = Node.PROCESS_MODE_INHERIT
+		_boot_label.get_parent().queue_free()
+		_boot_label = null
+	print("VoxelArena: start-up done in %d ms" % (Time.get_ticks_msec() - _boot_0))
 	print("VoxelArena: ready (renderer ", RenderingServer.get_current_rendering_method(), ")")
 
 func _cube_m(key: String) -> float:
@@ -512,6 +554,8 @@ func _player() -> void:
 	cam.near = 0.05
 	add_child(cam)
 	cam.current = true
+	if VoxelTouch.active and OS.has_feature("web"):
+		cam.far = VoxelSettings.PHONE_FAR      # (a phone's browser: no further than it needs to draw)
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1.0, 0.8, 0.4)
 	_flash.omni_range = 6.0
@@ -520,7 +564,7 @@ func _player() -> void:
 	# Juicy Jared in blocks, seen in the top-down view
 	avatar = VoxelBody.new()
 	add_child(avatar)
-	avatar.setup("jared_new", 0.0125, 1, _mat)       # (Jared sculpted from scratch: JaredBuild)
+	avatar.setup("jared_new", 0.0125 * jared_chunk, jared_chunk, _mat)       # (Jared sculpted from scratch: JaredBuild)
 	avatar.visible = false
 
 func _hud() -> void:
@@ -1317,6 +1361,34 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 		spawn(maxi(n, 1))
 
 # ---------------------------------------------------------------- input
+
+var _boot_steps := 9
+## Jared's own blocks (your avatar top-down and in the mirror, your mate, you on the coaster): 1 a sprite pixel a cube
+## (650,000 cells: 13 s of a browser's start-up to flesh out and mesh), 2 on a phone's browser (an eighth of them).
+static var jared_chunk := 1
+var _staged := false            # the start-up a step a frame (a phone's browser)
+var _boot_i := 0
+var _boot_t := 0
+var _boot_0 := 0
+var _boot_label: Label
+
+## A start-up step beginning: said in the console (with how long the last took) and, staged, on screen, with a frame
+## drawn before it starts. Not staged: nothing waits (the arena's whole the moment it's added, as the tests expect).
+func _boot(what: String) -> void:
+	_boot_i += 1
+	var now := Time.get_ticks_msec()
+	var mem := ""
+	if OS.has_feature("web"):       # (the memory the game holds so far: a phone's tab is closed past a few hundred MB)
+		var mb = JavaScriptBridge.eval("(function(){try{return Math.round(engine.rtenv.HEAP8.length/1048576)}catch(e){return -1}})()", true)
+		mem = ", %s MB held" % str(mb)
+	print("VoxelArena: start-up step %d of %d: %s (the last took %d ms%s)" % [_boot_i, _boot_steps, what, now - _boot_t, mem])
+	if OS.has_feature("web"):       # (the page's own line too: there even if the picture isn't)
+		JavaScriptBridge.eval("window.smashedSay&&window.smashedSay('%s')" % ("" if what == "done" else "Loading: step %d of %d (%s)" % [_boot_i, _boot_steps, what.replace("'", "")]), true)
+	if _staged:
+		_boot_label.text = "Loading: step %d of %d\n%s" % [_boot_i, _boot_steps, what]
+		await get_tree().process_frame
+		await get_tree().process_frame
+	_boot_t = Time.get_ticks_msec()
 
 ## The view turned by the mouse's movement (or a touch's drag: VoxelTouch), in pixels.
 func look_by(rel: Vector2) -> void:

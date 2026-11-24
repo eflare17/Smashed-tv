@@ -108,7 +108,9 @@ static func detect(opts: Dictionary) -> bool:
 	active = forced
 	_aim_on = false
 	if allowed and not active and OS.has_feature("web"):
-		active = JavaScriptBridge.eval("(navigator.maxTouchPoints>0 && matchMedia('(pointer:coarse)').matches)", true) == true
+		var r = JavaScriptBridge.eval("((navigator.maxTouchPoints>0 && matchMedia('(pointer:coarse)').matches)?1:0)", true)
+		active = r != null and str(r).to_float() == 1.0     # (a number: what comes back for a JS true isn't always a bool)
+	print("VoxelTouch: ", "on" if active else "off", " (forced)" if forced else "")
 	return active
 
 ## The mouse grabbed (first person, playing)? Touch mode: always (there's no pointer to lock; the menus say when they're up).
