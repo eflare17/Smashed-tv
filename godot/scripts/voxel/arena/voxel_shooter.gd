@@ -91,7 +91,7 @@ func mouse_floor() -> Vector3:
 ## Their mouse's ray top-down: [origin, dir], or [] (first person, or unknown).
 func mouse_ray() -> Array:
 	if local:
-		var mp: Vector2 = arena.get_viewport().get_mouse_position()
+		var mp: Vector2 = VoxelTouch.pointer(arena.get_viewport())
 		return [cam.project_ray_origin(mp), cam.project_ray_normal(mp)]
 	return _ray
 

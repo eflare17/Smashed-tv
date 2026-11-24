@@ -191,7 +191,7 @@ func add_games() -> void:
 	if DisplayServer.has_feature(DisplayServer.FEATURE_NATIVE_DIALOG_FILE):
 		if arena.inv_ui.is_open():
 			arena.close_inventory()
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		VoxelTouch.grab(false)
 		DisplayServer.file_dialog_show("Add games", OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS), "", false,
 			DisplayServer.FILE_DIALOG_MODE_OPEN_FILES,
 			PackedStringArray(["*.md, *.bin, *.gen, *.smd, *.sfc, *.smc, *.sms, *.gg, *.zip ; Games"]), _on_files)
@@ -209,7 +209,7 @@ func add_games() -> void:
 
 func _on_files(status: bool, paths: PackedStringArray, _filter: int) -> void:
 	if not arena.top_down:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 	if not status or paths.is_empty():
 		scan()                          # (none picked: any put in the folder by hand still come onto the shelf)
 		return

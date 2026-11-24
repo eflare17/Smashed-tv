@@ -239,7 +239,7 @@ func open() -> void:
 	_open = true
 	_panel.visible = true
 	arena._let_go()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 	_refresh()
 
 func close() -> void:
@@ -249,7 +249,7 @@ func close() -> void:
 	_panel.visible = false
 	if not arena.top_down and not arena._opts.has("auto") and not arena.inv_ui.is_open() and not arena.lock_view.is_open() \
 			and not (arena.mine and arena.mine.active):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 
 func _process(dt: float) -> void:
 	if _toast_t > 0.0:

@@ -90,6 +90,22 @@ func _draw() -> void:
 				draw_rect(Rect2(r.position.x + 3, r.end.y - 3, (r.size.x - 6) * (1.0 - c), 2), Color(1.0, 0.7, 0.3, 0.9))
 		x += gw + GROUP_GAP
 
+## The slot under a point (the bar's own coordinates; -1: none). Tall: the group's name over it and the strip under it
+## down to the screen's edge count too (a thumb's tap: VoxelTouch).
+func slot_at(p: Vector2) -> int:
+	var top := size.y - SLOT_H - HEAD_H
+	if loadout == null or p.y < top or p.y > size.y - offset_bottom:
+		return -1
+	var x := 0.0
+	for gr in _groups():
+		var mine: Array = gr[1]
+		for j in mine.size():
+			var x0 := x + j * (SLOT_W + PAD)
+			if p.x >= x0 - PAD * 0.5 and p.x < x0 + SLOT_W + PAD * 0.5:
+				return int(mine[j])
+		x += _group_w(gr) + GROUP_GAP
+	return -1
+
 func _text(at: Vector2, t: String, fs: int, col: Color, w: float, align: HorizontalAlignment) -> void:
 	draw_string_outline(_font, at, t, align, w, fs, 4, Color(0, 0, 0, 0.85))
 	draw_string(_font, at, t, align, w, fs, col)

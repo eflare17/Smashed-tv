@@ -109,7 +109,7 @@ func _aim() -> Array:
 	var dir: Vector3
 	var nozzle: Vector3
 	if arena.top_down:
-		var mp := arena.get_viewport().get_mouse_position()
+		var mp := VoxelTouch.pointer(arena.get_viewport())
 		from = cam.project_ray_origin(mp)
 		dir = cam.project_ray_normal(mp)
 		var pp: Vector3 = arena.player.global_position + Vector3(0, 1.0, 0)

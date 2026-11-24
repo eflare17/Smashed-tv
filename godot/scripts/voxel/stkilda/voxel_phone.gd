@@ -115,13 +115,13 @@ func open() -> void:
 	_note.text = "With a mate: Home and the Dig Site (you both go)." if coop else ""
 	var t := Time.get_time_dict_from_system()
 	_clock.text = "%d:%02d" % [t.hour, t.minute]
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 
 func close() -> void:
 	_open = false
 	get_node("Phone").visible = false
 	if not arena.top_down:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 
 func can_open() -> bool:
 	return not (arena.inv_ui.is_open() or arena.lock_view.is_open() or arena.lying > 0 or arena.games.seated > 0
@@ -156,6 +156,9 @@ func travel(id: String) -> void:
 	_going = true
 	close()
 	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "invasion": "Luna Park: Invasion ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
+	if id in ["stkilda", "kill12", "invasion"] and not stkilda.built:
+		_black_label.text = "Loading Luna Park ..."        # (built the first time you go: a few seconds, longer on a phone)
+		print("VoxelPhone: building St Kilda (Luna Park)")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)

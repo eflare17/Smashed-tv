@@ -28,6 +28,10 @@ const PRESETS := {
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
+## (what only the Forward+ renderer does: the browser's game, on Compatibility, doesn't show these rows)
+const FORWARD_ONLY := ["taa", "ssao", "ssil", "sdfgi", "fog", "fx"]
+const PHONE_ACROSS := 1280.0     # a phone's browser: the 3D picture's longer side, in pixels, before the preset's scale
+const PHONE_FAR := 260.0         # ... and how far it draws (metres)
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
 	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2}
 ## (what each setting can be, for the menu: [label, values, value labels])
@@ -98,7 +102,7 @@ func load_file() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(file) != OK:
 		first_run = true
-		set_preset(guess())
+		set_preset("low" if VoxelTouch.active else guess())     # (a phone's browser: Low, no guessing; SET raises it)
 		return
 	var missing := []
 	for k in v:
@@ -160,8 +164,16 @@ static func hardware() -> String:
 func apply(arena: Node3D) -> void:
 	var vp := arena.get_viewport()
 	var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
-	vp.scaling_3d_scale = float(v.scale)
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if (forward and float(v.scale) < 0.99) else Viewport.SCALING_3D_MODE_BILINEAR
+	var sc := float(v.scale)
+	if VoxelTouch.active and OS.has_feature("web"):
+		# a phone's browser: its screen is 1440p or more in real pixels; the 3D is drawn as if it were 1280 across at most
+		# (the preset's own scale on top), and no further than a phone needs to see. The HUD stays sharp.
+		var win := arena.get_window().size
+		sc *= clampf(PHONE_ACROSS / maxf(1.0, float(maxi(win.x, win.y))), 0.4, 1.0)
+		if arena.get("cam") and arena.cam:
+			arena.cam.far = PHONE_FAR
+	vp.scaling_3d_scale = sc
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if (forward and sc < 0.99) else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(int(v.msaa), Viewport.MSAA_DISABLED)
 	vp.use_taa = bool(v.taa) and forward
 	var sh := int(v.shadows)
