@@ -25,11 +25,13 @@ takes a bit longer. Every upgrade should make a difference you can feel at once.
 ## Money and gold
 
 - **The hopper** at the end of the rails: E tips the cart into it, and it sorts the load. Soil, clay,
-  rock and quartz are **sold on the spot**: **1 coin per 10 litres**. A full starting cart of dirt is
-  about 100 coins.
+  rock and quartz are **sold on the spot**, and **deeper pays more** (agreed 24 Nov 2026). Coins per
+  100 litres: **soil 5, clay 8, rock 20, quartz 50**. A full starting cart from the first cave-in is
+  about 100 coins; the same cart from the far chamber is about 230, plus its gold. The quarry floor is
+  soil, so it pays least. The hopper's panel shows what each part of the load fetched.
 - **Gold is kept** in the team's **gold store**. The **gold buyer's shed** by the mine entrance buys it
-  (E at the counter sells all of it), at **about 50 times** the price of dirt. Gold you don't sell is
-  what machinery costs.
+  (E at the counter sells all of it), at **20 coins a litre** (it was 5 until 24 Nov). Gold you don't
+  sell is what machinery costs.
 - Gold is rare at first (flecks in the quartz seam in the rock), so dirt pays for the early upgrades
   and gold takes over deeper in.
 - **Levels cost money.** **New machinery costs money plus gold**, so the more gold you find, the more
@@ -85,6 +87,18 @@ Built 19 Nov 2026 *(suggested, all easy to change)*:
 - **The look:** an orange motor box with fins and an exhaust stub on the front end, plus the footboard.
   Both only show once it's bought.
 - **Tested by** `BulldozerBuilder.MotorCartTest`.
+
+### Prices after "deeper pays more" (24 Nov 2026)
+
+Deep loads fetch about twice what they did, so everything bought after Cart 2 costs more, and the whole tree
+still takes about 48 minutes in the model (`art/bulldozer-vox/pace_model.py`). Everything up to Cart 2 is
+unchanged. `Steps` in `Upgrades.cs` is the list that counts:
+- **Jackhammer** 720, then 360, 630, 950, 2,040.
+- **Motor cart** 910, then 640, 1,090. **Bigger cart** 1,800. **Automatic cart** 2,500 + 20 L gold.
+- **Backpack** 600 + 5 L gold, then 300, 480, 770, 1,230, 1,920, 3,360, 4,560.
+- **Dingo** unchanged (1,000 + 12 L gold).
+
+(The motor cart prices in the section above are the ones from before this.)
 
 ## Build order
 

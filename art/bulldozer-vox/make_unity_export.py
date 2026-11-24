@@ -1735,7 +1735,7 @@ public static class BulldozerBuilder
             wk.SetTool(2);
             uLog += " backpackLocked=" + (!wk.backpackOwned && wk.Tool != 2) + " shovelHolds=" + wk.shovelHolds + " cartHolds=" + cart.capacity;
             uLog += " buyBroke=" + up.Buy(Upgrades.Branch.Shovel) + "(" + up.CantBuy(Upgrades.Branch.Shovel) + ")";
-            money.TestGrant(10000, Mathf.CeilToInt(50f / (VoxelWorld.VoxelVolume * 1000f)));
+            money.TestGrant(30000, Mathf.CeilToInt(50f / (VoxelWorld.VoxelVolume * 1000f)));
             long c0 = money.Coins;
             uLog += " backpackBeforeShovel6=" + up.Buy(Upgrades.Branch.Backpack) + "(" + up.CantBuy(Upgrades.Branch.Backpack) + ")";
             for (int k = 0; k < 5; k++) up.Buy(Upgrades.Branch.Shovel);
@@ -1945,6 +1945,10 @@ public static class BulldozerBuilder
             int store0 = money.GoldStore; long c0 = money.Coins;
             var load = new int[16]; load[VoxelWorld.LooseSoil] = 400; load[VoxelWorld.LooseGold] = 80;
             money.Pay(load);
+            double vs = Money.ValueOf(VoxelWorld.LooseSoil, 4096), vc = Money.ValueOf(VoxelWorld.LooseClay, 4096), vr = Money.ValueOf(VoxelWorld.LooseRock, 4096),
+                   vq = Money.ValueOf(VoxelWorld.LooseQuartz, 4096), vg = Money.ValueOf(VoxelWorld.LooseGold, 4096);
+            dLog += " per1000L soil=" + vs.ToString("F0") + " clay=" + vc.ToString("F0") + " rock=" + vr.ToString("F0") + " quartz=" + vq.ToString("F0") + " gold=" + vg.ToString("F0")
+                  + " deeperPaysMore=" + (vs < vc && vc < vr && vr < vq && vq < vg);
             dLog += " goldKept=" + (money.GoldStore - store0 == 80) + " dirtPaid=" + (money.Coins - c0) + "(want~" + Money.ValueOf(VoxelWorld.LooseSoil, 400).ToString("F1") + ")";
             var gm = new System.IO.MemoryStream(); var gw = new System.IO.BinaryWriter(gm); money.WriteState(gw); gw.Flush();
             int storeHad = money.GoldStore; money.Clear(); gm.Position = 0; money.ReadState(new System.IO.BinaryReader(gm));
@@ -2626,7 +2630,7 @@ public static class BulldozerBuilder
             case 11:
                 TreeCheck(up.Level(Upgrades.Branch.Shovel) == 2 && money.Coins == treeCoins - 40 && up.SelectedState == Upgrades.NodeState.Owned, "aBuys");
                 up.SetLevel(Upgrades.Branch.Pick, 5);
-                money.Clear(); money.TestGrant(100, 0);                         // the jackhammer: 600 coins, there are 100
+                money.Clear(); money.TestGrant(100, 0);                         // the jackhammer: 720 coins, there are 100
                 up.Select(Upgrades.Branch.Pick, 5);
                 TreeCheck(up.SelectedState == Upgrades.NodeState.TooDear, "jackhammerTooDear");
                 treeCoins = money.Coins;
@@ -2644,7 +2648,7 @@ public static class BulldozerBuilder
                 TreeCheck(up.SelectedName == "Backpack" && up.SelectedState == Upgrades.NodeState.TooDear, "shovel6ToBackpackUnlocked(" + up.SelectedName + " " + up.SelectedState + ")");
                 // a tree that shows every kind of node for the pictures
                 up.SetLevel(Upgrades.Branch.Backpack, 2); up.SetLevel(Upgrades.Branch.Cart, 2);
-                money.Clear(); money.TestGrant(700, 0);
+                money.Clear(); money.TestGrant(800, 0);
                 up.Select(Upgrades.Branch.Pick, 5);
                 treeWaitReal = now + 1f;
                 break;
@@ -5082,7 +5086,7 @@ public static class BulldozerBuilder
             var boards = cart.transform.Find("Big tub");
             BCheck("boardsHiddenBefore", boards != null && !boards.gameObject.activeSelf);
             int before = cart.capacity;
-            money.TestGrant(750, 0);
+            money.TestGrant(1800, 0);
             BCheck("buysWithCoinsOnly", up.Buy(Upgrades.Branch.Cart) && money.Coins == 0);
             bgcLog += " holdsL=" + (before * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + "->" + (cart.capacity * VoxelWorld.VoxelVolume * 1000f).ToString("F0");
             BCheck("bigger", cart.capacity == 8192 && before == 6144);
@@ -5120,7 +5124,7 @@ public static class BulldozerBuilder
             bgcLog += " paid=" + paid + " worth=" + bgcWorth.ToString("F1") + " left=" + w.CartVoxels;
             BCheck("paysForAll", System.Math.Abs(paid - bgcWorth) < 1.01 && w.CartVoxels < VoxelWorld.ClodVoxels);
             long c0 = money.Coins;
-            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 750);
+            BCheck("sellsBack", up.SellBack(Upgrades.Branch.Cart) && money.Coins - c0 == 1800);
             BCheck("smallerAgain", cart.capacity == 6144);
             Debug.Log((bgcOk ? "BULLDOZER_BIGCART_RESULT" : "BULLDOZER_BIGCART_FAILED") + bgcLog);
             BigCartFinish(bgcOk ? 0 : 1);
@@ -7790,7 +7794,7 @@ public static class BulldozerBuilder
         {
             McShot(cam, cart, new Vector3(-4.6f, 2.6f, -2.6f), new Vector3(-1.2f, 0.5f, 0f), 0.04f);
             if (k < 2f) return true;
-            if (uPanel.Length == 0) { money.TestGrant(1500, 0); sTitle = "The upgrades (U)"; sCaption = "Motor cart 2 and 3:  4 m/s, then 5 m/s"; uPanel = up.Describe(Upgrades.Branch.Cart); }
+            if (uPanel.Length == 0) { money.TestGrant(2000, 0); sTitle = "The upgrades (U)"; sCaption = "Motor cart 2 and 3:  4 m/s, then 5 m/s"; uPanel = up.Describe(Upgrades.Branch.Cart); }
             if (k > 2.8f && sStep == 0) { up.Buy(Upgrades.Branch.Cart); sStep = 1; uPanel = up.Describe(Upgrades.Branch.Cart); }
             if (k > 3.6f && sStep == 1) { up.Buy(Upgrades.Branch.Cart); sStep = 2; uPanel = up.Describe(Upgrades.Branch.Cart); }
             if (k < 5.5f) return true;
@@ -8597,7 +8601,7 @@ public static class BulldozerBuilder
             if (wk.Scoops == uLastScoops) Debug.LogError("BULLDOZER_UPCLIP_FAILED no scoops at Shovel 6");
             sPop = "Shovel 6:  " + (wk.Scoops - uLastScoops) + " scoops in 6.5 s,  biggest " + (uScoopMax * VoxelWorld.VoxelVolume * 1000f).ToString("F0") + " L"; sPopUntil = Time.time + 4f;
             money.TestGrant(0, Mathf.CeilToInt(5f / (VoxelWorld.VoxelVolume * 1000f)));
-            sTitle = "The upgrades (U)"; sCaption = "Shovel maxed, so the backpack unlocks: 400 coins and 5 L of gold";
+            sTitle = "The upgrades (U)"; sCaption = "Shovel maxed, so the backpack unlocks: 600 coins and 5 L of gold";
             uPanel = up.Describe(Upgrades.Branch.Backpack);
             sPh = 5; sT0 = t;
             return true;

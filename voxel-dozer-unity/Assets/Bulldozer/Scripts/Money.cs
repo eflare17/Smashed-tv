@@ -1,10 +1,16 @@
 // Money: the team's one shared pot of coins.
 //
 // Dirt that goes down the hopper at the dump (the end of the rails, 8 m out of the mine door) is sorted:
-//   - soil, clay, rock and quartz are sold on the spot: 1 coin for every 10 litres;
-//   - gold ore is kept, in the team's gold store.  The gold buyer's shed by the mine entrance buys it, at 50
-//     times the price of dirt (E there sells all of it).  Gold you keep is for buying machinery later.
-// A panel shows what the load was sorted into and what it fetched.  Tipping anywhere else pays nothing.
+//   - soil, clay, rock and quartz are sold on the spot, each at its own price (the table below): soil, which
+//     is the quarry floor, pays least; rock and quartz, which are deeper in the mine, pay most;
+//   - gold ore is kept, in the team's gold store.  The gold buyer's shed by the mine entrance buys it, at 20
+//     coins a litre (E there sells all of it).  Gold you keep is for buying machinery later.
+// A panel shows what the load was sorted into and what each part fetched.  Tipping anywhere else pays nothing.
+//
+// DEEPER PAYS MORE (24 Nov 2026, agreed with the owner).  Before, everything but gold was 1 coin per 10 litres
+// and gold 5 coins a litre, so the soft quarry floor beside the dump paid best and the deep rock worst.  Now a
+// load from the first cave-in pays about what it did, and each step deeper pays more.  The later upgrades cost
+// more to match (Upgrades.cs), so the whole tree still takes about as long.  The model: pace_model.py.
 //
 // Every change to the pot goes through Pay and Spend here, and nowhere else, so that when multiplayer comes
 // the host can make each change and send it to the other players.
@@ -14,8 +20,13 @@ public class Money : MonoBehaviour
 {
     public static Money Instance { get; private set; }
 
-    public const float CoinsPerLitre = 0.1f;              // 1 coin per 10 litres
-    public const float GoldTimes = 50f;                   // gold ore is worth this many times as much
+    // coins for a litre of each (loose) material.  Per 100 litres: soil 5, clay 8, rock 20, quartz 50, gold 2,000.
+    public const float SoilPerLitre = 0.05f, ClayPerLitre = 0.08f, RockPerLitre = 0.2f, QuartzPerLitre = 0.5f, GoldPerLitre = 20f;
+    public static float PerLitre(int material)
+    {
+        return material == VoxelWorld.LooseGold ? GoldPerLitre : material == VoxelWorld.LooseQuartz ? QuartzPerLitre
+             : material == VoxelWorld.LooseRock ? RockPerLitre : material == VoxelWorld.LooseClay ? ClayPerLitre : SoilPerLitre;
+    }
 
     public long Coins { get; private set; }               // in the pot now
     public long Earned { get; private set; }              // all ever paid in, for tests and later stats
@@ -29,6 +40,7 @@ public class Money : MonoBehaviour
     float popTimer, sellTimer;
     string sellText = "";
     readonly double[] popLitres = new double[16];       // what the load being paid for was sorted into
+    readonly double[] popValue = new double[16];        // and what each part of it fetched, in coins
     static readonly string[] SortNames = { "", "", "", "", "", "", "Soil", "Clay", "Rock", "Quartz", "Gold" };
 
     void Awake() { Instance = this; }
@@ -38,8 +50,7 @@ public class Money : MonoBehaviour
     public static double ValueOf(int material, int voxels)
     {
         double litres = voxels * VoxelWorld.VoxelVolume * 1000.0;
-        double coins = litres * CoinsPerLitre;
-        return material == VoxelWorld.LooseGold ? coins * GoldTimes : coins;
+        return litres * PerLitre(material);
     }
 
     /// The hopper's sorting: `voxelsByMaterial[m]` is how much of loose material m went down it.  The dirt is
@@ -53,10 +64,13 @@ public class Money : MonoBehaviour
             if (m == VoxelWorld.LooseGold) { GoldStore += voxelsByMaterial[m]; GameAudio.Gold(); continue; }   // kept, not sold here (with its own sparkle)
             value += ValueOf(m, voxelsByMaterial[m]);
         }
-        if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
+        if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); System.Array.Clear(popValue, 0, popValue.Length); }
         for (int m = VoxelWorld.LooseSoil; m <= VoxelWorld.LooseGold && m < voxelsByMaterial.Length; m++)
+        {
             popLitres[m] += voxelsByMaterial[m] * VoxelWorld.VoxelVolume * 1000.0;
-        popTimer = 4f;
+            if (m != VoxelWorld.LooseGold) popValue[m] += ValueOf(m, voxelsByMaterial[m]);
+        }
+        popTimer = 6f;
         Ending.CountPaid(voxelsByMaterial);                     // (the totals for the ending's stats)
         if (value <= 0) return 0;
         fraction += value;
@@ -93,7 +107,7 @@ public class Money : MonoBehaviour
     {
         if (coins <= 0) return;
         Coins += coins; Earned += coins;
-        if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); }
+        if (popTimer <= 0f) { popCoins = 0; System.Array.Clear(popLitres, 0, popLitres.Length); System.Array.Clear(popValue, 0, popValue.Length); }
         popCoins += coins; popTimer = 4f;
         sellText = why; sellTimer = 5f;
     }
@@ -163,13 +177,14 @@ public class Money : MonoBehaviour
             // the hopper's sorting: what the load was, in litres; the gold goes to the gold store
             string sorted = "";
             for (int m = VoxelWorld.LooseSoil; m < VoxelWorld.LooseGold; m++)
-                if (popLitres[m] >= 0.5) sorted += (sorted.Length > 0 ? "     " : "") + SortNames[m] + " " + popLitres[m].ToString("F0") + " L";
+                if (popLitres[m] >= 0.5) sorted += (sorted.Length > 0 ? "     " : "") + SortNames[m] + " " + popLitres[m].ToString("F0") + " L (+" + popValue[m].ToString("F0") + ")";   // what each fetched: rock and quartz pay more
             string line = (sorted.Length > 0 ? sorted + "     =  +" + popCoins.ToString("N0") + " coins" : "");
             if (popLitres[VoxelWorld.LooseGold] >= 0.5) line += (line.Length > 0 ? "\n" : "") + "Gold " + popLitres[VoxelWorld.LooseGold].ToString("F0") + " L  ->  your gold store (sell it at the gold buyer's shed)";
             if (line.Length > 0)
             {
                 var panel = new GUIStyle(GUI.skin.box) { fontSize = 18, alignment = TextAnchor.MiddleCenter };
-                GUI.Box(new Rect(Ui.W / 2 - 360, 104, 720, 78), "Hopper sorted it:\n" + line, panel);
+                float pw = Mathf.Min(940f, Ui.W - 40f);
+                GUI.Box(new Rect(Ui.W / 2 - pw / 2, 104, pw, 78), "Hopper sorted it:\n" + line, panel);
             }
         }
         if (sellTimer > 0f)

@@ -8,8 +8,15 @@
 import sys, json
 
 L_PER_VOX = 1000.0 / 4096           # litres per voxel
-COIN_PER_L = 0.1
-GOLD_COIN_PER_L = COIN_PER_L * 50
+# Deeper pays more (24 Nov 2026): coins a litre for soil, clay, rock, quartz (Money.cs), and gold.
+# Before that everything was 0.1 and gold 5: run with OLD_PRICES = True to see that again.
+OLD_PRICES = False
+PRICE = (0.1, 0.1, 0.1, 0.1) if OLD_PRICES else (0.05, 0.08, 0.2, 0.5)
+GOLD_COIN_PER_L = 5.0 if OLD_PRICES else 20.0
+# the share of a load that is soil, clay, rock, quartz, by depth stage (0 = cave-in 1 .. 4 = far chamber): a read
+# of the mine recipe in VoxelWorld.cs, with the boulders counted as rock.  An estimate, not a measurement.
+MIX = [(0.37, 0.32, 0.31, 0.00), (0.12, 0.18, 0.70, 0.00), (0.04, 0.07, 0.89, 0.00), (0.00, 0.05, 0.87, 0.08), (0.00, 0.05, 0.83, 0.12)]
+def coin_per_l(stage): return sum(p * s for p, s in zip(PRICE, MIX[stage]))
 
 def steps(prices):
     return prices
@@ -18,10 +25,10 @@ PRICES = json.loads(sys.argv[1]) if len(sys.argv) > 1 else None
 
 # (name, coins, gold litres) per branch, in order; from Upgrades.cs
 P = PRICES or {
-  "pick":  [("Pick 2",60,0),("Pick 3",110,0),("Pick 4",190,0),("Pick 5",320,0),("Jackhammer",600,0),("Jackhammer 2",260,0),("Jackhammer 3",420,0),("Jackhammer 4",560,0),("Jackhammer 5",850,0)],
+  "pick":  [("Pick 2",60,0),("Pick 3",110,0),("Pick 4",190,0),("Pick 5",320,0),("Jackhammer",720,0),("Jackhammer 2",360,0),("Jackhammer 3",630,0),("Jackhammer 4",950,0),("Jackhammer 5",2040,0)],
   "shovel":[("Shovel 2",40,0),("Shovel 3",75,0),("Shovel 4",135,0),("Shovel 5",230,0),("Shovel 6",380,0)],
-  "pack":  [("Backpack",400,5),("Backpack 2",150,0),("Backpack 3",240,0),("Backpack 4",384,0),("Backpack 5",614,0),("Backpack 6",800,0),("Backpack 7",1400,0),("Backpack 8",1900,0)],
-  "cart":  [("Cart 2",450,0),("Motor cart",650,0),("Motor cart 2",400,0),("Motor cart 3",640,0),("Bigger cart",750,0),("Automatic cart",1000,20)],
+  "pack":  [("Backpack",600,5),("Backpack 2",300,0),("Backpack 3",480,0),("Backpack 4",770,0),("Backpack 5",1230,0),("Backpack 6",1920,0),("Backpack 7",3360,0),("Backpack 8",4560,0)],
+  "cart":  [("Cart 2",450,0),("Motor cart",910,0),("Motor cart 2",640,0),("Motor cart 3",1090,0),("Bigger cart",1800,0),("Automatic cart",2500,20)],
 }
 SHOVEL_HOLDS = [480,640,800,980,1180,1400]
 SHOVEL_SPEED = [1.0,1.1,1.2,1.3,1.45,1.6]
@@ -33,7 +40,7 @@ OVERHEAD = 12.0       # seconds per load: grab, line up, tip, let go
 GOLD_SHARE = [0.0, 0.0, 0.004, 0.006, 0.008]   # share of a load that is gold, by depth stage (0 = cave-in 1 .. 4 = far chamber)
 
 def income(lv, stage):
-    """coins a minute and gold litres a minute, for these levels at this depth stage"""
+    """coins a minute, gold litres a minute and litres dug a minute, for these levels at this depth stage"""
     sh = lv["shovel"]; c = lv["cart"]; pk = lv["pack"]; pi = lv["pick"]
     scoop = SHOVEL_HOLDS[sh] * L_PER_VOX
     cyc = (0.36 + 0.42) / SHOVEL_SPEED[sh] * SLOW
@@ -53,7 +60,7 @@ def income(lv, stage):
     travel = 0 if auto else 2 * dist / speed
     t = fill + travel + (4 if auto else OVERHEAD)
     gold_l = cartL * GOLD_SHARE[stage]
-    return (cartL * (1 - GOLD_SHARE[stage]) * COIN_PER_L) / t * 60, gold_l / t * 60
+    return (cartL * (1 - GOLD_SHARE[stage]) * coin_per_l(stage)) / t * 60, gold_l / t * 60, cartL / t * 60
 
 def run(verbose=True):
     lv = {"pick": 0, "shovel": 0, "pack": 0, "cart": 0}
@@ -74,7 +81,7 @@ def run(verbose=True):
         if not opts: break
         opts.sort()
         _, b, name, cost, g = opts[0]
-        cpm, gpm = income(lv, stage)
+        cpm, gpm, lpm = income(lv, stage)
         # wait until affordable; gold needed is dug alongside
         need_c = max(0.0, cost - coins) / cpm
         need_g = max(0.0, g - gold) / gpm if g > gold and gpm > 0 else (0 if g <= gold else 1e9)
@@ -84,15 +91,15 @@ def run(verbose=True):
             # dig until the gold stage
             idle = 0.0
             while stage < 2:
-                t += 10; idle += 10; coins += cpm / 6; dug_m3 += cpm / 6 / COIN_PER_L / 1000
+                t += 10; idle += 10; coins += cpm / 6; dug_m3 += lpm / 6 / 1000
                 stage = 0 if dug_m3 < 22 else 1 if dug_m3 < 55 else 2
-                cpm, gpm = income(lv, stage)
+                cpm, gpm, lpm = income(lv, stage)
             log[-1] = (t, name, "nothing to buy for %.1f min (needs gold; banked %d coins)" % (idle / 60, coins))
             continue
         t += wait
         coins += cpm * wait / 60 - cost
         gold += gpm * wait / 60 - g
-        dug_m3 += cpm * wait / 60 / COIN_PER_L / 1000
+        dug_m3 += lpm * wait / 60 / 1000
         idx[b] += 1
         lv[b] += 1
         log.append((t, name, "%5.0f coins/min at stage %d, waited %4.0f s" % (cpm, stage, wait)))
