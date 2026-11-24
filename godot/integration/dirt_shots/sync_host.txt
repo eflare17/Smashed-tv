@@ -2,17 +2,17 @@ DSSYNC ok   host: at the Dig Site
 DSSYNC ok   host: the guest's dig done in the host's ground
 DSSYNC ok   host: the host drops a heap of loose dirt
 DSSYNC ok   host: the host's: the heap slumped out to a pile (2 cells out, 28 blocks' worth loose)
-DSSYNC host: baseline (no clods) 12.29 m, frames mean 15.61 p95 21.24 worst 58.34 ms, layer_us + show_us mean 546 p95 808
-DSSYNC host: with clods 12.52 m, frames mean 15.67 p95 20.47 worst 75.45 ms, layer_us + show_us mean 557 p95 831; 492 clods let go, 205 awake at the most, each second [40, 129, 181, 201, 191, 169, 97, 63, 44, 24, 4, 1, 1, 0, 1, 1, 2, 0, 2, 1]; at rest 0.70 s after the push
-DSSYNC ok   host: the host dozes 20 s with a guest watching: over 200 clods let go (492; the baseline 0)
+DSSYNC host: baseline (no clods) 12.26 m, frames mean 14.78 p95 19.28 worst 58.86 ms, layer_us + show_us mean 531 p95 789
+DSSYNC host: with clods 12.89 m, frames mean 15.24 p95 19.89 worst 57.44 ms, layer_us + show_us mean 535 p95 768; 653 clods let go, 212 awake at the most, each second [65, 157, 172, 205, 203, 190, 126, 100, 69, 45, 19, 4, 5, 4, 2, 2, 1, 1, 1, 1]; at rest 0.92 s after the push
+DSSYNC ok   host: the host dozes 20 s with a guest watching: over 200 clods let go (653; the baseline 0)
 DSSYNC ok   host: not a mm made or lost at any second, nor with every clod settled (0 mm; the baseline 0; 0 clods left)
-DSSYNC ok   host: the clods' packets <= 6 kB a second (5247 bytes in the busiest second; 237 packets, 50961 bytes in all: 2462 a second of the push and the rest after)
-DSSYNC ok   host: the clods' step <= 2.0 ms on average (318 us with any awake; p95 879, worst 4109)
-DSSYNC ok   host: frame p95 <= the baseline's + 3.0 ms (20.47 against 21.24: -0.78; means 15.67 against 15.61)
-DSSYNC ok   host: layer_us + show_us within 20% of the baseline's (mean 557 us against 546: +2%)
-DSSYNC ok   host: the host's blast: 2316 blocks blown out as 200 clods, all of it there
-DSSYNC ok   host: its clods at rest 6.0 s on, not a mm lost
+DSSYNC ok   host: the clods' packets <= 6 kB a second (5242 bytes in the busiest second; 248 packets, 57476 bytes in all: 2748 a second of the push and the rest after)
+DSSYNC ok   host: the clods' step <= 2.0 ms on average (341 us with any awake; p95 888, worst 2480)
+DSSYNC ok   host: frame p95 <= the baseline's + 3.0 ms (19.89 against 19.28: +0.60; means 15.24 against 14.78)
+DSSYNC ok   host: layer_us + show_us within 20% of the baseline's (mean 535 us against 531: +1%)
+DSSYNC ok   host: the host's blast: 2316 blocks blown out as 198 clods, all of it there
+DSSYNC ok   host: its clods at rest 6.2 s on, not a mm lost
 DSSYNC ok   host: home again
-DSSYNC ok   host: the host sent 804 updates (1771159 bytes)
-DSSYNC host stats { "ch": 804, "ch_bytes": 1771159, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0, "clod_n": 309, "clod_bytes": 51465, "clod_most": 5247 }
+DSSYNC ok   host: the host sent 825 updates (1934261 bytes)
+DSSYNC host stats { "ch": 825, "ch_bytes": 1934261, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0, "clod_n": 320, "clod_bytes": 57980, "clod_most": 5242 }
 DSSYNC done 14 passed, 0 failed

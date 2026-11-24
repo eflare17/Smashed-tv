@@ -16,17 +16,17 @@ DSFEEL ok   (c) from over 2 m/s to under 0.3 m/s takes more than 0.3 s (0.42 s)
 DSFEEL ok   (c) no frame loses more than 25% of its top speed (0.093 m/s moved, 0.093 said; limit 0.80)
 DSFEEL ok   (c) its tracks slip while it's stalled (1.00 at the least, over 0.5)
 DSFEEL ok   (c) its nose dips 1.5 to 5 degrees at the most (3.96)
-DSFEEL ok   (c): not a mm made or lost (0 mm drift; ground 5272382375, loads 0, clods 875)
+DSFEEL ok   (c): not a mm made or lost (0 mm drift; ground 5272381750, loads 0, clods 1500)
 DSFEEL (f) the Bobcat, bucket up, flat out at the bank: top 2.96 m/s (its: 3.0); from the last frame over 2 m/s to standing: 0.27 s; the most a frame lost: 0.506 m/s as it moved, 0.506 as it says (limit 0.75); it stands 0.30 m off the bank's face, slip 1.00 at the least; 'Too steep for the Bobcat' 90 frames; 
 DSFEEL ok   (f) a bank stops the Bobcat without a frame losing more than 25% of its top speed (0.506, 0.506; limit 0.75)
 DSFEEL ok   (f) it's stopped at the bank, not short of it or in it (0.30 m off), its wheels spinning (1.00)
 DSFEEL ok   (f): not a mm made or lost (0 mm drift; ground 5272383250, loads 0, clods 0)
 DSFEEL ok   (d) the patch levelled again: flat to +-1 cell (0.00 to 0.00)
-DSFEEL (d) the yard's push, 20 s, blade 0.10 m in: 12.52 m; slowest 0.00 m/s, at the end 0.00 m/s; mean slip 0.68; the most a frame lost 0.137 m/s; heap ahead 1.23 m, 1461 blocks banked; stops: 'The blade's full: back up, or raise it' 469 frames; 
-DSFEEL (d) frames 1201, mean 13.64, p95 18.09, worst 59.92 ms; layer_us mean 195, p95 297; show_us mean 323, p95 509
+DSFEEL (d) the yard's push, 20 s, blade 0.10 m in: 12.77 m; slowest 0.00 m/s, at the end 0.00 m/s; mean slip 0.67; the most a frame lost 0.136 m/s; heap ahead 1.21 m, 1457 blocks banked; stops: 'The blade's full: back up, or raise it' 448 frames; 
+DSFEEL (d) frames 1201, mean 13.52, p95 17.83, worst 54.90 ms; layer_us mean 203, p95 332; show_us mean 304, p95 476
 DSFEEL ok   (d) not a mm made or lost at any second of it (0 mm at the most)
-DSFEEL ok   (d): not a mm made or lost (0 mm drift; ground 5264318403, loads 0, clods 847)
+DSFEEL ok   (d): not a mm made or lost (0 mm drift; ground 5264318491, loads 0, clods 759)
 DSFEEL (d) the baseline (stage 3's game, this test): p95 20.98 ms, 14.66 m, top 3.20 m/s
-DSFEEL ok   (d) the 20 s push moves >= 80% of the baseline's metres (12.52 of 14.66: 85%)
-DSFEEL ok   (d) frame p95 <= the baseline's + 0.5 ms (18.09 against 20.98: -2.90)
+DSFEEL ok   (d) the 20 s push moves >= 80% of the baseline's metres (12.77 of 14.66: 87%)
+DSFEEL ok   (d) frame p95 <= the baseline's + 0.5 ms (17.83 against 20.98: -3.15)
 DSFEEL done 22 passed, 0 failed

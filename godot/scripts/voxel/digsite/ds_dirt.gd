@@ -46,6 +46,9 @@ const AGE_S := 6.0              # or at this age, the next time it touches the g
 const AGE_MOST := 9.0           # at this, wherever it is
 const DEP_FRAME := 200          # clods settling a frame at most
 const DEP_COL := 36             # mm on a column in a frame from settling clods before the next one there waits (the ground rises evenly: no spikes)
+const MELT_MIN := 5             # mm a column's settled dirt is laid on it a step at the least, and MELT_K of what's waiting (a clod melts in over
+const MELT_MOST := 26           # ... and this at the most (the ground under a lump rises under 30 mm a frame)
+const MELT_K := 0.25            # a sixth of a second, as it's seen shrinking, not in one step: the ground under a pour rises smoothly: stage 9, the owner's "boulder flickers")
 const CRUMB := 125              # the sizes (mm): a crumb, 12 cm; a clod, 20 cm; a chunk, 32 cm
 const CLOD := 500
 const CHUNK := 2000
@@ -113,6 +116,10 @@ var direct_n := 0
 var frame := 0
 var held_n := 0                 # clods at a bucket's or a tray's boxes last step (the machines only look for ones to take in while there are any)
 var taken_n := 0                # (tests: clods taken into a bucket or a tray so far)
+var hit_n := 0                  # the last step's bounces off the ground: how many, the hardest's speed into it (m/s),
+var hit_v := 0.0                # where, and how much dirt was in it (what DigSite ticks for: stage 9)
+var hit_at := Vector3.ZERO
+var hit_mm := 0
 var ghost := false              # a guest's: its clods are pictures (nothing in them, nothing laid on the ground)
 var net_on := false             # (the host's, a guest there) the clods gone are remembered for the next packet
 var net_tag := N_NEW            # what a new clod's marked (N_OWN while a blast the guest throws too is thrown)
@@ -195,7 +202,10 @@ var _gxm := PackedFloat32Array()  # (rise per metre toward +x on its low-x half,
 var _gxp := PackedFloat32Array()
 var _gzm := PackedFloat32Array()
 var _gzp := PackedFloat32Array()
-var _dep := PackedInt32Array()  # this frame's settled dirt by column (mm), laid all at once ...
+var melt := true                # (tests: false, settled dirt's laid in the step it settles, as before stage 9)
+var dep_wait := DEP_COL * 3     # mm waiting on a column before the next clod there waits (melting: a quarter of what's waiting is laid a step, so about DEP_COL a step still gets down)
+var _melt := 0                  # mm settled and not laid yet (in mass_mm)
+var _dep := PackedInt32Array()  # settled dirt by column (mm) waiting to be laid (_flush: some each step) ...
 var _depm := PackedByteArray()
 var _dept := PackedInt32Array() # ... the columns with any
 var _mass := 0
@@ -266,13 +276,18 @@ func setup(g, at := Vector3.ZERO) -> void:
 
 ## The dirt in the clods (mm), and what's owed the ground (stage 3)
 func mass_mm() -> int:
-	return _mass
+	return _mass + _melt
+
+## mm settled and still melting into the ground (laid within a few steps)
+func melting_mm() -> int:
+	return _melt
 
 func owed_mm() -> int:
 	return _owed
 
+## How many clods there are (1 with none, while the last ones' dirt is still melting into the ground)
 func awake() -> int:
-	return n
+	return n if n > 0 or _melt == 0 else 1
 
 ## The dirt in the clods whose middles are in a box (mm): t the box's middle and axes in the world, half its size (a
 ## dozer's load ahead of its blade)
@@ -459,7 +474,7 @@ func _deposit(i: int, gently: bool) -> bool:
 	var cz := (pz[i] - origin.z) * INV_CELL
 	var mx := int(cx)
 	var mz := int(cz)
-	if gently and _dep[mz * _w + mx] >= DEP_COL:
+	if gently and _dep[mz * _w + mx] >= dep_wait:
 		return false
 	var k := 2
 	if mm >= 1000:
@@ -486,6 +501,7 @@ func _deposit(i: int, gently: bool) -> bool:
 			_dept.append(c)
 			_depm[c] = m
 		_dep[c] += left
+	_melt += mm
 	_gone(i, 0)
 	return true
 
@@ -609,13 +625,23 @@ func _grow(most: int) -> void:
 	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, hld, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz, cnet]:
 		a.resize(most)
 
-# the frame's settled dirt laid on the ground
-func _flush() -> void:
-	for c in _dept:
-		if _dep[c] > 0:             # (a guest's picture has nothing in it: nothing's laid, the ground's not touched)
-			grid.put_layer(c % _w, c / _w, _dep[c], _depm[c])
-		_dep[c] = 0
-	_dept.clear()
+# the settled dirt laid on the ground: a share of what's waiting on each column (all of it: all at once)
+func _flush(all := false) -> void:
+	var keep := 0
+	var whole := all or not melt
+	for j in _dept.size():
+		var c := _dept[j]
+		var v := _dep[c]
+		if v > 0:                   # (a guest's picture has nothing in it: nothing's laid, the ground's not touched)
+			var lay := v if whole else mini(v, clampi(int(v * MELT_K), MELT_MIN, MELT_MOST))
+			grid.put_layer(c % _w, c / _w, lay, _depm[c])
+			v -= lay
+			_dep[c] = v
+			_melt -= lay
+			if v > 0:
+				_dept[keep] = c
+				keep += 1
+	_dept.resize(keep)
 
 ## Every clod settled where it is, now (a save, leaving, the host changing): all of it's in the ground after, what
 ## was owed too
@@ -630,7 +656,7 @@ func land_all() -> void:
 			_deposit(i, false)
 			_remove(i)
 		settled_n += 1
-	_flush()
+	_flush(true)
 	_pay_owed()
 	for c in _ht:
 		_hm[c] = 0
@@ -910,11 +936,15 @@ func _cave(i: int, x: float, y: float, z: float, ux: float, uy: float, uz: float
 
 ## A step of dt (1/60 s)
 func step(dt: float) -> void:
+	hit_n = 0
+	hit_v = 0.0
 	if n == 0:
 		step_us = 0
 		draw_us = 0
 		held_n = 0
 		_bstale = true
+		if not _dept.is_empty():
+			_flush()
 		if not _ht.is_empty():
 			for c in _ht:
 				_hm[c] = 0
@@ -1095,6 +1125,11 @@ func step(dt: float) -> void:
 		var nz := -sz * inv
 		var vn := ux * nx + uy * inv + uz * nz
 		if vn < -BOUNCE_V:
+			hit_n += 1
+			if -vn > hit_v:
+				hit_v = -vn
+				hit_at = Vector3(x, y, z)
+				hit_mm = cmm[i]
 			var k := (1.0 + REST) * vn
 			ux = (ux - k * nx) * BOUNCE_GRIP
 			uy = uy - k * inv

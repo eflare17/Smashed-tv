@@ -35,6 +35,7 @@ var look: DsLook                            # the site's sky, sun, toon shading 
 var clods: DsClods                          # the lumps on the loose dirt, fixed in place, riding the gliding surface
 var dirt: DsDirt                            # the dirt that's come loose: clods that fall, roll, get shoved and settle (dirt physics, stage 3)
 var _dirt_acc = 0.0
+var ticks: DsSfx.Ticks                      # clods landing, heard (stage 9)
 var dirt_paused = false                     # (the tests' pictures: the clods held still)
 var near_office = false
 const OFFICE_WINDOW := Vector3(-6.6, 1.1, 36.0)   # the site office's counter (its side facing the gate)
@@ -443,7 +444,7 @@ func _process(_dt: float) -> void:
 	# (kept every minute you're here, as well as when you leave: a crash loses a minute)
 	# (a save puts every clod down first, DsSave: so it waits up to 10 s for a moment there are none in the air)
 	_save_in -= _dt
-	if _save_in <= 0.0 and (dirt == null or dirt.n == 0 or _save_in <= -10.0):
+	if _save_in <= 0.0 and (dirt == null or dirt.awake() == 0 or _save_in <= -10.0):
 		_save_in = 60.0
 		DsSave.save(self)
 	_step_dirt(_dt)
@@ -484,6 +485,13 @@ func _step_dirt(dt: float) -> void:
 		if dirt.n > 0:
 			dirt.set_boxes(clod_boxes())
 		dirt.step(1.0 / 60.0)
+		if dirt.hit_n > 0:
+			if ticks == null:
+				ticks = DsSfx.Ticks.new()
+				add_child(ticks)
+			ticks.tick(dirt.hit_at, dirt.hit_v, dirt.hit_mm)
+	if ticks:
+		ticks.pass_time(dt)
 
 ## Every box the clods bump into: each machine's (DsMachine.clod_boxes), then extra_boxes (the tests')
 var extra_boxes: Array = []

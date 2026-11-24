@@ -218,7 +218,7 @@ func _process(dt: float) -> bool:
 			_tick()
 			if dg.load_n == 0 and float(cur.get("a_out", -1.0)) < 0.0:
 				cur.a_out = t - mark
-			if (dg.load_n == 0 and d.n == 0 and t - mark > 1.0) or t - mark > 14.0:
+			if (dg.load_n == 0 and d.awake() == 0 and t - mark > 1.0) or t - mark > 14.0:
 				dg.curl_cmd = 0.0
 				_mass_now()
 				cur.a_s = t - mark
@@ -258,7 +258,7 @@ func _process(dt: float) -> bool:
 			var dg := _dingo()
 			var tk := _truck()
 			_tick()
-			if (dg.load_n == 0 and d.n == 0 and t - mark > 1.0) or t - mark > 14.0:
+			if (dg.load_n == 0 and d.awake() == 0 and t - mark > 1.0) or t - mark > 14.0:
 				dg.curl_cmd = 0.0
 				_mass_now()
 				cur.b_s = t - mark
@@ -297,7 +297,7 @@ func _process(dt: float) -> bool:
 				cur.c_left = tk.load_n
 				cur.c_awake = d.n
 				cur.c_awake_mm = d.mass_mm()
-			if cur.has("c_behind") and (d.n == 0 or t - mark > TIP_S + 10.0):
+			if cur.has("c_behind") and (d.awake() == 0 or t - mark > TIP_S + 10.0):
 				_mass_now()
 				cur.c_s = t - mark
 				cur.c_drift = cur.drift
@@ -356,7 +356,7 @@ func _process(dt: float) -> bool:
 					print("DBG d %d s: awake %d (held %d), tray %d, bobcat %d, clods %d mm; lip %.2f m over the rim" % [cur.sec, d.n, d.held_n, tk.load_n, bc.load_n, d.mass_mm(), bc.edge().y - _tray_mid().y - DsTruck.TRAY.y])
 			if bc.load_n > 0:
 				cur.d_lip_low = minf(float(cur.get("d_lip_low", INF)), bc.edge().y - _tray_mid().y - DsTruck.TRAY.y)
-			if (bc.load_n == 0 and d.n == 0 and t - mark > 1.0) or t - mark > 16.0:
+			if (bc.load_n == 0 and d.awake() == 0 and t - mark > 1.0) or t - mark > 16.0:
 				bc.curl_cmd = 0.0
 				_mass_now()
 				cur.d_s = t - mark
@@ -394,7 +394,7 @@ func _process(dt: float) -> bool:
 						var tm := _tray_mid()
 						for i in mini(d.n, 6):
 							print("DBG    clod %.2f %.2f %.2f from the tray's middle, v %.2f %.2f %.2f, age %.1f held %.1f gnd %d mm %d" % [d.px[i] - tm.x, d.py[i] - tm.y, d.pz[i] - tm.z, d.vx[i], d.vy[i], d.vz[i], d.age[i], d.hld[i], d.gnd[i], d.cmm[i]])
-			if (bc.load_n == 0 and d.n == 0 and t - mark > 1.0) or t - mark > 16.0:
+			if (bc.load_n == 0 and d.awake() == 0 and t - mark > 1.0) or t - mark > 16.0:
 				bc.curl_cmd = 0.0
 				_mass_now()
 				cur.e_s = t - mark
@@ -432,7 +432,7 @@ func _process(dt: float) -> bool:
 			_tick()
 			if tk.load_n == 0 and float(cur.get("f_out", -1.0)) < 0.0:
 				cur.f_out = t - mark
-			if (tk.load_n == 0 and d.n == 0) or t - mark > 40.0:
+			if (tk.load_n == 0 and d.awake() == 0) or t - mark > 40.0:
 				_mass_now()
 				cur.f_s = t - mark
 				cur.f_left = tk.load_n

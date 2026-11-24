@@ -63,7 +63,7 @@ const ROCK_MOST := 3.0          # ... and rock (it rings, and stops in a hand's 
 # rolled up and over, to tumble down its front; the rest off the blade's two ends (more of it the fuller the heap), to
 # lie beside the cut as windrows. The heap the blade banks up (the grid's) keeps the rest. What's in clods in front of
 # the blade weighs on it as the heap does (push_load).
-const CLOD_SHARE := 0.35
+const CLOD_SHARE := 0.55          # (stage 9: raised from 0.35; the most, in steps of 0.05, at which what comes off is still the share asked for: at 0.6 it's 56.6%, at 1.0 68%: CLOD_STEP and the sweep's take_most hold it)
 const CLOD_FROM := 500          # mm owed the clods before any's taken (a clod's worth)
 const CLOD_STEP := 3000         # mm a step into clods at the most
 const CLOD_PIECE := 1000        # mm let go at a place

@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: stages 1 to 7 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 9 built (see `dirt_physics_progress.md`). Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -31,7 +31,8 @@ collisions and the Dig Site's own ground added. It works in co-op (the host owns
 - **The grid is the only sleeper.** Resting clods are deposited and deleted. No wake list: a blade or blast re-cuts
   the ground through the normal break-off path.
 - **No clod-against-clod contacts in GDScript.** Body comes from a cheap per-cell "awake heap" floor raise.
-- **Dozer starts at a 35% clod share** of blade spill (crest and blade ends); the tested grid heap keeps the rest.
+- **Dozer's clod share is 55%** (stage 9: the most at which what comes off is the share asked for). It started at 35%:
+  the dozer started at a 35% clod share of blade spill (crest and blade ends); the tested grid heap keeps the rest.
   The judges disagreed here (100% vs 30-40%); the share is one constant, raised in stage 9 only if mass and frame
   numbers allow.
 - **Machine feel comes early** (stage 4): it is independent of clods and the quickest cure for "clunky".
@@ -101,6 +102,8 @@ Remainders below 125 mm never become a clod: they go straight to `put_layer`.
    shrinks to zero over 0.15 s. *As built in stage 2*: spread evenly over 2 x 2, 4 x 4 or 6 x 6 columns by the clod's
    size, not bilinearly over 4 (a chunk's 2000 mm on four columns is a 500 mm spike), and a clod waits a step if its
    middle column has had 36 mm that step (`DEP_COL`).
+   *As built in stage 9*: a settled clod's dirt melts in over a few steps (a quarter of what waits on a column a
+   step, 5 to 26 mm), not in the one; it is counted in `mass_mm()` until it is down, and `awake()` is 1 while any waits.
 8. **Budget**: `CLOD_US` cap (target 2000). When over, force-deposit the slowest, then the oldest (*as built*:
    clods on the ground first, then the front of the list; sorting costs more than it saves).
    Cap `FLY_MAX` is set from the stage 2 measurement: **800** (expected 800-1000 here, not the 1500 first proposed).

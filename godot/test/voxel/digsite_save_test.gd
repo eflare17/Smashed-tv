@@ -117,7 +117,7 @@ func _process(dt: float) -> bool:
 		3:
 			# (the heap settled, and the clods the blade let go lying in it: DsDirt, the dirt physics' stage 5. The last
 			# of them roll down the heap for the 6 s a clod has; the ground's all there only once they're in it)
-			if t - mark > 3.0 and (ds.dirt == null or ds.dirt.n == 0 or t - mark > 12.0):
+			if t - mark > 3.0 and (ds.dirt == null or ds.dirt.awake() == 0 or t - mark > 12.0):     # (awake(): none left, and none's dirt still melting in: stage 9)
 				var f0 := _facts()
 				check(f0.heights != [] and int(f0.loose) > 100000 and int(f0.ground) == int(v.ground), "the dozer's cut and pushed a heap (%d mm loose; its clods at rest %.1f s after it stopped, %d left)" % [f0.loose, t - mark, ds.dirt.n if ds.dirt != null else 0])
 				# (stage 8) a blast 8 m to the side of the cut: its clods are in the air when the game's left

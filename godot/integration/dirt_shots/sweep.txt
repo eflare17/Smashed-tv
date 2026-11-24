@@ -1,0 +1,26 @@
+DSSWEEP ok   the patch is flat to +-1 cell (0.00 to 0.00)
+DSSWEEP ok   a tip truck, a Bobcat and a bulldozer at the site
+DSSWEEP the order: the baseline first, then the clods; DsDirt.FLY_MAX 800, its time cap 2000 us; DsDozer.CLOD_SHARE 0.55; the rain 8000 mm a frame for 10 s
+DSSWEEP baseline (no clods): the Bobcat scooped 65000 mm and poured it (0 left in it), the tray held 65000 and tipped to 0; the blast went off; the dozer 28.59 m in 30 s; the rain 4800000 mm; clods awake at the most 0 (0 settled, 9853 spawns laid straight down, 0 put down by the caps), at rest 41.0 s in (0 left at 60 s)
+DSSWEEP baseline (no clods): frames 3601, mean 10.24, p95 18.86, worst 155.00 ms; the clods' step mean 0 us, p95 0, worst 0 over 0 frames with any; in the 10 s at the cap: awake mean 0, most 0, step mean 0 us, p95 0, worst 0; 2400 rain spots found no room; mass drift 0 mm at the most, 0 at the end, 0 after land_all
+DSSWEEP baseline (no clods): the view behind the dozer dropped back 6.1% at the most (0.0% at 60 s, standing), shook 16.4 mm at the most (930 frames its tracks slipped), 0.0 mm standing; 0 ticks
+DSSWEEP with clods: the Bobcat scooped 65000 mm and poured it (0 left in it), the tray held 65000 and tipped to 0; the blast went off; the dozer 29.86 m in 30 s; the rain 4800000 mm; clods awake at the most 800 (5473 settled, 1641 spawns laid straight down, 2506 put down by the caps), at rest 41.0 s in (0 left at 60 s)
+DSSWEEP with clods: frames 3601, mean 11.62, p95 21.09, worst 156.57 ms; the clods' step mean 886 us, p95 2430, worst 5497 over 2099 frames with any; in the 10 s at the cap: awake mean 549, most 800, step mean 1796 us, p95 3906, worst 5497; 656 rain spots found no room; mass drift 0 mm at the most, 0 at the end, 0 after land_all
+DSSWEEP with clods: the view behind the dozer dropped back 5.9% at the most (0.0% at 60 s, standing), shook 15.8 mm at the most (918 frames its tracks slipped), 0.0 mm standing; 367 ticks
+DSSWEEP ok   the baseline: a bucket scooped (65000 mm), poured into the tray (65000: >= 85%), the tray tipped empty (0 left)
+DSSWEEP ok   the baseline: the blast went off, the dozer driven from its seat 28.59 m (forward, back off its heap, forward again)
+DSSWEEP ok   the baseline: not a mm made or lost at any second, at 60 s, or after land_all (0, 0, 0 mm; the rain's 4800000 counted in)
+DSSWEEP ok   with clods: a bucket scooped (65000 mm), poured into the tray (65000: >= 85%), the tray tipped empty (0 left)
+DSSWEEP ok   with clods: the blast went off, the dozer driven from its seat 29.86 m (forward, back off its heap, forward again)
+DSSWEEP ok   with clods: not a mm made or lost at any second, at 60 s, or after land_all (0, 0, 0 mm; the rain's 4800000 counted in)
+DSSWEEP ok   the baseline makes no clods (0)
+DSSWEEP ok   the cap was reached and held: 656 of the rain's spots found no room; awake 800 at the most (FLY_MAX 800; the time cap's room 379 at the end), 549 on average through the 10 s
+DSSWEEP ok   the clods' step <= 2.0 ms on average over the session (886 us with any awake; p95 2430)
+DSSWEEP ok   and over the 10 s at the cap (1796 us; p95 3906, worst 5497)
+DSSWEEP ok   frame p95 <= the baseline's + 3.0 ms (21.09 against 18.86: +2.24; means 11.62 against 10.24: +1.38)
+DSSWEEP NOTE the plan's absolute frame p95 <= 12 ms: 21.09 with clods, 18.86 the baseline (not met; not a check: stage 1 measured the baseline alone over it on this box)
+DSSWEEP ok   the clods come to rest (41.0 s into the session; 0 left at 60 s)
+DSSWEEP ok   the view drops back with the dozer's speed: 5.9% at the most (never over 8%), 0.0% standing
+DSSWEEP ok   it shakes while the tracks slip, under 3 cm (15.8 mm at the most), and not standing (0.0 mm)
+DSSWEEP ok   clods landing tick (367; the baseline 0)
+DSSWEEP done 17 passed, 0 failed

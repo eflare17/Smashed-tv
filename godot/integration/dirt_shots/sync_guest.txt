@@ -5,14 +5,14 @@ DSSYNC ok   guest: the guest's dig confirmed by the host (nothing pending)
 DSSYNC ok   guest: the guest sees it: the heap slumped out to a pile (2 cells out, 28 blocks' worth loose)
 DSSYNC ok   guest: a section gone wrong found by the checksums and fixed (1 fixes)
 DSSYNC ok   guest: both grounds match now
-DSSYNC guest: second: shown / the host's   2:118/118 3:174/174 4:193/193 5:196/197 6:179/179 7:127/127 8:78/78 9:51/51 10:34/34 11:16/16 12:2/2 13:1/1 14:1/1 15:1/1 16:0/0 17:0/0 18:2/2 19:1/1 20:2/2 
-DSSYNC ok   guest: the guest's clod count within 15% of the host's each second after the first (19 seconds, 0 out; the furthest off 0.5%; 196 shown at the most; 213 packets)
+DSSYNC guest: second: shown / the host's   2:152/152 3:160/160 4:197/197 5:207/207 6:187/187 7:142/142 8:105/105 9:84/84 10:52/52 11:27/27 12:11/11 13:7/7 14:3/3 15:3/3 16:1/1 17:2/2 18:1/1 19:0/0 20:1/1 
+DSSYNC ok   guest: the guest's clod count within 15% of the host's each second after the first (19 seconds, 0 out; the furthest off 0.0%; 207 shown at the most; 245 packets)
 DSSYNC ok   guest: the sections' checksums equal within 4 s of the last clod settling (1.05 s after the guest heard; still equal 6.2 s on: true; 0 of the host's clods still shown)
 DSSYNC ok   guest: the guest digs: no clods of its own (0, 0 flicked)
-DSSYNC ok   guest: the host's blast thrown here too from its random number: 200 clods of the guest's own to watch, the host's 200 (0.0% off)
-DSSYNC ok   guest: the guest's pictures gone 2.0 s after the host's clods, and both grounds match (0 left, 0 of the host's)
+DSSYNC ok   guest: the host's blast thrown here too from its random number: 198 clods of the guest's own to watch, the host's 198 (0.0% off)
+DSSYNC ok   guest: the guest's pictures gone 1.8 s after the host's clods, and both grounds match (0 left, 0 of the host's)
 DSSYNC ok   guest: nothing the guest had weighed anything at any frame (0 mm at the most)
 DSSYNC ok   guest: home again
 DSSYNC ok   guest: the guest's own site back as it was (0 chunks changed)
-DSSYNC guest stats { "ch": 804, "ch_bytes": 1771159, "ops": 2, "fixes": 1, "hashes": 45, "match": 44, "world_bytes": 0, "clod_n": 282, "clod_bytes": 46296, "clod_most": 0 }
+DSSYNC guest stats { "ch": 825, "ch_bytes": 1934261, "ops": 2, "fixes": 1, "hashes": 45, "match": 44, "world_bytes": 0, "clod_n": 318, "clod_bytes": 57966, "clod_most": 0 }
 DSSYNC done 15 passed, 0 failed

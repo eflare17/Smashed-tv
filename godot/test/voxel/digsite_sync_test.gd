@@ -299,8 +299,8 @@ func _clods(_dt: float) -> bool:
 				check(v.thrown > 100 and ds.terrain.grid.ground_mm() + d.mass_mm() + d.owed_mm() == int(v.g0), "the host's blast: %d blocks blown out as %d clods, all of it there" % [v.blown, v.thrown])
 				_next(17)
 		17:
-			if (d.n == 0 and t - mark > 1.0) or t - mark > 15.0:
-				check(d.n == 0 and ds.terrain.grid.ground_mm() + d.owed_mm() == int(v.g0), "its clods at rest %.1f s on, not a mm lost" % (t - mark))
+			if (d.awake() == 0 and t - mark > 1.0) or t - mark > 15.0:      # (awake(): none left, and none's dirt still melting in: stage 9)
+				check(d.awake() == 0 and ds.terrain.grid.ground_mm() + d.owed_mm() == int(v.g0), "its clods at rest %.1f s on, not a mm lost" % (t - mark))
 				ds.net.event("t8", ["bdone"])
 				ds.machines.get_off()
 				_next(6)

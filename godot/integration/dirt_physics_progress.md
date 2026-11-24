@@ -1046,3 +1046,140 @@ Quit or go home mid-pour or mid-blast and every lump in the air is in the ground
 - Bucket and tray loads are still not saved (out of scope, as before).
 - `baseline.txt` is still stage 1's (put back after the yard guard). `feel.txt`, `dozer_clod.txt`, `pour.txt` and
   `blast.txt` are this stage's guard runs.
+
+## Stage 9: polish, perf sweep, the owner's flickering boulder
+
+**Built**
+
+- **The owner's "this big boulder flickers when I emptied the bucket" (24 Nov).** The "boulder" is one of the big
+  lumps `DsClods` draws on loose dirt (`ds_clods.gd`, `shaders/ds_clod.gdshader`): laid once at fixed spots, each
+  drawn by its shader from the ground under it (shown where there is loose dirt, turned and shuffled by the ground's
+  height, coloured by its middle column's soil). Nothing rebuilt, hid or moved it, and no clod knocked it: its node,
+  multimesh, mesh and instance transform never change. What flickered was the shader's own sums. Each clod that
+  settled put its whole 31 to 56 mm on the columns under the lump in one step, so the ground under a lump jumped up to
+  113 mm in a frame; the lump's angle was `height x 7..16 rad/m` whatever its size, so a half-metre lump turned up to
+  84 degrees in one frame, 13 times it went from sand's colour to dirt's and back as clods of each landed on its
+  middle column, and it jumped 65 mm sideways. Fixed three ways:
+  1. `ds_dirt.gd`: a settled clod's dirt **melts in** over a few steps (`MELT_K` a quarter of what waits on a column a
+     step, `MELT_MIN` 5 to `MELT_MOST` 26 mm) instead of in the one. It is in `mass_mm()` until it is down
+     (`melting_mm()`), `awake()` is 1 while any waits, `land_all()` lays all of it at once.
+  2. the shader (uniform `calm`, 1): a lump turns for the ground moving as a thing its size would rolling
+     (`0.4..0.8 / size` rad/m: a 12 cm crumb still churns, a half-metre lump barely turns) and shuffles less the
+     bigger it is;
+  3. its colour is the soil over its whole foot (its middle column twice and four round it), not one column's.
+  `DsClods.lump_drawn()` is the shader's sums in GDScript (a headless run draws nothing) and `laid_near()` the lumps
+  near a place, for the test.
+- **The view breathes** (`ds_machines.gd`): from behind, it drops back up to 8% of its distance with the machine's
+  speed (eased, `CAM_PULL`), and shakes while its tracks slip (to 2.5 cm) and when it lands with a thud (to 3 cm;
+  `DsMachine.jolt`, new, set by `_thud`), never more than 3 cm.
+- **Clods tick as they land** (`ds_sfx.gd`: `DsSfx.Ticks`, a dull thud made in code, five voices, 18 a second at the
+  most; louder and lower the harder and bigger). `DsDirt` notes each step's hardest bounce off the ground
+  (`hit_n`, `hit_v`, `hit_at`, `hit_mm`); `DigSite._step_dirt` plays it.
+- **`DsDozer.CLOD_SHARE` 0.35 -> 0.55**: the highest, in steps of 0.05, at which stage 5's test still passes.
+- **`test/voxel/digsite_dirt_sweep.gd`** (the 60 s session), **`digsite_boulder_test.gd`**, `digsite_boulder_shots.gd`.
+- `dig_site.gd`'s timed save waits on `dirt.awake() == 0` (it was `dirt.n == 0`): not while dirt is still melting in.
+- **No native batch.** Stage 2's probe passed, but nothing needs it: the clods' step is 1.8 ms at the cap, inside the
+  2.0 budget. The native API and both binaries are untouched.
+
+**Tests**
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_dirt_sweep.gd -- --nosave
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_boulder_test.gd -- --nosave
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_dozer_clod_test.gd -- --nosave [--share=0.6]
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_boulder_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=after   (--before --tag=before)
+
+`digsite_dirt_sweep`: 17/0 (three runs; the numbers are the last, run in the guard set). The session, twice in the one
+run (baseline first: clod share 0, pours and blasts without clods, the rain laid straight down): the Bobcat scoops
+65000 mm and pours it in the truck's tray (100%), the truck tips it out, the dozer pushes 10 to 40 s (backing off its
+heap at 22 s), a stick goes off at 18 s, and from 20 to 30 s the script rains 8000 mm of dirt a frame over the dozer's
+path as clods (4.8 million mm: far more than there is room for; what finds none goes straight down).
+
+| Criterion | Measured |
+|---|---|
+| at the cap | 800 awake at the most (`FLY_MAX` 800); 549 on average through the 10 s (the time cap, 2000 us, holds it under 800 most frames); 656 of the rain's 2400 spots found no room |
+| `step_us` mean <= 2.0 ms | 0.89 ms over the session's 2099 frames with any awake (p95 2.43); **1.80 ms over the 10 s at the cap** (p95 3.9, worst 5.5). Other runs: 1.77, 1.80 |
+| whole-frame p95 <= baseline + 3.0 ms | 21.09 against 18.86: **+2.24** (means 11.62 / 10.24). Other runs: +1.09 (19.60 / 18.50), and +4.00 with another Godot test running beside it (not counted: see below) |
+| whole-frame p95 <= 12 ms | **not met, and not a check**: 21.09 with clods, 18.86 the baseline. As stage 1 found, the baseline alone is over it on this box (no GPU, a second job on it); the test prints it as a NOTE. Proposed since stage 1: keep "+3.0 ms over the baseline, back to back", drop the absolute |
+| mass exact | 0 mm drift at each of the 60 seconds, at the end and after `land_all()`, both runs (the rain counted in) |
+| the session happened | bucket 65000 mm scooped, 65000 in the tray, tray tipped to 0, 1 blast, the dozer driven 27.8 m; clods at rest 41 s in, 0 left at 60 s |
+| the view | drops back 5.9% at the most (never over 8%), 0.0% standing; shakes 15.8 mm at the most while the tracks slip, 0.0 standing |
+| ticks | 367 with clods, 0 in the baseline |
+
+The +4.00 ms run was the first, taken while a `digsite_dozer_clod_test` share run was going on the same box; alone it
+was +1.09, and +2.24 with the picture-taking going on beside it. The criterion was not loosened.
+
+`CLOD_SHARE` (stage 5's `digsite_dozer_clod_test --share=`; its one check that fails is "the clods are their share
+of what the blade's front moves on, to 3 points"; all its others, the frame and step times too, pass at every share):
+
+| share asked | 0.35 | 0.50 | 0.55 | 0.60 | 0.65 | 0.80 | 1.00 |
+|---|---|---|---|---|---|---|---|
+| share got | 34.9% | 49.9% | 53.9% | 56.6% | 58.8% | 64.1% | 68.0% |
+| test | 16/0 | 16/0 | **16/0** | 15/1 | 15/1 | 15/1 | 15/1 |
+
+Over about a half the blade cannot give what is asked: `CLOD_STEP` (3000 mm a step), the owed counter's clamp and
+what the sweep's `take_most` finds hold it at 68% however much is asked. 0.55 is the most that is honest. At 0.55:
+12.77 m in 20 s (0.35: 12.52), step mean 309 us, 53.9%.
+
+`digsite_boulder_test`: 11/0. The excavator's 77500 mm (half sand, a quarter dirt, a quarter clay) tipped on the
+grass twice in the one run: as it was (`melt` off, the shader's `calm` 0), then as it is.
+
+| In a frame, at the most, a big lump | As it was | As it is | Limit |
+|---|---|---|---|
+| turns | 84 degrees (1.47 rad) | 3.8 degrees (0.066) | 7 (0.12) |
+| the ground under it rises | 113 mm | 24 mm | 30 |
+| grows or shrinks (of its size) | 0.68 | 0.14 | 0.20 |
+| changes colour (1: a plain change of soil) | 1.40, 13 times over 0.5 | 0.25, never | 0.5 |
+| shuffles | 65 mm | 6 mm | 10 |
+
+And: no lump's node, multimesh, mesh or place changes, no patch shown is hidden again, nothing changes from a second
+after the clods are at rest, 0 mm made or lost. (The first run of this stage had the rise at 32.2 mm: `MELT_MOST`
+was added for it.)
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` / `digsite_blast_clod_test` | 22/0 / 16/0 / 21/0 / 20/0 |
+| save pair | 6/0, 7/0 |
+| sync pair (enet) / dynamite pair (enet) | host 14/0, guest 15/0 / host 4/0, guest 5/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0: 12.88 m both runs, frame p95 18.14 ms |
+
+Four of these failed on the first pass and pass now; what was changed, and why it is not a loosening:
+
+- `digsite_pour_test` (f) (499223 of 500000 mm on the ground), `digsite_save_test` phase 1, `digsite_sync_test` host:
+  each waited for `dirt.n == 0` and then read the ground. With the melt, the last clods' dirt is still going down for
+  a few steps after the last clod is gone (the mass sum was exact throughout: it is in `mass_mm()`). They now wait for
+  `dirt.awake() == 0`, which says "no clods, and none's dirt still melting"; every number they check is as it was.
+- `digsite_blast_clod_test`'s worst frame (+12.66 ms against +8): run while the boulder pictures were being drawn on
+  the same box. Alone: +4.34. Unchanged.
+
+**Pictures** (`integration/dirt_shots/`): `boulder_before_3a..c.png` and `boulder_after_3a..c.png` (three frames one
+after another, 3 s into the pour: the heap with its big tan lumps; in the "before" three the lumps differ from frame
+to frame, in the "after" three they stand still), `stage9_1..4` (the yard's four). Looked at: the heap and its lumps
+read right, more of the dozer's wave is loose lumps than in stage 8's. `boulder.txt`, `sweep.txt` are the tests' text.
+
+**What the owner will see**: the big lumps on a fresh heap stand still while more dirt lands on them: no spinning,
+no blinking between sand and dirt; the heap grows smoothly under a pour rather than in jumps. From behind a machine
+the view eases back as it gets up speed and shudders when the tracks spin or it drops off a ledge. Clods patter as
+they land. More of what the dozer pushes rolls ahead of it and off the blade's ends as real lumps.
+
+**Known gaps**
+
+- **The boulder is identified from the description, not the owner's screenshot** (which this session never saw): the
+  only big, angular, half-sunk tan things the Dig Site draws on a fresh pour are these lumps, and the test shows
+  them doing what "flickers" describes. They are about 0.5 to 0.9 m across, not 2 m. If the owner's boulder is
+  something else, `digsite_boulder_shots.gd` is the place to start.
+- The flicker and its cure are measured from the shader's sums redone in GDScript (`lump_drawn`), which must be kept
+  the same as the shader by hand; at 1 to 2 frames a second here the stills only show it, they cannot prove it.
+- The plan's absolute 12 ms frame is not met on this box (see the table); the baseline is not either.
+- At the cap the step's p95 is 3.9 ms and its worst 5.5 (the plan's p95 budget is 4.0: just inside).
+- `CLOD_SHARE` over 0.55 needs the dozer's `CLOD_STEP` and the sweep's `take_most` looked at, not the constant.
+  The Dingo's and Bobcat's `OVER_SHARE` is still 0.35.
+- A guest hears no ticks for the host's clods (its pictures of them do not bounce); it hears its own blast's.
+- The shake and the pull are only in the view from behind; from the seat the body's own rocking (stage 4) is all.
+  Whether 1.5 cm of shake reads as weight or as noise needs a real screen at a real frame rate.
+- Not done: the "Blade -0.NN m" readout's flicker noted in stage 5; the native batch.
