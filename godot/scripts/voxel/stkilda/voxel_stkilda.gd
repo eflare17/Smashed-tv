@@ -36,6 +36,7 @@ var rain: VoxelRain
 var breaks: VoxelBreakables
 var nav: VoxelParkNav
 var game: VoxelParkGame                        # "Kill 1, 2 come" (the phone starts it)
+var invasion: VoxelParkInvasion                # "Luna Park: Invasion": enemies on the rides and round the park (the phone)
 var dirt: VoxelParkDirt                        # the dirt along Luna Park's wall you can dig (the break-in)
 var bushes: VoxelParkBushes                    # the bushes in it: cut down, dragged over a hole, hidden in
 var hack: VoxelCarouselHack                    # the Carousel's control box, the gadget, a loose bolt (the sabotage)
@@ -101,6 +102,9 @@ func build() -> void:
 	hack = VoxelCarouselHack.new()            # (after the lights: it turns the Carousel's off and on)
 	add_child(hack)
 	hack.setup(self)
+	invasion = VoxelParkInvasion.new()        # (after the rides and the hack: it puts its riders on once they've turned)
+	add_child(invasion)
+	invasion.setup(self)
 	var crowd := SkCrowd.new()
 	crowd.name = "SkCrowd"
 	crowd.setup(town)
@@ -186,6 +190,7 @@ func home() -> void:
 		return
 	active = false
 	game.stop()
+	invasion.stop()
 	clear_park()
 	arena.frozen = _was_frozen
 	visible = false

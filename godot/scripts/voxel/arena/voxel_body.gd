@@ -26,6 +26,7 @@ var speed := 0.0
 var odo := 0.0                        # metres walked
 const CRAWL_M := 0.4                  # metres one worm wave (bunch + reach) covers with no legs
 var attack := 0.0
+var sit := -1.0                       # sat on a ride's seat (Luna Park: Invasion): 0 legs hanging down .. 1 out in front; < 0 not
 ## Hit reaction (the owner, 20 Oct): seconds left staggering (no pushing forward), the shove (m/s, world), and how
 ## hard the last hit was (0..1, for the flinch).
 var stagger := 0.0
@@ -557,6 +558,14 @@ func animate(dt: float, moving: bool) -> void:
 		rot["arm_l"] = (rot.get("arm_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(-0.7 * f, 0, 0.4 * f))
 		rot["thigh_l"] = (rot.get("thigh_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(0.35 * f, 0, 0))
 		rot["shin_l"] = (rot.get("shin_l", Quaternion.IDENTITY) as Quaternion) * Quaternion.from_euler(Vector3(0.3 * f, 0, 0))
+	if sit >= 0.0 and alive and not airborne:
+		# sat on a ride (VoxelParkInvasion): the thighs forward, the knees bent, the hands out in front holding on
+		for sd in ["l", "r"]:
+			rot["thigh_" + sd] = Quaternion.from_euler(Vector3(-(0.55 + 0.9 * sit), 0, 0.08 if sd == "l" else -0.08))
+			rot["shin_" + sd] = Quaternion.from_euler(Vector3(0.6 + 0.75 * sit, 0, 0))
+			if act == 0 and flinch <= 0.0 and panic_t <= 0.0 and weapon == "":
+				rot["arm_" + sd] = Quaternion.from_euler(Vector3(-0.75, 0, 0.1 if sd == "l" else -0.1))
+				rot["forearm_" + sd] = Quaternion.from_euler(Vector3(-0.5, 0, 0))
 	var turn := Quaternion.IDENTITY
 	var lift := Vector3(p.pos) * model.voxel_m
 	var lost := legs_lost()

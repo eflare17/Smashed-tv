@@ -366,6 +366,10 @@ func _ready() -> void:
 		if not stkilda.active:
 			stkilda.go()
 		stkilda.stand_by_carousel()
+	if _opts.has("invasion"):        # (the link ?invasion / --invasion: St Kilda with "Luna Park: Invasion" on)
+		if not stkilda.active:
+			stkilda.go()
+		stkilda.invasion.start()
 	if _opts.has("digsite"):         # (tests, pictures: --digsite straight to the Dig Site)
 		digsite.go()
 	if _opts.has("phone"):
@@ -1753,7 +1757,13 @@ func _physics_process(dt: float) -> void:
 				continue
 			if b.airborne or b.knock.length_squared() > 0.0001:
 				b.react_step(dt)          # knocked flying dead: still flies, lands, slides
-				_keep_dead(b)
+				if not (b.has_meta("park") or b.has_meta("range")):
+					_keep_dead(b)         # (St Kilda's, the gun range's: not in the arena's square)
+			continue
+		if b.has_meta("riding"):
+			# (sat on one of Luna Park's rides: VoxelParkInvasion puts it on its seat every frame; no walking, no path,
+			# no keeping apart, no swing. Its stagger and flinch still run out; knocked flying, the invasion lets it go)
+			b.react_step(dt)
 			continue
 		var pp: Vector3 = targets[0]
 		var ti := 0
@@ -1787,7 +1797,7 @@ func _physics_process(dt: float) -> void:
 				mv += away / dl * (0.8 - dl) * 6.0
 		b.position += mv * dt
 		var off_arena := park or b.has_meta("range")    # (St Kilda's, the gun range's: not in the arena's square)
-		if park:
+		if park and not b.airborne:               # (in the air, off a ride or blown over a wall: back on the map where it lands)
 			b.position = stkilda.nav.keep_on(b.position)
 		elif not off_arena:
 			b.position.x = clampf(b.position.x, -ARENA + 1.0, ARENA - 1.0)

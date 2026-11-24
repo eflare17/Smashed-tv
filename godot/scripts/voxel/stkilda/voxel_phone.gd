@@ -2,13 +2,14 @@ class_name VoxelPhone
 extends Control
 ## The phone (the owner, 27 Oct: "a phone-style menu pops up and you fast travel"): P gets it out, bottom right.
 ## One app so far, Travel: Home (the arena), St Kilda (Luna Park, VoxelStKilda), a game there (Kill 1, 2 come:
-## VoxelParkGame), or the gun range (VoxelGunRange). Pick one (a click, or its number) and
+## VoxelParkGame; Luna Park: Invasion: VoxelParkInvasion), or the gun range (VoxelGunRange). Pick one (a click, or its number) and
 ## the screen goes black a moment and you're there. P or Esc puts it away. Not while playing with a mate (yet).
 
 const W := 270.0
-const H := 600.0
+const H := 650.0
 const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"],
-	["range", "Gun range", "Try every weapon"], ["digsite", "Dig Site", "Dig, tunnel, drive machines"]]
+	["range", "Gun range", "Try every weapon"], ["digsite", "Dig Site", "Dig, tunnel, drive machines"],
+	["invasion", "Luna Park: Invasion", "Clear the rides"]]     # (last: the others keep their numbers)
 const COOP_PLACES := ["home", "digsite"]   # (with a mate: these, the two of you together; the rest not yet)
 
 var arena: VoxelArena
@@ -51,7 +52,7 @@ func setup(a: VoxelArena, sk: VoxelStKilda) -> void:
 		var p: Array = PLACES[i]
 		var b := Button.new()
 		b.position = Vector2(16, y)
-		b.size = Vector2(W - 56, 78)
+		b.size = Vector2(W - 56, 64)
 		b.focus_mode = Control.FOCUS_NONE
 		b.add_theme_stylebox_override("normal", _box(Color("#f2f2f6"), 16))
 		b.add_theme_stylebox_override("hover", _box(Color("#ffffff"), 16, Color("#ffd54a"), 3))
@@ -59,11 +60,11 @@ func setup(a: VoxelArena, sk: VoxelStKilda) -> void:
 		b.add_theme_stylebox_override("disabled", _box(Color("#8792a8"), 16))
 		b.pressed.connect(travel.bind(String(p[0])))
 		screen.add_child(b)
-		_label(b, "%d  %s" % [i + 1, p[1]], 24, Vector2(16, 8), Color("#1a1c2c"))
-		var sub := _label(b, String(p[2]), 16, Vector2(42, 44), Color("#4a4f63"))
+		_label(b, "%d  %s" % [i + 1, p[1]], 22, Vector2(16, 4), Color("#1a1c2c"))
+		var sub := _label(b, String(p[2]), 15, Vector2(42, 36), Color("#4a4f63"))
 		sub.name = "Sub"
 		_buttons[p[0]] = b
-		y += 88.0
+		y += 70.0
 	_note = _label(screen, "", 14, Vector2(18, H - 28 - 80), Color(1.0, 0.85, 0.4))
 	_note.size = Vector2(W - 60, 40)
 	_note.autowrap_mode = TextServer.AUTOWRAP_WORD
@@ -94,6 +95,8 @@ func open() -> void:
 	var here := "home"
 	if stkilda.active:
 		here = "kill12" if stkilda.game and stkilda.game.running else "stkilda"
+		if stkilda.invasion and stkilda.invasion.running:
+			here = "invasion"
 	elif arena.gun_range.active:
 		here = "range"
 	elif arena.digsite and arena.digsite.active:
@@ -106,6 +109,8 @@ func open() -> void:
 		sub.text = "You're here" if id == here else String(PLACES.filter(func(pl: Array) -> bool: return pl[0] == id)[0][2])
 		if id == "kill12" and stkilda.game and stkilda.game.over:
 			sub.text = "Play again (best %d kills)" % stkilda.game.best_kills
+		if id == "invasion" and stkilda.invasion and stkilda.invasion.over:
+			sub.text = "Play again (best %s)" % VoxelParkGame._clock(stkilda.invasion.best_time)
 	_note.text = "With a mate: Home and the Dig Site (you both go)." if coop else ""
 	var t := Time.get_time_dict_from_system()
 	_clock.text = "%d:%02d" % [t.hour, t.minute]
@@ -149,7 +154,7 @@ func travel(id: String) -> void:
 		return
 	_going = true
 	close()
-	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
+	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "invasion": "Luna Park: Invasion ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
@@ -164,10 +169,15 @@ func travel(id: String) -> void:
 		"stkilda":
 			if stkilda.active:
 				stkilda.game.stop()
+				stkilda.invasion.stop()
 			stkilda.go()
 		"kill12":
 			stkilda.go()
+			stkilda.invasion.stop()
 			stkilda.game.start()
+		"invasion":
+			stkilda.go()
+			stkilda.invasion.start()
 		"range":
 			stkilda.home()
 			arena.gun_range.go()
