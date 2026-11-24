@@ -35,9 +35,10 @@ func _next(s: int) -> void:
 func _ds() -> DigSite:
 	return arena.digsite
 
-# everything solid, in mm over a column (every block's 125 and the loose layer)
+# everything solid, in mm over a column (every block's 125 and the loose layer), and the crumbs a bite's flicked off
+# that aren't back in the ground yet (dirt physics, stage 7: DsTools.FLICK of a bite flies off the tool as clods)
 func _count_solid(tr: DsTerrain) -> int:
-	return tr.grid.ground_mm()
+	return tr.grid.ground_mm() + _ds().dirt.mass_mm() + _ds().dirt.owed_mm()
 
 # the mm the spade's dug (or a scoop tipped short) that isn't yet a whole block in the backpack
 func _carried() -> int:
@@ -78,6 +79,8 @@ func _process(dt: float) -> bool:
 				v.dirt = arena.inv.count("dirt")
 				v.solid = _count_solid(ds.terrain)
 				v.carry = _carried()
+				v.flicked = ds.tools.flicked
+				v.settled = ds.dirt.settled_n
 				_next(2)
 		2:
 			if t - mark > 0.6:
@@ -89,6 +92,13 @@ func _process(dt: float) -> bool:
 				var gone: int = int(v.solid) - _count_solid(ds.terrain)
 				var kept: int = _carried() - int(v.carry)
 				check(got > 0 and got * DsTerrain.MM + kept == gone, "the shovel: a scoop of soil into the backpack (%d dirt, %d mm gone, %d mm carried)" % [got, gone, kept])
+				# (FLICK of the bite, in whole crumbs: 10 to 20% of a full scoop; the rusty shovel slips one swing in
+				# four and bites a third as much, and then it's the nearest whole crumb to 15%)
+				var fl: int = ds.tools.flicked - int(v.flicked)
+				var bite := float(gone) / DsTerrain.MM + fl
+				var share := fl / maxf(0.01, bite)
+				check(absf(fl - DsTools.FLICK * bite) <= 0.5 and (bite < 10.0 or (fl > 0 and share >= 0.1 and share <= 0.2)) and ds.dirt.awake() + ds.dirt.settled_n - int(v.settled) == fl,
+					"and flicks crumbs off: %d of the bite's %.1f blocks' worth (%.0f%%), %d still rolling" % [fl, bite, share * 100.0, ds.dirt.awake()])
 				v.dirt = arena.inv.count("dirt")
 				v.solid = _count_solid(ds.terrain)
 				v.carry = _carried()
@@ -131,6 +141,7 @@ func _process(dt: float) -> bool:
 			if t - mark > 0.7:
 				var got: int = arena.inv.count("stone") + arena.inv.count("coal") + arena.inv.count("iron_ore") - int(v.stone)
 				check(got > 0 and _count_solid(ds.terrain) < int(v.solid), "the pick breaks it: %d bits of rock in the backpack" % got)
+				v.gone = int(v.solid) - _count_solid(ds.terrain)
 				v.solid = _count_solid(ds.terrain)
 				_swing("hammer_ds")
 				_next(8)
@@ -138,6 +149,12 @@ func _process(dt: float) -> bool:
 			if t - mark > 0.7:
 				var chipped: int = int(v.solid) - _count_solid(ds.terrain)
 				check(chipped > 0 and chipped < 20 * DsTerrain.MM, "the hammer chips a little out (%d blocks)" % (chipped / DsTerrain.MM))
+				_next(9)
+		9:
+			# (the crumbs come to rest: all of them back in the ground, nothing owed)
+			if ds.dirt.awake() == 0 or t - mark > 12.0:
+				check(ds.dirt.awake() == 0 and ds.dirt.owed_mm() == 0 and ds.tools.flicked > int(v.flicked),
+					"the crumbs melt back into the ground (%d flicked in all, %d awake, %d mm owed)" % [ds.tools.flicked - int(v.flicked), ds.dirt.awake(), ds.dirt.owed_mm()])
 				_office_checks(ds)
 				return _done()
 	return false

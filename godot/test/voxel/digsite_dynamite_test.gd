@@ -101,6 +101,9 @@ func _solo() -> bool:
 				check(int(last.n) > 1000, "it goes off in the dirt: %d blocks blown out, %d cracked loose" % [last.n, last.cracked])
 				check(top < at.y - 0.6, "a crater (%.2f m deep)" % (at.y - top))
 				check(_total() == int(v.total), "the chunks land as loose blocks: not one made or lost (%d, %d)" % [_total(), v.total])
+				# (dirt physics, stage 7: what's blown out is clods, DsDirt's: all thrown, all at rest and back in the ground)
+				check(ds.blasts.thrown > 100 and ds.blasts.thrown_mm + ds.blasts.laid_mm == int(last.n) * DsTerrain.MM and ds.dirt.awake() == 0 and ds.dirt.owed_mm() == 0,
+					"the chunks are clods: %d thrown (%d of the %d mm blown out), all at rest %.1f s after the bang" % [ds.blasts.thrown, ds.blasts.thrown_mm, int(last.n) * DsTerrain.MM, t - mark - DsBlasts.FUSE])
 				check(arena.player_hp >= float(v.hp) - 0.01, "14 m off, you're not hurt")
 				v.soft = int(last.n)
 				# in the stone: a shaft down to it, a stick at its bottom
@@ -137,6 +140,7 @@ func _solo() -> bool:
 				arena.inv.add("prop_wood", 1)
 				check(ds.supports.place(DigSite.AT + Vector3(10.0, v.fl, -16.0), Vector3.UP), "a room held up by a prop")
 				v.falls = ds.caves.falls
+				v.total = _total() + ds.dirt.mass_mm() + ds.dirt.owed_mm()        # (the room's dug into the backpack: counted from here)
 				v.broke = ds.supports.broke
 				arena.inv.add("dynamite", 1)
 				_stand(Vector3(0, 0, 10))
@@ -146,6 +150,13 @@ func _solo() -> bool:
 			if (ds.caves.falls > int(v.falls) and t - mark > 2.0) or t - mark > 20.0:
 				check(ds.supports.broke > int(v.broke), "the blast takes the prop's foot: it gives way")
 				check(ds.caves.falls > int(v.falls), "and the room it held caves in (%d falls)" % (ds.caves.falls - int(v.falls)))
+				_next(6)
+		6:
+			# (stage 7: the roof's middle comes down as lumps; with the blast's clods they come to rest, nothing lost)
+			if (not ds.blasts.busy() and ds.dirt.awake() == 0 and t - mark > 1.0) or t - mark > 20.0:
+				check(ds.caves.lumps_n > 0 and ds.dirt.awake() == 0, "its roof's middle came down as lumps (%d blocks' worth), all at rest" % ds.caves.lumps_n)
+				ds.dirt.land_all()
+				check(_total() == int(v.total) and ds.dirt.owed_mm() == 0, "after four blasts and a cave-in: not a mm made or lost (%d, %d)" % [_total(), v.total])
 				return _done()
 	return false
 

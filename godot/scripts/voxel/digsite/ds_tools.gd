@@ -138,12 +138,44 @@ func _dust_at(p: Vector3, col: Color) -> void:
 
 var _carry = {}                # material -> mm the spade's dug (or tipped short) not yet a whole block in the backpack
 
-## The spade's mm by material as whole blocks for the backpack (what's left over carried to the next bite)
-func _blocks_of(counts_mm: PackedInt32Array) -> PackedInt32Array:
+const FLICK := 0.15             # of a bite that never reaches the backpack: it's flicked back off the tool as crumbs (dirt physics, stage 7)
+var flicked = 0                 # (the tests: crumbs flicked so far)
+
+## Whether this game's bites flick crumbs: where the dirt runs (a guest's don't: its clods would be nobody's)
+func flicks() -> bool:
+	return site.get("dirt") != null and site.net.runs()
+
+## How many crumbs (a block's worth each) a bite of n blocks' worth of m flicks: FLICK of it; ore never (it's kept)
+func _flick_n(m: int, n: float) -> int:
+	if not flicks() or (m >= DsMats.COAL and m <= DsMats.GEM):
+		return 0
+	return roundi(n * FLICK)
+
+## k crumbs of m flicked off the tool at p: back toward where the swing came from (against `look`) and up, to fall
+## and roll by your feet and melt into the ground there (DsDirt)
+func _flick(p: Vector3, look: Vector3, m: int, k: int) -> void:
+	var d: DsDirt = site.dirt
+	var back = Vector3(-look.x, 0.0, -look.z)
+	back = back.normalized() if back.length() > 0.05 else Vector3.ZERO
+	for i in k:
+		var side = Vector3(d.randf01() - 0.5, 0.0, d.randf01() - 0.5) * 1.6
+		var v = back * (0.6 + d.randf01() * 1.2) + side + Vector3(0, 1.6 + d.randf01() * 1.4, 0)
+		d.spawn(p + Vector3(side.x * 0.1, 0.12, side.z * 0.1), v, m, DsDirt.CRUMB)
+		flicked += 1
+
+## The spade's mm by material as whole blocks for the backpack (what's left over carried to the next bite). With
+## `flick` (PackedInt32Array, filled in): the crumbs each material's bite flicks, taken out of it first.
+func _blocks_of(counts_mm: PackedInt32Array, flick = null) -> PackedInt32Array:
 	var out = PackedInt32Array()
 	out.resize(counts_mm.size())
+	if flick != null:
+		flick.resize(counts_mm.size())
 	for m in counts_mm.size():
 		var v: int = counts_mm[m] + int(_carry.get(m, 0))
+		if flick != null:
+			var k = mini(_flick_n(m, float(counts_mm[m]) / DsTerrain.MM), v / DsTerrain.MM)
+			flick[m] = k
+			v -= k * DsTerrain.MM
 		out[m] = v / DsTerrain.MM
 		_carry[m] = v % DsTerrain.MM
 	return out
@@ -166,10 +198,14 @@ func spade_at(p: Vector3, look: Vector3, r: float, hardest: int) -> Dictionary:
 	if not got is Dictionary:
 		return {"counts": PackedInt32Array(), "n": 0, "mm": 0, "refused": 0}
 	# (the cut's in mm: whole blocks go in the backpack, the rest's carried)
-	var blocks = _blocks_of(got.counts)
+	var fl = PackedInt32Array()
+	var blocks = _blocks_of(got.counts, fl)
 	var n = 0
 	for c in blocks:
 		n += c
+	for m in fl.size():
+		if fl[m] > 0:
+			_flick(p, f, m, fl[m])
 	return {"counts": blocks, "n": n, "mm": int(got.taken), "refused": hardest + 1 if bool(got.rock) else 0}
 
 ## A scoop of n blocks tipped out where you aim: it lands there and spreads round, a pile (through DsNet): -> blocks
@@ -300,6 +336,13 @@ func bite(tool: Node3D, p: Vector3, n: Vector3, filling: bool) -> int:
 	if VoxelBody.credit and a.get("guide"):
 		a.guide.tried("dig")
 	var counts: PackedInt32Array = got.counts
+	if tool.weapon_id == "pick":
+		# (the pick's bite is whole blocks: FLICK of each kind fly off it as crumbs, the rest's the backpack's)
+		for m in counts.size():
+			var k = mini(_flick_n(m, float(counts[m])), counts[m])
+			if k > 0:
+				counts[m] -= k
+				_flick(p, tool.look(), m, k)
 	if int(got.get("mm", got.n)) == 0:
 		tool.sfx("dig_clang", p, -2.0)
 		tool._dust(p, Color8(200, 200, 200))

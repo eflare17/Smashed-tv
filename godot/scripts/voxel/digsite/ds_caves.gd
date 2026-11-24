@@ -15,6 +15,35 @@ var warnings = 0               # (the tests')
 var falls = 0
 var held = 0
 var _hurt_ms = -100000
+var lumps_n = 0                # (the tests: blocks of fallen roofs that came down as lumps)
+
+const LUMP_R := 1.6             # blocks: a lump's worth is a ball this big of the roof (the 3 blocks' depth that falls) ...
+const LUMP_GAP := 3             # ... one every this many blocks, 3 x 3 of them round where it went: 171 blocks at most
+
+## A roof that's just fallen at block (x, y, z) of `grid` (its cave event: there the roof's blocks, and two over
+## each, are loose and about to drop): the middle of it comes down as lumps, clods of `dirt` (chunks, and what's
+## over as a smaller one each), 3 x 3 balls of it dug out and let go where they were; the rest stays the grid's own
+## loose fall. Nothing's made or lost. -> blocks that went as lumps (200 at most). (Dirt physics, stage 7; the
+## cave-in test calls it on a ground of its own.)
+static func lumps(grid, dirt: DsDirt, x: int, y: int, z: int) -> int:
+	var total = 0
+	for dz in [-LUMP_GAP, 0, LUMP_GAP]:
+		for dx in [-LUMP_GAP, 0, LUMP_GAP]:
+			var c = Vector3(x + dx + 0.5, y + 1.5, z + dz + 0.5)
+			var got: Dictionary = grid.dig_sphere(c, LUMP_R, 1)       # (1: what's loose, and soft ground; never rock or a prop)
+			if int(got.n) <= 0:
+				continue
+			total += int(got.n)
+			var counts: PackedInt32Array = got.counts
+			var p = dirt.origin + c * DsDirt.CELL
+			for m in counts.size():
+				var mm: int = counts[m] * DsDirt.MM
+				while mm > 0:
+					var one = mm if mm < DsDirt.CHUNK + DsDirt.CRUMB else DsDirt.CHUNK
+					var o = Vector3(dirt.randf01() - 0.5, dirt.randf01() - 0.5, dirt.randf01() - 0.5)
+					dirt.spawn(p + o * 0.1, Vector3(o.x * 1.2, -0.4 - dirt.randf01(), o.z * 1.2), m, one)
+					mm -= one
+	return total
 
 func setup(s: Node3D) -> void:
 	site = s
@@ -27,6 +56,8 @@ func poll() -> void:
 	var ev: PackedInt32Array = tr.grid.take_cave_events()
 	for i in range(0, ev.size() - 4, 5):
 		var at = tr.centre_of(Vector3i(ev[i + 1], ev[i + 2], ev[i + 3])) + Vector3(0, -0.06, 0)
+		if ev[i] == 2 and site.get("dirt") != null:
+			lumps_n += lumps(tr.grid, site.dirt, ev[i + 1], ev[i + 2], ev[i + 3])
 		_show(ev[i], at, ev[i + 4])
 		site.net.event("cave", [ev[i], at, ev[i + 4]])
 		if ev[i] == 2 and Time.get_ticks_msec() - _hurt_ms > 2000:
