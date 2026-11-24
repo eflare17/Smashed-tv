@@ -4411,6 +4411,111 @@ public static class BulldozerBuilder
         }
     }
 
+    // The cart over spill:  -executeMethod BulldozerBuilder.CartBumpTest    prints BULLDOZER_CARTBUMP_RESULT (or _FAILED)
+    // Loose dirt is thrown onto the rails, then he pushes the cart over it.  The cart, the man and the camera must
+    // rise and fall gently: the fastest any of them moves up or down is logged, beside what the old one-point floor
+    // would have done (rawFloor), which jumps a voxel at a time.
+    static int cbPhase, cbThrows, cbFrames;
+    static float[] cbBare;
+    static float cbT0, cbAlong0, cbCartY, cbManY, cbCamY, cbRawY, cbMaxCart, cbMaxMan, cbMaxCam, cbMaxRaw, cbStill, cbLump;
+    static string cbLog;
+    public static void CartBumpTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        cbPhase = 0; cbThrows = 0; cbFrames = 0; cbLog = ""; cbMaxCart = cbMaxMan = cbMaxCam = cbMaxRaw = 0f; cbStill = 0f; cbLump = 0f;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += CartBumpTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void CartBumpFinish(int code)
+    {
+        EditorApplication.update -= CartBumpTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static void CartBumpTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_CARTBUMP_FAILED timed out in phase " + cbPhase + cbLog); CartBumpFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var cart = MineCart.Instance;
+        if (w == null || wk == null || cart == null || cart.Length <= 0f) return;
+        float t = Time.time;
+        Vector3 inward = -cart.transform.forward; inward.y = 0f; inward.Normalize();
+        if (cbPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true;
+            cbAlong0 = cart.Along;
+            cbBare = new float[60];
+            for (int i = 0; i < cbBare.Length; i++) cbBare[i] = w.FloorAt(cart.transform.position + inward * (1.0f + i * 0.05f) + Vector3.up * 0.5f);
+            cbLog += " cartOnTheFloor=" + (cart.transform.position.y - cart.RawFloor).ToString("F3") + "m";
+            cbPhase = 1; cbT0 = t;
+            return;
+        }
+        if (cbPhase == 1)
+        {
+            // dig a shovelful beside the track, and drop it on the rails ahead of the cart: six of them, 1.6 to 3.6 m in
+            if (t - cbT0 < 0.8f) return;
+            Vector3 spot = cart.transform.position + cart.transform.right * 3f + inward * (cbThrows * 0.5f);
+            spot.y = w.FloorAt(spot + Vector3.up) - 0.1f;
+            w.Pick(spot, 0.4f, Vector3.zero);
+            int got = w.Scoop(spot, 0.7f, 220);
+            Vector3 rail = cart.transform.position + inward * (1.6f + cbThrows * 0.4f) + Vector3.up * 1.0f;
+            w.Throw(rail, Vector3.down * 0.5f, 0.6f, 0.3f);
+            cbLog += " throw" + cbThrows + "=" + got;
+            cbThrows++; cbT0 = t;
+            if (cbThrows >= 6) cbPhase = 2;
+            return;
+        }
+        if (cbPhase == 2)
+        {
+            if (t - cbT0 < 3f && w.ClodCount > 0) return;
+            // how lumpy the rails ahead are now
+            cbLump = 0f;
+            for (int i = 0; i < cbBare.Length; i++)
+                cbLump = Mathf.Max(cbLump, w.FloorAt(cart.transform.position + inward * (1.0f + i * 0.05f) + Vector3.up * 0.5f) - cbBare[i]);
+            cbLog += " spillOnRails=" + (cbLump * 100f).ToString("F0") + "cm clodsLeft=" + w.ClodCount;
+            StandAtEnd(wk, cart, true);                          // push it in, over the spill
+            cbLog += " grabbed=" + cGrabbed;
+            cbCartY = cart.transform.position.y; cbManY = wk.transform.position.y; cbRawY = cart.RawFloor;
+            cbCamY = Camera.main != null ? Camera.main.transform.position.y : 0f;
+            cbPhase = 3; cbT0 = t;
+            return;
+        }
+        if (cbPhase == 3)
+        {
+            float dt = Mathf.Max(Time.deltaTime, 0.002f);
+            float cy = cart.transform.position.y, my = wk.transform.position.y, ry = cart.RawFloor, ky = Camera.main != null ? Camera.main.transform.position.y : 0f;
+            if (t - cbT0 > 0.3f)
+            {
+                cbMaxCart = Mathf.Max(cbMaxCart, Mathf.Abs(cy - cbCartY) / dt);
+                cbMaxMan = Mathf.Max(cbMaxMan, Mathf.Abs(my - cbManY) / dt);
+                cbMaxCam = Mathf.Max(cbMaxCam, Mathf.Abs(ky - cbCamY) / dt);
+                cbMaxRaw = Mathf.Max(cbMaxRaw, Mathf.Abs(ry - cbRawY) / dt);
+                cbFrames++;
+            }
+            cbCartY = cy; cbManY = my; cbCamY = ky; cbRawY = ry;
+            float moved = Mathf.Abs(cart.Along - cbAlong0);
+            cbStill = moved > 0.01f && wk.HoldingCart != 0 ? cbStill : cbStill + Time.deltaTime;
+            if (moved < 4.2f && t - cbT0 < 12f) return;
+            wk.overrideWalk = 0f;
+            bool ok = true;
+            cbLog += " pushed=" + moved.ToString("F2") + "m frames=" + cbFrames
+                   + " fastestUpDown(m/s) cart=" + cbMaxCart.ToString("F2") + " man=" + cbMaxMan.ToString("F2") + " camera=" + cbMaxCam.ToString("F2") + " rawFloor=" + cbMaxRaw.ToString("F2");
+            if (!cGrabbed) { ok = false; cbLog += " grabbed=FAIL"; }
+            if (cbLump < 0.06f) { ok = false; cbLog += " spillOnRails=FAIL"; }
+            if (moved < 2.5f) { ok = false; cbLog += " pushedOverIt=FAIL"; }
+            if (cbMaxCart > 0.05f) { ok = false; cbLog += " cartLevel=FAIL"; } else cbLog += " cartLevel=ok";
+            if (cbMaxMan > 0.6f) { ok = false; cbLog += " manGentle=FAIL"; } else cbLog += " manGentle=ok";
+            if (cbMaxCam > 0.6f) { ok = false; cbLog += " cameraGentle=FAIL"; } else cbLog += " cameraGentle=ok";
+            Debug.Log((ok ? "BULLDOZER_CARTBUMP_RESULT" : "BULLDOZER_CARTBUMP_FAILED") + cbLog);
+            CartBumpFinish(ok ? 0 : 1);
+        }
+    }
+
     // Small fixes (24 Nov):  -executeMethod BulldozerBuilder.FixesTest    prints BULLDOZER_FIXES_RESULT (or _FAILED)
     // The test keys (F7 F8 F9) are off unless switched on in Settings, and the switch works.  At the gold shed with
     // gold, E hands the gold in even with an arrow lying right there; with no gold, E then picks the arrow up.  F6

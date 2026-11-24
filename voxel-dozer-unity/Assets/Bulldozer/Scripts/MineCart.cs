@@ -172,11 +172,44 @@ public class MineCart : MonoBehaviour
         dir = (path[i] - path[i - 1]).normalized;
     }
 
+    // The cart rides the rails, not the dirt lying on them: its height is the rails' height (SiteProps.RailHeight),
+    // so it rolls level through spill, which it pushes its wheels through.  (Before 24 Nov 2026 it took the floor
+    // under one point each frame: over loose dirt it, the man holding it and the camera behind him jolted up and
+    // down a voxel at a time, which the owner saw as the camera shaking.)  The man holding it still walks on the
+    // dirt, but his height is averaged over a step and eased in.  RawFloor is the old one-point height (the test).
+    float holdY, holdS, holdTime;
+    bool haveHoldY;
+    /// The rails' height, s metres along the track.
+    float RailAt(float s)
+    {
+        var h = SiteProps.RailHeight;
+        if (h == null || h.Count != path.Count) { Vector3 p0, d0; Sample(s, out p0, out d0); return world.FloorAt(p0 + Vector3.up * 0.5f); }
+        s = Mathf.Clamp(s, 0f, length);
+        int i = 1;
+        while (i < path.Count - 1 && distanceAt[i] < s) i++;
+        return Mathf.Lerp(h[i - 1], h[i], Mathf.InverseLerp(distanceAt[i - 1], distanceAt[i], s));
+    }
+    float FloorAlong(float s, float halfSpan)
+    {
+        const int N = 9;
+        float sum = 0f;
+        for (int i = 0; i < N; i++)
+        {
+            Vector3 p, d;
+            Sample(s + Mathf.Lerp(-halfSpan, halfSpan, i / (N - 1f)), out p, out d);
+            sum += world.FloorAt(p + Vector3.up * 0.5f);
+        }
+        return sum / N;
+    }
+    static float Ease(float from, float to) { return Mathf.Lerp(from, to, 1f - Mathf.Exp(-6f * Mathf.Max(Time.deltaTime, 0.001f))); }
+    /// The floor right under the cart's middle (tests: what its height used to be).
+    public float RawFloor { get { Vector3 p, d; Sample(Along, out p, out d); return world.FloorAt(p + Vector3.up * 0.5f); } }
+
     void Place()
     {
         Vector3 at, dir;
         Sample(Along, out at, out dir);
-        at.y = world.FloorAt(at + Vector3.up * 0.5f);
+        at.y = RailAt(Along);
         dir.y = 0f;
         transform.SetPositionAndRotation(at, Quaternion.LookRotation(dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.forward));
         DrawLoad();
@@ -300,10 +333,16 @@ public class MineCart : MonoBehaviour
     public void HoldPlace(int end, out Vector3 at, out Vector3 facing)
     {
         Vector3 dir;
-        Sample(Along + end * (HalfLength + StandOff), out at, out dir);
+        float s = Along + end * (HalfLength + StandOff);
+        Sample(s, out at, out dir);
         dir.y = 0f;
         facing = -end * dir.normalized;
-        at.y = world.FloorAt(at + Vector3.up * 0.5f);
+        // his feet: the floor about where he stands, eased the same way as the cart (see Place)
+        float floor = FloorAlong(s, 0.3f);
+        bool fresh = !haveHoldY || Time.time - holdTime > 0.25f || Mathf.Abs(s - holdS) > 0.5f;
+        holdY = fresh ? floor : Ease(holdY, floor);
+        holdS = s; holdTime = Time.time; haveHoldY = true;
+        at.y = holdY;
     }
 
     /// The top of the end he is holding, where his hands go.
@@ -331,7 +370,7 @@ public class MineCart : MonoBehaviour
         Sample(s + way * (HalfLength + 0.04f), out lead, out dir);
         Vector3 here, d2;
         Sample(s, out here, out d2);
-        lead.y = world.FloorAt(here + Vector3.up * 0.5f) + 0.75f;
+        lead.y = RailAt(s) + 0.75f;
         return world.MaterialAt(lead) != VoxelWorld.Air;
     }
 

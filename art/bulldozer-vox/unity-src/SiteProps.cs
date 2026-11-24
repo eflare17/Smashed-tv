@@ -19,6 +19,8 @@ public class SiteProps : MonoBehaviour
 
     /// The middle of the track, point by point, from deep in the tunnel out to the end of the line.
     public static readonly List<Vector3> RailPath = new List<Vector3>();
+    /// The height of the rails at each point of RailPath (the cart rides at this height: MineCart.cs).
+    public static readonly List<float> RailHeight = new List<float>();
 
     /// True if a machine of the given radius at this spot would be inside something solid.
     /// A person on foot is not stopped by things that only keep machines out (the mine tunnel).
@@ -409,6 +411,8 @@ public class SiteProps : MonoBehaviour
         pts.Add(way[way.Length - 1]);
         RailPath.Clear();
         RailPath.AddRange(pts);
+        RailHeight.Clear();
+        foreach (var rp in pts) RailHeight.Add(RailY(rp.x, rp.z));
         float sinceSleeper = 1f;
         for (int i = 0; i < pts.Count - 1; i++)
         {
