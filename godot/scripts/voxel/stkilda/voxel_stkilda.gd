@@ -171,6 +171,8 @@ func go() -> void:
 	_debris_bound = arena.debris.bound
 	arena.debris.bound = INF                    # (the arena's walls don't stop the cubes here)
 	arena.frozen = true
+	if arena.waves and arena.waves._banner:      # (the arena's "WAVE 1" would hang on screen: its fade is frozen too)
+		arena.waves._banner.visible = false
 	active = true
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
