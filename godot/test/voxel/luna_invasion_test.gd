@@ -6,6 +6,11 @@ extends SceneTree
 ## group comes once; the lot cleared shows the banner and keeps a best time; Home takes every one away and puts the
 ## scenery riders back. Fixed seeds, the player put where it's wanted, kills through the bodies' own damage.
 ##   godot --headless --path godot --fixed-fps 60 -s res://test/voxel/luna_invasion_test.gd
+## First (the owner, 24 Nov: "a button to start it"; the Carousel stopped dead flings its enemies): travelling to St
+## Kilda the park's peaceful; the start button's just inside the entrance, its prompt shows when you look at it; E
+## starts the invasion with nobody made within 12 m of you; E held calls it off; the Carousel driven flat out through
+## the hack's own signals and braked flings every enemy riding it (kills, cash, the ride cleared), the view yours; from
+## half speed only a few fall off.
 ## Prints PASS / FAIL lines and "LUNA INVASION: X passed, Y failed". Owned by the St Kilda session.
 
 const I := preload("res://scripts/voxel/stkilda/voxel_park_invasion.gd")
@@ -14,7 +19,7 @@ var arena: VoxelArena
 var sk: VoxelStKilda
 var inv: VoxelParkInvasion
 var t := 0.0
-var step := 0
+var step := 100
 var passed := 0
 var failed := 0
 var had_best := false
@@ -30,6 +35,219 @@ var walker: Dictionary
 var seat_y := 0.0
 var sweep_t := 0.0
 var sweep_n := 0
+var btn: VoxelInvasionButton
+var hack: VoxelCarouselHack
+var seen_ids := {}               # the park's bodies seen so far
+var near_min := INF              # the nearest any was to you the frame it was first there
+var first_ground := INF          # when the first of the ground groups came (s after the press)
+var on0: Array = []              # the Carousel's riders before the brake: [rec, body, how far out from its middle]
+var kills0 := 0
+var mid := Vector3.ZERO
+
+func _hold(k: Key, down: bool) -> void:
+	var e := InputEventKey.new()
+	e.physical_keycode = k
+	e.pressed = down
+	Input.parse_input_event(e)
+
+func _signal(act: String) -> void:
+	hack.send(hack.keys.find(act))
+
+func _carousel() -> Dictionary:
+	return inv.rides.filter(func(r): return r.name == "Carousel")[0]
+
+# stood in front of the button, looking at it (or turned `turn` radians away)
+func _at_button(turn := 0.0) -> void:
+	var at := btn.button_at()
+	var p := btn.global_transform * Vector3(0.0, 0.0, 2.0)
+	var to := at - Vector3(p.x, 1.6, p.z)
+	sk._put(Vector3(p.x, 0.05, p.z), atan2(-to.x, -to.z) + turn, atan2(to.y, Vector2(to.x, to.z).length()))
+
+# the park's bodies new this frame: how near you the nearest was
+func _watch() -> void:
+	var me := arena.player.global_position
+	for b in _park():
+		if seen_ids.has(b.get_instance_id()):
+			continue
+		seen_ids[b.get_instance_id()] = true
+		near_min = minf(near_min, b.global_position.distance_to(me))
+		if not b.has_meta("riding"):
+			first_ground = minf(first_ground, inv.time)
+
+func _button_steps() -> void:
+	match step:
+		100:
+			if t < 1.5:
+				return
+			arena.waves.queue.clear()
+			arena.godmode = true
+			sk = arena.stkilda
+			_key(KEY_P)
+			_next(101)
+		101:
+			if t > 0.2:
+				_key(KEY_1 + VoxelPhone.PLACES.map(func(p): return p[0]).find("stkilda"))
+				_next(102)
+		102:
+			if t < 0.5:
+				return
+			inv = sk.invasion
+			btn = sk.button
+			hack = sk.hack
+			_check(sk.active and not inv.running and not inv._hud.visible, "travelled to St Kilda: the invasion's not on")
+			_check(_park().is_empty() and inv._hidden.is_empty(), "the park's peaceful: no enemies, every scenery rider on its seat")
+			var face := SkLunaPark.xf(sk.town)
+			var loc: Vector3 = (sk.global_transform * face).affine_inverse() * btn.global_position
+			_check(btn != null and loc.z < -SkLunaPark.TOWER_D and loc.z > -14.0 and absf(loc.x) > SkLunaPark.MOUTH_HALF + 0.5 and absf(loc.x) < 6.0,
+				"the button's just inside the entrance, beside the path (%.1f m in past the face, %.1f m to the side)" % [-loc.z, loc.x])
+			_check(btn.sign.text == "INVASION" and btn.button.global_position.y > 1.0, "its sign says INVASION, the button %.1f m up" % btn.button.global_position.y)
+			_at_button(PI)
+			_next(103)
+		103:
+			if t < 0.2:
+				return
+			_check(btn.prompt == "" and not arena._use_label.text.contains("invasion"), "by it but looking away: no prompt")
+			_at_button()
+			_next(104)
+		104:
+			if t < 0.2:
+				return
+			_check(arena._use_label.text == "E  start the invasion" and btn.prompt == arena._use_label.text, "looking at it: \"%s\"" % arena._use_label.text)
+			inv.seed_ = 7
+			seen_ids.clear()
+			near_min = INF
+			first_ground = INF
+			_key(KEY_E)
+			_next(105)
+		105:
+			_watch()
+			if t < 0.15:
+				return
+			_check(inv.running and btn.presses == 1 and inv._hud.visible, "E: the invasion's on (%d rides, %d to kill)" % [inv.rides.size(), inv.left()])
+			_check(btn._siren.playing and btn.lamp_light.visible, "the siren's going, the lamp's flashing")
+			for h in inv._hidden:
+				seats_hidden.append([h[0], h[1]])
+			_next(106)
+		106:
+			_watch()
+			if t < 1.0:
+				return
+			_check(btn.button.position.z < VoxelInvasionButton.BUTTON_OUT - 0.04, "the button's down (%.2f m in)" % (VoxelInvasionButton.BUTTON_OUT - btn.button.position.z))
+			_check(arena._use_label.text.begins_with("E  call off the invasion"), "its prompt now: \"%s\"" % arena._use_label.text)
+			_check(inv._ground.is_empty(), "nobody on the ground yet, a second in")
+			_next(107)
+		107:
+			_watch()
+			if t < 5.0:
+				return
+			_check(not seen_ids.is_empty() and near_min >= 12.0, "%d enemies there by now, none made within 12 m of you (the nearest %.1f m)" % [seen_ids.size(), near_min])
+			_check(first_ground >= I.INSIDE_WAIT and not inv._ground.is_empty(), "the first on the ground came after %.1f s (%d in)" % [first_ground, inv._ground.size()])
+			_hold(KEY_E, true)
+			_next(108)
+		108:
+			if t < 0.5:
+				return
+			_check(inv.running and arena._use_label.text.contains("["), "E held half a second: still on, the bar filling: " + arena._use_label.text)
+			_next(109)
+		109:
+			if t < 0.8:
+				return
+			_hold(KEY_E, false)
+			_check(not inv.running and not inv._hud.visible and _park().is_empty(), "E held a second: called off, its enemies gone")
+			_check(inv._hidden.is_empty() and not seats_hidden.is_empty() and seats_hidden.all(func(h): return ((h[0] as Array)[2] as Transform3D).is_equal_approx(h[1])),
+				"the scenery riders back on their seats (%d)" % seats_hidden.size())
+			seats_hidden.clear()
+			_next(110)
+		110:
+			if t < 0.3:
+				return
+			_check(arena._use_label.text == "E  start the invasion" and not btn._siren.playing and not btn.lamp_light.visible, "the button's ready again, quiet")
+			# the Carousel: flat out through the hack's own signals, the invasion on, and the brake
+			inv.seed_ = 7
+			inv.start()
+			mid = hack.spin.global_position
+			_stand(mid, 22.0)
+			_next(111)
+		111:
+			if t < 0.5:
+				return
+			for k in 3:
+				_signal("faster")
+			_next(112)
+		112:
+			if hack.w < 3.35 and t < 12.0:
+				return
+			var car := _carousel()
+			on0.clear()
+			for r in car.riders:
+				if r.state == I.SEATED and _made(r):
+					var b: VoxelBody = r.body
+					on0.append([r, b, Vector2(b.global_position.x - mid.x, b.global_position.z - mid.z).length()])
+			_check(hack.w > 3.3 and on0.size() >= 2 and on0.size() == (car.riders as Array).size(), "flat out (%.1f rad/s): its %d enemies still on it, holding on" % [hack.w, on0.size()])
+			kills0 = inv.kills
+			cash0 = arena.cash
+			_signal("brake")
+			_next(113)
+		113:
+			if t < 0.1:
+				return
+			var car := _carousel()
+			_check(inv.flung == on0.size() and not (car.riders as Array).any(func(r): return r.state == I.SEATED), "the brake: all %d flung, none left riding" % inv.flung)
+			_check(on0.all(func(o): return (o[1] as VoxelBody).airborne and not (o[1] as VoxelBody).has_meta("riding")), "they're in the air, the arena's bodies")
+			_check(hack.tumbles.size() == 1 and arena.cam.current and not (hack._cam and hack._cam.current), "the scenery rider's thrown too; the view stays yours")
+			_next(114)
+		114:
+			if t < 5.0:
+				return
+			var car := _carousel()
+			var out_min := INF
+			var dead := 0
+			for o in on0:
+				var b: VoxelBody = o[1]
+				if not is_instance_valid(b):
+					dead += 1
+					continue
+				out_min = minf(out_min, Vector2(b.global_position.x - mid.x, b.global_position.z - mid.z).length() - float(o[2]))
+				if not b.alive:
+					dead += 1
+			_check(out_min > 5.0, "every one went outward more than 5 m (the least %.1f m)" % out_min)
+			_check(dead * 2 > on0.size(), "most died landing (%d of %d)" % [dead, on0.size()])
+			_check(inv.kills - kills0 == dead and arena.cash > cash0, "counted as kills (%d) and paid ($%d)" % [inv.kills - kills0, arena.cash - cash0])
+			for o in on0:
+				if is_instance_valid(o[1]) and (o[1] as VoxelBody).alive:
+					_check(not car.cleared, "not cleared while one that lived is about")
+					(o[1] as VoxelBody).hurt(99999.0)
+			_check(car.cleared and inv.paid >= I.RIDE_CASH, "all dead: the Carousel's cleared ($%d paid for rides)" % inv.paid)
+			# again from half speed: only a few fall off
+			hack.reset()
+			inv.start()
+			_stand(mid, 22.0)
+			_next(115)
+		115:
+			if t < 0.5:
+				return
+			for k in 2:
+				_signal("faster")
+			_next(116)
+		116:
+			if hack.w < 2.15 and t < 8.0:
+				return
+			on0.clear()
+			for r in _carousel().riders:
+				if r.state == I.SEATED and _made(r):
+					on0.append([r, r.body, float((r.body as VoxelBody).hp)])
+			_signal("brake")
+			_next(117)
+		117:
+			if t < 3.0:
+				return
+			var off := on0.filter(func(o): return o[0].state != I.SEATED)
+			_check(not off.is_empty() and off.size() < on0.size() and hack.tumbles.is_empty(), "stopped dead from half speed (2.2 rad/s): %d of %d knocked off, the rest still on" % [off.size(), on0.size()])
+			_check(off.all(func(o): return is_instance_valid(o[1]) and (o[1] as VoxelBody).alive and (o[1] as VoxelBody).hp < float(o[2]) and not (o[1] as VoxelBody).airborne),
+				"those fell and were hurt a little, alive")
+			sk.home()
+			_check(not inv.running and _park().is_empty(), "home: stopped")
+			_next(0)
 
 func _initialize() -> void:
 	had_best = FileAccess.file_exists(VoxelParkInvasion.BEST_FILE)
@@ -72,6 +290,9 @@ func _next(s: int) -> void:
 func _process(dt: float) -> bool:
 	t += dt
 	if arena.phone and arena.phone._going:
+		return false
+	if step >= 100:
+		_button_steps()
 		return false
 	match step:
 		0:

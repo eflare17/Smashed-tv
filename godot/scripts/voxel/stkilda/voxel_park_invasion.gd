@@ -17,6 +17,7 @@ extends Node
 ## scenery riders back.
 
 const FILL := 0.4                # of a ride's riders that are enemies ...
+const FILL_RIDE := {"Carousel": 0.8}    # (the Carousel: most of them, for the brake to throw: carousel_stopped)
 const MIN_RIDERS := 2            # ... this many at least (or every one, on a ride with fewer)
 const GET_OFF := 8.0             # m: you this near a rider and it jumps off
 const NEAR_ON := 60.0            # m: riders nearer than this are made ...
@@ -37,6 +38,19 @@ const BEST_FILE := "user://stkilda_invasion.cfg"
 const RIDE_NAMES := {"Carousel": "Carousel", "SkyRider": "Sky Rider", "Supernova": "Supernova", "PharaohsCurse": "Pharaoh's Curse",
 	"ConeyDrop": "Coney Drop", "Spider": "Spider", "PowerSurge": "Power Surge", "ArabianMerry": "Arabian Merry",
 	"SkScenicRailway": "Scenic Railway"}
+# started at the button (you're inside the park already: nobody pops up in front of you)
+const INSIDE_NEAR := 15.0        # m: riders this near and in your view wait INSIDE_HOLD s (the red flash over them) ...
+const INSIDE_HOLD := Vector2(0.3, 0.7)
+const INSIDE_KEEP := 12.0        # ... and nobody's made nearer than this for the first INSIDE_WAIT s
+const INSIDE_WAIT := 3.0         # s before the first of the ground groups comes in (at the wall, away from you)
+# the Carousel stopped dead (VoxelCarouselHack's brake): its riders flung off
+const HOLD_ON := 0.9             # rad/s: turning faster than this nobody can get off it (they hold on)
+const KNOCK_FROM := 1.7          # rad/s (half speed): stopped dead from above this a few fall off ...
+const KNOCK_PART := 0.35         # ... this much of them
+const KNOCK_HURT := 15.0
+const FLING_HURT := 170.0        # health off landing, flung from flat out (the big ones: FLING_HEAVY of their own)
+const FLING_HEAVY := 0.45
+const DAZED := 1.6               # s longer on the ground, one that lived
 const HIPS := 0.88               # a scenery rider's hips above their feet (SkLunaRides._seat)
 
 enum { SEATED, HOPPING, OFF, DEAD }
@@ -58,6 +72,9 @@ var _due: Array = []             # area numbers, one for each still to come in
 var _gap := 0.0
 var _hidden: Array = []          # [a Riders' seat, where they sat]: the scenery riders taken off
 var _rng := RandomNumberGenerator.new()
+var _flung: Array = []           # [a body in the air off the Carousel, the health its landing takes]
+var flung := 0                   # how many the Carousel's thrown, this game
+var _inside := false             # started at the button
 var _hud: Label
 var _end: Label
 
@@ -91,8 +108,9 @@ func _label(size: int, c: Color, outline: int) -> Label:
 	sk.arena._hud_layer.add_child(l)
 	return l
 
-## Off we go (you're in St Kilda).
-func start() -> void:
+## Off we go (you're in St Kilda). inside: started at the button, you stood in the park: riders in front of you and
+## near come a moment later than the rest, the ground groups after INSIDE_WAIT s.
+func start(inside := false) -> void:
 	stop()
 	if sk.game:
 		sk.game.stop()                       # (not both games at once)
@@ -111,7 +129,17 @@ func start() -> void:
 	time = 0.0
 	cleared = 0
 	paid = 0
-	_gap = 0.0
+	flung = 0
+	_inside = inside
+	_gap = INSIDE_WAIT if inside else 0.0
+	if inside:
+		var me := sk.arena.player.global_position
+		var look := Vector3(-sin(sk.arena.look_yaw), 0, -cos(sk.arena.look_yaw))
+		for rec in _recs:
+			var to := _seat_xf(rec).origin - me
+			to.y = 0.0
+			if to.length() < INSIDE_NEAR and (sk.arena.top_down or look.dot(to.normalized()) > 0.2):
+				rec.hold = _rng.randf_range(INSIDE_HOLD.x, INSIDE_HOLD.y)
 	_hud.visible = true
 	_end.visible = false
 	_hud_line()
@@ -137,6 +165,7 @@ func stop() -> void:
 	_recs.clear()
 	_ground.clear()
 	_due.clear()
+	_flung.clear()
 	if was:
 		sk.clear_park()
 
@@ -185,7 +214,7 @@ func _find_rides() -> void:
 				for i in r.seats.size():
 					if ((r.seats[i] as Array)[2] as Transform3D).basis.get_scale().x >= 0.01:      # (not one thrown off already)
 						seats.append([r, i, legs])
-			var want := mini(seats.size(), maxi(MIN_RIDERS, roundi(seats.size() * FILL)))
+			var want := mini(seats.size(), maxi(MIN_RIDERS, roundi(seats.size() * float(FILL_RIDE.get(String(c.name), FILL)))))
 			# (spread round the ride: every few seats, from a seat picked by the game's seed)
 			var first := _rng.randi() % maxi(1, seats.size())
 			var touched := {}
@@ -229,7 +258,7 @@ func _new_ride(n: Node) -> Dictionary:
 
 func _add_rider(ride: Dictionary, at: Dictionary, legs: float) -> void:
 	var rec := {"ride": int(ride.i), "kind": RIDER_KINDS[_rng.randi() % RIDER_KINDS.size()], "state": SEATED, "body": null,
-		"at": at, "legs": legs, "prev": Vector3.INF, "put": Vector3.INF, "v": Vector3.ZERO, "wait": INF, "hop": 0.0, "made": false, "fall": false, "hp0": 0.0, "cb": Callable(), "from": Vector3.ZERO, "to": Vector3.ZERO}
+		"at": at, "legs": legs, "prev": Vector3.INF, "put": Vector3.INF, "v": Vector3.ZERO, "wait": INF, "hop": 0.0, "made": false, "fall": false, "hp0": 0.0, "hold": 0.0, "cb": Callable(), "from": Vector3.ZERO, "to": Vector3.ZERO}
 	(ride.riders as Array).append(rec)
 	_recs.append(rec)
 
@@ -387,7 +416,7 @@ func _riders_step(dt: float) -> void:
 				if rec.made:
 					_rider_died(null, rec)
 					continue
-			if d < NEAR_ON and not rec.made:
+			if d < NEAR_ON and not rec.made and time >= float(rec.hold) and not (_inside and time < INSIDE_WAIT and d < INSIDE_KEEP):
 				_make(rec, seat)
 				rec.made = true
 			continue
@@ -420,7 +449,8 @@ func _riders_step(dt: float) -> void:
 			continue                          # (a statue on its seat)
 		var thrower: bool = rec.kind == "thrower" and VoxelKinds.can_throw(b)
 		rec.wait = float(rec.wait) - dt       # (INF till its ride's been hit)
-		var off := b.panic_t > 0.0 or (not thrower and (d < GET_OFF or float(rec.wait) <= 0.0))
+		var tight := _holding_on(rec)        # (the Carousel turning fast: nobody can get off it)
+		var off := b.panic_t > 0.0 or (not thrower and not tight and (d < GET_OFF or float(rec.wait) <= 0.0))
 		if rec.kind == "thrower" and not thrower:
 			off = true                        # (no arm to throw with: down to hit you)
 		if off and a.down_t <= 0.0:
@@ -457,6 +487,94 @@ func _throw_step(b: VoxelBody, eye: Vector3, d: float, dt: float) -> void:
 				b.act = VoxelBody.ACT_AIM
 				b.act_t = VoxelKinds.AIM
 				b.act_p = 0.0
+
+# ---------------------------------------------------------------- the Carousel stopped dead
+#
+# (The owner, 24 Nov: "Do I still have the ability to make it spin fast and stop so they go flying?"; all of them fly
+# off.) VoxelCarouselHack's brake calls carousel_stopped: from flat out every enemy riding the Carousel is let go and
+# launched the way its horse was going, and outward, and up, as fast as the ride was turning there; it tumbles as any
+# body knocked flying, and where it comes to rest it's hurt FLING_HURT (dead, most kinds; a big one lives, lies DAZED s
+# longer, gets up and comes at you). They're kills like any other (the count, the cash, the ride cleared when its
+# last rider's dead). From above half speed (KNOCK_FROM) a few just fall off, hurt a little.
+
+func _holding_on(rec: Dictionary) -> bool:
+	return sk.hack != null and sk.hack.w > HOLD_ON and String(rides[int(rec.ride)].name) == "Carousel"
+
+## The Carousel stopped dead, turning at w rad/s about mid. all: flat out, every rider flung; else (above KNOCK_FROM) a
+## few knocked off. How many went.
+func carousel_stopped(mid: Vector3, w: float, all: bool) -> int:
+	if not running or (not all and w < KNOCK_FROM):
+		return 0
+	var on := []
+	for ride in rides:
+		if String(ride.name) == "Carousel":
+			for rec in ride.riders:
+				if rec.state == SEATED:
+					on.append(rec)
+	if on.is_empty():
+		return 0
+	var n := on.size()
+	if not all:
+		n = clampi(roundi(on.size() * KNOCK_PART), 1, maxi(1, on.size() - 1))
+		var first := _rng.randi() % on.size()             # (spread round the ride)
+		var pick := []
+		for i in n:
+			pick.append(on[(first + i * on.size() / n) % on.size()])
+		on = pick
+	var top: float = VoxelCarouselHack.SPEEDS[VoxelCarouselHack.SPEEDS.size() - 1]
+	var k := clampf(w / top, 0.0, 1.3)
+	var went := 0
+	for rec in on:
+		var seat := _seat_xf(rec)
+		var b: VoxelBody = rec.body if rec.body != null and is_instance_valid(rec.body) else null
+		if b == null:
+			if rec.made:
+				continue
+			_make(rec, seat)                  # (too far off to have been made yet: it flies all the same)
+			rec.made = true
+			b = rec.body
+		var r := seat.origin - mid
+		r.y = 0.0
+		var out := r.normalized() if r.length() > 0.1 else Vector3.FORWARD
+		var along := Vector3.UP.cross(r) * w          # (how its seat was going)
+		var v: Vector3
+		var hurt := KNOCK_HURT
+		if all:
+			v = (along * 0.75).limit_length(15.0) + out * _rng.randf_range(4.0, 7.0) * k
+			v.y = _rng.randf_range(4.5, 7.0) * k
+			hurt = b.hp * FLING_HEAVY if b.heavy() else FLING_HURT * k * k
+		else:
+			v = along * 0.3 + out * _rng.randf_range(1.2, 2.2)
+			v.y = _rng.randf_range(1.2, 2.0)
+		b.visible = true
+		_let_go(b)
+		b.act = 0
+		b.act_p = 0.0
+		b.launch(v, _rng.randf_range(5.0, 9.0) if all else 3.0)
+		rec.state = OFF
+		rec.wait = INF
+		_flung.append([b, hurt])
+		went += 1
+	flung += went
+	if went > 0 and all:
+		sk.arena.sound.play("swoosh_heavy", mid, 2.0, 1.1)
+	return went
+
+# the flung ones: hurt where they come to rest
+func _flung_step() -> void:
+	var k := 0
+	while k < _flung.size():
+		var b: VoxelBody = _flung[k][0] if is_instance_valid(_flung[k][0]) else null
+		if b != null and b.alive and b.airborne:
+			k += 1
+			continue
+		if b != null and b.alive:
+			sk.arena.sound.play("slam", b.global_position, -9.0, 1.4)
+			if sk.arena.debris:
+				sk.arena.debris.throw(b.position + Vector3(0, 0.2, 0), Vector3.UP, Color(0.6, 0.58, 0.52), 8)
+			if not b.hurt(float(_flung[k][1])) and b.alive:
+				b.down_t += DAZED             # (lived: dazed a while, then up and at you)
+		_flung.remove_at(k)
 
 # ---------------------------------------------------------------- the parts of the park, their groups
 
@@ -540,7 +658,9 @@ func _come_in(a: Dictionary) -> void:
 			best_s = s
 			best = p
 	if best == Vector3.INF:
-		best = spots[from]
+		for p: Vector3 in spots:             # (none far enough off: the furthest there is, never beside you)
+			if best == Vector3.INF or p.distance_squared_to(me) > best.distance_squared_to(me):
+				best = p
 	var kinds: Array = VoxelParkGame.KINDS
 	a.came = int(a.came) + 1
 	var b := sk.spawn(kinds[_rng.randi() % kinds.size()], best)
@@ -560,6 +680,7 @@ func _process(dt: float) -> void:
 		return
 	time += dt
 	_riders_step(dt)
+	_flung_step()
 	_areas_step(dt)
 	_ground = _ground.filter(func(b): return is_instance_valid(b))
 	_hud_line()

@@ -11,6 +11,8 @@ extends Node3D
 ## - A loose bolt: with the ride stood still, hold E by a horse nobody's on for LOOSEN s (a bar fills): its bolt's
 ##   loose. From then it rattles on its pole as the ride turns, the faster the worse, and when the ride stops dead
 ##   it's thrown over crooked on its pole and stays that way.
+## - (The invasion on, VoxelParkInvasion.carousel_stopped: stopped dead from flat out every enemy riding it is flung
+##   off; from above half speed a few are knocked off.)
 ## - Stopped dead from flat out (THROW_FROM), a rider goes flying across the park at Luna Palace, the view going with
 ##   them, and is caught by a foot on a window sill, left hanging upside down (the owner, 31 Oct). VoxelCarouselTumble.
 ## Put back as it was the next time you come (reset). Owned by the St Kilda session.
@@ -227,8 +229,12 @@ func send(k: int) -> void:
 			if w > 0.05:
 				braking = DEAD_STOP
 				_brake_from = w
+				# (the invasion on: every enemy riding it flung off, VoxelParkInvasion; then the view stays yours)
+				var flung := 0
+				if sk.invasion and sk.invasion.running:
+					flung = sk.invasion.carousel_stopped(spin.global_position, w, w > THROW_FROM)
 				if w > THROW_FROM:
-					_throw()
+					_throw(flung == 0)
 				sk.arena.sound.play("slam", carousel.global_position, 2.0, 0.7)
 				sk.arena.sound.play("mine_groan", carousel.global_position, 0.0, 1.2)
 			level = 0
@@ -456,7 +462,8 @@ func _palace_wall() -> bool:
 	return true
 
 ## The rider thrown off: at Luna Palace if it's there to hit, else into whatever's nearest the way they're going.
-func _throw() -> void:
+## (view false: the view doesn't go with them: the invasion's enemies are flying too and you need your own.)
+func _throw(view := true) -> void:
 	if spin.riders == null:
 		return
 	var mid := spin.global_position
@@ -529,7 +536,7 @@ func _throw() -> void:
 	tb.start(Transform3D(face.scaled(Vector3.ONE * best_xf.basis.get_scale().x), start), custom, fly, mid, lift, 4.0 if far else 6.0)
 	tumbles.append(tb)
 	sk.arena.sound.play("swoosh_heavy", start, 0.0, 0.8)
-	if far:
+	if far and view:
 		_follow(tb, fly.normalized())
 
 # ---------------------------------------------------------------- the view going with them
