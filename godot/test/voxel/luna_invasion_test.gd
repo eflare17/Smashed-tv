@@ -2,7 +2,7 @@ extends SceneTree
 ## "Luna Park: Invasion" (VoxelParkInvasion): 6 on the phone starts it; every ride with seats has enemies riding it (the
 ## scenery riders they replace hidden); a rider stays on its seat as the ride moves and is hit where it's drawn; one
 ## shot dead (VoxelArena.fire) drops the count and falls off as a body; the rest of its ride get off; walking up to a
-## ride gets them off too; a thrower throws from its seat; a ride cleared pays $20 and counts; a part of the park's
+## ride gets them off too; a grenade blows one off; a thrower throws from its seat; a ride cleared pays $20 and counts; a part of the park's
 ## group comes once; the lot cleared shows the banner and keeps a best time; Home takes every one away and puts the
 ## scenery riders back. Fixed seeds, the player put where it's wanted, kills through the bodies' own damage.
 ##   godot --headless --path godot --fixed-fps 60 -s res://test/voxel/luna_invasion_test.gd
@@ -205,6 +205,28 @@ func _process(dt: float) -> bool:
 			var b: VoxelBody = walker.body
 			_check(walker.state == I.OFF and _made(walker) and not b.has_meta("riding") and b.global_position.y < 0.3,
 				"within %d m: it's off the %s and on the ground" % [int(I.GET_OFF), inv.rides[int(walker.ride)].title])
+			_next(20)
+		20:
+			# a grenade's blast beside one on the Spider: blown off its seat like any enemy
+			var sp := inv._recs.filter(func(r): return r.state == I.SEATED and inv.rides[int(r.ride)].name == "Spider")
+			if sp.is_empty():
+				_check(false, "a rider on the Spider to blow up")
+				_next(10)
+				return false
+			walker = sp[0]
+			if t < 0.01:
+				_stand(inv._seat_xf(walker).origin, 15.0)
+			if t < 0.4:
+				return false
+			vb = walker.body
+			seat_y = vb.global_position.y
+			arena.melee["grenades"].explode(vb.global_transform * Vector3(0.5, vb.height * 0.5, 0.3), "bench")
+			_next(21)
+		21:
+			if t < 0.25:
+				return false
+			_check(walker.state != I.SEATED and is_instance_valid(vb) and not vb.has_meta("riding") and vb.global_transform.basis.is_equal_approx(Basis.IDENTITY),
+				"a grenade beside one on the Spider: blown off its seat (%s, %.1f m up, was %.1f)" % ["dead" if not vb.alive else "alive", vb.global_position.y, seat_y])
 			_next(10)
 		10:
 			# a thrower throws from its seat

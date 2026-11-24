@@ -229,7 +229,7 @@ func _new_ride(n: Node) -> Dictionary:
 
 func _add_rider(ride: Dictionary, at: Dictionary, legs: float) -> void:
 	var rec := {"ride": int(ride.i), "kind": RIDER_KINDS[_rng.randi() % RIDER_KINDS.size()], "state": SEATED, "body": null,
-		"at": at, "legs": legs, "prev": Vector3.INF, "v": Vector3.ZERO, "wait": INF, "hop": 0.0, "made": false, "fall": false, "hp0": 0.0, "cb": Callable(), "from": Vector3.ZERO, "to": Vector3.ZERO}
+		"at": at, "legs": legs, "prev": Vector3.INF, "put": Vector3.INF, "v": Vector3.ZERO, "wait": INF, "hop": 0.0, "made": false, "fall": false, "hp0": 0.0, "cb": Callable(), "from": Vector3.ZERO, "to": Vector3.ZERO}
 	(ride.riders as Array).append(rec)
 	_recs.append(rec)
 
@@ -271,6 +271,7 @@ func _make(rec: Dictionary, seat: Transform3D) -> void:
 	rec.body = b
 	rec.hp0 = b.hp
 	rec.prev = Vector3.INF
+	rec.put = Vector3.INF
 	rec.cb = _rider_died.bind(rec)
 	b.died.connect(rec.cb, CONNECT_ONE_SHOT)
 
@@ -398,8 +399,10 @@ func _riders_step(dt: float) -> void:
 			rec.body = null
 			rec.made = false
 			continue
-		if b.airborne or not b.has_meta("riding"):
-			# knocked off (a bat, a blast, the gravity gun, the harpoon): the arena's from here
+		var dragged: bool = rec.put != Vector3.INF and b.stagger > 0.0 and b.knock == Vector3.ZERO \
+				and b.global_position.distance_to(rec.put) > 0.02       # (the harpoon's line reeling it in)
+		if b.airborne or dragged or not b.has_meta("riding"):
+			# knocked or pulled off (a bat, a blast, the gravity gun, the harpoon): the arena's from here
 			if b.has_meta("riding"):
 				_let_go(b)
 			rec.state = OFF
@@ -409,6 +412,7 @@ func _riders_step(dt: float) -> void:
 			rec.v = (seat.origin - (rec.prev as Vector3)) / dt
 		rec.prev = seat.origin
 		b.global_transform = _body_xf(b, seat)
+		rec.put = b.global_position
 		b.visible = _seen(rec)
 		if b.hp < float(rec.hp0) or b.stagger > 0.0:
 			_alert(rides[int(rec.ride)])
@@ -563,6 +567,7 @@ func _process(dt: float) -> void:
 		_all_clear()
 
 func _hud_line() -> void:
+	_hud.visible = not (sk.arena.phone and sk.arena.phone.is_open())      # (the phone's out: it's in its way)
 	_hud.text = "Luna Park invasion: rides cleared %d/%d, enemies left %d     %s" % [cleared, rides.size(), left(), VoxelParkGame._clock(time)]
 
 func _all_clear() -> void:

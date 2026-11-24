@@ -60,7 +60,8 @@ func setup(a: VoxelArena, sk: VoxelStKilda) -> void:
 		b.add_theme_stylebox_override("disabled", _box(Color("#8792a8"), 16))
 		b.pressed.connect(travel.bind(String(p[0])))
 		screen.add_child(b)
-		_label(b, "%d  %s" % [i + 1, p[1]], 22, Vector2(16, 4), Color("#1a1c2c"))
+		var long := String(p[1]).length() > 14          # (a long name: smaller, to fit the button)
+		_label(b, "%d  %s" % [i + 1, p[1]], 18 if long else 22, Vector2(16, 8 if long else 4), Color("#1a1c2c"))
 		var sub := _label(b, String(p[2]), 15, Vector2(42, 36), Color("#4a4f63"))
 		sub.name = "Sub"
 		_buttons[p[0]] = b

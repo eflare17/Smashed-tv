@@ -1171,6 +1171,66 @@ checked against the code before it was fixed (`kinds_test` 19 checks, `waves_tes
   HOST DIRECT and the address typed in, or `--room=CODE` with a local PeerJS server, HOST A GAME and the code typed in:
   both link), `test/voxel/net_menu_shots.gd` (`voxel_shots/online_*.png`).
 
+## Luna Park: Invasion (24 Nov, the owner: "an option to have enemies in Luna Park")
+
+Enemies riding the rides that you have to kill, and enemies in the park that come as you get near each part of it.
+On branch `claude/luna-park-enemies` (not merged or published by this job).
+
+- **Playing it**: the phone (P), the 6th entry, **"Luna Park: Invasion"** (last in the list so Gun range and Dig Site
+  keep their numbers; the phone's a little taller and its buttons shorter to fit six). Or straight there: `--invasion`
+  (PC) / `?invasion` (the web page). Off unless you pick it. Home, St Kilda or "Kill 1, 2 come" on the phone stop it
+  (its enemies go, the scenery riders are back on their seats). First person or top-down. Not in co-op (the phone
+  doesn't offer it with a mate: the park isn't shared).
+- **On the rides** (`scripts/voxel/stkilda/voxel_park_invasion.gd`, `VoxelParkInvasion`, made in
+  `VoxelStKilda.build()` after the rides and the Carousel's hack): every `SkLunaRides.Riders` in the park is found
+  (so the Carousel's new horses, the Sky Rider, Supernova, Pharaoh's Curse, Spider, Power Surge, Arabian Merry, and
+  the Coney Drop too: its Riders node is there under its seats, nothing in the St Kilda copy had to change), and 40%
+  of each ride's riders (2 at least) are enemies instead: the scenery rider's seat is shrunk to nothing the way the
+  Carousel's thrown one is, and a real `VoxelBody` (grunt, swarmer, batter or thrower) is put on that seat every
+  frame (`riders.global_transform * what it rides on * the seat`, as `Riders.follow()`), its hips where the scenery
+  rider's were, turned and tipped with the seat. The Scenic Railway's trains carry nobody, so each gets two (the
+  second row of the front car, the front of the back car: the front seat's left for you). With seed 7: 33 riders on
+  9 rides.
+- **Hit where they're drawn**: a rider is an ordinary arena body (in `arena.bodies`, marked `"park"` and `"riding"`),
+  its node's transform the seat's, so `VoxelBody.trace` and every weapon's own damage works on it as it's drawn. The
+  arena's move loop skips one marked `"riding"` (no walking, path, keeping apart or swing; its stagger and flinch
+  still run out). `VoxelBody.sit` (new: 0 legs hanging .. 1 out in front, from the ride's own riders' `legs`) bends
+  the legs and puts the hands out. Killed on its seat it's let go the next frame, upright in the world again and
+  thrown the way the seat was going, so the body (and what's cut off it) falls from where it was. Knocked off (a
+  blast, the bat, the gravity gun: `airborne`) or reeled in by the harpoon, it's let go and is the arena's from there.
+- **Getting off**: throwers stay on and throw at you from their seat (3.5 to 26 m; `VoxelKinds.throw_from`, the aim
+  and throw poses run here because the arena's own kinds' step is held while you're in St Kilda). The rest jump off
+  and come at you when you're within 8 m, when one of their ride's riders is hit or killed (one after another over a
+  second or so), or when they're set alight; a thrower whose arm's gone gets off too. A seat under 2.5 m: a hop down
+  onto the walking map; higher: a fall, landing flat, getting up.
+- **Only the rides round you cost anything**: a rider further than 60 m isn't made yet (it's still counted), and one
+  nobody's touched is put away again past 75 m.
+- **By area**: each ride, the Ghost Train, Luna Palace and the forecourt has a group of 3 to 6 (set when the game
+  starts) that comes in the first time you're within 25 m, one every 0.3 s, at the ways in "Kill 1, 2 come" uses
+  (inside the wall, the Ghost Train's door), near that area, 14 m or more from you and out of your sight if there's
+  such a spot. While an area's ride still has riders on it and you're within 45 m, one more comes every 14 s (3 at
+  most). About 24 alive at once: the ground ones wait their turn (a few always come).
+- **The goal**: the line top centre, "Luna Park invasion: rides cleared 3/9, enemies left 27" and the clock (its own
+  label, as "Kill 1, 2 come"; the fps line's left alone). A ride whose riders are all dead (on it or off) pays $20
+  with a chime and a line; kills pay their usual cash. Every ride cleared and nobody left: "LUNA PARK CLEARED", your
+  kills and time, the best time kept in `user://stkilda_invasion.cfg`. Going down doesn't end it.
+- **Changed besides**: `voxel_arena.gd` (the `"riding"` skip; `--invasion`; a park enemy in the air isn't pulled
+  back onto the walking map till it lands; a dead park or gun-range body knocked flying is no longer clamped into the
+  arena's square, 3 km away: before, a body shot dead in the park with any shove on it vanished), `voxel_body.gd`
+  (`sit`), `voxel_stkilda.gd`, `voxel_phone.gd`, `voxel_park_game.gd` (starting one game stops the other).
+  Nothing Forward+ only, no native add-on types; `scripts/voxel/digsite/`, the mine and `stkilda/map/` untouched.
+- **Not done**: co-op; riders on the coaster's trains you can't see while you ride it yourself are hidden with their
+  train (still there); the ground enemies' own moves (a charger's run, a thrower's throw on foot) are off in St
+  Kilda as they were before this.
+- Tests: `test/voxel/luna_invasion_test.gd` (headless, about 40 s, fixed seeds: 37 checks, "LUNA INVASION: 37 passed, 0 failed"); the park's own after it:
+  `stkilda_kill12_test` 8 ok, `stkilda_carousel_hack_test` 29 ok, `stkilda_tumble_test` 5 ok, `stkilda_ride_test`
+  13 ok; `stkilda_luna_smash_test` 6 ok and 2 FAIL (its mouse clicks at the Ghost Train knock nothing out without a
+  screen: the same two fail on `claude/godot-voxel` before this work). Pictures
+  `test/voxel/luna_invasion_shots.gd` (`voxel_shots/luna_invasion_*.png`: `carousel`, `carousel_close`, `coaster`,
+  `wheel`, `spider`, `ground`, `phone`).
+
+Luna invasion: done
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

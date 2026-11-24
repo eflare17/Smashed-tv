@@ -60,6 +60,8 @@ func setup(s: VoxelStKilda) -> void:
 
 ## Off we go (you're in St Kilda).
 func start() -> void:
+	if sk.invasion:
+		sk.invasion.stop()                   # (not both games at once)
 	stop()
 	_find_spots()
 	running = true
