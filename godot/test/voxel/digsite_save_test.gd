@@ -102,9 +102,11 @@ func _process(dt: float) -> bool:
 				dz.throttle = 0.0
 				_next(3)
 		3:
-			if t - mark > 3.0:               # (the heap settled)
+			# (the heap settled, and the clods the blade let go lying in it: DsDirt, the dirt physics' stage 5. The last
+			# of them roll down the heap for the 6 s a clod has; the ground's all there only once they're in it)
+			if t - mark > 3.0 and (ds.dirt == null or ds.dirt.n == 0 or t - mark > 12.0):
 				var f := _facts()
-				check(f.heights != [] and int(f.loose) > 100000 and int(f.ground) == int(v.ground), "the dozer's cut and pushed a heap (%d mm loose)" % f.loose)
+				check(f.heights != [] and int(f.loose) > 100000 and int(f.ground) == int(v.ground), "the dozer's cut and pushed a heap (%d mm loose; its clods at rest %.1f s after it stopped, %d left)" % [f.loose, t - mark, ds.dirt.n if ds.dirt != null else 0])
 				f["from"] = [v.from.x, v.from.z]
 				f["fwd"] = [v.fwd.x, v.fwd.z]
 				v.facts = f

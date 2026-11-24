@@ -552,3 +552,109 @@ buckets and the truck's tray ease in and out instead of snapping to speed.
 - The body's rock dips the blade's picture by up to 14 cm at the peak (the blade is on the body); the edge that cuts
   does not move.
 - Camera shake and pull-back with speed are stage 9.
+
+## Stage 5: dozer break-off and push
+
+**What was built**
+
+- `ds_dozer.gd`: of what the blade's front moves on ahead each step (the spill: the grid's `blade_sweep`, `moved` +
+  `taken`), `CLOD_SHARE` 0.35 is owed to clods. Once a clod's worth is owed (`CLOD_FROM` 500 mm) it is taken out of the
+  sweep as counts by material (`take_most`, 3000 mm a step at most, from each end of the edge in turn) and let go
+  (`_break_off`) in pieces of 1000 mm through `DsDirt.spawn_mass`:
+  - most at the heap's crest, 0.5 to 0.85 m ahead of the edge across the whole blade, with the blade's speed plus
+    0.5 m/s on and 1.1 to 2.3 m/s up (rolled up and over, to tumble down the heap's front);
+  - the rest off the blade's two ends, 0.3 m outside, going out at 0.9 to 2.0 m/s: 12% of the clods with the heap
+    ahead empty, up to 40% with it brim full (`full`, stage 4's), so the windrows grow as the blade fills.
+  The grid's heap keeps the other 65%, as tested before. No native change: `take_most` and `counts` were already bound.
+- `push_load` (what weighs on the dozer and shows as "pushing N t") adds the clods' mm in a box ahead of the blade:
+  blade wide, 1.6 m ahead of the edge, as high as the heap is looked at; counted every third step.
+- `ds_dirt.gd`: `mass_in(transform, half)`, the mm in the clods whose middles are in a box.
+- The cosmetic `_tumble` particles: 12 instead of 40 where the wave is real clods (solo or host); a guest keeps 40,
+  it sees no clods until stage 8.
+- `test/voxel/digsite_dozer_clod_test.gd` (the stage's test) and `test/voxel/digsite_dozer_clod_clip.gd` (the clip).
+- Tests that counted the ground alone now count the clods with it, because the last of them are still rolling when a
+  push ends (they roll down the heap for the 6 s a clod has): `digsite_fleet_test` (`_ground()`),
+  `digsite_yard_test` (the total, clods in it, is what must be the same: 767 mm were in clods at the end),
+  `digsite_save_test` (phase 1 waits for the clods to be at rest before it writes what the site is like: 6.0 s after
+  the dozer stopped). Without these three edits yard failed 1 and the save pair 1 and 2; not a mm was lost in
+  either (the yard's drift was 0, and phase 2's ground was the whole of what there was before the push).
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_dozer_clod_test.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 30 --write-movie <dir>/clip.png -s res://test/voxel/digsite_dozer_clod_clip.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_yard_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=stage5
+
+(64 s; 4 min; 60 s. The test does the yard's 20 s push twice in the one run, back to back: with the dozer's
+`clod_share` 0, which is stage 4's blade and the baseline, then with the clods. `--order=ba` does them the other way
+round. It writes `integration/dirt_shots/dozer_clod.txt`.)
+
+**`digsite_dozer_clod_test`: `DSDOZCLOD done 16 passed, 0 failed`** (three runs: baseline first, clods first, and the
+committed one; the numbers below are baseline first / clods first)
+
+| Criterion | Baseline (share 0, same run) | Measured |
+|---|---|---|
+| the baseline is stage 4's push | 12.29 m (stage 4: 12.29) | |
+| mass exact every second, at the end, and after `land_all` | 0 mm | 0 mm; 0 mm left in clods |
+| the clods are 35% of the spill | | 34.9% / 35.0% (237085 of 678380 mm) |
+| clods spawned > 200 | 0 | 499 / 507 |
+| peak awake <= `FLY_MAX` 800 | 0 | 210 / 213; none put down by the caps |
+| heap ahead >= 0.3 m and >= 80% of the baseline's | 1.22 m | 1.23 / 1.21 m: 101% / 100% |
+| windrow > 0 mm in the columns 0.5 to 1.5 m outside each blade end | 39577 and 53191 mm (212 and 270 columns) | 63991 and 75408 mm (438 and 585 columns) / 70661 and 71666 |
+| metres >= 80% of stage 4's (9.83 m) | 12.29 m | 12.52 / 12.64 m: 102% / 103% |
+| `step_us` mean <= 2.0 ms | | 0.26 / 0.27 ms (p95 0.75 / 0.77, worst 2.2 / 4.2) |
+| frame p95 <= baseline + 3.0 ms | 16.93 / 17.27 ms | 18.46 / 18.52 ms: +1.53 / +1.25 (means +1.05 / +0.99) |
+| `layer_us + show_us` within 20% of the baseline's | mean 518 / 526 us | 539 / 542 us: +4% / +3% |
+| added: the dozer standing, the clods come to rest and are gone | | 1.03 / 1.08 s |
+
+The frame's extra 1.0 ms mean is more than the clods' own step (0.26 ms): the rest is drawing them and the machines'
+boxes handed over each step. The clod run is not the same to the digit in the two orders (499 or 507 clods): the
+clods' random numbers carry on from the run before. Each order by itself repeats.
+
+At `--fixed-fps 30` the same test is 15 passed, 1 failed, and the failure is the baseline's own check: stage 4's
+push goes 12.19 m at 30 frames a second, not 12.29 (nothing to do with clods). With clods there: 513 let go, 34.9%,
+197 awake at the most, mass exact.
+
+**Clip and shots** (`integration/dirt_shots/`, looked at): `dozer_clods.mp4` (10 s, 30 fps, 960 x 540: 5 s from in
+front of the blade, 5 s from behind and above), stills from it `dozer_clods_1_front.png` and
+`dozer_clods_2_behind.png`, and the yard's four again as `stage5_1_start.png` to `stage5_4_side.png`. Seen: lumps
+coming up over the crest and rolling down the heap's front, lumps going off both ends of the blade and lying beside
+the cut, one or two thrown a couple of metres onto the grass. No lump seen through the blade's face or the bonnet,
+none hanging in the air. The clods are a darker brown than the lumpy skin on the heap they land in, so the moment one
+melts in is a small change of shade as well as of shape; at a few frames a second here that could not be judged as
+motion. Checked frame by frame only in stills.
+
+**What the owner will see**: push with the bulldozer and the top of its wave is loose lumps: they come up the blade,
+tip over the crest, bounce and roll down the front of the heap, and pour off both ends of the blade to lie in rows
+beside the cut, more of them the fuller the blade. The rows beside the cut are about half as big again as before.
+The dozer goes as far as it did (12.5 m against 12.3 in 20 s). Stop, and the lumps settle into the heap within a
+second or so (stragglers on a steep flank within 6 s).
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` | 22/0: (d) 12.52 m, frame p95 19.07 ms against the committed 20.98 |
+| save pair | 4/0, 6/0 (after the edit above; before it 3/1 and 4/2) |
+| sync pair (enet) | host 6/0, guest 9/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0 (after the edit above; before it 5/1 and 6/1): 12.52 m both runs, frame p95 17.21 and 17.40 ms, mass exact |
+
+**Known gaps and things later stages must know**
+
+- **A guest sees no clods** (stage 8): it sees the host's heap and windrows grow through the grid as before, with the
+  old particles. The windrows a guest sees are the real ones (the clods' deposits).
+- **The timed save while playing** (`DsSave.save` every 60 s) does not land the clods first; leaving and quitting
+  do. A crash between would lose what was in the air at that save (hundreds of mm). Stage 8's.
+- **The "Blade -0.NN m" readout flickers** while pushing a heap (-0.02 to -0.9 from frame to frame, seen in the
+  clip). It is not from this stage: with the share 0 it has as many such frames (381 of 1201 under -0.1 m against
+  401). It reads the ground under the edge before the sweep clears it. Worth a fix in stage 9.
+- **The share is of the blade's front spill, not of everything the blade moves**: 6.1% of all the mm it shifted (most
+  of that is the sweep clearing behind the edge, the same dirt many times over).
+- **Clods on a steep heap flank keep rolling slowly** until their 6 s is up (34 of 177 after a 5 s push in the save
+  test). It reads as the heap trickling; if it reads as jitter, `STUCK_S` is the knob.
+- `feel.txt` was re-written by the guard run (this stage's game: 12.52 m). `feel_base.txt` is still stage 3's.
+- The clod's shade against the skin, and popping at settle, need judging at full frame rate on a real GPU.

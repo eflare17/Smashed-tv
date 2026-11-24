@@ -129,7 +129,9 @@ func _report(dz: DsDozer) -> bool:
 	for l in lines:
 		print(l)
 	check(metres >= 10.0, "the dozer moves >= 10 m (%.2f)" % metres)
-	check(int(m1.total) == int(m0.total) and int(m1.ground) + int(m1.loads) == int(m0.ground) + int(m0.loads), "ground_mm and every load the same before and after: %d mm drift" % (int(m1.total) - int(m0.total)))
+	# (from the dirt physics' stage 5 the dozer's blade lets go clods, and the last of them are still rolling when the
+	# push ends: the ground, every load and the clods together are what's the same)
+	check(int(m1.total) == int(m0.total), "ground_mm, every load and the clods still loose the same before and after: %d mm drift (%d mm in clods at the end)" % [int(m1.total) - int(m0.total), int(m1.clods)])
 	check(float(s.frame.p95) > 0.0, "frame p95 recorded: %.2f ms (no limit yet)" % s.frame.p95)
 	# the pair: phase 1 leaves its numbers, phase 2 checks its own against them
 	var dir := ProjectSettings.globalize_path(out)
