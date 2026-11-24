@@ -658,3 +658,138 @@ second or so (stragglers on a steep flank within 6 s).
   test). It reads as the heap trickling; if it reads as jitter, `STUCK_S` is the knob.
 - `feel.txt` was re-written by the guard run (this stage's game: 12.52 m). `feel_base.txt` is still stage 3's.
 - The clod's shade against the skin, and popping at settle, need judging at full frame rate on a real GPU.
+
+## Stage 6: buckets, pouring and the truck
+
+**What was built**
+
+- `ds_machine.gd`: `let_go(p, m, mm, truck, v, spread, within, free)` lets what a bucket pours or a tray tips go as
+  clods (`DsDirt.spawn_mass`) at `p`, going at `v`; 40 clods' worth a step at the most (`POUR_MOST`). The timer and
+  `_land_falling` are gone, with `_falling`, `falling_n()` and `DsTruck.incoming`. What is under a crumb's worth
+  (125 mm), and all of it when there is no room for more clods, goes straight where it is bound: the tray, or the
+  ground under `p`. `_pour_v` is how the lip is going, eased over an eighth of a second. `_tear` and `_take_in` are
+  shared by the loaders and the excavator (below). `pour_clods = false` on a machine lands its pour at once, as
+  before the clods: the test's baseline, and what happens where there is no `DsDirt`.
+- `ds_dingo.gd` (the Bobcat through it): tipped, the load comes out along the lip (across its width), going as the lip
+  goes plus 0.5 to 1.5 m/s off the bucket's floor, at the rate the curl sets (as before: 300 blocks a second right
+  forward). **Lip tear**: a tenth of each bite never reaches the bucket, it is let go at the lip as crumbs that tumble
+  on ahead. **Overflow**: full, 35% of what the lip pushes on ahead is taken out of the sweep and rolls off the same
+  way (`OVER_SHARE`, the dozer's share). **Scooping**: clods lying still in or against the bucket are in it, while
+  there is room and it is not tipped.
+- `ds_excavator.gd`: opened, it pours clods from under its pin (`pour_point`), thrown on a little when it is swinging;
+  the same tear at its teeth and the same taking in while it holds.
+- `ds_truck.gd`: the clods lying still in the tray under its rim are its load (`_take_in`: its floor and walls were
+  already boxes to them, stage 3). Tipped past 0.45 it lets clods go over the tail, across the tray's width, sliding
+  off at 1.4 to 3 m/s. `room()` is the tray's room less the clods in it and over it, so a bucket still pours no more
+  over a tray than fits.
+- `ds_dirt.gd`: `take_in(box, where it was, half, room, dt, load)` (a clod at a bucket's or a tray's boxes for 0.15 s
+  and slower than 0.4 m/s against the box); `spawn`/`spawn_mass` take `free`, the seconds a poured clod goes through
+  buckets' boxes (it is coming out of one: 0.3 s, the excavator 0.6); `held_n`, `lay`, `has_room`. Two rules for
+  clods on top of boxes: one whose middle is past the box's edge goes on off it (it hung there by its own width);
+  one on a tray wall's top or a bucket's top for 1 s and not taken in slides off. Held for 8 s and neither, it ages
+  again, so no clod is awake for ever.
+- The pour's particle stream is 14 crumbs where the stream is real clods (solo or host); a guest keeps the 60.
+- `test/voxel/digsite_pour_test.gd`, `test/voxel/digsite_pour_shots.gd`.
+- Tests edited because `falling_n()` is gone and a pour is clods till they rest: `digsite_dingo_test` (its total
+  counts the clods; it waits for them to be at rest, 8 s at most instead of 4), `digsite_fleet_test` (the same two
+  waits, 8 and 16 s), `digsite_yard.gd` (`falling` is 0).
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_pour_test.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_pour_shots.gd -- --nosave --out=res://integration/dirt_shots
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_yard_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=stage6
+
+(70 s; 60 s; 60 s. The test does (a) to (c) twice in the one run, back to back: with every machine's `pour_clods`
+off, the baseline, then with the clods; `--order=ba` the other way round. It writes `integration/dirt_shots/pour.txt`.)
+
+**`digsite_pour_test`: `DSPOUR done 21 passed, 0 failed`** (both orders; below, baseline first / clods first)
+
+| Criterion | Baseline (no clods, same run) | Measured |
+|---|---|---|
+| (a) Dingo, 32500 mm scripted into its bucket, lip over the tray's middle: the tray gains >= 85% | 100% at once | 32500 of 32500: 100% / 100%; the rest (0) on the ground; poured in 1.28 s, at rest 1.57 s on |
+| (b) lip 2.00 m off the tray's middle (0.8 m outside its side): the tray gains 0 | 0 | 0 / 0; all 32500 on the ground, at rest 3.85 / 4.75 s on |
+| (c) the truck tips: >= 95% of its load on the ground behind it within 10 s | 100% | 32500 of 32500: 100% / 100%; tray empty 2.25 s after the tip starts, heap out to 3.1 / 2.6 m behind the tail (baseline 1.4) |
+| mass exact in (a), (b), (c), every second and at each end | 0, 0, 0 mm | 0, 0, 0 mm |
+| `step_us` mean <= 2.0 ms | | 0.14 / 0.14 ms (p95 0.36 / 0.33); 85 / 94 awake at the most, none put down by the caps |
+| frame p95 <= baseline + 3.0 ms | 12.80 / 12.60 ms | 14.23 / 14.58 ms: +1.43 / +1.98 (means 7.53 -> 9.04, 7.82 -> 8.44) |
+| added (d): the Bobcat standing outside the truck, nose at the tray's side, lip over the rim: the tray gains >= 85% | | 65000 of 65000: 100%; its lip 0.37 / 0.34 m over the rim at the lowest; mass exact |
+| added (e): the Bobcat 0.2 m further back, its lip over the side wall as it tips: some in, some over the side | | 25% / 16% in the tray, the rest on the ground beside the truck; mass exact |
+| added (f): a full tray (500000 mm, scripted) tipped: all out, `step_us` mean <= 2.0 ms, awake <= `FLY_MAX` | | all 500000 on the ground, mass exact; empty 9.7 s on, at rest 16.0 s on; 167 / 170 awake at the most; step mean 0.43 / 0.39 ms (p95 0.80); heap 1.52 m high; frame mean 13.8 / 12.8, p95 20.2 / 18.3 ms |
+
+Earlier runs of the same test the same hour gave frame p95 differences of -1.18, -0.96, -0.12 and +1.62 ms: the
+frame time here is mostly the arena's own and moves by a millisecond or two between runs. The clods' own step is
+0.14 ms.
+
+**Where a criterion's meaning had to be chosen, and what the plan had wrong**
+
+- **"Pour centred over the tray" with the Dingo puts the Dingo inside the truck.** Its lip reaches 0.8 m ahead of its
+  middle and, arms right up and tipped, is 1.44 to 1.79 m off the ground; the tray's rim is at 2.23 m. So (a) is as
+  the plan says (the lip over the tray's middle, 0.51 m over its floor: it pours from inside the tray's walls), and
+  that is also how the Dingo loaded the truck before this stage (machines pass through each other; the old rule
+  took anything poured within the tray's footprint from 0.2 m under its floor up). (d) is the pour a driver can
+  really make from outside, with the Bobcat, whose arms reach over the rim.
+- **The loaders had no "overflow" or "10% lip tear" to turn into clods**; both are new here (see above).
+- **"On the ground behind it"** is the rise of the ground in the columns from 0.5 m ahead of the tray's tail to 8 m
+  behind it, 4 m either side; clods still awake at 10 s do not count (there were none).
+- **A bucket still holds back over a full tray** (`room()`), as before; so the tray takes in every clod that lies in
+  it, and a few thrown in from elsewhere heap it past its 100%.
+
+**Three things found by looking, and fixed**
+
+- Clods that went down the outside of the tray lay in a row along the tray floor's edge for ever (150 of them in
+  (e)): a box is grown by a clod's radius on every side, so its top has a ledge that wide, and a clod on a tray is
+  held and does not age. Now a clod on top with its middle past the edge goes on off it.
+- The excavator's pour threw 11 clods (2250 of 77500 mm) over the truck's cab in the fleet test: opened, its bucket
+  hangs under where it pours from, turning, and a clod still in its box when the box counted again was flung 3 m.
+  Its poured clods now go through buckets for 0.6 s. (The fleet test then puts all 77500 mm in the tray, as before.)
+- The first shots run hung waiting for clods on top of the tray's side wall to come to rest: hence the slide rule.
+
+**Shots** (`integration/dirt_shots/`, looked at): `pour_1_stream.png` (the Bobcat's bucket over the rim, lumps under
+its lip in the tray), `pour_2_tray.png` (the tray's load after), `pour_3_miss.png` (backed off: a stream of lumps
+down the outside of the tray's wall), `pour_4_tip.png` (the tray up, lumps coming off its tail onto a growing heap),
+`pour_5_heap.png` (the heap at rest, lumpy), and the yard's four again as `stage6_1_start.png` to
+`stage6_4_side.png` (the push looks as in stage 5). Stills only: at one or two frames a second here the stream could
+not be judged as motion, and no clip was made (the stage does not ask for one).
+
+**What the owner will see**: tip a bucket and the dirt comes out as lumps along its lip, faster the further it is
+tipped, falls, bounces and rolls into a pile; over the truck it rattles into the tray and the tray's load comes up as
+the lumps come to rest; with the lip over the wall or short of it, part or all of it goes down the truck's side onto
+the ground. Tip the truck and the load comes off the tail as lumps that tumble down a growing heap. Digging with a
+loader, crumbs flick off the lip and roll on ahead, more of them once the bucket is full, and lumps lying in the way
+are scooped up.
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 (dingo and fleet after the edits above; fleet before the excavator's 0.6 s: 19/1) |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` | 22/0: (d) 12.52 m, frame p95 21.14 ms against the committed 20.98 |
+| `digsite_dozer_clod_test` | 16/0: 12.52 m, step mean 0.31 ms, frame p95 +0.37 ms on its baseline |
+| save pair | 4/0, 6/0 |
+| sync pair (enet) | host 6/0, guest 9/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0: 12.52 m both runs, frame p95 19.46 and 18.50 ms, mass exact |
+
+**Known gaps and things later stages must know**
+
+- **A guest sees no clods** (stage 8): a pour on its screen is the old particle stream, and the tray's load and the
+  heap come up as the host's clods land. Nobody looked at a guest's screen.
+- **The Dingo cannot pour over the tray's rim** (see above): it loads the truck with its bucket through the tray's
+  wall, as it always did. Its clods start inside the tray. Raising its arms' reach, or lowering the tray's sides, is
+  a design change for the owner, not made here.
+- **Clods in the tray are not a visible volume**: they lie on its floor for a sixth of a second and are then the
+  counted load (the lump that rises). Out of scope by the plan.
+- **A clod pushed against a tipped bucket or lying on a full one** is not taken in; it slides off after a second.
+- **Spilled dirt beside the truck stands steep against it** (the truck's body is a wall to loose dirt) until the truck
+  moves; clods on that bank take up to 6 s to settle.
+- **The time cap** (`cap_us`) was off in the test, as in stage 5's. With it biting, or `FLY_MAX` reached, a pour over
+  a tray goes straight into the tray (as before the clods) and a pour over the ground straight onto it; neither
+  happened in any run (0 laid straight down).
+- **The lip tear's share (10%) and the overflow's (35%) were not tuned by eye**; `TEAR` and `OVER_SHARE` are the knobs.
+  The Dingo test's bucket has 30920 mm in it after its 3 s bite (not compared with the game before this stage).
+- `baseline.txt` is still stage 1's (the yard test's guard run re-wrote it; put back). `feel.txt` and
+  `dozer_clod.txt` are this stage's guard runs.
+- Sound: nothing new; clod ticks are stage 9.
