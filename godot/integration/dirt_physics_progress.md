@@ -919,3 +919,130 @@ again). When a tunnel's roof goes, lumps come down with the dust and pile on the
 - `baseline.txt` is still stage 1's (the yard guard re-wrote it; put back). `feel.txt`, `dozer_clod.txt` and
   `pour.txt` are this stage's guard runs.
 - Sound: nothing new; clod ticks are stage 9.
+
+## Stage 8: co-op and save
+
+**State found**: `dig_site.gd`, `ds_blasts.gd`, `ds_dirt.gd`, `ds_net.gd` and `ds_save.gd` had this stage's game code in
+the working tree, uncommitted, with no test and no log entry (an earlier run of this stage that stopped). It was read
+through, kept, and two faults in it were found by the new test and fixed (below).
+
+**Built**
+
+- `ds_dirt.gd`: `ghost` (a guest's dirt: every clod it has weighs 0 mm, nothing is laid on the ground, `land_all()`
+  just clears them). `net_pack` / `net_unpack`: the host's clods in packets of 440 bytes at the most: a 5-byte head
+  (packet number, how many clods the host has, how many packets a lap takes, how many "gone" numbers), the numbers of
+  clods gone since (each sent 3 times), then 9 bytes a clod (u16 id, position to 2 cm in 3 x u16, material + size
+  byte). New clods go first, the rest in turn. The guest keeps "puppets" by id, glides each to where it was last
+  said to be, rolls it as fast as it goes, and drops one not heard of for 3.5 laps (0.5 s at the least).
+- `ds_net.gd`: fast id 100 for the clod packets, 12 a second (`_send_clods`); when the host's last clod settles the
+  ground's diff and the checksums go at once instead of waiting their turn. `stats.clod_n / clod_bytes / clod_most`.
+- `ds_blasts.gd`: event `clods` (one reliable message: where, what came out, the power, the host dirt's random
+  number, its awake count and cap). The guest throws the same clods itself, weightless, and runs them on its own copy
+  of the ground. The host marks its own blast clods `N_OWN` so they are not streamed as well. The old 22 chunks are
+  only sent when no guest throws clods.
+- `ds_save.gd`: `land_all()` before packing. `dig_site.gd`: the minute's autosave waits up to 10 s for a moment with
+  no clods awake (so it does not flatten a wave mid-push); `_step_dirt` runs on a guest too (its pictures), and when
+  the game's role flips (joined a mate, or the host went) it calls `land_all()` first.
+- **Not as the plan said**: every clod of the host's that is not a blast's is streamed (a pour's too), not only
+  "machine-touched, nearest first". Nearness only matters once a lap takes over 6 packets: then clods further than
+  15 m from the guest go every other lap.
+- No native change.
+- Tests: `digsite_sync_test.gd` extended (host 6 -> 14 checks, guest 9 -> 15), `digsite_save_test.gd` extended
+  (4 -> 6, 6 -> 7), new `digsite_sync_shots.gd` (a guest's screen).
+
+**Two faults the test found in the code as it lay**
+
+1. Second 7 of the first paced run: the guest showed 92 clods, the host had 129 (28.7% off). Cause: the packets'
+   turn goes through the clods by index, and a clod that settles is replaced by the last one (swap-remove); if the
+   turn had passed that index the moved clod waited a whole lap more, and with one packet in ten lost it went
+   unheard past the guest's 2.5 laps and was dropped, to pop back a lap later. Fix: a moved clod is marked `N_DUE`
+   and goes in the next packet; the guest waits 3.5 laps, timed by how often packets really arrive (`_pint`), not by
+   an assumed 12 a second.
+2. The host's send timer threw away its remainder each time (`_clod_t = 0`), so at 60 frames a second it sent 10 a
+   second, not 12. It now keeps it.
+
+**Commands** (from the repository's root; the pair run together, host first)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_test.gd -- --nosave --host=YARD1 --via=enet --lag=150 --loss=10
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_test.gd -- --nosave --join=127.0.0.1 --via=enet --lag=150 --loss=10
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_save_test.gd -- --save=<path> --phase=1
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_save_test.gd -- --save=<path> --phase=2
+    (host as above with digsite_sync_shots.gd)  xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_shots.gd -- --nosave --join=127.0.0.1 --via=enet --lag=150 --loss=10 --out=res://integration/dirt_shots
+
+(The sync pair takes 2 min 5 s and writes `integration/dirt_shots/sync_host.txt` and `sync_guest.txt`.)
+
+**How the sync test runs**: the old six steps, then the host levels the yard's patch and pushes across it for 20 s
+twice, back to back: clods off (the baseline for its frames), then on. Both games are held to the clock by the test
+(a frame every 1/60 s at the least): headless, `--fixed-fps` runs a light game's frames faster than a busy one's, so
+the guest's "second" was a third of the host's and the first run's comparison meant nothing. Frame times are the
+frame's own work, without the wait. The guest compares the clods it shows with the host's count in the last packet
+it got. For the checksums the host sends its own `section_hashes()` when its last clod settles and every half second
+for 6 s; the guest compares its ground's each frame.
+
+**(a) sync pair, `--lag=150 --loss=10`: host `14 passed, 0 failed`, guest `15 passed, 0 failed`** (three runs after
+the fixes, all the same; the committed text is the third)
+
+| Criterion | Measured (runs 1, 2, 3) |
+|---|---|
+| guest clod count within 15% of the host's, each second 2 to 20 | 0 of 19 seconds out in each; furthest off 6.3%, 2.1%, 0.5% (178 of 190; 193 of 197; 196 of 197); 194 to 196 shown at the most |
+| guest spawns 0 mass clods | 0 mm in the guest's dirt at every frame of the run (the push, its own dig, the 200 blast clods it threw itself); its dig flicked 0 crumbs |
+| section hashes equal within 4 s of the last clod settling | 1.03, 1.07, 1.05 s after the guest heard; still equal 6.2 s on |
+| clod traffic <= 6 kB/s | busiest second 5258, 5247, 5247 bytes; 2.46 kB/s mean over the push (51 kB in all) |
+| host mass | 0 mm drift at every second of both pushes and at rest; 492 clods let go, 205 awake at the most |
+| host `step_us` mean <= 2.0 ms | 307 us with any awake (p95 856, worst 1360) |
+| host frame p95 <= baseline + 3.0 ms | +0.19, +0.73, -0.77 ms (20.97 / 20.78, 20.71 / 19.98, 20.47 / 21.24) |
+| `layer_us + show_us` within 20% of baseline | +1%, +3%, +2% |
+| added: the host's blast | 2316 blocks as 200 clods on the host; the guest threw 200 of its own from the host's random number (0.0% off), all gone 2.0 s after the host's, grounds match |
+
+- **The plan's absolute "<= 12 ms" frame is not met in the pair, and is not checked there**: with two games on this
+  box the baseline push itself is 20 to 21 ms p95 (solo it is 16.9: stage 5's test, below). The pair checks the
+  difference only. No criterion was loosened.
+- Without the bad line (the guard run, no lag or loss): host 14/0, guest 15/0; every second's counts equal; 1.05 s.
+
+**(b) save pair: `6 passed, 0 failed`, then `7 passed, 0 failed`**
+
+| Criterion | Measured |
+|---|---|
+| >= 100 clods airborne at save | 191 of 191 more than 0.2 m off the ground (a stick's blast 0.5 s before), 306750 mm in them |
+| `ground_mm` + loads identical after reload | 5265675000 mm before (ground + clods + loads), 5265675000 in the ground after leaving, 5265675000 in the new game; 0 clods, 0 owed |
+
+**Stage 5's budgets, solo** (`digsite_dozer_clod_test`, 16/0): step 259 us mean (p95 758); frame p95 17.57 against
+16.88 (+0.69 ms); `layer_us + show_us` +5%.
+
+**Shots** (`integration/dirt_shots/`, looked at): `sync_guest_1_wave.png` (the guest on foot beside the patch, 177 of
+the host's 177 clods shown: the mate on the bulldozer, brown lumps heaped on the blade and spilling round its end);
+`sync_guest_2_rest.png` (2 s after the last has gone: the cut, the windrows and the heap as lumpy ground); the yard's
+four again as `stage8_*.png` (the push looks as in stage 7). In the first, a clump of lumps sits above the blade's
+top corner: the guest's dozer is drawn a little behind where the host's is (risk 6 of the plan).
+
+**What the owner will see**: a mate watching you doze sees the same wave of lumps on the blade and rolling off its
+ends, a little behind (0.15 to 0.3 s) and gliding rather than bouncing. A blast throws its lumps on both screens.
+Quit or go home mid-pour or mid-blast and every lump in the air is in the ground when you come back.
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` / `digsite_blast_clod_test` | 22/0 / 16/0 / 21/0 / 20/0 |
+| sync pair (enet, no lag) / dynamite pair (enet) | host 14/0, guest 15/0 / host 4/0, guest 5/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0 |
+
+**Known gaps**
+
+- **Host change is not tested.** The code path is there (`_step_dirt`: the role flips, `land_all()`), but no test
+  drops the link mid-wave.
+- **The cap was not reached in co-op.** The push peaks at 205 clods (4 packets a lap). At `FLY_MAX` 800 a lap is 17
+  packets (1.4 s) and far clods go every other lap: a guest would see them move in steps. Not measured, not seen.
+- **Puppets collide with nothing** on the guest: they go where the host says, 150 ms and up to a lap late, beside a
+  dozer that is itself drawn late. Two stills were looked at, no motion.
+- **A guest's blast clods are its own run** of the same throw on its copy of the ground: they can come to rest in
+  other places than the host's; the dirt itself arrives with the host's ground. They are not counted in the 15%.
+- **The guest's flick** is checked through `dig_at` (0 clods, 0 flicked), not through a swung shovel.
+- **The pair's frame numbers are with two games on four cores**; only the difference from the baseline is asserted.
+- Bucket and tray loads are still not saved (out of scope, as before).
+- `baseline.txt` is still stage 1's (put back after the yard guard). `feel.txt`, `dozer_clod.txt`, `pour.txt` and
+  `blast.txt` are this stage's guard runs.
