@@ -4658,6 +4658,112 @@ public static class BulldozerBuilder
         }
     }
 
+    // The part-blocked cave-ins:  -executeMethod BulldozerBuilder.GapTest    prints BULLDOZER_GAP_RESULT (or _FAILED)
+    // The second and third cave-ins leave a gap along one wall.  He walks through each (no digging); the rails are
+    // still buried, so the cart and the grunts (who keep to the middle) can't pass; each dozer part is still buried;
+    // the first cave-in is still full.  Two pictures: Logs/gap_cave2.png and gap_cave3.png.
+    static int gpPhase;
+    static float gpT0, gpBest;
+    static string gpLog;
+    static bool gpOk;
+    public static void GapTest()
+    {
+        EditorSceneManager.OpenScene(ScenePath);
+        EditorSettings.enterPlayModeOptionsEnabled = true;
+        EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload;
+        gpPhase = 0; gpLog = ""; gpOk = true;
+        testStart = EditorApplication.timeSinceStartup;
+        EditorApplication.update += GapTick;
+        EditorApplication.EnterPlaymode();
+    }
+    static void GpCheck(bool ok, string what) { gpLog += " " + what + "=" + (ok ? "ok" : "FAIL"); if (!ok) gpOk = false; }
+    static void GapFinish(int code)
+    {
+        EditorApplication.update -= GapTick;
+        EditorSettings.enterPlayModeOptionsEnabled = false;
+        EditorApplication.Exit(code);
+    }
+    static float GpAlong(Worker wk) { return wk.transform.position.z - VoxelWorld.PortalZ; }
+    static void GapTick()
+    {
+        if (EditorApplication.timeSinceStartup - testStart > 240) { Debug.LogError("BULLDOZER_GAP_FAILED timed out in phase " + gpPhase + gpLog); GapFinish(1); return; }
+        if (!EditorApplication.isPlaying) return;
+        var w = VoxelWorld.Instance; var wk = Worker.Instance; var g = Goals.Instance;
+        if (w == null || wk == null || g == null) return;
+        float t = Time.time, px = VoxelWorld.PortalX, pz = VoxelWorld.PortalZ;
+        if (gpPhase == 0)
+        {
+            if (t < 2f) return;
+            if (wk.InDozer) wk.GetOut();
+            wk.useOverride = true; Hud.SkipFirstHelp();
+            gpLog += " fill=" + g.CaveFill(0).ToString("F3") + "/" + g.CaveFill(1).ToString("F3") + "/" + g.CaveFill(2).ToString("F3")
+                   + " highestOnRails=" + g.CaveHighest(0).ToString("F2") + "/" + g.CaveHighest(1).ToString("F2") + "/" + g.CaveHighest(2).ToString("F2");
+            GpCheck(g.CaveFill(0) > 0.75f, "firstStillFull");
+            GpCheck(g.CaveHighest(1) > 1.5f && g.CaveHighest(2) > 1.5f && !g.CaveClear(1) && !g.CaveClear(2), "railsStillBuried");
+            GpCheck(Grunts.OpenTo(8f) < 14.5f && Grunts.OpenTo(21f) < 24.5f, "gruntsStillBlocked(" + Grunts.OpenTo(8f).ToString("F1") + "," + Grunts.OpenTo(21f).ToString("F1") + ")");
+            // each part's hollow still has rubble over it
+            Vector3 f1 = VoxelWorld.FindSpot(1), f2 = VoxelWorld.FindSpot(2);
+            GpCheck(w.MaterialAt(new Vector3(f1.x, 0.9f, f1.z)) != VoxelWorld.Air && w.MaterialAt(new Vector3(f2.x, 0.9f, f2.z)) != VoxelWorld.Air, "partsStillBuried");
+            // a look at the second cave-in from the open stretch before it
+            wk.Teleport(new Vector3(px - 0.4f, 0f, pz + 9.5f), 0f);
+            wk.Look(4f);
+            gpPhase = 1; gpT0 = t;
+            return;
+        }
+        if (gpPhase == 1)
+        {
+            if (t - gpT0 < 1.5f) return;
+            TestCapture("gap_cave2.png");
+            // through the second: along the west wall
+            wk.Teleport(new Vector3(px - 1.25f, 0f, pz + 11.5f), 0f);
+            wk.overrideWalk = 1f; gpBest = 0f;
+            gpPhase = 2; gpT0 = t;
+            return;
+        }
+        if (gpPhase == 2)
+        {
+            gpBest = Mathf.Max(gpBest, GpAlong(wk));
+            if (gpBest < 20.5f && t - gpT0 < 12f) return;
+            wk.overrideWalk = 0f;
+            GpCheck(gpBest >= 20.5f, "walksPastSecond(" + gpBest.ToString("F1") + "m in " + (t - gpT0).ToString("F1") + "s)");
+            wk.Teleport(new Vector3(px + 0.4f, 0f, pz + 20.5f), 0f);
+            wk.Look(4f);
+            gpPhase = 3; gpT0 = t;
+            return;
+        }
+        if (gpPhase == 3)
+        {
+            if (t - gpT0 < 1.5f) return;
+            TestCapture("gap_cave3.png");
+            // through the third: along the east wall
+            wk.Teleport(new Vector3(px + 1.25f, 0f, pz + 22f), 0f);
+            wk.overrideWalk = 1f; gpBest = 0f;
+            gpPhase = 4; gpT0 = t;
+            return;
+        }
+        if (gpPhase == 4)
+        {
+            gpBest = Mathf.Max(gpBest, GpAlong(wk));
+            if (gpBest < 29f && t - gpT0 < 12f) return;
+            wk.overrideWalk = 0f;
+            GpCheck(gpBest >= 29f, "walksPastThird(" + gpBest.ToString("F1") + "m in " + (t - gpT0).ToString("F1") + "s)");
+            // and not down the middle: the rails are buried
+            wk.Teleport(new Vector3(px, 0f, pz + 11.5f), 0f);
+            wk.overrideWalk = 1f; gpBest = 0f;
+            gpPhase = 5; gpT0 = t;
+            return;
+        }
+        if (gpPhase == 5)
+        {
+            gpBest = Mathf.Max(gpBest, GpAlong(wk));
+            if (t - gpT0 < 4f) return;
+            wk.overrideWalk = 0f;
+            GpCheck(gpBest < 16f, "notDownTheMiddle(" + gpBest.ToString("F1") + "m)");
+            Debug.Log((gpOk ? "BULLDOZER_GAP_RESULT" : "BULLDOZER_GAP_FAILED") + gpLog);
+            GapFinish(gpOk ? 0 : 1);
+        }
+    }
+
     // Small fixes (24 Nov):  -executeMethod BulldozerBuilder.FixesTest    prints BULLDOZER_FIXES_RESULT (or _FAILED)
     // The test keys (F7 F8 F9) are off unless switched on in Settings, and the switch works.  At the gold shed with
     // gold, E hands the gold in even with an arrow lying right there; with no gold, E then picks the arrow up.  F6

@@ -150,7 +150,7 @@ public class Goals : MonoBehaviour
     // metres along the tunnel from its mouth
     public static readonly float[] CaveFrom = { 3f, 13f, 23f }, CaveTo = { 7f, 19f, 28f };
     /// How full a fresh cave-in is (share of the tunnel's space, from GoalsTest); a bit less than this means dug into.
-    public static readonly float[] FreshFill = { 0.80f, 0.79f, 0.83f };
+    public static readonly float[] FreshFill = { 0.80f, 0.52f, 0.61f };   // (the second and third are part-blocked: VoxelWorld.CollapseShare)
     public const float DugBy = 0.03f, ClearHeight = 0.5f;
 
     /// The share of the tunnel's space (floor to roof, wall to wall) that is ground or rubble in cave-in c.

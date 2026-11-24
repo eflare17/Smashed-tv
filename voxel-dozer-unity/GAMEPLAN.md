@@ -100,6 +100,15 @@ unchanged. `Steps` in `Upgrades.cs` is the list that counts:
 
 (The motor cart prices in the section above are the ones from before this.)
 
+### Part-blocked cave-ins (agreed 24 Nov 2026)
+
+The first cave-in fills the tunnel, as before. The **second and third only part-block it**: the rubble stands to
+the roof on one side and over the rails, and slopes down to a gap along the other wall (the west wall at the
+second, the east wall at the third). You can walk past both without digging, see the gold seam and the chambers,
+and choose where to dig. The **cart cannot pass** until the rails are dug clear, and the grunts keep to the middle,
+so they are still held back. Each dozer part is still buried on the full side. They hold about a third less rubble
+than before (`CollapseShare` in `VoxelWorld.cs`; tested by `GapTest`).
+
 ## Build order
 
 1. **The dump and money.** Tipping a cart at the dump pays into the pot, with a money display.

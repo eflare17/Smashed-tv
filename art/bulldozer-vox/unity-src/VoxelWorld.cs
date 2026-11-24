@@ -64,6 +64,18 @@ public partial class VoxelWorld : MonoBehaviour
         which = along < 10f ? 0 : along < 21f ? 1 : 2;
         return 1.2f * math.max(Ramp(along, 3f, 4.2f, 6f, 7f), math.max(Ramp(along, 13f, 14.6f, 17.4f, 19f), Ramp(along, 23f, 24.2f, 26.8f, 28f)));
     }
+    /// The second and third cave-ins only part-block the tunnel (the owner's call, 24 Nov 2026).  The rubble stands to
+    /// the roof on one side and over the rails, and slopes down to a gap along the other wall that he can walk through
+    /// (the west wall at the second, the east wall at the third: each one's dozer part stays buried on the full
+    /// side).  The cart still can't pass until the rails are dug clear.  The first cave-in is still full.
+    /// Returns the share of the full fill at `across` metres from the tunnel's middle (+ is east).
+    public const float GapSlope = 1.0f, GapFloor = 0.04f;
+    public static float CollapseShare(int which, float across)
+    {
+        if (which == 0) return 1f;
+        float s = which == 1 ? -across : across;             // metres from the middle towards the gap's wall
+        return s <= 0f ? 1f : s >= GapSlope ? GapFloor : math.lerp(1f, GapFloor, s / GapSlope);
+    }
     public const float RoadX = -4f, RoadHalfWidth = 5.5f;   // the way out to the south
     // The escape track: a ramp up through the benches just east of the mine, then over the hilltop to the north fence
     // and on up the hillside beyond it (SiteProps.Hillside).  It wanders a little either side of TrackX.
@@ -865,6 +877,7 @@ public partial class VoxelWorld : MonoBehaviour
                     int which;
                     float fillTo = CollapseFill(along, out which);
                     fillTo *= 0.9f + 0.14f * n3;
+                    fillTo *= CollapseShare(which, wx - PortalX);               // (the second and third leave a gap along one wall)
                     float up = (y - Ground + 0.5f) * Voxel / TunnelHeight;
                     if (up >= fillTo || InFindHole(wx, (y - Ground) * Voxel, wz)) m = Air;
                     else

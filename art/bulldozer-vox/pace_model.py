@@ -1,7 +1,7 @@
 # A rough pace model for the Digger Game's upgrade ladder (a read-through, not a voxel simulation).
 # python pace_model.py  prints when a greedy player would buy each upgrade, with the prices in P below
 # (kept by hand in step with Upgrades.cs: the 22 Nov 2026 tuning).  Assumptions: cave-in 1 is about 22 m3 and
-# cave-in 2 about 33 m3 (from GoalsTest), gold only past cave-in 2, a real player about 2.2x slower than the
+# cave-in 2 about 22 m3 and cave-in 3 about 18 m3 (part-blocked since 24 Nov 2026: they were 33 and 25), gold only past cave-in 2, a real player about 2.2x slower than the
 # shovel animation, 12 s of handling per cart load.  Treat the minutes as rough; the shape is what matters.
 # A "greedy" player always buys the cheapest useful upgrade they can afford, and digs in between.
 # Income is modelled from the real numbers in Upgrades.cs / Worker.cs / MineCart.cs, with a human slow-down factor.
@@ -68,7 +68,7 @@ def run(verbose=True):
     coins = 0.0; gold = 0.0; t = 0.0; dug_m3 = 0.0
     log = []
     while True:
-        stage = 0 if dug_m3 < 22 else 1 if dug_m3 < 55 else 2 if dug_m3 < 80 else 3 if dug_m3 < 110 else 4
+        stage = 0 if dug_m3 < 22 else 1 if dug_m3 < 44 else 2 if dug_m3 < 62 else 3 if dug_m3 < 92 else 4
         # the next thing to buy: the cheapest available (the backpack only after Shovel 6)
         opts = []
         for b in P:
@@ -92,7 +92,7 @@ def run(verbose=True):
             idle = 0.0
             while stage < 2:
                 t += 10; idle += 10; coins += cpm / 6; dug_m3 += lpm / 6 / 1000
-                stage = 0 if dug_m3 < 22 else 1 if dug_m3 < 55 else 2
+                stage = 0 if dug_m3 < 22 else 1 if dug_m3 < 44 else 2
                 cpm, gpm, lpm = income(lv, stage)
             log[-1] = (t, name, "nothing to buy for %.1f min (needs gold; banked %d coins)" % (idle / 60, coins))
             continue
