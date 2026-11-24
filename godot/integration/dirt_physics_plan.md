@@ -84,17 +84,23 @@ Remainders below 125 mm never become a clod: they go straight to `put_layer`.
 3. **Bounce** when normal speed < -2 m/s (restitution 0.25); otherwise **roll**: tangential gravity minus friction
    0.7, spin = v / r.
 4. **Awake heap**: a 0.25 m hash counts awake clods per cell and raises the local floor by `count * r`, so a stream
-   piles before it settles.
+   piles before it settles. *As built in stage 2*: the raise is capped (`HEAP_FULL`, 1500 mm in a square); a clod
+   coming down on a full square settles there and then. Uncapped, a stream stood metres of floor under itself and
+   threw clods 9 m away (progress log, stage 2).
 5. **Machines**: oriented boxes from `keepout_boxes()`, one body box per machine, and the truck tray (floor + 4
    walls, new `tray_boxes()`). Broadphase: only clods within a machine's bounding radius are tested. Push out along
    least penetration, take the box's point velocity. Clods above 0.6 of blade height get a sideways push toward the
    nearer blade end (windrows).
 6. **Settle** when speed < 0.4 m/s for 0.25 s **and** slope < 30 degrees, or age > 6 s, or overflow. Never while
-   inside a blade or bucket box (avoids a settle/re-cut flicker).
-7. **Deposit**: split bilinearly over the 4 nearest columns, summed per column, flushed once a frame with
-   `grid.put_layer`, at most 200 clods a frame. The clod shrinks to zero over 0.15 s.
-8. **Budget**: `CLOD_US` cap (target 2000). When over, force-deposit the slowest, then the oldest.
-   Cap `FLY_MAX` is set from the stage 2 measurement (expected 800-1000 here, not the 1500 first proposed).
+   inside a blade or bucket box (avoids a settle/re-cut flicker). *As built in stage 2*: also when slow for 1 s
+   whatever the slope (`STUCK_S`), so a clod on a 30 to 35 degree flank does not wait out its 6 s.
+7. **Deposit**: summed per column, flushed once a frame with `grid.put_layer`, at most 200 clods a frame. The clod
+   shrinks to zero over 0.15 s. *As built in stage 2*: spread evenly over 2 x 2, 4 x 4 or 6 x 6 columns by the clod's
+   size, not bilinearly over 4 (a chunk's 2000 mm on four columns is a 500 mm spike), and a clod waits a step if its
+   middle column has had 36 mm that step (`DEP_COL`).
+8. **Budget**: `CLOD_US` cap (target 2000). When over, force-deposit the slowest, then the oldest (*as built*:
+   clods on the ground first, then the front of the list; sorting costs more than it saves).
+   Cap `FLY_MAX` is set from the stage 2 measurement: **800** (expected 800-1000 here, not the 1500 first proposed).
 
 ### Tunnels
 
@@ -176,6 +182,9 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   - `digsite_clod_perf.gd`: hold 400, 800, 1200, 1500 awake for 10 s each. Prints us per clod and `step_us`
     mean/p95. Pass: `FLY_MAX` set to the largest count with mean <= 2.0 ms and p95 <= 4.0 ms; the usec cap holds
     p95 <= 4.0 ms at 2x that count by force-depositing; mass exact.
+    *As tested*: each count is held three times and fits only if all three do; the check is that `FLY_MAX` (800)
+    fits every time. A larger count fitting on a good minute (1200 does, about one run in five) is printed as a
+    note, not failed: the constant stays where it always fits.
 - **Fallback ladder** if 800 awake does not fit: ground check every third frame for airborne clods; drop the awake
   heap; `FLY_MAX` 500 with 2x coarser spawns. If 500 does not fit, stop and report before stage 3.
 - **Native probe (max half a day, outside the work tree)**: pip scons, clone godot-cpp 4.4, build Linux, try mingw.

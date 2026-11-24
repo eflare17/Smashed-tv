@@ -4,8 +4,8 @@ extends SceneTree
 ## ), on a small grid of its own (no arena), DsDirt alone with no time cap: 400, 800, 1200 and 1500 clods held awake for
 ## 10 s each (let go a few at a time from 1 to 2.5 m up, all over the middle of the ground, topped up every tick as clods settle; the grid
 ## slumping under them as in the game, its time not counted). Prints a step's time (mean, p95, worst) and the time a
-## clod. Then: DsDirt.FLY_MAX is the largest of those counts whose step is 2.0 ms or under on average and 4.0 ms or
-## under at p95; with twice FLY_MAX offered, the time cap (DsDirt.CLOD_US) holds the step's p95 to 4.0 ms by settling
+## clod. Then: DsDirt.FLY_MAX awake fit, a step 2.0 ms or under on average and 4.0 ms or under at p95, in every run
+## (a larger count that fits too is printed as a note: it doesn't every time); with twice FLY_MAX offered, the time cap (DsDirt.CLOD_US) holds the step's p95 to 4.0 ms by settling
 ## and turning away what it has no time for; at rest a step's under 0.05 ms; and not a millimetre's made or lost.
 ## Each is run three times, turn about, and fits only if every run does (the box is shared: see the progress log).
 ## Options: --counts=400,800 (others), --secs=10, --reps=3, --out=dir (the table, as clod_perf.txt). Owned by the voxel session.
@@ -147,6 +147,7 @@ func _initialize() -> void:
 			drift = maxi(drift, maxi(r.drift, absi(r.end)))
 			rest = maxf(rest, r.rest)
 	say("DSCLODPERF   each count over its %d runs:" % reps)
+	var fit := {}
 	for c: int in counts:
 		var rs: Array = rows[c]
 		var fits := true
@@ -159,9 +160,16 @@ func _initialize() -> void:
 			lo = minf(lo, r.mean)
 			p95 = maxi(p95, r.p95)
 		say("DSCLODPERF   %5d: step mean %.0f to %.0f us, p95 %d us at most: %s" % [c, lo, mean, p95, "fits" if fits else "over"])
+		fit[c] = fits
 		if fits:
 			best = maxi(best, c)
-	check(best == DsDirt.FLY_MAX, "FLY_MAX (%d) is the largest count whose step's 2.0 ms or under on average and 4.0 ms at p95, every run (%d)" % [DsDirt.FLY_MAX, best])
+	# The cap has to hold on a bad day, so the check is one-sided: FLY_MAX itself must fit in every run. A bigger count
+	# fitting too (1200 does about one time in five, on a good minute of a shared box) is a note, not a failure: the
+	# constant stays where it fits every time, and the time cap takes the slack.
+	var cap_fits: bool = rows.has(DsDirt.FLY_MAX) and fit[DsDirt.FLY_MAX]
+	check(cap_fits and best >= DsDirt.FLY_MAX, "FLY_MAX (%d) awake fit in every run: a step's 2.0 ms or under on average and 4.0 ms at p95 (the largest count that fit: %d)" % [DsDirt.FLY_MAX, best])
+	if best > DsDirt.FLY_MAX:
+		say("DSCLODPERF note %d fit as well this time (FLY_MAX stays %d: it has to fit every time, and %d doesn't)" % [best, DsDirt.FLY_MAX, best])
 	check(best >= 500, "500 awake or more fit (the plan's floor)")
 	# twice that offered, with the time cap on
 	var twos := []
