@@ -96,3 +96,135 @@ The regression set from here on is therefore the plan's, with `digsite_test` at 
 - At -0.05 the blade runs off the patch's far edge before 20 s; the baseline's -0.10 stays on it (blade ends 4 m short).
 - The yard test's pair needs phase 1 first: `--phase=2` alone fails with "no first run's numbers".
 - `mass()` counts no clods yet (there are none): stage 2 adds `dirt.mass_mm() + dirt.owed_mm()` to it.
+
+## Stage 2: clod core spike on a bare grid (done, 24 Nov)
+
+**The answer**: a clod costs **1.4 to 2.1 us a step** in GDScript against this grid (1.4 to 1.5 when the box is quiet).
+**`FLY_MAX` = 800.** The native library **can** be rebuilt here for Linux and Windows.
+
+**What was built** (nothing in the game uses it yet: no game code changed)
+
+- `scripts/voxel/digsite/ds_dirt.gd` (`DsDirt`, a `RefCounted`): clods as struct-of-arrays on a `DigSiteGrid`.
+  `setup(grid, origin)`, `spawn(p, v, material, mm)`, `spawn_mass(p, v, material, mm, spread, within)` (crumbs 125,
+  clods 500, chunks 2000 mm; 2x and 3x coarser over a fifth and a half of the cap; under a crumb goes straight to the
+  ground), `step(dt)`, `mass_mm()`, `owed_mm()`, `awake()`, `land_all()`, `fly_max`, `cap_us`, `seed_`, `step_us`.
+  Fall (gravity 9.8), bounce (over 2 m/s into the ground: restitution 0.25), roll (friction 0.7, the slope from the
+  ground and the awake heap), the awake heap (quarter-metre squares), settle (under 0.4 m/s for 0.25 s on under 30
+  degrees; or 6 s old), a batched deposit (`put_layer`, once a step, 200 clods a step at most), the time cap
+  (`CLOD_US` 2000: over it, clods are settled where they are and spawns go straight to the ground). No drawing, no
+  spin, no machines, no tunnels, no network: stage 3 on.
+- `test/voxel/digsite_clod_test.gd`, `test/voxel/digsite_clod_perf.gd`. Bare 128 x 96 x 128 grid, no arena.
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_clod_test.gd -- --nosave
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_clod_perf.gd -- --nosave --out=res://integration/dirt_shots
+
+(3 s and 30 s. The perf test's options: `--counts=400,800`, `--secs=10`, `--reps=3`; `--out` writes `clod_perf.txt`.)
+
+**`digsite_clod_test`: `DSCLOD done 10 passed, 0 failed`**
+
+| Criterion | Measured |
+|---|---|
+| 1000 clods from 3 m onto one spot (10 a tick, 500 mm each), all deposited within 8 s | 6.62 s (tick 397); 702 awake at most |
+| Mass exact to the mm | 0 mm off at every tick and at the end; all 500000 mm is loose dirt on the ground |
+| No column more than 250 mm over its neighbours, at any tick | 79 mm at most (a column over all four straight neighbours, each measured over the ground as it was) |
+| Pile slope 28 to 38 degrees after slump | 31.5 (eight ways: 30 28 30 31 33 31 33 36); 1.29 m high |
+| A clod let go on a 40 degree heap goes over 1 m downhill before settling | 4.58 m down the bank (to its foot), fastest 4.2 m/s, settled 0.5 m past it |
+| Two runs, identical `section_hashes` | identical; all gone at tick 397 both times |
+
+The slope is the rise from a quarter to three quarters of the pile's height over the run between them, averaged over
+eight directions. The "40 degree heap" is a firm bank built for the test (cells and a firm layer, a true plane; the
+grid is not ticked in that part): loose dirt will not stand at 40.
+
+**`digsite_clod_perf`: `DSCLODPERF done 5 passed, 0 failed`** (three whole runs back to back, load average 2 to 3.5
+from another job; each run holds each count three times, turn about; the last run's table is in
+`integration/dirt_shots/clod_perf.txt`)
+
+| Awake | `step_us` mean over the 9 runs | p95 at most | a clod | Verdict (2.0 ms mean, 4.0 ms p95) |
+|---|---|---|---|---|
+| 400 | 647 to 1012 | 1205 | 1.6 to 2.5 us | fits |
+| 800 | 1189 to 1671 | 2272 | 1.5 to 2.1 us | fits, every run |
+| 1200 | 1649 to 2457 | 3542 | 1.4 to 1.9 us | on the line: over in at least one run of every three |
+| 1500 | 2038 to 3196 | 4909 | 1.5 to 2.2 us | over |
+
+| Criterion | Measured |
+|---|---|
+| `FLY_MAX` is the largest count that fits | 800, in all three runs |
+| The time cap holds p95 <= 4.0 ms at 2x (1600 offered) | p95 2778 to 3052 us (the middle run of each three), mean 2012 to 2017; it kept 1015 to 1292 awake, settled 1500 to 4900 by force and turned 3400 to 3800 spawns straight to the ground |
+| Mass exact | 0 mm off in every run |
+| All clods at rest: `step_us` <= 0.05 ms | 0.0004 ms (0.4 us) |
+
+The workload: clods let go a dozen at a time from 1 to 2.5 m up, all over the middle 10 x 10 m, topped up every tick;
+half to two thirds of them are on the ground at any time (the dear half). The grid slumps under them with the game's
+kind of budget (2 ms); its time is not in `step_us` (it was 0.9 to 1.5 ms a tick here: "grid" in the table).
+
+**How the verdict is taken, and why**: the box is shared and the same code's step time moved by a third between one
+run and the next (800 awake: 1189 us, then 1671 us). So each count is held three times and **fits only if every one of
+its runs does** (a cap has to hold on a bad day). That is stricter than one run, not looser. 1200 is honestly on the
+line (best 1649 us, usually 1900 to 2300): on a quiet box it could fit, and then the test's first check fails and says
+so. `FLY_MAX` is one constant; the time cap adapts anyway (with 1600 offered it kept 1000 to 1300 awake inside 2 ms).
+
+**What it took to get there** (the per-clod cost, same test, back to back): as first written 2.3 to 2.45 us; ground
+looked at only when an airborne clod could have reached it (up to 6 steps, the fallback ladder's first rung, done
+better) 2.05 to 2.2 us; a square's slopes kept 3 steps instead of worked out every step (5 `height_at` calls each)
+1.46 us. The awake heap stayed: the ladder's other rungs were not needed.
+
+**Where it differs from the plan, and why**
+
+- **The awake heap is capped** (`HEAP_FULL`, 1500 mm in a square), and a clod coming down on a full square settles
+  there and then (the plan's "or overflow"). Uncapped, as the plan had it, 1000 clods onto one spot stood 3.4 m of
+  floor under the stream and threw them out at 8 m/s to 9 m away: the "pile" was 0.29 m high at 4 degrees. With it
+  off, the test fails at 4.7 degrees.
+- **The deposit is not bilinear over 4 columns.** A clod's dirt goes evenly onto 2 x 2, 4 x 4 or 6 x 6 columns by its
+  size. A chunk's 2000 mm on four columns is a 500 mm spike, against the plan's own 250 mm. And a clod waits a step if
+  its middle column has had 36 mm that step (`DEP_COL`), so the ground rises evenly: 79 mm worst. (Without the wait:
+  133 mm, still passes, and clods settle sooner, 4.9 s. A knob for stage 9.)
+- **`STUCK_S`**: slow for 1 s settles whatever the slope (the plan's rule leaves a clod on a 30 to 35 degree flank
+  waiting for its 6 s). Without it the drop takes 7.65 s, with it 6.62.
+- **A 2 cm contact skin**: rolling down a bank a clod was "in the air" every other step by rounding, so friction only
+  half applied (6.1 m/s down the test's bank; 4.2 with the skin).
+- **Bounces keep 60% of their speed along the ground** (0.85 threw clods 5.7 m from a 3 m drop).
+- **Shedding at the time cap** takes clods on the ground first, then the front of the list: not strictly "slowest,
+  then oldest" (sorting 800 a step costs more than it saves).
+- No spin or basis yet (drawing: stage 3). The id is kept (16 bits).
+
+**Native probe: passed** (outside the work tree, in the scratchpad's `native_probe/`)
+
+- `scons` 4 and `x86_64-w64-mingw32-g++` 13-win32 are installed here. godot-cpp branch 4.4 (`b0e3b1e`) built
+  `template_release` for Linux, then for Windows with `use_mingw=yes` (about 25 minutes each at `-j2` on this box).
+- `native/build.sh` on a copy of the **unmodified** sources: 34 s, a `.so` (798528 bytes, the committed one's size)
+  and a `.dll` (PE32+ x86-64, 1558016 bytes; the committed one is 1557504; imports only KERNEL32 and msvcrt).
+- The rebuilt `.so`, put in the tree for the run and taken out again: `digsite_dirt_test` 12/0, `digsite_clod_test`
+  10/0. The committed binaries are unchanged (`git status` clean on `native/bin`).
+- The `.dll` could not be run here (no Windows): "produced" is all that is claimed for it.
+- So stage 9's native part is unlocked. godot-cpp must be rebuilt if the scratchpad is cleared (it is not in the repo).
+
+**Guards** (`-- --nosave`; no game code changed in this stage)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet | 14/0, 20/0 |
+| ground | 21/1, then 22/0, 22/0, 21/1 over four runs: the one failing is "no frame over 16 ms building (worst 17.6 ms)", a wall-clock check on a loaded box |
+| `digsite_test` | 5/1 once (the failing line was not captured; the plan's known one is "Travel Home"), then 6/0 three times |
+| save pair | 4/0, 6/0 |
+| sync pair over enet | host 6/0, guest 9/0 |
+
+**What the owner will see**: nothing in the game. The cost table above and the cap: 800 clods moving at once.
+
+**Known gaps and things later stages must know**
+
+- `Yard.mass()` does not count clods yet: there is no `DsDirt` in the site until stage 3 (add `dirt.mass_mm() +
+  dirt.owed_mm()` there).
+- **A native hang, found by accident**: `put_layer` on a column at the grid's roof whose neighbours are all at the
+  roof too never returns (`lay_put` passes the spare to the lowest neighbour, which passes it back). The first perf
+  workload built a ridge to the roof (100 m3 poured along one 20 m path) and hung there. The game's site is far from
+  that, and the perf test now spreads its dirt, but stage 3 should keep clods from depositing within a metre of the
+  roof, or stage 9 fix `lay_put`.
+- Deposits can outrun the slump: the layer's budget (`LAYER_US` 1500 in the game) decides how fast a heap spreads.
+  With 1500 awake the grid's tick here took 1.4 to 1.8 ms of its 2 ms. Stage 5 should watch `layer_us` while dozing.
+- With `cap_us` on, runs are not bit-identical (the cap is by the clock). The determinism check runs with it off.
+- Clods are kept 1.5 m in from the grid's side (the edge ring takes no loose dirt).
+- The perf numbers are for clods alone on a bare grid: drawing (stage 3) and machine boxes (stage 3 on) come on top,
+  inside the same 2 ms.

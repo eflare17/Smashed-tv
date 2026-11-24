@@ -181,6 +181,10 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
 - **Native probe (max half a day, outside the work tree)**: pip scons, clone godot-cpp 4.4, build Linux, try mingw.
   Pass to unlock stage 9's native part: unmodified sources rebuild to a `.so` that passes `digsite_dirt_test` 12/0
   **and** a `.dll` is produced. Otherwise the plan stays GDScript-only; record the result in this file.
+  **Result (24 Nov): passed.** `scons` and `x86_64-w64-mingw32-g++` (13-win32) are on this box; godot-cpp 4.4
+  (`b0e3b1e`) built for Linux and Windows (`template_release`), and `native/build.sh` on a copy of the unmodified
+  sources gave a `.so` that passes `digsite_dirt_test` 12/0 (and `digsite_clod_test` 10/0) and a 1.56 MB PE32+ `.dll`.
+  Stage 9's native part is unlocked; the committed binaries were not replaced. Details in the progress log.
 - **Owner sees**: nothing in the game; a per-clod cost table and the chosen cap.
 - **Out of scope**: drawing, machines, break-off, net, native code changes.
 
