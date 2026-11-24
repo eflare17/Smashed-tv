@@ -1,0 +1,27 @@
+DSDOZCLOD ok   the patch is flat to +-1 cell (0.00 to 0.00)
+DSDOZCLOD ok   on the bulldozer (id 5)
+DSDOZCLOD the order: the baseline first, then the clods; the clods' share 0.35; DsDirt.FLY_MAX 800
+DSDOZCLOD baseline (no clods): 12.29 m in 20 s (at the end 0.16 m/s); heap ahead 1.22 m at the end, 1.26 m at the most; 1482 blocks banked; 31831 blocks' worth moved; stops: 'The blade's full: back up, or raise it' 474 frames; 
+DSDOZCLOD baseline (no clods): frames 1201, mean 13.08, p95 16.93, worst 56.55 ms; layer_us mean 188, p95 272; show_us mean 330, p95 515; the two together mean 518, p95 746
+DSDOZCLOD baseline (no clods): windrows 0.5 to 1.5 m outside the blade's ends, along its 12.3 m: 39577 and 53191 mm over the patch's level (212 and 270 columns) at the end of the push; 39577 and 53185 once everything's settled
+DSDOZCLOD with clods: 12.52 m in 20 s (at the end 0.00 m/s); heap ahead 1.23 m at the end, 1.28 m at the most; 1464 blocks banked; 30965 blocks' worth moved; stops: 'The blade's full: back up, or raise it' 471 frames; 
+DSDOZCLOD with clods: frames 1201, mean 14.13, p95 18.46, worst 54.34 ms; layer_us mean 201, p95 309; show_us mean 338, p95 519; the two together mean 539, p95 784
+DSDOZCLOD with clods: windrows 0.5 to 1.5 m outside the blade's ends, along its 12.5 m: 63991 and 75408 mm over the patch's level (438 and 585 columns) at the end of the push; 63991 and 75383 once everything's settled
+DSDOZCLOD with clods: 499 let go (237085 mm: 34.9% of the 678380 mm the blade's front moved on; 6.1% of all it moved, the sweep behind its edge and all), 210 awake at the most, 3 at the end of the push (1010 mm); 496 settled during it, 0 laid straight on the ground (no room for them, or under a crumb), 0 put down by the caps; at the most 64878 mm of them in front of the blade as its load
+DSDOZCLOD with clods: the clods' step mean 260 us, p95 754, worst 2184 over the 1167 frames with any awake (mean 253 over all 1201); at rest 0 us
+DSDOZCLOD with clods: the dozer standing, the last clod's settled 1.03 s on (0 left awake); then land_all: 0 mm in clods
+DSDOZCLOD ok   the baseline is stage 4's push (12.29 m; stage 4's 12.29)
+DSDOZCLOD ok   the baseline makes no clods (0)
+DSDOZCLOD ok   not a mm made or lost at any second of the push or at its end (0 mm at the most; the baseline 0)
+DSDOZCLOD ok   nor once every clod's settled and land_all's called (0 mm; 0 mm left in clods)
+DSDOZCLOD ok   the clods are their share of what the blade's front moves on (34.9%; DsDozer.CLOD_SHARE 35%)
+DSDOZCLOD ok   over 200 clods let go (499)
+DSDOZCLOD ok   never more awake than FLY_MAX (210 of 800)
+DSDOZCLOD ok   the heap ahead >= 0.3 m and >= 80% of the baseline's (1.23 m of 1.22: 101%)
+DSDOZCLOD ok   a windrow in the columns 0.5 to 1.5 m outside each end of the blade (63991 and 75408 mm; the baseline's 39577 and 53191)
+DSDOZCLOD ok   metres moved >= 80% of stage 4's (12.52 of 12.29: 102%)
+DSDOZCLOD ok   the clods' step <= 2.0 ms on average (260 us with any awake; p95 754)
+DSDOZCLOD ok   frame p95 <= the baseline's + 3.0 ms (18.46 against 16.93: +1.53; means 14.13 against 13.08: +1.05)
+DSDOZCLOD ok   layer_us + show_us within 20% of the baseline's (mean 539 us against 518: +4%; p95 784 against 746: +5%)
+DSDOZCLOD ok   the dozer standing, the clods come to rest and are gone (1.03 s)
+DSDOZCLOD done 16 passed, 0 failed

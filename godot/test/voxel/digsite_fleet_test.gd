@@ -46,9 +46,11 @@ func _ds() -> DigSite:
 func _m(i: int) -> DsMachine:
 	return _ds().machines.by_id(i)
 
-# everything solid, in mm over a column (every block's 125 and the loose layer: DigSiteGrid.ground_mm); loads are mm too
+# everything solid, in mm over a column (every block's 125 and the loose layer: DigSiteGrid.ground_mm); loads are mm too.
+# With it, the dirt that's come loose and not yet settled (the dozer's clods, DsDirt: the dirt physics' stage 5)
 func _ground() -> int:
-	return _ds().terrain.grid.ground_mm()
+	var d: DsDirt = _ds().dirt
+	return _ds().terrain.grid.ground_mm() + (d.mass_mm() + d.owed_mm() if d != null else 0)
 
 func _on(m: DsMachine) -> void:
 	var ds := _ds()

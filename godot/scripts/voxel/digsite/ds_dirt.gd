@@ -213,6 +213,29 @@ func owed_mm() -> int:
 func awake() -> int:
 	return n
 
+## The dirt in the clods whose middles are in a box (mm): t the box's middle and axes in the world, half its size (a
+## dozer's load ahead of its blade)
+func mass_in(t: Transform3D, half: Vector3) -> int:
+	if n == 0:
+		return 0
+	var inv := t.affine_inverse()
+	var cx := t.origin.x
+	var cz := t.origin.z
+	var r2 := half.length_squared()
+	var hx := half.x
+	var hy := half.y
+	var hz := half.z
+	var sum := 0
+	for i in n:
+		var dx := px[i] - cx
+		var dz := pz[i] - cz
+		if dx * dx + dz * dz > r2:
+			continue
+		var l: Vector3 = inv * Vector3(px[i], py[i], pz[i])
+		if absf(l.x) <= hx and absf(l.y) <= hy and absf(l.z) <= hz:
+			sum += cmm[i]
+	return sum
+
 func _rnd() -> int:
 	_rng = (_rng * 1103515245 + 12345) & 0x7fffffff
 	return _rng >> 8

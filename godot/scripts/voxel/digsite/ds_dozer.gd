@@ -58,6 +58,27 @@ const BANK_TO := 1.0
 const BANK_MOST := 1.4          # ... and a face HEAP high, this hard: it bites in half a metre and stalls (take less: raise the blade)
 const JAM_MOST := 2.2           # what it can't move at all holds it this hard
 const ROCK_MOST := 3.0          # ... and rock (it rings, and stops in a hand's width)
+# Its wave of dirt is real lumps (the dirt physics' stage 5): of what the blade moves on ahead each step, CLOD_SHARE
+# comes off as clods (DsDirt) instead of being laid on the heap: most at the heap's crest, going with the blade and
+# rolled up and over, to tumble down its front; the rest off the blade's two ends (more of it the fuller the heap), to
+# lie beside the cut as windrows. The heap the blade banks up (the grid's) keeps the rest. What's in clods in front of
+# the blade weighs on it as the heap does (push_load).
+const CLOD_SHARE := 0.35
+const CLOD_FROM := 500          # mm owed the clods before any's taken (a clod's worth)
+const CLOD_STEP := 3000         # mm a step into clods at the most
+const CLOD_PIECE := 1000        # mm let go at a place
+const CREST_AT := 0.5           # m ahead of the edge the crest's clods come off, to CREST_TO
+const CREST_TO := 0.85
+const CREST_UP := 1.1           # m/s up they're rolled, to CREST_UP_TO; and on ahead of the blade by CREST_ON
+const CREST_UP_TO := 2.3
+const CREST_ON := 0.5
+const END_SHARE := 0.12         # of the clods, off the blade's ends with the heap ahead empty ...
+const END_FULL := 0.4           # ... and with it brim full
+const END_OUT := 0.3            # m outside the blade's end they come off, going out at END_V to END_V_TO m/s
+const END_V := 0.9
+const END_V_TO := 2.0
+const LOAD_AHEAD := 1.6         # m ahead of the edge the clods count as its load (as far as the heap's looked at)
+const LOAD_EVERY := 3           # steps between counts of them
 
 var lift = START_LIFT
 var lift_cmd = 0.0
@@ -76,6 +97,14 @@ var bank = 0.0                 # how much firm ground stands over the edge just 
 var _v_lift = 0.0              # the blade's rams, eased (-1 .. 1)
 var _jam_r = 0.0               # what it couldn't move, holding it back (fading)
 var _rock_r = 0.0
+var clod_share = CLOD_SHARE    # (tests: 0, and the blade's as it was before the clods)
+var clods_made = 0             # (tests: clods its blade has let go, and their mm)
+var clods_mm = 0
+var spilled = 0                # (tests: mm its blade's front has moved on, the clods' share in it)
+var clod_load = 0              # mm in clods in front of the blade
+var _clod_due = 0.0            # mm owed the clods of what's been moved
+var _flip = false
+var _load_in = 0
 var _look: Node3D
 var _pivot: MeshInstance3D
 var _tracks: DsTrackRig
@@ -244,8 +273,19 @@ func _tool(dt: float) -> void:
 	# working only going forward (or trying to): a parked blade doesn't dig, and it moves only what it sweeps through
 	if speed > 0.02 or (throttle > 0.05 and speed > -0.05):
 		var share = clampf(maxf(speed, 0.0) * dt / SWEEP_DEPTH, 0.0, 1.0)
-		var r: Dictionary = tr.blade(a, b, f, 2, MOUTH, FIRM, HARDEST, 0, HEAP, share)
-		moved += int(r.moved)
+		# (the clods' share of what it moves, taken out of the sweep as counts: from one end of the edge on, so
+		# from each end in turn)
+		var take = 0
+		if clod_share > 0.0 and site.dirt != null and _clod_due >= CLOD_FROM:
+			take = mini(int(_clod_due) / DsDirt.MM * DsDirt.MM, CLOD_STEP)
+			_flip = not _flip
+		var r: Dictionary = tr.blade(b if take > 0 and _flip else a, a if take > 0 and _flip else b, f, 2, MOUTH, FIRM, HARDEST, take, HEAP, share)
+		moved += int(r.moved) + int(r.taken)
+		spilled += int(r.moved) + int(r.taken)
+		if clod_share > 0.0 and site.dirt != null:
+			_clod_due = clampf(_clod_due + clod_share * (int(r.moved) + int(r.taken)) - int(r.taken), 0.0, 2.0 * CLOD_STEP)
+			if int(r.taken) > 0:
+				_break_off(r.counts, a, b, f)
 		_jam(int(r.jammed), int(r.moved))
 		# (from the blade back to the tracks nothing's left standing above the edge, or above where the tracks ride
 		# if that's higher: the blade's swept through all of it. So a step it cut before the machine dipped, or
@@ -275,11 +315,59 @@ func _tool(dt: float) -> void:
 		cut_rate = lerpf(cut_rate, 0.0, minf(1.0, dt * 4.0))
 		full = move_toward(full, 0.0, 2.0 * dt)
 		bank = move_toward(bank, 0.0, 2.0 * dt)
-	push_load = tr.load_ahead(a, b, f, HEAP + 0.3)
+	push_load = tr.load_ahead(a, b, f, HEAP + 0.3) + _clods_ahead(a, b, f) / float(DsTerrain.MM)
 	# (the blade's a wall, and its push arms and the gap back to the tracks closed: the heap can't slump back through)
 	# (and up to the sky: a heap grown over the blade's top used to come to rest on top of the blocked cells, a shelf
 	# floating over the blade and the bonnet; now what spills over slides off ahead or to the sides)
 	tr.block(id, a + f * LIP, b + f * LIP, f, EDGE_X - length * 0.5 + 0.15 + LIP, MOUTH + 6.0)
+
+## What the blade's taken for the clods (mm by material) let go as clods: at the heap's crest across the blade, going
+## with the blade and rolled up and on over it; and off the blade's two ends, outward. All of it: what's too little
+## for a clod, or one too many, DsDirt lays on the ground there.
+func _break_off(counts: PackedInt32Array, a: Vector3, b: Vector3, f: Vector3) -> void:
+	var d: DsDirt = site.dirt
+	var o = b - a
+	o.y = 0.0
+	o = o.normalized()
+	var ends = lerpf(END_SHARE, END_FULL, smoothstep(0.3, 1.0, full))
+	var v0 = f * maxf(speed, 0.0)
+	for m in counts.size():
+		var mm = counts[m]
+		while mm > 0:
+			var one = mini(mm, CLOD_PIECE)
+			mm -= one
+			var p: Vector3
+			var v: Vector3
+			if d.randf01() < ends:
+				var side = -1.0 if d.randf01() < 0.5 else 1.0
+				p = (a if side < 0.0 else b) + o * (side * END_OUT) + f * (0.1 + 0.4 * d.randf01())
+				v = v0 * 0.7 + o * (side * lerpf(END_V, END_V_TO, d.randf01())) + Vector3(0.0, 0.6 + 0.8 * d.randf01(), 0.0)
+				p.y = maxf(p.y, ground_y(p.x, p.z)) + 0.25 + 0.5 * d.randf01()
+			else:
+				p = a.lerp(b, 0.04 + 0.92 * d.randf01()) + f * lerpf(CREST_AT, CREST_TO, d.randf01())
+				v = v0 + f * CREST_ON + Vector3(0.0, lerpf(CREST_UP, CREST_UP_TO, d.randf01()), 0.0)
+				p.y = maxf(p.y, ground_y(p.x, p.z)) + 0.2
+			var n = d.spawn_mass(p, v, m, one, 0.45, 0.12)
+			clods_made += n
+			clods_mm += one
+
+## The dirt in clods in front of the blade (mm): across it, LOAD_AHEAD ahead of its edge, as high as the heap's
+## looked at (counted every LOAD_EVERY steps)
+func _clods_ahead(a: Vector3, b: Vector3, f: Vector3) -> int:
+	var d: DsDirt = site.dirt
+	if d == null or d.n == 0:
+		clod_load = 0
+		return 0
+	_load_in -= 1
+	if _load_in <= 0:
+		_load_in = LOAD_EVERY
+		var o = b - a
+		o.y = 0.0
+		var half = Vector3(o.length() * 0.5, (HEAP + 0.3) * 0.5 + 0.2, LOAD_AHEAD * 0.5)
+		var fl = Vector3(f.x, 0.0, f.z).normalized()
+		var mid = (a + b) * 0.5 + fl * half.z + Vector3(0.0, half.y - 0.2, 0.0)
+		clod_load = d.mass_in(Transform3D(Basis(o.normalized(), Vector3.UP, fl), mid), half)
+	return clod_load
 
 ## What it couldn't move (no room left in front: the heap's as high as it'll go) holds it back, so the blade doesn't
 ## pass through what it can't shift: it stalls against a full blade
@@ -362,7 +450,8 @@ func _dust_fx() -> void:
 	if speed > 0.1 and edge_gap < 0.03 and site.terrain:
 		site.terrain.wear_edge(e[0], e[1], forward())
 	if _tumble == null:
-		_tumble = DsMachine.chunks(40)
+		# (where its wave is real clods, the host's game or your own, only a few of these, small: the lumps are DsDirt's)
+		_tumble = DsMachine.chunks(12 if runs() and clod_share > 0.0 else 40)
 		_tumble.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 		_tumble.emission_box_extents = Vector3(HALF_WIDTH * 0.88, 0.1, 0.15)
 		_tumble.direction = Vector3(0.0, 0.15, -1.0)
