@@ -175,6 +175,7 @@ var net_menu: VoxelNetMenu      # the online menu (O)
 var stkilda: VoxelStKilda        # St Kilda (Luna Park), down the phone's Travel (scripts/voxel/stkilda)
 var speed_k := 1.0               # how fast you walk, of your own pace (St Kilda: slower dragging a bush)
 var gun_range: VoxelGunRange    # the gun range (the phone's Travel: every weapon to try)
+var touch: VoxelTouch            # the phone browser's touch controls (null: keyboard and mouse; VoxelTouch.detect, or the first touch)
 var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
 var digsite: DigSite             # the Dig Site (the phone's Travel: dig, tunnel, machines; co-op together; scripts/voxel/digsite)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
@@ -192,6 +193,7 @@ func _ready() -> void:
 		var kv := String(a).trim_prefix("--").split("=")
 		_opts[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	chunk = int(_opts.get("chunk", "1"))
+	VoxelTouch.detect(_opts)        # (a phone's browser, ?touch: before the settings, which start on Low there)
 	top_down = _opts.has("topdown")
 	_mat = StandardMaterial3D.new()
 	_mat.vertex_color_use_as_albedo = true
@@ -345,7 +347,7 @@ func _ready() -> void:
 			_next_wave()
 	if _opts.has("enemies"):
 		waves.on = false
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if (top_down or _opts.has("auto")) else Input.MOUSE_MODE_CAPTURED
+	VoxelTouch.grab(not (top_down or _opts.has("auto")))
 	# --host=CODE / --join=CODE (co-op straight away; --via=enet for an address, --server=ws://... a PeerJS server,
 	# --local no STUN/TURN)
 	godmode = _opts.has("godmode") or _opts.has("auto") or _opts.has("meleetest") or _opts.has("weaponshots") or _opts.has("swordtest")
@@ -372,6 +374,8 @@ func _ready() -> void:
 		stkilda.invasion.start()
 	if _opts.has("digsite"):         # (tests, pictures: --digsite straight to the Dig Site)
 		digsite.go()
+	if VoxelTouch.active:
+		touch_on()
 	if _opts.has("phone"):
 		phone.open()
 	print("VoxelArena: ready (renderer ", RenderingServer.get_current_rendering_method(), ")")
@@ -713,7 +717,7 @@ func _health_step(dt: float) -> void:
 ## A chest's padlock up close to dial (then_chest: opened by E at a locked chest, the chest opens once it springs).
 func open_lock(st: VoxelStorage, then_chest: bool) -> void:
 	_let_go()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 	lock_then_chest = then_chest
 	_unlock_t = 0.0
 	lock_view.open(st)
@@ -722,7 +726,7 @@ func close_lock() -> void:
 	lock_view.close()
 	lock_then_chest = false
 	if not top_down and not _opts.has("auto"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 
 func arena_lock_on(st: VoxelStorage) -> bool:
 	return stash.lock_on(st)
@@ -957,7 +961,7 @@ func get_up() -> void:
 func open_inventory(st: VoxelStorage) -> void:
 	_let_go()
 	if not top_down:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		VoxelTouch.grab(false)
 	inv_ui.open(st)
 	if st:
 		st.open_here = true
@@ -972,7 +976,7 @@ func close_inventory() -> void:
 		st.open_here = false
 		stash.open_changed(st)
 	if not top_down and not _opts.has("auto"):
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 
 # which chest the player is at (E opens it), and the screen shut if they walk off from the open one
 func _storage_step(dt: float) -> void:
@@ -1314,35 +1318,58 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 
 # ---------------------------------------------------------------- input
 
+## The view turned by the mouse's movement (or a touch's drag: VoxelTouch), in pixels.
+func look_by(rel: Vector2) -> void:
+	var sens := 0.0025 * cam.fov / 80.0 * mouse_sens        # slower when aimed in
+	look_yaw -= rel.x * sens
+	look_pitch = clampf(look_pitch - rel.y * sens, -1.4, 1.4)
+	_mouse_v += rel
+
+## Touch mode on (a phone's browser: VoxelTouch.detect, ?touch, or the first real touch): the touch layer made, the
+## keyboard's line and the mouse's buttons put away; the first time the game's run, the Low preset.
+func touch_on() -> void:
+	if touch:
+		return
+	var fresh := not VoxelTouch.active       # (found out at a touch, after the settings were read)
+	touch = VoxelTouch.new()
+	add_child(touch)
+	touch.setup(self)
+	if fresh and settings_menu.s.first_run and settings_menu.s.file != "" and not _opts.has("preset"):
+		settings_menu.s.set_preset("low")
+		settings_menu.s.apply(self)
+		settings_menu.s.save_file()
+
+func _input(e: InputEvent) -> void:
+	if touch == null and e is InputEventScreenTouch and VoxelTouch.allowed:
+		touch_on()                  # (the first touch: touch mode; this touch is its first)
+		touch._input(e)
+
 func _unhandled_input(e: InputEvent) -> void:
 	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or (phone and phone.is_open()):
 		return                  # (the online menu, the settings have the keys and the mouse)
 	if mine and mine.active:
 		return                  # (down the mine: VoxelMine has the keys)
 	if e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] \
-			and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
+			and (top_down or VoxelTouch.grabbed()):
 		_clicked[e.button_index] = true                  # (a click quicker than a frame still counts)
-	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var sens := 0.0025 * cam.fov / 80.0 * mouse_sens        # slower when aimed in
-		look_yaw -= e.relative.x * sens
-		look_pitch = clampf(look_pitch - e.relative.y * sens, -1.4, 1.4)
-		_mouse_v += e.relative
+	if e is InputEventMouseMotion and VoxelTouch.grabbed() and not VoxelTouch.active:
+		look_by(e.relative)
 	elif e is InputEventMouseMotion:
 		_mouse_v += e.relative
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-		if not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		if not top_down and not VoxelTouch.grabbed():
 			return                                       # the mouse let go (Esc): the wheel does nothing either
 		var up: bool = e.button_index == MOUSE_BUTTON_WHEEL_UP
 		if loadout.id() == "vacuum" and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			vacuum.wheel(up)                          # vacuum: right click held + wheel sizes the brush
 		else:
 			_switch(func(): loadout.cycle(-1 if up else 1))
-	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2] and (top_down or Input.mouse_mode == Input.MOUSE_MODE_CAPTURED):
+	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_XBUTTON1, MOUSE_BUTTON_XBUTTON2] and (top_down or VoxelTouch.grabbed()):
 		_sword_key(false)
-	elif e is InputEventMouseButton and e.pressed and not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	elif e is InputEventMouseButton and e.pressed and not top_down and not VoxelTouch.grabbed():
 		# first person grabs the mouse on a click (that click does nothing else); top-down keeps it free (aiming
 		# follows the pointer)
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		VoxelTouch.grab(true)
 		_ignore[e.button_index] = true
 	elif e is InputEventKey and e.pressed and not e.echo:
 		if inv_ui.is_open():
@@ -1360,7 +1387,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if e.physical_keycode in [KEY_E, KEY_SPACE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_ESCAPE]:
 				get_up()
 				if e.physical_keycode == KEY_ESCAPE:
-					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+					VoxelTouch.grab(false)
 			return
 		if games.seated > 0:
 			if e.physical_keycode in [KEY_E, KEY_ESCAPE]:
@@ -1455,10 +1482,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					var vi := loadout.index_of("vacuum")
 					_switch(func(): loadout.swap_last() if loadout.current == vi else loadout.select(vi))
 			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+				VoxelTouch.grab(false)
 			KEY_V:
 				top_down = not top_down
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if top_down else Input.MOUSE_MODE_CAPTURED
+				VoxelTouch.grab(not top_down)
 			KEY_F1:
 				sun.shadow_enabled = not sun.shadow_enabled
 			KEY_F2:
@@ -1650,7 +1677,7 @@ func _weaponshots() -> void:
 		return
 	if k == n and not top_down:
 		top_down = true
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		VoxelTouch.grab(false)
 		get_viewport().warp_mouse(get_viewport().get_visible_rect().size * Vector2(0.62, 0.35))
 	var i := k % n
 	if loadout.current != i:
@@ -1704,6 +1731,8 @@ func _physics_process(dt: float) -> void:
 	# the player: WASD by where you look (top-down: by the screen)
 	var iv := Vector2(float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
+	if touch and touch.stick_on:
+		iv = touch.move             # (the touch stick: the same, by how far it's pushed)
 	if (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or (phone and phone.is_open()):
 		iv = Vector2.ZERO           # (typing a room code isn't walking)
 	var sp := (7.5 if Input.is_physical_key_pressed(KEY_SHIFT) else 4.5) * speed_k
@@ -2106,7 +2135,7 @@ static func _set_layers(n: Node, mask: int) -> void:
 		_set_layers(c, mask)
 
 func _mouse_floor() -> Vector3:
-	var mp := get_viewport().get_mouse_position()
+	var mp := VoxelTouch.pointer(get_viewport())
 	var o := cam.project_ray_origin(mp)
 	var d := cam.project_ray_normal(mp)
 	if absf(d.y) < 0.0001:
@@ -2147,7 +2176,7 @@ func _shoot(dt: float) -> void:
 	for btn in _ignore.keys():
 		if not Input.is_mouse_button_pressed(btn):
 			_ignore.erase(btn)
-	var free := Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not top_down    # first person, the mouse let go
+	var free := not VoxelTouch.grabbed() and not top_down    # first person, the mouse let go
 	var id := loadout.id()
 	var tapped_l := _clicked.has(MOUSE_BUTTON_LEFT)
 	var tapped_r := _clicked.has(MOUSE_BUTTON_RIGHT)
@@ -2196,7 +2225,7 @@ func _shoot(dt: float) -> void:
 # F (or a mouse side button): a sword slash the way the mouse was moving, whatever is out; C: a chop (top-down: a
 # low sweep at the legs)
 func _sword_key(low: bool) -> void:
-	if sword == null or not sword.ready_to_swing() or (not top_down and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED) or down_t > 0.0:
+	if sword == null or not sword.ready_to_swing() or (not top_down and not VoxelTouch.grabbed()) or down_t > 0.0:
 		return
 	sword.quick(low)
 	net.local_input("quick", [low, _mouse_v])

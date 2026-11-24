@@ -302,7 +302,7 @@ func start_ride() -> void:
 		return
 	_was_top = arena.top_down
 	arena.top_down = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	VoxelTouch.grab(true)
 	_look_from = Vector2(arena.look_yaw, arena.look_pitch)
 	ride_train.board()
 	var first := _rider == null

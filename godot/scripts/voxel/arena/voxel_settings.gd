@@ -28,6 +28,8 @@ const PRESETS := {
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
+## (what only the Forward+ renderer does: the browser's game, on Compatibility, doesn't show these rows)
+const FORWARD_ONLY := ["taa", "ssao", "ssil", "sdfgi", "fog", "fx"]
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
 	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2}
 ## (what each setting can be, for the menu: [label, values, value labels])
@@ -98,7 +100,7 @@ func load_file() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(file) != OK:
 		first_run = true
-		set_preset(guess())
+		set_preset("low" if VoxelTouch.active else guess())     # (a phone's browser: Low, no guessing; SET raises it)
 		return
 	var missing := []
 	for k in v:

@@ -296,6 +296,12 @@ static func my_address() -> String:
 func is_open() -> bool:
 	return _open
 
+## A phone (VoxelTouch): the panel half as big again (its buttons are a mouse's size), about its middle.
+func touch_layout() -> void:
+	_panel.resized.connect(func(): _panel.pivot_offset = _panel.size * 0.5)
+	_panel.pivot_offset = _panel.size * 0.5
+	_panel.scale = Vector2(1.4, 1.4)
+
 func toggle() -> void:
 	if _open:
 		close()
@@ -310,7 +316,7 @@ func open() -> void:
 	_open = true
 	_panel.visible = true
 	arena._let_go()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 	# the code box filled in for you: a code you've copied (your mate's message), else the last room you joined
 	if net.role == "" and _code_in.text == "":
 		var c := code_in(DisplayServer.clipboard_get())
@@ -335,7 +341,7 @@ func close() -> void:
 	if fo:
 		fo.release_focus()
 	if not arena.top_down and not arena._opts.has("auto") and not arena.inv_ui.is_open() and not arena.lock_view.is_open():
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # (the backpack or a padlock still up underneath: the mouse stays theirs)
+		VoxelTouch.grab(true)     # (the backpack or a padlock still up underneath: the mouse stays theirs)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey) or not e.pressed or e.echo:

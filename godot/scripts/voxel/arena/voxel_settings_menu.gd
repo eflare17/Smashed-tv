@@ -31,6 +31,8 @@ var _now: Label
 var _presets := {}              # name: Button
 var _rows := {}                 # key: OptionButton / HSlider
 var _vals := {}                 # slider key: its value's Label
+var _labels := {}               # key: its name's Label (hidden with its row where the renderer can't do it)
+var _scroll: ScrollContainer
 var _bench_b: Button
 var _apply_b: Button
 var _result: Label
@@ -136,6 +138,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	scroll.custom_minimum_size = Vector2(748, 330)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	v.add_child(scroll)
+	_scroll = scroll
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 12)
@@ -144,7 +147,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	scroll.add_child(grid)
 	for key in VoxelSettings.CHOICES:
 		var c: Array = VoxelSettings.CHOICES[key]
-		_label(grid, c[0])
+		_labels[key] = _label(grid, c[0])
 		var ob := OptionButton.new()
 		ob.custom_minimum_size = Vector2(170, 32)
 		ob.add_theme_font_size_override("font_size", 14)
@@ -154,7 +157,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 		grid.add_child(ob)
 		_rows[key] = ob
 	for sl in [["fov", "Field of view", 60.0, 110.0, 1.0], ["sens", "Mouse speed", 0.2, 3.0, 0.05], ["volume", "Volume", 0.0, 1.0, 0.05]]:
-		_label(grid, sl[1])
+		_labels[sl[0]] = _label(grid, sl[1])
 		var h := HBoxContainer.new()
 		var hs := HSlider.new()
 		hs.min_value = sl[2]
@@ -190,14 +193,46 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	if not s.bench.is_empty():
 		recommended = String(s.bench.get("pick", ""))
 		_result.text = _bench_text(s.bench.get("results", {}), recommended)
+	show_supported(RenderingServer.get_current_rendering_method() == "forward_plus")
 	_refresh()
 
-func _label(parent: Control, text: String) -> void:
+## The rows the renderer can't do aren't shown (the browser's game is on Compatibility: no TAA, SSAO, SSIL, SDFGI,
+## volumetric fog or reflections there; forward: every row).
+func show_supported(forward: bool) -> void:
+	for key in VoxelSettings.FORWARD_ONLY:
+		if _rows.has(key):
+			(_rows[key] as Control).visible = forward
+			(_labels[key] as Control).visible = forward
+
+## A phone (VoxelTouch): everything a thumb's size, the list shorter to make the room; the mouse's speed isn't a phone's.
+func touch_layout() -> void:
+	for name in _presets:
+		var b: Button = _presets[name]
+		b.custom_minimum_size = Vector2(0, 66)
+		b.add_theme_font_size_override("font_size", 20)
+	for b2: Button in [_bench_b, _apply_b, _bench_b.get_parent().get_child(2)]:
+		b2.custom_minimum_size = Vector2(0, 60)
+		b2.add_theme_font_size_override("font_size", 18)
+	for key in _rows:
+		var c: Control = _rows[key]
+		c.custom_minimum_size.y = 50
+		if c is OptionButton:
+			c.add_theme_font_size_override("font_size", 16)
+			var pop := (c as OptionButton).get_popup()
+			pop.add_theme_font_size_override("font_size", 24)
+			pop.add_theme_constant_override("v_separation", 18)
+	_scroll.custom_minimum_size.y = 250
+	(_rows.sens as Control).get_parent().visible = false
+	(_labels.sens as Control).visible = false
+	_hw.visible = false
+
+func _label(parent: Control, text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	l.custom_minimum_size = Vector2(190, 0)
 	l.add_theme_font_size_override("font_size", 14)
 	parent.add_child(l)
+	return l
 
 func _button(parent: Control, text: String, cb: Callable) -> Button:
 	var b := Button.new()
@@ -290,7 +325,7 @@ func open() -> void:
 	_open = true
 	_panel.visible = true
 	arena._let_go()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 	_hw.text = VoxelSettings.hardware()
 	_refresh()
 	(_presets[s.preset] if _presets.has(s.preset) else _bench_b).grab_focus()
@@ -304,7 +339,7 @@ func close() -> void:
 	if fo:
 		fo.release_focus()
 	if not arena.top_down and not arena._opts.has("auto") and not arena.inv_ui.is_open() and not arena.lock_view.is_open():
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED     # (the backpack or a padlock still up underneath: the mouse stays theirs)
+		VoxelTouch.grab(true)     # (the backpack or a padlock still up underneath: the mouse stays theirs)
 
 func _unhandled_input(e: InputEvent) -> void:
 	if not (e is InputEventKey) or not e.pressed or e.echo:
@@ -349,7 +384,7 @@ func bench_start() -> void:
 	arena.godmode = true
 	arena.frozen = false
 	arena.top_down = false
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	VoxelTouch.grab(false)
 	_bench_lbl.visible = true
 	_next_preset()
 
