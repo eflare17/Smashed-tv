@@ -49,6 +49,8 @@ const DEP_COL := 36             # mm on a column in a frame from settling clods 
 const MELT_MIN := 5             # mm a column's settled dirt is laid on it a step at the least, and MELT_K of what's waiting (a clod melts in over
 const MELT_MOST := 26           # ... and this at the most (the ground under a lump rises under 30 mm a frame)
 const MELT_K := 0.25            # a sixth of a second, as it's seen shrinking, not in one step: the ground under a pour rises smoothly: stage 9, the owner's "boulder flickers")
+const MELT_COLS := 256          # columns melting at once at the most: what settles on more is laid whole, as before stage 9 (a melting column's a put_layer a step
+                                # for six steps, not one: with the time cap shedding hundreds a step that was 1 ms of the step's 2, and the cap shed twice as many for it)
 const CRUMB := 125              # the sizes (mm): a crumb, 12 cm; a clod, 20 cm; a chunk, 32 cm
 const CLOD := 500
 const CHUNK := 2000
@@ -203,6 +205,7 @@ var _gxp := PackedFloat32Array()
 var _gzm := PackedFloat32Array()
 var _gzp := PackedFloat32Array()
 var melt := true                # (tests: false, settled dirt's laid in the step it settles, as before stage 9)
+var melt_cols := MELT_COLS      # (tests)
 var dep_wait := DEP_COL * 3     # mm waiting on a column before the next clod there waits (melting: a quarter of what's waiting is laid a step, so about DEP_COL a step still gets down)
 var _melt := 0                  # mm settled and not laid yet (in mass_mm)
 var _dep := PackedInt32Array()  # settled dirt by column (mm) waiting to be laid (_flush: some each step) ...
@@ -625,7 +628,8 @@ func _grow(most: int) -> void:
 	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, hld, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz, cnet]:
 		a.resize(most)
 
-# the settled dirt laid on the ground: a share of what's waiting on each column (all of it: all at once)
+# the settled dirt laid on the ground: a share of what's waiting on each column (all of it: all at once), on
+# melt_cols columns at the most (the longest waiting); the rest get theirs whole
 func _flush(all := false) -> void:
 	var keep := 0
 	var whole := all or not melt
@@ -633,7 +637,7 @@ func _flush(all := false) -> void:
 		var c := _dept[j]
 		var v := _dep[c]
 		if v > 0:                   # (a guest's picture has nothing in it: nothing's laid, the ground's not touched)
-			var lay := v if whole else mini(v, clampi(int(v * MELT_K), MELT_MIN, MELT_MOST))
+			var lay := v if whole or keep >= melt_cols else mini(v, clampi(int(v * MELT_K), MELT_MIN, MELT_MOST))
 			grid.put_layer(c % _w, c / _w, lay, _depm[c])
 			v -= lay
 			_dep[c] = v
