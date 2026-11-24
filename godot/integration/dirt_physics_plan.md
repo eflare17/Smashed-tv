@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: stages 1 to 3 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 4 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -232,6 +232,12 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   < 0.3 m/s over > 0.3 s; no frame-to-frame speed drop > 25% of top speed; slip > 0.5 while stalled; yaw rate
   changes by <= `turn_rate * dt * 6` a frame; peak pitch between 1.5 and 5 degrees; on the flat, top speed within
   10% of stage 1's and the 20 s push moves >= 80% of the baseline metres. Frame p95 <= baseline + 0.5 ms; mass exact.
+  *As built and tested* (`digsite_feel_test.gd`, 22 checks): speed is measured from where the dozer is each frame, not
+  only from what it says. The frame baseline is the same test run on stage 3's game the same hour (`--write-base`,
+  four pairs back to back). Added: a drop from 1 m (the thud) and the Bobcat at the same bank (the hard stop every
+  machine had). The pitch checked is the body's rock on its tracks (`sway`: its look only, the blade doesn't feel it).
+  The dozer is held at a bank by the firm face ahead of its edge (`BANK_*`), not by "the blade's full": a full blade
+  in the open lugs and creeps (it spills off its ends), and only what it cannot move at all (a jam) stalls it.
 - **Owner sees**: the dozer leans into a load, tracks spin and throw dust, the engine labours, the blade and arms
   ease instead of snapping; no more instant stop on "blade's full".
 - **Out of scope**: camera, key remapping, gamepad, guest-side prediction.

@@ -9,6 +9,7 @@ extends DsMachine
 
 const CAPACITY := 4000 * DsTerrain.MM  # mm in the tray (4000 blocks of 125 mm over a column: 8 m3)
 const TIP_RATE := 0.45          # of the way up a second
+const TIP_EASE := 4.0           # per second: its ram eases in and out (the dirt physics' stage 4)
 const POUR_FROM := 0.45         # tipped this far, it pours ...
 const POUR_RATE := 500.0 * DsTerrain.MM   # ... this fast (mm a second), at full tip
 const PROPS_MOST := 12
@@ -23,6 +24,7 @@ const TRAY_HIGH := 0.95
 
 var tip = 0.0                  # the tray, 0 down .. 1 right up
 var tip_cmd = 0.0
+var _v_tip = 0.0               # its ram, eased (-1 .. 1)
 var tray_load = {}             # material -> mm in the tray
 var load_n = 0
 var props = 0                  # concrete supports on it
@@ -55,6 +57,7 @@ func _init() -> void:
 	seat = Vector3(0.5, 0.95, -2.4)
 	pipe = Vector3(1.0, 2.6, -2.2)
 	turn_needs_speed = true
+	sway_k = 0.7                    # (long, on six wheels: it rocks less)
 
 func _build() -> void:
 	super()
@@ -223,11 +226,14 @@ func status() -> String:
 
 func _follow(dt: float) -> void:
 	super(dt)
-	_roll += speed * dt
+	_roll += track_v * dt
 
 func _tool(dt: float) -> void:
-	_roll += speed * dt
-	tip = clampf(tip + tip_cmd * TIP_RATE * dt, 0.0, 1.0)
+	_roll += track_v * dt
+	_v_tip = move_toward(_v_tip, tip_cmd, TIP_EASE * dt)
+	tip = clampf(tip + _v_tip * TIP_RATE * dt, 0.0, 1.0)
+	if (tip <= 0.0 and _v_tip < 0.0) or (tip >= 1.0 and _v_tip > 0.0):
+		_v_tip = 0.0
 	_pose_tool()
 	if tip > POUR_FROM and load_n > 0:
 		var k = (tip - POUR_FROM) / (1.0 - POUR_FROM)

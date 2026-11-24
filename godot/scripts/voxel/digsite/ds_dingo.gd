@@ -3,7 +3,7 @@ extends DsMachine
 ## The Dingo (stage 6): a stand-on mini loader, its bucket on two arms out front, like the digger game's (Loader:
 ## LIFT_RATE, CURL_RATE, POUR_FROM). R/F raise and lower the arms, the right mouse button curls the bucket back (it
 ## holds), the left tips it forward (it pours). Drive at the ground with the bucket low and it bites the voxel ground
-## into the bucket (soil and clay: not rock, it stops dead on that); lift it, drive, tip it and what's in it pours
+## into the bucket (soil and clay: not rock, it rings on that and stalls); lift it, drive, tip it and what's in it pours
 ## out where the bucket's edge is, loose, and slumps into a pile (DsTerrain.dump). The game that runs the ground does
 ## the digging and pouring; the guest's shows the arms and the bucket from the host's state. Owned by the voxel
 ## session.
@@ -31,6 +31,8 @@ const CAPACITY := 260 * DsTerrain.MM   # mm the bucket holds (260 blocks of 125 
 const BITE_EVERY := 0.08        # s between bites
 const POUR_RATE := 300.0 * DsTerrain.MM   # mm a second, tipped right forward
 const HARDEST := 2              # soil and clay (DsMats.HARD)
+const ARM_EASE := 5.0           # per second: its rams ease in and out (the excavator's ARM_EASE; the dirt physics' stage 4)
+const ROCK_MOST := 3.0          # rock under its lip holds it this hard (of its drive standing): it rings and stalls
 
 var arm = 0.0                  # radians from level (where the driver's put the arms)
 var curl = 0.0                 # the bucket's floor against level (up +: holding; tipped forward -: pouring)
@@ -44,6 +46,9 @@ var curl_cmd = 0.0
 var bucket = {}                # material -> blocks in it
 var load_n = 0
 var push_load = 0.0            # loose dirt banked against the bucket, in blocks (it slows it)
+var _v_lift = 0.0              # its rams, eased (-1 .. 1)
+var _v_curl = 0.0
+var _rock_r = 0.0              # rock, holding it back (fading)
 var dug = 0                    # (tests: mm its bucket's taken or pushed)
 var firm_rate = 2              # firm blocks off a column at full sweep (the Bobcat: 3)
 var bog = 900.0                # banked blocks that bring it nearly to a stop
@@ -225,11 +230,11 @@ func edge_ends() -> Array:
 func _gap() -> float:
 	return maxf((edge() - global_position).dot(forward()) - length * 0.5, bucket_len)
 
-func _drive(dt: float) -> void:
-	var top = max_speed
-	max_speed = top * (1.0 - 0.75 * clampf(float(push_load) / bog, 0.0, 1.0))
-	super(dt)
-	max_speed = top
+## What holds it back going forward: the dirt banked against its bucket (as it slowed it before), rock under its lip
+func drive_resist(dir: float) -> float:
+	if dir <= 0.0:
+		return 0.0
+	return 0.75 * clampf(float(push_load) / bog, 0.0, 1.0) + _rock_r
 
 ## The bucket's cutting edge in the world
 func edge() -> Vector3:
@@ -281,8 +286,8 @@ func shake_lean() -> float:
 ## Tracks and wheels turning with how it goes
 func _spin(dt: float) -> void:
 	if _tracks:
-		_tracks.update(speed + steer * 0.6, speed - steer * 0.6, dt)
-	_roll += speed * dt
+		_tracks.update(track_v + steer * 0.6, track_v - steer * 0.6, dt)
+	_roll += track_v * dt
 	for w in _wheels:
 		var r: float = w[1]
 		(w[0] as Node3D).basis = Basis(Vector3.BACK, -_roll / r).scaled(Vector3(r, r, 1.0))
@@ -310,8 +315,15 @@ func _follow(dt: float) -> void:
 
 func _tool(dt: float) -> void:
 	_spin(dt)
-	arm = clampf(arm + lift_cmd * LIFT_RATE * dt, arm_low, arm_high)
-	curl = clampf(curl + curl_cmd * CURL_RATE * dt, CURL_MIN, CURL_MAX)
+	_v_lift = move_toward(_v_lift, lift_cmd, ARM_EASE * dt)
+	_v_curl = move_toward(_v_curl, curl_cmd, ARM_EASE * 1.4 * dt)
+	arm = clampf(arm + _v_lift * LIFT_RATE * dt, arm_low, arm_high)
+	curl = clampf(curl + _v_curl * CURL_RATE * dt, CURL_MIN, CURL_MAX)
+	if (arm <= arm_low and _v_lift < 0.0) or (arm >= arm_high and _v_lift > 0.0):
+		_v_lift = 0.0
+	if (curl <= CURL_MIN and _v_curl < 0.0) or (curl >= CURL_MAX and _v_curl > 0.0):
+		_v_curl = 0.0
+	_rock_r = move_toward(_rock_r, 0.0, 6.0 * dt)
 	_hold()
 	_pose_tool()
 	var tr: DsTerrain = site.terrain
@@ -335,11 +347,13 @@ func _tool(dt: float) -> void:
 				bucket[m] = int(bucket.get(m, 0)) + counts[m]
 				load_n += counts[m]
 		dug += int(r.taken) + int(r.moved)
-		if bool(r.rock) and int(r.taken) + int(r.moved) == 0 and speed > 0.0:
-			speed = 0.0
-			blocked = "Rock: the %s's bucket won't take it" % kind
-			if site.net:
+		if bool(r.rock) and int(r.taken) + int(r.moved) == 0 and (speed > 0.0 or throttle > 0.05):
+			# (it rings on it and stalls in a hand's width, its tracks slipping: not from full speed to none in a frame)
+			if _rock_r <= 0.0 and site.net:
 				site.net.event("fx", ["dig_clang", e, 0])
+			_rock_r = ROCK_MOST
+			if speed < 0.3:
+				blocked = "Rock: the %s's bucket won't take it" % kind
 		push_load = tr.load_ahead(ends[0], ends[1], f, bucket_high + 0.3)
 	# (the bucket's a wall to loose dirt while it's held level, so what's banked against it stays in front)
 	if tip() > POUR_FROM:

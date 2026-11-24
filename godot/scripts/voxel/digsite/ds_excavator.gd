@@ -328,7 +328,7 @@ func _tool(dt: float) -> void:
 	var working = (spin > 0.1 or _v_reach < -0.1) and curl > CURL_EMPTY + 0.1 and load_n < CAPACITY
 	if not working:
 		_keep_out(b0, before, before_curl)
-	_tracks.update(speed + steer * 0.8, speed - steer * 0.8, dt)
+	_tracks.update(track_v + steer * 0.8, track_v - steer * 0.8, dt)
 	_pose_tool()
 	var e = edge()
 	# digging (the digger game's way, DsTerrain.blade): the teeth dragged, pulled down or curled through the ground take
@@ -409,7 +409,7 @@ func _keep_out(b0: float, before: Vector2, before_curl: float) -> void:
 
 func _follow(dt: float) -> void:
 	super(dt)
-	_tracks.update(speed, speed, dt)
+	_tracks.update(track_v, track_v, dt)
 
 ## Its stack's top, on the house (DsProps.excavator_house's), slewing with it
 func exhaust_at() -> Vector3:

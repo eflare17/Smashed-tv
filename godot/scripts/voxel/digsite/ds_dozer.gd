@@ -5,7 +5,7 @@ extends DsMachine
 ## standing above it (DsTerrain.blade): the loose soil at once, firm ground a bit at a time, and banks it up against
 ## the blade, the rest rolling off its ends; the heap goes with it, picked up again as it drives on, so you push dirt
 ## about. What's banked against the blade pushes back: the more of it, the slower it goes, and the tracks bog. It
-## won't cut rock (stone and harder): it stops dead. As the digger game's: it moves only what it sweeps through (no
+## won't cut rock (stone and harder): it rings on it and stalls. As the digger game's: it moves only what it sweeps through (no
 ## travel, nothing moved: a stalled blade can't pump a heap up), the blade's held steady while the machine pitches under
 ## it (else it cuts a dip, drives down into it and digs deeper still), and Q's CUT holds the edge a set depth (T/G, 5
 ## cm steps) under where the ground began, so it takes an even layer off. In co-op the host's game runs it. Owned by
@@ -42,6 +42,22 @@ const HOLD_LIFT_SPEED := 1.1
 const BODY_PIN := Vector3(1.2, 1.78, 0.76)    # (each side: z flipped; DsProps.bulldozer's brackets)
 const BLADE_PIN := Vector3(2.36, 1.15, 0.84)  # (in the blade's frame: DsProps.dozer_blade's brackets)
 const BARREL_LEN := 0.62
+# Its weight (the dirt physics' stage 4): nothing stops it dead any more. What it's pushing and cutting holds it back
+# (drive_resist), and so does the heap ahead filling up to where the blade can bank no more (FULL_*), so it's lugging
+# before the blade's quite full; what it then can't move (a jam) holds it hard, to a stall, its tracks slipping; rock
+# harder still. A bank's face (firm ground standing over the edge just ahead: BANK_*) holds it from just before the
+# blade meets it, so it comes into a bank braking and bites in to a stall, instead of going from full speed to none.
+const LIFT_EASE := 5.0          # per second: the blade's rams ease in and out (the excavator's ARM_EASE)
+const FULL_AT: Array[float] = [0.31, 0.75, 1.5, 2.5]    # m ahead of the edge the room for more's looked at (where it lays what it cuts)
+const FULL_FROM := 0.75         # the heap ahead this full (0 .. 1), it starts to hold the machine back ...
+const FULL_MOST := 0.45         # ... and brim full, this hard (of its drive standing): it lugs, it doesn't stall on that
+                                # alone (a full blade spills off its ends and the heap slumps on ahead: it creeps on)
+const BANK_AT: Array[float] = [0.31, 0.75]      # m ahead of the edge firm ground standing over it's looked for: a bank's face
+const BANK_FROM := 0.4          # that much of HEAP's height of firm face ahead (0 .. 1) starts to hold it back ...
+const BANK_TO := 1.0
+const BANK_MOST := 1.4          # ... and a face HEAP high, this hard: it bites in half a metre and stalls (take less: raise the blade)
+const JAM_MOST := 2.2           # what it can't move at all holds it this hard
+const ROCK_MOST := 3.0          # ... and rock (it rings, and stops in a hand's width)
 
 var lift = START_LIFT
 var lift_cmd = 0.0
@@ -55,6 +71,11 @@ var _edge_avg = NAN
 var _keys_was = {}
 var cut_rate = 0.0             # firm blocks a second it's cutting (smoothed)
 var _jam_t = 0.0               # (a moment since the blade was too full to take more)
+var full = 0.0                 # how full the heap ahead is, up to where the blade banks it (0 .. 1)
+var bank = 0.0                 # how much firm ground stands over the edge just ahead, of HEAP's height (0 .. 1)
+var _v_lift = 0.0              # the blade's rams, eased (-1 .. 1)
+var _jam_r = 0.0               # what it couldn't move, holding it back (fading)
+var _rock_r = 0.0
 var _look: Node3D
 var _pivot: MeshInstance3D
 var _tracks: DsTrackRig
@@ -177,14 +198,23 @@ func status() -> String:
 		word += "   pushing %.1f t" % (push_load * 0.0031)
 	return word + ("   " + blocked if blocked != "" else "")
 
-func _drive(dt: float) -> void:
-	# the push_load pushes back: slower with more banked against the blade
+## What holds it back going forward: the load banked against the blade and how fast it's cutting (as they slowed it
+## before), the heap ahead brim full, what it couldn't move, rock
+func drive_resist(dir: float) -> float:
+	if dir <= 0.0:
+		return 0.0
 	var k = 1.0 - 0.85 * pow(clampf(float(push_load) / BOG, 0.0, 1.0), 1.3) * (0.6 if cut_on else 1.0)
 	k *= clampf(1.0 - cut_rate / CUT_BOG, 0.3, 1.0)
-	var top = max_speed
-	max_speed = minf(top, CUT_TOP if cut_on else top) * k
-	super(dt)
-	max_speed = top
+	return (1.0 - k) + FULL_MOST * smoothstep(FULL_FROM, 1.0, full) + BANK_MOST * smoothstep(BANK_FROM, BANK_TO, bank) + _jam_r + _rock_r
+
+func top_speed() -> float:
+	return minf(max_speed, CUT_TOP) if cut_on else max_speed
+
+## (looking ahead for a bank) going forward, what stands over its blade's edge is the blade's to cut
+func cut_floor(dir: float) -> float:
+	if dir <= 0.0 or _pivot == null:
+		return INF
+	return edge().y
 
 func _tool(dt: float) -> void:
 	_jam_t = maxf(_jam_t - dt, 0.0)
@@ -195,10 +225,15 @@ func _tool(dt: float) -> void:
 	if cut_on:
 		_hold_cut(dt)
 	else:
-		lift = clampf(lift + lift_cmd * LIFT_SPEED * dt, LIFT_MIN, LIFT_MAX)
+		_v_lift = move_toward(_v_lift, lift_cmd, LIFT_EASE * dt)
+		lift = clampf(lift + _v_lift * LIFT_SPEED * dt, LIFT_MIN, LIFT_MAX)
+		if (lift <= LIFT_MIN and _v_lift < 0.0) or (lift >= LIFT_MAX and _v_lift > 0.0):
+			_v_lift = 0.0
 	_steady_blade(dt)
 	_pose_tool()
-	_tracks.update(speed + steer * 0.8, speed - steer * 0.8, dt)
+	_tracks.update(track_v + steer * 0.8, track_v - steer * 0.8, dt)
+	_jam_r = move_toward(_jam_r, 0.0, 3.0 * dt)
+	_rock_r = move_toward(_rock_r, 0.0, 6.0 * dt)
 	var tr: DsTerrain = site.terrain
 	var e: Array = edge_ends()
 	var a: Vector3 = e[0]
@@ -220,17 +255,26 @@ func _tool(dt: float) -> void:
 		var r2: Dictionary = tr.blade(Vector3(a.x, maxf(a.y, base), a.z), Vector3(b.x, maxf(b.y, base), b.z), f, rows, MOUTH, 999, HARDEST, 0, HEAP, 1.0)
 		moved += int(r2.moved)
 		if int(r2.jammed) > 0:
-			# (what's between the blade and the tracks couldn't be cleared: the heap in front has no more room. It
-			# stops dead rather than creeping on with the ground standing up through the blade: the owner, 9 Nov)
+			# (what's between the blade and the tracks couldn't be cleared: the heap in front has no more room. It's
+			# held hard, rather than creeping on with the ground standing up through the blade: the owner, 9 Nov;
+			# it was lugging down already as the heap filled: full)
 			_jam_t = 1.0
-			speed = minf(speed, 0.0)
-			blocked = "The blade's full: back up, or raise it"
+			_jam_r = JAM_MOST
+			if speed < 0.3:
+				blocked = "The blade's full: back up, or raise it"
 		cut_rate = lerpf(cut_rate, float(r.cut) / DsTerrain.MM / maxf(dt, 0.001), minf(1.0, dt * 4.0))
 		if bool(r.rock) and int(r.moved) == 0 and throttle > 0.05:
-			speed = minf(speed, 0.0)
-			blocked = "Rock: the blade won't cut it (dynamite, or the excavator)"
+			_rock_r = ROCK_MOST
+			if speed < 0.3:
+				blocked = "Rock: the blade won't cut it (dynamite, or the excavator)"
+		full = _full_ahead(a, b, f)
+		bank = _bank_ahead(a, b, f)
+		if speed < 0.3 and blocked == "" and resist >= 1.0:
+			blocked = "Too deep a bite: back up, or raise the blade" if BANK_MOST * smoothstep(BANK_FROM, BANK_TO, bank) >= 0.5 else "The blade's full: back up, or raise it"
 	else:
 		cut_rate = lerpf(cut_rate, 0.0, minf(1.0, dt * 4.0))
+		full = move_toward(full, 0.0, 2.0 * dt)
+		bank = move_toward(bank, 0.0, 2.0 * dt)
 	push_load = tr.load_ahead(a, b, f, HEAP + 0.3)
 	# (the blade's a wall, and its push arms and the gap back to the tracks closed: the heap can't slump back through)
 	# (and up to the sky: a heap grown over the blade's top used to come to rest on top of the blocked cells, a shelf
@@ -244,9 +288,31 @@ func _jam(jammed: int, did: int) -> void:
 		return
 	_jam_t = 1.0
 	var k = clampf(float(jammed) / float(jammed + did + 1), 0.0, 1.0)
-	speed = minf(speed, max_speed * (1.0 - k))
-	if k > 0.6:
+	_jam_r = maxf(_jam_r, JAM_MOST * k)
+	if k > 0.6 and speed < 0.3:
 		blocked = "The blade's full: back up, or raise it"
+
+## How full the heap ahead is (0 .. 1): the room left under where the blade banks soil up to (HEAP over its edge), where
+## it lays what it cuts (FULL_AT ahead of the edge, at three places across it)
+func _full_ahead(a: Vector3, b: Vector3, f: Vector3) -> float:
+	var room = 0.0
+	for i in 3:
+		var p: Vector3 = a.lerp(b, 0.15 + 0.35 * i)
+		var top = p.y + HEAP
+		for d in FULL_AT:
+			room += clampf((top - ground_y(p.x + f.x * d, p.z + f.z * d)) / HEAP, 0.0, 1.0)
+	return 1.0 - room / (3.0 * FULL_AT.size())
+
+## How much firm ground stands over the edge just ahead of it (0 .. 1, of HEAP's height): a bank's face it's about to
+## bite. Loose dirt isn't one (that's its load).
+func _bank_ahead(a: Vector3, b: Vector3, f: Vector3) -> float:
+	var tr: DsTerrain = site.terrain
+	var face = 0.0
+	for i in 3:
+		var p: Vector3 = a.lerp(b, 0.15 + 0.35 * i)
+		for d in BANK_AT:
+			face += clampf((tr.firm_at(p.x + f.x * d, p.z + f.z * d) - p.y) / HEAP, 0.0, 1.0)
+	return face / (3.0 * BANK_AT.size())
 
 ## CUT: the edge held cut_cm under where the ground began, read across the blade just behind it
 func _hold_cut(dt: float) -> void:
@@ -277,7 +343,7 @@ func _steady_blade(dt: float) -> void:
 
 func _follow(dt: float) -> void:
 	super(dt)
-	_tracks.update(speed, speed, dt)
+	_tracks.update(track_v, track_v, dt)
 
 var _moved_was = 0
 var _tumble: CPUParticles3D

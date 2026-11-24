@@ -421,3 +421,134 @@ should be (nothing a machine does makes clods yet).
   down (leaving and quitting do): with only the debug key making them nothing real is lost; stage 8 settles it.
 - `put_layer` at the grid's roof (stage 2's note) is still unguarded.
 - The site test runs with `cap_us = 0` so that it is the same every run; the cap itself is `digsite_clod_perf`'s.
+
+## Stage 4: machine weight (done, 24 Nov)
+
+**What was built** (no clods in it: this is how the machines drive)
+
+- `ds_machine.gd`, `_drive`: **a drive against what holds it back, over its weight**, instead of a speed it is moved
+  toward. The drive pulls `accel * PULL` (2.5) m/s2 standing and nothing at top speed; what a machine is pushing
+  (`drive_resist(dir)`, a subclass's) pulls the other way, as a share of that. Flat out with resistance r it settles
+  at (1 - r) of its top speed, the same speeds the old code clamped it to, but it gets there by slowing; at r >= 1 it
+  stalls. Let go, its brakes bring it to a stand. A slope as steep as it climbs is 0.4 of resistance.
+  - **Track slip**: from r 0.35 its tracks turn faster than it goes, at r 1 (or held at a bank) they turn at 0.7 of
+    what is asked with the machine standing. `track_v` drives the track and wheel models, `slip` (0 to 1) the dust: a
+    second emitter throws dirt and lumps out behind slipping tracks.
+  - **Turning eased** at 4/s, changing by no more than `turn_rate * 5` a second (it was instant).
+  - **Banks seen coming** (`_look_ahead`): the old code set speed to 0 in the frame a step, a slope or a bank was met
+    (`ds_machine.gd:500`). Now, going faster than 0.5 m/s, it looks where it could just stop for what would stop it,
+    and holds its speed to what it can still stop from in what is left, so it arrives nearly standing. What is left
+    when it gets there (0.5 m/s as tested) is a bump: a clunk and a kick of the nose.
+  - **Body rock** (`sway`, both games, from what both know): a spring (10 rad/s, damping 0.4) on the body, nose up
+    pulling away, down braking, down 1.2 degrees leaning into a load; 3.2 degrees asked at the most. It turns the
+    body and what is on it (`shake_node`), not the tracks, and the tool does not feel it: digging is unchanged.
+  - **Landing thud**: coming down faster than 1.6 m/s and stopped, the body drops on its springs (`bob`) and comes
+    back, a thump, dust from under it.
+  - The guest sees the slip: it rides in the state's driver number (the whole number is who, the rest half the slip),
+    so the message is the same length.
+- `ds_dozer.gd`: its three hard stops are gone (`speed = minf(speed, 0)` on a jam, on rock, and `_jam`'s clamp).
+  `drive_resist` is the old load and cutting slow-down, plus: the heap ahead nearly brim full (`full`, 12 height
+  samples where the blade lays what it cuts: up to 0.45), a firm face standing over the edge just ahead (`bank`, 6
+  samples 0.31 and 0.75 m ahead: up to 1.4, so a bank holds it from just before the blade meets it), what it could not
+  move at all (a jam: 2.2, fading at 3/s) and rock (3.0). The blade's rams ease in and out (`LIFT_EASE` 5/s). New
+  message at a bank: "Too deep a bite: back up, or raise the blade".
+- `ds_dingo.gd` (and the Bobcat through it): `drive_resist` for the dirt banked on the bucket and for rock (it stalls
+  in a hand's width instead of `speed = 0`); arms and bucket eased (`ARM_EASE` 5/s, the excavator's).
+  `ds_truck.gd`: the tray's ram eased; it rocks less (`sway_k` 0.7). `ds_excavator.gd`: its tracks show `track_v`.
+- `ds_sfx.gd`: revs come up with the throttle before the machine moves and with tracks turning though it is not
+  moving; held back the engine drops in pitch and gets louder (`lug`); the track clatter follows the tracks' speed and
+  is louder and faster slipping.
+- `test/voxel/digsite_feel_test.gd`, `test/voxel/digsite_feel_shots.gd`.
+
+**Commands** (from the repository's root)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_feel_test.gd -- --nosave
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_feel_shots.gd -- --nosave --out=res://integration/dirt_shots
+
+(70 s and 50 s. The test writes `integration/dirt_shots/feel.txt` and reads its baseline from
+`integration/dirt_shots/feel_base.txt`: "p95 metres top". The baseline is the same test on stage 3's game
+(`fd001a4` checked out beside, this test file copied in) with `--write-base --out=<dir>`; `--base=<file>` reads one
+from elsewhere; `--debug` prints the run frame by frame.)
+
+**`digsite_feel_test`: `DSFEEL done 22 passed, 0 failed`** (five runs after the last change; everything but the frame
+times is the same to the digit every run). "Before" is the same test on stage 3's game: 12 passed, 8 failed.
+
+| Criterion | Before (stage 3) | Measured |
+|---|---|---|
+| (c) dozer flat out into a 1.5 m bank the test builds (blade carried 0.35 m up): from over 2 m/s to under 0.3 m/s takes > 0.3 s | 0.02 s | 0.42 s, over 0.47 m (top 3.17 m/s) |
+| (c) no frame loses more than 25% of top speed (0.80 m/s), as it moved and as it says | 2.78 m/s in one frame | 0.093 m/s |
+| (c) slip > 0.5 while stalled (2 s, throttle full on) | no slip | 1.00 at the least; it stands still (0.00 m/s) |
+| (c) peak pitch 1.5 to 5 degrees | 0 | 3.96 degrees nose down, 0.28 s before it stops; 1.20 leaning on the bank after |
+| (b) yaw rate changes by <= `turn_rate * dt * 6` a frame (0.0800 rad/s), hard over one way, then the other, then let go | 1.6000 | 0.0667; it reaches 0.798 of 0.80 rad/s and stops turning |
+| (a) on the flat, top speed within 10% of stage 1's 3.2 m/s | 3.20 | 3.20 (90% of it in 2.07 s, as before: 2.05; let go it stands in 1.10 s) |
+| (d) the 20 s push moves >= 80% of the baseline metres | 14.66 m | 12.29 m: 84% (the most a frame lost: 0.136 m/s, before 2.07) |
+| (d) frame p95 <= baseline + 0.5 ms | 20.99, 21.37, 20.13, 21.16 ms | 20.30, 20.98, 18.87, 20.60 ms: -0.69, -0.39, -1.26, -0.56 |
+| mass exact | 0 mm | 0 mm after (a), (c), (f), (d) and at every second of (d) |
+| (e) added: dropped 1 m it lands with a thud, body 2 to 10 cm down and back | none | 3.4 cm, then 0.0 |
+| (f) added: the Bobcat, bucket up, flat out at the same bank: no frame loses more than 25% of its top speed (0.75 m/s) | not run | 0.506 m/s (the last bump); it stands 0.30 m off the face, wheels spinning |
+
+**The frame baseline and how it was taken.** Four pairs back to back in one session with nothing else running (load
+1.1): stage 3's game, then this one, each the whole test, the p95 of (d)'s 1201 frames. Every pair has the new game
+under the old. The committed `feel_base.txt` is the first pair's baseline (20.985 ms); a later run should take its
+own the same hour, since this box's p95 moves by a millisecond between runs. Not the same work on both sides: the new
+dozer bogs sooner, so after 5 s it moves less dirt a frame than the old one did. What the weight itself costs is small
+(18 ground samples a dozer step, one bank look a step at speed, two springs).
+
+**Where a criterion's meaning had to be chosen**
+
+- "Speed" is how far it really moved along its nose in the frame, and also what it says; both are checked.
+- "Peak pitch" is the body's rock (`sway`). The ground's own pitch under it is printed (0 degrees in the bank run).
+- 80% of the baseline metres passes at 84%, and that is a real change, not noise (the run is the same every time). The
+  old dozer covered its last 5 m in lurches: stopped dead by a jam, off again at up to 2 m/s, stopped dead again (2.07
+  m/s lost in a frame, 165 frames of "the blade's full"). The new one lugs down to a crawl with its tracks slipping
+  (mean slip 0.69 over the 20 s) and creeps. Stage 5 holds its metres against this stage's 12.29 m.
+
+**Three attempts that did not work** (so the next stage does not repeat them)
+
+- Holding the dozer back by how full the heap ahead is, hard enough to stall it: it stalled for good at 9.2 to 10 m
+  (63 to 69% of the baseline). A full blade in the open is not stuck: it spills off its ends and the heap slumps on.
+  Adding the windrows' room did not tell a bank from a heap either (both read 0.92 full).
+- Letting the jam alone stop it at a bank: 0.25 s from 2 m/s (fails), and the blade ends 1.4 m into the face.
+- What does tell a bank from a heap is that a bank is firm: hence `bank`, firm ground over the edge just ahead.
+
+**Shots** (`integration/dirt_shots/`, looked at): `feel_1_bite.png` (side on, 0.95 m/s and falling, nose 3.7 degrees
+down, the blade in the bank's face), `feel_2_stalled.png` (from behind, stalled, dust thrown out behind the tracks, the
+new message on the screen), `feel_3_let_go.png` (side on again, throttle off: level). The yard's four again as
+`stage4_1_start.png` to `stage4_4_side.png`: the push looks as before, the dozer a little short of where it got to.
+
+**What the owner will see**: drive the bulldozer at a bank and it no longer stops as if it had hit glass. It comes in
+braking, the nose dips, the blade bites in about half a metre, and it stands there with its tracks spinning, throwing
+dirt out behind, the engine lower and louder, until you back off or raise the blade. Pushing a growing heap it slows
+steadily to a crawl instead of stop, go, stop. Every machine pulls away with its nose up, rocks when it stops, eases
+into a turn, brakes for a bank or a step it cannot climb, and thumps down if it drops off an edge. Blades, arms,
+buckets and the truck's tray ease in and out instead of snapping to speed.
+
+**Guards** (one after another, after the last change to the machines; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 15/0, 12/0, 13/0, 9/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| save pair | 4/0, 6/0 |
+| sync pair (enet) | host 6/0, guest 9/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0: 12.29 m both runs (0.01% apart), frame p95 20.47 ms, mass exact |
+
+**Known gaps and things later stages must know**
+
+- **The dozer goes 16% less far in the yard's 20 s push** (12.29 m against 14.66 m). `baseline.txt` is still stage
+  1's game; stage 5's "80% of stage 4's metres" is 9.83 m.
+- **At a bank the blade bites 0.69 m in and stalls for good** until the driver backs off or raises it; the old one
+  cut 1.6 m in before it jammed. Taking a thinner cut (blade higher) goes on. `BANK_MOST` is the knob.
+- **What cannot be seen coming still stops it in a frame**: turning into a bank, backing into one faster than the
+  look reaches, ground slumping in front. It is then a bump of whatever speed it had. As tested the most was 0.5 m/s.
+- **The dozer looks no further than its blade when the blade is low** (ground over the edge is the blade's to cut):
+  with the blade up it brakes for a bank as any machine does.
+- **Sound was not listened to** (no audio here): the engine and clatter changes run without error, their levels are
+  a guess to be judged by ear.
+- **The guest's view**: its machines rock and slip from the host's 20 Hz state; a thud is seen from the height
+  change. No guest-side prediction (out of scope). The sync pair passes; nobody looked at a guest's screen.
+- The body's rock dips the blade's picture by up to 14 cm at the peak (the blade is on the body); the edge that cuts
+  does not move.
+- Camera shake and pull-back with speed are stage 9.

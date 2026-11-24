@@ -1,7 +1,7 @@
 class_name DsSfx
 extends Node3D
 ## A machine's sound (the owner, 11 Nov: the machines were silent), the digger game's sfx.gd brought over: all made
-## here in code, no sound files: a diesel that revs and labours, a hydraulic whine while its rams work, its tracks
+## here in code, no sound files: a diesel that revs with the throttle and lugs down when it's held back, a hydraulic whine while its rams work, its tracks
 ## clattering, soil scraping where it cuts and falling where it pours, a beeper backing up. One of these on each
 ## machine, heard from where it stands, so a mate's machine is heard too; driven by what both games know of it
 ## (DsMachine: speed, driver, effort_now, cut_now, its load going down). Owned by the voxel session.
@@ -68,15 +68,20 @@ func update(dt: float, m: DsMachine, tracked: bool, pouring: bool) -> void:
 	var on = m.driver != 0
 	var go = clampf(absf(m.speed) / m.max_speed, 0.0, 1.0)
 	var work = clampf(m.effort_now + m.cut_now * 0.6, 0.0, 1.0)
+	# (its weight, stage 4: its revs come up with the throttle, before it's moving, and with its tracks turning
+	# though it isn't; held back, it lugs: lower and louder; its tracks clatter by how fast they turn, more slipping)
+	var turning = clampf(absf(m.track_v) / m.max_speed, 0.0, 1.0)
+	var revs = maxf(maxf(go, turning), 0.85 * clampf(absf(m.throttle), 0.0, 1.0)) if on else 0.0
+	var lug = m.lug if on else 0.0
 	_eng = lerpf(_eng, 1.0 if on else 0.0, minf(dt * 3.0, 1.0))
 	var base: float = engine.get_meta("pitch")
-	engine.pitch_scale = lerpf(engine.pitch_scale, base * (0.8 + 0.3 * go + 0.25 * work - 0.12 * m.cut_now), minf(dt * 5.0, 1.0))
-	_level(engine, _eng * db_to_linear(-15.0 + 5.0 * maxf(go, work)), 0.0)
+	engine.pitch_scale = lerpf(engine.pitch_scale, base * (0.8 + 0.3 * revs + 0.25 * work - 0.12 * m.cut_now - 0.2 * lug), minf(dt * 5.0, 1.0))
+	_level(engine, _eng * db_to_linear(-15.0 + 5.0 * maxf(revs, work) + 3.0 * lug), 0.0)
 	_hyd = lerpf(_hyd, m.effort_now if on else 0.0, minf(dt * 9.0, 1.0))
 	whine.pitch_scale = 0.9 + 0.25 * _hyd
 	_level(whine, _hyd, -17.0)
-	_clk = lerpf(_clk, go if tracked else 0.0, minf(dt * 6.0, 1.0))
-	clank.pitch_scale = 0.6 + 0.5 * go
+	_clk = lerpf(_clk, minf(turning * (1.0 + 0.6 * m.slip), 1.3) if tracked else 0.0, minf(dt * 6.0, 1.0))
+	clank.pitch_scale = 0.6 + 0.5 * turning + 0.25 * m.slip
 	_level(clank, _clk, -11.0)
 	_scr = lerpf(_scr, clampf(m.cut_now, 0.0, 1.0), minf(dt * 7.0, 1.0))
 	scrape.pitch_scale = 0.8 + 0.35 * go

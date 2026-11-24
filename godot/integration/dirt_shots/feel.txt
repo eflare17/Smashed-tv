@@ -1,0 +1,32 @@
+DSFEEL ok   the patch is flat to +-1 cell (0.00 to 0.00)
+DSFEEL ok   on the bulldozer (id 5): top speed 3.2 m/s, turns 0.80 rad/s
+DSFEEL (a) flat out on the flat, blade up: top speed 3.20 m/s (it says 3.20), 90% of it in 2.07 s; let go, it stands in 1.10 s, 1.47 m on; the most a frame lost: 0.082 m/s
+DSFEEL ok   (a) top speed within 10% of stage 1's 3.2 m/s (3.20)
+DSFEEL ok   (a) let go, it comes to a stand (1.10 s)
+DSFEEL ok   (a): not a mm made or lost (0 mm drift; ground 5264319250, loads 0, clods 0)
+DSFEEL (b) standing, hard over one way, then the other, then let go: turning 0.798 rad/s at the most (its rate: 0.80), 0.015 rad/s a second after letting go; the most its turning changed in a frame: 0.0667 rad/s (limit 0.0800)
+DSFEEL ok   (b) its turning changes by no more than turn_rate * dt * 6 a frame (0.0667 <= 0.0800 rad/s)
+DSFEEL ok   (b) it gets up to its turning rate and stops turning (0.798 of 0.80; 0.015 after)
+DSFEEL (e) let go from 1 m up: down in 0.45 s; its body goes down 3.4 cm on its springs, and is 0.0 cm off 1.5 s and more after
+DSFEEL ok   (e) it lands with a thud: its body 2 to 10 cm down on its springs, and back (3.4 cm, then 0.0)
+DSFEEL ok   (c) the bank stands: 1.50 m over the patch at its face (at rest in 1 ticks)
+DSFEEL (c) into the bank flat out (11.8 m off, blade 0.35 m up): top 3.17 m/s; the last frame over 2 m/s to the first under 0.3 m/s: 0.42 s, 0.47 m; the most a frame lost: 0.093 m/s as it moved, 0.093 m/s as it says (limit 0.80)
+DSFEEL (c) stalled (2.0 s, throttle full on): slip 1.00 at the least, 1.00 mean; creeping 0.00 m/s at the most; its blade's edge 0.69 m into the bank's face; nose 3.96 deg at the most (0.28 s before it stopped), -1.20 deg at the end; the ground under it pitched it 0.00 deg at the most; 'Too deep a bite: back up, or raise the blade' 151 frames; 
+DSFEEL ok   (c) from over 2 m/s to under 0.3 m/s takes more than 0.3 s (0.42 s)
+DSFEEL ok   (c) no frame loses more than 25% of its top speed (0.093 m/s moved, 0.093 said; limit 0.80)
+DSFEEL ok   (c) its tracks slip while it's stalled (1.00 at the least, over 0.5)
+DSFEEL ok   (c) its nose dips 1.5 to 5 degrees at the most (3.96)
+DSFEEL ok   (c): not a mm made or lost (0 mm drift; ground 5272383250, loads 0, clods 0)
+DSFEEL (f) the Bobcat, bucket up, flat out at the bank: top 2.96 m/s (its: 3.0); from the last frame over 2 m/s to standing: 0.27 s; the most a frame lost: 0.506 m/s as it moved, 0.506 as it says (limit 0.75); it stands 0.30 m off the bank's face, slip 1.00 at the least; 'Too steep for the Bobcat' 90 frames; 
+DSFEEL ok   (f) a bank stops the Bobcat without a frame losing more than 25% of its top speed (0.506, 0.506; limit 0.75)
+DSFEEL ok   (f) it's stopped at the bank, not short of it or in it (0.30 m off), its wheels spinning (1.00)
+DSFEEL ok   (f): not a mm made or lost (0 mm drift; ground 5272383250, loads 0, clods 0)
+DSFEEL ok   (d) the patch levelled again: flat to +-1 cell (0.00 to 0.00)
+DSFEEL (d) the yard's push, 20 s, blade 0.10 m in: 12.29 m; slowest 0.00 m/s, at the end 0.15 m/s; mean slip 0.69; the most a frame lost 0.136 m/s; heap ahead 1.22 m, 1482 blocks banked; stops: 'The blade's full: back up, or raise it' 474 frames; 
+DSFEEL (d) frames 1201, mean 14.17, p95 18.50, worst 65.71 ms; layer_us mean 198, p95 320; show_us mean 347, p95 526
+DSFEEL ok   (d) not a mm made or lost at any second of it (0 mm at the most)
+DSFEEL ok   (d): not a mm made or lost (0 mm drift; ground 5264319250, loads 0, clods 0)
+DSFEEL (d) the baseline (stage 3's game, this test): p95 20.98 ms, 14.66 m, top 3.20 m/s
+DSFEEL ok   (d) the 20 s push moves >= 80% of the baseline's metres (12.29 of 14.66: 84%)
+DSFEEL ok   (d) frame p95 <= the baseline's + 0.5 ms (18.50 against 20.98: -2.49)
+DSFEEL done 22 passed, 0 failed

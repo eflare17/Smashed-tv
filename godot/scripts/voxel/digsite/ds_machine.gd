@@ -4,7 +4,12 @@ extends Node3D
 ## then the Bobcat, the excavator, the tip truck and the drill. Like the digger game's Machine: W/S drive (it takes
 ## a moment to get going and to stop), A/D turn (skid steer: on the spot too), the ground under its four corners
 ## sets its height, its nose-up and its lean. It won't climb what's too steep for it (MAX_CLIMB) or a step taller
-## than STEP: it stops dead, the driver told; it drives down into a hole fine (and has to find a ramp out). Only the
+## than STEP: the driver's told; it drives down into a hole fine (and has to find a ramp out). It has weight (the dirt
+## physics' stage 4, "the Dig Site feels pretty clunky"): its drive pulls hardest standing and not at all at its top
+## speed, what it's pushing (drive_resist) pulls the other way, so loaded it lugs down instead of being held to a
+## speed; its tracks slip when it's held back (slip, track_v: what its tracks and its dust show); it's eased into a
+## turn; it brakes for a bank it's coming up to instead of stopping dead at it; and its body rocks on its tracks (sway:
+## nose up pulling away, down braking or leaning into a load, a thud when it lands). Only the
 ## game that runs the ground (solo, or the host) moves it; the guest's shows the host's (its state 20 times a
 ## second, eased between) and sends its driver's controls. Subclasses add their tools (a bucket, an arm, a tray, a
 ## drill head) through _tool(dt), net_more()/net_take_more() and _cmds_more(). Owned by the voxel session.
@@ -64,6 +69,48 @@ var shake_work = 0.0045        # more at full speed
 var shake_pitch = 0.0007       # rad
 var shake_hz = 58.0            # (rad a second: its main buzz)
 var _shake_clock = 0.0
+# Its weight (stage 4)
+const PULL := 2.5               # its drive: accel * PULL m/s2 standing, falling to none at its top speed (so it's as
+                                # quick off the mark as it was and eases up to its top speed instead of hitting it)
+const BRAKE := 1.0              # x accel: its brakes besides, let go or driven against the way it's going
+const UPHILL := 0.4             # the resistance of a slope as steep as it'll climb (of its drive standing)
+const YAW_EASE := 4.0           # per second: its turning eased to what's asked ...
+const YAW_JERK := 5.0           # ... and changing by no more than turn_rate * this a second
+const LOOK_FROM := 0.5          # m/s: going faster than this it looks for a bank where it could just stop ...
+const LOOK_MOST := 2.5          # ... no further off than this (m)
+const SLIP_FROM := 0.35         # resistance (of its drive standing) from which its tracks start to slip; at 1 they only slip
+const LUG_REVS := 0.7           # stalled, its tracks turn at this share of what's asked of them (its engine's lugging)
+const TRACK_EASE := 8.0
+const SWAY_HZ := 10.0           # rad/s: its body on its tracks, a spring ...
+const SWAY_DAMP := 0.4          # ... that rocks once or twice
+const SWAY_ACC := 0.0105        # rad a m/s2 (0.6 degrees): nose up pulling away, down braking
+const SWAY_LOAD := 0.021        # rad (1.2 degrees): nose down leaning into what's holding it back
+const SWAY_MOST := 0.056        # rad (3.2 degrees) it's asked for at the most; about 4 with its overshoot
+const SWAY_END := 0.08
+const THUD_FROM := 1.6          # m/s: coming down faster than this and stopped, it's landed
+var track_v = 0.0              # m/s: what its tracks (or wheels) are doing: its speed, and more when they slip
+var slip = 0.0                 # 0 .. 1: how much of its tracks' turning isn't moving it
+var resist = 0.0               # what's holding it back, of its drive standing (1: it stalls flat out) (the game that runs it)
+var lug = 0.0                  # 0 .. 1: how hard its engine's labouring (both games)
+var sway = 0.0                 # rad, nose up +: its body rocking on its tracks (its look only: its tool doesn't feel it)
+var sway_k = 1.0               # (a subclass: how much it rocks)
+var bob = 0.0                  # m: its body down on its springs (a landing)
+var bumped = 0.0               # m/s it was doing (back: -) when a bank stopped it this frame (0: none did)
+var _sway_v = 0.0
+var _bob_v = 0.0
+var _acc = 0.0
+var _speed_was = 0.0
+var _y_was = NAN
+var _fall_was = 0.0
+var _yaw_v = 0.0
+var _track_more = 0.0
+var _wall_gap = -1.0           # m to a bank it's braking for (-1: none)
+var _wall_dir = 0.0
+var _wall_yaw = 0.0
+var _cap_y = INF               # (looking ahead: ground over this is its blade's to cut, not a bank)
+var _slip_dust: CPUParticles3D
+var _slip_clods: CPUParticles3D
+var _thud_dust: CPUParticles3D
 
 func setup(s: Node3D, id_: int, at: Vector3, yaw_: float) -> void:
 	site = s
@@ -147,6 +194,7 @@ func step(dt: float) -> void:
 		_land_falling()
 	_pour_fx(dt)
 	effort_now = shake_effort()
+	_weight_fx(dt)
 	_dust_fx()
 	_shake_body(dt)
 	if sfx == null and driver != 0:
@@ -223,7 +271,69 @@ func _shake_body(dt: float) -> void:
 	var c = _shake_clock
 	var work = clampf(absf(speed) / max_speed + effort_now, 0.0, 1.0)
 	shake_node.position.y = sin(c * shake_hz) * (shake_idle + shake_work * work) + sin(c * shake_hz * 0.64) * shake_work * 0.3 * work
-	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean()
+	shake_node.position.y += bob
+	shake_node.rotation.z = sin(c * shake_hz * 0.4) * shake_pitch * work + shake_lean() + sway
+
+## Its body rocking on its tracks, on both games (from what both know: its speed, its slip, where it is): nose up as it
+## pulls away, down as it brakes or leans into a load, a spring that rocks once or twice; and a thud when it lands
+func _weight_fx(dt: float) -> void:
+	dt = clampf(dt, 0.001, 0.05)
+	if not runs():
+		# (the guest's: its tracks from the host's slip)
+		lug = slip
+		track_v = speed / (1.0 - slip) if slip < 0.9 else maxf(absf(speed), LUG_REVS * max_speed) * (signf(speed) if absf(speed) > 0.05 else 1.0)
+	_acc = lerpf(_acc, clampf((speed - _speed_was) / dt, -8.0, 8.0), 1.0 - exp(-10.0 * dt))
+	_speed_was = speed
+	var want = clampf(_acc * SWAY_ACC - lug * SWAY_LOAD, -SWAY_MOST, SWAY_MOST) * sway_k
+	if absf(bumped) > 0.4:
+		_sway_v -= bumped * 0.14 * sway_k
+		if sfx and driver != 0:
+			sfx.clunked(clampf(absf(bumped) / 3.0, 0.1, 1.0) * clunk_weight)
+	bumped = 0.0
+	# (landing: it was coming down fast and it's stopped)
+	var py = global_position.y
+	var fall = 0.0 if is_nan(_y_was) else (py - _y_was) / dt
+	_y_was = py
+	if _fall_was < -THUD_FROM and _fall_was > -20.0 and fall > _fall_was * 0.3:
+		_thud(-_fall_was)
+	_fall_was = fall
+	var n = clampi(ceili(dt * 90.0), 1, 4)
+	var h = dt / n
+	for i in n:
+		_sway_v += (SWAY_HZ * SWAY_HZ * (want - sway) - 2.0 * SWAY_DAMP * SWAY_HZ * _sway_v) * h
+		sway += _sway_v * h
+		_bob_v += (-196.0 * bob - 9.8 * _bob_v) * h
+		bob += _bob_v * h
+	if absf(sway) > SWAY_END:
+		sway = clampf(sway, -SWAY_END, SWAY_END)
+		_sway_v = 0.0
+	bob = clampf(bob, -0.09, 0.05)
+
+## It's landed, coming down at v m/s: its body drops on its springs, its nose dips, a thump, dust from under it
+func _thud(v: float) -> void:
+	var k = clampf((v - THUD_FROM) / 4.0, 0.15, 1.0)
+	_bob_v -= minf(v, 6.0) * 0.3
+	_sway_v -= k * 0.25 * sway_k
+	if sfx:
+		sfx.clunked(k * clunk_weight * 1.2)
+	if _thud_dust == null:
+		var s = clampf(length / 5.0, 0.35, 1.0)
+		_thud_dust = puffs(Color("#d6bd98"), 22, 1.1)
+		_thud_dust.one_shot = true
+		_thud_dust.explosiveness = 0.95
+		_thud_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_thud_dust.emission_box_extents = Vector3(width * 0.55, 0.05, length * 0.5)
+		_thud_dust.direction = Vector3(0, 1, 0)
+		_thud_dust.spread = 75.0
+		_thud_dust.initial_velocity_min = 0.6 * s
+		_thud_dust.initial_velocity_max = 2.2 * s
+		_thud_dust.gravity = Vector3(0, 0.2, 0)
+		_thud_dust.scale_amount_min = 0.7 * s
+		_thud_dust.scale_amount_max = 1.6 * s
+		add_child(_thud_dust)
+	_thud_dust.global_transform = Transform3D(Basis(Vector3.UP, yaw), global_position + Vector3(0, 0.1, 0))
+	_thud_dust.restart()
+	_thud_dust.emitting = true
 
 ## (a subclass) its tool at the end of its travel or resting on the ground, by what both games know of it
 func at_stop() -> bool:
@@ -406,12 +516,44 @@ func _dust_fx() -> void:
 	# (dust off the back of the tracks, low down, whichever way it's going)
 	_dust.global_position = global_position - forward() * signf(speed) * (length * 0.4) + Vector3(0, 0.1, 0)
 	_dust.emitting = absf(speed) > 0.4
+	# (its tracks slipping: dirt and dust thrown out behind them, the harder the more they slip)
+	var spinning: bool = slip > 0.3 and absf(track_v) > 0.4 and driver != 0
+	if spinning and _slip_dust == null:
+		var k = clampf(length / 5.0, 0.35, 1.0)
+		_slip_dust = puffs(Color("#b89a6e"), 26, 0.9)
+		_slip_dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_slip_dust.emission_box_extents = Vector3(width * 0.5, 0.05, 0.15)
+		_slip_dust.spread = 28.0
+		_slip_dust.initial_velocity_min = 1.2 * k
+		_slip_dust.initial_velocity_max = 3.2 * k
+		_slip_dust.gravity = Vector3(0, 0.3, 0)
+		_slip_dust.scale_amount_min = 0.6 * k
+		_slip_dust.scale_amount_max = 1.4 * k
+		add_child(_slip_dust)
+		_slip_clods = chunks(18)
+		_slip_clods.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		_slip_clods.emission_box_extents = Vector3(width * 0.5, 0.04, 0.1)
+		_slip_clods.spread = 24.0
+		_slip_clods.initial_velocity_min = 1.6 * k
+		_slip_clods.initial_velocity_max = 4.0 * k
+		_slip_clods.scale_amount_min = 0.16 * k
+		_slip_clods.scale_amount_max = 0.42 * k
+		add_child(_slip_clods)
+	if _slip_dust:
+		if spinning:
+			var back = signf(track_v)
+			var at = global_position - forward() * back * (length * 0.5) + Vector3(0, 0.12, 0)
+			for p: CPUParticles3D in [_slip_dust, _slip_clods]:
+				p.global_transform = Transform3D(Basis(Vector3.UP, yaw), at)
+				p.direction = Vector3(0.0, 0.55, back)      # (out behind its tracks, and up: its forward's -z)
+		_slip_dust.emitting = spinning
+		_slip_clods.emitting = spinning and tracked
 	_exhaust.global_position = exhaust_at()
 	_exhaust.emitting = driver != 0
 	# (its tracks or tyres wear the grass bare where they go: the digger game's track marks)
 	if absf(speed) > 0.05 and site.terrain:
 		site.terrain.wear_tracks(self)
-	_exhaust.speed_scale = 0.6 + 0.8 * clampf(absf(throttle), 0.0, 1.0)      # (worked hard, it puffs faster)
+	_exhaust.speed_scale = 0.6 + 0.8 * clampf(maxf(absf(throttle), lug), 0.0, 1.0)      # (worked hard, it puffs faster)
 	# (the dust where it lands, once it's landed: as long after it starts pouring as it takes to fall, on both games)
 	while not _dust_due.is_empty() and float(_dust_due[0][0]) <= _fx_clock:
 		var d: Array = _dust_due.pop_front()
@@ -482,15 +624,48 @@ func _pour_fx(dt: float) -> void:
 		if on:
 			_stream.global_position = fx_pour_at()
 
+## (a subclass) what's holding it back going dir (1 forward, -1 back), of its drive standing: 0 nothing, 1 and it
+## stalls flat out (a blade's load, a bucket in a heap); between, flat out it settles at that much less of its top speed
+func drive_resist(_dir: float) -> float:
+	return 0.0
+
+## (a subclass) its top speed now (a dozer's CUT: a steady job)
+func top_speed() -> float:
+	return max_speed
+
+## (a subclass) looking ahead for a bank going dir: ground over this height's its tool's to cut, not a bank (INF: none is)
+func cut_floor(_dir: float) -> float:
+	return INF
+
 ## (the game that runs it) moves it by its controls over the ground
 func _drive(dt: float) -> void:
-	var want = throttle * max_speed * (1.0 if throttle >= 0.0 else 0.7)
-	var a = accel if absf(want) > absf(speed) and signf(want) == signf(speed) or is_zero_approx(speed) else accel * 2.0
-	speed = move_toward(speed, want, a * dt)
+	# its drive against what's holding it back, over its weight: flat out with nothing in its way it settles at its top
+	# speed; held back by r, at (1 - r) of it; at r >= 1 it stalls, its tracks slipping
+	var vt = throttle * top_speed() * (1.0 if throttle >= 0.0 else 0.7)
+	var pull = accel * PULL
+	var dir = signf(speed) if absf(speed) > 0.02 else signf(vt)      # (the way it's going, or trying to)
+	var r = 0.0
+	if dir != 0.0:
+		r = maxf(drive_resist(dir), 0.0) + UPHILL * clampf(pitch * dir / max_climb, 0.0, 1.2)
+	resist = r
+	var a = pull * (vt - speed) / max_speed
+	if absf(speed) > 0.02 and (is_zero_approx(vt) or signf(vt) != signf(speed)):
+		a -= signf(speed) * accel * BRAKE
+	if absf(speed) <= 0.02 and (absf(a) <= pull * r or is_zero_approx(vt)):
+		speed = 0.0
+	else:
+		speed += (a - dir * pull * r) * dt
+		# (what holds it back and its brakes stop it: they don't send it the other way)
+		if speed * dir < 0.0 and signf(vt) != -dir:
+			speed = 0.0
+	# its turning, eased (and never changing faster than YAW_JERK)
 	var turn_k = 1.0 - 0.5 * clampf(absf(speed) / max_speed, 0.0, 1.0)
 	if turn_needs_speed:
 		turn_k = clampf(absf(speed) / 1.5, 0.0, 1.0) * (1.0 if speed >= 0.0 else -1.0)    # (wheels: it turns as it rolls)
-	var new_yaw = yaw - steer * turn_rate * turn_k * dt
+	var jerk = turn_rate * YAW_JERK * dt
+	_yaw_v += clampf((-steer * turn_rate * turn_k - _yaw_v) * (1.0 - exp(-YAW_EASE * dt)), -jerk, jerk)
+	var new_yaw = yaw + _yaw_v * dt
+	_look_ahead(dt, new_yaw)
 	var at = global_position
 	var to = at + Vector3(-sin(new_yaw), 0, -cos(new_yaw)) * speed * dt
 	# the site's fence
@@ -513,7 +688,11 @@ func _drive(dt: float) -> void:
 		elif _wall_ahead(to, new_yaw, signf(going), at.y):
 			blocked = "Too steep for the %s" % kind
 	if blocked != "":
+		# (it's against a bank. It was braking for it if it saw it coming (_look_ahead), so there's little left to lose)
+		if absf(speed) > absf(bumped):
+			bumped = speed
 		speed = 0.0
+		_wall_gap = -1.0
 		to = at
 		c = _corners(at, new_yaw)
 		top = maxf(maxf(c[0], c[1]), maxf(c[2], c[3]))
@@ -521,6 +700,16 @@ func _drive(dt: float) -> void:
 		hb = maxf(c[2], c[3])
 		new_pitch = atan2(hf - hb, length)
 	yaw = new_yaw
+	# its tracks: held back, they turn faster than it goes (slip), up to LUG_REVS of what's asked with it standing
+	var s = 0.0
+	if not is_zero_approx(vt) and signf(vt) == dir:
+		s = 1.0 if blocked != "" else clampf((r - SLIP_FROM) / (1.0 - SLIP_FROM), 0.0, 1.0)
+	_track_more = lerpf(_track_more, s * maxf((vt * LUG_REVS - speed) * signf(vt), 0.0) * signf(vt), 1.0 - exp(-TRACK_EASE * dt))
+	if absf(_track_more) < 0.01:
+		_track_more = 0.0
+	track_v = speed + _track_more
+	slip = clampf(1.0 - speed / track_v, 0.0, 1.0) if absf(track_v) > 0.15 and _track_more != 0.0 else 0.0
+	lug = clampf(maxf(r, slip), 0.0, 1.0) if not is_zero_approx(vt) else 0.0
 	# where it rests (the digger game's: on its corners' average, or a crest between its tracks if that's higher),
 	# eased to, as are its pitch and roll (the owner, 9 Nov: "it's still so jumpy": it climbed each block's 12.5 cm
 	# step in one frame, and the camera behind it jolted with it). Off a real drop it falls.
@@ -541,6 +730,35 @@ func _drive(dt: float) -> void:
 	pitch = lerpf(pitch, atan2(lean_f, length), k)
 	roll = lerpf(roll, atan2(lean_r, width), k)
 
+## A bank it's coming up to (the hard stop there was: it went from full speed to none in a frame): at speed it looks
+## where it could just stop (its speed squared over twice what its brakes do) for what would stop it (_wall_ahead), and
+## having seen it holds its speed to what it can still stop from in what's left, so it's nearly standing when it gets
+## there. Not a bank after all (its blade's cut it away, it's turned off it): it's forgotten.
+func _look_ahead(dt: float, yaw_: float) -> void:
+	var dir = signf(speed)
+	var stop = accel * PULL
+	if _wall_gap >= 0.0 and (dir != _wall_dir or absf(angle_difference(yaw_, _wall_yaw)) > 0.12):
+		_wall_gap = -1.0
+	if _wall_gap < 0.0:
+		if absf(speed) < LOOK_FROM:
+			return
+		var d = minf(speed * speed / (2.0 * stop) + absf(speed) * dt, LOOK_MOST)
+		_cap_y = cut_floor(dir)
+		var hit = _wall_ahead(global_position + Vector3(-sin(yaw_), 0, -cos(yaw_)) * dir * d, yaw_, dir, -INF)
+		_cap_y = INF
+		if not hit:
+			return
+		_wall_gap = d
+		_wall_dir = dir
+		_wall_yaw = yaw_
+	_wall_gap -= absf(speed) * dt
+	if _wall_gap < -0.4:
+		_wall_gap = -1.0
+		return
+	var most = sqrt(2.0 * stop * maxf(_wall_gap, 0.0)) + 0.2
+	if absf(speed) > most:
+		speed = dir * maxf(most, absf(speed) - stop * 2.0 * dt)
+
 ## The ground just ahead of its leading corners rising steeper than it climbs (a pit's wall, a bank), measured from
 ## where it rides (base: its height now; a hole under a corner, its own bucket's bite, doesn't count)
 func _wall_ahead(at: Vector3, yaw_: float, dir: float, base: float) -> bool:
@@ -552,11 +770,11 @@ func _wall_ahead(at: Vector3, yaw_: float, dir: float, base: float) -> bool:
 		# (loose dirt isn't a wall: tracks and wheels climb it or shove through it; a bank of firm ground is)
 		var q: Vector3 = p + f * 0.3
 		var from = maxf(base, ground_y(p.x, p.z))
-		var rise = minf(ground_y(q.x, q.z), site.terrain.firm_at(q.x, q.z)) - from
+		var rise = minf(minf(ground_y(q.x, q.z), site.terrain.firm_at(q.x, q.z)), _cap_y) - from
 		if rise / 0.3 > lim and rise > 0.08:
 			# (a lip it steps up onto isn't a wall: a bank is, rising on past what it steps up)
 			var q2: Vector3 = p + f * wall_look
-			if minf(ground_y(q2.x, q2.z), site.terrain.firm_at(q2.x, q2.z)) - from > step_up:
+			if minf(minf(ground_y(q2.x, q2.z), site.terrain.firm_at(q2.x, q2.z)), _cap_y) - from > step_up:
 				return true
 	return false
 
@@ -587,7 +805,8 @@ func view_yaw() -> float:
 
 ## Its state, for the guest's game: where, its tool, its driver
 func net_state() -> PackedByteArray:
-	var f = PackedFloat32Array([global_position.x, global_position.y, global_position.z, yaw, pitch, roll, speed, float(driver)])
+	# (its tracks' slip rides with its driver: the whole number's who, the rest half the slip, so nothing's added)
+	var f = PackedFloat32Array([global_position.x, global_position.y, global_position.z, yaw, pitch, roll, speed, float(driver) + clampf(slip, 0.0, 1.0) * 0.5])
 	f.append_array(net_more())
 	return f.to_byte_array()
 
@@ -599,6 +818,7 @@ func net_take(d: PackedByteArray) -> void:
 	_to = {"yaw": f[3], "pitch": f[4], "roll": f[5]}
 	speed = f[6]
 	driver = int(f[7])
+	slip = clampf((f[7] - driver) * 2.0, 0.0, 1.0)
 	net_take_more(f.slice(8))
 
 ## (a subclass) its tool's state, as floats
