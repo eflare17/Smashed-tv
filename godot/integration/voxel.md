@@ -1482,3 +1482,95 @@ her pictures' size, are the Characters task's lists). Look at her in `test/voxel
 Known limits: carved from single frames, so what a picture hides (inside the arms, under hair) is a guess; a
 character holding something in its standing frame gets it in its hands (the test Jared's blasters); long hair over
 the shoulders is carved into the body and arms (paint it, or ask Gemini for the cleaner views).
+
+## Touch controls (web)
+
+(The owner, 24 Nov: "could the website one detect if you're on phone then use phone controls?", "build the touch
+controls fresh", "an option to increase the graphics"; then, from a Samsung S25: the page "stops on loading".)
+`scripts/voxel/arena/voxel_touch.gd` (`VoxelTouch`, a CanvasLayer the arena only makes in touch mode).
+
+**Detection.** `VoxelTouch.detect(opts)` runs first thing in `VoxelArena._ready`. On the web it asks the page
+`navigator.maxTouchPoints > 0 && matchMedia('(pointer:coarse)').matches` (a touch screen and no mouse or trackpad).
+`?touch` (or `--touch`) forces it on, `?notouch` keeps it off for good. Otherwise the first real
+`InputEventScreenTouch` turns it on mid-game (`VoxelArena.touch_on`). A PC with a mouse never sees any of it: no
+layer is made, nothing in the key or mouse handling changed.
+
+**Layout** (landscape; the same in portrait, the buttons scaled up so they stay a thumb's size, the top row wrapped):
+
+| where | what |
+|---|---|
+| left half | the stick, where the thumb lands (faint at rest); pushed to its edge: run |
+| right half | drag: look (capped at 90 px an event, so a new finger or a dropped frame never jerks the view); top-down: a second stick, Jared aims the way it's pushed |
+| bottom right, above the weapon bar | FIRE (hold; a drag that starts on FIRE or AIM looks too), AIM (the right mouse button), E (gold, with the game's own line over it, "ride the Scenic Railway", when there's something to use), R, JUMP, `<` `>` (the weapon before / after) |
+| the weapon bar | a tap on a slot takes that weapon out (a touch there that slides becomes the stick or a look) |
+| top right | `...` shows / hides PHONE, BAG, VIEW, HELP, SET, ONLINE (at the gun range: LANE < >) |
+| a menu open | the first finger is the mouse (taps are clicks, drags scroll and move sliders); X closes it; the padlock: TAKE OFF |
+| the Carousel's gadget out | 1 2 3 4 in a row over the weapon bar |
+
+The keyboard's long line along the bottom and the mouse's small ONLINE / SETTINGS / HELP buttons are hidden. No
+pointer lock is asked for.
+
+**The shim.** Buttons send the very events the keyboard and mouse send (`Input.parse_input_event` with an
+`InputEventKey` by physical key, or an `InputEventMouseButton`), so every key handler in the game works unchanged.
+The stick sets `VoxelTouch.move`, which `_physics_process` reads in place of WASD (and holds W/A/S/D/Shift down past
+40% / 94% for what reads the keys: the coaster's speed, getting out of bed). A look drag calls `VoxelArena.look_by`,
+the function the mouse's motion now calls. `VoxelTouch.grab()` / `grabbed()` stand in for `Input.mouse_mode`
+(arena, phone, settings, help, online menu, games room, St Kilda) and `VoxelTouch.pointer()` for the mouse's place
+(top-down aim, the vacuum). `Input.emulate_mouse_from_touch` is turned off in touch mode: the layer decides what each
+finger is. Nothing is allocated per frame; the pad redraws only when a button changes.
+
+**Graphics.** A phone's first run starts on Low (no guess from the graphics card, no benchmark). SET opens the same
+settings screen, its buttons and rows thumb-sized, and what's picked is kept (`user://voxel_settings.cfg`). The rows
+only Forward+ can do (TAA, SSAO, SSIL, SDFGI, volumetric fog, effects quality) aren't shown on Compatibility, on any
+device. On a phone the 3D picture is drawn 1280 pixels across at most, times the preset's render scale (a 2340 x 1080
+phone on Low: about 860 x 400; the HUD stays sharp), and the camera draws 260 m.
+
+**Getting a phone past loading.** Measured in headless Chromium (software GL, a phone's 844 x 390 at 2x; "held" is
+the game's WebAssembly memory):
+
+| | before | now | held |
+|---|---|---|---|
+| phone, plain link | 29.7 s | 16.1 s | 199 MB |
+| phone, `?carousel` | 37.8 s | 23.1 s | 412 MB |
+| desktop, plain link | 30.2 s | 27.6 s | 199 MB |
+| desktop, `?carousel` | 32.2 s | 32.1 s | 412 MB |
+
+(JS heap, `performance.memory.usedJSHeapSize`: phone 35 / 44 MB, desktop 50 / 71 MB.) What was found and done:
+
+- 13 s of every start-up was one thing: Jared's own blocks (your avatar for top-down and the mirror), 650,000 cells
+  fleshed out and meshed in one frozen frame. On a phone they're made an eighth as many (`VoxelArena.jared_chunk`
+  = 2; your mate's and the coaster rider's too): about 1 s. Desktop is as it was.
+- The start-up is staged on a phone (`_boot`): a step, then a frame, with "Loading: step N of 9 (what)" on the canvas,
+  on a line along the bottom of the page (plain HTML, there even if the canvas isn't drawing) and in the console,
+  each with how long the last step took and the MB held. `chrome://inspect` on a stuck phone shows the last step
+  begun. The arena's nodes don't run until the last step is done. On desktop the same lines print; nothing waits.
+- St Kilda is only built when you go there (it already was, unless the link says `?stkilda`, `?carousel` or
+  `?invasion`; then it's its own step, "Luna Park"). The phone's black screen says "Loading Luna Park ..." the first
+  time. **It is the memory**: the plain link holds 199 MB, Luna Park takes it to 412 MB. A phone that won't start on
+  the `?carousel` link should be tried on the plain link first.
+- The page shows any JavaScript error it throws on that bottom line, and a lost WebGL context puts up "The graphics
+  stopped ... Tap to reload" (`export_presets.cfg`'s head, and a hook the arena adds).
+- Low was already in force before anything heavy is made (the cubes' caps, cube size 2, shadows and MSAA off): the
+  settings are read straight after the static world; that order is unchanged.
+
+Not done: the Luna Park build isn't spread over frames (one 3 to 5 s stop under the black screen) and isn't any
+smaller on a phone; the 138 MB the engine holds before the game's first line isn't ours to cut; no real phone has
+run this yet (only Chromium's phone emulation), so why the S25 stopped isn't confirmed.
+
+**Not touch-friendly yet.** The Dig Site's machines and the mine (PC only in the browser anyway); the games room's
+consoles (the controller is keys); St Kilda's K rain / N night and F1-F12; the quick sword (F / C), eating (H), the
+padlock key (L), swap-last (Q); the backpack's shift+click (move a stack across) and right click (half a stack); the
+vacuum's brush size (AIM held + wheel, though `<` `>` do send the wheel); the Carousel hack's swing-round camera;
+typing a room code needs the online menu's own keypad (the browser's keyboard isn't raised). AIM is a hold, so
+aiming in and firing takes two right-hand fingers. The weapon bar is too small to tap in portrait (use `<` `>`).
+
+**Tests.** `godot --headless --path godot --fixed-fps 60 -s res://test/voxel/touch_test.gd -- --nosave`: 52 checks
+(touch off: no layer, W walks; the first touch builds it; stick, look with the cap, three fingers at once, FIRE, a
+drag from FIRE, `<` `>`, a bar slot, JUMP, E at a chest with its caption, the backpack by taps, X, BAG / HELP /
+ONLINE, VIEW and top-down aim, SET and a preset by tap, the Forward+ rows, Low on a phone's first run and the choice
+kept, PHONE and a row tapped, the gun range's LANE). Pictures (Playwright, a touch phone, taps and a CDP stick drag):
+`voxel_shots/touch_land_1.png` (the layout), `touch_land_2_stick_fire.png` (walking on the stick while FIRE is
+held), `touch_land_3_phone.png`, `touch_land_4_settings.png`, `touch_land_5_bag.png`, `touch_land_6_help.png`,
+`touch_land_7_topdown.png`, `touch_port_1.png` (portrait).
+
+Touch controls: done

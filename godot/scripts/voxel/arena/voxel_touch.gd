@@ -209,6 +209,8 @@ func _layout() -> void:
 	# top right: X (a menu up), or ... and its row (wrapped where it runs out of room: a phone held upright)
 	var m := 16.0 * k
 	_at[B_CLOSE] = Vector2(vs.x - m - _half[B_CLOSE].x, m + _half[B_CLOSE].y)
+	if ui and arena.phone.is_open() and vs.x > VoxelPhone.W + 80.0 + _half[B_CLOSE].x * 2.0 + m * 2.0:
+		_at[B_CLOSE].x = vs.x - VoxelPhone.W - 40.0 - m - _half[B_CLOSE].x      # (the phone's in that corner: beside it)
 	_show[B_CLOSE] = 1 if ui else 0
 	_at[B_TAKE_OFF] = Vector2(vs.x - m - _half[B_TAKE_OFF].x, _at[B_CLOSE].y + _half[B_CLOSE].y + m + _half[B_TAKE_OFF].y)
 	_show[B_TAKE_OFF] = 1 if (ui and _lock) else 0

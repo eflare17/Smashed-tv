@@ -156,6 +156,9 @@ func travel(id: String) -> void:
 	_going = true
 	close()
 	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "invasion": "Luna Park: Invasion ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
+	if id in ["stkilda", "kill12", "invasion"] and not stkilda.built:
+		_black_label.text = "Loading Luna Park ..."        # (built the first time you go: a few seconds, longer on a phone)
+		print("VoxelPhone: building St Kilda (Luna Park)")
 	_black.visible = true
 	var tw := create_tween()
 	tw.tween_property(_black, "modulate:a", 1.0, 0.35)
