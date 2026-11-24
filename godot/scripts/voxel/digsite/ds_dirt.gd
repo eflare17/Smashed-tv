@@ -14,7 +14,12 @@ extends RefCounted
 ## about by the machines' boxes (set_boxes: a body, a blade, a bucket, a truck's tray: pushed out the way they came in,
 ## taking the box's speed there), stacked up a blade's face and shoved off its ends, and at home under a roof (in a
 ## tunnel the ground's surface is the hill over it: there a clod goes by the cells round it, and its dirt is put back
-## in whole blocks where it lies, DigSiteGrid.fill_sphere, what won't fit owed till it will). No network yet.
+## in whole blocks where it lies, DigSiteGrid.fill_sphere, what won't fit owed till it will).
+## Stage 8, co-op: the host's clods are the dirt; a guest's are pictures of them with nothing in them (`ghost`). The
+## host packs its clods 12 times a second into a few hundred bytes (net_pack: the new ones first, then the rest in
+## turn, the ones near the guest twice as often when there are more than fit; and the numbers of those gone); the
+## guest shows each where it was last said to be, gliding there (net_unpack: "puppets"). A blast's clods aren't sent
+## one by one: the guest throws its own from the same random numbers (DsBlasts) and runs them here, weighing nothing.
 ## Nothing's made or lost: grid.ground_mm() + mass_mm() + owed_mm() never changes.
 ## Runs where the dirt runs (solo, or the host), a step every 1/60 s. With cap_us 0 it's the same every run (its random
 ## numbers are its own, from `seed_`); the time cap, when it bites, is by the clock. Owned by the voxel session.
@@ -70,6 +75,21 @@ const HELD_S := 0.15            # s a clod's been on a bucket or in a tray, and 
 const HELD_SLIDE := 1.0         # s on top of a bucket or a tray's wall and not taken in: it slides off (it's not in it)
 const HELD_MOST := 8.0          # s held and neither: it ages again (and is put down in the end, as any clod)
 const DRAW_K := 1.3             # a lump's drawn radius, of its clod's half side (as much dirt as the cube)
+# co-op (stage 8)
+const NET_Q := 0.02             # m: a clod's place is sent to this
+const NET_ONE := 9              # bytes a clod sent: its number (2), where it is (3 x 2), its material and size (1)
+const NET_HEAD := 5             # a packet's first bytes: its own number, how many clods the host has (2), a lap in packets, how many gone
+const NET_GONE := 60            # numbers of clods gone in a packet at most, each sent NET_GONE_X times (the line loses some)
+const NET_GONE_X := 3
+const NET_LAP := 6              # packets a lap of all the clods may take (half a second) before the far ones go every other lap
+const NET_NEAR := 15.0          # m from the guest a clod's near
+const NET_T_SEND := 1.0 / 12.0
+const NET_LOST := 0.5           # s a puppet's not heard of before it's gone (longer when a lap is: _plost)
+const N_NEW := 0                # (cnet) a clod not sent yet; sent; one the guest has already (a blast's: thrown there too)
+const N_SENT := 1
+const N_OWN := 2
+const N_DUE := 4                # sent, and to go again in the next packet (its turn was skipped: _remove)
+const NET_WAIT := 3.5           # laps a puppet's not heard of before it's gone (two more when the far ones go every other lap)
 
 var grid                        # DigSiteGrid
 var origin := Vector3.ZERO      # its corner in the world
@@ -93,6 +113,10 @@ var direct_n := 0
 var frame := 0
 var held_n := 0                 # clods at a bucket's or a tray's boxes last step (the machines only look for ones to take in while there are any)
 var taken_n := 0                # (tests: clods taken into a bucket or a tray so far)
+var ghost := false              # a guest's: its clods are pictures (nothing in them, nothing laid on the ground)
+var net_on := false             # (the host's, a guest there) the clods gone are remembered for the next packet
+var net_tag := N_NEW            # what a new clod's marked (N_OWN while a blast the guest throws too is thrown)
+var host_n := 0                 # (the guest's) how many clods the host said it has, last
 
 # the clods (struct of arrays; a clod deleted is swapped with the last)
 var px := PackedFloat32Array()
@@ -115,6 +139,7 @@ var spn := PackedFloat32Array()
 var axx := PackedFloat32Array()
 var azz := PackedFloat32Array()
 var csz := PackedFloat32Array()   # its material, drawn size and shape packed as the shader takes them (_pack)
+var cnet := PackedByteArray()     # (co-op) N_NEW, N_SENT, N_OWN
 var n := 0
 # the settled, shrinking away (drawn only: their dirt's in the ground)
 var gx := PackedFloat32Array()
@@ -127,6 +152,35 @@ var gax := PackedFloat32Array()
 var gaz := PackedFloat32Array()
 var gt := PackedFloat32Array()
 var gn := 0
+# a guest's puppets: the host's clods as last heard of (number -> which, _pat), each gliding from where it was shown
+# to where it's said to be over the time between its last two hearings
+var qn := 0
+var _pat := {}
+var qid := PackedInt32Array()
+var qfx := PackedFloat32Array()
+var qfy := PackedFloat32Array()
+var qfz := PackedFloat32Array()
+var qtx := PackedFloat32Array()
+var qty := PackedFloat32Array()
+var qtz := PackedFloat32Array()
+var qt := PackedFloat32Array()    # when it was last heard of (_now)
+var qgap := PackedFloat32Array()  # how long it takes to get there
+var qsz := PackedFloat32Array()
+var qr := PackedFloat32Array()
+var qang := PackedFloat32Array()
+var qax := PackedFloat32Array()
+var qaz := PackedFloat32Array()
+var _now := 0.0
+var _plost := NET_LOST
+var _pseq := -1
+var _nseq := 0                    # (the host's) the next packet's number
+var _ncur := 0                    # where its turn's got to in the clods, and how many laps it's done
+var _nlap := 0
+var _nnew := 0                    # clods not sent yet, or due again (N_NEW, N_DUE): they go first
+var _pint := NET_T_SEND           # (the guest's) the time between the host's packets, as they come
+var _plast := 0.0
+var _ngone := PackedInt32Array()  # numbers gone to send (times left << 16 | number)
+var _nzero := 0                   # packets yet to say "none" (the last clod's gone: said NET_GONE_X times)
 
 var _w := 0
 var _d := 0
@@ -280,7 +334,7 @@ func take_in(t: Transform3D, was: Transform3D, half: Vector3, room: int, dt: flo
 
 ## mm of m straight onto the ground under p (world): what's too little for a clod
 func lay(p: Vector3, m: int, mm: int) -> void:
-	if mm > 0:
+	if mm > 0 and not ghost:
 		_lay(clampf(p.x, _x0, _x1), clampf(p.z, _z0, _z1), mm, m)
 
 ## Whether there's room for `more` clods now (fly_max, the time cap): a pour over a truck's tray that there's none
@@ -306,6 +360,8 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int, free := 0.0) -> bool:
 	if mm <= 0:
 		return false
 	if mm < CRUMB or n >= _room():
+		if ghost:
+			return false
 		direct_n += 1
 		var x := clampf(p.x, _x0, _x1)
 		var z := clampf(p.z, _z0, _z1)
@@ -333,6 +389,11 @@ func spawn(p: Vector3, v: Vector3, m: int, mm: int, free := 0.0) -> bool:
 	rest[n] = 0.0
 	hld[n] = 0.0
 	age[n] = -free                  # (under 0: just let go from a bucket)
+	if ghost:
+		mm = 0                      # (a picture: as big as the host's, nothing in it)
+	cnet[n] = net_tag
+	if net_tag == N_NEW:
+		_nnew += 1
 	cmm[n] = mm
 	cmat[n] = m
 	cid[n] = _next_id
@@ -492,6 +553,8 @@ func _pay_owed() -> void:
 
 # mm of m straight onto the ground at world (x, z) (what never became a clod), spread as a clod's is
 func _lay(x: float, z: float, mm: int, m: int) -> void:
+	if ghost:
+		return
 	var cx := (x - origin.x) * INV_CELL
 	var cz := (z - origin.z) * INV_CELL
 	var k := 4 if mm >= 250 else 2
@@ -507,6 +570,11 @@ func _lay(x: float, z: float, mm: int, m: int) -> void:
 
 func _remove(i: int) -> void:
 	_mass -= cmm[i]
+	var c := cnet[i]
+	if c == N_NEW or c == N_DUE:
+		_nnew -= 1
+	if net_on and (c == N_SENT or c == N_DUE):
+		_ngone.append(((NET_GONE_X - 1) << 16) | cid[i])
 	n -= 1
 	if i != n:
 		px[i] = px[n]
@@ -529,22 +597,32 @@ func _remove(i: int) -> void:
 		axx[i] = axx[n]
 		azz[i] = azz[n]
 		csz[i] = csz[n]
+		cnet[i] = cnet[n]
+		# (the last clod's come down here, behind where the packets' turn has got to, before its own turn came:
+		# it would wait a whole lap more. It goes in the next packet.)
+		if net_on and i < _ncur and n >= _ncur and cnet[i] == N_SENT:
+			cnet[i] = N_DUE
+			_nnew += 1
 
 # room for `most` clods (the arrays only ever grow: n is how many are in use)
 func _grow(most: int) -> void:
-	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, hld, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz]:
+	for a in [px, py, pz, vx, vy, vz, rad, nap, rest, age, hld, cmm, cmat, cid, gnd, ang, spn, axx, azz, csz, cnet]:
 		a.resize(most)
 
 # the frame's settled dirt laid on the ground
 func _flush() -> void:
 	for c in _dept:
-		grid.put_layer(c % _w, c / _w, _dep[c], _depm[c])
+		if _dep[c] > 0:             # (a guest's picture has nothing in it: nothing's laid, the ground's not touched)
+			grid.put_layer(c % _w, c / _w, _dep[c], _depm[c])
 		_dep[c] = 0
 	_dept.clear()
 
 ## Every clod settled where it is, now (a save, leaving, the host changing): all of it's in the ground after, what
 ## was owed too
 func land_all() -> void:
+	if ghost:
+		drop_ghosts()
+		return
 	for i in range(n - 1, -1, -1):
 		if _roofed(i):
 			_bury(i)
@@ -841,7 +919,7 @@ func step(dt: float) -> void:
 			for c in _ht:
 				_hm[c] = 0
 			_ht.clear()
-		if _mm and (gn > 0 or _shown != 0):
+		if _mm and (gn > 0 or qn > 0 or _shown != 0):
 			_draw(dt)
 			step_us = draw_us
 		return
@@ -1154,6 +1232,32 @@ func _draw(dt: float) -> void:
 		buf[o + 15] = azz[i]
 		o += 16
 		i += 1
+	# (a guest's) the host's clods, each on its way to where it was last said to be
+	var q := 0
+	var now := _now
+	while q < qn and i < most:
+		var f := minf((now - qt[q]) / qgap[q], 1.0)
+		var x := qfx[q] + (qtx[q] - qfx[q]) * f
+		var z := qfz[q] + (qtz[q] - qfz[q]) * f
+		if f < 1.0:
+			# (rolling: it turns as fast as it goes, about the line across its way)
+			var ux := (qtx[q] - qfx[q]) / qgap[q]
+			var uz := (qtz[q] - qfz[q]) / qgap[q]
+			var sp := sqrt(ux * ux + uz * uz)
+			if sp > 0.3:
+				qax[q] = uz / sp
+				qaz[q] = -ux / sp
+			qang[q] += minf(sp / qr[q], 12.0) * dt
+		buf[o + 3] = x
+		buf[o + 7] = qfy[q] + (qty[q] - qfy[q]) * f
+		buf[o + 11] = z
+		buf[o + 12] = qsz[q]
+		buf[o + 13] = qang[q]
+		buf[o + 14] = qax[q]
+		buf[o + 15] = qaz[q]
+		o += 16
+		i += 1
+		q += 1
 	var j := 0
 	while j < gn:
 		var t := gt[j] - dt
@@ -1190,3 +1294,216 @@ func _draw(dt: float) -> void:
 		_mm.visible_instance_count = i
 		_mmi.visible = i > 0
 	draw_us = Time.get_ticks_usec() - t0
+
+# ---------------------------------------------------------------- co-op (stage 8)
+
+## How many clods are to be seen here: its own, and (a guest's) the host's
+func shown() -> int:
+	return n + qn
+
+## (a guest's) every picture gone: its own clods (nothing in them) and the host's
+func drop_ghosts() -> void:
+	if ghost:
+		for i in range(n - 1, -1, -1):
+			_remove(i)
+		for c in _ht:
+			_hm[c] = 0
+		_ht.clear()
+	qn = 0
+	_pat.clear()
+	_pseq = -1
+	_pint = NET_T_SEND
+	host_n = 0
+	gn = 0
+	if _mm:
+		_draw(0.0)
+
+## (the host's) a guest's just come: every clod's new to it
+func net_reset() -> void:
+	_nnew = 0
+	for i in n:
+		cnet[i] = N_NEW
+	_nnew = n
+	_ngone.clear()
+	_ncur = 0
+	_nzero = 0
+
+## (the host's) whether there's anything to say: clods, or ones gone the guest's yet to hear of
+func net_due() -> bool:
+	return n > 0 or not _ngone.is_empty() or _nzero > 0
+
+## (the host's) the next packet, `most` bytes at most: its number; how many clods the guest should be seeing (those
+## not its own: a blast's it threw itself); how many packets a lap of them takes now (128 more: the far ones go every
+## other lap); the numbers of those gone since; then clods, NET_ONE bytes each: the ones never sent first, then the
+## rest in turn from where the last packet stopped. `near`: where the guest is (far ones wait when a lap's long).
+func net_pack(near: Vector3, most: int) -> PackedByteArray:
+	var b := PackedByteArray()
+	var own := 0
+	for i in n:
+		if cnet[i] == N_OWN:
+			own += 1
+	var mine := n - own
+	var g := mini(_ngone.size(), NET_GONE)
+	var room := maxi(0, (most - NET_HEAD - g * 2) / NET_ONE)
+	var lap := ceili(float(mine) / maxf(1.0, float(room)))
+	var skip := lap > NET_LAP
+	b.resize(NET_HEAD + g * 2 + mini(room, mine) * NET_ONE)
+	b[0] = _nseq & 255
+	_nseq += 1
+	b.encode_u16(1, mine)
+	b[3] = mini(lap, 127) | (128 if skip else 0)
+	b[4] = g
+	var o := NET_HEAD
+	for k in g:
+		var e := _ngone[k]
+		b.encode_u16(o, e & 0xffff)
+		o += 2
+		if (e >> 16) > 0:
+			_ngone.append(e - 0x10000)
+	if g > 0:
+		_ngone = _ngone.slice(g)
+	if mine == 0:
+		_nzero = maxi(0, _nzero - 1)
+		return b.slice(0, o)
+	_nzero = NET_GONE_X
+	var sent := 0
+	var picked := PackedInt32Array()
+	if _nnew > 0:
+		var i := n - 1                  # (the new ones are mostly the last)
+		while i >= 0 and sent < room and _nnew > 0:
+			if cnet[i] == N_NEW or cnet[i] == N_DUE:
+				cnet[i] = 3
+				_nnew -= 1
+				picked.append(i)
+				sent += 1
+			i -= 1
+	var seen := 0
+	var far2 := NET_NEAR * NET_NEAR
+	while sent < room and seen < n:
+		if _ncur >= n:
+			_ncur = 0
+			_nlap += 1
+		var i := _ncur
+		_ncur += 1
+		seen += 1
+		if cnet[i] != N_SENT:
+			continue
+		if skip and (_nlap & 1) != 0:
+			var dx := px[i] - near.x
+			var dz := pz[i] - near.z
+			if dx * dx + dz * dz > far2:
+				continue
+		picked.append(i)
+		sent += 1
+	var ox := origin.x
+	var oy := origin.y
+	var oz := origin.z
+	var inv := 1.0 / NET_Q
+	for i in picked:
+		cnet[i] = N_SENT
+		b.encode_u16(o, cid[i])
+		b.encode_u16(o + 2, clampi(roundi((px[i] - ox) * inv), 0, 65535))
+		b.encode_u16(o + 4, clampi(roundi((py[i] - oy) * inv), 0, 65535))
+		b.encode_u16(o + 6, clampi(roundi((pz[i] - oz) * inv), 0, 65535))
+		# (its size: which power of two blocks its radius is nearest, 0 .. 7)
+		var k := clampi(roundi(log(rad[i] * 16.0) * 4.328085), 0, 7)
+		b[o + 8] = (cmat[i] & 31) | (k << 5)
+		o += NET_ONE
+	return b.slice(0, o)
+
+## (a guest's) a packet from the host taken: the clods in it shown (new ones where they are, known ones set gliding
+## there), the ones gone taken away. One older than the last taken is dropped (the line can swap them).
+func net_unpack(b: PackedByteArray) -> void:
+	if b.size() < NET_HEAD:
+		return
+	var seq := b[0]
+	if _pseq >= 0:
+		var d := (seq - _pseq) & 255
+		if d == 0 or d > 128:
+			return
+		# (how often they really come: a host at 30 frames a second sends 10 a second, a busy one fewer)
+		_pint = clampf(lerpf(_pint, (_now - _plast) / d, 0.2), NET_T_SEND, 0.5)
+	_pseq = seq
+	_plast = _now
+	host_n = b.decode_u16(1)
+	var lap := b[3] & 127
+	# (how long one may go unheard of: NET_WAIT laps as the packets come, so one lost and a turn late don't drop it;
+	# two more when the far ones go every other lap)
+	_plost = maxf(NET_LOST, (NET_WAIT + 2.0 if (b[3] & 128) != 0 else NET_WAIT) * lap * _pint)
+	var g := b[4]
+	var o := NET_HEAD
+	if b.size() < o + g * 2:
+		return
+	for k in g:
+		var at: int = _pat.get(b.decode_u16(o), -1)
+		if at >= 0:
+			_pdrop(at)
+		o += 2
+	if host_n == 0:
+		while qn > 0:
+			_pdrop(qn - 1)
+		return
+	var ox := origin.x
+	var oy := origin.y
+	var oz := origin.z
+	var now := _now
+	while o + NET_ONE <= b.size():
+		var id := b.decode_u16(o)
+		var x := ox + b.decode_u16(o + 2) * NET_Q
+		var y := oy + b.decode_u16(o + 4) * NET_Q
+		var z := oz + b.decode_u16(o + 6) * NET_Q
+		var ms := b[o + 8]
+		o += NET_ONE
+		var at: int = _pat.get(id, -1)
+		if at < 0:
+			if qn >= FLY_MAX:
+				continue
+			if qn == qid.size():
+				for a in [qid, qfx, qfy, qfz, qtx, qty, qtz, qt, qgap, qsz, qr, qang, qax, qaz]:
+					a.resize(maxi(64, qn * 2))
+			at = qn
+			qn += 1
+			_pat[id] = at
+			qid[at] = id
+			qfx[at] = x
+			qfy[at] = y
+			qfz[at] = z
+			qgap[at] = NET_T_SEND
+			var r := 0.0625 * pow(2.0, (ms >> 5) / 3.0)
+			qr[at] = r
+			var k := (((id + 1) * 2654435761) >> 9) & 0x3fffffff
+			var t := (k & 1023) * (TAU / 1024.0)
+			qang[at] = t * 3.0
+			qax[at] = cos(t)
+			qaz[at] = sin(t)
+			qsz[at] = _pack(ms & 31, r * DRAW_K, ((k >> 13) & 255) / 256.0)
+		else:
+			# (from where it's shown now)
+			var gap := qgap[at]
+			var f := minf((now - qt[at]) / gap, 1.0)
+			qfx[at] += (qtx[at] - qfx[at]) * f
+			qfy[at] += (qty[at] - qfy[at]) * f
+			qfz[at] += (qtz[at] - qfz[at]) * f
+			qgap[at] = clampf(now - qt[at], NET_T_SEND, 0.6)
+		qtx[at] = x
+		qty[at] = y
+		qtz[at] = z
+		qt[at] = now
+
+func _pdrop(at: int) -> void:
+	_pat.erase(qid[at])
+	qn -= 1
+	if at != qn:
+		for a in [qid, qfx, qfy, qfz, qtx, qty, qtz, qt, qgap, qsz, qr, qang, qax, qaz]:
+			a[at] = a[qn]
+		_pat[qid[at]] = at
+
+## (a guest's) a frame of dt: its clock on, the puppets not heard of for too long gone (their clods settled and every
+## word of it lost, or the host's gone quiet)
+func ghost_tick(dt: float) -> void:
+	_now += dt
+	var i := qn - 1
+	while i >= 0:
+		if _now - qt[i] > _plost:
+			_pdrop(i)
+		i -= 1

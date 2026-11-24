@@ -409,7 +409,7 @@ func home() -> void:
 		lamp.visible = false
 	net.left()
 	if dirt:
-		dirt.land_all()                       # (what's in the air is put down: nothing's left hanging, nothing's lost)
+		dirt.land_all()                       # (what's in the air is put down: nothing's left hanging, nothing's lost; a guest's pictures of the host's just go)
 	DsSave.save(self)
 	active = false
 	visible = false
@@ -441,8 +441,9 @@ func _process(_dt: float) -> void:
 	if not active:
 		return
 	# (kept every minute you're here, as well as when you leave: a crash loses a minute)
+	# (a save puts every clod down first, DsSave: so it waits up to 10 s for a moment there are none in the air)
 	_save_in -= _dt
-	if _save_in <= 0.0:
+	if _save_in <= 0.0 and (dirt == null or dirt.n == 0 or _save_in <= -10.0):
 		_save_in = 60.0
 		DsSave.save(self)
 	_step_dirt(_dt)
@@ -461,11 +462,22 @@ func _process(_dt: float) -> void:
 		var top = terrain.grid.column_top(c.x, c.z)
 		lamp.visible = terrain.contains(p) and top > c.y + 1
 
-# The clods (DsDirt) stepped, 60 times a second whatever the frame rate (two steps a frame at most), where the dirt
-# runs (solo, or the host); the machines' boxes handed to them first (only while there are any)
+# The clods (DsDirt) stepped, 60 times a second whatever the frame rate (two steps a frame at most); the machines'
+# boxes handed to them first (only while there are any). Where the dirt runs (solo, or the host) they're the dirt; a
+# guest's are pictures: the host's clods as it's told of them, and a blast's that it throws itself (stage 8).
 func _step_dirt(dt: float) -> void:
-	if dirt == null or dirt_paused or not net.runs():
+	if dirt == null:
 		return
+	var g: bool = not net.runs()
+	if g != dirt.ghost:
+		# (this game's joined a mate's, or its host has gone and the ground here is its own now: what's real is put
+		# down in the ground that's its own; pictures just go)
+		dirt.land_all()
+		dirt.ghost = g
+	if dirt_paused:
+		return
+	if g:
+		dirt.ghost_tick(dt)
 	_dirt_acc = minf(_dirt_acc + dt, 2.0 / 60.0)
 	while _dirt_acc >= 1.0 / 60.0 - 0.00001:
 		_dirt_acc -= 1.0 / 60.0

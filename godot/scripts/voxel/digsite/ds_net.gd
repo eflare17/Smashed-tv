@@ -22,9 +22,16 @@ const HASH_T := 2.0
 const PART := 48000
 const FAST := 68                # (the fast messages' first byte: a Dig Site machine's state)
 const MOST_CHUNKS := 240        # chunks a diff at most (the rest next time)
+const CLODS := 100              # the fast id the clods go by (the machines': 1 .. 5, and 128 more for a driver's controls)
+const CLOD_HZ := 12.0           # packets of clods a second (DsDirt.net_pack) ...
+const CLOD_BYTES := 440         # ... each this long at most, the two bytes ahead of it in that: 5.3 kB a second at the very most
 
 var site: Node3D                # DigSite
-var stats = {"ch": 0, "ch_bytes": 0, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0}
+var stats = {"ch": 0, "ch_bytes": 0, "ops": 0, "fixes": 0, "hashes": 0, "match": 0, "world_bytes": 0, "clod_n": 0, "clod_bytes": 0, "clod_most": 0}
+var _clod_t = 0.0
+var _clod_sec = 0.0            # (the second being counted, and its bytes: stats.clod_most is the most in one)
+var _clod_sec_b = 0
+var _clods_out = false         # the host's dirt had clods awake last frame
 # the host's
 var guest_here = false
 var _applied = 0               # the guest's last action done here
@@ -50,6 +57,44 @@ var _fast = {}                 # id -> Callable(d: PackedByteArray)
 func setup(s: Node3D) -> void:
 	site = s
 	name = "Net"
+	register_fast(CLODS, _clods_in)
+
+# (the guest's) a packet of the host's clods
+func _clods_in(d: PackedByteArray) -> void:
+	if role() == "guest" and synced and site.dirt != null and site.dirt.ghost:
+		stats.clod_n += 1
+		stats.clod_bytes += d.size() + 2
+		site.dirt.net_unpack(d)
+
+# (the host's, a guest there) the clods, CLOD_HZ times a second; and when the last of them has just come to rest,
+# the ground's changes and its checksums at once (the guest's ground is whole the moment its mate's is)
+func _send_clods(dt: float) -> void:
+	var d: DsDirt = site.dirt
+	if d == null:
+		return
+	d.net_on = true
+	_clod_sec += dt
+	if _clod_sec >= 1.0:
+		_clod_sec -= 1.0
+		stats.clod_most = maxi(stats.clod_most, _clod_sec_b)
+		_clod_sec_b = 0
+	_clod_t += dt
+	if _clod_t >= 1.0 / CLOD_HZ:
+		_clod_t = minf(_clod_t - 1.0 / CLOD_HZ, 1.0 / CLOD_HZ)      # (what's over is kept: CLOD_HZ a second, whatever the frames)
+		if d.net_due():
+			var n = _net()
+			var o = n.get("other") if n else null
+			var near: Vector3 = (o as Node3D).global_position if o != null and is_instance_valid(o) and o is Node3D else Vector3(site.arena.player.global_position)
+			var body: PackedByteArray = d.net_pack(near, CLOD_BYTES - 2)
+			send_fast(CLODS, body)
+			stats.clod_n += 1
+			stats.clod_bytes += body.size() + 2
+			_clod_sec_b += body.size() + 2
+	var out: bool = d.n > 0
+	if _clods_out and not out:
+		_diff_t = 1.0 / DIFF_HZ
+		_hash_t = HASH_T
+	_clods_out = out
 
 func register_op(kind: String, fn: Callable) -> void:
 	_ops[kind] = fn
@@ -154,6 +199,8 @@ func _drop_shared() -> void:
 	_want = false
 	_pending.clear()
 	_outbox.clear()
+	if site.dirt:
+		site.dirt.drop_ghosts()           # (the host's clods' pictures: they're not this ground's)
 
 # ---------------------------------------------------------------- each frame
 
@@ -183,7 +230,10 @@ func _process(dt: float) -> void:
 		return
 	# the host: what's changed to the guest, and now and then the checksums
 	if not guest_here:
+		if site.dirt:
+			site.dirt.net_on = false
 		return
+	_send_clods(dt)
 	_diff_t += dt
 	_hash_t += dt
 	if _diff_t >= 1.0 / DIFF_HZ or _hash_t >= HASH_T:
@@ -224,6 +274,8 @@ func on_net(m: Array) -> void:
 			_applied = 0
 			_acked = 0
 			guest_here = true
+			if site.dirt:
+				site.dirt.net_reset()                     # (every clod in the air is new to it)
 			stats.world_bytes = z.size()
 			var n = maxi(1, ceili(float(z.size()) / PART))
 			for i in n:

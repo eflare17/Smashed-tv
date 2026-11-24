@@ -4,7 +4,9 @@ extends RefCounted
 ## changed from how it's made (DigSiteGrid.modified_chunks, packed as the co-op game sends it to a mate joining, the
 ## loose dirt with it), the grass worn bare, and where each machine's parked. Beside the game's own save
 ## (VoxelStorages.save_path + ".digsite"; none where that's none: the tests, --nosave). Your own site only: a
-## guest at a mate's doesn't save theirs. Not kept: what's in a bucket or the truck's tray. Owned by the voxel session.
+## guest at a mate's doesn't save theirs. Not kept: what's in a bucket or the truck's tray. The clods in the air are
+## put down in the ground first (DsDirt.land_all: the dirt physics' stage 8), so what's saved is all of the dirt.
+## Owned by the voxel session.
 
 const VERSION := 1
 
@@ -16,6 +18,8 @@ static func save(site: DigSite) -> bool:
 	var p = path(site)
 	if p == "" or not site.built or site.terrain == null or site._is_guest():
 		return false
+	if site.get("dirt") != null:
+		site.dirt.land_all()
 	var g = site.terrain.grid
 	var chunks: PackedByteArray = g.pack_chunks(g.modified_chunks())
 	var machines = []
