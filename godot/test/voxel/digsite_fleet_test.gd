@@ -54,7 +54,7 @@ func _on(m: DsMachine) -> void:
 	var ds := _ds()
 	if ds.machines.driving:
 		ds.machines.get_off()
-	var at := m.global_position - m.right() * (m.width * 0.5 + 0.8)
+	var at = m.global_position - m.right() * (m.width * 0.5 + 0.8)
 	ds._put(Vector3(at.x, m.ground_y(at.x, at.z) + 0.05, at.z), 0.0, 0.0)
 	ds.machines._process(0.0)
 	ds.machines.use()
@@ -173,7 +173,7 @@ func _solo() -> bool:
 			var tk := _m(4) as DsTruck
 			if (tk.load_n == 0 and tk.falling_n() == 0) or t - mark > 8.0:
 				tk.tip_cmd = -1.0
-				var now := _ground() + (_m(3) as DsExcavator).load_n + (_m(2) as DsBobcat).load_n + tk.load_n
+				var now = _ground() + (_m(3) as DsExcavator).load_n + (_m(2) as DsBobcat).load_n + tk.load_n
 				check(tk.load_n == 0, "R tips it: the load pours out behind")
 				check(now == int(v.total), "not a block made or lost (%d, %d)" % [now, v.total])
 				_next(11)
