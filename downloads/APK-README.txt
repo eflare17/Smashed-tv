@@ -2,8 +2,8 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,124,149 bytes (40.2 MB)
-SHA-256:  0e0092ffd2517e19af8cd9f2ec5c352594374404eba358aab9a82195a2191bc7
+Size:     42,128,245 bytes (40.2 MB)
+SHA-256:  f2ad34f53ebea081eb823d033f5af30bdf249dadfc21862808c7c928ce47b17a
 Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
 Phones:   64-bit ARM (arm64-v8a) -- a Galaxy S25 or anything else from the last ten years.
           Android 5.0 or newer. Nothing else is in the file: no 32-bit, no Intel.
@@ -47,6 +47,18 @@ WHAT IS IN IT
   of it, and APPLY RECOMMENDED runs the benchmark and picks a preset for you.
   If it feels smooth, try Medium -- native is a good deal faster than the
   browser was and the Low default is deliberately careful.
+- Swinging the view round no longer hitches. The phone's renderer compiles a
+  shader the first time anything is really drawn with it, which is why turning
+  used to stutter the first time you looked somewhere new; the game now turns
+  the camera right round behind the loading screen so all of that is done
+  before you can touch anything. It costs a couple of seconds of loading and
+  it happens every launch, not just the first.
+- The enemies have their blocks back, and it is a setting now: "Enemy detail
+  (cube size)" in SET, Fine on every preset including Low. There is a second
+  row, "Your own blocks", for the Jared you see top-down, in the bedroom
+  mirror and in co-op -- that one still starts Chunky on Low, because he is
+  eight times the blocks of an enemy and all of it is built while you wait on
+  the loading screen. Turn him up if you do not mind the wait.
 
 WHAT IS NOT IN IT
 -----------------
@@ -68,9 +80,11 @@ app's own private storage and go when you uninstall it.
 
 FIRST RUN
 ---------
-It loads in nine named steps with a "Loading: step N of 9" line on a dark
-screen. The yard is the slow one. Give it some seconds the first time; it is
-building the world, not stuck. After that it is the same every launch.
+It loads in ten named steps with a "Loading: step N of 10" line on a dark
+screen. The yard is the slow one, and the last step before "done" is the
+camera being swung round to warm the picture up. Give it some seconds; it is
+building the world, not stuck. It does the same on every launch, not only the
+first one.
 
 Nobody has run this build on a phone yet -- it was built and inspected on a
 machine with no Android device attached. If it falls over, the thing worth
