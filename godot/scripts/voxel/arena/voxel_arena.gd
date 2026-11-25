@@ -2108,7 +2108,7 @@ func _process(dt: float) -> void:
 		sound.stop("burning")       # (joined while something here burned: the host's fire isn't run here)
 	var t2 := Time.get_ticks_usec()
 	for b in bodies:
-		var moving := b.alive and not frozen
+		var moving := b.alive and (not frozen or b.has_meta("walks"))   # ("walks": moved by a level of its own, as Demolition's are)
 		if not b.alive:
 			if not b.frozen():
 				b.dead_t += dt        # (frozen mid-fall, a statue: it falls the rest of the way once it thaws)
@@ -2487,6 +2487,8 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			var wb := walls()
 			if wb:
 				wb.shot(wh, d, float(opts.get("wall", 1.0 / 3.0)))   # (a St Kilda or Demolition building: the bricks it hit knocked out)
+			if demolition and demolition.active:
+				demolition.world_shot(wh.get("collider"))            # (Demolition's gas bottles, pumps, tanker: up it goes)
 		_tracer_list.append({"a": muzzle, "b": end, "t": 0.06})
 		if best_b:
 			var rr := r

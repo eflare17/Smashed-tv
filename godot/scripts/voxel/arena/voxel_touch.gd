@@ -9,6 +9,8 @@ extends CanvasLayer
 ##     < > (the weapon before / after); a tap on a slot of the weapon bar takes that one out
 ##   top right: ... shows or hides PHONE, BAG, VIEW, HELP, SET, ONLINE
 ##   a menu open: taps are clicks (the first finger is the mouse), X closes it
+##   driving Demolition's crane: the cluster goes and the crane's own buttons take its place (BOOM < >, CABLE ^ v,
+##     OUT), the left stick drives the tracks and turns it; out of the cab they go back
 ## The game is fed through one shim: buttons send the same InputEventKey / InputEventMouseButton the keyboard and mouse
 ## would (Input.parse_input_event), the stick sets `move` (VoxelArena reads it in place of WASD), a look drag calls
 ## VoxelArena.look_by (what the mouse's motion calls). No pointer lock: grab() / grabbed() stand in for
@@ -16,7 +18,8 @@ extends CanvasLayer
 ## voxel-web-touch session.
 
 enum {B_FIRE, B_AIM, B_USE, B_RELOAD, B_PREV, B_NEXT, B_JUMP, B_MORE, B_PHONE, B_BAG, B_VIEW, B_HELP, B_SET, B_ONLINE,
-	B_LANE_PREV, B_LANE_NEXT, B_CLOSE, B_TAKE_OFF, B_N1, B_N2, B_N3, B_N4, B_COUNT}
+	B_LANE_PREV, B_LANE_NEXT, B_CLOSE, B_TAKE_OFF, B_N1, B_N2, B_N3, B_N4,
+	B_BOOM_L, B_BOOM_R, B_CABLE_UP, B_CABLE_DOWN, B_CRANE_OUT, B_COUNT}
 enum {K_KEY, K_MOUSE, K_WHEEL, K_MORE}
 enum {F_NONE, F_STICK, F_LOOK, F_BUTTON, F_SLOT, F_UI}
 ## each button: [label, kind, key or mouse button, half its size (x, y) at scale 1, round]
@@ -43,8 +46,19 @@ const DEFS := [
 	["2", K_KEY, KEY_2, Vector2(44, 44), false],
 	["3", K_KEY, KEY_3, Vector2(44, 44), false],
 	["4", K_KEY, KEY_4, Vector2(44, 44), false],
+	["BOOM <", K_KEY, KEY_LEFT, Vector2(58, 42), false],
+	["BOOM >", K_KEY, KEY_RIGHT, Vector2(58, 42), false],
+	["CABLE ^", K_KEY, KEY_UP, Vector2(54, 42), false],
+	["CABLE v", K_KEY, KEY_DOWN, Vector2(54, 42), false],
+	["OUT", K_KEY, KEY_E, Vector2(48, 48), true],
 ]
 const CLUSTER := [B_FIRE, B_AIM, B_USE, B_RELOAD, B_PREV, B_NEXT, B_JUMP]
+## Driving Demolition's crane: the boom round, the cable in and out, and out of the cab. The left stick drives it (its
+## W A S D are the tracks and the turn) and a drag on the right still looks about, so these are what's left. Two rows
+## in the bottom right corner where the weapons' cluster was, filled right to left under the right thumb; a phone held
+## upright that hasn't the width for a row shrinks them to fit it rather than push one off the screen.
+const CRANE_ROWS := [[B_CABLE_DOWN, B_BOOM_R, B_BOOM_L], [B_CABLE_UP, B_CRANE_OUT]]
+const CRANE_Y := [-58.0, -152.0]        # each row, above the weapon bar, at scale 1
 ## (where each of the cluster is from the screen's bottom right corner, above the weapon bar, at scale 1)
 const CLUSTER_AT := [Vector2(-118, -130), Vector2(-262, -55), Vector2(-380, -55), Vector2(-262, -160), Vector2(-265, -255),
 	Vector2(-180, -255), Vector2(-70, -280)]
@@ -99,6 +113,7 @@ var _nums := 0
 var _lanes := false
 var _lock := false
 var _top := false
+var _crane := false             # in Demolition's crane: the crane's buttons in the cluster's place
 
 ## Touch mode for this game? opts: the game's options (--touch, the page's ?touch / ?notouch). On the web: a touch screen
 ## with no mouse or trackpad (a coarse pointer).
@@ -205,7 +220,22 @@ func _layout() -> void:
 	for j in CLUSTER.size():
 		var b: int = CLUSTER[j]
 		_at[b] = corner + (CLUSTER_AT[j] as Vector2) * k
-		_show[b] = 0 if ui else 1
+		_show[b] = 0 if (ui or _crane) else 1
+	# in the crane's cab: the weapons' cluster is gone (no weapon works from in there) and the crane's own is up
+	var ck := k
+	for row in CRANE_ROWS:
+		var need := 34.0
+		for b2: int in row:
+			need += (DEFS[b2][3] as Vector2).x * 2.0 + 10.0
+		ck = minf(ck, vs.x / maxf(need, 1.0))
+	for r in CRANE_ROWS.size():
+		var cx := vs.x - 14.0 * ck
+		var cy: float = corner.y + CRANE_Y[r] * ck
+		for b3: int in CRANE_ROWS[r]:
+			_half[b3] = (DEFS[b3][3] as Vector2) * ck
+			_at[b3] = Vector2(cx - _half[b3].x, clampf(cy, _half[b3].y + 6.0, vs.y - _half[b3].y - 6.0))
+			_show[b3] = 1 if (_crane and not ui) else 0
+			cx -= _half[b3].x * 2.0 + 10.0 * ck
 	# top right: X (a menu up), or ... and its row (wrapped where it runs out of room: a phone held upright)
 	var m := 16.0 * k
 	_at[B_CLOSE] = Vector2(vs.x - m - _half[B_CLOSE].x, m + _half[B_CLOSE].y)
@@ -499,10 +529,14 @@ func _process(_dt: float) -> void:
 	var hack = arena.stkilda.hack if arena.stkilda else null
 	var nums := 4 if (hack and hack._open) else 0
 	var lanes: bool = arena.gun_range != null and arena.gun_range.active
-	if lock != _lock or nums != _nums or lanes != _lanes or get_viewport().get_visible_rect().size != _size:
+	var crane: bool = arena.demolition != null and arena.demolition.driving()
+	if lock != _lock or nums != _nums or lanes != _lanes or crane != _crane or get_viewport().get_visible_rect().size != _size:
 		_lock = lock
 		_nums = nums
 		_lanes = lanes
+		if crane != _crane:
+			_let_go_all()               # (in or out of the cab: nothing stays held, no key left down)
+			_crane = crane
 		redo = true
 	if redo:
 		_layout()
@@ -549,7 +583,8 @@ func _draw_pad() -> void:
 		var h := _half[b]
 		var down := _held[b] >= 0
 		var label := String(DEFS[b][0])
-		var fs := int((26.0 if b == B_FIRE else 20.0) * k)
+		var kb := h.x / maxf((DEFS[b][3] as Vector2).x, 1.0)      # (this button's own scale: the crane's row shrinks to fit)
+		var fs := int((26.0 if b == B_FIRE else 20.0) * kb)
 		if DEFS[b][4]:
 			var hot := b == B_USE and _use_cap != ""
 			_pad.draw_circle(c, h.x, Color(1, 1, 1, 0.4) if down else (Color(0.9, 0.7, 0.1, 0.45) if hot else Color(0.03, 0.04, 0.07, 0.45)))
@@ -559,7 +594,7 @@ func _draw_pad() -> void:
 		else:
 			_pad.draw_style_box(_sb_down if down else _sb, Rect2(c - h, h * 2.0))
 			if label.length() > 5:
-				fs = int(17.0 * k)
+				fs = int(17.0 * kb)
 		_text(c, label, fs, Color.WHITE)
 		if b == B_USE and _use_cap != "":
 			_text(c + Vector2(0, -h.y - 14.0 * k), _use_cap, int(17.0 * k), Color(1, 0.9, 0.5))
