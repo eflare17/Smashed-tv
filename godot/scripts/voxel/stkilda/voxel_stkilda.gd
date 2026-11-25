@@ -190,6 +190,9 @@ func go() -> void:
 	_put(s[0], s[1], 0.0)
 	rain.arrived()
 	VoxelBody.wall_at = breaks.solid           # (bodies knocked flying bounce off the buildings)
+	# the park's shaders compiled now, behind a cover, instead of one at a time as the view swings onto each ride
+	# (VoxelArena.prewarm_view; it does nothing where the renderer compiles up front)
+	arena.prewarm_view("Luna Park")
 
 ## Home to the arena, where you were.
 func home() -> void:

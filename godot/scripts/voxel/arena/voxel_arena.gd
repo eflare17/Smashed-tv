@@ -21,6 +21,8 @@ extends Node3D
 const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batter", "batter", "charger", "thrower", "shielder"]
 const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9, "charger": 1.75, "thrower": 1.85, "shielder": 2.2, "boss": 4.4}
 const MAX_JOBS := 12            # meshing jobs running at once
+const PREWARM_YAWS := 12        # warming the picture up: views round the compass, ...
+const PREWARM_PITCHES := [-0.55, -0.05, 0.5]      # ... at each of these pitches (down at the floor, level, up)
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
 const PILLAR_HALF := 0.6        # half a pillar's width (they're 3.5 m tall)
@@ -197,12 +199,13 @@ func _ready() -> void:
 	VoxelTouch.detect(_opts)        # (a phone's browser, ?touch: before the settings, which start on Low there)
 	# a phone's browser (or --staged): the start-up a step a frame, each named on screen and in the console, so a phone
 	# that stops can be told where (chrome://inspect); nothing of the half-made arena runs till it's done
-	jared_chunk = 2 if (_opts.has("lightjared") or VoxelTouch.phone()) else 1
+	if _opts.has("lightjared"):
+		jared_chunk = 2         # (--lightjared: Jared's blocks an eighth as many, whatever the settings say)
 	_staged = _opts.has("staged") or VoxelTouch.phone()
 	_boot_t = Time.get_ticks_msec()
 	_boot_0 = _boot_t
 	var luna_first: bool = _opts.has("stkilda") or _opts.has("carousel") or _opts.has("invasion")
-	_boot_steps = 10 if luna_first else 9
+	_boot_steps = (10 if luna_first else 9) + (1 if prewarm_wanted() else 0)
 	if _staged:
 		process_mode = Node.PROCESS_MODE_DISABLED
 		var bl := CanvasLayer.new()
@@ -420,6 +423,9 @@ func _ready() -> void:
 		touch_on()
 	if _opts.has("phone"):
 		phone.open()
+	if prewarm_wanted():
+		await _boot("warming the picture up")
+		await prewarm_view("Warming the picture up")
 	await _boot("done")
 	if _staged:
 		process_mode = Node.PROCESS_MODE_INHERIT
@@ -568,6 +574,15 @@ func _player() -> void:
 	_flash.light_energy = 0.0
 	add_child(_flash)
 	# Juicy Jared in blocks, seen in the top-down view
+	remake_avatar()
+
+## Your own Jared built (again, at the cube size the settings ask for: "Your own blocks"). Seen top-down, in the
+## bedroom's mirror, by your co-op mate and on the Scenic Railway.
+func remake_avatar() -> void:
+	if avatar:
+		avatar.queue_free()
+		_hands.clear()          # (they hung on his old skeleton: the weapon goes back in his hand next frame)
+		_hand_id = "-"
 	avatar = VoxelBody.new()
 	add_child(avatar)
 	avatar.setup("jared_new", 0.0125 * jared_chunk, jared_chunk, _mat)       # (Jared sculpted from scratch: JaredBuild)
@@ -1379,9 +1394,12 @@ func _respawn_all(count := -1, kinds_back: Array = []) -> void:
 
 var _boot_steps := 9
 ## Jared's own blocks (your avatar top-down and in the mirror, your mate, you on the coaster): 1 a sprite pixel a cube
-## (650,000 cells: 13 s of a browser's start-up to flesh out and mesh), 2 on a phone's browser (an eighth of them).
+## (650,000 cells: 13 s of a browser's start-up to flesh out and mesh), 2 an eighth of them. The settings' "Your own
+## blocks" row sets it (VoxelSettings: Low chunky, the rest fine); --lightjared forces chunky. It used to be forced
+## chunky on every phone with no way to turn it off, which is half of why the owner said the characters looked worse.
 static var jared_chunk := 1
 var _staged := false            # the start-up a step a frame (a phone's browser)
+var _prewarming := false        # prewarm_view is turning the view round now (it doesn't start twice over)
 var _boot_i := 0
 var _boot_t := 0
 var _boot_0 := 0
@@ -1404,6 +1422,70 @@ func _boot(what: String) -> void:
 		await get_tree().process_frame
 		await get_tree().process_frame
 	_boot_t = Time.get_ticks_msec()
+
+# ---------------------------------------------------------------- warming the picture up
+
+## Why: the browser's WebGL (and the phone's, native or not: both run Godot's Compatibility renderer) compiles a
+## shader the first time something is actually drawn with it, and the game stops dead while it does. Standing still
+## you never notice, because what's in front of you was compiled on the first frame -- but swing the view round and
+## every new wall, ride, sign and lamp brings its own compile with it, which is what the owner felt on 25 Nov: "when
+## I move the camera it lags". Measured in the real browser build (test/voxel/voxel_perf_sweep.gd --spin, and the
+## same spin driven through Chromium): turning right round for the first time, the worst frames were 2 to 5 times a
+## normal one; turning round again, with everything already compiled, there were no spikes at all. So it is
+## first-sight compiling, not per-frame work -- and first-sight work can be done early.
+## Forward+ on a PC compiles up front and doesn't need this.
+func prewarm_wanted() -> bool:
+	if _opts.has("noprewarm") or DisplayServer.get_name() == "headless":
+		return false
+	return _staged or OS.has_feature("web") or _opts.has("prewarm")
+
+## Turns the camera right round on the spot, up and down as well, a frame at a time, so everything in sight is drawn
+## once -- and compiled -- before the player can touch anything. Behind the loading screen it costs nothing they can
+## see; called anywhere else (arriving at Luna Park, which has its own few seconds of building) it puts up a cover of
+## its own, so they don't watch the view whip around. `label`: what the cover says ("" to use the loading screen
+## that's already up).
+func prewarm_view(label: String) -> void:
+	if cam == null or _prewarming or not prewarm_wanted():
+		return
+	_prewarming = true
+	var cover: CanvasLayer = null
+	if _boot_label == null:
+		cover = CanvasLayer.new()
+		cover.layer = 60
+		add_child(cover)
+		var bg := ColorRect.new()
+		bg.color = Color(0.03, 0.02, 0.06)
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		cover.add_child(bg)
+		var lb := Label.new()
+		lb.text = label
+		lb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lb.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lb.add_theme_font_size_override("font_size", 34)
+		lb.add_theme_color_override("font_color", Color("#f7a8ff"))
+		cover.add_child(lb)
+		await get_tree().process_frame            # (the cover up before the view starts turning)
+	var t0 := Time.get_ticks_msec()
+	var yaw0 := look_yaw
+	var pitch0 := look_pitch
+	var eye: Vector3 = player.global_position + Vector3(0, 1.65, 0)
+	for pitch in PREWARM_PITCHES:
+		for i in PREWARM_YAWS:
+			look_yaw = yaw0 + TAU * float(i) / float(PREWARM_YAWS)
+			look_pitch = pitch
+			# set straight on the camera too: through the loading screen the arena isn't processing, so nothing else
+			# would place it
+			cam.global_position = eye
+			cam.rotation = Vector3(look_pitch, look_yaw, 0.0)
+			await get_tree().process_frame
+	look_yaw = yaw0
+	look_pitch = pitch0
+	cam.rotation = Vector3(pitch0, yaw0, 0.0)
+	print("VoxelArena: picture warmed up in %d ms (%d views)" % [Time.get_ticks_msec() - t0, PREWARM_PITCHES.size() * PREWARM_YAWS])
+	if cover:
+		cover.queue_free()
+	_prewarming = false
 
 ## The view turned by the mouse's movement (or a touch's drag: VoxelTouch), in pixels.
 func look_by(rel: Vector2) -> void:
