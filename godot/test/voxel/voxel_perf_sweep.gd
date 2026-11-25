@@ -22,6 +22,13 @@ extends SceneTree
 ## spiking on lap two happens every time the view moves). It also says how many instances came newly into view at
 ## each step, so a spike can be read against what caused it.
 ##
+## --walk (the owner, 25 Nov: "it only seems to stutter when I'm using both sticks"): the same ground covered three
+## ways from the same spot -- walking straight ahead with the view still, standing still and turning the view, and both
+## at once -- so the two can be told apart from the pair. Each step moves and/or turns and then measures straight away,
+## as --spin does, and says how many instances came newly into view, because walking while turning sweeps new scenery
+## in faster than either alone. If the game code spikes here it is the game code; if it does not and the browser still
+## stutters with two thumbs down, it is the drawing or the browser's own input, not the logic.
+##
 ## Prints PASS or FAIL: FAIL if the route couldn't be walked (no Luna Park, no spots). The numbers themselves are for
 ## reading, not for passing: a phone's budget is 16.7 ms a frame and the arena/Luna lines say how much of that the game
 ## code alone takes. Owned by the voxel phone-performance session.
@@ -59,6 +66,12 @@ const SPIN := {
 }
 const SPIN_STEP := 15.0          # degrees the view turns between measurements
 const SPIN_FRAMES := 8           # frames measured at each step (not settled first: the hitch is in the first one)
+## --walk: from each of the SPIN spots, 24 steps of this much (a step is about what 4.5 m/s walking covers in the 8
+## frames measured, and the turn is the same per-step turn --spin uses)
+const WALK_STEP := 0.6           # metres forward a step
+const WALK_STEPS := 24
+const WALK_WAYS := ["the left stick alone (walking, view still)", "the look drag alone (turning on the spot)",
+	"both at once (walking and turning)"]
 
 var arena: VoxelArena
 var presets := ["low", "high"]
@@ -67,6 +80,7 @@ var frames := 90
 var ablate := false
 var spin := false
 var chars := false
+var walk := false
 var fails := []
 var lines := []                  # every row printed, for the summary at the end
 
@@ -84,6 +98,8 @@ func _initialize() -> void:
 			spin = true
 		elif x == "--chars":
 			chars = true
+		elif x == "--walk":
+			walk = true
 	seed(20261125)
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
@@ -226,6 +242,9 @@ func _run() -> void:
 		return
 	if spin:
 		await _spin_run()
+		return
+	if walk:
+		await _walk_run()
 		return
 	# a lap of both places first, with nothing measured: Luna Park is built, every view's meshes are made and the
 	# meshing jobs that a preset's cube size sets off are finished, so the first place measured isn't charged for it
@@ -421,6 +440,101 @@ func _visible_set() -> Dictionary:
 			continue
 		out[vi.get_instance_id()] = true
 	return out
+
+# ================================================================ --walk: walking, turning, and both at once
+
+func _walk_run() -> void:
+	# the park built and both presets' meshes made first, so step one isn't charged for building the place
+	for p in ["low", "high"]:
+		arena.settings_menu.s.set_preset(p)
+		arena.settings_menu.s.apply(arena)
+		arena.stkilda.go()
+		_stand("luna", SPIN.luna[0])
+		await _settle()
+		arena.stkilda.home()
+		_stand("arena", SPIN.arena[0])
+		await _settle()
+	print("WALK (the park built, the presets' meshes made)")
+	for p in presets:
+		if where != "luna":
+			await _walk_place("arena", p)
+		if where != "arena":
+			await _walk_place("luna", p)
+	print("WALK ==================================================== the lot")
+	for l in lines:
+		print("WALK ", l)
+	print("PASS" if fails.is_empty() else "FAIL (%d)" % fails.size())
+	done = true
+
+func _walk_place(place: String, preset: String) -> void:
+	var s := arena.settings_menu.s
+	s.set_preset(preset)
+	s.apply(arena)
+	if place == "luna":
+		if not arena.stkilda.active:
+			arena.stkilda.go()
+	elif arena.stkilda.active:
+		arena.stkilda.home()
+	_check(not SPIN[place].is_empty(), "%s %s: spots to walk from" % [place, preset])
+	for spot in SPIN[place]:
+		for way in 3:
+			# each way starts from the same place looking the same way, and every way is run twice: the second lap
+			# has seen the ground before, so anything still spiking there happens every time
+			for lap in 2:
+				_stand(place, spot)
+				arena.look_pitch = -0.1
+				await _settle()
+				await _walk_lap("%s %s / %s" % [place, preset, spot[0]], way, lap, place)
+
+## One lap: WALK_STEPS steps of moving (way 0), turning (way 1) or both (way 2), SPIN_FRAMES frames measured straight
+## after each one.
+func _walk_lap(tag: String, way: int, lap: int, place: String) -> void:
+	var start: float = arena.look_yaw
+	var all := []
+	var firsts := []                 # the frame right after each step
+	var worst := [0.0, 0, 0]         # [ms, step, newly in view]
+	var fresh_tot := 0
+	var seen := _visible_set()
+	for i in WALK_STEPS:
+		var n := i + 1
+		if way != 0:
+			# the view turned, as --spin does; a walk-only lap keeps it where it started
+			arena.look_yaw = start + deg_to_rad(SPIN_STEP * n)
+		if way != 1:
+			_walk_to(place, start, WALK_STEP * n)
+		var ms := []
+		var last := Time.get_ticks_usec()
+		for f in SPIN_FRAMES:
+			await process_frame
+			var now := Time.get_ticks_usec()
+			ms.append(float(now - last) / 1000.0)
+			last = now
+		var now_seen := _visible_set()
+		var f2 := 0
+		for k in now_seen:
+			if not seen.has(k):
+				f2 += 1
+		seen = now_seen
+		fresh_tot += f2
+		all += ms
+		firsts.append(ms[0])
+		if ms[0] > worst[0]:
+			worst = [ms[0], i, f2]
+	lines.append("%-46s %-44s lap %d  p50 %5.1f  p95 %5.1f  p99 %5.1f  worst %6.1f ms   (first frame after each step: p50 %5.1f, worst %6.1f ms at step %d)   %d instances came newly into view" % [
+		tag, WALK_WAYS[way], lap + 1, _pct(all, 50), _pct(all, 95), _pct(all, 99), _pct(all, 100),
+		_pct(firsts, 50), worst[0], worst[1], fresh_tot])
+	print("WALK ", lines[-1])
+
+## The player `d` metres on from where the lap started, walking the way it was first looking (so the ground covered is
+## the same whether the view turns or not).
+func _walk_to(place: String, start_yaw: float, d: float) -> void:
+	var f := Vector3(-sin(start_yaw), 0, -cos(start_yaw)) * d
+	if place == "luna":
+		arena.stkilda.stand("%f,%f,0" % [f.x, f.z])
+		return
+	arena.player.global_position = Vector3(clampf(f.x, -24.0, 24.0), 0.0, clampf(10.0 + f.z, -24.0, 24.0))
+	arena.player.velocity = Vector3.ZERO
+	arena.player.reset_physics_interpolation()
 
 # ================================================================ --chars: what a block character costs
 
