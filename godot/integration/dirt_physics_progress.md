@@ -1142,7 +1142,8 @@ was added for it.)
 | dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
 | dingo / fleet / ground | 14/0, 20/0, 22/0 |
 | `digsite_test` | 6/0 |
-| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` | 10/0 / 14/0 |
+| `digsite_clod_perf` | 5/0 in 6 runs of 6 after the fix below: with 1600 offered the capped step's p95 is 2313 to 2740 us (the middle of each run's three; limit 4000), stage 8's 2426 and 2470 in the same session. Before the fix: 3848 to 4596, 4/1 two runs in five |
 | `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` / `digsite_blast_clod_test` | 22/0 / 16/0 / 21/0 / 20/0 |
 | save pair | 6/0, 7/0 |
 | sync pair (enet) / dynamite pair (enet) | host 14/0, guest 15/0 / host 4/0, guest 5/0 |
@@ -1176,10 +1177,80 @@ they land. More of what the dozer pushes rolls ahead of it and off the blade's e
 - The flicker and its cure are measured from the shader's sums redone in GDScript (`lump_drawn`), which must be kept
   the same as the shader by hand; at 1 to 2 frames a second here the stills only show it, they cannot prove it.
 - The plan's absolute 12 ms frame is not met on this box (see the table); the baseline is not either.
-- At the cap the step's p95 is 3.9 ms and its worst 5.5 (the plan's p95 budget is 4.0: just inside).
+- At the cap the sweep's step p95 was 3.9 ms as first committed (the plan's budget is 4.0); after the fix below it is 2.4 (worst 4.0).
 - `CLOD_SHARE` over 0.55 needs the dozer's `CLOD_STEP` and the sweep's `take_most` looked at, not the constant.
   The Dingo's and Bobcat's `OVER_SHARE` is still 0.35.
 - A guest hears no ticks for the host's clods (its pictures of them do not bounce); it hears its own blast's.
 - The shake and the pull are only in the view from behind; from the seat the body's own rocking (stage 4) is all.
   Whether 1.5 cm of shake reads as weight or as noise needs a real screen at a real frame rate.
 - Not done: the "Blade -0.NN m" readout's flicker noted in stage 5; the native batch.
+
+### Stage 9, after verification round 1 (the fixes)
+
+**1. The time cap overshot with melting dirt (`digsite_clod_perf`, 4/1 two runs in five).** Cause, measured: the
+melt made every settled column a `put_layer` a step for about six steps instead of one. With the cap shedding
+hundreds of clods a step, `_flush` went from 534 columns and 202 us a step (melt off) to 2327 columns and 950 us:
+half the step's 2000 us. That time is in `step_us`, so a clod looked dearer, the cap made less room and shed more,
+and what it shed melted too. (The time was inside the budget's count all along; nothing was queued outside it.)
+
+Fix (`ds_dirt.gd`): `MELT_COLS` 256, the most columns melting at once (the ones waiting longest); what settles on
+more is laid whole in its step, as before stage 9. A pour or a bucket's load never has that many going (the boulder
+test's numbers are the same to the digit: 24.4 mm, 3.8 degrees), so the owner's boulder stands as still; only a
+flood past what the step has time for goes down in one. With 256, `_flush` under the cap is 736 columns, 275 us.
+
+`digsite_clod_perf`, the three time-cap rows of each run (1600 offered; p95 of the step, us), one after another in
+one session, load about 1:
+
+| Game | p95 of the three rows | Awake | Shed | On ground | Test |
+|---|---|---|---|---|---|
+| stage 9 as committed (d164eb8; the verifiers' five runs) | 3848 to 4596 | 890 to 998 | 8000 to 10200 | 29 to 36% | 4/1, 5/0, 5/0, 4/1, 5/0 |
+| stage 9 as committed, my run (`--reps=1`) | 3923, then 4404 | 966, 903 | 9334, 10162 | 34% | (FAIL at 4404) |
+| the same with `melt` off | 2929 | 993 | 3418 | 45% | |
+| stage 8 (6ff9528), run 1 | 2426 / 2465 / 2188 | 1185 to 1246 | 305 to 1603 | 51 to 54% | 5/0 |
+| stage 8, run 2 | 2470 / 2255 / 2606 | 1241 to 1326 | 771 to 1738 | 51% | 5/0 |
+| fixed, run 1 | 2487 / 2472 / 2515 | 1199 to 1244 | 654 to 1639 | 45 to 47% | 5/0 |
+| fixed, run 2 | 3141 / 2727 / 2647 | 1168 to 1341 | 1626 to 3683 | 41 to 45% | 5/0 |
+| fixed, run 3 | 2400 / 2380 / 3161 | 1148 to 1194 | 830 to 3547 | 42 to 47% | 5/0 |
+| fixed, run 4 | 2555 / 2301 / 2522 | 1218 to 1231 | 550 to 2273 | 44 to 47% | 5/0 |
+| fixed, run 5 | 2308 / 2422 / 2313 | 1216 to 1294 | 1169 to 1387 | 44 to 46% | 5/0 |
+| fixed, in the guard set | 3108 / 2740 / 2535 | 1151 to 1286 | 1262 to 3150 | 42 to 46% | 5/0 |
+
+The check is on the middle row of the three: 2313 to 2740 us fixed, against 4000; the worst single row of 18 is
+3161. (`MELT_COLS` 128 gave 2386 to 2393 and 512 was not better than 256 in the 800-awake rows: 256 kept.) The
+4.0 ms limit is as it was. 800 awake with no cap: step mean 1223 to 1480 us, p95 2314 at the most (stage 8 in the
+same session: 1259 to 1468, 2664). On-ground share stays a little under stage 8's (45 against 51%): up to 256
+columns still melt.
+
+The sweep after the fix: 17/0; at the cap 665 awake on average (549 before), step mean 1841 us, **p95 2438** (3.9 ms
+before), worst 4025; frame p95 20.23 against 18.44: +1.78; mass 0 / 0 / 0.
+
+**2. `digsite_dozer_clod_test`'s "the baseline is stage 4's push (12.24 m; stage 4's 12.29)", one run in five: not
+stage 9's, and not the clods'.** The baseline pass has no clods at all; what moves its metres is the ground's own
+slump, which the native grid does to a wall-clock budget (`DsTerrain`: `grid.layer_step(LAYER_US)` 1500 us a tick,
+`grid.settle(SETTLE_US)` 2500 us; `dig_site_layer.cpp`, `dig_site_dirt.cpp` stop when the time is up and leave the
+rest for the next tick). On a frame where the box stalls, less of the heap ahead of the blade has slumped, and the
+dozer ends a few cm short. Evidence:
+
+| Run | Baseline metres |
+|---|---|
+| stage 9, box quiet (2 runs of mine; 4 of the verifiers' 5) | 12.29 |
+| stage 8 (6ff9528), six busy loops running beside it, 3 runs | 12.24, 12.23, 12.23 (the check fails each time) |
+| stage 9 fixed, the same load, turn about with those, 3 runs | 12.23, 12.29, 12.24 |
+| stage 8 with `LAYER_US` 150 in a scratch copy, box quiet | 12.18 |
+
+So it is there at stage 8 (and, the budgets being stage 0's, before), it comes from the box being busy, and it is
+5 to 6 cm of 12.29 m. Nothing was changed: the check's 2 cm is right for a quiet box and says so when the box is
+not; making the slump's budget a count rather than a time would change the native API, which this stage does not.
+A failure of this one check with 12.23 or 12.24 m is the box; run it again alone.
+
+**3. The guard table** above now gives `digsite_clod_perf`'s numbers.
+
+**4. The untracked files** (`godot/.facts`: a `digsite_save_test` run with an empty `--save=`;
+two `stkilda_*_clip.gd.uid`: written by `--import` for another branch's scripts that have none committed) were
+this job's litter: deleted, never committed. `--import` will write the two `.uid` again; they are not this branch's.
+
+**Guards after the fix** (one after another, `--out=user://f9`): sweep 17/0, boulder 11/0 (24.4 mm, 0.066 rad,
+unchanged), dozer_clod 16/0 (12.29 m, 53.8%, step mean 334 us, frame p95 -0.64), dirt 12/0, tools 17/0, dynamite
+15/0, support 13/0, cave 14/0, tunnel 7/0, walkin 2/0, dingo 14/0, fleet 20/0, ground 22/0, `digsite_test` 6/0,
+clod_test 10/0, clod_site 14/0, pour 21/0 (500000 of 500000 mm), blast_clod 20/0, feel 22/0, clod_perf 5/0, yard
+6/0 and 7/0, save pair 6/0 and 7/0, sync pair host 14/0 guest 15/0, dynamite pair host 4/0 guest 5/0.
