@@ -306,7 +306,12 @@ func _process(dt: float) -> bool:
 			_next(1)
 		1:
 			if t > 0.2:
-				_key(KEY_1 + VoxelPhone.PLACES.size() - 1)
+				# (its own number on the phone, not the last one: new places are added after it)
+				var k := 0
+				for i in VoxelPhone.PLACES.size():
+					if String(VoxelPhone.PLACES[i][0]) == "invasion":
+						k = i
+				_key(KEY_1 + k)
 				_next(2)
 		2:
 			if t < 0.3:

@@ -111,7 +111,8 @@ func setup(s, picked: Array) -> void:
 		var b := Building.new()
 		b.make(self, bd)
 		list.append(b)
-	VoxelItems.brick_cols = _cols
+	_cols = VoxelItems.brick_cols        # (the one dict every place adds its blocks' colours to: those cubes are Brick
+	                                     # in the backpack. Shared, so a second place doesn't take the first's away)
 	_make_grid()
 
 ## A building of a level's own (Demolition's: there's no town map behind it), from its outline (world x, z), how tall
@@ -1024,7 +1025,7 @@ class Building:
 		col = c
 		glassy = glass
 		block_w = bw
-		roof_col = c.darkened(0.45)
+		roof_col = c.darkened(0.2)        # (the roof's drawn as it's lit: much darker than this and it reads as a hole)
 		root = Node3D.new()
 		root.name = nm
 		o.add_child(root)

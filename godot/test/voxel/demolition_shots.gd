@@ -70,8 +70,9 @@ func _process(dt: float) -> bool:
 		1:
 			if t < 0.3:
 				return false
-			# the street, nothing touched: down it from the west end, the crane parked on the road
-			_stand(D.AT + Vector3(-38.0, 0.05, 7.0), D.AT + Vector3(2.0, 5.0, -4.0))
+			# the street, nothing touched: straight down the road from its west end, the crane parked on it
+			dem.crane.place(D.AT + D.CRANE_AT, -PI / 2.0, 0.8)   # (the boom swung out, so you can see what it is)
+			_stand(D.AT + Vector3(-34.0, 0.05, 0.0), D.AT + Vector3(12.0, 4.5, -1.0))
 			step = 2
 			t = 0.0
 		2:
@@ -79,10 +80,9 @@ func _process(dt: float) -> bool:
 			step = 3
 			t = 0.0
 		3:
-			# the crane: swung round with the ball out over the road, the office behind it
-			dem.crane.place(D.AT + Vector3(-2.0, 0.0, -1.0), -PI / 2.0 - 0.5)
-			dem.crane.cable = 6.0
-			_stand(D.AT + Vector3(-13.0, 0.05, 12.0), D.AT + Vector3(2.0, 7.0, -3.0))
+			# the crane: out in the street, the boom round over the north footpath, the ball hanging off it
+			dem.crane.place(D.AT + Vector3(-6.0, 0.0, 1.0), -PI / 2.0, 0.6)
+			_stand(D.AT + Vector3(-20.0, 0.05, 2.0), D.AT + Vector3(0.0, 6.0, -4.0))
 			step = 4
 			t = 0.0
 		4:
@@ -92,13 +92,18 @@ func _process(dt: float) -> bool:
 			step = 5
 			t = 0.0
 		5:
-			# the block half down: holes in the shop and the office, the water tower's legs out
-			var shop := _of("BrickShop")
-			for c in [2, 5, 8]:
-				dem.breaks.blast(_wall(shop, c, 1.4), 2.4)
-			var office := _of("Office")
+			# the block half down: the crane out of the way, then holes in four of them and the water tower's legs out
+			dem.crane.place(D.AT + Vector3(46.0, 0.0, 0.0), -PI / 2.0)
+			# (the walls that face the road, so the holes show from it: the third side of a north-row building, the
+			# first of a south-row one -- a ring runs x0,z0 -> x1,z0 -> x1,z1 -> x0,z1)
+			for c in [25, 28, 31]:
+				dem.breaks.blast(_wall(_of("BrickShop"), c, 1.4), 2.6)
+			for c in [21, 24, 27]:
+				dem.breaks.blast(_wall(_of("CornerShop"), c, 1.4), 2.6)
 			for c in [30, 34, 38]:
-				dem.breaks.blast(_wall(office, c, 2.0), 2.6)
+				dem.breaks.blast(_wall(_of("Office"), c, 2.2), 2.8)
+			for c in [2, 6]:
+				dem.breaks.blast(_wall(_of("LockUps"), c, 1.4), 2.4)
 			var tank := _of("WaterTower")
 			for k in 2:
 				var a: Vector2 = tank.ring[k]
@@ -106,9 +111,9 @@ func _process(dt: float) -> bool:
 			step = 6
 			t = 0.0
 		6:
-			if t < 1.2:
+			if t < 1.4:
 				return false
-			_stand(D.AT + Vector3(-10.0, 0.05, 2.0), D.AT + Vector3(-2.0, 4.0, -10.0))
+			_stand(D.AT + Vector3(-34.0, 0.05, 0.0), D.AT + Vector3(12.0, 4.5, -1.0))     # (the street shot again)
 			step = 7
 			t = 0.0
 		7:
@@ -116,17 +121,15 @@ func _process(dt: float) -> bool:
 			step = 8
 			t = 0.0
 		8:
-			# the tower block: its ground floor taken out, five storeys coming down on top of it
+			# the tower block: its ground floor taken out all round, five storeys coming down on top of it
 			var tower := _of("TowerBlock")
-			for c in [2, 5, 8, 11]:
+			for c in [2, 5, 8, 11, 14, 17, 20, 23]:
 				dem.breaks.blast(_wall(tower, c, 1.2), 2.8)
-			for c in [14, 17, 20]:
-				dem.breaks.blast(_wall(tower, c, 1.2), 2.8)
-			_stand(D.AT + Vector3(-18.0, 0.05, -6.0), D.AT + Vector3(-16.0, 7.0, 10.0))
+			_stand(D.AT + Vector3(6.0, 0.05, -1.0), D.AT + Vector3(-16.0, 9.0, 12.0))
 			step = 9
 			t = 0.0
 		9:
-			if t < 0.45:
+			if t < 0.5:
 				return false
 			_save("tower")
 			step = 10

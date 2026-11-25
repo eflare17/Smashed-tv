@@ -149,10 +149,10 @@ func _ground() -> void:
 	_box(body, Vector3(140.0, 1.0, 90.0), AT + Vector3(6.0, -0.5, 0.0), Color("#5f6b45"))        # the dirt
 	_box(null, Vector3(140.0, 0.06, 8.0), AT + Vector3(6.0, 0.03, 0.0), Color("#3a3b40"))        # the road
 	for i in 17:
-		_box(null, Vector3(2.2, 0.08, 0.26), AT + Vector3(-50.0 + i * 7.0, 0.05, 0.0), Color("#c9c3a6"))   # its middle line
+		_box(null, Vector3(2.2, 0.08, 0.26), AT + Vector3(-50.0 + i * 7.0, 0.05, 0.0), Color("#9a9478"))   # its middle line
 	for s in [-1.0, 1.0]:
-		_box(null, Vector3(140.0, 0.22, 3.0), AT + Vector3(6.0, 0.11, s * 5.6), Color("#9b9a92"))   # the footpath
-		_box(null, Vector3(140.0, 0.3, 0.3), AT + Vector3(6.0, 0.15, s * 4.1), Color("#b9b6ac"))    # the kerb
+		_box(null, Vector3(140.0, 0.22, 3.0), AT + Vector3(6.0, 0.11, s * 5.6), Color("#6d6c66"))   # the footpath
+		_box(null, Vector3(140.0, 0.3, 0.3), AT + Vector3(6.0, 0.15, s * 4.1), Color("#85837b"))    # the kerb
 
 func _box(body: StaticBody3D, size: Vector3, at: Vector3, c: Color) -> void:
 	var mi := MeshInstance3D.new()

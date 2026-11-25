@@ -1277,6 +1277,61 @@ On branch `claude/luna-invasion-2` (not merged or published by this job).
 
 Luna invasion: done
 
+## Demolition (24 Nov, the owner: "making a little level with distructable building?")
+
+A little town block to flatten against the clock, and a drivable wrecking ball crane to do it with (the owner asked
+for the crane in the first version). On branch `claude/voxel-demolition` (not merged or published by this job).
+**Phase A: the block, the goal and the crane. No enemies and no chain-reaction props yet.**
+
+- **Playing it**: the phone (P), the 7th entry, **"Demolition"** (last in the list so the others keep their numbers).
+  Or straight there: `--demolition` (PC) / `?demolition` (the web page). The phone's Home takes you back and builds
+  the block again. `R` starts another run. First person or top-down. Not in co-op (the block isn't shared).
+- **The street** (`scripts/voxel/demolition/voxel_demolition.gd`, `VoxelDemolition`, made in `VoxelArena._ready`
+  beside the gun range): its own corner of the world at `AT` (3 km east of the arena, the other way from the range),
+  under the arena's own sky. Flat ground, a road down the middle with a middle line, kerbs and footpaths, and eight
+  buildings either side of it (`TOWN`): the corner shop, a two-storey brick shop, a glass-fronted office, a timber
+  shed, a five-storey tower block, a water tower on four legs, a petrol station canopy on posts, and a row of
+  lock-ups. 2144 blocks in all, built in about 20 ms the first time you go (nothing is built until then).
+- **They are St Kilda's buildings**: `VoxelBreakables.add_plain` (new) makes a building from an outline, a height and
+  a colour with no town map behind it -- so bullets, the shotgun, every melee weapon, the grenades' holes, the bricks
+  that fly and pile up, blocks that fall when nothing holds them up, slabs that tip over and the roof that falls in
+  all work here exactly as they do in Luna Park. It's drawn in blocks from the start (there's no drawn model to swap
+  out when it's first hit). Each building breaks its own way: `glassy` glazes most of an office's inner columns two
+  rows in three; `block_w` makes the shed's blocks 1.6 m, so it comes apart in big chunks; `open_to`/`leg` leave the
+  bottom rows out but for the corners, so the water tower stands on legs and the canopy on posts and both come down
+  when a leg goes; the tower block's fifteen rows pancake.
+- **The crane** (`voxel_wrecking_crane.gd`, `VoxelWreckingCrane`): parked at the west end. Walk up and `E` puts you
+  in the cab; `W`/`S` drive the tracks, `A`/`D` turn it, the left and right arrows swing the boom, the up and down
+  arrows pay the cable out and in, `E` gets you out. Nothing of the Dig Site's machines is used (its add-on is PC
+  only): the ball is a verlet point on a cable worked out here, stepped at a fixed 120 Hz so it swings the same on
+  any machine. It keeps its own momentum -- driving drags it behind, swinging the boom throws it out, stopping
+  doesn't stop it -- and a hard swing runs about 9 m/s. The cable takes the speed along itself out of the ball (a
+  rope tugs, it doesn't catapult) and leaves the swing across it alone; `MAX_V` caps it, and the step after it
+  touches a wall caps it lower, or a ball jammed between two buildings winds itself up to nonsense. Where it hits, a
+  blow at under `SMASH` is a chip (breakables' `strike`) and over it a hole (`blast`, bigger the faster it was
+  going), and the system's own rules drop or tip over what's left hanging. A ball that smashed carries on through.
+- **The run**: `RUN_T` 180 s for `TARGET` 55% of the blocks. The HUD line is the Luna Park: Invasion one
+  (`Demolition: 43% down (target 55%), 2:59 left, score 128`, and what the crane's keys do while you're in it); the
+  target hit shows a banner with the time, the score and the best, pays $150, and keeps the best in
+  `user://demolition.cfg`; time up shows what you got. Going down doesn't end the run.
+- **Web and phone**: no native code and no threads, and the loose rubble is capped well under St Kilda's (`CAP`), and
+  lower again (`CAP_WEB`) on the web or in touch mode -- the multimeshes are made that size, so a phone doesn't pay
+  for bricks it can't draw. The crane needs a keyboard: there are no touch buttons for it yet.
+- **St Kilda is untouched in what it does**: the breakables' owner is untyped now (it only ever needs `active`,
+  `arena`, `nav`, `town`), its rubble caps are vars off the same consts, and the three places that asked
+  `stkilda.breaks` for the wall in front of them ask `VoxelArena.walls()` instead, which answers for whichever of the
+  two places you're in.
+- **Next (phase B)**: enemies on the rooftops and in the windows, and chain-reaction props -- gas bottles, the petrol
+  pumps, a fuel tanker. `roof_spots()`, `window_spots()` and `prop_spots()` are there for them and nothing uses them
+  yet; the score counts blocks only.
+- Tests: `test/voxel/demolition_test.gd`, "DEMOLITION: 35 passed, 0 failed" (about 50 s headless). Guards after:
+  `stkilda_kill12_test`, `luna_invasion_test`, `stkilda_tumble_test`, `stkilda_ride_test`,
+  `stkilda_carousel_hack_test`. (`stkilda_luna_smash_test` fails 2 of 8 on this branch before any of this work:
+  pre-existing.) Pictures `test/voxel/demolition_shots.gd` into `integration/demolition_shots/`:
+  `demolition_street.png`, `_crane.png`, `_smash.png`, `_tower.png`.
+
+Demolition phase A: done
+
 # Block (voxel) characters: integration note
 
 Branch `claude/godot-voxel`. Owned files: `scripts/voxel/`, `assets/voxel/`, `test/voxel/`, this note,

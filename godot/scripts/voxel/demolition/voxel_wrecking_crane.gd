@@ -8,7 +8,10 @@ extends Node3D
 ## pulled down by gravity and held at `cable` metres from the boom's tip, stepped at a fixed STEP so it swings the same
 ## on any machine, with next to no damping. So it keeps its own momentum: driving forward drags it behind, swinging the
 ## boom throws it out, and stopping lets it carry on -- the weight is the whole point, and you line a swing up a few
-## seconds before it lands.
+## seconds before it lands. A hard swing runs about 9 m/s. What the cable takes out of it is the speed along itself (a
+## rope tugs, it doesn't catapult), never the swing across it; MAX_V is the most it can ever be doing, and the step
+## after it has touched a wall it's held lower still, or a ball jammed between two buildings -- the wall shoving it one
+## way and the cable pulling it back the other -- winds itself up to a speed nothing could swing at.
 ##
 ## What it smashes: every step, the ball's own sample points are asked of VoxelBreakables.solid (is this inside a wall
 ## still standing?). Where one is, the blow goes in at the speed the ball was doing -- under SMASH it's a chip
@@ -31,7 +34,7 @@ const DRAG := 0.7                # how fast it rolls to a stop
 const TURN := 0.75               # rad/s turning on the spot
 const STEP := 1.0 / 120.0        # s a step of the ball
 const G := 9.8
-const MAX_V := 14.0              # m/s the ball can ever be doing (50 km/h: a hard swing, and no faster)
+const MAX_V := 16.0              # m/s the ball can ever be doing (a flat-out swing runs about 13: this is the stop)
 const DAMP := 0.9995             # of its speed a step (next to nothing: it swings and swings)
 const THUD := 1.6                # m/s: slower than this and the ball just rests on the wall
 const SMASH := 3.2               # m/s: faster than this and it takes a hole out instead of a chip
@@ -97,7 +100,7 @@ func _build() -> void:
 	_box(_turret, null, Vector3(3.2, 1.3, 1.1), Vector3(0.0, 0.65, 2.2), black)                  # the counterweight
 	_boom = Node3D.new()
 	_boom.name = "Boom"
-	_boom.rotation = Vector3(-PITCH, 0.0, 0.0)      # (its -z points up and forward)
+	_boom.rotation = Vector3(PITCH, 0.0, 0.0)       # (turning its -z up: the boom points forward and up)
 	_turret.add_child(_boom)
 	_box(_boom, null, Vector3(0.6, 0.6, BOOM), Vector3(0.0, 0.0, -BOOM * 0.5), paint)            # the boom
 	for i in 6:
@@ -141,11 +144,18 @@ func _box(parent: Node3D, body: StaticBody3D, size: Vector3, at: Vector3, c: Col
 		cs.position = at
 		body.add_child(cs)
 
-## Parked somewhere else from now on (the tests and the pictures stand it where they want it).
-func place(at: Vector3, yaw_: float) -> void:
+## Parked somewhere else from now on, the boom round by `slew_` (the tests and the pictures stand it where they want
+## it). Not a swing: the ball hangs still under the tip wherever that puts it.
+func place(at: Vector3, yaw_: float, slew_ := 0.0) -> void:
 	_at = at
 	_yaw0 = yaw_
 	park()
+	if slew_ != 0.0:
+		slew = clampf(slew_, -SLEW_MAX, SLEW_MAX)
+		_place()
+		ball = tip() - Vector3(0, cable, 0)
+		_prev = ball
+		_draw()
 
 ## Back where it started, the ball hanging still (a new run).
 func park() -> void:

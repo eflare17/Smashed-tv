@@ -172,8 +172,8 @@ func _process(dt: float) -> bool:
 			_check(dem.crane.pos.distance_to(crane_at) > 1.0, "it drives (%.1f m)" % dem.crane.pos.distance_to(crane_at))
 			_check(arena.player.global_position.distance_to(dem.crane.seat()) < 0.2, "you're in the seat, not walking")
 			_check(dem.crane.ball.distance_to(ball0) > 0.5, "the ball's come with it, swinging behind")
-			# swing the boom one way, then back: the ball comes round with real speed
-			_hold(KEY_RIGHT, true)
+			# the boom swung out away from the wall, then back round: the ball comes at it with real speed
+			_hold(KEY_LEFT, true)
 			hit_down = dem.down()
 			step = 7
 			t = 0.0
@@ -181,8 +181,8 @@ func _process(dt: float) -> bool:
 			swing_top = maxf(swing_top, dem.crane.ball_speed())
 			if t < 1.4:
 				return false
-			_hold(KEY_RIGHT, false)
-			_hold(KEY_LEFT, true)
+			_hold(KEY_LEFT, false)
+			_hold(KEY_RIGHT, true)
 			step = 8
 			t = 0.0
 		8:
@@ -190,7 +190,7 @@ func _process(dt: float) -> bool:
 			swing_t += dt
 			if swing_t < 5.0:
 				return false
-			_hold(KEY_LEFT, false)
+			_hold(KEY_RIGHT, false)
 			_check(swing_top > 2.5 and swing_top < VoxelWreckingCrane.MAX_V - 1.0,
 					"the ball swings with weight behind it, and the cable never catapults it (%.1f m/s at its fastest)" % swing_top)
 			_check(dem.crane.smashes > 0, "a swing smashes the wall (%d holes, %d chips)" % [dem.crane.smashes, dem.crane.chips])
