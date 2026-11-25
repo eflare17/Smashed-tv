@@ -104,6 +104,7 @@ var _ui := false
 var _prompt := ""               # the game's "E  ..." line as last drawn
 var _use_cap := ""              # what E does now ("" nothing)
 var _size := Vector2.ZERO
+var _safe := Rect2()            # the screen's usable box (safe_box): the punch-hole camera's band off the buttons
 var _xf := Transform2D.IDENTITY # the screen's stretch: this layer's pixels -> the window's (what Input.parse_input_event takes)
 var _aim_dir := Vector2(0, -1)
 var _sb := StyleBoxFlat.new()
@@ -240,6 +241,37 @@ func _notification(what: int) -> void:
 
 # ---------------------------------------------------------------- where everything is
 
+## The screen's usable box in this layer's pixels. The Android build draws edge to edge now
+## (windowLayoutInDisplayCutoutMode=shortEdges, put on the APK by tools/android_cutout.py -- Godot 4.4 has no setting
+## for it), so the window covers the punch-hole camera instead of the system letterboxing it away, and the buttons
+## have to keep off that band themselves. Only the buttons: the left half's stick and the right half's look drag still
+## use the whole screen, because a thumb under the hole is a real touch -- it is the picture there that is missing.
+## DisplayServer.get_display_safe_area() is in window pixels, so it's scaled into ours (a 1280x720 viewport stretched
+## "expand" over a 2340x1080 phone is 1560x720 of them).
+static func safe_box(vs: Vector2, win: Vector2) -> Rect2:
+	var full := Rect2(Vector2.ZERO, vs)
+	if not OS.has_feature("mobile") or DisplayServer.get_name() == "headless" or vs.x < 8.0 or vs.y < 8.0 \
+			or win.x < 8.0 or win.y < 8.0:
+		return full
+	var safe := DisplayServer.get_display_safe_area()
+	if safe.size.x < 8 or safe.size.y < 8:
+		return full
+	var l := maxf(0.0, float(safe.position.x)) * vs.x / win.x
+	var t := maxf(0.0, float(safe.position.y)) * vs.y / win.y
+	var r := maxf(0.0, win.x - float(safe.position.x + safe.size.x)) * vs.x / win.x
+	var b := maxf(0.0, win.y - float(safe.position.y + safe.size.y)) * vs.y / win.y
+	var box := Rect2(Vector2(l, t), vs - Vector2(l + r, t + b))
+	if box.size.x < vs.x * 0.7 or box.size.y < vs.y * 0.7:
+		return full                 # (an answer that makes no sense -- a bar most of the screen wide: leave it alone)
+	return box
+
+## The usable box's corner, for anything drawn over the game that has to be read (the arena's own HUD line).
+static func safe_at(vp: Viewport) -> Vector2:
+	if vp == null:
+		return Vector2.ZERO
+	var w := vp.get_window()
+	return safe_box(vp.get_visible_rect().size, Vector2(w.size) if w else Vector2.ZERO).position
+
 ## The buttons' scale: about the same size under a thumb however the page is stretched (a phone on its side: 1).
 func _scale_for(vs: Vector2) -> float:
 	var win := Vector2(get_window().size) if is_inside_tree() else Vector2.ZERO
@@ -253,6 +285,8 @@ func _layout() -> void:
 	_size = vs
 	_xf = get_viewport().get_final_transform() if is_inside_tree() else Transform2D.IDENTITY
 	k = _scale_for(vs)
+	_safe = safe_box(vs, Vector2(get_window().size) if is_inside_tree() else vs)
+	vs = _safe.size                 # from here on the buttons are laid out in the usable box, not the whole screen
 	for b in B_COUNT:
 		_half[b] = (DEFS[b][3] as Vector2) * k
 		_show[b] = 0
@@ -305,6 +339,9 @@ func _layout() -> void:
 		var b2: int = B_N1 + n
 		_at[b2] = Vector2(vs.x * 0.5 + (n - 1.5) * 104.0 * k, vs.y - BAR_H - 60.0 * k)
 		_show[b2] = 1 if (not ui and n < _nums) else 0
+	if _safe.position != Vector2.ZERO:
+		for b in B_COUNT:           # the box's own corner put back on: everything above was placed from 0,0
+			_at[b] += _safe.position
 	_rest_stick()
 	_pad.queue_redraw()
 	_base.queue_redraw()
@@ -312,7 +349,7 @@ func _layout() -> void:
 
 func _rest_stick() -> void:
 	# (nobody on it: where a left thumb would find it, faint)
-	_stick_from = Vector2(190.0 * k, _size.y - BAR_H - 150.0 * k)
+	_stick_from = _safe.position + Vector2(190.0 * k, _safe.size.y - BAR_H - 150.0 * k)
 	_base.position = _stick_from
 	_knob.position = _stick_from
 	_base.modulate.a = 0.35
