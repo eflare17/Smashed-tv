@@ -141,7 +141,7 @@ func _every_visual(n: Node, group := "") -> Array:
 	var out := []
 	for c in n.get_children():
 		var g := group
-		if g.count("/") < 1:
+		if g.count("/") < 2:
 			g = (g + "/" if g != "" else "") + _label(c)
 		if c is VisualInstance3D and (c as VisualInstance3D).is_visible_in_tree():
 			out.append([c, g])

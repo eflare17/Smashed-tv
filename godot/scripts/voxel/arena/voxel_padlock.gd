@@ -24,6 +24,10 @@ var _shown := PackedFloat32Array([0, 0, 0, 0])   # each wheel's angle now, in di
 var _shackle: Node3D
 var _k := 0.0                   # 0 shut .. 1 open
 var digit_labels := true        # (the little one on the chest: no digits, too small to read)
+## How far off it stops being drawn (metres; 0: however far). A 6 cm padlock hanging on a chest is a pixel or two
+## across from the middle of the arena, and five of them were 116 of the arena's draw calls; the one you dial, held up
+## in front of the camera, is never cut off. Set before it goes into the tree (like digit_labels).
+var keep_within := 0.0
 
 func _ready() -> void:
 	_build()
@@ -178,4 +182,13 @@ func _build() -> void:
 	mark.material_override = _mat(Color8(150, 30, 30), 0.0, 0.6)
 	mark.position = Vector3(0, -H * 0.12 + DIAL_R * 0.62, D * 0.5 + 0.0008)
 	add_child(mark)
+	# its sixty-odd little meshes joined into one for the body, one for the shackle and one a wheel (the wheels still
+	# turn: each is a node of its own); the digits, where it has them, stay as they are
+	VoxelMerge.bake(self)
+	VoxelMerge.bake(_shackle)
+	for w in _wheels:
+		VoxelMerge.bake(w)
+	if keep_within > 0.0:
+		for n in find_children("*", "GeometryInstance3D", true, false):
+			(n as GeometryInstance3D).visibility_range_end = keep_within
 	set_code(code())

@@ -512,3 +512,4 @@ func _build() -> void:
 	l.position = Vector3(0, 1.7, 0.3)
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	add_child(l)
+	VoxelMerge.bake(self)         # (its boxes joined into a mesh a material; the glowing grate and the smoke are left alone)

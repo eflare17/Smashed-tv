@@ -166,3 +166,4 @@ func _build() -> void:
 		l.rotation = Vector3(-0.5, 0, 0)
 		add_child(l)
 		_tags[TRACKS[i]] = l
+	VoxelMerge.bake(self)         # (its boxes joined into a mesh a material: the bench, the racks, the gear hung on them)

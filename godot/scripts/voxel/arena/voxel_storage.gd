@@ -54,9 +54,15 @@ func setup(sid_: String, kind_: String, sound: VoxelSound) -> void:
 		_build_chest(size)
 	else:
 		_build_cabinet(size)
+	# its boxes joined into a mesh a material (the owner's phone: eleven draw calls a chest, seventeen a cabinet); the
+	# lid and the doors have their own hinge nodes, so they're joined on their own and still swing
+	VoxelMerge.bake(self)
+	for h in _hinges:
+		VoxelMerge.bake(h)
 	# the padlock's place: hanging from the hasp at the front
 	_lock = VoxelPadlock.new()
 	_lock.digit_labels = false
+	_lock.keep_within = 12.0        # (6 cm of brass: not drawn from across the arena)
 	add_child(_lock)
 	_lock.position = Vector3(0, size.y * 0.72 - 0.045, size.z * 0.5 + 0.024) if kind == "chest" else Vector3(0, size.y * 0.5, size.z * 0.5 + 0.06)
 	_lock.visible = false

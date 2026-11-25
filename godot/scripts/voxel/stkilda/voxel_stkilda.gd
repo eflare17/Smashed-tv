@@ -96,6 +96,8 @@ func build() -> void:
 	dirt = VoxelParkDirt.new()                # (after the shade along the wall: it's cut away over the dirt)
 	add_child(dirt)
 	dirt.setup(self)
+	# (its 700 chunks are meshed on worker threads over the next couple of seconds, and joined a patch a frame after
+	# that: meshing them all here instead added eight seconds to the wait at the gate, for work the threads do for free)
 	bushes = VoxelParkBushes.new()
 	add_child(bushes)
 	bushes.setup(self, dirt)

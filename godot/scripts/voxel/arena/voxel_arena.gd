@@ -2566,13 +2566,15 @@ func _hud_text() -> void:
 	if not _opts.has("stats"):       # (the owner, 21 Nov: "just show the frames"; --stats / ?stats for the rest)
 		hud.text = "%d fps" % fps
 		return
-	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s\n%s   cubes lying %s   pieces %d   backpack: %s   (Tab)" % [
+	hud.text = "%d fps   %.1f ms a frame   (game code %.1f ms)\ndraw calls %d   triangles on screen %s   (enemies %s)\nenemy %d   enemies %d alive, %d lying   kills %d\ncubes knocked out %d   flying now %d   meshing jobs %d running, %d done\ncube %.1f cm (%d sprite pixel%s a cube)   shadows %s   %s\npreset %s   render scale %d%%   scenery %s\n%s   cubes lying %s   pieces %d   backpack: %s   (Tab)" % [
 		fps, 1000.0 / maxf(1.0, fps), _code_ms + debris.last_ms,
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		_k(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)), _k(tris),
 		wave, alive, bodies.size() - alive, kills, knocked, debris.count(), _jobs.size(), _jobs_done,
 		_cube_m("grunt") * 100.0, chunk, "" if chunk == 1 else "s", ("on" if sun.shadow_enabled else "off") + ("   CAN'T DIE" if VoxelBody.immortal else ""),
 		RenderingServer.get_current_rendering_method(),
+		settings_menu.s.preset, int(round(get_viewport().scaling_3d_scale * 100.0)),
+		"everything" if VoxelParkDirt.detail_m <= 0.0 else "%d m" % int(VoxelParkDirt.detail_m),
 		("%d %s" % [loadout.current + 1, loadout.slot().name]) + ("  (brush %.1f m)" % vacuum.brush_r if loadout.id() == "vacuum" else ""), _k(debris.lying()), pieces.count(),
 		_backpack_line()]
 
