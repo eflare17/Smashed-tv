@@ -224,6 +224,30 @@ func _run() -> void:
 	await _wait(0.05)
 	_touch(1, l0, true)             # (the look thumb back where the rest of the test expects it)
 	await _wait(0.05)
+	# ---- "Even out the view": off unless it's asked for, and when it is on it must only move the surplus of a
+	# bursty frame to the next frame -- not lose any of the thumb's movement, which would be a slower view
+	_check(not T.smooth, "evening the view out is off unless it's asked for")
+	var burst := func(where: Vector2) -> Vector2:
+		var a := where
+		for n in 4:               # four even frames first, so there's an average for a burst to stand out from
+			a += Vector2(10, 0)
+			_drag(1, a, Vector2(10, 0))
+			await _wait(0.02)
+		var y := arena.look_yaw
+		for n in 6:               # then six samples in the one frame: the clump
+			a += Vector2(10, 0)
+			_drag(1, a, Vector2(10, 0))
+			_drag(0, s0 + Vector2(0, -60), Vector2.ZERO)    # (between them, so Godot doesn't fold them into one)
+		await _wait(0.1)          # (two frames: the frame itself and the one the surplus goes out on)
+		return Vector2(arena.look_yaw - y, a.x)
+	var plain: Vector2 = await burst.call(l0)
+	var held0: int = touch.smooth_held_sec
+	T.smooth = true
+	var evened: Vector2 = await burst.call(Vector2(plain.y + 20.0, l0.y))
+	T.smooth = false
+	_check(touch.smooth_held_sec > held0, "evened out: a bursty frame's surplus is held for the next frame (%d frames)" % (touch.smooth_held_sec - held0))
+	_check(absf(evened.x - plain.x) < absf(plain.x) * 0.05,
+		"... and none of the thumb's movement is lost on the way (%.4f rad vs %.4f)" % [evened.x, plain.x])
 	# ---- a third finger fires (the pistol's out) while those two stay down
 	clip0 = int(arena.melee.pistol.clip)
 	_touch(2, _btn(T.B_FIRE), true)

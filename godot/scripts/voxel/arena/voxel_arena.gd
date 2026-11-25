@@ -115,6 +115,7 @@ var _even_s0 := INF             # last frame's shown yaw
 var _frames := PackedFloat32Array()
 var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
+var _even_last := ""            # ?stats: the evenness line as last worked out, for the on-screen readout
 var _prof := {}                 # section -> microseconds this second (--stats)
 ## The melee weapons (the owner, 20 Oct: five, each doing something different): weapon id -> script; one whose
 ## file isn't there is left out of the slots.
@@ -2370,8 +2371,16 @@ func _process(dt: float) -> void:
 			var el := _even_line()
 			if el != "":
 				print("ARENA evenness:", el)
+				_even_last = el.strip_edges()
 				_even_asked.clear()
 				_even_shown.clear()
+			# ... and on screen as well, not only in the console: the owner reads this on the phone it happens on,
+			# where there is no console without a PC on the end of a cable (25 Nov)
+			var tl := _touch_line().strip_edges()
+			if tl != "":
+				hud.text += "\n" + tl
+			if _even_last != "":
+				hud.text += "\n" + _even_last
 			elif _even_shown.size() > 900:
 				_even_asked = _even_asked.slice(450)        # (the view hardly turned for a while: let the old go)
 				_even_shown = _even_shown.slice(450)

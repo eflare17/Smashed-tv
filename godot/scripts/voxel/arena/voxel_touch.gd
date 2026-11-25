@@ -76,6 +76,7 @@ const LOOK_CAP := 90.0          # the most one drag event turns (pixels): a new 
 ## reached 60 px. 150 is twice the room a real flick needs and still only 32 degrees, so nothing a thumb can do is
 ## clipped and nothing the browser can do is a snap.
 const LOOK_FRAME_CAP := 150.0
+const SMOOTH_OVER := 1.5        # `smooth`: a frame's look is passed through up to this many times the recent average
 const AIM_REACH := 240.0        # top-down: how far from Jared the aim point sits (pixels)
 const SLOT_SLIP := 26.0         # a touch on the weapon bar that moves this far isn't a tap: it's the stick, or a look
 const UI_SLIP := 22.0           # a menu's tap that moves this far (a scroll) doesn't click when let go
@@ -104,6 +105,15 @@ static var fold := true
 ## A finger's own last position cannot be about the wrong finger, and a finger just put down -- or put down again, or
 ## given a new identifier by the browser -- starts from where it landed, so its first drag contributes nothing.
 static var own_delta := true
+## The frame's look spread over the next one when the browser delivers it in clumps (_spread says exactly what it
+## does and what it costs). OFF by default, and this is the honest reason: the 17% of unevenness left after the
+## camera came out of the physics interpolation was measured with the snap above still live, and the snap turned out
+## to be worth 84% of unevenness on its own in the harness here (3% with it fixed). So there is no measurement left
+## that says any shudder remains, and smoothing buys evenness with lag on a game you aim in. It is here, switchable
+## (SET's "Even out the view" row, or ?smooth=1), because the harness cannot settle it: a software-rendered frame
+## here is 100 ms, the same size as the clumps, so clumping averages out inside a frame and a phone's 17 ms frame is
+## not reproducible. If the shudder is still there on the phone with the snap fixed, this is the thing to try.
+static var smooth := false
 static var active := false      # touch mode on (there's a layer)
 static var allowed := true      # (?notouch: never, not even at a touch)
 static var forced := false      # (?touch)
@@ -153,6 +163,7 @@ var fingers_worst := 0          # the most fingers down at once in that second
 var key_sec := 0                # keys this layer sent the game in that second (W A S D Shift flipping)
 var in_us := 0                  # microseconds spent in _input in that second
 var folds_sec := 0              # frames in that second whose drags were applied (what the count above folded down to)
+var smooth_held_sec := 0        # `smooth`: frames whose surplus was held back for the next one
 var look_worst_px := 0.0        # ?stats: the most one frame's worth of look drags added up to (pixels)
 var frame_capped_sec := 0       # frames in that second whose summed look hit LOOK_FRAME_CAP
 var rel_bad_sec := 0            # drags whose engine `relative` disagreed with this finger's own movement
@@ -171,6 +182,9 @@ var _ev_frame := 0
 ## The layer folds them itself now: a drag only writes down where the finger is (and sums what a look moved), and
 ## flush() applies the frame's worth once, before the game reads any of it.
 var _pend_look := Vector2.ZERO          # a look drag's pixels since the last flush (summed)
+var _look_held := Vector2.ZERO          # `smooth`: a burst's surplus, out on the next frame (_spread)
+var _look_avg := 0.0                    # `smooth`: the recent per-frame look, pixels
+var _held_last := false                 # `smooth`: last frame held something back (so this one holds nothing)
 var _pend_look_any := false
 var _pend_stick := Vector2.ZERO         # where the stick finger is now
 var _pend_stick_any := false
@@ -569,6 +583,27 @@ func _look(i: int, p: Vector2, rel: Vector2) -> void:
 	_pend_look += rel
 	_pend_look_any = true
 
+## A frame's look evened out, when `smooth` is on. Not a low-pass filter, which would lag everything: the frame's
+## worth is passed straight through up to SMOOTH_OVER times the recent average, and only the surplus above that is
+## held back, at most half of the frame, and it goes out on the very next frame. So a thumb moving at a steady rate
+## is never delayed at all (0 ms), and the most any movement can ever be late by is one frame -- 17 ms at 60 fps,
+## and only the part of a burst above the average. That is the whole cost, and it is why this is worth offering: a
+## longer filter buys evenness with lag you can feel when you are aiming, which is the wrong trade on this game.
+func _spread(rel: Vector2) -> Vector2:
+	var n := rel.length()
+	var was := _held_last
+	_held_last = false
+	# never twice running: whatever is held goes out whole on the next frame, so "one frame late" is exact rather
+	# than a surplus rippling down the frames and quietly becoming three
+	if not was and _look_avg > 1.0 and n > _look_avg * SMOOTH_OVER:
+		var keep := minf(n - _look_avg * SMOOTH_OVER, n * 0.5)
+		_look_held = rel * (keep / n)
+		rel -= _look_held
+		_held_last = true
+		smooth_held_sec += 1
+	_look_avg = lerpf(_look_avg, n, 0.2)
+	return rel
+
 ## The frame's touches applied, once: what the drags wrote down turns into the stick's keys and the view's turn. The
 ## game calls this before it reads either (VoxelArena's _physics_process and _process), so a frame of thirty drags
 ## costs what a frame of one does. Idempotent: called twice in a frame, the second does nothing.
@@ -578,14 +613,17 @@ func flush() -> void:
 	if _pend_stick_any:
 		_pend_stick_any = false
 		_stick_to(_pend_stick)
-	if _pend_look_any:
+	if _pend_look_any or _look_held != Vector2.ZERO:
 		_pend_look_any = false
-		var rel := _pend_look
+		var rel := _pend_look + _look_held
 		_pend_look = Vector2.ZERO
+		_look_held = Vector2.ZERO
 		look_worst_px = maxf(look_worst_px, rel.length())
 		if rel.length() > LOOK_FRAME_CAP:
 			rel = rel.normalized() * LOOK_FRAME_CAP     # (a burst can't add up to a jerk: LOOK_FRAME_CAP says why)
 			frame_capped_sec += 1
+		if smooth:
+			rel = _spread(rel)
 		arena.look_by(rel * LOOK_K)
 	if _pend_aim_i >= 0:
 		var i := _pend_aim_i
@@ -680,6 +718,9 @@ func _let_go_all() -> void:
 	_pend_look_any = false
 	_pend_look = Vector2.ZERO
 	_pend_aim_i = -1
+	_look_held = Vector2.ZERO       # (`smooth`: nothing of the last drag goes out after the fingers are gone)
+	_look_avg = 0.0
+	_held_last = false
 
 # ---------------------------------------------------------------- the shim: what the keyboard and mouse would send
 

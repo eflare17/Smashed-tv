@@ -47,10 +47,11 @@ var _bench := {}                # running: {order, i, phase, t0, times, last_us,
 func setup(arena_: Node3D, use_file: bool) -> void:
 	arena = arena_
 	layer = 31
-	# ?steady=0 / ?fold=0 / ?own=0 on the page (--steady=0 ... on the command line): start with one of the view fixes
+	# ?steady=0 / ?fold=0 / ?own=0 / ?smooth=1 on the page (--steady=0 ... on the command line): start with one of
+	# the view fixes
 	# off, for a comparison from a cold start. Read once, into the setting itself, so the SET rows tell the truth and
 	# the owner can still flip them back mid-game -- which is the point of them.
-	for key in ["steady", "fold", "own"]:
+	for key in ["steady", "fold", "own", "smooth"]:
 		if arena._opts.has(key):
 			s.v[key] = String(arena._opts[key]) != "0"
 	if not use_file:
@@ -59,6 +60,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 			arena.set_steady_view(bool(s.v.get("steady", true)))
 		VoxelTouch.fold = bool(s.v.get("fold", true))
 		VoxelTouch.own_delta = bool(s.v.get("own", true))
+		VoxelTouch.smooth = bool(s.v.get("smooth", false))
 	else:
 		s.load_file()
 		var p := String(arena._opts.get("preset", ""))

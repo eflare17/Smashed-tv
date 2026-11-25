@@ -68,7 +68,7 @@ const NATIVE_FAR := 420.0
 ## only ever see in the bedroom mirror. MEDIUM in SET turns on both, and the rest of Medium with them.
 const NATIVE_START := {"scale": 1.0, "scenery": 110.0}
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
-	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2, "steady": true, "fold": true, "own": true}
+	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2, "steady": true, "fold": true, "own": true, "smooth": false}
 ## (what each setting can be, for the menu: [label, values, value labels])
 const CHOICES := {
 	# The three view fixes, first in the list so they are easy to find on a phone, and switchable so the owner can
@@ -84,6 +84,10 @@ const CHOICES := {
 	"steady": ["Steady view (shudder fix)", [false, true], ["Off - as it was", "On"]],
 	"fold": ["Combine thumb moves (shudder fix)", [false, true], ["Off - as it was", "On"]],
 	"own": ["Own thumb tracking (snap fix)", [false, true], ["Off - as it was", "On"]],
+	# and one that is OFF by default and only worth trying if a shudder is still there with the three above on:
+	# it holds back the part of a bursty frame above the recent average and lets it out on the next frame, which is
+	# at most 17 ms of lag on that part and none at all on a steady thumb (VoxelTouch.smooth, _spread)
+	"smooth": ["Even out the view (try if it still shudders)", [false, true], ["Off", "On - up to 17 ms later"]],
 	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0, 1.25, 1.5], ["50%", "67%", "77%", "85%", "100%", "125% (supersampled)", "150% (supersampled)"]],
 	"msaa": ["Anti-aliasing (MSAA)", [0, 2, 4, 8], ["Off", "2x", "4x", "8x"]],
 	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
@@ -328,6 +332,7 @@ func apply(arena: Node3D) -> void:
 		arena.set_steady_view(bool(v.get("steady", true)))
 	VoxelTouch.fold = bool(v.get("fold", true))
 	VoxelTouch.own_delta = bool(v.get("own", true))
+	VoxelTouch.smooth = bool(v.get("smooth", false))
 	arena.base_fov = float(v.fov)
 	arena.mouse_sens = float(v.sens)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.0001, float(v.volume))))
