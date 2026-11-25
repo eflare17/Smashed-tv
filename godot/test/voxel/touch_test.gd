@@ -141,6 +141,19 @@ func _run() -> void:
 	_drag(1, l0 + Vector2(40, 0), Vector2(40, 0))
 	await _wait(0.1)
 	_check(arena.look_yaw < yaw0 - 0.05 and touch.stick_on, "a second finger dragged on the right turns the view (%.3f rad) while the stick's held" % (arena.look_yaw - yaw0))
+	# ---- both thumbs down: a frame's worth of drags is applied once (the owner, 25 Nov: "it only seems to stutter
+	# when I'm using both sticks" -- with two fingers the browser's drags stop being folded for us, so the layer
+	# folds them itself)
+	yaw0 = arena.look_yaw
+	var folds0: int = touch.folds_sec
+	var keys0: int = touch.key_sec
+	for n in 20:                    # one frame, forty drags: the stick's thumb jittering, the look's thumb sweeping
+		_drag(0, s0 + Vector2(0, -60 + (1 if n % 2 == 0 else -1)), Vector2(0, 1.0 if n % 2 == 0 else -1.0))
+		_drag(1, l0 + Vector2(40 + n * 2, 0), Vector2(2, 0))
+	await _wait(0.05)
+	_check(touch.folds_sec - folds0 == 1, "both thumbs: a frame of 40 drags is applied once, not forty times (%d)" % (touch.folds_sec - folds0))
+	_check(arena.look_yaw < yaw0 - 0.05, "... and the view turns by the lot of them, not by the last one (%.3f rad)" % (arena.look_yaw - yaw0))
+	_check(touch.key_sec - keys0 == 0, "... and a jittering thumb sends the game no keys (%d)" % (touch.key_sec - keys0))
 	yaw0 = arena.look_yaw
 	_drag(1, l0 + Vector2(1040, 0), Vector2(1000, 0))
 	await _wait(0.1)

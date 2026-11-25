@@ -114,6 +114,36 @@ var _lanes := false
 var _lock := false
 var _top := false
 var _crane := false             # in Demolition's crane: the crane's buttons in the cluster's place
+## ?stats only: how much the browser is feeding us. One finger dragging arrives as one event a frame (Godot folds the
+## run of drags into it); two fingers down, the roles alternate and nothing folds, so this is the honest count.
+var ev_sec := 0                 # touch events since the stats line last read them
+var ev_worst := 0               # the most in one frame in that second
+var fingers_worst := 0          # the most fingers down at once in that second
+var key_sec := 0                # keys this layer sent the game in that second (W A S D Shift flipping)
+var in_us := 0                  # microseconds spent in _input in that second
+var folds_sec := 0              # frames in that second whose drags were applied (what the count above folded down to)
+var _ev_frame := 0
+## Two thumbs down: the browser's drags stop being folded. Godot folds a drag into the one before it, so a single
+## finger's run of drags arrives as one event a frame -- but with two fingers the stream alternates (stick, look,
+## stick, look) and no two neighbours match, so every raw sample from the panel is delivered. Measured in the real
+## browser build (test harness, 25 Nov): one finger, about 30 touch events a second, never more than 1 in a frame;
+## two fingers, 240 a second, 8 to 30 in a frame (166 in the worst) -- the same raw events either way. So the stick
+## was being tested against the walk and run lines up to thirty times a frame, and the keys it sends the game went
+## from a handful a second to about 40, each of them a whole pass of the input tree that nothing marks handled.
+## The layer folds them itself now: a drag only writes down where the finger is (and sums what a look moved), and
+## flush() applies the frame's worth once, before the game reads any of it.
+var _pend_look := Vector2.ZERO          # a look drag's pixels since the last flush (summed)
+var _pend_look_any := false
+var _pend_stick := Vector2.ZERO         # where the stick finger is now
+var _pend_stick_any := false
+var _pend_aim := Vector2.ZERO           # top-down: where the aiming thumb is now
+var _pend_aim_i := -1
+## What the browser calls each finger, mapped to one of our FINGERS slots. Godot's web build hands the DOM's own
+## Touch.identifier straight through as the event's index, and a browser is free to count those up for ever rather
+## than reuse small slots (proved with the real build on 25 Nov: a touch given identifier 11 arrived as index 11).
+## Taken as a slot number that would walk off the end of this layer's arrays and the controls would simply stop
+## answering, so the identifiers are given slots of our own as the fingers come down.
+var _slot := {}                 # the browser's id -> 0..FINGERS-1
 
 ## Touch mode for this game? opts: the game's options (--touch, the page's ?touch / ?notouch). The Android build: always
 ## (a phone has nothing else). On the web: a touch screen with no mouse or trackpad (a coarse pointer).
@@ -313,23 +343,49 @@ func button_shown(b: int) -> bool:
 # ---------------------------------------------------------------- the touches
 
 func _input(e: InputEvent) -> void:
+	if e is InputEventScreenTouch or e is InputEventScreenDrag:
+		ev_sec += 1
+		_ev_frame += 1
+		var _t0 := Time.get_ticks_usec()
+		_touch_input(e)
+		in_us += Time.get_ticks_usec() - _t0
+		return
+	_touch_input(e)
+
+func _touch_input(e: InputEvent) -> void:
 	if e is InputEventScreenTouch:
 		var t := e as InputEventScreenTouch
-		if t.index < 0 or t.index >= FINGERS:
+		var i := _slot_for(t.index, t.pressed)
+		if i < 0:
 			return
 		if t.pressed:
-			_down(t.index, t.position)
+			_down(i, t.position)
 		else:
-			_up(t.index, t.position)
-		if _role[t.index] != F_UI and not _ui:
+			_up(i, t.position)
+			_slot.erase(t.index)
+		if _role[i] != F_UI and not _ui:
 			get_viewport().set_input_as_handled()
 	elif e is InputEventScreenDrag:
 		var d := e as InputEventScreenDrag
-		if d.index < 0 or d.index >= FINGERS:
+		var i := _slot_for(d.index, false)
+		if i < 0:
 			return
-		_drag(d.index, d.position, d.relative)
-		if _role[d.index] != F_UI and not _ui:
+		_drag(i, d.position, d.relative)
+		if _role[i] != F_UI and not _ui:
 			get_viewport().set_input_as_handled()
+
+## The slot this browser id has (-1: none, and `make` false means don't give it one -- a drag for a finger we never
+## saw come down is nothing to us). A new finger takes the lowest free slot, so the usual 0, 1, 2 stay 0, 1, 2.
+func _slot_for(id: int, make: bool) -> int:
+	if _slot.has(id):
+		return int(_slot[id])
+	if not make:
+		return -1
+	for i in FINGERS:
+		if not _slot.values().has(i):
+			_slot[id] = i
+			return i
+	return -1
 
 func _down(i: int, p: Vector2) -> void:
 	if _role[i] != F_NONE:
@@ -373,12 +429,15 @@ func _up(i: int, p: Vector2) -> void:
 			# (a scroll's drag let go over a button isn't a click on it: the mouse comes up off the screen)
 			_mouse_btn(MOUSE_BUTTON_LEFT, false, p if _slip[i] < UI_SLIP * k else Vector2(-200, -200))
 	_role[i] = F_NONE
+	if _pend_aim_i == i:
+		_pend_aim_i = -1
 
 func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 	_slip[i] = maxf(_slip[i], p.distance_to(_from[i]))
 	match _role[i]:
 		F_STICK:
-			_stick_to(p)
+			_pend_stick = p
+			_pend_stick_any = true
 		F_LOOK:
 			_look(i, p, rel)
 		F_BUTTON:
@@ -388,7 +447,8 @@ func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 			if _slip[i] > SLOT_SLIP * k:
 				if _from[i].x < _size.x * 0.5 and not stick_on:
 					_stick_start(i, _from[i])
-					_stick_to(p)
+					_pend_stick = p
+					_pend_stick_any = true
 				else:
 					_role[i] = F_LOOK
 		F_UI:
@@ -398,13 +458,37 @@ func _look(i: int, p: Vector2, rel: Vector2) -> void:
 	if _ui:
 		return
 	if arena.top_down:
-		var d := p - _from[i]       # top-down: the drag is a second stick, Jared aims the way it's pushed
-		if d.length_squared() > 144.0:
-			_aim_dir = d.normalized()
+		_pend_aim = p               # top-down: the drag is a second stick, Jared aims the way it's pushed
+		_pend_aim_i = i
 		return
+	# each raw drag is still capped on its own (a finger the browser re-identified, a dropped frame: no jerk), and
+	# the frame's capped drags are summed -- which is what one finger's folded event already was
 	rel.x = clampf(rel.x, -LOOK_CAP, LOOK_CAP)
 	rel.y = clampf(rel.y, -LOOK_CAP, LOOK_CAP)
-	arena.look_by(rel * LOOK_K)
+	_pend_look += rel
+	_pend_look_any = true
+
+## The frame's touches applied, once: what the drags wrote down turns into the stick's keys and the view's turn. The
+## game calls this before it reads either (VoxelArena's _physics_process and _process), so a frame of thirty drags
+## costs what a frame of one does. Idempotent: called twice in a frame, the second does nothing.
+func flush() -> void:
+	if _pend_stick_any or _pend_look_any or _pend_aim_i >= 0:
+		folds_sec += 1
+	if _pend_stick_any:
+		_pend_stick_any = false
+		_stick_to(_pend_stick)
+	if _pend_look_any:
+		_pend_look_any = false
+		var rel := _pend_look
+		_pend_look = Vector2.ZERO
+		arena.look_by(rel * LOOK_K)
+	if _pend_aim_i >= 0:
+		var i := _pend_aim_i
+		_pend_aim_i = -1
+		if _role[i] != F_NONE:
+			var d := _pend_aim - _from[i]
+			if d.length_squared() > 144.0:
+				_aim_dir = d.normalized()
 
 func _stick_start(i: int, p: Vector2) -> void:
 	var r := STICK_R * k
@@ -416,6 +500,7 @@ func _stick_start(i: int, p: Vector2) -> void:
 	_base.modulate.a = 1.0
 	_knob.modulate.a = 1.0
 	move = Vector2.ZERO
+	_pend_stick_any = false
 
 func _stick_to(p: Vector2) -> void:
 	var r := STICK_R * k
@@ -431,6 +516,7 @@ func _stick_to(p: Vector2) -> void:
 func _stick_end() -> void:
 	stick_on = false
 	move = Vector2.ZERO
+	_pend_stick_any = false
 	_stick_keys(false, false, false, false, false)
 	_rest_stick()
 
@@ -484,10 +570,16 @@ func _let_go_all() -> void:
 		_mouse_btn(MOUSE_BUTTON_LEFT, false, Vector2(-200, -200))
 		_ui_finger = -1
 	_role.fill(F_NONE)
+	_slot.clear()
+	_pend_stick_any = false
+	_pend_look_any = false
+	_pend_look = Vector2.ZERO
+	_pend_aim_i = -1
 
 # ---------------------------------------------------------------- the shim: what the keyboard and mouse would send
 
 func _key(key: Key, down: bool) -> void:
+	key_sec += 1
 	var e := InputEventKey.new()
 	e.physical_keycode = key        # (the game reads physical keys; no keycode: Tab isn't the menus' "next")
 	e.pressed = down
@@ -526,6 +618,14 @@ func _ui_open() -> bool:
 			or arena.guide.is_open() or (arena.net_menu != null and arena.net_menu.is_open())
 
 func _process(_dt: float) -> void:
+	flush()
+	ev_worst = maxi(ev_worst, _ev_frame)
+	_ev_frame = 0
+	var down := 0
+	for r in _role:
+		if r != F_NONE:
+			down += 1
+	fingers_worst = maxi(fingers_worst, down)
 	var redo := false
 	var ui := _ui_open()
 	if ui != _ui:

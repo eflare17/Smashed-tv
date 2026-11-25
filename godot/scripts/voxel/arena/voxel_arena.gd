@@ -76,6 +76,8 @@ var _kick := 0.0
 var _opts := {}
 var _t := 0.0
 var _stat_t := 0.0
+var _worst_dt := 0.0            # ?stats: the worst frame in the second being reported
+var _dts := PackedFloat32Array()        # ?stats: that second's frames (for p99)
 var _frames := PackedFloat32Array()
 var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
@@ -1897,6 +1899,8 @@ func _walkcheck(dt: float) -> void:
 		get_tree().quit()
 
 func _physics_process(dt: float) -> void:
+	if touch:
+		touch.flush()           # (the frame's touches folded into one: VoxelTouch.flush)
 	if _opts.has("walkcheck"):
 		return
 	# the player: WASD by where you look (top-down: by the screen)
@@ -2146,15 +2150,29 @@ static func _out_of_box(p: Vector3, c: Vector3, hx: float, hz: float) -> Vector3
 	return p
 
 func _process(dt: float) -> void:
+	if touch:
+		touch.flush()           # (a frame with no physics tick in it: the touches still land before the camera)
 	_t += dt
 	if _opts.has("secs") or _opts.has("swordtest") or _opts.has("meleetest") or _opts.has("weaponshots"):
 		_frames.append(dt)          # (only the test runs' summary reads them, _finish: not kept for a whole game)
 	if _opts.has("stats"):
 		_stat_t += dt
+		_worst_dt = maxf(_worst_dt, dt)
+		_dts.append(dt)
 		if _stat_t >= 1.0:
 			_stat_t = 0.0
 			_hud_text()
 			print("ARENA ", hud.text.replace("\n", " | "))
+			print("ARENA worst frame %.1f ms   p99 %.1f ms%s" % [_worst_dt * 1000.0, _p99() * 1000.0, _touch_line()])
+			_worst_dt = 0.0
+			_dts.clear()
+			if touch:
+				touch.ev_sec = 0
+				touch.ev_worst = 0
+				touch.fingers_worst = 0
+				touch.key_sec = 0
+				touch.in_us = 0
+				touch.folds_sec = 0
 			var ps := ""
 			for k in _prof:
 				ps += "%s %.1f  " % [k, _prof[k] / 1000.0 / maxf(1.0, Engine.get_frames_per_second())]
@@ -2663,6 +2681,21 @@ func _hud_text() -> void:
 		"everything" if VoxelParkDirt.detail_m <= 0.0 else "%d m" % int(VoxelParkDirt.detail_m),
 		("%d %s" % [loadout.current + 1, loadout.slot().name]) + ("  (brush %.1f m)" % vacuum.brush_r if loadout.id() == "vacuum" else ""), _k(debris.lying()), pieces.count(),
 		_backpack_line()]
+
+## The worst frame in the last second, and what the browser fed the touch layer to make it (?stats only).
+func _p99() -> float:
+	if _dts.is_empty():
+		return 0.0
+	var a := _dts.duplicate()
+	a.sort()
+	return a[mini(a.size() - 1, int(floor(float(a.size()) * 0.99)))]
+
+func _touch_line() -> String:
+	if touch == null:
+		return ""
+	return "   touch %d events/s, worst %d in a frame, %d finger%s down, folded to %d/s, %d keys/s, %.2f ms/s in the touch layer" % [
+		touch.ev_sec, touch.ev_worst, touch.fingers_worst, "" if touch.fingers_worst == 1 else "s",
+		touch.folds_sec, touch.key_sec, touch.in_us / 1000.0]
 
 static func _k(n: int) -> String:
 	return "%.1fk" % (n / 1000.0) if n >= 1000 else str(n)
