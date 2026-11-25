@@ -11,6 +11,16 @@ extends SceneTree
 ##   ... -- --where=luna          just one place (arena / luna)
 ##   ... -- --ablate              Luna Park again with one group of things switched off at a time: what each costs
 ##   ... -- --frames=120          frames measured at each spot (default 90)
+##   ... -- --spin                stand still and swing the view right round instead of walking the route
+##   ... -- --chars               what a block character costs to build and to draw, at each cube size
+##
+## --spin (the owner, 25 Nov: "when I move the camera it lags"): stood on one spot, the view turned 15 degrees at a
+## time all the way round, a handful of frames measured at each step and NOT settled first -- the frame right after
+## the view moves is the one that hitches, so it has to be counted, not waited out. It prints the worst frame and the
+## p99 as well as the p50, because a stutter is a spike and an average hides it, and it does two laps: the first lap
+## sees everything for the first time (first-sight work shows up there), the second sees it all again (anything still
+## spiking on lap two happens every time the view moves). It also says how many instances came newly into view at
+## each step, so a spike can be read against what caused it.
 ##
 ## Prints PASS or FAIL: FAIL if the route couldn't be walked (no Luna Park, no spots). The numbers themselves are for
 ## reading, not for passing: a phone's budget is 16.7 ms a frame and the arena/Luna lines say how much of that the game
@@ -42,12 +52,21 @@ const ABLATE := [
 		"Supernova", "PharaohsCurse", "ConeyDrop", "SkScenicRailway"]],
 	["the town", ["Town"]],
 ]
+## --spin: where to stand and turn the view right round (the same spots the route starts from)
+const SPIN := {
+	"arena": [["the middle of the arena", Vector3(0, 0, 10), 0.0]],
+	"luna": [["Luna Park's forecourt", "0,0,0"], ["among the rides", "4,-46,0"]],
+}
+const SPIN_STEP := 15.0          # degrees the view turns between measurements
+const SPIN_FRAMES := 8           # frames measured at each step (not settled first: the hitch is in the first one)
 
 var arena: VoxelArena
 var presets := ["low", "high"]
 var where := ""
 var frames := 90
 var ablate := false
+var spin := false
+var chars := false
 var fails := []
 var lines := []                  # every row printed, for the summary at the end
 
@@ -61,6 +80,10 @@ func _initialize() -> void:
 			frames = int(x.trim_prefix("--frames="))
 		elif x == "--ablate":
 			ablate = true
+		elif x == "--spin":
+			spin = true
+		elif x == "--chars":
+			chars = true
 	seed(20261125)
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
@@ -198,6 +221,12 @@ func _process(dt: float) -> bool:
 	return false
 
 func _run() -> void:
+	if chars:
+		await _chars_run()
+		return
+	if spin:
+		await _spin_run()
+		return
 	# a lap of both places first, with nothing measured: Luna Park is built, every view's meshes are made and the
 	# meshing jobs that a preset's cube size sets off are finished, so the first place measured isn't charged for it
 	for p in ["low", "high"]:
@@ -303,6 +332,150 @@ func _measure() -> Array:
 		out.append(float(now - last) / 1000.0)
 		last = now
 	return out
+
+# ================================================================ --spin: turning the view on the spot
+
+func _spin_run() -> void:
+	# Luna Park built and both presets' meshes made before anything is measured, so lap one is charged for first
+	# SIGHT of things, not for the park being built at all
+	for p in ["low", "high"]:
+		arena.settings_menu.s.set_preset(p)
+		arena.settings_menu.s.apply(arena)
+		arena.stkilda.go()
+		_stand("luna", SPIN.luna[0])
+		await _settle()
+		arena.stkilda.home()
+		_stand("arena", SPIN.arena[0])
+		await _settle()
+	print("SPIN (the park built, the presets' meshes made)")
+	for p in presets:
+		if where != "luna":
+			await _spin_place("arena", p)
+		if where != "arena":
+			await _spin_place("luna", p)
+	print("SPIN ==================================================== the lot")
+	for l in lines:
+		print("SPIN ", l)
+	print("PASS" if fails.is_empty() else "FAIL (%d)" % fails.size())
+	done = true
+
+func _spin_place(place: String, preset: String) -> void:
+	var s := arena.settings_menu.s
+	s.set_preset(preset)
+	s.apply(arena)
+	if place == "luna":
+		if not arena.stkilda.active:
+			arena.stkilda.go()
+	elif arena.stkilda.active:
+		arena.stkilda.home()
+	_check(not SPIN[place].is_empty(), "%s %s: spots to spin at" % [place, preset])
+	for spot in SPIN[place]:
+		_stand(place, spot)
+		arena.look_pitch = -0.1
+		await _settle()
+		var start: float = arena.look_yaw
+		for lap in 2:
+			await _spin_lap("%s %s / %s" % [place, preset, spot[0]], lap, start)
+
+## One lap: the view set SPIN_STEP degrees further round each step, SPIN_FRAMES frames measured straight away.
+func _spin_lap(tag: String, lap: int, start: float) -> void:
+	var steps := int(round(360.0 / SPIN_STEP))
+	var all := []
+	var firsts := []                 # the frame right after each turn
+	var worst := [0.0, 0, 0]         # [ms, step, newly in view]
+	var seen := _visible_set()
+	for i in steps:
+		arena.look_yaw = start + deg_to_rad(SPIN_STEP * (i + 1))
+		var ms := []
+		var last := Time.get_ticks_usec()
+		for f in SPIN_FRAMES:
+			await process_frame
+			var now := Time.get_ticks_usec()
+			ms.append(float(now - last) / 1000.0)
+			last = now
+		var now_seen := _visible_set()
+		var fresh := 0
+		for k in now_seen:
+			if not seen.has(k):
+				fresh += 1
+		seen = now_seen
+		all += ms
+		firsts.append(ms[0])
+		if ms[0] > worst[0]:
+			worst = [ms[0], i, fresh]
+	lines.append("%-46s lap %d  p50 %5.1f  p95 %5.1f  p99 %5.1f  worst %6.1f ms   (first frame after each turn: p50 %5.1f, worst %6.1f ms at step %d, %d newly in view)" % [
+		tag, lap + 1, _pct(all, 50), _pct(all, 95), _pct(all, 99), _pct(all, 100),
+		_pct(firsts, 50), worst[0], worst[1], worst[2]])
+	print("SPIN ", lines[-1])
+
+## What the camera can see now, as a set of node paths (for "newly in view").
+func _visible_set() -> Dictionary:
+	var planes := arena.cam.get_frustum()
+	var out := {}
+	for n in _every_visual(arena):
+		var vi := n[0] as VisualInstance3D
+		if not (vi is MeshInstance3D or vi is MultiMeshInstance3D):
+			continue
+		var box := vi.global_transform * vi.get_aabb()
+		if not _seen(planes, box) or not _in_range(vi, box):
+			continue
+		out[vi.get_instance_id()] = true
+	return out
+
+# ================================================================ --chars: what a block character costs
+
+## Each kind of body built at each cube size, once (nothing cached yet, as the start-up finds it) and then again
+## (cached, as a wave of them finds it): how long it takes, and what it draws -- the draw calls (one a body part) and
+## the triangles the camera is handed for every enemy on screen.
+func _chars_run() -> void:
+	print("CHARS  kind            cube size   first build   again   draw calls   triangles")
+	for chunk in [1, 2]:
+		var tot_first := 0.0
+		var tot_tris := 0
+		for key in (VoxelArena.HEIGHT as Dictionary).keys() + ["jared_new"]:
+			VoxelBody._flesh_cache.clear()
+			VoxelBody._shared.clear()
+			var t0 := Time.get_ticks_usec()
+			var b := _build_body(String(key), chunk)
+			var first := float(Time.get_ticks_usec() - t0) / 1000.0
+			var calls := 0
+			var tris := 0
+			for n in b.parts:
+				var mi := b.parts[n].mesh as MeshInstance3D
+				if mi and mi.mesh:
+					calls += mi.mesh.get_surface_count()
+					tris += _tris(mi.mesh)
+			b.queue_free()
+			var t1 := Time.get_ticks_usec()
+			var b2 := _build_body(String(key), chunk)
+			var again := float(Time.get_ticks_usec() - t1) / 1000.0
+			b2.queue_free()
+			await process_frame
+			tot_first += first
+			tot_tris += tris
+			lines.append("  %-14s %s     %8.0f ms  %6.1f ms   %6d       %s" % [
+				key, "fine (1)  " if chunk == 1 else "chunky (2)", first, again, calls, _k(tris)])
+			print("CHARS ", lines[-1])
+		_check(tot_tris > 0, "cube size %d: bodies built" % chunk)
+		lines.append("  %-14s %s     %8.0f ms            all %d kinds, %s tris the lot" % [
+			"ALL KINDS", "fine (1)  " if chunk == 1 else "chunky (2)", tot_first, (VoxelArena.HEIGHT as Dictionary).size(), _k(tot_tris)])
+		print("CHARS ", lines[-1])
+	print("CHARS ==================================================== the lot")
+	for l in lines:
+		print("CHARS ", l)
+	print("PASS" if fails.is_empty() else "FAIL (%d)" % fails.size())
+	done = true
+
+func _build_body(key: String, chunk: int) -> VoxelBody:
+	var md := VoxelModel.get_model(key)
+	var rows := float(md.rig.get("ref_rows", 80)) if md else 80.0
+	var cube_m := float((VoxelArena.HEIGHT as Dictionary).get(key, 1.85)) / rows * float(chunk)
+	if key == "jared_new":                    # (the player's own body: its cube is a sprite pixel, not a height)
+		cube_m = 0.0125 * float(chunk)
+	var b := VoxelBody.new()
+	arena.add_child(b)
+	b.setup(key, cube_m, chunk, arena._mat)
+	return b
 
 static func _pct(a: Array, p: int) -> float:
 	if a.is_empty():
