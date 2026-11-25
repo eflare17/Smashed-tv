@@ -51,13 +51,17 @@ func _of(nm: String) -> VoxelBreakables.Building:
 			return b
 	return null
 
-# enemies on every post of one kind on a building (the pictures: who's on the roof, who's in the windows)
-func _man(nm: String, kind: int) -> int:
+# Enemies on a building's posts of one kind (the pictures: who's on the roof, who's in the windows). toward: only
+# the posts within r of that point, so the camera sees them -- a building's windows run right round it.
+func _man(nm: String, kind: int, toward := Vector3.INF, r := 11.0) -> int:
 	var n := 0
 	for p in dem.mob.posts:
-		if int(p.kind) == kind and String(dem.breaks.list[int(p.bi)].data.id) == nm and not bool(p.taken):
-			dem.mob.fill(p)
-			n += 1
+		if int(p.kind) != kind or String(dem.breaks.list[int(p.bi)].data.id) != nm or bool(p.taken):
+			continue
+		if toward != Vector3.INF and (p.at as Vector3).distance_to(toward) > r:
+			continue
+		dem.mob.fill(p)
+		n += 1
 	return n
 
 func _wall(b: VoxelBreakables.Building, c: int, y: float) -> Vector3:
@@ -146,15 +150,17 @@ func _process(dt: float) -> bool:
 			step = 10
 			t = 0.0
 		10:
-			# phase B. The block as new again, and enemies stationed on the office: three on its roof, three in the
-			# windows of its upper storeys (VoxelDemolitionMob's posts are its roof tiles and its glazed blocks)
+			# phase B. The block as new again, and enemies stationed on the office and the brick shop: on the roof
+			# tiles, and in the windows of the upper storeys along the road (VoxelDemolitionMob's posts; the window
+			# ones burst the glazed block out as they take it, which is why there are holes in the wall)
 			dem.start()
 			dem.crane.place(D.AT + Vector3(46.0, 0.0, 0.0), -PI / 2.0)
-			_man("Office", VoxelDemolitionMob.ROOF)
-			_man("Office", VoxelDemolitionMob.WINDOW)
-			_man("BrickShop", VoxelDemolitionMob.ROOF)
+			var face := D.AT + Vector3(11.0, 7.0, -6.0)      # (the office's wall along the road: what the camera sees)
+			_man("Office", VoxelDemolitionMob.ROOF, face, 13.0)
+			_man("Office", VoxelDemolitionMob.WINDOW, face, 11.0)
+			_man("BrickShop", VoxelDemolitionMob.ROOF, D.AT + Vector3(-6.0, 7.0, -6.0), 13.0)
 			dem.mob.made = dem.mob.most()      # (no more coming while the picture's taken: just these)
-			_stand(D.AT + Vector3(2.0, 0.05, 2.5), D.AT + Vector3(11.0, 6.5, -6.0))
+			_stand(D.AT + Vector3(-9.0, 0.05, 7.0), D.AT + Vector3(11.0, 7.5, -6.0))
 			step = 11
 			t = 0.0
 		11:
@@ -175,7 +181,7 @@ func _process(dt: float) -> bool:
 				mid += v
 			mid /= off.ring.size()
 			dem.breaks.blast(Vector3(mid.x, off.h - 0.2, mid.y), 5.0)
-			_stand(D.AT + Vector3(2.0, 0.05, 2.5), D.AT + Vector3(11.0, 6.5, -6.0))    # (the same spot, after)
+			_stand(D.AT + Vector3(-9.0, 0.05, 7.0), D.AT + Vector3(11.0, 7.5, -6.0))   # (the same spot, after)
 			step = 13
 			t = 0.0
 		13:
