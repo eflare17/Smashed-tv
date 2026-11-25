@@ -53,6 +53,7 @@ func _run() -> void:
 		await _shot("arena_house", preset)
 		_at_a_chest()
 		await _shot("arena_chest", preset)
+	await _enemy_shots()
 	print("PASS")
 	done = true
 
@@ -69,6 +70,29 @@ func _along_the_dirt() -> void:
 	var at := sk.global_transform * Vector3(p.x, 0.05, p.y)
 	var look := sk.global_transform * Vector3(p.x + d.x * 40.0, 0.0, p.y + d.y * 40.0)
 	_stand(at, look)
+
+## A grunt close up at each cube size (the owner, 25 Nov: "the enemies look worse -- blockier / lower detail"), on
+## the Low preset a phone starts on: enemy_chunky is what a phone drew before (two sprite pixels a cube, an eighth of
+## the blocks), enemy_fine is what Low draws now.
+func _enemy_shots() -> void:
+	var s := arena.settings_menu.s
+	s.set_preset("low")
+	s.apply(arena)
+	for size in [["chunky", 2], ["fine", 1]]:
+		s.set_value("chunk", int(size[1]))
+		s.apply(arena)
+		for i in 6:
+			await process_frame
+		for b in arena.bodies.duplicate():
+			if b and is_instance_valid(b):
+				b.queue_free()
+		arena.bodies.clear()
+		var e := arena.spawn_kind("grunt", Vector3(0, 0, 0))
+		e.yaw = 0.0
+		e.speed = 0.0
+		arena.frozen = true                  # (he stands there: the same pose both times)
+		_stand(Vector3(0, 0.05, 2.0), Vector3(0, 1.35, 0))
+		await _shot("enemy_%s" % size[0], "low")
 
 ## Two metres in front of a chest with its padlock on, looking at it.
 func _at_a_chest() -> void:
