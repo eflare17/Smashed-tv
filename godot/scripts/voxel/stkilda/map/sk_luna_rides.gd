@@ -457,9 +457,16 @@ static func _taken(fill: float) -> bool:
 ## The riders on a ride: follow() puts each back on what they ride on (after the ride's moved it).
 class Riders extends MultiMeshInstance3D:
 	var seats: Array = []
+	# the batch's floats, kept from frame to frame (written in one go: see SkCrowd.put). Reading them back off the
+	# MultiMesh every frame copied the lot (and in --headless, where the dummy renderer keeps none, came back empty and
+	# filled the log).
+	var _buf := PackedFloat32Array()
 
 	func follow() -> void:
-		var buf := multimesh.buffer           # (written in one go: see SkCrowd.put)
+		if _buf.size() != seats.size() * 20:
+			_buf = multimesh.buffer
+			if _buf.size() != seats.size() * 20:
+				_buf.resize(seats.size() * 20)
 		for i in seats.size():
 			var s: Array = seats[i]
 			var on := Transform3D.IDENTITY
@@ -467,8 +474,8 @@ class Riders extends MultiMeshInstance3D:
 				on = (s[0] as MultiMesh).get_instance_transform(s[1])
 			elif s[0] is Node3D:
 				on = (s[0] as Node3D).transform
-			SkCrowd.put(buf, i, on * (s[2] as Transform3D))
-		multimesh.buffer = buf
+			SkCrowd.put(_buf, i, on * (s[2] as Transform3D))
+		multimesh.buffer = _buf
 
 ## A carousel horse, prancing, facing -z... no: along +x (it's turned to face round the ride).
 static func _horse(coat: Color, mane: Color) -> ArrayMesh:

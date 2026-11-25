@@ -30,6 +30,14 @@ var dragging := -1
 var _meshes: Array[ArrayMesh] = []
 var _stump: ArrayMesh
 var _hud: Label
+# (The owner, 25 Nov: the browser game "was a bit laggy" on a phone.) A bush and its stump used to be a MeshInstance3D
+# each, two hundred of them along the strip and two hundred draw calls; now the stumps are one batch and the bushes
+# still growing are one batch a kind, four calls in all. Only a bush that's been cut down leaves its batch and gets
+# its own node to tip, lie and be dragged on; and a bush standing still has its transform left alone, instead of
+# being written every frame for a shiver that finished a quarter of a second after the blow.
+var _stumps: MultiMeshInstance3D
+var _batch: Array[MultiMeshInstance3D] = []
+const SHIVER := 0.35            # s a blow's shiver lasts (after it, a growing bush isn't touched again)
 
 func setup(s: VoxelStKilda, dirt: VoxelParkDirt) -> void:
 	sk = s
@@ -50,6 +58,7 @@ func setup(s: VoxelStKilda, dirt: VoxelParkDirt) -> void:
 				var p: Vector2 = o + d * along + across * side * (OUT + rng.randf_range(-0.25, 0.4))
 				_add(Vector3(p.x, 0.0, p.y), rng.randf() * TAU, rng.randi() % _meshes.size(), rng.randf_range(0.85, 1.15))
 				along += EVERY * rng.randf_range(0.7, 1.3)
+	_batches()
 	_hud = Label.new()
 	_hud.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_hud.offset_left = -200
@@ -66,21 +75,58 @@ func setup(s: VoxelStKilda, dirt: VoxelParkDirt) -> void:
 	sk.arena._hud_layer.add_child(_hud)
 
 func _add(at: Vector3, yaw: float, kind: int, size: float) -> void:
-	var stump := MeshInstance3D.new()
-	stump.mesh = _stump
-	stump.material_override = SkModels.baked_material()
-	stump.position = at
-	stump.rotation.y = yaw
-	add_child(stump)
 	var mi := MeshInstance3D.new()
 	mi.mesh = _meshes[kind]
 	mi.material_override = SkModels.baked_material()
 	mi.position = at
 	mi.rotation.y = yaw
 	mi.scale = Vector3.ONE * size
+	mi.visible = false              # (while it's growing, its kind's batch draws it)
 	add_child(mi)
-	list.append({"node": mi, "stump": stump, "base": at, "at": at, "yaw": yaw, "size": size, "hp": HITS, "state": "grow",
-		"t": 0.0, "cool": 0.0, "tip_axis": Vector3.RIGHT, "lie": Basis()})
+	list.append({"node": mi, "base": at, "at": at, "yaw": yaw, "size": size, "hp": HITS, "state": "grow",
+		"t": SHIVER, "cool": 0.0, "tip_axis": Vector3.RIGHT, "lie": Basis(), "kind": kind, "slot": -1})
+
+## The stumps in one batch, and the bushes in one a kind (every bush has a place in its kind's batch for as long as
+## it's growing; cut down, its place is collapsed to nothing and its own node takes over).
+func _batches() -> void:
+	_stumps = _mmi("Stumps", _stump, list.size())
+	for i in list.size():
+		_stumps.multimesh.set_instance_transform(i, Transform3D(Basis(Vector3.UP, float(list[i].yaw)), list[i].base))
+	for kind in _meshes.size():
+		var mine := []
+		for i in list.size():
+			if int(list[i].kind) == kind:
+				list[i].slot = mine.size()
+				mine.append(i)
+		_batch.append(_mmi("Bushes%d" % kind, _meshes[kind], mine.size()))
+		for i in mine:
+			_grow_xf(list[i])
+
+func _mmi(nm: String, mesh: Mesh, count: int) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = count
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = nm
+	mmi.multimesh = mm
+	mmi.material_override = SkModels.baked_material()
+	add_child(mmi)
+	return mmi
+
+## A growing bush's place in its batch, written (the shiver after a blow, and once as it settles).
+func _grow_xf(b: Dictionary) -> void:
+	var shake := maxf(0.0, 1.0 - float(b.t) * 4.0) * 0.12 * sin(float(b.t) * 60.0)
+	_batch[int(b.kind)].multimesh.set_instance_transform(int(b.slot),
+		Transform3D(Basis(Vector3.UP, float(b.yaw)).rotated(Vector3.RIGHT, shake).scaled(Vector3.ONE * float(b.size)), b.at))
+
+## In its batch (growing) or out of it (cut down: its place drawn as nothing, its own node shown instead).
+func _in_batch(b: Dictionary, on: bool) -> void:
+	(b.node as MeshInstance3D).visible = not on
+	if on:
+		_grow_xf(b)
+	else:
+		_batch[int(b.kind)].multimesh.set_instance_transform(int(b.slot), Transform3D(Basis().scaled(Vector3.ZERO), b.base))
 
 ## A cut bush lying on its side, its middle LIE_Y over at (b.at: where its middle is, on the ground).
 func _lie_xf(b: Dictionary) -> Transform3D:
@@ -123,8 +169,10 @@ func reset() -> void:
 		b.state = "grow"
 		b.hp = HITS
 		b.at = b.base
+		b.t = SHIVER
 		var mi: MeshInstance3D = b.node
 		mi.transform = Transform3D(Basis(Vector3.UP, b.yaw).scaled(Vector3.ONE * float(b.size)), b.base)
+		_in_batch(b, true)
 
 # ---------------------------------------------------------------- cutting one down (the melee weapons: VoxelMelee.wall_strike)
 
@@ -161,7 +209,10 @@ func strike(from: Vector3, dir: Vector3, reach: float) -> bool:
 		b.state = "tip"
 		var flat := Vector3(dir.x, 0, dir.z)
 		b.tip_axis = (flat.cross(Vector3.DOWN) if flat.length() > 0.01 else Vector3.RIGHT).normalized()
+		_in_batch(b, false)         # (out of its kind's batch: its own node tips it over)
 		sk.arena.say("Cut down: E to drag it", 1.5)
+	else:
+		_grow_xf(b)
 	return true
 
 # ---------------------------------------------------------------- dragging, hiding
@@ -176,9 +227,9 @@ func _process(dt: float) -> void:
 		var sz := Vector3.ONE * float(b.size)
 		match String(b.state):
 			"grow":
-				b.t += dt
-				var shake := maxf(0.0, 1.0 - float(b.t) * 4.0) * 0.12 * sin(float(b.t) * 60.0)     # (just hit: a shiver)
-				mi.transform = Transform3D(Basis(Vector3.UP, float(b.yaw)).rotated(Vector3.RIGHT, shake).scaled(sz), b.at)
+				if b.t < SHIVER:               # (just hit: a shiver; after it, it stands still and isn't touched again)
+					b.t += dt
+					_grow_xf(b)
 			"tip":
 				# over off its stump, round its foot, coming to lie on its side
 				b.t += dt

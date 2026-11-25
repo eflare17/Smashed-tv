@@ -71,12 +71,72 @@ class Patch extends VoxelTerrain:
 		return out
 
 	func wdig(c: Vector3, r: float, hardest: int) -> Dictionary:
-		dug = true
+		_split()
 		return dig(to_local(c), r, hardest)
 
 	func wfill(c: Vector3, r: float, n: int) -> int:
-		dug = true
+		_split()
 		return fill(to_local(c), r, n)
+
+	# ------------------------------------------------------------ one mesh while nobody's dug it
+	#
+	# (The owner, 25 Nov: the browser game "was a bit laggy" on a phone.) A patch's dirt is meshed in 2 m chunks, 32 of
+	# them, and the strip runs right round the park: from the forecourt that was seven hundred draw calls, two thirds of
+	# everything drawn in Luna Park, for ground nobody has touched. Until a shovel goes in, a patch can't change, so its
+	# chunks are joined into one mesh (the same triangles, the same colours: nothing looks different) and the chunks' own
+	# meshes are hidden. The first dig splits it back into chunks, which is the only state they're ever dug in, and
+	# coming back to the park (reset) joins them again.
+
+	var whole: MeshInstance3D       # the lot in one mesh (while undug); null till it's been joined
+	var joined := false
+
+	## Join the chunks if they're all meshed and nothing's dug. True once it's done it.
+	func join() -> bool:
+		if joined or dug or not _dirty.is_empty() or not _jobs.is_empty():
+			return false
+		var v := PackedVector3Array()
+		var n := PackedVector3Array()
+		var col := PackedColorArray()
+		for mi in _mesh:
+			if mi.mesh == null:
+				continue
+			var a := mi.mesh.surface_get_arrays(0)
+			v.append_array(a[Mesh.ARRAY_VERTEX])
+			n.append_array(a[Mesh.ARRAY_NORMAL])
+			col.append_array(a[Mesh.ARRAY_COLOR])
+		if v.is_empty():
+			return false
+		var arr := []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = v
+		arr[Mesh.ARRAY_NORMAL] = n
+		arr[Mesh.ARRAY_COLOR] = col
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		if whole == null:
+			whole = MeshInstance3D.new()
+			whole.name = "WholePatch"
+			whole.material_override = _mat
+			add_child(whole)
+		whole.mesh = am
+		joined = true
+		_chunks(false)
+		return true
+
+	# a shovel's gone in: back to the chunks, each meshed as it's dug
+	func _split() -> void:
+		dug = true
+		if not joined:
+			return
+		joined = false
+		whole.mesh = null
+		_chunks(true)
+
+	func _chunks(on: bool) -> void:
+		for mi in _mesh:
+			mi.visible = on
+		if whole:
+			whole.visible = not on
 
 	func wcontains(p: Vector3) -> bool:
 		var l := to_local(p)
@@ -97,7 +157,7 @@ class Patch extends VoxelTerrain:
 		dug = false
 		generate()
 		for c in band_chunks():
-			_dirty[c] = true
+			_dirty[c] = true     # (meshed again, and joined again once they are: VoxelParkDirt._process)
 
 func setup(s: VoxelStKilda) -> void:
 	sk = s
@@ -219,6 +279,14 @@ func reset() -> void:
 func finish() -> void:
 	for p in patches:
 		p.finish()
+		p.join()
+
+## One patch's chunks joined into one mesh a frame (each is a megabyte of arrays: not all at once, and not while a
+## shovel's in it). Nothing left to join and this does nothing.
+func _process(_dt: float) -> void:
+	for p in patches:
+		if p.join():
+			return
 
 # ---------------------------------------------------------------- cutting the town away over the strip
 
