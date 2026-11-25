@@ -919,3 +919,338 @@ again). When a tunnel's roof goes, lumps come down with the dust and pile on the
 - `baseline.txt` is still stage 1's (the yard guard re-wrote it; put back). `feel.txt`, `dozer_clod.txt` and
   `pour.txt` are this stage's guard runs.
 - Sound: nothing new; clod ticks are stage 9.
+
+## Stage 8: co-op and save
+
+**State found**: `dig_site.gd`, `ds_blasts.gd`, `ds_dirt.gd`, `ds_net.gd` and `ds_save.gd` had this stage's game code in
+the working tree, uncommitted, with no test and no log entry (an earlier run of this stage that stopped). It was read
+through, kept, and two faults in it were found by the new test and fixed (below).
+
+**Built**
+
+- `ds_dirt.gd`: `ghost` (a guest's dirt: every clod it has weighs 0 mm, nothing is laid on the ground, `land_all()`
+  just clears them). `net_pack` / `net_unpack`: the host's clods in packets of 440 bytes at the most: a 5-byte head
+  (packet number, how many clods the host has, how many packets a lap takes, how many "gone" numbers), the numbers of
+  clods gone since (each sent 3 times), then 9 bytes a clod (u16 id, position to 2 cm in 3 x u16, material + size
+  byte). New clods go first, the rest in turn. The guest keeps "puppets" by id, glides each to where it was last
+  said to be, rolls it as fast as it goes, and drops one not heard of for 3.5 laps (0.5 s at the least).
+- `ds_net.gd`: fast id 100 for the clod packets, 12 a second (`_send_clods`); when the host's last clod settles the
+  ground's diff and the checksums go at once instead of waiting their turn. `stats.clod_n / clod_bytes / clod_most`.
+- `ds_blasts.gd`: event `clods` (one reliable message: where, what came out, the power, the host dirt's random
+  number, its awake count and cap). The guest throws the same clods itself, weightless, and runs them on its own copy
+  of the ground. The host marks its own blast clods `N_OWN` so they are not streamed as well. The old 22 chunks are
+  only sent when no guest throws clods.
+- `ds_save.gd`: `land_all()` before packing. `dig_site.gd`: the minute's autosave waits up to 10 s for a moment with
+  no clods awake (so it does not flatten a wave mid-push); `_step_dirt` runs on a guest too (its pictures), and when
+  the game's role flips (joined a mate, or the host went) it calls `land_all()` first.
+- **Not as the plan said**: every clod of the host's that is not a blast's is streamed (a pour's too), not only
+  "machine-touched, nearest first". Nearness only matters once a lap takes over 6 packets: then clods further than
+  15 m from the guest go every other lap.
+- No native change.
+- Tests: `digsite_sync_test.gd` extended (host 6 -> 14 checks, guest 9 -> 15), `digsite_save_test.gd` extended
+  (4 -> 6, 6 -> 7), new `digsite_sync_shots.gd` (a guest's screen).
+
+**Two faults the test found in the code as it lay**
+
+1. Second 7 of the first paced run: the guest showed 92 clods, the host had 129 (28.7% off). Cause: the packets'
+   turn goes through the clods by index, and a clod that settles is replaced by the last one (swap-remove); if the
+   turn had passed that index the moved clod waited a whole lap more, and with one packet in ten lost it went
+   unheard past the guest's 2.5 laps and was dropped, to pop back a lap later. Fix: a moved clod is marked `N_DUE`
+   and goes in the next packet; the guest waits 3.5 laps, timed by how often packets really arrive (`_pint`), not by
+   an assumed 12 a second.
+2. The host's send timer threw away its remainder each time (`_clod_t = 0`), so at 60 frames a second it sent 10 a
+   second, not 12. It now keeps it.
+
+**Commands** (from the repository's root; the pair run together, host first)
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_test.gd -- --nosave --host=YARD1 --via=enet --lag=150 --loss=10
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_test.gd -- --nosave --join=127.0.0.1 --via=enet --lag=150 --loss=10
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_save_test.gd -- --save=<path> --phase=1
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_save_test.gd -- --save=<path> --phase=2
+    (host as above with digsite_sync_shots.gd)  xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_sync_shots.gd -- --nosave --join=127.0.0.1 --via=enet --lag=150 --loss=10 --out=res://integration/dirt_shots
+
+(The sync pair takes 2 min 5 s and writes `integration/dirt_shots/sync_host.txt` and `sync_guest.txt`.)
+
+**How the sync test runs**: the old six steps, then the host levels the yard's patch and pushes across it for 20 s
+twice, back to back: clods off (the baseline for its frames), then on. Both games are held to the clock by the test
+(a frame every 1/60 s at the least): headless, `--fixed-fps` runs a light game's frames faster than a busy one's, so
+the guest's "second" was a third of the host's and the first run's comparison meant nothing. Frame times are the
+frame's own work, without the wait. The guest compares the clods it shows with the host's count in the last packet
+it got. For the checksums the host sends its own `section_hashes()` when its last clod settles and every half second
+for 6 s; the guest compares its ground's each frame.
+
+**(a) sync pair, `--lag=150 --loss=10`: host `14 passed, 0 failed`, guest `15 passed, 0 failed`** (three runs after
+the fixes, all the same; the committed text is the third)
+
+| Criterion | Measured (runs 1, 2, 3) |
+|---|---|
+| guest clod count within 15% of the host's, each second 2 to 20 | 0 of 19 seconds out in each; furthest off 6.3%, 2.1%, 0.5% (178 of 190; 193 of 197; 196 of 197); 194 to 196 shown at the most |
+| guest spawns 0 mass clods | 0 mm in the guest's dirt at every frame of the run (the push, its own dig, the 200 blast clods it threw itself); its dig flicked 0 crumbs |
+| section hashes equal within 4 s of the last clod settling | 1.03, 1.07, 1.05 s after the guest heard; still equal 6.2 s on |
+| clod traffic <= 6 kB/s | busiest second 5258, 5247, 5247 bytes; 2.46 kB/s mean over the push (51 kB in all) |
+| host mass | 0 mm drift at every second of both pushes and at rest; 492 clods let go, 205 awake at the most |
+| host `step_us` mean <= 2.0 ms | 307 us with any awake (p95 856, worst 1360) |
+| host frame p95 <= baseline + 3.0 ms | +0.19, +0.73, -0.77 ms (20.97 / 20.78, 20.71 / 19.98, 20.47 / 21.24) |
+| `layer_us + show_us` within 20% of baseline | +1%, +3%, +2% |
+| added: the host's blast | 2316 blocks as 200 clods on the host; the guest threw 200 of its own from the host's random number (0.0% off), all gone 2.0 s after the host's, grounds match |
+
+- **The plan's absolute "<= 12 ms" frame is not met in the pair, and is not checked there**: with two games on this
+  box the baseline push itself is 20 to 21 ms p95 (solo it is 16.9: stage 5's test, below). The pair checks the
+  difference only. No criterion was loosened.
+- Without the bad line (the guard run, no lag or loss): host 14/0, guest 15/0; every second's counts equal; 1.05 s.
+
+**(b) save pair: `6 passed, 0 failed`, then `7 passed, 0 failed`**
+
+| Criterion | Measured |
+|---|---|
+| >= 100 clods airborne at save | 191 of 191 more than 0.2 m off the ground (a stick's blast 0.5 s before), 306750 mm in them |
+| `ground_mm` + loads identical after reload | 5265675000 mm before (ground + clods + loads), 5265675000 in the ground after leaving, 5265675000 in the new game; 0 clods, 0 owed |
+
+**Stage 5's budgets, solo** (`digsite_dozer_clod_test`, 16/0): step 259 us mean (p95 758); frame p95 17.57 against
+16.88 (+0.69 ms); `layer_us + show_us` +5%.
+
+**Shots** (`integration/dirt_shots/`, looked at): `sync_guest_1_wave.png` (the guest on foot beside the patch, 177 of
+the host's 177 clods shown: the mate on the bulldozer, brown lumps heaped on the blade and spilling round its end);
+`sync_guest_2_rest.png` (2 s after the last has gone: the cut, the windrows and the heap as lumpy ground); the yard's
+four again as `stage8_*.png` (the push looks as in stage 7). In the first, a clump of lumps sits above the blade's
+top corner: the guest's dozer is drawn a little behind where the host's is (risk 6 of the plan).
+
+**What the owner will see**: a mate watching you doze sees the same wave of lumps on the blade and rolling off its
+ends, a little behind (0.15 to 0.3 s) and gliding rather than bouncing. A blast throws its lumps on both screens.
+Quit or go home mid-pour or mid-blast and every lump in the air is in the ground when you come back.
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` / `digsite_clod_perf` | 10/0 / 14/0 / 5/0 |
+| `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` / `digsite_blast_clod_test` | 22/0 / 16/0 / 21/0 / 20/0 |
+| sync pair (enet, no lag) / dynamite pair (enet) | host 14/0, guest 15/0 / host 4/0, guest 5/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0 |
+
+**Known gaps**
+
+- **Host change is not tested.** The code path is there (`_step_dirt`: the role flips, `land_all()`), but no test
+  drops the link mid-wave.
+- **The cap was not reached in co-op.** The push peaks at 205 clods (4 packets a lap). At `FLY_MAX` 800 a lap is 17
+  packets (1.4 s) and far clods go every other lap: a guest would see them move in steps. Not measured, not seen.
+- **Puppets collide with nothing** on the guest: they go where the host says, 150 ms and up to a lap late, beside a
+  dozer that is itself drawn late. Two stills were looked at, no motion.
+- **A guest's blast clods are its own run** of the same throw on its copy of the ground: they can come to rest in
+  other places than the host's; the dirt itself arrives with the host's ground. They are not counted in the 15%.
+- **The guest's flick** is checked through `dig_at` (0 clods, 0 flicked), not through a swung shovel.
+- **The pair's frame numbers are with two games on four cores**; only the difference from the baseline is asserted.
+- Bucket and tray loads are still not saved (out of scope, as before).
+- `baseline.txt` is still stage 1's (put back after the yard guard). `feel.txt`, `dozer_clod.txt`, `pour.txt` and
+  `blast.txt` are this stage's guard runs.
+
+## Stage 9: polish, perf sweep, the owner's flickering boulder
+
+**Built**
+
+- **The owner's "this big boulder flickers when I emptied the bucket" (24 Nov).** The "boulder" is one of the big
+  lumps `DsClods` draws on loose dirt (`ds_clods.gd`, `shaders/ds_clod.gdshader`): laid once at fixed spots, each
+  drawn by its shader from the ground under it (shown where there is loose dirt, turned and shuffled by the ground's
+  height, coloured by its middle column's soil). Nothing rebuilt, hid or moved it, and no clod knocked it: its node,
+  multimesh, mesh and instance transform never change. What flickered was the shader's own sums. Each clod that
+  settled put its whole 31 to 56 mm on the columns under the lump in one step, so the ground under a lump jumped up to
+  113 mm in a frame; the lump's angle was `height x 7..16 rad/m` whatever its size, so a half-metre lump turned up to
+  84 degrees in one frame, 13 times it went from sand's colour to dirt's and back as clods of each landed on its
+  middle column, and it jumped 65 mm sideways. Fixed three ways:
+  1. `ds_dirt.gd`: a settled clod's dirt **melts in** over a few steps (`MELT_K` a quarter of what waits on a column a
+     step, `MELT_MIN` 5 to `MELT_MOST` 26 mm) instead of in the one. It is in `mass_mm()` until it is down
+     (`melting_mm()`), `awake()` is 1 while any waits, `land_all()` lays all of it at once.
+  2. the shader (uniform `calm`, 1): a lump turns for the ground moving as a thing its size would rolling
+     (`0.4..0.8 / size` rad/m: a 12 cm crumb still churns, a half-metre lump barely turns) and shuffles less the
+     bigger it is;
+  3. its colour is the soil over its whole foot (its middle column twice and four round it), not one column's.
+  `DsClods.lump_drawn()` is the shader's sums in GDScript (a headless run draws nothing) and `laid_near()` the lumps
+  near a place, for the test.
+- **The view breathes** (`ds_machines.gd`): from behind, it drops back up to 8% of its distance with the machine's
+  speed (eased, `CAM_PULL`), and shakes while its tracks slip (to 2.5 cm) and when it lands with a thud (to 3 cm;
+  `DsMachine.jolt`, new, set by `_thud`), never more than 3 cm.
+- **Clods tick as they land** (`ds_sfx.gd`: `DsSfx.Ticks`, a dull thud made in code, five voices, 18 a second at the
+  most; louder and lower the harder and bigger). `DsDirt` notes each step's hardest bounce off the ground
+  (`hit_n`, `hit_v`, `hit_at`, `hit_mm`); `DigSite._step_dirt` plays it.
+- **`DsDozer.CLOD_SHARE` 0.35 -> 0.55**: the highest, in steps of 0.05, at which stage 5's test still passes.
+- **`test/voxel/digsite_dirt_sweep.gd`** (the 60 s session), **`digsite_boulder_test.gd`**, `digsite_boulder_shots.gd`.
+- `dig_site.gd`'s timed save waits on `dirt.awake() == 0` (it was `dirt.n == 0`): not while dirt is still melting in.
+- **No native batch.** Stage 2's probe passed, but nothing needs it: the clods' step is 1.8 ms at the cap, inside the
+  2.0 budget. The native API and both binaries are untouched.
+
+**Tests**
+
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_dirt_sweep.gd -- --nosave
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_boulder_test.gd -- --nosave
+    /root/godot/godot --headless --path godot --fixed-fps 60 -s res://test/voxel/digsite_dozer_clod_test.gd -- --nosave [--share=0.6]
+    xvfb-run -a /root/godot/godot --path godot --fixed-fps 60 -s res://test/voxel/digsite_boulder_shots.gd -- --nosave --out=res://integration/dirt_shots --tag=after   (--before --tag=before)
+
+`digsite_dirt_sweep`: 17/0 (three runs; the numbers are the last, run in the guard set). The session, twice in the one
+run (baseline first: clod share 0, pours and blasts without clods, the rain laid straight down): the Bobcat scoops
+65000 mm and pours it in the truck's tray (100%), the truck tips it out, the dozer pushes 10 to 40 s (backing off its
+heap at 22 s), a stick goes off at 18 s, and from 20 to 30 s the script rains 8000 mm of dirt a frame over the dozer's
+path as clods (4.8 million mm: far more than there is room for; what finds none goes straight down).
+
+| Criterion | Measured |
+|---|---|
+| at the cap | 800 awake at the most (`FLY_MAX` 800); 549 on average through the 10 s (the time cap, 2000 us, holds it under 800 most frames); 656 of the rain's 2400 spots found no room |
+| `step_us` mean <= 2.0 ms | 0.89 ms over the session's 2099 frames with any awake (p95 2.43); **1.80 ms over the 10 s at the cap** (p95 3.9, worst 5.5). Other runs: 1.77, 1.80 |
+| whole-frame p95 <= baseline + 3.0 ms | 21.09 against 18.86: **+2.24** (means 11.62 / 10.24). Other runs: +1.09 (19.60 / 18.50), and +4.00 with another Godot test running beside it (not counted: see below) |
+| whole-frame p95 <= 12 ms | **not met, and not a check**: 21.09 with clods, 18.86 the baseline. As stage 1 found, the baseline alone is over it on this box (no GPU, a second job on it); the test prints it as a NOTE. Proposed since stage 1: keep "+3.0 ms over the baseline, back to back", drop the absolute |
+| mass exact | 0 mm drift at each of the 60 seconds, at the end and after `land_all()`, both runs (the rain counted in) |
+| the session happened | bucket 65000 mm scooped, 65000 in the tray, tray tipped to 0, 1 blast, the dozer driven 27.8 m; clods at rest 41 s in, 0 left at 60 s |
+| the view | drops back 5.9% at the most (never over 8%), 0.0% standing; shakes 15.8 mm at the most while the tracks slip, 0.0 standing |
+| ticks | 367 with clods, 0 in the baseline |
+
+The +4.00 ms run was the first, taken while a `digsite_dozer_clod_test` share run was going on the same box; alone it
+was +1.09, and +2.24 with the picture-taking going on beside it. The criterion was not loosened.
+
+`CLOD_SHARE` (stage 5's `digsite_dozer_clod_test --share=`; its one check that fails is "the clods are their share
+of what the blade's front moves on, to 3 points"; all its others, the frame and step times too, pass at every share):
+
+| share asked | 0.35 | 0.50 | 0.55 | 0.60 | 0.65 | 0.80 | 1.00 |
+|---|---|---|---|---|---|---|---|
+| share got | 34.9% | 49.9% | 53.9% | 56.6% | 58.8% | 64.1% | 68.0% |
+| test | 16/0 | 16/0 | **16/0** | 15/1 | 15/1 | 15/1 | 15/1 |
+
+Over about a half the blade cannot give what is asked: `CLOD_STEP` (3000 mm a step), the owed counter's clamp and
+what the sweep's `take_most` finds hold it at 68% however much is asked. 0.55 is the most that is honest. At 0.55:
+12.77 m in 20 s (0.35: 12.52), step mean 309 us, 53.9%.
+
+`digsite_boulder_test`: 11/0. The excavator's 77500 mm (half sand, a quarter dirt, a quarter clay) tipped on the
+grass twice in the one run: as it was (`melt` off, the shader's `calm` 0), then as it is.
+
+| In a frame, at the most, a big lump | As it was | As it is | Limit |
+|---|---|---|---|
+| turns | 84 degrees (1.47 rad) | 3.8 degrees (0.066) | 7 (0.12) |
+| the ground under it rises | 113 mm | 24 mm | 30 |
+| grows or shrinks (of its size) | 0.68 | 0.14 | 0.20 |
+| changes colour (1: a plain change of soil) | 1.40, 13 times over 0.5 | 0.25, never | 0.5 |
+| shuffles | 65 mm | 6 mm | 10 |
+
+And: no lump's node, multimesh, mesh or place changes, no patch shown is hidden again, nothing changes from a second
+after the clods are at rest, 0 mm made or lost. (The first run of this stage had the rise at 32.2 mm: `MELT_MOST`
+was added for it.)
+
+**Guards** (one after another; `-- --nosave` unless said)
+
+| Test | Result |
+|---|---|
+| dirt / tools / dynamite / support / cave / tunnel / walkin | 12/0, 17/0, 15/0, 13/0, 14/0, 7/0, 2/0 |
+| dingo / fleet / ground | 14/0, 20/0, 22/0 |
+| `digsite_test` | 6/0 |
+| `digsite_clod_test` / `digsite_clod_site_test` | 10/0 / 14/0 |
+| `digsite_clod_perf` | 5/0 in 6 runs of 6 after the fix below: with 1600 offered the capped step's p95 is 2313 to 2740 us (the middle of each run's three; limit 4000), stage 8's 2426 and 2470 in the same session. Before the fix: 3848 to 4596, 4/1 two runs in five |
+| `digsite_feel_test` / `digsite_dozer_clod_test` / `digsite_pour_test` / `digsite_blast_clod_test` | 22/0 / 16/0 / 21/0 / 20/0 |
+| save pair | 6/0, 7/0 |
+| sync pair (enet) / dynamite pair (enet) | host 14/0, guest 15/0 / host 4/0, guest 5/0 |
+| `digsite_yard_test` phase 1, 2 | 6/0, 7/0: 12.88 m both runs, frame p95 18.14 ms |
+
+Four of these failed on the first pass and pass now; what was changed, and why it is not a loosening:
+
+- `digsite_pour_test` (f) (499223 of 500000 mm on the ground), `digsite_save_test` phase 1, `digsite_sync_test` host:
+  each waited for `dirt.n == 0` and then read the ground. With the melt, the last clods' dirt is still going down for
+  a few steps after the last clod is gone (the mass sum was exact throughout: it is in `mass_mm()`). They now wait for
+  `dirt.awake() == 0`, which says "no clods, and none's dirt still melting"; every number they check is as it was.
+- `digsite_blast_clod_test`'s worst frame (+12.66 ms against +8): run while the boulder pictures were being drawn on
+  the same box. Alone: +4.34. Unchanged.
+
+**Pictures** (`integration/dirt_shots/`): `boulder_before_3a..c.png` and `boulder_after_3a..c.png` (three frames one
+after another, 3 s into the pour: the heap with its big tan lumps; in the "before" three the lumps differ from frame
+to frame, in the "after" three they stand still), `stage9_1..4` (the yard's four). Looked at: the heap and its lumps
+read right, more of the dozer's wave is loose lumps than in stage 8's. `boulder.txt`, `sweep.txt` are the tests' text.
+
+**What the owner will see**: the big lumps on a fresh heap stand still while more dirt lands on them: no spinning,
+no blinking between sand and dirt; the heap grows smoothly under a pour rather than in jumps. From behind a machine
+the view eases back as it gets up speed and shudders when the tracks spin or it drops off a ledge. Clods patter as
+they land. More of what the dozer pushes rolls ahead of it and off the blade's ends as real lumps.
+
+**Known gaps**
+
+- **The boulder is identified from the description, not the owner's screenshot** (which this session never saw): the
+  only big, angular, half-sunk tan things the Dig Site draws on a fresh pour are these lumps, and the test shows
+  them doing what "flickers" describes. They are about 0.5 to 0.9 m across, not 2 m. If the owner's boulder is
+  something else, `digsite_boulder_shots.gd` is the place to start.
+- The flicker and its cure are measured from the shader's sums redone in GDScript (`lump_drawn`), which must be kept
+  the same as the shader by hand; at 1 to 2 frames a second here the stills only show it, they cannot prove it.
+- The plan's absolute 12 ms frame is not met on this box (see the table); the baseline is not either.
+- At the cap the sweep's step p95 was 3.9 ms as first committed (the plan's budget is 4.0); after the fix below it is 2.4 (worst 4.0).
+- `CLOD_SHARE` over 0.55 needs the dozer's `CLOD_STEP` and the sweep's `take_most` looked at, not the constant.
+  The Dingo's and Bobcat's `OVER_SHARE` is still 0.35.
+- A guest hears no ticks for the host's clods (its pictures of them do not bounce); it hears its own blast's.
+- The shake and the pull are only in the view from behind; from the seat the body's own rocking (stage 4) is all.
+  Whether 1.5 cm of shake reads as weight or as noise needs a real screen at a real frame rate.
+- Not done: the "Blade -0.NN m" readout's flicker noted in stage 5; the native batch.
+
+### Stage 9, after verification round 1 (the fixes)
+
+**1. The time cap overshot with melting dirt (`digsite_clod_perf`, 4/1 two runs in five).** Cause, measured: the
+melt made every settled column a `put_layer` a step for about six steps instead of one. With the cap shedding
+hundreds of clods a step, `_flush` went from 534 columns and 202 us a step (melt off) to 2327 columns and 950 us:
+half the step's 2000 us. That time is in `step_us`, so a clod looked dearer, the cap made less room and shed more,
+and what it shed melted too. (The time was inside the budget's count all along; nothing was queued outside it.)
+
+Fix (`ds_dirt.gd`): `MELT_COLS` 256, the most columns melting at once (the ones waiting longest); what settles on
+more is laid whole in its step, as before stage 9. A pour or a bucket's load never has that many going (the boulder
+test's numbers are the same to the digit: 24.4 mm, 3.8 degrees), so the owner's boulder stands as still; only a
+flood past what the step has time for goes down in one. With 256, `_flush` under the cap is 736 columns, 275 us.
+
+`digsite_clod_perf`, the three time-cap rows of each run (1600 offered; p95 of the step, us), one after another in
+one session, load about 1:
+
+| Game | p95 of the three rows | Awake | Shed | On ground | Test |
+|---|---|---|---|---|---|
+| stage 9 as committed (d164eb8; the verifiers' five runs) | 3848 to 4596 | 890 to 998 | 8000 to 10200 | 29 to 36% | 4/1, 5/0, 5/0, 4/1, 5/0 |
+| stage 9 as committed, my run (`--reps=1`) | 3923, then 4404 | 966, 903 | 9334, 10162 | 34% | (FAIL at 4404) |
+| the same with `melt` off | 2929 | 993 | 3418 | 45% | |
+| stage 8 (6ff9528), run 1 | 2426 / 2465 / 2188 | 1185 to 1246 | 305 to 1603 | 51 to 54% | 5/0 |
+| stage 8, run 2 | 2470 / 2255 / 2606 | 1241 to 1326 | 771 to 1738 | 51% | 5/0 |
+| fixed, run 1 | 2487 / 2472 / 2515 | 1199 to 1244 | 654 to 1639 | 45 to 47% | 5/0 |
+| fixed, run 2 | 3141 / 2727 / 2647 | 1168 to 1341 | 1626 to 3683 | 41 to 45% | 5/0 |
+| fixed, run 3 | 2400 / 2380 / 3161 | 1148 to 1194 | 830 to 3547 | 42 to 47% | 5/0 |
+| fixed, run 4 | 2555 / 2301 / 2522 | 1218 to 1231 | 550 to 2273 | 44 to 47% | 5/0 |
+| fixed, run 5 | 2308 / 2422 / 2313 | 1216 to 1294 | 1169 to 1387 | 44 to 46% | 5/0 |
+| fixed, in the guard set | 3108 / 2740 / 2535 | 1151 to 1286 | 1262 to 3150 | 42 to 46% | 5/0 |
+
+The check is on the middle row of the three: 2313 to 2740 us fixed, against 4000; the worst single row of 18 is
+3161. (`MELT_COLS` 128 gave 2386 to 2393 and 512 was not better than 256 in the 800-awake rows: 256 kept.) The
+4.0 ms limit is as it was. 800 awake with no cap: step mean 1223 to 1480 us, p95 2314 at the most (stage 8 in the
+same session: 1259 to 1468, 2664). On-ground share stays a little under stage 8's (45 against 51%): up to 256
+columns still melt.
+
+The sweep after the fix: 17/0; at the cap 665 awake on average (549 before), step mean 1841 us, **p95 2438** (3.9 ms
+before), worst 4025; frame p95 20.23 against 18.44: +1.78; mass 0 / 0 / 0.
+
+**2. `digsite_dozer_clod_test`'s "the baseline is stage 4's push (12.24 m; stage 4's 12.29)", one run in five: not
+stage 9's, and not the clods'.** The baseline pass has no clods at all; what moves its metres is the ground's own
+slump, which the native grid does to a wall-clock budget (`DsTerrain`: `grid.layer_step(LAYER_US)` 1500 us a tick,
+`grid.settle(SETTLE_US)` 2500 us; `dig_site_layer.cpp`, `dig_site_dirt.cpp` stop when the time is up and leave the
+rest for the next tick). On a frame where the box stalls, less of the heap ahead of the blade has slumped, and the
+dozer ends a few cm short. Evidence:
+
+| Run | Baseline metres |
+|---|---|
+| stage 9, box quiet (2 runs of mine; 4 of the verifiers' 5) | 12.29 |
+| stage 8 (6ff9528), six busy loops running beside it, 3 runs | 12.24, 12.23, 12.23 (the check fails each time) |
+| stage 9 fixed, the same load, turn about with those, 3 runs | 12.23, 12.29, 12.24 |
+| stage 8 with `LAYER_US` 150 in a scratch copy, box quiet | 12.18 |
+
+So it is there at stage 8 (and, the budgets being stage 0's, before), it comes from the box being busy, and it is
+5 to 6 cm of 12.29 m. Nothing was changed: the check's 2 cm is right for a quiet box and says so when the box is
+not; making the slump's budget a count rather than a time would change the native API, which this stage does not.
+A failure of this one check with 12.23 or 12.24 m is the box; run it again alone.
+
+**3. The guard table** above now gives `digsite_clod_perf`'s numbers.
+
+**4. The untracked files** (`godot/.facts`: a `digsite_save_test` run with an empty `--save=`;
+two `stkilda_*_clip.gd.uid`: written by `--import` for another branch's scripts that have none committed) were
+this job's litter: deleted, never committed. `--import` will write the two `.uid` again; they are not this branch's.
+
+**Guards after the fix** (one after another, `--out=user://f9`): sweep 17/0, boulder 11/0 (24.4 mm, 0.066 rad,
+unchanged), dozer_clod 16/0 (12.29 m, 53.8%, step mean 334 us, frame p95 -0.64), dirt 12/0, tools 17/0, dynamite
+15/0, support 13/0, cave 14/0, tunnel 7/0, walkin 2/0, dingo 14/0, fleet 20/0, ground 22/0, `digsite_test` 6/0,
+clod_test 10/0, clod_site 14/0, pour 21/0 (500000 of 500000 mm), blast_clod 20/0, feel 22/0, clod_perf 5/0, yard
+6/0 and 7/0, save pair 6/0 and 7/0, sync pair host 14/0 guest 15/0, dynamite pair host 4/0 guest 5/0.

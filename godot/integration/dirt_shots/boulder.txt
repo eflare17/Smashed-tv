@@ -1,0 +1,18 @@
+DSBOULDER as it was (a clod's dirt laid the step it settles): the excavator's 77500 mm (half sand, a quarter dirt, a quarter clay) tipped out on the grass: 146 clods awake at the most, at rest 8.4 s after; 623 frames looked at; 106 lumps of size 0.25 or more within 2.0 m, 27 of them drawn at half their size or more
+DSBOULDER      drawn as it is (calm 1): in a frame at the most a big lump turned 0.227 rad (13.0 degrees), changed size 0.675, colour 0.952 (5 times over 0.50), shuffled 25.7 mm; the ground under one rose 113.4 mm; 1.53 rad turned in all
+DSBOULDER      drawn as it was (calm 0): in a frame at the most a big lump turned 1.468 rad (84.1 degrees), changed size 0.675, colour 1.398 (13 times over 0.50), shuffled 65.0 mm; the ground under one rose 113.4 mm; 7.75 rad turned in all
+DSBOULDER as it is (melting in): the excavator's 77500 mm (half sand, a quarter dirt, a quarter clay) tipped out on the grass: 138 clods awake at the most, at rest 8.2 s after; 613 frames looked at; 102 lumps of size 0.25 or more within 2.0 m, 25 of them drawn at half their size or more
+DSBOULDER      drawn as it is (calm 1): in a frame at the most a big lump turned 0.066 rad (3.8 degrees), changed size 0.137, colour 0.254 (0 times over 0.50), shuffled 6.0 mm; the ground under one rose 24.4 mm; 1.29 rad turned in all
+DSBOULDER      drawn as it was (calm 0): in a frame at the most a big lump turned 0.322 rad (18.5 degrees), changed size 0.137, colour 0.000 (0 times over 0.50), shuffled 12.5 mm; the ground under one rose 24.4 mm; 6.32 rad turned in all
+DSBOULDER ok   both buckets poured as clods, and they've come to rest (146 and 138 awake at the most)
+DSBOULDER ok   big lumps stand in both heaps (27 and 25)
+DSBOULDER ok   none of the lumps' nodes, multimeshes, meshes or places changed (their instances are laid once, at the start), and no patch shown was hidden again (0 changed, 0 hidden)
+DSBOULDER ok   from a second after the clods are at rest no big lump changes at all (0 frames one did)
+DSBOULDER ok   as it was, the fault's there: a big lump turned 1.47 rad in a frame (84 degrees), 7.8 rad in all; 13 frames a lump changed soil (the most 1.40)
+DSBOULDER ok   no big lump turns more than 0.12 rad in a frame: 0.066 (3.8 degrees; it was 1.47), 1.29 rad in all at the most (it was 7.8)
+DSBOULDER ok   the ground under a big lump rises 30 mm in a frame at the most: 24.4 (it was 113.4)
+DSBOULDER ok   nor does one grow or shrink more than 0.20 of its size in a frame: 0.137 (it was 0.675)
+DSBOULDER ok   nor change colour more than 0.50 of a soil's in a frame: 0.254 (it was 1.40, 13 times)
+DSBOULDER ok   nor shuffle more than 1 cm in a frame: 6.0 mm (it was 65.0)
+DSBOULDER ok   not a mm made or lost (0 mm)
+DSBOULDER done 11 passed, 0 failed

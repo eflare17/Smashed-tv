@@ -3,7 +3,7 @@
 Branch `claude/digsite-dirt-physics`. Scope: `godot/scripts/voxel/digsite/` and `godot/test/voxel/` only.
 Never touched: `Smashed.html`, `html-version-b331`, `emu/`.
 
-Status: stages 1 to 7 built (see `dirt_physics_progress.md`); the rest is plan. Facts marked "checked" were read in the code while writing this;
+Status: stages 1 to 9 built (see `dirt_physics_progress.md`). Facts marked "checked" were read in the code while writing this;
 every timing is a target to be measured in stage 1 and 2, not a measurement.
 
 ## What we're building
@@ -31,7 +31,8 @@ collisions and the Dig Site's own ground added. It works in co-op (the host owns
 - **The grid is the only sleeper.** Resting clods are deposited and deleted. No wake list: a blade or blast re-cuts
   the ground through the normal break-off path.
 - **No clod-against-clod contacts in GDScript.** Body comes from a cheap per-cell "awake heap" floor raise.
-- **Dozer starts at a 35% clod share** of blade spill (crest and blade ends); the tested grid heap keeps the rest.
+- **Dozer's clod share is 55%** (stage 9: the most at which what comes off is the share asked for). It started at 35%:
+  the dozer started at a 35% clod share of blade spill (crest and blade ends); the tested grid heap keeps the rest.
   The judges disagreed here (100% vs 30-40%); the share is one constant, raised in stage 9 only if mass and frame
   numbers allow.
 - **Machine feel comes early** (stage 4): it is independent of clods and the quickest cure for "clunky".
@@ -101,6 +102,8 @@ Remainders below 125 mm never become a clod: they go straight to `put_layer`.
    shrinks to zero over 0.15 s. *As built in stage 2*: spread evenly over 2 x 2, 4 x 4 or 6 x 6 columns by the clod's
    size, not bilinearly over 4 (a chunk's 2000 mm on four columns is a 500 mm spike), and a clod waits a step if its
    middle column has had 36 mm that step (`DEP_COL`).
+   *As built in stage 9*: a settled clod's dirt melts in over a few steps (a quarter of what waits on a column a
+   step, 5 to 26 mm), not in the one; it is counted in `mass_mm()` until it is down, and `awake()` is 1 while any waits.
 8. **Budget**: `CLOD_US` cap (target 2000). When over, force-deposit the slowest, then the oldest (*as built*:
    clods on the ground first, then the front of the list; sorting costs more than it saves).
    Cap `FLY_MAX` is set from the stage 2 measurement: **800** (expected 800-1000 here, not the 1500 first proposed).
@@ -330,6 +333,14 @@ A gaming PC is several times faster than this box; the box numbers are the gate.
   Pass: whole-frame p95 <= 12 ms and <= baseline + 3.0 ms; `step_us` mean <= 2.0 ms; mass exact;
   `CLOD_SHARE` is the highest value at which stage 5's test still passes. Full regression set as at stage 1.
   If native: `digsite_dirt_test` 12/0 on the new `.so`, and the game still runs with the old binaries swapped back.
+- **Owner's bug report (24 Nov, stages 1-7 Windows build), must be fixed in this stage**: "this big boulder flickers
+  when I emptied the bucket". An excavator emptied its bucket on the grass and a big tan boulder (a large angular
+  rock about 2 m across with a dark band, half sunk in the ground) flickered while the clods poured and settled
+  beside it. Find what draws that boulder and why a pour next to it makes it flicker (suspects: the boulder being
+  rebuilt or shown/hidden each time the ground under it changes as clods melt into the layer; z-fighting with the
+  terrain's remesh; clods knocking it). Reproduce in a test (a pour beside a boulder: the boulder's node, mesh,
+  visibility and transform do not change while clods land unless the ground under it really gives way), fix it,
+  and take a before/after shot.
 - **Owner sees**: the camera breathes with the machine, clods tick as they land, more of the pushed dirt is real.
 - **Out of scope**: clod-against-clod contacts, slab detach, gamepad and key remapping.
 

@@ -42,11 +42,7 @@ func setup(s: Node3D) -> void:
 			mm.mesh = DsLook.clod_mesh(px + pz * 2)
 			mm.instance_count = _per
 			for i in _per:
-				# big enough to overlap and hide the ground under them, with some small ones to fill in
-				var size = lerpf(0.07, 0.34, pow(gr.randf(), 1.7))
-				var b = Basis(Vector3(gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0)).normalized(), gr.randf() * TAU)
-				b = b * Basis.from_scale(Vector3(size * gr.randf_range(0.85, 1.35), size, size * gr.randf_range(0.8, 1.25)))
-				mm.set_instance_transform(i, Transform3D(b, Vector3(gr.randf() * side_m, 0.0, gr.randf() * side_m)))
+				mm.set_instance_transform(i, _one(gr, side_m))
 			var inst = MultiMeshInstance3D.new()
 			inst.multimesh = mm
 			inst.material_override = mat
@@ -58,6 +54,31 @@ func setup(s: Node3D) -> void:
 			add_child(inst)
 			_patches.append(inst)
 	tr.loose_changed.connect(_on_loose)
+
+# a lump's place in its patch, its size and how it's turned, from the generator (the same every game)
+static func _one(gr: RandomNumberGenerator, side_m: float) -> Transform3D:
+	# big enough to overlap and hide the ground under them, with some small ones to fill in
+	var size = lerpf(0.07, 0.34, pow(gr.randf(), 1.7))
+	var b = Basis(Vector3(gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0), gr.randf_range(-1.0, 1.0)).normalized(), gr.randf() * TAU)
+	b = b * Basis.from_scale(Vector3(size * gr.randf_range(0.85, 1.35), size, size * gr.randf_range(0.8, 1.25)))
+	return Transform3D(b, Vector3(gr.randf() * side_m, 0.0, gr.randf() * side_m))
+
+## (the tests': a headless run keeps no instance's transform) The lumps of `big` size or more (the shader's size: its
+## instance's y scale) laid within r m of p: [{root: where (world), size, patch, index}], from the same generator
+func laid_near(p: Vector3, r: float, big: float) -> Array:
+	var out = []
+	var side_m = 32 * DsTerrain.CELL
+	var gr = RandomNumberGenerator.new()
+	gr.seed = 29
+	for k in _patches.size():
+		var base: Vector3 = _patches[k].position
+		for i in _per:
+			var t = _one(gr, side_m)
+			var root = base + t.origin
+			var size = t.basis.y.length()
+			if size >= big and Vector2(root.x - p.x, root.z - p.z).length() <= r:
+				out.append({"root": root, "size": size, "patch": k, "index": i})
+	return out
 
 func _on_loose(per: PackedInt32Array) -> void:
 	_loose = per
@@ -110,3 +131,53 @@ func _process(_dt: float) -> void:
 	mat.set_shader_parameter("keep_ry", ry)
 	mat.set_shader_parameter("keep_rz", rz)
 	mat.set_shader_parameter("keep_half", half)
+
+# ---------------------------------------------------------------- what a lump's drawn as (the tests')
+
+## shaders/ds_clod.gdshader's vertex(), worked out here for one lump (the tests': a headless run draws nothing): the
+## lump rooted at `root` (world), `size` big (its instance's y scale), from the ground's two textures' bytes
+## (DigSiteGrid.show_topo_bytes, show_offsets). `calm` as the shader's uniform of that name (0: as it was before the
+## dirt physics' stage 9). -> {h: the ground under it (m over the grid's corner), keep: how much of its size it's
+## drawn at, angle: how far it's turned (rad), col: its colour, shift: where it's shuffled to}. Not the blades' and
+## buckets' keep-out. Keep the two the same.
+static func lump_drawn(topo: PackedByteArray, off: PackedByteArray, origin: Vector3, root: Vector3, size: float, calm: float) -> Dictionary:
+	const C := DsTerrain.CELL
+	var w: int = DsTerrain.W
+	var d: int = DsTerrain.D
+	var ax = root.x - origin.x
+	var az = root.z - origin.z
+	var gx = ax / C - 0.5
+	var gz = az / C - 0.5
+	var cx = floori(gx)
+	var cz = floori(gz)
+	var fx = gx - cx
+	var fz = gz - cz
+	var hh = [0.0, 0.0, 0.0, 0.0]
+	for k in 4:
+		var qx = clampi(cx + (k & 1), 0, w - 1)
+		var qz = clampi(cz + (k >> 1), 0, d - 1)
+		var i = qz * w + qx
+		hh[k] = (topo[i * 4] + 1.0 + off.decode_half(i * 2)) * C
+	var h = lerpf(lerpf(hh[0], hh[1], fx), lerpf(hh[2], hh[3], fx), fz)
+	var col_x = clampi(floori(ax / C), 0, w - 1)
+	var col_z = clampi(floori(az / C), 0, d - 1)
+	var ci = col_z * w + col_x
+	var deep = topo[ci * 4 + 1] / 8.0 * C
+	var keep = smoothstep(size * 0.12, size * 0.8, deep)
+	var seed = fposmod(root.x * 12.9898 + root.z * 78.233, 1.0)
+	var rate = lerpf(7.0 + seed * 9.0, (0.4 + seed * 0.4) / maxf(size, 0.07), calm)
+	var col: Color = DsMats.COL[clampi(topo[ci * 4 + 2], 0, 15)]
+	if calm > 0.0:
+		# (its colour: the soil over its whole foot, not its middle column's alone)
+		var reach = maxf(size * 0.6, C) / C
+		var sum = Vector3(col.r, col.g, col.b) * 2.0
+		for k in 4:
+			var tx = clampi(floori(ax / C + (reach if k == 0 else (-reach if k == 1 else 0.0))), 0, w - 1)
+			var tz = clampi(floori(az / C + (reach if k == 2 else (-reach if k == 3 else 0.0))), 0, d - 1)
+			var c2: Color = DsMats.COL[clampi(topo[(tz * w + tx) * 4 + 2], 0, 15)]
+			sum += Vector3(c2.r, c2.g, c2.b)
+		var mixed = sum / 6.0
+		col = col.lerp(Color(mixed.x, mixed.y, mixed.z), calm)
+	var amp = lerpf(0.1, 0.1 * clampf(0.12 / maxf(size, 0.07), 0.25, 1.0), calm)
+	return {"h": h, "keep": keep, "angle": h * rate, "col": col,
+		"shift": Vector3(sin(h * 5.0 + seed * 20.0), 0.0, cos(h * 4.0 + seed * 31.0)) * amp}

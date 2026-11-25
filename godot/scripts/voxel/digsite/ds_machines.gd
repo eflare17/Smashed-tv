@@ -25,6 +25,16 @@ const CAM_FOLLOW_UP := 4.0      # ... and up and down, more softly
 var _cam_m: DsMachine
 var _cam_at = Vector3.ZERO
 var _cam_floor = -INF
+# The view breathes with the machine (the dirt physics' stage 9): it drops back CAM_PULL of its distance at full speed
+# (eased), and shakes a couple of centimetres while its tracks slip or when it lands with a thud
+const CAM_PULL := 0.08
+const CAM_PULL_EASE := 1.6      # per second
+const CAM_SHAKE_SLIP := 0.025   # m, tracks only slipping
+const CAM_SHAKE_THUD := 0.03    # m, the hardest landing
+const CAM_SHAKE_MOST := 0.03
+var cam_pull = 0.0             # 0 .. 1: how far back of CAM_PULL it is now
+var cam_shake = Vector3.ZERO    # where the shake has it now, from where it would be
+var _cam_clock = 0.0
 var gauge: DsGauge              # the level while driving
 
 func setup(s: Node3D) -> void:
@@ -278,6 +288,16 @@ func _process(dt: float) -> void:
 			elif driving == m:
 				site.net.send_fast(m.id + CMD_BASE, m.net_cmds())
 
+## The view's shake for m as it is now (in the camera's own frame: across, up): its tracks slipping, its thud
+func shake_of(m: DsMachine, dt: float) -> Vector3:
+	var slipping = smoothstep(0.3, 0.9, m.slip) * clampf(absf(m.track_v) / maxf(m.max_speed, 0.01), 0.0, 1.0) if m.driver != 0 else 0.0
+	var amp = minf(CAM_SHAKE_SLIP * slipping + CAM_SHAKE_THUD * m.jolt, CAM_SHAKE_MOST)
+	if amp < 0.0005:
+		return Vector3.ZERO
+	_cam_clock += dt
+	var c = _cam_clock
+	return Vector3(sin(c * 71.0) * 0.6 + sin(c * 113.0) * 0.4, sin(c * 89.0 + 1.3) * 0.6 + sin(c * 131.0) * 0.4, 0.0) * amp * 0.7071
+
 ## V while driving: from behind it, or from the seat
 func toggle_view() -> void:
 	third = not third
@@ -308,6 +328,7 @@ func _third_cam(m: DsMachine, dt: float) -> void:
 		_cam_m = m
 		_cam_at = raw
 		_cam_floor = -INF
+		cam_pull = 0.0
 	var kh = 1.0 - exp(-CAM_FOLLOW * dt)
 	var kv = 1.0 - exp(-CAM_FOLLOW_UP * dt)
 	_cam_at = Vector3(lerpf(_cam_at.x, raw.x, kh), lerpf(_cam_at.y, raw.y, kv), lerpf(_cam_at.z, raw.z, kh))
@@ -315,7 +336,8 @@ func _third_cam(m: DsMachine, dt: float) -> void:
 	var yaw: float = a.look_yaw
 	var p = clampf(float(a.look_pitch), -1.25, 0.3)
 	var dir = Vector3(-sin(yaw) * cos(p), sin(p), -cos(yaw) * cos(p))
-	var pos = target - dir * cam_dist
+	cam_pull = lerpf(cam_pull, clampf(absf(m.speed) / maxf(m.max_speed, 0.01), 0.0, 1.0), 1.0 - exp(-CAM_PULL_EASE * dt))
+	var pos = target - dir * (cam_dist * (1.0 + CAM_PULL * cam_pull))
 	# kept out of the ground, the lift eased too (a heap passing under it doesn't pop it up), never let into it
 	var floor_y: float = m.ground_y(pos.x, pos.z) + 0.5
 	_cam_floor = floor_y if _cam_floor == -INF else lerpf(_cam_floor, floor_y, kv)
@@ -323,6 +345,9 @@ func _third_cam(m: DsMachine, dt: float) -> void:
 	a.cam.global_position = pos
 	if pos.distance_to(target) > 0.05:
 		a.cam.look_at(target, Vector3.UP)
+	# (the shake after the aim: the whole picture shudders, it doesn't swing about what it looks at)
+	cam_shake = shake_of(m, dt)
+	a.cam.global_position = pos + a.cam.global_transform.basis * cam_shake
 	a.cross.visible = false
 	var av = a.avatar
 	if av:

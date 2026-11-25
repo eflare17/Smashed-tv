@@ -89,6 +89,7 @@ const SWAY_MOST := 0.056        # rad (3.2 degrees) it's asked for at the most; 
 const SWAY_END := 0.08
 const THUD_FROM := 1.6          # m/s: coming down faster than this and stopped, it's landed
 var track_v = 0.0              # m/s: what its tracks (or wheels) are doing: its speed, and more when they slip
+var jolt = 0.0                 # 0 .. 1: it's just landed with a thud, fading (the view behind it shakes: stage 9)
 var slip = 0.0                 # 0 .. 1: how much of its tracks' turning isn't moving it
 var resist = 0.0               # what's holding it back, of its drive standing (1: it stalls flat out) (the game that runs it)
 var lug = 0.0                  # 0 .. 1: how hard its engine's labouring (both games)
@@ -342,6 +343,7 @@ func _weight_fx(dt: float) -> void:
 		if sfx and driver != 0:
 			sfx.clunked(clampf(absf(bumped) / 3.0, 0.1, 1.0) * clunk_weight)
 	bumped = 0.0
+	jolt = move_toward(jolt, 0.0, dt * 2.5)
 	# (landing: it was coming down fast and it's stopped)
 	var py = global_position.y
 	var fall = 0.0 if is_nan(_y_was) else (py - _y_was) / dt
@@ -364,6 +366,7 @@ func _weight_fx(dt: float) -> void:
 ## It's landed, coming down at v m/s: its body drops on its springs, its nose dips, a thump, dust from under it
 func _thud(v: float) -> void:
 	var k = clampf((v - THUD_FROM) / 4.0, 0.15, 1.0)
+	jolt = maxf(jolt, k)
 	_bob_v -= minf(v, 6.0) * 0.3
 	_sway_v -= k * 0.25 * sway_k
 	if sfx:

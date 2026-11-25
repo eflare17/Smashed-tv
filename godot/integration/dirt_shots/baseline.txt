@@ -1,10 +1,10 @@
-DSYARD frames 1201, mean 15.35, p95 22.94, worst 59.39 ms
-DSYARD standing (2 s before): frames 121, mean 10.79, p95 13.47, worst 105.88 ms
-DSYARD layer_us mean 250, p95 440; show_us mean 391, p95 622
-DSYARD metres moved 14.66 (0.00 off its line), slowest 0.00 m/s, at the end 0.00 m/s
-DSYARD heap height ahead 1.16 m at the end, 1.26 m at most; banked against the blade 1416 blocks; 41187 blocks' worth moved
-DSYARD ground_mm before 5264319250, after 5264319250; loads before 0, after 0; total before 5264319250, after 5264319250
-DSYARD stops: 'The blade's full: back up, or raise it' 164 frames; 
+DSYARD frames 1201, mean 13.38, p95 18.14, worst 31.91 ms
+DSYARD standing (2 s before): frames 121, mean 7.94, p95 9.60, worst 110.88 ms
+DSYARD layer_us mean 205, p95 337; show_us mean 329, p95 513
+DSYARD metres moved 12.88 (0.00 off its line), slowest 0.00 m/s, at the end 0.34 m/s
+DSYARD heap height ahead 1.28 m at the end, 1.30 m at most; banked against the blade 1461 blocks; 31235 blocks' worth moved
+DSYARD ground_mm before 5264319250, after 5264318477; loads before 0, after 0; total before 5264319250, after 5264319250
+DSYARD stops: 'The blade's full: back up, or raise it' 436 frames; 
 DSYARD run: 20 s, blade -0.10 m, patch 24 m at cell 162, phase 2
-DSYARD the run before: ground_mm 5264319250, metres 14.66; this one: 5264319250, 14.66 (0.0000%, 0.00% apart)
+DSYARD the run before: ground_mm 5264318477, metres 12.88; this one: 5264318477, 12.88 (0.0000%, 0.00% apart)
 DSYARD done 7 passed, 0 failed

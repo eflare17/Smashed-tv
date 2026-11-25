@@ -14,6 +14,12 @@ uniform vec2 grid_size = vec2(512.0, 512.0);
 uniform float cell = 0.125;
 uniform vec3 grid_origin = vec3(0.0);
 uniform vec3 soil_cols[16];
+// 1: a big lump turns and shuffles as little for the ground moving under it as a thing its size would rolling, and its
+// colour's the soil over its whole foot (the owner, 24 Nov: "this big boulder flickers when I emptied the bucket": a
+// lump half a metre across turned 45 degrees in a frame each time a clod melted in beside it, and went from sand to
+// dirt and back as clods of each landed on its middle column). 0: as it was (the tests' "before"). DsClods.lump_drawn
+// is these sums again for the tests: keep the two the same.
+uniform float calm = 1.0;
 uniform int keep_n = 0;
 uniform vec4 keep_rx[8];
 uniform vec4 keep_ry[8];
@@ -60,11 +66,11 @@ void vertex() {
 		keep *= clamp(d / max(size, 0.001), 0.0, 1.0);
 	}
 	// the ground rising or falling under it turns it over and shuffles it about, so pushed dirt churns; settled stays still
-	float angle = h * (7.0 + seed * 9.0);
+	float angle = h * mix(7.0 + seed * 9.0, (0.4 + seed * 0.4) / max(size, 0.07), calm);
 	vec3 axis = normalize(vec3(sin(seed * 40.0), 0.35, cos(seed * 40.0)));
 	vec3 p = mat3(MODEL_MATRIX) * VERTEX * keep;
 	p = p * cos(angle) + cross(axis, p) * sin(angle) + axis * dot(axis, p) * (1.0 - cos(angle));
-	vec3 shuffle = vec3(sin(h * 5.0 + seed * 20.0), 0.0, cos(h * 4.0 + seed * 31.0)) * 0.1;
+	vec3 shuffle = vec3(sin(h * 5.0 + seed * 20.0), 0.0, cos(h * 4.0 + seed * 31.0)) * mix(0.1, 0.1 * clamp(0.12 / max(size, 0.07), 0.25, 1.0), calm);
 	vec3 w = vec3(root.x, 0.0, root.z) + p + shuffle;
 	// part buried, so it lies in the heap rather than balanced on it
 	float sunk = grid_origin.y + h - size * keep * 0.35;
@@ -77,6 +83,17 @@ void vertex() {
 	v_low = clamp((w.y - sunk) / max(size * keep * 0.9, 0.001), 0.0, 1.0);
 	int m = int(t.b * 255.0 + 0.5);
 	v_soil = soil_cols[clamp(m, 0, 15)];
+	if (calm > 0.0) {
+		// the soil over its whole foot: its middle column's twice, and four more round it
+		float reach = max(size * 0.6, cell) / cell;
+		vec3 sum = v_soil * 2.0;
+		for (int k = 0; k < 4; k++) {
+			vec2 o = k == 0 ? vec2(reach, 0.0) : (k == 1 ? vec2(-reach, 0.0) : (k == 2 ? vec2(0.0, reach) : vec2(0.0, -reach)));
+			ivec2 q = clamp(ivec2(floor(at / cell + o)), ivec2(0), ivec2(grid_size) - 1);
+			sum += soil_cols[clamp(int(texelFetch(topo_tex, q, 0).b * 255.0 + 0.5), 0, 15)];
+		}
+		v_soil = mix(v_soil, sum / 6.0, calm);
+	}
 }
 
 void fragment() {

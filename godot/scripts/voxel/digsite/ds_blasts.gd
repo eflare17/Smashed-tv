@@ -8,8 +8,9 @@ extends Node3D
 ## isn't thrown: it lies loose in the hole, in whole blocks, to be shovelled up (a clod's dirt melts into the loose
 ## layer, which is of one material a column). A roof it opens up may cave in (stage 7: it all wakes). Anyone near is
 ## hurt, nearer worse. The game that runs the ground blows it up and throws the clods; a guest's stick goes to the
-## host as an action ("dyn"), and the guest gets "boom" events for the bang, the flash and a few chunks to watch
-## (its own, nothing in them, till it's sent the clods: stage 8). Owned by the voxel session.
+## host as an action ("dyn"), and the guest gets a "boom" event for the bang and the flash, and a "clods" one: what
+## came out and the host's dirt's random number, from which it throws the same clods itself, with nothing in them
+## (dirt physics, stage 8: a couple of hundred lumps in one message, not sent one by one). Owned by the voxel session.
 
 const FUSE := 4.0
 const RADIUS := 1.3             # m, in the softest ground
@@ -41,6 +42,7 @@ func setup(s: Node3D) -> void:
 	site.net.register_op("dyn", _dyn_op)
 	site.net.register_event("dyn", func(a: Array): _dyn_op(a, false))
 	site.net.register_event("boom", func(a: Array): _boom_fx(a[0], float(a[1]), a[2], false))
+	site.net.register_event("clods", _clods_in)
 
 ## (the Dynamite) a stick put down at p and lit: false if there's none in the backpack
 func light(p: Vector3) -> bool:
@@ -144,9 +146,11 @@ func _process(dt: float) -> void:
 # What a blast at `at` blew out (counts: blocks by material, n of them) thrown as clods from the hole: chunks mostly,
 # bigger ones as the awake fill up (twice over a fifth of the room, three times over half, as DsDirt.spawn_mass), out
 # and up from under the hole's middle. Ore lies in the hole in whole blocks. All of it's kept.
-func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float) -> void:
+# (`more`: clods to count as awake besides those here: a guest throwing the host's blast, the host's then)
+func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float, more := 0) -> void:
 	var tr: DsTerrain = site.terrain
 	var d: DsDirt = site.dirt
+	var real: bool = d == null or not d.ghost
 	var c = tr.to_cells(at)
 	var r = DsTerrain.CELL * pow(maxf(1.0, float(n)) * 0.2387, 1.0 / 3.0)     # (a ball of n blocks)
 	for m in counts.size():
@@ -154,6 +158,8 @@ func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float) -> void
 		if mm <= 0:
 			continue
 		if m >= DsMats.COAL and m <= DsMats.GEM:
+			if not real:
+				continue
 			var put: int = tr.grid.fill_sphere(c, RADIUS / DsTerrain.CELL + 2.0, m, counts[m], true)
 			mm -= put * DsTerrain.MM
 			laid_mm += put * DsTerrain.MM
@@ -163,7 +169,7 @@ func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float) -> void
 			continue
 		if d == null:
 			continue
-		if not clods:
+		if not clods and real:
 			# (the tests' baseline: in a ring round the hole, at once)
 			var k = CHUNKS
 			for j in k:
@@ -175,8 +181,8 @@ func _throw(at: Vector3, counts: PackedInt32Array, n: int, power: float) -> void
 			continue
 		while mm >= DsDirt.CRUMB:
 			var coarse = 1
-			if d.n * 5 > d.fly_max:
-				coarse = 3 if d.n * 2 > d.fly_max else 2
+			if (d.n + more) * 5 > d.fly_max:
+				coarse = 3 if (d.n + more) * 2 > d.fly_max else 2
 			var k = d._rnd() % 20
 			var one = DsDirt.CHUNK
 			if k < 2:
@@ -231,9 +237,18 @@ func _blow(at: Vector3) -> void:
 			if c > 0:
 				chunks.append([m_n[0], c])
 	var seed = randi()
-	_throw(at, counts, int(got.n), clampf(pow(maxf(1.0, float(got.n)) / 2300.0, 1.0 / 3.0), 0.35, 1.2))
-	_boom_fx(at, RADIUS, [seed, chunks], true)
-	site.net.event("boom", [at, RADIUS, [seed, chunks]])
+	var power = clampf(pow(maxf(1.0, float(got.n)) / 2300.0, 1.0 / 3.0), 0.35, 1.2)
+	var d: DsDirt = site.dirt
+	# (a guest there throws them too, from where the dirt's random numbers are now: they're not sent it one by one)
+	var told: bool = d != null and clods and site.net.role() == "host" and site.net.guest_here
+	if told:
+		site.net.event("clods", [at, counts, int(got.n), power, d._rng, d.n, d.fly_max])
+		d.net_tag = DsDirt.N_OWN
+	_throw(at, counts, int(got.n), power)
+	if d:
+		d.net_tag = DsDirt.N_NEW
+	_boom_fx(at, RADIUS, [seed, [] if told else chunks], true)
+	site.net.event("boom", [at, RADIUS, [seed, [] if told else chunks]])
 	site.arena.hurt_players_near(at, HURT_R, HURT)
 
 # the bang, the flash, the dust (both games); a guest's chunks to watch (where the ground runs they're clods: _throw)
@@ -295,6 +310,21 @@ func _boom_fx(at: Vector3, r: float, chunks_in: Array, real: bool) -> void:
 	ps.global_position = at
 	ps.emitting = true
 	ps.finished.connect(ps.queue_free)
+
+# (a guest's) the host's blast's clods thrown here too, as it threw them: the same random numbers, the same sizes,
+# nothing in them (DsDirt.ghost). They fly, bounce and roll on this game's copy of the ground and shrink away at rest;
+# the dirt itself comes with the host's ground as its own clods land.
+func _clods_in(a: Array) -> void:
+	var d: DsDirt = site.dirt
+	if a.size() < 7 or d == null or not d.ghost or not site.active:
+		return
+	var was = d._rng
+	var most = d.fly_max
+	d._rng = int(a[4])
+	d.fly_max = int(a[6])
+	_throw(a[0], a[1], int(a[2]), float(a[3]), int(a[5]) - d.n)
+	d._rng = was
+	d.fly_max = most
 
 ## Anything still lit or in the air: a stick, a blast's clods not yet at rest, a guest's chunks (the tests, leaving)
 func busy() -> bool:

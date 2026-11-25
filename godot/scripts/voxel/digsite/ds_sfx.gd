@@ -112,6 +112,7 @@ static func _make() -> void:
 	_streams["pour"] = _wav(_noise(rng, 0.3, 500, 2.2), true)
 	_streams["beep"] = _wav(_beep(), false)
 	_streams["clunk"] = _wav(_clunk(rng), false)
+	_streams["tick"] = _wav(_tick(rng), false)
 
 static func _wav(samples: PackedFloat32Array, looped: bool) -> AudioStreamWAV:
 	var bytes = PackedByteArray()
@@ -210,3 +211,53 @@ static func _clunk(rng: RandomNumberGenerator) -> PackedFloat32Array:
 		low = lerpf(low, rng.randf_range(-1.0, 1.0), 0.25)
 		out[i] = sin(TAU * 92.0 * t) * 0.8 * exp(-t * 20.0) + sin(TAU * 610.0 * t) * 0.14 * exp(-t * 30.0) + low * 0.5 * exp(-t * 32.0)
 	return out
+
+# a lump of dirt landing: a short dull thud, no ring in it
+static func _tick(rng: RandomNumberGenerator) -> PackedFloat32Array:
+	var n = int(RATE * 0.11)
+	var out = PackedFloat32Array()
+	out.resize(n)
+	var low = 0.0
+	for i in n:
+		var t = float(i) / RATE
+		low = lerpf(low, rng.randf_range(-1.0, 1.0), 0.12)
+		out[i] = (sin(TAU * 118.0 * t) * 0.55 * exp(-t * 55.0) + low * 1.5 * exp(-t * 42.0)) * minf(t * 900.0, 1.0)
+	return out
+
+## Clods landing (the dirt physics' stage 9): one of these in the Dig Site, tick(at, v, mm) when a clod's bounced off the
+## ground there at v m/s with mm of dirt in it: a dull thud heard from there, louder and lower the harder and bigger, a
+## few voices, and no more than TICK_HZ a second (a pour's patter, not a buzz)
+class Ticks extends Node3D:
+	const VOICES := 5
+	const TICK_HZ := 18.0
+	var played := 0                 # (the tests')
+	var _v: Array[AudioStreamPlayer3D] = []
+	var _next := 0
+	var _wait := 0.0
+
+	func _init() -> void:
+		DsSfx._make()
+		for i in VOICES:
+			var p = AudioStreamPlayer3D.new()
+			p.stream = DsSfx._streams["tick"]
+			p.unit_size = 7.0
+			p.max_distance = 45.0
+			p.attenuation_filter_cutoff_hz = 20500.0
+			add_child(p)
+			_v.append(p)
+
+	func pass_time(dt: float) -> void:
+		_wait = maxf(_wait - dt, 0.0)
+
+	func tick(at: Vector3, v: float, mm: int) -> void:
+		if _wait > 0.0:
+			return
+		_wait = 1.0 / TICK_HZ
+		var p = _v[_next]
+		_next = (_next + 1) % VOICES
+		var big = clampf(float(mm) / 2000.0, 0.0, 1.0)
+		p.global_position = at
+		p.volume_db = linear_to_db(clampf((v - 1.0) / 7.0, 0.12, 1.0) * lerpf(0.55, 1.0, big)) - 9.0 + DsSfx.GAIN
+		p.pitch_scale = lerpf(1.5, 0.7, sqrt(big)) * randf_range(0.88, 1.14)
+		p.play()
+		played += 1
