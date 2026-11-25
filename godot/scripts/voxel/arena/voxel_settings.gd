@@ -16,15 +16,20 @@ const FILE := "user://voxel_settings.cfg"
 const ORDER := ["low", "medium", "high", "ultra", "extreme"]
 const PRESETS := {
 	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
-		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12, "gore": 0, "jiggle": 3},
+		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12, "gore": 0, "jiggle": 3,
+		"scenery": 60.0},
 	"medium": {"scale": 0.85, "msaa": 0, "taa": false, "shadows": 1, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25, "gore": 1, "jiggle": 3},
+		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25, "gore": 1, "jiggle": 3,
+		"scenery": 110.0},
 	"high": {"scale": 1.0, "msaa": 2, "taa": false, "shadows": 2, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40, "gore": 1, "jiggle": 3},
+		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40, "gore": 1, "jiggle": 3,
+		"scenery": 180.0},
 	"ultra": {"scale": 1.0, "msaa": 4, "taa": true, "shadows": 2, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60, "gore": 1, "jiggle": 3},
+		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60, "gore": 1, "jiggle": 3,
+		"scenery": 0.0},
 	"extreme": {"scale": 1.5, "msaa": 8, "taa": true, "shadows": 3, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120, "gore": 2, "jiggle": 3},
+		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120, "gore": 2, "jiggle": 3,
+		"scenery": 0.0},
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
@@ -40,6 +45,7 @@ const CHOICES := {
 	"msaa": ["Anti-aliasing (MSAA)", [0, 2, 4, 8], ["Off", "2x", "4x", "8x"]],
 	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
 	"shadows": ["Shadows", [0, 1, 2, 3], ["Off", "Hard (2048)", "Soft (4096)", "Sharpest (8192)"]],
+	"scenery": ["Scenery detail", [60.0, 110.0, 180.0, 0.0], ["Near (60 m)", "Medium (110 m)", "Far (180 m)", "Everything"]],
 	"fx": ["Effects quality", [0, 1], ["Normal", "Best (+ reflections)"]],
 	"gore": ["Gore", [0, 1, 2], ["Normal", "Ultra (bleeding, pools)", "Extreme"]],
 	"jiggle": ["Jiggle (Gothica)", [0, 1, 2, 3], ["Off", "Natural", "Bouncy", "Out of this world"]],
@@ -204,6 +210,12 @@ func apply(arena: Node3D) -> void:
 	RenderingServer.environment_set_sdfgi_ray_count(RenderingServer.ENV_SDFGI_RAY_COUNT_128 if hi
 		else int(ProjectSettings.get_setting("rendering/global_illumination/sdfgi/probe_ray_count", 1)))
 	RenderingServer.environment_set_volumetric_fog_volume_size(128 if hi else 64, 128 if hi else 64)
+	# how far off St Kilda's scenery keeps every block: past it the diggable dirt along Luna Park's wall is a flat band
+	# instead of 650,000 blocks' faces, and the Carousel's twelve 30,000-triangle horses aren't drawn
+	var scen := float(v.get("scenery", 0.0))
+	VoxelParkDirt.detail_m = scen
+	if arena.get("stkilda") and arena.stkilda:
+		arena.stkilda.scenery(scen)
 	VoxelMirror.enabled = bool(v.mirror)
 	VoxelBlood.level = int(v.get("gore", 1))
 	VoxelJiggle.level = int(v.get("jiggle", 3))

@@ -15,6 +15,13 @@ extends SceneTree
 const SRC := "res://assets/models/carousel_horse/CarouselHorse.3mf"
 const OUT := "res://assets/models/carousel_horse/horse.res"
 const TRIS := 30000
+## ... and a cheap one for the Low preset, where twelve of the full horse were a third of every triangle Luna Park
+## draws (made by the same run: -- --low).
+const OUT_LOW := "res://assets/models/carousel_horse/horse_low.res"
+const TRIS_LOW := 3000
+
+var tris := TRIS
+var out := OUT
 const LONG := 1.75          # nose to tail (m)
 const LIFT := 0.25          # its hooves this far up from where it stands
 
@@ -79,6 +86,9 @@ func _initialize() -> void:
 		if arg.begins_with("--preview="):
 			_preview(arg.trim_prefix("--preview="), idx)
 			return
+		if arg == "--low":
+			tris = TRIS_LOW
+			out = OUT_LOW
 	var col := PackedColorArray()
 	col.resize(pos.size())
 	for i in pos.size():
@@ -105,7 +115,7 @@ func _initialize() -> void:
 	for l in im.get_surface_lod_count(0):
 		var li := im.get_surface_lod_indices(0, l)
 		print("lod %d: %d triangles" % [l, li.size() / 3])
-		if absi(li.size() / 3 - TRIS) < absi(best.size() / 3 - TRIS):
+		if absi(li.size() / 3 - tris) < absi(best.size() / 3 - tris):
 			best = li
 	# only the corners it still uses, sized and turned for the ride
 	var s := LONG / (length.y - length.x)
@@ -133,8 +143,8 @@ func _initialize() -> void:
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, b)
 	m.resource_name = "CarouselHorse"
-	ResourceSaver.save(m, OUT, ResourceSaver.FLAG_COMPRESS)
-	print("saved %s: %d triangles, %d corners, %.3f m a mm, its seat %.2f m up" % [OUT, i2.size() / 3, p2.size(), s,
+	ResourceSaver.save(m, out, ResourceSaver.FLAG_COMPRESS)
+	print("saved %s: %d triangles, %d corners, %.3f m a mm, its seat %.2f m up" % [out, i2.size() / 3, p2.size(), s,
 		(4.5 - low) * s + LIFT])
 	quit()
 

@@ -30,6 +30,10 @@ const RED := Color("#8e1c22")
 const RED_DARK := Color("#5e1116")
 const CREAM := Color("#f2e7cf")
 const IRON := Color("#1b1c1f")       # (SkLunaRides' fence)
+const HORSE := "res://assets/models/carousel_horse/horse.res"
+## The same horse cut down to 3,800 triangles, for the Low and Medium presets: twelve of the full one were 361,000
+## triangles, a third of everything the camera sees from Luna Park's forecourt (tools/carousel_horse.gd -- --low).
+const HORSE_LOW := "res://assets/models/carousel_horse/horse_low.res"
 const WARM := [Color(1.0, 0.86, 0.55), Color(1.0, 0.93, 0.72), Color(1.0, 0.8, 0.45)]
 
 static func dress(carousel: Node3D) -> void:
@@ -301,7 +305,7 @@ static func _horses(spin: SkLunaRides.Spinner) -> void:
 	var poles := Node3D.new()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = load("res://assets/models/carousel_horse/horse.res")
+	mm.mesh = horse(false)      # (VoxelStKilda.scenery puts the cheap one on where the settings ask for it)
 	mm.instance_count = RING
 	var horses := MultiMeshInstance3D.new()
 	horses.name = "Horses"
@@ -331,6 +335,14 @@ static func _horses(spin: SkLunaRides.Spinner) -> void:
 	spin.add_child(pm)
 	spin.horses = list
 	spin.riders = SkLunaRides._riders(spin, seats, 0.0, 0.8, 0.15)
+
+## The horse's mesh, kept once loaded: the owner's model, or the cheap one.
+static var _horses_mesh := {}
+static func horse(low: bool) -> Mesh:
+	var p := HORSE_LOW if low else HORSE
+	if not _horses_mesh.has(p):
+		_horses_mesh[p] = load(p)
+	return _horses_mesh[p]
 
 ## A twisted gold pole, floor to ceiling: a rod with a ridge wound round it, a collar at each end.
 static func _pole(holder: Node3D, at: Vector3) -> void:

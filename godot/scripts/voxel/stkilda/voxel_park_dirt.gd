@@ -17,8 +17,13 @@ const END_GAP := 3.0            # m left as it was at each end of a run (the cor
 const ROW := 0.125              # m: the floor's rows, where it's cut round the strip
 const MAX_CUTS := 32            # (the ground's shader takes this many)
 
+## Within this many metres the dirt is drawn block by block, further off as a flat band of 1 m quads (the settings'
+## Scenery detail: Low 60 m, High 180, Ultra and Extreme the lot). 0: block by block however far off.
+static var detail_m := 0.0
+
 var sk: VoxelStKilda
 var patches: Array[Patch] = []
+var _detail := -1.0             # the detail_m the patches are set to now
 var cuts: Array = []            # [start (Vector2), along (Vector2, unit), length, half width]
 var ring := PackedVector2Array()
 
@@ -81,13 +86,19 @@ class Patch extends VoxelTerrain:
 	# ------------------------------------------------------------ one mesh while nobody's dug it
 	#
 	# (The owner, 25 Nov: the browser game "was a bit laggy" on a phone.) A patch's dirt is meshed in 2 m chunks, 32 of
-	# them, and the strip runs right round the park: from the forecourt that was seven hundred draw calls, two thirds of
-	# everything drawn in Luna Park, for ground nobody has touched. Until a shovel goes in, a patch can't change, so its
-	# chunks are joined into one mesh (the same triangles, the same colours: nothing looks different) and the chunks' own
-	# meshes are hidden. The first dig splits it back into chunks, which is the only state they're ever dug in, and
-	# coming back to the park (reset) joins them again.
+	# them, and the strip runs right round the park: from the forecourt that was seven hundred draw calls and 650,000
+	# triangles, two thirds of everything drawn in Luna Park, for ground nobody has touched. Until a shovel goes in, a
+	# patch can't change, so:
+	#   - its chunks are joined into one mesh (the same triangles, the same colours: nothing looks different), and
+	#   - a second, flat mesh is made of the strip's top in 1 m quads, for when the patch is further off than
+	#     VoxelParkDirt.detail_m, where the band of blocks is a few pixels across anyway.
+	# The first dig splits the patch back into its chunks, which is the only state it's ever dug in, and coming back to
+	# the park (reset) joins it again.
 
-	var whole: MeshInstance3D       # the lot in one mesh (while undug); null till it's been joined
+	const FAR_STEP := 8             # blocks a quad in the flat mesh (1 m)
+
+	var whole: MeshInstance3D       # the lot in one mesh, block by block (while undug); null till it's been joined
+	var flat: MeshInstance3D        # ... and the same strip as a flat band, for a long way off
 	var joined := false
 
 	## Join the chunks if they're all meshed and nothing's dug. True once it's done it.
@@ -106,6 +117,24 @@ class Patch extends VoxelTerrain:
 			col.append_array(a[Mesh.ARRAY_COLOR])
 		if v.is_empty():
 			return false
+		if whole == null:
+			whole = _part("WholePatch")
+			flat = _part("FlatPatch")
+		whole.mesh = _one_mesh(v, n, col)
+		flat.mesh = _flat_mesh()
+		joined = true
+		_chunks(false)
+		detail(VoxelParkDirt.detail_m)
+		return true
+
+	func _part(nm: String) -> MeshInstance3D:
+		var mi := MeshInstance3D.new()
+		mi.name = nm
+		mi.material_override = _mat
+		add_child(mi)
+		return mi
+
+	static func _one_mesh(v: PackedVector3Array, n: PackedVector3Array, col: PackedColorArray) -> ArrayMesh:
 		var arr := []
 		arr.resize(Mesh.ARRAY_MAX)
 		arr[Mesh.ARRAY_VERTEX] = v
@@ -113,15 +142,50 @@ class Patch extends VoxelTerrain:
 		arr[Mesh.ARRAY_COLOR] = col
 		var am := ArrayMesh.new()
 		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		return am
+
+	## The strip's top as FAR_STEP-block quads, each the colour the mesher gives the top block in its middle, so from a
+	## distance it's the same band of dirt with the turf-coloured edge rows.
+	func _flat_mesh() -> ArrayMesh:
+		var v := PackedVector3Array()
+		var n := PackedVector3Array()
+		var col := PackedColorArray()
+		for cz in range(z0, z1, FAR_STEP):
+			for cx in range(0, x1, FAR_STEP):
+				var x2 := mini(cx + FAR_STEP, x1)
+				var z2 := mini(cz + FAR_STEP, z1)
+				var mx := (cx + x2) / 2
+				var mz := (cz + z2) / 2
+				var top := -1
+				for y in range(NY - 1, -1, -1):
+					if at(mx, y, mz) != AIR:
+						top = y
+						break
+				if top < 0:
+					continue
+				var m := at(mx, top, mz)
+				var look := GRASS if (m == FILL or m == EDGE) and top == NY - 1 else m
+				var hsh := ((mx * 92837111) ^ (top * 689287499) ^ (mz * 283923481)) & 0xFFFF
+				var k := (0.9 + 0.2 * float(hsh % 101) / 100.0) * lerpf(0.72, 1.0, float(top) / float(NY - 1)) * _SHADE[2]
+				var c: Color = COL[look]
+				c = Color(c.r * k, c.g * k, c.b * k)
+				var y0 := origin.y + float(top + 1) * CELL
+				var a := origin + Vector3(cx * CELL, 0, cz * CELL)
+				a.y = y0
+				var b := Vector3(origin.x + x2 * CELL, y0, origin.z + z2 * CELL)
+				for p in [a, Vector3(b.x, y0, a.z), Vector3(a.x, y0, b.z), Vector3(b.x, y0, a.z), b, Vector3(a.x, y0, b.z)]:
+					v.append(p)
+					n.append(Vector3.UP)
+					col.append(c)
+		return _one_mesh(v, n, col)
+
+	## Block by block within `m` metres of the camera, a flat band beyond it (0: block by block however far off).
+	func detail(m: float) -> void:
 		if whole == null:
-			whole = MeshInstance3D.new()
-			whole.name = "WholePatch"
-			whole.material_override = _mat
-			add_child(whole)
-		whole.mesh = am
-		joined = true
-		_chunks(false)
-		return true
+			return
+		whole.visibility_range_end = m
+		flat.visibility_range_begin = m
+		flat.visible = m > 0.0 and joined
 
 	# a shovel's gone in: back to the chunks, each meshed as it's dug
 	func _split() -> void:
@@ -130,6 +194,7 @@ class Patch extends VoxelTerrain:
 			return
 		joined = false
 		whole.mesh = null
+		flat.mesh = null
 		_chunks(true)
 
 	func _chunks(on: bool) -> void:
@@ -137,6 +202,7 @@ class Patch extends VoxelTerrain:
 			mi.visible = on
 		if whole:
 			whole.visible = not on
+			flat.visible = not on and VoxelParkDirt.detail_m > 0.0
 
 	func wcontains(p: Vector3) -> bool:
 		var l := to_local(p)
@@ -282,8 +348,12 @@ func finish() -> void:
 		p.join()
 
 ## One patch's chunks joined into one mesh a frame (each is a megabyte of arrays: not all at once, and not while a
-## shovel's in it). Nothing left to join and this does nothing.
+## shovel's in it). Nothing left to join and this does nothing but watch the Scenery detail setting.
 func _process(_dt: float) -> void:
+	if _detail != detail_m:
+		_detail = detail_m
+		for p in patches:
+			p.detail(detail_m)
 	for p in patches:
 		if p.join():
 			return

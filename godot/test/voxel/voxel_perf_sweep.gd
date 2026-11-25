@@ -81,6 +81,7 @@ func _in_view() -> Array:
 	var tris := 0
 	var by := {}
 	var by_tris := {}
+	var heavy := {}                 # the single instances worth naming (over 20k triangles each)
 	for n in _every_visual(arena):
 		var vi := n[0] as VisualInstance3D
 		var mesh: Mesh = null
@@ -99,16 +100,21 @@ func _in_view() -> Array:
 			continue
 		if mesh == null or mesh.get_surface_count() == 0:
 			continue
-		if not _seen(planes, vi.global_transform * vi.get_aabb()):
+		var box := vi.global_transform * vi.get_aabb()
+		if not _seen(planes, box):
+			continue
+		if not _in_range(vi, box):
 			continue
 		var sc := mesh.get_surface_count()
 		var t := _tris(mesh) * many
+		if t > 20000:
+			heavy[String(arena.get_path_to(vi))] = t
 		inst += many
 		calls += sc
 		tris += t
 		by[n[1]] = int(by.get(n[1], 0)) + sc
 		by_tris[n[1]] = int(by_tris.get(n[1], 0)) + t
-	return [inst, calls, tris, by, by_tris]
+	return [inst, calls, tris, by, by_tris, heavy]
 
 ## A mesh's triangles (counted once and remembered: the same mesh is used over and over).
 static var _tri_cache := {}
@@ -149,6 +155,16 @@ static func _label(n: Node) -> String:
 		return nm
 	var s := n.get_script() as Script
 	return s.resource_path.get_file().get_basename() if s else n.get_class()
+
+## Is it near enough, and far enough, to be drawn (its visibility range: the far scenery and the levels of detail)?
+func _in_range(vi: VisualInstance3D, box: AABB) -> bool:
+	var g := vi as GeometryInstance3D
+	if g == null:
+		return true
+	var d := arena.cam.global_position.distance_to(box.get_center())
+	if g.visibility_range_end > 0.0 and d > g.visibility_range_end + g.visibility_range_end_margin:
+		return false
+	return not (g.visibility_range_begin > 0.0 and d < g.visibility_range_begin - g.visibility_range_begin_margin)
 
 ## Is any of this box on the camera's side of every one of the frustum's planes?
 static func _seen(planes: Array[Plane], box: AABB) -> bool:
@@ -249,6 +265,8 @@ func _place(place: String, preset: String, off_name: String, off: Array = []) ->
 		if off_name == "":
 			rows.append("      draw calls by group: " + _by(v[3], false))
 			rows.append("      triangles by group:  " + _by(v[4], true))
+			if not v[5].is_empty():
+				rows.append("      the heaviest meshes: " + _by(v[5], true))
 	lines.append("%-34s p50 %5.1f ms  p95 %5.1f ms   (the whole route)" % [tag, _pct(all, 50), _pct(all, 95)])
 	print("SWEEP ", lines[-1])
 	for r in rows:

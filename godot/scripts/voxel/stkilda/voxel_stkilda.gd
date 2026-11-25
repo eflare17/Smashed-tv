@@ -141,6 +141,7 @@ func build() -> void:
 	for i in 4:
 		SkTownBuilder._wall(edge, c[i], c[(i + 1) % 4], WALL_H)
 	built = true
+	scenery(VoxelParkDirt.detail_m)       # (the settings' Scenery detail, put on what's just been built)
 	print("VoxelStKilda: built in ", Time.get_ticks_msec() - t0, " ms")
 
 ## Stood outside the Carousel looking at it (the web link's ?carousel: straight to the ride).
@@ -213,6 +214,20 @@ func home() -> void:
 	hack.reset()
 	button.reset()
 	VoxelBody.wall_at = Callable()
+
+## The settings' Scenery detail (metres; 0: everything, however far off). The park's small heavy things stop being
+## drawn past it: the Carousel's twelve horses are 30,000 triangles each, a third of everything the camera sees from
+## the forecourt, and the people riding the rides are a batch apiece. The dirt along the wall takes the same number
+## its own way (VoxelParkDirt.detail_m: a flat band past it, not 650,000 blocks' faces).
+func scenery(m: float) -> void:
+	if not built:
+		return
+	for n in find_children("*", "MultiMeshInstance3D", true, false):
+		if n.name == "Horses":
+			(n as MultiMeshInstance3D).multimesh.mesh = VoxelCarousel.horse(m > 0.0 and m <= 110.0)
+			(n as GeometryInstance3D).visibility_range_end = 0.0 if m <= 0.0 else maxf(m, 90.0)
+		elif n is SkLunaRides.Riders:
+			(n as GeometryInstance3D).visibility_range_end = 220.0 if m <= 0.0 else maxf(m, 70.0)
 
 func _put(at: Vector3, yaw: float, pitch: float) -> void:
 	arena.player.global_position = at
