@@ -295,7 +295,7 @@ func _process(dt: float) -> bool:
 			_check(dem.kills() > kills0, "the kill's counted (%d)" % dem.kills())
 			_check(dem.score() >= score0 + D.KILL_SCORE, "and it's in the score (%d, was %d)" % [dem.score(), score0])
 			dem._hud_line()
-			_check(dem._hud.text.contains("kills") and dem._hud.text.contains("score"),
+			_check(dem._hud.text.contains("kill") and dem._hud.text.contains("score"),
 					"the HUD line carries the kills: \"%s\"" % dem._hud.text.get_slice("     ", 0))
 			step = 24
 			t = 0.0

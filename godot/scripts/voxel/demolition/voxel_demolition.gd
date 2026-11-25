@@ -361,8 +361,8 @@ func _hud_line() -> void:
 			else "     W/S drive   A/D turn   left/right swing the boom   up/down the cable   E out"
 	elif crane and crane.can_enter():
 		tail = "     E: drive the crane"
-	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d, %d kills%s" % [roundi(share() * 100.0),
-		roundi(TARGET * 100.0), VoxelParkGame._clock(ceilf(left())), score(), kills(), tail]
+	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d, %s%s" % [roundi(share() * 100.0),
+		roundi(TARGET * 100.0), VoxelParkGame._clock(ceilf(left())), score(), VoxelParkGame._n(kills()), tail]
 
 func _flattened() -> void:
 	running = false
@@ -378,8 +378,8 @@ func _flattened() -> void:
 	cf.save(BEST_FILE)
 	arena.cash += CASH
 	_hud.visible = false
-	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d (%d blocks, %d kills)   +$%d\nbest %s, %d\nR: again   P: the phone (home)" % [
-		roundi(share() * 100.0), VoxelParkGame._clock(time), "   NEW BEST!" if new_best else "", score(), down(), kills(), CASH,
+	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d (%d blocks, %s)   +$%d\nbest %s, %d\nR: again   P: the phone (home)" % [
+		roundi(share() * 100.0), VoxelParkGame._clock(time), "   NEW BEST!" if new_best else "", score(), down(), VoxelParkGame._n(kills()), CASH,
 		VoxelParkGame._clock(best_time), best_score]
 	_end.visible = true
 	arena.sound.play("gold_find", Vector3.INF, 0.0, 0.8)
@@ -394,8 +394,8 @@ func _out_of_time() -> void:
 	cf.set_value("best", "score", best_score)
 	cf.save(BEST_FILE)
 	_hud.visible = false
-	_end.text = "TIME UP\n%d%% down of %d%%, score %d (%d blocks, %d kills)\nbest %d\nR: again   P: the phone (home)" % [
-		roundi(share() * 100.0), roundi(TARGET * 100.0), score(), down(), kills(), best_score]
+	_end.text = "TIME UP\n%d%% down of %d%%, score %d (%d blocks, %s)\nbest %d\nR: again   P: the phone (home)" % [
+		roundi(share() * 100.0), roundi(TARGET * 100.0), score(), down(), VoxelParkGame._n(kills()), best_score]
 	_end.visible = true
 
 func _unhandled_input(e: InputEvent) -> void:

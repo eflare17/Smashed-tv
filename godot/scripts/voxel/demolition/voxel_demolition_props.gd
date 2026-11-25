@@ -6,10 +6,10 @@ extends Node3D
 ## fire and smoke, everything near is hurt and thrown -- and every other prop within `reach` is lit with a short fuse,
 ## so a shot at the tanker runs down the pumps and the bottles a beat at a time.
 ##
-## It can't run away with itself: a prop goes off once (`gone`), at most AT_ONCE go off in a frame and never closer
-## together than GAP, so a long chain is a run of bangs, not one frame's worth of work. The fire and smoke are cut
-## down on the web and on a phone. Nothing here is native, threaded or physical: the blast is breakables' own, the
-## fire is debris cubes.
+## It can't run away with itself: a prop goes off once (`gone`), no more than AT_ONCE in a frame and never closer
+## together than GAP, so the whole eleven of them lit at once is a run of bangs a frame apart, not one frame's worth
+## of work. The fire and smoke are cut down on the web and on a phone. Nothing here is native, threaded or physical:
+## the blast is breakables' own, the fire is the arena's debris cubes and flames.
 
 ## each kind: how big it is, its colour, the hole its blast takes out, how far it sets others off, what it does to
 ## whoever's near, and how many fire and smoke cubes it throws
@@ -33,9 +33,9 @@ const PLAN := [
 	["bottle", Vector3(-5.3, 0.0, -5.6)],
 	["tanker", Vector3(8.0, 0.0, 2.3)],
 ]
-const AT_ONCE := 3               # blasts a frame at most ...
+const AT_ONCE := 3               # blasts a frame at most (the ceiling; GAP below is what really holds them apart) ...
 const AT_ONCE_WEB := 2
-const GAP := 0.12                # ... and this long between them
+const GAP := 0.12                # ... and this long between one and the next, so eleven of them is a run of bangs
 const FUSE := Vector2(0.22, 0.45)        # s before a prop lit by another's blast goes off ("a beat later")
 const BALL_V := 2.5              # m/s the wrecking ball must be doing to set one off
 
@@ -71,7 +71,7 @@ func _build() -> void:
 		body.collision_mask = 0
 		body.set_meta("prop", list.size())
 		node.add_child(body)
-		var i := list.size()
+		# (`at` is its middle, where its blast goes off from; the shapes below sit in the prop node's own frame)
 		list.append({"kind": kind, "at": at + Vector3(0.0, size.y * 0.5, 0.0), "node": node, "body": body,
 			"gone": false, "lit": false})
 		match kind:
@@ -91,7 +91,6 @@ func _build() -> void:
 			_:
 				_box(node, body, Vector3(size.x, size.y * 0.88, size.z), Vector3(0.0, size.y * 0.44, 0.0), Color(String(spec.col)))
 				_box(node, null, Vector3(size.x * 0.45, size.y * 0.14, size.z * 0.45), Vector3(0.0, size.y * 0.94, 0.0), Color("#8d9095"))
-		list[i]["body"] = body       # (the one that stops shots: its shapes sit in the prop node's own frame)
 
 func _box(parent: Node3D, body: StaticBody3D, size: Vector3, at: Vector3, c: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()

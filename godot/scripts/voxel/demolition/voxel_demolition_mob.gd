@@ -40,7 +40,7 @@ const DROP_OUT := 1.2            # m/s out from the wall a let-go enemy goes (th
 
 var level: VoxelDemolition
 var posts: Array = []            # [{at, kind, bi, c, row, tile, taken}]
-var mobs: Array = []             # [{b, post, air, from_y, hurt, walks, swing, next}]
+var mobs: Array = []             # [{b, post, air, from_y, hurt, walks, loose, swing}]
 var kills := 0
 var made := 0                    # bodies made this run
 var dropped := 0                 # posts that fell out from under their enemy (the tests)
@@ -176,8 +176,9 @@ func fill(post: Dictionary) -> VoxelBody:
 	return b
 
 # The window an enemy takes a post in burst out, so it stands in the opening and you can see it from the street (a
-# glazed block is a window, not a hole). It isn't the player's doing, so the block it cost comes off the level's count
-# as well: the share down and the score are what you knocked down, not what they climbed out of.
+# glazed block is a window, not a hole). It isn't the player's doing, so what it costs is counted here and kept out of
+# the level's own (VoxelDemolition.down): the share down and the score are what you knocked down, not what they
+# climbed out of. What holds the enemy up is the block under the opening, which is left where it is.
 func _open(post: Dictionary) -> void:
 	var b: VoxelBreakables.Building = level.breaks.list[int(post.bi)]
 	var i := int(post.c) * b.rows + int(post.row)
