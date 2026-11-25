@@ -2,9 +2,11 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,128,245 bytes (40.2 MB)
-SHA-256:  f2ad34f53ebea081eb823d033f5af30bdf249dadfc21862808c7c928ce47b17a
+Size:     42,132,341 bytes (40.2 MB)
+SHA-256:  1fe53fa4dcef8617598f984c8cc35f35f728eacc9a624ee1d7dfeb9044e97585
 Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
+          (tools/build_android.sh; same signing key as the first build, so it
+          installs straight over it)
 Phones:   64-bit ARM (arm64-v8a) -- a Galaxy S25 or anything else from the last ten years.
           Android 5.0 or newer. Nothing else is in the file: no 32-bit, no Intel.
 
@@ -41,12 +43,39 @@ WHAT IS IN IT
   looks, FIRE / AIM / E / R / JUMP and the weapon bar bottom right, "..."
   for PHONE, BAG, VIEW, HELP, SET.
 - Landscape. Hold the phone sideways.
-- Graphics start on Low, the same as the browser does on a phone, and the 3D
-  picture is drawn at about 1280 across however many real pixels the screen
-  has, with the far distance pulled in to 260 m. SET (under "...") changes all
-  of it, and APPLY RECOMMENDED runs the benchmark and picks a preset for you.
-  If it feels smooth, try Medium -- native is a good deal faster than the
-  browser was and the Low default is deliberately careful.
+- It fills the panel now, punch-hole camera and all. The first build sat in a
+  black band down one side: a landscape app whose window says nothing about the
+  display cutout gets laid out so it cannot overlap the camera hole, and the
+  system fills the leftover strip black -- about 100 px of a Galaxy S25's 2340.
+  The APK now asks for the cutout (windowLayoutInDisplayCutoutMode=shortEdges),
+  so the picture goes right to the edges, and the buttons and the fps line keep
+  themselves out of the camera's band instead. Nothing moves under your thumbs:
+  the left half still walks and the right half still looks, hole or no hole.
+- Graphics start much higher than the first build, which was still running the
+  browser's settings. The 3D picture is now drawn at the screen's own pixels
+  (2340 x 1080 on an S25, where it used to be drawn 858 x 396 and stretched --
+  7.4 times the pixels), the far distance goes out to 420 m instead of 260 m,
+  and Luna Park keeps its scenery in full out to 110 m instead of 60 m. The
+  rest stays where Low had it, so loading is no slower than before.
+  Measured: the longer view costs nothing at all in Luna Park and 11 draw calls
+  at the worst spot in the arena; the scenery step is about a third more
+  triangles there. The pixels cannot be measured without a phone, which is why
+  everything else was left alone.
+- Two things were deliberately left off, because they are the ones that could
+  cost real frames and nobody could measure them here: the sun's SHADOWS (four
+  shadow splits over 60 m -- it could double what Luna Park draws) and YOUR OWN
+  BLOCKS at Fine (12 seconds of building on the loading screen for a body you
+  only see in the mirror). Both are one tap away: MEDIUM in SET.
+  SET says "Custom" rather than "Low" on the first run for exactly this reason
+  -- it is Low with the render scale and the scenery moved up, nothing else.
+- IF IT IS TOO MUCH FOR THE PHONE, in this order:
+  1. SET -> Render scale -> 85%, then 77%. That row now means what it says on
+     a phone, and 77% is barely over half the pixels of 100%.
+  2. SET -> Scenery detail -> Near (60 m), which is where the first build had
+     it.
+  3. LOW, which puts everything back to the first build's settings bar the
+     draw distance.
+  APPLY RECOMMENDED still runs the benchmark and picks a preset for you.
 - Swinging the view round no longer hitches. The phone's renderer compiles a
   shader the first time anything is really drawn with it, which is why turning
   used to stutter the first time you looked somewhere new; the game now turns
@@ -88,4 +117,6 @@ first one.
 
 Nobody has run this build on a phone yet -- it was built and inspected on a
 machine with no Android device attached. If it falls over, the thing worth
-knowing is which loading step it got to.
+knowing is which loading step it got to. If the picture is still not reaching
+the edges, the thing worth knowing is whether the black band is on the camera's
+side of the screen or the other one.

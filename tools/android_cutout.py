@@ -48,6 +48,7 @@ ANDROID_NS = "http://schemas.android.com/apk/res/android"
 ATTR_NAME = "windowLayoutInDisplayCutoutMode"
 ATTR_ID = 0x01010546            # android.R.attr.windowLayoutInDisplayCutoutMode
 SHORT_EDGES = 1                 # LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+MTIME = 1104537600             # 2005-01-01, the zip stamp on the one entry this replaces
 
 
 def u16(b, o):
@@ -261,8 +262,11 @@ def main():
         # of its 2705 entries are stored uncompressed, and repacking them in Python would recompress the lot)
         staged = os.path.join(tmp, "staged.apk")
         shutil.copyfile(a.apk_in, staged)
-        with open(os.path.join(tmp, "AndroidManifest.xml"), "wb") as f:
+        manifest = os.path.join(tmp, "AndroidManifest.xml")
+        with open(manifest, "wb") as f:
             f.write(new)
+        os.utime(manifest, (MTIME, MTIME))          # (zip stamps the entry from the file: a fixed one, so two runs
+                                                    #  over the same export give the same APK byte for byte)
         subprocess.run(["zip", "-q", "-d", staged, "META-INF/*.RSA", "META-INF/*.SF", "META-INF/MANIFEST.MF"],
                        check=False)                 # (an unsigned export has none)
         subprocess.run(["zip", "-q", "-X", staged, "AndroidManifest.xml"], cwd=tmp, check=True)
@@ -272,6 +276,7 @@ def main():
             os.remove(a.apk_out)
         subprocess.run([tool("apksigner"), "sign", "--ks", a.keystore, "--ks-key-alias", a.alias,
                         "--ks-pass", "pass:" + a.password, "--key-pass", "pass:" + a.password,
+                        "--v4-signing-enabled", "false",    # (v4 is a separate .idsig file nothing here wants)
                         "--out", a.apk_out, aligned], check=True)
         subprocess.run([tool("apksigner"), "verify", "--print-certs", a.apk_out], check=True)
     finally:
