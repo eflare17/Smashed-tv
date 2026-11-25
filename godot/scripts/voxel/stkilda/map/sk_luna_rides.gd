@@ -457,9 +457,11 @@ static func _taken(fill: float) -> bool:
 ## The riders on a ride: follow() puts each back on what they ride on (after the ride's moved it).
 class Riders extends MultiMeshInstance3D:
 	var seats: Array = []
-	# the batch's floats, kept from frame to frame (written in one go: see SkCrowd.put). Reading them back off the
+	# CHANGED HERE, NOT IN THE ST KILDA PROJECT (25 Nov, the phone's performance): put it in crowd/luna_rides.gd there
+	# too, or the next tools/stkilda_sync.sh run will lose it.
+	# The batch's floats, kept from frame to frame (written in one go: see SkCrowd.put). Reading them back off the
 	# MultiMesh every frame copied the lot (and in --headless, where the dummy renderer keeps none, came back empty and
-	# filled the log).
+	# filled the log with ten thousand errors a run).
 	var _buf := PackedFloat32Array()
 
 	func follow() -> void:

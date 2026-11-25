@@ -37,7 +37,7 @@ const SPOTS := {
 const ABLATE := [
 	["the crowd", ["SkCrowd"]],
 	["the flags", ["SkParkFlags"]],
-	["the ride lights", ["SkRideLights"]],
+	["the ride lights", ["RideSpill", "NightPools"]],
 	["the rides turning", ["Carousel", "GhostTrain", "ArabianMerry", "MoonBalloons", "Spider", "SkyRider", "PowerSurge",
 		"Supernova", "PharaohsCurse", "ConeyDrop", "SkScenicRailway"]],
 	["the town", ["Town"]],
