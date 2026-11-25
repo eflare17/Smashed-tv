@@ -23,6 +23,7 @@ var built := false
 var town: SkTownBuilder
 var env: Environment                         # St Kilda's sky (swapped in for the arena's while you're here)
 var sun: DirectionalLight3D
+var _prewarm_due := false                    # just arrived: the picture wants warming up (VoxelArena.prewarm_view)
 var _home_at := Vector3.ZERO                 # where you were in the arena, and which way you looked
 var _home_yaw := 0.0
 var _home_pitch := 0.0
@@ -190,9 +191,7 @@ func go() -> void:
 	_put(s[0], s[1], 0.0)
 	rain.arrived()
 	VoxelBody.wall_at = breaks.solid           # (bodies knocked flying bounce off the buildings)
-	# the park's shaders compiled now, behind a cover, instead of one at a time as the view swings onto each ride
-	# (VoxelArena.prewarm_view; it does nothing where the renderer compiles up front)
-	arena.prewarm_view("Luna Park")
+	_prewarm_due = true                        # (next frame, once whoever sent you here has stood you where they want)
 
 ## Home to the arena, where you were.
 func home() -> void:
@@ -275,6 +274,13 @@ func railway() -> Node3D:
 
 func _process(dt: float) -> void:
 	sun.shadow_enabled = arena.sun.shadow_enabled     # (the settings' Shadows, and F1, are on the arena's sun)
+	if _prewarm_due:
+		# the park's shaders compiled now, behind a cover, instead of one at a time as the view swings onto each
+		# ride (VoxelArena.prewarm_view; it does nothing where the renderer compiles up front). The frame after
+		# arriving, not inside go(), so that a caller standing you somewhere else first (the Carousel link, the
+		# tests) is the view it warms up and the view it leaves you looking at.
+		_prewarm_due = false
+		arena.prewarm_view("Luna Park")
 	if ride_train:
 		var up := float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)) \
 				- float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
