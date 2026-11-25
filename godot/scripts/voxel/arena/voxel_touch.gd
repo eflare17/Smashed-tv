@@ -195,6 +195,12 @@ var _pend_aim_i := -1
 ## than reuse small slots (proved with the real build on 25 Nov: a touch given identifier 11 arrived as index 11).
 ## Taken as a slot number that would walk off the end of this layer's arrays and the controls would simply stop
 ## answering, so the identifiers are given slots of our own as the fingers come down.
+##
+## A finger the browser cancels (touchcancel: a notification pulled down over the game, a palm taken for a gesture)
+## does reach us as a release -- checked in the 4.4.1 web template, which binds touchcancel to the same handler as
+## touchend -- so its slot is freed and nothing is left held. A finger dragged off the canvas keeps reporting (the
+## DOM sends a touch's moves to the element it started on), and its drags are measured the same way, so dragging
+## the look thumb past the screen's edge keeps turning the view instead of stopping or jerking.
 var _slot := {}                 # the browser's id -> 0..FINGERS-1
 
 ## Touch mode for this game? opts: the game's options (--touch, the page's ?touch / ?notouch). The Android build: always
