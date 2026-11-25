@@ -274,18 +274,22 @@ static func _shared_meshes(md: VoxelModel, key_: String, chunk: int, cube_m: flo
 		return _shared[ck]
 	var out := {}
 	for n in md.parts_for(""):
-		var p: Dictionary = md.parts[n]
-		var g: Dictionary = grids[n]
-		var o := Vector3(p.origin) / float(chunk) - md.bone_pivot[int(p.bone)] * md.voxel_m / cube_m
-		var am := array_mesh(VoxMesher.mesh(g, o, cube_m))
-		var cnt := 0
-		for c in (g.cells as PackedInt32Array):
-			if c != 0:
-				cnt += 1
-		am.set_meta("count", cnt)
-		out[n] = am
+		out[n] = _shared_mesh_part(md, chunk, cube_m, grids, n)
 	_shared[ck] = out
 	return out
+
+## One part's shared mesh (the cubes left in it counted, which is the health it starts with).
+static func _shared_mesh_part(md: VoxelModel, chunk: int, cube_m: float, grids: Dictionary, n: String) -> ArrayMesh:
+	var p: Dictionary = md.parts[n]
+	var g: Dictionary = grids[n]
+	var o := Vector3(p.origin) / float(chunk) - md.bone_pivot[int(p.bone)] * md.voxel_m / cube_m
+	var am := array_mesh(VoxMesher.mesh(g, o, cube_m))
+	var cnt := 0
+	for c in (g.cells as PackedInt32Array):
+		if c != 0:
+			cnt += 1
+	am.set_meta("count", cnt)
+	return am
 
 ## Quads (VoxMesher.mesh's) as a mesh; null when there are none.
 static func array_mesh(a: Dictionary) -> ArrayMesh:
@@ -301,57 +305,181 @@ static func array_mesh(a: Dictionary) -> ArrayMesh:
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	return am
 
+# ---------------------------------------------------------------- building a character, in one go or a slice at a time
+#
+# The inside of a block character is filled in cube by cube, and your own Jared at Fine is 655,000 cubes of it. In
+# one go that is 13 s on this PC and 14 s in a desktop browser, a phone's worse again, and nothing is drawn and no
+# tap is answered for the whole of it -- which is what a settings row that changed a cube size used to cost, and
+# what the owner reported on 25 Nov as a tab that froze and never came back. So the same work is also offered a
+# slice at a time: build_begin() opens a job, build_step() does at most `budget_ms` of it and says whether it has
+# finished, and VoxelArena runs one a frame behind a "Rebuilding the blocks" line (VoxelArena._rb_tick). When the
+# job is done the caches hold exactly what the all-at-once call leaves in them, so a body made at that size
+# afterwards costs nothing. _flesh_grids() below is the same builder with no budget at all.
+
+## A job to flesh out (and, with cube_m > 0, mesh) one model at one cube size. Hand it to build_step until that
+## returns true. Nothing is built here: opening a job is free.
+static func build_begin(key_: String, chunk: int, cube_m := 0.0) -> Dictionary:
+	var md := VoxelModel.get_model(key_)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key_)
+	var st := {"key": key_, "chunk": chunk, "cube_m": cube_m, "md": md, "parts": md.parts_for(""),
+		"pi": 0, "mi": 0, "i": 0, "phase": "part", "rng": rng, "out": {}, "meshes": {}, "mid": {},
+		"g": {}, "cells": PackedInt32Array(), "size": Vector3i.ZERO, "limb": false, "head": false, "deep": 0,
+		"done": false}
+	var ck := "%s|%d" % [key_, chunk]
+	if _flesh_cache.has(ck):                  # (built before: straight on to the meshes, or nothing left to do)
+		st.out = _flesh_cache[ck]
+		st.phase = "meshes"
+	return st
+
+## How far along the job is, 0 to 1 (for the line on screen).
+static func build_progress(st: Dictionary) -> float:
+	var n := float((st.parts as Array).size())
+	if n <= 0.0 or bool(st.done):
+		return 1.0
+	if String(st.phase) == "meshes":
+		return 0.9 + 0.1 * float(st.mi) / n
+	var part := 0.0
+	var cells: PackedInt32Array = st.cells
+	if cells.size() > 0:
+		part = clampf(float(st.i) / float(cells.size()), 0.0, 1.0)
+	return 0.9 * clampf((float(st.pi) + part) / n, 0.0, 1.0)
+
+## At most budget_ms of the job. True when it is finished. INF does the lot in one call.
+static func build_step(st: Dictionary, budget_ms: float) -> bool:
+	if bool(st.done):
+		return true
+	var t0 := Time.get_ticks_usec()
+	var cap := int(budget_ms * 1000.0) if budget_ms < INF else 0x7FFFFFFF
+	var md: VoxelModel = st.md
+	var parts: Array = st.parts
+	while true:
+		match String(st.phase):
+			"part":
+				if int(st.pi) >= parts.size():
+					_flesh_cache["%s|%d" % [st.key, st.chunk]] = st.out
+					if _brain_ints.is_empty():
+						for c in BRAIN:
+							_brain_ints[((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1] = true
+					st.phase = "meshes"
+					continue
+				var n: String = parts[int(st.pi)]
+				var g := md.grid(n)
+				if int(st.chunk) > 1:
+					g = VoxMesher.downsample(g)
+				st.g = g
+				st.size = g.size
+				st.cells = (g.cells as PackedInt32Array).duplicate()
+				st.i = 0
+				st.mid = {}
+				st.deep = 0
+				st.head = n == "head"
+				st.limb = false
+				for l in LIMBS:
+					if n.begins_with(l):
+						st.limb = true
+				if n == "shield":
+					st.phase = "lump"           # (steel all through: no flesh in it)
+				else:
+					st.phase = "deep" if st.head else "fill"
+			"deep":
+				# the head: how deep its deepest cube is, so a skull two cubes in can be told from a head too small for one
+				var s: Vector3i = st.size
+				var g: Dictionary = st.g
+				var cells: PackedInt32Array = st.cells
+				var i := int(st.i)
+				var n := cells.size()
+				var deep := int(st.deep)
+				var guard := 0
+				while i < n:
+					if cells[i] != 0:
+						deep = maxi(deep, _depth(g, i % s.x, (i / s.x) % s.y, i / (s.x * s.y)))
+					i += 1
+					guard += 1
+					if guard >= 1024:
+						guard = 0
+						if Time.get_ticks_usec() - t0 >= cap:
+							break
+				st.i = i
+				st.deep = deep
+				if i >= n:
+					st.i = 0
+					st.phase = "fill"
+			"fill":
+				var s: Vector3i = st.size
+				var g: Dictionary = st.g
+				var rng: RandomNumberGenerator = st.rng
+				var mid: Dictionary = st.mid
+				var limb: bool = st.limb
+				var head: bool = st.head
+				var deep: int = st.deep
+				var cells: PackedInt32Array = st.cells
+				var i := int(st.i)
+				var n := cells.size()
+				var guard := 0
+				while i < n:
+					var x := i % s.x
+					var y := (i / s.x) % s.y
+					var z := i / (s.x * s.y)
+					if cells[i] != 0 and not _surface(g, x, y, z):
+						var c: Color = FLESH[rng.randi() % FLESH.size()]
+						if limb and _near_axis(g, x, y, z, 1.3, mid):
+							c = BONE
+						elif head:
+							var dp := _depth(g, x, y, z)
+							if deep >= 3 and dp == 2:
+								c = BONE                      # the skull
+							else:
+								c = BRAIN[rng.randi() % BRAIN.size()]
+						cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
+					i += 1
+					guard += 1
+					if guard >= 1024:
+						guard = 0
+						if Time.get_ticks_usec() - t0 >= cap:
+							break
+				st.i = i
+				st.cells = cells
+				if i >= n:
+					st.phase = "lump"
+			"lump":
+				st.out[String(parts[int(st.pi)])] = {"size": st.size, "cells": _largest_lump(st.cells, st.size)}
+				st.pi = int(st.pi) + 1
+				st.i = 0
+				st.phase = "part"
+			"meshes":
+				if float(st.cube_m) <= 0.0:
+					st.phase = "done"
+					continue
+				var ck := "%s|%d|%.5f" % [st.key, st.chunk, st.cube_m]
+				if _shared.has(ck):             # (meshed before: nothing left)
+					st.phase = "done"
+					continue
+				if int(st.mi) >= parts.size():
+					_shared[ck] = st.meshes
+					st.phase = "done"
+					continue
+				# the rig's pivots are in the model's own voxels (one a sprite pixel): a pixel is cube_m / chunk metres
+				md.voxel_m = float(st.cube_m) / float(st.chunk)
+				var n2: String = parts[int(st.mi)]
+				st.meshes[n2] = _shared_mesh_part(md, int(st.chunk), float(st.cube_m), st.out, n2)
+				st.mi = int(st.mi) + 1
+			_:
+				st.done = true
+				return true
+		if Time.get_ticks_usec() - t0 >= cap:
+			return false
+	return false
+
 # the model's grids at this chunk size, with flesh (and bone) inside instead of the builder's dark fill
 static func _flesh_grids(md: VoxelModel, key_: String, chunk: int) -> Dictionary:
 	var ck := "%s|%d" % [key_, chunk]
 	if _flesh_cache.has(ck):
 		return _flesh_cache[ck]
-	var out := {}
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(key_)
-	for n in md.parts_for(""):
-		var g := md.grid(n)
-		if chunk > 1:
-			g = VoxMesher.downsample(g)
-		var s: Vector3i = g.size
-		var cells: PackedInt32Array = (g.cells as PackedInt32Array).duplicate()
-		if n == "shield":
-			out[n] = {"size": s, "cells": _largest_lump(cells, s)}     # (steel all through: no flesh in it)
-			continue
-		var limb := false
-		for l in LIMBS:
-			if String(n).begins_with(l):
-				limb = true
-		# the head: a skull two cubes in, the brain inside it (or, in a head too small for both, all brain)
-		var head_deep := 0
-		if n == "head":
-			for z in s.z:
-				for y in s.y:
-					for x in s.x:
-						if cells[x + s.x * (y + s.y * z)] != 0:
-							head_deep = maxi(head_deep, _depth(g, x, y, z))
-		for z in s.z:
-			for y in s.y:
-				for x in s.x:
-					var i := x + s.x * (y + s.y * z)
-					if cells[i] == 0 or _surface(g, x, y, z):
-						continue
-					var c: Color = FLESH[rng.randi() % FLESH.size()]
-					if limb and _near_axis(g, x, y, z, 1.3):
-						c = BONE
-					elif n == "head":
-						var dp := _depth(g, x, y, z)
-						if head_deep >= 3 and dp == 2:
-							c = BONE                              # the skull
-						else:
-							c = BRAIN[rng.randi() % BRAIN.size()]
-					cells[i] = ((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1
-		out[n] = {"size": s, "cells": _largest_lump(cells, s)}
-	_flesh_cache[ck] = out
-	if _brain_ints.is_empty():
-		for c in BRAIN:
-			_brain_ints[((c.r8 << 16) | (c.g8 << 8) | c.b8) + 1] = true
-	return out
+	var st := build_begin(key_, chunk)
+	while not build_step(st, INF):
+		pass
+	return _flesh_cache[ck]
 
 # a part's grid keeping only its biggest lump of touching cubes (a few drawn pixels stand loose of the rest: they'd
 # fall off at the first cut anywhere on the part)
@@ -436,21 +564,33 @@ static func _depth(g: Dictionary, x: int, y: int, z: int) -> int:
 				return d
 	return 4
 
-static func _near_axis(g: Dictionary, x: int, y: int, z: int, r: float) -> bool:
-	# the middle of this row of the part (across x and z)
-	var s: Vector3i = g.size
-	var sx := 0.0
-	var sz := 0.0
-	var n := 0
-	for zz in s.z:
-		for xx in s.x:
-			if (g.cells as PackedInt32Array)[xx + s.x * (y + s.y * zz)] != 0:
-				sx += xx
-				sz += zz
-				n += 1
-	if n == 0:
+## Is this cube within r of the middle of its own row (across x and z)? -- what puts bone down the middle of a limb.
+## `mid` remembers each row's middle: it is the same for every cube in the row, and working it out again for each of
+## them (a pass over the whole row's cells, per cell) was most of the thirteen seconds a Jared at Fine used to take.
+## Left out, nothing is remembered and the answer is the same, cube by cube, as it always was.
+static func _near_axis(g: Dictionary, x: int, y: int, z: int, r: float, mid := {}) -> bool:
+	# ([middle x, middle z, how many cubes]: an Array, not a Vector3, so the two middles keep every digit they had
+	# when they were worked out cube by cube -- a Vector3 holds halves of them, and a cube right on the 1.3 would
+	# fall the other way)
+	var m: Array = mid.get(y, [0.0, 0.0, -1.0])
+	if m[2] < 0.0:
+		# the middle of this row of the part (across x and z)
+		var s: Vector3i = g.size
+		var sx := 0.0
+		var sz := 0.0
+		var n := 0
+		var cells: PackedInt32Array = g.cells
+		for zz in s.z:
+			for xx in s.x:
+				if cells[xx + s.x * (y + s.y * zz)] != 0:
+					sx += xx
+					sz += zz
+					n += 1
+		m = [sx / maxf(1.0, float(n)), sz / maxf(1.0, float(n)), float(n)]
+		mid[y] = m
+	if m[2] <= 0.0:
 		return false
-	return Vector2(x - sx / n, z - sz / n).length() <= r
+	return Vector2(x - m[0], z - m[1]).length() <= r
 
 # ---------------------------------------------------------------- meshes
 

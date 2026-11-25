@@ -218,6 +218,13 @@ func apply(arena: Node3D) -> void:
 	var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
 	var sc := float(v.scale)
 	if VoxelTouch.phone():
+		# A phone never supersamples. In a browser across() was already holding it to 1280 across, so 125% and 150%
+		# meant nothing there; on the native build, where the cap is the screen's own pixels, 150% on the owner's
+		# 2340-wide Galaxy S25 would ask WebGL (and the phone's driver) for a 3510x1620 buffer with MSAA on top --
+		# a buffer several times the screen, which is how a phone runs out of memory and loses the picture. The
+		# menu hides those two entries on a phone as well (VoxelSettingsMenu), so this is the backstop for a saved
+		# file, a preset (Extreme is 150%) or a ?preset= link that asks for one anyway.
+		sc = minf(sc, 1.0)
 		# a phone: the 3D is drawn no wider than across() (1280 in a browser, where WebGL is single-threaded and the
 		# fill is what hurts; the screen's own pixels on native) with the preset's scale on top, and no further than
 		# far_m(). The HUD is 2D and stays sharp either way.
@@ -280,17 +287,21 @@ func apply(arena: Node3D) -> void:
 		VoxelDebris.max_lie = int(v.lying)
 		VoxelDebris.max_fly = int(v.flying)
 		restart = true
-	if arena.chunk != int(v.chunk) and not arena._opts.has("chunk") and not (arena.net and arena.net.linked):
-		arena.chunk = int(v.chunk)
-		if arena.debris:            # (at the start: nothing made yet, it's all made at this size)
-			arena._warm_up()
-			restart = true
+	# (chunk_wanted(), not chunk: through a staged rebuild the old enemies are still the ones in the arena, and a row
+	# tapped twice must not leave the rebuild heading for the size that was asked for first)
+	if arena.chunk_wanted() != int(v.chunk) and not arena._opts.has("chunk") and not (arena.net and arena.net.linked):
+		if arena.debris:            # (built already: the new size built a slice a frame, the fight started over at the end)
+			arena.rebuild_enemies(int(v.chunk))
+		else:                       # (at the start: nothing made yet, it's all made at this size)
+			arena.chunk = int(v.chunk)
 	# your own Jared, his own setting: he's 650,000 cells at Fine where an enemy is 80,000, so he's the one thing a
 	# phone still keeps chunky by default (Low). Before this he was forced chunky on every phone with no way back.
+	# Building him is the slowest thing any setting asks for, so it goes through the arena's staged rebuild: the row
+	# answers at once and he is built a slice a frame behind a line that says how far along it is.
 	if VoxelArena.jared_chunk != int(v.get("jared", 1)) and not arena._opts.has("lightjared"):
 		VoxelArena.jared_chunk = int(v.get("jared", 1))
 		if arena.avatar:            # (at the start: made after this, at the new size)
-			arena.remake_avatar()
+			arena.rebuild_avatar()  # (655,000 cubes at Fine: a slice a frame, never inside the tap on the row)
 	if restart and arena.debris:
 		arena._respawn_all()
 	# the two shudder fixes (CHOICES says what they are): both on unless the owner has turned one off to compare

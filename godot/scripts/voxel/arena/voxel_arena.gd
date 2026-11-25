@@ -1367,6 +1367,134 @@ func spawn_kind(key: String, at: Vector3 = Vector3.INF) -> VoxelBody:
 	bodies.append(b)
 	return b
 
+# ---------------------------------------------------------------- a settings change that rebuilds characters
+#
+# The owner, 25 Nov: he opened SET on his phone, tapped a row and the tab froze for good, so he reloaded. The two
+# rows that change a cube size -- "Enemy detail" and "Your own blocks" -- and the preset buttons right above them,
+# which change both, used to build the characters again there and then, on the spot, inside the tap. Measured in a
+# desktop browser on this machine, going from Low (where your own Jared is chunky) to any other preset was one
+# frame 14.3 seconds long: nothing drawn, no tap answered, no way to tell it from a crash. A phone's browser is
+# slower again.
+#
+# So the building is handed to VoxelBody's staged builder instead and run a slice a frame, the way the start-up
+# screen runs its steps, with a line on screen saying how far along it is. The game carries on underneath: the old
+# enemies and the old Jared are still there and still playable, and they are swapped for the new ones in the one
+# frame at the end, which is cheap because by then everything is cached. Nothing here ever spends more than
+# REBUILD_MS of a frame.
+#
+# Tapping the same row twice, or another row, while one is running doesn't stack: _rb_add folds the new work into
+# the job already going, never starts a second one, and never queues a character that is already in the list.
+const REBUILD_MS := 6.0         # work done per frame while a rebuild runs (a 60 fps frame is 16.7 ms)
+var _rb := {}                   # the rebuild running: {chars, job, after, n, did} (empty: none)
+var _rb_label: Label
+
+## The enemies built again at a new cube size ("Enemy detail"), a slice a frame. The fight starts over at the end.
+func rebuild_enemies(to_chunk: int) -> void:
+	if to_chunk == chunk_wanted():
+		return
+	if to_chunk == chunk:           # (tapped back mid-rebuild: they're already this size, so nothing is swapped in)
+		(_rb.after as Dictionary).erase("chunk")
+		return
+	var chars := []
+	for key in HEIGHT:
+		chars.append([key, to_chunk, float(HEIGHT[key]) / _ref_rows(key) * float(to_chunk)])
+	_rb_add(chars, {"chunk": to_chunk})
+
+## Your own Jared built again at the size "Your own blocks" now asks for (jared_chunk), a slice a frame. He's 655,000
+## cubes at Fine: the one that used to freeze the tab outright.
+func rebuild_avatar() -> void:
+	_rb_add([["jared_new", jared_chunk, 0.0125 * jared_chunk]], {"avatar": true})
+
+## True while a rebuild is running (the settings screen says so; the test watches it).
+func rebuilding() -> bool:
+	return not _rb.is_empty()
+
+## The cube size the enemies will be at once the rebuild running has finished -- which is what the settings have to
+## compare a new choice against, because `chunk` stays at the old size until the new enemies are swapped in.
+func chunk_wanted() -> int:
+	if not _rb.is_empty() and (_rb.after as Dictionary).has("chunk"):
+		return int(_rb.after.chunk)
+	return chunk
+
+func _ref_rows(key: String) -> float:
+	var md := VoxelModel.get_model(key)
+	return float(md.rig.get("ref_rows", 80)) if md else 80.0
+
+func _rb_add(chars: Array, after: Dictionary) -> void:
+	if _rb.is_empty():
+		_rb = {"chars": [], "job": {}, "after": {}, "n": 0, "did": 0}
+	for c in chars:
+		var have: bool = not (_rb.job as Dictionary).is_empty() and String(_rb.job.key) == String(c[0]) and int(_rb.job.chunk) == int(c[1])
+		for d in (_rb.chars as Array):
+			have = have or (String(d[0]) == String(c[0]) and int(d[1]) == int(c[1]))
+		if not have:
+			(_rb.chars as Array).append(c)
+			_rb.n = int(_rb.n) + 1
+	for k in after:
+		(_rb.after as Dictionary)[k] = after[k]
+	_rb_say()
+
+func _rb_tick() -> void:
+	if _rb.is_empty():
+		return
+	var t0 := Time.get_ticks_usec()
+	while true:
+		var left := REBUILD_MS - float(Time.get_ticks_usec() - t0) / 1000.0
+		if left <= 0.0:
+			break
+		if (_rb.job as Dictionary).is_empty():
+			if (_rb.chars as Array).is_empty():
+				_rb_finish()
+				return
+			var c: Array = (_rb.chars as Array).pop_front()
+			_rb.job = VoxelBody.build_begin(String(c[0]), int(c[1]), float(c[2]))
+		if VoxelBody.build_step(_rb.job, left):
+			_rb.job = {}
+			_rb.did = int(_rb.did) + 1
+	_rb_say()
+
+func _rb_finish() -> void:
+	var after: Dictionary = _rb.after
+	_rb = {}
+	# the one frame that swaps them in: every size it needs is cached by now, so it costs milliseconds
+	if after.has("chunk"):
+		chunk = int(after.chunk)
+		_warm_up()
+		_respawn_all()
+	if after.has("avatar") and avatar:
+		remake_avatar()
+	_rb_say()
+	print("VoxelArena: rebuild done")
+
+## How far along, on screen (and on the page, where the loading screen's own line comes from). "" when it's over.
+func _rb_say() -> void:
+	var text := ""
+	if not _rb.is_empty():
+		var within := VoxelBody.build_progress(_rb.job) if not (_rb.job as Dictionary).is_empty() else 0.0
+		var share := (float(_rb.did) + within) / maxf(1.0, float(_rb.n))
+		text = "Rebuilding the blocks: step %d of %d (%d%%)" % [mini(int(_rb.did) + 1, int(_rb.n)), int(_rb.n), int(share * 100.0)]
+	if _rb_label == null and text != "":
+		var cl := CanvasLayer.new()
+		cl.layer = 59               # (under the start-up screen's 60, over the settings panel's 31)
+		add_child(cl)
+		_rb_label = Label.new()
+		_rb_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		_rb_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_rb_label.offset_left = -400
+		_rb_label.offset_right = 400
+		_rb_label.offset_top = 150
+		_rb_label.offset_bottom = 210
+		_rb_label.add_theme_font_size_override("font_size", 26)
+		_rb_label.add_theme_color_override("font_color", Color("#f6d17a"))
+		_rb_label.add_theme_constant_override("outline_size", 6)
+		_rb_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		cl.add_child(_rb_label)
+	if _rb_label:
+		_rb_label.text = text
+		_rb_label.visible = text != ""
+	if OS.has_feature("web"):       # (the page's own line as well, as the start-up steps do)
+		JavaScriptBridge.eval("window.smashedSay&&window.smashedSay('%s')" % text, true)
+
 # every kind made once while loading (their flesh and meshes cached), so the first of each doesn't stall the game
 func _warm_up() -> void:
 	for key in HEIGHT:
@@ -2204,6 +2332,7 @@ static func _out_of_box(p: Vector3, c: Vector3, hx: float, hz: float) -> Vector3
 func _process(dt: float) -> void:
 	if touch:
 		touch.flush()           # (a frame with no physics tick in it: the touches still land before the camera)
+	_rb_tick()                  # (a settings change that has to build characters again: a slice of it, never the lot)
 	_t += dt
 	if _opts.has("secs") or _opts.has("swordtest") or _opts.has("meleetest") or _opts.has("weaponshots"):
 		_frames.append(dt)          # (only the test runs' summary reads them, _finish: not kept for a whole game)

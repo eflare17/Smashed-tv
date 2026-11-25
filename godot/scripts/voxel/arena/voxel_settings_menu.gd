@@ -30,6 +30,7 @@ var _hw: Label
 var _now: Label
 var _presets := {}              # name: Button
 var _rows := {}                 # key: OptionButton / HSlider
+var _choice := {}               # key: [the values this machine is offered, their labels] (a phone is offered fewer)
 var _vals := {}                 # slider key: its value's Label
 var _labels := {}               # key: its name's Label (hidden with its row where the renderer can't do it)
 var _scroll: ScrollContainer
@@ -156,11 +157,12 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	scroll.add_child(grid)
 	for key in VoxelSettings.CHOICES:
 		var c: Array = VoxelSettings.CHOICES[key]
+		_choice[key] = _offered(key)
 		_labels[key] = _label(grid, c[0])
 		var ob := OptionButton.new()
 		ob.custom_minimum_size = Vector2(170, 32)
 		ob.add_theme_font_size_override("font_size", 14)
-		for t in c[2]:
+		for t in (_choice[key][1] as Array):
 			ob.add_item(t)
 		ob.item_selected.connect(_on_choice.bind(key))
 		grid.add_child(ob)
@@ -204,6 +206,22 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 		_result.text = _bench_text(s.bench.get("results", {}), recommended)
 	show_supported(RenderingServer.get_current_rendering_method() == "forward_plus")
 	_refresh()
+
+## What a row is allowed to offer here. Everything in CHOICES, except that a phone isn't offered a render scale
+## above 100%: in a browser across() already held it to 1280 across so "125% (supersampled)" did nothing at all,
+## and on the native build it would ask the phone's driver for a buffer several times its screen -- a trap in the
+## menu, not a setting. (VoxelSettings.apply holds a saved or preset value to 100% on a phone as well.)
+func _offered(key: String) -> Array:
+	var c: Array = VoxelSettings.CHOICES[key]
+	if key != "scale" or not VoxelTouch.phone():
+		return [c[1], c[2]]
+	var vals := []
+	var labels := []
+	for i in (c[1] as Array).size():
+		if float(c[1][i]) <= 1.0:
+			vals.append(c[1][i])
+			labels.append(c[2][i])
+	return [vals, labels]
 
 ## The rows the renderer can't do aren't shown (the browser's game is on Compatibility: no TAA, SSAO, SSIL, SDFGI,
 ## volumetric fog or reflections there; forward: every row).
@@ -259,7 +277,7 @@ func _refresh() -> void:
 		_presets[name].button_pressed = s.preset == name
 	_now.text = "Now: %s%s" % [NAMES.get(s.preset, "CUSTOM"), ("   (recommended for this PC: %s)" % NAMES[recommended]) if recommended != "" else ""]
 	for key in VoxelSettings.CHOICES:
-		var vals: Array = VoxelSettings.CHOICES[key][1]
+		var vals: Array = _choice[key][0]
 		var i := vals.find(s.v[key])
 		if i < 0:                   # (a value between the menu's: the nearest)
 			var bd := INF
@@ -298,7 +316,7 @@ func _on_preset(name: String) -> void:
 func _on_choice(i: int, key: String) -> void:
 	if _quiet:
 		return
-	s.set_value(key, VoxelSettings.CHOICES[key][1][i])
+	s.set_value(key, (_choice[key][0] as Array)[i])
 	_changed()
 
 func _on_slider(value: float, key: String) -> void:
