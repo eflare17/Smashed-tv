@@ -457,8 +457,8 @@ func _chars_run() -> void:
 				key, "fine (1)  " if chunk == 1 else "chunky (2)", first, again, calls, _k(tris)])
 			print("CHARS ", lines[-1])
 		_check(tot_tris > 0, "cube size %d: bodies built" % chunk)
-		lines.append("  %-14s %s     %8.0f ms            all %d kinds, %s tris the lot" % [
-			"ALL KINDS", "fine (1)  " if chunk == 1 else "chunky (2)", tot_first, (VoxelArena.HEIGHT as Dictionary).size(), _k(tot_tris)])
+		lines.append("  %-14s %s     %8.0f ms            all %d enemy kinds and Jared, %s tris the lot" % [
+			"EVERYONE", "fine (1)  " if chunk == 1 else "chunky (2)", tot_first, (VoxelArena.HEIGHT as Dictionary).size(), _k(tot_tris)])
 		print("CHARS ", lines[-1])
 	print("CHARS ==================================================== the lot")
 	for l in lines:
