@@ -3,8 +3,8 @@ extends SceneTree
 ##   xvfb-run -a -s "-screen 0 1280x720x24" /root/godot/godot --path godot --resolution 1280x720 --fixed-fps 60 \
 ##     -s res://test/voxel/demolition_shots.gd
 ## into integration/demolition_shots/demolition_*.png: the street before anything's touched, the block half down, the
-## crane with its ball alongside a building, the tower block coming down, the enemies stationed on the office's roof and
-## in its windows, the office coming down under them, and the petrol station's chain going off. (-- --only=name: just
+## crane with its ball alongside a building, the tower block coming down, the enemies stationed on the corner shop's roof
+## and in its windows, that shop coming down under them, and the petrol station's chain going off. (-- --only=name: just
 ## that one.)
 ## Owned by the Demolition session.
 
@@ -150,17 +150,16 @@ func _process(dt: float) -> bool:
 			step = 10
 			t = 0.0
 		10:
-			# phase B. The block as new again, and enemies stationed on the office and the brick shop: on the roof
-			# tiles, and in the windows of the upper storeys along the road (VoxelDemolitionMob's posts; the window
-			# ones burst the glazed block out as they take it, which is why there are holes in the wall)
+			# phase B. The block as new again, and enemies stationed on the corner shop at the west end of the street:
+			# on its roof tiles and in the windows of its upper storey facing the road (VoxelDemolitionMob's posts). The
+			# window ones burst the glazed block out as they take it, which is why there are holes in that wall.
 			dem.start()
 			dem.crane.place(D.AT + Vector3(46.0, 0.0, 0.0), -PI / 2.0)
-			var face := D.AT + Vector3(11.0, 7.0, -6.0)      # (the office's wall along the road: what the camera sees)
-			_man("Office", VoxelDemolitionMob.ROOF, face, 13.0)
-			_man("Office", VoxelDemolitionMob.WINDOW, face, 11.0)
-			_man("BrickShop", VoxelDemolitionMob.ROOF, D.AT + Vector3(-6.0, 7.0, -6.0), 13.0)
+			_man("CornerShop", VoxelDemolitionMob.ROOF)
+			_man("CornerShop", VoxelDemolitionMob.WINDOW, D.AT + Vector3(-21.0, 2.0, -6.0), 8.0)
+			_man("BrickShop", VoxelDemolitionMob.ROOF)
 			dem.mob.made = dem.mob.most()      # (no more coming while the picture's taken: just these)
-			_stand(D.AT + Vector3(-9.0, 0.05, 7.0), D.AT + Vector3(11.0, 7.5, -6.0))
+			_stand(D.AT + Vector3(-31.0, 0.05, 1.5), D.AT + Vector3(-21.0, 3.0, -8.0))
 			step = 11
 			t = 0.0
 		11:
@@ -170,22 +169,21 @@ func _process(dt: float) -> bool:
 			step = 12
 			t = 0.0
 		12:
-			# the office brought down under them: the sills of the windows they stand in blown out, the roof caved in
-			var off := _of("Office")
-			for c in [30, 34, 38]:
-				dem.breaks.blast(_wall(off, c, 7.0), 3.0)
-			for c in [30, 34, 38]:
-				dem.breaks.blast(_wall(off, c, 4.0), 3.0)
+			# and the corner shop brought down under them: the wall they're standing in and over blown out, the roof in
+			var shop := _of("CornerShop")
+			for c in [21, 24, 27]:                            # (the wall along the road)
+				dem.breaks.blast(_wall(shop, c, 1.0), 2.8)
+				dem.breaks.blast(_wall(shop, c, 2.8), 2.8)
 			var mid := Vector2.ZERO
-			for v in off.ring:
+			for v in shop.ring:
 				mid += v
-			mid /= off.ring.size()
-			dem.breaks.blast(Vector3(mid.x, off.h - 0.2, mid.y), 5.0)
-			_stand(D.AT + Vector3(-9.0, 0.05, 7.0), D.AT + Vector3(11.0, 7.5, -6.0))   # (the same spot, after)
+			mid /= shop.ring.size()
+			dem.breaks.blast(Vector3(mid.x, shop.h - 0.2, mid.y), 5.0)
+			_stand(D.AT + Vector3(-31.0, 0.05, 1.5), D.AT + Vector3(-21.0, 3.0, -8.0))   # (the same spot, after)
 			step = 13
 			t = 0.0
 		13:
-			if t < 0.8:
+			if t < 0.7:
 				return false
 			_save("collapse")
 			step = 14

@@ -236,7 +236,7 @@ func _fire(at: Vector3, spec: Dictionary) -> void:
 		var p := at + Vector3(_rng.randf_range(-r, r), _rng.randf_range(-r * 0.35, r), _rng.randf_range(-r, r))
 		var out := p - at
 		level.arena.flames.emit(p, 1, (out.normalized() if out.length() > 0.1 else Vector3.UP) * 3.0 + Vector3.UP * 2.0,
-				_rng.randf_range(4.0, 9.0), _rng.randf_range(0.5, 1.1))
+				_rng.randf_range(7.0, 14.0), _rng.randf_range(0.6, 1.3))     # (petrol, not a muzzle flash: big and slow)
 	level.arena.debris.throw(at, Vector3.UP * 1.6, Color("#f0a01e"), fire)
 	level.arena.debris.throw(at + Vector3(0, 0.8, 0), Vector3.UP * 2.2, Color("#2e2b29"), smoke)
 
