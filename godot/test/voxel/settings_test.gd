@@ -62,18 +62,18 @@ func _process(dt: float) -> bool:
 			s.set_preset("low")
 			s.apply(arena)
 			var vp: Viewport = arena.get_viewport()
-			check(arena.chunk == 2 and arena.debris.MAX == 3000 and arena.debris.MAX_LIE == 40000 and VoxelPieces.MAX_PIECES == 12 and VoxelArena.MAX_DEAD == 12,
-				"Low: chunky cubes (2 pixels), 40k lying, 3k flying, 12 pieces, 12 corpses")
+			check(arena.chunk == 1 and VoxelArena.jared_chunk == 2 and arena.debris.MAX == 3000 and arena.debris.MAX_LIE == 40000 and VoxelPieces.MAX_PIECES == 12 and VoxelArena.MAX_DEAD == 12,
+				"Low: fine enemies, chunky Jared, 40k lying, 3k flying, 12 pieces, 12 corpses")
 			check(not VoxelMirror.enabled and not arena.sun.shadow_enabled and not arena.world_env.ssao_enabled and not arena.world_env.glow_enabled and is_equal_approx(vp.scaling_3d_scale, 0.67),
 				"Low: no mirror, shadows, ambient occlusion or glow; drawn at 67%")
-			check(_alive() >= 1, "the cube size changed: the fight started over (%d enemies)" % _alive())
+			check(_alive() >= 1, "the cubes' caps changed: the fight started over (%d enemies)" % _alive())
 			s.set_value("glow", true)
 			var custom := s.preset
 			s.set_value("glow", false)
 			check(custom == "custom" and s.preset == "low", "a setting changed by hand: Custom; changed back: Low again")
 			s.set_preset("ultra")
 			s.apply(arena)
-			check(arena.chunk == 1 and arena.debris.MAX_LIE == 300000 and arena.debris.MAX == 12000 and VoxelPieces.MAX_PIECES == 45 and VoxelArena.MAX_DEAD == 60
+			check(arena.chunk == 1 and VoxelArena.jared_chunk == 1 and arena.debris.MAX_LIE == 300000 and arena.debris.MAX == 12000 and VoxelPieces.MAX_PIECES == 45 and VoxelArena.MAX_DEAD == 60
 				and vp.msaa_3d == Viewport.MSAA_4X and arena.sun.shadow_enabled and VoxelMirror.enabled,
 				"Ultra: fine cubes, 300k lying, 12k flying, 45 pieces, 60 corpses, 4x MSAA, shadows, the mirror")
 			var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
@@ -121,7 +121,7 @@ func _process(dt: float) -> bool:
 				Input.action_press("ui_up")         # (nothing: the screen has the keys)
 				v0.p0 = p0
 				m._on_preset("low")
-				check(m.s.preset == "low" and arena.chunk == 2 and m._presets.low.button_pressed and not m._presets.high.button_pressed,
+				check(m.s.preset == "low" and VoxelArena.jared_chunk == 2 and m._presets.low.button_pressed and not m._presets.high.button_pressed,
 					"the LOW button: Low on, shown pressed")
 				m._on_choice(1, "glow")
 				check(m.s.preset == "custom" and arena.world_env.glow_enabled and m._now.text.contains("CUSTOM"), "a row changed: glow on, Custom")
@@ -132,7 +132,7 @@ func _process(dt: float) -> bool:
 		3:
 			if t - mark > 0.2:
 				Input.action_release("ui_up")
-				check(not m.is_open() and arena.chunk == 1, "Esc closes it (High back on)")
+				check(not m.is_open() and arena.chunk == 1 and VoxelArena.jared_chunk == 1, "Esc closes it (High back on)")
 				# no benchmark in co-op
 				arena.net.role = "host"
 				m.bench_start()
@@ -177,12 +177,12 @@ func _process(dt: float) -> bool:
 		5:
 			if m._bench.has("i") and int(m._bench.i) == 4 and not v0.has("low_on"):
 				v0.low_on = true
-				check(arena.chunk == 2 and VoxelArena.MAX_DEAD == 12, "Low, tried last: chunky cubes")
+				check(VoxelArena.jared_chunk == 2 and VoxelArena.MAX_DEAD == 12, "Low, tried last: chunky Jared")
 			if m._bench.is_empty():
 				var res: Dictionary = m.s.bench.get("results", {})
 				check(m.recommended == "low" and res.size() == 5, "a slow PC: all five tried (%d), Low recommended" % res.size())
 				check(m.bench_booms > 0, "the benchmark's grenades went off (%d)" % m.bench_booms)
-				check(m.s.preset == "high" and arena.chunk == 1 and VoxelArena.MAX_DEAD == 40, "High back on after")
+				check(m.s.preset == "high" and arena.chunk == 1 and VoxelArena.jared_chunk == 1 and VoxelArena.MAX_DEAD == 40, "High back on after")
 				# stopped part way: nothing changes
 				m.close()
 				v0.rec = m.recommended

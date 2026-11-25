@@ -6,7 +6,12 @@ extends RefCounted
 ## its best, reflections, twice the gore kept); any
 ## one changed by hand makes it Custom. The picture: render scale (FSR upscaling below 100% on Forward+), MSAA, TAA,
 ## shadows (off / hard 2048 / soft 4096), SSAO, SSIL, glow, SDFGI global illumination, volumetric fog, the bedroom's
-## mirror. The gore's weight: the cube size (1 sprite pixel a cube, or 2: an eighth of the cubes), how many knocked-out
+## mirror. The block characters' detail: the cube size the enemies are built at, and your own Jared's (1 sprite pixel
+## a cube, or 2: an eighth of the cubes, which is what makes an enemy look blocky -- the owner, 25 Nov: "the enemies
+## look worse". Measured with test/voxel/voxel_perf_sweep.gd --chars: Fine and Chunky draw the same 14 calls a body,
+## Fine is about 13,000 triangles an enemy against 6,000, and the whole difference is in the one-off building during
+## the loading screen, so every preset now builds the enemies Fine. Jared alone is 650,000 cells and 11 s of that
+## building, so Low still builds him Chunky; it's a row in the menu either way.) The gore's weight: how many knocked-out
 ## cubes lie about and fly at once, cut-off pieces, corpses kept. Yours alone (not in the presets): field of view, mouse
 ## speed, volume, full screen, frame cap, vsync. Saved in user://voxel_settings.cfg. The first time the game runs it
 ## guesses a preset from the graphics card (guess()); the benchmark (VoxelSettingsMenu) measures one. Owned by the voxel
@@ -16,19 +21,19 @@ const FILE := "user://voxel_settings.cfg"
 const ORDER := ["low", "medium", "high", "ultra", "extreme"]
 const PRESETS := {
 	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
-		"fog": false, "mirror": false, "chunk": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12, "gore": 0, "jiggle": 3,
+		"fog": false, "mirror": false, "chunk": 1, "jared": 2, "lying": 40000, "flying": 3000, "pieces": 12, "corpses": 12, "gore": 0, "jiggle": 3,
 		"scenery": 60.0},
 	"medium": {"scale": 0.85, "msaa": 0, "taa": false, "shadows": 1, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25, "gore": 1, "jiggle": 3,
+		"fog": false, "mirror": true, "chunk": 1, "jared": 1, "lying": 80000, "flying": 5000, "pieces": 20, "corpses": 25, "gore": 1, "jiggle": 3,
 		"scenery": 110.0},
 	"high": {"scale": 1.0, "msaa": 2, "taa": false, "shadows": 2, "ssao": true, "ssil": false, "glow": true, "sdfgi": false,
-		"fog": false, "mirror": true, "chunk": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40, "gore": 1, "jiggle": 3,
+		"fog": false, "mirror": true, "chunk": 1, "jared": 1, "lying": 150000, "flying": 8000, "pieces": 30, "corpses": 40, "gore": 1, "jiggle": 3,
 		"scenery": 180.0},
 	"ultra": {"scale": 1.0, "msaa": 4, "taa": true, "shadows": 2, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60, "gore": 1, "jiggle": 3,
+		"fog": true, "mirror": true, "chunk": 1, "jared": 1, "lying": 300000, "flying": 12000, "pieces": 45, "corpses": 60, "gore": 1, "jiggle": 3,
 		"scenery": 0.0},
 	"extreme": {"scale": 1.5, "msaa": 8, "taa": true, "shadows": 3, "ssao": true, "ssil": true, "glow": true, "sdfgi": true,
-		"fog": true, "mirror": true, "chunk": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120, "gore": 2, "jiggle": 3,
+		"fog": true, "mirror": true, "chunk": 1, "jared": 1, "lying": 600000, "flying": 25000, "pieces": 90, "corpses": 120, "gore": 2, "jiggle": 3,
 		"scenery": 0.0},
 }
 ## (the effects' own quality, and screen-space reflections: Extreme's, or anything set to them by hand)
@@ -55,7 +60,8 @@ const CHOICES := {
 	"sdfgi": ["Global illumination (SDFGI)", [false, true], ["Off", "On"]],
 	"fog": ["Volumetric fog", [false, true], ["Off", "On"]],
 	"mirror": ["Bedroom mirror", [false, true], ["Off", "On"]],
-	"chunk": ["Cube size (gore detail)", [1, 2], ["Fine (1 pixel)", "Chunky (2 pixels)"]],
+	"chunk": ["Enemy detail (cube size)", [1, 2], ["Fine (every block)", "Chunky (an eighth of the blocks)"]],
+	"jared": ["Your own blocks (mirror, top-down, co-op)", [1, 2], ["Fine (every block)", "Chunky (an eighth of the blocks)"]],
 	"lying": ["Cubes lying about", [40000, 80000, 150000, 300000, 600000], ["40k", "80k", "150k", "300k", "600k"]],
 	"flying": ["Cubes flying at once", [3000, 5000, 8000, 12000, 25000], ["3k", "5k", "8k", "12k", "25k"]],
 	"pieces": ["Cut-off pieces", [12, 20, 30, 45, 90], ["12", "20", "30", "45", "90"]],
@@ -239,6 +245,12 @@ func apply(arena: Node3D) -> void:
 		if arena.debris:            # (at the start: nothing made yet, it's all made at this size)
 			arena._warm_up()
 			restart = true
+	# your own Jared, his own setting: he's 650,000 cells at Fine where an enemy is 80,000, so he's the one thing a
+	# phone still keeps chunky by default (Low). Before this he was forced chunky on every phone with no way back.
+	if VoxelArena.jared_chunk != int(v.get("jared", 1)) and not arena._opts.has("lightjared"):
+		VoxelArena.jared_chunk = int(v.get("jared", 1))
+		if arena.avatar:            # (at the start: made after this, at the new size)
+			arena.remake_avatar()
 	if restart and arena.debris:
 		arena._respawn_all()
 	arena.base_fov = float(v.fov)
