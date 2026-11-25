@@ -199,8 +199,10 @@ func _ready() -> void:
 	VoxelTouch.detect(_opts)        # (a phone's browser, ?touch: before the settings, which start on Low there)
 	# a phone's browser (or --staged): the start-up a step a frame, each named on screen and in the console, so a phone
 	# that stops can be told where (chrome://inspect); nothing of the half-made arena runs till it's done
-	if _opts.has("lightjared"):
-		jared_chunk = 2         # (--lightjared: Jared's blocks an eighth as many, whatever the settings say)
+	# (--lightjared: Jared's blocks an eighth as many, whatever the settings say. Otherwise back to all of them, and
+	# the settings' "Your own blocks" row has its say a step later -- it's a static, so it mustn't carry over from a
+	# game built before this one)
+	jared_chunk = 2 if _opts.has("lightjared") else 1
 	_staged = _opts.has("staged") or VoxelTouch.phone()
 	_boot_t = Time.get_ticks_msec()
 	_boot_0 = _boot_t
