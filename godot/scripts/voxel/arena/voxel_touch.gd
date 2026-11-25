@@ -70,6 +70,12 @@ const RUN_AT := 0.94            # pushed this far: running (Shift)
 const KEY_AT := 0.4             # past this an axis is its key as well (W A S D: the rides, getting out of bed)
 const LOOK_K := 1.5             # a look drag's pixels, as the mouse's (a swipe across half the screen: about 170 degrees)
 const LOOK_CAP := 90.0          # the most one drag event turns (pixels): a new finger, a dropped frame never jerk the view
+## The most a whole frame's worth of look drags turns (pixels). LOOK_CAP alone bounds each sample, but the fold adds
+## the frame's samples up, so a burst of capped ones could still jerk. A thumb's real sample is a few pixels at 120 Hz
+## and a hard flick across a phone is about 25 px a sample; measured in the browser build a frame's worth never
+## reached 60 px. 150 is twice the room a real flick needs and still only 32 degrees, so nothing a thumb can do is
+## clipped and nothing the browser can do is a snap.
+const LOOK_FRAME_CAP := 150.0
 const AIM_REACH := 240.0        # top-down: how far from Jared the aim point sits (pixels)
 const SLOT_SLIP := 26.0         # a touch on the weapon bar that moves this far isn't a tap: it's the stick, or a look
 const UI_SLIP := 22.0           # a menu's tap that moves this far (a scroll) doesn't click when let go
@@ -79,6 +85,25 @@ const FINGERS := 10
 ## to back in one session rather than trust a memory of it -- SET's "Combine thumb moves" row, or ?fold=0 on the page,
 ## puts the old event-at-a-time path back exactly.
 static var fold := true
+## Each finger's movement worked out here, from its own last position, instead of taken from the engine's
+## InputEventScreenDrag.relative. On; switchable the same way (SET's "Own thumb tracking" row, or ?own=0) so the
+## snap can be felt again on demand rather than remembered.
+##
+## Why: Godot 4.4.1's web build keeps its previous-position table indexed by a touch's PLACE in the browser's
+## changedTouches list, not by which finger it is. One finger: the place never changes and `relative` is right.
+## Two thumbs: the set of fingers the browser reports together changes constantly -- a thumb pauses, or their samples
+## land on different ticks -- and every change hands us one drag whose `relative` was measured from the OTHER thumb.
+## That is the whole gap between the thumbs in a single event. Measured in the real browser build (25 Nov, the probe
+## in this session's notes): one finger sweeping, 24 drags, `relative` right every time; both thumbs reported
+## together, wrong on the first event after the set changed, by 847 and 1173 px; a third finger joining, 337 px; the
+## thumbs crossing the screen's halves, 508 px; and the worst case -- the thumbs alternating, one browser sample each
+## so no two ever arrive in the same event -- wrong on EVERY one of 40 drags, by 318 to 402 px. Capped at LOOK_CAP
+## each, 90 px is still 19 degrees of view in one event, and the fold sums the frame's worth. That is the owner's
+## "sudden jerks to a different angle" (25 Nov), and it is why it happens everywhere and only with two thumbs.
+##
+## A finger's own last position cannot be about the wrong finger, and a finger just put down -- or put down again, or
+## given a new identifier by the browser -- starts from where it landed, so its first drag contributes nothing.
+static var own_delta := true
 static var active := false      # touch mode on (there's a layer)
 static var allowed := true      # (?notouch: never, not even at a touch)
 static var forced := false      # (?touch)
@@ -102,6 +127,7 @@ var _role := PackedInt32Array()         # each finger's: F_*
 var _fbtn := PackedInt32Array()         # the button (or the bar's slot) it's on
 var _from := PackedVector2Array()       # where it came down
 var _slip := PackedFloat32Array()       # how far it's strayed from there at most
+var _at_px := PackedVector2Array()      # where each finger was at its last event (our own baseline for a look's delta)
 var _stick_from := Vector2.ZERO
 var _keys := [false, false, false, false, false]    # W A S D Shift down by the stick
 var _ui := false
@@ -127,6 +153,12 @@ var fingers_worst := 0          # the most fingers down at once in that second
 var key_sec := 0                # keys this layer sent the game in that second (W A S D Shift flipping)
 var in_us := 0                  # microseconds spent in _input in that second
 var folds_sec := 0              # frames in that second whose drags were applied (what the count above folded down to)
+var look_worst_px := 0.0        # ?stats: the most one frame's worth of look drags added up to (pixels)
+var frame_capped_sec := 0       # frames in that second whose summed look hit LOOK_FRAME_CAP
+var rel_bad_sec := 0            # drags whose engine `relative` disagreed with this finger's own movement
+var rel_bad_worst := 0.0        # the worst such disagreement (pixels)
+static var dump := false        # ?dragdump: every drag printed (slot, the engine's relative, our own delta)
+var _dump_id := 0
 var _timing := false            # ?stats only: in_us is kept (the clock itself costs, and this is the hot path)
 var _ev_frame := 0
 ## Two thumbs down: the browser's drags stop being folded. Godot folds a drag into the one before it, so a single
@@ -155,6 +187,7 @@ var _slot := {}                 # the browser's id -> 0..FINGERS-1
 ## (a phone has nothing else). On the web: a touch screen with no mouse or trackpad (a coarse pointer).
 static func detect(opts: Dictionary) -> bool:
 	allowed = not opts.has("notouch")
+	dump = opts.has("dragdump")
 	forced = opts.has("touch") and allowed
 	active = forced
 	_aim_on = false
@@ -203,6 +236,7 @@ func setup(a: VoxelArena) -> void:
 	_fbtn.resize(FINGERS)
 	_from.resize(FINGERS)
 	_slip.resize(FINGERS)
+	_at_px.resize(FINGERS)
 	for sb in [_sb, _sb_down]:
 		sb.set_corner_radius_all(12)
 		sb.set_border_width_all(2)
@@ -402,6 +436,8 @@ func _touch_input(e: InputEvent) -> void:
 		var i := _slot_for(t.index, t.pressed)
 		if i < 0:
 			return
+		if dump:
+			print("TOUCH id=%d i=%d %s p=%.0f,%.0f" % [t.index, i, "down" if t.pressed else "up", t.position.x, t.position.y])
 		if t.pressed:
 			_down(i, t.position)
 		else:
@@ -414,6 +450,7 @@ func _touch_input(e: InputEvent) -> void:
 		var i := _slot_for(d.index, false)
 		if i < 0:
 			return
+		_dump_id = d.index
 		_drag(i, d.position, d.relative)
 		if _role[i] != F_UI and not _ui:
 			get_viewport().set_input_as_handled()
@@ -435,6 +472,7 @@ func _down(i: int, p: Vector2) -> void:
 	if _role[i] != F_NONE:
 		_up(i, p)                   # (a finger the browser never said was lifted)
 	_from[i] = p
+	_at_px[i] = p
 	_slip[i] = 0.0
 	var b := button_at(p)
 	if b >= 0:
@@ -476,7 +514,20 @@ func _up(i: int, p: Vector2) -> void:
 	if _pend_aim_i == i:
 		_pend_aim_i = -1
 
-func _drag(i: int, p: Vector2, rel: Vector2) -> void:
+## A drag for the finger in slot i, now at p. `engine_rel` is what the engine said the finger moved; it is only
+## counted and printed, never used (own_delta says why).
+func _drag(i: int, p: Vector2, engine_rel: Vector2) -> void:
+	var rel := p - _at_px[i]
+	_at_px[i] = p
+	var gap := (engine_rel - rel).length()
+	if gap > 1.0:
+		rel_bad_sec += 1
+		rel_bad_worst = maxf(rel_bad_worst, gap)
+	if dump:
+		print("DRAG id=%d i=%d role=%d p=%.0f,%.0f rel=%.0f,%.0f own=%.0f,%.0f gap=%.0f" % [
+			_dump_id, i, _role[i], p.x, p.y, engine_rel.x, engine_rel.y, rel.x, rel.y, gap])
+	if not own_delta:
+		rel = engine_rel            # (?own=0 / SET's row: the engine's figure back, to feel the snap again)
 	_slip[i] = maxf(_slip[i], p.distance_to(_from[i]))
 	match _role[i]:
 		F_STICK:
@@ -531,6 +582,10 @@ func flush() -> void:
 		_pend_look_any = false
 		var rel := _pend_look
 		_pend_look = Vector2.ZERO
+		look_worst_px = maxf(look_worst_px, rel.length())
+		if rel.length() > LOOK_FRAME_CAP:
+			rel = rel.normalized() * LOOK_FRAME_CAP     # (a burst can't add up to a jerk: LOOK_FRAME_CAP says why)
+			frame_capped_sec += 1
 		arena.look_by(rel * LOOK_K)
 	if _pend_aim_i >= 0:
 		var i := _pend_aim_i

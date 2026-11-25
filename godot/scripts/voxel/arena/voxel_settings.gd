@@ -68,17 +68,22 @@ const NATIVE_FAR := 420.0
 ## only ever see in the bedroom mirror. MEDIUM in SET turns on both, and the rest of Medium with them.
 const NATIVE_START := {"scale": 1.0, "scenery": 110.0}
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
-	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2, "steady": true, "fold": true}
+	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2, "steady": true, "fold": true, "own": true}
 ## (what each setting can be, for the menu: [label, values, value labels])
 const CHOICES := {
-	# The two shudder fixes, first in the list so they are easy to find on a phone, and switchable so the owner can
+	# The three view fixes, first in the list so they are easy to find on a phone, and switchable so the owner can
 	# feel the difference back to back in one session instead of trusting a memory of an hour ago (the owner, 25 Nov:
 	# "I don't know if you fixed it or if I'm learning the old one"). Both default On. "Steady view" keeps the camera
 	# out of Godot's physics interpolation, which was smearing it between frames and making an even thumb look uneven
 	# (VoxelArena.steady_view has the measurements); "Combine thumb moves" applies a frame's worth of touch samples
 	# once instead of one at a time (VoxelTouch.fold). ?steady=0 / ?fold=0 on the page start with either one off.
+	# once instead of one at a time (VoxelTouch.fold); "Own thumb tracking" works each thumb's movement out from its
+	# own last position instead of believing the engine, which on the web measures one thumb's move from the other
+	# thumb's place every time the browser changes which fingers it reports together -- the snap (VoxelTouch.own_delta
+	# has the measurements). ?steady=0 / ?fold=0 / ?own=0 on the page start with any of them off.
 	"steady": ["Steady view (shudder fix)", [false, true], ["Off - as it was", "On"]],
 	"fold": ["Combine thumb moves (shudder fix)", [false, true], ["Off - as it was", "On"]],
+	"own": ["Own thumb tracking (snap fix)", [false, true], ["Off - as it was", "On"]],
 	"scale": ["Render scale", [0.5, 0.67, 0.77, 0.85, 1.0, 1.25, 1.5], ["50%", "67%", "77%", "85%", "100%", "125% (supersampled)", "150% (supersampled)"]],
 	"msaa": ["Anti-aliasing (MSAA)", [0, 2, 4, 8], ["Off", "2x", "4x", "8x"]],
 	"taa": ["Temporal AA", [false, true], ["Off", "On"]],
@@ -318,10 +323,11 @@ func apply(arena: Node3D) -> void:
 			arena.rebuild_avatar()  # (655,000 cubes at Fine: a slice a frame, never inside the tap on the row)
 	if restart and arena.debris:
 		arena._respawn_all()
-	# the two shudder fixes (CHOICES says what they are): both on unless the owner has turned one off to compare
+	# the three view fixes (CHOICES says what they are): all on unless the owner has turned one off to compare
 	if arena.has_method("set_steady_view"):
 		arena.set_steady_view(bool(v.get("steady", true)))
 	VoxelTouch.fold = bool(v.get("fold", true))
+	VoxelTouch.own_delta = bool(v.get("own", true))
 	arena.base_fov = float(v.fov)
 	arena.mouse_sens = float(v.sens)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.0001, float(v.volume))))

@@ -158,6 +158,72 @@ func _run() -> void:
 	_drag(1, l0 + Vector2(1040, 0), Vector2(1000, 0))
 	await _wait(0.1)
 	_check(absf(arena.look_yaw - yaw0) < 0.6, "a finger's huge jump is capped: the view doesn't spin (%.3f rad)" % (arena.look_yaw - yaw0))
+	# ---- the snap (the owner, 25 Nov: "view jumps or snaps" -- sudden jerks to a different angle). Godot's web
+	# build measures a drag's `relative` from whichever finger was in the same place in the browser's changed-touch
+	# list last time, so with two thumbs down it keeps handing us one thumb's move measured from the OTHER thumb's
+	# position -- hundreds of pixels. Proved in the real browser build on 25 Nov: wrong on every one of 40 drags
+	# when the thumbs alternate, by up to 1245 px. The layer works each finger's movement out itself now, so a
+	# `relative` about the wrong finger changes nothing at all.
+	_drag(1, l0 + Vector2(1040, 0), Vector2.ZERO)       # (settle: the finger is where it says it is)
+	await _wait(0.1)
+	yaw0 = arena.look_yaw
+	var pitch0 := arena.look_pitch
+	var bad0: int = touch.rel_bad_sec
+	for n in 6:                     # the look thumb creeping 3 px a sample, each `relative` the gap to the stick thumb
+		var at := l0 + Vector2(1040 + n * 3, 0)
+		_drag(1, at, at - s0)       # the engine's figure: measured from the stick's thumb, not this one
+	await _wait(0.1)
+	_check(absf(arena.look_yaw - yaw0) < 0.1 and absf(arena.look_pitch - pitch0) < 0.1,
+		"a `relative` about the other thumb is ignored: 18 px of thumb turns the view 18 px worth (%.3f rad, %.3f up)" % [
+			arena.look_yaw - yaw0, arena.look_pitch - pitch0])
+	_check(touch.rel_bad_sec > bad0 and touch.rel_bad_worst > 200.0,
+		"... and it is counted and reported as the engine getting it wrong (%d drags, worst %.0f px out)" % [
+			touch.rel_bad_sec - bad0, touch.rel_bad_worst])
+	# ---- a thumb rolling or briefly lifting: the re-press must contribute nothing, however far it lands from
+	# where the finger was. Both ways round: a proper lift and press, and a press the browser never said was lifted.
+	yaw0 = arena.look_yaw
+	_touch(1, l0 + Vector2(1058, 0), false)
+	await _wait(0.05)
+	_touch(1, Vector2(vs.x * 0.95, vs.y * 0.9), true)   # down again, most of the screen away
+	await _wait(0.05)
+	_drag(1, Vector2(vs.x * 0.95, vs.y * 0.9) + Vector2(4, 0), Vector2(4, 0))
+	await _wait(0.1)
+	_check(absf(arena.look_yaw - yaw0) < 0.05, "a thumb lifted and put down elsewhere starts from there (%.3f rad)" % (arena.look_yaw - yaw0))
+	yaw0 = arena.look_yaw
+	_touch(1, Vector2(vs.x * 0.55, vs.y * 0.15), true)  # pressed again with no lift: the layer lets the old one go
+	await _wait(0.05)
+	_drag(1, Vector2(vs.x * 0.55, vs.y * 0.15) + Vector2(4, 0), Vector2(4, 0))
+	await _wait(0.1)
+	_check(absf(arena.look_yaw - yaw0) < 0.05, "a thumb the browser never said was lifted, pressed again: no jump (%.3f rad)" % (arena.look_yaw - yaw0))
+	# ---- a finger the browser gives a big identifier to (Godot's web build passes the DOM's own number through):
+	# it gets a slot of ours, and its first drag is measured from where it landed
+	yaw0 = arena.look_yaw
+	var big := Vector2(vs.x * 0.75, vs.y * 0.3)
+	_touch(37, big, true)
+	await _wait(0.05)
+	_drag(37, big + Vector2(5, 0), big - s0)            # again the engine's cross-finger figure
+	await _wait(0.1)
+	_check(absf(arena.look_yaw - yaw0) < 0.05, "a finger with identifier 37: a slot of ours, and no jump on its first drag (%.3f rad)" % (arena.look_yaw - yaw0))
+	_touch(37, big + Vector2(5, 0), false)
+	await _wait(0.05)
+	# ---- and a frame's worth of samples can't add up to a jerk, however many arrive (LOOK_FRAME_CAP)
+	yaw0 = arena.look_yaw
+	var capped0: int = touch.frame_capped_sec
+	var ff := Vector2(vs.x * 0.55, vs.y * 0.15)
+	# ten samples each worth a whole LOOK_CAP, all in the one frame, with the stick's thumb in between so Godot
+	# doesn't fold them into one: capped one at a time that is 900 px, and LOOK_FRAME_CAP holds it to 150
+	for n in 10:
+		ff += Vector2(300, 0)
+		_drag(1, ff, Vector2(300, 0))
+		_drag(0, s0 + Vector2(0, -60), Vector2.ZERO)
+	await _wait(0.1)
+	_check(absf(arena.look_yaw - yaw0) < 0.6 and touch.frame_capped_sec > capped0,
+		"ten capped samples in one frame add up to a cap, not a spin (%.3f rad, %d frames capped)" % [
+			arena.look_yaw - yaw0, touch.frame_capped_sec - capped0])
+	_touch(1, ff, false)
+	await _wait(0.05)
+	_touch(1, l0, true)             # (the look thumb back where the rest of the test expects it)
+	await _wait(0.05)
 	# ---- a third finger fires (the pistol's out) while those two stay down
 	clip0 = int(arena.melee.pistol.clip)
 	_touch(2, _btn(T.B_FIRE), true)

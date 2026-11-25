@@ -2384,6 +2384,10 @@ func _process(dt: float) -> void:
 				touch.key_sec = 0
 				touch.in_us = 0
 				touch.folds_sec = 0
+				touch.rel_bad_sec = 0
+				touch.rel_bad_worst = 0.0
+				touch.look_worst_px = 0.0
+				touch.frame_capped_sec = 0
 			var ps := ""
 			for k in _prof:
 				ps += "%s %.1f  " % [k, _prof[k] / 1000.0 / maxf(1.0, Engine.get_frames_per_second())]
@@ -2953,9 +2957,11 @@ func _even_stat(a: PackedFloat32Array, keep: PackedInt32Array) -> Array:
 func _touch_line() -> String:
 	if touch == null:
 		return ""
-	return "   touch %d events/s, worst %d in a frame, %d finger%s down, folded to %d/s, %d keys/s, %.2f ms/s in the touch layer" % [
+	return "   touch %d events/s, worst %d in a frame, %d finger%s down, folded to %d/s, %d keys/s, %.2f ms/s in the touch layer%s" % [
 		touch.ev_sec, touch.ev_worst, touch.fingers_worst, "" if touch.fingers_worst == 1 else "s",
-		touch.folds_sec, touch.key_sec, touch.in_us / 1000.0]
+		touch.folds_sec, touch.key_sec, touch.in_us / 1000.0,
+		"   worst frame's look %.0f px%s" % [touch.look_worst_px, "" if touch.frame_capped_sec == 0 else " (%d frames capped)" % touch.frame_capped_sec]
+		+ ("" if touch.rel_bad_sec == 0 else "   [engine relative wrong on %d drags/s, worst %.0f px]" % [touch.rel_bad_sec, touch.rel_bad_worst])]
 
 static func _k(n: int) -> String:
 	return "%.1fk" % (n / 1000.0) if n >= 1000 else str(n)
