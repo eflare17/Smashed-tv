@@ -75,6 +75,10 @@ const SLOT_SLIP := 26.0         # a touch on the weapon bar that moves this far 
 const UI_SLIP := 22.0           # a menu's tap that moves this far (a scroll) doesn't click when let go
 const FINGERS := 10
 
+## The frame's drags folded into one (what _pend_look says). On; switchable so the owner can feel the difference back
+## to back in one session rather than trust a memory of it -- SET's "Combine thumb moves" row, or ?fold=0 on the page,
+## puts the old event-at-a-time path back exactly.
+static var fold := true
 static var active := false      # touch mode on (there's a layer)
 static var allowed := true      # (?notouch: never, not even at a touch)
 static var forced := false      # (?touch)
@@ -439,8 +443,11 @@ func _drag(i: int, p: Vector2, rel: Vector2) -> void:
 	_slip[i] = maxf(_slip[i], p.distance_to(_from[i]))
 	match _role[i]:
 		F_STICK:
-			_pend_stick = p
-			_pend_stick_any = true
+			if not fold:
+				_stick_to(p)        # (?fold=0: the old way, every sample applied as it arrives)
+			else:
+				_pend_stick = p
+				_pend_stick_any = true
 		F_LOOK:
 			_look(i, p, rel)
 		F_BUTTON:
@@ -468,6 +475,9 @@ func _look(i: int, p: Vector2, rel: Vector2) -> void:
 	# the frame's capped drags are summed -- which is what one finger's folded event already was
 	rel.x = clampf(rel.x, -LOOK_CAP, LOOK_CAP)
 	rel.y = clampf(rel.y, -LOOK_CAP, LOOK_CAP)
+	if not fold:
+		arena.look_by(rel * LOOK_K)     # (?fold=0: the old way, the view turned once an event)
+		return
 	_pend_look += rel
 	_pend_look_any = true
 

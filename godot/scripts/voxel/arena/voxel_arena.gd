@@ -62,6 +62,28 @@ var knocked := 0
 var kills := 0
 var look_yaw := 0.0
 var look_pitch := 0.0
+## The view's steadiness -- the third thing behind the phone's stutter (the owner, 25 Nov, on the build with the
+## shader pre-warm and the touch fold in it: "it's getting close to 60 frames, but it still kind of looks a bit
+## shuddery when I'm moving both sticks"). The frame rate was right and the movement still was not, so it is pacing,
+## not throughput.
+##
+## Physics interpolation is on for the whole game (project.godot: 120 Hz ticks, the walk smoothed between them), and
+## with it on, Godot shows every Node3D at lerp(where it was at the last physics tick, where it is now, the frame's
+## physics fraction). That is right for a node the physics moves -- the player. It is wrong for a node placed fresh
+## every frame in _process, because then "where it was at the last tick" is last frame's value and the fraction
+## smears the two together. Every other node this game moves every frame is already told to stay out of it (the
+## debris, the flames, the vacuum's brush and beam, the hammer's trail, the flamethrower's gun: all
+## PHYSICS_INTERPOLATION_MODE_OFF, and the shot tests do the same to their cameras). The game's own camera -- placed
+## and aimed by _camera() every frame, and the one node whose wobble the player sees as the whole world wobbling --
+## never was.
+##
+## What that costs, measured headless (a node fed a perfectly even 1.000 a frame, ~60 fps, a browser's few ms of
+## frame-time jitter): in the interpolation it rendered steps of 0.067 to 1.952, a wobble of 35% of the step, because
+## the physics fraction wanders over 0.005 to 0.998 as the frame time moves; out of it, 1.000 every frame, wobble 0%.
+## So a perfectly even thumb could be drawn as anywhere from a fifteenth to twice the real turn rate, frame to frame,
+## at a rock-steady 60 fps. That is the shudder. It is worst with both thumbs because that is when the view is
+## turning AND sliding, so there is the most movement for the unevenness to show up in.
+var steady_view := true         # the camera kept out of the interpolation (SET "Steady view", ?steady=0 for the old way)
 var _jobs := []                 # [{id, body: WeakRef, part, out: Dictionary}]
 var _jobs_done := 0
 var _fire_cd := 0.0
@@ -78,6 +100,17 @@ var _t := 0.0
 var _stat_t := 0.0
 var _worst_dt := 0.0            # ?stats: the worst frame in the second being reported
 var _dts := PackedFloat32Array()        # ?stats: that second's frames (for p99)
+## ?stats: how even the view's movement actually is, which is the thing a shudder at a good frame rate is made of.
+## Each frame the camera's turn is measured twice -- what the game asked for (look_yaw, after the frame's touches are
+## folded in) and what the renderer will actually draw (get_global_transform_interpolated(), which is the interpolated
+## transform while the camera is in the interpolation and the real one once it is out) -- each as a rate in degrees a
+## second. An even thumb should give an even rate, so the spread of that rate is the shudder, and it can be read with
+## the frame rate perfect. Two numbers because they separate the two possible causes: "asked" wobbling is the input
+## path (bursty touch samples), "shown" wobbling with "asked" steady is the drawing.
+var _even_asked := PackedFloat32Array()
+var _even_shown := PackedFloat32Array()
+var _even_y0 := INF             # last frame's asked yaw (INF: no frame yet)
+var _even_s0 := INF             # last frame's shown yaw
 var _frames := PackedFloat32Array()
 var _next_t := 0.0
 var _code_ms := 0.0            # the arena's own code a frame (smoothed)
@@ -570,6 +603,7 @@ func _player() -> void:
 	cam.near = 0.05
 	add_child(cam)
 	cam.current = true
+	set_steady_view(steady_view)    # (out of the physics interpolation: steady_view says why)
 	if VoxelTouch.phone():
 		cam.far = VoxelSettings.PHONE_FAR      # (a phone: no further than it needs to draw)
 	_flash = OmniLight3D.new()
@@ -1491,6 +1525,18 @@ func prewarm_view(label: String) -> void:
 		cover.queue_free()
 	_prewarming = false
 
+## The camera in or out of Godot's physics interpolation (steady_view says what that does to the picture and why it
+## has to be out). Switchable while the game runs, so the difference can be felt back to back in one session instead
+## of trusting a memory of an hour ago: SET's "Steady view" row, or ?steady=0 on the page. Going back in wants a
+## reset, or the camera lerps there from wherever it was last drawn.
+func set_steady_view(on: bool) -> void:
+	steady_view = on
+	if cam == null:
+		return
+	cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF if on else Node.PHYSICS_INTERPOLATION_MODE_INHERIT
+	if not on:
+		cam.reset_physics_interpolation()
+
 ## The view turned by the mouse's movement (or a touch's drag: VoxelTouch), in pixels.
 func look_by(rel: Vector2) -> void:
 	var sens := 0.0025 * cam.fov / 80.0 * mouse_sens        # slower when aimed in
@@ -2164,6 +2210,11 @@ func _process(dt: float) -> void:
 			_hud_text()
 			print("ARENA ", hud.text.replace("\n", " | "))
 			print("ARENA worst frame %.1f ms   p99 %.1f ms%s" % [_worst_dt * 1000.0, _p99() * 1000.0, _touch_line()])
+			var el := _even_line()
+			if el != "":
+				print("ARENA evenness:", el)
+			_even_asked.clear()
+			_even_shown.clear()
 			_worst_dt = 0.0
 			_dts.clear()
 			if touch:
@@ -2197,6 +2248,8 @@ func _process(dt: float) -> void:
 		_weaponshots()
 	var t0 := Time.get_ticks_usec()
 	_camera(dt)
+	if _opts.has("stats"):
+		_even_step(dt)          # (right after the camera is placed: that is the transform this frame draws)
 	var t1 := Time.get_ticks_usec()
 	_shoot(dt)
 	if _opts.has("meleetest"):
@@ -2689,6 +2742,53 @@ func _p99() -> float:
 	var a := _dts.duplicate()
 	a.sort()
 	return a[mini(a.size() - 1, int(floor(float(a.size()) * 0.99)))]
+
+## ?stats, a frame: how fast the view turned, as the game asked for it and as the renderer will draw it (_even_asked
+## says why both). Degrees a second and always positive -- the speed, not the direction, because a thumb sweeping back
+## and forth is the natural way to look around and its direction flipping would swamp the spread. The yaw is read off
+## the camera's own basis rather than look_yaw, so whatever the interpolation does to it is included.
+func _even_step(dt: float) -> void:
+	if cam == null or dt <= 0.0:
+		return
+	var asked := look_yaw
+	var shown: float = cam.get_global_transform_interpolated().basis.get_euler().y
+	if _even_y0 != INF:
+		_even_asked.append(absf(rad_to_deg(angle_difference(_even_y0, asked))) / dt)
+		_even_shown.append(absf(rad_to_deg(angle_difference(_even_s0, shown))) / dt)
+	_even_y0 = asked
+	_even_s0 = shown
+
+## ?stats: the second's evenness, over the frames where the view was actually turning (a still view averages zero and
+## the spread of it means nothing). "wobble" is the standard deviation of the turn speed over its average: 0% is a
+## perfectly even turn, and this is the number a shudder lives in -- it can read 30% or 40% with the frame rate a flat
+## 60, which is exactly what the owner described. Asked wobbling is the input path (bursty touch samples); shown
+## wobbling while asked is steady is the drawing.
+func _even_line() -> String:
+	var keep := PackedInt32Array()
+	for i in _even_shown.size():
+		if _even_asked[i] >= 2.0:            # the view really turning, not a resting thumb
+			keep.append(i)
+	if keep.size() < 20:
+		return ""
+	var a := _even_stat(_even_asked, keep)
+	var b := _even_stat(_even_shown, keep)
+	return "   turning %.0f deg/s over %d frames: asked wobbles %.0f%%, shown wobbles %.0f%% (shown %.0f to %.0f deg/s)%s" % [
+		a[0], keep.size(), a[1], b[1], b[2], b[3], "" if steady_view else "   [steady view OFF]"]
+
+## [average, spread as a percentage of it, lowest, highest] of a's values at the frames `keep` names.
+func _even_stat(a: PackedFloat32Array, keep: PackedInt32Array) -> Array:
+	var mu := 0.0
+	var lo := INF
+	var hi := -INF
+	for i in keep:
+		mu += a[i]
+		lo = minf(lo, a[i])
+		hi = maxf(hi, a[i])
+	mu /= float(keep.size())
+	var sq := 0.0
+	for i in keep:
+		sq += (a[i] - mu) * (a[i] - mu)
+	return [mu, sqrt(sq / float(keep.size())) / maxf(0.0001, mu) * 100.0, lo, hi]
 
 func _touch_line() -> String:
 	if touch == null:
