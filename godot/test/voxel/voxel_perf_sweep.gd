@@ -13,6 +13,8 @@ extends SceneTree
 ##   ... -- --frames=120          frames measured at each spot (default 90)
 ##   ... -- --spin                stand still and swing the view right round instead of walking the route
 ##   ... -- --chars               what a block character costs to build and to draw, at each cube size
+##   ... -- --far=260             the camera drawn no further than this (a phone's cap; the PC's is 4000 m)
+##   ... -- --scenery=110         St Kilda's scenery kept in full this far out (the "Scenery detail" setting)
 ##
 ## --spin (the owner, 25 Nov: "when I move the camera it lags"): stood on one spot, the view turned 15 degrees at a
 ## time all the way round, a handful of frames measured at each step and NOT settled first -- the frame right after
@@ -81,6 +83,8 @@ var ablate := false
 var spin := false
 var chars := false
 var walk := false
+var far := 0.0                   # --far=: the camera's far plane after the preset is on (0: leave it)
+var scen := -1.0                 # --scenery=: how far St Kilda's scenery stays in full (-1: leave it)
 var fails := []
 var lines := []                  # every row printed, for the summary at the end
 
@@ -100,6 +104,10 @@ func _initialize() -> void:
 			chars = true
 		elif x == "--walk":
 			walk = true
+		elif x.begins_with("--far="):
+			far = float(x.trim_prefix("--far="))
+		elif x.begins_with("--scenery="):
+			scen = float(x.trim_prefix("--scenery="))
 	seed(20261125)
 	arena = load("res://scripts/voxel/arena/voxel_arena.tscn").instantiate()
 	root.add_child(arena)
@@ -108,6 +116,17 @@ func _check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
 	if not ok:
 		fails.append(what)
+
+## --far= / --scenery=: the phone's two caps put on after a preset is applied, so the pair can be weighed without
+## pretending to be a phone (apply() only caps a real one). The far plane shortens the frustum everything is counted
+## against; the scenery distance is what St Kilda's dirt and rides go flat past.
+func _caps() -> void:
+	if far > 0.0:
+		arena.cam.far = far
+	if scen >= 0.0:
+		VoxelParkDirt.detail_m = scen
+		if arena.get("stkilda") and arena.stkilda:
+			arena.stkilda.scenery(scen)
 
 # ================================================================ what's in front of the camera
 
@@ -251,6 +270,7 @@ func _run() -> void:
 	for p in ["low", "high"]:
 		arena.settings_menu.s.set_preset(p)
 		arena.settings_menu.s.apply(arena)
+		_caps()
 		arena.stkilda.go()
 		for spot in SPOTS.luna:
 			_stand("luna", spot)
@@ -280,6 +300,7 @@ func _place(place: String, preset: String, off_name: String, off: Array = []) ->
 	var s := arena.settings_menu.s
 	s.set_preset(preset)
 	s.apply(arena)
+	_caps()
 	if place == "luna":
 		if not arena.stkilda.active:
 			arena.stkilda.go()
@@ -360,6 +381,7 @@ func _spin_run() -> void:
 	for p in ["low", "high"]:
 		arena.settings_menu.s.set_preset(p)
 		arena.settings_menu.s.apply(arena)
+		_caps()
 		arena.stkilda.go()
 		_stand("luna", SPIN.luna[0])
 		await _settle()
@@ -382,6 +404,7 @@ func _spin_place(place: String, preset: String) -> void:
 	var s := arena.settings_menu.s
 	s.set_preset(preset)
 	s.apply(arena)
+	_caps()
 	if place == "luna":
 		if not arena.stkilda.active:
 			arena.stkilda.go()
@@ -448,6 +471,7 @@ func _walk_run() -> void:
 	for p in ["low", "high"]:
 		arena.settings_menu.s.set_preset(p)
 		arena.settings_menu.s.apply(arena)
+		_caps()
 		arena.stkilda.go()
 		_stand("luna", SPIN.luna[0])
 		await _settle()
@@ -470,6 +494,7 @@ func _walk_place(place: String, preset: String) -> void:
 	var s := arena.settings_menu.s
 	s.set_preset(preset)
 	s.apply(arena)
+	_caps()
 	if place == "luna":
 		if not arena.stkilda.active:
 			arena.stkilda.go()

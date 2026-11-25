@@ -40,8 +40,25 @@ const PRESETS := {
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
 ## (what only the Forward+ renderer does: the browser's game, on Compatibility, doesn't show these rows)
 const FORWARD_ONLY := ["taa", "ssao", "ssil", "sdfgi", "fog", "fx"]
-const PHONE_ACROSS := 1280.0     # a phone (browser or Android): the 3D picture's longer side, in pixels, before the preset's scale
+const PHONE_ACROSS := 1280.0     # a phone's browser: the 3D picture's longer side, in pixels, before the preset's scale
 const PHONE_FAR := 260.0         # ... and how far it draws (metres)
+## The native Android build is not the browser: threads, a real driver, no WASM. The owner's Galaxy S25 ran it on
+## these browser caps at 109-120 fps (25 Nov: "that APK seemed buttery smooth ... it was 120 and then dropped down to
+## like 109"), and on a 2340x1080 screen the 1280 cap meant Low drew the 3D at 858x396 and stretched it over the
+## panel -- the owner's "I don't know if it's quite getting the res". So on native the cap comes off: "Render scale"
+## means what it says, as it does on a PC, and NATIVE_ACROSS is only a stop so a 4K Android panel doesn't try 3840.
+## The view goes half as far again as well: measured with voxel_perf_sweep --far=, 260 m -> 420 m costs 11 draw calls
+## and 11k triangles at the worst spot in the arena and nothing at all in Luna Park, because the scenery's own
+## visibility ranges do the culling, not the far plane.
+const NATIVE_ACROSS := 2560.0
+const NATIVE_FAR := 420.0
+## What a native phone starts on, over Low: the screen's own pixels, and Luna Park's scenery kept in full out to 110 m
+## instead of 60 m (+35% triangles at the worst spot there, +3 draw calls -- voxel_perf_sweep --scenery=). Shadows
+## stay off and your own Jared stays chunky, because those two are the ones that can't be afforded blind: the sun's
+## shadow is four splits over 60 m, which is the one change that could double Luna Park's geometry, and nothing here
+## can measure a phone's GPU; and Jared at Fine is 12.1 s of building on the loading screen (--chars) for a body you
+## only ever see in the bedroom mirror. MEDIUM in SET turns on both, and the rest of Medium with them.
+const NATIVE_START := {"scale": 1.0, "scenery": 110.0}
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
 	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2}
 ## (what each setting can be, for the menu: [label, values, value labels])
@@ -115,6 +132,10 @@ func load_file() -> void:
 	if cf.load(file) != OK:
 		first_run = true
 		set_preset("low" if VoxelTouch.active else guess())     # (a phone's browser: Low, no guessing; SET raises it)
+		if native():
+			for k in NATIVE_START:                              # (the native build: Low, with the headroom spent)
+				v[k] = NATIVE_START[k]
+			preset = which_preset()
 		return
 	var missing := []
 	for k in v:
@@ -149,6 +170,17 @@ func save_file() -> void:
 		cf.set_value("bench", "last", bench)
 	cf.save(file)
 
+## The native Android build, told from a phone's browser by the "Android Voxel Arena" preset's own feature tag.
+static func native() -> bool:
+	return OS.has_feature("voxel_mobile")
+
+## A phone's two caps: the 3D picture's longest side in pixels (before the preset's own scale), and how far it draws.
+static func across() -> float:
+	return NATIVE_ACROSS if native() else PHONE_ACROSS
+
+static func far_m() -> float:
+	return NATIVE_FAR if native() else PHONE_FAR
+
 ## A preset guessed from the graphics card's name (the first run, before any benchmark).
 static func guess(card := RenderingServer.get_video_adapter_name()) -> String:
 	var gpu := card.to_lower().replace("(tm)", "").replace("(r)", "")     # ("Intel(R) Arc(TM) A770": "intel arc a770")
@@ -178,13 +210,13 @@ func apply(arena: Node3D) -> void:
 	var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
 	var sc := float(v.scale)
 	if VoxelTouch.phone():
-		# a phone: its screen is 1440p or more in real pixels; the 3D is drawn as if it were 1280 across at most
-		# (the preset's own scale on top), and no further than a phone needs to see. The HUD stays sharp.
-		# (the native Android build too: this is the phone's fill rate, not WebGL -- the pixels cost the same either way)
+		# a phone: the 3D is drawn no wider than across() (1280 in a browser, where WebGL is single-threaded and the
+		# fill is what hurts; the screen's own pixels on native) with the preset's scale on top, and no further than
+		# far_m(). The HUD is 2D and stays sharp either way.
 		var win := arena.get_window().size
-		sc *= clampf(PHONE_ACROSS / maxf(1.0, float(maxi(win.x, win.y))), 0.4, 1.0)
+		sc *= clampf(across() / maxf(1.0, float(maxi(win.x, win.y))), 0.4, 1.0)
 		if arena.get("cam") and arena.cam:
-			arena.cam.far = PHONE_FAR
+			arena.cam.far = far_m()
 	vp.scaling_3d_scale = sc
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if (forward and sc < 0.99) else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(int(v.msaa), Viewport.MSAA_DISABLED)
