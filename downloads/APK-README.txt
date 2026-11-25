@@ -2,8 +2,8 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,144,629 bytes (40.2 MB)
-SHA-256:  fbbcb9aff2030295656d43441fdd12f8b8f4ebeafc243906474e3beb849760aa
+Size:     42,148,725 bytes (40.2 MB)
+SHA-256:  750cc68da72c521d091006ce8185eb7cfde3e8c0fca6a820cf27f6e87178f6c5
 Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
           (tools/build_android.sh; same signing key as the first build, so it
           installs straight over it)
@@ -76,6 +76,19 @@ WHAT IS IN IT
   3. LOW, which puts everything back to the first build's settings bar the
      draw distance.
   APPLY RECOMMENDED still runs the benchmark and picks a preset for you.
+- The two-thumb snap is gone. Godot's web build keeps a "where was this finger
+  last time" table indexed by a touch's place in the browser's changed-touch
+  list instead of by the finger, so with two thumbs down the game was handed
+  movements measured from the OTHER thumb -- up to 1245 px in a single event,
+  which is a 27-degree jerk of the view. The touch layer now works each
+  finger's movement out from that finger's own last position and ignores the
+  engine's figure completely, and no single frame can turn the view more than
+  150 px of drag however many readings arrive in it. That is a browser bug, so
+  this build may never have had it, but the APK carries the same code.
+  Two more rows in SET: "Own thumb tracking (snap fix)", On, which is the fix
+  above, and "Even out the view", Off, a smoother to try only if it still
+  shudders (it costs up to 17 ms of delay, and the measurements said it was the
+  snap, not smoothness, so it is off by default).
 - SET can't freeze the game any more. Tapping MEDIUM or above, or "Your own
   blocks" -> Fine, used to rebuild your Jared at 655,000 cubes inside the tap
   itself -- fourteen seconds of nothing, and worse on a phone than in a
