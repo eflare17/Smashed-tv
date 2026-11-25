@@ -2,8 +2,8 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,136,437 bytes (40.2 MB)
-SHA-256:  484fa5fb9d11d51d3d50b3b3402d98de53c27e717fabde42465849c4dbe78102
+Size:     42,144,629 bytes (40.2 MB)
+SHA-256:  fbbcb9aff2030295656d43441fdd12f8b8f4ebeafc243906474e3beb849760aa
 Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
           (tools/build_android.sh; same signing key as the first build, so it
           installs straight over it)
@@ -76,6 +76,18 @@ WHAT IS IN IT
   3. LOW, which puts everything back to the first build's settings bar the
      draw distance.
   APPLY RECOMMENDED still runs the benchmark and picks a preset for you.
+- SET can't freeze the game any more. Tapping MEDIUM or above, or "Your own
+  blocks" -> Fine, used to rebuild your Jared at 655,000 cubes inside the tap
+  itself -- fourteen seconds of nothing, and worse on a phone than in a
+  browser. The tap now comes back straight away and the rebuild runs a slice a
+  frame behind a "Rebuilding the blocks: step N of M" line while you keep
+  playing. The building itself also got about six times quicker. Turning the
+  shadows on says "this takes a few seconds" before it does it.
+- Two entries are no longer offered on a phone, because both were traps: render
+  scale above 100% (125% / 150% supersampled -- on this build that asks the
+  driver for a buffer several times the size of the screen) and the "Sharpest
+  (8192)" shadow map, which is a 64 MB depth texture. Everything else in SET is
+  still there, and LOW through EXTREME all still work.
 - The view is steadier than it was, and a touch quicker to answer. The camera
   was inside Godot's physics interpolation, so every frame it was drawn
   part-way between where you had just pointed it and where it is now, by a
