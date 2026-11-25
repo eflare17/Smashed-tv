@@ -1384,9 +1384,15 @@ func spawn_kind(key: String, at: Vector3 = Vector3.INF) -> VoxelBody:
 #
 # Tapping the same row twice, or another row, while one is running doesn't stack: _rb_add folds the new work into
 # the job already going, never starts a second one, and never queues a character that is already in the list.
-const REBUILD_MS := 6.0         # work done per frame while a rebuild runs (a 60 fps frame is 16.7 ms)
+## Work done per frame while a rebuild runs, at the least: a 60 fps frame is 16.7 ms, so this is about a third of
+## one. On anything slower than that it takes the same third of whatever the frame actually is (up to REBUILD_MAX),
+## because a rebuild paced at 6 ms against a 125 ms frame would be forty-odd seconds of "Rebuilding the blocks" --
+## the share of the frame is what the player feels, not the milliseconds.
+const REBUILD_MS := 6.0
+const REBUILD_MAX := 40.0
 var _rb := {}                   # the rebuild running: {chars, job, after, n, did} (empty: none)
 var _rb_label: Label
+var _rb_said := ""              # the last line put on the page (the browser: not one JavaScript call a frame)
 
 ## The enemies built again at a new cube size ("Enemy detail"), a slice a frame. The fight starts over at the end.
 func rebuild_enemies(to_chunk: int) -> void:
@@ -1434,12 +1440,16 @@ func _rb_add(chars: Array, after: Dictionary) -> void:
 		(_rb.after as Dictionary)[k] = after[k]
 	_rb_say()
 
-func _rb_tick() -> void:
+func _rb_tick(dt := 0.0) -> void:
 	if _rb.is_empty():
 		return
+	# a third of the frame while the game is being played; more than half of it while the settings screen is up,
+	# because nobody is playing behind it and the sooner the line goes away the better
+	var share := 0.6 if (settings_menu and settings_menu.is_open()) else 0.33
+	var budget := clampf(dt * 1000.0 * share, REBUILD_MS, REBUILD_MAX)
 	var t0 := Time.get_ticks_usec()
 	while true:
-		var left := REBUILD_MS - float(Time.get_ticks_usec() - t0) / 1000.0
+		var left := budget - float(Time.get_ticks_usec() - t0) / 1000.0
 		if left <= 0.0:
 			break
 		if (_rb.job as Dictionary).is_empty():
@@ -1473,6 +1483,14 @@ func _rb_say() -> void:
 		var within := VoxelBody.build_progress(_rb.job) if not (_rb.job as Dictionary).is_empty() else 0.0
 		var share := (float(_rb.did) + within) / maxf(1.0, float(_rb.n))
 		text = "Rebuilding the blocks: step %d of %d (%d%%)" % [mini(int(_rb.did) + 1, int(_rb.n)), int(_rb.n), int(share * 100.0)]
+	say_line(text, true)
+
+## A line across the top of the screen, and along the bottom of the page in a browser -- the same line the loading
+## screen writes. "" takes it away. The settings screen uses it to say what it is doing before a change the player
+## would otherwise watch as a frozen picture; a rebuild running has the last word, since its line is a count.
+func say_line(text: String, from_rebuild := false) -> void:
+	if not from_rebuild and not _rb.is_empty():
+		return
 	if _rb_label == null and text != "":
 		var cl := CanvasLayer.new()
 		cl.layer = 59               # (under the start-up screen's 60, over the settings panel's 31)
@@ -1492,7 +1510,8 @@ func _rb_say() -> void:
 	if _rb_label:
 		_rb_label.text = text
 		_rb_label.visible = text != ""
-	if OS.has_feature("web"):       # (the page's own line as well, as the start-up steps do)
+	if OS.has_feature("web") and text != _rb_said:     # (the page's own line as well, as the start-up steps do)
+		_rb_said = text
 		JavaScriptBridge.eval("window.smashedSay&&window.smashedSay('%s')" % text, true)
 
 # every kind made once while loading (their flesh and meshes cached), so the first of each doesn't stall the game
@@ -2332,7 +2351,7 @@ static func _out_of_box(p: Vector3, c: Vector3, hx: float, hz: float) -> Vector3
 func _process(dt: float) -> void:
 	if touch:
 		touch.flush()           # (a frame with no physics tick in it: the touches still land before the camera)
-	_rb_tick()                  # (a settings change that has to build characters again: a slice of it, never the lot)
+	_rb_tick(dt)                # (a settings change that has to build characters again: a slice of it, never the lot)
 	_t += dt
 	if _opts.has("secs") or _opts.has("swordtest") or _opts.has("meleetest") or _opts.has("weaponshots"):
 		_frames.append(dt)          # (only the test runs' summary reads them, _finish: not kept for a whole game)

@@ -31,6 +31,7 @@ var _now: Label
 var _presets := {}              # name: Button
 var _rows := {}                 # key: OptionButton / HSlider
 var _choice := {}               # key: [the values this machine is offered, their labels] (a phone is offered fewer)
+var _was := {}                  # the picture's settings as they were last put into effect (_picture_line)
 var _vals := {}                 # slider key: its value's Label
 var _labels := {}               # key: its name's Label (hidden with its row where the renderer can't do it)
 var _scroll: ScrollContainer
@@ -205,20 +206,23 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 		recommended = String(s.bench.get("pick", ""))
 		_result.text = _bench_text(s.bench.get("results", {}), recommended)
 	show_supported(RenderingServer.get_current_rendering_method() == "forward_plus")
+	_was = _picture_now()
 	_refresh()
 
-## What a row is allowed to offer here. Everything in CHOICES, except that a phone isn't offered a render scale
-## above 100%: in a browser across() already held it to 1280 across so "125% (supersampled)" did nothing at all,
-## and on the native build it would ask the phone's driver for a buffer several times its screen -- a trap in the
-## menu, not a setting. (VoxelSettings.apply holds a saved or preset value to 100% on a phone as well.)
+## What a row is allowed to offer here. Everything in CHOICES, except the two entries a phone shouldn't be handed:
+## a render scale above 100% (in a browser across() already held it to 1280 across, so "125% (supersampled)" did
+## nothing at all; on the native build it asks the driver for a buffer several times the screen) and the 8192
+## shadow map (a 64 MB depth texture a phone's browser may not have). Traps in the menu, not settings.
+## VoxelSettings.apply holds a saved or preset value down on a phone as well.
 func _offered(key: String) -> Array:
 	var c: Array = VoxelSettings.CHOICES[key]
-	if key != "scale" or not VoxelTouch.phone():
+	if not VoxelTouch.phone() or not (key == "scale" or key == "shadows"):
 		return [c[1], c[2]]
 	var vals := []
 	var labels := []
 	for i in (c[1] as Array).size():
-		if float(c[1][i]) <= 1.0:
+		# a phone: no render scale over 100%, and no shadow map over 4096 (VoxelSettings.apply says why both)
+		if float(c[1][i]) <= (1.0 if key == "scale" else 2.0):
 			vals.append(c[1][i])
 			labels.append(c[2][i])
 	return [vals, labels]
@@ -296,16 +300,49 @@ func _refresh() -> void:
 	_apply_b.disabled = recommended == "" or recommended == s.preset
 	_quiet = false
 
+func _picture_now() -> Dictionary:
+	var out := {}
+	for k in VoxelSettings.PICTURE:
+		out[k] = s.v.get(k)
+	return out
+
+## "" unless this change is one the renderer has to chew on, and we are somewhere it shows (a phone's browser, or
+## the native build: both draw with Godot's Compatibility renderer, which compiles a shader the first time
+## something is drawn with it).
+func _picture_line() -> String:
+	if not VoxelTouch.phone() or _was.is_empty():
+		return ""
+	var now := _picture_now()
+	if now == _was:
+		return ""
+	if int(now.get("shadows", 0)) > 0 and int(_was.get("shadows", 0)) == 0:
+		return "Turning the shadows on - this takes a few seconds"
+	return "Changing the picture..."
+
 func _slider_text(key: String) -> String:
 	match key:
 		"fov": return "%d°" % int(s.v.fov)
 		"sens": return "%.2fx" % float(s.v.sens)
 	return "%d%%" % int(round(float(s.v.volume) * 100.0))
 
+## A change put into effect. On a phone's browser, a change the renderer has to chew on (VoxelSettings.PICTURE:
+## shadows coming on is the one that really costs) is announced first and the line drawn before anything changes,
+## so the long frame that follows has a message over it instead of being a dead tab. Everywhere else -- a PC, and
+## every test -- nothing is deferred and this is as direct as it ever was.
 func _changed() -> void:
+	var say := _picture_line()
+	if say != "":
+		arena.say_line(say)
+		await get_tree().process_frame      # (the line drawn ...)
+		await get_tree().process_frame      # ... and on screen before the change)
 	s.apply(arena)
+	_was = _picture_now()
 	s.save_file()
 	_refresh()
+	if say != "":
+		await get_tree().process_frame      # (the long frame: the one that compiles what it now has to draw)
+		await get_tree().process_frame
+		arena.say_line("")
 
 func _on_preset(name: String) -> void:
 	if _quiet:

@@ -323,7 +323,7 @@ static func build_begin(key_: String, chunk: int, cube_m := 0.0) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key_)
 	var st := {"key": key_, "chunk": chunk, "cube_m": cube_m, "md": md, "parts": md.parts_for(""),
-		"pi": 0, "mi": 0, "i": 0, "phase": "part", "rng": rng, "out": {}, "meshes": {}, "mid": {},
+		"pi": 0, "mi": 0, "i": 0, "deep_i": 0, "phase": "part", "rng": rng, "out": {}, "meshes": {}, "mid": {},
 		"g": {}, "cells": PackedInt32Array(), "size": Vector3i.ZERO, "limb": false, "head": false, "deep": 0,
 		"done": false}
 	var ck := "%s|%d" % [key_, chunk]
@@ -371,6 +371,7 @@ static func build_step(st: Dictionary, budget_ms: float) -> bool:
 				st.size = g.size
 				st.cells = (g.cells as PackedInt32Array).duplicate()
 				st.i = 0
+				st.deep_i = 0
 				st.mid = {}
 				st.deep = 0
 				st.head = n == "head"
@@ -387,7 +388,7 @@ static func build_step(st: Dictionary, budget_ms: float) -> bool:
 				var s: Vector3i = st.size
 				var g: Dictionary = st.g
 				var cells: PackedInt32Array = st.cells
-				var i := int(st.i)
+				var i := int(st.deep_i)
 				var n := cells.size()
 				var deep := int(st.deep)
 				var guard := 0
@@ -400,10 +401,9 @@ static func build_step(st: Dictionary, budget_ms: float) -> bool:
 						guard = 0
 						if Time.get_ticks_usec() - t0 >= cap:
 							break
-				st.i = i
+				st.deep_i = i
 				st.deep = deep
 				if i >= n:
-					st.i = 0
 					st.phase = "fill"
 			"fill":
 				var s: Vector3i = st.size

@@ -40,6 +40,14 @@ const PRESETS := {
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
 ## (what only the Forward+ renderer does: the browser's game, on Compatibility, doesn't show these rows)
 const FORWARD_ONLY := ["taa", "ssao", "ssil", "sdfgi", "fog", "fx"]
+## The settings the renderer itself has to chew on when they change: a new shadow map or a new effect means the
+## driver compiles the shaders that draw with it, on the first frame drawn after the change, and in a browser that
+## is one long frame nobody can do anything during. Measured through Chromium at phone size: shadows Off -> Soft
+## was 4,078 ms and Off -> Sharpest 4,931 ms, with the whole tab unreachable (this machine software-renders, so a
+## real phone's driver will be a good deal quicker -- but it is the same frame and the same silence). Nothing can
+## make that frame short, so the settings screen says what it is doing first and draws the line before it changes
+## anything (VoxelSettingsMenu._changed): the picture stops for a moment with a message over it, not for nothing.
+const PICTURE := ["scale", "msaa", "taa", "shadows", "ssao", "ssil", "glow", "sdfgi", "fog", "mirror", "fx"]
 const PHONE_ACROSS := 1280.0     # a phone's browser: the 3D picture's longer side, in pixels, before the preset's scale
 const PHONE_FAR := 260.0         # ... and how far it draws (metres)
 ## The native Android build is not the browser: threads, a real driver, no WASM. The owner's Galaxy S25 ran it on
@@ -237,6 +245,12 @@ func apply(arena: Node3D) -> void:
 	vp.msaa_3d = {0: Viewport.MSAA_DISABLED, 2: Viewport.MSAA_2X, 4: Viewport.MSAA_4X, 8: Viewport.MSAA_8X}.get(int(v.msaa), Viewport.MSAA_DISABLED)
 	vp.use_taa = bool(v.taa) and forward
 	var sh := int(v.shadows)
+	if VoxelTouch.phone():
+		# A phone stops at the 4096 map. "Sharpest (8192)" is a 64 MB depth texture on top of everything else the
+		# page is holding, which is how a phone's browser runs out and loses the picture altogether -- and on a
+		# screen this size nobody could see the difference anyway. The menu hides the entry there as well; this is
+		# the backstop for a saved file or a ?preset= link that asks for it.
+		sh = mini(sh, 2)
 	arena.sun.shadow_enabled = sh > 0
 	if arena.house:                 # (the bedroom's ceiling light, its own child, too: Off is off in there as well)
 		for l in arena.house.find_children("*", "OmniLight3D", false, false):
