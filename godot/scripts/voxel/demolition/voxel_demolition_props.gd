@@ -228,10 +228,16 @@ func _go(i: int) -> void:
 	blast_at(at, float(spec.reach), true)
 
 func _fire(at: Vector3, spec: Dictionary) -> void:
-	var cut := 0.45 if small() else 1.0
+	var cut := 0.45 if small() else 1.0       # (the web and the phone: half the fire, half the smoke)
 	var fire := maxi(3, int(float(spec.fire) * cut))
 	var smoke := maxi(2, int(float(spec.smoke) * cut))
-	level.arena.flames.emit(at, fire, Vector3.UP * 4.0, 5.0, 1.1)
+	# a ball of fire the size of the blast, not one spark where it stood: each flame lit its own way out and up
+	var r := float(spec.r) * 0.45
+	for j in fire:
+		var p := at + Vector3(_rng.randf_range(-r, r), _rng.randf_range(-r * 0.35, r), _rng.randf_range(-r, r))
+		var out := p - at
+		level.arena.flames.emit(p, 1, (out.normalized() if out.length() > 0.1 else Vector3.UP) * 3.0 + Vector3.UP * 2.0,
+				_rng.randf_range(4.0, 9.0), _rng.randf_range(0.5, 1.1))
 	level.arena.debris.throw(at, Vector3.UP * 1.6, Color("#f0a01e"), fire)
 	level.arena.debris.throw(at + Vector3(0, 0.8, 0), Vector3.UP * 2.2, Color("#2e2b29"), smoke)
 

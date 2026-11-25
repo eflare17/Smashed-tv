@@ -1,12 +1,13 @@
 class_name VoxelDemolitionMob
 extends Node
 ## The block's enemies (Demolition, phase B; the owner, 24 Nov, of the first version: enemies on the rooftops and in
-## the windows). They stand posts on the buildings -- on the roof tiles, in the windows of the upper storeys -- and a
-## few walk the street. The point of them is that they go down with the building: every post is a block or a roof tile
-## of VoxelBreakables, and the moment the thing holding an enemy up is knocked out (a shot, a blast, the wrecking ball,
-## or the roof caving in once the walls have gone) the enemy is let go into the air, falls like anything else knocked
-## flying, and is hurt FALL_HURT a metre on the way down. Off the tower block that kills; off the timber shed it only
-## breaks them, and whoever gets up comes at you.
+## the windows). They stand posts on the buildings -- on the roof tiles, in the windows of the upper storeys (the
+## glazed block bursts out as one takes its post, so it stands in the opening where you can see it, on the block below)
+## -- and a few walk the street. The point of them is that they go down with the building: every post is a block or a
+## roof tile of VoxelBreakables, and the moment the thing holding an enemy up is knocked out (a shot, a blast, the
+## wrecking ball, or the roof caving in once the walls have gone) the enemy is let go into the air, falls like anything
+## else knocked flying, and is hurt FALL_HURT a metre on the way down. Off the tower block that kills; off the timber
+## shed it only breaks them, and whoever gets up comes at you.
 ##
 ## They come as you get near: a post within NEAR of you fills, one every GAP seconds so nothing hitches, at most
 ## ALIVE_CAP alive at a time and MOST in a run (half of each on the web and on a phone: a body is dear to make and
@@ -44,6 +45,7 @@ var kills := 0
 var made := 0                    # bodies made this run
 var dropped := 0                 # posts that fell out from under their enemy (the tests)
 var fell_dead := 0               # ... and the enemies the fall killed
+var opened := 0                  # blocks they burst out climbing into the windows (not the player's: off the score)
 var _cool := 0.0
 var _rng := RandomNumberGenerator.new()
 
@@ -79,7 +81,8 @@ func build_posts() -> void:
 				var t: Vector3 = tiles[ti]
 				posts.append({"at": Vector3(t.x, b.h + 0.05, t.z), "kind": ROOF, "bi": bi, "c": -1, "row": -1,
 					"tile": ti, "taken": false})
-		# the windows of the upper storeys: on the sill, just inside the glass
+		# the windows of the upper storeys: standing in the opening, on the block under it (that block is what holds
+		# them up; the glazed one is knocked out as they take the post, so you can see them from the street)
 		var wins := []
 		for c in b.cols.size():
 			var cc: Dictionary = b.cols[c]
@@ -88,9 +91,11 @@ func build_posts() -> void:
 			for r in range(1, b.rows):
 				if b._block_col(c, r) != VoxelBreakables.GLASS or b.alive[c * b.rows + r] == 0:
 					continue
+				if b.alive[c * b.rows + r - 1] == 0:
+					continue                 # (nothing under it to stand on: the petrol station's open bays)
 				var n2: Vector2 = cc.n
 				var at: Vector3 = b.block_at(c, r)
-				wins.append({"at": Vector3(at.x - n2.x * 0.9, r * b.bh + 0.05, at.z - n2.y * 0.9), "kind": WINDOW,
+				wins.append({"at": Vector3(at.x - n2.x * 0.15, r * b.bh + 0.05, at.z - n2.y * 0.15), "kind": WINDOW,
 					"bi": bi, "c": c, "row": r, "tile": -1, "taken": false})
 		# (spread round the building, not three in a row: every nth of them)
 		if wins.size() > PER_WINDOW:
@@ -141,6 +146,7 @@ func clear() -> void:
 	made = 0
 	dropped = 0
 	fell_dead = 0
+	opened = 0
 	_cool = 0.0
 
 func alive_now() -> int:
@@ -153,6 +159,8 @@ func alive_now() -> int:
 
 ## One enemy on a post (the tests put them where they want them).
 func fill(post: Dictionary) -> VoxelBody:
+	if int(post.kind) == WINDOW:
+		_open(post)
 	var key: String = KINDS[_rng.randi() % KINDS.size()]
 	var b := level.arena.spawn_kind(key, post.at)
 	b.set_meta("range", true)        # (not in the arena's square: it isn't dragged back into it, alive or dead)
@@ -166,6 +174,21 @@ func fill(post: Dictionary) -> VoxelBody:
 	if int(post.kind) == STREET:
 		b.set_meta("walks", true)
 	return b
+
+# The window an enemy takes a post in burst out, so it stands in the opening and you can see it from the street (a
+# glazed block is a window, not a hole). It isn't the player's doing, so the block it cost comes off the level's count
+# as well: the share down and the score are what you knocked down, not what they climbed out of.
+func _open(post: Dictionary) -> void:
+	var b: VoxelBreakables.Building = level.breaks.list[int(post.bi)]
+	var i := int(post.c) * b.rows + int(post.row)
+	if i < 0 or i >= b.alive.size() or b.alive[i] == 0:
+		return
+	var was := b.standing
+	var out := [[int(post.c), int(post.row)]]
+	if int(post.row) + 1 < b.rows:
+		out.append([int(post.c), int(post.row) + 1])     # (two blocks: an opening a body's height, not a letterbox)
+	b.knock(out, Vector3.DOWN)
+	opened += maxi(0, was - b.standing)
 
 func _died(_b: VoxelBody) -> void:
 	if level.running:
@@ -275,7 +298,7 @@ func _held_up(post: Dictionary) -> bool:
 			var t := int(post.tile)
 			return t >= 0 and t < b.roof_on.size() and b.roof_on[t] == 1
 		WINDOW:
-			var i := int(post.c) * b.rows + int(post.row)
+			var i := int(post.c) * b.rows + int(post.row) - 1      # (the block under the opening: what it stands on)
 			return i >= 0 and i < b.alive.size() and b.alive[i] == 1
 	return true
 

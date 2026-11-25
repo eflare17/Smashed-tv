@@ -195,9 +195,9 @@ func standing() -> int:
 		n += b.standing
 	return n
 
-## Blocks destroyed.
+## Blocks destroyed -- yours, that is: the windows the enemies burst out of to take their posts don't count.
 func down() -> int:
-	return maxi(0, blocks0 - standing())
+	return maxi(0, blocks0 - standing() - (mob.opened if mob else 0))
 
 ## Enemies of the block killed this run.
 func kills() -> int:
@@ -306,7 +306,7 @@ func street_spot() -> Vector3:
 func roof_spots() -> Array:
 	return mob.spots(VoxelDemolitionMob.ROOF) if mob else []
 
-## On the sills of the glazed blocks of the upper storeys, just inside the glass (VoxelDemolitionMob.WINDOW).
+## In the windows of the upper storeys, standing on the block under the glazed one (VoxelDemolitionMob.WINDOW).
 func window_spots() -> Array:
 	return mob.spots(VoxelDemolitionMob.WINDOW) if mob else []
 
@@ -336,7 +336,7 @@ func _process(dt: float) -> void:
 		return
 	if crane:
 		crane.step(dt)
-		if props and crane.driving:
+		if props:
 			props.ball_at(crane.ball, crane.ball_speed())    # (the ball through a gas bottle: up it goes)
 	if mob:
 		mob.step(dt)
@@ -356,7 +356,9 @@ func _hud_line() -> void:
 		return
 	var tail := ""
 	if crane and crane.driving:
-		tail = "     W/S drive   A/D turn   left/right swing the boom   up/down the cable   E out"
+		# (on a phone the keys mean nothing: VoxelTouch's own buttons are what's under the thumbs there)
+		tail = "     stick: drive and turn   BOOM < >   CABLE ^ v   OUT" if VoxelTouch.active \
+			else "     W/S drive   A/D turn   left/right swing the boom   up/down the cable   E out"
 	elif crane and crane.can_enter():
 		tail = "     E: drive the crane"
 	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d, %d kills%s" % [roundi(share() * 100.0),

@@ -9,6 +9,8 @@ extends CanvasLayer
 ##     < > (the weapon before / after); a tap on a slot of the weapon bar takes that one out
 ##   top right: ... shows or hides PHONE, BAG, VIEW, HELP, SET, ONLINE
 ##   a menu open: taps are clicks (the first finger is the mouse), X closes it
+##   driving Demolition's crane: the cluster goes and the crane's own buttons take its place (BOOM < >, CABLE ^ v,
+##     OUT), the left stick drives the tracks and turns it; out of the cab they go back
 ## The game is fed through one shim: buttons send the same InputEventKey / InputEventMouseButton the keyboard and mouse
 ## would (Input.parse_input_event), the stick sets `move` (VoxelArena reads it in place of WASD), a look drag calls
 ## VoxelArena.look_by (what the mouse's motion calls). No pointer lock: grab() / grabbed() stand in for

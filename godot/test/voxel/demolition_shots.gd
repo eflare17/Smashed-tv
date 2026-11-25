@@ -153,7 +153,8 @@ func _process(dt: float) -> bool:
 			_man("Office", VoxelDemolitionMob.ROOF)
 			_man("Office", VoxelDemolitionMob.WINDOW)
 			_man("BrickShop", VoxelDemolitionMob.ROOF)
-			_stand(D.AT + Vector3(2.0, 0.05, 2.0), D.AT + Vector3(11.0, 11.0, -6.0))
+			dem.mob.made = dem.mob.most()      # (no more coming while the picture's taken: just these)
+			_stand(D.AT + Vector3(-8.0, 0.05, 6.0), D.AT + Vector3(11.0, 8.0, -6.0))
 			step = 11
 			t = 0.0
 		11:
@@ -174,7 +175,7 @@ func _process(dt: float) -> bool:
 				mid += v
 			mid /= off.ring.size()
 			dem.breaks.blast(Vector3(mid.x, off.h - 0.2, mid.y), 5.0)
-			_stand(D.AT + Vector3(0.0, 0.05, 1.0), D.AT + Vector3(11.0, 9.0, -8.0))
+			_stand(D.AT + Vector3(-8.0, 0.05, 6.0), D.AT + Vector3(11.0, 7.0, -6.0))    # (the same spot, after)
 			step = 13
 			t = 0.0
 		13:
@@ -184,17 +185,18 @@ func _process(dt: float) -> bool:
 			step = 14
 			t = 0.0
 		14:
-			# the petrol station's chain: the tanker in the road lit, and the pumps and the gas bottles with it
+			# the petrol station's chain: the tanker in the road lit, and the pumps and the gas bottles with it. It
+			# runs in under a second and this script's steps are 2 s apart, so the chain is stepped here, by hand, to
+			# the moment the picture wants: the tanker and the pumps gone up, the fire still in the air.
 			dem.props.reset()
 			for i in dem.props.list.size():
 				if String(dem.props.list[i].kind) == "tanker":
 					dem.props.light(i, 0.0)
-			_stand(D.AT + Vector3(-8.0, 0.05, -1.0), D.AT + Vector3(11.0, 3.0, 8.0))
-			step = 15
-			t = 0.0
-		15:
-			if t < 0.75:
-				return false
+			_stand(D.AT + Vector3(2.0, 0.05, -1.5), D.AT + Vector3(12.0, 2.0, 9.0))
+			for i in 40:
+				dem.props.step(1.0 / 60.0)
+			for i in 7:
+				arena.flames._process(0.045)        # (the fire risen and spread a little: a ball, not a spark)
 			_save("chain")
 			step = 16
 			t = 0.0
