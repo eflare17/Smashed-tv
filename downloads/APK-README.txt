@@ -2,8 +2,8 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,132,341 bytes (40.2 MB)
-SHA-256:  1fe53fa4dcef8617598f984c8cc35f35f728eacc9a624ee1d7dfeb9044e97585
+Size:     42,136,437 bytes (40.2 MB)
+SHA-256:  484fa5fb9d11d51d3d50b3b3402d98de53c27e717fabde42465849c4dbe78102
 Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
           (tools/build_android.sh; same signing key as the first build, so it
           installs straight over it)
@@ -76,6 +76,19 @@ WHAT IS IN IT
   3. LOW, which puts everything back to the first build's settings bar the
      draw distance.
   APPLY RECOMMENDED still runs the benchmark and picks a preset for you.
+- The view is steadier than it was, and a touch quicker to answer. The camera
+  was inside Godot's physics interpolation, so every frame it was drawn
+  part-way between where you had just pointed it and where it is now, by a
+  fraction that wanders as the frame time wanders: an even thumb sweep came out
+  drawn as anywhere between 0 and 154 degrees a second. The camera is now out
+  of the interpolation, along with your own Jared and a co-op mate's body, the
+  way the flying cubes and the flames already were. It also takes about a frame
+  of lag out of the thumb. This is the engine, not a browser quirk, so the APK
+  gets it too -- the APK already felt smooth, so expect a small tidy-up rather
+  than a transformation, with a slightly sharper response.
+  Two new rows in SET if you want to feel the difference: "Steady view (shudder
+  fix)" and "Combine thumb moves (shudder fix)", both On. Turning either off
+  puts that half back the way it was.
 - Swinging the view round no longer hitches. The phone's renderer compiles a
   shader the first time anything is really drawn with it, which is why turning
   used to stutter the first time you looked somewhere new; the game now turns
