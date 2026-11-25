@@ -167,6 +167,7 @@ func _build() -> void:
 	_glow_m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	_glow_m.vertex_color_use_as_albedo = true
 	_gun = Node3D.new()
+	_gun.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF    # (posed every frame, under the camera)
 	view.add_child(_gun)
 	var inner := Node3D.new()
 	inner.scale = Vector3.ONE * VIEW_SCALE
@@ -223,6 +224,7 @@ func _build() -> void:
 # purple light; and the burst's flash
 func _build_hole(cube: BoxMesh) -> void:
 	_hole = Node3D.new()
+	_hole.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # (placed every frame)
 	_hole.top_level = true
 	add_child(_hole)
 	var ball := MeshInstance3D.new()
@@ -300,6 +302,7 @@ void fragment() {
 		_rings.append(ring)
 	_hole.visible = false
 	_hole_light = OmniLight3D.new()
+	_hole_light.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_hole_light.light_color = Color(0.5, 0.16, 1.0)
 	_hole_light.omni_range = 7.0
 	_hole_light.light_energy = 0.0
@@ -307,6 +310,7 @@ void fragment() {
 	_hole_light.top_level = true
 	add_child(_hole_light)
 	_flash = MeshInstance3D.new()
+	_flash.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var fm := SphereMesh.new()
 	fm.radius = 1.0
 	fm.height = 2.0
@@ -386,6 +390,7 @@ static func _aim(at: Vector3, to: Vector3) -> Transform3D:
 
 func hand_mesh() -> Node3D:
 	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_hand = Node3D.new()
 	root.add_child(_hand)
 	var inner := Node3D.new()
