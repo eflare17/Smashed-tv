@@ -122,6 +122,7 @@ var fingers_worst := 0          # the most fingers down at once in that second
 var key_sec := 0                # keys this layer sent the game in that second (W A S D Shift flipping)
 var in_us := 0                  # microseconds spent in _input in that second
 var folds_sec := 0              # frames in that second whose drags were applied (what the count above folded down to)
+var _timing := false            # ?stats only: in_us is kept (the clock itself costs, and this is the hot path)
 var _ev_frame := 0
 ## Two thumbs down: the browser's drags stop being folded. Godot folds a drag into the one before it, so a single
 ## finger's run of drags arrives as one event a frame -- but with two fingers the stream alternates (stick, look,
@@ -182,6 +183,7 @@ static func pointer(vp: Viewport) -> Vector2:
 
 func setup(a: VoxelArena) -> void:
 	arena = a
+	_timing = a._opts.has("stats")
 	layer = 40                      # (over the menus, layer 31: X stays on top)
 	active = true
 	Input.emulate_mouse_from_touch = false      # (a thumb on the stick isn't a click: this layer says what each touch is)
@@ -346,10 +348,11 @@ func _input(e: InputEvent) -> void:
 	if e is InputEventScreenTouch or e is InputEventScreenDrag:
 		ev_sec += 1
 		_ev_frame += 1
-		var _t0 := Time.get_ticks_usec()
-		_touch_input(e)
-		in_us += Time.get_ticks_usec() - _t0
-		return
+		if _timing:
+			var t0 := Time.get_ticks_usec()
+			_touch_input(e)
+			in_us += Time.get_ticks_usec() - t0
+			return
 	_touch_input(e)
 
 func _touch_input(e: InputEvent) -> void:
