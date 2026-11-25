@@ -178,6 +178,7 @@ var gun_range: VoxelGunRange    # the gun range (the phone's Travel: every weapo
 var touch: VoxelTouch            # the phone browser's touch controls (null: keyboard and mouse; VoxelTouch.detect, or the first touch)
 var phone: VoxelPhone            # P: the phone (its Travel app: home, St Kilda)
 var digsite: DigSite             # the Dig Site (the phone's Travel: dig, tunnel, machines; co-op together; scripts/voxel/digsite)
+var demolition: VoxelDemolition  # Demolition (the phone's Travel: a town block to flatten, a wrecking ball crane; scripts/voxel/demolition)
 var _dash_v := Vector3.ZERO     # a forced dash (a chainsaw's lunge): the player moves at this, not by the keys
 var _dash_t := 0.0
 var _mouse_v := Vector2.ZERO    # the mouse's recent movement (the way a slash goes)
@@ -349,6 +350,9 @@ func _ready() -> void:
 	gun_range = VoxelGunRange.new()
 	add_child(gun_range)
 	gun_range.setup(self)
+	demolition = VoxelDemolition.new()
+	add_child(demolition)
+	demolition.setup(self)
 	digsite = load("res://scenes/voxel/digsite/dig_site.tscn").instantiate()
 	add_child(digsite)
 	digsite.setup(self)
@@ -408,6 +412,8 @@ func _ready() -> void:
 		if not stkilda.active:
 			stkilda.go()
 		stkilda.invasion.start()
+	if _opts.has("demolition"):      # (the link ?demolition / --demolition: straight to the town block to flatten)
+		demolition.go()
 	if _opts.has("digsite"):         # (tests, pictures: --digsite straight to the Dig Site)
 		digsite.go()
 	if VoxelTouch.active:
@@ -1147,6 +1153,15 @@ func _storage_step(dt: float) -> void:
 		_near_st = null
 		_near_bed = 0
 
+## The buildings you can smash where you are: St Kilda's (VoxelBreakables), or Demolition's; else null. Every weapon
+## asks this before it takes a bite out of a wall (VoxelMelee.walls, fire, the grenades' blast).
+func walls() -> VoxelBreakables:
+	if stkilda and stkilda.active:
+		return stkilda.breaks
+	if demolition and demolition.active:
+		return demolition.breaks
+	return null
+
 var _say_text := ""
 ## A line in the middle of the screen for a moment.
 func say(text: String, secs := 2.0) -> void:
@@ -1823,7 +1838,7 @@ func _physics_process(dt: float) -> void:
 		player.velocity = Vector3.ZERO
 		player.global_position = house.lie_spot(lying)
 		dir = Vector3.ZERO
-	if games.seated > 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving()):
+	if games.seated > 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving()) or (demolition and demolition.driving()):
 		player.velocity = Vector3.ZERO
 		dir = Vector3.ZERO
 	player.velocity.x = dir.x * sp
@@ -1837,7 +1852,7 @@ func _physics_process(dt: float) -> void:
 			player.velocity.y = 5.0
 	else:
 		player.velocity.y -= 14.0 * dt
-	if lying <= 0 and games.seated == 0 and not mine.active and not (stkilda and stkilda.riding()) and not (digsite and digsite.driving()):
+	if lying <= 0 and games.seated == 0 and not mine.active and not (stkilda and stkilda.riding()) and not (digsite and digsite.driving()) and not (demolition and demolition.driving()):
 		player.move_and_slide()
 	# the enemies come at you (the nearest of you two in co-op; a guest's are moved by the host's snapshots)
 	if net.role == "guest" and net.linked:
@@ -2236,7 +2251,7 @@ func _shoot(dt: float) -> void:
 	if not _opts.has("swordtest"):
 		_sucking = hold_suck
 	_aiming = false
-	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.riding()) or (digsite and digsite.driving()):
+	if inv_ui.is_open() or lock_view.is_open() or lying > 0 or (net_menu and net_menu.is_open()) or (settings_menu and settings_menu.is_open()) or (guide and guide.is_open()) or games.seated > 0 or games.held >= 0 or mine.active or (phone and phone.is_open()) or (stkilda and stkilda.riding()) or (digsite and digsite.driving()) or (demolition and demolition.driving()):
 		_let_go()                   # (the inventory screen, the padlock: the mouse is for that; lying in bed: no)
 		_clicked.clear()
 		return
@@ -2469,8 +2484,9 @@ func fire(from: Vector3, dir: Vector3, pellets: int, spread: float, r: float, op
 			# sparks off the wall or floor
 			flames.emit(end, 3, (wh.normal as Vector3) * 2.0, 0.8, 0.18)
 			sound.play("hit_world", end, -4.0)
-			if stkilda and stkilda.active:
-				stkilda.breaks.shot(wh, d, float(opts.get("wall", 1.0 / 3.0)))   # (a St Kilda building: the bricks it hit knocked out)
+			var wb := walls()
+			if wb:
+				wb.shot(wh, d, float(opts.get("wall", 1.0 / 3.0)))   # (a St Kilda or Demolition building: the bricks it hit knocked out)
 		_tracer_list.append({"a": muzzle, "b": end, "t": 0.06})
 		if best_b:
 			var rr := r

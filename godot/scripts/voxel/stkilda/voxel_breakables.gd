@@ -32,8 +32,17 @@ const LIE_MAX := 150000         # bricks lying about (more: they crumble)
 const PILE := 0.3               # a pile's floor cell
 const NO_SHOPS :=["w1000251780", "w1000251784"]   # (Cafe Luna, the Gift Shop: Luna Park's own shop is on that outline)
 
-var sk: VoxelStKilda
+# The place these buildings are in: VoxelStKilda, or any other level that drives them the same way (Demolition's
+# VoxelDemolition). Untyped, so a level only has to have the few things touched here: active, arena, nav, town,
+# global_transform, get_node_or_null (add_park's and Building.make's are St Kilda's alone).
+var sk
 var list: Array[Building] = []
+# How much loose rubble this place allows, from the consts below (a level of its own may want less: Demolition on the
+# web sets these before setup, and the multimeshes are made that size).
+var fall_max := FALL_MAX
+var fall_draw := FALL_DRAW
+var fly_max := FLY_MAX
+var lie_max := LIE_MAX
 var _fall_mm: MultiMeshInstance3D
 var _fall: Array = []           # [{at, v, spin, basis, size, col, paint}]
 var _slabs: Array = []          # [{xf (its middle, how it's turned), v, axis, w (how fast it's tipping), parts: [[transform from its middle, colour, paint]]}]
@@ -91,19 +100,34 @@ static func _ring(bd: Dictionary) -> PackedVector2Array:
 		ring.remove_at(ring.size() - 1)
 	return ring
 
-func setup(s: VoxelStKilda, picked: Array) -> void:
+func setup(s, picked: Array) -> void:
 	sk = s
 	name = "Breakables"
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	_fall_mm = _mm_of(FALL_DRAW)
-	_fly_mm = _mm_of(FLY_MAX)
-	_lie_mm = _mm_of(LIE_MAX)
+	_fall_mm = _mm_of(fall_draw)
+	_fly_mm = _mm_of(fly_max)
+	_lie_mm = _mm_of(lie_max)
 	for bd in picked:
 		var b := Building.new()
 		b.make(self, bd)
 		list.append(b)
 	VoxelItems.brick_cols = _cols
 	_make_grid()
+
+## A building of a level's own (Demolition's: there's no town map behind it), from its outline (world x, z), how tall
+## and its colour. It's drawn in blocks from the moment it's built, since there's no model of it to swap out. glass: a
+## glass front (most of its inner columns glazed); bw: its blocks' width along a wall; open_to/leg: the bottom open_to
+## rows left out but for `leg` blocks at each corner, so it stands on legs (a water tower, a petrol station's canopy).
+func add_plain(nm: String, ring: PackedVector2Array, tall: float, c: Color, glass := false, bw := BLOCK,
+		open_to := 0, leg := 1) -> Building:
+	var b := Building.new()
+	b.plain = true
+	b.open_to = open_to
+	b.leg = leg
+	b.make_plain(self, nm, ring, tall, c, glass, bw)
+	list.append(b)
+	_make_grid()
+	return b
 
 ## Luna Park's own buildings (the owner, 30 Oct: "just do the ones in luna park"), built by SkLunaRides and
 ## SkLunaExtras, named here with the colour their blocks are: each box the park model stands you off with (its
@@ -114,7 +138,7 @@ func add_park() -> void:
 	for id in SkLunaExtras.SHOPS:
 		var look: Array = SkLunaExtras.SHOPS[id]
 		park[String(look[0]).replace(" ", "")] = look[2]
-	var back := sk.global_transform.affine_inverse()
+	var back: Transform3D = sk.global_transform.affine_inverse()
 	for nm in park:
 		var n := sk.get_node_or_null(NodePath(String(nm))) as Node3D
 		if n == null:
@@ -411,7 +435,7 @@ func _falling(dt: float) -> void:
 		k += 1
 	for s in _slabs:
 		for p in s.parts:
-			if k >= FALL_DRAW:
+			if k >= fall_draw:
 				break
 			mm.set_instance_transform(k, (s.xf as Transform3D) * (p[0] as Transform3D))
 			mm.set_instance_color(k, p[1])
@@ -421,7 +445,7 @@ func _falling(dt: float) -> void:
 ## A block coming down from at (world), its size and colour; paint: its bricks' colours (Building.paint_of), or none.
 func drop(at: Vector3, size: Vector3, col: Color, push: Vector3, paint := PackedColorArray(), basis := Basis.IDENTITY, piece := BRICK) -> void:
 	var xf := Transform3D(basis.scaled(size), at)
-	if _fall.size() >= FALL_MAX:
+	if _fall.size() >= fall_max:
 		bricks(xf, col, paint, push, 2.0, piece)
 		return
 	_fall.append({"at": at, "v": push + Vector3(randf_range(-0.6, 0.6), randf_range(0.0, 0.8), randf_range(-0.6, 0.6)),
@@ -437,7 +461,7 @@ static func brick_grid(xf: Transform3D, piece := BRICK) -> Vector3i:
 ## spread about of `spread` m/s); paint, if any, the colour of each in turn (brick_grid's x, then y, then z), else col.
 func bricks(xf: Transform3D, col: Color, paint: PackedColorArray, push: Vector3, spread: float, piece_m := BRICK) -> void:
 	# (a lot in the air already, a big collapse: the rest in bigger chunks, so there aren't more than the game can move)
-	var load := float(_fp.size()) / FLY_MAX
+	var load := float(_fp.size()) / fly_max
 	var coarse := 1.0 if load < 0.2 else (2.0 if load < 0.5 else 3.0)
 	var g0 := brick_grid(xf, piece_m)
 	var g := brick_grid(xf, piece_m * coarse)
@@ -459,7 +483,7 @@ func bricks(xf: Transform3D, col: Color, paint: PackedColorArray, push: Vector3,
 					continue
 				var sz := size * Vector3(randf_range(0.8, 0.97), randf_range(0.8, 0.97), randf_range(0.75, 0.95))
 				var v := push * randf_range(0.6, 1.2) + Vector3(randf_range(-1, 1), randf_range(-0.2, 1), randf_range(-1, 1)) * spread
-				if _fp.size() >= FLY_MAX:
+				if _fp.size() >= fly_max:
 					_lay(at, sz, c, turn)
 					continue
 				_fp.append(at)
@@ -518,8 +542,8 @@ func _flying(dt: float) -> void:
 		_fp[i] = p
 		i += 1
 	# (all at once: the whole buffer, each a 3x4 transform and a colour)
-	if _fbuf.size() != FLY_MAX * 16:
-		_fbuf.resize(FLY_MAX * 16)
+	if _fbuf.size() != fly_max * 16:
+		_fbuf.resize(fly_max * 16)
 	for k in _fp.size():
 		var b := _fb[k]
 		var s := _fs[k]
@@ -554,7 +578,7 @@ func _height(p: Vector3) -> float:
 
 ## A brick come to rest at p (on top of the pile there), lying flat-ish, its long side the way it was going.
 func _lay(p: Vector3, s: Vector3, c: Color, turn: Basis) -> void:
-	if _lp.size() >= LIE_MAX:
+	if _lp.size() >= lie_max:
 		if sk.arena and sk.arena.debris:
 			sk.arena.debris.burst([{"pos": p, "col": c}], Vector3.UP, 1.0)
 		return
@@ -704,7 +728,7 @@ func _wake_near(p: Vector3, r: float, vel: Callable, most: int) -> int:
 # lying brick i up and off at v (its slot hidden: the lying are only ever added to, till the next visit)
 func _fly_again(i: int, v: Vector3) -> void:
 	_lie_mm.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ZERO), _lp[i]))
-	if _fp.size() >= FLY_MAX:
+	if _fp.size() >= fly_max:
 		return
 	_fp.append(_lp[i] + Vector3.UP * 0.05)
 	_fv.append(v)
@@ -715,7 +739,7 @@ func _fly_again(i: int, v: Vector3) -> void:
 
 # you walking through rubble: the bricks at your feet kicked along the way you're going
 func _kick() -> void:
-	var me := sk.arena.player if sk.arena else null
+	var me = sk.arena.player if sk.arena else null
 	if me == null or _lp.is_empty():
 		return
 	var v := (me as CharacterBody3D).velocity
@@ -869,6 +893,11 @@ class Building:
 	var windows := true           # (a window every other block, the middle row of three: the town's, not Luna Park's)
 	var partners: Array = []      # (the other boxes of the same park model: all to blocks together)
 	var over := false             # a park model's: it stays, with holes in it (VoxelBreakables.HOLES), blocks behind
+	var plain := false            # a level's own (add_plain): drawn in blocks from the start, legs and all
+	var glassy := false           # a glass front: most of its inner columns glazed, two rows in three
+	var block_w := BLOCK          # its blocks' width along a wall
+	var open_to := 0              # the bottom rows left out but for the corners: it stands on legs
+	var leg := 1                  # blocks a corner leg
 	var _mats: Array = []
 	var _hk := ""
 	var _alive_img: Image
@@ -958,7 +987,7 @@ class Building:
 		owner = o
 		data = bd
 		ring = VoxelBreakables._ring(bd)
-		var town := o.sk.town
+		var town: SkTownBuilder = o.sk.town
 		var kind := String(bd.k)
 		h = float(bd.h)
 		if kind in SkFacades.HOUSES and ring.size() <= 12:
@@ -983,6 +1012,25 @@ class Building:
 		mi.material_override = SkModels.baked_material()
 		pretty.add_child(mi)
 		fronts.commit(pretty)
+		_shape(o)
+
+	## A level's own (VoxelBreakables.add_plain): blocks from the start, nothing drawn behind them.
+	func make_plain(o: VoxelBreakables, nm: String, r: PackedVector2Array, tall: float, c: Color, glass := false,
+			bw := BLOCK) -> void:
+		owner = o
+		data = {"id": nm, "n": nm, "k": "plain"}
+		ring = r
+		h = tall
+		col = c
+		glassy = glass
+		block_w = bw
+		roof_col = c.darkened(0.45)
+		root = Node3D.new()
+		root.name = nm
+		o.add_child(root)
+		pretty = Node3D.new()        # (empty: its blocks are what you see)
+		pretty.name = "AsDrawn"
+		root.add_child(pretty)
 		_shape(o)
 
 	## One of Luna Park's own (the owner, 30 Oct: "just do the ones in luna park"): the park's own model (node) looks
@@ -1097,13 +1145,14 @@ class Building:
 			var n2 := d.normalized().orthogonal()
 			if Geometry2D.is_point_in_polygon((a + b) / 2.0 + n2 * 0.05, ring):
 				n2 = -n2
-			var n := maxi(1, roundi(d.length() / BLOCK))
+			var n := maxi(1, roundi(d.length() / block_w))
 			var w := d.length() / n
 			for i in n:
 				var at := a + d.normalized() * (i + 0.5) * w
 				cols.append({"a": at, "dir": d.normalized(), "w": w, "n": n2,
 					"mid": Vector3(at.x - n2.x * THICK * 0.5, h * 0.5, at.y - n2.y * THICK * 0.5),
-					"glass": windows and (i % 2 == 1) and n >= 3 and i < n - 1, "shade": absf(n2.x) > absf(n2.y)})
+					"glass": (windows and (i % 2 == 1) and n >= 3 and i < n - 1) or (glassy and n >= 3 and i > 0 and i < n - 1),
+					"shade": absf(n2.x) > absf(n2.y)})
 		var lo := Vector2(INF, INF)
 		var hi := -lo
 		for v in ring:
@@ -1176,6 +1225,36 @@ class Building:
 		for c in cols.size():
 			_column(c)
 		_holes()
+		if plain:
+			_legs()
+			_to_blocks()              # (blocks are all it has: nothing drawn to swap out)
+
+	# A level's own, on legs (open_to, leg): the bottom rows taken out but for `leg` blocks at each corner of the
+	# outline. It's built that way, so nothing falls for it; knock a leg out and what it holds up does come down.
+	func _legs() -> void:
+		if open_to <= 0:
+			return
+		var starts := []              # the first column of each side of the outline
+		var last := Vector2.INF
+		for c in cols.size():
+			var d: Vector2 = cols[c].dir
+			if c == 0 or not d.is_equal_approx(last):
+				starts.append(c)
+			last = d
+		var keep := {}
+		for s in starts:
+			for k in leg:
+				keep[(int(s) + k) % cols.size()] = true
+				keep[(int(s) - 1 - k + cols.size()) % cols.size()] = true
+		for c in cols.size():
+			if keep.has(c):
+				continue
+			for r in mini(open_to, rows - 1):
+				var i := c * rows + r
+				if alive[i]:
+					alive[i] = 0
+					standing -= 1
+			_column(c)
 
 	func near(p: Vector3, r: float) -> bool:
 		return _box.grow(r).has_point(p)
@@ -1201,7 +1280,7 @@ class Building:
 		var cc: Dictionary = cols[c]
 		var k := row % 3
 		var c0 := col.darkened(0.3 if bool(cc.shade) else 0.18)     # (as dark as the drawn walls look, lit the same)
-		if bool(cc.glass) and k == 1 and rows >= 2:
+		if bool(cc.glass) and (k == 1 or (glassy and k == 2)) and rows >= 2:
 			return GLASS
 		var j := hash(Vector2i(c, row)) % 7
 		return c0.darkened(0.03 * (j % 3)).lightened(0.02 * int(j == 5))

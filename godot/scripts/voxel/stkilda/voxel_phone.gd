@@ -2,14 +2,16 @@ class_name VoxelPhone
 extends Control
 ## The phone (the owner, 27 Oct: "a phone-style menu pops up and you fast travel"): P gets it out, bottom right.
 ## One app so far, Travel: Home (the arena), St Kilda (Luna Park, VoxelStKilda), a game there (Kill 1, 2 come:
-## VoxelParkGame; Luna Park: Invasion: VoxelParkInvasion), or the gun range (VoxelGunRange). Pick one (a click, or its number) and
+## VoxelParkGame; Luna Park: Invasion: VoxelParkInvasion), the gun range (VoxelGunRange), the Dig Site or Demolition
+## (a town block to flatten, VoxelDemolition). Pick one (a click, or its number) and
 ## the screen goes black a moment and you're there. P or Esc puts it away. Not while playing with a mate (yet).
 
 const W := 270.0
 const H := 650.0
 const PLACES := [["home", "Home", "The arena"], ["stkilda", "St Kilda", "Luna Park"], ["kill12", "Kill 1, 2 come", "A game in Luna Park"],
 	["range", "Gun range", "Try every weapon"], ["digsite", "Dig Site", "Dig, tunnel, drive machines"],
-	["invasion", "Luna Park: Invasion", "Clear the rides"]]     # (last: the others keep their numbers)
+	["invasion", "Luna Park: Invasion", "Clear the rides"],
+	["demolition", "Demolition", "Flatten the block"]]          # (last: the others keep their numbers)
 const COOP_PLACES := ["home", "digsite"]   # (with a mate: these, the two of you together; the rest not yet)
 
 var arena: VoxelArena
@@ -102,6 +104,8 @@ func open() -> void:
 		here = "range"
 	elif arena.digsite and arena.digsite.active:
 		here = "digsite"
+	elif arena.demolition and arena.demolition.active:
+		here = "demolition"
 	var coop: bool = arena.net != null and arena.net.role != ""
 	for id in _buttons:
 		var b: Button = _buttons[id]
@@ -112,6 +116,8 @@ func open() -> void:
 			sub.text = "Play again (best %d kills)" % stkilda.game.best_kills
 		if id == "invasion" and stkilda.invasion and stkilda.invasion.over:
 			sub.text = "Play again (best %s)" % VoxelParkGame._clock(stkilda.invasion.best_time)
+		if id == "demolition" and arena.demolition and arena.demolition.best_score > 0 and id != here:
+			sub.text = "Flatten the block (best %d blocks)" % arena.demolition.best_score
 	_note.text = "With a mate: Home and the Dig Site (you both go)." if coop else ""
 	var t := Time.get_time_dict_from_system()
 	_clock.text = "%d:%02d" % [t.hour, t.minute]
@@ -155,7 +161,7 @@ func travel(id: String) -> void:
 		return
 	_going = true
 	close()
-	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "invasion": "Luna Park: Invasion ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ..."}.get(id, "Heading home ...")
+	_black_label.text = {"stkilda": "Off to St Kilda ...", "kill12": "Kill 1, 2 come: Luna Park ...", "invasion": "Luna Park: Invasion ...", "range": "To the gun range ...", "digsite": "Off to the Dig Site ...", "demolition": "Demolition: down the street ..."}.get(id, "Heading home ...")
 	if id in ["stkilda", "kill12", "invasion"] and not stkilda.built:
 		_black_label.text = "Loading Luna Park ..."        # (built the first time you go: a few seconds, longer on a phone)
 		print("VoxelPhone: building St Kilda (Luna Park)")
@@ -169,6 +175,8 @@ func travel(id: String) -> void:
 		arena.gun_range.home()                 # (off the range first: back where you were in the arena)
 	if arena.digsite and id != "digsite":
 		arena.digsite.home()
+	if arena.demolition and id != "demolition":
+		arena.demolition.home()
 	match id:
 		"stkilda":
 			if stkilda.active:
@@ -188,6 +196,9 @@ func travel(id: String) -> void:
 		"digsite":
 			stkilda.home()
 			arena.digsite.go()
+		"demolition":
+			stkilda.home()
+			arena.demolition.go()
 		_:
 			stkilda.home()
 	await get_tree().create_timer(0.25).timeout
@@ -212,6 +223,8 @@ func arrive(do: Callable, label: String) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	arena.gun_range.home()
+	if arena.demolition:
+		arena.demolition.home()
 	stkilda.home()
 	do.call()
 	await get_tree().create_timer(0.25).timeout
