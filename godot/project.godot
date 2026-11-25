@@ -15,6 +15,7 @@ config/name="Smashed TV"
 run/main_scene="res://scenes/main.tscn"
 run/main_scene.voxel_arena="res://scripts/voxel/arena/voxel_arena.tscn"
 run/main_scene.voxel_web="res://scripts/voxel/arena/voxel_arena.tscn"
+run/main_scene.voxel_mobile="res://scripts/voxel/arena/voxel_arena.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 
 [autoload]
@@ -182,6 +183,8 @@ common/physics_interpolation=true
 [rendering]
 
 textures/canvas_textures/default_texture_filter=0
+; (the Android build: Godot won't export to Android at all without this on -- a phone's GPU wants ETC2/ASTC, not S3TC)
+textures/vram_compression/import_etc2_astc=true
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 renderer/rendering_method.voxel_arena="forward_plus"

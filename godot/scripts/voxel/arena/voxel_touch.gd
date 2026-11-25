@@ -115,18 +115,27 @@ var _lock := false
 var _top := false
 var _crane := false             # in Demolition's crane: the crane's buttons in the cluster's place
 
-## Touch mode for this game? opts: the game's options (--touch, the page's ?touch / ?notouch). On the web: a touch screen
-## with no mouse or trackpad (a coarse pointer).
+## Touch mode for this game? opts: the game's options (--touch, the page's ?touch / ?notouch). The Android build: always
+## (a phone has nothing else). On the web: a touch screen with no mouse or trackpad (a coarse pointer).
 static func detect(opts: Dictionary) -> bool:
 	allowed = not opts.has("notouch")
 	forced = opts.has("touch") and allowed
 	active = forced
 	_aim_on = false
-	if allowed and not active and OS.has_feature("web"):
-		var r = JavaScriptBridge.eval("((navigator.maxTouchPoints>0 && matchMedia('(pointer:coarse)').matches)?1:0)", true)
-		active = r != null and str(r).to_float() == 1.0     # (a number: what comes back for a JS true isn't always a bool)
+	if allowed and not active:
+		if OS.has_feature("mobile"):            # (the Android build: a phone or a tablet, a touch screen either way)
+			active = true
+		elif OS.has_feature("web"):
+			var r = JavaScriptBridge.eval("((navigator.maxTouchPoints>0 && matchMedia('(pointer:coarse)').matches)?1:0)", true)
+			active = r != null and str(r).to_float() == 1.0     # (a number: what comes back for a JS true isn't always a bool)
 	print("VoxelTouch: ", "on" if active else "off", " (forced)" if forced else "")
 	return active
+
+## A real phone or tablet (the Android build, or a phone's browser) -- not --touch tried out on a desktop. What the
+## capped render scale, the shorter draw distance and the lighter Jared are for: they're about a phone's screen and
+## its fill rate, so they hold for the native build as much as for the browser's.
+static func phone() -> bool:
+	return active and (OS.has_feature("mobile") or OS.has_feature("web"))
 
 ## The mouse grabbed (first person, playing)? Touch mode: always (there's no pointer to lock; the menus say when they're up).
 static func grabbed() -> bool:

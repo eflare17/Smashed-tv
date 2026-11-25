@@ -35,7 +35,7 @@ const PRESETS := {
 const FX_PRESETS := {"low": 0, "medium": 0, "high": 0, "ultra": 0, "extreme": 1}
 ## (what only the Forward+ renderer does: the browser's game, on Compatibility, doesn't show these rows)
 const FORWARD_ONLY := ["taa", "ssao", "ssil", "sdfgi", "fog", "fx"]
-const PHONE_ACROSS := 1280.0     # a phone's browser: the 3D picture's longer side, in pixels, before the preset's scale
+const PHONE_ACROSS := 1280.0     # a phone (browser or Android): the 3D picture's longer side, in pixels, before the preset's scale
 const PHONE_FAR := 260.0         # ... and how far it draws (metres)
 const PERSONAL := {"fov": 80.0, "sens": 1.0, "volume": 1.0, "fullscreen": false, "fps": 0, "vsync": true,
 	"mine_sewers": true, "mine_cops": true, "mine_rivals": true, "announcer": 2}
@@ -171,9 +171,10 @@ func apply(arena: Node3D) -> void:
 	var vp := arena.get_viewport()
 	var forward := RenderingServer.get_current_rendering_method() == "forward_plus"
 	var sc := float(v.scale)
-	if VoxelTouch.active and OS.has_feature("web"):
-		# a phone's browser: its screen is 1440p or more in real pixels; the 3D is drawn as if it were 1280 across at most
+	if VoxelTouch.phone():
+		# a phone: its screen is 1440p or more in real pixels; the 3D is drawn as if it were 1280 across at most
 		# (the preset's own scale on top), and no further than a phone needs to see. The HUD stays sharp.
+		# (the native Android build too: this is the phone's fill rate, not WebGL -- the pixels cost the same either way)
 		var win := arena.get_window().size
 		sc *= clampf(PHONE_ACROSS / maxf(1.0, float(maxi(win.x, win.y))), 0.4, 1.0)
 		if arena.get("cam") and arena.cam:

@@ -209,8 +209,8 @@ func _on_server(text: String) -> void:
 				opened.emit(_code)
 			else:
 				opened.emit(_code)
-				_make_pc()
-				_pc.create_offer()
+				if _make_pc():
+					_pc.create_offer()
 		"ID-TAKEN":
 			status.emit("room %s is taken (someone's hosting it)" % _code if _role == "host" else "try again", "bad")
 			close()
@@ -226,7 +226,8 @@ func _on_server(text: String) -> void:
 				return                  # (one guest at a time)
 			_other = String(m.get("src", ""))
 			_drop_pc()
-			_make_pc()
+			if not _make_pc():
+				return
 			var pl: Dictionary = m.get("payload", {})
 			_pc.set_remote_description("offer", String(pl.get("sdp", "")))
 			_have_remote = true
@@ -255,8 +256,12 @@ func _flush_cands() -> void:
 		_pc.add_ice_candidate(String(c.get("sdpMid", "")), int(c.get("sdpMLineIndex", 0)), String(c.get("candidate", "")))
 	_pending_cands.clear()
 
-func _make_pc() -> void:
+## A fresh connection, ready to offer or answer. false: this build can't make one (see below).
+func _make_pc() -> bool:
 	_pc = WebRTCPeerConnection.new()
+	if _pc == null:      # (no addons/webrtc: the Android build leaves addons/ out, so there's no connection to make)
+		status.emit("Online play is in the PC and browser versions only", "bad")
+		return false
 	_pc.initialize({"iceServers": [] if local_only else ICE})
 	_pc.session_description_created.connect(_on_sdp)
 	_pc.ice_candidate_created.connect(_on_cand)
@@ -264,6 +269,7 @@ func _make_pc() -> void:
 	_fast = _pc.create_data_channel("fast", {"negotiated": true, "id": 2, "ordered": false, "maxRetransmits": 0})
 	_have_remote = false
 	_wait = 0.0
+	return true
 
 func _on_sdp(type: String, sdp: String) -> void:
 	_pc.set_local_description(type, sdp)

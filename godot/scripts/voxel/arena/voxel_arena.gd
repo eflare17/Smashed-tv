@@ -197,8 +197,8 @@ func _ready() -> void:
 	VoxelTouch.detect(_opts)        # (a phone's browser, ?touch: before the settings, which start on Low there)
 	# a phone's browser (or --staged): the start-up a step a frame, each named on screen and in the console, so a phone
 	# that stops can be told where (chrome://inspect); nothing of the half-made arena runs till it's done
-	jared_chunk = 2 if (_opts.has("lightjared") or (VoxelTouch.active and OS.has_feature("web"))) else 1
-	_staged = _opts.has("staged") or (VoxelTouch.active and OS.has_feature("web"))
+	jared_chunk = 2 if (_opts.has("lightjared") or VoxelTouch.phone()) else 1
+	_staged = _opts.has("staged") or VoxelTouch.phone()
 	_boot_t = Time.get_ticks_msec()
 	_boot_0 = _boot_t
 	var luna_first: bool = _opts.has("stkilda") or _opts.has("carousel") or _opts.has("invasion")
@@ -560,8 +560,8 @@ func _player() -> void:
 	cam.near = 0.05
 	add_child(cam)
 	cam.current = true
-	if VoxelTouch.active and OS.has_feature("web"):
-		cam.far = VoxelSettings.PHONE_FAR      # (a phone's browser: no further than it needs to draw)
+	if VoxelTouch.phone():
+		cam.far = VoxelSettings.PHONE_FAR      # (a phone: no further than it needs to draw)
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1.0, 0.8, 0.4)
 	_flash.omni_range = 6.0
