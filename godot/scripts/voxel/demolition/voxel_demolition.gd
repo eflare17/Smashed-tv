@@ -19,15 +19,18 @@ extends Node3D
 ##
 ## The crane (VoxelWreckingCrane) is parked at the west end of the street: walk up to it and E drives it.
 ##
-## Phase B, once the owner has played this: enemies on the rooftops and in the windows (roof_spots() and window_spots()
-## are here for them, and the arena's spawn_kind puts a body anywhere), and chain-reaction props -- gas bottles, the
-## petrol station's pumps, a fuel tanker -- which would sit in props_spots() and call breaks.blast() on each other.
-## Nothing here counts enemies or props yet, and the score counts blocks only.
+## Phase B put two things in the block. VoxelDemolitionMob stations enemies on the rooftops (roof_spots()) and in the
+## windows of the upper storeys (window_spots()), with a few out in the street, and brings them down with whatever they
+## were standing on -- the roof caving in, the sill blown out -- so they take the fall. VoxelDemolitionProps stands the
+## chain-reaction props (prop_spots()): the petrol station's pumps, gas bottles against the walls and a fuel tanker in
+## the road, each setting off the next within reach a beat later. The score is blocks down plus KILL_SCORE a kill, and
+## the HUD counts the kills.
 
 const AT := Vector3(3000.0, 0.0, 0.0)    # the street's middle (the road runs along x; the player arrives at its west end)
 const RUN_T := 180.0             # s a run
 const TARGET := 0.55             # of the block's blocks down: the goal
 const CASH := 150                # $ for flattening it
+const KILL_SCORE := 10           # what a kill is worth beside a block knocked down (the score)
 const BEST_FILE := "user://demolition.cfg"
 const START := Vector3(-30.0, 0.05, 0.0)     # where you arrive (from AT), looking east down the street
 const CRANE_AT := Vector3(-19.0, 0.0, 1.2)   # where the crane is parked
@@ -53,6 +56,8 @@ const TOWN := [
 var arena: VoxelArena
 var breaks: VoxelBreakables
 var crane: VoxelWreckingCrane
+var mob: VoxelDemolitionMob        # the block's enemies (phase B)
+var props: VoxelDemolitionProps    # the gas bottles, the pumps, the tanker (phase B)
 var active := false
 var built := false
 var nav = null                   # (VoxelBreakables looks for St Kilda's walking map: there's none here)
@@ -132,7 +137,15 @@ func build() -> void:
 	crane = VoxelWreckingCrane.new()
 	add_child(crane)
 	crane.setup(self, AT + CRANE_AT, -PI / 2.0)
-	print("VoxelDemolition: %d buildings, %d blocks, %d ms" % [breaks.list.size(), blocks0, Time.get_ticks_msec() - t0])
+	props = VoxelDemolitionProps.new()
+	add_child(props)
+	props.setup(self)
+	mob = VoxelDemolitionMob.new()
+	add_child(mob)
+	mob.setup(self)
+	mob.build_posts()
+	print("VoxelDemolition: %d buildings, %d blocks, %d posts, %d props, %d ms" % [breaks.list.size(), blocks0,
+		mob.posts.size(), props.list.size(), Time.get_ticks_msec() - t0])
 
 static func _ring(spec: Dictionary) -> PackedVector2Array:
 	var a: Vector2 = spec.a + Vector2(AT.x, AT.z)
@@ -182,9 +195,17 @@ func standing() -> int:
 		n += b.standing
 	return n
 
-## Blocks destroyed: the score.
+## Blocks destroyed.
 func down() -> int:
 	return maxi(0, blocks0 - standing())
+
+## Enemies of the block killed this run.
+func kills() -> int:
+	return mob.kills if mob else 0
+
+## The score: every block down, and KILL_SCORE for every enemy killed.
+func score() -> int:
+	return down() + kills() * KILL_SCORE
 
 ## How much of the block is down, 0..1.
 func share() -> float:
@@ -213,7 +234,7 @@ func go() -> void:
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_help_text = arena.help.text
-	arena.help.text = "DEMOLITION   flatten the block   E drive the crane   P phone (home)   R start again   WASD walk   mouse look   1-5 weapons"
+	arena.help.text = "DEMOLITION   flatten the block   bring it down on the enemies   shoot the petrol station   E drive the crane   P phone (home)   R start again   WASD walk   mouse look   1-5 weapons"
 	VoxelBody.wall_at = breaks.solid    # (bodies knocked flying bounce off the buildings: phase B's enemies)
 	start()
 
@@ -226,6 +247,10 @@ func home() -> void:
 	if crane:
 		crane.leave()
 		crane.place(AT + CRANE_AT, -PI / 2.0)      # (back in the street where it's parked)
+	if mob:
+		mob.clear()                     # (its enemies gone: they're the block's, not the arena's)
+	if props:
+		props.reset()
 	breaks.reset()                      # (the buildings as new)
 	visible = false
 	process_mode = Node.PROCESS_MODE_DISABLED
@@ -249,6 +274,10 @@ func start() -> void:
 		crane.leave()
 		crane.place(AT + CRANE_AT, -PI / 2.0)
 	breaks.reset()
+	if mob:
+		mob.reset()                     # (after the buildings: its posts are their blocks and roof tiles)
+	if props:
+		props.reset()
 	blocks0 = standing()
 	running = true
 	over = false
@@ -268,38 +297,34 @@ func stop() -> void:
 func street_spot() -> Vector3:
 	return AT + START
 
-# ---------------------------------------------------------------- phase B's seams (nothing uses these yet)
+# ---------------------------------------------------------------- where the block's enemies and props stand
+#
+# (Phase A left these three as seams; phase B's VoxelDemolitionMob and VoxelDemolitionProps are what stands on them.
+# Each is a point in the world: an enemy's feet, a prop's middle.)
 
-## The middle of each building's roof: where enemies on the rooftops would stand.
+## On the roofs, a few tiles apart: the enemies stationed up there (VoxelDemolitionMob.ROOF).
 func roof_spots() -> Array:
-	var out := []
-	for b in breaks.list:
-		var mid := Vector2.ZERO
-		for v in b.ring:
-			mid += v
-		out.append(Vector3(mid.x / b.ring.size(), b.h + 0.1, mid.y / b.ring.size()))
-	return out
+	return mob.spots(VoxelDemolitionMob.ROOF) if mob else []
 
-## A spot at each glazed block, just inside the wall: where enemies in the windows would stand.
+## On the sills of the glazed blocks of the upper storeys, just inside the glass (VoxelDemolitionMob.WINDOW).
 func window_spots() -> Array:
-	var out := []
-	for b in breaks.list:
-		for c in b.cols.size():
-			var cc: Dictionary = b.cols[c]
-			if not bool(cc.glass):
-				continue
-			for r in b.rows:
-				if b._block_col(c, r) == VoxelBreakables.GLASS:
-					var n: Vector2 = cc.n
-					out.append(b.block_at(c, r) - Vector3(n.x, 0, n.y) * 1.2)
-	return out
+	return mob.spots(VoxelDemolitionMob.WINDOW) if mob else []
 
-## Where the chain-reaction props would go: the petrol station's pumps and a bottle or two by each building.
+## Out on the road and the footpaths, in front of every other building (VoxelDemolitionMob.STREET).
+func street_spots() -> Array:
+	return mob.spots(VoxelDemolitionMob.STREET) if mob else []
+
+## The chain-reaction props: the petrol station's pumps, the gas bottles, the tanker.
 func prop_spots() -> Array:
-	var out := []
-	for s in [Vector3(9.0, 0.3, 11.0), Vector3(13.0, 0.3, 11.0), Vector3(-14.0, 0.3, -7.5), Vector3(25.0, 0.3, -7.5)]:
-		out.append(AT + s)
-	return out
+	return props.spots() if props else []
+
+## A shot that hit the world out here (VoxelArena.fire): a prop it hit goes up. True if it was one of them.
+func world_shot(collider: Object) -> bool:
+	return props != null and active and props.world_shot(collider)
+
+## A blast out here that wasn't a prop's (a grenade): the props in reach of it lit. How many.
+func props_blast(p: Vector3, r: float) -> int:
+	return props.blast_at(p, r) if (props != null and active) else 0
 
 # ---------------------------------------------------------------- the run
 
@@ -311,6 +336,12 @@ func _process(dt: float) -> void:
 		return
 	if crane:
 		crane.step(dt)
+		if props and crane.driving:
+			props.ball_at(crane.ball, crane.ball_speed())    # (the ball through a gas bottle: up it goes)
+	if mob:
+		mob.step(dt)
+	if props:
+		props.step(dt)
 	if running:
 		time += dt
 		if share() >= TARGET:
@@ -328,8 +359,8 @@ func _hud_line() -> void:
 		tail = "     W/S drive   A/D turn   left/right swing the boom   up/down the cable   E out"
 	elif crane and crane.can_enter():
 		tail = "     E: drive the crane"
-	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d%s" % [roundi(share() * 100.0),
-		roundi(TARGET * 100.0), VoxelParkGame._clock(ceilf(left())), down(), tail]
+	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d, %d kills%s" % [roundi(share() * 100.0),
+		roundi(TARGET * 100.0), VoxelParkGame._clock(ceilf(left())), score(), kills(), tail]
 
 func _flattened() -> void:
 	running = false
@@ -338,15 +369,15 @@ func _flattened() -> void:
 	var new_best := best_time <= 0.0 or time < best_time
 	if new_best:
 		best_time = time
-	best_score = maxi(best_score, down())
+	best_score = maxi(best_score, score())
 	var cf := ConfigFile.new()
 	cf.set_value("best", "time", best_time)
 	cf.set_value("best", "score", best_score)
 	cf.save(BEST_FILE)
 	arena.cash += CASH
 	_hud.visible = false
-	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d blocks   +$%d\nbest %s, %d blocks\nR: again   P: the phone (home)" % [
-		roundi(share() * 100.0), VoxelParkGame._clock(time), "   NEW BEST!" if new_best else "", down(), CASH,
+	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d (%d blocks, %d kills)   +$%d\nbest %s, %d\nR: again   P: the phone (home)" % [
+		roundi(share() * 100.0), VoxelParkGame._clock(time), "   NEW BEST!" if new_best else "", score(), down(), kills(), CASH,
 		VoxelParkGame._clock(best_time), best_score]
 	_end.visible = true
 	arena.sound.play("gold_find", Vector3.INF, 0.0, 0.8)
@@ -355,14 +386,14 @@ func _out_of_time() -> void:
 	running = false
 	over = true
 	won = false
-	best_score = maxi(best_score, down())
+	best_score = maxi(best_score, score())
 	var cf := ConfigFile.new()
 	cf.set_value("best", "time", best_time)
 	cf.set_value("best", "score", best_score)
 	cf.save(BEST_FILE)
 	_hud.visible = false
-	_end.text = "TIME UP\n%d%% down of %d%%, score %d blocks\nbest %d blocks\nR: again   P: the phone (home)" % [
-		roundi(share() * 100.0), roundi(TARGET * 100.0), down(), best_score]
+	_end.text = "TIME UP\n%d%% down of %d%%, score %d (%d blocks, %d kills)\nbest %d\nR: again   P: the phone (home)" % [
+		roundi(share() * 100.0), roundi(TARGET * 100.0), score(), down(), kills(), best_score]
 	_end.visible = true
 
 func _unhandled_input(e: InputEvent) -> void:

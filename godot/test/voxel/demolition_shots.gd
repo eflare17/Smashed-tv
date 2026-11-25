@@ -3,7 +3,9 @@ extends SceneTree
 ##   xvfb-run -a -s "-screen 0 1280x720x24" /root/godot/godot --path godot --resolution 1280x720 --fixed-fps 60 \
 ##     -s res://test/voxel/demolition_shots.gd
 ## into integration/demolition_shots/demolition_*.png: the street before anything's touched, the block half down, the
-## crane with its ball alongside a building, and the tower block coming down. (-- --only=name: just that one.)
+## crane with its ball alongside a building, the tower block coming down, the enemies stationed on the office's roof and
+## in its windows, the office coming down under them, and the petrol station's chain going off. (-- --only=name: just
+## that one.)
 ## Owned by the Demolition session.
 
 const D := preload("res://scripts/voxel/demolition/voxel_demolition.gd")
@@ -48,6 +50,15 @@ func _of(nm: String) -> VoxelBreakables.Building:
 		if String(b.data.id) == nm:
 			return b
 	return null
+
+# enemies on every post of one kind on a building (the pictures: who's on the roof, who's in the windows)
+func _man(nm: String, kind: int) -> int:
+	var n := 0
+	for p in dem.mob.posts:
+		if int(p.kind) == kind and String(dem.breaks.list[int(p.bi)].data.id) == nm and not bool(p.taken):
+			dem.mob.fill(p)
+			n += 1
+	return n
 
 func _wall(b: VoxelBreakables.Building, c: int, y: float) -> Vector3:
 	var n: Vector2 = b.cols[c].n
@@ -135,6 +146,60 @@ func _process(dt: float) -> bool:
 			step = 10
 			t = 0.0
 		10:
-			print("SHOTS done (%d%% down, %d blocks)" % [roundi(dem.share() * 100.0), dem.down()])
+			# phase B. The block as new again, and enemies stationed on the office: three on its roof, three in the
+			# windows of its upper storeys (VoxelDemolitionMob's posts are its roof tiles and its glazed blocks)
+			dem.start()
+			dem.crane.place(D.AT + Vector3(46.0, 0.0, 0.0), -PI / 2.0)
+			_man("Office", VoxelDemolitionMob.ROOF)
+			_man("Office", VoxelDemolitionMob.WINDOW)
+			_man("BrickShop", VoxelDemolitionMob.ROOF)
+			_stand(D.AT + Vector3(2.0, 0.05, 2.0), D.AT + Vector3(11.0, 11.0, -6.0))
+			step = 11
+			t = 0.0
+		11:
+			if t < 1.0:
+				return false
+			_save("enemies")
+			step = 12
+			t = 0.0
+		12:
+			# the office brought down under them: the sills of the windows they stand in blown out, the roof caved in
+			var off := _of("Office")
+			for c in [30, 34, 38]:
+				dem.breaks.blast(_wall(off, c, 7.0), 3.0)
+			for c in [30, 34, 38]:
+				dem.breaks.blast(_wall(off, c, 4.0), 3.0)
+			var mid := Vector2.ZERO
+			for v in off.ring:
+				mid += v
+			mid /= off.ring.size()
+			dem.breaks.blast(Vector3(mid.x, off.h - 0.2, mid.y), 5.0)
+			_stand(D.AT + Vector3(0.0, 0.05, 1.0), D.AT + Vector3(11.0, 9.0, -8.0))
+			step = 13
+			t = 0.0
+		13:
+			if t < 0.8:
+				return false
+			_save("collapse")
+			step = 14
+			t = 0.0
+		14:
+			# the petrol station's chain: the tanker in the road lit, and the pumps and the gas bottles with it
+			dem.props.reset()
+			for i in dem.props.list.size():
+				if String(dem.props.list[i].kind) == "tanker":
+					dem.props.light(i, 0.0)
+			_stand(D.AT + Vector3(-8.0, 0.05, -1.0), D.AT + Vector3(11.0, 3.0, 8.0))
+			step = 15
+			t = 0.0
+		15:
+			if t < 0.75:
+				return false
+			_save("chain")
+			step = 16
+			t = 0.0
+		16:
+			print("SHOTS done (%d%% down, %d blocks, %d enemies, %d props gone off)" % [roundi(dem.share() * 100.0),
+				dem.down(), dem.mob.mobs.size(), dem.props.booms])
 			quit(0)
 	return false

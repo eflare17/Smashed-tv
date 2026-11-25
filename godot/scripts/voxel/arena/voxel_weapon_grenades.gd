@@ -947,6 +947,8 @@ func explode(p: Vector3, how: String, st: Dictionary = {}) -> void:
 	var wb = arena.walls()
 	if wb:
 		wb.blast(p, BLAST_R)                            # (St Kilda's or Demolition's buildings: a hole)
+	if arena.demolition and arena.demolition.active:
+		arena.demolition.props_blast(p, BLAST_R)        # (Demolition's gas bottles and pumps: the chain starts here)
 	arena.hurt_players_near(p, BLAST_R, 50.0)          # (yourself and your mate too, if you're close)
 	var info := {"boom": how, "shot": String(st.get("kind", "")), "flew_s": snappedf(float(st.get("t", 0.0)), 0.01),
 		"bounces": int(st.get("bounces", 0)), "bodies": 0, "cut": 0, "torn": 0, "pieces": 0, "killed": 0, "shattered": 0,
