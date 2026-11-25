@@ -14,6 +14,8 @@ var step := 0
 var out := ""
 var fails := []
 var horse := -1
+var riders := 0                 # the scenery riders on the ride to start with
+var knocked := 0                # ... those knocked off by the brake from half speed
 
 func _initialize() -> void:
 	for x in OS.get_cmdline_user_args():
@@ -51,6 +53,21 @@ func _put(p: Vector3, look_at: Vector3) -> void:
 func _signal(act: String) -> void:
 	hack.send(hack.keys.find(act))
 
+# the one thrown all the way over at Luna Palace (the rest are tumbling off the platform)
+func _palace_tumble() -> VoxelCarouselTumble:
+	for tb in hack.tumbles:
+		if (tb as VoxelCarouselTumble).hang_at != Vector3.INF:
+			return tb
+	return null
+
+# how many riders are still drawn on the ride
+func _still_on() -> int:
+	var n := 0
+	for s in hack.spin.riders.seats:
+		if ((s as Array)[2] as Transform3D).basis.get_scale().x >= 0.01:
+			n += 1
+	return n
+
 func _horse_at(k: int) -> Vector3:
 	for h in hack.spin.horses:
 		if int(h[1]) == k:
@@ -69,6 +86,7 @@ func _process(dt: float) -> bool:
 			sk.go()
 			hack = sk.hack
 			_check(hack != null and hack.box != null, "the control box is by the Carousel")
+			riders = hack.spin.riders.seats.size()
 			var b := hack.box.global_position
 			_put(b + hack.box.global_transform.basis.z * 1.2 + Vector3(0, 0.05, 0), hack.carousel.global_position)
 			step = 1
@@ -108,6 +126,9 @@ func _process(dt: float) -> bool:
 			if t < 0.4:
 				return false
 			_check(hack.w == 0.0, "the brake stops it dead")
+			# (braked from half speed, not flat out: a few riders knocked off it, the rest still on)
+			knocked = hack.tumbles.size()
+			_check(knocked > 0 and knocked < riders, "braked from half speed: %d of %d knocked off, the rest still on" % [knocked, riders])
 			_signal("slower")
 			_check(hack.seen.count(true) == 4, "all four signals worked out: %s" % str(hack.keys))
 			# to a horse nobody's on, E held
@@ -149,12 +170,13 @@ func _process(dt: float) -> bool:
 			if t < 0.6:
 				return false
 			_check(hack.w == 0.0 and hack.thrown > 0.0, "stopped dead: the loose horse thrown over on its pole")
-			_check(hack.tumbles.size() == 1, "and a rider thrown off")
+			_check(hack.tumbles.size() == riders, "and every rider thrown off (%d of %d, %d earlier)" % [hack.tumbles.size() - knocked, riders - knocked, knocked])
+			_check(_still_on() == 0, "none left riding it")
 			_shot("4_thrown")
 			step = 9
 			t = 0.0
 		9:
-			var tb: VoxelCarouselTumble = hack.tumbles[0] if not hack.tumbles.is_empty() else null
+			var tb: VoxelCarouselTumble = _palace_tumble()
 			if tb != null and tb.stage == "flying" and not has_meta("swung"):
 				set_meta("swung", true)
 				var mm := InputEventMouseMotion.new()
@@ -188,7 +210,7 @@ func _process(dt: float) -> bool:
 			t = 0.0
 		11:
 			# after a while hanging there, the foot slips: head first into the wheelie bin under the window
-			var tb: VoxelCarouselTumble = hack.tumbles[0]
+			var tb: VoxelCarouselTumble = _palace_tumble()
 			if (tb.stage != "binned" or tb._t < 3.5) and t < 15.0:
 				return false
 			_check(hack.bin != null, "a wheelie bin under the window")

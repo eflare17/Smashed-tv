@@ -15,6 +15,10 @@ extends Node3D
 ##   off; from above half speed a few are knocked off.)
 ## - Stopped dead from flat out (THROW_FROM), a rider goes flying across the park at Luna Palace, the view going with
 ##   them, and is caught by a foot on a window sill, left hanging upside down (the owner, 31 Oct). VoxelCarouselTumble.
+## - And the rest of them with him: ordinary play throws its riders off the same way the invasion throws its enemies
+##   (_fling, the same thresholds and the same launch as VoxelParkInvasion.carousel_stopped). Flat out, the lot go;
+##   from above half speed (KNOCK_FROM) a few are knocked off. The control box says how near it is to that, so you're
+##   never braking at a speed where nothing happens and no reason given (_refresh).
 ## Put back as it was the next time you come (reset). Owned by the St Kilda session.
 
 const SPEEDS := [0.0, 0.45, 1.2, 2.2, 3.4]   # rad/s the ride turns at each speed (1: its own)
@@ -27,6 +31,13 @@ const NEAR_HORSE := 1.7         # m (level) from a horse's pole to get at its bo
 const ACTS := ["faster", "slower", "brake", "lights"]
 const THROW_FROM := 3.0         # rad/s (flat out): stopped dead faster than this and a rider goes flying (VoxelCarouselTumble)
 const THROW_MAX := 9.0          # m/s they fly off at, at most
+# the rest of the riders thrown off with him: the invasion's own numbers (VoxelParkInvasion.KNOCK_FROM, KNOCK_PART), so
+# ordinary play and the invasion stop the ride the same way
+const KNOCK_FROM := 1.7         # rad/s (half speed): stopped dead from above this a few riders are knocked off ...
+const KNOCK_PART := 0.35        # ... this much of them
+const FLING_MAX := 8            # riders made into tumbling bodies at once at most (the phone: six RigidBody3D each,
+                                # and the ride seats 7; any over that stay on it rather than vanish)
+const NOTE_T := 4.0             # s the box says what the brake just did
 const BOX_GREY := Color("#6f777d")
 
 var sk: VoxelStKilda
@@ -57,6 +68,11 @@ var _spill_entry = null
 var _ui: PanelContainer
 var _rows: Array[Label] = []
 var _state: Label
+var _speed_row: Label           # how near it is to throwing them off, and what the brake did last time
+var _note := ""                 # (that, said in so many words for NOTE_T s after a brake)
+var _note_t := 0.0
+var flung := 0                  # riders thrown off by the last brake (tests)
+var _fling_rng := RandomNumberGenerator.new()
 
 func setup(s: VoxelStKilda) -> void:
 	sk = s
@@ -103,6 +119,10 @@ func reset() -> void:
 		(g[0] as Array)[2] = g[1]
 	_gone_seats.clear()
 	_hold = 0.0
+	flung = 0
+	_note = ""
+	_note_t = 0.0
+	_fling_rng.seed = 1913
 	_set_lights(true)
 	keys = ACTS.duplicate()
 	keys.shuffle()
@@ -189,6 +209,8 @@ func _gadget() -> void:
 		_rows.append(l)
 	_state = _label("", 20, Color("#cfd6dc"))
 	v.add_child(_state)
+	_speed_row = _label("", 20, Color("#ef7d22"))
+	v.add_child(_speed_row)
 	v.add_child(_label("1-4 send   E put away", 18, Color("#7d8790")))
 	_ui.visible = false
 	sk.arena._hud_layer.add_child(_ui)
@@ -212,6 +234,27 @@ func _refresh() -> void:
 		_rows[k].text = "%d   SIGNAL %s   %s" % [k + 1, "ABCD"[k], ("-> " + String(keys[k]).to_upper()) if seen[k] else "???"]
 	var turning := "STOPPED" if w < 0.02 else "SPEED %d" % level
 	_state.text = "RIDE: %s   LIGHTS: %s" % [turning, "ON" if lights_on else "OFF"]
+	if _speed_row:
+		_speed_row.text = _note if _note_t > 0.0 else speed_word()
+
+## What the box says about how fast it's turning: whether braking it now would throw anyone off, in so many words, with
+## a bar that fills as it winds up to flat out. (The owner, 24 Nov: sped up, braked, and nobody flew, with nothing on
+## screen to say why: the brake does nothing below KNOCK_FROM and it takes a few seconds at the top notch to get there.)
+func speed_word() -> String:
+	if w < 0.02:
+		return "STOPPED"
+	var bar := ""
+	var fill := int(round(clampf(w / THROW_FROM, 0.0, 1.0) * 10.0))
+	for k in 10:
+		bar += "|" if k < fill else "."
+	var what := "TOO SLOW: THE BRAKE THROWS NOBODY OFF"
+	if w > THROW_FROM:
+		what = "FLAT OUT: THE BRAKE THROWS EVERY RIDER OFF"
+	elif w >= KNOCK_FROM:
+		what = "THE BRAKE KNOCKS A FEW OFF - KEEP WINDING UP"
+	elif level >= SPEEDS.size() - 1:
+		what = "WINDING UP TO FLAT OUT - WAIT FOR IT"
+	return "[%s] %s" % [bar, what]
 
 ## Send signal k (0..3) to the control box: whatever it's wired to happens.
 func send(k: int) -> void:
@@ -229,12 +272,19 @@ func send(k: int) -> void:
 			if w > 0.05:
 				braking = DEAD_STOP
 				_brake_from = w
+				var all := w > THROW_FROM
 				# (the invasion on: every enemy riding it flung off, VoxelParkInvasion; then the view stays yours)
-				var flung := 0
+				var enemies := 0
 				if sk.invasion and sk.invasion.running:
-					flung = sk.invasion.carousel_stopped(spin.global_position, w, w > THROW_FROM)
-				if w > THROW_FROM:
-					_throw(flung == 0)
+					enemies = sk.invasion.carousel_stopped(spin.global_position, w, all)
+				flung = 0
+				if all:
+					flung = _throw(enemies == 0)          # (the one who goes all the way over at Luna Palace)
+				# the scenery riders: in ordinary play the rest of them go too, the same as the invasion's enemies
+				# (the invasion's own are its business: its riders are flung above, the few scenery ones left stay)
+				if sk.invasion == null or not sk.invasion.running:
+					flung += _fling(all)
+				_said(all, enemies)
 				sk.arena.sound.play("slam", carousel.global_position, 2.0, 0.7)
 				sk.arena.sound.play("mine_groan", carousel.global_position, 0.0, 1.2)
 			level = 0
@@ -307,6 +357,8 @@ func _process(dt: float) -> void:
 			(h[0] as MultiMeshInstance3D).multimesh.set_instance_transform(k, xf)
 		if spin.riders:
 			spin.riders.follow()
+	if _note_t > 0.0:
+		_note_t -= dt
 	if box:
 		(box.get_node("Lamp0") as Node3D).visible = w > 0.02
 		(box.get_node("Lamp1") as Node3D).visible = w <= 0.02
@@ -463,9 +515,10 @@ func _palace_wall() -> bool:
 
 ## The rider thrown off: at Luna Palace if it's there to hit, else into whatever's nearest the way they're going.
 ## (view false: the view doesn't go with them: the invasion's enemies are flying too and you need your own.)
-func _throw(view := true) -> void:
+## How many went (0 or 1).
+func _throw(view := true) -> int:
 	if spin.riders == null:
-		return
+		return 0
 	var mid := spin.global_position
 	var far := _palace_wall()
 	var space := get_world_3d().direct_space_state
@@ -504,7 +557,7 @@ func _throw(view := true) -> void:
 			best_xf = xf
 			best_v = v
 	if best < 0:
-		return
+		return 0
 	var seat: Array = seats[best]
 	_gone_seats.append([seat, seat[2]])
 	var custom := spin.riders.multimesh.get_instance_custom_data(best)
@@ -538,6 +591,92 @@ func _throw(view := true) -> void:
 	sk.arena.sound.play("swoosh_heavy", start, 0.0, 0.8)
 	if far and view:
 		_follow(tb, fly.normalized())
+	return 1
+
+# ---------------------------------------------------------------- the rest of them thrown off with him
+#
+# (The owner, 24 Nov: "when I speed up the merry go round and stop it the person doesn't go flying now" -- he wasn't in
+# the invasion, where every rider goes. So ordinary play does it too: the same thresholds and the same launch as
+# VoxelParkInvasion.carousel_stopped, so stopping the ride feels the same whichever you're in.) The difference is what's
+# sitting on the horses: not enemies but scenery riders, drawn all together in one batch (SkLunaRides.Riders). One of
+# those is turned into something real the moment it leaves: its place in the batch shrunk away to nothing (the same
+# as _throw's one does) and a VoxelCarouselTumble put where it sat -- the crowd's ragdoll, tumbling off the platform,
+# then lying there, up, dizzy, and walking off. Nothing to hurt (VoxelParkInvasion.FLING_HURT is an enemy's health):
+# they get up and go.
+
+## Every rider still on the ride thrown off (`all`: stopped dead from flat out), or a few knocked off it (stopped from
+## above KNOCK_FROM). How many went.
+func _fling(all: bool) -> int:
+	if spin == null or spin.riders == null or (not all and w < KNOCK_FROM):
+		return 0
+	var seats: Array = spin.riders.seats
+	var on := []                            # the seats still ridden (not shrunk away by a throw already)
+	for i in seats.size():
+		if ((seats[i] as Array)[2] as Transform3D).basis.get_scale().x >= 0.01:
+			on.append(i)
+	if on.is_empty():
+		return 0
+	if not all:
+		# a few of them, spread round the ride (as the invasion picks its own)
+		var n := clampi(roundi(on.size() * KNOCK_PART), 1, maxi(1, on.size() - 1))
+		var first := _fling_rng.randi() % on.size()
+		var pick := []
+		for k in n:
+			pick.append(on[(first + k * on.size() / n) % on.size()])
+		on = pick
+	elif on.size() > FLING_MAX:
+		on.resize(FLING_MAX)                # (the phone: that many loose bodies at once is plenty; the rest hold on)
+	var mid := spin.global_position
+	var top: float = SPEEDS[SPEEDS.size() - 1]
+	var k := clampf(w / top, 0.0, 1.3)
+	var went := 0
+	for i in on:
+		var seat: Array = seats[i]
+		var on_what := Transform3D()
+		for h in spin.horses:
+			if int(h[1]) == int(seat[1]):
+				on_what = h[2]
+		var xf := spin.global_transform * on_what * (seat[2] as Transform3D)
+		var r := xf.origin - mid
+		r.y = 0.0
+		var out := r.normalized() if r.length() > 0.1 else Vector3.FORWARD
+		var along := Vector3.UP.cross(r) * w          # (the way their horse was going)
+		var v: Vector3
+		var spun := 3.0
+		if all:
+			v = (along * 0.75).limit_length(15.0) + out * _fling_rng.randf_range(4.0, 7.0) * k
+			v.y = _fling_rng.randf_range(4.5, 7.0) * k
+			spun = _fling_rng.randf_range(5.0, 9.0)
+		else:
+			v = along * 0.3 + out * _fling_rng.randf_range(1.2, 2.2)
+			v.y = _fling_rng.randf_range(1.2, 2.0)
+		# off the batch and into a body of their own, in the one go (never drawn in both)
+		var custom := spin.riders.multimesh.get_instance_custom_data(i)
+		_gone_seats.append([seat, seat[2]])
+		seat[2] = Transform3D(Basis().scaled(Vector3.ONE * 0.001), (seat[2] as Transform3D).origin)
+		var tb := VoxelCarouselTumble.new()
+		tb.name = "Tumble"
+		add_child(tb)
+		var flat := Vector3(v.x, 0, v.z)
+		var face := Basis(Vector3.UP, atan2(-flat.x, -flat.z))
+		tb.start(Transform3D(face.scaled(Vector3.ONE * xf.basis.get_scale().x), xf.origin), custom, flat, mid, v.y, spun)
+		tumbles.append(tb)
+		went += 1
+	if went > 0:
+		spin.riders.follow()                # (their places in the batch gone this frame, not the next)
+		sk.arena.sound.play("swoosh_heavy", mid, 2.0 if all else -2.0, 1.1)
+	return went
+
+## What the box says about the brake just pulled: whether anyone came off, and if not, why not.
+func _said(all: bool, enemies: int) -> void:
+	var total := flung + enemies
+	if total > 0:
+		_note = "THE BRAKE: %d THROWN OFF" % total if all else "THE BRAKE: %d KNOCKED OFF" % total
+	elif _brake_from < KNOCK_FROM:
+		_note = "THE BRAKE: TOO SLOW, NOBODY CAME OFF - WIND IT RIGHT UP"
+	else:
+		_note = "THE BRAKE: NOBODY LEFT TO THROW OFF"
+	_note_t = NOTE_T
 
 # ---------------------------------------------------------------- the view going with them
 
