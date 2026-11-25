@@ -199,6 +199,12 @@ func _make_other() -> void:
 	arena.add_child(_o_cam)
 	other_avatar = VoxelBody.new()
 	arena.add_child(other_avatar)
+	# your mate's body, view and Jared are all placed every frame in _other_frame (smoothed towards the last snapshot
+	# there), so they belong out of Godot's physics interpolation, as this game's own camera and avatar are --
+	# otherwise it draws them at a lerp between last frame's place and this one and they slide against a steady world
+	# (VoxelArena.steady_view has the measurements)
+	for n: Node3D in [_o_body, _o_cam, other_avatar]:
+		n.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	other_avatar.setup("jared_new", 0.0125 * VoxelArena.jared_chunk, VoxelArena.jared_chunk, arena._mat)
 	other = VoxelShooter.new()
 	other.arena = arena

@@ -22,6 +22,7 @@ const KEYS := ["grunt", "grunt", "swarmer", "swarmer", "brute", "batter", "batte
 const HEIGHT := {"grunt": 1.85, "swarmer": 1.7, "brute": 2.2, "batter": 1.9, "charger": 1.75, "thrower": 1.85, "shielder": 2.2, "boss": 4.4}
 const MAX_JOBS := 12            # meshing jobs running at once
 const PREWARM_YAWS := 12        # warming the picture up: views round the compass, ...
+const EVEN_FRAMES := 60         # ?stats: turning frames the evenness line waits for before it reports (_even_line)
 const PREWARM_PITCHES := [-0.55, -0.05, 0.5]      # ... at each of these pitches (down at the floor, level, up)
 const ARENA := 22.0             # half the arena's width, metres
 const PILLARS := [Vector3(-8, 0, -8), Vector3(8, 0, -8), Vector3(-8, 0, 8), Vector3(8, 0, 8)]
@@ -622,6 +623,11 @@ func remake_avatar() -> void:
 		_hands.clear()          # (they hung on his old skeleton: the weapon goes back in his hand next frame)
 		_hand_id = "-"
 	avatar = VoxelBody.new()
+	# placed and posed every frame in _process (_camera top-down, _self_in_mirror in the bedroom), so out of the
+	# physics interpolation like the camera and everything else this game moves every frame: steady_view says why.
+	# It matters doubly now the camera is out -- while both were in, they smeared together and stayed still relative
+	# to each other, and your own Jared would have started sliding against a steady world if only the camera came out.
+	avatar.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(avatar)
 	avatar.setup("jared_new", 0.0125 * jared_chunk, jared_chunk, _mat)       # (Jared sculpted from scratch: JaredBuild)
 	avatar.visible = false
@@ -2210,11 +2216,17 @@ func _process(dt: float) -> void:
 			_hud_text()
 			print("ARENA ", hud.text.replace("\n", " | "))
 			print("ARENA worst frame %.1f ms   p99 %.1f ms%s" % [_worst_dt * 1000.0, _p99() * 1000.0, _touch_line()])
+			# the evenness line waits until it has enough turning frames to mean anything, rather than reporting
+			# whatever one second happened to hold: a second is ~60 frames on a phone but ~15 under the software
+			# renderer the test harness uses, and a spread over 15 samples is noise
 			var el := _even_line()
 			if el != "":
 				print("ARENA evenness:", el)
-			_even_asked.clear()
-			_even_shown.clear()
+				_even_asked.clear()
+				_even_shown.clear()
+			elif _even_shown.size() > 900:
+				_even_asked = _even_asked.slice(450)        # (the view hardly turned for a while: let the old go)
+				_even_shown = _even_shown.slice(450)
 			_worst_dt = 0.0
 			_dts.clear()
 			if touch:
@@ -2768,7 +2780,7 @@ func _even_line() -> String:
 	for i in _even_shown.size():
 		if _even_asked[i] >= 2.0:            # the view really turning, not a resting thumb
 			keep.append(i)
-	if keep.size() < 20:
+	if keep.size() < EVEN_FRAMES:
 		return ""
 	var a := _even_stat(_even_asked, keep)
 	var b := _even_stat(_even_shown, keep)
