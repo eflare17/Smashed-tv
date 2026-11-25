@@ -606,7 +606,7 @@ func _player() -> void:
 	cam.current = true
 	set_steady_view(steady_view)    # (out of the physics interpolation: steady_view says why)
 	if VoxelTouch.phone():
-		cam.far = VoxelSettings.PHONE_FAR      # (a phone: no further than it needs to draw)
+		cam.far = VoxelSettings.far_m()        # (a phone: no further than it needs to draw)
 	_flash = OmniLight3D.new()
 	_flash.light_color = Color(1.0, 0.8, 0.4)
 	_flash.omni_range = 6.0
@@ -637,7 +637,7 @@ func _hud() -> void:
 	add_child(cl)
 	_hud_layer = cl
 	hud = Label.new()
-	hud.position = Vector2(12, 10)
+	hud.position = Vector2(12, 10) + VoxelTouch.safe_at(get_viewport())   # (a punch-hole camera: clear of it)
 	hud.add_theme_font_size_override("font_size", 16)
 	hud.add_theme_color_override("font_outline_color", Color.BLACK)
 	hud.add_theme_constant_override("outline_size", 5)
