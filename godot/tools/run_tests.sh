@@ -68,19 +68,29 @@ fi
 [ -n "$logs" ] || logs="$(mktemp -d -t voxel-tests-XXXXXX)"
 mkdir -p "$logs"
 shots_dir="$logs/shots"
+## A saved game of its own for every test that touches one, fresh every run. This is not cosmetic. A test run with
+## `-s` and no --save= and none of the flags VoxelArena counts as "testing" (--nosave among them) gets the REAL
+## user://voxel_save.json: it loads whatever the last run left there and writes its own back. So inventory_test,
+## farm_test and upgrades_test -- which all check that something is saved and comes back -- fail against another
+## test's leftovers (measured: inventory_test 19 passed / 10 failed that way, 29 / 0 with a save file of its own),
+## and which tests fail changes from run to run with the order. --nosave is not the answer either: it turns saving
+## off altogether, so the save-and-load checks inside those tests fail instead (inventory_test 28 / 1).
+saves_dir="$logs/saves"
+mkdir -p "$saves_dir"
+rm -f "$saves_dir"/*
 
 # ---------------------------------------------------------------- the table: name, kind, the user args after --
 # The args are taken from each test's own header comment. "-" means none at all -- which for a test that saves
 # (save_test, help_test, digsite_save_test) is the point: --nosave would stop the very thing it is checking.
 TESTS="
 announcer_test|script|--nosave
-barbecue_test|script|-
-bedroom_test|script|-
-chickens_test|script|-
+barbecue_test|script|--save=@save@
+bedroom_test|script|--save=@save@
+chickens_test|script|--save=@save@
 coop_test|pair|-
-dangle_test|script|-
-demolition_test|script|-
-dig_test|script|-
+dangle_test|script|--save=@save@
+demolition_test|script|--save=@save@
+dig_test|script|--save=@save@
 digsite_cave_test|script|--nosave
 digsite_dingo_test|script|--nosave
 digsite_dirt_test|script|--nosave
@@ -94,51 +104,51 @@ digsite_test|script|--nosave
 digsite_tools_test|script|--nosave
 digsite_tunnel_test|script|--nosave
 digsite_walkin_test|script|--nosave
-farm_test|script|-
-fixes_test|script|-
-games_test|script|-
+farm_test|script|--save=@save@
+fixes_test|script|--save=@save@
+games_test|script|--save=@save@
 gothica_test|script|--nosave
-gun_range_test|shots|-
-health_test|script|-
+gun_range_test|shots|--save=@save@
+health_test|script|--save=@save@
 help_test|script|--save=user://help_x.json
-inventory_test|script|-
+inventory_test|script|--save=@save@
 judder_test|script|--nosave
-kinds_test|script|-
+kinds_test|script|--save=@save@
 lagcomp_test|pair|-
 logic_test|scene|-
-luna_invasion_test|script|-
+luna_invasion_test|script|--save=@save@
 mine_coop_test|pair|-
 mine_test|script|--nosave
 net_link_test|pair|-
-net_menu_test|script|-
+net_menu_test|script|--save=@save@
 perf_test|scene|-
-save_test|script|-
+save_test|script|--save=@save@
 settings_speed_test|script|--nosave
 settings_stale_test|script|--nosave --settings --touch
-settings_test|script|-
-shredder_test|script|-
-stkilda_carousel_fling_test|shots|-
-stkilda_carousel_hack_test|shots|-
-stkilda_dig_test|shots|-
-stkilda_kill12_test|shots|-
-stkilda_luna_smash_test|shots|-
-stkilda_rain_test|shots|-
-stkilda_ride_test|shots|-
-stkilda_rubble_test|shots|-
-stkilda_smash_test|shots|-
-stkilda_test|shots|-
-stkilda_tumble_test|shots|-
-stkilda_walk_test|shots|-
-stkilda_weapons_wall_test|shots|-
-sweep_arena_test|script|-
-sweep_games_test|script|-
-sweep_misc_test|script|-
-sweep_net_test|script|-
-sweep_test|script|-
-sweep_weapons_test|script|-
-sweep_yard_test|script|-
+settings_test|script|--save=@save@
+shredder_test|script|--save=@save@
+stkilda_carousel_fling_test|shots|--save=@save@
+stkilda_carousel_hack_test|shots|--save=@save@
+stkilda_dig_test|shots|--save=@save@
+stkilda_kill12_test|shots|--save=@save@
+stkilda_luna_smash_test|shots|--save=@save@
+stkilda_rain_test|shots|--save=@save@
+stkilda_ride_test|shots|--save=@save@
+stkilda_rubble_test|shots|--save=@save@
+stkilda_smash_test|shots|--save=@save@
+stkilda_test|shots|--save=@save@
+stkilda_tumble_test|shots|--save=@save@
+stkilda_walk_test|shots|--save=@save@
+stkilda_weapons_wall_test|shots|--save=@save@
+sweep_arena_test|script|--save=@save@
+sweep_games_test|script|--save=@save@
+sweep_misc_test|script|--save=@save@
+sweep_net_test|script|--save=@save@
+sweep_test|script|--save=@save@
+sweep_weapons_test|script|--save=@save@
+sweep_yard_test|script|--save=@save@
 touch_test|script|--nosave
-upgrades_test|script|-
+upgrades_test|script|--save=@save@
 waves_test|script|--waves
 "
 
@@ -172,13 +182,14 @@ cmd_for() {   # name kind args
 	case "$kind" in
 		script)
 			printf '%s\n--headless\n--path\n%s\n--fixed-fps\n60\n-s\nres://test/voxel/%s.gd\n' "$godot" "$proj" "$name"
-			[ "$args" = "-" ] || { printf -- '--\n'; printf '%s\n' $args; } ;;
+			[ "$args" = "-" ] || { printf -- '--\n'; printf '%s\n' ${args//@save@/$saves_dir/$name.json}; } ;;
 		scene)
 			printf '%s\n--headless\n--path\n%s\n--fixed-fps\n60\nres://test/voxel/%s.tscn\n' "$godot" "$proj" "$name" ;;
 		shots)
 			# a real display, Forward+, and a folder for the pictures: never --headless
 			printf 'xvfb-run\n-a\n%s\n--path\n%s\n--fixed-fps\n60\n-s\nres://test/voxel/%s.gd\n--\n--out=%s/%s\n' \
-				"$godot" "$proj" "$name" "$shots_dir" "$name" ;;
+				"$godot" "$proj" "$name" "$shots_dir" "$name"
+			[ "$args" = "-" ] || printf '%s\n' ${args//@save@/$saves_dir/$name.json} ;;
 	esac
 }
 
@@ -223,7 +234,7 @@ run_one() {   # name kind args
 	t0=$(date +%s)
 	if [ "$kind" = "phases" ]; then
 		# two runs, in order, sharing one --save= path; the second only means anything if the first got that far
-		local keep="user://run_tests_$name"
+		local keep="$saves_dir/$name"       # (the two phases share it, and it starts the run fresh)
 		: > "$log"
 		local ph rc2=0
 		for ph in 1 2; do
@@ -244,6 +255,8 @@ run_one() {   # name kind args
 	t1=$(date +%s)
 	secs=$((t1 - t0))
 	sum="$(summary_of "$log")"
+	# the two-phase one prints a summary a phase, and the second phase is the half that matters: show both
+	[ "$kind" = "phases" ] && sum="$(grep -hoE '[0-9]+ passed, [0-9]+ failed' "$log" | paste -sd';' - | sed 's/;/ then /g')"
 	[ -n "$sum" ] || sum="no summary line"
 	if [ "$rc" -eq 124 ]; then
 		printf 'FAIL  %-30s %5ds  timed out after %ss\n' "$name" "$secs" "$lim"
@@ -264,12 +277,25 @@ if [ "$list_only" -eq 1 ]; then
 		if [ "$kind" = "pair" ]; then
 			echo "$name (pair, not run)"
 		elif [ "$kind" = "phases" ]; then
-			echo "$name: two runs sharing --save=user://run_tests_$name, --phase=1 then --phase=2"
+			echo "$name: two runs sharing --save=$saves_dir/$name, --phase=1 then --phase=2"
 		else
 			echo "$name: $(cmd_for "$name" "$kind" "$args" | tr '\n' ' ')"
 		fi
 	done
 	exit 0
+fi
+
+# A test file nobody listed here is a test nobody runs -- which is how three Dig Site tests sat on this branch not
+# even compiling. So the table is checked against what is on disk, and a stranger is a failure, not a shrug.
+strays=""
+for f in "$proj"/test/voxel/*_test.gd; do
+	n="$(basename "$f" .gd)"
+	echo "$TESTS" | grep -q "^$n|" || strays="$strays $n"
+done
+if [ -n "$strays" ]; then
+	echo "run_tests.sh: these tests are not in this script's table, so nothing runs them:$strays" >&2
+	echo "              add a line for each (name|kind|the user args its own header documents) and run again." >&2
+	exit 3
 fi
 
 echo "Godot:   $godot"
