@@ -1277,6 +1277,49 @@ On branch `claude/luna-invasion-2` (not merged or published by this job).
 
 Luna invasion: done
 
+## The Carousel's brake in ordinary play (25 Nov, the owner: "when I speed up the merry go round and stop it the person doesn't go flying now")
+
+He wasn't in the invasion. Outside it the brake threw exactly **one** rider -- `VoxelCarouselHack._throw`, the one who
+goes all the way over at Luna Palace -- and only above `THROW_FROM` (3 rad/s), which the top notch takes a couple of
+seconds of winding to reach (`SPEEDS` tops out at 3.4, `SPEED_UP` 0.5 rad/s a second). Wind up, brake straight away,
+and nothing happened at all, with nothing on screen to say why. On branch `claude/voxel-carousel-fling`.
+
+- **Ordinary play now stops the ride the way the invasion does** (`VoxelCarouselHack._fling`): the invasion's own
+  thresholds and launch maths, so the two feel the same. Stopped dead from flat out (above `THROW_FROM`) **every**
+  rider on it goes, launched the way its horse was going (0.75 of that, 15 m/s at most) plus 4 to 7 m/s outward and
+  4.5 to 7 m/s up, scaled by how fast it was turning; from above half speed (`KNOCK_FROM` 1.7 rad/s, speed 3) a third
+  of them (`KNOCK_PART`, one at least, never all) are knocked off gently and the rest ride on; below that, nobody.
+  The one thrown at Luna Palace is still one of them, and the view still goes with him.
+- **Turning a drawn rider into a real one**: the riders are scenery, all drawn together in one batch
+  (`SkLunaRides.Riders`, `spin.riders.seats`). Each one that leaves has its place in the batch shrunk away to nothing
+  (as `_throw`'s one always did) and a `VoxelCarouselTumble` put where it sat in the same go, with `follow()` called
+  straight after so it's never drawn in two places for a frame. The tumble is the crowd's ragdoll (`SkRagdoll`, six
+  `RigidBody3D`, nothing bumps into them but the world): off the platform, down, lying there, up, dizzy with stars,
+  and walking off. Nothing to hurt -- `VoxelParkInvasion.FLING_HURT` is an enemy's health -- so they all get up again.
+- **The frame rate**: `FLING_MAX` 8 loose bodies at once. The Carousel has 12 horses and seats **7** riders
+  (`VoxelCarousel.RING`, half the horses taken), so in practice the lot go and the cap never bites; it's there so a
+  busier ride can't put 170 rigid bodies in the air on a phone. Any over the cap stay riding rather than vanish.
+- **The trap fixed, not just the symptom**: the control box's gadget has a line under the ride's state saying, in its
+  own plain words and with a bar that fills as it winds up, whether braking it *now* would do anything --
+  "[||||||||] FLAT OUT: THE BRAKE THROWS THEM ALL OFF", "THE BRAKE KNOCKS A FEW OFF", "WINDING UP: TOO SLOW YET TO
+  THROW ANYONE OFF", "TOO SLOW: THE BRAKE THROWS NOBODY OFF" (`speed_word`). And for `NOTE_T` (4 s) after you pull
+  the brake it says what that brake just did instead: "THE BRAKE: 7 THROWN OFF", "THE BRAKE: 2 KNOCKED OFF", or
+  "THE BRAKE: TOO SLOW, NOBODY CAME OFF" (`_said`). No numbers were changed, so the ride still winds up as it did.
+- **The invasion is untouched**: with it running the brake does exactly what it did (`carousel_stopped` for its
+  enemies, `_throw` for the one scenery rider left on it); `_fling` only runs with the invasion off.
+- Tests: `test/voxel/stkilda_carousel_fling_test.gd` -- the gap that let this through, the **non-invasion** path:
+  wound right up and braked (all 7 off, none left riding or drawn, in the air, down and lying clear of the ride),
+  braked from half speed (a few off, the rest still on and still drawn), braked from slow (nobody off), and the box's
+  wording at each. "PASS", 24 ok, about 90 s headless. Guards after: `luna_invasion_test` 65/0 (its own fling
+  unchanged), `stkilda_carousel_hack_test` 31 ok, `stkilda_tumble_test`, `stkilda_ride_test`, `touch_test` 64/0.
+  (`stkilda_luna_smash_test` fails 2 of 8 before any of this work, as it did on the branch already.)
+- Pictures `test/voxel/stkilda_carousel_fling_shots.gd` (`-- --out=dir`, Forward+ under a display):
+  `voxel_shots/carousel_fling_in_the_air.png` and `_coming_down.png` (riders in the air just after the brake, the
+  horses bare behind them), `_box_flat_out.png` and `_box_too_slow.png` (the gadget saying what the brake will do and
+  what it just did).
+
+Carousel fling: done
+
 ## Demolition (24 Nov, the owner: "making a little level with distructable building?")
 
 A little town block to flatten against the clock, and a drivable wrecking ball crane to do it with (the owner asked

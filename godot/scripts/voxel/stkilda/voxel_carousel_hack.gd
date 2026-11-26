@@ -210,6 +210,7 @@ func _gadget() -> void:
 	_state = _label("", 20, Color("#cfd6dc"))
 	v.add_child(_state)
 	_speed_row = _label("", 20, Color("#ef7d22"))
+	_speed_row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART      # (it says it in words: let it take two lines)
 	v.add_child(_speed_row)
 	v.add_child(_label("1-4 send   E put away", 18, Color("#7d8790")))
 	_ui.visible = false
@@ -244,16 +245,16 @@ func speed_word() -> String:
 	if w < 0.02:
 		return "STOPPED"
 	var bar := ""
-	var fill := int(round(clampf(w / THROW_FROM, 0.0, 1.0) * 10.0))
-	for k in 10:
+	var fill := int(round(clampf(w / THROW_FROM, 0.0, 1.0) * 8.0))
+	for k in 8:
 		bar += "|" if k < fill else "."
 	var what := "TOO SLOW: THE BRAKE THROWS NOBODY OFF"
 	if w > THROW_FROM:
-		what = "FLAT OUT: THE BRAKE THROWS EVERY RIDER OFF"
+		what = "FLAT OUT: THE BRAKE THROWS THEM ALL OFF"
 	elif w >= KNOCK_FROM:
-		what = "THE BRAKE KNOCKS A FEW OFF - KEEP WINDING UP"
+		what = "THE BRAKE KNOCKS A FEW OFF"
 	elif level >= SPEEDS.size() - 1:
-		what = "WINDING UP TO FLAT OUT - WAIT FOR IT"
+		what = "WINDING UP: TOO SLOW YET TO THROW ANYONE OFF"
 	return "[%s] %s" % [bar, what]
 
 ## Send signal k (0..3) to the control box: whatever it's wired to happens.
@@ -673,7 +674,7 @@ func _said(all: bool, enemies: int) -> void:
 	if total > 0:
 		_note = "THE BRAKE: %d THROWN OFF" % total if all else "THE BRAKE: %d KNOCKED OFF" % total
 	elif _brake_from < KNOCK_FROM:
-		_note = "THE BRAKE: TOO SLOW, NOBODY CAME OFF - WIND IT RIGHT UP"
+		_note = "THE BRAKE: TOO SLOW, NOBODY CAME OFF"
 	else:
 		_note = "THE BRAKE: NOBODY LEFT TO THROW OFF"
 	_note_t = NOTE_T
