@@ -27,6 +27,13 @@ const GROUP := Vector2i(3, 6)
 const MORE_EVERY := 14.0         # s between the extra ones while an area's ride still has riders
 const MORE_MAX := 3              # extra ones an area at most
 const MORE_R := 45.0             # (only while you're this near it)
+## The Carousel is the one ride you can work yourself (VoxelCarouselHack: wind it up, brake it, throw its riders off),
+## and it used to be unusable in an invasion: its group of 3-6 came at AREA_R, its riders all hopped off at GET_OFF
+## (8 m, and the box stands a few metres from a ring of 4.9), and its reinforcement rule sent one more every
+## MORE_EVERY *because* riders were still seated -- the very state the stunt needs. So you get this long from first
+## coming near it: its group waits, its riders sit tight, and one of them comes after you at a time. It ends the
+## moment you brake it from flat out, or when the time runs out, so the park can always be cleared.
+const GRACE := 50.0              # s at the Carousel before its group comes in
 const MAX_ALIVE := 24            # about this many bodies alive at once (the ones on the ground wait their turn)
 const SPAWN_GAP := 0.3
 const FAR := 14.0                # m from you at least, where the ground ones come in
@@ -54,6 +61,8 @@ const DAZED := 1.6               # s longer on the ground, one that lived
 const HIPS := 0.88               # a scenery rider's hips above their feet (SkLunaRides._seat)
 
 enum { SEATED, HOPPING, OFF, DEAD }
+
+var _car_hold := false           # (the Carousel's grace is running: its riders sit tight, _holding_on)
 
 var sk: VoxelStKilda
 var running := false
@@ -257,7 +266,7 @@ func _new_ride(n: Node) -> Dictionary:
 	return ride
 
 func _add_rider(ride: Dictionary, at: Dictionary, legs: float) -> void:
-	var rec := {"ride": int(ride.i), "kind": RIDER_KINDS[_rng.randi() % RIDER_KINDS.size()], "state": SEATED, "body": null,
+	var rec := {"ride": int(ride.i), "kind": RIDER_KINDS[_rng.randi() % RIDER_KINDS.size()], "state": SEATED, "body": null, "sent": false,
 		"at": at, "legs": legs, "prev": Vector3.INF, "put": Vector3.INF, "v": Vector3.ZERO, "wait": INF, "hop": 0.0, "made": false, "fall": false, "hp0": 0.0, "hold": 0.0, "cb": Callable(), "from": Vector3.ZERO, "to": Vector3.ZERO}
 	(ride.riders as Array).append(rec)
 	_recs.append(rec)
@@ -498,7 +507,12 @@ func _throw_step(b: VoxelBody, eye: Vector3, d: float, dt: float) -> void:
 # last rider's dead). From above half speed (KNOCK_FROM) a few just fall off, hurt a little.
 
 func _holding_on(rec: Dictionary) -> bool:
-	return sk.hack != null and sk.hack.w > HOLD_ON and String(rides[int(rec.ride)].name) == "Carousel"
+	if sk.hack == null or String(rides[int(rec.ride)].name) != "Carousel":
+		return false
+	if sk.hack.w > HOLD_ON:
+		return true                           # (turning fast: nobody can get off it)
+	# your room at the ride (GRACE): they sit tight, bar the one sent after you
+	return _car_hold and not bool(rec.get("sent", false))
 
 ## The Carousel stopped dead, turning at w rad/s about mid. all: flat out, every rider flung; else (above KNOCK_FROM) a
 ## few knocked off. How many went.
@@ -630,22 +644,49 @@ func _find_areas() -> void:
 	_add_area("Forecourt", sk.arrive_spot()[0], -1)
 
 func _add_area(nm: String, at: Vector3, ride: int) -> void:
-	areas.append({"name": nm, "at": Vector3(at.x, 0, at.z), "ride": ride, "n": _rng.randi_range(GROUP.x, GROUP.y), "done": false,
+	areas.append({"name": nm, "at": Vector3(at.x, 0, at.z), "ride": ride, "n": _rng.randi_range(GROUP.x, GROUP.y), "done": false, "grace": GRACE,
 		"more": 0, "more_t": MORE_EVERY, "came": 0})
+
+## One of a ride's riders off after you, and only one at a time: while you are working the Carousel's gadget the rest
+## sit tight (_holding_on), so this is the whole of the fight until you brake it or walk away.
+func _one_off(ride: Dictionary) -> void:
+	for rec in ride.riders:
+		if int(rec.state) == HOPPING:
+			return
+		if int(rec.state) == OFF and rec.body != null and is_instance_valid(rec.body) and (rec.body as VoxelBody).alive:
+			return                            # (the one sent is still coming)
+	for rec in ride.riders:
+		if int(rec.state) == SEATED and rec.made and rec.kind != "thrower":
+			rec.sent = true
+			rec.wait = _rng.randf_range(0.2, 0.8)
+			return
 
 func _areas_step(dt: float) -> void:
 	var me := sk.arena.player.global_position
 	for i in areas.size():
 		var a: Dictionary = areas[i]
 		var d := Vector2(me.x - a.at.x, me.z - a.at.z).length()
-		if not a.done:
+		# the Carousel while you're at its control box: its group waits, and one rider comes off after you instead
+		# of the lot of them. Pull the brake from flat out, or put the gadget away, and the group comes in as normal
+		# -- it is not cancelled, because the park can only be cleared if it arrives.
+		var busy := false
+		if int(a.ride) >= 0 and String(rides[int(a.ride)].name) == "Carousel" and sk.hack != null and not sk.hack.stunt_done:
 			if d < AREA_R:
+				a.grace = maxf(0.0, float(a.grace) - dt)      # (the clock only runs while you're there)
+			busy = float(a.grace) > 0.0 and d < MORE_R
+			_car_hold = busy
+			if busy:
+				_one_off(rides[int(a.ride)])
+		elif int(a.ride) >= 0 and String(rides[int(a.ride)].name) == "Carousel":
+			_car_hold = false
+		if not a.done:
+			if d < AREA_R and not busy:
 				a.done = true
 				for k in int(a.n):
 					_due.append(i)
 			continue
 		# a few more, one at a time, while its ride still has riders on it and you're about
-		if int(a.ride) < 0 or int(a.more) >= MORE_MAX or d > MORE_R:
+		if int(a.ride) < 0 or int(a.more) >= MORE_MAX or d > MORE_R or busy:
 			continue
 		if not (rides[int(a.ride)].riders as Array).any(func(r): return r.state == SEATED):
 			continue

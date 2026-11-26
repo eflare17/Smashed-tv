@@ -49,6 +49,12 @@ var sk: VoxelStKilda
 var carousel: Node3D
 var spin: SkLunaRides.Spinner
 var box: Node3D
+## Wound the ride right up and braked it at least once. Until then the invasion gives you room at this ride: its group
+## holds back and one rider comes after you instead of the lot (VoxelParkInvasion.GRACE; the owner, 27 Nov: "can you
+## make it so enemies don't come, so you can actually have some time to be able to set it off"). Both the group of 3-6
+## and the riders came at once before: the riders because GET_OFF is 8 m and the box stands a few metres from a ring of
+## 4.9, and the group because standing there kept its reinforcement rule ("while its ride still has riders on it") true.
+var stunt_done := false
 var level := 1                  # the speed it's set to (SPEEDS)
 var w := 0.45                   # how fast it's turning now (rad/s)
 var braking := 0.0              # s left of a dead stop
@@ -279,6 +285,8 @@ func send(k: int) -> void:
 				braking = DEAD_STOP
 				_brake_from = w
 				var all := w > THROW_FROM
+				if all:
+					stunt_done = true       # (wound up and braked once: the Carousel's group comes in now)
 				# (the invasion on: every enemy riding it flung off, VoxelParkInvasion; then the view stays yours)
 				var enemies := 0
 				# (the invasion on, flat out: one of its enemies is taken off for the flight at Luna Palace before

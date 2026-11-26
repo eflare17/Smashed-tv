@@ -16,7 +16,7 @@ config/name="Smashed TV"
 ; version/name in export_presets.cfg with it, for every APK published: every APK up to 26 Nov 2026 went out as
 ; version code 1, which is why Android let any of them install over any other without a word and why neither the
 ; owner nor we could tell which build was on his phone when the settings screen misbehaved.
-config/version="3 (26 Nov 2026)"
+config/version="4 (27 Nov 2026)"
 run/main_scene="res://scenes/main.tscn"
 run/main_scene.voxel_arena="res://scripts/voxel/arena/voxel_arena.tscn"
 run/main_scene.voxel_web="res://scripts/voxel/arena/voxel_arena.tscn"

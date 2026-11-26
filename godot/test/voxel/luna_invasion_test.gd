@@ -162,7 +162,53 @@ func _button_steps() -> void:
 			if t < 0.3:
 				return
 			_check(arena._use_label.text == "E  start the invasion" and not btn._siren.playing and not btn.lamp_light.visible, "the button's ready again, quiet")
-			# the Carousel: flat out through the hack's own signals, the invasion on, and the brake
+			_next(120)
+		# ---- at the control box: the group waits and one rider comes, so there is time to set the ride off
+		120:
+			inv.seed_ = 11
+			inv.start()
+			mid = hack.spin.global_position
+			var bx: Vector3 = hack.box.global_position
+			sk._put(Vector3(bx.x, 0.05, bx.z) + Vector3(0, 0, 1.0), 0.0, 0.0)
+			_next(121)
+		121:
+			if t < 0.2:
+				return
+			hack._show(true)                  # (E at the box: the gadget up, as a player would)
+			_check(not hack.stunt_done and float(_car_area().grace) > 0.0, "at the ride, the stunt not done, its grace running")
+			_next(122)
+		122:
+			if t < 2.5:
+				return
+			var car := _carousel()
+			var seated := (car.riders as Array).filter(func(r): return int(r.state) == I.SEATED).size()
+			var off := (car.riders as Array).filter(func(r): return int(r.state) != I.SEATED).size()
+			_check(off <= 1, "at the box: one rider off at most, not the lot of them (%d off, %d still on)" % [off, seated])
+			_check(seated >= 2, "the rest sit tight (%d on)" % seated)
+			_check(not _car_area().done, "the Carousel's group is holding back")
+			_check(inv.kills >= 0 and (car.riders as Array).size() >= 3, "its riders are still its riders (%d)" % (car.riders as Array).size())
+			for k in 4:
+				_signal("faster")
+			_next(123)
+		123:
+			if hack.w < 3.35 and t < 14.0:
+				return
+			_check(hack.w > 3.3, "wound right up with the gadget up (%.1f rad/s)" % hack.w)
+			_signal("brake")
+			_next(124)
+		124:
+			if t < 0.4:
+				return
+			_check(hack.stunt_done, "braked from flat out: the park stops waiting on you")
+			_check(_car_area().done, "and the Carousel's group comes in now")
+			inv.stop()
+			# this case's own flight is still in the air: tidied away here so the next case counts only its own
+			for tb in hack.tumbles:
+				if is_instance_valid(tb):
+					(tb as Node).queue_free()
+			hack.tumbles.clear()
+			hack.stunt_done = false
+			# on to the brake from a distance (the case that was here before this one)
 			inv.seed_ = 7
 			inv.start()
 			mid = hack.spin.global_position
@@ -171,7 +217,7 @@ func _button_steps() -> void:
 		111:
 			if t < 0.5:
 				return
-			for k in 3:
+			for k in 4:
 				_signal("faster")
 			_next(112)
 		112:
@@ -423,7 +469,8 @@ func _process(dt: float) -> bool:
 			_check(not vb.has_meta("riding") and (vb.airborne or vb.global_position.y < seat_y - 0.05), "the body's let go and falling (%.2f m up, was %.2f)" % [vb.global_position.y, seat_y])
 			_next(7)
 		7:
-			if t < 2.5:
+			# till it is down, not a flat 2.5 s: how far it has to fall depends where its ride is in its cycle
+			if t < 6.0 and (not is_instance_valid(vb) or vb.global_position.y >= 0.2):
 				return false
 			var mid := (ride.node as Node3D).global_position
 			_check(is_instance_valid(vb) and arena.bodies.has(vb) and vb.global_position.y < 0.2 and vb.global_position.distance_to(mid) < 30.0,
@@ -573,3 +620,7 @@ func _seat_in_world(hack, rec: Dictionary) -> Vector3:
 	if i < 0 or i >= seats.size():
 		return Vector3.ZERO
 	return hack._seat_world(seats[i], (rec.at as Dictionary).xf as Transform3D).origin
+
+## The Carousel's area record (its group, and the grace before that group comes in).
+func _car_area() -> Dictionary:
+	return inv.areas.filter(func(a): return int(a.ride) >= 0 and String(inv.rides[int(a.ride)].name) == "Carousel")[0]
