@@ -129,7 +129,7 @@ func _solo() -> bool:
 				_next(8)
 		8:
 			if t - mark > 3.0:
-				var g := ds.terrain.grid
+				var g = ds.terrain.grid
 				var c := ds.terrain.cell_of(_dingo().global_position + Vector3(0, -0.05, 0))
 				var p := ds.terrain.cell_of(Vector3(c.x, c.y, c.z))
 				var _u := p
@@ -144,7 +144,7 @@ func _solo() -> bool:
 						var p2 := at + Vector3(x * 0.5, 0, z * 0.5)
 						for k in 5:
 							ds.terrain.dig(Vector3(p2.x, at.y - 0.3 - k * 0.35, p2.z), 0.5, 9)
-				var _g := g
+				var _g = g
 				_next(9)
 		9:
 			var d := _dingo()

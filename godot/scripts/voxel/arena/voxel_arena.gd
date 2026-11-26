@@ -2738,7 +2738,7 @@ func _weapons_step(dt: float) -> void:
 	if k < 0.5 and loadout.last < loadout.slots.size():
 		shown = String(loadout.slots[loadout.last].id)
 	var drop := -0.35 * (k / 0.5 if k < 0.5 else (1.0 - k) / 0.5)
-	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving())     # (in bed, dialling a padlock, on the couch, a game case in your hands, on St Kilda's coaster: the weapon put away)
+	var away := lying > 0 or lock_view.is_open() or games.seated > 0 or games.held >= 0 or mine.active or (stkilda and stkilda.riding()) or (digsite and digsite.driving()) or (demolition and demolition.driving())     # (in bed, dialling a padlock, on the couch, a game case in your hands, on St Kilda's coaster, in the wrecking crane's cab: the weapon put away)
 	vacuum.step(dt, shown == "vacuum" and not away, _sucking and cur == "vacuum")
 	for id in melee:
 		var w: VoxelMelee = melee[id]

@@ -51,9 +51,11 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	# the view fixes
 	# off, for a comparison from a cold start. Read once, into the setting itself, so the SET rows tell the truth and
 	# the owner can still flip them back mid-game -- which is the point of them.
+	var page := {}                  # the four the page asked for, kept so the saved file can't talk over them
 	for key in ["steady", "fold", "own", "smooth"]:
 		if arena._opts.has(key):
-			s.v[key] = String(arena._opts[key]) != "0"
+			page[key] = String(arena._opts[key]) != "0"
+	s.v.merge(page, true)
 	if not use_file:
 		s.file = ""
 		if arena.has_method("set_steady_view"):
@@ -66,9 +68,15 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 		var p := String(arena._opts.get("preset", ""))
 		if p != "":
 			s.set_preset(p)
-		s.apply(arena)
 		if s.first_run or s.migrated:
 			s.save_file()       # (migrated: written back with its VERSION stamp, so the step isn't redone next launch)
+		# The file has just overwritten the four above: load_file() reads back every key the file holds, which on
+		# any machine that has run the game once is all of them, so a ?smooth=1 link only ever worked on a brand-new
+		# install. They go back on top of it here -- a switch asked for in the link wins over the file -- and after
+		# the save above, so a comparison asked for in one link is never written back as a choice the owner made.
+		# (?preset= is written back, by set_preset before the save: a preset is a choice, these four are a test.)
+		s.v.merge(page, true)
+		s.apply(arena)
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE

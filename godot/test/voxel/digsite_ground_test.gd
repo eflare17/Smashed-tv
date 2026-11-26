@@ -164,13 +164,13 @@ func _dig_checks(tr: DsTerrain) -> void:
 	var r: Dictionary = tr.dig(at, 0.5, 2)
 	var after: int = tr.grid.count_box(0, 0, 0, 512, 192, 512, -1)
 	check(int(r.n) > 50 and before - after == int(r.n), "a dig took %d blocks out (%d solid before, %d after)" % [r.n, before, after])
-	var b0 := tr.built_n
+	var b0 = tr.built_n
 	var built := tr.step(50.0)
 	check(built >= 1 and built <= 8, "only the sections it touched rebuilt (%d)" % built)
 	check(tr.top_at(at.x, at.z) < at.y - 0.3, "a hole there (top %.2f, was %.2f)" % [tr.top_at(at.x, at.z), at.y])
 	var r2: Dictionary = tr.dig(at + Vector3(0, -6.0, 0), 0.5, 2)
 	check(int(r2.refused) > 2 or int(r2.n) == 0 or int(r2.n) < 260, "a shovel can't dig rock (deep: %d taken, hardest refused %d)" % [r2.n, r2.refused])
-	var _unused := b0
+	var _unused = b0
 
 func _budget_checks(tr: DsTerrain) -> void:
 	tr.grid.mark_all_dirty()

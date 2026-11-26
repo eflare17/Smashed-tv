@@ -15,7 +15,8 @@ extends Node3D
 ##
 ## The run: RUN_T seconds to get TARGET of the block's blocks down. The HUD counts the share down, the clock and the
 ## score (blocks destroyed); hit the target and a banner shows the time, the score and the best, kept in
-## user://demolition.cfg. Going down doesn't end it. R runs it again, the phone takes you home.
+## user://demolition.cfg. Going down doesn't end it. R reloads the weapon, as it does everywhere else; R HELD for a
+## second runs the block again (AGAIN_HOLD, with a bar on screen while it counts), and the phone takes you home.
 ##
 ## The crane (VoxelWreckingCrane) is parked at the west end of the street: walk up to it and E drives it.
 ##
@@ -34,6 +35,13 @@ const KILL_SCORE := 10           # what a kill is worth beside a block knocked d
 const BEST_FILE := "user://demolition.cfg"
 const START := Vector3(-30.0, 0.05, 0.0)     # where you arrive (from AT), looking east down the street
 const CRANE_AT := Vector3(-19.0, 0.0, 1.2)   # where the crane is parked
+## R HELD for this long starts the run over. A tap of R is the reload it is everywhere else in the game, because one
+## keystroke used to wipe the run (the owner lost a 42-second run to it, and the phone has an R button under the
+## thumb), and because swallowing R here meant you could not reload in this level at all. Held, with a bar on screen
+## from NOTE_AT on, so a thumb resting on R can be taken off before anything happens. The same shape as the
+## Carousel's loose bolt (VoxelCarouselHack: hold E, a bar fills), which is this game's own way of asking.
+const AGAIN_HOLD := 1.0
+const NOTE_AT := 0.15            # s before the bar is shown (a plain reload tap doesn't flash it)
 # the rubble this level allows: well under St Kilda's, and lower again on the web and on a phone (the bricks are the
 # dear part -- a brick a MultiMesh instance -- and a phone has neither the memory nor the fill rate for St Kilda's)
 const CAP := {"fly": 2200, "lie": 60000, "fall": 350, "draw": 1600}
@@ -79,6 +87,9 @@ var _debris_bound := INF
 var _help_text := ""
 var _hud: Label
 var _end: Label
+var _again: Label                # the bar while R is held (AGAIN_HOLD)
+var _r_hold := 0.0               # s R has been held (0: not held)
+var _r_done := false             # (this hold already started the run again: R has to be let go before another counts)
 
 func setup(a: VoxelArena) -> void:
 	arena = a
@@ -100,6 +111,12 @@ func setup(a: VoxelArena) -> void:
 	_end.offset_right = 440
 	_end.offset_top = -250
 	_end.offset_bottom = -40
+	_again = _label(26, Color("#ff9d5c"), 8)
+	_again.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_again.offset_left = -440
+	_again.offset_right = 440
+	_again.offset_top = -210
+	_again.offset_bottom = -160
 
 func _label(size: int, c: Color, outline: int) -> Label:
 	var l := Label.new()
@@ -234,7 +251,7 @@ func go() -> void:
 	visible = true
 	process_mode = Node.PROCESS_MODE_INHERIT
 	_help_text = arena.help.text
-	arena.help.text = "DEMOLITION   flatten the block   bring it down on the enemies   shoot the petrol station   E drive the crane   P phone (home)   R start again   WASD walk   mouse look   1-5 weapons"
+	arena.help.text = "DEMOLITION   flatten the block   bring it down on the enemies   shoot the petrol station   E drive the crane   P phone (home)   R reload   hold R start again   WASD walk   mouse look   1-5 weapons"
 	VoxelBody.wall_at = breaks.solid    # (bodies knocked flying bounce off the buildings: phase B's enemies)
 	start()
 
@@ -290,8 +307,11 @@ func start() -> void:
 func stop() -> void:
 	running = false
 	over = false
+	_r_hold = 0.0
 	_hud.visible = false
 	_end.visible = false
+	if _again:
+		_again.visible = false
 
 ## Where you stand to look down the street (the pictures, the tests).
 func street_spot() -> Vector3:
@@ -348,7 +368,42 @@ func _process(dt: float) -> void:
 			_flattened()
 		elif left() <= 0.0:
 			_out_of_time()
+	_again_step(dt)
 	_hud_line()
+
+## R held down: the run starts over at AGAIN_HOLD, with a bar from NOTE_AT on and nothing at all before that, so the
+## tap that reloads the weapon looks and feels like a reload. Read from the key itself rather than from the key
+## event, so the phone's R button holds the same way (VoxelTouch sends the real key down and up for it), and so a
+## release that never arrives -- a menu taking the focus mid-hold -- cannot leave this counting on its own.
+func _again_step(dt: float) -> void:
+	if not Input.is_physical_key_pressed(KEY_R) or _busy():
+		_r_done = false
+		if _r_hold > 0.0:
+			_r_hold = 0.0
+			_again.visible = false
+		return
+	if _r_done:
+		return                      # (still held after it fired: one hold is one run, not one a second)
+	_r_hold += dt
+	if _r_hold >= AGAIN_HOLD:
+		_r_hold = 0.0
+		_r_done = true
+		_again.visible = false
+		arena.sound.play("dial_click", Vector3.INF, -4.0, 1.2)
+		start()
+		return
+	_again.visible = _r_hold >= NOTE_AT
+	if _again.visible:
+		var bar := int(_r_hold / AGAIN_HOLD * 10.0)
+		_again.text = "Starting the run again  [%s%s]   let go of R to carry on" % ["#".repeat(bar), "-".repeat(10 - bar)]
+
+## A menu up, lying in bed, sat at a console: this level's own keys do nothing, the way the arena carves its own out
+## (VoxelArena._unhandled_input). Without this E and R out here acted straight through the backpack and the settings
+## screen.
+func _busy() -> bool:
+	return (arena.phone and arena.phone.is_open()) or arena.inv_ui.is_open() or arena.lock_view.is_open() \
+			or (arena.settings_menu and arena.settings_menu.is_open()) or (arena.guide and arena.guide.is_open()) \
+			or (arena.net_menu and arena.net_menu.is_open()) or arena.lying > 0 or arena.games.seated > 0
 
 func _hud_line() -> void:
 	_hud.visible = running and not (arena.phone and arena.phone.is_open())
@@ -361,6 +416,8 @@ func _hud_line() -> void:
 			else "     W/S drive   A/D turn   left/right swing the boom   up/down the cable   E out"
 	elif crane and crane.can_enter():
 		tail = "     E: drive the crane"
+	elif VoxelTouch.active:
+		tail = "     hold R: start the run again"     # (a phone: the keyboard's long help line isn't shown there)
 	_hud.text = "Demolition: %d%% down (target %d%%), %s left, score %d, %s%s" % [roundi(share() * 100.0),
 		roundi(TARGET * 100.0), VoxelParkGame._clock(ceilf(left())), score(), VoxelParkGame._n(kills()), tail]
 
@@ -378,7 +435,7 @@ func _flattened() -> void:
 	cf.save(BEST_FILE)
 	arena.cash += CASH
 	_hud.visible = false
-	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d (%d blocks, %s)   +$%d\nbest %s, %d\nR: again   P: the phone (home)" % [
+	_end.text = "THE BLOCK'S DOWN\n%d%% of it in %s%s\nscore %d (%d blocks, %s)   +$%d\nbest %s, %d\nhold R: again   P: the phone (home)" % [
 		roundi(share() * 100.0), VoxelParkGame._clock(time), "   NEW BEST!" if new_best else "", score(), down(), VoxelParkGame._n(kills()), CASH,
 		VoxelParkGame._clock(best_time), best_score]
 	_end.visible = true
@@ -394,12 +451,12 @@ func _out_of_time() -> void:
 	cf.set_value("best", "score", best_score)
 	cf.save(BEST_FILE)
 	_hud.visible = false
-	_end.text = "TIME UP\n%d%% down of %d%%, score %d (%d blocks, %s)\nbest %d\nR: again   P: the phone (home)" % [
+	_end.text = "TIME UP\n%d%% down of %d%%, score %d (%d blocks, %s)\nbest %d\nhold R: again   P: the phone (home)" % [
 		roundi(share() * 100.0), roundi(TARGET * 100.0), score(), down(), VoxelParkGame._n(kills()), best_score]
 	_end.visible = true
 
 func _unhandled_input(e: InputEvent) -> void:
-	if not active or (arena.phone and arena.phone.is_open()) or not (e is InputEventKey and e.pressed and not e.echo):
+	if not active or _busy() or not (e is InputEventKey and e.pressed and not e.echo):
 		return
 	var k := (e as InputEventKey).physical_keycode
 	if k == KEY_E and crane:
@@ -410,6 +467,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		else:
 			return
 		get_viewport().set_input_as_handled()
-	elif k == KEY_R:
-		start()
-		get_viewport().set_input_as_handled()
+	# R is NOT taken here. This node is a child of the arena, so its handler runs first, and marking R handled meant
+	# the arena's own reload (VoxelArena._unhandled_input, KEY_R) never ran -- there was no reloading at all in this
+	# level -- while a single tap wiped the run. The press goes straight on to the arena, and _again_step watches
+	# the key itself for a hold.

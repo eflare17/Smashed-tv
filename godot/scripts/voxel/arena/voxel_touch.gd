@@ -185,6 +185,8 @@ var _pend_look := Vector2.ZERO          # a look drag's pixels since the last fl
 var _look_held := Vector2.ZERO          # `smooth`: a burst's surplus, out on the next frame (_spread)
 var _look_avg := 0.0                    # `smooth`: the recent per-frame look, pixels
 var _held_last := false                 # `smooth`: last frame held something back (so this one holds nothing)
+var _held_frame := -1                   # `smooth`: the drawn frame _look_held was put aside on (it goes out on a later one)
+var _spread_frame := -1                 # `smooth`: the last drawn frame _spread worked on (it only counts once a frame)
 var _pend_look_any := false
 var _pend_stick := Vector2.ZERO         # where the stick finger is now
 var _pend_stick_any := false
@@ -293,12 +295,12 @@ func setup(a: VoxelArena) -> void:
 	_mouse_btn(MOUSE_BUTTON_LEFT, false, Vector2(-200, -200))
 
 func _exit_tree() -> void:
-	_let_go_all()
+	_let_go_all(true)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		if arena:
-			_let_go_all()               # (the tab left mid-press: nothing stays held)
+			_let_go_all(true)           # (the tab left mid-press: nothing stays held, and the fingers are gone with it)
 
 # ---------------------------------------------------------------- where everything is
 
@@ -522,7 +524,7 @@ func _down(i: int, p: Vector2) -> void:
 func _up(i: int, p: Vector2) -> void:
 	match _role[i]:
 		F_BUTTON:
-			_release(_fbtn[i])
+			_release(_fbtn[i], i)
 		F_STICK:
 			_stick_end()
 		F_SLOT:
@@ -551,6 +553,9 @@ func _drag(i: int, p: Vector2, engine_rel: Vector2) -> void:
 			_dump_id, i, _role[i], p.x, p.y, engine_rel.x, engine_rel.y, rel.x, rel.y, gap])
 	if not own_delta:
 		rel = engine_rel            # (?own=0 / SET's row: the engine's figure back, to feel the snap again)
+	if _role[i] == F_NONE:
+		_readopt(i, p)              # (a thumb whose role a menu took away, still down: it takes one again here)
+		return
 	_slip[i] = maxf(_slip[i], p.distance_to(_from[i]))
 	match _role[i]:
 		F_STICK:
@@ -574,6 +579,27 @@ func _drag(i: int, p: Vector2, engine_rel: Vector2) -> void:
 					_role[i] = F_LOOK
 		F_UI:
 			_mouse_move(p, rel, true)
+
+## A finger that is still on the glass but has no role -- _let_go_all cleared it when a menu came up or the crane's
+## cab was entered or left. Its next drag gives it one again, by the half of the screen it is in now, so the player
+## never has to lift and re-place a thumb: the stick in the left half if nothing else is on it, a look drag
+## otherwise. It starts from where the finger is now (as a finger just put down does), so re-taking a role turns
+## the view by nothing and puts the stick's middle under the thumb.
+##
+## Never a button and never a weapon slot, however exactly the finger is sitting on one: a press has to be a real
+## tap. The finger that opened the menu is usually the one this runs for -- it tapped BAG, or X to close it -- and
+## it is often left resting over the cluster, so pressing what is under it would fire the weapon or switch it for
+## nothing. Nothing is sent to the game here at all, so no key can be left down.
+func _readopt(i: int, p: Vector2) -> void:
+	if _ui:
+		return                      # (a menu's up: the game's controls aren't there, and its mouse is only given out in _down)
+	_from[i] = p
+	_at_px[i] = p
+	_slip[i] = 0.0
+	if p.x < _size.x * 0.5 and not stick_on:
+		_stick_start(i, p)
+	else:
+		_role[i] = F_LOOK
 
 func _look(i: int, p: Vector2, rel: Vector2) -> void:
 	if _ui:
@@ -599,34 +625,50 @@ func _look(i: int, p: Vector2, rel: Vector2) -> void:
 ## and only the part of a burst above the average. That is the whole cost, and it is why this is worth offering: a
 ## longer filter buys evenness with lag you can feel when you are aiming, which is the wrong trade on this game.
 func _spread(rel: Vector2) -> Vector2:
+	var f := Engine.get_process_frames()
+	var first := f != _spread_frame      # the first call of this drawn frame (flush runs up to four times in one)
 	var n := rel.length()
 	var was := _held_last
-	_held_last = false
+	if first:
+		_spread_frame = f
+		_held_last = false
 	# never twice running: whatever is held goes out whole on the next frame, so "one frame late" is exact rather
 	# than a surplus rippling down the frames and quietly becoming three
-	if not was and _look_avg > 1.0 and n > _look_avg * SMOOTH_OVER:
+	if first and not was and _look_avg > 1.0 and n > _look_avg * SMOOTH_OVER:
 		var keep := minf(n - _look_avg * SMOOTH_OVER, n * 0.5)
 		_look_held = rel * (keep / n)
+		_held_frame = f
 		rel -= _look_held
 		_held_last = true
 		smooth_held_sec += 1
-	_look_avg = lerpf(_look_avg, n, 0.2)
+	if first:
+		# only once a frame: a second call in the same frame used to lerp this again and drag the threshold the
+		# whole thing is measured against up toward the burst it is meant to catch
+		_look_avg = lerpf(_look_avg, n, 0.2)
 	return rel
 
 ## The frame's touches applied, once: what the drags wrote down turns into the stick's keys and the view's turn. The
 ## game calls this before it reads either (VoxelArena's _physics_process and _process), so a frame of thirty drags
 ## costs what a frame of one does. Idempotent: called twice in a frame, the second does nothing.
 func flush() -> void:
+	# `smooth`: the surplus _spread held back is due on the NEXT drawn frame, not later in this one. flush() is
+	# called four times a rendered frame (VoxelArena._physics_process at 120 Hz, so twice, VoxelArena._process and
+	# this layer's own _process), and the second call used to let the held part straight out again -- the camera got
+	# the whole unsmoothed burst before it was ever drawn, which is the setting doing exactly nothing. The frame
+	# counter is what says "the next frame"; _held_last cannot, because it is true for the rest of this one.
+	var due := _look_held != Vector2.ZERO and Engine.get_process_frames() != _held_frame
 	if _pend_stick_any or _pend_look_any or _pend_aim_i >= 0:
 		folds_sec += 1
 	if _pend_stick_any:
 		_pend_stick_any = false
 		_stick_to(_pend_stick)
-	if _pend_look_any or _look_held != Vector2.ZERO:
+	if _pend_look_any or due:
 		_pend_look_any = false
-		var rel := _pend_look + _look_held
+		var rel := _pend_look
 		_pend_look = Vector2.ZERO
-		_look_held = Vector2.ZERO
+		if due:
+			rel += _look_held
+			_look_held = Vector2.ZERO
 		look_worst_px = maxf(look_worst_px, rel.length())
 		if rel.length() > LOOK_FRAME_CAP:
 			rel = rel.normalized() * LOOK_FRAME_CAP     # (a burst can't add up to a jerk: LOOK_FRAME_CAP says why)
@@ -686,7 +728,7 @@ func _stick_key(j: int, key: Key, on: bool) -> void:
 
 func _press(b: int, finger: int) -> void:
 	if _held[b] >= 0:
-		return
+		return                      # (down already: a second finger on it isn't a second press -- _release waits for the last)
 	_held[b] = finger
 	match int(DEFS[b][1]):
 		K_KEY:
@@ -701,9 +743,18 @@ func _press(b: int, finger: int) -> void:
 			_layout()
 	_pad.queue_redraw()
 
-func _release(b: int) -> void:
+## A button let go. `finger` is the one coming off it (-1: nobody in particular -- _let_go_all, which clears the
+## roles first). A button under two thumbs stays pressed until the LAST of them goes: before this, a second thumb
+## that touched FIRE and lifted again took the press away while the first thumb was still on it and the gun stopped
+## firing.
+func _release(b: int, finger := -1) -> void:
 	if _held[b] < 0:
 		return
+	for i in FINGERS:
+		if i != finger and _role[i] == F_BUTTON and _fbtn[i] == b:
+			if _held[b] == finger:
+				_held[b] = i        # (the one on record is going: the press passes to the finger still on it)
+			return                  # (still held: nothing is sent, the button stays down)
 	_held[b] = -1
 	match int(DEFS[b][1]):
 		K_KEY:
@@ -712,8 +763,15 @@ func _release(b: int) -> void:
 			_mouse_btn(DEFS[b][2], false, _size * 0.5)
 	_pad.queue_redraw()
 
-## Everything held let go (a menu's come up, the tab's left).
-func _let_go_all() -> void:
+## Everything held let go (a menu's come up, the crane's cab, the tab's left). `forget`: the browser's finger ids are
+## dropped as well -- only for the cases where the fingers really are gone (the layer leaving the tree, the tab left,
+## where no touchend may ever arrive). A menu opening or closing is NOT one of those: the thumbs are still on the
+## glass, and dropping their ids used to leave every one of them dead until it was lifted, because _slot_for() no
+## longer knew them and every drag they sent was thrown away (the owner's "the stick goes dead after a menu"). What
+## is HELD still has to go -- no key, no mouse button may be left down over a menu -- so the roles are cleared and
+## the ids are kept, and _readopt() gives a live finger its role back on its next drag.
+func _let_go_all(forget := false) -> void:
+	_role.fill(F_NONE)              # (first: a button comes up when the last finger on it goes, and they all go here)
 	for b in B_COUNT:
 		_release(b)
 	if stick_on:
@@ -721,8 +779,8 @@ func _let_go_all() -> void:
 	if _ui_finger >= 0:
 		_mouse_btn(MOUSE_BUTTON_LEFT, false, Vector2(-200, -200))
 		_ui_finger = -1
-	_role.fill(F_NONE)
-	_slot.clear()
+	if forget:
+		_slot.clear()
 	_pend_stick_any = false
 	_pend_look_any = false
 	_pend_look = Vector2.ZERO
@@ -730,6 +788,8 @@ func _let_go_all() -> void:
 	_look_held = Vector2.ZERO       # (`smooth`: nothing of the last drag goes out after the fingers are gone)
 	_look_avg = 0.0
 	_held_last = false
+	_held_frame = -1
+	_spread_frame = -1
 
 # ---------------------------------------------------------------- the shim: what the keyboard and mouse would send
 

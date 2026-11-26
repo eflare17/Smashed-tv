@@ -17,6 +17,11 @@ var _flash_col := Color(2.6, 2.6, 2.6)
 func _ready() -> void:
 	process_priority = 950
 	top_level = true
+	# each block enemy's root is placed fresh every frame from _process (_pose), not by the physics, so the roots
+	# have to stay out of Godot's physics interpolation or they are drawn smeared between frames -- the same bug the
+	# camera, your own Jared and the gravity gun had (test/voxel/judder_test.gd has the measurements). The roots are
+	# children of this node and inherit it.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 
 var _low := false
 

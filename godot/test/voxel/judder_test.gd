@@ -143,6 +143,16 @@ func _game() -> void:
 		and arena.net.other_avatar.physics_interpolation_mode == OFF,
 		"in co-op, your mate's body, view and Jared are out of it")
 	arena.net._drop_other()
+	# the 2D fight's block enemies ("Characters: blocks", VoxelEnemies): each enemy's root is placed fresh every
+	# frame from _process (_pose), the same shape as the camera, your own Jared and the gravity gun, and it was the
+	# one left in the interpolation
+	var en: Node3D = load("res://scripts/voxel/voxel_enemies.gd").new()
+	root.add_child(en)
+	await process_frame             # (added from _process, so its own _ready runs on the next frame)
+	_check(en.physics_interpolation_mode == OFF,
+		"the 2D fight's block enemies are out of it as well (their roots are its children and inherit it)")
+	root.remove_child(en)
+	en.free()
 	# ---- the switch, both ways: the owner compares in one session, not against a memory of an hour ago
 	arena.set_steady_view(false)
 	_check(not arena.steady_view and arena.cam.physics_interpolation_mode != OFF,
@@ -177,6 +187,35 @@ func _game() -> void:
 		"?steady=0&fold=0 start with both off, and the SET rows say so")
 	arena._opts = keep
 	m.queue_free()
+	# ---- and with a saved settings file in the way they still have to win. The four are read into the settings
+	# before the file is loaded, and load_file() reads back every key the file holds -- which on any machine that
+	# has run the game once is all of them -- so the file simply overwrote them and ?smooth=1 / ?steady=0 only ever
+	# worked on a brand-new install. They must not be saved back either: a comparison asked for in a link is not a
+	# choice the owner made in the SET rows.
+	var f := "user://judder_opts_test.cfg"
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	var w := VoxelSettings.new()
+	w.file = f
+	w.set_value("smooth", false)            # the file says Off ...
+	w.set_value("steady", true)
+	w.save_file()
+	var m2 := VoxelSettingsMenu.new()
+	arena.add_child(m2)
+	m2.s.file = f
+	keep = arena._opts.duplicate()
+	arena._opts["smooth"] = "1"             # ... and the page says On
+	arena._opts.erase("steady")
+	arena._opts.erase("fold")
+	m2.setup(arena, true)
+	_check(bool(m2.s.v.get("smooth", false)) and VoxelTouch.smooth,
+		"?smooth=1 beats a saved file that says Off (the file used to win)")
+	var cf := ConfigFile.new()
+	_check(cf.load(f) == OK and not bool(cf.get_value("settings", "smooth", false)),
+		"... and it isn't written back into the file as if it had been chosen")
+	arena._opts = keep
+	m2.queue_free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	VoxelTouch.smooth = false
 	# ---- put it back as the game ships, so nothing after this runs on the old path
 	VoxelTouch.fold = true
 	arena.set_steady_view(true)

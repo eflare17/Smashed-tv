@@ -248,6 +248,34 @@ func _run() -> void:
 	_check(touch.smooth_held_sec > held0, "evened out: a bursty frame's surplus is held for the next frame (%d frames)" % (touch.smooth_held_sec - held0))
 	_check(absf(evened.x - plain.x) < absf(plain.x) * 0.05,
 		"... and none of the thumb's movement is lost on the way (%.4f rad vs %.4f)" % [evened.x, plain.x])
+	# ... and the surplus has to land on a LATER frame than the burst, which is the whole of what this setting does.
+	# flush() runs four times a rendered frame (VoxelArena._physics_process at 120 Hz, so twice, VoxelArena._process,
+	# and this layer's own _process) and it used to let the held part straight back out on the second call, because
+	# the "have I just held something" flag it tested is still true for the rest of that frame. So the camera got the
+	# whole unsmoothed burst before the frame was drawn and the row did nothing at all; the two checks above cannot
+	# see that, because they only ever compare the total, which the bug preserves. flush() is driven directly here:
+	# a drag cannot choose which of a frame's four calls it arrives between.
+	T.smooth = true
+	touch._look_held = Vector2.ZERO
+	touch._held_last = false
+	touch._held_frame = -1
+	touch._spread_frame = -1
+	touch._look_avg = 10.0          # (a steady 10 px a frame: 120 px in one frame is a burst against that)
+	touch._pend_look = Vector2(120, 0)
+	touch._pend_look_any = true
+	yaw0 = arena.look_yaw
+	touch.flush()
+	var one := arena.look_yaw - yaw0
+	touch.flush()
+	touch.flush()
+	var same := arena.look_yaw - yaw0
+	_check(absf(same - one) < 0.00001 and touch._look_held != Vector2.ZERO,
+		"evened out: the surplus stays put when flush() runs again in the same frame (%.4f rad, then %.4f)" % [one, same])
+	await _wait(0.06)
+	var whole := arena.look_yaw - yaw0
+	_check(absf(whole) > absf(one) * 1.5 and absf(whole - one * 2.0) < absf(one) * 0.1 and touch._look_held == Vector2.ZERO,
+		"... and it goes out whole on a later frame (%.4f rad of the burst's frame, %.4f in all)" % [one, whole])
+	T.smooth = false
 	# ---- a third finger fires (the pistol's out) while those two stay down
 	clip0 = int(arena.melee.pistol.clip)
 	_touch(2, _btn(T.B_FIRE), true)
@@ -268,6 +296,86 @@ func _run() -> void:
 	p0 = arena.player.global_position
 	await _wait(0.3)
 	_check(arena.player.global_position.distance_to(p0) < 0.05, "... and you stand still")
+	# ---- two thumbs on the one button: the press lasts until the LAST of them lifts. A second finger put on a
+	# button that is already down was not written down anywhere, so when IT lifted the button was let go with the
+	# first thumb still pressing it -- FIRE held, a second thumb brushed it, and the gun stopped firing.
+	_touch(0, _btn(T.B_FIRE), true)
+	await _wait(0.1)
+	_check(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), "FIRE held by one thumb")
+	_touch(1, _btn(T.B_FIRE) + Vector2(8, 8), true)
+	await _wait(0.1)
+	_check(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), "a second thumb down on it: still held, and not pressed twice")
+	_touch(1, _btn(T.B_FIRE) + Vector2(8, 8), false)
+	await _wait(0.1)
+	_check(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT),
+		"the second thumb lifted: the first thumb's press is still on (it used to stop here)")
+	_touch(0, _btn(T.B_FIRE), false)
+	await _wait(0.1)
+	_check(not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), "the last thumb off it: now the button's up")
+	# and the same for a key button (R), the other way round: the FIRST of the two lifts first
+	_touch(0, _btn(T.B_JUMP), true)
+	_touch(1, _btn(T.B_JUMP) + Vector2(6, 6), true)
+	await _wait(0.1)
+	_touch(0, _btn(T.B_JUMP), false)
+	await _wait(0.1)
+	_check(Input.is_physical_key_pressed(KEY_SPACE), "JUMP under two thumbs: the first lifting doesn't let it go")
+	_touch(1, _btn(T.B_JUMP) + Vector2(6, 6), false)
+	await _wait(0.1)
+	_check(not Input.is_physical_key_pressed(KEY_SPACE), "... the second lifting does")
+	await _wait(0.6)
+	# ---- a menu opened and closed with a thumb still on the glass: it goes on working without being lifted. On the
+	# owner's phone the stick went dead after any menu, because letting go of what was HELD also threw away the
+	# browser's finger-id -> slot map, and every drag from a finger whose id was gone was dropped until it lifted.
+	arena.player.global_position = Vector3(0, 0.05, 6)
+	arena.look_yaw = 0.0
+	await _wait(0.3)
+	_touch(0, s0, true)
+	await _wait(0.05)
+	_drag(0, s0 + Vector2(0, -60), Vector2(0, -60))
+	await _wait(0.3)
+	_check(touch.stick_on and touch.move.y < -0.4, "a thumb on the stick, pushed up (%.2f)" % touch.move.y)
+	arena.settings_menu.toggle()
+	await _wait(0.3)
+	_check(arena.settings_menu.is_open() and not touch.stick_on and touch.move == Vector2.ZERO
+		and not Input.is_physical_key_pressed(KEY_W),
+		"the settings up: the stick is let go and no key is left down")
+	_check(touch._slot.has(0), "... but the thumb that never left the glass is still one the layer knows")
+	arena.settings_menu.toggle()
+	await _wait(0.3)
+	_drag(0, s0 + Vector2(0, -70), Vector2(0, -10))     # (its first drag back: it takes the stick under itself)
+	await _wait(0.05)
+	p0 = arena.player.global_position
+	_drag(0, s0 + Vector2(0, -130), Vector2(0, -60))
+	await _wait(0.5)
+	_check(touch.stick_on and touch.move.y < -0.4,
+		"the menu closed and the same thumb dragged on: the stick is back under it, nothing lifted (%.2f)" % touch.move.y)
+	_check(arena.player.global_position.z < p0.z - 0.5,
+		"... and it walks you again (%.2f m)" % (p0.z - arena.player.global_position.z))
+	_touch(0, s0 + Vector2(0, -130), false)
+	await _wait(0.2)
+	# a thumb left sitting on FIRE when the menu closed: it turns the view, and it does NOT fire on its own -- the
+	# finger this happens to is usually the one that tapped the menu open or X shut, resting over the cluster
+	_touch(1, _btn(T.B_FIRE), true)
+	await _wait(0.15)
+	_check(Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), "a thumb on FIRE")
+	arena.settings_menu.toggle()
+	await _wait(0.3)
+	_check(not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), "the settings up: FIRE is let go")
+	arena.settings_menu.toggle()
+	await _wait(0.3)
+	var fb := _btn(T.B_FIRE)
+	_drag(1, fb + Vector2(-20, 0), Vector2(-20, 0))
+	await _wait(0.05)
+	yaw0 = arena.look_yaw
+	_drag(1, fb + Vector2(-70, 0), Vector2(-50, 0))
+	await _wait(0.2)
+	_check(not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and absf(arena.look_yaw - yaw0) > 0.02,
+		"the thumb left on FIRE turns the view when it moves, and never fires by itself (%.3f rad)" % (arena.look_yaw - yaw0))
+	_touch(1, fb + Vector2(-70, 0), false)
+	await _wait(0.3)
+	_check(not touch.stick_on and not touch._slot.has(0) and not touch._slot.has(1)
+		and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT),
+		"both thumbs lifted: nothing held, and their slots are given back")
 	# ---- weapons: > the next one, a tap on the bar's slot that one
 	slot0 = arena.loadout.current
 	await _tap(_btn(T.B_NEXT))

@@ -40,6 +40,14 @@ var props_down0 := 0
 var touch: VoxelTouch
 var slew0 := 0.0
 var cable0 := 0.0
+# R: the reload key, and a hold of it to start the run again (it used to wipe the run on one tap)
+var r_time := 0.0
+var r_at := Vector3.ZERO
+var r_clip := 0
+## How long each step waits before it looks at anything. Two seconds for everything that was here before; the R
+## checks turn it down, because the hold they are about is one second long and nothing shorter than the wait can be
+## watched happening.
+var gate := 2.0
 
 func _initialize() -> void:
 	had_best = FileAccess.file_exists(D.BEST_FILE)
@@ -93,7 +101,7 @@ func _wall_spot(b: VoxelBreakables.Building, c: int, y: float) -> Vector3:
 
 func _process(dt: float) -> bool:
 	t += dt
-	if t < 2.0 or (arena.phone and arena.phone._going):
+	if t < gate or (arena.phone and arena.phone._going):
 		return false
 	match step:
 		0:
@@ -416,15 +424,128 @@ func _process(dt: float) -> bool:
 			_check(not dem.crane.driving, "OUT gets you out of the cab")
 			_check(touch.button_shown(T.B_FIRE) and not touch.button_shown(T.B_BOOM_L),
 					"and the buttons go back to the weapons'")
+			gate = 0.4                        # (the R hold is 1 s: the steps below have to look inside that)
+			step = 34
+			t = 0.0
+		# ---------------------------------------------------------------- R: reload, and a HOLD to start again
+		# A tap of R used to call start() and wipe the run -- 42 seconds gone to one keystroke, and the phone has an
+		# R button right under the thumb -- and because this level marked R handled before the arena saw it, there
+		# was no reloading at all in Demolition. Now R is the reload key it is everywhere else and only R HELD for
+		# AGAIN_HOLD starts the run again, with a bar on screen while it counts. The phone's R button sends the same
+		# real key down and up, so it holds the same way; this walks it through that button.
+		34:
+			_check(dem.running, "the run's still going, for the R checks")
+			_check(touch.button_shown(T.B_RELOAD), "the phone's R button is on screen")
+			_check(not dem._again.visible, "nothing on screen about starting again until R is held")
+			r_time = dem.time
+			r_at = arena.player.global_position
+			# the phone's R button held down: VoxelTouch sends the real key down and up for it, so the level sees
+			# exactly what a keyboard's R is
+			_touch(0, touch.button_pos(T.B_RELOAD), true)
+			step = 35
+			t = 0.0
+		35:
+			_check(Input.is_physical_key_pressed(KEY_R), "a thumb on the phone's R button is the R key down")
+			_check(dem._again.visible and dem._again.text.contains("let go of R"),
+					"R held: a note on screen counts it, and says how to stop it")
+			_check(dem.time > r_time and not dem.over and arena.player.global_position.distance_to(r_at) < 1.5,
+					"... and part way through the hold nothing has happened yet (%.1f s)" % dem.time)
+			_touch(0, touch.button_pos(T.B_RELOAD), false)
+			step = 36
+			t = 0.0
+		36:
+			_check(not dem._again.visible and dem.time > r_time
+					and arena.player.global_position.distance_to(r_at) < 1.5,
+					"let go before the second's up: the note's gone and the run is untouched (%.1f s, was %.1f)" % [
+						dem.time, r_time])
+			r_time = dem.time
+			_touch(0, touch.button_pos(T.B_RELOAD), true)     # (and now held right through)
+			gate = 2.0
+			step = 37
+			t = 0.0
+		37:
+			_check(dem.time < r_time and dem.running and not dem.over,
+					"the phone's R held %.1f s: the run starts again (%.2f s on the clock, was %.1f)" % [
+						D.AGAIN_HOLD, dem.time, r_time])
+			_check(arena.player.global_position.distance_to(dem.street_spot()) < 1.5,
+					"... and you're back at the west end of the street")
+			_check(not dem._again.visible, "... and the note's gone")
+			_touch(0, touch.button_pos(T.B_RELOAD), false)
 			touch.queue_free()
 			arena.touch = null
 			VoxelTouch.active = false
 			arena.help.visible = true
+			step = 38
+			t = 0.0
+		38:
+			arena._switch(func(): arena.loadout.select(arena.loadout.index_of("pistol")))
+			step = 39
+			t = 0.0
+		39:
+			# a TAP of R reloads the weapon, as it does in the rest of the game, and leaves the run alone. This
+			# level used to mark R handled before the arena ever saw it, so there was no reloading in it at all.
+			arena.melee.pistol.clip = 3
+			r_clip = int(arena.melee.pistol.clip)
+			r_time = dem.time
+			r_at = arena.player.global_position
+			_key(KEY_R)
+			step = 40
+			t = 0.0
+		40:
+			_check(arena.melee.pistol.reload_t > 0.0 or int(arena.melee.pistol.clip) > r_clip,
+					"a tap of R reloads the weapon in Demolition too (%d rounds, was %d)" % [
+						int(arena.melee.pistol.clip), r_clip])
+			_check(dem.time > r_time and arena.player.global_position.distance_to(r_at) < 1.5,
+					"... and it does NOT wipe the run: the clock kept going (%.1f s, was %.1f)" % [dem.time, r_time])
+			_check(arena.help.text.contains("R reload") and arena.help.text.contains("hold R start again"),
+					"the level's help line says R reloads and a hold starts the run again")
+			step = 41
+			t = 0.0
+		41:
+			# the backpack open: R is the backpack's, not the level's -- the arena carves its own keys out the same
+			# way, and this level used to act straight through every menu
+			arena.open_inventory(null)
+			step = 42
+			t = 0.0
+		42:
+			_check(arena.inv_ui.is_open(), "the backpack's open")
+			r_time = dem.time
+			r_at = arena.player.global_position
+			_hold(KEY_R, true)
+			step = 43
+			t = 0.0
+		43:
+			_check(dem.time > r_time and arena.player.global_position.distance_to(r_at) < 1.5 and not dem._again.visible,
+					"R held with the backpack open does nothing at all (%.1f s, was %.1f)" % [dem.time, r_time])
+			_hold(KEY_R, false)
+			arena.close_inventory()
+			step = 44
+			t = 0.0
+		# ---------------------------------------------------------------- the weapon put away in the cab
+		44:
+			_check(arena.melee.pistol.view.visible, "out of the cab: the pistol's there in front of you")
+			dem.crane.place(D.AT + D.CRANE_AT, -PI / 2.0)
+			_put(dem.crane.seat(), -PI / 2.0, 0.0)
+			dem.crane.enter()
+			step = 45
+			t = 0.0
+		45:
+			_check(dem.driving(), "in the cab again")
+			_check(not arena.melee.pistol.view.visible,
+					"in the wrecking crane's cab the weapon is put away, as on the coaster and in a Dig Site machine")
+			dem.crane.leave()
+			step = 46
+			t = 0.0
+		46:
+			_check(arena.melee.pistol.view.visible, "out of the cab: it's back in your hands")
 			step = 9
 			t = 0.0
 		9:
 			# the target hit: the banner, the best kept (the block's counted down to what's already down)
-			dem.blocks0 = ceili(float(dem.standing()) / (1.0 - D.TARGET))     # (as if the block had been this much bigger)
+			# as if the block had been this much bigger. The windows the enemies burst out of are off the player's
+			# score (VoxelDemolition.down() takes mob.opened off), so they go into the sum or the share lands a
+			# couple of blocks short of the target.
+			dem.blocks0 = ceili(float(dem.standing() + (dem.mob.opened if dem.mob else 0)) / (1.0 - D.TARGET))
 			step = 10
 			t = 0.0
 		10:
@@ -432,6 +553,8 @@ func _process(dt: float) -> bool:
 				return false
 			_check(dem.won and dem.over and not dem.running, "the target hit: the run's done")
 			_check(dem._end.visible and dem._end.text.contains("THE BLOCK'S DOWN"), "the banner's up")
+			_check(dem._end.text.contains("hold R: again") and not dem._end.text.contains("\nR: again"),
+					"and it asks for R to be HELD to go again, not tapped")
 			_check(dem.best_time > 0.0 and dem.best_score > 0, "a best kept (%s, %d blocks)" % [VoxelParkGame._clock(dem.best_time), dem.best_score])
 			var cf := ConfigFile.new()
 			_check(cf.load(D.BEST_FILE) == OK and float(cf.get_value("best", "time", 0.0)) > 0.0, "and written to %s" % D.BEST_FILE)
