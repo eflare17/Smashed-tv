@@ -560,6 +560,44 @@ func carousel_stopped(mid: Vector3, w: float, all: bool) -> int:
 		sk.arena.sound.play("swoosh_heavy", mid, 2.0, 1.1)
 	return went
 
+## Its enemies still seated on the Carousel, for the flight at Luna Palace (VoxelCarouselHack): each one's record, its
+## seat's place in the ride's batch, and the seat transform the ride was built with. The geometry is the hack's to do,
+## not ours: _seat_xf cannot place a Carousel seat (the horses' batch reads every instance transform back as the
+## origin, which is why VoxelCarouselHack._throw works off the Spinner's own horse list instead).
+func carousel_riders() -> Array:
+	var out := []
+	if not running:
+		return out
+	for ride in rides:
+		if String(ride.name) != "Carousel":
+			continue
+		for rec in ride.riders:
+			if rec.state == SEATED:
+				out.append({"rec": rec, "i": int((rec.at as Dictionary).i), "xf": (rec.at as Dictionary).xf})
+	return out
+
+## One of those taken off for the flight: off the ride, hidden, and killed through the ordinary path, so the count
+## drops and the kill is yours. The flight is flown in its place by the hack. Until now that flight's body came from
+## the scenery riders, and an invasion leaves the Carousel exactly one of those (FILL_RIDE 0.8 of its seats), so the
+## one civilian always made it, from wherever he was sitting, for want of competition (the owner, 26 Nov: "make it so
+## the NPC that doesn't do it on the invasion level").
+func take_flier(rec: Dictionary, seat: Transform3D) -> bool:
+	var b: VoxelBody = rec.body if rec.body != null and is_instance_valid(rec.body) else null
+	if b == null:
+		if rec.made:
+			return false                    # (its body is gone from under us)
+		_make(rec, seat)                    # (too far off to have been made yet: it flies all the same)
+		rec.made = true
+		b = rec.body
+	if b == null:
+		return false
+	_let_go(b)
+	rec.state = OFF
+	rec.wait = INF
+	b.visible = false                       # (the flight is its body now: this one is gone)
+	b.hurt(b.hp * 2.0)                      # your kill, counted and paid like any other
+	return true
+
 # the flung ones: hurt where they come to rest
 func _flung_step() -> void:
 	var k := 0

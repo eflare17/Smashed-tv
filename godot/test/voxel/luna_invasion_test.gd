@@ -182,7 +182,10 @@ func _button_steps() -> void:
 			for r in car.riders:
 				if r.state == I.SEATED and _made(r):
 					var b: VoxelBody = r.body
-					on0.append([r, b, Vector2(b.global_position.x - mid.x, b.global_position.z - mid.z).length()])
+					on0.append([r, b, Vector2(b.global_position.x - mid.x, b.global_position.z - mid.z).length(), _seat_in_world(hack, r)])
+					# (o[3]: where the seat really is. Not the body -- a riding body is parked at the ride's middle --
+					# and not VoxelParkInvasion._seat_xf either, which cannot place a Carousel seat: the horses' batch
+					# reads every instance transform back as the origin, so only the Spinner's horse list knows.)
 			_check(hack.w > 3.3 and on0.size() >= 2 and on0.size() == (car.riders as Array).size(), "flat out (%.1f rad/s): its %d enemies still on it, holding on" % [hack.w, on0.size()])
 			kills0 = inv.kills
 			cash0 = arena.cash
@@ -192,9 +195,35 @@ func _button_steps() -> void:
 			if t < 0.1:
 				return
 			var car := _carousel()
-			_check(inv.flung == on0.size() and not (car.riders as Array).any(func(r): return r.state == I.SEATED), "the brake: all %d flung, none left riding" % inv.flung)
-			_check(on0.all(func(o): return (o[1] as VoxelBody).airborne and not (o[1] as VoxelBody).has_meta("riding")), "they're in the air, the arena's bodies")
-			_check(hack.tumbles.size() == 1 and arena.cam.current and not (hack._cam and hack._cam.current), "the scenery rider's thrown too; the view stays yours")
+			# One of them is taken off for the flight at Luna Palace before the rest are flung
+			# (VoxelParkInvasion.carousel_flier): hidden, counted as your kill, and the arc flown in its place. It used
+			# to be the one civilian the invasion leaves on the ride, picked by having no competition.
+			var flier := on0.filter(func(o): return is_instance_valid(o[1]) and not (o[1] as VoxelBody).visible)
+			var rest := on0.filter(func(o): return is_instance_valid(o[1]) and (o[1] as VoxelBody).visible)
+			_check(flier.size() == 1, "one enemy taken for the flight at Luna Palace (%d)" % flier.size())
+			_check(inv.flung == rest.size() and not (car.riders as Array).any(func(r): return r.state == I.SEATED), "the brake: the other %d flung, none left riding" % inv.flung)
+			_check(rest.all(func(o): return (o[1] as VoxelBody).airborne and not (o[1] as VoxelBody).has_meta("riding")), "they're in the air, the arena's bodies")
+			_check(hack.tumbles.size() == 1 and arena.cam.current and not (hack._cam and hack._cam.current), "the flight is flown; the view stays yours")
+			_check((hack.tumbles[0] as VoxelCarouselTumble).hang_at != Vector3.INF, "it's the arc at the window, caught by a foot on the sill")
+			_check((hack._gone_seats as Array).is_empty(), "the civilian is left on his horse (%d scenery seats emptied)" % (hack._gone_seats as Array).size())
+			# and it is the one that was heading most directly at the palace -- the point of taking an enemy is that
+			# there are six to choose between, where the lone civilian was picked by having no competition
+			if hack._wall_at != Vector3.INF:
+				var best_dot := -INF
+				var chosen_dot := -INF
+				for o in on0:
+					var pos: Vector3 = o[3]
+					var arm := pos - mid
+					arm.y = 0.0
+					var to := hack._wall_at - pos
+					to.y = 0.0
+					if arm.length() < 0.1 or to.length() < 0.1:
+						continue
+					var dot := Vector3.UP.cross(arm).normalized().dot(to.normalized())
+					best_dot = maxf(best_dot, dot)
+					if is_instance_valid(o[1]) and not (o[1] as VoxelBody).visible:
+						chosen_dot = dot
+				_check(chosen_dot >= best_dot - 0.05, "the one heading most at Luna Palace was picked (%.3f, best %.3f)" % [chosen_dot, best_dot])
 			_next(114)
 		114:
 			if t < 5.0:
@@ -206,6 +235,9 @@ func _button_steps() -> void:
 				var b: VoxelBody = o[1]
 				if not is_instance_valid(b):
 					dead += 1
+					continue
+				if not b.visible:
+					dead += 1                 # (the one taken for the flight: counted as it went, and gone from the ride)
 					continue
 				out_min = minf(out_min, Vector2(b.global_position.x - mid.x, b.global_position.z - mid.z).length() - float(o[2]))
 				if not b.alive:
@@ -532,3 +564,12 @@ func _process(dt: float) -> bool:
 			print("LUNA INVASION: %d passed, %d failed" % [passed, failed])
 			quit(0 if failed == 0 else 1)
 	return false
+
+## Where a rider's seat is in the world, as VoxelCarouselHack works it out (its _seat_world, over the Spinner's own
+## horse list -- the ride's MultiMesh gives the origin back for every horse).
+func _seat_in_world(hack, rec: Dictionary) -> Vector3:
+	var seats: Array = hack.spin.riders.seats
+	var i := int((rec.at as Dictionary).i)
+	if i < 0 or i >= seats.size():
+		return Vector3.ZERO
+	return hack._seat_world(seats[i], (rec.at as Dictionary).xf as Transform3D).origin

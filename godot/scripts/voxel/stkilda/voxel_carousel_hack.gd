@@ -30,6 +30,11 @@ const AWAY := 9.0               # m from the box and the gadget's put away
 const NEAR_HORSE := 1.7         # m (level) from a horse's pole to get at its bolt
 const ACTS := ["faster", "slower", "brake", "lights"]
 const THROW_FROM := 3.0         # rad/s (flat out): stopped dead faster than this and a rider goes flying (VoxelCarouselTumble)
+## The colours the invasion's flier goes over in: SkCrowd's near-black shirt (3) and trousers (1), packed the way
+## VoxelCarouselTumble.start reads them out of a custom colour -- so what sails at Luna Palace during an invasion
+## reads as one of them and not as a park-goer in a red shirt. (Its body is the crowd's shape, not the block
+## character's: the flight, the slide, the hanging by a foot and the bin are all built for that one.)
+const ENEMY_LOOK := Color(0.20, 0.0, 0.14, 0.5)
 const THROW_MAX := 9.0          # m/s they fly off at, at most
 # the rest of the riders thrown off with him: the invasion's own numbers (VoxelParkInvasion.KNOCK_FROM, KNOCK_PART), so
 # ordinary play and the invasion stop the ride the same way
@@ -276,11 +281,16 @@ func send(k: int) -> void:
 				var all := w > THROW_FROM
 				# (the invasion on: every enemy riding it flung off, VoxelParkInvasion; then the view stays yours)
 				var enemies := 0
+				# (the invasion on, flat out: one of its enemies is taken off for the flight at Luna Palace before
+				# the rest are flung, so an enemy makes it and not the one civilian left on the ride)
+				var flier := {}
+				if all and sk.invasion and sk.invasion.running and _palace_wall():
+					flier = _pick_enemy()
 				if sk.invasion and sk.invasion.running:
 					enemies = sk.invasion.carousel_stopped(spin.global_position, w, all)
 				flung = 0
 				if all:
-					flung = _throw(enemies == 0)          # (the one who goes all the way over at Luna Palace)
+					flung = _throw(enemies == 0, flier)   # (the one who goes all the way over at Luna Palace)
 				# the scenery riders: in ordinary play the rest of them go too, the same as the invasion's enemies
 				# (the invasion's own are its business: its riders are flung above, the few scenery ones left stay)
 				if sk.invasion == null or not sk.invasion.running:
@@ -517,11 +527,16 @@ func _palace_wall() -> bool:
 ## The rider thrown off: at Luna Palace if it's there to hit, else into whatever's nearest the way they're going.
 ## (view false: the view doesn't go with them: the invasion's enemies are flying too and you need your own.)
 ## How many went (0 or 1).
-func _throw(view := true) -> int:
-	if spin.riders == null:
+func _throw(view := true, given := {}) -> int:
+	if spin.riders == null and given.is_empty():
 		return 0
 	var mid := spin.global_position
 	var far := _palace_wall()
+	if not given.is_empty():
+		# an enemy handed over by the invasion: already off the ride and counted, so there is no seat to shrink away
+		# and no scenery rider to pick. It flies in black, as one of them, not in a park-goer's shirt (SkCrowd's
+		# palette through VoxelCarouselTumble.start: shirt 3 and trousers 1 are the near-black pair).
+		return _fly(given.xf, given.v, ENEMY_LOOK, mid, far, view)
 	var space := get_world_3d().direct_space_state
 	var best := -1
 	var best_d := INF
@@ -532,11 +547,7 @@ func _throw(view := true) -> int:
 		var s: Array = seats[i]
 		if (s[2] as Transform3D).basis.get_scale().x < 0.01:
 			continue                         # (thrown off already)
-		var on := Transform3D()
-		for h in spin.horses:
-			if int(h[1]) == int(s[1]):
-				on = h[2]
-		var xf := spin.global_transform * on * (s[2] as Transform3D)
+		var xf := _seat_world(s, s[2])
 		var r := xf.origin - mid
 		r.y = 0.0
 		var v := Vector3.UP.cross(r) * w
@@ -563,11 +574,61 @@ func _throw(view := true) -> int:
 	_gone_seats.append([seat, seat[2]])
 	var custom := spin.riders.multimesh.get_instance_custom_data(best)
 	seat[2] = Transform3D(Basis().scaled(Vector3.ONE * 0.001), (seat[2] as Transform3D).origin)
+	return _fly(best_xf, best_v, custom, mid, far, view)
+
+## Where a seat of this ride is in the world. `local`: the seat's own transform (the ride's batch holds every horse's
+## place, but a MultiMesh reads its instance transforms back as the origin here, so the Spinner's own horse list is
+## what says where a horse is).
+func _seat_world(s: Array, local: Transform3D) -> Transform3D:
+	var on := Transform3D()
+	for h in spin.horses:
+		if int(h[1]) == int(s[1]):
+			on = h[2]
+	return spin.global_transform * on * local
+
+## The invasion's enemy best placed for the flight at Luna Palace: the one whose seat is heading most directly at the
+## wall, of the six or so riding it -- where the scenery rider it used to pick was the one civilian an invasion leaves
+## on the ride, and so was picked by having nobody to compete with. Taken off the ride and counted as your kill by
+## VoxelParkInvasion.take_flier; {} if none of them could be. (_palace_wall() first: _wall_at is the aim.)
+func _pick_enemy() -> Dictionary:
+	if spin == null or spin.riders == null or sk.invasion == null:
+		return {}
+	var seats: Array = spin.riders.seats
+	var mid := spin.global_position
+	var best := {}
+	var best_d := INF
+	for r in sk.invasion.carousel_riders():
+		var i := int(r.i)
+		if i < 0 or i >= seats.size():
+			continue
+		var xf := _seat_world(seats[i], r.xf as Transform3D)
+		var arm := xf.origin - mid
+		arm.y = 0.0
+		var to := _wall_at - xf.origin
+		to.y = 0.0
+		if arm.length() < 0.1 or to.length() < 0.1:
+			continue
+		var v := Vector3.UP.cross(arm) * w
+		var d := 1.0 - v.normalized().dot(to.normalized())        # (0: straight at it)
+		if d < best_d:
+			best_d = d
+			best = {"rec": r.rec, "xf": xf, "v": v}
+	if best.is_empty():
+		return {}
+	if not sk.invasion.take_flier(best.rec, best.xf as Transform3D):
+		return {}
+	return best
+
+## The flight itself: a body from `xf` (its feet) going at `v`, in `custom`'s colours. `far`: an arc solved onto
+## Luna Palace's window sill, where VoxelCarouselTumble catches them by a foot; else into whatever is nearest the
+## way they were going. Shared by the scenery rider the brake picks in ordinary play and by the enemy the invasion
+## hands over during one.
+func _fly(xf: Transform3D, v: Vector3, custom: Color, mid: Vector3, far: bool, view: bool) -> int:
 	var tb := VoxelCarouselTumble.new()
 	tb.name = "Tumble"
 	add_child(tb)
-	var start := best_xf.origin
-	var fly := Vector3(best_v.x, 0, best_v.z)
+	var start := xf.origin
+	var fly := Vector3(v.x, 0, v.z)
 	var lift := 2.2
 	if far:
 		# an arc that comes down on the wall a little in front of it (the body's middle about 1.1 m up off their feet)
@@ -587,7 +648,7 @@ func _throw(view := true) -> int:
 	else:
 		fly = fly.normalized() * minf(fly.length(), THROW_MAX)
 	var face := Basis(Vector3.UP, atan2(-fly.x, -fly.z))
-	tb.start(Transform3D(face.scaled(Vector3.ONE * best_xf.basis.get_scale().x), start), custom, fly, mid, lift, 4.0 if far else 6.0)
+	tb.start(Transform3D(face.scaled(Vector3.ONE * xf.basis.get_scale().x), start), custom, fly, mid, lift, 4.0 if far else 6.0)
 	tumbles.append(tb)
 	sk.arena.sound.play("swoosh_heavy", start, 0.0, 0.8)
 	if far and view:
