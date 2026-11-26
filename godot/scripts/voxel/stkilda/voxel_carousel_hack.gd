@@ -622,8 +622,8 @@ func _fling(all: bool) -> int:
 		var n := clampi(roundi(on.size() * KNOCK_PART), 1, maxi(1, on.size() - 1))
 		var first := _fling_rng.randi() % on.size()
 		var pick := []
-		for k in n:
-			pick.append(on[(first + k * on.size() / n) % on.size()])
+		for j in n:
+			pick.append(on[(first + j * on.size() / n) % on.size()])
 		on = pick
 	elif on.size() > FLING_MAX:
 		on.resize(FLING_MAX)                # (the phone: that many loose bodies at once is plenty; the rest hold on)
