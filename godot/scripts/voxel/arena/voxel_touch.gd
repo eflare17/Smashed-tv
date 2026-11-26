@@ -223,8 +223,11 @@ static func detect(opts: Dictionary) -> bool:
 ## A real phone or tablet (the Android build, or a phone's browser) -- not --touch tried out on a desktop. What the
 ## capped render scale, the shorter draw distance and the lighter Jared are for: they're about a phone's screen and
 ## its fill rate, so they hold for the native build as much as for the browser's.
+## pretend_phone: a headless test's way in -- this PC is neither "mobile" nor "web", so a test that has to walk the
+## phone branches (test/voxel/settings_stale_test.gd) sets this with --touch. Never set by the game itself.
+static var pretend_phone := false
 static func phone() -> bool:
-	return active and (OS.has_feature("mobile") or OS.has_feature("web"))
+	return active and (pretend_phone or OS.has_feature("mobile") or OS.has_feature("web"))
 
 ## The mouse grabbed (first person, playing)? Touch mode: always (there's no pointer to lock; the menus say when they're up).
 static func grabbed() -> bool:

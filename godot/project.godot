@@ -12,6 +12,11 @@ config_version=5
 [application]
 
 config/name="Smashed TV"
+; Which build this is, shown on the settings screen (VoxelSettingsMenu._hw_text). Bump it, and version/code and
+; version/name in export_presets.cfg with it, for every APK published: every APK up to 26 Nov 2026 went out as
+; version code 1, which is why Android let any of them install over any other without a word and why neither the
+; owner nor we could tell which build was on his phone when the settings screen misbehaved.
+config/version="2 (26 Nov 2026)"
 run/main_scene="res://scenes/main.tscn"
 run/main_scene.voxel_arena="res://scripts/voxel/arena/voxel_arena.tscn"
 run/main_scene.voxel_web="res://scripts/voxel/arena/voxel_arena.tscn"

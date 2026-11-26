@@ -67,8 +67,8 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 		if p != "":
 			s.set_preset(p)
 		s.apply(arena)
-		if s.first_run:
-			s.save_file()
+		if s.first_run or s.migrated:
+			s.save_file()       # (migrated: written back with its VERSION stamp, so the step isn't redone next launch)
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -132,7 +132,7 @@ func setup(arena_: Node3D, use_file: bool) -> void:
 	_hw.custom_minimum_size = Vector2(740, 0)
 	_hw.add_theme_font_size_override("font_size", 13)
 	_hw.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
-	_hw.text = VoxelSettings.hardware()
+	_hw.text = _hw_text()
 	v.add_child(_hw)
 	var prow := HBoxContainer.new()
 	prow.add_theme_constant_override("separation", 8)
@@ -258,7 +258,17 @@ func touch_layout() -> void:
 	_scroll.custom_minimum_size.y = 250
 	(_rows.sens as Control).get_parent().visible = false
 	(_labels.sens as Control).visible = false
-	_hw.visible = false
+	_hw.text = _hw_text()           # (a phone: the build on its own, not the processor -- _hw_text says why)
+
+## The small line under the title: the PC in a line, and which build this is. On a phone just the build, because a
+## phone's processor name is no use to anybody and the room is. Why it is there at all: the owner sideloads each new
+## APK over the last one, and every APK up to 26 Nov 2026 reported itself as version 1.0 with version code 1, so
+## Android installed any of them over any other without a word and there was no way -- for him or for us -- to tell
+## which build he was looking at when he said the settings screen froze. Now the screen says, and the version code
+## goes up with each build so a phone refuses an older one.
+func _hw_text() -> String:
+	var build := "Build %s" % str(ProjectSettings.get_setting("application/config/version", "dev"))
+	return build if VoxelTouch.phone() else "%s   %s" % [VoxelSettings.hardware(), build]
 
 func _label(parent: Control, text: String) -> Label:
 	var l := Label.new()
@@ -335,6 +345,7 @@ func _slider_text(key: String) -> String:
 func _changed() -> void:
 	var say := _picture_line()
 	if say != "":
+		arena.say_held = say                # (held over the whole change: a rebuild's count goes under it, not over)
 		arena.say_line(say)
 		await get_tree().process_frame      # (the line drawn ...)
 		await get_tree().process_frame      # ... and on screen before the change)
@@ -345,6 +356,7 @@ func _changed() -> void:
 	if say != "":
 		await get_tree().process_frame      # (the long frame: the one that compiles what it now has to draw)
 		await get_tree().process_frame
+		arena.say_held = ""
 		arena.say_line("")
 
 func _on_preset(name: String) -> void:
@@ -393,7 +405,7 @@ func open() -> void:
 	_panel.visible = true
 	arena._let_go()
 	VoxelTouch.grab(false)
-	_hw.text = VoxelSettings.hardware()
+	_hw.text = _hw_text()
 	_refresh()
 	(_presets[s.preset] if _presets.has(s.preset) else _bench_b).grab_focus()
 

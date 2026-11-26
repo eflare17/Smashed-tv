@@ -1394,6 +1394,9 @@ const REBUILD_MAX := 40.0
 var _rb := {}                   # the rebuild running: {chars, job, after, n, did} (empty: none)
 var _rb_label: Label
 var _rb_said := ""              # the last line put on the page (the browser: not one JavaScript call a frame)
+## A line the settings screen is holding up over a change the renderer has to chew on (VoxelSettings.PICTURE): it
+## outranks a rebuild's count instead of being replaced by it. say_line has the measurements. "" when there is none.
+var say_held := ""
 
 ## The enemies built again at a new cube size ("Enemy detail"), a slice a frame. The fight starts over at the end.
 func rebuild_enemies(to_chunk: int) -> void:
@@ -1492,6 +1495,13 @@ func _rb_say() -> void:
 func say_line(text: String, from_rebuild := false) -> void:
 	if not from_rebuild and not _rb.is_empty():
 		return
+	# What the settings screen is holding up stays up, with a rebuild's count on a line under it rather than in
+	# place of it. "Rebuilding the blocks: step 1 of 1 (0%)" standing perfectly still through a seconds-long
+	# shader compile is exactly what reads as a freeze: measured on the native path at a phone's full 2340x1080,
+	# tapping MEDIUM (the mirror and the shadows coming on, over a Jared being built again) was one 4,381 ms frame,
+	# and the only line on screen was that count.
+	if say_held != "" and text != say_held:
+		text = say_held if text == "" else "%s\n%s" % [say_held, text]
 	if _rb_label == null and text != "":
 		var cl := CanvasLayer.new()
 		cl.layer = 59               # (under the start-up screen's 60, over the settings panel's 31)
@@ -1502,7 +1512,7 @@ func say_line(text: String, from_rebuild := false) -> void:
 		_rb_label.offset_left = -400
 		_rb_label.offset_right = 400
 		_rb_label.offset_top = 150
-		_rb_label.offset_bottom = 210
+		_rb_label.offset_bottom = 260       # (room for two lines: say_held's, and a rebuild's count under it)
 		_rb_label.add_theme_font_size_override("font_size", 26)
 		_rb_label.add_theme_color_override("font_color", Color("#f6d17a"))
 		_rb_label.add_theme_constant_override("outline_size", 6)

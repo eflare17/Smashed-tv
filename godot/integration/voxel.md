@@ -612,6 +612,56 @@ scalable settings, plus a recommended-settings test based on the player's hardwa
   limbs, cubes popped up, pieces tossed), so the flying and lying cubes and pieces fill up toward each preset's caps:
   it measures the gore at full load, not only the drawing.
 
+### The saved file's version stamp (26 Nov, the owner, on the Android APK: "the enemies looked more blockybthen the website version")
+
+`user://voxel_settings.cfg` keeps every setting **verbatim**, so when a *default* moves, a player who already has a
+file never gets the new default: `load_file()` reads back what is there, and its `missing` fill only adds keys that
+are absent altogether. That is what happened on the owner's phone. The first APK (`164b770`) was built before
+`cc0b076` ("the enemies get their blocks back"), when Low's `chunk` was **2** -- an eighth of the blocks -- so his
+first launch wrote `chunk: 2`, and every APK since read it straight back: blocky enemies on the phone, Fine in the
+browser, where no pre-fix file had ever been written. The same file also carries `scale: 0.67` and `scenery: 60.0`,
+which is why the native build's "it draws the screen's pixels" (`1a52b30`, `NATIVE_START`) never reached him either.
+
+So the file now says which build's defaults it was written against.
+
+- **`VoxelSettings.VERSION`** (1 as of 26 Nov) is written into the file as `settings/version` by `save_file()`. A
+  file with no `version` key at all is **version 0**: anything the first APK wrote.
+- **`VoxelSettings._migrate(was, had)`** runs from `load_file()` when `was < VERSION`, last of all and reading
+  `had` -- the values the file itself carried -- so it decides from the file rather than from whatever the `missing`
+  fill guessed. It sets `migrated`, and `VoxelSettingsMenu.setup()` saves the file when it is set, so the stamp
+  sticks and a step runs once per phone.
+- **To use it for the next default change, three steps:** (1) change the default -- a `PRESETS` value, a `PERSONAL`
+  value, `NATIVE_START` -- as you would anyway; (2) bump `VERSION` by one; (3) add one `if was < <the new VERSION>:`
+  block to `_migrate()`, and nothing else.
+- **What a step may touch.** Only a value that *still matches the old default* and whose neighbours show it was never
+  chosen by hand. `_was_preset(name, had, ignore)` is the test: if the rest of the file is a preset to the letter as
+  that preset is *now*, the one odd value came from the preset too, not from the row. A value the player picked is
+  theirs to keep. Step 1 therefore moves `chunk: 2` to Fine (and applies `NATIVE_START` on the native build) **only**
+  for a file that is otherwise Low exactly; a stamped file with `chunk: 2`, or an unstamped one that is High with
+  `chunk: 2`, is left alone. The one case the file cannot tell apart -- a player sitting on Low who deliberately
+  chose the Chunky the preset had already given him -- is corrected as well, which is the way round the owner wants
+  it, and the row puts it back.
+- Tests: `test/voxel/settings_stale_test.gd` (24 checks: a file written in the first APK's exact shape comes up Fine
+  with Low's chunky Jared and the native starting picture; the same file in a phone's browser keeps Low's own
+  picture; a Chunky chosen on purpose stays; a file already up to date isn't touched; the step doesn't run twice;
+  and then the arena started on the native path *with that file* -- `--settings --touch`, with
+  `VoxelSettings.pretend_native` and `VoxelTouch.pretend_phone` standing in for the APK's feature tags -- the
+  settings screen opened and every frame of it inside a budget).
+
+**Which build is on the phone.** Every APK up to 26 Nov went out as `version/code=1`, `version/name="1.0"`, so
+Android let any of them install over any other without a word, and neither the owner nor we could tell which build
+he was looking at. Now `version/code` and `version/name` in `export_presets.cfg` and
+`application/config/version` in `project.godot` are bumped together for each published APK (2, 26 Nov 2026), the
+phone refuses an older one, and the settings screen's small line under the title says **Build 2 (26 Nov 2026)** (on a
+phone that line is the build alone; on a PC it is the PC's line and then the build -- `VoxelSettingsMenu._hw_text`).
+
+**A long picture change says what it is, over a rebuild.** `VoxelArena.say_held` holds the settings screen's own line
+(`_picture_line()`: "Turning the shadows on - this takes a few seconds") up for the whole of a change, with a
+rebuild's count on a line *under* it instead of in place of it. Measured on the native path with a real draw at a
+phone's full 2340x1080: tapping MEDIUM -- the mirror and the shadows coming on over a Jared being built again -- was
+one **4,381 ms** frame, and before this the only line on screen was "Rebuilding the blocks: step 1 of 1 (0%)",
+standing perfectly still, which is what reads as a freeze.
+
 ### Enemy variety (Stage 11 of the overnight plan, 22 Oct: "a fast charger, a ranged thrower and a tanky shield brute")
 
 - `scripts/voxel/arena/voxel_kinds.gd` (`VoxelKinds`, the arena's `kinds`): each kind's own move, run on the host (or

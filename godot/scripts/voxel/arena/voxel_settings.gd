@@ -18,6 +18,28 @@ extends RefCounted
 ## session.
 
 const FILE := "user://voxel_settings.cfg"
+## The shape of the saved file. A saved file carries every setting VERBATIM, so when a DEFAULT moves, a player who
+## already has a file keeps the old default for ever: load_file() reads what is there and the `missing` fill below
+## only adds keys that are absent altogether. That is what happened to the owner's phone. The first Android APK
+## (164b770) was built before cc0b076 ("the enemies get their blocks back"), when Low's "chunk" was 2 -- an eighth
+## of the blocks -- so his first launch wrote chunk: 2, and every APK since read it straight back: blocky enemies on
+## the phone and Fine in the browser, where no pre-fix file was ever written. The same file also carries
+## scale: 0.67 and scenery: 60.0, which is why the native build's "it draws the screen's pixels" (1a52b30,
+## NATIVE_START) never reached him either.
+##
+## So the file says which build's defaults it was written against, and _migrate() moves an older one on. A file with
+## no "version" key at all is version 0: anything the first APK wrote.
+##
+## HOW TO USE THIS FOR THE NEXT DEFAULT CHANGE (three steps):
+##   1. change the default -- a PRESETS value, a PERSONAL value, NATIVE_START -- as you would anyway;
+##   2. bump VERSION by one;
+##   3. add one `if was < <the new VERSION>:` block to _migrate(), and nothing else.
+## A migration step may only move a value that STILL MATCHES THE OLD DEFAULT and whose neighbours show it was never
+## chosen by hand -- _was_preset() is the test for that: the rest of the file being a preset exactly as that preset
+## was means the odd value came from the preset, not from the row. A value the player picked is theirs to keep.
+## Every file is saved with the current VERSION (and load_file sets `migrated`, so the screen writes it back once),
+## so a step runs once on a given phone and never again. test/voxel/settings_stale_test.gd guards all of this.
+const VERSION := 1
 const ORDER := ["low", "medium", "high", "ultra", "extreme"]
 const PRESETS := {
 	"low": {"scale": 0.67, "msaa": 0, "taa": false, "shadows": 0, "ssao": false, "ssil": false, "glow": false, "sdfgi": false,
@@ -121,6 +143,7 @@ var file := FILE                # ("": never saved, the tests' games)
 var v := {}                     # every setting now
 var preset := "high"            # or "custom"
 var first_run := false
+var migrated := false           # (load_file brought an older file up to date: the screen saves it, so the stamp sticks)
 var bench := {}                 # the last benchmark: {preset: [average fps, 1% low fps]}, "pick", "hw"
 
 func _init() -> void:
@@ -162,10 +185,13 @@ func load_file() -> void:
 				v[k] = NATIVE_START[k]
 			preset = which_preset()
 		return
+	var was := int(cf.get_value("settings", "version", 0))     # (no stamp: 0, the first APK's file or older)
+	var had := {}                   # what the file itself carried, for _migrate: untouched by anything below
 	var missing := []
 	for k in v:
 		if cf.has_section_key("settings", k):
 			v[k] = cf.get_value("settings", k, v[k])
+			had[k] = v[k]
 		else:
 			missing.append(k)
 	if not missing.is_empty():
@@ -182,8 +208,47 @@ func load_file() -> void:
 					if PRESETS[name].has(k):
 						v[k] = PRESETS[name][k]
 				break
+	# A default that moved after this file was written (VERSION says how to add the next one). Last, and reading
+	# `had` rather than v, so it decides from what the file actually held and has the final say over the guess the
+	# fill above made for a key that wasn't in the file at all.
+	if was < VERSION:
+		_migrate(was, had)
 	preset = which_preset()
 	bench = cf.get_value("bench", "last", {})
+
+## A saved file written against an older build's defaults, brought up to date. `was`: the version it was stamped
+## with (0: unstamped). `had`: the values the file itself carried. One block per VERSION step; VERSION says how to
+## add the next one.
+func _migrate(was: int, had: Dictionary) -> void:
+	if was < 1:
+		# cc0b076 + 1a52b30: Low's enemies went from Chunky to Fine, your own Jared became a row of his own (Low
+		# keeps him chunky -- he is 650,000 cubes at Fine and 12 s of the loading screen), and a native phone now
+		# starts on the screen's own pixels with Luna Park's scenery out to 110 m. Everything the first APK
+		# (164b770) wrote predates all three.
+		# Only a file that is Low exactly as Low was then is moved on: there the 2 can only have come from the
+		# preset. The one case nobody can tell apart from the file -- a player sitting on Low who deliberately
+		# chose the Chunky the preset had already given him -- is corrected as well, which is the way round the
+		# owner wants it ("the enemies looked more blocky"), and the row is right there to put it back.
+		if int(had.get("chunk", 1)) == 2 and _was_preset("low", had, ["chunk"]):
+			set_preset("low")       # Low as Low is now: Fine enemies, chunky Jared, the rest where it already was
+			if native():
+				for k in NATIVE_START:
+					v[k] = NATIVE_START[k]
+			print("VoxelSettings: a settings file from before the enemies got their blocks back (version %d): today's Low put on" % was)
+	# (the next step goes here: `if was < 2:` ...)
+	migrated = true             # (stamped either way, so a step that found nothing to do isn't asked again)
+
+## True when `had` -- what a saved file actually carried -- is the preset `name` exactly as this build has it, apart
+## from the keys in `ignore` and any key the file didn't have at all (a setting added since it was written). This is
+## what tells "never touched since a preset" from "chosen on purpose": if the rest of the file is a preset to the
+## letter, the one odd value came from that preset too.
+func _was_preset(name: String, had: Dictionary, ignore: Array) -> bool:
+	for k in PRESETS[name]:
+		if ignore.has(k) or not had.has(k):
+			continue
+		if had[k] != PRESETS[name][k]:
+			return false
+	return int(had.get("fx", 0)) == FX_PRESETS[name]
 
 func save_file() -> void:
 	if file == "":
@@ -191,13 +256,18 @@ func save_file() -> void:
 	var cf := ConfigFile.new()
 	for k in v:
 		cf.set_value("settings", k, v[k])
+	cf.set_value("settings", "version", VERSION)     # (which build's defaults these are: VERSION says why)
 	if not bench.is_empty():
 		cf.set_value("bench", "last", bench)
 	cf.save(file)
 
 ## The native Android build, told from a phone's browser by the "Android Voxel Arena" preset's own feature tag.
+## pretend_native: there is no feature tag on this PC, so a headless test that has to walk the native path
+## (test/voxel/settings_stale_test.gd) sets this instead -- with VoxelTouch.pretend_phone, which is the other half
+## of what the APK is. Never set by the game itself.
+static var pretend_native := false
 static func native() -> bool:
-	return OS.has_feature("voxel_mobile")
+	return pretend_native or OS.has_feature("voxel_mobile")
 
 ## A phone's two caps: the 3D picture's longest side in pixels (before the preset's own scale), and how far it draws.
 static func across() -> float:

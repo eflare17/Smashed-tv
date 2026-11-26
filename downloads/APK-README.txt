@@ -2,9 +2,10 @@ SMASHED TV -- VOXEL ARENA, THE ANDROID BUILD
 ============================================
 
 File:     SmashedVoxelArena.apk
-Size:     42,148,725 bytes (40.2 MB)
-SHA-256:  750cc68da72c521d091006ce8185eb7cfde3e8c0fca6a820cf27f6e87178f6c5
-Built:    25 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
+Version:  2 (26 Nov 2026) -- Android version code 2
+Size:     42,299,935 bytes (40.3 MB)
+SHA-256:  bc68b7446ea0080c7795a8c7329fdc4bc587842a2633a9ecdbd6c6da8793eb4f
+Built:    26 November 2026, Godot 4.4.1 stable, export preset "Android Voxel Arena"
           (tools/build_android.sh; same signing key as the first build, so it
           installs straight over it)
 Phones:   64-bit ARM (arm64-v8a) -- a Galaxy S25 or anything else from the last ten years.
@@ -30,6 +31,15 @@ PUTTING IT ON THE PHONE
 Updating later: a newer APK installs straight over this one as long as it is
 signed with the same key. If Android ever refuses with "App not installed",
 uninstall the old one first.
+
+WHICH BUILD AM I RUNNING? Open SET in the game: the small line under the word
+SETTINGS says "Build 2 (26 Nov 2026)". Android's own Settings > Apps > Smashed
+TV voxel arena shows the same number. Every build before this one said version
+1.0, which meant Android would happily install an older APK over a newer one
+without saying a word -- so if you have several SmashedVoxelArena.apk files in
+Downloads it was possible to end up back on an old build by tapping the wrong
+one. From build 2 on, the number goes up with every build and the phone
+refuses to go backwards.
 
 
 WHAT IS IN IT
