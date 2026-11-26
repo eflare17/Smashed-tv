@@ -44,6 +44,9 @@ var _fly_v := Vector3.ZERO      # feet first and upside down to the sill: not th
 var _fly_T := 1.0
 var _fly_side := Vector3.RIGHT
 var _fly_yaw := 0.0
+var _lid_t := 0.0               # (the lid shutting on him in the bin: _lid_step)
+var _lid_hit := false
+var _lid_done := false
 
 const FLY_SPEED := 26.0         # m/s across, at a window
 const TURNS := PI * 3.0         # head over heels on the way there
@@ -52,6 +55,40 @@ const SPLAT_T := 0.35           # s stuck flat to it first
 const SLIDE_T := 1.0            # s sliding down
 const HANG_T := 5.0             # s hanging there before the foot slips off (the owner: "hang like 5 seconds then fall into a bin")
 const BIN_FLOOR := 0.12         # m: the bin's floor, inside, off the ground
+const LID_WAIT := 0.7           # s in the bin before the lid starts to come down
+const LID_FALL := 0.45          # s it takes to fall shut
+const LID_BOUNCE := 0.18        # rad it rebounds off his legs, shaken off over LID_SETTLE
+const LID_SETTLE := 0.5         # s
+
+## The lid coming down on him. It waits LID_WAIT, swings shut over LID_FALL (fastest at the end, as a falling lid is),
+## clatters off his legs with a bounce of LID_BOUNCE and settles over LID_SETTLE. Nothing here moves the bin itself --
+## the rocking above does that, and the lid is its child, so it rocks with it.
+func _lid_step(dt: float) -> void:
+	if bin == null or _lid_done:
+		return
+	var lid := bin.get_node_or_null("Lid") as Node3D
+	if lid == null:
+		_lid_done = true
+		return
+	_lid_t += dt
+	if _lid_t < LID_WAIT:
+		return
+	var f := (_lid_t - LID_WAIT) / LID_FALL
+	var open: float = VoxelCarouselHack.LID_OPEN
+	var shut: float = VoxelCarouselHack.LID_SHUT
+	if f < 1.0:
+		lid.rotation.x = open + (shut - open) * f * f          # (gathering speed on the way down)
+		return
+	if not _lid_hit:
+		_lid_hit = true
+		_sound("cabinet_close", 1.0, 1.15)
+	var after := (_lid_t - LID_WAIT - LID_FALL) / LID_SETTLE
+	if after >= 1.0:
+		lid.rotation.x = shut
+		_lid_done = true
+		return
+	# off his legs and back down, a couple of smaller and smaller knocks
+	lid.rotation.x = shut - absf(sin(after * PI * 2.5)) * LID_BOUNCE * (1.0 - after)
 
 ## Throw them from `xf` (feet, facing -z) at `v` (m/s), the ride's middle at `mid` (they walk off away from it).
 func start(xf: Transform3D, custom_: Color, v: Vector3, mid: Vector3, lift := 2.2, spin := 6.0) -> void:
@@ -211,7 +248,10 @@ func _process(dt: float) -> void:
 			_put(Transform3D(_upside_down().scaled(Vector3.ONE * size), feet), false)
 			mid_now = feet + Vector3(0, -0.9 * size, 0)
 		"binned":
-			# head first in the bin, legs up out of it, kicking; the bin rocking from it
+			# head first in the bin, legs up out of it, kicking; the bin rocking from it; and after LID_WAIT the lid
+			# comes down on him -- it drops under its own weight, clips his legs, bounces, and settles shut (the owner,
+			# 27 Nov: "the lid shut on the enemy in the bin"). His legs keep kicking under it.
+			_lid_step(dt)
 			var feet := Vector3(bin_at.x, bin_at.y + BIN_FLOOR + 1.75 * size, bin_at.z)
 			var kick := sin(_t * 7.0) * 0.06 * (0.4 + 0.6 * exp(-_t * 0.4))
 			var b := Basis(_upside_down().x.normalized(), kick) * _upside_down()
@@ -309,7 +349,10 @@ func _splat() -> void:
 	_crack(at)
 
 func _sound(nm: String, db: float, pitch: float) -> void:
-	var arena = get_tree().root.get_node_or_null("VoxelArena")
+	var tree := get_tree()
+	if tree == null:
+		return                      # (not in the tree yet: nothing to play it through)
+	var arena = tree.root.get_node_or_null("VoxelArena")
 	if arena and arena.sound:
 		arena.sound.play(nm, hang_at, db, pitch)
 

@@ -128,6 +128,7 @@ settings_stale_test|script|--nosave --settings --touch
 settings_test|script|--save=@save@
 shredder_test|script|--save=@save@
 stkilda_carousel_fling_test|shots|--save=@save@
+stkilda_bin_lid_test|script|--nosave
 stkilda_carousel_hack_test|shots|--save=@save@
 stkilda_dig_test|shots|--save=@save@
 stkilda_kill12_test|shots|--save=@save@

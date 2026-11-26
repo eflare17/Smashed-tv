@@ -26,6 +26,8 @@ const SPEED_UP := 0.5           # rad/s a second it speeds up or slows down
 const DEAD_STOP := 0.15         # s the brake takes, from any speed
 const LOOSEN := 3.0             # s to loosen a bolt, holding E
 const NEAR_BOX := 1.8           # m from the box to use it
+const LID_OPEN := -0.25         # rad: the wheelie bin's lid hanging open, leant back off its hinge
+const LID_SHUT := PI / 2.0 - 0.04     # ... and laid over the opening, resting on the rim (VoxelCarouselTumble shuts it)
 const AWAY := 9.0               # m from the box and the gadget's put away
 const NEAR_HORSE := 1.7         # m (level) from a horse's pole to get at its bolt
 const ACTS := ["faster", "slower", "brake", "lights"]
@@ -126,6 +128,9 @@ func reset() -> void:
 	if bin:
 		bin.rotation.x = 0.0
 		bin.set_meta("wobble", 0.0)
+		var lid := bin.get_node_or_null("Lid") as Node3D
+		if lid:
+			lid.rotation.x = LID_OPEN                 # (open again, ready for the next one)
 	for g in _gone_seats:
 		(g[0] as Array)[2] = g[1]
 	_gone_seats.clear()
@@ -871,8 +876,6 @@ func _make_bin() -> void:
 	SkModels.box(h, Vector3(w - 0.08, 0.02, d - 0.08), Vector3(0, tall - 0.25, 0), inside)               # (dark in it)
 	SkModels.box(h, Vector3(w + 0.04, 0.05, d + 0.04), Vector3(0, tall, 0), green.lightened(0.05))       # the rim
 	SkModels.box(h, Vector3(0.36, 0.04, 0.06), Vector3(0, tall - 0.05, -d / 2.0 - 0.05), Color("#222222"))  # the handle
-	var lid := SkModels.box(h, Vector3(w + 0.06, d + 0.06, 0.04), Vector3(0, tall + (d + 0.06) / 2.0 - 0.02, -d / 2.0 - 0.05), Color("#c23a2e"))
-	lid.rotation.x = -0.25                                                                                # (open, leant back)
 	bin = Node3D.new()
 	bin.name = "WheelieBin"
 	var mi := MeshInstance3D.new()
@@ -890,6 +893,22 @@ func _make_bin() -> void:
 	cs.position = Vector3(0, tall / 2.0, 0)
 	body.add_child(cs)
 	bin.add_child(body)
+	# The lid on a hinge of its own, not baked in with the rest, so it can shut on him after he lands head first in
+	# there (the owner, 27 Nov: "the lid shut on the enemy in the bin"). It hangs open, leant back off the bin's back
+	# edge; VoxelCarouselTumble drops it once he's in. The hinge sits at the bin's back rim and the lid stands up out
+	# of it, so turning the hinge forward lays it over the opening.
+	var lh := Node3D.new()
+	SkModels.box(lh, Vector3(w + 0.06, d + 0.06, 0.04), Vector3(0, (d + 0.06) / 2.0 - 0.02, 0), Color("#c23a2e"))
+	var hinge := Node3D.new()
+	hinge.name = "Lid"
+	hinge.position = Vector3(0, tall + 0.02, -d / 2.0 - 0.03)
+	hinge.rotation.x = LID_OPEN
+	var lmi := MeshInstance3D.new()
+	lmi.mesh = SkModels.bake(lh)
+	lmi.material_override = SkModels.baked_material()
+	lh.free()
+	hinge.add_child(lmi)
+	bin.add_child(hinge)
 	add_child(bin)
 	var at := _sill + _sill_out * 0.45
 	bin.global_transform = Transform3D(Basis(Vector3.UP, atan2(_sill_out.x, _sill_out.z)), Vector3(at.x, 0.0, at.z))
