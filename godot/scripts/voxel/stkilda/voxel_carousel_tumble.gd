@@ -47,6 +47,7 @@ var _fly_yaw := 0.0
 var _lid_t := 0.0               # (the lid shutting on him in the bin: _lid_step)
 var _lid_hit := false
 var _lid_done := false
+var _lid_p := 0.0               # 0 open .. 1 shut (what squashes him in)
 
 const FLY_SPEED := 26.0         # m/s across, at a window
 const TURNS := PI * 3.0         # head over heels on the way there
@@ -59,6 +60,11 @@ const LID_WAIT := 0.7           # s in the bin before the lid starts to come dow
 const LID_FALL := 0.45          # s it takes to fall shut
 const LID_BOUNCE := 0.18        # rad it rebounds off his legs, shaken off over LID_SETTLE
 const LID_SETTLE := 0.5         # s
+## How far the lid squashes him into the bin as it comes down (of his length): his head stays on the bin's floor and
+## his legs are folded in after him, so the lid shuts on a bin with legs in it rather than through them. He goes a bit
+## wider as he goes shorter, the way anything does when it's sat on.
+const SQUASH := 0.34
+const SQUASH_WIDE := 0.04       # (barely: 13% put an arm out through the side of the bin)
 
 ## The lid coming down on him. It waits LID_WAIT, swings shut over LID_FALL (fastest at the end, as a falling lid is),
 ## clatters off his legs with a bounce of LID_BOUNCE and settles over LID_SETTLE. Nothing here moves the bin itself --
@@ -78,7 +84,9 @@ func _lid_step(dt: float) -> void:
 	var shut: float = VoxelCarouselHack.LID_SHUT
 	if f < 1.0:
 		lid.rotation.x = open + (shut - open) * f * f          # (gathering speed on the way down)
+		_lid_p = clampf(f * f, 0.0, 1.0)
 		return
+	_lid_p = 1.0
 	if not _lid_hit:
 		_lid_hit = true
 		_sound("cabinet_close", 1.0, 1.15)
@@ -252,8 +260,11 @@ func _process(dt: float) -> void:
 			# comes down on him -- it drops under its own weight, clips his legs, bounces, and settles shut (the owner,
 			# 27 Nov: "the lid shut on the enemy in the bin"). His legs keep kicking under it.
 			_lid_step(dt)
-			var feet := Vector3(bin_at.x, bin_at.y + BIN_FLOOR + 1.75 * size, bin_at.z)
-			var kick := sin(_t * 7.0) * 0.06 * (0.4 + 0.6 * exp(-_t * 0.4))
+			# squashed in as the lid comes over: he keeps his head on the floor and loses it off his length, so his
+			# feet come down inside the rim (the owner, 27 Nov: "when the bin lid falls down can it squash her legs in")
+			var sq := SQUASH * _lid_p
+			var feet := Vector3(bin_at.x, bin_at.y + BIN_FLOOR + 1.75 * size * (1.0 - sq), bin_at.z)
+			var kick := sin(_t * 7.0) * 0.06 * (0.4 + 0.6 * exp(-_t * 0.4)) * (1.0 - 0.7 * _lid_p)
 			var b := Basis(_upside_down().x.normalized(), kick) * _upside_down()
 			if bin:
 				var w := float(bin.get_meta("wobble", 0.0))
@@ -261,8 +272,9 @@ func _process(dt: float) -> void:
 				bin.set_meta("wobble", w * exp(-dt * 2.5))
 				bin.rotation = Vector3(rock, bin.rotation.y, 0)
 				b = Basis(bin.global_transform.basis.x.normalized(), rock) * b
-			_put(Transform3D(b.scaled(Vector3.ONE * size), feet), false)
-			mid_now = feet + Vector3(0, -0.6 * size, 0)
+			var wide := 1.0 + SQUASH_WIDE * _lid_p
+			_put(Transform3D(b.scaled(Vector3(size * wide, size * (1.0 - sq), size * wide)), feet), false)
+			mid_now = feet + Vector3(0, -0.6 * size * (1.0 - sq), 0)
 		"down", "up":
 			var tip := 1.0
 			if stage == "up":

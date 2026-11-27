@@ -96,6 +96,11 @@ func _initialize() -> void:
 	for i in int(1.0 / dt):
 		tb._lid_step(dt)
 	check(is_equal_approx(lid.rotation.x, shut), "then it lies shut on him (%.3f rad)" % lid.rotation.x)
+	# and he is squashed in after it, not left with his legs through the lid
+	check(is_equal_approx(tb._lid_p, 1.0), "squashed right in by the time it's shut (%.2f)" % tb._lid_p)
+	var short := 1.0 - VoxelCarouselTumble.SQUASH
+	check(short > 0.5 and short < 0.8, "he loses a third of his length to it (%.0f%% of him left)" % (short * 100.0))
+	check(VoxelCarouselTumble.SQUASH_WIDE > 0.0, "and goes that bit wider with it")
 
 	# a reset puts it back open for the next one, the way VoxelCarouselHack does it
 	lid.rotation.x = VoxelCarouselHack.LID_OPEN
