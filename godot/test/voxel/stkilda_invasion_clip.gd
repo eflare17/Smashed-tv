@@ -100,6 +100,13 @@ class Film extends Node:
 		await _wait(secs)
 		Input.action_release("move_up")
 
+	## Shift held down (or let go): SkWalker reads the key itself, not an action.
+	func _sprint(on: bool) -> void:
+		var e := InputEventKey.new()
+		e.physical_keycode = KEY_SHIFT
+		e.pressed = on
+		Input.parse_input_event(e)
+
 	## Walk her at `to` until she is within `near` m of it (or `most` seconds go by).
 	func _walk_to(to: Vector3, near: float, most: float) -> void:
 		var t := 0.0
@@ -136,11 +143,17 @@ class Film extends Node:
 		return ib
 
 	## It notices her and comes in; she turns, waits for it and swings.
+	## It comes for her; she turns to face it and swings. The camera comes round past the ibis and looks BACK at her,
+	## so you see her swing it rather than the back of her head -- and from out there it is over open grass, where the
+	## over-the-shoulder camera was backing into the buildings along the path (the owner, 27 Nov: "its the start into
+	## the building when she hit the ibis, I want the camera angle looking at her when she hit the ibis").
 	func _whack(ib: SkIbis) -> void:
 		ib.player = walker
 		ib.keep_off = 1.1
 		ib._pecks = 0
 		ib._t = 1.0
+		var was := on_her
+		on_her = false
 		var turned := 0.0
 		while turned < 4.0:
 			var dt := get_process_delta_time()
@@ -148,12 +161,33 @@ class Film extends Node:
 			to.y = 0.0
 			maddie.rotation.y = lerp_angle(maddie.rotation.y, atan2(-to.x, -to.z), minf(1.0, dt * 10.0))
 			turned += dt
-			_place(dt)
+			_whack_cam(ib, dt)
 			if to.length() < 2.1 and turned > 0.35:
 				break
 			await get_tree().process_frame
 		walker.swing()
-		await _wait(0.9)
+		var held := 0.0
+		while held < 1.1:
+			var dt := get_process_delta_time()
+			held += dt
+			_whack_cam(ib, dt)
+			await get_tree().process_frame
+		print("WHACK hit=", walker._bat_hit, " ibis state=", ib.state, " (tumble=", SkIbis.TUMBLE, ")")
+		on_her = was
+
+	## Out past the ibis, a little to one side, looking back at the two of them with her face to us.
+	func _whack_cam(ib: SkIbis, dt: float) -> void:
+		var her := walker.global_position + Vector3(0, 1.1, 0)
+		var it := ib.global_position + Vector3(0, 0.5, 0)
+		var at_her := it - her
+		at_her.y = 0.0
+		if at_her.length() < 0.2:
+			at_her = Vector3.FORWARD
+		at_her = at_her.normalized()
+		var want := it + at_her * 3.4 + at_her.cross(Vector3.UP) * 1.9 + Vector3(0, 1.35, 0)
+		var k := clampf(dt * 4.0, 0.0, 1.0)
+		cam.global_position = cam.global_position.lerp(want, k) if cam.global_position.distance_to(want) < 40.0 else want
+		cam.look_at(her.lerp(it, 0.35), Vector3.UP)
 
 	# ---------------------------------------------------------------- the clip
 
@@ -246,7 +280,9 @@ class Film extends Node:
 
 		# 3. on to the Carousel's control box (the player goes with her: the gadget is his to hold up)
 		var box: Vector3 = hack.box.global_position
+		_sprint(true)                      # (she runs for the ride, not a stroll)
 		await _walk_to(box, 2.0, 12.0)
+		_sprint(false)
 		sk._put(box + (box - hack.carousel.global_position).normalized() * 1.2, 0.0, 0.0)
 		arena.player.visible = false
 		await _wait(0.6)
